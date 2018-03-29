@@ -23,15 +23,11 @@ Trickster's Fast Forward feature ensures that, even with step boundary normaliza
 
 ## Install
 
-### Precompiled Binaries
-
-Coming Soon!
-
 ### Docker
 
 Docker images are available on Docker Hub:
 
-    $ docker run --name trickster -d -v /path/to/trickster.conf:/etc/trickster/trickster.conf -p 0.0.0.0:9090:9090 hub.docker.com/tricksterio/trickster:latest
+    $ docker run --name trickster -d -v /path/to/trickster.conf:/etc/trickster/trickster.conf -p 0.0.0.0:9090:9090 tricksterio/trickster
 
 See the 'deploy' Directory for more information about using or creating Trickster docker images.
 
