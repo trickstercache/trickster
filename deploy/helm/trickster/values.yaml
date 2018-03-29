@@ -1,0 +1,16 @@
+replicas: 1
+
+registry: hub.docker.com/tricksterio/trickster
+namespace: trickster
+
+listenPort: 9090
+
+originURL: http://prometheus:9090
+
+resources:
+  limits:
+   cpu: 500m
+   memory: 1Gi
+  requests:
+   cpu: 250m
+   memory: 256Mi

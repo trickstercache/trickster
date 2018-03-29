@@ -1,0 +1,39 @@
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: tiller-manager
+rules:
+- apiGroups: ["extensions"]
+  resources: ["deployments", "replicasets", "replicasets/scale", "replicationcontrollers/scale", "daemonsets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "deployments/rollback", "deployments/scale"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+- apiGroups: ["extensions"]
+  resources: ["replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["pods", "configmaps", "secrets", "serviceaccounts", "services", "endpoints", "persistentvolumeclaims", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["namespaces", "events", "pods/status", "replicationcontrollers/status"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["rolebindings", "roles"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: tiller-binding
+subjects:
+- kind: ServiceAccount
+  name: tiller
+  # namespace: {{ .Release.Namespace }}
+  # hard-coded due to bootstrapping nonsense.
+  namespace: trickster
+roleRef:
+  kind: Role
+  name: tiller-manager
+  apiGroup: rbac.authorization.k8s.io

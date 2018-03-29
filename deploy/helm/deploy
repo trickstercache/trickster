@@ -1,0 +1,6 @@
+#!/bin/bash
+
+helm upgrade dev trickster \
+	--install \
+	--namespace=trickster \
+	--tiller-namespace=trickster

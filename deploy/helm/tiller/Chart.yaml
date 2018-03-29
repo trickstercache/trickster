@@ -1,0 +1,8 @@
+name: tiller
+version: 0.0.2
+appVersion: 2.8.1
+description: Executes Tiller in our clusters but with it configured to talk to our external K8 APIs.
+home: https://helm.sh
+icon: https://helm.sh/assets/images/helm-logo-microsoft.svg
+sources:
+  - https://github.com/kubernetes/helm/blob/master/docs/install.md
