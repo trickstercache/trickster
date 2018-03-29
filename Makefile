@@ -23,10 +23,6 @@ kube-local:
 
 docker:
 	docker build -f ./deploy/Dockerfile -t trickster:$(PROGVER) .
-	
-docker-release:
-	docker tag trickster:$(PROGVER) hub.docker.com/tricksterio/trickster:$(PROGVER)
-	docker push hub.docker.com/tricksterio/trickster:$(PROGVER)
 
 clean:
 	rm ${GOPATH}/bin/trickster
