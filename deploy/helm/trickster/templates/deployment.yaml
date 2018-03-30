@@ -1,41 +1,68 @@
+{{- if .Capabilities.APIVersions.Has "apps/v1beta2" }}
+apiVersion: apps/v1beta2
+{{- else }}
 apiVersion: extensions/v1beta1
+{{- end }}
 kind: Deployment
 metadata:
+  name: {{ template "trickster.fullname" . }}
   labels:
-    name: {{ template "fullname" . }}
-    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
-    heritage: {{ .Release.Service }}
+    app: {{ template "trickster.name" . }}
+    chart: {{ template "trickster.chart" . }}
     release: {{ .Release.Name }}
-  name: {{ template "fullname" . }}
+    heritage: {{ .Release.Service }}
 spec:
-  replicas: {{ .Values.replicas }}
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ template "trickster.name" . }}
+      release: {{ .Release.Name }}
   template:
     metadata:
       labels:
-        name: {{ template "fullname" . }}
-      name: {{ template "fullname" . }}
+        app: {{ template "trickster.name" . }}
+        release: {{ .Release.Name }}
     spec:
       containers:
         - name: trickster
-          image: {{ template "trickster.image" . }}
-          imagePullPolicy: IfNotPresent
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           volumeMounts:
             - name: cfg-volume
               mountPath: /etc/trickster
-          env:
-            - name: NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.service.metricsPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
           resources:
 {{ toYaml .Values.resources | indent 12 }}
       volumes:
         - name: cfg-volume
           configMap:
-            name: {{ template "fullname" . }}-conf
+            name: {{ template "trickster.fullname" . }}
             items:
-              - key: trickster-conf
+              - key: trickster.conf
                 path: trickster.conf
-      serviceAccount: {{ .Release.Name }}-trickster
-      serviceAccountName: {{ .Release.Name }}-trickster
-
+    {{- with .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+    {{- end }}
