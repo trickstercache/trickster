@@ -3,8 +3,8 @@ FROM golang:1.9.3 as builder
 COPY . /go/src/github.com/comcast/trickster
 WORKDIR /go/src/github.com/comcast/trickster
 
-RUN go get github.com/tools/godep
-RUN godep restore
+RUN curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+RUN dep ensure 
 RUN GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -a -installsuffix cgo -o trickster -v github.com/comcast/trickster
 
 
