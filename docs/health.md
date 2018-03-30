@@ -1,7 +1,7 @@
 # Health Checks
 
 ## Health Check Endpoint
-Trickster offers a `/heath` endpoint for monitoring the health of the Trickster service and it's upstream connection to the origin.  To test the upstream origin, Trickster will make a request to it's labels endpoint (`/label/__name__/values`).
+Trickster offers a `/heath` endpoint for monitoring the health of the Trickster service and its upstream connection to the origin.  To test the upstream origin, Trickster will make a request to its labels endpoint (`/label/__name__/values`).
 
 An HTTP response of `200 OK` indicates that the end-to-end request to the origin was successful.
 
