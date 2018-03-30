@@ -12,21 +12,19 @@ If you are wanting to use Helm and kubernetes rbac use the folowing install step
 
 #### Bootstrap Local Kubernetes-Helm Dev
 
-- Install [Helm](helm.sh) **Client Version 2.6.0**
+- Install [Helm](helm.sh) **Client Version 2.8.2**
     ```
-    brew install https://raw.githubusercontent.com/Homebrew/homebrew-core/bc08679a573f7aaf3b29e9153386cad43c9e5731/Formula/kubernetes-helm.rb
-    brew pin kubernetes-helm
+    brew install kubernetes-helm
     ```
 
-- Install [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/) **client server 1.8.0, client version 1.8.0**
+- Install [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/) **client server 1.9.4, client version 1.9.4**
     ```
-    brew install https://raw.githubusercontent.com/Homebrew/homebrew-core/e4b03ca8689987364852d645207be16a1ec1b349/Formula/kubernetes-cli.rb
-    brew pin kubernetes-cli
+    curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.9.4/bin/darwin/amd64/kubectl
     ```
 
 - Install [minikube](https://kubernetes.io/docs/getting-started-guides/minikube/) **version 0.25.0**
     ```
-    brew cask install https://raw.githubusercontent.com/caskroom/homebrew-cask/903f1507e1aeea7fc826c6520a8403b4076ed6f4/Casks/minikube.rb
+    curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.25.2/minikube-darwin-amd64 && chmod +x minikube && sudo mv minikube /usr/local/bin/
     ```
     
 - Start minikube and enable RBAC `make start-minikube` or manually with `--extra-config=apiserver.Authorization.Mode=RBAC --kubernetes-version=v1.8.0`.
