@@ -7,7 +7,7 @@ install-tiller-dev:
 	kubectl config set-context minikube --namespace=trickster
 	-kubectl --namespace trickster create -f tiller/templates/serviceaccount.yaml
 	-kubectl --namespace trickster create -f tiller/templates/role.yaml
-	-helm init --service-account tiller --tiller-image gcr.io/kubernetes-helm/tiller:v2.6.0 --tiller-namespace trickster
+	-helm init --service-account tiller --tiller-image gcr.io/kubernetes-helm/tiller:v2.8.2 --tiller-namespace trickster
 	
 bootstrap-peripherals: install-tiller-dev
 	kubectl config use-context minikube
@@ -29,7 +29,7 @@ start-minikube:
 		--memory 2048 \
 		--cpus 2 \
 		--extra-config=apiserver.Authorization.Mode=RBAC \
-		--kubernetes-version=v1.8.0
+		--kubernetes-version=v1.9.4
 	-kubectl config set-context minikube --namespace=trickster
 	
 delete:
