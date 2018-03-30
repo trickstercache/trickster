@@ -25,3 +25,6 @@ OPATH
 ehthumbs.db
 Thumbs.db
 vendor
+
+# The binary
+trickster
