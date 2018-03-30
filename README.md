@@ -51,7 +51,7 @@ You can also clone the repository yourself and build using `make`:
 
     $ mkdir -p $GOPATH/src/github.com/comcast
     $ cd $GOPATH/src/github.com/comcast
-    $ git clone github.com/comcast/trickster.git
+    $ git clone https://github.com/comcast/trickster.git
     $ cd trickster
     $ make build
     $ ./trickster -origin http://prometheus.example.com:9090
