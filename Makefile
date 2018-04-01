@@ -2,9 +2,12 @@ DEFAULT: build
 
 PROGVER = $(shell grep 'const progversion = ' main.go | awk '{print $$4}' | sed -e 's/\"//g')
 
-build:
-	go build -o ${GOPATH}/bin/trickster -v github.com/comcast/trickster
-	
+deps:
+	go get
+
+build: deps
+	go build -o ${GOPATH}/bin/trickster
+
 helm-local:
 	kubectl config use-context minikube --namespace=trickster
 	kubectl scale --replicas=0 deployment/dev-trickster -n trickster
@@ -27,4 +30,4 @@ docker:
 clean:
 	rm ${GOPATH}/bin/trickster
 
-.PHONY: build helm-local kube-local docker docker-release clean
+.PHONY: build helm-local kube-local docker docker-release clean deps
