@@ -255,7 +255,7 @@ func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values
 	// Make the HTTP Request - dont use fetchPromQuery here, that is for instantaneous only.
 	body, resp, duration := t.getURL(hmGet, url, params, getProxyableClientHeaders(r))
 
-	if resp.StatusCode == 200 {
+	if resp != nil && resp.StatusCode == 200 {
 		// Unmarshal the prometheus data into another PrometheusMatrixEnvelope
 		err := json.Unmarshal(body, &pe)
 		if err != nil {
@@ -307,6 +307,10 @@ func (t *TricksterHandler) fetchPromQuery(originURL string, params url.Values, r
 	if err != nil {
 		// Cache Miss, we need to get it from prometheus
 		body, resp, duration = t.getURL(hmGet, originURL, params, getProxyableClientHeaders(r))
+
+		if resp == nil {
+			return body, nil
+		}
 
 		t.Metrics.ProxyRequestDuration.WithLabelValues(originURL, otPrometheus, mnQuery, crKeyMiss, strconv.Itoa(resp.StatusCode)).Observe(float64(duration))
 		t.Cacher.Store(cacheKey, string(body), ttl)
@@ -627,7 +631,7 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 					}
 					m.Unlock()
 
-					if r.StatusCode == 200 && udd.Status == rvSuccess {
+					if r != nil && r.StatusCode == 200 && udd.Status == rvSuccess {
 						upperDeltaData = udd
 						t.Metrics.ProxyRequestDuration.WithLabelValues(ctx.Origin.OriginURL, otPrometheus,
 							mnQueryRange, ctx.CacheLookupResult, strconv.Itoa(r.StatusCode)).Observe(float64(duration))
@@ -654,7 +658,7 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 					}
 					m.Unlock()
 
-					if r.StatusCode == 200 && ffd.Status == rvSuccess {
+					if r != nil && r.StatusCode == 200 && ffd.Status == rvSuccess {
 						fastForwardData = ffd
 					}
 					wg.Done()
