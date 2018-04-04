@@ -1,4 +1,6 @@
-# Trickster
+# Trickster [![Build Status](https://travis-ci.org/Comcast/trickster.svg)][travis]
+
+[![Go Report Card](https://goreportcard.com/badge/github.com/Comcast/trickster)](https://goreportcard.com/report/github.com/Comcast/trickster)
 
 Trickster is a reverse proxy cache for the Prometheus HTTP APIv1 that dramatically accelerates dashboard rendering times for any series queried from Prometheus.
 
