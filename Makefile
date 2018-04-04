@@ -22,7 +22,7 @@ kube-local:
 	eval $$(minikube docker-env) \
 		&& docker build -f deploy/Dockerfile -t trickster:dev .
 	kubectl set image deployment/trickster trickster=trickster:dev
-    kubectl scale --replicas=1 deployment/trickster
+	kubectl scale --replicas=1 deployment/trickster
 
 docker:
 	docker build -f ./deploy/Dockerfile -t trickster:$(PROGVER) .
