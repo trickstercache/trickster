@@ -1,4 +1,4 @@
-# Trickster [![Build Status](https://travis-ci.org/Comcast/trickster.svg)][travis]
+# Trickster ![Build Status](https://travis-ci.org/Comcast/trickster.svg)
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/Comcast/trickster)](https://goreportcard.com/report/github.com/Comcast/trickster)
 
