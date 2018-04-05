@@ -135,6 +135,13 @@ func (t *TricksterHandler) promQueryRangeHandler(w http.ResponseWriter, r *http.
 
 // Helper functions
 
+// defaultPrometheusMatrixEnvelope returns an empty envelope
+func defaultPrometheusMatrixEnvelope() PrometheusMatrixEnvelope {
+
+	return PrometheusMatrixEnvelope{Data: PrometheusMatrixData{ResultType: rvMatrix, Result: make([]*model.SampleStream, 0)}}
+
+}
+
 // getProxyableClientHeaders returns any pertinent http headers from the client that we should pass through to the Origin when proxying
 func getProxyableClientHeaders(r *http.Request) http.Header {
 
@@ -261,6 +268,7 @@ func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values
 		if err != nil {
 			level.Error(t.Logger).Log(lfEvent, "prometheus matrix unmarshaling error", "url", url+params.Encode(), lfDetail, err.Error())
 		}
+
 	}
 
 	return pe, resp, duration
@@ -385,7 +393,7 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 	ctx.RequestExtents.Start, ctx.RequestExtents.End = alignStepBoundaries(reqStart, reqEnd, ctx.StepMS, ctx.Time)
 
 	// setup some variables to determine and track the status of the query vs whats in the cache
-	ctx.Matrix = PrometheusMatrixEnvelope{}
+	ctx.Matrix = defaultPrometheusMatrixEnvelope()
 	ctx.CacheLookupResult = crKeyMiss
 
 	// parameters for filling gap on the upper bound
@@ -794,12 +802,14 @@ func (t *TricksterHandler) mergeVector(pe PrometheusMatrixEnvelope, pv Prometheu
 // mergeMatrix merges the passed PrometheusMatrixEnvelope object with the calling PrometheusMatrixEnvelope object
 func (t *TricksterHandler) mergeMatrix(pe PrometheusMatrixEnvelope, pe2 PrometheusMatrixEnvelope) PrometheusMatrixEnvelope {
 
-	if len(pe.Data.Result) == 0 {
+	if pe.Status != rvSuccess {
 		pe = pe2
 		return pe2
-	} else if len(pe2.Data.Result) == 0 {
+	} else if pe2.Status != rvSuccess {
 		return pe
 	}
+
+	level.Debug(t.Logger).Log(lfEvent, "mergeMatrix Condition", lfDetail, "3")
 
 	for i := range pe2.Data.Result {
 		metricSetFound := false
