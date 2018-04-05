@@ -809,8 +809,6 @@ func (t *TricksterHandler) mergeMatrix(pe PrometheusMatrixEnvelope, pe2 Promethe
 		return pe
 	}
 
-	level.Debug(t.Logger).Log(lfEvent, "mergeMatrix Condition", lfDetail, "3")
-
 	for i := range pe2.Data.Result {
 		metricSetFound := false
 		result2 := pe2.Data.Result[i]
