@@ -12,7 +12,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-const progversion = "0.0.10"
+const progversion = "0.0.11"
 
 // main function to boot up everything
 func main() {
