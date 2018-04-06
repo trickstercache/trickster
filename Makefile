@@ -8,6 +8,12 @@ deps:
 build: deps
 	go build -o ${GOPATH}/bin/trickster
 
+release: build release-artifacts docker docker-release
+
+release-artifacts:
+	GOOS=darwin GOARCH=amd64 go build -o ./OPATH/trickster-$(PROGVER).darwin-amd64 && gzip -f ./OPATH/trickster-$(PROGVER).darwin-amd64
+	GOOS=linux  GOARCH=amd64 go build -o ./OPATH/trickster-$(PROGVER).linux-amd64  && gzip -f ./OPATH/trickster-$(PROGVER).linux-amd64
+
 helm-local:
 	kubectl config use-context minikube --namespace=trickster
 	kubectl scale --replicas=0 deployment/dev-trickster -n trickster
@@ -26,6 +32,10 @@ kube-local:
 
 docker:
 	docker build -f ./deploy/Dockerfile -t trickster:$(PROGVER) .
+
+docker-release:
+	docker tag trickster:$(PROGVER) tricksterio/trickster:$(PROGVER)
+	docker tag tricksterio/trickster:$(PROGVER) tricksterio/trickster:latest
 
 clean:
 	rm ${GOPATH}/bin/trickster
