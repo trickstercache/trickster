@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -200,8 +201,6 @@ func setResponseHeaders(w http.ResponseWriter) {
 	w.Header().Set(hnAllowOrigin, "*")
 	// Set the Content-Type so browser's jQuery will auto-parse the response payload
 	w.Header().Set(hnContentType, hvApplicationJSON)
-	// Don't allow browsers to cache (important for relative time urls to not show stale data)
-	w.Header().Set(hnCacheControl, hvNoCache)
 }
 
 // getURL makes an HTTP request to the provided URL with the provided parameters and returns the response body
@@ -378,19 +377,17 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 	}
 
 	// get the browser-requested start/end times, so we can determine what part of the range is not in the cache
-	// SanitizeTime will change relative times (24h, 30m, etc) into absolute times for Prometheus Querying
-
-	reqStart, err := strconv.ParseInt(sanitizeTime(ctx.RequestParams[upStart][0])+"000", 10, 64)
+	reqStart, err := parseTime(ctx.RequestParams[upStart][0])
 	if err != nil {
 		level.Error(t.Logger).Log(lfEvent, "request parameter parser error", lfParamName, upStart, lfParamValue, ctx.RequestParams[upStart][0], lfDetail, err.Error())
 	}
 
-	reqEnd, err := strconv.ParseInt(sanitizeTime(ctx.RequestParams[upEnd][0])+"000", 10, 64)
+	reqEnd, err := parseTime(ctx.RequestParams[upEnd][0])
 	if err != nil {
 		level.Error(t.Logger).Log(lfEvent, "request parameter parser error", lfParamName, upEnd, lfParamValue, ctx.RequestParams[upEnd][0], lfDetail, err.Error())
 	}
 
-	ctx.RequestExtents.Start, ctx.RequestExtents.End = alignStepBoundaries(reqStart, reqEnd, ctx.StepMS, ctx.Time)
+	ctx.RequestExtents.Start, ctx.RequestExtents.End = alignStepBoundaries(reqStart.Unix()*1000, reqEnd.Unix()*1000, ctx.StepMS, ctx.Time)
 
 	// setup some variables to determine and track the status of the query vs whats in the cache
 	ctx.Matrix = defaultPrometheusMatrixEnvelope()
@@ -405,7 +402,7 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 
 	if err != nil || noCache {
 		// Cache Miss, Get the whole blob from Prometheus.
-		// Pass on the browser-requested start/end parameters (sanitized if relative) to our Prom Query
+		// Pass on the browser-requested start/end parameters to our Prom Query
 		if noCache {
 			ctx.CacheLookupResult = crPurge
 		}
@@ -943,39 +940,15 @@ func deriveCacheKey(prefix string, params url.Values) string {
 
 var reRelativeTime = regexp.MustCompile(`([0-9]+)([mshdw])`)
 
-// sanitizeTime looks at a query range time (e.g., start= or end=) and cleans it up if it's not epoch secs
-func sanitizeTime(input string) string {
-
-	// Return current epoch secs if 0 or now
-	if input == "now" || input == "0" {
-		return strconv.FormatInt(time.Now().Unix(), 10)
+// parseTime converts a query time URL parameter to time.Time.
+// Copied from https://github.com/prometheus/prometheus/blob/v2.2.1/web/api/v1/api.go#L798-L807
+func parseTime(s string) (time.Time, error) {
+	if t, err := strconv.ParseFloat(s, 64); err == nil {
+		s, ns := math.Modf(t)
+		return time.Unix(int64(s), int64(ns*float64(time.Second))), nil
 	}
-
-	// remove .milliseconds from epoch
-	if len(input) == 14 {
-		input = input[:10]
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, nil
 	}
-
-	// if a perfect integer, assume epoch timestamp
-	if _, err := strconv.ParseInt(input, 10, 64); err == nil {
-		return input
-	}
-
-	// If it looks like 24h or 10h, etc, convert to absolute epoch time here
-	if match := reRelativeTime.FindStringSubmatch(input); match != nil && len(match) == 3 {
-
-		if i, err := strconv.Atoi(match[1]); err == nil {
-
-			if m, ok := timeMultipliers[match[2]]; ok {
-
-				k := int64(time.Now().Unix() - (int64(i) * m))
-
-				return strconv.FormatInt(k, 10)
-
-			}
-		}
-	}
-
-	return input
-
+	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
 }
