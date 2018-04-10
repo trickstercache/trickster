@@ -66,9 +66,9 @@ func main() {
 	// Catch All for Single-Origin proxy
 	router.PathPrefix("/").HandlerFunc(t.promFullProxyHandler).Methods("GET")
 
-	level.Info(t.Logger).Log("event", "proxy http endpoint starting", "port", t.Config.ProxyServer.ListenPort)
+	level.Info(t.Logger).Log("event", "proxy http endpoint starting", "address", t.Config.ProxyServer.ListenAddress, "port", t.Config.ProxyServer.ListenPort)
 
 	// Start the Server
-	err := http.ListenAndServe(fmt.Sprintf(":%d", t.Config.ProxyServer.ListenPort), handlers.CompressHandler(router))
+	err := http.ListenAndServe(fmt.Sprintf("%s:%d", t.Config.ProxyServer.ListenAddress, t.Config.ProxyServer.ListenPort), handlers.CompressHandler(router))
 	level.Error(t.Logger).Log("event", "exiting", "err", err)
 }
