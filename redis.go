@@ -1,5 +1,3 @@
-package main
-
 /**
 * Copyright 2018 Comcast Cable Communications Management, LLC
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,6 +10,8 @@ package main
 * See the License for the specific language governing permissions and
 * limitations under the License.
  */
+
+package main
 
 import (
 	"sync"
