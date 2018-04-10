@@ -15,7 +15,7 @@ The following metrics are available for polling:
     * `status` - 'hit', 'phit', (partial hit) 'kmiss', (key miss) 'rmiss' (range miss)
 
 
-* `trickster_proxy_duration_ms` (Histogram) - Time required to proxy a given Prometheus query.
+* `trickster_proxy_duration_seconds` (Histogram) - Time required to proxy a given Prometheus query.
   * labels:
     * `method` - 'query' or 'query_range'
     * `status` - 'hit', 'phit', (partial hit) 'kmiss', (key miss) 'rmiss' (range miss)

@@ -44,9 +44,9 @@ func NewApplicationMetrics(config *Config, logger log.Logger) *ApplicationMetric
 		),
 		ProxyRequestDuration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "trickster_proxy_duration_ms",
-				Help:    "Time required (ms) to proxy a given Prometheus query.",
-				Buckets: []float64{50, 100, 500, 1000, 5000, 10000, 20000},
+				Name:    "trickster_proxy_duration_seconds",
+				Help:    "Time required in seconds to proxy a given Prometheus query.",
+				Buckets: []float64{0.05, 0.1, 0.5, 1, 5, 10, 20},
 			},
 			[]string{"origin", "origin_type", "method", "status", "http_status"},
 		),
