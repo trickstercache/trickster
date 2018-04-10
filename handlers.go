@@ -347,12 +347,12 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 	ctx.RequestParams = r.URL.Query()
 
 	// setup the default step value if it is missing
-	ctx.StepParam = strconv.FormatInt(int64(300), 10)
-	ctx.StepMS = int64(300)
+	ctx.StepParam = strconv.FormatInt(int64(ctx.Origin.DefaultStep), 10)
+	ctx.StepMS = int64(ctx.Origin.DefaultStep * 1000)
 
 	// Pull the Step Value from the User Reqest urlparams if it exists
 	if step, ok := ctx.RequestParams[upStep]; ok {
-		if ctx.StepMS, err = strconv.ParseInt(step[0], 10, 64); err == nil {
+		if ctx.StepMS, err = strconv.ParseInt(step[0], 10, 64); err == nil && ctx.StepMS > 0 {
 			ctx.StepParam = step[0]
 			ctx.StepMS *= 1000
 		}
@@ -754,6 +754,11 @@ func alignStepBoundaries(start int64, end int64, stepMS int64, now int64) (int64
 	// Don't query beyond Time.Now() or charts will have weird data on the far right
 	if end > now*1000 {
 		end = now * 1000
+	}
+
+	// Failsafe to 60s if something inexplicably happened to the step param
+	if stepMS == 0 {
+		stepMS = 60000
 	}
 
 	// Align start/end to step boundaries
