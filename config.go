@@ -29,6 +29,9 @@ type GeneralConfig struct {
 
 // ProxyServerConfig is a collection of configurations for the main http listener for the application
 type ProxyServerConfig struct {
+	// ListenAddress is IP address for the main http listener for the application
+	ListenAddress string `toml:"listen_address"`
+	// ListenPort is TCP Port for the main http listener for the application
 	ListenPort int `toml:"listen_port"`
 }
 
@@ -70,6 +73,8 @@ type PrometheusOriginConfig struct {
 
 // MetricsConfig is a collection of Metrics Collection configurations
 type MetricsConfig struct {
+	// ListenAddress is IP address from which the Application Metrics are available for pulling at /metrics
+	ListenAddress string `toml:"listen_address"`
 	// ListenPort is TCP Port from which the Application Metrics are available for pulling at /metrics
 	ListenPort int `toml:"listen_port"`
 }

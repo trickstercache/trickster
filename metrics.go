@@ -61,10 +61,10 @@ func NewApplicationMetrics(config *Config, logger log.Logger) *ApplicationMetric
 	if config.Metrics.ListenPort > 0 {
 		go func() {
 
-			level.Info(logger).Log("event", "metrics http endpoint starting", "port", fmt.Sprintf("%d", config.Metrics.ListenPort))
+			level.Info(logger).Log("event", "metrics http endpoint starting", "address", config.Metrics.ListenAddress, "port", fmt.Sprintf("%d", config.Metrics.ListenPort))
 
 			http.Handle("/metrics", promhttp.Handler())
-			if err := http.ListenAndServe(fmt.Sprintf(":%d", config.Metrics.ListenPort), nil); err != nil {
+			if err := http.ListenAndServe(fmt.Sprintf("%s:%d", config.Metrics.ListenAddress, config.Metrics.ListenPort), nil); err != nil {
 				level.Error(logger).Log("event", "unable to start metrics http server", "detail", err.Error())
 				os.Exit(1)
 			}
