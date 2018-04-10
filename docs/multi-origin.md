@@ -12,7 +12,7 @@ To utilize Multiple Origins, you must craft a Trickster configuration file to be
 
 Each origin that your Trickster instance supports must be explicitly enumerated in the configuration file. Trickster does not support open proxying.
 
-Each origin is identified by an origin moniker, provided in the configuration section header for the origin ([origin.MONIKER]). For path and urlparam multi-origin configurations, the Moniker can be simple words. For DNS Aliasing, the origin moniker must match an FQDN that resolves to your Trickster instance.
+Each origin is identified by an origin moniker, provided in the configuration section header for the origin ([origins.MONIKER]). For path and urlparam multi-origin configurations, the Moniker can be simple words. For DNS Aliasing, the origin moniker must match an FQDN that resolves to your Trickster instance.
 
 In all cases, if Trickster cannot identify a valid origin by the client-provided moniker, it will proxy the request to the default origin.
 
@@ -25,7 +25,7 @@ Example Path/URLParam Multi-Origin Configuration:
 [origins]
 
     # default origin
-    [origin.default]
+    [origins.default]
         origin_url = 'http://prometheus.example.com:9090'
         api_path = '/api/v1'
         default_step = 300
@@ -33,7 +33,7 @@ Example Path/URLParam Multi-Origin Configuration:
         max_value_age_secs = 86400
 
     # "foo" origin
-    [origin.foo]
+    [origins.foo]
         origin_url = 'http://prometheus-foo.example.com:9090'
         api_path = '/api/v1'
         default_step = 300
@@ -41,7 +41,7 @@ Example Path/URLParam Multi-Origin Configuration:
         max_value_age_secs = 86400
 
     # "bar" origin
-    [origin.bar]
+    [origins.bar]
         origin_url = 'http://prometheus-bar.example.com:9090'
         api_path = '/api/v1'
         default_step = 300
@@ -87,7 +87,7 @@ Example DNS-based Origin Configuration:
 [origins]
 
     # default origin
-    [origin.default]
+    [origins.default]
         origin_url = 'http://prometheus.example.com:9090'
         api_path = '/api/v1'
         default_step = 300
@@ -95,7 +95,7 @@ Example DNS-based Origin Configuration:
         max_value_age_secs = 86400
 
     # "foo" origin
-    [origin.trickster-foo.example.com]
+    [origins.trickster-foo.example.com]
         origin_url = 'http://prometheus-foo.example.com:9090'
         api_path = '/api/v1'
         default_step = 300
@@ -103,7 +103,7 @@ Example DNS-based Origin Configuration:
         max_value_age_secs = 86400
 
     # "bar" origin
-    [origin.trickster-bar.example.com]
+    [origins.trickster-bar.example.com]
         origin_url = 'http://prometheus-bar.example.com:9090'
         api_path = '/api/v1'
         default_step = 300
