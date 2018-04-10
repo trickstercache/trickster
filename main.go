@@ -57,11 +57,11 @@ func main() {
 	// Path-based  multi-origin support - no support for full proxy of the prometheus UI, only querying
 	router.HandleFunc("/{originMoniker}"+apiV1Path+mnQueryRange, t.promQueryRangeHandler).Methods("GET")
 	router.HandleFunc("/{originMoniker}"+apiV1Path+mnQuery, t.promQueryHandler).Methods("GET")
-	router.HandleFunc("/{originMoniker}"+apiV1Path+mnLabels, t.promAPIProxyHandler).Methods("GET")
+	router.HandleFunc("/{originMoniker}"+apiV1Path, t.promAPIProxyHandler).Methods("GET")
 
 	router.HandleFunc(apiV1Path+mnQueryRange, t.promQueryRangeHandler).Methods("GET")
 	router.HandleFunc(apiV1Path+mnQuery, t.promQueryHandler).Methods("GET")
-	router.HandleFunc(apiV1Path+mnLabels, t.promAPIProxyHandler).Methods("GET")
+	router.HandleFunc(apiV1Path, t.promAPIProxyHandler).Methods("GET")
 
 	// Catch All for Single-Origin proxy
 	router.PathPrefix("/").HandlerFunc(t.promFullProxyHandler).Methods("GET")
