@@ -238,6 +238,7 @@ func (t *TricksterHandler) getURL(method string, uri string, params url.Values, 
 		level.Error(t.Logger).Log(lfEvent, "error downloading url", "url", uri, lfDetail, err.Error())
 		return []byte{}, resp, -1
 	}
+	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -245,7 +246,6 @@ func (t *TricksterHandler) getURL(method string, uri string, params url.Values, 
 		return []byte{}, resp, 0
 	}
 
-	resp.Body.Close()
 	duration := int64(time.Now().Sub(startTime).Nanoseconds() / 1000000)
 
 	return body, resp, duration
