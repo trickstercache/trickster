@@ -44,7 +44,7 @@ Since this cache type runs inside the virtual memory allocated to the Trickster 
 To completely purge a Filesystem-based Cache, you will need to:
 
 * Docker/Kube: delete the Trickster container and run a new one
-* Metal/VM: Stop the Trickster process an manually `rm -rf /tmp/trickster` (or your custom-configured directory).
+* Metal/VM: Stop the Trickster process and manually run `rm -rf /tmp/trickster` (or your custom-configured directory).
 
 ### Redis Cache
 
