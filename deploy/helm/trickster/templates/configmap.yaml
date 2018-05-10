@@ -25,29 +25,29 @@ data:
     [cache]
         # cache_type defines what kind of cache Trickster uses
         # options are 'memory', 'redis' and 'filesystem'.  'memory' is the default
-        cache_type = {{ .Values.cacheType | quote }}
+        cache_type = {{ .Values.cache.type | quote }}
 
         # record_ttl_secs defines the relative expiration of cached queries. default is 6 hours (21600 seconds)
         record_ttl_secs = {{ .Values.recordTTLSecs }}
 
-            {{- if eq .Values.cacheType "redis" }}
+            {{- if eq .Values.cache.type "redis" }}
             # Configuration options when using a Redis Cache
             [cache.redis]
 
                 # protocol defines the protocol for connecting to redis ('unix' or 'tcp') 'tcp' is default
-                protocol = {{ .Values.redisCache.protocol | quote }}
+                protocol = {{ .Values.cache.redis.protocol | quote }}
 
                 # endpoint defines the fqdn+port or path to a unix socket file for connecting to redis
                 # default is 'redis:6379'
-                endpoint = {{ .Values.redisCache.endpoint | quote }}
+                endpoint = {{ .Values.cache.redis.endpoint | quote }}
 
-            {{- else if eq .Values.cacheType "filesystem" }}
+            {{- else if eq .Values.cache.type "filesystem" }}
             # Configuration options when using a Filesystem Cache
             [cache.filesystem]
 
                 # cache_path defines the directory location under which the Trickster cache will be maintained
                 # default is '/tmp/trickster'
-                cache_path = {{ .Values.filesystemCache.path | quote }}
+                cache_path = {{ .Values.cache.filesystem.path | quote }}
             {{- end }}
 
     # Configuration options for mapping Origin(s)
