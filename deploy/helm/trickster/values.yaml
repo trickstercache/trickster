@@ -3,12 +3,13 @@
 # Default trickster originURL, references a source Prometheus instance
 # Ref: https://github.com/Comcast/trickster/blob/master/docs/configuring.md
 originURL: http://prometheus:9090
-cacheType: memory
-redisCache:
-  protocol: tcp
-  endpoint: redis:6379
-filesystemCache:
-  path: /tmp/trickster
+cache:
+  type: memory
+  redis:
+    protocol: tcp
+    endpoint: redis:6379
+  filesystem:
+    path: /tmp/trickster
 # Put ints in quotes to ensure they aren't converted to scientific notations.
 # See https://github.com/kubernetes/helm/issues/1707
 recordTTLSecs: "21600"
