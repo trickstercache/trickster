@@ -3,6 +3,21 @@
 # Default trickster originURL, references a source Prometheus instance
 # Ref: https://github.com/Comcast/trickster/blob/master/docs/configuring.md
 originURL: http://prometheus:9090
+cache:
+  type: memory
+  redis:
+    protocol: tcp
+    endpoint: redis:6379
+  filesystem:
+    path: /tmp/trickster
+# Put ints in quotes to ensure they aren't converted to scientific notations.
+# See https://github.com/kubernetes/helm/issues/1707
+recordTTLSecs: "21600"
+defaultStep: "300"
+# 24h
+maxValueAgeSecs: "86400"
+fastForwardDisable: false
+logLevel: info
 
 # Number of trickster replicas desired
 replicaCount: 1
@@ -10,7 +25,7 @@ replicaCount: 1
 # image for trickster deplyoment
 image:
   repository: tricksterio/trickster
-  tag: 0.0.9
+  tag: 0.0.12
   pullPolicy: IfNotPresent
 
 # Service resource for trickster deplyoment
