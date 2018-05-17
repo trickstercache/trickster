@@ -1,6 +1,6 @@
 # Cache Types
 
-There are 3 cache types supported by by Trickster
+There are 3 cache types supported by Trickster
 
 * In-Memory Cache (default)
 * Filesystem Cache
@@ -25,7 +25,7 @@ The default Filesystem Cache path is `/tmp/trickster`. The sample configuration 
 
 ## Redis Cache
 
-Redis is a good option for larger dashboard setups that also have heavy user traffic, where you might see degraded performance with a Filesystem Cache. This allows Trickster to scale better than a Filesystem Cache, but you will need to provide your own Redis instance at which to point your Trickster instance. The default Redis endpoint is `redis:6379`, and should work for most docker and kube deployments with containers or services named `redis`. The sample configuration demonstrates how to customize the Redis endpoint. In addition to supporting TCP endoints, Trickster supports unix sockets for Trickster and Redis running on the same VM or baremetal host.
+Redis is a good option for larger dashboard setups that also have heavy user traffic, where you might see degraded performance with a Filesystem Cache. This allows Trickster to scale better than a Filesystem Cache, but you will need to provide your own Redis instance at which to point your Trickster instance. The default Redis endpoint is `redis:6379`, and should work for most docker and kube deployments with containers or services named `redis`. The sample configuration demonstrates how to customize the Redis endpoint. In addition to supporting TCP endpoints, Trickster supports Unix sockets for Trickster and Redis running on the same VM or bare-metal host.
 
 Ensure that your Redis instance is located close to your Trickster instance in order to minimize additional roundtrip latency.
 

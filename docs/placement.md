@@ -6,7 +6,7 @@ Depending upon the size of your existing or planned deployment, there are severa
 
 <img src="./images/deploy-single-everything.png" />
 
-Single "Everything" is the most common placement model. In this configuration, you have one dashboard endpoint, one Trickster endpoint and one Prometheus endpoint. Behind each endpoint, you may have a single instance or a cluster. Each component is only aware of the other component's endpoint exposure and not the underlying configuration. This configuration represents a one-for-one-for-one deploymnet of your Dashboard, Prometheus, and Trickster endpoints.
+Single "Everything" is the most common placement model. In this configuration, you have one dashboard endpoint, one Trickster endpoint and one Prometheus endpoint. Behind each endpoint, you may have a single instance or a cluster. Each component is only aware of the other component's endpoint exposure and not the underlying configuration. This configuration represents a one-for-one-for-one deployment of your Dashboard, Prometheus, and Trickster endpoints.
 
 ## Multi-Origin
 
@@ -24,4 +24,4 @@ In this configuration, be aware that the default 'memory' cache may be underpowe
 
 <img src="./images/deploy-multi-trickster.png" />
 
-In a Multi-Trickster configuration, you have one dashboard endpoint, multiple Trickster endpoints, and multiple Prometheus endpoints, with each Trickster Endpoint having a one-to-one mapping to a Prometheus Endpoint as a pair. This is a good design if Mutli-Origin is not performant enough for the amount of activity associated with your solution (e.g., you need more Tricksters). If the Dashboard system owner is different from the Prometheus system owner, either party could own and operate the Trickster instance.
+In a Multi-Trickster configuration, you have one dashboard endpoint, multiple Trickster endpoints, and multiple Prometheus endpoints, with each Trickster Endpoint having a one-to-one mapping to a Prometheus Endpoint as a pair. This is a good design if Multi-Origin is not performant enough for the amount of activity associated with your solution (e.g., you need more Tricksters). If the Dashboard system owner is different from the Prometheus system owner, either party could own and operate the Trickster instance.
