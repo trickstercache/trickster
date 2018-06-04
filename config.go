@@ -124,7 +124,7 @@ func NewConfig() *Config {
 			CacheType:     ctMemory,
 			RecordTTLSecs: 21600,
 			Redis:         RedisConfig{Protocol: "tcp", Endpoint: "redis:6379"},
-			Filesystem:    FilesystemCacheConfig{CachePath: "/tmp"},
+			Filesystem:    FilesystemCacheConfig{CachePath: "/tmp/trickster"},
 			ReapSleepMS:   1000,
 			Compression:   true,
 		},
