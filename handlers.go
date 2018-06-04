@@ -217,7 +217,7 @@ func setResponseHeaders(w http.ResponseWriter) {
 }
 
 // getURL makes an HTTP request to the provided URL with the provided parameters and returns the response body
-func (t *TricksterHandler) getURL(method string, uri string, params url.Values, headers http.Header) ([]byte, *http.Response, int64) {
+func (t *TricksterHandler) getURL(method string, uri string, params url.Values, headers http.Header) ([]byte, *http.Response, float64) {
 
 	if len(params) > 0 {
 		uri += "?" + params.Encode()
@@ -246,7 +246,7 @@ func (t *TricksterHandler) getURL(method string, uri string, params url.Values, 
 		return []byte{}, resp, 0
 	}
 
-	duration := int64(time.Now().Sub(startTime).Nanoseconds() / 1000000000)
+	duration := float64(time.Now().Sub(startTime).Nanoseconds() / 1000000000)
 
 	return body, resp, duration
 }
@@ -267,7 +267,7 @@ func (t *TricksterHandler) getVectorFromPrometheus(url string, params url.Values
 
 }
 
-func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values, r *http.Request) (PrometheusMatrixEnvelope, *http.Response, int64) {
+func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values, r *http.Request) (PrometheusMatrixEnvelope, *http.Response, float64) {
 
 	pe := PrometheusMatrixEnvelope{}
 
@@ -318,7 +318,7 @@ func (t *TricksterHandler) fetchPromQuery(originURL string, params url.Values, r
 
 	var body []byte
 	resp := &http.Response{}
-	var duration int64
+	var duration float64
 
 	cacheResult := crKeyMiss
 
