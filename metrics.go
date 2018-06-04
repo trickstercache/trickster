@@ -44,7 +44,7 @@ func NewApplicationMetrics(config *Config, logger log.Logger) *ApplicationMetric
 		CacheRequestStatus: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "trickster_requests_total",
-				Help: "Count of ",
+				Help: "Count of the total number of requests Trickster has handled",
 			},
 			[]string{"origin", "origin_type", "method", "status", "http_status"},
 		),
