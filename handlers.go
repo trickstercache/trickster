@@ -246,7 +246,7 @@ func (t *TricksterHandler) getURL(method string, uri string, params url.Values, 
 		return []byte{}, resp, 0
 	}
 
-	duration := int64(time.Now().Sub(startTime).Nanoseconds() / 1000000)
+	duration := int64(time.Now().Sub(startTime).Nanoseconds() / 1000000000)
 
 	return body, resp, duration
 }
