@@ -223,8 +223,6 @@ func (t *TricksterHandler) getURL(method string, uri string, params url.Values, 
 		uri += "?" + params.Encode()
 	}
 
-	level.Debug(t.Logger).Log(lfEvent, "prometheusOriginHttpRequest", "url", uri)
-
 	parsedURL, err := url.Parse(uri)
 	if err != nil {
 		level.Error(t.Logger).Log(lfEvent, "error parsing url", "url", uri, lfDetail, err.Error())
@@ -251,6 +249,8 @@ func (t *TricksterHandler) getURL(method string, uri string, params url.Values, 
 	}
 
 	duration := float64(time.Now().Sub(startTime).Nanoseconds() / 1000000000)
+
+	level.Debug(t.Logger).Log(lfEvent, "prometheusOriginHttpRequest", "url", uri, "duration", duration)
 
 	return body, resp, duration
 }
