@@ -223,8 +223,6 @@ func (t *TricksterHandler) getURL(method string, uri string, params url.Values, 
 		uri += "?" + params.Encode()
 	}
 
-	level.Debug(t.Logger).Log(lfEvent, "prometheusOriginHttpRequest", "url", uri)
-
 	parsedURL, err := url.Parse(uri)
 	if err != nil {
 		level.Error(t.Logger).Log(lfEvent, "error parsing url", "url", uri, lfDetail, err.Error())
@@ -238,6 +236,10 @@ func (t *TricksterHandler) getURL(method string, uri string, params url.Values, 
 		level.Error(t.Logger).Log(lfEvent, "error downloading url", "url", uri, lfDetail, err.Error())
 		return []byte{}, resp, -1
 	}
+	if resp.StatusCode != 200 {
+		level.Warn(t.Logger).Log(lfEvent, "error downloading url", "url", uri, "status", resp.Status)
+		return []byte{}, resp, -1
+	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -247,6 +249,8 @@ func (t *TricksterHandler) getURL(method string, uri string, params url.Values, 
 	}
 
 	duration := float64(time.Now().Sub(startTime).Nanoseconds() / 1000000000)
+
+	level.Debug(t.Logger).Log(lfEvent, "prometheusOriginHttpRequest", "url", uri, "duration", duration)
 
 	return body, resp, duration
 }
@@ -260,7 +264,7 @@ func (t *TricksterHandler) getVectorFromPrometheus(url string, params url.Values
 	// Unmarshal the prometheus data into another PrometheusMatrixEnvelope
 	err := json.Unmarshal(body, &pe)
 	if err != nil {
-		level.Error(t.Logger).Log(lfEvent, "prometheus vector unmarshaling error", "url", url+params.Encode(), lfDetail, err.Error())
+		level.Error(t.Logger).Log(lfEvent, "prometheus vector unmarshaling error", "url", url+"?"+params.Encode(), lfDetail, err.Error())
 	}
 
 	return pe, resp, 0
@@ -278,7 +282,7 @@ func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values
 		// Unmarshal the prometheus data into another PrometheusMatrixEnvelope
 		err := json.Unmarshal(body, &pe)
 		if err != nil {
-			level.Error(t.Logger).Log(lfEvent, "prometheus matrix unmarshaling error", "url", url+params.Encode(), lfDetail, err.Error())
+			level.Error(t.Logger).Log(lfEvent, "prometheus matrix unmarshaling error", "url", url+"?"+params.Encode(), lfDetail, err.Error())
 		}
 
 	}
