@@ -217,7 +217,7 @@ func setResponseHeaders(w http.ResponseWriter) {
 }
 
 // getURL makes an HTTP request to the provided URL with the provided parameters and returns the response body
-func (t *TricksterHandler) getURL(method string, uri string, params url.Values, headers http.Header) ([]byte, *http.Response, float64) {
+func (t *TricksterHandler) getURL(method string, uri string, params url.Values, headers http.Header) ([]byte, *http.Response, time.Duration) {
 
 	if len(params) > 0 {
 		uri += "?" + params.Encode()
@@ -246,12 +246,12 @@ func (t *TricksterHandler) getURL(method string, uri string, params url.Values, 
 		return []byte{}, resp, 0
 	}
 
-	duration := float64(time.Now().Sub(startTime).Nanoseconds() / 1000000000)
+	duration := time.Since(startTime)
 
 	return body, resp, duration
 }
 
-func (t *TricksterHandler) getVectorFromPrometheus(url string, params url.Values, r *http.Request) (PrometheusVectorEnvelope, *http.Response, int64) {
+func (t *TricksterHandler) getVectorFromPrometheus(url string, params url.Values, r *http.Request) (PrometheusVectorEnvelope, *http.Response, time.Duration) {
 
 	pe := PrometheusVectorEnvelope{}
 
@@ -267,7 +267,7 @@ func (t *TricksterHandler) getVectorFromPrometheus(url string, params url.Values
 
 }
 
-func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values, r *http.Request) (PrometheusMatrixEnvelope, *http.Response, float64) {
+func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values, r *http.Request) (PrometheusMatrixEnvelope, *http.Response, time.Duration) {
 
 	pe := PrometheusMatrixEnvelope{}
 
@@ -318,7 +318,7 @@ func (t *TricksterHandler) fetchPromQuery(originURL string, params url.Values, r
 
 	var body []byte
 	resp := &http.Response{}
-	var duration float64
+	var duration time.Duration
 
 	cacheResult := crKeyMiss
 
@@ -332,7 +332,7 @@ func (t *TricksterHandler) fetchPromQuery(originURL string, params url.Values, r
 			return body, nil
 		}
 
-		t.Metrics.ProxyRequestDuration.WithLabelValues(originURL, otPrometheus, mnQuery, crKeyMiss, strconv.Itoa(resp.StatusCode)).Observe(float64(duration))
+		t.Metrics.ProxyRequestDuration.WithLabelValues(originURL, otPrometheus, mnQuery, crKeyMiss, strconv.Itoa(resp.StatusCode)).Observe(duration.Seconds())
 		t.Cacher.Store(cacheKey, string(body), ttl)
 	} else {
 		// Cache hit, return the data set
@@ -624,7 +624,7 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 					if r.StatusCode == 200 && ldd.Status == rvSuccess {
 						lowerDeltaData = ldd
 						t.Metrics.ProxyRequestDuration.WithLabelValues(ctx.Origin.OriginURL, otPrometheus,
-							mnQueryRange, ctx.CacheLookupResult, strconv.Itoa(r.StatusCode)).Observe(float64(duration))
+							mnQueryRange, ctx.CacheLookupResult, strconv.Itoa(r.StatusCode)).Observe(duration.Seconds())
 					}
 					wg.Done()
 				}()
@@ -652,7 +652,7 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 					if r != nil && r.StatusCode == 200 && udd.Status == rvSuccess {
 						upperDeltaData = udd
 						t.Metrics.ProxyRequestDuration.WithLabelValues(ctx.Origin.OriginURL, otPrometheus,
-							mnQueryRange, ctx.CacheLookupResult, strconv.Itoa(r.StatusCode)).Observe(float64(duration))
+							mnQueryRange, ctx.CacheLookupResult, strconv.Itoa(r.StatusCode)).Observe(duration.Seconds())
 					}
 					wg.Done()
 				}()
