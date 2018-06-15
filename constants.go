@@ -92,11 +92,9 @@ const (
 
 // Log Fields
 const (
-	lfEvent      = "event"
-	lfDetail     = "detail"
-	lfParamName  = "paramName"
-	lfParamValue = "paramValue"
-	lfCacheKey   = "cacheKey"
+	lfEvent    = "event"
+	lfDetail   = "detail"
+	lfCacheKey = "cacheKey"
 )
 
 // http methods
