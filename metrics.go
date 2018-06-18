@@ -27,7 +27,6 @@ import (
 
 // ApplicationMetrics enumerates the metrics collected and reported by the trickster application.
 type ApplicationMetrics struct {
-	// Persist Metrics
 	CacheRequestStatus   *prometheus.CounterVec
 	CacheRequestElements *prometheus.CounterVec
 	ProxyRequestDuration *prometheus.HistogramVec

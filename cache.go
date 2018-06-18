@@ -13,6 +13,13 @@
 
 package main
 
+const (
+	// Cache interface types
+	ctMemory     = "memory"
+	ctFilesystem = "filesystem"
+	ctRedis      = "redis"
+)
+
 // Cache is the interface for the supported caching fabrics
 // When making new cache types, Retrieve() must return an error on cache miss
 type Cache interface {

@@ -21,6 +21,23 @@ import (
 	"strconv"
 )
 
+const (
+	// Command-line flags
+	cfConfig      = "config"
+	cfVersion     = "version"
+	cfLogLevel    = "log-level"
+	cfInstanceId  = "instance-id"
+	cfOrigin      = "origin"
+	cfProxyPort   = "proxy-port"
+	cfMetricsPort = "metrics-port"
+
+	// Environment variables
+	evOrigin      = "TRK_ORIGIN"
+	evProxyPort   = "TRK_PROXY_PORT"
+	evMetricsPort = "TRK_METRICS_PORT"
+	evLogLevel    = "TRK_LOG_LEVEL"
+)
+
 // loadConfiguration reads the config path from Flags,
 // Loads the configs (w/ default values where missing)
 // and then evaluates any provided flags as overrides
