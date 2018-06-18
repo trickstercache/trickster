@@ -13,9 +13,7 @@
 
 package main
 
-import (
-	"github.com/BurntSushi/toml"
-)
+import "github.com/BurntSushi/toml"
 
 // Config File Model for Application
 type Config struct {
