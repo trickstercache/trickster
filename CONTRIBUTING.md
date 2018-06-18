@@ -38,9 +38,6 @@ For quickly compiling and testing your changes do:
 # For building.
 go build
 ./trickster
-
-# For testing.
-make test         # Note, we're working on integrating tests, so this target does not currently do anything
 ```
 
 ## Pull Request Checklist
