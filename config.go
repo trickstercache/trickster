@@ -13,19 +13,16 @@
 
 package main
 
-import (
-	"github.com/BurntSushi/toml"
-)
+import "github.com/BurntSushi/toml"
 
-// Config File Model for Application
 type Config struct {
+	Caching          CachingConfig                     `toml:"cache"`
+	DefaultOriginURL string                            // to capture a CLI origin url
+	Logging          LoggingConfig                     `toml:"logging"`
 	Main             GeneralConfig                     `toml:"main"`
 	Metrics          MetricsConfig                     `toml:"metrics"`
-	Logging          LoggingConfig                     `toml:"logging"`
-	Caching          CachingConfig                     `toml:"cache"`
 	Origins          map[string]PrometheusOriginConfig `toml:"origins"`
 	ProxyServer      ProxyServerConfig                 `toml:"proxy_server"`
-	DefaultOriginURL string                            // to capture a CLI origin url
 }
 
 // GeneralConfig is a collection of general configuration values.
@@ -103,23 +100,6 @@ type LoggingConfig struct {
 // NewConfig returns a Config initialized with default values.
 func NewConfig() *Config {
 	return &Config{
-		Main: GeneralConfig{
-			ConfigFile: "/etc/trickster/trickster.conf",
-			Hostname:   "localhost.unknown",
-		},
-
-		ProxyServer: ProxyServerConfig{
-			ListenPort: 9090,
-		},
-
-		Origins: map[string]PrometheusOriginConfig{"default": defaultOriginConfig()},
-
-		Metrics: MetricsConfig{
-			ListenPort: 8082,
-		},
-
-		Logging: LoggingConfig{LogFile: "", LogLevel: "INFO"},
-
 		Caching: CachingConfig{
 			CacheType:     ctMemory,
 			RecordTTLSecs: 21600,
@@ -128,14 +108,30 @@ func NewConfig() *Config {
 			ReapSleepMS:   1000,
 			Compression:   true,
 		},
+		Logging: LoggingConfig{
+			LogFile:  "",
+			LogLevel: "INFO",
+		},
+		Main: GeneralConfig{
+			ConfigFile: "/etc/trickster/trickster.conf",
+			Hostname:   "localhost.unknown",
+		},
+		Metrics: MetricsConfig{
+			ListenPort: 8082,
+		},
+		Origins: map[string]PrometheusOriginConfig{
+			"default": defaultOriginConfig(),
+		},
+		ProxyServer: ProxyServerConfig{
+			ListenPort: 9090,
+		},
 	}
 }
 
 func defaultOriginConfig() PrometheusOriginConfig {
-
 	return PrometheusOriginConfig{
 		OriginURL:           "http://prometheus:9090/",
-		APIPath:             "/api/v1/",
+		APIPath:             prometheusAPIv1Path,
 		DefaultStep:         300,
 		IgnoreNoCacheHeader: true,
 		MaxValueAgeSecs:     86400, // Keep datapoints up to 24 hours old
@@ -147,5 +143,3 @@ func (c *Config) LoadFile(path string) error {
 	_, err := toml.DecodeFile(path, &c)
 	return err
 }
-
-//
