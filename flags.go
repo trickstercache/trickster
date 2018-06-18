@@ -45,7 +45,7 @@ func loadConfiguration(c *Config, arguments []string) error {
 	var path string
 	var version bool
 
-	f := flag.NewFlagSet(trickster, -1)
+	f := flag.NewFlagSet(applicationName, -1)
 	f.SetOutput(ioutil.Discard)
 	f.StringVar(&path, cfConfig, "", "Supplies Path to Config File")
 	f.BoolVar(&version, cfVersion, false, "Prints trickster version")
@@ -69,7 +69,7 @@ func loadConfiguration(c *Config, arguments []string) error {
 
 	// Display version information then exit the program
 	if version == true {
-		fmt.Println(progversion)
+		fmt.Println(applicationVersion)
 		os.Exit(3)
 	}
 
@@ -117,7 +117,7 @@ func loadFlags(c *Config, arguments []string) {
 	var proxyListenPort int
 	var metricsListenPort int
 
-	f := flag.NewFlagSet(trickster, flag.ExitOnError)
+	f := flag.NewFlagSet(applicationName, flag.ExitOnError)
 	f.BoolVar(&version, cfVersion, true, "Prints Trickster version")
 	f.StringVar(&c.Logging.LogLevel, cfLogLevel, c.Logging.LogLevel, "Level of Logging to use (debug, info, warn, error)")
 	f.IntVar(&c.Main.InstanceID, cfInstanceId, 0, "Instance ID for when running multiple processes")
