@@ -25,7 +25,6 @@ import (
 
 const progversion = "0.0.12"
 
-// main function to boot up everything
 func main() {
 	t := &TricksterHandler{}
 	t.ResponseChannels = make(map[string]chan *ClientRequestContext)
