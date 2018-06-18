@@ -926,9 +926,6 @@ func (t *TricksterHandler) mergeMatrix(pe PrometheusMatrixEnvelope, pe2 Promethe
 
 // cropToRange crops the datasets in a given PrometheusMatrixEnvelope down to the provided start and end times
 func (pe PrometheusMatrixEnvelope) cropToRange(start int64, end int64) {
-
-	//level.Debug(t.Logger).Log(lfEvent, "cropToClientRange", "start", start, "end", end)
-
 	// iterate through each metric series in the result
 	for i := range pe.Data.Result {
 		if start > 0 {
@@ -940,8 +937,6 @@ func (pe PrometheusMatrixEnvelope) cropToRange(start int64, end int64) {
 				ts := int64(pe.Data.Result[i].Values[j].Timestamp)
 				if ts >= start {
 					pe.Data.Result[i].Values = pe.Data.Result[i].Values[j:]
-					//level.Debug(t.Logger).Log(lfEvent, "seriesResultAdjustStartIndex", "seriesIndex", i, "valueIndex", j,
-					//	"newStart", ts, "newRangeSize", len(pe.Data.Result[i].Values))
 					break
 				}
 			}
