@@ -258,13 +258,14 @@ func (t *TricksterHandler) getURL(method string, uri string, params url.Values, 
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("error downloading URL %q: %v", uri, err)
 	}
+	defer resp.Body.Close()
+
 	if resp.StatusCode != 200 {
 		// We don't want to return non-200 status codes as internal Go errors,
 		// as we want to proxy those status codes all the way back to the user.
 		level.Warn(t.Logger).Log(lfEvent, "error downloading URL", "url", uri, "status", resp.Status)
 		return []byte{}, resp, 0, nil
 	}
-	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
