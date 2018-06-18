@@ -56,7 +56,12 @@ func (t *TricksterHandler) promHealthCheckHandler(w http.ResponseWriter, r *http
 	path := "/api/v1/" + mnLabels
 
 	originURL := t.getOrigin(r).OriginURL + strings.Replace(path, "//", "/", 1)
-	body, resp, _ := t.getURL(hmGet, originURL, r.URL.Query(), getProxyableClientHeaders(r))
+	body, resp, _, err := t.getURL(hmGet, originURL, r.URL.Query(), getProxyableClientHeaders(r))
+	if err != nil {
+		level.Error(t.Logger).Log(lfEvent, "error fetching data from origin Prometheus", lfDetail, err.Error())
+		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
 
 	for k, v := range resp.Header {
 		w.Header().Set(k, strings.Join(v, ","))
@@ -82,7 +87,12 @@ func (t *TricksterHandler) promFullProxyHandler(w http.ResponseWriter, r *http.R
 	}
 
 	originURL := t.getOrigin(r).OriginURL + strings.Replace(path, "//", "/", 1)
-	body, resp, _ := t.getURL(hmGet, originURL, r.URL.Query(), getProxyableClientHeaders(r))
+	body, resp, _, err := t.getURL(hmGet, originURL, r.URL.Query(), getProxyableClientHeaders(r))
+	if err != nil {
+		level.Error(t.Logger).Log(lfEvent, "error fetching data from origin Prometheus", lfDetail, err.Error())
+		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
 
 	for k, v := range resp.Header {
 		w.Header().Set(k, strings.Join(v, ","))
@@ -105,7 +115,12 @@ func (t *TricksterHandler) promAPIProxyHandler(w http.ResponseWriter, r *http.Re
 	}
 
 	originURL := t.getOrigin(r).OriginURL + strings.Replace(path, "//", "/", 1)
-	body, resp := t.fetchPromQuery(originURL, r.URL.Query(), r)
+	body, resp, err := t.fetchPromQuery(originURL, r.URL.Query(), r)
+	if err != nil {
+		level.Error(t.Logger).Log(lfEvent, "error fetching data from origin Prometheus", lfDetail, err.Error())
+		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
 	writeResponse(w, body, resp)
 }
 
@@ -124,14 +139,24 @@ func (t *TricksterHandler) promQueryHandler(w http.ResponseWriter, r *http.Reque
 
 	originURL := t.getOrigin(r).OriginURL + strings.Replace(path, "//", "/", 1)
 	params := r.URL.Query()
-	body, resp := t.fetchPromQuery(originURL, params, r)
+	body, resp, err := t.fetchPromQuery(originURL, params, r)
+	if err != nil {
+		level.Error(t.Logger).Log(lfEvent, "error fetching data from origin Prometheus", lfDetail, err.Error())
+		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
 	writeResponse(w, body, resp)
 }
 
 // promQueryRangeHandler handles calls to /query_range (requests for timeseries values)
 func (t *TricksterHandler) promQueryRangeHandler(w http.ResponseWriter, r *http.Request) {
 
-	ctx := t.buildRequestContext(w, r)
+	ctx, err := t.buildRequestContext(w, r)
+	if err != nil {
+		level.Error(t.Logger).Log(lfEvent, "error building request context", lfDetail, err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
 	// This WaitGroup ensures that the server does not write the response until we are 100% done Trickstering the range request.
 	// The responsders that fulfill client requests will mark the waitgroup done when the response is ready for delivery.
@@ -217,7 +242,7 @@ func setResponseHeaders(w http.ResponseWriter) {
 }
 
 // getURL makes an HTTP request to the provided URL with the provided parameters and returns the response body
-func (t *TricksterHandler) getURL(method string, uri string, params url.Values, headers http.Header) ([]byte, *http.Response, time.Duration) {
+func (t *TricksterHandler) getURL(method string, uri string, params url.Values, headers http.Header) ([]byte, *http.Response, time.Duration, error) {
 
 	if len(params) > 0 {
 		uri += "?" + params.Encode()
@@ -225,76 +250,80 @@ func (t *TricksterHandler) getURL(method string, uri string, params url.Values, 
 
 	parsedURL, err := url.Parse(uri)
 	if err != nil {
-		level.Error(t.Logger).Log(lfEvent, "error parsing url", "url", uri, lfDetail, err.Error())
-		return []byte{}, &http.Response{}, 0
+		return nil, nil, 0, fmt.Errorf("error parsing URL %q: %v", uri, err)
 	}
 
 	startTime := time.Now()
 	client := &http.Client{}
 	resp, err := client.Do(&http.Request{Method: method, URL: parsedURL})
 	if err != nil {
-		level.Error(t.Logger).Log(lfEvent, "error downloading url", "url", uri, lfDetail, err.Error())
-		return []byte{}, resp, -1
+		return nil, nil, 0, fmt.Errorf("error downloading URL %q: %v", uri, err)
 	}
 	if resp.StatusCode != 200 {
-		level.Warn(t.Logger).Log(lfEvent, "error downloading url", "url", uri, "status", resp.Status)
-		return []byte{}, resp, -1
+		// We don't want to return non-200 status codes as internal Go errors,
+		// as we want to proxy those status codes all the way back to the user.
+		level.Warn(t.Logger).Log(lfEvent, "error downloading URL", "url", uri, "status", resp.Status)
+		return []byte{}, resp, 0, nil
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		level.Error(t.Logger).Log(lfEvent, "error reading body from http response", "url", uri, lfDetail, err.Error())
-		return []byte{}, resp, 0
+		return nil, nil, 0, fmt.Errorf("error reading body from HTTP response for URL %q: %v", uri, err)
 	}
 
 	duration := time.Since(startTime)
 
 	level.Debug(t.Logger).Log(lfEvent, "prometheusOriginHttpRequest", "url", uri, "duration", duration)
 
-	return body, resp, duration
+	return body, resp, duration, nil
 }
 
-func (t *TricksterHandler) getVectorFromPrometheus(url string, params url.Values, r *http.Request) (PrometheusVectorEnvelope, *http.Response, time.Duration) {
+func (t *TricksterHandler) getVectorFromPrometheus(url string, params url.Values, r *http.Request) (PrometheusVectorEnvelope, *http.Response, error) {
 
 	pe := PrometheusVectorEnvelope{}
 
 	// Make the HTTP Request
-	body, resp := t.fetchPromQuery(url, params, r)
-	// Unmarshal the prometheus data into another PrometheusMatrixEnvelope
-	err := json.Unmarshal(body, &pe)
+	body, resp, err := t.fetchPromQuery(url, params, r)
 	if err != nil {
-		level.Error(t.Logger).Log(lfEvent, "prometheus vector unmarshaling error", "url", url+"?"+params.Encode(), lfDetail, err.Error())
+		return pe, nil, fmt.Errorf("error fetching data from Prometheus: %v", err)
+	}
+	// Unmarshal the prometheus data into another PrometheusMatrixEnvelope
+	err = json.Unmarshal(body, &pe)
+	if err != nil {
+		return pe, nil, fmt.Errorf("Prometheus vector unmarshaling error for URL %q: %v", url, err)
 	}
 
-	return pe, resp, 0
+	return pe, resp, nil
 
 }
 
-func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values, r *http.Request) (PrometheusMatrixEnvelope, *http.Response, time.Duration) {
+func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values, r *http.Request) (PrometheusMatrixEnvelope, *http.Response, time.Duration, error) {
 
 	pe := PrometheusMatrixEnvelope{}
 
 	// Make the HTTP Request - dont use fetchPromQuery here, that is for instantaneous only.
-	body, resp, duration := t.getURL(hmGet, url, params, getProxyableClientHeaders(r))
+	body, resp, duration, err := t.getURL(hmGet, url, params, getProxyableClientHeaders(r))
+	if err != nil {
+		return pe, nil, 0, err
+	}
 
-	if resp != nil && resp.StatusCode == 200 {
+	if resp.StatusCode == 200 {
 		// Unmarshal the prometheus data into another PrometheusMatrixEnvelope
 		err := json.Unmarshal(body, &pe)
 		if err != nil {
-			level.Error(t.Logger).Log(lfEvent, "prometheus matrix unmarshaling error", "url", url+"?"+params.Encode(), lfDetail, err.Error())
+			return pe, nil, 0, fmt.Errorf("Prometheus matrix unmarshaling error for URL %q: %v", url, err)
 		}
-
 	}
 
-	return pe, resp, duration
+	return pe, resp, duration, nil
 
 }
 
 // fetchPromQuery checks for cached instantaneous value for the query and returns it if found,
 // otherwise proxies the request to the Prometheus origin and sets the cache with a low TTL
-// fetchPromQuery does not any data marshalling
-func (t *TricksterHandler) fetchPromQuery(originURL string, params url.Values, r *http.Request) ([]byte, *http.Response) {
+// fetchPromQuery does not do any data marshalling
+func (t *TricksterHandler) fetchPromQuery(originURL string, params url.Values, r *http.Request) ([]byte, *http.Response, error) {
 
 	var ttl int64 = 15
 	var end int64 = 0
@@ -330,10 +359,9 @@ func (t *TricksterHandler) fetchPromQuery(originURL string, params url.Values, r
 	cachedBody, err := t.Cacher.Retrieve(cacheKey)
 	if err != nil {
 		// Cache Miss, we need to get it from prometheus
-		body, resp, duration = t.getURL(hmGet, originURL, params, getProxyableClientHeaders(r))
-
-		if resp == nil {
-			return body, nil
+		body, resp, duration, err = t.getURL(hmGet, originURL, params, getProxyableClientHeaders(r))
+		if err != nil {
+			return nil, nil, err
 		}
 
 		t.Metrics.ProxyRequestDuration.WithLabelValues(originURL, otPrometheus, mnQuery, crKeyMiss, strconv.Itoa(resp.StatusCode)).Observe(duration.Seconds())
@@ -347,12 +375,12 @@ func (t *TricksterHandler) fetchPromQuery(originURL string, params url.Values, r
 
 	t.Metrics.CacheRequestStatus.WithLabelValues(originURL, otPrometheus, mnQuery, cacheResult, strconv.Itoa(resp.StatusCode)).Inc()
 
-	return body, resp
+	return body, resp, nil
 
 }
 
 // buildRequestContext Creates a ClientRequestContext based on the incoming client request
-func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Request) *ClientRequestContext {
+func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Request) (*ClientRequestContext, error) {
 
 	var err error
 
@@ -394,14 +422,20 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 	}
 
 	// get the browser-requested start/end times, so we can determine what part of the range is not in the cache
+	if len(ctx.RequestParams[upStart]) == 0 {
+		return nil, fmt.Errorf("missing start time parameter")
+	}
 	reqStart, err := parseTime(ctx.RequestParams[upStart][0])
 	if err != nil {
-		level.Error(t.Logger).Log(lfEvent, "request parameter parser error", lfParamName, upStart, lfParamValue, ctx.RequestParams[upStart][0], lfDetail, err.Error())
+		return nil, fmt.Errorf("failed to parse parameter %q with value %q: %v", upStart, ctx.RequestParams[upStart][0], err)
 	}
 
+	if len(ctx.RequestParams[upEnd]) == 0 {
+		return nil, fmt.Errorf("missing end time parameter")
+	}
 	reqEnd, err := parseTime(ctx.RequestParams[upEnd][0])
 	if err != nil {
-		level.Error(t.Logger).Log(lfEvent, "request parameter parser error", lfParamName, upEnd, lfParamValue, ctx.RequestParams[upEnd][0], lfDetail, err.Error())
+		return nil, fmt.Errorf("failed to parse parameter %q with value %q: %v", upEnd, ctx.RequestParams[upEnd][0], err)
 	}
 
 	ctx.RequestExtents.Start, ctx.RequestExtents.End = alignStepBoundaries(reqStart.Unix()*1000, reqEnd.Unix()*1000, ctx.StepMS, ctx.Time)
@@ -446,7 +480,7 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 		// Marshall the cache payload into a PrometheusMatrixEnvelope struct
 		err = json.Unmarshal([]byte(cachedBody), &ctx.Matrix)
 		if err != nil {
-			level.Error(t.Logger).Log(lfEvent, "could not unmarshal cached data for this key", "key", ctx.CacheKey, "data", cachedBody)
+			return nil, fmt.Errorf("error unmarshalling cached data for key %q with content %q: %v", ctx.CacheKey, cachedBody, err)
 		}
 
 		// Get the Extents of the data in the cache
@@ -499,8 +533,7 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 			ctx.OriginUpperExtents.End = 0
 			extent = "upper"
 		} else {
-			level.Error(t.Logger).Log(lfEvent, "deltaRoutineImpossible", "description", "Reaching this final clause should be impossible. Yikes!",
-				"reqStart", ctx.RequestExtents.Start, "reqEnd", ctx.RequestExtents.End, "ce.Start", ce.Start, "ce.End", ce.End)
+			panic(fmt.Sprintf("Reaching this final clause should be impossible. Yikes! reqStart=%d, reqEnd=%d, ce.Start=%d, ce.End=%d", ctx.RequestExtents.Start, ctx.RequestExtents.End, ce.Start, ce.End))
 		}
 
 		level.Debug(t.Logger).Log(lfEvent, "deltaRoutineCompleted", "CacheLookupResult", ctx.CacheLookupResult, lfCacheKey, ctx.CacheKey,
@@ -509,12 +542,12 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 			"OriginUpperExtents.Start", ctx.OriginUpperExtents.Start, "OriginUpperExtents.End", ctx.OriginUpperExtents.End, "extent", extent)
 	}
 
-	return ctx
-
+	return ctx, nil
 }
 
 func (t *TricksterHandler) respondToCacheHit(ctx *ClientRequestContext) {
 
+	defer ctx.WaitGroup.Done()
 	t.Metrics.CacheRequestStatus.WithLabelValues(ctx.Origin.OriginURL, otPrometheus, mnQueryRange, ctx.CacheLookupResult, "200").Inc()
 
 	// Do the extraction of the range the user requested from the fully cached dataset, if needed.
@@ -531,7 +564,12 @@ func (t *TricksterHandler) respondToCacheHit(ctx *ClientRequestContext) {
 		passthroughParam(upQuery, ctx.RequestParams, originParams, nil)
 		passthroughParam(upTimeout, ctx.RequestParams, originParams, nil)
 		passthroughParam(upTime, ctx.RequestParams, originParams, nil)
-		ffd, resp, _ := t.getVectorFromPrometheus(queryURL, originParams, ctx.Request)
+		ffd, resp, err := t.getVectorFromPrometheus(queryURL, originParams, ctx.Request)
+		if err != nil {
+			level.Error(t.Logger).Log(lfEvent, "error fetching data from origin Prometheus", lfDetail, err.Error())
+			ctx.Writer.WriteHeader(http.StatusBadGateway)
+			return
+		}
 		r = resp
 		if resp.StatusCode == 200 && ffd.Status == rvSuccess {
 			ctx.Matrix = t.mergeVector(ctx.Matrix, ffd)
@@ -542,10 +580,11 @@ func (t *TricksterHandler) respondToCacheHit(ctx *ClientRequestContext) {
 	body, err := json.Marshal(ctx.Matrix)
 	if err != nil {
 		level.Error(t.Logger).Log(lfEvent, "prometheus matrix marshaling error", lfDetail, err.Error())
+		ctx.Writer.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
 	writeResponse(ctx.Writer, body, r)
-	ctx.WaitGroup.Done()
 }
 
 func writeResponse(w http.ResponseWriter, body []byte, resp *http.Response) {
@@ -582,7 +621,13 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 
 		// get the cache data for this request again, in case anything about the record has changed
 		// between the time we queued the request and the time it was consumed from the channel
-		ctx := t.buildRequestContext(r.Writer, r.Request)
+		ctx, err := t.buildRequestContext(r.Writer, r.Request)
+		if err != nil {
+			level.Error(t.Logger).Log(lfEvent, "error building request context", lfDetail, err.Error())
+			r.Writer.WriteHeader(http.StatusBadRequest)
+			r.WaitGroup.Done()
+			continue
+		}
 
 		// The cache miss became a cache hit between the time it was queued and processed.
 		if ctx.CacheLookupResult == crHit {
@@ -602,12 +647,14 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 
 			var wg sync.WaitGroup
 
+			var m sync.Mutex // Protects originErr and resp below.
+			var originErr error
 			resp := &http.Response{}
-			m := &sync.Mutex{}
 
 			if ctx.OriginLowerExtents.Start > 0 && ctx.OriginLowerExtents.End > 0 {
 				wg.Add(1)
 				go func() {
+					defer wg.Done()
 
 					queryURL := ctx.Origin.OriginURL + mnQueryRange
 					originParams := url.Values{}
@@ -617,7 +664,14 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 					originParams.Add(upStep, ctx.StepParam)
 					originParams.Add(upStart, strconv.FormatInt(ctx.OriginLowerExtents.Start/1000, 10))
 					originParams.Add(upEnd, strconv.FormatInt(ctx.OriginLowerExtents.End/1000, 10))
-					ldd, r, duration := t.getMatrixFromPrometheus(queryURL, originParams, r.Request)
+					ldd, r, duration, err := t.getMatrixFromPrometheus(queryURL, originParams, r.Request)
+
+					if err != nil {
+						m.Lock()
+						originErr = err
+						m.Unlock()
+						return
+					}
 
 					m.Lock()
 					if resp == (&http.Response{}) {
@@ -630,13 +684,14 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 						t.Metrics.ProxyRequestDuration.WithLabelValues(ctx.Origin.OriginURL, otPrometheus,
 							mnQueryRange, ctx.CacheLookupResult, strconv.Itoa(r.StatusCode)).Observe(duration.Seconds())
 					}
-					wg.Done()
 				}()
 			}
 
 			if ctx.OriginUpperExtents.Start > 0 && ctx.OriginUpperExtents.End > 0 {
 				wg.Add(1)
 				go func() {
+					defer wg.Done()
+
 					queryURL := ctx.Origin.OriginURL + mnQueryRange
 					originParams := url.Values{}
 					// Add the prometheus query params from the user urlparams to the origin request
@@ -645,7 +700,14 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 					originParams.Add(upStep, ctx.StepParam)
 					originParams.Add(upStart, strconv.FormatInt(ctx.OriginUpperExtents.Start/1000, 10))
 					originParams.Add(upEnd, strconv.FormatInt(ctx.OriginUpperExtents.End/1000, 10))
-					udd, r, duration := t.getMatrixFromPrometheus(queryURL, originParams, r.Request)
+					udd, r, duration, err := t.getMatrixFromPrometheus(queryURL, originParams, r.Request)
+
+					if err != nil {
+						m.Lock()
+						originErr = err
+						m.Unlock()
+						return
+					}
 
 					m.Lock()
 					if resp == (&http.Response{}) {
@@ -658,13 +720,14 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 						t.Metrics.ProxyRequestDuration.WithLabelValues(ctx.Origin.OriginURL, otPrometheus,
 							mnQueryRange, ctx.CacheLookupResult, strconv.Itoa(r.StatusCode)).Observe(duration.Seconds())
 					}
-					wg.Done()
 				}()
 			}
 
 			if !ctx.Origin.FastForwardDisable && !(ctx.RequestExtents.End < ctx.Time-ctx.StepMS) {
 				wg.Add(1)
 				go func() {
+					defer wg.Done()
+
 					// Query the latest points if Fast Forward is enabled
 					queryURL := ctx.Origin.OriginURL + mnQuery
 					originParams := url.Values{}
@@ -672,7 +735,14 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 					passthroughParam(upQuery, ctx.RequestParams, originParams, nil)
 					passthroughParam(upTimeout, ctx.RequestParams, originParams, nil)
 					passthroughParam(upTime, ctx.RequestParams, originParams, nil)
-					ffd, r, _ := t.getVectorFromPrometheus(queryURL, originParams, r.Request)
+					ffd, r, err := t.getVectorFromPrometheus(queryURL, originParams, r.Request)
+
+					if err != nil {
+						m.Lock()
+						originErr = err
+						m.Unlock()
+						return
+					}
 
 					m.Lock()
 					if resp == (&http.Response{}) {
@@ -683,11 +753,17 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 					if r != nil && r.StatusCode == 200 && ffd.Status == rvSuccess {
 						fastForwardData = ffd
 					}
-					wg.Done()
 				}()
 			}
 
 			wg.Wait()
+
+			if originErr != nil {
+				level.Error(t.Logger).Log(lfEvent, "error fetching data from origin Prometheus", lfDetail, originErr.Error())
+				r.Writer.WriteHeader(http.StatusBadGateway)
+				r.WaitGroup.Done()
+				continue
+			}
 
 			t.Metrics.CacheRequestStatus.WithLabelValues(ctx.Origin.OriginURL, otPrometheus, mnQueryRange, ctx.CacheLookupResult, strconv.Itoa(resp.StatusCode)).Inc()
 
@@ -712,6 +788,9 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 				cacheBody, err := json.Marshal(ctx.Matrix)
 				if err != nil {
 					level.Error(t.Logger).Log(lfEvent, "prometheus matrix marshaling error", lfDetail, err.Error())
+					r.Writer.WriteHeader(http.StatusInternalServerError)
+					r.WaitGroup.Done()
+					continue
 				}
 
 				if t.Config.Caching.Compression {
@@ -751,6 +830,9 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 			body, err := json.Marshal(ctx.Matrix)
 			if err != nil {
 				level.Error(t.Logger).Log(lfEvent, "prometheus matrix marshaling error", lfDetail, err.Error())
+				r.Writer.WriteHeader(http.StatusInternalServerError)
+				r.WaitGroup.Done()
+				continue
 			}
 
 			writeResponse(r.Writer, body, resp)
