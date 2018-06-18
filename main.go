@@ -37,6 +37,9 @@ const (
 	mnQuery      = "query"
 	mnLabels     = "label/__name__/values"
 	mnHealth     = "health"
+
+	// Prometheus URL endpoints
+	prometheusAPIv1Path = "/api/v1/"
 )
 
 func main() {
@@ -70,21 +73,18 @@ func main() {
 
 	router := mux.NewRouter()
 
-	// API Version 1 Support
-	const apiV1Path = "/api/v1/"
-
 	// Health Check Paths
 	router.HandleFunc("/{originMoniker}/"+mnHealth, t.promHealthCheckHandler).Methods("GET")
 	router.HandleFunc("/"+mnHealth, t.promHealthCheckHandler).Methods("GET")
 
 	// Path-based  multi-origin support - no support for full proxy of the prometheus UI, only querying
-	router.HandleFunc("/{originMoniker}"+apiV1Path+mnQueryRange, t.promQueryRangeHandler).Methods("GET")
-	router.HandleFunc("/{originMoniker}"+apiV1Path+mnQuery, t.promQueryHandler).Methods("GET")
-	router.PathPrefix("/{originMoniker}" + apiV1Path).HandlerFunc(t.promAPIProxyHandler).Methods("GET")
+	router.HandleFunc("/{originMoniker}"+prometheusAPIv1Path+mnQueryRange, t.promQueryRangeHandler).Methods("GET")
+	router.HandleFunc("/{originMoniker}"+prometheusAPIv1Path+mnQuery, t.promQueryHandler).Methods("GET")
+	router.PathPrefix("/{originMoniker}" + prometheusAPIv1Path).HandlerFunc(t.promAPIProxyHandler).Methods("GET")
 
-	router.HandleFunc(apiV1Path+mnQueryRange, t.promQueryRangeHandler).Methods("GET")
-	router.HandleFunc(apiV1Path+mnQuery, t.promQueryHandler).Methods("GET")
-	router.PathPrefix(apiV1Path).HandlerFunc(t.promAPIProxyHandler).Methods("GET")
+	router.HandleFunc(prometheusAPIv1Path+mnQueryRange, t.promQueryRangeHandler).Methods("GET")
+	router.HandleFunc(prometheusAPIv1Path+mnQuery, t.promQueryHandler).Methods("GET")
+	router.PathPrefix(prometheusAPIv1Path).HandlerFunc(t.promAPIProxyHandler).Methods("GET")
 
 	// Catch All for Single-Origin proxy
 	router.PathPrefix("/").HandlerFunc(t.promFullProxyHandler).Methods("GET")
