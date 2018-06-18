@@ -24,11 +24,9 @@ type Cache interface {
 }
 
 func getCache(t *TricksterHandler) Cache {
-
 	switch t.Config.Caching.CacheType {
 	case ctFilesystem:
 		return &FilesystemCache{Config: t.Config.Caching.Filesystem, T: t}
-
 	case ctRedis:
 		return &RedisCache{Config: t.Config.Caching.Redis, T: t}
 	}

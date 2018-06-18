@@ -29,7 +29,6 @@ import (
 
 // ApplicationMetrics enumerates the metrics collected and reported by the trickster application.
 type ApplicationMetrics struct {
-
 	// Persist Metrics
 	CacheRequestStatus   *prometheus.CounterVec
 	CacheRequestElements *prometheus.CounterVec
@@ -38,7 +37,6 @@ type ApplicationMetrics struct {
 
 // NewApplicationMetrics returns a ApplicationMetrics object and instantiates an HTTP server for polling them.
 func NewApplicationMetrics(config *Config, logger log.Logger) *ApplicationMetrics {
-
 	metrics := ApplicationMetrics{
 		// Metrics
 		CacheRequestStatus: prometheus.NewCounterVec(
@@ -85,5 +83,4 @@ func NewApplicationMetrics(config *Config, logger log.Logger) *ApplicationMetric
 	}
 
 	return &metrics
-
 }

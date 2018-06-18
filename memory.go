@@ -36,7 +36,6 @@ type CacheObject struct {
 
 // Connect initializes the MemoryCache
 func (c *MemoryCache) Connect() error {
-
 	level.Info(c.T.Logger).Log("event", "memorycache setup")
 	c.client = sync.Map{}
 	go c.Reap()
@@ -67,7 +66,6 @@ func (c *MemoryCache) Reap() {
 
 		c.client.Range(func(k, value interface{}) bool {
 			if value.(CacheObject).Expiration < now {
-
 				key := k.(string)
 				level.Debug(c.T.Logger).Log("event", "memorycache cache reap", "key", key)
 
@@ -88,7 +86,6 @@ func (c *MemoryCache) Reap() {
 			}
 			return true
 		})
-
 		time.Sleep(time.Duration(c.T.Config.Caching.ReapSleepMS) * time.Millisecond)
 	}
 }

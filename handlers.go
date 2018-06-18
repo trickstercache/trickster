@@ -49,7 +49,6 @@ type TricksterHandler struct {
 // promHealthCheckHandler returns the health of Trickster
 // can't suppport multi-origin full proxy for path-based proxying
 func (t *TricksterHandler) promHealthCheckHandler(w http.ResponseWriter, r *http.Request) {
-
 	level.Debug(t.Logger).Log(lfEvent, "promHealthCheckHandler", "path", r.URL.Path, "method", r.Method)
 
 	// Check the labels path for Prometheus Origin Handler to satisfy health check
@@ -66,6 +65,7 @@ func (t *TricksterHandler) promHealthCheckHandler(w http.ResponseWriter, r *http
 	for k, v := range resp.Header {
 		w.Header().Set(k, strings.Join(v, ","))
 	}
+
 	w.WriteHeader(resp.StatusCode)
 	w.Write(body)
 }
@@ -73,7 +73,6 @@ func (t *TricksterHandler) promHealthCheckHandler(w http.ResponseWriter, r *http
 // promFullProxyHandler handles calls to non-api paths for single-origin configurations and multi-origin via param or hostname
 // can't suppport multi-origin full proxy for path-based proxying
 func (t *TricksterHandler) promFullProxyHandler(w http.ResponseWriter, r *http.Request) {
-
 	level.Debug(t.Logger).Log(lfEvent, "promFullProxyHandler", "path", r.URL.Path, "method", r.Method)
 
 	path := r.URL.Path
@@ -97,13 +96,13 @@ func (t *TricksterHandler) promFullProxyHandler(w http.ResponseWriter, r *http.R
 	for k, v := range resp.Header {
 		w.Header().Set(k, strings.Join(v, ","))
 	}
+
 	w.WriteHeader(resp.StatusCode)
 	w.Write(body)
 }
 
 // promAPIProxyHandler handles proxying of non-query/query_range API calls such as the labels path
 func (t *TricksterHandler) promAPIProxyHandler(w http.ResponseWriter, r *http.Request) {
-
 	path := r.URL.Path
 	vars := mux.Vars(r)
 
@@ -121,12 +120,12 @@ func (t *TricksterHandler) promAPIProxyHandler(w http.ResponseWriter, r *http.Re
 		w.WriteHeader(http.StatusBadGateway)
 		return
 	}
+
 	writeResponse(w, body, resp)
 }
 
 // promQueryHandler handles calls to /query (for instantaneous values)
 func (t *TricksterHandler) promQueryHandler(w http.ResponseWriter, r *http.Request) {
-
 	path := r.URL.Path
 	vars := mux.Vars(r)
 
@@ -145,12 +144,12 @@ func (t *TricksterHandler) promQueryHandler(w http.ResponseWriter, r *http.Reque
 		w.WriteHeader(http.StatusBadGateway)
 		return
 	}
+
 	writeResponse(w, body, resp)
 }
 
 // promQueryRangeHandler handles calls to /query_range (requests for timeseries values)
 func (t *TricksterHandler) promQueryRangeHandler(w http.ResponseWriter, r *http.Request) {
-
 	ctx, err := t.buildRequestContext(w, r)
 	if err != nil {
 		level.Error(t.Logger).Log(lfEvent, "error building request context", lfDetail, err.Error())
@@ -166,6 +165,7 @@ func (t *TricksterHandler) promQueryRangeHandler(w http.ResponseWriter, r *http.
 	} else {
 		t.queueRangeProxyRequest(ctx)
 	}
+
 	// Wait until the response is fulfilled before delivering.
 	ctx.WaitGroup.Wait()
 }
@@ -176,14 +176,16 @@ func (t *TricksterHandler) promQueryRangeHandler(w http.ResponseWriter, r *http.
 
 // defaultPrometheusMatrixEnvelope returns an empty envelope
 func defaultPrometheusMatrixEnvelope() PrometheusMatrixEnvelope {
-
-	return PrometheusMatrixEnvelope{Data: PrometheusMatrixData{ResultType: rvMatrix, Result: make([]*model.SampleStream, 0)}}
-
+	return PrometheusMatrixEnvelope{
+		Data: PrometheusMatrixData{
+			ResultType: rvMatrix,
+			Result:     make([]*model.SampleStream, 0),
+		},
+	}
 }
 
 // getProxyableClientHeaders returns any pertinent http headers from the client that we should pass through to the Origin when proxying
 func getProxyableClientHeaders(r *http.Request) http.Header {
-
 	headers := http.Header{}
 
 	// pass through Authorization Header
@@ -196,7 +198,6 @@ func getProxyableClientHeaders(r *http.Request) http.Header {
 
 // getOrigin determines the origin server to service the request based on the Host header and url params
 func (t *TricksterHandler) getOrigin(r *http.Request) PrometheusOriginConfig {
-
 	var originName string
 	var ok bool
 
@@ -229,7 +230,6 @@ func (t *TricksterHandler) getOrigin(r *http.Request) PrometheusOriginConfig {
 	}
 
 	return p
-
 }
 
 // setResponseHeaders adds any needed headers to the response object.
@@ -243,7 +243,6 @@ func setResponseHeaders(w http.ResponseWriter) {
 
 // getURL makes an HTTP request to the provided URL with the provided parameters and returns the response body
 func (t *TricksterHandler) getURL(method string, uri string, params url.Values, headers http.Header) ([]byte, *http.Response, time.Duration, error) {
-
 	if len(params) > 0 {
 		uri += "?" + params.Encode()
 	}
@@ -280,7 +279,6 @@ func (t *TricksterHandler) getURL(method string, uri string, params url.Values, 
 }
 
 func (t *TricksterHandler) getVectorFromPrometheus(url string, params url.Values, r *http.Request) (PrometheusVectorEnvelope, *http.Response, error) {
-
 	pe := PrometheusVectorEnvelope{}
 
 	// Make the HTTP Request
@@ -295,11 +293,9 @@ func (t *TricksterHandler) getVectorFromPrometheus(url string, params url.Values
 	}
 
 	return pe, resp, nil
-
 }
 
 func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values, r *http.Request) (PrometheusMatrixEnvelope, *http.Response, time.Duration, error) {
-
 	pe := PrometheusMatrixEnvelope{}
 
 	// Make the HTTP Request - dont use fetchPromQuery here, that is for instantaneous only.
@@ -317,14 +313,12 @@ func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values
 	}
 
 	return pe, resp, duration, nil
-
 }
 
 // fetchPromQuery checks for cached instantaneous value for the query and returns it if found,
 // otherwise proxies the request to the Prometheus origin and sets the cache with a low TTL
 // fetchPromQuery does not do any data marshalling
 func (t *TricksterHandler) fetchPromQuery(originURL string, params url.Values, r *http.Request) ([]byte, *http.Response, error) {
-
 	var ttl int64 = 15
 	var end int64 = 0
 	var err error
@@ -376,15 +370,18 @@ func (t *TricksterHandler) fetchPromQuery(originURL string, params url.Values, r
 	t.Metrics.CacheRequestStatus.WithLabelValues(originURL, otPrometheus, mnQuery, cacheResult, strconv.Itoa(resp.StatusCode)).Inc()
 
 	return body, resp, nil
-
 }
 
 // buildRequestContext Creates a ClientRequestContext based on the incoming client request
 func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Request) (*ClientRequestContext, error) {
-
 	var err error
 
-	ctx := &ClientRequestContext{Request: r, Writer: w, Origin: t.getOrigin(r), Time: time.Now().Unix()}
+	ctx := &ClientRequestContext{
+		Request: r,
+		Writer:  w,
+		Origin:  t.getOrigin(r),
+		Time:    time.Now().Unix(),
+	}
 
 	ctx.Origin.OriginURL += strings.Replace(ctx.Origin.APIPath+"/", "//", "/", 1)
 
@@ -425,6 +422,7 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 	if len(ctx.RequestParams[upStart]) == 0 {
 		return nil, fmt.Errorf("missing start time parameter")
 	}
+
 	reqStart, err := parseTime(ctx.RequestParams[upStart][0])
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse parameter %q with value %q: %v", upStart, ctx.RequestParams[upStart][0], err)
@@ -433,6 +431,7 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 	if len(ctx.RequestParams[upEnd]) == 0 {
 		return nil, fmt.Errorf("missing end time parameter")
 	}
+
 	reqEnd, err := parseTime(ctx.RequestParams[upEnd][0])
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse parameter %q with value %q: %v", upEnd, ctx.RequestParams[upEnd][0], err)
@@ -457,9 +456,7 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 		if noCache {
 			ctx.CacheLookupResult = crPurge
 		}
-
 	} else {
-
 		// We had a Redis Key Hit for the hashed query key, but we may not have all points requested by browser
 		// So we can have a Range Miss, Partial Hit, Full Hit when comparing cached range to what the client requested.
 		// So let's find out what we are missing (if anything) and fetch what we don't have
@@ -546,7 +543,6 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 }
 
 func (t *TricksterHandler) respondToCacheHit(ctx *ClientRequestContext) {
-
 	defer ctx.WaitGroup.Done()
 	t.Metrics.CacheRequestStatus.WithLabelValues(ctx.Origin.OriginURL, otPrometheus, mnQueryRange, ctx.CacheLookupResult, "200").Inc()
 
@@ -600,7 +596,6 @@ func writeResponse(w http.ResponseWriter, body []byte, resp *http.Response) {
 }
 
 func (t *TricksterHandler) queueRangeProxyRequest(ctx *ClientRequestContext) {
-
 	t.ChannelCreateMtx.Lock()
 	ch, ok := t.ResponseChannels[ctx.CacheKey]
 	if !ok {
@@ -612,13 +607,10 @@ func (t *TricksterHandler) queueRangeProxyRequest(ctx *ClientRequestContext) {
 	t.ChannelCreateMtx.Unlock()
 
 	ch <- ctx
-
 }
 
 func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeRequests <-chan *ClientRequestContext) {
-
 	for r := range originRangeRequests {
-
 		// get the cache data for this request again, in case anything about the record has changed
 		// between the time we queued the request and the time it was consumed from the channel
 		ctx, err := t.buildRequestContext(r.Writer, r.Request)
@@ -842,7 +834,6 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 }
 
 func alignStepBoundaries(start int64, end int64, stepMS int64, now int64) (int64, int64) {
-
 	// In case the user had the start/end parameters reversed chronologically, we can fix that up for them
 	if start > end {
 		x := end
@@ -865,7 +856,6 @@ func alignStepBoundaries(start int64, end int64, stepMS int64, now int64) (int64
 	end = ((end / stepMS) * stepMS)
 
 	return start, end
-
 }
 
 func (pe PrometheusMatrixEnvelope) getValueCount() int64 {
@@ -878,7 +868,6 @@ func (pe PrometheusMatrixEnvelope) getValueCount() int64 {
 
 // mergeVector merges the passed PrometheusVectorEnvelope object with the calling PrometheusVectorEnvelope object
 func (t *TricksterHandler) mergeVector(pe PrometheusMatrixEnvelope, pv PrometheusVectorEnvelope) PrometheusMatrixEnvelope {
-
 	if len(pv.Data.Result) == 0 {
 		level.Debug(t.Logger).Log(lfEvent, "mergeVectorPrematureExit")
 		return pe
@@ -890,19 +879,20 @@ func (t *TricksterHandler) mergeVector(pe PrometheusMatrixEnvelope, pv Prometheu
 			result1 := pe.Data.Result[j]
 			if result2.Metric.Equal(result1.Metric) {
 				if result2.Timestamp > result1.Values[len(result1.Values)-1].Timestamp {
-					pe.Data.Result[j].Values = append(pe.Data.Result[j].Values, model.SamplePair{Timestamp: model.Time((int64(result2.Timestamp) / 1000) * 1000), Value: result2.Value})
+					pe.Data.Result[j].Values = append(pe.Data.Result[j].Values, model.SamplePair{
+						Timestamp: model.Time((int64(result2.Timestamp) / 1000) * 1000),
+						Value:     result2.Value,
+					})
 				}
 			}
 		}
 	}
 
 	return pe
-
 }
 
 // mergeMatrix merges the passed PrometheusMatrixEnvelope object with the calling PrometheusMatrixEnvelope object
 func (t *TricksterHandler) mergeMatrix(pe PrometheusMatrixEnvelope, pe2 PrometheusMatrixEnvelope) PrometheusMatrixEnvelope {
-
 	if pe.Status != rvSuccess {
 		pe = pe2
 		return pe2
@@ -940,7 +930,6 @@ func (pe PrometheusMatrixEnvelope) cropToRange(start int64, end int64) {
 
 	// iterate through each metric series in the result
 	for i := range pe.Data.Result {
-
 		if start > 0 {
 			// Now we First determine the correct start index for each series in the Matrix
 			// iterate through each value in the given metric series
@@ -966,29 +955,22 @@ func (pe PrometheusMatrixEnvelope) cropToRange(start int64, end int64) {
 				ts := int64(pe.Data.Result[i].Values[j].Timestamp)
 				if ts <= end {
 					pe.Data.Result[i].Values = pe.Data.Result[i].Values[:j+1]
-					//level.Debug(t.Logger).Log(lfEvent, "seriesResultAdjustEndIndex", "seriesIndex", i, "valueIndex", j,
-					//	"newEnd", ts, "newRangeSize", len(pe.Data.Result[i].Values))
 					break
 				}
 			}
 		}
-
 	}
-
 }
 
 // getCacheExtents returns the timestamps of the oldest and newest cached data points for the given query.
 func (pe PrometheusMatrixEnvelope) getExtents() MatrixExtents {
-
 	r := pe.Data.Result
 
 	var oldest int64
 	var newest int64
 
 	for series := range r {
-
 		if len(r[series].Values) > 0 {
-
 			// Update Oldest Value
 			ts := int64(r[series].Values[0].Timestamp)
 			if oldest == 0 || ts < oldest {
@@ -1008,7 +990,6 @@ func (pe PrometheusMatrixEnvelope) getExtents() MatrixExtents {
 
 // passthroughParam passes the parameter with paramName, if present in the requestParams, on to the proxyParams collection
 func passthroughParam(paramName string, requestParams url.Values, proxyParams url.Values, filterFunc func(string) string) {
-
 	if value, ok := requestParams[paramName]; ok {
 		if filterFunc != nil {
 			value[0] = filterFunc(value[0])
@@ -1024,7 +1005,6 @@ func md5sum(input string) string {
 
 // deriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
 func deriveCacheKey(prefix string, params url.Values) string {
-
 	k := ""
 	// if we have a prefix, set it up
 	if len(prefix) > 0 {
