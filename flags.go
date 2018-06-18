@@ -21,6 +21,23 @@ import (
 	"strconv"
 )
 
+const (
+	// Command-line flags
+	cfConfig      = "config"
+	cfVersion     = "version"
+	cfLogLevel    = "log-level"
+	cfInstanceId  = "instance-id"
+	cfOrigin      = "origin"
+	cfProxyPort   = "proxy-port"
+	cfMetricsPort = "metrics-port"
+
+	// Environment variables
+	evOrigin      = "TRK_ORIGIN"
+	evProxyPort   = "TRK_PROXY_PORT"
+	evMetricsPort = "TRK_METRICS_PORT"
+	evLogLevel    = "TRK_LOG_LEVEL"
+)
+
 // loadConfiguration reads the config path from Flags,
 // Loads the configs (w/ default values where missing)
 // and then evaluates any provided flags as overrides
@@ -28,7 +45,7 @@ func loadConfiguration(c *Config, arguments []string) error {
 	var path string
 	var version bool
 
-	f := flag.NewFlagSet(trickster, -1)
+	f := flag.NewFlagSet(applicationName, -1)
 	f.SetOutput(ioutil.Discard)
 	f.StringVar(&path, cfConfig, "", "Supplies Path to Config File")
 	f.BoolVar(&version, cfVersion, false, "Prints trickster version")
@@ -52,7 +69,7 @@ func loadConfiguration(c *Config, arguments []string) error {
 
 	// Display version information then exit the program
 	if version == true {
-		fmt.Println(progversion)
+		fmt.Println(applicationVersion)
 		os.Exit(3)
 	}
 
@@ -66,7 +83,6 @@ func loadConfiguration(c *Config, arguments []string) error {
 }
 
 func loadEnvVars(c *Config) {
-
 	// Origin
 	if x := os.Getenv(evOrigin); x != "" {
 		c.DefaultOriginURL = x
@@ -95,14 +111,13 @@ func loadEnvVars(c *Config) {
 
 // loadFlags loads configuration from command line flags.
 func loadFlags(c *Config, arguments []string) {
-
 	var path string
 	var version bool
 	var origin string
 	var proxyListenPort int
 	var metricsListenPort int
 
-	f := flag.NewFlagSet(trickster, flag.ExitOnError)
+	f := flag.NewFlagSet(applicationName, flag.ExitOnError)
 	f.BoolVar(&version, cfVersion, true, "Prints Trickster version")
 	f.StringVar(&c.Logging.LogLevel, cfLogLevel, c.Logging.LogLevel, "Level of Logging to use (debug, info, warn, error)")
 	f.IntVar(&c.Main.InstanceID, cfInstanceId, 0, "Instance ID for when running multiple processes")
@@ -119,13 +134,10 @@ func loadFlags(c *Config, arguments []string) {
 	if len(origin) > 0 {
 		c.DefaultOriginURL = origin
 	}
-
 	if proxyListenPort > 0 {
 		c.ProxyServer.ListenPort = proxyListenPort
 	}
-
 	if metricsListenPort > 0 {
 		c.Metrics.ListenPort = metricsListenPort
 	}
-
 }

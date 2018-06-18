@@ -82,6 +82,6 @@ type pkgCaller struct {
 
 func (pc pkgCaller) String() string {
 	caller := fmt.Sprintf("%+v", pc.c)
-	caller = strings.TrimPrefix(caller, "github.com/comcast/trickster/")
+	caller = strings.TrimPrefix(caller, "github.com/Comcast/trickster/")
 	return caller
 }

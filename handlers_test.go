@@ -46,7 +46,7 @@ func newTestTricksterHandler(t *testing.T) (tr *TricksterHandler, close func(t *
 	conf := NewConfig()
 	conf.Origins["default"] = PrometheusOriginConfig{
 		OriginURL:           "http://nonexistent-origin:54321/",
-		APIPath:             "/api/v1/",
+		APIPath:             prometheusAPIv1Path,
 		DefaultStep:         300,
 		IgnoreNoCacheHeader: true,
 		MaxValueAgeSecs:     86400,
@@ -90,7 +90,7 @@ func TestUnreachableOriginReturnsStatusBadGateway(t *testing.T) {
 		},
 		{
 			handler: (*TricksterHandler).promQueryRangeHandler,
-			path:    "/api/v1/query_range?start=0&end=100000000&query=up",
+			path:    prometheusAPIv1Path + "query_range?start=0&end=100000000&query=up",
 		},
 	}
 
@@ -111,7 +111,7 @@ func TestMissingRangeQueryParametersResultInStatusBadRequest(t *testing.T) {
 	defer closeFn(t)
 
 	rr := httptest.NewRecorder()
-	tr.promQueryRangeHandler(rr, httptest.NewRequest("GET", "http://trickster/api/v1/query_range", nil))
+	tr.promQueryRangeHandler(rr, httptest.NewRequest("GET", "http://trickster"+prometheusAPIv1Path+"query_range", nil))
 	if rr.Result().StatusCode != http.StatusBadRequest {
 		t.Errorf("unexpected status code; want %d, got %d", http.StatusBadRequest, rr.Result().StatusCode)
 	}

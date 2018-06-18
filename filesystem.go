@@ -36,7 +36,6 @@ type FilesystemCache struct {
 
 // Connect instantiates the FilesystemCache mutex map and starts the Expired Entry Reaper goroutine
 func (c *FilesystemCache) Connect() error {
-
 	level.Info(c.T.Logger).Log("event", "filesystem cache setup", "cachePath", c.Config.CachePath)
 
 	if err := mustMakeDirectory(c.Config.CachePath); err != nil {
@@ -51,9 +50,7 @@ func (c *FilesystemCache) Connect() error {
 
 // Store places an object in the cache using the specified key and ttl
 func (c *FilesystemCache) Store(cacheKey string, data string, ttl int64) error {
-
 	expFile, dataFile := c.getFileNames(cacheKey)
-
 	expiration := []byte(strconv.FormatInt(time.Now().Unix()+ttl, 10))
 
 	level.Debug(c.T.Logger).Log("event", "filesystem cache store", "key", cacheKey, "expFile", expFile, "dataFile", dataFile)
@@ -73,7 +70,6 @@ func (c *FilesystemCache) Store(cacheKey string, data string, ttl int64) error {
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)
 func (c *FilesystemCache) Retrieve(cacheKey string) (string, error) {
-
 	_, dataFile := c.getFileNames(cacheKey)
 	level.Debug(c.T.Logger).Log("event", "filesystem cache retrieve", "key", cacheKey, "dataFile", dataFile)
 
@@ -86,22 +82,17 @@ func (c *FilesystemCache) Retrieve(cacheKey string) (string, error) {
 	}
 
 	return string(content), nil
-
 }
 
 // Reap continually iterates through the cache to find expired elements and removes them
 func (c *FilesystemCache) Reap() {
-
 	for {
 		now := time.Now().Unix()
 
 		files, err := ioutil.ReadDir(c.Config.CachePath)
 		if err == nil {
-
 			for _, file := range files {
-
 				if strings.HasSuffix(file.Name(), ".expiration") {
-
 					cacheKey := strings.Replace(file.Name(), ".expiration", "", 1)
 					expFile, dataFile := c.getFileNames(cacheKey)
 					mtx := c.getMutex(cacheKey)
@@ -110,7 +101,6 @@ func (c *FilesystemCache) Reap() {
 					if err == nil {
 						expiration, err := strconv.ParseInt(string(content), 10, 64)
 						if err != nil || expiration < now {
-
 							level.Debug(c.T.Logger).Log("event", "filesystem cache reap", "key", cacheKey, "dataFile", dataFile)
 
 							// Get a lock
@@ -128,17 +118,14 @@ func (c *FilesystemCache) Reap() {
 
 							// Unlock
 							c.T.ChannelCreateMtx.Unlock()
-
 						}
 					}
 					mtx.Unlock()
 				}
-
 			}
 		}
 
 		time.Sleep(time.Duration(c.T.Config.Caching.ReapSleepMS) * time.Millisecond)
-
 	}
 }
 
@@ -153,7 +140,6 @@ func (c *FilesystemCache) getFileNames(cacheKey string) (string, string) {
 }
 
 func (c *FilesystemCache) getMutex(cacheKey string) *sync.Mutex {
-
 	var mtx *sync.Mutex
 	var ok bool
 	c.mapMutex.Lock()
@@ -177,5 +163,6 @@ func mustMakeDirectory(path string) error {
 	if err != nil || !writeable(path) {
 		return fmt.Errorf(`[%s] directory is not writeable by the trickster`, path)
 	}
+
 	return nil
 }
