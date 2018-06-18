@@ -45,15 +45,15 @@ Go environment with [version 1.9 or greater installed](http://golang.org/doc/ins
 You can directly use the `go` tool to download and install the `trickster`
 binary into your `GOPATH`:
 
-    $ go get github.com/comcast/trickster
+    $ go get github.com/Comcast/trickster
     $ trickster -origin http://prometheus.example.com:9090
 
 
 You can also clone the repository yourself and build using `make`:
 
-    $ mkdir -p $GOPATH/src/github.com/comcast
-    $ cd $GOPATH/src/github.com/comcast
-    $ git clone https://github.com/comcast/trickster.git
+    $ mkdir -p $GOPATH/src/github.com/Comcast
+    $ cd $GOPATH/src/github.com/Comcast
+    $ git clone https://github.com/Comcast/trickster.git
     $ cd trickster
     $ make build
     $ ./trickster -origin http://prometheus.example.com:9090
