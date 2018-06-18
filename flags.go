@@ -66,7 +66,6 @@ func loadConfiguration(c *Config, arguments []string) error {
 }
 
 func loadEnvVars(c *Config) {
-
 	// Origin
 	if x := os.Getenv(evOrigin); x != "" {
 		c.DefaultOriginURL = x
@@ -95,7 +94,6 @@ func loadEnvVars(c *Config) {
 
 // loadFlags loads configuration from command line flags.
 func loadFlags(c *Config, arguments []string) {
-
 	var path string
 	var version bool
 	var origin string
@@ -119,13 +117,10 @@ func loadFlags(c *Config, arguments []string) {
 	if len(origin) > 0 {
 		c.DefaultOriginURL = origin
 	}
-
 	if proxyListenPort > 0 {
 		c.ProxyServer.ListenPort = proxyListenPort
 	}
-
 	if metricsListenPort > 0 {
 		c.Metrics.ListenPort = metricsListenPort
 	}
-
 }

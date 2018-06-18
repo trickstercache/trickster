@@ -132,7 +132,6 @@ func NewConfig() *Config {
 }
 
 func defaultOriginConfig() PrometheusOriginConfig {
-
 	return PrometheusOriginConfig{
 		OriginURL:           "http://prometheus:9090/",
 		APIPath:             "/api/v1/",
@@ -147,5 +146,3 @@ func (c *Config) LoadFile(path string) error {
 	_, err := toml.DecodeFile(path, &c)
 	return err
 }
-
-//
