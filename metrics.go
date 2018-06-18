@@ -25,8 +25,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-//timing counters - query time out to prometheus
-
 // ApplicationMetrics enumerates the metrics collected and reported by the trickster application.
 type ApplicationMetrics struct {
 	// Persist Metrics
@@ -38,7 +36,6 @@ type ApplicationMetrics struct {
 // NewApplicationMetrics returns a ApplicationMetrics object and instantiates an HTTP server for polling them.
 func NewApplicationMetrics(config *Config, logger log.Logger) *ApplicationMetrics {
 	metrics := ApplicationMetrics{
-		// Metrics
 		CacheRequestStatus: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "trickster_requests_total",
@@ -63,7 +60,6 @@ func NewApplicationMetrics(config *Config, logger log.Logger) *ApplicationMetric
 		),
 	}
 
-	// Register Metrics
 	prometheus.MustRegister(metrics.CacheRequestStatus)
 	prometheus.MustRegister(metrics.CacheRequestElements)
 	prometheus.MustRegister(metrics.ProxyRequestDuration)

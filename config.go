@@ -15,7 +15,6 @@ package main
 
 import "github.com/BurntSushi/toml"
 
-// Config File Model for Application
 type Config struct {
 	Main             GeneralConfig                     `toml:"main"`
 	Metrics          MetricsConfig                     `toml:"metrics"`

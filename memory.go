@@ -69,10 +69,7 @@ func (c *MemoryCache) Reap() {
 				key := k.(string)
 				level.Debug(c.T.Logger).Log("event", "memorycache cache reap", "key", key)
 
-				// Get a lock
 				c.T.ChannelCreateMtx.Lock()
-
-				// Delete the key
 				c.client.Delete(k)
 
 				// Close out the channel if it exists
@@ -81,7 +78,6 @@ func (c *MemoryCache) Reap() {
 					delete(c.T.ResponseChannels, key)
 				}
 
-				// Unlock
 				c.T.ChannelCreateMtx.Unlock()
 			}
 			return true
