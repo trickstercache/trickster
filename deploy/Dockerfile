@@ -4,7 +4,7 @@ COPY . /go/src/github.com/Comcast/trickster
 WORKDIR /go/src/github.com/Comcast/trickster
 
 RUN curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
-RUN dep ensure 
+RUN dep ensure
 RUN GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -a -installsuffix cgo -o trickster -v github.com/Comcast/trickster
 
 
