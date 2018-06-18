@@ -24,8 +24,8 @@ import (
 )
 
 const (
-	trickster   = "trickster"
-	progversion = "0.0.12"
+	applicationName    = "trickster"
+	applicationVersion = "0.0.12"
 
 	// Log fields
 	lfEvent    = "event"
@@ -57,7 +57,7 @@ func main() {
 		t.Logger = newLogger(t.Config.Logging, "")
 	}
 
-	level.Info(t.Logger).Log("event", "application startup", "version", progversion)
+	level.Info(t.Logger).Log("event", "application startup", "version", applicationVersion)
 
 	t.Metrics = NewApplicationMetrics(t.Config, t.Logger)
 
