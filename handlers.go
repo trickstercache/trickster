@@ -93,7 +93,7 @@ func (t *TricksterHandler) promHealthCheckHandler(w http.ResponseWriter, r *http
 	level.Debug(t.Logger).Log(lfEvent, "promHealthCheckHandler", "path", r.URL.Path, "method", r.Method)
 
 	// Check the labels path for Prometheus Origin Handler to satisfy health check
-	path := "/api/v1/" + mnLabels
+	path := prometheusAPIv1Path + mnLabels
 
 	originURL := t.getOrigin(r).OriginURL + strings.Replace(path, "//", "/", 1)
 	body, resp, _, err := t.getURL(hmGet, originURL, r.URL.Query(), getProxyableClientHeaders(r))

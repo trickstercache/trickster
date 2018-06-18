@@ -131,7 +131,7 @@ func NewConfig() *Config {
 func defaultOriginConfig() PrometheusOriginConfig {
 	return PrometheusOriginConfig{
 		OriginURL:           "http://prometheus:9090/",
-		APIPath:             "/api/v1/",
+		APIPath:             prometheusAPIv1Path,
 		DefaultStep:         300,
 		IgnoreNoCacheHeader: true,
 		MaxValueAgeSecs:     86400, // Keep datapoints up to 24 hours old
