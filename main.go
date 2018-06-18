@@ -23,7 +23,21 @@ import (
 	"github.com/gorilla/mux"
 )
 
-const progversion = "0.0.12"
+const (
+	trickster   = "trickster"
+	progversion = "0.0.12"
+
+	// Log fields
+	lfEvent    = "event"
+	lfDetail   = "detail"
+	lfCacheKey = "cacheKey"
+
+	// Prometheus API method names
+	mnQueryRange = "query_range"
+	mnQuery      = "query"
+	mnLabels     = "label/__name__/values"
+	mnHealth     = "health"
+)
 
 func main() {
 	t := &TricksterHandler{}

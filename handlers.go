@@ -34,6 +34,47 @@ import (
 	"github.com/prometheus/common/model"
 )
 
+const (
+	// Origin database types
+	otPrometheus = "prometheus"
+
+	// Common HTTP Header Values
+	hvNoCache         = "no-cache"
+	hvApplicationJSON = "application/json"
+
+	// Common HTTP Header Names
+	hnCacheControl  = "Cache-Control"
+	hnAllowOrigin   = "Access-Control-Allow-Origin"
+	hnContentType   = "Content-Type"
+	hnAuthorization = "Authorization"
+
+	// HTTP methods
+	hmGet = "GET"
+
+	// Prometheus response values
+	rvSuccess = "success"
+	rvMatrix  = "matrix"
+	rvVector  = "vector"
+
+	// Common URL parameter names
+	upQuery      = "query"
+	upStart      = "start"
+	upEnd        = "end"
+	upStep       = "step"
+	upOriginFqdn = "origin_fqdn"
+	upOriginPort = "origin_port"
+	upTimeout    = "timeout"
+	upOrigin     = "origin"
+	upTime       = "time"
+
+	// Cache lookup results
+	crKeyMiss    = "kmiss"
+	crRangeMiss  = "rmiss"
+	crHit        = "hit"
+	crPartialHit = "phit"
+	crPurge      = "purge"
+)
+
 // TricksterHandler contains the services the Handlers need to operate
 type TricksterHandler struct {
 	Logger           log.Logger
