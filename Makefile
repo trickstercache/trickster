@@ -1,6 +1,6 @@
 DEFAULT: build
 
-PROGVER = $(shell grep 'const progversion = ' main.go | awk '{print $$4}' | sed -e 's/\"//g')
+PROGVER = $(shell grep 'applicationVersion = ' main.go | awk '{print $$3}' | sed -e 's/\"//g')
 
 deps:
 	go get
