@@ -32,6 +32,12 @@ type ApplicationMetrics struct {
 	ProxyRequestDuration *prometheus.HistogramVec
 }
 
+func (metrics ApplicationMetrics) Unregister() {
+	prometheus.Unregister(metrics.CacheRequestStatus)
+	prometheus.Unregister(metrics.CacheRequestElements)
+	prometheus.Unregister(metrics.ProxyRequestDuration)
+}
+
 // NewApplicationMetrics returns a ApplicationMetrics object and instantiates an HTTP server for polling them.
 func NewApplicationMetrics(config *Config, logger log.Logger) *ApplicationMetrics {
 	metrics := ApplicationMetrics{

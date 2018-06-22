@@ -37,6 +37,10 @@ docker-release:
 	docker tag trickster:$(PROGVER) tricksterio/trickster:$(PROGVER)
 	docker tag tricksterio/trickster:$(PROGVER) tricksterio/trickster:latest
 
+test:
+	go test
+	go test -run '' -o ${GOPATH}/bin/trickster
+
 clean:
 	rm ${GOPATH}/bin/trickster
 
