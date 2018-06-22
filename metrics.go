@@ -32,8 +32,30 @@ type ApplicationMetrics struct {
 	ProxyRequestDuration *prometheus.HistogramVec
 }
 
+func (metrics ApplicationMetrics) Unregister() {
+	prometheus.Unregister(metrics.CacheRequestStatus)
+	prometheus.Unregister(metrics.CacheRequestElements)
+	prometheus.Unregister(metrics.ProxyRequestDuration)
+}
+
+func (metrics ApplicationMetrics) ListenAndServe(config *Config, logger log.Logger) {
+	// Turn up the Metrics HTTP Server
+	if config.Metrics.ListenPort > 0 {
+		go func() {
+
+			level.Info(logger).Log("event", "metrics http endpoint starting", "address", config.Metrics.ListenAddress, "port", fmt.Sprintf("%d", config.Metrics.ListenPort))
+
+			http.Handle("/metrics", promhttp.Handler())
+			if err := http.ListenAndServe(fmt.Sprintf("%s:%d", config.Metrics.ListenAddress, config.Metrics.ListenPort), nil); err != nil {
+				level.Error(logger).Log("event", "unable to start metrics http server", "detail", err.Error())
+				os.Exit(1)
+			}
+		}()
+	}
+}
+
 // NewApplicationMetrics returns a ApplicationMetrics object and instantiates an HTTP server for polling them.
-func NewApplicationMetrics(config *Config, logger log.Logger) *ApplicationMetrics {
+func NewApplicationMetrics() *ApplicationMetrics {
 	metrics := ApplicationMetrics{
 		CacheRequestStatus: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -62,20 +84,6 @@ func NewApplicationMetrics(config *Config, logger log.Logger) *ApplicationMetric
 	prometheus.MustRegister(metrics.CacheRequestStatus)
 	prometheus.MustRegister(metrics.CacheRequestElements)
 	prometheus.MustRegister(metrics.ProxyRequestDuration)
-
-	// Turn up the Metrics HTTP Server
-	if config.Metrics.ListenPort > 0 {
-		go func() {
-
-			level.Info(logger).Log("event", "metrics http endpoint starting", "address", config.Metrics.ListenAddress, "port", fmt.Sprintf("%d", config.Metrics.ListenPort))
-
-			http.Handle("/metrics", promhttp.Handler())
-			if err := http.ListenAndServe(fmt.Sprintf("%s:%d", config.Metrics.ListenAddress, config.Metrics.ListenPort), nil); err != nil {
-				level.Error(logger).Log("event", "unable to start metrics http server", "detail", err.Error())
-				os.Exit(1)
-			}
-		}()
-	}
 
 	return &metrics
 }
