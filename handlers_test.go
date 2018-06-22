@@ -65,6 +65,7 @@ func newTestTricksterHandler(t *testing.T) (tr *TricksterHandler, close func(t *
 	}
 
 	return tr, func(t *testing.T) {
+		tr.Metrics.Unregister()
 		if err := tr.Cacher.Close(); err != nil {
 			t.Fatal("Error closing cacher:", err)
 		}
