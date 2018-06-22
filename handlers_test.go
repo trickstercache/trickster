@@ -56,7 +56,7 @@ func newTestTricksterHandler(t *testing.T) (tr *TricksterHandler, close func(t *
 		ResponseChannels: make(map[string]chan *ClientRequestContext),
 		Config:           conf,
 		Logger:           logger,
-		Metrics:          NewApplicationMetrics(conf, logger),
+		Metrics:          NewApplicationMetrics(),
 	}
 
 	tr.Cacher = getCache(tr)
