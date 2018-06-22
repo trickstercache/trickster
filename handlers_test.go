@@ -56,7 +56,7 @@ func newTestTricksterHandler(t *testing.T) (tr *TricksterHandler, close func(t *
 		ResponseChannels: make(map[string]chan *ClientRequestContext),
 		Config:           conf,
 		Logger:           logger,
-		Metrics:          NewApplicationMetrics(conf, logger),
+		Metrics:          NewApplicationMetrics(),
 	}
 
 	tr.Cacher = getCache(tr)
@@ -65,6 +65,7 @@ func newTestTricksterHandler(t *testing.T) (tr *TricksterHandler, close func(t *
 	}
 
 	return tr, func(t *testing.T) {
+		tr.Metrics.Unregister()
 		if err := tr.Cacher.Close(); err != nil {
 			t.Fatal("Error closing cacher:", err)
 		}

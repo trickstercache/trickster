@@ -62,7 +62,8 @@ func main() {
 
 	level.Info(t.Logger).Log("event", "application startup", "version", applicationVersion)
 
-	t.Metrics = NewApplicationMetrics(t.Config, t.Logger)
+	t.Metrics = NewApplicationMetrics()
+	t.Metrics.ListenAndServe(t.Config, t.Logger)
 
 	t.Cacher = getCache(t)
 	if err := t.Cacher.Connect(); err != nil {
