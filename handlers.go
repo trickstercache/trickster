@@ -430,17 +430,19 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 	// Get the params from the User request so we can inspect them and pass on to prometheus
 	ctx.RequestParams = r.URL.Query()
 
-	// setup the default step value if it is missing
-	ctx.StepParam = strconv.FormatInt(int64(ctx.Origin.DefaultStep), 10)
-	ctx.StepMS = int64(ctx.Origin.DefaultStep * 1000)
-
-	// Pull the Step Value from the User Reqest urlparams if it exists
-	if step, ok := ctx.RequestParams[upStep]; ok {
-		if ctx.StepMS, err = strconv.ParseInt(step[0], 10, 64); err == nil && ctx.StepMS > 0 {
-			ctx.StepParam = step[0]
-			ctx.StepMS *= 1000
-		}
+	// Validate and parse the step value from the user request URL params.
+	if len(ctx.RequestParams[upStep]) == 0 {
+		return nil, fmt.Errorf("missing step parameter")
 	}
+	ctx.StepParam = ctx.RequestParams[upStep][0]
+	step, err := strconv.ParseInt(ctx.StepParam, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse parameter %q with value %q: %v", upStep, ctx.StepParam, err)
+	}
+	if step <= 0 {
+		return nil, fmt.Errorf("step parameter %d <= 0, has to be positive", step)
+	}
+	ctx.StepMS *= step * 1000
 
 	cacheKeyBase := ctx.Origin.OriginURL + ctx.StepParam
 	// if we have an authorization header, that should be part of the cache key to ensure only authorized users can access cached datasets
