@@ -75,7 +75,6 @@ type FilesystemCacheConfig struct {
 type PrometheusOriginConfig struct {
 	OriginURL           string `toml:"origin_url"`
 	APIPath             string `toml:"api_path"`
-	DefaultStep         int    `toml:"default_step"`
 	IgnoreNoCacheHeader bool   `toml:"ignore_no_cache_header"`
 	MaxValueAgeSecs     int64  `toml:"max_value_age_secs"`
 	FastForwardDisable  bool   `toml:"fast_forward_disable"`
@@ -132,7 +131,6 @@ func defaultOriginConfig() PrometheusOriginConfig {
 	return PrometheusOriginConfig{
 		OriginURL:           "http://prometheus:9090/",
 		APIPath:             prometheusAPIv1Path,
-		DefaultStep:         300,
 		IgnoreNoCacheHeader: true,
 		MaxValueAgeSecs:     86400, // Keep datapoints up to 24 hours old
 	}
