@@ -54,31 +54,35 @@ func (r *RedisCache) Retrieve(cacheKey string) (string, error) {
 // Reap continually iterates through the cache to find expired elements and removes them
 func (r *RedisCache) Reap() {
 	for {
-		var keys []string
-
-		r.T.ChannelCreateMtx.Lock()
-		for key, _ := range r.T.ResponseChannels {
-			keys = append(keys, key)
-		}
-		r.T.ChannelCreateMtx.Unlock()
-
-		for _, key := range keys {
-			_, err := r.client.Get(key).Result()
-			if err == redis.Nil {
-				level.Debug(r.T.Logger).Log("event", "redis cache reap", "key", key)
-
-				r.T.ChannelCreateMtx.Lock()
-
-				// Close out the channel if it exists
-				if _, ok := r.T.ResponseChannels[key]; ok {
-					close(r.T.ResponseChannels[key])
-					delete(r.T.ResponseChannels, key)
-				}
-
-				r.T.ChannelCreateMtx.Unlock()
-			}
-		}
+		r.ReapOnce()
 		time.Sleep(time.Duration(r.T.Config.Caching.ReapSleepMS) * time.Millisecond)
+	}
+}
+
+func (r *RedisCache) ReapOnce() {
+	var keys []string
+
+	r.T.ChannelCreateMtx.Lock()
+	for key, _ := range r.T.ResponseChannels {
+		keys = append(keys, key)
+	}
+	r.T.ChannelCreateMtx.Unlock()
+
+	for _, key := range keys {
+		_, err := r.client.Get(key).Result()
+		if err == redis.Nil {
+			level.Debug(r.T.Logger).Log("event", "redis cache reap", "key", key)
+
+			r.T.ChannelCreateMtx.Lock()
+
+			// Close out the channel if it exists
+			if _, ok := r.T.ResponseChannels[key]; ok {
+				close(r.T.ResponseChannels[key])
+				delete(r.T.ResponseChannels, key)
+			}
+
+			r.T.ChannelCreateMtx.Unlock()
+		}
 	}
 }
 
