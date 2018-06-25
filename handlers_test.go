@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"github.com/go-kit/kit/log"
 )
 
 func TestParseTime(t *testing.T) {
@@ -51,11 +52,10 @@ func newTestTricksterHandler(t *testing.T) (tr *TricksterHandler, close func(t *
 		IgnoreNoCacheHeader: true,
 		MaxValueAgeSecs:     86400,
 	}
-	logger := newLogger(conf.Logging, "")
 	tr = &TricksterHandler{
 		ResponseChannels: make(map[string]chan *ClientRequestContext),
 		Config:           conf,
-		Logger:           logger,
+		Logger:           log.NewNopLogger(),
 		Metrics:          NewApplicationMetrics(),
 	}
 

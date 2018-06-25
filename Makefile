@@ -38,9 +38,11 @@ docker-release:
 	docker tag tricksterio/trickster:$(PROGVER) tricksterio/trickster:latest
 
 test:
-	go test -run '' -o ${GOPATH}/bin/trickster
+	go get github.com/alicebob/miniredis
+	go test -run '' -o ${GOPATH}/bin/trickster -v
 
 test-cover:
+	go get github.com/alicebob/miniredis
 	go test -run '' -o ${GOPATH}/bin/trickster -coverprofile=cover.out
 	go tool cover -html=cover.out
 
