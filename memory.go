@@ -62,28 +62,32 @@ func (c *MemoryCache) Retrieve(cacheKey string) (string, error) {
 // Reap continually iterates through the cache to find expired elements and removes them
 func (c *MemoryCache) Reap() {
 	for {
-		now := time.Now().Unix()
-
-		c.client.Range(func(k, value interface{}) bool {
-			if value.(CacheObject).Expiration < now {
-				key := k.(string)
-				level.Debug(c.T.Logger).Log("event", "memorycache cache reap", "key", key)
-
-				c.T.ChannelCreateMtx.Lock()
-				c.client.Delete(k)
-
-				// Close out the channel if it exists
-				if _, ok := c.T.ResponseChannels[key]; ok {
-					close(c.T.ResponseChannels[key])
-					delete(c.T.ResponseChannels, key)
-				}
-
-				c.T.ChannelCreateMtx.Unlock()
-			}
-			return true
-		})
+		c.ReapOnce()
 		time.Sleep(time.Duration(c.T.Config.Caching.ReapSleepMS) * time.Millisecond)
 	}
+}
+
+func (c *MemoryCache) ReapOnce() {
+	now := time.Now().Unix()
+
+	c.client.Range(func(k, value interface{}) bool {
+		if value.(CacheObject).Expiration < now {
+			key := k.(string)
+			level.Debug(c.T.Logger).Log("event", "memorycache cache reap", "key", key)
+
+			c.T.ChannelCreateMtx.Lock()
+			c.client.Delete(k)
+
+			// Close out the channel if it exists
+			if _, ok := c.T.ResponseChannels[key]; ok {
+				close(c.T.ResponseChannels[key])
+				delete(c.T.ResponseChannels, key)
+			}
+
+			c.T.ChannelCreateMtx.Unlock()
+		}
+		return true
+	})
 }
 
 // Close is not used for MemoryCache, and is here to fully prototype the Cache Interface
