@@ -371,8 +371,12 @@ func (t *TricksterHandler) fetchPromQuery(originURL string, params url.Values, r
 		cacheKeyBase += strings.Join(authorization, " ")
 	}
 
-	if t, ok := params[upTime]; ok {
-		end, err = strconv.ParseInt(t[0], 10, 64)
+	if ts, ok := params[upTime]; ok {
+		reqStart, err := parseTime(ts[0])
+		if err != nil {
+			return nil, nil, err
+		}
+		end = reqStart.Unix()
 		if end <= (time.Now().Unix()-1800) && end%1800 == 0 {
 			// the Time param is perfectly on the hour and not recent, this is unusual for random dashboard loads.
 			// It might be some kind of a daily or hourly rollup. Let's cache it longer than 15s
