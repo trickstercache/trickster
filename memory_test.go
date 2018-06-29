@@ -47,7 +47,7 @@ func TestMemoryCache_Store(t *testing.T) {
 	}
 
 	// it should store a value
-	err = mc.Store("cacheKey", "data", 1000)
+	err = mc.Store("cacheKey", "data", 60000)
 	if (err != nil) {
 		t.Error(err)
 	}
@@ -62,7 +62,7 @@ func TestMemoryCache_Retrieve(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = mc.Store("cacheKey", "data", 1000)
+	err = mc.Store("cacheKey", "data", 60000)
 	if (err != nil) {
 		t.Error(err)
 	}
