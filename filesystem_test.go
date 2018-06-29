@@ -41,7 +41,7 @@ func TestFilesystemCache_Store(t *testing.T) {
 	}
 
 	// it should store a value
-	err = fc.Store("cacheKey", "data", 1000)
+	err = fc.Store("cacheKey", "data", 60000)
 	if err != nil {
 		t.Error(err)
 	}
@@ -56,7 +56,7 @@ func TestFilesystemCache_Retrieve(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	err = fc.Store("cacheKey", "data", 5000)
+	err = fc.Store("cacheKey", "data", 60000)
 	if err != nil {
 		t.Error(err)
 	}
