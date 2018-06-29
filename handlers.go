@@ -442,7 +442,7 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 	if step <= 0 {
 		return nil, fmt.Errorf("step parameter %d <= 0, has to be positive", step)
 	}
-	ctx.StepMS *= step * 1000
+	ctx.StepMS = step * 1000
 
 	cacheKeyBase := ctx.Origin.OriginURL + ctx.StepParam
 	// if we have an authorization header, that should be part of the cache key to ensure only authorized users can access cached datasets
