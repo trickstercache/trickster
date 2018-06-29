@@ -57,7 +57,7 @@ func TestRedisCache_Store(t *testing.T) {
 	}
 
 	// it should store a value
-	err = rc.Store("cacheKey", "data", 1000)
+	err = rc.Store("cacheKey", "data", 60000)
 	if (err != nil) {
 		t.Error(err)
 	}
@@ -71,7 +71,7 @@ func TestRedisCache_Retrieve(t *testing.T) {
 	if (err != nil) {
 		t.Error(err)
 	}
-	err = rc.Store("cacheKey", "data", 5000)
+	err = rc.Store("cacheKey", "data", 60000)
 	if (err != nil) {
 		t.Error(err)
 	}
