@@ -37,6 +37,10 @@ docker-release:
 	docker tag trickster:$(PROGVER) tricksterio/trickster:$(PROGVER)
 	docker tag tricksterio/trickster:$(PROGVER) tricksterio/trickster:latest
 
+.PHONY: style
+style:
+	! gofmt -d $$(find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
+
 test:
 	go get github.com/alicebob/miniredis
 	go test -run '' -o ${GOPATH}/bin/trickster -v
