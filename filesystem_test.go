@@ -14,14 +14,14 @@
 package main
 
 import (
-	"testing"
 	"github.com/go-kit/kit/log"
+	"testing"
 )
 
 func TestFilesystemCache_Connect(t *testing.T) {
-	cfg:= Config{Caching:CachingConfig{ReapSleepMS:1}}
-	tr := TricksterHandler{Logger:log.NewNopLogger(), Config:&cfg}
-	fc := FilesystemCache{T:&tr, Config:FilesystemCacheConfig{CachePath:"."}}
+	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1}}
+	tr := TricksterHandler{Logger: log.NewNopLogger(), Config: &cfg}
+	fc := FilesystemCache{T: &tr, Config: FilesystemCacheConfig{CachePath: "."}}
 
 	// it should connect
 	err := fc.Connect()
@@ -31,9 +31,9 @@ func TestFilesystemCache_Connect(t *testing.T) {
 }
 
 func TestFilesystemCache_Store(t *testing.T) {
-	cfg:= Config{Caching:CachingConfig{ReapSleepMS:1}}
-	tr := TricksterHandler{Logger:log.NewNopLogger(), Config:&cfg}
-	fc := FilesystemCache{T:&tr, Config:FilesystemCacheConfig{CachePath:"."}}
+	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1}}
+	tr := TricksterHandler{Logger: log.NewNopLogger(), Config: &cfg}
+	fc := FilesystemCache{T: &tr, Config: FilesystemCacheConfig{CachePath: "."}}
 
 	err := fc.Connect()
 	if err != nil {
@@ -48,9 +48,9 @@ func TestFilesystemCache_Store(t *testing.T) {
 }
 
 func TestFilesystemCache_Retrieve(t *testing.T) {
-	cfg:= Config{Caching:CachingConfig{ReapSleepMS:1}}
-	tr := TricksterHandler{Logger:log.NewNopLogger(), Config:&cfg}
-	fc := FilesystemCache{T:&tr, Config:FilesystemCacheConfig{CachePath:"."}}
+	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1}}
+	tr := TricksterHandler{Logger: log.NewNopLogger(), Config: &cfg}
+	fc := FilesystemCache{T: &tr, Config: FilesystemCacheConfig{CachePath: "."}}
 
 	err := fc.Connect()
 	if err != nil {
@@ -66,7 +66,7 @@ func TestFilesystemCache_Retrieve(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if (data != "data") {
+	if data != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
 }

@@ -13,7 +13,9 @@
 
 package main
 
-import ( "testing" )
+import (
+	"testing"
+)
 
 func TestLoadFlags(t *testing.T) {
 	c := Config{}
@@ -29,13 +31,13 @@ func TestLoadFlags(t *testing.T) {
 	// it should read command line flags
 	loadFlags(&c, a)
 
-	if (c.DefaultOriginURL != a[1]) {
+	if c.DefaultOriginURL != a[1] {
 		t.Errorf("wanted \"%s\". got \"%s\".", a[1], c.DefaultOriginURL)
 	}
-	if (c.ProxyServer.ListenPort != 9091) {
+	if c.ProxyServer.ListenPort != 9091 {
 		t.Errorf("wanted \"%d\". got \"%d\".", 9091, c.ProxyServer.ListenPort)
 	}
-	if (c.Metrics.ListenPort != 9092) {
+	if c.Metrics.ListenPort != 9092 {
 		t.Errorf("wanted \"%d\". got \"%d\".", 9092, c.Metrics.ListenPort)
 	}
 }
@@ -47,7 +49,7 @@ func TestLoadConfiguration(t *testing.T) {
 	// it should not error if config path is not set
 	err := loadConfiguration(&c, a)
 
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 }

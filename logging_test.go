@@ -28,12 +28,12 @@ func TestNewLogger(t *testing.T) {
 	// it should create a logger for each level
 	for _, tc := range testCases {
 		t.Run(tc, func(t *testing.T) {
-			newLogger(LoggingConfig{LogLevel:tc}, tc)
+			newLogger(LoggingConfig{LogLevel: tc}, tc)
 		})
 	}
 }
 
 func TestNewLogger_LogFile(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
-	newLogger(LoggingConfig{LogFile:"out.log"}, "test")
+	newLogger(LoggingConfig{LogFile: "out.log"}, "test")
 }
