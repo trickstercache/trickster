@@ -143,7 +143,7 @@ func (t *TricksterHandler) promFullProxyHandler(w http.ResponseWriter, r *http.R
 }
 
 // promAPIProxyHandler handles proxying of non-query/query_range API calls such as the labels path
-func (t *TricksterHandler) promAPIProxyHandler(w http.ResponseWriter, r *http.Request) {
+func (t *TricksterHandler) promAPIXProxyHandler(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	vars := mux.Vars(r)
 
