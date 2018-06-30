@@ -14,9 +14,10 @@
 package main
 
 import (
+	"testing"
+
 	"github.com/alicebob/miniredis"
 	"github.com/go-kit/kit/log"
-	"testing"
 )
 
 func setupRedisCache() (RedisCache, func()) {

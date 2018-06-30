@@ -14,8 +14,9 @@
 package main
 
 import (
-	"github.com/go-kit/kit/log"
 	"testing"
+
+	"github.com/go-kit/kit/log"
 )
 
 func TestFilesystemCache_Connect(t *testing.T) {
