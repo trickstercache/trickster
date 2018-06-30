@@ -25,7 +25,7 @@ import (
 
 const (
 	applicationName    = "trickster"
-	applicationVersion = "0.0.13"
+	applicationVersion = "0.0.15a"
 
 	// Log fields
 	lfEvent    = "event"
@@ -81,11 +81,11 @@ func main() {
 	// Path-based  multi-origin support - no support for full proxy of the prometheus UI, only querying
 	router.HandleFunc("/{originMoniker}"+prometheusAPIv1Path+mnQueryRange, t.promQueryRangeHandler).Methods("GET")
 	router.HandleFunc("/{originMoniker}"+prometheusAPIv1Path+mnQuery, t.promQueryHandler).Methods("GET")
-	router.PathPrefix("/{originMoniker}" + prometheusAPIv1Path).HandlerFunc(t.promAPIProxyHandler).Methods("GET")
+	router.PathPrefix("/{originMoniker}" + prometheusAPIv1Path).HandlerFunc(t.promFullProxyHandler).Methods("GET")
 
 	router.HandleFunc(prometheusAPIv1Path+mnQueryRange, t.promQueryRangeHandler).Methods("GET")
 	router.HandleFunc(prometheusAPIv1Path+mnQuery, t.promQueryHandler).Methods("GET")
-	router.PathPrefix(prometheusAPIv1Path).HandlerFunc(t.promAPIProxyHandler).Methods("GET")
+	router.PathPrefix(prometheusAPIv1Path).HandlerFunc(t.promFullProxyHandler).Methods("GET")
 
 	// Catch All for Single-Origin proxy
 	router.PathPrefix("/").HandlerFunc(t.promFullProxyHandler).Methods("GET")
