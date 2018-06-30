@@ -14,18 +14,18 @@
 package main
 
 import (
-	"testing"
 	"github.com/go-kit/kit/log"
+	"testing"
 )
 
-func setupMemoryCache() (MemoryCache) {
-	cfg := Config{Caching:CachingConfig{ReapSleepMS:1000}}
+func setupMemoryCache() MemoryCache {
+	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1000}}
 	tr := TricksterHandler{
-		Logger:log.NewNopLogger(),
+		Logger:           log.NewNopLogger(),
 		ResponseChannels: make(map[string]chan *ClientRequestContext),
-		Config: &cfg,
+		Config:           &cfg,
 	}
-	return MemoryCache{T:&tr}
+	return MemoryCache{T: &tr}
 }
 
 func TestMemoryCache_Connect(t *testing.T) {
@@ -33,7 +33,7 @@ func TestMemoryCache_Connect(t *testing.T) {
 
 	// it should connect
 	err := mc.Connect()
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 }
@@ -42,38 +42,37 @@ func TestMemoryCache_Store(t *testing.T) {
 	mc := setupMemoryCache()
 
 	err := mc.Connect()
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 
 	// it should store a value
 	err = mc.Store("cacheKey", "data", 60000)
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 }
-
 
 func TestMemoryCache_Retrieve(t *testing.T) {
 	mc := setupMemoryCache()
 
 	err := mc.Connect()
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 
 	err = mc.Store("cacheKey", "data", 60000)
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 
 	// it should retrieve a value
 	var data string
 	data, err = mc.Retrieve("cacheKey")
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
-	if (data != "data") {
+	if data != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\"", "data", data)
 	}
 }
@@ -82,7 +81,7 @@ func TestMemoryCache_ReapOnce(t *testing.T) {
 	mc := setupMemoryCache()
 
 	err := mc.Connect()
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 
@@ -96,7 +95,7 @@ func TestMemoryCache_ReapOnce(t *testing.T) {
 	// it should remove empty response channel
 	mc.ReapOnce()
 
-	if (mc.T.ResponseChannels["cacheKey"] != nil) {
+	if mc.T.ResponseChannels["cacheKey"] != nil {
 		t.Errorf("expected response channel to be removed")
 	}
 }
