@@ -14,25 +14,25 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"github.com/go-kit/kit/log"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
-	"github.com/go-kit/kit/log"
-	"fmt"
-	"encoding/json"
-	"bytes"
-	"io/ioutil"
 )
 
 const (
-	nonexistantOrigin = "http://nonexistent-origin:54321"
-	exampleQuery = "/api/v1/query?query=up&time=2015-07-01T20:11:15.781Z"
-	exampleRangeQuery = "/api/v1/query_range?query=up&start=2015-07-01T20:10:30.781Z&end=2015-07-01T20:11:00.781Z&step=15"
+	nonexistantOrigin       = "http://nonexistent-origin:54321"
+	exampleQuery            = "/api/v1/query?query=up&time=2015-07-01T20:11:15.781Z"
+	exampleRangeQuery       = "/api/v1/query_range?query=up&start=2015-07-01T20:10:30.781Z&end=2015-07-01T20:11:00.781Z&step=15"
 	exampleRangeQuery_query = "up"
 	exampleRangeQuery_start = "2015-07-01T20:10:30.781Z"
-	exampleRangeQuery_end = "2015-07-01T20:11:00.781Z"
-	exampleRangeQuery_step = "15"
+	exampleRangeQuery_end   = "2015-07-01T20:11:00.781Z"
+	exampleRangeQuery_step  = "15"
 
 	// this example should have 2 data points later than those in exampleRangeResponse
 	exampleResponse = `{
@@ -95,7 +95,6 @@ const (
       ]
    }
 }`
-
 )
 
 func TestParseTime(t *testing.T) {
@@ -173,9 +172,6 @@ func TestUnreachableOriginReturnsStatusBadGateway(t *testing.T) {
 			handler: (*TricksterHandler).promFullProxyHandler,
 		},
 		{
-			handler: (*TricksterHandler).promAPIProxyHandler,
-		},
-		{
 			handler: (*TricksterHandler).promQueryHandler,
 		},
 		{
@@ -216,7 +212,7 @@ func TestMissingRangeQueryParametersResultInStatusBadRequest(t *testing.T) {
 }
 
 func newTestServer(body string) *httptest.Server {
-	handler := func( w http.ResponseWriter, r *http.Request) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, body)
 	}
 	s := httptest.NewServer(http.HandlerFunc(handler))
@@ -230,7 +226,7 @@ func TestTricksterHandler_getOrigin(t *testing.T) {
 	// it should get test origin
 	r := httptest.NewRequest("GET", nonexistantOrigin, nil)
 	o := tr.getOrigin(r)
-	if (o.OriginURL != nonexistantOrigin) {
+	if o.OriginURL != nonexistantOrigin {
 		t.Errorf("wanted \"%s\" got \"%s\".", nonexistantOrigin, o.OriginURL)
 	}
 }
@@ -245,9 +241,9 @@ func TestTricksterHandler_promHealthCheckHandler(t *testing.T) {
 	// it should proxy request
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)
-	tr.promHealthCheckHandler(w,r)
+	tr.promHealthCheckHandler(w, r)
 
-	if (w.Result().StatusCode != 200) {
+	if w.Result().StatusCode != 200 {
 		t.Errorf("wanted 200 got %d.", w.Result().StatusCode)
 	}
 }
@@ -262,26 +258,9 @@ func TestTricksterHandler_promFullProxyHandler(t *testing.T) {
 	// it should proxy request
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)
-	tr.promFullProxyHandler(w,r)
+	tr.promFullProxyHandler(w, r)
 
-	if (w.Result().StatusCode != 200) {
-		t.Errorf("wanted 200 got %d.", w.Result().StatusCode)
-	}
-}
-
-func TestTricksterHandler_promAPIProxyHandler(t *testing.T) {
-	tr, closeFn := newTestTricksterHandler(t)
-	defer closeFn(t)
-	es := newTestServer("{}")
-	defer es.Close()
-	tr.setTestOrigin(es.URL)
-
-	// it should proxy request
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL, nil)
-	tr.promAPIProxyHandler(w,r)
-
-	if (w.Result().StatusCode != 200) {
+	if w.Result().StatusCode != 200 {
 		t.Errorf("wanted 200 got %d.", w.Result().StatusCode)
 	}
 }
@@ -296,9 +275,9 @@ func TestTricksterHandler_promQueryHandler(t *testing.T) {
 	// it should proxy request
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)
-	tr.promQueryHandler(w,r)
+	tr.promQueryHandler(w, r)
 
-	if (w.Result().StatusCode != 200) {
+	if w.Result().StatusCode != 200 {
 		t.Errorf("wanted 200 got %d.", w.Result().StatusCode)
 	}
 }
@@ -312,10 +291,10 @@ func TestTricksterHandler_promQueryRangeHandler_cacheMiss(t *testing.T) {
 
 	// it should queue the proxy request
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL + exampleRangeQuery, nil)
-	tr.promQueryRangeHandler(w,r)
+	r := httptest.NewRequest("GET", es.URL+exampleRangeQuery, nil)
+	tr.promQueryRangeHandler(w, r)
 
-	if (w.Result().StatusCode != 200) {
+	if w.Result().StatusCode != 200 {
 		t.Errorf("wanted 200 got %d.", w.Result().StatusCode)
 	}
 }
@@ -328,23 +307,23 @@ func TestTricksterHandler_promQueryRangeHandler_cacheHit(t *testing.T) {
 	tr.setTestOrigin(es.URL)
 
 	// setup cache
-	r := httptest.NewRequest("GET", es.URL + exampleRangeQuery, nil)
-	tr.fetchPromQuery(es.URL + prometheusAPIv1Path + exampleRangeQuery_step, r.URL.Query(), r)
+	r := httptest.NewRequest("GET", es.URL+exampleRangeQuery, nil)
+	tr.fetchPromQuery(es.URL+prometheusAPIv1Path+exampleRangeQuery_step, r.URL.Query(), r)
 
 	// it should respond from cache
 	w := httptest.NewRecorder()
-	r = httptest.NewRequest("GET", es.URL + exampleRangeQuery, nil)
-	tr.promQueryRangeHandler(w,r)
+	r = httptest.NewRequest("GET", es.URL+exampleRangeQuery, nil)
+	tr.promQueryRangeHandler(w, r)
 
 	resp := w.Result()
 	defer resp.Body.Close()
 
-	if (resp.StatusCode != 200) {
+	if resp.StatusCode != 200 {
 		t.Errorf("wanted 200. got %d.", resp.StatusCode)
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 
@@ -352,11 +331,11 @@ func TestTricksterHandler_promQueryRangeHandler_cacheHit(t *testing.T) {
 
 	pm := PrometheusMatrixEnvelope{}
 	err = json.Unmarshal(bodyBytes, &pm)
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 
-	if (pm.getValueCount() != 6) {
+	if pm.getValueCount() != 6 {
 		t.Errorf("wanted 6 got %d.", pm.getValueCount())
 	}
 }
@@ -370,11 +349,11 @@ func TestTricksterHandler_getURL(t *testing.T) {
 	tr.setTestOrigin(es.URL)
 
 	// it should get from the echo server
-	b,_,_,err := tr.getURL("GET", es.URL, url.Values{}, nil)
-	if (err != nil) {
+	b, _, _, err := tr.getURL("GET", es.URL, url.Values{}, nil)
+	if err != nil {
 		t.Error(err)
 	}
-	if (bytes.Compare(b,[]byte(body)) != 0) {
+	if bytes.Compare(b, []byte(body)) != 0 {
 		t.Errorf("wanted \"%s\" got \"%s\"", body, b)
 	}
 }
@@ -387,12 +366,12 @@ func TestTricksterHandler_getVectorFromPrometheus(t *testing.T) {
 	tr.setTestOrigin(es.URL)
 
 	// it should get an empty vector envelope
-	r := httptest.NewRequest("GET", es.URL + exampleQuery, nil)
-	pe,_,err := tr.getVectorFromPrometheus(es.URL, r.URL.Query(), r)
-	if (err != nil) {
+	r := httptest.NewRequest("GET", es.URL+exampleQuery, nil)
+	pe, _, err := tr.getVectorFromPrometheus(es.URL, r.URL.Query(), r)
+	if err != nil {
 		t.Error(err)
 	}
-	if (pe.Status != "success") {
+	if pe.Status != "success" {
 		t.Errorf("wanted \"success\" got \"%s\".", pe.Status)
 	}
 }
@@ -405,12 +384,12 @@ func TestTricksterHandler_getMatrixFromPrometheus(t *testing.T) {
 	tr.setTestOrigin(es.URL)
 
 	// it should get an empty matrix envelope
-	r := httptest.NewRequest("GET", es.URL + exampleRangeQuery, nil)
-	pe,_,_,err := tr.getMatrixFromPrometheus(es.URL, r.URL.Query(), r)
-	if (err != nil) {
+	r := httptest.NewRequest("GET", es.URL+exampleRangeQuery, nil)
+	pe, _, _, err := tr.getMatrixFromPrometheus(es.URL, r.URL.Query(), r)
+	if err != nil {
 		t.Error(err)
 	}
-	if (pe.Status != "success") {
+	if pe.Status != "success" {
 		t.Errorf("wanted \"success\" got \"%s\".", pe.Status)
 	}
 }
@@ -420,9 +399,9 @@ func TestTricksterHandler_respondToCacheHit(t *testing.T) {
 	defer closeTr(t)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", nonexistantOrigin + exampleRangeQuery, nil)
-	ctx,err := tr.buildRequestContext(w, r)
-	if (err != nil) {
+	r := httptest.NewRequest("GET", nonexistantOrigin+exampleRangeQuery, nil)
+	ctx, err := tr.buildRequestContext(w, r)
+	if err != nil {
 		t.Error(err)
 	}
 
@@ -431,16 +410,15 @@ func TestTricksterHandler_respondToCacheHit(t *testing.T) {
 	tr.respondToCacheHit(ctx)
 }
 
-
 func TestPrometheusMatrixEnvelope_getValueCount(t *testing.T) {
 	pm := PrometheusMatrixEnvelope{}
 	err := json.Unmarshal([]byte(exampleRangeResponse), &pm)
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 
 	// it should count the values in the matrix
-	if (6 != pm.getValueCount()) {
+	if 6 != pm.getValueCount() {
 		t.Errorf("wanted 6 got %d.", pm.getValueCount())
 	}
 }
@@ -451,20 +429,20 @@ func TestTricksterHandler_mergeVector(t *testing.T) {
 
 	pm := PrometheusMatrixEnvelope{}
 	err := json.Unmarshal([]byte(exampleRangeResponse), &pm)
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 
 	pv := PrometheusVectorEnvelope{}
 	err = json.Unmarshal([]byte(exampleResponse), &pv)
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 
 	// it should merge the values from the vector into the matrix
 	pe := tr.mergeVector(pm, pv)
 
-	if (8 != pe.getValueCount()) {
+	if 8 != pe.getValueCount() {
 		t.Errorf("wanted 8 got %d.", pe.getValueCount())
 	}
 }
