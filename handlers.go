@@ -142,29 +142,6 @@ func (t *TricksterHandler) promFullProxyHandler(w http.ResponseWriter, r *http.R
 	w.Write(body)
 }
 
-// promAPIProxyHandler handles proxying of non-query/query_range API calls such as the labels path
-func (t *TricksterHandler) promAPIXProxyHandler(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Path
-	vars := mux.Vars(r)
-
-	// clear out the origin moniker from the front of the API path
-	if originName, ok := vars["originMoniker"]; ok {
-		if strings.HasPrefix(path, "/"+originName) {
-			path = strings.Replace(path, "/"+originName, "", 1)
-		}
-	}
-
-	originURL := t.getOrigin(r).OriginURL + strings.Replace(path, "//", "/", 1)
-	body, resp, err := t.fetchPromQuery(originURL, r.URL.Query(), r)
-	if err != nil {
-		level.Error(t.Logger).Log(lfEvent, "error fetching data from origin Prometheus", lfDetail, err.Error())
-		w.WriteHeader(http.StatusBadGateway)
-		return
-	}
-
-	writeResponse(w, body, resp)
-}
-
 // promQueryHandler handles calls to /query (for instantaneous values)
 func (t *TricksterHandler) promQueryHandler(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
