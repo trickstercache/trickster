@@ -15,15 +15,14 @@ package main
 
 import (
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	bolt "github.com/coreos/bbolt"
-
 	"github.com/go-kit/kit/log/level"
-	//"golang.org/x/sys/unix"
 )
 
 // BoltDbCache describes a BoltDb Cache
@@ -39,7 +38,7 @@ type BoltDbCache struct {
 // Connect instantiates the BoltDbCache mutex map and starts the Expired Entry Reaper goroutine
 func (c *BoltDbCache) Connect() error {
 
-	fullPath := strings.Replace(c.Config.CachePath+"/"+c.Config.Filename, "//", "/", -1)
+	fullPath := path.Join(c.Config.CachePath, c.Config.Filename)
 
 	level.Info(c.T.Logger).Log("event", "boltdb cache setup", "cachePath", fullPath)
 
