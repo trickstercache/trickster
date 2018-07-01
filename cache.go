@@ -18,6 +18,7 @@ const (
 	ctMemory     = "memory"
 	ctFilesystem = "filesystem"
 	ctRedis      = "redis"
+	ctBoltDB     = "boltdb"
 )
 
 // Cache is the interface for the supported caching fabrics
@@ -34,6 +35,8 @@ func getCache(t *TricksterHandler) Cache {
 	switch t.Config.Caching.CacheType {
 	case ctFilesystem:
 		return &FilesystemCache{Config: t.Config.Caching.Filesystem, T: t}
+	case ctBoltDB:
+		return &BoltDbCache{Config: t.Config.Caching.BoltDb, T: t}
 	case ctRedis:
 		return &RedisCache{Config: t.Config.Caching.Redis, T: t}
 	default:
