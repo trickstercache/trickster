@@ -120,7 +120,7 @@ func NewConfig() *Config {
 
 			Redis:      RedisCacheConfig{Protocol: "tcp", Endpoint: "redis:6379"},
 			Filesystem: FilesystemCacheConfig{CachePath: defaultCachePath},
-			BoltDB:     BoltDBCacheConfig{CachePath: defaultCachePath, Filename: "bolt.db", Bucket: "trickster"},
+			BoltDB:     BoltDBCacheConfig{CachePath: defaultCachePath, Filename: "trickster.db", Bucket: "trickster"},
 
 			ReapSleepMS: 1000,
 			Compression: true,
