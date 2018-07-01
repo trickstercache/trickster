@@ -88,7 +88,7 @@ type TricksterHandler struct {
 // HTTP Handlers
 
 // promHealthCheckHandler returns the health of Trickster
-// can't suppport multi-origin full proxy for path-based proxying
+// can't support multi-origin full proxy for path-based proxying
 func (t *TricksterHandler) promHealthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	level.Debug(t.Logger).Log(lfEvent, "promHealthCheckHandler", "path", r.URL.Path, "method", r.Method)
 
@@ -112,7 +112,7 @@ func (t *TricksterHandler) promHealthCheckHandler(w http.ResponseWriter, r *http
 }
 
 // promFullProxyHandler handles calls to non-api paths for single-origin configurations and multi-origin via param or hostname
-// can't suppport multi-origin full proxy for path-based proxying
+// can't support multi-origin full proxy for path-based proxying
 func (t *TricksterHandler) promFullProxyHandler(w http.ResponseWriter, r *http.Request) {
 	level.Debug(t.Logger).Log(lfEvent, "promFullProxyHandler", "path", r.URL.Path, "method", r.Method)
 
@@ -317,7 +317,7 @@ func (t *TricksterHandler) getVectorFromPrometheus(url string, params url.Values
 func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values, r *http.Request) (PrometheusMatrixEnvelope, *http.Response, time.Duration, error) {
 	pe := PrometheusMatrixEnvelope{}
 
-	// Make the HTTP Request - dont use fetchPromQuery here, that is for instantaneous only.
+	// Make the HTTP Request - don't use fetchPromQuery here, that is for instantaneous only.
 	body, resp, duration, err := t.getURL(hmGet, url, params, getProxyableClientHeaders(r))
 	if err != nil {
 		return pe, nil, 0, err
@@ -464,7 +464,7 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 
 	ctx.RequestExtents.Start, ctx.RequestExtents.End = alignStepBoundaries(reqStart.Unix()*1000, reqEnd.Unix()*1000, ctx.StepMS, ctx.Time)
 
-	// setup some variables to determine and track the status of the query vs whats in the cache
+	// setup some variables to determine and track the status of the query vs what's in the cache
 	ctx.Matrix = defaultPrometheusMatrixEnvelope()
 	ctx.CacheLookupResult = crKeyMiss
 
