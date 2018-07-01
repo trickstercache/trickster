@@ -24,21 +24,21 @@ import (
 	"github.com/go-kit/kit/log/level"
 )
 
-// BoltDbCache describes a BoltDb Cache
-type BoltDbCache struct {
+// BoltDBCache describes a BoltDB Cache
+type BoltDBCache struct {
 	T      *TricksterHandler
-	Config BoltDbCacheConfig
+	Config BoltDBCacheConfig
 	dbh    *bolt.DB
 }
 
-// Connect instantiates the BoltDbCache mutex map and starts the Expired Entry Reaper goroutine
-func (c *BoltDbCache) Connect() error {
+// Connect instantiates the BoltDBCache mutex map and starts the Expired Entry Reaper goroutine
+func (c *BoltDBCache) Connect() error {
 
 	fullPath := path.Join(c.Config.CachePath, c.Config.Filename)
 
 	level.Info(c.T.Logger).Log("event", "boltdb cache setup", "cachePath", fullPath)
 
-	err := mustMakeDirectory(c.Config.CachePath)
+	err := makeDirectory(c.Config.CachePath)
 	if err != nil {
 		return err
 	}
@@ -64,7 +64,7 @@ func (c *BoltDbCache) Connect() error {
 }
 
 // Store places an object in the cache using the specified key and ttl
-func (c *BoltDbCache) Store(cacheKey string, data string, ttl int64) error {
+func (c *BoltDBCache) Store(cacheKey string, data string, ttl int64) error {
 
 	expKey, dataKey := c.getKeyNames(cacheKey)
 	expiration := []byte(strconv.FormatInt(time.Now().Unix()+ttl, 10))
@@ -95,7 +95,7 @@ func (c *BoltDbCache) Store(cacheKey string, data string, ttl int64) error {
 }
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)
-func (c *BoltDbCache) Retrieve(cacheKey string) (string, error) {
+func (c *BoltDBCache) Retrieve(cacheKey string) (string, error) {
 
 	level.Debug(c.T.Logger).Log("event", "boltdb cache retrieve", "key", cacheKey)
 
@@ -107,7 +107,7 @@ func (c *BoltDbCache) Retrieve(cacheKey string) (string, error) {
 }
 
 // retrieve looks for an object in cache and returns it (or an error if not found)
-func (c *BoltDbCache) retrieve(cacheKey string) (string, error) {
+func (c *BoltDBCache) retrieve(cacheKey string) (string, error) {
 
 	content := ""
 
@@ -129,7 +129,7 @@ func (c *BoltDbCache) retrieve(cacheKey string) (string, error) {
 }
 
 // checkExpiration verifies that a cacheKey is not expired
-func (c *BoltDbCache) checkExpiration(cacheKey string) {
+func (c *BoltDBCache) checkExpiration(cacheKey string) {
 
 	expKey, _ := c.getKeyNames(cacheKey)
 
@@ -144,7 +144,7 @@ func (c *BoltDbCache) checkExpiration(cacheKey string) {
 }
 
 // Delete removes an object in cache, if present
-func (c *BoltDbCache) Delete(cacheKey string) error {
+func (c *BoltDBCache) Delete(cacheKey string) error {
 
 	level.Debug(c.T.Logger).Log("event", "boltdb cache delete", "key", cacheKey)
 
@@ -189,7 +189,7 @@ func (c *BoltDbCache) Delete(cacheKey string) error {
 }
 
 // Reap continually iterates through the cache to find expired elements and removes them
-func (c *BoltDbCache) Reap() {
+func (c *BoltDBCache) Reap() {
 
 	for {
 		c.ReapOnce()
@@ -198,7 +198,7 @@ func (c *BoltDbCache) Reap() {
 
 }
 
-func (c *BoltDbCache) ReapOnce() {
+func (c *BoltDBCache) ReapOnce() {
 
 	now := time.Now().Unix()
 	expiredKeys := make([]string, 0)
@@ -233,16 +233,14 @@ func (c *BoltDbCache) ReapOnce() {
 		c.Delete(cacheKey)
 	}
 
-	return
-
 }
 
-// Close closes the BoltDbCache
-func (c *BoltDbCache) Close() error {
+// Close closes the BoltDBCache
+func (c *BoltDBCache) Close() error {
 	c.dbh.Close()
 	return nil
 }
 
-func (c *BoltDbCache) getKeyNames(cacheKey string) (string, string) {
+func (c *BoltDBCache) getKeyNames(cacheKey string) (string, string) {
 	return cacheKey + ".expiration", cacheKey + ".data"
 }

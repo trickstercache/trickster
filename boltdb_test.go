@@ -19,10 +19,10 @@ import (
 	"github.com/go-kit/kit/log"
 )
 
-func TestBoltDbCache_Connect(t *testing.T) {
+func TestBoltDBCache_Connect(t *testing.T) {
 	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1}}
 	tr := TricksterHandler{Logger: log.NewNopLogger(), Config: &cfg}
-	bc := BoltDbCache{T: &tr, Config: BoltDbCacheConfig{CachePath: ".", Filename: "test.db", Bucket: "trickster_test"}}
+	bc := BoltDBCache{T: &tr, Config: BoltDBCacheConfig{CachePath: ".", Filename: "test.db", Bucket: "trickster_test"}}
 
 	// it should connect
 	err := bc.Connect()
@@ -34,10 +34,10 @@ func TestBoltDbCache_Connect(t *testing.T) {
 
 }
 
-func TestBoltDbCache_Store(t *testing.T) {
+func TestBoltDBCache_Store(t *testing.T) {
 	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1}}
 	tr := TricksterHandler{Logger: log.NewNopLogger(), Config: &cfg}
-	bc := BoltDbCache{T: &tr, Config: BoltDbCacheConfig{CachePath: ".", Filename: "test.db", Bucket: "trickster_test"}}
+	bc := BoltDBCache{T: &tr, Config: BoltDBCacheConfig{CachePath: ".", Filename: "test.db", Bucket: "trickster_test"}}
 
 	err := bc.Connect()
 	if err != nil {
@@ -52,10 +52,10 @@ func TestBoltDbCache_Store(t *testing.T) {
 	}
 }
 
-func TestBoltDbCache_Delete(t *testing.T) {
+func TestBoltDBCache_Delete(t *testing.T) {
 	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1}}
 	tr := TricksterHandler{Logger: log.NewNopLogger(), Config: &cfg}
-	bc := BoltDbCache{T: &tr, Config: BoltDbCacheConfig{CachePath: ".", Filename: "test.db", Bucket: "trickster_test"}}
+	bc := BoltDBCache{T: &tr, Config: BoltDBCacheConfig{CachePath: ".", Filename: "test.db", Bucket: "trickster_test"}}
 
 	err := bc.Connect()
 	if err != nil {
@@ -77,10 +77,10 @@ func TestBoltDbCache_Delete(t *testing.T) {
 
 }
 
-func TestBoltDbCache_Retrieve(t *testing.T) {
+func TestBoltDBCache_Retrieve(t *testing.T) {
 	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1}}
 	tr := TricksterHandler{Logger: log.NewNopLogger(), Config: &cfg}
-	bc := BoltDbCache{T: &tr, Config: BoltDbCacheConfig{CachePath: ".", Filename: "test.db", Bucket: "trickster_test"}}
+	bc := BoltDBCache{T: &tr, Config: BoltDBCacheConfig{CachePath: ".", Filename: "test.db", Bucket: "trickster_test"}}
 
 	err := bc.Connect()
 	if err != nil {

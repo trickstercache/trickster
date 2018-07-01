@@ -54,7 +54,7 @@ type CachingConfig struct {
 	Filesystem    FilesystemCacheConfig `toml:"filesystem"`
 	ReapSleepMS   int64                 `toml:"reap_sleep_ms"`
 	Compression   bool                  `toml:"compression"`
-	BoltDb        BoltDbCacheConfig     `toml:"boltdb"`
+	BoltDB        BoltDBCacheConfig     `toml:"boltdb"`
 }
 
 // RedisCacheConfig is a collection of Configurations for Connecting to Redis
@@ -66,12 +66,12 @@ type RedisCacheConfig struct {
 }
 
 // BotlDbCacheConfig is a collection of Configurations for storing cached data on the Filesystem
-type BoltDbCacheConfig struct {
+type BoltDBCacheConfig struct {
 	// CachePath represents the directory path on disk where our cache will live
 	CachePath string `toml:"cache_path"`
 	// Filename represents the filename of the Boltdb database that will be maintained in CachePath
 	Filename string `toml:"filename"`
-	// Bucket represents the name of the bucket within BoltDb under which Trickster's keys will be stored.
+	// Bucket represents the name of the bucket within BoltDB under which Trickster's keys will be stored.
 	Bucket string `toml:"bucket"`
 }
 
@@ -120,7 +120,7 @@ func NewConfig() *Config {
 
 			Redis:      RedisCacheConfig{Protocol: "tcp", Endpoint: "redis:6379"},
 			Filesystem: FilesystemCacheConfig{CachePath: defaultCachePath},
-			BoltDb:     BoltDbCacheConfig{CachePath: defaultCachePath, Filename: "bolt.db", Bucket: "trickster"},
+			BoltDB:     BoltDBCacheConfig{CachePath: defaultCachePath, Filename: "bolt.db", Bucket: "trickster"},
 
 			ReapSleepMS: 1000,
 			Compression: true,

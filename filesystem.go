@@ -38,7 +38,7 @@ type FilesystemCache struct {
 func (c *FilesystemCache) Connect() error {
 	level.Info(c.T.Logger).Log("event", "filesystem cache setup", "cachePath", c.Config.CachePath)
 
-	if err := mustMakeDirectory(c.Config.CachePath); err != nil {
+	if err := makeDirectory(c.Config.CachePath); err != nil {
 		return err
 	}
 
@@ -157,8 +157,8 @@ func writeable(path string) bool {
 	return unix.Access(path, unix.W_OK) == nil
 }
 
-// mustMakeDirectory creates a directory on the filesystem and exits the application in the event of a failure.
-func mustMakeDirectory(path string) error {
+// makeDirectory creates a directory on the filesystem and exits the application in the event of a failure.
+func makeDirectory(path string) error {
 	err := os.MkdirAll(path, 0755)
 	if err != nil || !writeable(path) {
 		return fmt.Errorf(`[%s] directory is not writeable by the trickster: %s`, path, err.Error())
