@@ -15,8 +15,9 @@ package main
 
 import (
 	"testing"
-	"github.com/go-kit/kit/log"
+
 	"github.com/alicebob/miniredis"
+	"github.com/go-kit/kit/log"
 )
 
 func setupRedisCache() (RedisCache, func()) {
@@ -25,16 +26,15 @@ func setupRedisCache() (RedisCache, func()) {
 		panic(err)
 	}
 	tr := TricksterHandler{
-		Logger:log.NewNopLogger(),
+		Logger:           log.NewNopLogger(),
 		ResponseChannels: make(map[string]chan *ClientRequestContext),
 	}
-	rcfg := RedisConfig{Endpoint:s.Addr()}
+	rcfg := RedisCacheConfig{Endpoint: s.Addr()}
 	close := func() {
 		s.Close()
 	}
-	return RedisCache{T:&tr, Config:rcfg}, close
+	return RedisCache{T: &tr, Config: rcfg}, close
 }
-
 
 func TestRedisCache_Connect(t *testing.T) {
 	rc, close := setupRedisCache()
@@ -42,7 +42,7 @@ func TestRedisCache_Connect(t *testing.T) {
 
 	// it should connect
 	err := rc.Connect()
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 }
@@ -52,13 +52,13 @@ func TestRedisCache_Store(t *testing.T) {
 	defer close()
 
 	err := rc.Connect()
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 
 	// it should store a value
 	err = rc.Store("cacheKey", "data", 60000)
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 }
@@ -68,20 +68,20 @@ func TestRedisCache_Retrieve(t *testing.T) {
 	defer close()
 
 	err := rc.Connect()
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 	err = rc.Store("cacheKey", "data", 60000)
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 
 	// it should retrieve a value
 	data, err := rc.Retrieve("cacheKey")
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
-	if (data != "data") {
+	if data != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\"", "data", data)
 	}
 }
@@ -91,7 +91,7 @@ func TestRedisCache_ReapOnce(t *testing.T) {
 	defer close()
 
 	err := rc.Connect()
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 
@@ -102,7 +102,7 @@ func TestRedisCache_ReapOnce(t *testing.T) {
 	// it should remove empty response channel
 	rc.ReapOnce()
 
-	if (rc.T.ResponseChannels["cacheKey"] != nil) {
+	if rc.T.ResponseChannels["cacheKey"] != nil {
 		t.Errorf("expected response channel to be removed")
 	}
 }
@@ -112,13 +112,13 @@ func TestRedisCache_Close(t *testing.T) {
 	defer close()
 
 	err := rc.Connect()
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 
 	// it should close
 	err = rc.Close()
-	if (err != nil) {
+	if err != nil {
 		t.Error(err)
 	}
 }
