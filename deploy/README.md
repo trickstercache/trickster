@@ -8,7 +8,7 @@ $ docker run --name trickster -d [-v /path/to/trickster.conf:/etc/trickster/tric
 
 ## Kubernetes, Helm, RBAC
 ---
-If you are wanting to use Helm and kubernetes rbac use the folowing install steps in the `deploy/helm` directory.
+If you are wanting to use Helm and kubernetes rbac use the following install steps in the `deploy/helm` directory.
 
 #### Bootstrap Local Kubernetes-Helm Dev
 
