@@ -17,12 +17,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/go-kit/kit/log"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"github.com/go-kit/kit/log"
 )
 
 const (
