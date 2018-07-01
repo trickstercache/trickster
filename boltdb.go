@@ -237,8 +237,7 @@ func (c *BoltDBCache) ReapOnce() {
 
 // Close closes the BoltDBCache
 func (c *BoltDBCache) Close() error {
-	c.dbh.Close()
-	return nil
+	return c.dbh.Close()
 }
 
 func (c *BoltDBCache) getKeyNames(cacheKey string) (string, string) {
