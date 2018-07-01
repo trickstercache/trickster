@@ -29,7 +29,7 @@ func setupRedisCache() (RedisCache, func()) {
 		Logger:           log.NewNopLogger(),
 		ResponseChannels: make(map[string]chan *ClientRequestContext),
 	}
-	rcfg := RedisConfig{Endpoint: s.Addr()}
+	rcfg := RedisCacheConfig{Endpoint: s.Addr()}
 	close := func() {
 		s.Close()
 	}
