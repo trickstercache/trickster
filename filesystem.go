@@ -161,7 +161,7 @@ func writeable(path string) bool {
 func mustMakeDirectory(path string) error {
 	err := os.MkdirAll(path, 0755)
 	if err != nil || !writeable(path) {
-		return fmt.Errorf(`[%s] directory is not writeable by the trickster`, path)
+		return fmt.Errorf(`[%s] directory is not writeable by the trickster: %s`, path, err.Error())
 	}
 
 	return nil
