@@ -78,12 +78,7 @@ func (c *BoltDBCache) Store(cacheKey string, data string, ttl int64) error {
 			return err
 		}
 
-		err = b.Put([]byte(expKey), expiration)
-		if err != nil {
-			return err
-		}
-
-		return nil
+		return b.Put([]byte(expKey), expiration)
 	})
 	if err != nil {
 		return err
@@ -229,7 +224,6 @@ func (c *BoltDBCache) ReapOnce() {
 
 	// Iterate through the expired keys so we can delete them
 	for _, cacheKey := range expiredKeys {
-
 		c.Delete(cacheKey)
 	}
 
