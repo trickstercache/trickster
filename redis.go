@@ -24,7 +24,7 @@ import (
 // RedisCache represents a redis cache object that conforms to the Cache interface
 type RedisCache struct {
 	T         *TricksterHandler
-	Config    RedisConfig
+	Config    RedisCacheConfig
 	client    *redis.Client
 	CacheKeys sync.Map
 }
