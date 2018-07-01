@@ -26,7 +26,7 @@ import (
 	//"golang.org/x/sys/unix"
 )
 
-// BoltDbCache describes a Filesystem Cache
+// BoltDbCache describes a BoltDb Cache
 type BoltDbCache struct {
 	T      *TricksterHandler
 	Config BoltDbCacheConfig
