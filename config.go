@@ -65,7 +65,7 @@ type RedisCacheConfig struct {
 	Endpoint string `toml:"endpoint"`
 }
 
-// BotlDbCacheConfig is a collection of Configurations for storing cached data on the Filesystem
+// BoltDBCacheConfig is a collection of Configurations for storing cached data on the Filesystem
 type BoltDBCacheConfig struct {
 	// CachePath represents the directory path on disk where our cache will live
 	CachePath string `toml:"cache_path"`
