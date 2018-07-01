@@ -36,7 +36,7 @@ func getCache(t *TricksterHandler) Cache {
 	case ctFilesystem:
 		return &FilesystemCache{Config: t.Config.Caching.Filesystem, T: t}
 	case ctBoltDB:
-		return &BoltDbCache{Config: t.Config.Caching.BoltDb, T: t}
+		return &BoltDBCache{Config: t.Config.Caching.BoltDB, T: t}
 	case ctRedis:
 		return &RedisCache{Config: t.Config.Caching.Redis, T: t}
 	default:
