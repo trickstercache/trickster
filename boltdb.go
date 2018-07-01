@@ -18,7 +18,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	bolt "github.com/coreos/bbolt"
@@ -30,9 +29,6 @@ type BoltDbCache struct {
 	T      *TricksterHandler
 	Config BoltDbCacheConfig
 	dbh    *bolt.DB
-
-	mutexes  map[string]*sync.Mutex
-	mapMutex sync.Mutex
 }
 
 // Connect instantiates the BoltDbCache mutex map and starts the Expired Entry Reaper goroutine
