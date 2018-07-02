@@ -409,7 +409,10 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 	ctx.Origin.OriginURL += strings.Replace(ctx.Origin.APIPath+"/", "//", "/", 1)
 
 	// Get the params from the User request so we can inspect them and pass on to prometheus
-	ctx.RequestParams = r.URL.Query()
+	if err := r.ParseForm(); err != nil {
+		return nil, fmt.Errorf("Unable to parse form: %v", err)
+	}
+	ctx.RequestParams = r.Form
 
 	// Validate and parse the step value from the user request URL params.
 	if len(ctx.RequestParams[upStep]) == 0 {
