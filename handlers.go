@@ -31,6 +31,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/golang/snappy"
 	"github.com/gorilla/mux"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 )
 
@@ -409,7 +410,10 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 	ctx.Origin.OriginURL += strings.Replace(ctx.Origin.APIPath+"/", "//", "/", 1)
 
 	// Get the params from the User request so we can inspect them and pass on to prometheus
-	ctx.RequestParams = r.URL.Query()
+	if err := r.ParseForm(); err != nil {
+		return nil, errors.Wrap(err, "unable to parse form")
+	}
+	ctx.RequestParams = r.Form
 
 	// Validate and parse the step value from the user request URL params.
 	if len(ctx.RequestParams[upStep]) == 0 {
@@ -418,7 +422,7 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 	ctx.StepParam = ctx.RequestParams[upStep][0]
 	step, err := strconv.ParseInt(ctx.StepParam, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse parameter %q with value %q: %v", upStep, ctx.StepParam, err)
+		return nil, errors.Wrap(err, fmt.Sprintf("failed to parse parameter %q with value %q", upStep, ctx.StepParam))
 	}
 	if step <= 0 {
 		return nil, fmt.Errorf("step parameter %d <= 0, has to be positive", step)
@@ -450,7 +454,7 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 
 	reqStart, err := parseTime(ctx.RequestParams[upStart][0])
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse parameter %q with value %q: %v", upStart, ctx.RequestParams[upStart][0], err)
+		return nil, errors.Wrap(err, fmt.Sprintf("failed to parse parameter %q with value %q", upStart, ctx.RequestParams[upStart][0]))
 	}
 
 	if len(ctx.RequestParams[upEnd]) == 0 {
@@ -459,7 +463,7 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 
 	reqEnd, err := parseTime(ctx.RequestParams[upEnd][0])
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse parameter %q with value %q: %v", upEnd, ctx.RequestParams[upEnd][0], err)
+		return nil, errors.Wrap(err, fmt.Sprintf("failed to parse parameter %q with value %q", upEnd, ctx.RequestParams[upEnd][0]))
 	}
 
 	ctx.RequestExtents.Start, ctx.RequestExtents.End = alignStepBoundaries(reqStart.Unix()*1000, reqEnd.Unix()*1000, ctx.StepMS, ctx.Time)
@@ -502,7 +506,7 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 		// Marshall the cache payload into a PrometheusMatrixEnvelope struct
 		err = json.Unmarshal([]byte(cachedBody), &ctx.Matrix)
 		if err != nil {
-			return nil, fmt.Errorf("error unmarshalling cached data for key %q with content %q: %v", ctx.CacheKey, cachedBody, err)
+			return nil, errors.Wrap(err, fmt.Sprintf("error unmarshalling cached data for key %q with content %q", ctx.CacheKey, cachedBody))
 		}
 
 		// Get the Extents of the data in the cache

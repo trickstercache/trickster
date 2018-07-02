@@ -9,6 +9,21 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/alicebob/gopher-json"
+  packages = ["."]
+  revision = "5a6b3ba71ee69b77cf64febf8b5a7526ca5eaef0"
+
+[[projects]]
+  name = "github.com/alicebob/miniredis"
+  packages = [
+    ".",
+    "server"
+  ]
+  revision = "8890fdcfa933258e09a5b9b897270118064d70fd"
+  version = "2.4.4"
+
+[[projects]]
+  branch = "master"
   name = "github.com/beorn7/perks"
   packages = ["quantile"]
   revision = "3a771d992973f24aa725d07868b467d1ddfceafb"
@@ -60,6 +75,15 @@
   name = "github.com/golang/snappy"
   packages = ["."]
   revision = "553a641470496b2327abcac10b36396bd98e45c9"
+
+[[projects]]
+  name = "github.com/gomodule/redigo"
+  packages = [
+    "internal",
+    "redis"
+  ]
+  revision = "9c11da706d9b7902c6da69c592f75637793fe121"
+  version = "v2.0.0"
 
 [[projects]]
   name = "github.com/gorilla/context"
@@ -129,6 +153,17 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/yuin/gopher-lua"
+  packages = [
+    ".",
+    "ast",
+    "parse",
+    "pm"
+  ]
+  revision = "46796da1b0b4794e1e341883a399f12cc7574b55"
+
+[[projects]]
+  branch = "master"
   name = "golang.org/x/sys"
   packages = ["unix"]
   revision = "378d26f46672a356c46195c28f61bdb4c0a781dd"
@@ -142,6 +177,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "27af0c00cee0eb32f89da6c872bdc3e93e9aee5a26ec8c04ce5e417d79a3d6e7"
+  inputs-digest = "f12b269ddcd59088c8213f207418d4a1396e906fac9d9c3d0fe10c53ae6d8563"
   solver-name = "gps-cdcl"
   solver-version = 1
