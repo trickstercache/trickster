@@ -43,11 +43,11 @@ style:
 
 test:
 	go get github.com/alicebob/miniredis
-	go test -run '' -o ${GOPATH}/bin/trickster -v
+	go test -o ${GOPATH}/bin/trickster -v ./...
 
 test-cover:
 	go get github.com/alicebob/miniredis
-	go test -run '' -o ${GOPATH}/bin/trickster -coverprofile=cover.out
+	go test -o ${GOPATH}/bin/trickster -coverprofile=cover.out ./...
 	go tool cover -html=cover.out
 
 clean:
