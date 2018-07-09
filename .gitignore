@@ -28,3 +28,7 @@ vendor
 
 # The binary
 trickster
+
+# dep
+cacheKey.data
+cacheKey.expiration

@@ -1,9 +1,19 @@
 DEFAULT: build
 
+GO           ?= go
+GOFMT        ?= $(GO)fmt
+FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
+DEP          := $(FIRST_GOPATH)/bin/dep
+
 PROGVER = $(shell grep 'applicationVersion = ' main.go | awk '{print $$3}' | sed -e 's/\"//g')
 
-deps:
-	go get
+.PHONY: $(DEP)
+$(DEP):
+	GOOS= GOARCH= $(GO) get -u github.com/golang/dep/cmd/dep
+
+.PHONY: deps
+deps: $(DEP)
+	$(DEP) ensure
 
 build: deps
 	go build -o ${GOPATH}/bin/trickster
@@ -41,16 +51,16 @@ docker-release:
 style:
 	! gofmt -d $$(find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
-test:
-	go get github.com/alicebob/miniredis
+.PHONY: test
+test: deps
 	go test -o ${GOPATH}/bin/trickster -v ./...
 
-test-cover:
-	go get github.com/alicebob/miniredis
+.PHONY: test-cover
+test-cover: deps
 	go test -o ${GOPATH}/bin/trickster -coverprofile=cover.out ./...
 	go tool cover -html=cover.out
 
 clean:
 	rm ${GOPATH}/bin/trickster
 
-.PHONY: build helm-local kube-local docker docker-release clean deps
+.PHONY: build helm-local kube-local docker docker-release clean
