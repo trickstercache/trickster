@@ -12,4 +12,4 @@ matrix:
     - "1.10.x"
     - master
     script:
-    - make style build
+    - make style test build
