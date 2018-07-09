@@ -505,8 +505,11 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 
 		// Marshall the cache payload into a PrometheusMatrixEnvelope struct
 		err = json.Unmarshal([]byte(cachedBody), &ctx.Matrix)
+		// If there is an error unmarshaling the cache we should treat it as a cache miss
+		// and re-fetch from origin
 		if err != nil {
-			return nil, errors.Wrap(err, fmt.Sprintf("error unmarshalling cached data for key %q with content %q", ctx.CacheKey, cachedBody))
+			ctx.CacheLookupResult = crRangeMiss
+			return ctx, nil
 		}
 
 		// Get the Extents of the data in the cache
