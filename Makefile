@@ -4,6 +4,7 @@ GO           ?= go
 GOFMT        ?= $(GO)fmt
 FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
 DEP          := $(FIRST_GOPATH)/bin/dep
+TRICKSTER    := $(FIRST_GOPATH)/bin/trickster
 
 PROGVER = $(shell grep 'applicationVersion = ' main.go | awk '{print $$3}' | sed -e 's/\"//g')
 
@@ -15,15 +16,19 @@ $(DEP):
 deps: $(DEP)
 	$(DEP) ensure
 
+.PHONY: build
 build: deps
-	go build -o ${GOPATH}/bin/trickster
+	go build -o $(TRICKSTER)
 
+.PHONY: release
 release: build release-artifacts docker docker-release
 
+.PHONY: release-artifacts
 release-artifacts:
 	GOOS=darwin GOARCH=amd64 go build -o ./OPATH/trickster-$(PROGVER).darwin-amd64 && gzip -f ./OPATH/trickster-$(PROGVER).darwin-amd64
 	GOOS=linux  GOARCH=amd64 go build -o ./OPATH/trickster-$(PROGVER).linux-amd64  && gzip -f ./OPATH/trickster-$(PROGVER).linux-amd64
 
+.PHONY: helm-local
 helm-local:
 	kubectl config use-context minikube --namespace=trickster
 	kubectl scale --replicas=0 deployment/dev-trickster -n trickster
@@ -32,6 +37,7 @@ helm-local:
 	kubectl set image deployment/dev-trickster trickster=trickster:dev -n trickster
 	kubectl scale --replicas=1 deployment/dev-trickster -n trickster
 
+.PHONY: kube-local
 kube-local:
 	kubectl config use-context minikube
 	kubectl scale --replicas=0 deployment/trickster
@@ -40,9 +46,11 @@ kube-local:
 	kubectl set image deployment/trickster trickster=trickster:dev
 	kubectl scale --replicas=1 deployment/trickster
 
+.PHONY: docker
 docker:
 	docker build -f ./deploy/Dockerfile -t trickster:$(PROGVER) .
 
+.PHONY: docker-release
 docker-release:
 	docker tag trickster:$(PROGVER) tricksterio/trickster:$(PROGVER)
 	docker tag tricksterio/trickster:$(PROGVER) tricksterio/trickster:latest
@@ -53,14 +61,13 @@ style:
 
 .PHONY: test
 test: deps
-	go test -o ${GOPATH}/bin/trickster -v ./...
+	go test -o $(TRICKSTER) -v ./...
 
 .PHONY: test-cover
 test-cover: deps
-	go test -o ${GOPATH}/bin/trickster -coverprofile=cover.out ./...
+	go test -o $(TRICKSTER) -coverprofile=cover.out ./...
 	go tool cover -html=cover.out
 
+.PHONY: clean
 clean:
-	rm ${GOPATH}/bin/trickster
-
-.PHONY: build helm-local kube-local docker docker-release clean
+	rm $(TRICKSTER)
