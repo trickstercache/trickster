@@ -227,13 +227,13 @@ func TestTricksterHandler_pingHandler(t *testing.T) {
 	defer es.Close()
 	tr.setTestOrigin(es.URL)
 
-	// it should return 200 OK
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)
 	tr.pingHandler(w, r)
 
 	resp := w.Result()
 
+	// it should return 200 OK
 	if resp.StatusCode != 200 {
 		t.Errorf("wanted 200 got %d.", resp.StatusCode)
 	}
