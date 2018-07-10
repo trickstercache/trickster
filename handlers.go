@@ -317,7 +317,11 @@ func (t *TricksterHandler) getVectorFromPrometheus(url string, params url.Values
 	// Unmarshal the prometheus data into another PrometheusMatrixEnvelope
 	err = json.Unmarshal(body, &pe)
 	if err != nil {
-		return pe, nil, fmt.Errorf("Prometheus vector unmarshaling error for URL %q: %v", url, err)
+		// If we get a scalar response, we just want to return the resp without an error
+		// this will allow the upper layers to just use the raw response
+		if pe.Data.ResultType != "scalar" {
+			return pe, nil, fmt.Errorf("Prometheus vector unmarshaling error for URL %q: %v", url, err)
+		}
 	}
 
 	return pe, resp, nil
