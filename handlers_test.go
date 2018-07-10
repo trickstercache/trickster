@@ -220,6 +220,35 @@ func newTestServer(body string) *httptest.Server {
 	return s
 }
 
+func TestTricksterHandler_pingHandler(t *testing.T) {
+	tr, closeFn := newTestTricksterHandler(t)
+	defer closeFn(t)
+	es := newTestServer("{}")
+	defer es.Close()
+	tr.setTestOrigin(es.URL)
+
+	// it should return 200 OK
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", es.URL, nil)
+	tr.pingHandler(w, r)
+
+	resp := w.Result()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("wanted 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != "pong" {
+		t.Errorf("wanted 'pong' got %s.", bodyBytes)
+	}
+
+}
+
 func TestTricksterHandler_getOrigin(t *testing.T) {
 	tr, closeFn := newTestTricksterHandler(t)
 	defer closeFn(t)
