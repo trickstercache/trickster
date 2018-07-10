@@ -75,6 +75,7 @@ func main() {
 	router := mux.NewRouter()
 
 	// Health Check Paths
+	router.HandleFunc("/ping", t.pingHandler).Methods("GET")
 	router.HandleFunc("/{originMoniker}/"+mnHealth, t.promHealthCheckHandler).Methods("GET")
 	router.HandleFunc("/"+mnHealth, t.promHealthCheckHandler).Methods("GET")
 
