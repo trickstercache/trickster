@@ -164,7 +164,15 @@ func (t *TricksterHandler) promQueryHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	originURL := t.getOrigin(r).OriginURL + strings.Replace(path, "//", "/", 1)
-	params := r.URL.Query()
+
+	// Get the params from the User request so we can inspect them and pass on to prometheus
+	if err := r.ParseForm(); err != nil {
+		level.Error(t.Logger).Log(lfEvent, "error parsing form", lfDetail, err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	params := r.Form
+
 	body, resp, err := t.fetchPromQuery(originURL, params, r)
 	if err != nil {
 		level.Error(t.Logger).Log(lfEvent, "error fetching data from origin Prometheus", lfDetail, err.Error())
