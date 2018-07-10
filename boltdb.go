@@ -15,7 +15,7 @@ package main
 
 import (
 	"fmt"
-	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -34,16 +34,16 @@ type BoltDBCache struct {
 // Connect instantiates the BoltDBCache mutex map and starts the Expired Entry Reaper goroutine
 func (c *BoltDBCache) Connect() error {
 
-	fullPath := path.Join(c.Config.CachePath, c.Config.Filename)
+	dir, _ := filepath.Split(c.Config.Filename)
 
-	level.Info(c.T.Logger).Log("event", "boltdb cache setup", "cachePath", fullPath)
+	level.Info(c.T.Logger).Log("event", "boltdb cache setup", "cachePath", c.Config.Filename)
 
-	err := makeDirectory(c.Config.CachePath)
+	err := makeDirectory(dir)
 	if err != nil {
 		return err
 	}
 
-	c.dbh, err = bolt.Open(fullPath, 0644, &bolt.Options{Timeout: 1 * time.Second})
+	c.dbh, err = bolt.Open(c.Config.Filename, 0644, &bolt.Options{Timeout: 1 * time.Second})
 	if err != nil {
 		return err
 	}
@@ -156,7 +156,7 @@ func (c *BoltDBCache) Delete(cacheKey string) error {
 
 		err2 := b.Delete([]byte(dataKey))
 		if err2 != nil {
-			level.Error(c.T.Logger).Log("event", "boltdb cache key delete faiure", "key", dataKey, "reason", err2.Error())
+			level.Error(c.T.Logger).Log("event", "boltdb cache key delete failure", "key", dataKey, "reason", err2.Error())
 		}
 
 		c.T.ChannelCreateMtx.Lock()
