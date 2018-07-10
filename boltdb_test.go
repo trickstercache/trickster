@@ -22,7 +22,7 @@ import (
 func TestBoltDBCache_Connect(t *testing.T) {
 	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1}}
 	tr := TricksterHandler{Logger: log.NewNopLogger(), Config: &cfg}
-	bc := BoltDBCache{T: &tr, Config: BoltDBCacheConfig{CachePath: ".", Filename: "test.db", Bucket: "trickster_test"}}
+	bc := BoltDBCache{T: &tr, Config: BoltDBCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}}
 
 	// it should connect
 	err := bc.Connect()
@@ -37,7 +37,7 @@ func TestBoltDBCache_Connect(t *testing.T) {
 func TestBoltDBCache_Store(t *testing.T) {
 	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1}}
 	tr := TricksterHandler{Logger: log.NewNopLogger(), Config: &cfg}
-	bc := BoltDBCache{T: &tr, Config: BoltDBCacheConfig{CachePath: ".", Filename: "test.db", Bucket: "trickster_test"}}
+	bc := BoltDBCache{T: &tr, Config: BoltDBCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}}
 
 	err := bc.Connect()
 	if err != nil {
@@ -55,7 +55,7 @@ func TestBoltDBCache_Store(t *testing.T) {
 func TestBoltDBCache_Delete(t *testing.T) {
 	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1}}
 	tr := TricksterHandler{Logger: log.NewNopLogger(), Config: &cfg}
-	bc := BoltDBCache{T: &tr, Config: BoltDBCacheConfig{CachePath: ".", Filename: "test.db", Bucket: "trickster_test"}}
+	bc := BoltDBCache{T: &tr, Config: BoltDBCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}}
 
 	err := bc.Connect()
 	if err != nil {
@@ -80,7 +80,7 @@ func TestBoltDBCache_Delete(t *testing.T) {
 func TestBoltDBCache_Retrieve(t *testing.T) {
 	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1}}
 	tr := TricksterHandler{Logger: log.NewNopLogger(), Config: &cfg}
-	bc := BoltDBCache{T: &tr, Config: BoltDBCacheConfig{CachePath: ".", Filename: "test.db", Bucket: "trickster_test"}}
+	bc := BoltDBCache{T: &tr, Config: BoltDBCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}}
 
 	err := bc.Connect()
 	if err != nil {
