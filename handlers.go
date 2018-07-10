@@ -88,6 +88,14 @@ type TricksterHandler struct {
 
 // HTTP Handlers
 
+// pingHandler handles calls to /ping, which checks the health of the Trickster app, but not connectivity to upstream origins
+// it respond with 200 OK and "pong" so long as the HTTP Server is running and taking requests
+func (t *TricksterHandler) pingHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(hnCacheControl, hvNoCache)
+	w.WriteHeader(200)
+	w.Write([]byte("pong"))
+}
+
 // promHealthCheckHandler returns the health of Trickster
 // can't support multi-origin full proxy for path-based proxying
 func (t *TricksterHandler) promHealthCheckHandler(w http.ResponseWriter, r *http.Request) {
@@ -945,7 +953,7 @@ func (t *TricksterHandler) mergeMatrix(pe PrometheusMatrixEnvelope, pe2 Promethe
 		}
 
 		if !metricSetFound {
-			level.Debug(t.Logger).Log(lfEvent, "MergeMatrixEnvelopeNewMetric", lfDetail, "Did not find mergable metric set in cache", "metricFingerprint", result2.Metric.Fingerprint())
+			level.Debug(t.Logger).Log(lfEvent, "MergeMatrixEnvelopeNewMetric", lfDetail, "Did not find mergeable metric set in cache", "metricFingerprint", result2.Metric.Fingerprint())
 			// Couldn't find metrics with that name in the existing resultset, so this must
 			// be new for this poll. That's fine, just add it outright instead of merging.
 			pe.Data.Result = append(pe.Data.Result, result2)
