@@ -1,7 +1,7 @@
 # Health Checks
 
 ## Ping Endpoint
-Trickster provides a '/ping' endpoint that returns a response of `200 OK` and the word `pong` if Trickster is up and running.  The `/ping` endpoint does not check any proxy configurations or upstream origins.
+Trickster provides a `/ping` endpoint that returns a response of `200 OK` and the word `pong` if Trickster is up and running.  The `/ping` endpoint does not check any proxy configurations or upstream origins.
 
 ## Health Check Endpoint
 Trickster offers a `/health` endpoint for monitoring the health of the Trickster service and its upstream connection to the origin.  To test the upstream origin, Trickster will make a request to its labels endpoint (`/label/__name__/values`).
