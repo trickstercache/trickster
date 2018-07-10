@@ -105,7 +105,7 @@ func (t *TricksterHandler) promHealthCheckHandler(w http.ResponseWriter, r *http
 	path := prometheusAPIv1Path + mnLabels
 
 	originURL := t.getOrigin(r).OriginURL + strings.Replace(path, "//", "/", 1)
-	body, resp, _, err := t.getURL(hmGet, originURL, r.URL.Query(), getProxyableClientHeaders(r))
+	body, resp, _, err := t.getURL(r.Method, originURL, r.URL.Query(), getProxyableClientHeaders(r))
 	if err != nil {
 		level.Error(t.Logger).Log(lfEvent, "error fetching data from origin Prometheus", lfDetail, err.Error())
 		w.WriteHeader(http.StatusBadGateway)
@@ -136,7 +136,7 @@ func (t *TricksterHandler) promFullProxyHandler(w http.ResponseWriter, r *http.R
 	}
 
 	originURL := t.getOrigin(r).OriginURL + strings.Replace(path, "//", "/", 1)
-	body, resp, _, err := t.getURL(hmGet, originURL, r.URL.Query(), getProxyableClientHeaders(r))
+	body, resp, _, err := t.getURL(r.Method, originURL, r.URL.Query(), getProxyableClientHeaders(r))
 	if err != nil {
 		level.Error(t.Logger).Log(lfEvent, "error fetching data from origin Prometheus", lfDetail, err.Error())
 		w.WriteHeader(http.StatusBadGateway)
@@ -335,7 +335,7 @@ func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values
 	pe := PrometheusMatrixEnvelope{}
 
 	// Make the HTTP Request - don't use fetchPromQuery here, that is for instantaneous only.
-	body, resp, duration, err := t.getURL(hmGet, url, params, getProxyableClientHeaders(r))
+	body, resp, duration, err := t.getURL(r.Method, url, params, getProxyableClientHeaders(r))
 	if err != nil {
 		return pe, nil, 0, err
 	}
@@ -393,7 +393,7 @@ func (t *TricksterHandler) fetchPromQuery(originURL string, params url.Values, r
 	cachedBody, err := t.Cacher.Retrieve(cacheKey)
 	if err != nil {
 		// Cache Miss, we need to get it from prometheus
-		body, resp, duration, err = t.getURL(hmGet, originURL, params, getProxyableClientHeaders(r))
+		body, resp, duration, err = t.getURL(r.Method, originURL, params, getProxyableClientHeaders(r))
 		if err != nil {
 			return nil, nil, err
 		}
