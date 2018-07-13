@@ -882,6 +882,9 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 			writeResponse(r.Writer, body, resp)
 			r.WaitGroup.Done()
 		}
+		// Explicitly release the request context so that the underlying memory can be
+		// freed before the next request is received via the channel, which overwrites "r".
+		r = nil
 	}
 }
 
