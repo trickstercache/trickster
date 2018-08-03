@@ -604,7 +604,7 @@ func (t *TricksterHandler) respondToCacheHit(ctx *ClientRequestContext) {
 	r := &http.Response{}
 
 	// If Fast Forward is enabled and the request is a real-time request, go get that data
-	if !ctx.Origin.FastForwardDisable && !(ctx.RequestExtents.End < ctx.Time-ctx.StepMS) {
+	if !ctx.Origin.FastForwardDisable && !(ctx.RequestExtents.End < (ctx.Time*1000)-ctx.StepMS) {
 		// Query the latest points if Fast Forward is enabled
 		queryURL := ctx.Origin.OriginURL + mnQuery
 		originParams := url.Values{}
