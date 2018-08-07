@@ -50,18 +50,27 @@ type CachingConfig struct {
 	// CacheType represents the type of cache that we wish to use: "memory", "filesystem", or "redis"
 	CacheType     string                `toml:"cache_type"`
 	RecordTTLSecs int64                 `toml:"record_ttl_secs"`
-	Redis         RedisConfig           `toml:"redis"`
+	Redis         RedisCacheConfig      `toml:"redis"`
 	Filesystem    FilesystemCacheConfig `toml:"filesystem"`
 	ReapSleepMS   int64                 `toml:"reap_sleep_ms"`
 	Compression   bool                  `toml:"compression"`
+	BoltDB        BoltDBCacheConfig     `toml:"boltdb"`
 }
 
-// RedisConfig is a collection of Configurations for Connecting to Redis
-type RedisConfig struct {
+// RedisCacheConfig is a collection of Configurations for Connecting to Redis
+type RedisCacheConfig struct {
 	// Protocol represents the connection method (e.g., "tcp", "unix", etc.)
 	Protocol string `toml:"protocol"`
 	// Endpoint represents FQDN:port or IPAddress:Port of the Redis server
 	Endpoint string `toml:"endpoint"`
+}
+
+// BoltDBCacheConfig is a collection of Configurations for storing cached data on the Filesystem
+type BoltDBCacheConfig struct {
+	// Filename represents the filename (including path) of the BotlDB database
+	Filename string `toml:"filename"`
+	// Bucket represents the name of the bucket within BoltDB under which Trickster's keys will be stored.
+	Bucket string `toml:"bucket"`
 }
 
 // FilesystemCacheConfig is a collection of Configurations for storing cached data on the Filesystem
@@ -98,14 +107,21 @@ type LoggingConfig struct {
 
 // NewConfig returns a Config initialized with default values.
 func NewConfig() *Config {
+
+	defaultCachePath := "/tmp/trickster"
+
 	return &Config{
 		Caching: CachingConfig{
+
 			CacheType:     ctMemory,
 			RecordTTLSecs: 21600,
-			Redis:         RedisConfig{Protocol: "tcp", Endpoint: "redis:6379"},
-			Filesystem:    FilesystemCacheConfig{CachePath: "/tmp/trickster"},
-			ReapSleepMS:   1000,
-			Compression:   true,
+
+			Redis:      RedisCacheConfig{Protocol: "tcp", Endpoint: "redis:6379"},
+			Filesystem: FilesystemCacheConfig{CachePath: defaultCachePath},
+			BoltDB:     BoltDBCacheConfig{Filename: defaultCachePath + "/trickster.db", Bucket: "trickster"},
+
+			ReapSleepMS: 1000,
+			Compression: true,
 		},
 		Logging: LoggingConfig{
 			LogFile:  "",
