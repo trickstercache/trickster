@@ -31,6 +31,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/golang/snappy"
 	"github.com/gorilla/mux"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 )
 
@@ -87,6 +88,14 @@ type TricksterHandler struct {
 
 // HTTP Handlers
 
+// pingHandler handles calls to /ping, which checks the health of the Trickster app, but not connectivity to upstream origins
+// it respond with 200 OK and "pong" so long as the HTTP Server is running and taking requests
+func (t *TricksterHandler) pingHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(hnCacheControl, hvNoCache)
+	w.WriteHeader(200)
+	w.Write([]byte("pong"))
+}
+
 // promHealthCheckHandler returns the health of Trickster
 // can't support multi-origin full proxy for path-based proxying
 func (t *TricksterHandler) promHealthCheckHandler(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +105,7 @@ func (t *TricksterHandler) promHealthCheckHandler(w http.ResponseWriter, r *http
 	path := prometheusAPIv1Path + mnLabels
 
 	originURL := t.getOrigin(r).OriginURL + strings.Replace(path, "//", "/", 1)
-	body, resp, _, err := t.getURL(hmGet, originURL, r.URL.Query(), getProxyableClientHeaders(r))
+	body, resp, _, err := t.getURL(r.Method, originURL, r.URL.Query(), getProxyableClientHeaders(r))
 	if err != nil {
 		level.Error(t.Logger).Log(lfEvent, "error fetching data from origin Prometheus", lfDetail, err.Error())
 		w.WriteHeader(http.StatusBadGateway)
@@ -127,7 +136,7 @@ func (t *TricksterHandler) promFullProxyHandler(w http.ResponseWriter, r *http.R
 	}
 
 	originURL := t.getOrigin(r).OriginURL + strings.Replace(path, "//", "/", 1)
-	body, resp, _, err := t.getURL(hmGet, originURL, r.URL.Query(), getProxyableClientHeaders(r))
+	body, resp, _, err := t.getURL(r.Method, originURL, r.URL.Query(), getProxyableClientHeaders(r))
 	if err != nil {
 		level.Error(t.Logger).Log(lfEvent, "error fetching data from origin Prometheus", lfDetail, err.Error())
 		w.WriteHeader(http.StatusBadGateway)
@@ -155,7 +164,15 @@ func (t *TricksterHandler) promQueryHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	originURL := t.getOrigin(r).OriginURL + strings.Replace(path, "//", "/", 1)
-	params := r.URL.Query()
+
+	// Get the params from the User request so we can inspect them and pass on to prometheus
+	if err := r.ParseForm(); err != nil {
+		level.Error(t.Logger).Log(lfEvent, "error parsing form", lfDetail, err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	params := r.Form
+
 	body, resp, err := t.fetchPromQuery(originURL, params, r)
 	if err != nil {
 		level.Error(t.Logger).Log(lfEvent, "error fetching data from origin Prometheus", lfDetail, err.Error())
@@ -308,7 +325,11 @@ func (t *TricksterHandler) getVectorFromPrometheus(url string, params url.Values
 	// Unmarshal the prometheus data into another PrometheusMatrixEnvelope
 	err = json.Unmarshal(body, &pe)
 	if err != nil {
-		return pe, nil, fmt.Errorf("Prometheus vector unmarshaling error for URL %q: %v", url, err)
+		// If we get a scalar response, we just want to return the resp without an error
+		// this will allow the upper layers to just use the raw response
+		if pe.Data.ResultType != "scalar" {
+			return pe, nil, fmt.Errorf("Prometheus vector unmarshaling error for URL %q: %v", url, err)
+		}
 	}
 
 	return pe, resp, nil
@@ -318,7 +339,7 @@ func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values
 	pe := PrometheusMatrixEnvelope{}
 
 	// Make the HTTP Request - don't use fetchPromQuery here, that is for instantaneous only.
-	body, resp, duration, err := t.getURL(hmGet, url, params, getProxyableClientHeaders(r))
+	body, resp, duration, err := t.getURL(r.Method, url, params, getProxyableClientHeaders(r))
 	if err != nil {
 		return pe, nil, 0, err
 	}
@@ -376,7 +397,7 @@ func (t *TricksterHandler) fetchPromQuery(originURL string, params url.Values, r
 	cachedBody, err := t.Cacher.Retrieve(cacheKey)
 	if err != nil {
 		// Cache Miss, we need to get it from prometheus
-		body, resp, duration, err = t.getURL(hmGet, originURL, params, getProxyableClientHeaders(r))
+		body, resp, duration, err = t.getURL(r.Method, originURL, params, getProxyableClientHeaders(r))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -409,21 +430,24 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 	ctx.Origin.OriginURL += strings.Replace(ctx.Origin.APIPath+"/", "//", "/", 1)
 
 	// Get the params from the User request so we can inspect them and pass on to prometheus
-	ctx.RequestParams = r.URL.Query()
+	if err := r.ParseForm(); err != nil {
+		return nil, errors.Wrap(err, "unable to parse form")
+	}
+	ctx.RequestParams = r.Form
 
 	// Validate and parse the step value from the user request URL params.
 	if len(ctx.RequestParams[upStep]) == 0 {
 		return nil, fmt.Errorf("missing step parameter")
 	}
 	ctx.StepParam = ctx.RequestParams[upStep][0]
-	step, err := strconv.ParseInt(ctx.StepParam, 10, 64)
+	step, err := parseDuration(ctx.StepParam)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse parameter %q with value %q: %v", upStep, ctx.StepParam, err)
+		return nil, errors.Wrap(err, fmt.Sprintf("failed to parse parameter %q with value %q", upStep, ctx.StepParam))
 	}
 	if step <= 0 {
-		return nil, fmt.Errorf("step parameter %d <= 0, has to be positive", step)
+		return nil, fmt.Errorf("step parameter %v <= 0, has to be positive", step)
 	}
-	ctx.StepMS = step * 1000
+	ctx.StepMS = int64(step.Seconds() * 1000)
 
 	cacheKeyBase := ctx.Origin.OriginURL + ctx.StepParam
 	// if we have an authorization header, that should be part of the cache key to ensure only authorized users can access cached datasets
@@ -450,7 +474,7 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 
 	reqStart, err := parseTime(ctx.RequestParams[upStart][0])
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse parameter %q with value %q: %v", upStart, ctx.RequestParams[upStart][0], err)
+		return nil, errors.Wrap(err, fmt.Sprintf("failed to parse parameter %q with value %q", upStart, ctx.RequestParams[upStart][0]))
 	}
 
 	if len(ctx.RequestParams[upEnd]) == 0 {
@@ -459,7 +483,7 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 
 	reqEnd, err := parseTime(ctx.RequestParams[upEnd][0])
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse parameter %q with value %q: %v", upEnd, ctx.RequestParams[upEnd][0], err)
+		return nil, errors.Wrap(err, fmt.Sprintf("failed to parse parameter %q with value %q", upEnd, ctx.RequestParams[upEnd][0]))
 	}
 
 	ctx.RequestExtents.Start, ctx.RequestExtents.End = alignStepBoundaries(reqStart.Unix()*1000, reqEnd.Unix()*1000, ctx.StepMS, ctx.Time)
@@ -501,8 +525,11 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 
 		// Marshall the cache payload into a PrometheusMatrixEnvelope struct
 		err = json.Unmarshal([]byte(cachedBody), &ctx.Matrix)
+		// If there is an error unmarshaling the cache we should treat it as a cache miss
+		// and re-fetch from origin
 		if err != nil {
-			return nil, fmt.Errorf("error unmarshalling cached data for key %q with content %q: %v", ctx.CacheKey, cachedBody, err)
+			ctx.CacheLookupResult = crRangeMiss
+			return ctx, nil
 		}
 
 		// Get the Extents of the data in the cache
@@ -577,7 +604,7 @@ func (t *TricksterHandler) respondToCacheHit(ctx *ClientRequestContext) {
 	r := &http.Response{}
 
 	// If Fast Forward is enabled and the request is a real-time request, go get that data
-	if !ctx.Origin.FastForwardDisable && !(ctx.RequestExtents.End < ctx.Time-ctx.StepMS) {
+	if !ctx.Origin.FastForwardDisable && !(ctx.RequestExtents.End < (ctx.Time*1000)-ctx.StepMS) {
 		// Query the latest points if Fast Forward is enabled
 		queryURL := ctx.Origin.OriginURL + mnQuery
 		originParams := url.Values{}
@@ -855,6 +882,9 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 			writeResponse(r.Writer, body, resp)
 			r.WaitGroup.Done()
 		}
+		// Explicitly release the request context so that the underlying memory can be
+		// freed before the next request is received via the channel, which overwrites "r".
+		r = nil
 	}
 }
 
@@ -938,7 +968,7 @@ func (t *TricksterHandler) mergeMatrix(pe PrometheusMatrixEnvelope, pe2 Promethe
 		}
 
 		if !metricSetFound {
-			level.Debug(t.Logger).Log(lfEvent, "MergeMatrixEnvelopeNewMetric", lfDetail, "Did not find mergable metric set in cache", "metricFingerprint", result2.Metric.Fingerprint())
+			level.Debug(t.Logger).Log(lfEvent, "MergeMatrixEnvelopeNewMetric", lfDetail, "Did not find mergeable metric set in cache", "metricFingerprint", result2.Metric.Fingerprint())
 			// Couldn't find metrics with that name in the existing resultset, so this must
 			// be new for this poll. That's fine, just add it outright instead of merging.
 			pe.Data.Result = append(pe.Data.Result, result2)
@@ -1055,4 +1085,20 @@ func parseTime(s string) (time.Time, error) {
 		return t, nil
 	}
 	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
+}
+
+// parseDuration converts a duration URL parameter to time.Duration.
+// Copied from https://github.com/prometheus/prometheus/blob/v2.2.1/web/api/v1/api.go#L809-L821
+func parseDuration(s string) (time.Duration, error) {
+	if d, err := strconv.ParseFloat(s, 64); err == nil {
+		ts := d * float64(time.Second)
+		if ts > float64(math.MaxInt64) || ts < float64(math.MinInt64) {
+			return 0, fmt.Errorf("cannot parse %q to a valid duration. It overflows int64", s)
+		}
+		return time.Duration(ts), nil
+	}
+	if d, err := model.ParseDuration(s); err == nil {
+		return time.Duration(d), nil
+	}
+	return 0, fmt.Errorf("cannot parse %q to a valid duration", s)
 }

@@ -25,7 +25,7 @@ import (
 
 const (
 	applicationName    = "trickster"
-	applicationVersion = "0.0.16"
+	applicationVersion = "0.0.17"
 
 	// Log fields
 	lfEvent    = "event"
@@ -75,16 +75,17 @@ func main() {
 	router := mux.NewRouter()
 
 	// Health Check Paths
+	router.HandleFunc("/ping", t.pingHandler).Methods("GET")
 	router.HandleFunc("/{originMoniker}/"+mnHealth, t.promHealthCheckHandler).Methods("GET")
 	router.HandleFunc("/"+mnHealth, t.promHealthCheckHandler).Methods("GET")
 
 	// Path-based  multi-origin support - no support for full proxy of the prometheus UI, only querying
-	router.HandleFunc("/{originMoniker}"+prometheusAPIv1Path+mnQueryRange, t.promQueryRangeHandler).Methods("GET")
-	router.HandleFunc("/{originMoniker}"+prometheusAPIv1Path+mnQuery, t.promQueryHandler).Methods("GET")
+	router.HandleFunc("/{originMoniker}"+prometheusAPIv1Path+mnQueryRange, t.promQueryRangeHandler).Methods("GET", "POST")
+	router.HandleFunc("/{originMoniker}"+prometheusAPIv1Path+mnQuery, t.promQueryHandler).Methods("GET", "POST")
 	router.PathPrefix("/{originMoniker}" + prometheusAPIv1Path).HandlerFunc(t.promFullProxyHandler).Methods("GET")
 
-	router.HandleFunc(prometheusAPIv1Path+mnQueryRange, t.promQueryRangeHandler).Methods("GET")
-	router.HandleFunc(prometheusAPIv1Path+mnQuery, t.promQueryHandler).Methods("GET")
+	router.HandleFunc(prometheusAPIv1Path+mnQueryRange, t.promQueryRangeHandler).Methods("GET", "POST")
+	router.HandleFunc(prometheusAPIv1Path+mnQuery, t.promQueryHandler).Methods("GET", "POST")
 	router.PathPrefix(prometheusAPIv1Path).HandlerFunc(t.promFullProxyHandler).Methods("GET")
 
 	// Catch All for Single-Origin proxy
