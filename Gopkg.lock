@@ -14,13 +14,13 @@
   revision = "5a6b3ba71ee69b77cf64febf8b5a7526ca5eaef0"
 
 [[projects]]
-  branch = "master"
   name = "github.com/alicebob/miniredis"
   packages = [
     ".",
     "server"
   ]
   revision = "8890fdcfa933258e09a5b9b897270118064d70fd"
+  version = "2.4.4"
 
 [[projects]]
   branch = "master"
@@ -122,13 +122,19 @@
   version = "v1.0.0"
 
 [[projects]]
+  name = "github.com/pkg/errors"
+  packages = ["."]
+  revision = "645ef00459ed84a119197bfb8d8205042c6df63d"
+  version = "v0.8.0"
+
+[[projects]]
+  branch = "master"
   name = "github.com/prometheus/client_golang"
   packages = [
     "prometheus",
     "prometheus/promhttp"
   ]
-  revision = "c5b7fccd204277076155f10851dad72b76a49317"
-  version = "v0.8.0"
+  revision = "d6a9817c4afc94d51115e4a30d449056a3fbf547"
 
 [[projects]]
   branch = "master"
@@ -183,6 +189,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "8a24b331f567877ed84af621aa92de07a17d85839f9bc2043e90048c29066c2d"
+  inputs-digest = "547cf8110b1b7744f6a59abbdf8a1fc2bb52137164ef945aee72b8ad17b6c752"
   solver-name = "gps-cdcl"
   solver-version = 1

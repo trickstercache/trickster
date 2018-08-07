@@ -16,6 +16,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 
 	"github.com/go-kit/kit/log"
