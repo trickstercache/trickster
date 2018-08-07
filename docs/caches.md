@@ -22,12 +22,16 @@ The Filesystem Cache is a popular option when you have larger dashboard setup (e
 
 The default Filesystem Cache path is `/tmp/trickster`. The sample configuration demonstrates how to specify a custom cache path. Ensure that the user account running Trickster has read/write access to the custom directory or the application will exit on startup upon testing filesystem access. All users generally have access to /tmp so there is no concern about permissions in the default case.
 
+## BoltDB Cache
+
+The BoltDB Cache is a popular key/value store, created by [Ben Johnson](https://github.com/benbjohnson). [CoreOS's bbolt fork](https://github.com/coreos/bbolt) is the version implemented in Trickster. A BoltDB store is a filesystem-based solution that stores the entire database in a single file. Trickster, by default, creates the database at `/tmp/trickster/trickster.db` and uses a bucket name of 'trickster' for storing key/value data. See the example config file for details on customizing this aspect of your Trickster deployment. The same guidance about filesystem permissions described in the Filesystem Cache section above apply to a BoltDB Cache.
 
 ## Redis Cache
 
 Redis is a good option for larger dashboard setups that also have heavy user traffic, where you might see degraded performance with a Filesystem Cache. This allows Trickster to scale better than a Filesystem Cache, but you will need to provide your own Redis instance at which to point your Trickster instance. The default Redis endpoint is `redis:6379`, and should work for most docker and kube deployments with containers or services named `redis`. The sample configuration demonstrates how to customize the Redis endpoint. In addition to supporting TCP endpoints, Trickster supports Unix sockets for Trickster and Redis running on the same VM or bare-metal host.
 
 Ensure that your Redis instance is located close to your Trickster instance in order to minimize additional roundtrip latency.
+
 
 ## Purging the Cache
 

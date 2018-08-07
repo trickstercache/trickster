@@ -72,3 +72,11 @@
 [prune]
   go-tests = true
   unused-packages = true
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/alicebob/miniredis"
+
+[[constraint]]
+  name = "github.com/coreos/bbolt"
+  version = "1.3.0"
