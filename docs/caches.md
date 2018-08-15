@@ -24,7 +24,7 @@ The default Filesystem Cache path is `/tmp/trickster`. The sample configuration 
 
 ## BoltDB Cache
 
-The BoltDB Cache is a popular key/value store, created by [Ben Johnson](https://github.com/benbjohnson). [CoreOS's bbolt fork](https://github.com/coreos/bbolt) is the version implemented in Trickster. A BoltDB store is a filesystem-based solution that stores the entire database in a single file. Trickster, by default, creates the database at `/tmp/trickster/trickster.db` and uses a bucket name of 'trickster' for storing key/value data. See the example config file for details on customizing this aspect of your Trickster deployment. The same guidance about filesystem permissions described in the Filesystem Cache section above apply to a BoltDB Cache.
+The BoltDB Cache is a popular key/value store, created by [Ben Johnson](https://github.com/benbjohnson). [CoreOS's bbolt fork](https://github.com/coreos/bbolt) is the version implemented in Trickster. A BoltDB store is a filesystem-based solution that stores the entire database in a single file. Trickster, by default, creates the database at `trickster.db` and uses a bucket name of 'trickster' for storing key/value data. See the example config file for details on customizing this aspect of your Trickster deployment. The same guidance about filesystem permissions described in the Filesystem Cache section above apply to a BoltDB Cache.
 
 ## Redis Cache
 

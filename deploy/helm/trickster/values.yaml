@@ -10,6 +10,9 @@ cache:
     endpoint: redis:6379
   filesystem:
     path: /tmp/trickster
+  boltdb:
+    file: trickster.db
+    bucket: trickster
 # Put ints in quotes to ensure they aren't converted to scientific notations.
 # See https://github.com/kubernetes/helm/issues/1707
 recordTTLSecs: "21600"
