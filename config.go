@@ -63,6 +63,8 @@ type RedisCacheConfig struct {
 	Protocol string `toml:"protocol"`
 	// Endpoint represents FQDN:port or IPAddress:Port of the Redis server
 	Endpoint string `toml:"endpoint"`
+	// Password can be set when using password protected redis instance.
+	Password string `toml:"password"`
 }
 
 // BoltDBCacheConfig is a collection of Configurations for storing cached data on the Filesystem

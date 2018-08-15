@@ -36,6 +36,9 @@ func (r *RedisCache) Connect() error {
 		Network: r.Config.Protocol,
 		Addr:    r.Config.Endpoint,
 	})
+	if r.Config.Password != "" {
+		r.client.Options().Password = r.Config.Password
+	}
 	return r.client.Ping().Err()
 }
 
