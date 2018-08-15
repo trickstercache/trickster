@@ -47,7 +47,7 @@ type ProxyServerConfig struct {
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
 type CachingConfig struct {
-	// CacheType represents the type of cache that we wish to use: "memory", "filesystem", or "redis"
+	// CacheType represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
 	CacheType     string                `toml:"cache_type"`
 	RecordTTLSecs int64                 `toml:"record_ttl_secs"`
 	Redis         RedisCacheConfig      `toml:"redis"`
@@ -109,6 +109,7 @@ type LoggingConfig struct {
 func NewConfig() *Config {
 
 	defaultCachePath := "/tmp/trickster"
+	defaultBoltDBFile := "trickster.db"
 
 	return &Config{
 		Caching: CachingConfig{
@@ -118,7 +119,7 @@ func NewConfig() *Config {
 
 			Redis:      RedisCacheConfig{Protocol: "tcp", Endpoint: "redis:6379"},
 			Filesystem: FilesystemCacheConfig{CachePath: defaultCachePath},
-			BoltDB:     BoltDBCacheConfig{Filename: defaultCachePath + "/trickster.db", Bucket: "trickster"},
+			BoltDB:     BoltDBCacheConfig{Filename: defaultBoltDBFile, Bucket: "trickster"},
 
 			ReapSleepMS: 1000,
 			Compression: true,
