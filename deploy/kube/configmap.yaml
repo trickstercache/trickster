@@ -22,7 +22,7 @@ data:
 
     [cache]
         # cache_type defines what kind of cache Trickster uses
-        # options are 'memory', 'redis' and 'filesystem'.  'memory' is the default
+        # options are 'boltdb, 'filesystem', 'memory', and 'redis'.  'memory' is the default
         cache_type = 'memory'
 
         # record_ttl_secs defines the relative expiration of cached queries. default is 6 hours (21600 seconds)
@@ -31,19 +31,30 @@ data:
             # Configuration options when using a Redis Cache
             #[cache.redis]
 
-                # protocol defines the protocol for connecting to redis ('unix' or 'tcp') 'tcp' is default
-                #protocol = 'tcp'
+            # protocol defines the protocol for connecting to redis ('unix' or 'tcp') 'tcp' is default
+            #protocol = 'tcp'
 
-                # endpoint defines the fqdn+port or path to a unix socket file for connecting to redis
-                # default is 'redis:6379'
-                #endpoint = 'redis:6379'
+            # endpoint defines the fqdn+port or path to a unix socket file for connecting to redis
+            # default is 'redis:6379'
+            #endpoint = 'redis:6379'
 
             # Configuration options when using a Filesystem Cache
             #[cache.filesystem]
 
-                # cache_path defines the directory location under which the Trickster cache will be maintained
-                # default is '/tmp/trickster'
-                #cache_path = '/tmp/trickster'
+            # cache_path defines the directory location under which the Trickster cache will be maintained
+            # default is '/tmp/trickster'
+            #cache_path = '/tmp/trickster'
+            # Configuration options when using a BoltDb Cache
+            #[cache.boltdb]
+
+            # filename defines the file where the Trickster cache will be maintained
+            # default is 'trickster.db'
+            # filename = 'trickster.db'
+
+            # bucket defines the name of the BotlDb bucket (similar to a namespace) under which our key value store lives
+            # default is 'trickster'
+            # bucket = 'trickster'
+
 
     # Configuration options for mapping Origin(s)
     [origins]

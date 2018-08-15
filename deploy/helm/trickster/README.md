@@ -23,10 +23,12 @@ Parameter | Description | Default
 `ingress.tls` | TLS configuration for Trickster Ingress | `[]`
 `nodeSelector` | Node labels for pod assignment | `{}`
 `originURL` | Default trickster originURL, references a source Prometheus instance | `http://prometheus:9090`
-`cache.type` | The cache_type to use.  {memory, filesystem, redis} | `memory`
+`cache.type` | The cache_type to use.  {boltdb, filesystem, memory, redis} | `memory`
 `cache.redis.protocol` | The protocol for connecting to redis ('unix' or 'tcp') | `tcp`
 `cache.redis.endpoint` | The fqdn+port or path to a unix socket file for connecting to redis | `redis:6379`
 `cache.filesystem.path` | The directory location under which the Trickster filesystem cache will be maintained | `/tmp/trickster`
+`cache.boltdb.file` | The filename of the BoltDB database | `trickster.db`
+`cache.boltdb.bucket` | The name of the BoltDB bucket | `trickster`
 `recordTTLSecs` | The relative expiration of cached queries. default is 6 hours (21600 seconds) | `21600`
 `defaultStep` | The step (in seconds) of a query_range request if one is not provided by the client. This helps to correct improperly formed client requests. | `300`
 `maxValueAgeSecs` | The maximum age of specific datapoints in seconds. Default is 86400 (24 hours). | `86400`
