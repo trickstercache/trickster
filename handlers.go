@@ -662,6 +662,26 @@ func (t *TricksterHandler) queueRangeProxyRequest(ctx *ClientRequestContext) {
 }
 
 func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeRequests <-chan *ClientRequestContext) {
+	// Close handler goroutine if its request channel is empty.
+	go func() {
+		for {
+			time.Sleep(10 * time.Second)
+
+			t.ChannelCreateMtx.Lock()
+
+			if len(originRangeRequests) == 0 {
+				if _, ok := t.ResponseChannels[cacheKey]; ok {
+					close(t.ResponseChannels[cacheKey])
+					delete(t.ResponseChannels, cacheKey)
+					t.ChannelCreateMtx.Unlock()
+					return
+				}
+			}
+
+			t.ChannelCreateMtx.Unlock()
+		}
+	}()
+
 	for r := range originRangeRequests {
 		// get the cache data for this request again, in case anything about the record has changed
 		// between the time we queued the request and the time it was consumed from the channel
