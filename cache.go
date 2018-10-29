@@ -13,6 +13,10 @@
 
 package main
 
+import (
+	"fmt"
+)
+
 const (
 	// Cache interface types
 	ctMemory     = "memory"
@@ -39,7 +43,9 @@ func getCache(t *TricksterHandler) Cache {
 		return &BoltDBCache{Config: t.Config.Caching.BoltDB, T: t}
 	case ctRedis:
 		return &RedisCache{Config: t.Config.Caching.Redis, T: t}
-	default:
+	case ctMemory:
 		return &MemoryCache{T: t}
+	default:
+		panic(fmt.Errorf("Invalid cache type: %q", t.Config.Caching.CacheType))
 	}
 }
