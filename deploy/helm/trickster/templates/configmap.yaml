@@ -48,7 +48,6 @@ data:
             # cache_path defines the directory location under which the Trickster cache will be maintained
             # default is '/tmp/trickster'
             cache_path = {{ .Values.cache.filesystem.path | quote }}
-            {{- end }}
 
             {{- else if eq .Values.cache.type "boltdb" }}
             # Configuration options when using a BoltDb Cache
