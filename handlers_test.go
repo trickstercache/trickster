@@ -482,16 +482,27 @@ func TestAlignStepBoundaries(t *testing.T) {
 	tests := []struct {
 		start, end, stepMS, now int64
 		rangeStart, rangeEnd    int64
+		err                     bool
 	}{
 		{
 			1, 100, 10, 1000,
 			0, 100,
+			false,
+		},
+
+		{
+			100, 1, 10, 1000,
+			0, 0,
+			true,
 		},
 	}
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			s, e := alignStepBoundaries(test.start, test.end, test.stepMS, test.now)
+			s, e, err := alignStepBoundaries(test.start, test.end, test.stepMS, test.now)
+			if hasErr := err != nil; hasErr != test.err {
+				t.Fatalf("Mismatch in error: expected=%v actual=%v", test.err, hasErr)
+			}
 			if s != test.rangeStart {
 				t.Fatalf("Mismatch in rangeStart: expected=%d actual=%d", test.rangeStart, s)
 			}
