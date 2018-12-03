@@ -397,7 +397,7 @@ func TestTricksterHandler_getVectorFromPrometheus(t *testing.T) {
 
 	// it should get an empty vector envelope
 	r := httptest.NewRequest("GET", es.URL+exampleQuery, nil)
-	pe, _, err := tr.getVectorFromPrometheus(es.URL, r.URL.Query(), r)
+	pe, _, _, err := tr.getVectorFromPrometheus(es.URL, r.URL.Query(), r)
 	if err != nil {
 		t.Error(err)
 	}
@@ -415,7 +415,7 @@ func TestTricksterHandler_getMatrixFromPrometheus(t *testing.T) {
 
 	// it should get an empty matrix envelope
 	r := httptest.NewRequest("GET", es.URL+exampleRangeQuery, nil)
-	pe, _, _, err := tr.getMatrixFromPrometheus(es.URL, r.URL.Query(), r)
+	pe, _, _, _, err := tr.getMatrixFromPrometheus(es.URL, r.URL.Query(), r)
 	if err != nil {
 		t.Error(err)
 	}
