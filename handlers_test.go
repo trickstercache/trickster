@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 
 	"github.com/go-kit/kit/log"
@@ -474,5 +475,29 @@ func TestTricksterHandler_mergeVector(t *testing.T) {
 
 	if 8 != pe.getValueCount() {
 		t.Errorf("wanted 8 got %d.", pe.getValueCount())
+	}
+}
+
+func TestAlignStepBoundaries(t *testing.T) {
+	tests := []struct {
+		start, end, stepMS, now int64
+		rangeStart, rangeEnd    int64
+	}{
+		{
+			1, 100, 10, 1000,
+			0, 100,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			s, e := alignStepBoundaries(test.start, test.end, test.stepMS, test.now)
+			if s != test.rangeStart {
+				t.Fatalf("Mismatch in rangeStart: expected=%d actual=%d", test.rangeStart, s)
+			}
+			if e != test.rangeEnd {
+				t.Fatalf("Mismatch in rangeStart: expected=%d actual=%d", test.rangeEnd, e)
+			}
+		})
 	}
 }
