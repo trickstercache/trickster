@@ -979,7 +979,9 @@ func (t *TricksterHandler) mergeMatrix(pe PrometheusMatrixEnvelope, pe2 Promethe
 }
 
 // cropToRange crops the datasets in a given PrometheusMatrixEnvelope down to the provided start and end times
-func (pe PrometheusMatrixEnvelope) cropToRange(start int64, end int64) {
+func (pe *PrometheusMatrixEnvelope) cropToRange(start int64, end int64) {
+	seriesToRemove := make([]int, 0)
+
 	// iterate through each metric series in the result
 	for i := range pe.Data.Result {
 		if start > 0 {
@@ -993,6 +995,9 @@ func (pe PrometheusMatrixEnvelope) cropToRange(start int64, end int64) {
 					pe.Data.Result[i].Values = pe.Data.Result[i].Values[j:]
 					break
 				}
+			}
+			if int64(pe.Data.Result[i].Values[len(pe.Data.Result)-1].Timestamp) < start {
+				seriesToRemove = append(seriesToRemove, i)
 			}
 		}
 
@@ -1008,7 +1013,17 @@ func (pe PrometheusMatrixEnvelope) cropToRange(start int64, end int64) {
 					break
 				}
 			}
+			if len(pe.Data.Result[i].Values) > 0 && int64(pe.Data.Result[i].Values[0].Timestamp) > end {
+				if (len(seriesToRemove) > 0 && seriesToRemove[len(seriesToRemove)-1] != i) || len(seriesToRemove) == 0 {
+					seriesToRemove = append(seriesToRemove, i)
+				}
+			}
 		}
+	}
+
+	for i := len(seriesToRemove) - 1; i >= 0; i-- {
+		toRemove := seriesToRemove[i]
+		pe.Data.Result = append(pe.Data.Result[:toRemove], pe.Data.Result[toRemove+1:]...)
 	}
 }
 
