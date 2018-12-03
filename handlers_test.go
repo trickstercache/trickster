@@ -502,17 +502,27 @@ func TestAlignStepBoundaries(t *testing.T) {
 			0, 0,
 			true,
 		},
-
 		// query with start and end after now
 		{
 			2000, 3000, 10, 1,
 			0, 0,
 			true,
 		},
-
 		// query with start and end after now, with start after end
 		{
 			3000, 2000, 10, 1,
+			0, 0,
+			true,
+		},
+		// query with no step
+		{
+			1, 100, 0, 1,
+			0, 0,
+			true,
+		},
+		// query with negative step
+		{
+			1, 100, -10, 1,
 			0, 0,
 			true,
 		},

@@ -917,8 +917,8 @@ func alignStepBoundaries(start int64, end int64, stepMS int64, now int64) (int64
 	}
 
 	// Failsafe to 60s if something inexplicably happened to the step param
-	if stepMS == 0 {
-		stepMS = 60000
+	if stepMS <= 0 {
+		return 0, 0, fmt.Errorf("step must be > 0")
 	}
 
 	// Align start/end to step boundaries
