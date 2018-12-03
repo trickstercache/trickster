@@ -906,14 +906,14 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 }
 
 func alignStepBoundaries(start int64, end int64, stepMS int64, now int64) (int64, int64, error) {
-	// In case the user had the start/end parameters reversed chronologically, lets return an error
-	if start > end {
-		return 0, 0, fmt.Errorf("start is after end")
-	}
-
 	// Don't query beyond Time.Now() or charts will have weird data on the far right
 	if end > now*1000 {
 		end = now * 1000
+	}
+
+	// In case the user had the start/end parameters reversed chronologically, lets return an error
+	if start > end {
+		return 0, 0, fmt.Errorf("start is after end")
 	}
 
 	// Failsafe to 60s if something inexplicably happened to the step param

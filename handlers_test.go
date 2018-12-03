@@ -486,20 +486,33 @@ func TestAlignStepBoundaries(t *testing.T) {
 	}{
 		// Basic test
 		{
-			1, 100, 1, 1000,
+			1, 100, 1, 1,
 			1, 100,
 			false,
 		},
 		// Ensure that it aligns to the step interval
 		{
-			1, 100, 10, 1000,
+			1, 100, 10, 1,
 			0, 100,
 			false,
 		},
-
 		// query with start after end, ensure that it returns an error
 		{
-			100, 1, 10, 1000,
+			100, 1, 10, 1,
+			0, 0,
+			true,
+		},
+
+		// query with start and end after now
+		{
+			2000, 3000, 10, 1,
+			0, 0,
+			true,
+		},
+
+		// query with start and end after now, with start after end
+		{
+			3000, 2000, 10, 1,
 			0, 0,
 			true,
 		},
