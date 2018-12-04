@@ -486,7 +486,10 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 		return nil, errors.Wrap(err, fmt.Sprintf("failed to parse parameter %q with value %q", upEnd, ctx.RequestParams[upEnd][0]))
 	}
 
-	ctx.RequestExtents.Start, ctx.RequestExtents.End = alignStepBoundaries(reqStart.Unix()*1000, reqEnd.Unix()*1000, ctx.StepMS, ctx.Time)
+	ctx.RequestExtents.Start, ctx.RequestExtents.End, err = alignStepBoundaries(reqStart.Unix()*1000, reqEnd.Unix()*1000, ctx.StepMS, ctx.Time)
+	if err != nil {
+		return nil, errors.Wrap(err, "error aligning step boundary")
+	}
 
 	// setup some variables to determine and track the status of the query vs what's in the cache
 	ctx.Matrix = defaultPrometheusMatrixEnvelope()
@@ -902,29 +905,27 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 	}
 }
 
-func alignStepBoundaries(start int64, end int64, stepMS int64, now int64) (int64, int64) {
-	// In case the user had the start/end parameters reversed chronologically, we can fix that up for them
-	if start > end {
-		x := end
-		end = start
-		start = x
-	}
-
+func alignStepBoundaries(start int64, end int64, stepMS int64, now int64) (int64, int64, error) {
 	// Don't query beyond Time.Now() or charts will have weird data on the far right
 	if end > now*1000 {
 		end = now * 1000
 	}
 
+	// In case the user had the start/end parameters reversed chronologically, lets return an error
+	if start > end {
+		return 0, 0, fmt.Errorf("start is after end")
+	}
+
 	// Failsafe to 60s if something inexplicably happened to the step param
-	if stepMS == 0 {
-		stepMS = 60000
+	if stepMS <= 0 {
+		return 0, 0, fmt.Errorf("step must be > 0")
 	}
 
 	// Align start/end to step boundaries
 	start = (start / stepMS) * stepMS
 	end = ((end / stepMS) * stepMS)
 
-	return start, end
+	return start, end, nil
 }
 
 func (pe PrometheusMatrixEnvelope) getValueCount() int64 {

@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 
 	"github.com/go-kit/kit/log"
@@ -474,5 +475,71 @@ func TestTricksterHandler_mergeVector(t *testing.T) {
 
 	if 8 != pe.getValueCount() {
 		t.Errorf("wanted 8 got %d.", pe.getValueCount())
+	}
+}
+
+func TestAlignStepBoundaries(t *testing.T) {
+	tests := []struct {
+		start, end, stepMS, now int64
+		rangeStart, rangeEnd    int64
+		err                     bool
+	}{
+		// Basic test
+		{
+			1, 100, 1, 1,
+			1, 100,
+			false,
+		},
+		// Ensure that it aligns to the step interval
+		{
+			1, 100, 10, 1,
+			0, 100,
+			false,
+		},
+		// query with start after end, ensure that it returns an error
+		{
+			100, 1, 10, 1,
+			0, 0,
+			true,
+		},
+		// query with start and end after now
+		{
+			2000, 3000, 10, 1,
+			0, 0,
+			true,
+		},
+		// query with start and end after now, with start after end
+		{
+			3000, 2000, 10, 1,
+			0, 0,
+			true,
+		},
+		// query with no step
+		{
+			1, 100, 0, 1,
+			0, 0,
+			true,
+		},
+		// query with negative step
+		{
+			1, 100, -10, 1,
+			0, 0,
+			true,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			s, e, err := alignStepBoundaries(test.start, test.end, test.stepMS, test.now)
+			if hasErr := err != nil; hasErr != test.err {
+				t.Fatalf("Mismatch in error: expected=%v actual=%v", test.err, hasErr)
+			}
+			if s != test.rangeStart {
+				t.Fatalf("Mismatch in rangeStart: expected=%d actual=%d", test.rangeStart, s)
+			}
+			if e != test.rangeEnd {
+				t.Fatalf("Mismatch in rangeStart: expected=%d actual=%d", test.rangeEnd, e)
+			}
+		})
 	}
 }
