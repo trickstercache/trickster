@@ -1031,7 +1031,8 @@ func (pe *PrometheusMatrixEnvelope) cropToRange(start int64, end int64) {
 					break
 				}
 			}
-			if int64(pe.Data.Result[i].Values[len(pe.Data.Result)-1].Timestamp) < start {
+
+			if len(pe.Data.Result[i].Values) == 0 || int64(pe.Data.Result[i].Values[len(pe.Data.Result)-1].Timestamp) < start {
 				seriesToRemove = append(seriesToRemove, i)
 			}
 		}
@@ -1048,8 +1049,9 @@ func (pe *PrometheusMatrixEnvelope) cropToRange(start int64, end int64) {
 					break
 				}
 			}
-			if len(pe.Data.Result[i].Values) > 0 && int64(pe.Data.Result[i].Values[0].Timestamp) > end {
-				if (len(seriesToRemove) > 0 && seriesToRemove[len(seriesToRemove)-1] != i) || len(seriesToRemove) == 0 {
+
+			if len(pe.Data.Result[i].Values) == 0 || int64(pe.Data.Result[i].Values[0].Timestamp) > end {
+				if len(seriesToRemove) == 0 || seriesToRemove[len(seriesToRemove)-1] != i {
 					seriesToRemove = append(seriesToRemove, i)
 				}
 			}
