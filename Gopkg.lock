@@ -19,14 +19,14 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:82df807c12721df81914d7cbb4885218ec21d38f7744b11ec28b521f15e1edb4"
+  digest = "1:7cef26b012e0b3c0054864125354004087a0790dc8f1687cfb900bdc5f7c1b7e"
   name = "github.com/alicebob/miniredis"
   packages = [
     ".",
     "server",
   ]
   pruneopts = "UT"
-  revision = "8890fdcfa933258e09a5b9b897270118064d70fd"
+  revision = "cfad8aca71ccc62cda12ac78511441bb953fe717"
 
 [[projects]]
   branch = "master"
@@ -56,12 +56,12 @@
   version = "v0.8.0"
 
 [[projects]]
-  digest = "1:31a18dae27a29aa074515e43a443abfd2ba6deb6d69309d8d7ce789c45f34659"
+  digest = "1:4062bc6de62d73e2be342243cf138cf499b34d558876db8d9430e2149388a4d8"
   name = "github.com/go-logfmt/logfmt"
   packages = ["."]
   pruneopts = "UT"
-  revision = "390ab7935ee28ec6b286364bba9b4dd6410cb3d5"
-  version = "v0.3.0"
+  revision = "07c9b44f60d7ffdfb7d8efe1ad539965737836dc"
+  version = "v0.4.0"
 
 [[projects]]
   digest = "1:34a9a60fade37f8009ed4a19e02924198aba3eabfcc120ee5c6002b7de17212d"
@@ -89,20 +89,20 @@
   version = "v1.8.0"
 
 [[projects]]
-  digest = "1:ffc060c551980d37ee9e428ef528ee2813137249ccebb0bfc412ef83071cac91"
+  digest = "1:97df918963298c287643883209a2c3f642e6593379f97ab400c2a2e219ab647d"
   name = "github.com/golang/protobuf"
   packages = ["proto"]
   pruneopts = "UT"
-  revision = "925541529c1fa6821df4e44ce2723319eb2be768"
-  version = "v1.0.0"
+  revision = "aa810b61a9c79d51363740d207bb46cf8e620ed5"
+  version = "v1.2.0"
 
 [[projects]]
   branch = "master"
-  digest = "1:29a5ab9fa9e845fd8e8726f31b187d710afd271ef1eb32085fe3d604b7e06382"
+  digest = "1:4a0c6bb4805508a6287675fac876be2ac1182539ca8a32468d8128882e9d5009"
   name = "github.com/golang/snappy"
   packages = ["."]
   pruneopts = "UT"
-  revision = "553a641470496b2327abcac10b36396bd98e45c9"
+  revision = "2e65f85255dbc3072edf28d6b5b8efc472979f5a"
 
 [[projects]]
   digest = "1:38ec74012390146c45af1f92d46e5382b50531247929ff3a685d2b2be65155ac"
@@ -116,12 +116,12 @@
   version = "v2.0.0"
 
 [[projects]]
-  digest = "1:160eabf7a69910fd74f29c692718bc2437c1c1c7d4c9dea9712357752a70e5df"
+  digest = "1:c79fb010be38a59d657c48c6ba1d003a8aa651fa56b579d959d74573b7dff8e1"
   name = "github.com/gorilla/context"
   packages = ["."]
   pruneopts = "UT"
-  revision = "1ea25387ff6f684839d82767c1733ff4d4d15d0a"
-  version = "v1.1"
+  revision = "08b5f424b9271eedf6f9f0ce86cb9396ed337a42"
+  version = "v1.1.1"
 
 [[projects]]
   digest = "1:664d37ea261f0fc73dd17f4a1f5f46d01fbb0b0d75f6375af064824424109b7d"
@@ -148,12 +148,12 @@
   revision = "b84e30acd515aadc4b783ad4ff83aff3299bdfe0"
 
 [[projects]]
-  digest = "1:5985ef4caf91ece5d54817c11ea25f182697534f8ae6521eadcd628c142ac4b6"
+  digest = "1:ff5ebae34cfbf047d505ee150de27e60570e8c394b3b8fdbb720ff6ac71985fc"
   name = "github.com/matttproud/golang_protobuf_extensions"
   packages = ["pbutil"]
   pruneopts = "UT"
-  revision = "3247c84500bff8d9fb6d579d800f20b3e091582c"
-  version = "v1.0.0"
+  revision = "c12348ce28de40eed0136aa2b644d0ee0650e56c"
+  version = "v1.0.1"
 
 [[projects]]
   digest = "1:40e195917a951a8bf867cd05de2a46aaf1806c50cf92eebf4c16f78cd196f747"
@@ -164,27 +164,28 @@
   version = "v0.8.0"
 
 [[projects]]
-  branch = "master"
-  digest = "1:2331a3aa2a326722e1e808f131bcf0da9618399e763610e17da20ad25ecf2bfe"
+  digest = "1:26663fafdea73a38075b07e8e9d82fc0056379d2be8bb4e13899e8fda7c7dd23"
   name = "github.com/prometheus/client_golang"
   packages = [
     "prometheus",
+    "prometheus/internal",
     "prometheus/promhttp",
   ]
   pruneopts = "UT"
-  revision = "d6a9817c4afc94d51115e4a30d449056a3fbf547"
+  revision = "abad2d1bd44235a26707c172eab6bca5bf2dbad3"
+  version = "v0.9.1"
 
 [[projects]]
   branch = "master"
-  digest = "1:32d10bdfa8f09ecf13598324dba86ab891f11db3c538b6a34d1c3b5b99d7c36b"
+  digest = "1:2d5cd61daa5565187e1d96bae64dbbc6080dacf741448e9629c64fd93203b0d4"
   name = "github.com/prometheus/client_model"
   packages = ["go"]
   pruneopts = "UT"
-  revision = "99fa1f4be8e564e8a6b613da7fa6f46c9edafc6c"
+  revision = "5c3871d89910bfb32f5fcab2aa4b9ec68e65a99f"
 
 [[projects]]
   branch = "master"
-  digest = "1:d8eb54ba064d155389fdb417aca96e928404dd1a8054570da25c071096d2bd9b"
+  digest = "1:db712fde5d12d6cdbdf14b777f0c230f4ff5ab0be8e35b239fc319953ed577a4"
   name = "github.com/prometheus/common"
   packages = [
     "expfmt",
@@ -192,11 +193,11 @@
     "model",
   ]
   pruneopts = "UT"
-  revision = "38c53a9f4bfcd932d1b00bfc65e256a7fba6b37a"
+  revision = "4724e9255275ce38f7179b2478abeae4e28c904f"
 
 [[projects]]
   branch = "master"
-  digest = "1:f261e077bd68fcb94edbc27ca4964fca036aebb79423f1e5cd7389df18e38b7f"
+  digest = "1:d39e7c7677b161c2dd4c635a2ac196460608c7d8ba5337cc8cae5825a2681f8f"
   name = "github.com/prometheus/procfs"
   packages = [
     ".",
@@ -205,11 +206,11 @@
     "xfs",
   ]
   pruneopts = "UT"
-  revision = "780932d4fbbe0e69b84c34c20f5c8d0981e109ea"
+  revision = "1dc9a6cbc91aacc3e8b2d63db4d2e957a5394ac4"
 
 [[projects]]
   branch = "master"
-  digest = "1:0b3820dab04898566dda3451e758a4aef25cf35fd36ba46e123173c5ecd2ca5f"
+  digest = "1:8ae7ee611e7317a88b14b088e84e4cd31ac8368d3e95b30668ebd26c33db3275"
   name = "github.com/yuin/gopher-lua"
   packages = [
     ".",
@@ -218,15 +219,15 @@
     "pm",
   ]
   pruneopts = "UT"
-  revision = "46796da1b0b4794e1e341883a399f12cc7574b55"
+  revision = "a0dfe84f6227cda1c5f975bf3e35d55ae0d3df61"
 
 [[projects]]
   branch = "master"
-  digest = "1:99e9f259afc6328efa223a59cdcfac9f974a9708c5dc1512948c995069ed1a5b"
+  digest = "1:9399de11945e643d7131cf070736122b76800d92d57a80494bd9a4e73e6979f3"
   name = "golang.org/x/sys"
   packages = ["unix"]
   pruneopts = "UT"
-  revision = "378d26f46672a356c46195c28f61bdb4c0a781dd"
+  revision = "a5c9d58dba9a56f97aaa86f55e638b718c5a6c42"
 
 [[projects]]
   digest = "1:c805e517269b0ba4c21ded5836019ed7d16953d4026cb7d00041d039c7906be9"
