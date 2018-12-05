@@ -722,7 +722,7 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 					}
 
 					m.Lock()
-					if r == (&http.Response{}) || r.StatusCode != 200 {
+					if resp.StatusCode == 0 || r.StatusCode != 200 {
 						if r.StatusCode != 200 {
 							errorBody = b
 						}
@@ -761,7 +761,7 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 					}
 
 					m.Lock()
-					if r == (&http.Response{}) || r.StatusCode != 200 {
+					if resp.StatusCode == 0 || r.StatusCode != 200 {
 						if r.StatusCode != 200 {
 							errorBody = b
 						}
@@ -799,7 +799,7 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 					}
 
 					m.Lock()
-					if r == (&http.Response{}) || r.StatusCode != 200 {
+					if resp.StatusCode == 0 || r.StatusCode != 200 {
 						if r.StatusCode != 200 {
 							errorBody = b
 						}
