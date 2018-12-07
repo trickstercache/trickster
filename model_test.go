@@ -181,6 +181,33 @@ func TestPrometheusMatrixEnvelope_CropToRange(t *testing.T) {
 			start: 200,
 			end:   300,
 		},
+
+		// Case where we have more series then points
+		{
+			before: PrometheusMatrixEnvelope{
+				Data: PrometheusMatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{model.SamplePair{99, 1.5}},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{model.SamplePair{99, 1.5}},
+						},
+					},
+				},
+			},
+			after: PrometheusMatrixEnvelope{
+				Data: PrometheusMatrixData{
+					ResultType: "matrix",
+					Result:     model.Matrix{},
+				},
+			},
+			start: 200,
+			end:   300,
+		},
 	}
 
 	for i, test := range tests {
