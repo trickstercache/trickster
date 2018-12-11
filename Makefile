@@ -18,7 +18,23 @@ deps: $(DEP)
 
 .PHONY: build
 build: deps
-	go build -o $(TRICKSTER)
+	go build
+
+rpm: build
+	mkdir -p ./OPATH/SOURCES
+	cp -p trickster ./OPATH/SOURCES/
+	cp conf/trickster.service ./OPATH/SOURCES/
+	sed -e 's%^# log_file =.*$$%log_file = "/var/log/trickster/trickster.log"%' \
+		-e 's%prometheus:9090%localhost:9090%' \
+		< conf/example.conf > ./OPATH/SOURCES/trickster.conf
+	rpmbuild --define "_topdir $(CURDIR)/OPATH" \
+		--define "_version $(PROGVER)" \
+		--define "_release 1" \
+		-ba trickster.spec
+
+.PHONY: install
+install: deps
+	echo go build -o $(TRICKSTER) $(PROGVER)
 
 .PHONY: release
 release: build release-artifacts docker docker-release
@@ -70,4 +86,4 @@ test-cover: deps
 
 .PHONY: clean
 clean:
-	rm $(TRICKSTER)
+	rm -rf ./trickster ./OPATH ./vendor
