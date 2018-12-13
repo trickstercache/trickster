@@ -71,3 +71,9 @@ The Makefile provides several targets:
 ## Contributing
 
 Refer to [CONTRIBUTING.md](CONTRIBUTING.md)
+
+## Who uses Trickster?
+
+As the Trickster community grows, we'd like to keep track of who is using it in their stack. We invite you to submit a PR with your company name and @githubhandle to be included on the list.
+
+1. [Comcast](https://comcast.github.io) [[@jranson](https://github.com/jranson)]
