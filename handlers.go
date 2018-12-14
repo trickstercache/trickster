@@ -92,7 +92,7 @@ type TricksterHandler struct {
 // it respond with 200 OK and "pong" so long as the HTTP Server is running and taking requests
 func (t *TricksterHandler) pingHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(hnCacheControl, hvNoCache)
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("pong"))
 }
 
@@ -300,7 +300,7 @@ func (t *TricksterHandler) getURL(method string, uri string, params url.Values, 
 		return nil, nil, 0, fmt.Errorf("error reading body from HTTP response for URL %q: %v", uri, err)
 	}
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		// We don't want to return non-200 status codes as internal Go errors,
 		// as we want to proxy those status codes all the way back to the user.
 		level.Warn(t.Logger).Log(lfEvent, "error downloading URL", "url", uri, "status", resp.Status)
@@ -344,7 +344,7 @@ func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values
 		return pe, nil, nil, 0, err
 	}
 
-	if resp.StatusCode == 200 {
+	if resp.StatusCode == http.StatusOK {
 		// Unmarshal the prometheus data into another PrometheusMatrixEnvelope
 		err := json.Unmarshal(body, &pe)
 		if err != nil {
@@ -408,7 +408,7 @@ func (t *TricksterHandler) fetchPromQuery(originURL string, params url.Values, r
 		// Cache hit, return the data set
 		body = []byte(cachedBody)
 		cacheResult = crHit
-		resp.StatusCode = 200
+		resp.StatusCode = http.StatusOK
 	}
 
 	t.Metrics.CacheRequestStatus.WithLabelValues(originURL, otPrometheus, mnQuery, cacheResult, strconv.Itoa(resp.StatusCode)).Inc()
@@ -622,7 +622,7 @@ func (t *TricksterHandler) respondToCacheHit(ctx *ClientRequestContext) {
 			return
 		}
 		r = resp
-		if resp.StatusCode == 200 && ffd.Status == rvSuccess {
+		if resp.StatusCode == http.StatusOK && ffd.Status == rvSuccess {
 			ctx.Matrix = t.mergeVector(ctx.Matrix, ffd)
 		}
 	}
@@ -643,7 +643,7 @@ func writeResponse(w http.ResponseWriter, body []byte, resp *http.Response) {
 	setResponseHeaders(w)
 
 	if resp.StatusCode == 0 {
-		resp.StatusCode = 200
+		resp.StatusCode = http.StatusOK
 	}
 
 	w.WriteHeader(resp.StatusCode)
@@ -742,15 +742,15 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 					}
 
 					m.Lock()
-					if resp.StatusCode == 0 || r.StatusCode != 200 {
-						if r.StatusCode != 200 {
+					if resp.StatusCode == 0 || r.StatusCode != http.StatusOK {
+						if r.StatusCode != http.StatusOK {
 							errorBody = b
 						}
 						resp = r
 					}
 					m.Unlock()
 
-					if r.StatusCode == 200 && ldd.Status == rvSuccess {
+					if r.StatusCode == http.StatusOK && ldd.Status == rvSuccess {
 						lowerDeltaData = ldd
 						t.Metrics.ProxyRequestDuration.WithLabelValues(ctx.Origin.OriginURL, otPrometheus,
 							mnQueryRange, ctx.CacheLookupResult, strconv.Itoa(r.StatusCode)).Observe(duration.Seconds())
@@ -781,15 +781,15 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 					}
 
 					m.Lock()
-					if resp.StatusCode == 0 || r.StatusCode != 200 {
-						if r.StatusCode != 200 {
+					if resp.StatusCode == 0 || r.StatusCode != http.StatusOK {
+						if r.StatusCode != http.StatusOK {
 							errorBody = b
 						}
 						resp = r
 					}
 					m.Unlock()
 
-					if r != nil && r.StatusCode == 200 && udd.Status == rvSuccess {
+					if r != nil && r.StatusCode == http.StatusOK && udd.Status == rvSuccess {
 						upperDeltaData = udd
 						t.Metrics.ProxyRequestDuration.WithLabelValues(ctx.Origin.OriginURL, otPrometheus,
 							mnQueryRange, ctx.CacheLookupResult, strconv.Itoa(r.StatusCode)).Observe(duration.Seconds())
@@ -819,15 +819,15 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 					}
 
 					m.Lock()
-					if resp.StatusCode == 0 || r.StatusCode != 200 {
-						if r.StatusCode != 200 {
+					if resp.StatusCode == 0 || r.StatusCode != http.StatusOK {
+						if r.StatusCode != http.StatusOK {
 							errorBody = b
 						}
 						resp = r
 					}
 					m.Unlock()
 
-					if r != nil && r.StatusCode == 200 && ffd.Status == rvSuccess {
+					if r != nil && r.StatusCode == http.StatusOK && ffd.Status == rvSuccess {
 						fastForwardData = ffd
 					}
 				}()
@@ -912,7 +912,7 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 				continue
 			}
 
-			if resp.StatusCode != 200 {
+			if resp.StatusCode != http.StatusOK {
 				writeResponse(r.Writer, errorBody, resp)
 			} else {
 				writeResponse(r.Writer, body, resp)
