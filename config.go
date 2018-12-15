@@ -15,6 +15,7 @@ package main
 
 import "github.com/BurntSushi/toml"
 
+// Config is the main configuration object
 type Config struct {
 	Caching          CachingConfig                     `toml:"cache"`
 	DefaultOriginURL string                            // to capture a CLI origin url

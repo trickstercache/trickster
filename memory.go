@@ -67,6 +67,7 @@ func (c *MemoryCache) Reap() {
 	}
 }
 
+// ReapOnce makes a single iteration through the cache to to find and remove expired elements
 func (c *MemoryCache) ReapOnce() {
 	now := time.Now().Unix()
 

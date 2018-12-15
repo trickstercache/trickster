@@ -360,7 +360,7 @@ func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values
 // fetchPromQuery does not do any data marshalling
 func (t *TricksterHandler) fetchPromQuery(originURL string, params url.Values, r *http.Request) ([]byte, *http.Response, error) {
 	var ttl int64 = 15
-	var end int64 = 0
+	var end int64
 	var err error
 
 	cacheKeyBase := originURL
