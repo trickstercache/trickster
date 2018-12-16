@@ -185,6 +185,7 @@ func (c *BoltDBCache) Reap() {
 
 }
 
+// ReapOnce makes a single iteration through the cache to to find and remove expired elements
 func (c *BoltDBCache) ReapOnce() {
 
 	now := time.Now().Unix()

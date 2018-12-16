@@ -62,11 +62,12 @@ func (r *RedisCache) Reap() {
 	}
 }
 
+// ReapOnce makes a single iteration through the Response Channels to remove orphaned channels due to Redis Cache Expiration
 func (r *RedisCache) ReapOnce() {
 	var keys []string
 
 	r.T.ChannelCreateMtx.Lock()
-	for key, _ := range r.T.ResponseChannels {
+	for key := range r.T.ResponseChannels {
 		keys = append(keys, key)
 	}
 	r.T.ChannelCreateMtx.Unlock()

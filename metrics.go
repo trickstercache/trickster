@@ -33,6 +33,7 @@ type ApplicationMetrics struct {
 	ProxyRequestDuration *prometheus.HistogramVec
 }
 
+// Unregister removes registered metrics from the Prometheus metrics instrumentation.
 func (metrics ApplicationMetrics) Unregister() {
 	prometheus.Unregister(metrics.CacheRequestStatus)
 	prometheus.Unregister(metrics.CacheRequestElements)
