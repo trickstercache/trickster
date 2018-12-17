@@ -77,3 +77,5 @@ Refer to [CONTRIBUTING.md](CONTRIBUTING.md)
 As the Trickster community grows, we'd like to keep track of who is using it in their stack. We invite you to submit a PR with your company name and @githubhandle to be included on the list.
 
 1. [Comcast](https://comcast.github.io) [[@jranson](https://github.com/jranson)]
+2. [Selfnet e.V.](https://www.selfnet.de/) [[@ThoreKr](https://github.com/ThoreKr)]
+
