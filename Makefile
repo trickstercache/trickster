@@ -30,7 +30,7 @@ rpm: build
 	rpmbuild --define "_topdir $(CURDIR)/OPATH" \
 		--define "_version $(PROGVER)" \
 		--define "_release 1" \
-		-ba trickster.spec
+		-ba deploy/packaging/trickster.spec
 
 .PHONY: install
 install: deps
