@@ -21,10 +21,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strconv"
 	"testing"
 
 	"github.com/go-kit/kit/log"
+	"github.com/prometheus/common/model"
 )
 
 const (
@@ -475,6 +477,71 @@ func TestTricksterHandler_mergeVector(t *testing.T) {
 
 	if 8 != pe.getValueCount() {
 		t.Errorf("wanted 8 got %d.", pe.getValueCount())
+	}
+}
+
+func TestTricksterHandler_mergeMatrix(t *testing.T) {
+	tests := []struct {
+		a, b, merged PrometheusMatrixEnvelope
+	}{
+		{
+			a: PrometheusMatrixEnvelope{
+				Status: rvSuccess,
+				Data: PrometheusMatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{1, 1.5},
+							},
+						},
+					},
+				},
+			},
+			b: PrometheusMatrixEnvelope{
+				Status: rvSuccess,
+				Data: PrometheusMatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{1, 1.5},
+								model.SamplePair{2, 1.5},
+							},
+						},
+					},
+				},
+			},
+			merged: PrometheusMatrixEnvelope{
+				Status: rvSuccess,
+				Data: PrometheusMatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{1, 1.5},
+								model.SamplePair{2, 1.5},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	tr, closeTr := newTestTricksterHandler(t)
+	defer closeTr(t)
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			merged := tr.mergeMatrix(test.a, test.b)
+			if !reflect.DeepEqual(merged, test.merged) {
+				t.Fatalf("Mismatch\nactual=%v\nexpected=%v", merged, test.merged)
+			}
+		})
 	}
 }
 

@@ -993,12 +993,23 @@ func (t *TricksterHandler) mergeMatrix(pe PrometheusMatrixEnvelope, pe2 Promethe
 	for i := range pe2.Data.Result {
 		metricSetFound := false
 		result2 := pe2.Data.Result[i]
+	METRIC_MERGE:
 		for j := range pe.Data.Result {
 			result1 := pe.Data.Result[j]
 			if result2.Metric.Equal(result1.Metric) {
 				metricSetFound = true
-				pe.Data.Result[j].Values = append(pe2.Data.Result[i].Values, pe.Data.Result[j].Values...)
-				break
+				// Ensure that we don't duplicate datapoints or put points out-of-order
+				// This method assumes that `pe2` is "before" `pe`, we need to actually
+				// check and enforce that assumption
+				last := pe.Data.Result[j].Values[len(pe.Data.Result[j].Values)-1]
+				for x, v := range pe2.Data.Result[i].Values {
+					fmt.Println(v.Timestamp, last.Timestamp)
+					if v.Timestamp > last.Timestamp {
+						pe.Data.Result[j].Values = append(pe2.Data.Result[i].Values, pe.Data.Result[j].Values[x:]...)
+						break METRIC_MERGE
+					}
+				}
+				break METRIC_MERGE
 			}
 		}
 
