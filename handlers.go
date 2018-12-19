@@ -1003,7 +1003,6 @@ func (t *TricksterHandler) mergeMatrix(pe PrometheusMatrixEnvelope, pe2 Promethe
 				// check and enforce that assumption
 				last := pe.Data.Result[j].Values[len(pe.Data.Result[j].Values)-1]
 				for x, v := range pe2.Data.Result[i].Values {
-					fmt.Println(v.Timestamp, last.Timestamp)
 					if v.Timestamp > last.Timestamp {
 						pe.Data.Result[j].Values = append(pe2.Data.Result[i].Values, pe.Data.Result[j].Values[x:]...)
 						break METRIC_MERGE
