@@ -484,6 +484,148 @@ func TestTricksterHandler_mergeMatrix(t *testing.T) {
 	tests := []struct {
 		a, b, merged PrometheusMatrixEnvelope
 	}{
+		// Series that adhere to rule
+		{
+			a: PrometheusMatrixEnvelope{
+				Status: rvSuccess,
+				Data: PrometheusMatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{10, 1.5},
+							},
+						},
+					},
+				},
+			},
+			b: PrometheusMatrixEnvelope{
+				Status: rvSuccess,
+				Data: PrometheusMatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{1, 1.5},
+								model.SamplePair{5, 1.5},
+							},
+						},
+					},
+				},
+			},
+			merged: PrometheusMatrixEnvelope{
+				Status: rvSuccess,
+				Data: PrometheusMatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{1, 1.5},
+								model.SamplePair{5, 1.5},
+								model.SamplePair{10, 1.5},
+							},
+						},
+					},
+				},
+			},
+		},
+		// Empty second series
+		{
+			a: PrometheusMatrixEnvelope{
+				Status: rvSuccess,
+				Data: PrometheusMatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{10, 1.5},
+							},
+						},
+					},
+				},
+			},
+			b: PrometheusMatrixEnvelope{
+				Status: rvSuccess,
+				Data: PrometheusMatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{},
+						},
+					},
+				},
+			},
+			merged: PrometheusMatrixEnvelope{
+				Status: rvSuccess,
+				Data: PrometheusMatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{10, 1.5},
+							},
+						},
+					},
+				},
+			},
+		},
+		// Series that have too many points in the second series
+		{
+			a: PrometheusMatrixEnvelope{
+				Status: rvSuccess,
+				Data: PrometheusMatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{10, 1.5},
+							},
+						},
+					},
+				},
+			},
+			b: PrometheusMatrixEnvelope{
+				Status: rvSuccess,
+				Data: PrometheusMatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{1, 1.5},
+								model.SamplePair{5, 1.5},
+								model.SamplePair{10, 1.5},
+								model.SamplePair{15, 1.5},
+							},
+						},
+					},
+				},
+			},
+			merged: PrometheusMatrixEnvelope{
+				Status: rvSuccess,
+				Data: PrometheusMatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{1, 1.5},
+								model.SamplePair{5, 1.5},
+								model.SamplePair{10, 1.5},
+							},
+						},
+					},
+				},
+			},
+		},
+		// Series that don't adhere to rules
 		{
 			a: PrometheusMatrixEnvelope{
 				Status: rvSuccess,
@@ -507,7 +649,6 @@ func TestTricksterHandler_mergeMatrix(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "a"},
 							Values: []model.SamplePair{
-								model.SamplePair{1, 1.5},
 								model.SamplePair{2, 1.5},
 							},
 						},
@@ -523,7 +664,6 @@ func TestTricksterHandler_mergeMatrix(t *testing.T) {
 							Metric: model.Metric{"__name__": "a"},
 							Values: []model.SamplePair{
 								model.SamplePair{1, 1.5},
-								model.SamplePair{2, 1.5},
 							},
 						},
 					},
