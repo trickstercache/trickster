@@ -1001,10 +1001,11 @@ func (t *TricksterHandler) mergeMatrix(pe PrometheusMatrixEnvelope, pe2 Promethe
 				// Ensure that we don't duplicate datapoints or put points out-of-order
 				// This method assumes that `pe2` is "before" `pe`, we need to actually
 				// check and enforce that assumption
-				last := pe.Data.Result[j].Values[len(pe.Data.Result[j].Values)-1]
-				for x, v := range pe2.Data.Result[i].Values {
-					if v.Timestamp > last.Timestamp {
-						pe.Data.Result[j].Values = append(pe2.Data.Result[i].Values, pe.Data.Result[j].Values[x:]...)
+				first := result1.Values[0]
+				for x := len(result2.Values) - 1; x >= 0; x-- {
+					v := result2.Values[x]
+					if v.Timestamp < first.Timestamp {
+						result1.Values = append(result2.Values[:x+1], result1.Values...)
 						break METRIC_MERGE
 					}
 				}
