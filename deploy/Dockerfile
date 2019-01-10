@@ -1,4 +1,4 @@
-FROM golang:1.11.2 as builder
+FROM golang:1.11.4 as builder
 
 COPY . /go/src/github.com/Comcast/trickster
 WORKDIR /go/src/github.com/Comcast/trickster
