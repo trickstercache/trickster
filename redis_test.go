@@ -29,7 +29,7 @@ func setupRedisCache() (RedisCache, func()) {
 	tr := TricksterHandler{
 		Logger:           log.NewNopLogger(),
 		ResponseChannels: make(map[string]chan *ClientRequestContext),
-		Config:		  &cfg,
+		Config:           &cfg,
 	}
 	rcfg := RedisCacheConfig{Endpoint: s.Addr()}
 	close := func() {
