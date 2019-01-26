@@ -39,6 +39,7 @@ func (r *RedisCache) Connect() error {
 	if r.Config.Password != "" {
 		r.client.Options().Password = r.Config.Password
 	}
+	go r.Reap()
 	return r.client.Ping().Err()
 }
 
@@ -69,23 +70,30 @@ func (r *RedisCache) ReapOnce() {
 	r.T.ChannelCreateMtx.Lock()
 	for key := range r.T.ResponseChannels {
 		keys = append(keys, key)
+
 	}
 	r.T.ChannelCreateMtx.Unlock()
 
-	for _, key := range keys {
-		_, err := r.client.Get(key).Result()
-		if err == redis.Nil {
-			level.Debug(r.T.Logger).Log("event", "redis cache reap", "key", key)
+	if len(keys) > 0 {
+		results, err := r.client.MGet(keys...).Result()
+		if err != nil {
+			level.Debug(r.T.Logger).Log("event", "error fetching values in bulk from redis cache", "MGetDetail", err)
+		}
 
-			r.T.ChannelCreateMtx.Lock()
+		for i, key := range keys {
+			if results[i] == nil {
+				level.Debug(r.T.Logger).Log("event", "redis cache reap", "key", key)
 
-			// Close out the channel if it exists
-			if _, ok := r.T.ResponseChannels[key]; ok {
-				close(r.T.ResponseChannels[key])
-				delete(r.T.ResponseChannels, key)
+				r.T.ChannelCreateMtx.Lock()
+
+				// Close out the channel if it exists
+				if _, ok := r.T.ResponseChannels[key]; ok {
+					close(r.T.ResponseChannels[key])
+					delete(r.T.ResponseChannels, key)
+				}
+
+				r.T.ChannelCreateMtx.Unlock()
 			}
-
-			r.T.ChannelCreateMtx.Unlock()
 		}
 	}
 }
