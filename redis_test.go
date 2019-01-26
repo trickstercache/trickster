@@ -25,9 +25,11 @@ func setupRedisCache() (RedisCache, func()) {
 	if err != nil {
 		panic(err)
 	}
+	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1000}}
 	tr := TricksterHandler{
 		Logger:           log.NewNopLogger(),
 		ResponseChannels: make(map[string]chan *ClientRequestContext),
+		Config:		  &cfg,
 	}
 	rcfg := RedisCacheConfig{Endpoint: s.Addr()}
 	close := func() {
