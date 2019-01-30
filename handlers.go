@@ -857,7 +857,7 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 			}
 
 			// Prune any old points based on retention policy
-			ctx.Matrix.cropToRange(ctx.Time-ctx.Origin.MaxValueAgeSecs, 0)
+			ctx.Matrix.cropToRange(int64(ctx.Time-ctx.Origin.MaxValueAgeSecs)*1000, 0)
 
 			// If it's not a full cache hit, we want to write this back to the cache
 			if ctx.CacheLookupResult != crHit {
