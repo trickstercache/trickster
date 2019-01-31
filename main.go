@@ -25,7 +25,7 @@ import (
 
 const (
 	applicationName    = "trickster"
-	applicationVersion = "0.1.6"
+	applicationVersion = "0.1.7"
 
 	// Log fields
 	lfEvent    = "event"
