@@ -90,6 +90,7 @@ type PrometheusOriginConfig struct {
 	IgnoreNoCacheHeader bool   `toml:"ignore_no_cache_header"`
 	MaxValueAgeSecs     int64  `toml:"max_value_age_secs"`
 	FastForwardDisable  bool   `toml:"fast_forward_disable"`
+	NoCacheLastDataSecs int64  `toml:"no_cache_last_data_secs"`
 }
 
 // MetricsConfig is a collection of Metrics Collection configurations

@@ -861,8 +861,13 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 
 			// If it's not a full cache hit, we want to write this back to the cache
 			if ctx.CacheLookupResult != crHit {
+				cacheMatrix := ctx.Matrix.copy()
+				if ctx.Origin.NoCacheLastDataSecs != 0 {
+					cacheMatrix.cropToRange(0, int64(ctx.Time-ctx.Origin.NoCacheLastDataSecs)*1000)
+				}
+
 				// Marshal the Envelope back to a json object for Cache Storage
-				cacheBody, err := json.Marshal(ctx.Matrix)
+				cacheBody, err := json.Marshal(cacheMatrix)
 				if err != nil {
 					level.Error(t.Logger).Log(lfEvent, "prometheus matrix marshaling error", lfDetail, err.Error())
 					r.Writer.WriteHeader(http.StatusInternalServerError)
@@ -1099,6 +1104,22 @@ func (pe PrometheusMatrixEnvelope) getExtents() MatrixExtents {
 	}
 
 	return MatrixExtents{Start: oldest, End: newest}
+}
+
+// copy return a deep copy of PrometheusMatrixEnvelope.
+func (pe PrometheusMatrixEnvelope) copy() PrometheusMatrixEnvelope {
+	resPe := PrometheusMatrixEnvelope{
+		Status: pe.Status,
+		Data: PrometheusMatrixData{
+			ResultType: pe.Data.ResultType,
+			Result:     make([]*model.SampleStream, len(pe.Data.Result)),
+		},
+	}
+	for index := range pe.Data.Result {
+		resSampleSteam := *pe.Data.Result[index]
+		resPe.Data.Result[index] = &resSampleSteam
+	}
+	return resPe
 }
 
 // passthroughParam passes the parameter with paramName, if present in the requestParams, on to the proxyParams collection
