@@ -40,6 +40,7 @@ func (metrics ApplicationMetrics) Unregister() {
 	prometheus.Unregister(metrics.ProxyRequestDuration)
 }
 
+// ListenAndServe Starts the HTTP Server for Prometheus Scraping
 func (metrics ApplicationMetrics) ListenAndServe(config *Config, logger log.Logger) {
 	// Turn up the Metrics HTTP Server
 	if config.Metrics.ListenPort > 0 {
