@@ -26,7 +26,7 @@ const (
 	cfConfig      = "config"
 	cfVersion     = "version"
 	cfLogLevel    = "log-level"
-	cfInstanceId  = "instance-id"
+	cfInstanceID  = "instance-id"
 	cfOrigin      = "origin"
 	cfProxyPort   = "proxy-port"
 	cfMetricsPort = "metrics-port"
@@ -120,7 +120,7 @@ func loadFlags(c *Config, arguments []string) {
 	f := flag.NewFlagSet(applicationName, flag.ExitOnError)
 	f.BoolVar(&version, cfVersion, true, "Prints Trickster version")
 	f.StringVar(&c.Logging.LogLevel, cfLogLevel, c.Logging.LogLevel, "Level of Logging to use (debug, info, warn, error)")
-	f.IntVar(&c.Main.InstanceID, cfInstanceId, 0, "Instance ID for when running multiple processes")
+	f.IntVar(&c.Main.InstanceID, cfInstanceID, 0, "Instance ID for when running multiple processes")
 	f.StringVar(&origin, cfOrigin, "", "URL to the Prometheus Origin. Enter it like you would in grafana, e.g., http://prometheus:9090")
 	f.IntVar(&proxyListenPort, cfProxyPort, 0, "Port that the Proxy server will listen on.")
 	f.IntVar(&metricsListenPort, cfMetricsPort, 0, "Port that the /metrics endpoint will listen on.")
