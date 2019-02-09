@@ -56,10 +56,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if t.Config.Profiler.Enabled {
-		go exposeProfilerEndpoint(t.Config, t.Logger)
-	}
-
 	if t.Config.Main.InstanceID > 0 {
 		t.Logger = newLogger(t.Config.Logging, fmt.Sprint(t.Config.Main.InstanceID))
 	} else {
@@ -67,6 +63,10 @@ func main() {
 	}
 
 	level.Info(t.Logger).Log("event", "application startup", "version", applicationVersion)
+
+	if t.Config.Profiler.Enabled {
+		go exposeProfilerEndpoint(t.Config, t.Logger)
+	}
 
 	t.Metrics = NewApplicationMetrics()
 	t.Metrics.ListenAndServe(t.Config, t.Logger)
@@ -105,7 +105,7 @@ func main() {
 }
 
 func exposeProfilerEndpoint(c *Config, l log.Logger) {
-	level.Info(l).Log("event", "starting profiler endpoint")
+	level.Info(l).Log("event", "profiler http endpoint starting", "port", c.Profiler.ListenPort)
 	err := http.ListenAndServe(fmt.Sprintf(":%d", c.Profiler.ListenPort), nil)
 	if err != nil {
 		level.Error(l).Log("error starting profiler http server: %s", err.Error())
