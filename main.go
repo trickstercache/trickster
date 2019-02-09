@@ -108,6 +108,6 @@ func exposeProfilerEndpoint(c *Config, l log.Logger) {
 	level.Info(l).Log("event", "profiler http endpoint starting", "port", c.Profiler.ListenPort)
 	err := http.ListenAndServe(fmt.Sprintf(":%d", c.Profiler.ListenPort), nil)
 	if err != nil {
-		level.Error(l).Log("error starting profiler http server: %s", err.Error())
+		level.Error(l).Log("event", "error starting profiler http server", "detail", err.Error())
 	}
 }
