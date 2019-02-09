@@ -104,8 +104,9 @@ func (t *TricksterHandler) promHealthCheckHandler(w http.ResponseWriter, r *http
 	// Check the labels path for Prometheus Origin Handler to satisfy health check
 	path := prometheusAPIv1Path + mnLabels
 
-	originURL := t.getOrigin(r).OriginURL + strings.Replace(path, "//", "/", 1)
-	body, resp, _, err := t.getURL(r.Method, originURL, r.URL.Query(), getProxyableClientHeaders(r))
+	origin := t.getOrigin(r)
+	originURL := origin.OriginURL + strings.Replace(path, "//", "/", 1)
+	body, resp, _, err := t.getURL(origin, r.Method, originURL, r.URL.Query(), getProxyableClientHeaders(r))
 	if err != nil {
 		level.Error(t.Logger).Log(lfEvent, "error fetching data from origin Prometheus", lfDetail, err.Error())
 		w.WriteHeader(http.StatusBadGateway)
@@ -135,8 +136,9 @@ func (t *TricksterHandler) promFullProxyHandler(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	originURL := t.getOrigin(r).OriginURL + strings.Replace(path, "//", "/", 1)
-	body, resp, _, err := t.getURL(r.Method, originURL, r.URL.Query(), getProxyableClientHeaders(r))
+	origin := t.getOrigin(r)
+	originURL := origin.OriginURL + strings.Replace(path, "//", "/", 1)
+	body, resp, _, err := t.getURL(origin, r.Method, originURL, r.URL.Query(), getProxyableClientHeaders(r))
 	if err != nil {
 		level.Error(t.Logger).Log(lfEvent, "error fetching data from origin Prometheus", lfDetail, err.Error())
 		w.WriteHeader(http.StatusBadGateway)
@@ -277,7 +279,7 @@ func setResponseHeaders(w http.ResponseWriter) {
 }
 
 // getURL makes an HTTP request to the provided URL with the provided parameters and returns the response body
-func (t *TricksterHandler) getURL(method string, uri string, params url.Values, headers http.Header) ([]byte, *http.Response, time.Duration, error) {
+func (t *TricksterHandler) getURL(o PrometheusOriginConfig, method string, uri string, params url.Values, headers http.Header) ([]byte, *http.Response, time.Duration, error) {
 	if len(params) > 0 {
 		uri += "?" + params.Encode()
 	}
@@ -288,7 +290,8 @@ func (t *TricksterHandler) getURL(method string, uri string, params url.Values, 
 	}
 
 	startTime := time.Now()
-	client := &http.Client{}
+	client := &http.Client{Timeout: time.Duration(o.TimeoutSecs * time.Second.Nanoseconds())}
+
 	resp, err := client.Do(&http.Request{Method: method, URL: parsedURL})
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("error downloading URL %q: %v", uri, err)
@@ -339,7 +342,7 @@ func (t *TricksterHandler) getMatrixFromPrometheus(url string, params url.Values
 	pe := PrometheusMatrixEnvelope{}
 
 	// Make the HTTP Request - don't use fetchPromQuery here, that is for instantaneous only.
-	body, resp, duration, err := t.getURL(r.Method, url, params, getProxyableClientHeaders(r))
+	body, resp, duration, err := t.getURL(t.getOrigin(r), r.Method, url, params, getProxyableClientHeaders(r))
 	if err != nil {
 		return pe, nil, nil, 0, err
 	}
@@ -397,7 +400,7 @@ func (t *TricksterHandler) fetchPromQuery(originURL string, params url.Values, r
 	cachedBody, err := t.Cacher.Retrieve(cacheKey)
 	if err != nil {
 		// Cache Miss, we need to get it from prometheus
-		body, resp, duration, err = t.getURL(r.Method, originURL, params, getProxyableClientHeaders(r))
+		body, resp, duration, err = t.getURL(t.getOrigin(r), r.Method, originURL, params, getProxyableClientHeaders(r))
 		if err != nil {
 			return nil, nil, err
 		}

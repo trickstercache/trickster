@@ -90,6 +90,7 @@ type PrometheusOriginConfig struct {
 	IgnoreNoCacheHeader bool   `toml:"ignore_no_cache_header"`
 	MaxValueAgeSecs     int64  `toml:"max_value_age_secs"`
 	FastForwardDisable  bool   `toml:"fast_forward_disable"`
+	TimeoutSecs         int64  `toml:"timeout_secs"`
 }
 
 // MetricsConfig is a collection of Metrics Collection configurations
@@ -153,6 +154,7 @@ func defaultOriginConfig() PrometheusOriginConfig {
 		APIPath:             prometheusAPIv1Path,
 		IgnoreNoCacheHeader: true,
 		MaxValueAgeSecs:     86400, // Keep datapoints up to 24 hours old
+		TimeoutSecs:         180,
 	}
 }
 
