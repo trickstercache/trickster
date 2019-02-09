@@ -16,8 +16,10 @@ package main
 import (
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 
+	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -52,6 +54,10 @@ func main() {
 		// to know the log path, and the config load just failed, so we just abort.
 		fmt.Println("Could not load trickster configuration: ", err.Error())
 		os.Exit(1)
+	}
+
+	if t.Config.Profiler.Enabled {
+		go exposeProfilerEndpoint(t.Config, t.Logger)
 	}
 
 	if t.Config.Main.InstanceID > 0 {
@@ -96,4 +102,12 @@ func main() {
 	// Start the Server
 	err := http.ListenAndServe(fmt.Sprintf("%s:%d", t.Config.ProxyServer.ListenAddress, t.Config.ProxyServer.ListenPort), handlers.CompressHandler(router))
 	level.Error(t.Logger).Log("event", "exiting", "err", err)
+}
+
+func exposeProfilerEndpoint(c *Config, l log.Logger) {
+	level.Info(l).Log("event", "starting profiler endpoint")
+	err := http.ListenAndServe(fmt.Sprintf(":%d", c.Profiler.ListenPort), nil)
+	if err != nil {
+		level.Error(l).Log("error starting profiler http server: %s", err.Error())
+	}
 }

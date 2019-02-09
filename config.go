@@ -22,6 +22,7 @@ type Config struct {
 	Logging          LoggingConfig                     `toml:"logging"`
 	Main             GeneralConfig                     `toml:"main"`
 	Metrics          MetricsConfig                     `toml:"metrics"`
+	Profiler         ProfilerConfig                    `toml:"profiler"`
 	Origins          map[string]PrometheusOriginConfig `toml:"origins"`
 	ProxyServer      ProxyServerConfig                 `toml:"proxy_server"`
 }
@@ -100,6 +101,14 @@ type MetricsConfig struct {
 	ListenPort int `toml:"listen_port"`
 }
 
+// ProfilerConfig is a collection of pprof profiling configurations
+type ProfilerConfig struct {
+	// Enabled specifies whether or not the pprof endpoint should be exposed
+	Enabled bool `toml:"enabled"`
+	// ListenPort is TCP Port from which the Profiler data is available at /debug/pprof
+	ListenPort int `toml:"listen_port"`
+}
+
 // LoggingConfig is a collection of Logging configurations
 type LoggingConfig struct {
 	// LogFile provides the filepath to the instances's logfile. Set as empty string to Log to Console
@@ -137,6 +146,10 @@ func NewConfig() *Config {
 		},
 		Metrics: MetricsConfig{
 			ListenPort: 8082,
+		},
+		Profiler: ProfilerConfig{
+			ListenPort: 6060,
+			Enabled:    false,
 		},
 		Origins: map[string]PrometheusOriginConfig{
 			"default": defaultOriginConfig(),
