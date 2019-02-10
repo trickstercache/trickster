@@ -23,19 +23,21 @@ import (
 
 const (
 	// Command-line flags
-	cfConfig      = "config"
-	cfVersion     = "version"
-	cfLogLevel    = "log-level"
-	cfInstanceID  = "instance-id"
-	cfOrigin      = "origin"
-	cfProxyPort   = "proxy-port"
-	cfMetricsPort = "metrics-port"
+	cfConfig       = "config"
+	cfVersion      = "version"
+	cfLogLevel     = "log-level"
+	cfInstanceID   = "instance-id"
+	cfOrigin       = "origin"
+	cfProxyPort    = "proxy-port"
+	cfMetricsPort  = "metrics-port"
+	cfProfilerPort = "profiler-port"
 
 	// Environment variables
-	evOrigin      = "TRK_ORIGIN"
-	evProxyPort   = "TRK_PROXY_PORT"
-	evMetricsPort = "TRK_METRICS_PORT"
-	evLogLevel    = "TRK_LOG_LEVEL"
+	evOrigin       = "TRK_ORIGIN"
+	evProxyPort    = "TRK_PROXY_PORT"
+	evMetricsPort  = "TRK_METRICS_PORT"
+	evLogLevel     = "TRK_LOG_LEVEL"
+	evProfilerPort = "TRK_PROFILER_PORT"
 )
 
 // loadConfiguration reads the config path from Flags,
@@ -102,6 +104,14 @@ func loadEnvVars(c *Config) {
 		}
 	}
 
+	// ProfilerPort
+	if x := os.Getenv(evProfilerPort); x != "" {
+		if y, err := strconv.ParseInt(x, 10, 64); err == nil {
+			c.Profiler.ListenPort = int(y)
+			c.Profiler.Enabled = true
+		}
+	}
+
 	// LogLevel
 	if x := os.Getenv(evLogLevel); x != "" {
 		c.Logging.LogLevel = x
@@ -116,6 +126,7 @@ func loadFlags(c *Config, arguments []string) {
 	var origin string
 	var proxyListenPort int
 	var metricsListenPort int
+	var profilerListenPort int
 
 	f := flag.NewFlagSet(applicationName, flag.ExitOnError)
 	f.BoolVar(&version, cfVersion, true, "Prints Trickster version")
@@ -124,6 +135,7 @@ func loadFlags(c *Config, arguments []string) {
 	f.StringVar(&origin, cfOrigin, "", "URL to the Prometheus Origin. Enter it like you would in grafana, e.g., http://prometheus:9090")
 	f.IntVar(&proxyListenPort, cfProxyPort, 0, "Port that the Proxy server will listen on.")
 	f.IntVar(&metricsListenPort, cfMetricsPort, 0, "Port that the /metrics endpoint will listen on.")
+	f.IntVar(&profilerListenPort, cfProfilerPort, 0, "Port that the /debug/pprof endpoint will listen on.")
 
 	// BEGIN IGNORED FLAGS
 	f.StringVar(&path, cfConfig, "", "Path to Trickster Config File")
@@ -139,5 +151,9 @@ func loadFlags(c *Config, arguments []string) {
 	}
 	if metricsListenPort > 0 {
 		c.Metrics.ListenPort = metricsListenPort
+	}
+	if profilerListenPort > 0 {
+		c.Profiler.ListenPort = profilerListenPort
+		c.Profiler.Enabled = true
 	}
 }

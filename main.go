@@ -16,8 +16,10 @@ package main
 import (
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 
+	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -62,6 +64,10 @@ func main() {
 
 	level.Info(t.Logger).Log("event", "application startup", "version", applicationVersion)
 
+	if t.Config.Profiler.Enabled {
+		go exposeProfilerEndpoint(t.Config, t.Logger)
+	}
+
 	t.Metrics = NewApplicationMetrics()
 	t.Metrics.ListenAndServe(t.Config, t.Logger)
 
@@ -96,4 +102,12 @@ func main() {
 	// Start the Server
 	err := http.ListenAndServe(fmt.Sprintf("%s:%d", t.Config.ProxyServer.ListenAddress, t.Config.ProxyServer.ListenPort), handlers.CompressHandler(router))
 	level.Error(t.Logger).Log("event", "exiting", "err", err)
+}
+
+func exposeProfilerEndpoint(c *Config, l log.Logger) {
+	level.Info(l).Log("event", "profiler http endpoint starting", "port", c.Profiler.ListenPort)
+	err := http.ListenAndServe(fmt.Sprintf(":%d", c.Profiler.ListenPort), nil)
+	if err != nil {
+		level.Error(l).Log("event", "error starting profiler http server", "detail", err.Error())
+	}
 }
