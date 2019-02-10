@@ -866,7 +866,7 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 					cacheMatrix.cropToRange(0, int64(ctx.Time-ctx.Origin.NoCacheLastDataSecs)*1000)
 				}
 
-        // Marshal the Envelope back to a json object for Cache Storage
+				// Marshal the Envelope back to a json object for Cache Storage
 				cacheBody, err := json.Marshal(cacheMatrix)
 				if err != nil {
 					level.Error(t.Logger).Log(lfEvent, "prometheus matrix marshaling error", lfDetail, err.Error())
