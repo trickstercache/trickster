@@ -382,7 +382,7 @@ func TestTricksterHandler_getURL(t *testing.T) {
 	tr.setTestOrigin(es.URL)
 
 	// it should get from the echo server
-	b, _, _, err := tr.getURL("GET", es.URL, url.Values{}, nil)
+	b, _, _, err := tr.getURL(tr.Config.Origins["default"], "GET", es.URL, url.Values{}, nil)
 	if err != nil {
 		t.Error(err)
 	}

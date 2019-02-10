@@ -22,6 +22,7 @@ type Config struct {
 	Logging          LoggingConfig                     `toml:"logging"`
 	Main             GeneralConfig                     `toml:"main"`
 	Metrics          MetricsConfig                     `toml:"metrics"`
+	Profiler         ProfilerConfig                    `toml:"profiler"`
 	Origins          map[string]PrometheusOriginConfig `toml:"origins"`
 	ProxyServer      ProxyServerConfig                 `toml:"proxy_server"`
 }
@@ -91,6 +92,7 @@ type PrometheusOriginConfig struct {
 	MaxValueAgeSecs     int64  `toml:"max_value_age_secs"`
 	FastForwardDisable  bool   `toml:"fast_forward_disable"`
 	NoCacheLastDataSecs int64  `toml:"no_cache_last_data_secs"`
+	TimeoutSecs         int64  `toml:"timeout_secs"`
 }
 
 // MetricsConfig is a collection of Metrics Collection configurations
@@ -98,6 +100,14 @@ type MetricsConfig struct {
 	// ListenAddress is IP address from which the Application Metrics are available for pulling at /metrics
 	ListenAddress string `toml:"listen_address"`
 	// ListenPort is TCP Port from which the Application Metrics are available for pulling at /metrics
+	ListenPort int `toml:"listen_port"`
+}
+
+// ProfilerConfig is a collection of pprof profiling configurations
+type ProfilerConfig struct {
+	// Enabled specifies whether or not the pprof endpoint should be exposed
+	Enabled bool `toml:"enabled"`
+	// ListenPort is TCP Port from which the Profiler data is available at /debug/pprof
 	ListenPort int `toml:"listen_port"`
 }
 
@@ -139,6 +149,10 @@ func NewConfig() *Config {
 		Metrics: MetricsConfig{
 			ListenPort: 8082,
 		},
+		Profiler: ProfilerConfig{
+			ListenPort: 6060,
+			Enabled:    false,
+		},
 		Origins: map[string]PrometheusOriginConfig{
 			"default": defaultOriginConfig(),
 		},
@@ -154,6 +168,7 @@ func defaultOriginConfig() PrometheusOriginConfig {
 		APIPath:             prometheusAPIv1Path,
 		IgnoreNoCacheHeader: true,
 		MaxValueAgeSecs:     86400, // Keep datapoints up to 24 hours old
+		TimeoutSecs:         180,
 	}
 }
 

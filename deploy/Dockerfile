@@ -1,4 +1,4 @@
-FROM golang:1.11.4 as builder
+FROM golang:1.11.5 as builder
 
 COPY . /go/src/github.com/Comcast/trickster
 WORKDIR /go/src/github.com/Comcast/trickster
@@ -8,7 +8,7 @@ RUN dep ensure
 RUN GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -a -installsuffix cgo -o trickster -v github.com/Comcast/trickster
 
 
-FROM alpine:3.8
+FROM alpine:3.9
 LABEL maintainer "The Trickster Authors <trickster-developers@googlegroups.com>"
 
 COPY --from=builder /go/src/github.com/Comcast/trickster/trickster /usr/local/bin/trickster
