@@ -23,6 +23,13 @@ Please send us an e-mail or create a new GitHub issue to request a PDF version o
   Practices for Production
   Environments](http://peter.bourgon.org/go-in-production/#formatting-and-style).
 
+## Reporting Feature Requests, Bugs, Vulnerabilities and other Issues
+
+If you find a bug in Trickster, please file a detailed report as an Issue. We currently do not utilize an Issue template, but please be as thorough as possible in your report. There is no such thing as too much information.
+
+Likewise, if you have a Feature Request, please file a detailed Issue, explaining the feature's functionality and use cases. Features should be useful to the broader community, so be sure to consider that before filing.
+
+If you find a security vulnerability in Trickster, please report it at https://my.xfinity.com/vulnerabilityreport and contact the [Maintainers](MAINTAINERS.md).
 
 ## Steps to Contribute
 
