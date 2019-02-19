@@ -8,17 +8,13 @@ TRICKSTER    := $(FIRST_GOPATH)/bin/trickster
 
 PROGVER = $(shell grep 'applicationVersion = ' main.go | awk '{print $$3}' | sed -e 's/\"//g')
 
-.PHONY: $(DEP)
-$(DEP):
-	GOOS= GOARCH= $(GO) get -u github.com/golang/dep/cmd/dep
-
-.PHONY: deps
-deps: $(DEP)
-	$(DEP) ensure
+.PHONY: go-mod-vendor
+go-mod-vendor:
+	GO111MODULE=on $(GO) mod vendor
 
 .PHONY: build
-build: deps
-	go build
+build: go-mod-vendor
+	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) go build -a -v
 
 rpm: build
 	mkdir -p ./OPATH/SOURCES
@@ -33,7 +29,7 @@ rpm: build
 		-ba deploy/packaging/trickster.spec
 
 .PHONY: install
-install: deps
+install: go-mod-vendor
 	echo go build -o $(TRICKSTER) $(PROGVER)
 
 .PHONY: release
@@ -76,11 +72,11 @@ style:
 	! gofmt -d $$(find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
 .PHONY: test
-test: deps
+test: go-mod-vendor
 	go test -o $(TRICKSTER) -v ./...
 
 .PHONY: test-cover
-test-cover: deps
+test-cover: go-mod-vendor
 	go test -o $(TRICKSTER) -coverprofile=cover.out ./...
 	go tool cover -html=cover.out
 
