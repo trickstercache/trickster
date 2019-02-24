@@ -862,6 +862,10 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 			// If it's not a full cache hit, we want to write this back to the cache
 			if ctx.CacheLookupResult != crHit {
 				cacheMatrix := ctx.Matrix.copy()
+
+				// Prune any old points based on retention policy
+				cacheMatrix.cropToRange(int64(ctx.Time-ctx.Origin.MaxValueAgeSecs)*1000, 0)
+
 				if ctx.Origin.NoCacheLastDataSecs != 0 {
 					cacheMatrix.cropToRange(0, int64(ctx.Time-ctx.Origin.NoCacheLastDataSecs)*1000)
 				}
