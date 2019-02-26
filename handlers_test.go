@@ -180,7 +180,7 @@ func TestUnreachableOriginReturnsStatusBadGateway(t *testing.T) {
 		},
 		{
 			handler: (*TricksterHandler).promQueryRangeHandler,
-			path:    prometheusAPIv1Path + "query_range?start=0&end=100000000&step=15&query=up",
+			path:    prometheusAPIv1Path + "query_range?start=100000000&end=200000000&step=15&query=up",
 		},
 	}
 
