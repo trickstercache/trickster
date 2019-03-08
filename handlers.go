@@ -800,7 +800,7 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 				}()
 			}
 
-			if !ctx.Origin.FastForwardDisable && !(ctx.RequestExtents.End < ctx.Time-ctx.StepMS) {
+			if !ctx.Origin.FastForwardDisable && !(ctx.RequestExtents.End < ctx.Time*1000-ctx.StepMS) {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
