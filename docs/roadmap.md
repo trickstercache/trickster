@@ -2,10 +2,10 @@
 
 Our roadmap for Trickster is largely focused on a 1.0 release, which will have a completely refactored codebase. Trickster 1.0 will be more efficient and easily extensible. 
 
-Trickster 1.0 will have the folowing enhancements:
+Trickster 1.0 will have the following enhancements:
 - The application is refactored into Packages to simplify reuse
 - Simplified hash collision prevention and pipelining (replacing channels with mutexes)
-- Upstream Proxy interface to faciliate support for additional TSDB types
+- Upstream Proxy interface to facilitate support for additional TSDB types
 - Support for InfluxDB acceleration
 - Full compliance with HTTP 1.0/1.1 RFC's for Proxy/Caching
 - Simpler and more efficient Delta computations
@@ -25,7 +25,7 @@ We hope to provdie a Trickster 1.0 GA Release in the first half of Q2 2019 that 
 
 ## How to Help
 
-You can help by contributing to Trickster 1.0 on the `next` branch, or trying it out in your environment. Docker images for the latest Trickster 1.0 Beta release wiil be published under the `next` tag.
+You can help by contributing to Trickster 1.0 on the `next` branch, or trying it out in your environment. Docker images for the latest Trickster 1.0 Beta release will be published under the `next` tag.
 
 By giving Trickster 1.0 Beta a spin, you can help us identify and fix defects more quickly. Be sure to file issues if you find something wrong, using the `1.0` label. If you can reliably reproduce the issue, provide detailed steps so that developers can more easily root-cause the issue.
 
