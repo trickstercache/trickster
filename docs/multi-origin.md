@@ -8,7 +8,7 @@ There are 3 ways to configure multi-origin support.
 
 ## Basic Usage
 
-To utilize Multiple Origins, you must craft a Trickster configuration file to be read when Trickster starts up. There is a good example in [conf/example.conf](../conf/example.conf). The config file should be placed in `/etc/trickster/trickster.conf` unless you specify a different path when starting Trickster with the `-config` command line argument.
+To utilize Multiple Origins, you must craft a Trickster configuration file to be read when Trickster starts up. There is a good example in [cmd/trickster/conf/example.conf](../cmd/trickster/conf/example.conf). The config file should be placed in `/etc/trickster/trickster.conf` unless you specify a different path when starting Trickster with the `-config` command line argument.
 
 Each origin that your Trickster instance supports must be explicitly enumerated in the configuration file. Trickster does not support open proxying.
 
