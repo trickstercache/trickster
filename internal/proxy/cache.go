@@ -13,7 +13,12 @@
 
 package proxy
 
-import "github.com/Comcast/trickster/internal/cache"
+import (
+	"github.com/golang/snappy"
+
+	"github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/util/log"
+)
 
 // Cache Lookup Results
 const (
@@ -32,6 +37,18 @@ func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
 	if err != nil {
 		return d, err
 	}
+
+	// Decompress if it's not JSON. Because the Compression configuration may have changed between the time
+	// the document was cached and when it was retrieved, we have to inspect to determine if it should be decompressed
+	if bytes[0] != 123 {
+		// Not a JSON object, try decompressing
+		log.Debug("decompressing cached data", log.Pairs{"cacheKey": key})
+		b, err := snappy.Decode(nil, bytes)
+		if err == nil {
+			bytes = b
+		}
+	}
+
 	_, err = d.UnmarshalMsg(bytes)
 	return d, nil
 }
@@ -44,5 +61,11 @@ func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl int) error {
 	if err != nil {
 		return err
 	}
+
+	if c.Configuration().Compression {
+		log.Debug("compressing cached data", log.Pairs{"cacheKey": key})
+		bytes = snappy.Encode(nil, bytes)
+	}
+
 	return c.Store(key, bytes, int64(ttl))
 }
