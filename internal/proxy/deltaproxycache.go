@@ -71,7 +71,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	missRanges := cts.CalculateDeltas(trq)
 
 	if len(missRanges) == 0 {
-		metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crHit, r.URL.Path).Inc()
+		metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crHit, "200", r.URL.Path).Inc()
 		Respond(w, cacheData.StatusCode, cacheData.Headers, cacheData.Body)
 		return
 	}
@@ -96,7 +96,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 					return
 				}
 				nts.SetExtents([]timeseries.Extent{*e})
-				metrics.ProxyRequestDuration.WithLabelValues(req.OriginName, req.OriginType, req.HTTPMethod, "phit", req.URL.Path).Observe(float64(dur))
+				metrics.ProxyRequestDuration.WithLabelValues(req.OriginName, req.OriginType, req.HTTPMethod, "phit", string(resp.StatusCode), req.URL.Path).Observe(float64(dur))
 				appendLock.Lock()
 				defer appendLock.Unlock()
 
@@ -137,7 +137,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	go func() {
 		defer wg.Done()
 		// Respond to the user. Using the response headers from a Delta Response, so as to not map conflict with cacheData on WriteCache
-		metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crPartialHit, r.URL.Path).Inc()
+		metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crPartialHit, "200", r.URL.Path).Inc()
 		Respond(w, cacheData.StatusCode, rh, rdata)
 	}()
 

@@ -34,16 +34,16 @@ func ObjectProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, c
 
 	if !refresh {
 		if d, err := QueryCache(cache, key); err == nil {
-			metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crHit, r.URL.Path).Inc()
+			metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crHit, "200", r.URL.Path).Inc()
 			log.Debug("cache hit", log.Pairs{"key": key})
 			Respond(w, d.StatusCode, d.Headers, d.Body)
 			return
 		}
 	}
 
-	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crKeyMiss, r.URL.Path).Inc()
 	body, resp, dur := Fetch(r)
-	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crKeyMiss, r.URL.Path).Observe(float64(dur))
+	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crKeyMiss, string(resp.StatusCode), r.URL.Path).Inc()
+	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crKeyMiss, string(resp.StatusCode), r.URL.Path).Observe(float64(dur))
 
 	if resp.StatusCode == http.StatusOK && len(body) > 0 {
 		WriteCache(cache, key, DocumentFromHTTPResponse(resp, body), ttl)
