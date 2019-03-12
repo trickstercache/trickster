@@ -11,54 +11,53 @@
 * limitations under the License.
  */
 
- package main
+package main
 
- import (
-	 "fmt"
-	 "net/http"
-	 _ "net/http/pprof" // Comment to disable. Availabl on :METRICS_PORT/debug/pprof
-	 "os"
-  
-	 "github.com/Comcast/trickster/internal/cache"
-	 "github.com/Comcast/trickster/internal/config"
-	 "github.com/Comcast/trickster/internal/routing"
-	 "github.com/Comcast/trickster/internal/routing/registration"
-	 "github.com/Comcast/trickster/internal/util/log"
-	 "github.com/Comcast/trickster/internal/util/metrics"
- )
- 
- const (
-	 applicationName    = "trickster"
-	 applicationVersion = "1.0.0"
- )
- 
- func main() {
- 
-	 var err error
-	 err = config.Load(applicationName, applicationVersion, os.Args[1:])
-	 if err != nil {
-		 fmt.Println("Could not load configuration:", err.Error())
-		 os.Exit(1)
-	 }
- 
-	 if config.Flags.PrintVersion {
-		 fmt.Println(applicationVersion)
-		 os.Exit(0)
-	 }
- 
-	 log.Init()
-	 defer log.Logger.Close()
-	 log.Info("application start up", log.Pairs{"name": applicationName, "version": applicationVersion})
- 
-	 metrics.Init()
-	 cache.LoadCachesFromConfig()
-	 registration.RegisterProxyRoutes()
- 
-	 log.Info("proxy http endpoint starting", log.Pairs{"address": config.ProxyServer.ListenAddress, "port": config.ProxyServer.ListenPort})
- 
-	 // Start the Server
-	 err = http.ListenAndServe(fmt.Sprintf("%s:%d", config.ProxyServer.ListenAddress, config.ProxyServer.ListenPort), routing.Router)
-	 log.Error("exiting", log.Pairs{"err": err})
- 
- }
- 
+import (
+	"fmt"
+	"net/http"
+	_ "net/http/pprof" // Comment to disable. Availabl on :METRICS_PORT/debug/pprof
+	"os"
+
+	"github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/routing"
+	"github.com/Comcast/trickster/internal/routing/registration"
+	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/Comcast/trickster/internal/util/metrics"
+)
+
+const (
+	applicationName    = "trickster"
+	applicationVersion = "1.0.0"
+)
+
+func main() {
+
+	var err error
+	err = config.Load(applicationName, applicationVersion, os.Args[1:])
+	if err != nil {
+		fmt.Println("Could not load configuration:", err.Error())
+		os.Exit(1)
+	}
+
+	if config.Flags.PrintVersion {
+		fmt.Println(applicationVersion)
+		os.Exit(0)
+	}
+
+	log.Init()
+	defer log.Logger.Close()
+	log.Info("application start up", log.Pairs{"name": applicationName, "version": applicationVersion})
+
+	metrics.Init()
+	cache.LoadCachesFromConfig()
+	registration.RegisterProxyRoutes()
+
+	log.Info("proxy http endpoint starting", log.Pairs{"address": config.ProxyServer.ListenAddress, "port": config.ProxyServer.ListenPort})
+
+	// Start the Server
+	err = http.ListenAndServe(fmt.Sprintf("%s:%d", config.ProxyServer.ListenAddress, config.ProxyServer.ListenPort), routing.Router)
+	log.Error("exiting", log.Pairs{"err": err})
+
+}

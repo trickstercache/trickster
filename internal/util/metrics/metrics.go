@@ -25,52 +25,50 @@ import (
 	"github.com/Comcast/trickster/internal/util/log"
 )
 
-// Metrics ...
-var Metrics *TricksterMetrics
+// ProxyRequestStatus ...
+var ProxyRequestStatus *prometheus.CounterVec
 
-// TricksterMetrics enumerates the metrics collected and reported by the trickster application.
-type TricksterMetrics struct {
-	CacheRequestStatus   *prometheus.CounterVec
-	CacheRequestElements *prometheus.CounterVec
-	ProxyRequestDuration *prometheus.HistogramVec
-}
+// CacheRequestElements ...
+var CacheRequestElements *prometheus.CounterVec
 
-// Init creates a TricksterMetrics object and instantiates an HTTP server for polling them.
+// ProxyRequestDuration ...
+var ProxyRequestDuration *prometheus.HistogramVec
+
+// Init ...
 func Init() {
 
-	Metrics = &TricksterMetrics{
-		// Metrics
-		CacheRequestStatus: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "trickster_requests_total",
-				Help: "Count of ",
-			},
-			[]string{"origin", "origin_type", "method", "status", "http_status"},
-		),
-		CacheRequestElements: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "trickster_points_total",
-				Help: "Count of data points returned in a Prometheus query_range Request",
-			},
-			[]string{"origin", "origin_type", "status"},
-		),
-		ProxyRequestDuration: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "trickster_proxy_duration_seconds",
-				Help:    "Time required in seconds to proxy a given Prometheus query.",
-				Buckets: []float64{0.05, 0.1, 0.5, 1, 5, 10, 20},
-			},
-			[]string{"origin", "origin_type", "method", "status", "http_status"},
-		),
-	}
+	ProxyRequestStatus = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "trickster_requests_total",
+			Help: "Count of ",
+		},
+		[]string{"origin", "origin_type", "method", "cache_status", "http_status", "path"},
+	)
+
+	CacheRequestElements = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "trickster_points_total",
+			Help: "Count of data points returned in Upstream Timeseries Requests",
+		},
+		[]string{"origin", "origin_type", "cache_status", "path"},
+	)
+
+	ProxyRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "trickster_proxy_duration_seconds",
+			Help:    "Time required in seconds to proxy a given Prometheus query.",
+			Buckets: []float64{0.05, 0.1, 0.5, 1, 5, 10, 20},
+		},
+		[]string{"origin", "origin_type", "method", "status", "http_status", "path"},
+	)
 
 	// Register Metrics
-	prometheus.MustRegister(Metrics.CacheRequestStatus)
-	prometheus.MustRegister(Metrics.CacheRequestElements)
-	prometheus.MustRegister(Metrics.ProxyRequestDuration)
+	prometheus.MustRegister(ProxyRequestStatus)
+	prometheus.MustRegister(CacheRequestElements)
+	prometheus.MustRegister(ProxyRequestDuration)
 
 	// Turn up the Metrics HTTP Server
-	if config.Config.Metrics.ListenPort > 0 {
+	if config.Metrics.ListenPort > 0 {
 		go func() {
 
 			log.Info("metrics http endpoint starting", log.Pairs{"address": config.Metrics.ListenAddress, "port": fmt.Sprintf("%d", config.Metrics.ListenPort)})

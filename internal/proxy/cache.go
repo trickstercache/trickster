@@ -14,6 +14,8 @@
 package proxy
 
 import (
+	"bytes"
+
 	"github.com/golang/snappy"
 
 	"github.com/Comcast/trickster/internal/cache"
@@ -29,27 +31,27 @@ const (
 	CrPurge      = "purge"
 )
 
+var magicHeader = []byte("sNaPpY")
+
 // QueryCache ...
 func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
 
 	d := &HTTPDocument{}
-	bytes, err := c.Retrieve(key)
+	data, err := c.Retrieve(key)
 	if err != nil {
 		return d, err
 	}
 
 	// Decompress if it's not JSON. Because the Compression configuration may have changed between the time
 	// the document was cached and when it was retrieved, we have to inspect to determine if it should be decompressed
-	if bytes[0] != 123 {
-		// Not a JSON object, try decompressing
+	if bytes.HasPrefix(data, magicHeader) {
 		log.Debug("decompressing cached data", log.Pairs{"cacheKey": key})
-		b, err := snappy.Decode(nil, bytes)
+		b, err := snappy.Decode(nil, data[6:])
 		if err == nil {
-			bytes = b
+			data = b
 		}
 	}
-
-	_, err = d.UnmarshalMsg(bytes)
+	_, err = d.UnmarshalMsg(data)
 	return d, nil
 }
 
@@ -57,15 +59,16 @@ func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
 func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl int) error {
 	// Delete Date Header, http.ReponseWriter will insert as Now() on cache retreival
 	delete(d.Headers, "Date")
-	bytes, err := d.MarshalMsg(nil)
+	data, err := d.MarshalMsg(nil)
 	if err != nil {
 		return err
 	}
 
 	if c.Configuration().Compression {
 		log.Debug("compressing cached data", log.Pairs{"cacheKey": key})
-		bytes = snappy.Encode(nil, bytes)
+		b := snappy.Encode(nil, data)
+		data = append(magicHeader, b...)
 	}
 
-	return c.Store(key, bytes, int64(ttl))
+	return c.Store(key, data, int64(ttl))
 }

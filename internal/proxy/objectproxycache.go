@@ -18,6 +18,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/Comcast/trickster/internal/util/metrics"
 	"github.com/Comcast/trickster/pkg/locks"
 )
 
@@ -33,14 +34,17 @@ func ObjectProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, c
 
 	if !refresh {
 		if d, err := QueryCache(cache, key); err == nil {
+			metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crHit, r.URL.Path).Inc()
 			log.Debug("cache hit", log.Pairs{"key": key})
 			Respond(w, d.StatusCode, d.Headers, d.Body)
 			return
 		}
 	}
-	log.Debug("cache miss", log.Pairs{"key": key})
 
-	body, resp, _ := Fetch(r)
+	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crKeyMiss, r.URL.Path).Inc()
+	body, resp, dur := Fetch(r)
+	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crKeyMiss, r.URL.Path).Observe(float64(dur))
+
 	if resp.StatusCode == http.StatusOK && len(body) > 0 {
 		WriteCache(cache, key, DocumentFromHTTPResponse(resp, body), ttl)
 	}

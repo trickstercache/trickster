@@ -22,6 +22,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/compress/gzip"
 	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
 const (
@@ -35,7 +36,9 @@ const (
 
 // ProxyRequest ...
 func ProxyRequest(r *Request, w http.ResponseWriter) {
-	body, resp, _ := Fetch(r)
+	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, "none", r.URL.Path).Inc()
+	body, resp, dur := Fetch(r)
+	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, "none", r.URL.Path).Observe(float64(dur))
 	Respond(w, resp.StatusCode, resp.Header, body)
 }
 

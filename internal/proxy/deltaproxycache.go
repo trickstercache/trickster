@@ -21,13 +21,13 @@ import (
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/Comcast/trickster/internal/util/metrics"
 	"github.com/Comcast/trickster/pkg/locks"
 )
 
 // DeltaProxyCacheRequest ...
 func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, cache cache.Cache, ttl int, refresh bool) {
 
-	status := crKeyMiss
 	key := client.DeriveCacheKey(r.URL.Path, r.URL.Query(), "", "")
 
 	locks.Acquire(key)
@@ -39,8 +39,6 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		ProxyRequest(r, w)
 		return
 	}
-
-	status = crPartialHit
 
 	trq.NormalizeExtent()
 
@@ -73,7 +71,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	missRanges := cts.CalculateDeltas(trq)
 
 	if len(missRanges) == 0 {
-		status = crHit
+		metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crHit, r.URL.Path).Inc()
 		Respond(w, cacheData.StatusCode, cacheData.Headers, cacheData.Body)
 		return
 	}
@@ -90,18 +88,18 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		go func(e *timeseries.Extent, r *Request) {
 			defer wg.Done()
 			client.SetExtent(req, e)
-			body, resp, _ := Fetch(req)
+			body, resp, dur := Fetch(req)
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				nts, err := client.UnmarshalTimeseries(body)
 				if err != nil {
 					log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
 					return
 				}
-
 				nts.SetExtents([]timeseries.Extent{*e})
-
+				metrics.ProxyRequestDuration.WithLabelValues(req.OriginName, req.OriginType, req.HTTPMethod, "phit", req.URL.Path).Observe(float64(dur))
 				appendLock.Lock()
 				defer appendLock.Unlock()
+
 				mts = append(mts, nts)
 				if rh == nil {
 					rh = resp.Header
@@ -134,8 +132,14 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		wg.Done()
 	}()
 
-	// Respond to the user. Using the response headers from a Delta Response, so as to not map conflict with cacheData on WriteCache
-	Respond(w, cacheData.StatusCode, rh, rdata)
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		// Respond to the user. Using the response headers from a Delta Response, so as to not map conflict with cacheData on WriteCache
+		metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crPartialHit, r.URL.Path).Inc()
+		Respond(w, cacheData.StatusCode, rh, rdata)
+	}()
+
 	wg.Wait()
-	log.Debug("placeholder status message", log.Pairs{"status": status})
 }

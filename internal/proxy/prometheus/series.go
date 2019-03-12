@@ -19,7 +19,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy"
 )
 
-// SeriesHandler checks the health of the Configured Upstream Origin
+// SeriesHandler ...
 func (c Client) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	proxy.ProxyRequest(proxy.NewRequest(c.Name, otPrometheus, "SeriesHandler", http.MethodGet, u, r.Header, r), w)
