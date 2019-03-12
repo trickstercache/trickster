@@ -15,9 +15,14 @@ package log
 
 import (
 	"testing"
+
+	"github.com/Comcast/trickster/internal/config"
 )
 
 func TestNewLogger(t *testing.T) {
+
+	c := config.NewConfig()
+
 	testCases := []string{
 		"debug",
 		"info",
@@ -28,12 +33,17 @@ func TestNewLogger(t *testing.T) {
 	// it should create a logger for each level
 	for _, tc := range testCases {
 		t.Run(tc, func(t *testing.T) {
-			newLogger(LoggingConfig{LogLevel: tc}, tc)
+			c.Logging.LogLevel = tc
+			ConsoleLogger(tc)
 		})
 	}
 }
 
 func TestNewLogger_LogFile(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
-	newLogger(LoggingConfig{LogFile: "out.log"}, "test")
+	config.Config = config.NewConfig()
+	config.Main = &config.MainConfig{InstanceID: 0}
+	config.Logging = &config.LoggingConfig{LogFile: "out.test.log"}
+	Init()
+
 }
