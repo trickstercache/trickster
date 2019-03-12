@@ -15,22 +15,10 @@ package memory
 
 import (
 	"testing"
-
-	"github.com/go-kit/kit/log"
 )
 
-func setupMemoryCache() MemoryCache {
-	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1000}}
-	tr := TricksterHandler{
-		Logger:           log.NewNopLogger(),
-		ResponseChannels: make(map[string]chan *ClientRequestContext),
-		Config:           &cfg,
-	}
-	return MemoryCache{T: &tr}
-}
-
-func TestMemoryCache_Connect(t *testing.T) {
-	mc := setupMemoryCache()
+func TestCache_Connect(t *testing.T) {
+	mc := Cache{}
 
 	// it should connect
 	err := mc.Connect()
@@ -39,8 +27,8 @@ func TestMemoryCache_Connect(t *testing.T) {
 	}
 }
 
-func TestMemoryCache_Store(t *testing.T) {
-	mc := setupMemoryCache()
+func TestCache_Store(t *testing.T) {
+	mc := Cache{}
 
 	err := mc.Connect()
 	if err != nil {
@@ -48,38 +36,38 @@ func TestMemoryCache_Store(t *testing.T) {
 	}
 
 	// it should store a value
-	err = mc.Store("cacheKey", "data", 60000)
+	err = mc.Store("cacheKey", []byte("data"), 60000)
 	if err != nil {
 		t.Error(err)
 	}
 }
 
-func TestMemoryCache_Retrieve(t *testing.T) {
-	mc := setupMemoryCache()
+func TestCache_Retrieve(t *testing.T) {
+	mc := Cache{}
 
 	err := mc.Connect()
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = mc.Store("cacheKey", "data", 60000)
+	err = mc.Store("cacheKey", []byte("data"), 60000)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// it should retrieve a value
-	var data string
+	var data []byte
 	data, err = mc.Retrieve("cacheKey")
 	if err != nil {
 		t.Error(err)
 	}
-	if data != "data" {
+	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\"", "data", data)
 	}
 }
 
-func TestMemoryCache_ReapOnce(t *testing.T) {
-	mc := setupMemoryCache()
+func TestCache_ReapOnce(t *testing.T) {
+	mc := Cache{}
 
 	err := mc.Connect()
 	if err != nil {
@@ -87,21 +75,17 @@ func TestMemoryCache_ReapOnce(t *testing.T) {
 	}
 
 	// fake an expired entry
-	mc.Store("cacheKey", "data", -1000)
+	mc.Store("cacheKey", []byte("data"), -1000)
 
-	// fake a response channel to reap
-	ch := make(chan *ClientRequestContext, 100)
-	mc.T.ResponseChannels["cacheKey"] = ch
-
-	// it should remove empty response channel
 	mc.ReapOnce()
 
-	if mc.T.ResponseChannels["cacheKey"] != nil {
-		t.Errorf("expected response channel to be removed")
+	if _, err := mc.Retrieve("cacheKey"); err == nil {
+		t.Errorf("expected cache entry to be removed")
 	}
+
 }
 
-func TestMemoryCache_Close(t *testing.T) {
-	mc := setupMemoryCache()
+func TestCache_Close(t *testing.T) {
+	mc := Cache{}
 	mc.Close()
 }
