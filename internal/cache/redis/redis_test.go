@@ -16,26 +16,25 @@ package redis
 import (
 	"testing"
 
+	"github.com/Comcast/trickster/internal/config"
+
 	"github.com/alicebob/miniredis"
-	"github.com/go-kit/kit/log"
 )
 
-func setupRedisCache() (RedisCache, func()) {
+func setupRedisCache() (*Cache, func()) {
 	s, err := miniredis.Run()
 	if err != nil {
 		panic(err)
 	}
-	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1000}}
-	tr := TricksterHandler{
-		Logger:           log.NewNopLogger(),
-		ResponseChannels: make(map[string]chan *ClientRequestContext),
-		Config:           &cfg,
-	}
-	rcfg := RedisCacheConfig{Endpoint: s.Addr()}
+	config.Config = config.NewConfig()
+	rcfg := config.RedisCacheConfig{Endpoint: s.Addr()}
 	close := func() {
 		s.Close()
 	}
-	return RedisCache{T: &tr, Config: rcfg}, close
+	cacheConfig := config.CachingConfig{Type: "redis", Redis: rcfg}
+	config.Caches = map[string]config.CachingConfig{"default": cacheConfig}
+
+	return &Cache{Config: &cacheConfig}, close
 }
 
 func TestRedisCache_Connect(t *testing.T) {
@@ -59,7 +58,7 @@ func TestRedisCache_Store(t *testing.T) {
 	}
 
 	// it should store a value
-	err = rc.Store("cacheKey", "data", 60000)
+	err = rc.Store("cacheKey", []byte("data"), 60000)
 	if err != nil {
 		t.Error(err)
 	}
@@ -73,7 +72,7 @@ func TestRedisCache_Retrieve(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	err = rc.Store("cacheKey", "data", 60000)
+	err = rc.Store("cacheKey", []byte("data"), 60000)
 	if err != nil {
 		t.Error(err)
 	}
@@ -83,29 +82,8 @@ func TestRedisCache_Retrieve(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if data != "data" {
+	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\"", "data", data)
-	}
-}
-
-func TestRedisCache_ReapOnce(t *testing.T) {
-	rc, close := setupRedisCache()
-	defer close()
-
-	err := rc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-
-	// fake an empty response channel to reap
-	ch := make(chan *ClientRequestContext, 100)
-	rc.T.ResponseChannels["cacheKey"] = ch
-
-	// it should remove empty response channel
-	rc.ReapOnce()
-
-	if rc.T.ResponseChannels["cacheKey"] != nil {
-		t.Errorf("expected response channel to be removed")
 	}
 }
 
