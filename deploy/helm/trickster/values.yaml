@@ -77,13 +77,13 @@ ingress:
 
 # Resource limits & requests
 # Ref: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/
-resources:
-  limits:
-   cpu: 100m
-   memory: 128Mi
-  requests:
-   cpu: 100m
-   memory: 128Mi
+resources: {}
+  # limits:
+  #  cpu: 100m
+  #  memory: 128Mi
+  # requests:
+  #  cpu: 100m
+  #  memory: 128Mi
 
 # Node labels for pod assignment
 # Ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
