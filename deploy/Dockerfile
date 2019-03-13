@@ -10,7 +10,7 @@ FROM alpine:3.9
 LABEL maintainer "The Trickster Authors <trickster-developers@googlegroups.com>"
 
 COPY --from=builder /go/src/github.com/Comcast/trickster/trickster /usr/local/bin/trickster
-COPY conf/example.conf /etc/trickster/trickster.conf
+COPY cmd/trickster/conf/example.conf /etc/trickster/trickster.conf
 RUN chown nobody /usr/local/bin/trickster
 RUN chmod +x /usr/local/bin/trickster
 
