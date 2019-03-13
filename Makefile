@@ -41,6 +41,7 @@ release-artifacts:
 	GOOS=darwin GOARCH=amd64 go build -o ./OPATH/trickster-$(PROGVER).darwin-amd64 $(TRICKSTER_MAIN)/main.go && gzip -f ./OPATH/trickster-$(PROGVER).darwin-amd64
 	GOOS=linux  GOARCH=amd64 go build -o ./OPATH/trickster-$(PROGVER).linux-amd64  $(TRICKSTER_MAIN)/main.go && gzip -f ./OPATH/trickster-$(PROGVER).linux-amd64
 
+# Minikube and helm bootstrapping are done via deploy/helm/Makefile
 .PHONY: helm-local
 helm-local:
 	kubectl config use-context minikube --namespace=trickster
@@ -50,6 +51,7 @@ helm-local:
 	kubectl set image deployment/dev-trickster trickster=trickster:dev -n trickster
 	kubectl scale --replicas=1 deployment/dev-trickster -n trickster
 
+# Minikube and helm bootstrapping are done via deploy/kube/Makefile
 .PHONY: kube-local
 kube-local:
 	kubectl config use-context minikube
