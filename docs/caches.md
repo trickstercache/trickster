@@ -1,10 +1,11 @@
 # Cache Types
 
-There are 3 cache types supported by Trickster
+There are 4 cache types supported by Trickster
 
 * In-Memory Cache (default)
 * Filesystem Cache
 * Redis Cache
+* bbolt Cache
 
 The sample configuration ([cmd/trickster/conf/example.conf](../cmd/trickster/conf/example.conf)) demonstrates how to select and configure a particular cache type, as well as how to configure generic cache configurations such as Retention Policy.
 
@@ -22,9 +23,9 @@ The Filesystem Cache is a popular option when you have larger dashboard setup (e
 
 The default Filesystem Cache path is `/tmp/trickster`. The sample configuration demonstrates how to specify a custom cache path. Ensure that the user account running Trickster has read/write access to the custom directory or the application will exit on startup upon testing filesystem access. All users generally have access to /tmp so there is no concern about permissions in the default case.
 
-## BoltDB Cache
+## bbolt Cache
 
-The BoltDB Cache is a popular key/value store, created by [Ben Johnson](https://github.com/benbjohnson). [CoreOS's bbolt fork](https://github.com/coreos/bbolt) is the version implemented in Trickster. A BoltDB store is a filesystem-based solution that stores the entire database in a single file. Trickster, by default, creates the database at `trickster.db` and uses a bucket name of 'trickster' for storing key/value data. See the example config file for details on customizing this aspect of your Trickster deployment. The same guidance about filesystem permissions described in the Filesystem Cache section above apply to a BoltDB Cache.
+The BoltDB Cache is a popular key/value store, created by [Ben Johnson](https://github.com/benbjohnson). [CoreOS's bbolt fork](https://github.com/coreos/bbolt) is the version implemented in Trickster. A bbolt store is a filesystem-based solution that stores the entire database in a single file. Trickster, by default, creates the database at `trickster.db` and uses a bucket name of 'trickster' for storing key/value data. See the example config file for details on customizing this aspect of your Trickster deployment. The same guidance about filesystem permissions described in the Filesystem Cache section above apply to a bbolt Cache.
 
 ## Redis Cache
 
@@ -53,3 +54,7 @@ To completely purge a Filesystem-based Cache, you will need to:
 ### Redis Cache
 
 Connect to your Redis instance and issue a FLUSH command. Note that if your Redis instance supports more applications than Trickster, a FLUSH will clear the cache for all dependent applications.
+
+### bbolt Cache
+
+Stop the Trickster process and delete the configured bbolt file.
