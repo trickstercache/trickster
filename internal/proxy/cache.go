@@ -13,7 +13,12 @@
 
 package proxy
 
-import "github.com/Comcast/trickster/internal/cache"
+import (
+	"github.com/golang/snappy"
+
+	"github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/util/log"
+)
 
 // Cache Lookup Results
 const (
@@ -27,11 +32,25 @@ const (
 // QueryCache ...
 func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
 
+	inflate := c.Configuration().Compression
+	if inflate {
+		key += ".sz"
+	}
+
 	d := &HTTPDocument{}
 	bytes, err := c.Retrieve(key)
 	if err != nil {
 		return d, err
 	}
+
+	if inflate {
+		log.Debug("decompressing cached data", log.Pairs{"cacheKey": key})
+		b, err := snappy.Decode(nil, bytes)
+		if err == nil {
+			bytes = b
+		}
+	}
+
 	_, err = d.UnmarshalMsg(bytes)
 	return d, nil
 }
@@ -44,5 +63,12 @@ func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl int) error {
 	if err != nil {
 		return err
 	}
+
+	if c.Configuration().Compression {
+		key += ".sz"
+		log.Debug("compressing cached data", log.Pairs{"cacheKey": key})
+		bytes = snappy.Encode(nil, bytes)
+	}
+
 	return c.Store(key, bytes, int64(ttl))
 }

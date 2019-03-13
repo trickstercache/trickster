@@ -16,11 +16,9 @@
  import (
 	 "fmt"
 	 "net/http"
-	 _ "net/http/pprof"
+	 _ "net/http/pprof" // Comment to disable. Available on :METRICS_PORT/debug/pprof
 	 "os"
- 
-	 //"github.com/gorilla/handlers"
- 
+  
 	 "github.com/Comcast/trickster/internal/cache"
 	 "github.com/Comcast/trickster/internal/config"
 	 "github.com/Comcast/trickster/internal/routing"
