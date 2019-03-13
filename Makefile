@@ -7,7 +7,7 @@ TRICKSTER_MAIN := cmd/trickster
 DEP          := $(FIRST_GOPATH)/bin/dep
 TRICKSTER    := $(FIRST_GOPATH)/bin/trickster
 
-PROGVER = $(shell grep 'applicationVersion = ' cmd/trickster/main.go | awk '{print $$3}' | sed -e 's/\"//g')
+PROGVER = $(shell grep 'applicationVersion = ' $(TRICKSTER_MAIN)/main.go | awk '{print $$3}' | sed -e 's/\"//g')
 
 .PHONY: go-mod-vendor
 go-mod-vendor:
