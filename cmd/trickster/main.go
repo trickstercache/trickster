@@ -16,7 +16,7 @@
  import (
 	 "fmt"
 	 "net/http"
-	 _ "net/http/pprof" // Comment to disable. Availabl on :METRICS_PORT/debug/pprof
+	 _ "net/http/pprof" // Comment to disable. Available on :METRICS_PORT/debug/pprof
 	 "os"
   
 	 "github.com/Comcast/trickster/internal/cache"

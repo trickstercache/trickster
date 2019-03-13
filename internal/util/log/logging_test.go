@@ -11,25 +11,29 @@
 * limitations under the License.
  */
 
-package md5
+package log
 
 import (
 	"testing"
 )
 
-func TestTableChecksum(t *testing.T) {
-	var tests = []struct {
-		input    string
-		expected string
-	}{
-		{"abcd", "e2fc714c4727ee9395f324cd2e7f331f"},
-		{"1234", "81dc9bdb52d04dc20036dbd8313ed055"},
-		{"trickster", "a16c8420c9a58d63f141fee498205ea1"},
+func TestNewLogger(t *testing.T) {
+	testCases := []string{
+		"debug",
+		"info",
+		"warn",
+		"error",
+		"none",
 	}
+	// it should create a logger for each level
+	for _, tc := range testCases {
+		t.Run(tc, func(t *testing.T) {
+			newLogger(LoggingConfig{LogLevel: tc}, tc)
+		})
+	}
+}
 
-	for _, test := range tests {
-		if output := Checksum(test.input); output != test.expected {
-			t.Error("Test Failed: {} inputted, {} expected, recieved: {}", test.input, test.expected, output)
-		}
-	}
+func TestNewLogger_LogFile(t *testing.T) {
+	// it should create a logger that outputs to a log file ("out.test.log")
+	newLogger(LoggingConfig{LogFile: "out.log"}, "test")
 }

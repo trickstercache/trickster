@@ -32,16 +32,18 @@ const (
 // QueryCache ...
 func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
 
+	inflate := c.Configuration().Compression
+	if inflate {
+		key += ".sz"
+	}
+
 	d := &HTTPDocument{}
 	bytes, err := c.Retrieve(key)
 	if err != nil {
 		return d, err
 	}
 
-	// Decompress if it's not JSON. Because the Compression configuration may have changed between the time
-	// the document was cached and when it was retrieved, we have to inspect to determine if it should be decompressed
-	if bytes[0] != 123 {
-		// Not a JSON object, try decompressing
+	if inflate {
 		log.Debug("decompressing cached data", log.Pairs{"cacheKey": key})
 		b, err := snappy.Decode(nil, bytes)
 		if err == nil {
@@ -63,6 +65,7 @@ func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl int) error {
 	}
 
 	if c.Configuration().Compression {
+		key += ".sz"
 		log.Debug("compressing cached data", log.Pairs{"cacheKey": key})
 		bytes = snappy.Encode(nil, bytes)
 	}
