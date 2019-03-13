@@ -34,7 +34,7 @@ func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
 
 	inflate := c.Configuration().Compression
 	if inflate {
-		key += ".gz"
+		key += ".sz"
 	}
 
 	d := &HTTPDocument{}
@@ -65,7 +65,7 @@ func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl int) error {
 	}
 
 	if c.Configuration().Compression {
-		key += ".gz"
+		key += ".sz"
 		log.Debug("compressing cached data", log.Pairs{"cacheKey": key})
 		bytes = snappy.Encode(nil, bytes)
 	}
