@@ -17,18 +17,18 @@ import (
 	"net/http"
 	"net/url"
 
+	"encoding/json"
+	"fmt"
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy"
-	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/routing"
-	"encoding/json"
-	"fmt"
+	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/Comcast/trickster/internal/util/md5"
 	"regexp"
 	"strconv"
-	"time"
 	"strings"
-	"github.com/Comcast/trickster/internal/util/md5"
+	"time"
 )
 
 // Client Implements the Database Client Interface
@@ -41,17 +41,17 @@ type Client struct {
 }
 
 const (
-	APIPath      = "/"
-	mnQuery      = "query"
-	health       = "ping"
+	APIPath = "/"
+	mnQuery = "query"
+	health  = "ping"
 )
 
 // Common URL Parameter Names
 const (
-	upQuery   = "q"
+	upQuery = "q"
 )
 
-var reType, reTime1, reTime2, reStep, reparentheses, reTime1Parse, reTime2Parse  *regexp.Regexp
+var reType, reTime1, reTime2, reStep, reparentheses, reTime1Parse, reTime2Parse *regexp.Regexp
 
 func init() {
 	reType = regexp.MustCompile(`(?i)^(?P<statementType>SELECT|\w+)`)
@@ -165,12 +165,12 @@ func getTimeValueForQueriesWithoutNow(timeParsed []string) int64 {
 	}
 	re := regexp.MustCompile("[0-9]+")
 	number := re.FindAllString(timeWithoutOperator, -1)
-	numValue, _ := (strconv.ParseInt(number[0],10, 32))
+	numValue, _ := (strconv.ParseInt(number[0], 10, 32))
 	timeValue := numValue * multiplier.Nanoseconds()
 	return timeValue
 }
 
-func getTimeValueForQueriesWithNow(timeParsed []string) (int64, string)  {
+func getTimeValueForQueriesWithNow(timeParsed []string) (int64, string) {
 	suffix := strings.SplitAfterN(timeParsed[0], "now()", 2)
 	timeWithOperator := strings.TrimSpace(suffix[1])
 	timeWithOperator = timeWithOperator[2:]
@@ -192,8 +192,8 @@ func getTimeValueForQueriesWithNow(timeParsed []string) (int64, string)  {
 	default:
 		multiplier = time.Nanosecond
 	}
-	num := timeWithOperator[2:len(timeWithOperator)-1]
-	numValue, _ := (strconv.ParseInt(num,10, 32))
+	num := timeWithOperator[2 : len(timeWithOperator)-1]
+	numValue, _ := (strconv.ParseInt(num, 10, 32))
 	timeValue := numValue * multiplier.Nanoseconds()
 	return timeValue, timeWithOperator
 }
@@ -228,7 +228,7 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 		time2Parsed := reTime2Parse.FindAllString(time2[0], -1)
 		if time2Parsed != nil && len(time2Parsed) != 0 {
 
-			if (strings.Index(time2Parsed[0], "now()") != -1) {
+			if strings.Index(time2Parsed[0], "now()") != -1 {
 				timeValue, time2WithOperator := getTimeValueForQueriesWithNow(time2Parsed)
 				operator := time2WithOperator[0]
 				switch operator {
@@ -250,7 +250,7 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 		}
 
 	} else {
-		if (trq.Extent.End.IsZero()) {
+		if trq.Extent.End.IsZero() {
 			trq.Extent.End = time.Now().UTC()
 		}
 	}
@@ -261,14 +261,14 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 		time1Parsed := reTime1Parse.FindAllString(time1[0], -1)
 		if time1Parsed != nil && len(time1Parsed) != 0 {
 
-			if (strings.Index(time1Parsed[0], "now()") != -1) {
+			if strings.Index(time1Parsed[0], "now()") != -1 {
 				timeValue, time1WithOperator := getTimeValueForQueriesWithNow(time1Parsed)
 				operator := time1WithOperator[0]
 				switch operator {
 				case '-':
 					timeValue = time.Now().UTC().UnixNano() - timeValue
 					trq.Extent.Start, _ = time.Parse(time.RFC3339, string(timeValue))
-					if (trq.Extent.End.IsZero()) {
+					if trq.Extent.End.IsZero() {
 						trq.Extent.End = time.Now().UTC()
 					}
 				case '+':
@@ -285,7 +285,7 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 		}
 
 	} else {
-		if (trq.Extent.Start.IsZero()) {
+		if trq.Extent.Start.IsZero() {
 			trq.Extent.Start = time.Now().UTC()
 		}
 	}
@@ -315,7 +315,7 @@ func (c Client) FastForwardURL(r *proxy.Request) (*url.URL, error) {
 	return &url.URL{}, nil
 }
 func (c Client) RegisterRoutes(originName string, o config.OriginConfig) {
-	fmt.Println("Registering Origin Handlers" + "originType" + o.Type, "originName" + originName)
+	fmt.Println("Registering Origin Handlers"+"originType"+o.Type, "originName"+originName)
 	routing.Router.HandleFunc("/"+health, c.HealthHandler).Methods("GET")
 	routing.Router.HandleFunc("/"+originName+APIPath+mnQuery, c.QueryHandler).Methods("GET")
 	routing.Router.PathPrefix("/" + originName + APIPath).HandlerFunc(c.ProxyHandler).Methods("GET")

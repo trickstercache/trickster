@@ -19,15 +19,12 @@ import (
 	_ "net/http/pprof" // Comment to disable. Available on :METRICS_PORT/debug/pprof
 	"os"
 
-	cr "github.com/Comcast/trickster/internal/cache/registration"
+	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/routing"
-	rr "github.com/Comcast/trickster/internal/routing/registration"
+	"github.com/Comcast/trickster/internal/routing/registration"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
-
-	"github.com/gorilla/handlers"
 )
 
 const (
@@ -54,14 +51,13 @@ func main() {
 	log.Info("application start up", log.Pairs{"name": applicationName, "version": applicationVersion})
 
 	metrics.Init()
-	cr.LoadCachesFromConfig()
-	proxy.RegisterPingHandler()
-	rr.RegisterProxyRoutes()
+	cache.LoadCachesFromConfig()
+	registration.RegisterProxyRoutes()
 
 	log.Info("proxy http endpoint starting", log.Pairs{"address": config.ProxyServer.ListenAddress, "port": config.ProxyServer.ListenPort})
 
 	// Start the Server
-	err = http.ListenAndServe(fmt.Sprintf("%s:%d", config.ProxyServer.ListenAddress, config.ProxyServer.ListenPort), handlers.CompressHandler(routing.Router))
+	err = http.ListenAndServe(fmt.Sprintf("%s:%d", config.ProxyServer.ListenAddress, config.ProxyServer.ListenPort), routing.Router)
 	log.Error("exiting", log.Pairs{"err": err})
 
 }

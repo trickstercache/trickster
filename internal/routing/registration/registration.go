@@ -17,13 +17,17 @@ import (
 	"strings"
 
 	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/proxy/influxdb"
 	"github.com/Comcast/trickster/internal/proxy/prometheus"
 	"github.com/Comcast/trickster/internal/util/log"
 )
+
+// RegisterCaches ...
+func RegisterCaches() {
+
+}
 
 // RegisterProxyRoutes ...
 func RegisterProxyRoutes() {
@@ -35,7 +39,7 @@ func RegisterProxyRoutes() {
 		var c cache.Cache
 		var err error
 
-		c, err = registration.GetCache(o.CacheName)
+		c, err = cache.GetCache(o.CacheName)
 		if err != nil {
 			log.Fatal(1, "invalid cache name in origin config", log.Pairs{"originName": k, "cacheName": o.CacheName})
 		}
