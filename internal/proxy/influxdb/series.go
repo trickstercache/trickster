@@ -14,8 +14,8 @@
 package influxdb
 
 import (
-	"time"
 	"sort"
+	"time"
 
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/influxdata/influxdb/models"
@@ -43,7 +43,7 @@ func contains(arr []string, key string) int {
 
 // SetExtents ...
 func (se SeriesEnvelope) SetExtents(extents []timeseries.Extent) {
-	for i := 0; i< len(extents); i++ {
+	for i := 0; i < len(extents); i++ {
 		se.ExtentList[i] = extents[i]
 	}
 }
@@ -52,7 +52,7 @@ func (se *SeriesEnvelope) Extremes() []timeseries.Extent {
 
 	var containsIndex = contains(se.Results[0].Series[0].Columns, "time")
 	var ans []int64
-	if  (containsIndex != -1) {
+	if containsIndex != -1 {
 		resultSize := len(se.Results)
 		for index := 0; index < resultSize; index++ {
 			seriesSize := len(se.Results[index].Series)
@@ -79,9 +79,10 @@ func (se *SeriesEnvelope) Extremes() []timeseries.Extent {
 	}
 	return nil
 }
+
 // Extents ...
 func (se SeriesEnvelope) Extents() []timeseries.Extent {
-	if (len(se.Extents()) == 0) {
+	if len(se.Extents()) == 0 {
 		return se.Extremes()
 	}
 	return se.ExtentList
@@ -158,13 +159,13 @@ func (se SeriesEnvelope) Merge(collection ...timeseries.Timeseries) {
 // Copy ...
 func (se SeriesEnvelope) Copy() timeseries.Timeseries {
 	resultSe := &SeriesEnvelope{
-		Err: se.Err,
+		Err:     se.Err,
 		Results: make([]Result, 0, len(se.Results)),
 	}
 	for index := range se.Results {
 		resResult := se.Results[index]
 		resResult.Err = se.Results[index].Err
-		resResult.StatementID =  se.Results[index].StatementID
+		resResult.StatementID = se.Results[index].StatementID
 		for seriesIndex := range se.Results[index].Series {
 			serResult := se.Results[index].Series[seriesIndex]
 			serResult.Name = se.Results[index].Series[seriesIndex].Name
@@ -197,11 +198,11 @@ func (se SeriesEnvelope) Copy() timeseries.Timeseries {
 func (se SeriesEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 
 	ts := &SeriesEnvelope{
-		Err: se.Err,
+		Err:     se.Err,
 		Results: make([]Result, 0, len(se.Results)),
 	}
 
-	for _,s := range se.Results[0].Series {
+	for _, s := range se.Results[0].Series {
 		l := len(s.Values)
 		ss := &models.Row{Name: s.Name, Tags: s.Tags, Columns: s.Columns, Values: make([][]interface{}, 0, l), Partial: s.Partial}
 		start := 0
@@ -243,7 +244,7 @@ func (se SeriesEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 func (se SeriesEnvelope) Sort() {
 	m := make(map[int64]models.Row)
 	var containsIndex = contains(se.Results[0].Series[0].Columns, "time")
-	if  (containsIndex != -1) {
+	if containsIndex != -1 {
 		resultSize := len(se.Results)
 		for index := 0; index < resultSize; index++ {
 			seriesSize := len(se.Results[index].Series)
@@ -258,7 +259,7 @@ func (se SeriesEnvelope) Sort() {
 			for key := range m {
 				keys = append(keys, key)
 			}
-			sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j]})
+			sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 			sm := make([]models.Row, 0, len(keys))
 			for _, key := range keys {
 				sm = append(sm, m[key])
