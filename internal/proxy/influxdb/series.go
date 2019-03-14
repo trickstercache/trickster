@@ -14,8 +14,8 @@
 package influxdb
 
 import (
-	"sort"
 	"time"
+	"sort"
 
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/influxdata/influxdb/models"
@@ -25,8 +25,10 @@ const (
 	// MinimumTick is the minimum supported time resolution. This has to be
 	// at least time.Second in order for the code below to work.
 	minimumTick = time.Millisecond
-	// milliSecondValue is the no of milliseconds in one second (1000).
-	milliSecondValue = int64(time.Second / minimumTick)
+	// second is the Time duration equivalent to one second.
+	second = int64(time.Second / minimumTick)
+	// The number of nanoseconds per minimum tick.
+	nanosPerTick = int64(minimumTick / time.Nanosecond)
 )
 
 func contains(arr []string, key string) int {
@@ -41,17 +43,16 @@ func contains(arr []string, key string) int {
 
 // SetExtents ...
 func (se SeriesEnvelope) SetExtents(extents []timeseries.Extent) {
-	for i := 0; i < len(extents); i++ {
+	for i := 0; i< len(extents); i++ {
 		se.ExtentList[i] = extents[i]
 	}
 }
 
-// Extremes ...
 func (se *SeriesEnvelope) Extremes() []timeseries.Extent {
 
 	var containsIndex = contains(se.Results[0].Series[0].Columns, "time")
 	var ans []int64
-	if containsIndex != -1 {
+	if  (containsIndex != -1) {
 		resultSize := len(se.Results)
 		for index := 0; index < resultSize; index++ {
 			seriesSize := len(se.Results[index].Series)
@@ -73,52 +74,51 @@ func (se *SeriesEnvelope) Extremes() []timeseries.Extent {
 				min = ans[i]
 			}
 		}
-		se.ExtentList = []timeseries.Extent{timeseries.Extent{Start: time.Unix(min/milliSecondValue, (min%milliSecondValue)*(int64(minimumTick))), End: time.Unix(max/milliSecondValue, (max%milliSecondValue)*(int64(minimumTick)))}}
+		se.ExtentList = []timeseries.Extent{timeseries.Extent{Start: time.Unix(min/second, (min%second)*nanosPerTick), End: time.Unix(max/second, (max%second)*nanosPerTick)}}
 		return se.ExtentList
 	}
 	return nil
 }
-
 // Extents ...
 func (se SeriesEnvelope) Extents() []timeseries.Extent {
-	if len(se.Extents()) == 0 {
+	if (len(se.Extents()) == 0) {
 		return se.Extremes()
 	}
 	return se.ExtentList
 }
 
 // CalculateDeltas ...
-//func (se SeriesEnvelope) CalculateDeltas(trq *timeseries.TimeRangeQuery) []timeseries.Extent {
-//	se.Extremes()
-//	misses := []time.Time{}
-//	for i := trq.Extent.Start; trq.Extent.End.After(i) || trq.Extent.End == i; i = i.Add(time.Second * time.Duration(trq.Step)) {
-//		found := false
-//		for j := range se.Extents() {
-//			if i == se.Extents()[j].Start || i == se.Extents()[j].End || (i.After(se.Extents()[j].Start) && se.Extents()[j].End.After(i)) {
-//				found = true
-//				break
-//			}
-//		}
-//		if !found {
-//			misses = append(misses, i)
-//		}
-//	}
-//	// Find the fill and gap ranges
-//	ins := []timeseries.Extent{}
-//	e := time.Unix(0, 0)
-//	var inStart = e
-//	l := len(misses)
-//	for i := range misses {
-//		if inStart == e {
-//			inStart = misses[i]
-//		}
-//		if i+1 == l || misses[i+1] != misses[i].Add(se.Step()) {
-//			ins = append(ins, timeseries.Extent{Start: inStart, End: misses[i]})
-//			inStart = e
-//		}
-//	}
-//	return ins
-//}
+func (se SeriesEnvelope) CalculateDeltas(trq *timeseries.TimeRangeQuery) []timeseries.Extent {
+	se.Extremes()
+	misses := []time.Time{}
+	for i := trq.Extent.Start; trq.Extent.End.After(i) || trq.Extent.End == i; i = i.Add(time.Second * time.Duration(trq.Step)) {
+		found := false
+		for j := range se.Extents() {
+			if i == se.Extents()[j].Start || i == se.Extents()[j].End || (i.After(se.Extents()[j].Start) && se.Extents()[j].End.After(i)) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			misses = append(misses, i)
+		}
+	}
+	// Find the fill and gap ranges
+	ins := []timeseries.Extent{}
+	e := time.Unix(0, 0)
+	var inStart = e
+	l := len(misses)
+	for i := range misses {
+		if inStart == e {
+			inStart = misses[i]
+		}
+		if i+1 == l || misses[i+1] != misses[i].Add(se.Step()) {
+			ins = append(ins, timeseries.Extent{Start: inStart, End: misses[i]})
+			inStart = e
+		}
+	}
+	return ins
+}
 
 // Step ...
 func (se SeriesEnvelope) Step() time.Duration {
@@ -131,7 +131,7 @@ func (se SeriesEnvelope) SetStep(step time.Duration) {
 }
 
 // Merge ...
-func (se SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) {
+func (se SeriesEnvelope) Merge(collection ...timeseries.Timeseries) {
 	seResults := make(map[int]*Result)
 
 	for _, s := range se.Results {
@@ -152,21 +152,19 @@ func (se SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) {
 			se.ExtentList = append(se.ExtentList, se2.ExtentList...)
 		}
 	}
-	if (sort) {
-		se.Sort()
-	}
+	se.Sort()
 }
 
 // Copy ...
 func (se SeriesEnvelope) Copy() timeseries.Timeseries {
 	resultSe := &SeriesEnvelope{
-		Err:     se.Err,
+		Err: se.Err,
 		Results: make([]Result, 0, len(se.Results)),
 	}
 	for index := range se.Results {
 		resResult := se.Results[index]
 		resResult.Err = se.Results[index].Err
-		resResult.StatementID = se.Results[index].StatementID
+		resResult.StatementID =  se.Results[index].StatementID
 		for seriesIndex := range se.Results[index].Series {
 			serResult := se.Results[index].Series[seriesIndex]
 			serResult.Name = se.Results[index].Series[seriesIndex].Name
@@ -199,11 +197,11 @@ func (se SeriesEnvelope) Copy() timeseries.Timeseries {
 func (se SeriesEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 
 	ts := &SeriesEnvelope{
-		Err:     se.Err,
+		Err: se.Err,
 		Results: make([]Result, 0, len(se.Results)),
 	}
 
-	for _, s := range se.Results[0].Series {
+	for _,s := range se.Results[0].Series {
 		l := len(s.Values)
 		ss := &models.Row{Name: s.Name, Tags: s.Tags, Columns: s.Columns, Values: make([][]interface{}, 0, l), Partial: s.Partial}
 		start := 0
@@ -242,23 +240,10 @@ func (se SeriesEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 }
 
 // Sort ...
-<<<<<<< HEAD
-func (se SeriesEnvelope) Sort() {}
-
-// SeriesCount returns the number of individual Series in the Timeseries object
-func (se SeriesEnvelope) SeriesCount() int {
-	return 0
-}
-
-// ValueCount returns the count of all values across all Series in the Timeseries object
-func (se SeriesEnvelope) ValueCount() int {
-	return 0
-}
-
 func (se SeriesEnvelope) Sort() {
 	m := make(map[int64]models.Row)
 	var containsIndex = contains(se.Results[0].Series[0].Columns, "time")
-	if containsIndex != -1 {
+	if  (containsIndex != -1) {
 		resultSize := len(se.Results)
 		for index := 0; index < resultSize; index++ {
 			seriesSize := len(se.Results[index].Series)
@@ -273,7 +258,7 @@ func (se SeriesEnvelope) Sort() {
 			for key := range m {
 				keys = append(keys, key)
 			}
-			sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+			sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j]})
 			sm := make([]models.Row, 0, len(keys))
 			for _, key := range keys {
 				sm = append(sm, m[key])

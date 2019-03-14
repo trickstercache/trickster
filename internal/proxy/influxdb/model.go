@@ -23,8 +23,8 @@ import (
 
 // SeriesEnvelope ...
 type SeriesEnvelope struct {
-	Results      []Result            `json:"results"`
-	Err          string              `json:"error,omitempty"`
+    Results      []Result            `json:"results"`
+	Err     	 string              `json:"error,omitempty"`
 	StepDuration time.Duration       `json:"step,omitempty"`
 	ExtentList   []timeseries.Extent `json:"extents,omitempty"`
 }

@@ -17,18 +17,18 @@ import (
 	"net/http"
 	"net/url"
 
-	"encoding/json"
-	"fmt"
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy"
-	"github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/internal/util/md5"
+	"github.com/Comcast/trickster/internal/routing"
+	"encoding/json"
+	"fmt"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
+	"strings"
+	"github.com/Comcast/trickster/internal/util/md5"
 )
 
 // Client Implements the Database Client Interface
@@ -41,17 +41,17 @@ type Client struct {
 }
 
 const (
-	APIPath = "/"
-	mnQuery = "query"
-	health  = "ping"
+	APIPath      = "/"
+	mnQuery      = "query"
+	health       = "ping"
 )
 
 // Common URL Parameter Names
 const (
-	upQuery = "q"
+	upQuery   = "q"
 )
 
-var reType, reTime1, reTime2, reStep, reparentheses, reTime1Parse, reTime2Parse *regexp.Regexp
+var reType, reTime1, reTime2, reStep, reparentheses, reTime1Parse, reTime2Parse  *regexp.Regexp
 
 func init() {
 	reType = regexp.MustCompile(`(?i)^(?P<statementType>SELECT|\w+)`)
@@ -90,8 +90,8 @@ func (c Client) BaseURL() *url.URL {
 }
 
 // UnmarshalInstantaneous ...
-func (c Client) UnmarshalInstantaneous([]byte) (timeseries.Timeseries, error) {
-	return SeriesEnvelope{}, nil
+func (c Client) UnmarshalInstantaneous() timeseries.Timeseries {
+	return SeriesEnvelope{}
 }
 
 // BuildUpstreamURL ...
@@ -135,13 +135,10 @@ func (c Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	proxy.ObjectProxyCacheRequest(proxy.NewRequest(c.Name, proxy.OtInfluxDb, "QueryHandler", r.Method, u, r.Header, r), w, &c, c.Cache, 30, false, false)
 }
 
-func getTimeValueForQueriesWithoutNow(timeParsed []string) (int64, error) {
-	if timeParsed == nil || len(timeParsed) == 0 {
-		return 0, proxy.ErrorTimeArrayEmpty()
-	}
+func getTimeValueForQueriesWithoutNow(timeParsed []string) int64 {
 	suffix := strings.SplitAfterN(timeParsed[0], " ", 2)
 	timeWithoutOperator := strings.TrimSpace(suffix[1])
-	timeWithoutOperator = timeWithoutOperator[0:]
+	timeWithoutOperator = timeWithoutOperator[2:]
 	unit := timeWithoutOperator[len(timeWithoutOperator)-1]
 	var multiplier = time.Nanosecond
 
@@ -168,23 +165,17 @@ func getTimeValueForQueriesWithoutNow(timeParsed []string) (int64, error) {
 	}
 	re := regexp.MustCompile("[0-9]+")
 	number := re.FindAllString(timeWithoutOperator, -1)
-	numValue, err := (strconv.ParseInt(number[0], 10, 64))
-	if (err != nil) {
-		panic(err)
-	}
+	numValue, _ := (strconv.ParseInt(number[0],10, 32))
 	timeValue := numValue * multiplier.Nanoseconds()
-	return timeValue, nil
+	return timeValue
 }
 
-func getTimeValueForQueriesWithNow(timeParsed []string) (int64, string, error) {
-	if timeParsed == nil || len(timeParsed) == 0 {
-		return 0, "", proxy.ErrorTimeArrayEmpty()
-	}
+func getTimeValueForQueriesWithNow(timeParsed []string) (int64, string)  {
 	suffix := strings.SplitAfterN(timeParsed[0], "now()", 2)
 	timeWithOperator := strings.TrimSpace(suffix[1])
-	timeWithoutOperator := timeWithOperator[2:]
-	unit := timeWithoutOperator[len(timeWithoutOperator)-1]
-	var multiplier time.Duration
+	timeWithOperator = timeWithOperator[2:]
+	unit := timeWithOperator[len(timeWithOperator)-1]
+	var multiplier = time.Nanosecond
 	switch unit {
 	case 'y':
 		multiplier = 365 * 24 * time.Hour
@@ -201,13 +192,14 @@ func getTimeValueForQueriesWithNow(timeParsed []string) (int64, string, error) {
 	default:
 		multiplier = time.Nanosecond
 	}
-	num := timeWithOperator[2 : len(timeWithOperator)-1]
-	numValue, _ := (strconv.ParseInt(num, 10, 32))
+	num := timeWithOperator[2:len(timeWithOperator)-1]
+	numValue, _ := (strconv.ParseInt(num,10, 32))
 	timeValue := numValue * multiplier.Nanoseconds()
-	return timeValue, timeWithOperator, nil
+	return timeValue, timeWithOperator
 }
 
 // ParseTimeRangeQuery ...
+//todo: convert this giant function into a list of smaller functions
 func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	qi := r.URL.Query()
@@ -221,11 +213,9 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 	if stepArray != nil && len(stepArray) != 0 {
 		stepWithParen := reparentheses.FindAllString(stepArray[0], -1)
 		if stepWithParen != nil && len(stepWithParen) != 0 {
-			re := regexp.MustCompile("[0-9]+")
-			numericStep := re.FindAllString(stepWithParen[0][1:len(stepWithParen[0])-1], -1)
-			step, err := strconv.ParseInt(numericStep[0], 10, 0)
+			step, err := strconv.ParseInt(stepWithParen[0][1:len(stepWithParen)-1], 10, 0)
 			if err != nil {
-				return nil, err
+				return nil, proxy.ErrorMissingURLParam(upQuery)
 			} else {
 				trq.Step = step
 			}
@@ -237,36 +227,30 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 	if time2 != nil && len(time2) != 0 {
 		time2Parsed := reTime2Parse.FindAllString(time2[0], -1)
 		if time2Parsed != nil && len(time2Parsed) != 0 {
-			if strings.Index(time2Parsed[0], "now()") != -1 {
-				timeValue, time2WithOperator, err := getTimeValueForQueriesWithNow(time2Parsed)
-				if (err != nil) {
-					return nil, err
-				}
+
+			if (strings.Index(time2Parsed[0], "now()") != -1) {
+				timeValue, time2WithOperator := getTimeValueForQueriesWithNow(time2Parsed)
 				operator := time2WithOperator[0]
 				switch operator {
 				case '-':
 					timeValue = time.Now().UTC().UnixNano() - timeValue
-					trq.Extent.Start = time.Unix(0, timeValue)
-					trq.Extent.End = time.Unix(0, timeValue)
+					trq.Extent.Start, _ = time.Parse(time.RFC3339, string(timeValue))
+					trq.Extent.End = time.Now().UTC()
 				case '+':
 					timeValue = time.Now().UnixNano() + timeValue
-					trq.Extent.Start = time.Unix(0, timeValue)
-					trq.Extent.End = time.Unix(0, timeValue)
+					trq.Extent.Start = time.Now().UTC()
+					trq.Extent.End, _ = time.Parse(time.RFC3339, string(timeValue))
 				default:
 					timeValue = time.Now().UTC().UnixNano()
 				}
 
 			} else {
-				val, err := getTimeValueForQueriesWithoutNow(time2Parsed)
-				if (err != nil) {
-					return nil, err
-				}
-				trq.Extent.End = time.Unix(0, val)
+				trq.Extent.End, _ = time.Parse(time.RFC3339, string(getTimeValueForQueriesWithoutNow(time2Parsed)))
 			}
 		}
 
 	} else {
-		if trq.Extent.End.IsZero() {
+		if (trq.Extent.End.IsZero()) {
 			trq.Extent.End = time.Now().UTC()
 		}
 	}
@@ -276,39 +260,36 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 	if time1 != nil && len(time1) != 0 {
 		time1Parsed := reTime1Parse.FindAllString(time1[0], -1)
 		if time1Parsed != nil && len(time1Parsed) != 0 {
-			if strings.Index(time1Parsed[0], "now()") != -1 {
-				timeValue, time1WithOperator, err := getTimeValueForQueriesWithNow(time1Parsed)
-				if (err != nil) {
-					return nil, err
-				}
+
+			if (strings.Index(time1Parsed[0], "now()") != -1) {
+				timeValue, time1WithOperator := getTimeValueForQueriesWithNow(time1Parsed)
 				operator := time1WithOperator[0]
 				switch operator {
 				case '-':
 					timeValue = time.Now().UTC().UnixNano() - timeValue
-					trq.Extent.Start = time.Unix(0, timeValue)
-					if trq.Extent.End.IsZero() {
+					trq.Extent.Start, _ = time.Parse(time.RFC3339, string(timeValue))
+					if (trq.Extent.End.IsZero()) {
 						trq.Extent.End = time.Now().UTC()
 					}
 				case '+':
 					timeValue = time.Now().UnixNano() + timeValue
-					trq.Extent.End = time.Unix(0, timeValue)
-					if trq.Extent.Start.IsZero() {
-						trq.Extent.Start = time.Now().UTC()
-					}
+					trq.Extent.Start, _ = time.Parse(time.RFC3339, string(timeValue))
+					trq.Extent.End, _ = time.Parse(time.RFC3339, string(timeValue))
 				default:
-					timeValue = time.Now().UTC().UnixNano()
+					timeValue = time.Now().UnixNano()
 				}
 
 			} else {
-				val, err := getTimeValueForQueriesWithoutNow(time1Parsed)
-				if (err != nil) {
-					return nil, err
-				}
-				trq.Extent.Start = time.Unix(0, val)
+				trq.Extent.Start, _ = time.Parse(time.RFC3339, string(getTimeValueForQueriesWithoutNow(time1Parsed)))
 			}
 		}
 
+	} else {
+		if (trq.Extent.Start.IsZero()) {
+			trq.Extent.Start = time.Now().UTC()
+		}
 	}
+
 	return trq, nil
 }
 
@@ -326,15 +307,8 @@ func (c Client) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, error) {
 }
 
 // RegisterRoutes ...
-<<<<<<< HEAD
-func (c Client) RegisterRoutes(name string, o config.OriginConfig) {}
-
-// FastForwardURL ...
-func (c Client) FastForwardURL(r *proxy.Request) (*url.URL, error) {
-	return &url.URL{}, nil
-}
 func (c Client) RegisterRoutes(originName string, o config.OriginConfig) {
-	fmt.Println("Registering Origin Handlers"+"originType"+o.Type, "originName"+originName)
+	fmt.Println("Registering Origin Handlers" + "originType" + o.Type, "originName" + originName)
 	routing.Router.HandleFunc("/"+health, c.HealthHandler).Methods("GET")
 	routing.Router.HandleFunc("/"+originName+APIPath+mnQuery, c.QueryHandler).Methods("GET")
 	routing.Router.PathPrefix("/" + originName + APIPath).HandlerFunc(c.ProxyHandler).Methods("GET")

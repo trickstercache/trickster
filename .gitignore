@@ -35,6 +35,3 @@ cacheKey.expiration
 
 #Goland IDE
 .idea/
-
-#log testing
-out.log
