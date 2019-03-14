@@ -32,3 +32,6 @@ trickster
 # dep
 cacheKey.data
 cacheKey.expiration
+
+#Goland IDE
+.idea/
