@@ -173,8 +173,8 @@ func getTimeValueForQueriesWithoutNow(timeParsed []string) int64 {
 func getTimeValueForQueriesWithNow(timeParsed []string) (int64, string) {
 	suffix := strings.SplitAfterN(timeParsed[0], "now()", 2)
 	timeWithOperator := strings.TrimSpace(suffix[1])
-	timeWithOperator = timeWithOperator[2:]
-	unit := timeWithOperator[len(timeWithOperator)-1]
+	timeWithoutOperator := timeWithOperator[2:]
+	unit := timeWithoutOperator[len(timeWithoutOperator)-1]
 	var multiplier = time.Nanosecond
 	switch unit {
 	case 'y':
@@ -213,9 +213,11 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 	if stepArray != nil && len(stepArray) != 0 {
 		stepWithParen := reparentheses.FindAllString(stepArray[0], -1)
 		if stepWithParen != nil && len(stepWithParen) != 0 {
-			step, err := strconv.ParseInt(stepWithParen[0][1:len(stepWithParen)-1], 10, 0)
+			re := regexp.MustCompile("[0-9]+")
+			numericStep := re.FindAllString(stepWithParen[0][1:len(stepWithParen[0])-1], -1)
+			step, err := strconv.ParseInt(numericStep[0], 10, 0)
 			if err != nil {
-				return nil, proxy.ErrorMissingURLParam(upQuery)
+				return nil, err
 			} else {
 				trq.Step = step
 			}
@@ -234,18 +236,18 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 				switch operator {
 				case '-':
 					timeValue = time.Now().UTC().UnixNano() - timeValue
-					trq.Extent.Start, _ = time.Parse(time.RFC3339, string(timeValue))
+					trq.Extent.Start = time.Unix(0, timeValue)
 					trq.Extent.End = time.Now().UTC()
 				case '+':
 					timeValue = time.Now().UnixNano() + timeValue
 					trq.Extent.Start = time.Now().UTC()
-					trq.Extent.End, _ = time.Parse(time.RFC3339, string(timeValue))
+					trq.Extent.End = time.Unix(0, timeValue)
 				default:
 					timeValue = time.Now().UTC().UnixNano()
 				}
 
 			} else {
-				trq.Extent.End, _ = time.Parse(time.RFC3339, string(getTimeValueForQueriesWithoutNow(time2Parsed)))
+				trq.Extent.End = time.Unix(0, getTimeValueForQueriesWithoutNow(time2Parsed))
 			}
 		}
 
@@ -267,20 +269,22 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 				switch operator {
 				case '-':
 					timeValue = time.Now().UTC().UnixNano() - timeValue
-					trq.Extent.Start, _ = time.Parse(time.RFC3339, string(timeValue))
+					trq.Extent.Start = time.Unix(0, timeValue)
 					if trq.Extent.End.IsZero() {
 						trq.Extent.End = time.Now().UTC()
 					}
 				case '+':
 					timeValue = time.Now().UnixNano() + timeValue
-					trq.Extent.Start, _ = time.Parse(time.RFC3339, string(timeValue))
-					trq.Extent.End, _ = time.Parse(time.RFC3339, string(timeValue))
+					trq.Extent.End = time.Unix(0, timeValue)
+					if trq.Extent.Start.IsZero() {
+						trq.Extent.Start = time.Now().UTC()
+					}
 				default:
-					timeValue = time.Now().UnixNano()
+					timeValue = time.Now().UTC().UnixNano()
 				}
 
 			} else {
-				trq.Extent.Start, _ = time.Parse(time.RFC3339, string(getTimeValueForQueriesWithoutNow(time1Parsed)))
+				trq.Extent.Start = time.Unix(0, getTimeValueForQueriesWithoutNow(time1Parsed))
 			}
 		}
 
