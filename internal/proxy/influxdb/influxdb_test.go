@@ -58,3 +58,20 @@ func TestParseTimeRangeQueryWithoutNow(t *testing.T) {
 		assert.Equal(t, ans.Extent.End.UTC().Second() - ans.Extent.Start.UTC().Second(), 1)
 	}
 }
+
+func TestParseTimeRangeQueryWithAbsoluteTime(t *testing.T) {
+	req := &http.Request{URL: &url.URL{
+		Scheme:   "https",
+		Host:     "blah.com",
+		Path:     "/",
+		RawQuery: "q=SELECT%20mean(%22value%22)%20FROM%20%22monthly%22.%22bandwidth.1min%22%20WHERE%20(%22cdn%22%20%3D%20%27over-the-top%27)%20AND%20time%20%3C%2052926911486ms%20GROUP%20BY%20time(15s)%2C%20%22cachegroup%22%20fill(null)",
+	}}
+	client := &Client{}
+	ans, err := client.ParseTimeRangeQuery(req)
+	if (err != nil) {
+		fmt.Println(err.Error())
+	} else {
+		assert.Equal(t, int(ans.Step), 15)
+		assert.Equal(t, ans.Extent.Start.UTC().IsZero(), true)
+	}
+}
