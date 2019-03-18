@@ -138,7 +138,7 @@ func (c Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 func getTimeValueForQueriesWithoutNow(timeParsed []string) int64 {
 	suffix := strings.SplitAfterN(timeParsed[0], " ", 2)
 	timeWithoutOperator := strings.TrimSpace(suffix[1])
-	timeWithoutOperator = timeWithoutOperator[2:]
+	timeWithoutOperator = timeWithoutOperator[0:]
 	unit := timeWithoutOperator[len(timeWithoutOperator)-1]
 	var multiplier = time.Nanosecond
 
@@ -165,7 +165,10 @@ func getTimeValueForQueriesWithoutNow(timeParsed []string) int64 {
 	}
 	re := regexp.MustCompile("[0-9]+")
 	number := re.FindAllString(timeWithoutOperator, -1)
-	numValue, _ := (strconv.ParseInt(number[0], 10, 32))
+	numValue, err := (strconv.ParseInt(number[0], 10, 64))
+	if (err != nil) {
+		panic(err)
+	}
 	timeValue := numValue * multiplier.Nanoseconds()
 	return timeValue
 }
@@ -199,7 +202,6 @@ func getTimeValueForQueriesWithNow(timeParsed []string) (int64, string) {
 }
 
 // ParseTimeRangeQuery ...
-//todo: convert this giant function into a list of smaller functions
 func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	qi := r.URL.Query()
@@ -229,7 +231,6 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 	if time2 != nil && len(time2) != 0 {
 		time2Parsed := reTime2Parse.FindAllString(time2[0], -1)
 		if time2Parsed != nil && len(time2Parsed) != 0 {
-
 			if strings.Index(time2Parsed[0], "now()") != -1 {
 				timeValue, time2WithOperator := getTimeValueForQueriesWithNow(time2Parsed)
 				operator := time2WithOperator[0]
@@ -237,10 +238,10 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 				case '-':
 					timeValue = time.Now().UTC().UnixNano() - timeValue
 					trq.Extent.Start = time.Unix(0, timeValue)
-					trq.Extent.End = time.Now().UTC()
+					trq.Extent.End = time.Unix(0, timeValue)
 				case '+':
 					timeValue = time.Now().UnixNano() + timeValue
-					trq.Extent.Start = time.Now().UTC()
+					trq.Extent.Start = time.Unix(0, timeValue)
 					trq.Extent.End = time.Unix(0, timeValue)
 				default:
 					timeValue = time.Now().UTC().UnixNano()
@@ -262,7 +263,6 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 	if time1 != nil && len(time1) != 0 {
 		time1Parsed := reTime1Parse.FindAllString(time1[0], -1)
 		if time1Parsed != nil && len(time1Parsed) != 0 {
-
 			if strings.Index(time1Parsed[0], "now()") != -1 {
 				timeValue, time1WithOperator := getTimeValueForQueriesWithNow(time1Parsed)
 				operator := time1WithOperator[0]
