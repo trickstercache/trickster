@@ -288,12 +288,7 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 			}
 		}
 
-	} else {
-		if trq.Extent.Start.IsZero() {
-			trq.Extent.Start = time.Now().UTC()
-		}
 	}
-
 	return trq, nil
 }
 
