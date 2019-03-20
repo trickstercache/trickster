@@ -23,9 +23,6 @@ data:
     # listen_address defines the ip on which Trickster's Proxy server listens.
     # empty by default, listening on all interfaces
     # listen_address =
-    {{ if .Values.service.metricsAddress }}
-    listen_address = {{ .Values.service.address }}
-    {{ end }}
 
 
     [caches]
@@ -77,7 +74,7 @@ data:
       {{- range .Values.caches }}
         {{ printf "[caches.%s]" .name }}
         type = {{ .type | quote }}
-        record_ttl_secs = {{ .recordTTLSecs }}
+        record_ttl_secs = {{ .recordTTLSecs | default(21600) }}
         {{ if .reapIntervalMs }}
         reap_interval_ms = {{ .reapIntervalMs }}
         {{ end }}
@@ -176,9 +173,6 @@ data:
     # listen_address defines the ip that Trickster's metrics server listens on at /metrics
     # empty by default, listening on all interfaces
     # listen_address =
-    {{ if .Values.service.metricsAddress }}
-    listen_address = {{ .Values.service.metricsAddress }}
-    {{ end }}
 
     # Configruation Options for Profiler
     [profiler]

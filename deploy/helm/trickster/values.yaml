@@ -54,11 +54,9 @@ image:
 service:
   type: ClusterIP
   port: 9090
-  #address = "localhost"
-  metricsPort: 8080
-  # metricsAddress = "localhost"
-  # metricsNodePort: 0
   # nodePort: 0
+  metricsPort: 8080
+  # metricsNodePort: 0
 
 # Ingress resource for trickster service
 # Ref : https://kubernetes.io/docs/concepts/services-networking/ingress/
