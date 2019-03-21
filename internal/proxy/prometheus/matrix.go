@@ -202,7 +202,7 @@ func (t Times) Less(i, j int) bool {
 	return t[i].Before(t[j])
 }
 
-// Swap modifes an array by of Prometheus model.Times swapping the values in indexes i and j
+// Swap modifies an array by of Prometheus model.Times swapping the values in indexes i and j
 func (t Times) Swap(i, j int) {
 	t[i], t[j] = t[j], t[i]
 }
