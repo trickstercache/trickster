@@ -1,26 +1,44 @@
 # Default values for trickster.
 
-# Default trickster originURL, references a source Prometheus instance
-# Ref: https://github.com/Comcast/trickster/blob/master/docs/configuring.md
-originURL: http://prometheus:9090
-cache:
-  type: memory
-  redis:
-    protocol: tcp
-    endpoint: redis:6379
-  filesystem:
-    path: /tmp/trickster
-  boltdb:
-    file: trickster.db
-    bucket: trickster
 # Put ints in quotes to ensure they aren't converted to scientific notations.
 # See https://github.com/kubernetes/helm/issues/1707
-recordTTLSecs: "21600"
-defaultStep: "300"
-# 24h
-maxValueAgeSecs: "86400"
-fastForwardDisable: false
+
+origins:
+  - name: default
+    type: prometheus
+    scheme: http
+    host: 'prometheus:9090'
+    pathPrefix: ''
+    timeoutSecs: "180"
+    apiPath: /api/v1
+    ignoreNoCacheHeader: false
+    # 24h
+    maxValueAgeSecs: "86400"
+    fastForwardDisable: false
+    backfillToleranceSecs: "180"
+
+# Default trickster originURL, references a source Prometheus instance
+# Ref: https://github.com/Comcast/trickster/blob/master/docs/configuring.md
+caches:
+  - name: default
+    type: memory
+    compression: true
+    recordTTLSecs: "21600"
+    reapIntervalMs: "1000"
+    redis:
+      protocol: tcp
+      endpoint: redis:6379
+      password: ''
+    filesystem:
+      path: /tmp/trickster
+    bbolt:
+      file: trickster.db
+      bucket: trickster
+
 logLevel: info
+profiler:
+  enabled: false
+  port: 6060
 
 # Number of trickster replicas desired
 replicaCount: 1
@@ -28,7 +46,7 @@ replicaCount: 1
 # image for trickster deplyoment
 image:
   repository: tricksterio/trickster
-  tag: 0.0.12
+  tag: 1.0.0
   pullPolicy: IfNotPresent
 
 # Service resource for trickster deplyoment
@@ -36,9 +54,9 @@ image:
 service:
   type: ClusterIP
   port: 9090
+  # nodePort: 0
   metricsPort: 8080
   # metricsNodePort: 0
-  # nodePort: 0
 
 # Ingress resource for trickster service
 # Ref : https://kubernetes.io/docs/concepts/services-networking/ingress/

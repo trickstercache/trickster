@@ -17,28 +17,11 @@ import (
 	"testing"
 )
 
-func TestLoadFlags(t *testing.T) {
-	c := NewConfig()
-	a := []string{
-		"-origin",
-		"http://prometheus.example.com:9090",
-		"-proxy-port",
-		"9091",
-		"-metrics-port",
-		"9092",
-	}
-
-	// it should read command line flags
-	c.parseFlags("trickster-test", a)
-	c.loadFlags()
-
-	if DefaultOriginURL != a[1] {
-		t.Errorf("wanted \"%s\". got \"%s\".", a[1], DefaultOriginURL)
-	}
-	if c.ProxyServer.ListenPort != 9091 {
-		t.Errorf("wanted \"%d\". got \"%d\".", 9091, c.ProxyServer.ListenPort)
-	}
-	if c.Metrics.ListenPort != 9092 {
-		t.Errorf("wanted \"%d\". got \"%d\".", 9092, c.Metrics.ListenPort)
+func TestLoadConfiguration(t *testing.T) {
+	a := []string{}
+	// it should not error if config path is not set
+	err := Load("trickster-test", "0", a)
+	if err != nil {
+		t.Error(err)
 	}
 }

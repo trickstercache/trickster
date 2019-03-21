@@ -16,13 +16,13 @@ package filesystem
 import (
 	"testing"
 
-	"github.com/go-kit/kit/log"
+	"github.com/Comcast/trickster/internal/config"
 )
 
 func TestFilesystemCache_Connect(t *testing.T) {
-	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1}}
-	tr := TricksterHandler{Logger: log.NewNopLogger(), Config: &cfg}
-	fc := FilesystemCache{T: &tr, Config: FilesystemCacheConfig{CachePath: "."}}
+
+	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, ReapIntervalMS: 1}
+	fc := Cache{Config: &cacheConfig}
 
 	// it should connect
 	err := fc.Connect()
@@ -32,9 +32,9 @@ func TestFilesystemCache_Connect(t *testing.T) {
 }
 
 func TestFilesystemCache_Store(t *testing.T) {
-	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1}}
-	tr := TricksterHandler{Logger: log.NewNopLogger(), Config: &cfg}
-	fc := FilesystemCache{T: &tr, Config: FilesystemCacheConfig{CachePath: "."}}
+
+	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, ReapIntervalMS: 1}
+	fc := Cache{Config: &cacheConfig}
 
 	err := fc.Connect()
 	if err != nil {
@@ -42,22 +42,22 @@ func TestFilesystemCache_Store(t *testing.T) {
 	}
 
 	// it should store a value
-	err = fc.Store("cacheKey", "data", 60000)
+	err = fc.Store("cacheKey", []byte("data"), 60000)
 	if err != nil {
 		t.Error(err)
 	}
 }
 
 func TestFilesystemCache_Retrieve(t *testing.T) {
-	cfg := Config{Caching: CachingConfig{ReapSleepMS: 1}}
-	tr := TricksterHandler{Logger: log.NewNopLogger(), Config: &cfg}
-	fc := FilesystemCache{T: &tr, Config: FilesystemCacheConfig{CachePath: "."}}
+
+	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, ReapIntervalMS: 1}
+	fc := Cache{Config: &cacheConfig}
 
 	err := fc.Connect()
 	if err != nil {
 		t.Error(err)
 	}
-	err = fc.Store("cacheKey", "data", 60000)
+	err = fc.Store("cacheKey", []byte("data"), 60000)
 	if err != nil {
 		t.Error(err)
 	}
@@ -67,7 +67,7 @@ func TestFilesystemCache_Retrieve(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if data != "data" {
+	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
 }

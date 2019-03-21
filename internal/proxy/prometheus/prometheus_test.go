@@ -11,26 +11,29 @@
 * limitations under the License.
  */
 
-package timeseries
+package prometheus
 
-import (
-	"time"
-)
+import "testing"
 
-// TimeRangeQuery ...
-type TimeRangeQuery struct {
-	Statement string
-	Extent    Extent
-	Step      int64
-}
+func TestParseTime(t *testing.T) {
+	fixtures := []struct {
+		input  string
+		output string
+	}{
+		{"2018-04-07T05:08:53.200Z", "2018-04-07 05:08:53.2 +0000 UTC"},
+		{"1523077733", "2018-04-07 05:08:53 +0000 UTC"},
+		{"1523077733.2", "2018-04-07 05:08:53.2 +0000 UTC"},
+	}
 
-// NormalizeExtent ...
-func (trq *TimeRangeQuery) NormalizeExtent() {
-	if trq.Step > 0 {
-		if trq.Extent.End.After(time.Now()) {
-			trq.Extent.End = time.Now()
+	for _, f := range fixtures {
+		out, err := parseTime(f.input)
+		if err != nil {
+			t.Error(err)
 		}
-		trq.Extent.Start = time.Unix((trq.Extent.Start.Unix()/trq.Step)*trq.Step, 0)
-		trq.Extent.End = time.Unix((trq.Extent.End.Unix()/trq.Step)*trq.Step, 0)
+
+		outStr := out.UTC().String()
+		if outStr != f.output {
+			t.Errorf("Expected %s, got %s for input %s", f.output, outStr, f.input)
+		}
 	}
 }

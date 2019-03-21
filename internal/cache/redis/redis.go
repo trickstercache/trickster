@@ -14,7 +14,6 @@
 package redis
 
 import (
-	"sync"
 	"time"
 
 	"github.com/go-redis/redis"
@@ -25,10 +24,9 @@ import (
 
 // Cache represents a redis cache object that conforms to the Cache interface
 type Cache struct {
-	Name      string
-	Config    *config.CachingConfig
-	client    *redis.Client
-	CacheKeys sync.Map
+	Name   string
+	Config *config.CachingConfig
+	client *redis.Client
 }
 
 // Configuration returns the Configuration for the Cache object

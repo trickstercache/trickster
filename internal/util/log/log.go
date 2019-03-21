@@ -55,11 +55,11 @@ func mapToArray(event string, detail Pairs) []interface{} {
 }
 
 func init() {
-	Logger = DefaultLogger()
+	Logger = ConsoleLogger("info")
 }
 
-func DefaultLogger() *TricksterLogger {
-
+// ConsoleLogger ...
+func ConsoleLogger(logLevel string) *TricksterLogger {
 	l := &TricksterLogger{}
 
 	wr := os.Stdout
@@ -73,12 +73,29 @@ func DefaultLogger() *TricksterLogger {
 		}),
 	)
 
+	l.level = strings.ToLower(logLevel)
+
+	// wrap logger depending on log level
+	switch l.level {
+	case "debug":
+		logger = level.NewFilter(logger, level.AllowDebug())
+	case "info":
+		logger = level.NewFilter(logger, level.AllowInfo())
+	case "warn":
+		logger = level.NewFilter(logger, level.AllowWarn())
+	case "error":
+		logger = level.NewFilter(logger, level.AllowError())
+	case "trace":
+		logger = level.NewFilter(logger, level.AllowDebug())
+	default:
+		logger = level.NewFilter(logger, level.AllowInfo())
+	}
+
 	logger = level.NewFilter(logger, level.AllowInfo())
 
 	l.logger = logger
 
 	return l
-
 }
 
 // Init returns a TricksterLogger for the provided logging configuration. The

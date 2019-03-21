@@ -29,101 +29,6 @@ import (
 	"github.com/prometheus/common/model"
 )
 
-const (
-	nonexistantOrigin       = "http://nonexistent-origin:54321"
-	exampleQuery            = "/api/v1/query?query=up&time=2015-07-01T20:11:15.781Z"
-	exampleRangeQuery       = "/api/v1/query_range?query=up&start=2015-07-01T20:10:30.781Z&end=2015-07-01T20:11:00.781Z&step=15"
-	exampleRangeQuery_query = "up"
-	exampleRangeQuery_start = "2015-07-01T20:10:30.781Z"
-	exampleRangeQuery_end   = "2015-07-01T20:11:00.781Z"
-	exampleRangeQuery_step  = "15"
-
-	// this example should have 2 data points later than those in exampleRangeResponse
-	exampleResponse = `{
-   "status" : "success",
-   "data" : {
-      "resultType" : "vector",
-      "result" : [
-         {
-            "metric" : {
-               "__name__" : "up",
-               "job" : "prometheus",
-               "instance" : "localhost:9090"
-            },
-            "value": [ 1435781475.781, "1" ]
-         },
-         {
-            "metric" : {
-               "__name__" : "up",
-               "job" : "node",
-               "instance" : "localhost:9091"
-            },
-            "value" : [ 1435781475.781, "0" ]
-         }
-      ]
-   }
-}`
-
-	// this example should have 6 data points
-	// NOTE: Times in this response should end with '.781' not '.000'. Had
-	//       to truncate due to how extents are measured in TricksterHandler.
-	exampleRangeResponse = `{
-   "status" : "success",
-   "data" : {
-      "resultType" : "matrix",
-      "result" : [
-         {
-            "metric" : {
-               "__name__" : "up",
-               "job" : "prometheus",
-               "instance" : "localhost:9090"
-            },
-            "values" : [
-               [ 1435781430.000, "1" ],
-               [ 1435781445.000, "1" ],
-               [ 1435781460.000, "1" ]
-            ]
-         },
-         {
-            "metric" : {
-               "__name__" : "up",
-               "job" : "node",
-               "instance" : "localhost:9091"
-            },
-            "values" : [
-               [ 1435781430.000, "0" ],
-               [ 1435781445.000, "0" ],
-               [ 1435781460.000, "1" ]
-            ]
-         }
-      ]
-   }
-}`
-)
-
-func TestParseTime(t *testing.T) {
-	fixtures := []struct {
-		input  string
-		output string
-	}{
-		{"2018-04-07T05:08:53.200Z", "2018-04-07 05:08:53.2 +0000 UTC"},
-		{"1523077733", "2018-04-07 05:08:53 +0000 UTC"},
-		{"1523077733.2", "2018-04-07 05:08:53.200000047 +0000 UTC"},
-	}
-
-	for _, f := range fixtures {
-		out, err := parseTime(f.input)
-		if err != nil {
-			t.Error(err)
-		}
-
-		outStr := out.UTC().String()
-		if outStr != f.output {
-			t.Errorf("Expected %s, got %s for input %s", f.output, outStr, f.input)
-		}
-	}
-}
-
 func newTestTricksterHandler(t *testing.T) (tr *TricksterHandler, close func(t *testing.T)) {
 	conf := NewConfig()
 
@@ -250,18 +155,6 @@ func TestTricksterHandler_pingHandler(t *testing.T) {
 		t.Errorf("wanted 'pong' got %s.", bodyBytes)
 	}
 
-}
-
-func TestTricksterHandler_getOrigin(t *testing.T) {
-	tr, closeFn := newTestTricksterHandler(t)
-	defer closeFn(t)
-
-	// it should get test origin
-	r := httptest.NewRequest("GET", nonexistantOrigin, nil)
-	o := tr.getOrigin(r)
-	if o.OriginURL != nonexistantOrigin {
-		t.Errorf("wanted \"%s\" got \"%s\".", nonexistantOrigin, o.OriginURL)
-	}
 }
 
 func TestTricksterHandler_promHealthCheckHandler(t *testing.T) {
@@ -427,6 +320,7 @@ func TestTricksterHandler_getMatrixFromPrometheus(t *testing.T) {
 	}
 }
 
+
 func TestTricksterHandler_respondToCacheHit(t *testing.T) {
 	tr, closeTr := newTestTricksterHandler(t)
 	defer closeTr(t)
@@ -443,18 +337,6 @@ func TestTricksterHandler_respondToCacheHit(t *testing.T) {
 	tr.respondToCacheHit(ctx)
 }
 
-func TestPrometheusMatrixEnvelope_getValueCount(t *testing.T) {
-	pm := PrometheusMatrixEnvelope{}
-	err := json.Unmarshal([]byte(exampleRangeResponse), &pm)
-	if err != nil {
-		t.Error(err)
-	}
-
-	// it should count the values in the matrix
-	if 6 != pm.getValueCount() {
-		t.Errorf("wanted 6 got %d.", pm.getValueCount())
-	}
-}
 
 func TestTricksterHandler_mergeVector(t *testing.T) {
 	tr, closeTr := newTestTricksterHandler(t)
@@ -480,273 +362,26 @@ func TestTricksterHandler_mergeVector(t *testing.T) {
 	}
 }
 
-func TestTricksterHandler_mergeMatrix(t *testing.T) {
-	tests := []struct {
-		a, b, merged PrometheusMatrixEnvelope
-	}{
-		// Series that adhere to rule
-		{
-			a: PrometheusMatrixEnvelope{
-				Status: rvSuccess,
-				Data: PrometheusMatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "a"},
-							Values: []model.SamplePair{
-								model.SamplePair{10, 1.5},
-							},
-						},
-					},
-				},
-			},
-			b: PrometheusMatrixEnvelope{
-				Status: rvSuccess,
-				Data: PrometheusMatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "a"},
-							Values: []model.SamplePair{
-								model.SamplePair{1, 1.5},
-								model.SamplePair{5, 1.5},
-							},
-						},
-					},
-				},
-			},
-			merged: PrometheusMatrixEnvelope{
-				Status: rvSuccess,
-				Data: PrometheusMatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "a"},
-							Values: []model.SamplePair{
-								model.SamplePair{1, 1.5},
-								model.SamplePair{5, 1.5},
-								model.SamplePair{10, 1.5},
-							},
-						},
-					},
-				},
-			},
-		},
-		// Empty second series
-		{
-			a: PrometheusMatrixEnvelope{
-				Status: rvSuccess,
-				Data: PrometheusMatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "a"},
-							Values: []model.SamplePair{
-								model.SamplePair{10, 1.5},
-							},
-						},
-					},
-				},
-			},
-			b: PrometheusMatrixEnvelope{
-				Status: rvSuccess,
-				Data: PrometheusMatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "a"},
-							Values: []model.SamplePair{},
-						},
-					},
-				},
-			},
-			merged: PrometheusMatrixEnvelope{
-				Status: rvSuccess,
-				Data: PrometheusMatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "a"},
-							Values: []model.SamplePair{
-								model.SamplePair{10, 1.5},
-							},
-						},
-					},
-				},
-			},
-		},
-		// Series that have too many points in the second series
-		{
-			a: PrometheusMatrixEnvelope{
-				Status: rvSuccess,
-				Data: PrometheusMatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "a"},
-							Values: []model.SamplePair{
-								model.SamplePair{10, 1.5},
-							},
-						},
-					},
-				},
-			},
-			b: PrometheusMatrixEnvelope{
-				Status: rvSuccess,
-				Data: PrometheusMatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "a"},
-							Values: []model.SamplePair{
-								model.SamplePair{1, 1.5},
-								model.SamplePair{5, 1.5},
-								model.SamplePair{10, 1.5},
-								model.SamplePair{15, 1.5},
-							},
-						},
-					},
-				},
-			},
-			merged: PrometheusMatrixEnvelope{
-				Status: rvSuccess,
-				Data: PrometheusMatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "a"},
-							Values: []model.SamplePair{
-								model.SamplePair{1, 1.5},
-								model.SamplePair{5, 1.5},
-								model.SamplePair{10, 1.5},
-							},
-						},
-					},
-				},
-			},
-		},
-		// Series that don't adhere to rules
-		{
-			a: PrometheusMatrixEnvelope{
-				Status: rvSuccess,
-				Data: PrometheusMatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "a"},
-							Values: []model.SamplePair{
-								model.SamplePair{1, 1.5},
-							},
-						},
-					},
-				},
-			},
-			b: PrometheusMatrixEnvelope{
-				Status: rvSuccess,
-				Data: PrometheusMatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "a"},
-							Values: []model.SamplePair{
-								model.SamplePair{2, 1.5},
-							},
-						},
-					},
-				},
-			},
-			merged: PrometheusMatrixEnvelope{
-				Status: rvSuccess,
-				Data: PrometheusMatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "a"},
-							Values: []model.SamplePair{
-								model.SamplePair{1, 1.5},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
+func TestTricksterHandler_mergeVector(t *testing.T) {
 	tr, closeTr := newTestTricksterHandler(t)
 	defer closeTr(t)
 
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			merged := tr.mergeMatrix(test.a, test.b)
-			if !reflect.DeepEqual(merged, test.merged) {
-				t.Fatalf("Mismatch\nactual=%v\nexpected=%v", merged, test.merged)
-			}
-		})
-	}
-}
-
-func TestAlignStepBoundaries(t *testing.T) {
-	tests := []struct {
-		start, end, stepMS, now int64
-		rangeStart, rangeEnd    int64
-		err                     bool
-	}{
-		// Basic test
-		{
-			1, 100, 1, 1,
-			1, 100,
-			false,
-		},
-		// Ensure that it aligns to the step interval
-		{
-			1, 100, 10, 1,
-			0, 100,
-			false,
-		},
-		// query with start after end, ensure that it returns an error
-		{
-			100, 1, 10, 1,
-			0, 0,
-			true,
-		},
-		// query with start and end after now
-		{
-			2000, 3000, 10, 1,
-			0, 0,
-			true,
-		},
-		// query with start and end after now, with start after end
-		{
-			3000, 2000, 10, 1,
-			0, 0,
-			true,
-		},
-		// query with no step
-		{
-			1, 100, 0, 1,
-			0, 0,
-			true,
-		},
-		// query with negative step
-		{
-			1, 100, -10, 1,
-			0, 0,
-			true,
-		},
+	pm := PrometheusMatrixEnvelope{}
+	err := json.Unmarshal([]byte(exampleRangeResponse), &pm)
+	if err != nil {
+		t.Error(err)
 	}
 
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			s, e, err := alignStepBoundaries(test.start, test.end, test.stepMS, test.now)
-			if hasErr := err != nil; hasErr != test.err {
-				t.Fatalf("Mismatch in error: expected=%v actual=%v", test.err, hasErr)
-			}
-			if s != test.rangeStart {
-				t.Fatalf("Mismatch in rangeStart: expected=%d actual=%d", test.rangeStart, s)
-			}
-			if e != test.rangeEnd {
-				t.Fatalf("Mismatch in rangeStart: expected=%d actual=%d", test.rangeEnd, e)
-			}
-		})
+	pv := PrometheusVectorEnvelope{}
+	err = json.Unmarshal([]byte(exampleResponse), &pv)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// it should merge the values from the vector into the matrix
+	pe := tr.mergeVector(pm, pv)
+
+	if 8 != pe.getValueCount() {
+		t.Errorf("wanted 8 got %d.", pe.getValueCount())
 	}
 }
