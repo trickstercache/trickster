@@ -24,11 +24,10 @@ import (
 	"github.com/Comcast/trickster/internal/util/log"
 )
 
-// RegisterCaches ... 
+// RegisterCaches ...
 func RegisterCaches() {
 
 }
-
 
 // RegisterProxyRoutes ...
 func RegisterProxyRoutes() {

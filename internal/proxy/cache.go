@@ -57,7 +57,7 @@ func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
 
 // WriteCache ...
 func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl int) error {
-	// Delete Date Header, http.ReponseWriter will insert as Now() on cache retreival
+	// Delete Date Header, http.ReponseWriter will insert as Now() on cache retrieval
 	delete(d.Headers, "Date")
 	bytes, err := d.MarshalMsg(nil)
 	if err != nil {

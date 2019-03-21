@@ -21,8 +21,6 @@ type Timeseries interface {
 	SetExtents([]Extent)
 	// Extents should return the list of time Extents having data present in the Timeseries
 	Extents() []Extent
-	// CalculateDeltas should return the extents of differnce between the Timeseries and the provided range
-	CalculateDeltas(*TimeRangeQuery) []Extent
 	// Step should return the Step Interval of the Timeseries
 	Step() time.Duration
 	// SetStep should update the Step Interval of the Timeseries
