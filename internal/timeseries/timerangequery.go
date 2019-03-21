@@ -14,7 +14,6 @@
 package timeseries
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -32,15 +31,10 @@ type TimeRangeQuery struct {
 func (trq *TimeRangeQuery) NormalizeExtent() {
 	if trq.Step > 0 {
 		if trq.Extent.End.After(time.Now()) {
-			fmt.Println("Extent Start is", trq.Extent.Start, "End WAS", trq.Extent.End, "and is NOW", time.Now())
 			trq.Extent.End = time.Now()
 		}
-
-		fmt.Println("Extent Start was", trq.Extent.Start, "End Was", trq.Extent.End, "Step is", trq.Step)
 		trq.Extent.Start = time.Unix((trq.Extent.Start.Unix()/trq.Step)*trq.Step, 0)
 		trq.Extent.End = time.Unix((trq.Extent.End.Unix()/trq.Step)*trq.Step, 0)
-		fmt.Println("Extent Start normalized to", trq.Extent.Start, "End normalized to", trq.Extent.End)
-
 	}
 }
 
@@ -52,7 +46,6 @@ func (trq *TimeRangeQuery) CalculateDeltas(have []Extent) []Extent {
 		for j := range have {
 			if j == 0 && i.Before(have[j].Start) {
 				// our earliest datapoint in cache is after the first point the user wants
-				fmt.Println("Optimization1")
 				break
 			}
 			if i == have[j].Start || i == have[j].End || (i.After(have[j].Start) && have[j].End.After(i)) {
@@ -61,7 +54,6 @@ func (trq *TimeRangeQuery) CalculateDeltas(have []Extent) []Extent {
 			}
 		}
 		if !found {
-			fmt.Println("did not find", i)
 			misses = append(misses, i)
 		}
 	}
@@ -76,7 +68,6 @@ func (trq *TimeRangeQuery) CalculateDeltas(have []Extent) []Extent {
 		}
 		if i+1 == l || misses[i+1] != misses[i].Add(time.Duration(trq.Step)*time.Second) {
 			ins = append(ins, Extent{Start: inStart, End: misses[i]})
-			fmt.Println("delta extent", ins[len(ins)-1])
 			inStart = e
 		}
 	}
