@@ -19,12 +19,15 @@ import (
 
 // TimeRangeQuery ...
 type TimeRangeQuery struct {
+	// Statement is the timeseries database query (with tokenized timeranges where present) requested by the user
 	Statement string
-	Extent    Extent
-	Step      int64
+	// Extent provides the start and end times for the request from a timeseries database
+	Extent Extent
+	// Step indicates the amount of time in seconds between each datapoint in a TimeRangeQuery's resulting timeseries
+	Step int64
 }
 
-// NormalizeExtent ...
+// NormalizeExtent adjusts the Start and End of a TimeRangeQuery's Extent to align against normalized boundaries.
 func (trq *TimeRangeQuery) NormalizeExtent() {
 	if trq.Step > 0 {
 		if trq.Extent.End.After(time.Now()) {
@@ -33,4 +36,36 @@ func (trq *TimeRangeQuery) NormalizeExtent() {
 		trq.Extent.Start = time.Unix((trq.Extent.Start.Unix()/trq.Step)*trq.Step, 0)
 		trq.Extent.End = time.Unix((trq.Extent.End.Unix()/trq.Step)*trq.Step, 0)
 	}
+}
+
+// CalculateDeltas provides a list of extents that are not in a cached timeseries, when provided a list of extents that are cached.
+func (trq *TimeRangeQuery) CalculateDeltas(have []Extent) []Extent {
+	misses := []time.Time{}
+	for i := trq.Extent.Start; trq.Extent.End.After(i) || trq.Extent.End == i; i = i.Add(time.Second * time.Duration(trq.Step)) {
+		found := false
+		for j := range have {
+			if i == have[j].Start || i == have[j].End || (i.After(have[j].Start) && have[j].End.After(i)) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			misses = append(misses, i)
+		}
+	}
+	// Find the fill and gap ranges
+	ins := []Extent{}
+	e := time.Unix(0, 0)
+	var inStart = e
+	l := len(misses)
+	for i := range misses {
+		if inStart == e {
+			inStart = misses[i]
+		}
+		if i+1 == l || misses[i+1] != misses[i].Add(time.Duration(trq.Step)*time.Second) {
+			ins = append(ins, Extent{Start: inStart, End: misses[i]})
+			inStart = e
+		}
+	}
+	return ins
 }
