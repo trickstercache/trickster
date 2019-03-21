@@ -48,8 +48,9 @@ func (me *MatrixEnvelope) Merge(collection ...timeseries.Timeseries) {
 			me2 := ts.(*MatrixEnvelope)
 			for _, s := range me2.Data.Result {
 				name := s.Metric.String()
-				if o, ok := meMetrics[name]; !ok {
-					meMetrics[name] = o
+				if _, ok := meMetrics[name]; !ok {
+					meMetrics[name] = s
+					me.Data.Result = append(me.Data.Result, s)
 					continue
 				}
 				meMetrics[name].Values = append(meMetrics[name].Values, s.Values...)
@@ -83,7 +84,7 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 		Status: me.Status,
 		Data: MatrixData{
 			ResultType: rvMatrix,
-			Result:     make([]*model.SampleStream, 0, len(me.Data.Result)),
+			Result:     make([]*model.SampleStream, 0, 0),
 		},
 	}
 
@@ -95,6 +96,11 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 		for i, val := range s.Values {
 
 			t := val.Timestamp.Time()
+			if t == e.End {
+				end = i + 1
+				break
+			}
+
 			if t.After(e.End) {
 				end = i
 				break
@@ -106,12 +112,8 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 
 			if start == -1 && (t == e.Start || (e.End.After(t) && t.After(e.Start))) {
 				start = i
-				continue
 			}
 
-			if end == -1 && (t == e.End || t.After(e.End)) {
-				end = i
-			}
 		}
 
 		if start != -1 {
@@ -136,7 +138,6 @@ func (me *MatrixEnvelope) Sort() {
 		m := make(map[model.Time]model.SamplePair)
 		for _, v := range s.Values { // []SamplePair
 			m[v.Timestamp] = v
-
 		}
 
 		keys := make(Times, 0, len(m))
@@ -148,7 +149,6 @@ func (me *MatrixEnvelope) Sort() {
 		sm := make([]model.SamplePair, 0, len(keys))
 		for _, key := range keys {
 			sm = append(sm, m[key])
-
 		}
 		me.Data.Result[i].Values = sm
 	}
