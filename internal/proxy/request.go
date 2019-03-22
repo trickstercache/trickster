@@ -50,7 +50,7 @@ func (r *Request) Copy() *Request {
 		HandlerName:   r.HandlerName,
 		HTTPMethod:    r.HTTPMethod,
 		URL:           copyURL(r.URL),
-		Headers:       r.Headers,
+		Headers:       copyHeaders(r.Headers),
 		ClientRequest: r.ClientRequest,
 	}
 }
