@@ -66,8 +66,7 @@ func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl int) error {
 	if c.Configuration().Compression {
 		key += ".sz"
 		log.Debug("compressing cached data", log.Pairs{"cacheKey": key})
-		b := snappy.Encode(nil, bytes)
-		bytes = b
+		bytes = snappy.Encode(nil, bytes)
 	}
 
 	return c.Store(key, bytes, int64(ttl))
