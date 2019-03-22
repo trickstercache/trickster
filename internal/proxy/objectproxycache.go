@@ -15,6 +15,7 @@ package proxy
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/util/log"
@@ -42,8 +43,8 @@ func ObjectProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, c
 	}
 
 	body, resp, dur := Fetch(r)
-	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crKeyMiss, string(resp.StatusCode), r.URL.Path).Inc()
-	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crKeyMiss, string(resp.StatusCode), r.URL.Path).Observe(float64(dur))
+	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crKeyMiss, strconv.Itoa(resp.StatusCode), r.URL.Path).Inc()
+	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crKeyMiss, strconv.Itoa(resp.StatusCode), r.URL.Path).Observe(float64(dur))
 
 	if resp.StatusCode == http.StatusOK && len(body) > 0 {
 		WriteCache(cache, key, DocumentFromHTTPResponse(resp, body), ttl)

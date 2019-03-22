@@ -16,6 +16,7 @@ package proxy
 import (
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,8 +38,8 @@ const (
 // ProxyRequest ...
 func ProxyRequest(r *Request, w http.ResponseWriter) {
 	body, resp, dur := Fetch(r)
-	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, "none", string(resp.StatusCode), r.URL.Path).Inc()
-	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, "none", string(resp.StatusCode), r.URL.Path).Observe(float64(dur))
+	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, "none", strconv.Itoa(resp.StatusCode), r.URL.Path).Inc()
+	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, "none", strconv.Itoa(resp.StatusCode), r.URL.Path).Observe(float64(dur))
 	Respond(w, resp.StatusCode, resp.Header, body)
 }
 
