@@ -35,6 +35,7 @@ const (
 	hnXAccelerator    = "X-Accelerator"
 	hnXForwardedBy    = "X-Forwarded-By"
 	hnXForwardedFor   = "X-Forwarded-For"
+	hnAcceptEncoding  = "Accept-Encoding"
 )
 
 func addProxyHeaders(remoteAddr string, headers http.Header) {
@@ -52,4 +53,10 @@ func extractHeader(headers http.Header, header string) (string, bool) {
 		return strings.Join(hv, "; "), true
 	}
 	return "", false
+}
+
+func removeClientHeaders(headers http.Header) {
+
+	headers.Del(hnAcceptEncoding)
+
 }

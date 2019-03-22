@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/compress/gzip"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
@@ -52,6 +51,8 @@ func Fetch(r *Request) ([]byte, *http.Response, time.Duration) {
 		addClientHeaders(r.Headers)
 	}
 
+	removeClientHeaders(r.Headers)
+
 	u := r.URL.String()
 	start := time.Now()
 	client := &http.Client{}
@@ -68,16 +69,6 @@ func Fetch(r *Request) ([]byte, *http.Response, time.Duration) {
 	if err != nil {
 		log.Error("error reading body from http response", log.Pairs{"url": u, "detail": err.Error()})
 		return []byte{}, resp, 0
-	}
-
-	// Decompress the content here since the gorilla compress will handle it.
-	// Not optimal, we should pass the compressed document through to the client
-	// and only use the gorilla compress handler if it is not already compressed
-	if h, ok := resp.Header[hnContentEncoding]; ok {
-		if h[0] == "gzip" {
-			body, _ = gzip.Inflate(body)
-			resp.Header.Del(hnContentEncoding)
-		}
 	}
 
 	latency := time.Since(start) // includes any time required to decompress the document for deserialization
