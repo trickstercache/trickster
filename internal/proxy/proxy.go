@@ -37,9 +37,9 @@ const (
 
 // ProxyRequest ...
 func ProxyRequest(r *Request, w http.ResponseWriter) {
-	body, resp, dur := Fetch(r)
+	body, resp, elapsed := Fetch(r)
 	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, "none", strconv.Itoa(resp.StatusCode), r.URL.Path).Inc()
-	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, "none", strconv.Itoa(resp.StatusCode), r.URL.Path).Observe(dur.Seconds())
+	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, "none", strconv.Itoa(resp.StatusCode), r.URL.Path).Observe(elapsed.Seconds())
 	Respond(w, resp.StatusCode, resp.Header, body)
 }
 

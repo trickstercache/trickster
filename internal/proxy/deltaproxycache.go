@@ -89,7 +89,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		go func(e *timeseries.Extent, r *Request) {
 			defer wg.Done()
 			client.SetExtent(req, e)
-			body, resp, dur := Fetch(req)
+			body, resp, elapsed := Fetch(req)
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				nts, err := client.UnmarshalTimeseries(body)
 				if err != nil {
@@ -104,7 +104,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 
 				nts.SetExtents([]timeseries.Extent{*e})
 				metrics.ProxyRequestStatus.WithLabelValues(req.OriginName, req.OriginType, req.HTTPMethod, cacheStatus, strconv.Itoa(resp.StatusCode), req.URL.Path).Inc()
-				metrics.ProxyRequestDuration.WithLabelValues(req.OriginName, req.OriginType, req.HTTPMethod, cacheStatus, strconv.Itoa(resp.StatusCode), req.URL.Path).Observe(dur.Seconds())
+				metrics.ProxyRequestDuration.WithLabelValues(req.OriginName, req.OriginType, req.HTTPMethod, cacheStatus, strconv.Itoa(resp.StatusCode), req.URL.Path).Observe(elapsed.Seconds())
 				appendLock.Lock()
 				defer appendLock.Unlock()
 
