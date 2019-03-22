@@ -109,17 +109,17 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		}(&missRanges[i], req)
 	}
 
-	// Fast Forward Here, Another wg.Add(1), go func, defer wg.Done(), fetch, Matrix from Vector, lock, defer unlock, append to mts
-
+	// TODO: Fast Forward Here, Another wg.Add(1), go func, defer wg.Done(), fetch, Matrix from Vector, lock, defer unlock, append to mts
 	wg.Wait()
+
+	// Merge the new delta timeseries into the cached timeseries
 	cts.Merge(mts...)
 
 	// Get the Request Object, Cropped down from the full Cache
-	rts := cts.Crop(trq.Extent)
-	rdata, err := client.MarshalTimeseries(rts)
+	rdata, err := client.MarshalTimeseries(cts.Crop(trq.Extent))
 
 	wg.Add(1)
-	// Write to cache in
+	// Write the newly-merged object back to the cache
 	go func() {
 		// Crop the Cached Object down to the Sample Age Retention Policy before storing
 		re := timeseries.Extent{End: time.Now(), Start: time.Now().Add(-time.Duration(client.Configuration().MaxValueAgeSecs) * time.Second)}
@@ -134,7 +134,6 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	}()
 
 	wg.Add(1)
-
 	go func() {
 		defer wg.Done()
 		// Respond to the user. Using the response headers from a Delta Response, so as to not map conflict with cacheData on WriteCache
