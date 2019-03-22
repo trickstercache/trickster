@@ -68,7 +68,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	}
 
 	// Find the ranges that we want, but which are not currently cached
-	missRanges := cts.CalculateDeltas(trq)
+	missRanges := trq.CalculateDeltas(cts.Extents())
 
 	if len(missRanges) == 0 {
 		metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crHit, "200", r.URL.Path).Inc()

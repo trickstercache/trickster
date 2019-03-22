@@ -39,7 +39,7 @@ func (c *Cache) Configuration() *config.CachingConfig {
 
 // Connect instantiates the Cache mutex map and starts the Expired Entry Reaper goroutine
 func (c *Cache) Connect() error {
-	log.Info("boltdb cache setup", log.Pairs{"cacheFile": c.Config.BBolt.Filename})
+	log.Info("bbolt cache setup", log.Pairs{"cacheFile": c.Config.BBolt.Filename})
 
 	var err error
 	c.dbh, err = bbolt.Open(c.Config.BBolt.Filename, 0644, &bbolt.Options{Timeout: 1 * time.Second})
@@ -83,7 +83,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
 		return err
 	}
 
-	log.Debug("boltdb cache store", log.Pairs{"key": dataKey, "expKey": expKey})
+	log.Debug("bbolt cache store", log.Pairs{"key": dataKey, "expKey": expKey})
 
 	return nil
 }
@@ -91,7 +91,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
 // Retrieve looks for an object in cache and returns it (or an error if not found)
 func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 
-	log.Debug("boltdb cache retrieve", log.Pairs{"key": cacheKey})
+	log.Debug("bbolt cache retrieve", log.Pairs{"key": cacheKey})
 
 	_, dataKey := c.getKeyNames(cacheKey)
 
@@ -109,7 +109,7 @@ func (c *Cache) retrieve(cacheKey string) ([]byte, error) {
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
 		v := b.Get([]byte(cacheKey))
 		if v == nil {
-			log.Debug("boltdb cache miss", log.Pairs{"key": cacheKey})
+			log.Debug("bbolt cache miss", log.Pairs{"key": cacheKey})
 			return fmt.Errorf("Value for key [%s] not in cache", cacheKey)
 		}
 		value = v
@@ -140,7 +140,7 @@ func (c *Cache) checkExpiration(cacheKey string) {
 // Delete removes an object in cache, if present
 func (c *Cache) Delete(cacheKey string) error {
 
-	log.Debug("boltdb cache delete", log.Pairs{"key": cacheKey})
+	log.Debug("bbolt cache delete", log.Pairs{"key": cacheKey})
 
 	expKey, dataKey := c.getKeyNames(cacheKey)
 
@@ -150,12 +150,12 @@ func (c *Cache) Delete(cacheKey string) error {
 
 		err1 := b.Delete([]byte(expKey))
 		if err1 != nil {
-			log.Error("boltdb cache key delete failure", log.Pairs{"key": expKey, "reason": err1.Error()})
+			log.Error("bbolt cache key delete failure", log.Pairs{"key": expKey, "reason": err1.Error()})
 		}
 
 		err2 := b.Delete([]byte(dataKey))
 		if err2 != nil {
-			log.Error("boltdb cache key delete failure", log.Pairs{"key": dataKey, "reason": err2.Error()})
+			log.Error("bbolt cache key delete failure", log.Pairs{"key": dataKey, "reason": err2.Error()})
 		}
 
 		// c.T.ChannelCreateMtx.Lock()

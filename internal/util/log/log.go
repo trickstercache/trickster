@@ -27,7 +27,6 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 )
 
-// Logger is the TricksterLogger object
 var Logger *TricksterLogger
 
 func mapToArray(event string, detail Pairs) []interface{} {
@@ -59,9 +58,8 @@ func init() {
 	Logger = ConsoleLogger("info")
 }
 
-// ConsoleLogger returns a TrickterLogger that outputs to os.Stdout for the provided Log Level
-func ConsoleLogger(lvl string) *TricksterLogger {
-
+// ConsoleLogger ...
+func ConsoleLogger(logLevel string) *TricksterLogger {
 	l := &TricksterLogger{}
 
 	wr := os.Stdout
@@ -75,7 +73,10 @@ func ConsoleLogger(lvl string) *TricksterLogger {
 		}),
 	)
 
-	switch strings.ToLower(lvl) {
+	l.level = strings.ToLower(logLevel)
+
+	// wrap logger depending on log level
+	switch l.level {
 	case "debug":
 		logger = level.NewFilter(logger, level.AllowDebug())
 	case "info":
@@ -90,10 +91,11 @@ func ConsoleLogger(lvl string) *TricksterLogger {
 		logger = level.NewFilter(logger, level.AllowInfo())
 	}
 
+	logger = level.NewFilter(logger, level.AllowInfo())
+
 	l.logger = logger
 
 	return l
-
 }
 
 // Init returns a TricksterLogger for the provided logging configuration. The

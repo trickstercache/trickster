@@ -14,15 +14,13 @@
 package log
 
 import (
+	"os"
 	"testing"
 
 	"github.com/Comcast/trickster/internal/config"
 )
 
-func TestNewLogger(t *testing.T) {
-
-	c := config.NewConfig()
-
+func TestConsoleLogger(t *testing.T) {
 	testCases := []string{
 		"debug",
 		"info",
@@ -33,8 +31,10 @@ func TestNewLogger(t *testing.T) {
 	// it should create a logger for each level
 	for _, tc := range testCases {
 		t.Run(tc, func(t *testing.T) {
-			c.Logging.LogLevel = tc
-			ConsoleLogger(tc)
+			l := ConsoleLogger(tc)
+			if l.level != tc {
+				t.Errorf("mismatch in log level: expected=%s actual=%s", tc, l.level)
+			}
 		})
 	}
 }
@@ -43,7 +43,11 @@ func TestNewLogger_LogFile(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
 	config.Config = config.NewConfig()
 	config.Main = &config.MainConfig{InstanceID: 0}
-	config.Logging = &config.LoggingConfig{LogFile: "out.test.log"}
+	config.Logging = &config.LoggingConfig{LogFile: "out.log", LogLevel: "info"}
 	Init()
+	Info("test entry", Pairs{"testKey": "testVal"})
+	if _, err := os.Stat("out.log"); err != nil {
+		t.Errorf(err.Error())
+	}
 
 }
