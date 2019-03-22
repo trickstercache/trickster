@@ -97,7 +97,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 					return
 				}
 				nts.SetExtents([]timeseries.Extent{*e})
-				metrics.ProxyRequestDuration.WithLabelValues(req.OriginName, req.OriginType, req.HTTPMethod, "phit", strconv.Itoa(resp.StatusCode), req.URL.Path).Observe(float64(dur))
+				metrics.ProxyRequestDuration.WithLabelValues(req.OriginName, req.OriginType, req.HTTPMethod, "phit", strconv.Itoa(resp.StatusCode), req.URL.Path).Observe(dur.Seconds())
 				appendLock.Lock()
 				defer appendLock.Unlock()
 

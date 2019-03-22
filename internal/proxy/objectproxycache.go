@@ -44,7 +44,7 @@ func ObjectProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, c
 
 	body, resp, dur := Fetch(r)
 	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crKeyMiss, strconv.Itoa(resp.StatusCode), r.URL.Path).Inc()
-	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crKeyMiss, strconv.Itoa(resp.StatusCode), r.URL.Path).Observe(float64(dur))
+	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crKeyMiss, strconv.Itoa(resp.StatusCode), r.URL.Path).Observe(dur.Seconds())
 
 	if resp.StatusCode == http.StatusOK && len(body) > 0 {
 		WriteCache(cache, key, DocumentFromHTTPResponse(resp, body), ttl)
