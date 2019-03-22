@@ -40,6 +40,10 @@ func (c *Client) DeriveCacheKey(path string, params url.Values, prefix string, e
 		k += p[0]
 	}
 
+	if p, ok := params["authorization"]; ok {
+		k += p[0]
+	}
+
 	if len(extra) > 0 {
 		k += extra
 	}
