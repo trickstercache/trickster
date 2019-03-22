@@ -16,12 +16,14 @@ package proxy
 import (
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/compress/gzip"
 	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
 const (
@@ -35,12 +37,14 @@ const (
 
 // ProxyRequest ...
 func ProxyRequest(r *Request, w http.ResponseWriter) {
-	body, resp, _ := Fetch(r)
+	body, resp, elapsed := Fetch(r)
+	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, "none", strconv.Itoa(resp.StatusCode), r.URL.Path).Inc()
+	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, "none", strconv.Itoa(resp.StatusCode), r.URL.Path).Observe(elapsed.Seconds())
 	Respond(w, resp.StatusCode, resp.Header, body)
 }
 
 // Fetch makes an HTTP request to the provided Origin URL
-func Fetch(r *Request) ([]byte, *http.Response, int) {
+func Fetch(r *Request) ([]byte, *http.Response, time.Duration) {
 
 	if r != nil {
 		addProxyHeaders(r.ClientRequest.RemoteAddr, r.Headers)
@@ -51,7 +55,7 @@ func Fetch(r *Request) ([]byte, *http.Response, int) {
 	u := r.URL.String()
 	start := time.Now()
 	client := &http.Client{}
-	resp, err := client.Do(&http.Request{Method: r.ClientRequest.Method, URL: r.URL, Header: r.ClientRequest.Header})
+	resp, err := client.Do(&http.Request{Method: r.ClientRequest.Method, URL: r.URL, Header: r.Headers})
 	if err != nil {
 		log.Error("error downloading url", log.Pairs{"url": u, "detail": err.Error()})
 		return []byte{}, resp, -1
@@ -60,6 +64,7 @@ func Fetch(r *Request) ([]byte, *http.Response, int) {
 	resp.Header.Del(hnContentLength)
 
 	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
 	if err != nil {
 		log.Error("error reading body from http response", log.Pairs{"url": u, "detail": err.Error()})
 		return []byte{}, resp, 0
@@ -75,10 +80,13 @@ func Fetch(r *Request) ([]byte, *http.Response, int) {
 		}
 	}
 
-	resp.Body.Close()
-	duration := int(time.Since(start).Nanoseconds() / 1000000)
-	go logUpstreamRequest(r.OriginName, r.OriginType, r.HandlerName, r.HTTPMethod, u, r.ClientRequest.UserAgent(), resp.StatusCode, len(body), duration)
-	return body, resp, duration
+	latency := time.Since(start) // includes any time required to decompress the document for deserialization
+
+	if config.Logging.LogLevel == "debug" || config.Logging.LogLevel == "trace" {
+		go logUpstreamRequest(r.OriginName, r.OriginType, r.HandlerName, r.HTTPMethod, u, r.ClientRequest.UserAgent(), resp.StatusCode, len(body), latency.Seconds())
+	}
+
+	return body, resp, latency
 }
 
 // Respond ...

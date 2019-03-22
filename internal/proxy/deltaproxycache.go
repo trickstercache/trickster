@@ -15,19 +15,20 @@ package proxy
 
 import (
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/Comcast/trickster/internal/util/metrics"
 	"github.com/Comcast/trickster/pkg/locks"
 )
 
 // DeltaProxyCacheRequest ...
 func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, cache cache.Cache, ttl int, refresh bool) {
 
-	status := crKeyMiss
 	key := client.DeriveCacheKey(r.URL.Path, r.URL.Query(), "", "")
 
 	locks.Acquire(key)
@@ -39,8 +40,6 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		ProxyRequest(r, w)
 		return
 	}
-
-	status = crPartialHit
 
 	trq.NormalizeExtent()
 
@@ -73,7 +72,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	missRanges := trq.CalculateDeltas(cts.Extents())
 
 	if len(missRanges) == 0 {
-		status = crHit
+		metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crHit, "200", r.URL.Path).Inc()
 		Respond(w, cacheData.StatusCode, cacheData.Headers, cacheData.Body)
 		return
 	}
@@ -90,7 +89,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		go func(e *timeseries.Extent, r *Request) {
 			defer wg.Done()
 			client.SetExtent(req, e)
-			body, resp, _ := Fetch(req)
+			body, resp, elapsed := Fetch(req)
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				nts, err := client.UnmarshalTimeseries(body)
 				if err != nil {
@@ -98,10 +97,17 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 					return
 				}
 
-				nts.SetExtents([]timeseries.Extent{*e})
+				cacheStatus := "phit"
+				if e.Start == trq.Extent.Start && e.End == trq.Extent.End {
+					cacheStatus = "rmiss"
+				}
 
+				nts.SetExtents([]timeseries.Extent{*e})
+				metrics.ProxyRequestStatus.WithLabelValues(req.OriginName, req.OriginType, req.HTTPMethod, cacheStatus, strconv.Itoa(resp.StatusCode), req.URL.Path).Inc()
+				metrics.ProxyRequestDuration.WithLabelValues(req.OriginName, req.OriginType, req.HTTPMethod, cacheStatus, strconv.Itoa(resp.StatusCode), req.URL.Path).Observe(elapsed.Seconds())
 				appendLock.Lock()
 				defer appendLock.Unlock()
+
 				mts = append(mts, nts)
 				if rh == nil {
 					rh = resp.Header
@@ -110,17 +116,17 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		}(&missRanges[i], req)
 	}
 
-	// Fast Forward Here, Another wg.Add(1), go func, defer wg.Done(), fetch, Matrix from Vector, lock, defer unlock, append to mts
-
+	// TODO: Fast Forward Here, Another wg.Add(1), go func, defer wg.Done(), fetch, Matrix from Vector, lock, defer unlock, append to mts
 	wg.Wait()
+
+	// Merge the new delta timeseries into the cached timeseries
 	cts.Merge(mts...)
 
 	// Get the Request Object, Cropped down from the full Cache
-	rts := cts.Crop(trq.Extent)
-	rdata, err := client.MarshalTimeseries(rts)
+	rdata, err := client.MarshalTimeseries(cts.Crop(trq.Extent))
 
 	wg.Add(1)
-	// Write to cache in
+	// Write the newly-merged object back to the cache
 	go func() {
 		// Crop the Cached Object down to the Sample Age Retention Policy before storing
 		re := timeseries.Extent{End: time.Now(), Start: time.Now().Add(-time.Duration(client.Configuration().MaxValueAgeSecs) * time.Second)}
@@ -134,8 +140,12 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		wg.Done()
 	}()
 
-	// Respond to the user. Using the response headers from a Delta Response, so as to not map conflict with cacheData on WriteCache
-	Respond(w, cacheData.StatusCode, rh, rdata)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// Respond to the user. Using the response headers from a Delta Response, so as to not map conflict with cacheData on WriteCache
+		Respond(w, cacheData.StatusCode, rh, rdata)
+	}()
+
 	wg.Wait()
-	log.Debug("placeholder status message", log.Pairs{"status": status})
 }

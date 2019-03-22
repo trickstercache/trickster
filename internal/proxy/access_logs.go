@@ -19,7 +19,7 @@ import (
 	"github.com/Comcast/trickster/internal/util/log"
 )
 
-func logUpstreamRequest(originName, originType, handlerName, method, path, userAgent string, responseCode, size, executionTime int) {
+func logUpstreamRequest(originName, originType, handlerName, method, path, userAgent string, responseCode, size int, requestDuration float64) {
 	log.Debug("upstream request",
 		log.Pairs{
 			"originName":  originName,
@@ -30,7 +30,7 @@ func logUpstreamRequest(originName, originType, handlerName, method, path, userA
 			"userAgent":   userAgent,
 			"code":        responseCode,
 			"size":        size,
-			"duration":    executionTime,
+			"durationMS":  int(requestDuration * 1000),
 		})
 }
 

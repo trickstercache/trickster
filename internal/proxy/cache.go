@@ -50,7 +50,6 @@ func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
 			bytes = b
 		}
 	}
-
 	_, err = d.UnmarshalMsg(bytes)
 	return d, nil
 }
