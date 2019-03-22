@@ -25,6 +25,8 @@ import (
 	"github.com/Comcast/trickster/internal/routing/registration"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
+
+	"github.com/gorilla/handlers"
 )
 
 const (
@@ -57,7 +59,7 @@ func main() {
 	log.Info("proxy http endpoint starting", log.Pairs{"address": config.ProxyServer.ListenAddress, "port": config.ProxyServer.ListenPort})
 
 	// Start the Server
-	err = http.ListenAndServe(fmt.Sprintf("%s:%d", config.ProxyServer.ListenAddress, config.ProxyServer.ListenPort), routing.Router)
+	err = http.ListenAndServe(fmt.Sprintf("%s:%d", config.ProxyServer.ListenAddress, config.ProxyServer.ListenPort), handlers.CompressHandler(routing.Router))
 	log.Error("exiting", log.Pairs{"err": err})
 
 }
