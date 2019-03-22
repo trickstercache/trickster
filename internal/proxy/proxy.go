@@ -64,7 +64,7 @@ func Fetch(r *Request) ([]byte, *http.Response, time.Duration) {
 	resp.Header.Del(hnContentLength)
 
 	body, err := ioutil.ReadAll(resp.Body)
-	defer resp.Body.Close()
+	resp.Body.Close()
 	if err != nil {
 		log.Error("error reading body from http response", log.Pairs{"url": u, "detail": err.Error()})
 		return []byte{}, resp, 0
