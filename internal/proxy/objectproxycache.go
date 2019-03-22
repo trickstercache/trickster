@@ -26,7 +26,11 @@ import (
 // ObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache
 func ObjectProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
 
-	key := client.DeriveCacheKey(r.URL.Path, r.URL.Query(), "", "")
+	a := ""
+	if h, ok := r.Headers[hnAuthorization]; ok {
+		a = h[0]
+	}
+	key := client.DeriveCacheKey(r.URL.Path, r.URL.Query(), "", a)
 
 	if !noLock {
 		locks.Acquire(key)

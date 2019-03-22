@@ -29,7 +29,12 @@ import (
 // DeltaProxyCacheRequest ...
 func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, cache cache.Cache, ttl int, refresh bool) {
 
-	key := client.DeriveCacheKey(r.URL.Path, r.URL.Query(), "", "")
+	a := ""
+	if h, ok := r.Headers[hnAuthorization]; ok {
+		a = h[0]
+	}
+
+	key := client.DeriveCacheKey(r.URL.Path, r.URL.Query(), "", a)
 
 	locks.Acquire(key)
 	defer locks.Release(key)
