@@ -96,8 +96,15 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 					log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
 					return
 				}
+
+				cacheStatus := "phit"
+				if e.Start == trq.Extent.Start && e.End == trq.Extent.End {
+					cacheStatus = "rmiss"
+				}
+
 				nts.SetExtents([]timeseries.Extent{*e})
-				metrics.ProxyRequestDuration.WithLabelValues(req.OriginName, req.OriginType, req.HTTPMethod, "phit", strconv.Itoa(resp.StatusCode), req.URL.Path).Observe(dur.Seconds())
+				metrics.ProxyRequestStatus.WithLabelValues(req.OriginName, req.OriginType, req.HTTPMethod, cacheStatus, strconv.Itoa(resp.StatusCode), req.URL.Path).Inc()
+				metrics.ProxyRequestDuration.WithLabelValues(req.OriginName, req.OriginType, req.HTTPMethod, cacheStatus, strconv.Itoa(resp.StatusCode), req.URL.Path).Observe(dur.Seconds())
 				appendLock.Lock()
 				defer appendLock.Unlock()
 
@@ -137,7 +144,6 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	go func() {
 		defer wg.Done()
 		// Respond to the user. Using the response headers from a Delta Response, so as to not map conflict with cacheData on WriteCache
-		metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crPartialHit, "200", r.URL.Path).Inc()
 		Respond(w, cacheData.StatusCode, rh, rdata)
 	}()
 
