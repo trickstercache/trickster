@@ -38,19 +38,19 @@ func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
 	}
 
 	d := &HTTPDocument{}
-	data, err := c.Retrieve(key)
+	bytes, err := c.Retrieve(key)
 	if err != nil {
 		return d, err
 	}
 
 	if inflate {
 		log.Debug("decompressing cached data", log.Pairs{"cacheKey": key})
-		b, err := snappy.Decode(nil, data)
+		b, err := snappy.Decode(nil, bytes)
 		if err == nil {
-			data = b
+			bytes = b
 		}
 	}
-	_, err = d.UnmarshalMsg(data)
+	_, err = d.UnmarshalMsg(bytes)
 	return d, nil
 }
 
@@ -58,7 +58,7 @@ func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
 func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl int) error {
 	// Delete Date Header, http.ReponseWriter will insert as Now() on cache retrieval
 	delete(d.Headers, "Date")
-	data, err := d.MarshalMsg(nil)
+	bytes, err := d.MarshalMsg(nil)
 	if err != nil {
 		return err
 	}
@@ -66,9 +66,9 @@ func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl int) error {
 	if c.Configuration().Compression {
 		key += ".sz"
 		log.Debug("compressing cached data", log.Pairs{"cacheKey": key})
-		b := snappy.Encode(nil, data)
-		data = b
+		b := snappy.Encode(nil, bytes)
+		bytes = b
 	}
 
-	return c.Store(key, data, int64(ttl))
+	return c.Store(key, bytes, int64(ttl))
 }
