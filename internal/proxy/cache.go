@@ -29,8 +29,6 @@ const (
 	CrPurge      = "purge"
 )
 
-var magicHeader = []byte("sNaPpY")
-
 // QueryCache ...
 func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
 
@@ -47,7 +45,7 @@ func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
 
 	if inflate {
 		log.Debug("decompressing cached data", log.Pairs{"cacheKey": key})
-		b, err := snappy.Decode(nil, data[6:])
+		b, err := snappy.Decode(nil, data)
 		if err == nil {
 			data = b
 		}
@@ -69,7 +67,7 @@ func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl int) error {
 		key += ".sz"
 		log.Debug("compressing cached data", log.Pairs{"cacheKey": key})
 		b := snappy.Encode(nil, data)
-		data = append(magicHeader, b...)
+		data = b
 	}
 
 	return c.Store(key, data, int64(ttl))
