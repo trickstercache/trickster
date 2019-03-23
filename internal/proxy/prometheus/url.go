@@ -50,7 +50,7 @@ func (c Client) SetExtent(r *proxy.Request, extent *timeseries.Extent) {
 	r.URL.RawQuery = params.Encode()
 }
 
-// FastForwardURL is present to conform to the timeseries.Timeseries interface, but is not used by the VectorEnvelope
+// FastForwardURL returns the url to fetch the Fast Forward value based on a timerange url
 func (c Client) FastForwardURL(r *proxy.Request) (*url.URL, error) {
 
 	u := proxy.CopyURL(r.URL)
