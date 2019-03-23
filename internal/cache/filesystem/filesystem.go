@@ -77,7 +77,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl int64, updateIndex bool)
 	if err != nil {
 		return err
 	}
-	log.Debug("filesystem cache store", log.Pairs{"key": cacheKey, "dataFile": dataFile, "indexed": updateIndex}})
+	log.Debug("filesystem cache store", log.Pairs{"key": cacheKey, "dataFile": dataFile, "indexed": updateIndex})
 	if updateIndex {
 		go c.Index.UpdateObject(o)
 	}
