@@ -15,9 +15,9 @@ package cache
 
 import "time"
 
-// Metadata maintains metadata about a Cache where Retention enforcement is managed internally,
+// Index maintains metadata about a Cache when Retention enforcement is managed internally,
 // like memory or bbolt. It is not used for independently managed caches like Redis.
-type Metadata struct {
+type Index struct {
 	// CacheSize represents the size of the cache in bytes
 	CacheSize int
 	// ObjectCount represents the count of objects in the Cache
@@ -28,10 +28,16 @@ type Metadata struct {
 
 // Object contains metadataa about an item in the Cache
 type Object struct {
-	// Size the size of the Object in bytes
-	Size int
+	// Name represents the name of the Object and is the key in a hashed collection of Cache Objects
+	Name string
+	// Expiration represents the time that the Object expires from Cache
+	Expiration time.Time
 	// LastWrite is the time the object was last Written
 	LastWrite time.Time
 	// LastAccess is the time the object was last Accessed
 	LastAccess time.Time
+	// Size the size of the Object in bytes
+	Size int
+	// Value is the value of the Object stored in the Cache
+	Value []byte
 }
