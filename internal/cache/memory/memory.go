@@ -27,6 +27,7 @@ type Cache struct {
 	Name   string
 	client sync.Map
 	Config *config.CachingConfig
+	Index  cache.Index
 }
 
 // CacheObject represents a Cached object as stored in the Memory Cache

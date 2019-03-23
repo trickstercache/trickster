@@ -11,7 +11,7 @@
 * limitations under the License.
  */
 
-package cache
+package index
 
 import "time"
 
