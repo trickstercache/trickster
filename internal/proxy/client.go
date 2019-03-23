@@ -50,7 +50,7 @@ type Client interface {
 	DeriveCacheKey(string, url.Values, string, string) string
 	// BuildUpstreamURL returns an URL for an upstream origin request based on the request URL
 	BuildUpstreamURL(*http.Request) *url.URL
-	// FastForwardURL returns the URL to the origin to collect Fast Foward data points based on the provided HTTP Request
+	// FastForwardURL returns the URL to the origin to collect Fast Forward data points based on the provided HTTP Request
 	FastForwardURL(*Request) (*url.URL, error)
 	// SetExtent will update an upstream request's timerange parameters based on the provided timeseries.Extent
 	SetExtent(*Request, *timeseries.Extent)
