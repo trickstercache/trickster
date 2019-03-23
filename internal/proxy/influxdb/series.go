@@ -41,7 +41,7 @@ func (se SeriesEnvelope) Step() time.Duration {
 func (se SeriesEnvelope) SetStep(time.Duration) {}
 
 // Merge ...
-func (se SeriesEnvelope) Merge(ts ...timeseries.Timeseries) {}
+func (se SeriesEnvelope) Merge(sort bool, ts ...timeseries.Timeseries) {}
 
 // Copy ...
 func (se SeriesEnvelope) Copy() timeseries.Timeseries {

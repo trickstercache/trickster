@@ -35,7 +35,7 @@ func (me *MatrixEnvelope) SetStep(step time.Duration) {
 }
 
 // Merge ...
-func (me *MatrixEnvelope) Merge(collection ...timeseries.Timeseries) {
+func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) {
 
 	meMetrics := make(map[string]*model.SampleStream)
 
@@ -43,22 +43,26 @@ func (me *MatrixEnvelope) Merge(collection ...timeseries.Timeseries) {
 		meMetrics[s.Metric.String()] = s
 	}
 
-	for _, ts := range collection {
-		if ts != nil {
-			me2 := ts.(*MatrixEnvelope)
-			for _, s := range me2.Data.Result {
-				name := s.Metric.String()
-				if _, ok := meMetrics[name]; !ok {
-					meMetrics[name] = s
-					me.Data.Result = append(me.Data.Result, s)
-					continue
+	if len(meMetrics) > 0 {
+		for _, ts := range collection {
+			if ts != nil {
+				me2 := ts.(*MatrixEnvelope)
+				for _, s := range me2.Data.Result {
+					name := s.Metric.String()
+					if _, ok := meMetrics[name]; !ok {
+						meMetrics[name] = s
+						me.Data.Result = append(me.Data.Result, s)
+						continue
+					}
+					meMetrics[name].Values = append(meMetrics[name].Values, s.Values...)
 				}
-				meMetrics[name].Values = append(meMetrics[name].Values, s.Values...)
+				me.ExtentList = append(me.ExtentList, me2.ExtentList...)
 			}
-			me.ExtentList = append(me.ExtentList, me2.ExtentList...)
 		}
 	}
-	me.Sort()
+	if sort {
+		me.Sort()
+	}
 }
 
 // Copy ...
@@ -70,9 +74,12 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 			Result:     make([]*model.SampleStream, 0, len(me.Data.Result)),
 		},
 	}
-	for index := range me.Data.Result {
-		resSampleSteam := *me.Data.Result[index]
-		resMe.Data.Result[index] = &resSampleSteam
+	for _, ss := range me.Data.Result {
+		newSS := &model.SampleStream{Metric: ss.Metric, Values: make([]model.SamplePair, 0, len(ss.Values))}
+		for _, v := range ss.Values {
+			newSS.Values = append(newSS.Values, model.SamplePair{Timestamp: v.Timestamp, Value: v.Value})
+		}
+		resMe.Data.Result = append(resMe.Data.Result, newSS)
 	}
 	return resMe
 }
@@ -80,15 +87,9 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 // Crop ...
 func (me *MatrixEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 
-	ts := &MatrixEnvelope{
-		Status: me.Status,
-		Data: MatrixData{
-			ResultType: rvMatrix,
-			Result:     make([]*model.SampleStream, 0, 0),
-		},
-	}
+	ts := me.Copy().(*MatrixEnvelope)
 
-	for _, s := range me.Data.Result {
+	for i, s := range ts.Data.Result {
 		ss := &model.SampleStream{Metric: s.Metric, Values: []model.SamplePair{}}
 		start := -1
 		end := -1
@@ -123,8 +124,9 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 
 			ss.Metric = s.Metric
 			ss.Values = s.Values[start:end]
+
 		}
-		ts.Data.Result = append(ts.Data.Result, ss)
+		ts.Data.Result[i] = ss
 	}
 
 	return ts

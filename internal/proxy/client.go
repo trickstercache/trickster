@@ -34,20 +34,32 @@ var Clients = make(map[string]Client)
 // Client ...
 type Client interface {
 
-	// Client Endpoint Registration
+	// RegisterRoutes provides a method to register upstream routes to HTTP Handlers
 	RegisterRoutes(string, config.OriginConfig)
+	// ParseTimeRangeQuery returns a timeseries.TimeRangeQuery based on the provided HTTP Request
 	ParseTimeRangeQuery(*http.Request) (*timeseries.TimeRangeQuery, error)
-	OriginName() string
-	BaseURL() *url.URL
-	// Required Handler Implementations
-	SetExtent(*Request, *timeseries.Extent)
-	HealthHandler(http.ResponseWriter, *http.Request)
-	CacheInstance() cache.Cache
-	DeriveCacheKey(string, url.Values, string, string) string
-	BuildUpstreamURL(*http.Request) *url.URL
-	UnmarshalTimeseries([]byte) (timeseries.Timeseries, error)
-	MarshalTimeseries(timeseries.Timeseries) ([]byte, error)
+	// Configuration returns the configuration for the Proxy Client
 	Configuration() config.OriginConfig
-
-	UnmarshalInstantaneous() timeseries.Timeseries
+	// OriginName returns the name of the origin the Proxy Client is handling
+	OriginName() string
+	// BaseURL returns the base URL (schema://host:port/path_prefix) for accessing an upstream origin
+	BaseURL() *url.URL
+	// CacheInstance returns the Cache object the Client uses in for Proxy Caching
+	CacheInstance() cache.Cache
+	// DeriveCacheKey returns a hashed key for the request, used for request synchronization and cache deconfliction
+	DeriveCacheKey(string, url.Values, string, string) string
+	// BuildUpstreamURL returns an URL for an upstream origin request based on the request URL
+	BuildUpstreamURL(*http.Request) *url.URL
+	// FastForwardURL returns the URL to the origin to collect Fast Foward data points based on the provided HTTP Request
+	FastForwardURL(*Request) (*url.URL, error)
+	// SetExtent will update an upstream request's timerange parameters based on the provided timeseries.Extent
+	SetExtent(*Request, *timeseries.Extent)
+	// HealthHandler is an HTTP Handler that checks the health of the upstream origin
+	HealthHandler(http.ResponseWriter, *http.Request)
+	// UnmarshalTimeseries will return a Timeseries from the provided byte slice
+	UnmarshalTimeseries([]byte) (timeseries.Timeseries, error)
+	// MarshalTimeseries will return a byte slice from  the provided Timeseries
+	MarshalTimeseries(timeseries.Timeseries) ([]byte, error)
+	// UnmarshalInstantaneous will return an Instantaneous Timeseries (only one value instead of a series) from the provided byte slice
+	UnmarshalInstantaneous([]byte) (timeseries.Timeseries, error)
 }

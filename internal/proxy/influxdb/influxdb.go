@@ -55,8 +55,8 @@ func (c Client) BaseURL() *url.URL {
 }
 
 // UnmarshalInstantaneous ...
-func (c Client) UnmarshalInstantaneous() timeseries.Timeseries {
-	return SeriesEnvelope{}
+func (c Client) UnmarshalInstantaneous([]byte) (timeseries.Timeseries, error) {
+	return SeriesEnvelope{}, nil
 }
 
 // BuildUpstreamURL ...
@@ -90,3 +90,8 @@ func (c Client) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, error) {
 
 // RegisterRoutes ...
 func (c Client) RegisterRoutes(name string, o config.OriginConfig) {}
+
+// FastForwardURL ...
+func (c Client) FastForwardURL(r *proxy.Request) (*url.URL, error) {
+	return &url.URL{}, nil
+}

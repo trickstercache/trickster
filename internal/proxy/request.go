@@ -49,13 +49,14 @@ func (r *Request) Copy() *Request {
 		OriginType:    r.OriginType,
 		HandlerName:   r.HandlerName,
 		HTTPMethod:    r.HTTPMethod,
-		URL:           copyURL(r.URL),
+		URL:           CopyURL(r.URL),
 		Headers:       copyHeaders(r.Headers),
 		ClientRequest: r.ClientRequest,
 	}
 }
 
-func copyURL(u *url.URL) *url.URL {
+// CopyURL returns a deep copy of a *url.URL
+func CopyURL(u *url.URL) *url.URL {
 	return &url.URL{
 		Scheme:   u.Scheme,
 		Host:     u.Host,

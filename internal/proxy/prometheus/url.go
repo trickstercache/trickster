@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/timeseries"
@@ -47,4 +48,22 @@ func (c Client) SetExtent(r *proxy.Request, extent *timeseries.Extent) {
 	params.Set(upStart, strconv.FormatInt(extent.Start.Unix(), 10))
 	params.Set(upEnd, strconv.FormatInt(extent.End.Unix(), 10))
 	r.URL.RawQuery = params.Encode()
+}
+
+// FastForwardURL is present to conform to the timeseries.Timeseries interface, but is not used by the VectorEnvelope
+func (c Client) FastForwardURL(r *proxy.Request) (*url.URL, error) {
+
+	u := proxy.CopyURL(r.URL)
+
+	if strings.HasSuffix(u.Path, "/query_range") {
+		u.Path = u.Path[0 : len(u.Path)-6]
+	}
+
+	p := u.Query()
+	p.Del(upStart)
+	p.Del(upEnd)
+	p.Del(upStep)
+	u.RawQuery = p.Encode()
+
+	return u, nil
 }

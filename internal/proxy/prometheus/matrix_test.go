@@ -212,7 +212,7 @@ func TestMerge(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			test.a.Merge(test.b)
+			test.a.Merge(true, test.b)
 			if !reflect.DeepEqual(test.merged, test.a) {
 				t.Fatalf("Mismatch\nactual=%v\nexpected=%v", test.a, test.merged)
 			}
