@@ -16,6 +16,7 @@ package proxy
 import (
 	"net/http"
 	"net/url"
+	"time"
 )
 
 // Request ...
@@ -27,10 +28,11 @@ type Request struct {
 	URL           *url.URL
 	Headers       http.Header
 	ClientRequest *http.Request
+	Timeout       time.Duration
 }
 
 // NewRequest returns a new proxy request object that can service the downstream request
-func NewRequest(originName, originType, handlerName, method string, url *url.URL, headers http.Header, clientRequest *http.Request) *Request {
+func NewRequest(originName, originType, handlerName, method string, url *url.URL, headers http.Header, timeout time.Duration, clientRequest *http.Request) *Request {
 	return &Request{
 		OriginName:    originName,
 		OriginType:    originType,
@@ -39,6 +41,7 @@ func NewRequest(originName, originType, handlerName, method string, url *url.URL
 		URL:           url,
 		Headers:       headers,
 		ClientRequest: clientRequest,
+		Timeout:       timeout,
 	}
 }
 
@@ -49,13 +52,14 @@ func (r *Request) Copy() *Request {
 		OriginType:    r.OriginType,
 		HandlerName:   r.HandlerName,
 		HTTPMethod:    r.HTTPMethod,
-		URL:           copyURL(r.URL),
+		URL:           CopyURL(r.URL),
 		Headers:       copyHeaders(r.Headers),
 		ClientRequest: r.ClientRequest,
 	}
 }
 
-func copyURL(u *url.URL) *url.URL {
+// CopyURL returns a deep copy of a *url.URL
+func CopyURL(u *url.URL) *url.URL {
 	return &url.URL{
 		Scheme:   u.Scheme,
 		Host:     u.Host,

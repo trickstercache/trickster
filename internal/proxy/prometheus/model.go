@@ -33,11 +33,6 @@ type VectorData struct {
 	Result     model.Vector `json:"result"`
 }
 
-// UnmarshalInstantaneous ...
-func (c Client) UnmarshalInstantaneous() timeseries.Timeseries {
-	return &VectorEnvelope{}
-}
-
 // MatrixEnvelope represents a Matrix response object from the Prometheus HTTP API
 type MatrixEnvelope struct {
 	Status       string              `json:"status"`
@@ -64,4 +59,29 @@ func (c Client) UnmarshalTimeseries(data []byte) (timeseries.Timeseries, error) 
 	me := &MatrixEnvelope{}
 	err := json.Unmarshal(data, &me)
 	return me, err
+}
+
+// UnmarshalInstantaneous ...
+func (c Client) UnmarshalInstantaneous(data []byte) (timeseries.Timeseries, error) {
+	ve := &VectorEnvelope{}
+	err := json.Unmarshal(data, &ve)
+	if err != nil {
+		return nil, err
+	}
+	return ve.ToMatrix(), nil
+}
+
+// ToMatrix converts a VectorEnvelope to a MatrixEnvelope
+func (ve *VectorEnvelope) ToMatrix() *MatrixEnvelope {
+	me := &MatrixEnvelope{}
+	me.Status = ve.Status
+	me.Data = MatrixData{
+		ResultType: "matrix",
+		Result:     make(model.Matrix, 0, len(ve.Data.Result)),
+	}
+	for _, v := range ve.Data.Result {
+		v.Timestamp = model.TimeFromUnix(v.Timestamp.Unix()) // Round to nearest Second
+		me.Data.Result = append(me.Data.Result, &model.SampleStream{Metric: v.Metric, Values: []model.SamplePair{model.SamplePair{Timestamp: v.Timestamp, Value: v.Value}}})
+	}
+	return me
 }

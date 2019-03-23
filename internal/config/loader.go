@@ -15,6 +15,7 @@ package config
 
 import (
 	"net/url"
+	"time"
 )
 
 // Load returns the Application Configuration, starting with a default config,
@@ -60,6 +61,10 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	ProxyServer = &c.ProxyServer
 	Logging = &c.Logging
 	Metrics = &c.Metrics
+
+	for _, o := range Origins {
+		o.Timeout = time.Duration(o.TimeoutSecs) * time.Second
+	}
 
 	return nil
 }

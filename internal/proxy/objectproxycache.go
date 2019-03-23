@@ -25,6 +25,12 @@ import (
 
 // ObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache
 func ObjectProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
+	body, resp := FetchViaObjectProxyCache(r, client, cache, ttl, refresh, noLock)
+	Respond(w, resp.StatusCode, resp.Header, body)
+}
+
+// FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
+func FetchViaObjectProxyCache(r *Request, client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) ([]byte, *http.Response) {
 
 	a := ""
 	if h, ok := r.Headers[hnAuthorization]; ok {
@@ -41,12 +47,17 @@ func ObjectProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, c
 		if d, err := QueryCache(cache, key); err == nil {
 			metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crHit, "200", r.URL.Path).Inc()
 			log.Debug("cache hit", log.Pairs{"key": key})
-			Respond(w, d.StatusCode, d.Headers, d.Body)
-			return
+			r := &http.Response{
+				Header:     d.Headers,
+				StatusCode: d.StatusCode,
+				Status:     d.Status,
+			}
+			return d.Body, r
 		}
 	}
 
 	body, resp, elapsed := Fetch(r)
+
 	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crKeyMiss, strconv.Itoa(resp.StatusCode), r.URL.Path).Inc()
 	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crKeyMiss, strconv.Itoa(resp.StatusCode), r.URL.Path).Observe(elapsed.Seconds())
 
@@ -54,5 +65,6 @@ func ObjectProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, c
 		WriteCache(cache, key, DocumentFromHTTPResponse(resp, body), ttl)
 	}
 
-	Respond(w, resp.StatusCode, resp.Header, body)
+	return body, resp
+
 }
