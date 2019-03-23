@@ -44,7 +44,6 @@ func (c *Cache) Connect() error {
 	if c.Config.Redis.Password != "" {
 		c.client.Options().Password = c.Config.Redis.Password
 	}
-	go c.Reap()
 	return c.client.Ping().Err()
 }
 
@@ -64,10 +63,22 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 	return []byte(res), nil
 }
 
+// Remove removes an object in cache, if present
+func (c *Cache) Remove(cacheKey string) {
+	log.Debug("redis cache remove", log.Pairs{"key": cacheKey})
+	c.client.Del(cacheKey)
+}
+
+// BulkRemove removes a list of objects from the cache. noLock is not used for Redis
+func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
+	log.Debug("redis cache bulk remove", log.Pairs{})
+	c.client.Del(cacheKeys...)
+}
+
 // Reap is not used with Redis Cache as it has built-in record lifetime management
 func (c *Cache) Reap() {}
 
-// ReapOnce makes a single iteration through the Response Channels to remove orphaned channels due to Redis Cache Expiration
+// ReapOnce is not used with Redis Cache as it has built-in record lifetime management
 func (c *Cache) ReapOnce() {}
 
 // Close disconnects from the Redis Cache

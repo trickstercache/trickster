@@ -17,23 +17,24 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/sys/unix"
 
+	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/Comcast/trickster/pkg/locks"
 )
+
+var lockPrefix string
 
 // Cache describes a Filesystem Cache
 type Cache struct {
-	Name     string
-	Config   *config.CachingConfig
-	mutexes  map[string]*sync.Mutex
-	mapMutex sync.Mutex
+	Name   string
+	Config *config.CachingConfig
+	Index  *cache.Index
 }
 
 // Configuration returns the Configuration for the Cache object
@@ -44,95 +45,83 @@ func (c *Cache) Configuration() *config.CachingConfig {
 // Connect instantiates the Cache mutex map and starts the Expired Entry Reaper goroutine
 func (c *Cache) Connect() error {
 	log.Info("filesystem cache setup", log.Pairs{"cachePath": c.Config.Filesystem.CachePath})
-
 	if err := makeDirectory(c.Config.Filesystem.CachePath); err != nil {
 		return err
 	}
-
-	c.mutexes = make(map[string]*sync.Mutex)
-
-	go c.Reap()
+	lockPrefix = c.Name + ".file."
+	c.Index = cache.NewIndex(nil, c.BulkRemove, time.Duration(c.Config.ReapIntervalMS)*time.Millisecond)
 	return nil
 }
 
 // Store places an object in the cache using the specified key and ttl
 func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
-	expFile, dataFile := c.getFileNames(cacheKey)
-	expiration := []byte(strconv.FormatInt(time.Now().Unix()+ttl, 10))
 
-	log.Debug("filesystem cache store", log.Pairs{"key": cacheKey, "expFile": expFile, "dataFile": dataFile})
-	mtx := c.getMutex(cacheKey)
-	mtx.Lock()
-	err1 := ioutil.WriteFile(dataFile, data, os.FileMode(0777))
-	err2 := ioutil.WriteFile(expFile, expiration, os.FileMode(0777))
-	mtx.Unlock()
+	dataFile := c.getFileName(cacheKey)
 
-	if err1 != nil {
-		return err1
-	} else if err2 != nil {
-		return err2
+	locks.Acquire(lockPrefix + cacheKey)
+	defer locks.Release(lockPrefix + cacheKey)
+
+	o := cache.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(time.Duration(ttl) * time.Second)}
+	err := ioutil.WriteFile(dataFile, o.ToBytes(), os.FileMode(0777))
+	if err != nil {
+		return err
 	}
+	log.Debug("filesystem cache store", log.Pairs{"key": cacheKey, "dataFile": dataFile})
+	go c.Index.UpdateObject(o)
 	return nil
+
 }
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)
 func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
-	_, dataFile := c.getFileNames(cacheKey)
-	log.Debug("filesystem cache retrieve", log.Pairs{"key": cacheKey, "dataFile": dataFile})
 
-	mtx := c.getMutex(cacheKey)
-	mtx.Lock()
-	content, err := ioutil.ReadFile(dataFile)
-	mtx.Unlock()
+	dataFile := c.getFileName(cacheKey)
+
+	locks.Acquire(lockPrefix + cacheKey)
+	defer locks.Release(lockPrefix + cacheKey)
+
+	log.Debug("filesystem cache retrieve", log.Pairs{"key": cacheKey, "dataFile": dataFile})
+	data, err := ioutil.ReadFile(dataFile)
 	if err != nil {
-		return []byte{}, fmt.Errorf("Value for key [%s] not in cache", cacheKey)
+		return cache.CacheMiss(cacheKey)
 	}
 
-	return content, nil
+	o, err := cache.ObjectFromBytes(data)
+	if err != nil {
+		return cache.CacheError(cacheKey, "value for key [%s] could not be deserialized from cache")
+	}
+
+	if o.Expiration.After(time.Now()) {
+		log.Debug("memorycache cache retrieve", log.Pairs{"cacheKey": cacheKey})
+		c.Index.UpdateObjectAccessTime(cacheKey)
+		return o.Value, nil
+	}
+	// Cache Object has been expired but not reaped, go ahead and delete it
+	go c.Remove(cacheKey)
+	return cache.CacheMiss(cacheKey)
+
 }
 
-// Reap continually iterates through the cache to find expired elements and removes them
-func (c *Cache) Reap() {
-	for {
-		now := time.Now().Unix()
+// Remove removes an object from the cache
+func (c *Cache) Remove(cacheKey string) {
 
-		files, err := ioutil.ReadDir(c.Config.Filesystem.CachePath)
-		if err == nil {
-			for _, file := range files {
-				if strings.HasSuffix(file.Name(), ".expiration") {
-					cacheKey := strings.Replace(file.Name(), ".expiration", "", 1)
-					expFile, dataFile := c.getFileNames(cacheKey)
-					mtx := c.getMutex(cacheKey)
-					mtx.Lock()
-					content, err := ioutil.ReadFile(expFile)
-					if err == nil {
-						expiration, err := strconv.ParseInt(string(content), 10, 64)
-						if err != nil || expiration < now {
-							log.Debug("filesystem cache reap", log.Pairs{"key": cacheKey, "dataFile": dataFile})
+	locks.Acquire(lockPrefix + cacheKey)
+	defer locks.Release(lockPrefix + cacheKey)
 
-							// // Get a lock
-							// c.T.ChannelCreateMtx.Lock()
+	if err := os.Remove(c.getFileName(cacheKey)); err == nil {
+		c.Index.RemoveObject(cacheKey, false)
+	}
+}
 
-							// // Delete the key
-							// os.Remove(expFile)
-							// os.Remove(dataFile)
+// BulkRemove removes a list of objects from the cache
+func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
+	for _, cacheKey := range cacheKeys {
+		locks.Acquire(lockPrefix + cacheKey)
+		defer locks.Release(lockPrefix + cacheKey)
 
-							// // Close out the channel if it exists
-							// if _, ok := c.T.ResponseChannels[cacheKey]; ok {
-							// 	close(c.T.ResponseChannels[cacheKey])
-							// 	delete(c.T.ResponseChannels, cacheKey)
-							// }
-
-							// // Unlock
-							// c.T.ChannelCreateMtx.Unlock()
-						}
-					}
-					mtx.Unlock()
-				}
-			}
+		if err := os.Remove(c.getFileName(cacheKey)); err == nil {
+			c.Index.RemoveObject(cacheKey, noLock)
 		}
-
-		time.Sleep(time.Duration(c.Config.ReapIntervalMS) * time.Millisecond)
 	}
 }
 
@@ -141,22 +130,9 @@ func (c *Cache) Close() error {
 	return nil
 }
 
-func (c *Cache) getFileNames(cacheKey string) (string, string) {
+func (c *Cache) getFileName(cacheKey string) string {
 	prefix := strings.Replace(c.Config.Filesystem.CachePath+"/"+cacheKey+".", "//", "/", 1)
-	return prefix + "expiration", prefix + "data"
-}
-
-func (c *Cache) getMutex(cacheKey string) *sync.Mutex {
-	var mtx *sync.Mutex
-	var ok bool
-	c.mapMutex.Lock()
-	if mtx, ok = c.mutexes[cacheKey]; !ok {
-		mtx = &sync.Mutex{}
-		c.mutexes[cacheKey] = mtx
-	}
-	c.mapMutex.Unlock()
-
-	return mtx
+	return prefix + "data"
 }
 
 // writeable returns true if the path is writeable by the calling process.

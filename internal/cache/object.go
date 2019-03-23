@@ -11,33 +11,38 @@
 * limitations under the License.
  */
 
-package index
+package cache
+
+//go:generate msgp
 
 import "time"
 
-// Index maintains metadata about a Cache when Retention enforcement is managed internally,
-// like memory or bbolt. It is not used for independently managed caches like Redis.
-type Index struct {
-	// CacheSize represents the size of the cache in bytes
-	CacheSize int
-	// ObjectCount represents the count of objects in the Cache
-	ObjectCount int
-	// Objects is a map of Objects in the Cache
-	Objects map[string]Object
-}
-
 // Object contains metadataa about an item in the Cache
 type Object struct {
-	// Name represents the name of the Object and is the key in a hashed collection of Cache Objects
-	Name string
+	// Key represents the name of the Object and is the accessor in a hashed collection of Cache Objects
+	Key string `msg:"key"`
 	// Expiration represents the time that the Object expires from Cache
-	Expiration time.Time
+	Expiration time.Time `msg:"expiration"`
 	// LastWrite is the time the object was last Written
-	LastWrite time.Time
+	LastWrite time.Time `msg:"lastwrite"`
 	// LastAccess is the time the object was last Accessed
-	LastAccess time.Time
+	LastAccess time.Time `msg:"lastaccess"`
 	// Size the size of the Object in bytes
-	Size int
+	Size int `msg:"size"`
 	// Value is the value of the Object stored in the Cache
-	Value []byte
+	// It is used by Caches but not by the Index
+	Value []byte `msg:"value,omitempty"`
+}
+
+// ToBytes returns a serialized byte slice representing the Object
+func (o *Object) ToBytes() []byte {
+	bytes, _ := o.MarshalMsg(nil)
+	return bytes
+}
+
+// ObjectFromBytes returns a deserialized Cache Object from a seralized byte slice
+func ObjectFromBytes(data []byte) (*Object, error) {
+	o := &Object{}
+	_, err := o.UnmarshalMsg(data)
+	return o, err
 }

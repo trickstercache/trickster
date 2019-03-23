@@ -15,12 +15,11 @@ package bbolt
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	bbolt "github.com/coreos/bbolt"
 
+	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 )
@@ -30,6 +29,7 @@ type Cache struct {
 	Name   string
 	Config *config.CachingConfig
 	dbh    *bbolt.DB
+	Index  *cache.Index
 }
 
 // Configuration returns the Configuration for the Cache object
@@ -58,182 +58,91 @@ func (c *Cache) Connect() error {
 		return err
 	}
 
-	go c.Reap()
+	c.Index = cache.NewIndex(nil, c.BulkRemove, time.Duration(c.Config.ReapIntervalMS)*time.Millisecond)
+
 	return nil
 }
 
 // Store places an object in the cache using the specified key and ttl
 func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
 
-	expKey, dataKey := c.getKeyNames(cacheKey)
-	expiration := []byte(strconv.FormatInt(time.Now().Unix()+ttl, 10))
+	o := cache.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(time.Duration(ttl) * time.Second)}
 
 	err := c.dbh.Update(func(tx *bbolt.Tx) error {
-
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
-
-		err := b.Put([]byte(dataKey), data)
-		if err != nil {
-			return err
-		}
-
-		return b.Put([]byte(expKey), expiration)
+		return b.Put([]byte(cacheKey), o.ToBytes())
 	})
 	if err != nil {
 		return err
 	}
-
-	log.Debug("bbolt cache store", log.Pairs{"key": dataKey, "expKey": expKey})
-
+	log.Debug("bbolt cache store", log.Pairs{"key": cacheKey})
+	go c.Index.UpdateObject(o)
 	return nil
+
 }
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)
 func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 
-	log.Debug("bbolt cache retrieve", log.Pairs{"key": cacheKey})
-
-	_, dataKey := c.getKeyNames(cacheKey)
-
-	c.checkExpiration(cacheKey)
-
-	return c.retrieve(dataKey)
-}
-
-// retrieve looks for an object in cache and returns it (or an error if not found)
-func (c *Cache) retrieve(cacheKey string) ([]byte, error) {
-
-	var value []byte
-
+	var data []byte
 	err := c.dbh.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
-		v := b.Get([]byte(cacheKey))
-		if v == nil {
+		data = b.Get([]byte(cacheKey))
+		if data == nil {
 			log.Debug("bbolt cache miss", log.Pairs{"key": cacheKey})
-			return fmt.Errorf("Value for key [%s] not in cache", cacheKey)
+			_, cme := cache.CacheMiss(cacheKey)
+			return cme
 		}
-		value = v
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return value, nil
-}
-
-// checkExpiration verifies that a cacheKey is not expired
-func (c *Cache) checkExpiration(cacheKey string) {
-
-	expKey, _ := c.getKeyNames(cacheKey)
-
-	content, err := c.retrieve(expKey)
-	if err == nil {
-		// We found this key, let's see if it's expired
-		expiration, err := strconv.ParseInt(string(content), 10, 64)
-		if err != nil || expiration < time.Now().Unix() {
-			c.Delete(cacheKey)
-		}
+	o, err := cache.ObjectFromBytes(data)
+	if err != nil {
+		return cache.CacheError(cacheKey, "value for key [%s] could not be deserialized from cache")
 	}
+
+	if o.Expiration.After(time.Now()) {
+		log.Debug("bbolt cache retrieve", log.Pairs{"cacheKey": cacheKey})
+		c.Index.UpdateObjectAccessTime(cacheKey)
+		return o.Value, nil
+	}
+	// Cache Object has been expired but not reaped, go ahead and delete it
+	go c.Remove(cacheKey)
+	return cache.CacheMiss(cacheKey)
+
 }
 
-// Delete removes an object in cache, if present
-func (c *Cache) Delete(cacheKey string) error {
+// Remove removes an object in cache, if present
+func (c *Cache) Remove(cacheKey string) {
+	c.remove(cacheKey)
+	c.Index.RemoveObject(cacheKey, false)
+}
 
-	log.Debug("bbolt cache delete", log.Pairs{"key": cacheKey})
-
-	expKey, dataKey := c.getKeyNames(cacheKey)
-
-	return c.dbh.Update(func(tx *bbolt.Tx) error {
-
+func (c *Cache) remove(cacheKey string) error {
+	err := c.dbh.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
-
-		err1 := b.Delete([]byte(expKey))
-		if err1 != nil {
-			log.Error("bbolt cache key delete failure", log.Pairs{"key": expKey, "reason": err1.Error()})
-		}
-
-		err2 := b.Delete([]byte(dataKey))
-		if err2 != nil {
-			log.Error("bbolt cache key delete failure", log.Pairs{"key": dataKey, "reason": err2.Error()})
-		}
-
-		// c.T.ChannelCreateMtx.Lock()
-
-		// // Close out the channel if it exists
-		// if _, ok := c.T.ResponseChannels[cacheKey]; ok {
-		// 	close(c.T.ResponseChannels[cacheKey])
-		// 	delete(c.T.ResponseChannels, cacheKey)
-		// }
-
-		// // Unlock
-		// c.T.ChannelCreateMtx.Unlock()
-
-		if err1 != nil {
-			return err1
-		}
-		if err2 != nil {
-			return err2
-		}
-
-		return nil
-
+		return b.Delete([]byte(cacheKey))
 	})
-
+	if err != nil {
+		log.Error("bbolt cache key delete failure", log.Pairs{"cacheKey": cacheKey, "reason": err.Error()})
+		return err
+	}
+	log.Debug("bbolt cache key delete", log.Pairs{"key": cacheKey})
+	return nil
 }
 
-// Reap continually iterates through the cache to find expired elements and removes them
-func (c *Cache) Reap() {
-
-	for {
-		c.ReapOnce()
-		time.Sleep(time.Duration(c.Config.ReapIntervalMS) * time.Millisecond)
+// BulkRemove removes a list of objects from the cache
+func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
+	for _, cacheKey := range cacheKeys {
+		c.remove(cacheKey)
+		c.Index.RemoveObject(cacheKey, noLock)
 	}
-
-}
-
-// ReapOnce makes a single iteration through the cache to to find and remove expired elements
-func (c *Cache) ReapOnce() {
-
-	now := time.Now().Unix()
-	expiredKeys := make([]string, 0)
-
-	// Iterate through the cache to find any expiration keys and check their value
-	c.dbh.View(func(tx *bbolt.Tx) error {
-		// Assume bucket exists and has keys
-		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
-		cursor := b.Cursor()
-
-		for k, v := cursor.First(); k != nil; k, v = cursor.Next() {
-
-			expKey := string(k)
-
-			if strings.HasSuffix(expKey, ".expiration") {
-
-				expiration, err := strconv.ParseInt(string(v), 10, 64)
-				if err != nil || expiration < now {
-
-					expiredKeys = append(expiredKeys, strings.Replace(expKey, ".expiration", "", -1))
-
-				}
-			}
-		}
-
-		return nil
-	})
-
-	// Iterate through the expired keys so we can delete them
-	for _, cacheKey := range expiredKeys {
-		c.Delete(cacheKey)
-	}
-
 }
 
 // Close closes the Cache
 func (c *Cache) Close() error {
 	return c.dbh.Close()
-}
-
-func (c *Cache) getKeyNames(cacheKey string) (string, string) {
-	return cacheKey + ".expiration", cacheKey + ".data"
 }
