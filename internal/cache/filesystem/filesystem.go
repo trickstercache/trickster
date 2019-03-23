@@ -49,12 +49,23 @@ func (c *Cache) Connect() error {
 		return err
 	}
 	lockPrefix = c.Name + ".file."
-	c.Index = cache.NewIndex(nil, c.BulkRemove, time.Duration(c.Config.ReapIntervalMS)*time.Millisecond)
+
+	// Load Index here and pass bytes as param2
+	indexData, _ := c.retrieve(cache.IndexKey, false)
+	c.Index = cache.NewIndex(c.Name, indexData, c.BulkRemove, time.Duration(c.Config.ReapIntervalSecs)*time.Second, time.Duration(c.Config.IndexWriteIntervalSecs)*time.Second, c.storeNoIndex)
 	return nil
 }
 
 // Store places an object in the cache using the specified key and ttl
 func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
+	return c.store(cacheKey, data, ttl, true)
+}
+
+func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
+	c.store(cacheKey, data, 31536000, false)
+}
+
+func (c *Cache) store(cacheKey string, data []byte, ttl int64, updateIndex bool) error {
 
 	dataFile := c.getFileName(cacheKey)
 
@@ -66,14 +77,20 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
 	if err != nil {
 		return err
 	}
-	log.Debug("filesystem cache store", log.Pairs{"key": cacheKey, "dataFile": dataFile})
-	go c.Index.UpdateObject(o)
+	log.Debug("filesystem cache store", log.Pairs{"key": cacheKey, "dataFile": dataFile, "indexed": updateIndex}})
+	if updateIndex {
+		go c.Index.UpdateObject(o)
+	}
 	return nil
 
 }
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)
 func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
+	return c.retrieve(cacheKey, true)
+}
+
+func (c *Cache) retrieve(cacheKey string, atime bool) ([]byte, error) {
 
 	dataFile := c.getFileName(cacheKey)
 
@@ -93,7 +110,9 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 
 	if o.Expiration.After(time.Now()) {
 		log.Debug("memorycache cache retrieve", log.Pairs{"cacheKey": cacheKey})
-		c.Index.UpdateObjectAccessTime(cacheKey)
+		if atime {
+			go c.Index.UpdateObjectAccessTime(cacheKey)
+		}
 		return o.Value, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it

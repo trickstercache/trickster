@@ -58,16 +58,23 @@ func (c *Cache) Connect() error {
 		return err
 	}
 
-	c.Index = cache.NewIndex(nil, c.BulkRemove, time.Duration(c.Config.ReapIntervalMS)*time.Millisecond)
-
+	// Load Index here and pass bytes as param2
+	indexData, _ := c.retrieve(cache.IndexKey, false)
+	c.Index = cache.NewIndex(c.Name, indexData, c.BulkRemove, time.Duration(c.Config.ReapIntervalSecs)*time.Second, time.Duration(c.Config.IndexWriteIntervalSecs)*time.Second, c.storeNoIndex)
 	return nil
 }
 
 // Store places an object in the cache using the specified key and ttl
 func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
+	return c.store(cacheKey, data, ttl, true)
+}
 
+func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
+	c.store(cacheKey, data, 31536000, false)
+}
+
+func (c *Cache) store(cacheKey string, data []byte, ttl int64, updateIndex bool) error {
 	o := cache.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(time.Duration(ttl) * time.Second)}
-
 	err := c.dbh.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
 		return b.Put([]byte(cacheKey), o.ToBytes())
@@ -75,14 +82,19 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
 	if err != nil {
 		return err
 	}
-	log.Debug("bbolt cache store", log.Pairs{"key": cacheKey})
-	go c.Index.UpdateObject(o)
+	log.Debug("bbolt cache store", log.Pairs{"key": cacheKey, "ttl": ttl, "indexed": updateIndex})
+	if updateIndex {
+		go c.Index.UpdateObject(o)
+	}
 	return nil
-
 }
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)
 func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
+	return c.retrieve(cacheKey, true)
+}
+
+func (c *Cache) retrieve(cacheKey string, atime bool) ([]byte, error) {
 
 	var data []byte
 	err := c.dbh.View(func(tx *bbolt.Tx) error {
@@ -106,7 +118,9 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 
 	if o.Expiration.After(time.Now()) {
 		log.Debug("bbolt cache retrieve", log.Pairs{"cacheKey": cacheKey})
-		c.Index.UpdateObjectAccessTime(cacheKey)
+		if atime {
+			go c.Index.UpdateObjectAccessTime(cacheKey)
+		}
 		return o.Value, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it

@@ -72,14 +72,15 @@ type OriginConfig struct {
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
 type CachingConfig struct {
-	// CacheType represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
-	Type           string                `toml:"type"`
-	RecordTTLSecs  int                   `toml:"record_ttl_secs"`
-	Redis          RedisCacheConfig      `toml:"redis"`
-	Filesystem     FilesystemCacheConfig `toml:"filesystem"`
-	ReapIntervalMS int                   `toml:"reap_interval_ms"`
-	Compression    bool                  `toml:"compression"`
-	BBolt          BBoltCacheConfig      `toml:"bbolt"`
+	// Type represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
+	Type                   string                `toml:"type"`
+	RecordTTLSecs          int                   `toml:"record_ttl_secs"`
+	Redis                  RedisCacheConfig      `toml:"redis"`
+	Filesystem             FilesystemCacheConfig `toml:"filesystem"`
+	ReapIntervalSecs       int                   `toml:"reap_interval_secs"`
+	Compression            bool                  `toml:"compression"`
+	BBolt                  BBoltCacheConfig      `toml:"bbolt"`
+	IndexWriteIntervalSecs int                   `toml:"index_write_interval_secs"`
 }
 
 // RedisCacheConfig is a collection of Configurations for Connecting to Redis
@@ -139,13 +140,14 @@ func NewConfig() *TricksterConfig {
 	return &TricksterConfig{
 		Caches: map[string]CachingConfig{
 			"default": {
-				Type:           "memory",
-				RecordTTLSecs:  21600,
-				Redis:          RedisCacheConfig{Protocol: "tcp", Endpoint: "redis:6379"},
-				Filesystem:     FilesystemCacheConfig{CachePath: defaultCachePath},
-				BBolt:          BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: "trickster"},
-				ReapIntervalMS: 1000,
-				Compression:    true,
+				Type:                   "memory",
+				RecordTTLSecs:          21600,
+				Redis:                  RedisCacheConfig{Protocol: "tcp", Endpoint: "redis:6379"},
+				Filesystem:             FilesystemCacheConfig{CachePath: defaultCachePath},
+				BBolt:                  BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: "trickster"},
+				ReapIntervalSecs:       3,
+				Compression:            true,
+				IndexWriteIntervalSecs: 5,
 			},
 		},
 		Logging: LoggingConfig{
