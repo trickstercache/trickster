@@ -24,7 +24,7 @@ import (
 // QueryRangeHandler ...
 func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
-	proxy.DeltaProxyCacheRequest(proxy.NewRequest(c.Name, otPrometheus, "QueryRangeHandler", r.Method, u, r.Header, r), w, c, c.Cache, c.Cache.Configuration().RecordTTLSecs, false)
+	proxy.DeltaProxyCacheRequest(proxy.NewRequest(c.Name, otPrometheus, "QueryRangeHandler", r.Method, u, r.Header, c.Config.Timeout, r), w, c, c.Cache, c.Cache.Configuration().RecordTTLSecs, false)
 }
 
 // ParseTimeRangeQuery ...

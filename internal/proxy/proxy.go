@@ -54,7 +54,7 @@ func Fetch(r *Request) ([]byte, *http.Response, time.Duration) {
 
 	u := r.URL.String()
 	start := time.Now()
-	client := &http.Client{}
+	client := &http.Client{Timeout: r.Timeout}
 	resp, err := client.Do(&http.Request{Method: r.ClientRequest.Method, URL: r.URL, Header: r.Headers})
 	if err != nil {
 		log.Error("error downloading url", log.Pairs{"url": u, "detail": err.Error()})

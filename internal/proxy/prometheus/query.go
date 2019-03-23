@@ -22,5 +22,5 @@ import (
 // QueryHandler handles calls to /query (for instantaneous values)
 func (c Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
-	proxy.ObjectProxyCacheRequest(proxy.NewRequest(c.Name, otPrometheus, "QueryHandler", r.Method, u, r.Header, r), w, &c, c.Cache, 30, false, false)
+	proxy.ObjectProxyCacheRequest(proxy.NewRequest(c.Name, otPrometheus, "QueryHandler", r.Method, u, r.Header, c.Config.Timeout, r), w, &c, c.Cache, 30, false, false)
 }

@@ -13,7 +13,11 @@
 
 package config
 
-import "github.com/BurntSushi/toml"
+import (
+	"time"
+
+	"github.com/BurntSushi/toml"
+)
 
 var Config *TricksterConfig
 var Main *MainConfig
@@ -52,17 +56,18 @@ type MainConfig struct {
 // OriginConfig is a collection of configurations for prometheus origins proxied by Trickster
 // You can override these on a per-request basis with url-params
 type OriginConfig struct {
-	Type                  string `toml:"type"`
-	Scheme                string `toml:"scheme"`
-	Host                  string `toml:"host"`
-	PathPrefix            string `toml:"path_prefix"`
-	APIPath               string `toml:"api_path"`
-	IgnoreNoCacheHeader   bool   `toml:"ignore_no_cache_header"`
-	MaxValueAgeSecs       int64  `toml:"max_value_age_secs"`
-	FastForwardDisable    bool   `toml:"fast_forward_disable"`
-	BackfillToleranceSecs int64  `toml:"backfill_tolerance_secs"`
-	TimeoutSecs           int64  `toml:"timeout_secs"`
-	CacheName             string `toml:"cache_name"`
+	Type                  string        `toml:"type"`
+	Scheme                string        `toml:"scheme"`
+	Host                  string        `toml:"host"`
+	PathPrefix            string        `toml:"path_prefix"`
+	APIPath               string        `toml:"api_path"`
+	IgnoreNoCacheHeader   bool          `toml:"ignore_no_cache_header"`
+	MaxValueAgeSecs       int64         `toml:"max_value_age_secs"`
+	FastForwardDisable    bool          `toml:"fast_forward_disable"`
+	BackfillToleranceSecs int64         `toml:"backfill_tolerance_secs"`
+	TimeoutSecs           int64         `toml:"timeout_secs"`
+	CacheName             string        `toml:"cache_name"`
+	Timeout               time.Duration `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
