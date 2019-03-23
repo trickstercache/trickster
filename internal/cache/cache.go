@@ -31,8 +31,10 @@ const (
 	ctBBolt      = "bbolt"
 )
 
+// Caches is a map of Caches being used by the application
 var Caches = make(map[string]Cache)
 
+// LoadCachesFromConfig iterates the Caching Confi and Connects/Maps each Cache
 func LoadCachesFromConfig() {
 	for k, v := range config.Caches {
 		c := NewCache(&v)
@@ -40,6 +42,7 @@ func LoadCachesFromConfig() {
 	}
 }
 
+// GetCache returns the Cache named cacheName if it exists
 func GetCache(cacheName string) (Cache, error) {
 	if c, ok := Caches[cacheName]; ok {
 		return c, nil
@@ -47,8 +50,7 @@ func GetCache(cacheName string) (Cache, error) {
 	return nil, fmt.Errorf("Could not find Cache named [%s]", cacheName)
 }
 
-// GetCache ...
-// TODO: Allow cache-per-origin rather than singleton
+// NewCache returns a Cache object based on the provided config.CachingConfig
 func NewCache(cfg *config.CachingConfig) Cache {
 	var c Cache
 
