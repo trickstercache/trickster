@@ -54,12 +54,14 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	}
 	normalizedNow.NormalizeExtent()
 
+	cfg := client.Configuration()
+
 	// this is used to ensure the head of the cache respects the BackFill Tolerance
-	backfill := &timeseries.TimeRangeQuery{
-		Extent: timeseries.Extent{Start: time.Unix(0, 0), End: normalizedNow.Extent.End},
+	bf := timeseries.Extent{Start: time.Unix(0, 0), End: normalizedNow.Extent.End}
+	if cfg.BackfillToleranceSecs > 0 {
+		bf.End = bf.End.Add(time.Duration(-cfg.BackfillToleranceSecs) * time.Second)
 	}
 
-	cfg := client.Configuration()
 	var cts timeseries.Timeseries
 	var doc *HTTPDocument
 	var elapsed time.Duration
@@ -210,7 +212,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		go func() {
 			defer wg.Done()
 			// Crop the Cached Object down to the Sample Age Retention Policy before storing
-			re := timeseries.Extent{End: backfill.Extent.End, Start: time.Now().Add(-time.Duration(cfg.MaxValueAgeSecs) * time.Second)}
+			re := timeseries.Extent{End: bf.End, Start: time.Now().Add(-time.Duration(cfg.MaxValueAgeSecs) * time.Second)}
 			cts = cts.Crop(re)
 			cdata, err := client.MarshalTimeseries(cts)
 			if err != nil {
