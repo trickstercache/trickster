@@ -26,7 +26,7 @@ type Timeseries interface {
 	// SetStep should update the Step Interval of the Timeseries
 	SetStep(time.Duration)
 	// Merge should merge the Timeseries collection into the source Timeseries
-	Merge(...Timeseries)
+	Merge(bool, ...Timeseries)
 	// Sort should uniqueify and sort all series by Timestamp
 	Sort()
 	// Copy should returns an exact duplicate source the Timeseries
