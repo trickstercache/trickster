@@ -75,10 +75,9 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 		},
 	}
 	for _, ss := range me.Data.Result {
-		newSS := &model.SampleStream{Metric: ss.Metric, Values: make([]model.SamplePair, 0, len(ss.Values))}
-		for _, v := range ss.Values {
-			newSS.Values = append(newSS.Values, model.SamplePair{Timestamp: v.Timestamp, Value: v.Value})
-		}
+
+		newSS := &model.SampleStream{Metric: ss.Metric}
+		newSS.Values = ss.Values
 		resMe.Data.Result = append(resMe.Data.Result, newSS)
 	}
 	return resMe
