@@ -48,7 +48,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
 	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
 	log.Debug("memorycache cache store", log.Pairs{"cacheKey": cacheKey, "length": len(data), "ttl": ttl})
 	o := cache.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(time.Duration(ttl) * time.Second)}
-	go c.client.Store(cacheKey, o)
+	c.client.Store(cacheKey, o)
 	go c.Index.UpdateObject(o)
 	return nil
 }
@@ -59,11 +59,12 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 	if ok {
 		r := record.(cache.Object)
 		if r.Expiration.After(time.Now()) {
-			log.Debug("memorycache cache retrieve", log.Pairs{"cacheKey": cacheKey})
+			log.Info("memorycache cache retrieve", log.Pairs{"cacheKey": cacheKey})
 			c.Index.UpdateObjectAccessTime(cacheKey)
 			cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(r.Value)))
 			return r.Value, nil
 		}
+
 		// Cache Object has been expired but not reaped, go ahead and delete it
 		go c.Remove(cacheKey)
 	}

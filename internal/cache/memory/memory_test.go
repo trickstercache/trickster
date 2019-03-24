@@ -15,10 +15,19 @@ package memory
 
 import (
 	"testing"
+
+	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
+func init() {
+	metrics.Init()
+}
+
 func TestCache_Connect(t *testing.T) {
-	mc := Cache{}
+
+	cacheConfig := config.CachingConfig{Type: "memory", Index: config.CacheIndexConfig{ReapIntervalSecs: 0}}
+	mc := Cache{Config: &cacheConfig}
 
 	// it should connect
 	err := mc.Connect()
@@ -28,7 +37,8 @@ func TestCache_Connect(t *testing.T) {
 }
 
 func TestCache_Store(t *testing.T) {
-	mc := Cache{}
+	cacheConfig := config.CachingConfig{Type: "memory", Index: config.CacheIndexConfig{ReapIntervalSecs: 0}}
+	mc := Cache{Config: &cacheConfig}
 
 	err := mc.Connect()
 	if err != nil {
@@ -43,7 +53,9 @@ func TestCache_Store(t *testing.T) {
 }
 
 func TestCache_Retrieve(t *testing.T) {
-	mc := Cache{}
+
+	cacheConfig := config.CachingConfig{Type: "memory", Index: config.CacheIndexConfig{ReapIntervalSecs: 0}}
+	mc := Cache{Config: &cacheConfig}
 
 	err := mc.Connect()
 	if err != nil {
@@ -66,26 +78,8 @@ func TestCache_Retrieve(t *testing.T) {
 	}
 }
 
-func TestCache_ReapOnce(t *testing.T) {
-	mc := Cache{}
-
-	err := mc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-
-	// fake an expired entry
-	mc.Store("cacheKey", []byte("data"), -1000)
-
-	mc.ReapOnce()
-
-	if _, err := mc.Retrieve("cacheKey"); err == nil {
-		t.Errorf("expected cache entry to be removed")
-	}
-
-}
-
 func TestCache_Close(t *testing.T) {
-	mc := Cache{}
+	cacheConfig := config.CachingConfig{Type: "memory", Index: config.CacheIndexConfig{ReapIntervalSecs: 1}}
+	mc := Cache{Config: &cacheConfig}
 	mc.Close()
 }

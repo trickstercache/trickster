@@ -17,11 +17,16 @@ import (
 	"testing"
 
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/util/metrics"
 )
+
+func init() {
+	metrics.Init()
+}
 
 func TestBoltDBCache_Connect(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, ReapIntervalMS: 1}
+	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapIntervalSecs: 1}}
 	bc := Cache{Config: &cacheConfig}
 
 	// it should connect
@@ -36,7 +41,7 @@ func TestBoltDBCache_Connect(t *testing.T) {
 
 func TestBoltDBCache_Store(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, ReapIntervalMS: 1}
+	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapIntervalSecs: 1}}
 	bc := Cache{Config: &cacheConfig}
 
 	err := bc.Connect()
@@ -54,7 +59,7 @@ func TestBoltDBCache_Store(t *testing.T) {
 
 func TestBoltDBCache_Delete(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, ReapIntervalMS: 1}
+	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapIntervalSecs: 1}}
 	bc := Cache{Config: &cacheConfig}
 
 	err := bc.Connect()
@@ -70,7 +75,7 @@ func TestBoltDBCache_Delete(t *testing.T) {
 	}
 
 	// it should store a value
-	err = bc.Delete("cacheKey")
+	err = bc.remove("cacheKey")
 	if err != nil {
 		t.Error(err)
 	}
@@ -79,7 +84,7 @@ func TestBoltDBCache_Delete(t *testing.T) {
 
 func TestBoltDBCache_Retrieve(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, ReapIntervalMS: 1}
+	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapIntervalSecs: 1}}
 	bc := Cache{Config: &cacheConfig}
 
 	err := bc.Connect()

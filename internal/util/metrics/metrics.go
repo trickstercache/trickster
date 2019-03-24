@@ -152,7 +152,7 @@ func Init() {
 	prometheus.MustRegister(CacheMaxBytes)
 
 	// Turn up the Metrics HTTP Server
-	if config.Metrics.ListenPort > 0 {
+	if config.Metrics != nil && config.Metrics.ListenPort > 0 {
 		go func() {
 
 			log.Info("metrics http endpoint starting", log.Pairs{"address": config.Metrics.ListenAddress, "port": fmt.Sprintf("%d", config.Metrics.ListenPort)})
