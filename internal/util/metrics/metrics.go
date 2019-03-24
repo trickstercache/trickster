@@ -46,16 +46,16 @@ var CacheByteOperations *prometheus.CounterVec
 var CacheEvents *prometheus.CounterVec
 
 // CacheObjects ...
-var CacheObjects *prometheus.Gauge
+var CacheObjects *prometheus.GaugeVec
 
 // CacheBytes ...
-var CacheBytes *prometheus.Gauge
+var CacheBytes *prometheus.GaugeVec
 
 // CacheMaxObjects ...
-var CacheMaxObjects *prometheus.Gauge
+var CacheMaxObjects *prometheus.GaugeVec
 
 // CacheMaxBytes ...
-var CacheMaxBytes *prometheus.Gauge
+var CacheMaxBytes *prometheus.GaugeVec
 
 //
 
