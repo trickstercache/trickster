@@ -39,12 +39,13 @@ func (c *Cache) Configuration() *config.CachingConfig {
 func (c *Cache) Connect() error {
 	log.Info("memorycache setup", log.Pairs{})
 	c.client = sync.Map{}
-	c.Index = cache.NewIndex(c.Name, nil, c.Config.Index, c.BulkRemove, nil)
+	c.Index = cache.NewIndex(c.Name, c.Config.Type, nil, c.Config.Index, c.BulkRemove, nil)
 	return nil
 }
 
 // Store places an object in the cache using the specified key and ttl
 func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
+	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
 	log.Debug("memorycache cache store", log.Pairs{"cacheKey": cacheKey, "length": len(data), "ttl": ttl})
 	o := cache.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(time.Duration(ttl) * time.Second)}
 	go c.client.Store(cacheKey, o)
@@ -60,13 +61,14 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 		if r.Expiration.After(time.Now()) {
 			log.Debug("memorycache cache retrieve", log.Pairs{"cacheKey": cacheKey})
 			c.Index.UpdateObjectAccessTime(cacheKey)
+			cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(r.Value)))
 			return r.Value, nil
 		}
 		// Cache Object has been expired but not reaped, go ahead and delete it
 		go c.Remove(cacheKey)
 	}
 
-	return cache.CacheMiss(cacheKey)
+	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
 }
 
 // Remove removes an object from the cache

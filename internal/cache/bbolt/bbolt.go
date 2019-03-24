@@ -60,7 +60,7 @@ func (c *Cache) Connect() error {
 
 	// Load Index here and pass bytes as param2
 	indexData, _ := c.retrieve(cache.IndexKey, false)
-	c.Index = cache.NewIndex(c.Name, indexData, c.Config.Index, c.BulkRemove, c.storeNoIndex)
+	c.Index = cache.NewIndex(c.Name, c.Config.Type, indexData, c.Config.Index, c.BulkRemove, c.storeNoIndex)
 	return nil
 }
 
@@ -74,6 +74,9 @@ func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 }
 
 func (c *Cache) store(cacheKey string, data []byte, ttl int64, updateIndex bool) error {
+
+	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
+
 	o := cache.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(time.Duration(ttl) * time.Second)}
 	err := c.dbh.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
@@ -102,7 +105,7 @@ func (c *Cache) retrieve(cacheKey string, atime bool) ([]byte, error) {
 		data = b.Get([]byte(cacheKey))
 		if data == nil {
 			log.Debug("bbolt cache miss", log.Pairs{"key": cacheKey})
-			_, cme := cache.CacheMiss(cacheKey)
+			_, cme := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
 			return cme
 		}
 		return nil
@@ -113,7 +116,7 @@ func (c *Cache) retrieve(cacheKey string, atime bool) ([]byte, error) {
 
 	o, err := cache.ObjectFromBytes(data)
 	if err != nil {
-		return cache.CacheError(cacheKey, "value for key [%s] could not be deserialized from cache")
+		return cache.CacheError(cacheKey, c.Name, c.Config.Type, "value for key [%s] could not be deserialized from cache")
 	}
 
 	if o.Expiration.After(time.Now()) {
@@ -121,11 +124,12 @@ func (c *Cache) retrieve(cacheKey string, atime bool) ([]byte, error) {
 		if atime {
 			go c.Index.UpdateObjectAccessTime(cacheKey)
 		}
+		cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(data)))
 		return o.Value, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
 	go c.Remove(cacheKey)
-	return cache.CacheMiss(cacheKey)
+	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
 
 }
 

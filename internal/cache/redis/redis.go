@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-redis/redis"
 
+	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 )
@@ -49,6 +50,7 @@ func (c *Cache) Connect() error {
 
 // Store places the the data into the Redis Cache using the provided Key and TTL
 func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
+	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
 	log.Debug("redis cache store", log.Pairs{"key": cacheKey})
 	return c.client.Set(cacheKey, data, time.Second*time.Duration(ttl)).Err()
 }
@@ -58,9 +60,12 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 	log.Debug("redis cache retrieve", log.Pairs{"key": cacheKey})
 	res, err := c.client.Get(cacheKey).Result()
 	if err != nil {
+		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
 		return []byte{}, err
 	}
-	return []byte(res), nil
+	data := []byte(res)
+	cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(data)))
+	return data, nil
 }
 
 // Remove removes an object in cache, if present
@@ -74,12 +79,6 @@ func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
 	log.Debug("redis cache bulk remove", log.Pairs{})
 	c.client.Del(cacheKeys...)
 }
-
-// Reap is not used with Redis Cache as it has built-in record lifetime management
-func (c *Cache) Reap() {}
-
-// ReapOnce is not used with Redis Cache as it has built-in record lifetime management
-func (c *Cache) ReapOnce() {}
 
 // Close disconnects from the Redis Cache
 func (c *Cache) Close() error {

@@ -32,11 +32,13 @@ type Cache interface {
 }
 
 // CacheMiss returns a standard Cache Miss response
-func CacheMiss(cacheKey string) ([]byte, error) {
+func ObserveCacheMiss(cacheKey, cacheName, cacheType string) ([]byte, error) {
+	ObserveCacheOperation(cacheName, cacheType, "get", "miss", 0)
 	return nil, fmt.Errorf("value  for key [%s] not in cache", cacheKey)
 }
 
 // CacheError returns an empty cache object and the formatted error
-func CacheError(cacheKey string, msg string) ([]byte, error) {
+func CacheError(cacheKey, cacheName, cacheType string, msg string) ([]byte, error) {
+	ObserveCacheEvent(cacheName, cacheType, "error", msg)
 	return nil, fmt.Errorf(msg, cacheKey)
 }

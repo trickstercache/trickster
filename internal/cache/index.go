@@ -42,6 +42,7 @@ type Index struct {
 	Objects map[string]*Object `msg="objects"`
 
 	name           string                             `msg="-"`
+	cacheType      string                             `msg="-"`
 	config         config.CacheIndexConfig            `msg="-"`
 	bulkRemoveFunc func([]string, bool)               `msg="-"`
 	reapInterval   time.Duration                      `msg="-"`
@@ -93,7 +94,7 @@ func ObjectFromBytes(data []byte) (*Object, error) {
 }
 
 // NewIndex returns a new Index based on the provided inputs
-func NewIndex(name string, indexData []byte, config config.CacheIndexConfig, bulkRemoveFunc func([]string, bool), flushFunc func(cacheKey string, data []byte)) *Index {
+func NewIndex(cacheName, cacheType string, indexData []byte, config config.CacheIndexConfig, bulkRemoveFunc func([]string, bool), flushFunc func(cacheKey string, data []byte)) *Index {
 	i := &Index{}
 
 	if len(indexData) > 0 {
@@ -102,7 +103,7 @@ func NewIndex(name string, indexData []byte, config config.CacheIndexConfig, bul
 		i.Objects = make(map[string]*Object)
 	}
 
-	i.name = name
+	i.name = cacheName
 	i.flushInterval = time.Duration(config.FlushIntervalSecs) * time.Second
 	i.flushFunc = flushFunc
 	i.reapInterval = time.Duration(config.ReapIntervalSecs) * time.Second
@@ -156,6 +157,8 @@ func (idx *Index) UpdateObject(obj Object) {
 		idx.ObjectCount++
 	}
 
+	ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount, idx.config.MaxSizeObjects, idx.config.MaxSizeBytes)
+
 	idx.Objects[key] = &obj
 }
 
@@ -166,11 +169,14 @@ func (idx *Index) RemoveObject(key string, noLock bool) {
 		indexLock.Lock()
 		defer indexLock.Unlock()
 	}
-
 	if o, ok := idx.Objects[key]; ok {
 		idx.CacheSize -= o.Size
 		idx.ObjectCount--
+
+		ObserveCacheOperation(idx.name, idx.cacheType, "del", "none", float64(o.Size))
+
 		delete(idx.Objects, key)
+		ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount, idx.config.MaxSizeObjects, idx.config.MaxSizeBytes)
 	}
 
 }
@@ -234,6 +240,7 @@ func (idx *Index) reap() {
 	}
 
 	if len(removals) > 0 {
+		ObserveCacheEvent(idx.name, idx.cacheType, "eviction", "ttl")
 		idx.bulkRemoveFunc(removals, true)
 	}
 
@@ -289,6 +296,7 @@ func (idx *Index) reap() {
 		}
 
 		if len(removals) > 0 {
+			ObserveCacheEvent(idx.name, idx.cacheType, "eviction", evictionType)
 			fmt.Println("Removals Found", removals)
 			idx.bulkRemoveFunc(removals, true)
 		}
@@ -318,18 +326,18 @@ func (o obectsAtime) Swap(i, j int) {
 	o[i], o[j] = o[j], o[i]
 }
 
-func ObserveCacheOperation(cache, cacheType, operation, status string, bytes int) {
+func ObserveCacheOperation(cache, cacheType, operation, status string, bytes float64) {
 	metrics.CacheObjectOperations.WithLabelValues(cache, cacheType, operation, status).Inc()
 	if bytes > 0 {
 		metrics.CacheByteOperations.WithLabelValues(cache, cacheType, operation, status).Add(float64(bytes))
 	}
 }
 
-func ObserveCacheEvent(cache, cacheType, event string) {
-	metrics.CacheEvents.WithLabelValues(cache, cacheType, event).Inc()
+func ObserveCacheEvent(cache, cacheType, event, reason string) {
+	metrics.CacheEvents.WithLabelValues(cache, cacheType, event, reason).Inc()
 }
 
-func ObserveCacheSizeChange(cache, cacheType string, objectCount, byteCount, maxObjects, maxBytes int64) {
+func ObserveCacheSizeChange(cache, cacheType string, byteCount, objectCount, maxBytes, maxObjects int64) {
 	metrics.CacheObjects.WithLabelValues(cache, cacheType).Set(float64(objectCount))
 	metrics.CacheBytes.WithLabelValues(cache, cacheType).Set(float64(byteCount))
 	metrics.CacheMaxObjects.WithLabelValues(cache, cacheType).Set(float64(maxObjects))

@@ -104,10 +104,10 @@ func Init() {
 			Name: "trickster_cache_events",
 			Help: "Count of operations performed on a Trickster cache.",
 		},
-		[]string{"cache", "type", "event"},
+		[]string{"cache", "type", "event", "reason"},
 	)
 
-	CacheObjects := prometheus.NewGaugeVec(
+	CacheObjects = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "trickster_cache_objects",
 			Help: "Count of objects in a Trickster cache.",
@@ -115,7 +115,7 @@ func Init() {
 		[]string{"cache", "type"},
 	)
 
-	CacheBytes := prometheus.NewGaugeVec(
+	CacheBytes = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "trickster_cache_bytes",
 			Help: "Count of bytes in a Trickster cache.",
@@ -123,7 +123,7 @@ func Init() {
 		[]string{"cache", "type"},
 	)
 
-	CacheMaxObjects := prometheus.NewGaugeVec(
+	CacheMaxObjects = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "trickster_cache_max_objects",
 			Help: "Trickster cache's Max Object Threshold for triggering an eviction exercise.",
@@ -131,7 +131,7 @@ func Init() {
 		[]string{"cache", "type"},
 	)
 
-	CacheMaxBytes := prometheus.NewGaugeVec(
+	CacheMaxBytes = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "trickster_cache_max_bytes",
 			Help: "Trickster cache's Max Object Threshold for triggering an eviction exercise.",
