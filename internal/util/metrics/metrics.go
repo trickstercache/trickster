@@ -34,8 +34,6 @@ var CacheRequestElements *prometheus.CounterVec
 // ProxyRequestDuration ...
 var ProxyRequestDuration *prometheus.HistogramVec
 
-//
-//
 // CacheObjectOperations ...
 var CacheObjectOperations *prometheus.CounterVec
 
@@ -56,8 +54,6 @@ var CacheMaxObjects *prometheus.GaugeVec
 
 // CacheMaxBytes ...
 var CacheMaxBytes *prometheus.GaugeVec
-
-//
 
 // Init ...
 func Init() {
