@@ -52,7 +52,7 @@ func (c *Cache) Connect() error {
 
 	// Load Index here and pass bytes as param2
 	indexData, _ := c.retrieve(cache.IndexKey, false)
-	c.Index = cache.NewIndex(c.Name, indexData, c.BulkRemove, time.Duration(c.Config.ReapIntervalSecs)*time.Second, time.Duration(c.Config.IndexWriteIntervalSecs)*time.Second, c.storeNoIndex)
+	c.Index = cache.NewIndex(c.Name, indexData, c.Config.Index, c.BulkRemove, c.storeNoIndex)
 	return nil
 }
 

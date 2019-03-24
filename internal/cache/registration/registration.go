@@ -46,28 +46,28 @@ func GetCache(cacheName string) (cache.Cache, error) {
 // LoadCachesFromConfig iterates the Caching Confi and Connects/Maps each Cache
 func LoadCachesFromConfig() {
 	for k, v := range config.Caches {
-		c := NewCache(&v)
+		c := NewCache(k, &v)
 		Caches[k] = c
 	}
 }
 
 // NewCache returns a Cache object based on the provided config.CachingConfig
-func NewCache(cfg *config.CachingConfig) cache.Cache {
+func NewCache(cacheName string, cfg *config.CachingConfig) cache.Cache {
 
 	var c cache.Cache
 
 	switch cfg.Type {
 	case ctFilesystem:
-		c = &filesystem.Cache{Config: cfg}
+		c = &filesystem.Cache{Name: cacheName, Config: cfg}
 
 	case ctRedis:
-		c = &redis.Cache{Config: cfg}
+		c = &redis.Cache{Name: cacheName, Config: cfg}
 
 	case ctBBolt:
-		c = &bbolt.Cache{Config: cfg}
+		c = &bbolt.Cache{Name: cacheName, Config: cfg}
 	default:
 		// Default to MemoryCache
-		c = &memory.Cache{Config: cfg}
+		c = &memory.Cache{Name: cacheName, Config: cfg}
 	}
 
 	c.Connect()

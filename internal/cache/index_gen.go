@@ -23,12 +23,12 @@ func (z *Index) DecodeMsg(dc *msgp.Reader) (err error) {
 		}
 		switch msgp.UnsafeString(field) {
 		case "CacheSize":
-			z.CacheSize, err = dc.ReadInt()
+			z.CacheSize, err = dc.ReadInt64()
 			if err != nil {
 				return
 			}
 		case "ObjectCount":
-			z.ObjectCount, err = dc.ReadInt()
+			z.ObjectCount, err = dc.ReadInt64()
 			if err != nil {
 				return
 			}
@@ -88,7 +88,7 @@ func (z *Index) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	err = en.WriteInt(z.CacheSize)
+	err = en.WriteInt64(z.CacheSize)
 	if err != nil {
 		return
 	}
@@ -97,7 +97,7 @@ func (z *Index) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	err = en.WriteInt(z.ObjectCount)
+	err = en.WriteInt64(z.ObjectCount)
 	if err != nil {
 		return
 	}
@@ -136,10 +136,10 @@ func (z *Index) MarshalMsg(b []byte) (o []byte, err error) {
 	// map header, size 3
 	// string "CacheSize"
 	o = append(o, 0x83, 0xa9, 0x43, 0x61, 0x63, 0x68, 0x65, 0x53, 0x69, 0x7a, 0x65)
-	o = msgp.AppendInt(o, z.CacheSize)
+	o = msgp.AppendInt64(o, z.CacheSize)
 	// string "ObjectCount"
 	o = append(o, 0xab, 0x4f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x43, 0x6f, 0x75, 0x6e, 0x74)
-	o = msgp.AppendInt(o, z.ObjectCount)
+	o = msgp.AppendInt64(o, z.ObjectCount)
 	// string "Objects"
 	o = append(o, 0xa7, 0x4f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x73)
 	o = msgp.AppendMapHeader(o, uint32(len(z.Objects)))
@@ -174,12 +174,12 @@ func (z *Index) UnmarshalMsg(bts []byte) (o []byte, err error) {
 		}
 		switch msgp.UnsafeString(field) {
 		case "CacheSize":
-			z.CacheSize, bts, err = msgp.ReadIntBytes(bts)
+			z.CacheSize, bts, err = msgp.ReadInt64Bytes(bts)
 			if err != nil {
 				return
 			}
 		case "ObjectCount":
-			z.ObjectCount, bts, err = msgp.ReadIntBytes(bts)
+			z.ObjectCount, bts, err = msgp.ReadInt64Bytes(bts)
 			if err != nil {
 				return
 			}
@@ -234,7 +234,7 @@ func (z *Index) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *Index) Msgsize() (s int) {
-	s = 1 + 10 + msgp.IntSize + 12 + msgp.IntSize + 8 + msgp.MapHeaderSize
+	s = 1 + 10 + msgp.Int64Size + 12 + msgp.Int64Size + 8 + msgp.MapHeaderSize
 	if z.Objects != nil {
 		for za0001, za0002 := range z.Objects {
 			_ = za0002
@@ -286,7 +286,7 @@ func (z *Object) DecodeMsg(dc *msgp.Reader) (err error) {
 				return
 			}
 		case "size":
-			z.Size, err = dc.ReadInt()
+			z.Size, err = dc.ReadInt64()
 			if err != nil {
 				return
 			}
@@ -349,7 +349,7 @@ func (z *Object) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	err = en.WriteInt(z.Size)
+	err = en.WriteInt64(z.Size)
 	if err != nil {
 		return
 	}
@@ -383,7 +383,7 @@ func (z *Object) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.AppendTime(o, z.LastAccess)
 	// string "size"
 	o = append(o, 0xa4, 0x73, 0x69, 0x7a, 0x65)
-	o = msgp.AppendInt(o, z.Size)
+	o = msgp.AppendInt64(o, z.Size)
 	// string "value"
 	o = append(o, 0xa5, 0x76, 0x61, 0x6c, 0x75, 0x65)
 	o = msgp.AppendBytes(o, z.Value)
@@ -427,7 +427,7 @@ func (z *Object) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				return
 			}
 		case "size":
-			z.Size, bts, err = msgp.ReadIntBytes(bts)
+			z.Size, bts, err = msgp.ReadInt64Bytes(bts)
 			if err != nil {
 				return
 			}
@@ -449,6 +449,6 @@ func (z *Object) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *Object) Msgsize() (s int) {
-	s = 1 + 4 + msgp.StringPrefixSize + len(z.Key) + 11 + msgp.TimeSize + 10 + msgp.TimeSize + 11 + msgp.TimeSize + 5 + msgp.IntSize + 6 + msgp.BytesPrefixSize + len(z.Value)
+	s = 1 + 4 + msgp.StringPrefixSize + len(z.Key) + 11 + msgp.TimeSize + 10 + msgp.TimeSize + 11 + msgp.TimeSize + 5 + msgp.Int64Size + 6 + msgp.BytesPrefixSize + len(z.Value)
 	return
 }

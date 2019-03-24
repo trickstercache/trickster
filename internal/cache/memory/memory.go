@@ -39,7 +39,7 @@ func (c *Cache) Configuration() *config.CachingConfig {
 func (c *Cache) Connect() error {
 	log.Info("memorycache setup", log.Pairs{})
 	c.client = sync.Map{}
-	c.Index = cache.NewIndex(c.Name, nil, c.BulkRemove, time.Duration(c.Config.ReapIntervalSecs)*time.Second, time.Duration(c.Config.IndexWriteIntervalSecs)*time.Second, nil)
+	c.Index = cache.NewIndex(c.Name, nil, c.Config.Index, c.BulkRemove, nil)
 	return nil
 }
 

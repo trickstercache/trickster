@@ -169,7 +169,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 				defer wg.Done()
 				req := r.Copy()
 				req.URL = ffURL
-				body, resp := FetchViaObjectProxyCache(req, client, cache, 15, false, true)
+				body, resp := FetchViaObjectProxyCache(req, client, cache, cache.Configuration().FastForwardTTLSecs, false, true)
 				if resp.StatusCode == http.StatusOK && len(body) > 0 {
 
 					ffts, err = client.UnmarshalInstantaneous(body)

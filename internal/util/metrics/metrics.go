@@ -34,6 +34,31 @@ var CacheRequestElements *prometheus.CounterVec
 // ProxyRequestDuration ...
 var ProxyRequestDuration *prometheus.HistogramVec
 
+//
+//
+// CacheObjectOperations ...
+var CacheObjectOperations *prometheus.CounterVec
+
+// CacheByteOperations ...
+var CacheByteOperations *prometheus.CounterVec
+
+// CacheEvents ...
+var CacheEvents *prometheus.CounterVec
+
+// CacheObjects ...
+var CacheObjects *prometheus.Gauge
+
+// CacheBytes ...
+var CacheBytes *prometheus.Gauge
+
+// CacheMaxObjects ...
+var CacheMaxObjects *prometheus.Gauge
+
+// CacheMaxBytes ...
+var CacheMaxBytes *prometheus.Gauge
+
+//
+
 // Init ...
 func Init() {
 
@@ -62,10 +87,73 @@ func Init() {
 		[]string{"origin", "origin_type", "method", "status", "http_status", "path"},
 	)
 
+	CacheObjectOperations = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "trickster_cache_operations_objects",
+			Help: "Count of operations performed on a Trickster cache.",
+		},
+		[]string{"cache", "type", "operation", "status"},
+	)
+
+	CacheByteOperations = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "trickster_cache_operations_bytes",
+			Help: "Count of operations performed on a Trickster cache.",
+		},
+		[]string{"cache", "type", "operation", "status"},
+	)
+
+	CacheEvents = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "trickster_cache_events",
+			Help: "Count of operations performed on a Trickster cache.",
+		},
+		[]string{"cache", "type", "event"},
+	)
+
+	CacheObjects := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "trickster_cache_objects",
+			Help: "Count of objects in a Trickster cache.",
+		},
+		[]string{"cache", "type"},
+	)
+
+	CacheBytes := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "trickster_cache_bytes",
+			Help: "Count of bytes in a Trickster cache.",
+		},
+		[]string{"cache", "type"},
+	)
+
+	CacheMaxObjects := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "trickster_cache_max_objects",
+			Help: "Trickster cache's Max Object Threshold for triggering an eviction exercise.",
+		},
+		[]string{"cache", "type"},
+	)
+
+	CacheMaxBytes := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "trickster_cache_max_bytes",
+			Help: "Trickster cache's Max Object Threshold for triggering an eviction exercise.",
+		},
+		[]string{"cache", "type"},
+	)
+
 	// Register Metrics
 	prometheus.MustRegister(ProxyRequestStatus)
 	prometheus.MustRegister(CacheRequestElements)
 	prometheus.MustRegister(ProxyRequestDuration)
+	prometheus.MustRegister(CacheObjectOperations)
+	prometheus.MustRegister(CacheByteOperations)
+	prometheus.MustRegister(CacheEvents)
+	prometheus.MustRegister(CacheObjects)
+	prometheus.MustRegister(CacheBytes)
+	prometheus.MustRegister(CacheMaxObjects)
+	prometheus.MustRegister(CacheMaxBytes)
 
 	// Turn up the Metrics HTTP Server
 	if config.Metrics.ListenPort > 0 {

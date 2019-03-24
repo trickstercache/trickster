@@ -178,7 +178,7 @@ func (t Times) Len() int {
 	return len(t)
 }
 
-// Len returns true if i comes before j
+// Less returns true if i comes before j
 func (t Times) Less(i, j int) bool {
 	return t[i].Before(t[j])
 }

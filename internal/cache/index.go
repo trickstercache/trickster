@@ -14,10 +14,14 @@
 package cache
 
 import (
+	"fmt"
+	"sort"
 	"sync"
 	"time"
 
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
 //go:generate msgp
@@ -31,18 +35,18 @@ var indexLock = sync.Mutex{}
 // like memory or bbolt. It is not used for independently managed caches like Redis.
 type Index struct {
 	// CacheSize represents the size of the cache in bytes
-	CacheSize int `msg="cache_size"`
+	CacheSize int64 `msg="cache_size"`
 	// ObjectCount represents the count of objects in the Cache
-	ObjectCount int `msg="object_count`
+	ObjectCount int64 `msg="object_count`
 	// Objects is a map of Objects in the Cache
 	Objects map[string]*Object `msg="objects"`
 
 	name           string                             `msg="-"`
+	config         config.CacheIndexConfig            `msg="-"`
 	bulkRemoveFunc func([]string, bool)               `msg="-"`
 	reapInterval   time.Duration                      `msg="-"`
 	flushInterval  time.Duration                      `msg="-"`
 	flushFunc      func(cacheKey string, data []byte) `msg="-"`
-	maxCacheSize   int                                `msg="-"`
 }
 
 // ToBytes returns a serialized byte slice representing the Index
@@ -69,7 +73,7 @@ type Object struct {
 	// LastAccess is the time the object was last Accessed
 	LastAccess time.Time `msg:"lastaccess"`
 	// Size the size of the Object in bytes
-	Size int `msg:"size"`
+	Size int64 `msg:"size"`
 	// Value is the value of the Object stored in the Cache
 	// It is used by Caches but not by the Index
 	Value []byte `msg:"value,omitempty"`
@@ -89,31 +93,32 @@ func ObjectFromBytes(data []byte) (*Object, error) {
 }
 
 // NewIndex returns a new Index based on the provided inputs
-func NewIndex(name string, indexData []byte, bulkRemoveFunc func([]string, bool), reapInterval time.Duration, flushInterval time.Duration, flushFunc func(cacheKey string, data []byte)) *Index {
-	var i *Index
+func NewIndex(name string, indexData []byte, config config.CacheIndexConfig, bulkRemoveFunc func([]string, bool), flushFunc func(cacheKey string, data []byte)) *Index {
+	i := &Index{}
+
 	if len(indexData) > 0 {
-		i = &Index{}
 		i.UnmarshalMsg(indexData)
-		i.name = name
-		i.reapInterval = reapInterval
-		i.bulkRemoveFunc = bulkRemoveFunc
-		i.flushInterval = flushInterval
-		i.flushFunc = flushFunc
 	} else {
-		i = &Index{name: name, reapInterval: reapInterval, bulkRemoveFunc: bulkRemoveFunc, flushInterval: flushInterval, flushFunc: flushFunc}
 		i.Objects = make(map[string]*Object)
 	}
 
-	if flushInterval > 0 && flushFunc != nil {
+	i.name = name
+	i.flushInterval = time.Duration(config.FlushIntervalSecs) * time.Second
+	i.flushFunc = flushFunc
+	i.reapInterval = time.Duration(config.ReapIntervalSecs) * time.Second
+	i.bulkRemoveFunc = bulkRemoveFunc
+	i.config = config
+
+	if i.flushInterval > 0 && flushFunc != nil {
 		go i.flusher()
 	} else {
-		log.Warn("cache index flusher did not start", log.Pairs{"cacheName": name, "flushInterval": flushInterval})
+		log.Warn("cache index flusher did not start", log.Pairs{"cacheName": i.name, "flushInterval": i.flushInterval})
 	}
 
-	if reapInterval > 0 {
+	if i.reapInterval > 0 {
 		go i.reaper()
 	} else {
-		log.Warn("cache reaper did not start", log.Pairs{"cacheName": name, "reapInterval": reapInterval})
+		log.Warn("cache reaper did not start", log.Pairs{"cacheName": i.name, "reapInterval": i.reapInterval})
 	}
 
 	return i
@@ -139,13 +144,13 @@ func (idx *Index) UpdateObject(obj Object) {
 	indexLock.Lock()
 	defer indexLock.Unlock()
 
-	obj.Size = len(obj.Value)
+	obj.Size = int64(len(obj.Value))
 	obj.Value = nil
 	obj.LastAccess = time.Now()
 	obj.LastWrite = obj.LastAccess
 
 	if o, ok := idx.Objects[key]; ok {
-		idx.CacheSize += (o.Size - idx.Objects[key].Size)
+		idx.CacheSize += o.Size - idx.Objects[key].Size
 	} else {
 		idx.CacheSize += obj.Size
 		idx.ObjectCount++
@@ -173,12 +178,13 @@ func (idx *Index) RemoveObject(key string, noLock bool) {
 // flusher continually iterates through the cache to find expired elements and removes them
 func (idx *Index) flusher() {
 	for {
+
 		time.Sleep(idx.flushInterval)
 		indexLock.Lock()
 		bytes, err := idx.MarshalMsg(nil)
 		indexLock.Unlock()
 		if err != nil {
-			log.Warn("unable to serialize index for flushing", log.Pairs{"detail": err.Error()})
+			log.Warn("unable to serialize index for flushing", log.Pairs{"cacheName": idx.name, "detail": err.Error()})
 			continue
 		}
 		idx.flushFunc(IndexKey, bytes)
@@ -193,15 +199,26 @@ func (idx *Index) reaper() {
 	}
 }
 
+type obectsAtime []*Object
+
 // reap makes a single iteration through the cache index to to find and remove expired elements
 // and evict least-recently-accessed elements to maintain the Maximum allowed Cache Size
 func (idx *Index) reap() {
+
+	log.Debug("cache stats readout",
+		log.Pairs{"cacheName": idx.name,
+			"cacheByteCount":   idx.CacheSize,
+			"cacheObjectCount": idx.ObjectCount,
+			"cacheMaxBytes":    idx.config.MaxSizeBytes,
+			"cacheMaxObjects":  idx.config.MaxSizeObjects,
+		},
+	)
 
 	indexLock.Lock()
 	defer indexLock.Unlock()
 
 	removals := make([]string, 0, 0)
-	remainders := make([]*Object, 0, idx.ObjectCount)
+	remainders := make(obectsAtime, 0, idx.ObjectCount)
 
 	now := time.Now()
 
@@ -220,9 +237,101 @@ func (idx *Index) reap() {
 		idx.bulkRemoveFunc(removals, true)
 	}
 
-	if idx.CacheSize > idx.maxCacheSize {
-		// Sort Remainders by LastAccess
-		// Remove until idx.CacheSize is back under the threshold
-	}
+	if ((idx.config.MaxSizeBytes > 0 && idx.CacheSize > idx.config.MaxSizeBytes) || (idx.config.MaxSizeObjects > 0 && idx.ObjectCount > idx.config.MaxSizeObjects)) && len(remainders) > 0 {
 
+		var evictionType string
+		if idx.CacheSize > idx.config.MaxSizeBytes {
+			evictionType = "size_bytes"
+		} else if idx.ObjectCount > idx.config.MaxSizeObjects {
+			evictionType = "size_objects"
+		} else {
+			return
+		}
+
+		log.Debug("max cache size reached. evicting least-recently-accessed records",
+			log.Pairs{
+				"reason":         evictionType,
+				"cacheSizeBytes": idx.CacheSize, "maxSizeBytes": idx.config.MaxSizeBytes,
+				"cacheSizeObjects": idx.ObjectCount, "maxSizeObjects": idx.config.MaxSizeObjects,
+			},
+		)
+
+		removals = make([]string, 0, 0)
+
+		sort.Sort(remainders)
+
+		i := 0
+		j := len(remainders)
+
+		if evictionType == "size_bytes" {
+			bytesNeeded := (idx.CacheSize - idx.config.MaxSizeBytes)
+			if idx.config.MaxSizeBytes > idx.config.MaxSizeBackoffBytes {
+				bytesNeeded += idx.config.MaxSizeBackoffBytes
+			}
+			bytesSelected := int64(0)
+			for bytesSelected < bytesNeeded && i < j {
+				removals = append(removals, remainders[i].Key)
+				bytesSelected += remainders[i].Size
+				i++
+			}
+		} else {
+			objectsNeeded := (idx.ObjectCount - idx.config.MaxSizeObjects)
+			if idx.config.MaxSizeObjects > idx.config.MaxSizeBackoffObjects {
+				objectsNeeded += idx.config.MaxSizeBackoffObjects
+			}
+			objectsSelected := int64(0)
+			fmt.Println(objectsSelected, objectsNeeded, i, j)
+			for objectsSelected < objectsNeeded && i < j {
+				removals = append(removals, remainders[i].Key)
+				objectsSelected++
+				i++
+			}
+		}
+
+		if len(removals) > 0 {
+			fmt.Println("Removals Found", removals)
+			idx.bulkRemoveFunc(removals, true)
+		}
+
+		log.Debug("size-based cache eviction exercise completed",
+			log.Pairs{
+				"reason":         evictionType,
+				"cacheSizeBytes": idx.CacheSize, "maxSizeBytes": idx.config.MaxSizeBytes,
+				"cacheSizeObjects": idx.ObjectCount, "maxSizeObjects": idx.config.MaxSizeObjects,
+			})
+
+	}
+}
+
+// Len returns the length of an array of Prometheus model.Times
+func (o obectsAtime) Len() int {
+	return len(o)
+}
+
+// Less returns true if i comes before j
+func (o obectsAtime) Less(i, j int) bool {
+	return o[i].LastAccess.Before(o[j].LastAccess)
+}
+
+// Swap modifies an array by of Prometheus model.Times swapping the values in indexes i and j
+func (o obectsAtime) Swap(i, j int) {
+	o[i], o[j] = o[j], o[i]
+}
+
+func ObserveCacheOperation(cache, cacheType, operation, status string, bytes int) {
+	metrics.CacheObjectOperations.WithLabelValues(cache, cacheType, operation, status).Inc()
+	if bytes > 0 {
+		metrics.CacheByteOperations.WithLabelValues(cache, cacheType, operation, status).Add(float64(bytes))
+	}
+}
+
+func ObserveCacheEvent(cache, cacheType, event string) {
+	metrics.CacheEvents.WithLabelValues(cache, cacheType, event).Inc()
+}
+
+func ObserveCacheSizeChange(cache, cacheType string, objectCount, byteCount, maxObjects, maxBytes int64) {
+	metrics.CacheObjects.WithLabelValues(cache, cacheType).Set(float64(objectCount))
+	metrics.CacheBytes.WithLabelValues(cache, cacheType).Set(float64(byteCount))
+	metrics.CacheMaxObjects.WithLabelValues(cache, cacheType).Set(float64(maxObjects))
+	metrics.CacheMaxBytes.WithLabelValues(cache, cacheType).Set(float64(maxBytes))
 }
