@@ -211,15 +211,6 @@ type obectsAtime []*Object
 // and evict least-recently-accessed elements to maintain the Maximum allowed Cache Size
 func (idx *Index) reap() {
 
-	log.Debug("cache stats readout",
-		log.Pairs{"cacheName": idx.name,
-			"cacheByteCount":   idx.CacheSize,
-			"cacheObjectCount": idx.ObjectCount,
-			"cacheMaxBytes":    idx.config.MaxSizeBytes,
-			"cacheMaxObjects":  idx.config.MaxSizeObjects,
-		},
-	)
-
 	indexLock.Lock()
 	defer indexLock.Unlock()
 
