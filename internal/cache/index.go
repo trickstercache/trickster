@@ -104,6 +104,7 @@ func NewIndex(cacheName, cacheType string, indexData []byte, config config.Cache
 	}
 
 	i.name = cacheName
+	i.cacheType = cacheType
 	i.flushInterval = time.Duration(config.FlushIntervalSecs) * time.Second
 	i.flushFunc = flushFunc
 	i.reapInterval = time.Duration(config.ReapIntervalSecs) * time.Second
@@ -317,6 +318,7 @@ func (o obectsAtime) Swap(i, j int) {
 	o[i], o[j] = o[j], o[i]
 }
 
+// ObserveCacheOperation increments counters as cache operations occur
 func ObserveCacheOperation(cache, cacheType, operation, status string, bytes float64) {
 	metrics.CacheObjectOperations.WithLabelValues(cache, cacheType, operation, status).Inc()
 	if bytes > 0 {
@@ -324,10 +326,12 @@ func ObserveCacheOperation(cache, cacheType, operation, status string, bytes flo
 	}
 }
 
+// ObserveCacheEvent increments counters as cache events occur
 func ObserveCacheEvent(cache, cacheType, event, reason string) {
 	metrics.CacheEvents.WithLabelValues(cache, cacheType, event, reason).Inc()
 }
 
+// ObserveCacheSizeChange adjust counters and gauges as the cache size changes due to object operations
 func ObserveCacheSizeChange(cache, cacheType string, byteCount, objectCount, maxBytes, maxObjects int64) {
 	metrics.CacheObjects.WithLabelValues(cache, cacheType).Set(float64(objectCount))
 	metrics.CacheBytes.WithLabelValues(cache, cacheType).Set(float64(byteCount))

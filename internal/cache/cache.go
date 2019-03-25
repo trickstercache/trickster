@@ -31,7 +31,7 @@ type Cache interface {
 	Configuration() *config.CachingConfig
 }
 
-// CacheMiss returns a standard Cache Miss response
+// ObserveCacheMiss returns a standard Cache Miss response
 func ObserveCacheMiss(cacheKey, cacheName, cacheType string) ([]byte, error) {
 	ObserveCacheOperation(cacheName, cacheType, "get", "miss", 0)
 	return nil, fmt.Errorf("value  for key [%s] not in cache", cacheKey)
