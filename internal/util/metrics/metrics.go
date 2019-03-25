@@ -25,11 +25,17 @@ import (
 	"github.com/Comcast/trickster/internal/util/log"
 )
 
+const (
+	metricNamespace = "trickster"
+	cacheSubsystem  = "cache"
+	proxySubsystem  = "proxy"
+)
+
 // ProxyRequestStatus ...
 var ProxyRequestStatus *prometheus.CounterVec
 
-// CacheRequestElements ...
-var CacheRequestElements *prometheus.CounterVec
+// ProxyRequestElements ...
+var ProxyRequestElements *prometheus.CounterVec
 
 // ProxyRequestDuration ...
 var ProxyRequestDuration *prometheus.HistogramVec
@@ -55,93 +61,113 @@ var CacheMaxObjects *prometheus.GaugeVec
 // CacheMaxBytes ...
 var CacheMaxBytes *prometheus.GaugeVec
 
-// Init ...
+// Init initializes the instrumented metrics and starts the listener endpoint
 func Init() {
 
 	ProxyRequestStatus = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "trickster_requests_total",
-			Help: "Count of ",
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "requests_total",
+			Help:      "Count of downstream client requests handled by trickster",
 		},
-		[]string{"origin", "origin_type", "method", "cache_status", "http_status", "path"},
+		[]string{"origin_name", "origin_type", "method", "cache_status", "http_status", "path"},
 	)
 
-	CacheRequestElements = prometheus.NewCounterVec(
+	ProxyRequestElements = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "trickster_points_total",
-			Help: "Count of data points returned in Upstream Timeseries Requests",
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "points_total",
+			Help:      "Count of data points in the timeseries returned to the requesting client.",
 		},
-		[]string{"origin", "origin_type", "cache_status", "path"},
+		[]string{"origin_name", "origin_type", "cache_status", "path"},
 	)
 
 	ProxyRequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "trickster_proxy_duration_seconds",
-			Help:    "Time required in seconds to proxy a given Prometheus query.",
-			Buckets: []float64{0.05, 0.1, 0.5, 1, 5, 10, 20},
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "http_request_duration_seconds",
+			Help:      "Time required in seconds to proxy a given Prometheus query.",
+			Buckets:   []float64{0.05, 0.1, 0.5, 1, 5, 10, 20},
 		},
-		[]string{"origin", "origin_type", "method", "status", "http_status", "path"},
+		[]string{"origin_name", "origin_type", "method", "status", "http_status", "path"},
 	)
 
 	CacheObjectOperations = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "trickster_cache_operations_objects",
-			Help: "Count of operations performed on a Trickster cache.",
+			Namespace: metricNamespace,
+			Subsystem: cacheSubsystem,
+			Name:      "object_operations_total",
+			Help:      "Count (in # of objects) of operations performed on a Trickster cache.",
 		},
-		[]string{"cache", "type", "operation", "status"},
+		[]string{"cache_name", "cache_type", "operation", "status"},
 	)
 
 	CacheByteOperations = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "trickster_cache_operations_bytes",
-			Help: "Count of operations performed on a Trickster cache.",
+			Namespace: metricNamespace,
+			Subsystem: cacheSubsystem,
+			Name:      "byte_operations_total",
+			Help:      "Count (in bytes) of operations performed on a Trickster cache.",
 		},
-		[]string{"cache", "type", "operation", "status"},
+		[]string{"cache_name", "cache_type", "operation", "status"},
 	)
 
 	CacheEvents = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "trickster_cache_events",
-			Help: "Count of operations performed on a Trickster cache.",
+			Namespace: metricNamespace,
+			Subsystem: cacheSubsystem,
+			Name:      "cache_events",
+			Help:      "Count of events performed on a Trickster cache.",
 		},
-		[]string{"cache", "type", "event", "reason"},
+		[]string{"cache_name", "cache_type", "event", "reason"},
 	)
 
 	CacheObjects = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "trickster_cache_objects",
-			Help: "Count of objects in a Trickster cache.",
+			Namespace: metricNamespace,
+			Subsystem: cacheSubsystem,
+			Name:      "cache_objects_total",
+			Help:      "Count of objects in a Trickster cache.",
 		},
-		[]string{"cache", "type"},
+		[]string{"cache_name", "cache_type"},
 	)
 
 	CacheBytes = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "trickster_cache_bytes",
-			Help: "Count of bytes in a Trickster cache.",
+			Namespace: metricNamespace,
+			Subsystem: cacheSubsystem,
+			Name:      "cache_bytes_total",
+			Help:      "Count of bytes in a Trickster cache.",
 		},
-		[]string{"cache", "type"},
+		[]string{"cache_name", "cache_type"},
 	)
 
 	CacheMaxObjects = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "trickster_cache_max_objects",
-			Help: "Trickster cache's Max Object Threshold for triggering an eviction exercise.",
+			Namespace: metricNamespace,
+			Subsystem: cacheSubsystem,
+			Name:      "cache_max_objects_total",
+			Help:      "Trickster cache's Max Object Threshold for triggering an eviction exercise.",
 		},
-		[]string{"cache", "type"},
+		[]string{"cache_name", "cache_type"},
 	)
 
 	CacheMaxBytes = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "trickster_cache_max_bytes",
-			Help: "Trickster cache's Max Object Threshold for triggering an eviction exercise.",
+			Namespace: metricNamespace,
+			Subsystem: cacheSubsystem,
+			Name:      "cache_max_bytes_total",
+			Help:      "Trickster cache's Max Byte Threshold for triggering an eviction exercise.",
 		},
-		[]string{"cache", "type"},
+		[]string{"cache_name", "cache_type"},
 	)
 
 	// Register Metrics
 	prometheus.MustRegister(ProxyRequestStatus)
-	prometheus.MustRegister(CacheRequestElements)
+	prometheus.MustRegister(ProxyRequestElements)
 	prometheus.MustRegister(ProxyRequestDuration)
 	prometheus.MustRegister(CacheObjectOperations)
 	prometheus.MustRegister(CacheByteOperations)

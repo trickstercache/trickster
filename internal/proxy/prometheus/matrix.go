@@ -148,6 +148,20 @@ func (me *MatrixEnvelope) Extents() []timeseries.Extent {
 	return me.ExtentList
 }
 
+// SeriesCount returns the number of individual Series in the Timeseries object
+func (me *MatrixEnvelope) SeriesCount() int {
+	return len(me.Data.Result)
+}
+
+// ValueCount returns the count of all values across all Series in the Timeseries object
+func (me *MatrixEnvelope) ValueCount() int {
+	c := 0
+	for i := range me.Data.Result {
+		c += len(me.Data.Result[i].Values)
+	}
+	return c
+}
+
 // Extremes returns the times of the oldest and newest cached data points for the given query.
 func (me *MatrixEnvelope) Extremes() []timeseries.Extent {
 	r := me.Data.Result
