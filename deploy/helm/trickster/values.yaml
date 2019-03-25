@@ -3,6 +3,32 @@
 # Put ints in quotes to ensure they aren't converted to scientific notations.
 # See https://github.com/kubernetes/helm/issues/1707
 
+# Default trickster originURL, references a source Prometheus instance
+# Ref: https://github.com/Comcast/trickster/blob/master/docs/configuring.md
+caches:
+  - name: default
+    type: memory
+    compression: true
+    timeSeriesTTLSecs: "21600"
+    fastforwardTTLSecs: "15"
+    objectTTLSecs: "30"
+    index:
+      reapIntervalSecs: "3"
+      flushIntervalSecs: "5"
+      maxSizeBytes: "536870912"
+      maxSizeBackoffBytes: "16777216"
+      maxSizeObjects: "0"
+      maxSizeBackoffObjects: "100"
+    redis:
+      protocol: tcp
+      endpoint: redis:6379
+      password: ''
+    filesystem:
+      path: /tmp/trickster
+    bbolt:
+      file: trickster.db
+      bucket: trickster
+
 origins:
   - name: default
     type: prometheus
@@ -16,24 +42,6 @@ origins:
     maxValueAgeSecs: "86400"
     fastForwardDisable: false
     backfillToleranceSecs: "180"
-
-# Default trickster originURL, references a source Prometheus instance
-# Ref: https://github.com/Comcast/trickster/blob/master/docs/configuring.md
-caches:
-  - name: default
-    type: memory
-    compression: true
-    recordTTLSecs: "21600"
-    reapIntervalMs: "1000"
-    redis:
-      protocol: tcp
-      endpoint: redis:6379
-      password: ''
-    filesystem:
-      path: /tmp/trickster
-    bbolt:
-      file: trickster.db
-      bucket: trickster
 
 logLevel: info
 profiler:
