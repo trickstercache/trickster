@@ -70,7 +70,10 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
 }
 
 func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
-	c.store(cacheKey, data, 31536000, false)
+	err := c.store(cacheKey, data, 31536000, false)
+	if err != nil {
+		log.Error("cache failed to write non-indexed object", log.Pairs{"cacheName": c.Name, "cacheType": "bbolt", "cacheKey": cacheKey, "objectSize": len(data)})
+	}
 }
 
 func (c *Cache) store(cacheKey string, data []byte, ttl int64, updateIndex bool) error {
