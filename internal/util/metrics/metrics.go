@@ -88,7 +88,7 @@ func Init() {
 		prometheus.HistogramOpts{
 			Namespace: metricNamespace,
 			Subsystem: proxySubsystem,
-			Name:      "http_request_duration_seconds",
+			Name:      "request_duration_seconds",
 			Help:      "Time required in seconds to proxy a given Prometheus query.",
 			Buckets:   []float64{0.05, 0.1, 0.5, 1, 5, 10, 20},
 		},
@@ -119,7 +119,7 @@ func Init() {
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
 			Subsystem: cacheSubsystem,
-			Name:      "cache_events",
+			Name:      "events_total",
 			Help:      "Count of events performed on a Trickster cache.",
 		},
 		[]string{"cache_name", "cache_type", "event", "reason"},
@@ -129,7 +129,7 @@ func Init() {
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
 			Subsystem: cacheSubsystem,
-			Name:      "cache_objects_total",
+			Name:      "objects_total",
 			Help:      "Count of objects in a Trickster cache.",
 		},
 		[]string{"cache_name", "cache_type"},
@@ -139,7 +139,7 @@ func Init() {
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
 			Subsystem: cacheSubsystem,
-			Name:      "cache_bytes_total",
+			Name:      "bytes_total",
 			Help:      "Count of bytes in a Trickster cache.",
 		},
 		[]string{"cache_name", "cache_type"},
@@ -149,7 +149,7 @@ func Init() {
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
 			Subsystem: cacheSubsystem,
-			Name:      "cache_max_objects_total",
+			Name:      "max_objects_total",
 			Help:      "Trickster cache's Max Object Threshold for triggering an eviction exercise.",
 		},
 		[]string{"cache_name", "cache_type"},
@@ -159,7 +159,7 @@ func Init() {
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
 			Subsystem: cacheSubsystem,
-			Name:      "cache_max_bytes_total",
+			Name:      "max_bytes_total",
 			Help:      "Trickster cache's Max Byte Threshold for triggering an eviction exercise.",
 		},
 		[]string{"cache_name", "cache_type"},
