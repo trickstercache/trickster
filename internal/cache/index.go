@@ -161,7 +161,7 @@ func (idx *Index) UpdateObject(obj Object) {
 		idx.ObjectCount++
 	}
 
-	ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount, idx.config.MaxSizeObjects, idx.config.MaxSizeBytes)
+	ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
 
 	idx.Objects[key] = &obj
 }
@@ -180,7 +180,7 @@ func (idx *Index) RemoveObject(key string, noLock bool) {
 		ObserveCacheOperation(idx.name, idx.cacheType, "del", "none", float64(o.Size))
 
 		delete(idx.Objects, key)
-		ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount, idx.config.MaxSizeObjects, idx.config.MaxSizeBytes)
+		ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
 	}
 
 }
@@ -335,7 +335,7 @@ func ObserveCacheEvent(cache, cacheType, event, reason string) {
 }
 
 // ObserveCacheSizeChange adjust counters and gauges as the cache size changes due to object operations
-func ObserveCacheSizeChange(cache, cacheType string, byteCount, objectCount, maxBytes, maxObjects int64) {
+func ObserveCacheSizeChange(cache, cacheType string, byteCount, objectCount int64) {
 	metrics.CacheObjects.WithLabelValues(cache, cacheType).Set(float64(objectCount))
 	metrics.CacheBytes.WithLabelValues(cache, cacheType).Set(float64(byteCount))
 }
