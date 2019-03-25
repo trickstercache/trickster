@@ -129,7 +129,7 @@ func Init() {
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
 			Subsystem: cacheSubsystem,
-			Name:      "objects_total",
+			Name:      "usage_objects",
 			Help:      "Count of objects in a Trickster cache.",
 		},
 		[]string{"cache_name", "cache_type"},
@@ -139,7 +139,7 @@ func Init() {
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
 			Subsystem: cacheSubsystem,
-			Name:      "bytes_total",
+			Name:      "usage_bytes",
 			Help:      "Count of bytes in a Trickster cache.",
 		},
 		[]string{"cache_name", "cache_type"},
@@ -149,7 +149,7 @@ func Init() {
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
 			Subsystem: cacheSubsystem,
-			Name:      "max_objects_total",
+			Name:      "max_usage_objects",
 			Help:      "Trickster cache's Max Object Threshold for triggering an eviction exercise.",
 		},
 		[]string{"cache_name", "cache_type"},
@@ -159,7 +159,7 @@ func Init() {
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
 			Subsystem: cacheSubsystem,
-			Name:      "max_bytes_total",
+			Name:      "max_usage_bytes",
 			Help:      "Trickster cache's Max Byte Threshold for triggering an eviction exercise.",
 		},
 		[]string{"cache_name", "cache_type"},
