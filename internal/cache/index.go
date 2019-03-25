@@ -94,7 +94,7 @@ func ObjectFromBytes(data []byte) (*Object, error) {
 }
 
 // NewIndex returns a new Index based on the provided inputs
-func NewIndex(cacheName, cacheType string, indexData []byte, config config.CacheIndexConfig, bulkRemoveFunc func([]string, bool), flushFunc func(cacheKey string, data []byte)) *Index {
+func NewIndex(cacheName, cacheType string, indexData []byte, cfg config.CacheIndexConfig, bulkRemoveFunc func([]string, bool), flushFunc func(cacheKey string, data []byte)) *Index {
 	i := &Index{}
 
 	if len(indexData) > 0 {
@@ -105,11 +105,11 @@ func NewIndex(cacheName, cacheType string, indexData []byte, config config.Cache
 
 	i.name = cacheName
 	i.cacheType = cacheType
-	i.flushInterval = time.Duration(config.FlushIntervalSecs) * time.Second
+	i.flushInterval = time.Duration(cfg.FlushIntervalSecs) * time.Second
 	i.flushFunc = flushFunc
-	i.reapInterval = time.Duration(config.ReapIntervalSecs) * time.Second
+	i.reapInterval = time.Duration(cfg.ReapIntervalSecs) * time.Second
 	i.bulkRemoveFunc = bulkRemoveFunc
-	i.config = config
+	i.config = cfg
 
 	if i.flushInterval > 0 && flushFunc != nil {
 		go i.flusher()
@@ -122,6 +122,9 @@ func NewIndex(cacheName, cacheType string, indexData []byte, config config.Cache
 	} else {
 		log.Warn("cache reaper did not start", log.Pairs{"cacheName": i.name, "reapInterval": i.reapInterval})
 	}
+
+	metrics.CacheMaxObjects.WithLabelValues(cacheName, cacheType).Set(float64(cfg.MaxSizeObjects))
+	metrics.CacheMaxBytes.WithLabelValues(cacheName, cacheType).Set(float64(cfg.MaxSizeBytes))
 
 	return i
 }
@@ -335,6 +338,4 @@ func ObserveCacheEvent(cache, cacheType, event, reason string) {
 func ObserveCacheSizeChange(cache, cacheType string, byteCount, objectCount, maxBytes, maxObjects int64) {
 	metrics.CacheObjects.WithLabelValues(cache, cacheType).Set(float64(objectCount))
 	metrics.CacheBytes.WithLabelValues(cache, cacheType).Set(float64(byteCount))
-	metrics.CacheMaxObjects.WithLabelValues(cache, cacheType).Set(float64(maxObjects))
-	metrics.CacheMaxBytes.WithLabelValues(cache, cacheType).Set(float64(maxBytes))
 }
