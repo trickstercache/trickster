@@ -111,10 +111,12 @@ func NewIndex(cacheName, cacheType string, indexData []byte, cfg config.CacheInd
 	i.bulkRemoveFunc = bulkRemoveFunc
 	i.config = cfg
 
-	if i.flushInterval > 0 && flushFunc != nil {
-		go i.flusher()
-	} else {
-		log.Warn("cache index flusher did not start", log.Pairs{"cacheName": i.name, "flushInterval": i.flushInterval})
+	if flushFunc != nil {
+		if i.flushInterval > 0 {
+			go i.flusher()
+		} else {
+			log.Warn("cache index flusher did not start", log.Pairs{"cacheName": i.name, "flushInterval": i.flushInterval})
+		}
 	}
 
 	if i.reapInterval > 0 {
