@@ -130,7 +130,7 @@ func Init() {
 			Namespace: metricNamespace,
 			Subsystem: cacheSubsystem,
 			Name:      "usage_objects",
-			Help:      "Count of objects in a Trickster cache.",
+			Help:      "Number of objects in a Trickster cache.",
 		},
 		[]string{"cache_name", "cache_type"},
 	)
@@ -140,7 +140,7 @@ func Init() {
 			Namespace: metricNamespace,
 			Subsystem: cacheSubsystem,
 			Name:      "usage_bytes",
-			Help:      "Count of bytes in a Trickster cache.",
+			Help:      "Number of bytes in a Trickster cache.",
 		},
 		[]string{"cache_name", "cache_type"},
 	)
