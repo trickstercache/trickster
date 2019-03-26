@@ -215,7 +215,7 @@ data:
 
         # [origins.foo]
         # type = 'influxdb'
-        # cache_name = 'bbolt'
+        # cache_name = 'bbolt_example'
         # scheme = 'http'
         # host = 'influx-origin:8086'
         # path_prefix = ''
