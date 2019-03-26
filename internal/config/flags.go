@@ -24,6 +24,7 @@ const (
 	cfLogLevel    = "log-level"
 	cfInstanceID  = "instance-id"
 	cfOrigin      = "origin"
+	cfOriginType  = "origin-type"
 	cfProxyPort   = "proxy-port"
 	cfMetricsPort = "metrics-port"
 
@@ -37,6 +38,7 @@ type TricksterFlags struct {
 	ConfigPath        string
 	customPath        bool
 	Origin            string
+	OriginType        string
 	ProxyListenPort   int
 	MetricsListenPort int
 	LogLevel          string
@@ -53,7 +55,8 @@ func (c *TricksterConfig) parseFlags(applicationName string, arguments []string)
 	f.StringVar(&Flags.ConfigPath, cfConfig, "", "Path to Trickster Config File")
 	f.StringVar(&Flags.LogLevel, cfLogLevel, c.Logging.LogLevel, "Level of Logging to use (debug, info, warn, error)")
 	f.IntVar(&Flags.InstanceID, cfInstanceID, 0, "Instance ID is for running multiple Trickster processes from the same config while logging to their own files.")
-	f.StringVar(&Flags.Origin, cfOrigin, "", "URL to the Prometheus Origin. Enter it like you would in grafana, e.g., http://prometheus:9090")
+	f.StringVar(&Flags.Origin, cfOrigin, "", "URL to the Origin. Enter it like you would in grafana, e.g., http://prometheus:9090")
+	f.StringVar(&Flags.OriginType, cfOriginType, "", "Type of origin (prometheus, influxdb)")
 	f.IntVar(&Flags.ProxyListenPort, cfProxyPort, 0, "Port that the primary Proxy server will listen on.")
 	f.IntVar(&Flags.MetricsListenPort, cfMetricsPort, 0, "Port that the /metrics endpoint will listen on.")
 	f.Parse(arguments)
@@ -67,7 +70,10 @@ func (c *TricksterConfig) parseFlags(applicationName string, arguments []string)
 
 func (c *TricksterConfig) loadFlags() {
 	if len(Flags.Origin) > 0 {
-		DefaultOriginURL = Flags.Origin
+		defaultOriginURL = Flags.Origin
+	}
+	if len(Flags.OriginType) > 0 {
+		defaultOriginType = Flags.OriginType
 	}
 	if Flags.ProxyListenPort > 0 {
 		c.ProxyServer.ListenPort = Flags.ProxyListenPort

@@ -26,14 +26,19 @@ func TestLoadFlags(t *testing.T) {
 		"9091",
 		"-metrics-port",
 		"9092",
+		"-origin-type",
+		"prometheus",
 	}
 
 	// it should read command line flags
 	c.parseFlags("trickster-test", a)
 	c.loadFlags()
 
-	if DefaultOriginURL != a[1] {
-		t.Errorf("wanted \"%s\". got \"%s\".", a[1], DefaultOriginURL)
+	if defaultOriginURL != a[1] {
+		t.Errorf("wanted \"%s\". got \"%s\".", a[1], defaultOriginURL)
+	}
+	if defaultOriginType != a[7] {
+		t.Errorf("wanted \"%s\". got \"%s\".", a[1], defaultOriginType)
 	}
 	if c.ProxyServer.ListenPort != 9091 {
 		t.Errorf("wanted \"%d\". got \"%d\".", 9091, c.ProxyServer.ListenPort)
