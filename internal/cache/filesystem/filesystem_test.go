@@ -17,11 +17,16 @@ import (
 	"testing"
 
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/util/metrics"
 )
+
+func init() {
+	metrics.Init()
+}
 
 func TestFilesystemCache_Connect(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, ReapIntervalMS: 1}
+	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapIntervalSecs: 1}}
 	fc := Cache{Config: &cacheConfig}
 
 	// it should connect
@@ -33,7 +38,7 @@ func TestFilesystemCache_Connect(t *testing.T) {
 
 func TestFilesystemCache_Store(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, ReapIntervalMS: 1}
+	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapIntervalSecs: 1}}
 	fc := Cache{Config: &cacheConfig}
 
 	err := fc.Connect()
@@ -50,7 +55,7 @@ func TestFilesystemCache_Store(t *testing.T) {
 
 func TestFilesystemCache_Retrieve(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, ReapIntervalMS: 1}
+	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapIntervalSecs: 1}}
 	fc := Cache{Config: &cacheConfig}
 
 	err := fc.Connect()

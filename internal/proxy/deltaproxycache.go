@@ -129,6 +129,8 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	appendLock := sync.Mutex{}
 	var rh http.Header
 
+	uncachedValueCount := 0
+
 	// iterate each time range that the client needs and fetch from the upstream origin
 	for i := range missRanges {
 		wg.Add(1)
@@ -145,6 +147,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 					log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
 					return
 				}
+				uncachedValueCount += nts.ValueCount()
 				nts.SetExtents([]timeseries.Extent{*e})
 				appendLock.Lock()
 				defer appendLock.Unlock()
@@ -169,7 +172,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 				defer wg.Done()
 				req := r.Copy()
 				req.URL = ffURL
-				body, resp := FetchViaObjectProxyCache(req, client, cache, 15, false, true)
+				body, resp := FetchViaObjectProxyCache(req, client, cache, cache.Configuration().FastForwardTTLSecs, false, true)
 				if resp.StatusCode == http.StatusOK && len(body) > 0 {
 
 					ffts, err = client.UnmarshalInstantaneous(body)
@@ -197,6 +200,15 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 
 	// Get the Request Object, Cropped down from the full Cache
 	rts := cts.Crop(trq.Extent)
+
+	cachedValueCount := rts.ValueCount() - uncachedValueCount
+
+	if uncachedValueCount > 0 {
+		metrics.ProxyRequestElements.WithLabelValues(r.OriginName, r.OriginType, "uncached", r.URL.Path).Add(float64(uncachedValueCount))
+	}
+	if cachedValueCount > 0 {
+		metrics.ProxyRequestElements.WithLabelValues(r.OriginName, r.OriginType, "cached", r.URL.Path).Add(float64(cachedValueCount))
+	}
 
 	// Merge Fast Forward data if present. This must be done after the Downstream Crop since
 	// the cropped extent was normalized to stepboundaries and would remove fast forward data

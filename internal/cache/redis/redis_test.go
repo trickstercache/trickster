@@ -17,9 +17,14 @@ import (
 	"testing"
 
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/util/metrics"
 
 	"github.com/alicebob/miniredis"
 )
+
+func init() {
+	metrics.Init()
+}
 
 func setupRedisCache() (*Cache, func()) {
 	s, err := miniredis.Run()

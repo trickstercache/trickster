@@ -57,3 +57,13 @@ func (se SeriesEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 
 // Sort ...
 func (se SeriesEnvelope) Sort() {}
+
+// SeriesCount returns the number of individual Series in the Timeseries object
+func (se SeriesEnvelope) SeriesCount() int {
+	return 0
+}
+
+// ValueCount returns the count of all values across all Series in the Timeseries object
+func (se SeriesEnvelope) ValueCount() int {
+	return 0
+}

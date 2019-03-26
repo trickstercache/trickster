@@ -33,4 +33,8 @@ type Timeseries interface {
 	Copy() Timeseries
 	// Crop should return a cropped copy of the Timeseries, leaving the original unchanged
 	Crop(Extent) Timeseries
+	// SeriesCount returns the number of individual Series in the Timeseries object
+	SeriesCount() int
+	// ValueCount returns the count of all values across all Series in the Timeseries object
+	ValueCount() int
 }

@@ -16,59 +16,8 @@ package cache
 import (
 	"fmt"
 
-	"github.com/Comcast/trickster/internal/cache/bbolt"
-	"github.com/Comcast/trickster/internal/cache/filesystem"
-	"github.com/Comcast/trickster/internal/cache/memory"
-	"github.com/Comcast/trickster/internal/cache/redis"
 	"github.com/Comcast/trickster/internal/config"
 )
-
-// Cache Interface Types
-const (
-	ctMemory     = "memory"
-	ctFilesystem = "filesystem"
-	ctRedis      = "redis"
-	ctBBolt      = "bbolt"
-)
-
-var Caches = make(map[string]Cache)
-
-func LoadCachesFromConfig() {
-	for k, v := range config.Caches {
-		c := NewCache(&v)
-		Caches[k] = c
-	}
-}
-
-func GetCache(cacheName string) (Cache, error) {
-	if c, ok := Caches[cacheName]; ok {
-		return c, nil
-	}
-	return nil, fmt.Errorf("Could not find Cache named [%s]", cacheName)
-}
-
-// GetCache ...
-// TODO: Allow cache-per-origin rather than singleton
-func NewCache(cfg *config.CachingConfig) Cache {
-	var c Cache
-
-	switch cfg.Type {
-	case ctFilesystem:
-		c = &filesystem.Cache{Config: cfg}
-
-	case ctRedis:
-		c = &redis.Cache{Config: cfg}
-
-	case ctBBolt:
-		c = &bbolt.Cache{Config: cfg}
-	default:
-		// Default to MemoryCache
-		c = &memory.Cache{Config: cfg}
-	}
-
-	c.Connect()
-	return c
-}
 
 // Cache is the interface for the supported caching fabrics
 // When making new cache types, Retrieve() must return an error on cache miss
@@ -76,7 +25,20 @@ type Cache interface {
 	Connect() error
 	Store(cacheKey string, data []byte, ttl int64) error
 	Retrieve(cacheKey string) ([]byte, error)
-	Reap()
+	Remove(cacheKey string)
+	BulkRemove(cacheKeys []string, noLock bool)
 	Close() error
 	Configuration() *config.CachingConfig
+}
+
+// ObserveCacheMiss returns a standard Cache Miss response
+func ObserveCacheMiss(cacheKey, cacheName, cacheType string) ([]byte, error) {
+	ObserveCacheOperation(cacheName, cacheType, "get", "miss", 0)
+	return nil, fmt.Errorf("value  for key [%s] not in cache", cacheKey)
+}
+
+// CacheError returns an empty cache object and the formatted error
+func CacheError(cacheKey, cacheName, cacheType string, msg string) ([]byte, error) {
+	ObserveCacheEvent(cacheName, cacheType, "error", msg)
+	return nil, fmt.Errorf(msg, cacheKey)
 }

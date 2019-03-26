@@ -3,7 +3,7 @@ module github.com/Comcast/trickster
 require (
 	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/alicebob/gopher-json v0.0.0-20180125190556-5a6b3ba71ee6 // indirect
-	github.com/alicebob/miniredis v0.0.0-20181205055656-cfad8aca71cc // indirect
+	github.com/alicebob/miniredis v2.4.6+incompatible // indirect
 	github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973 // indirect
 	github.com/coreos/bbolt v1.3.0 // indirect
 	github.com/go-kit/kit v0.8.0 // indirect

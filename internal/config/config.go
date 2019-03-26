@@ -90,14 +90,26 @@ type OriginConfig struct {
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
 type CachingConfig struct {
-	// CacheType represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
-	Type           string                `toml:"type"`
-	RecordTTLSecs  int                   `toml:"record_ttl_secs"`
-	Redis          RedisCacheConfig      `toml:"redis"`
-	Filesystem     FilesystemCacheConfig `toml:"filesystem"`
-	ReapIntervalMS int                   `toml:"reap_interval_ms"`
-	Compression    bool                  `toml:"compression"`
-	BBolt          BBoltCacheConfig      `toml:"bbolt"`
+	// Type represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
+	Type               string                `toml:"type"`
+	Compression        bool                  `toml:"compression"`
+	TimeseriesTTLSecs  int                   `toml:"timeseries_ttl_secs"`
+	ObjectTTLSecs      int                   `toml:"object_ttl_secs"`
+	FastForwardTTLSecs int                   `toml:"fastforward_ttl_secs"`
+	Index              CacheIndexConfig      `toml:"index"`
+	Redis              RedisCacheConfig      `toml:"redis"`
+	Filesystem         FilesystemCacheConfig `toml:"filesystem"`
+	BBolt              BBoltCacheConfig      `toml:"bbolt"`
+}
+
+// CacheIndexConfig defines the operation of the Cache Indexer
+type CacheIndexConfig struct {
+	ReapIntervalSecs      int   `toml:"reap_interval_secs"`
+	FlushIntervalSecs     int   `toml:"flush_interval_secs"`
+	MaxSizeBytes          int64 `toml:"max_size_bytes"`
+	MaxSizeBackoffBytes   int64 `toml:"max_size_backoff_bytes"`
+	MaxSizeObjects        int64 `toml:"max_size_objects"`
+	MaxSizeBackoffObjects int64 `toml:"max_size_backoff_objects"`
 }
 
 // RedisCacheConfig is a collection of Configurations for Connecting to Redis
@@ -157,13 +169,22 @@ func NewConfig() *TricksterConfig {
 	return &TricksterConfig{
 		Caches: map[string]CachingConfig{
 			"default": {
-				Type:           "memory",
-				RecordTTLSecs:  21600,
-				Redis:          RedisCacheConfig{Protocol: "tcp", Endpoint: "redis:6379"},
-				Filesystem:     FilesystemCacheConfig{CachePath: defaultCachePath},
-				BBolt:          BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: "trickster"},
-				ReapIntervalMS: 1000,
-				Compression:    true,
+				Type:               "memory",
+				Compression:        true,
+				TimeseriesTTLSecs:  21600,
+				FastForwardTTLSecs: 15,
+				ObjectTTLSecs:      30,
+				Redis:              RedisCacheConfig{Protocol: "tcp", Endpoint: "redis:6379"},
+				Filesystem:         FilesystemCacheConfig{CachePath: defaultCachePath},
+				BBolt:              BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: "trickster"},
+				Index: CacheIndexConfig{
+					ReapIntervalSecs:      3,
+					FlushIntervalSecs:     5,
+					MaxSizeBytes:          536870912,
+					MaxSizeBackoffBytes:   16777216,
+					MaxSizeObjects:        0,
+					MaxSizeBackoffObjects: 100,
+				},
 			},
 		},
 		Logging: LoggingConfig{
