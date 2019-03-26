@@ -99,7 +99,7 @@ func Init() {
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
 			Subsystem: cacheSubsystem,
-			Name:      "object_operations_total",
+			Name:      "operation_objects_total",
 			Help:      "Count (in # of objects) of operations performed on a Trickster cache.",
 		},
 		[]string{"cache_name", "cache_type", "operation", "status"},
@@ -109,7 +109,7 @@ func Init() {
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
 			Subsystem: cacheSubsystem,
-			Name:      "byte_operations_total",
+			Name:      "operation_bytes_total",
 			Help:      "Count (in bytes) of operations performed on a Trickster cache.",
 		},
 		[]string{"cache_name", "cache_type", "operation", "status"},
