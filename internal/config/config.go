@@ -19,21 +19,39 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// Config is the Running Configuration for Trickster
 var Config *TricksterConfig
+
+// Main is the Main subsection of the Running Configuration
 var Main *MainConfig
+
+// Origins is the Origin Map subsection of the Running Configuration
 var Origins map[string]OriginConfig
+
+// Caches is the Cache Map subsection of the Running Configuration
 var Caches map[string]CachingConfig
+
+// ProxyServer is the Proxy Server subsection of the Running Configuration
 var ProxyServer *ProxyServerConfig
+
+// Logging is the Logging subsection of the Running Configuration
 var Logging *LoggingConfig
+
+// Metrics is the Metrics subsection of the Running Configuration
 var Metrics *MetricsConfig
 
-var DefaultOriginURL string
+// Flags is a collection of command line flags that Trickster loads.
 var Flags = TricksterFlags{}
+var defaultOriginURL string
+var defaultOriginType string
 
+// ApplicationName is the name of the Application
 var ApplicationName string
+
+// ApplicationVersion holds the version of the Application
 var ApplicationVersion string
 
-// Config is the main configuration object
+// TricksterConfig is the main configuration object
 type TricksterConfig struct {
 	Main        MainConfig               `toml:"main"`
 	Origins     map[string]OriginConfig  `toml:"origins"`
