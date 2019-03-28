@@ -75,7 +75,7 @@ func (el ExtentList) Less(i, j int) bool {
 	return el[i].Start.Before(el[j].Start)
 }
 
-// Swap modifies an array by of Prometheus model.Times swapping the values in indexes i and j
+// Swap modifies an []Extent by swapping the values in indexes i and j
 func (el ExtentList) Swap(i, j int) {
 	el[i], el[j] = el[j], el[i]
 }
