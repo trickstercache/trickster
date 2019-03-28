@@ -56,6 +56,10 @@ func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 				me.ExtentList = append(me.ExtentList, me2.ExtentList...)
 			}
 		}
+
+		if len(me.ExtentList) > 0 {
+			me.ExtentList = timeseries.CompressExtents(me.ExtentList, me.StepDuration)
+		}
 	}
 	if sort {
 		me.Sort()
