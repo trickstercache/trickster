@@ -59,6 +59,10 @@ func Fetch(r *Request) ([]byte, *http.Response, time.Duration) {
 	resp, err := client.Do(&http.Request{Method: r.ClientRequest.Method, URL: r.URL, Header: r.Headers})
 	if err != nil {
 		log.Error("error downloading url", log.Pairs{"url": u, "detail": err.Error()})
+		// if there is an err and the response is nil, the server could not be reached; make a 502 for the downstream response
+		if resp == nil {
+			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r.ClientRequest}
+		}
 		return []byte{}, resp, -1
 	}
 
