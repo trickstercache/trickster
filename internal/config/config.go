@@ -91,15 +91,16 @@ type OriginConfig struct {
 // CachingConfig is a collection of defining the Trickster Caching Behavior
 type CachingConfig struct {
 	// Type represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
-	Type               string                `toml:"type"`
-	Compression        bool                  `toml:"compression"`
-	TimeseriesTTLSecs  int                   `toml:"timeseries_ttl_secs"`
-	ObjectTTLSecs      int                   `toml:"object_ttl_secs"`
-	FastForwardTTLSecs int                   `toml:"fastforward_ttl_secs"`
-	Index              CacheIndexConfig      `toml:"index"`
-	Redis              RedisCacheConfig      `toml:"redis"`
-	Filesystem         FilesystemCacheConfig `toml:"filesystem"`
-	BBolt              BBoltCacheConfig      `toml:"bbolt"`
+	Type               string                  `toml:"type"`
+	Compression        bool                    `toml:"compression"`
+	TimeseriesTTLSecs  int                     `toml:"timeseries_ttl_secs"`
+	ObjectTTLSecs      int                     `toml:"object_ttl_secs"`
+	FastForwardTTLSecs int                     `toml:"fastforward_ttl_secs"`
+	Index              CacheIndexConfig        `toml:"index"`
+	Redis              RedisCacheConfig        `toml:"redis"`
+	RedisCluster       RedisClusterCacheConfig `toml:"redis_cluster"`
+	Filesystem         FilesystemCacheConfig   `toml:"filesystem"`
+	BBolt              BBoltCacheConfig        `toml:"bbolt"`
 }
 
 // CacheIndexConfig defines the operation of the Cache Indexer
@@ -118,6 +119,14 @@ type RedisCacheConfig struct {
 	Protocol string `toml:"protocol"`
 	// Endpoint represents FQDN:port or IPAddress:Port of the Redis server
 	Endpoint string `toml:"endpoint"`
+	// Password can be set when using password protected redis instance.
+	Password string `toml:"password"`
+}
+
+// RedisClusterCacheConfig is a collection of Configurations for Connecting to Redis Cluster
+type RedisClusterCacheConfig struct {
+	// Endpoint represents FQDN:port or IPAddress:Port of the Redis server
+	Endpoints []string `toml:"endpoints"`
 	// Password can be set when using password protected redis instance.
 	Password string `toml:"password"`
 }
@@ -175,6 +184,7 @@ func NewConfig() *TricksterConfig {
 				FastForwardTTLSecs: 15,
 				ObjectTTLSecs:      30,
 				Redis:              RedisCacheConfig{Protocol: "tcp", Endpoint: "redis:6379"},
+				RedisCluster:       RedisClusterCacheConfig{Endpoints: []string{"redis:6379"}},
 				Filesystem:         FilesystemCacheConfig{CachePath: defaultCachePath},
 				BBolt:              BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: "trickster"},
 				Index: CacheIndexConfig{

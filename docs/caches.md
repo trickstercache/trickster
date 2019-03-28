@@ -4,8 +4,8 @@ There are 4 cache types supported by Trickster
 
 * In-Memory Cache (default)
 * Filesystem Cache
-* Redis Cache
 * bbolt Cache
+* Redis Cache & Redis Cluster
 
 The sample configuration ([cmd/trickster/conf/example.conf](../cmd/trickster/conf/example.conf)) demonstrates how to select and configure a particular cache type, as well as how to configure generic cache configurations such as Retention Policy.
 
@@ -33,6 +33,7 @@ Redis is a good option for larger dashboard setups that also have heavy user tra
 
 Ensure that your Redis instance is located close to your Trickster instance in order to minimize additional roundtrip latency.
 
+Redis Cluster is supported by Trickster. 
 
 ## Purging the Cache
 
@@ -51,10 +52,10 @@ To completely purge a Filesystem-based Cache, you will need to:
 * Docker/Kube: delete the Trickster container and run a new one
 * Metal/VM: Stop the Trickster process and manually run `rm -rf /tmp/trickster` (or your custom-configured directory).
 
-### Redis Cache
+### Redis
 
 Connect to your Redis instance and issue a FLUSH command. Note that if your Redis instance supports more applications than Trickster, a FLUSH will clear the cache for all dependent applications.
 
-### bbolt Cache
+### bbolt
 
 Stop the Trickster process and delete the configured bbolt file.

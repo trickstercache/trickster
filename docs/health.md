@@ -8,7 +8,7 @@ Trickster offers a `/health` endpoint for monitoring the health of the Trickster
 
 An HTTP response of `200 OK` indicates that the end-to-end request to the origin was successful.
 
-In a multi-origin setup, requesting against `/health` will test the default origin. You can indicate a specific origin to test by crafting requests in the same way a normal multi-origin request is structured. For example, `/origin_moniker/health`. See [multi-origin.md](multi-origin.md) for more information.
+In a multi-origin setup, requesting against `/health` will test the default origin. You can indicate a specific origin to test by crafting requests in the same way a normal multi-origin request is structured. For example, `/origin_name/health`. See [multi-origin.md](multi-origin.md) for more information.
 
 ## Other Ways to Monitor Health
 
