@@ -27,19 +27,25 @@ type Extent struct {
 // CompressExtents takes an []Extent slice, sorts it, and returns a version with
 // any time-adjacent Extents merged into a single element in the slice
 func CompressExtents(extents []Extent, step time.Duration) []Extent {
+
+	if len(extents) == 0 {
+		return extents
+	}
+
 	var notime time.Time
 	l := len(extents)
-	sort.Sort(ExtentList(extents))
+	exc := ExtentList(extents).Copy()
 	compressed := make([]Extent, 0, l)
+	sort.Sort(exc)
 	e := Extent{}
-	for i := range extents {
+	for i := range exc {
 		if e.Start == notime {
-			e.Start = extents[i].Start
+			e.Start = exc[i].Start
 		}
-		if i+1 < l && (extents[i].End.Add(step) == extents[i+1].Start || extents[i].End == extents[i+1].Start) {
+		if i+1 < l && (exc[i].End.Add(step) == exc[i+1].Start || exc[i].End == exc[i+1].Start) {
 			continue
 		}
-		e.End = extents[i].End
+		e.End = exc[i].End
 		compressed = append(compressed, e)
 		e = Extent{}
 	}
@@ -49,17 +55,27 @@ func CompressExtents(extents []Extent, step time.Duration) []Extent {
 // ExtentList is a type of []Extent used for sorting the slice
 type ExtentList []Extent
 
+// Copy returns a true copy of the ExtentList
+func (el ExtentList) Copy() ExtentList {
+	c := make(ExtentList, len(el))
+	for i := range el {
+		c[i].Start = el[i].Start
+		c[i].End = el[i].End
+	}
+	return c
+}
+
 // Len returns the length of an array of type []Extent
-func (e ExtentList) Len() int {
-	return len(e)
+func (el ExtentList) Len() int {
+	return len(el)
 }
 
 // Less returns true if element i in the []Extent comes before j
-func (e ExtentList) Less(i, j int) bool {
-	return e[i].Start.Before(e[j].Start)
+func (el ExtentList) Less(i, j int) bool {
+	return el[i].Start.Before(el[j].Start)
 }
 
 // Swap modifies an array by of Prometheus model.Times swapping the values in indexes i and j
-func (e ExtentList) Swap(i, j int) {
-	e[i], e[j] = e[j], e[i]
+func (el ExtentList) Swap(i, j int) {
+	el[i], el[j] = el[j], el[i]
 }
