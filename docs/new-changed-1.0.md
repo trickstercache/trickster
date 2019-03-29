@@ -16,6 +16,10 @@
 
 ## Breaking Changes
 
+## Origin Selection using Query Parameters
+
+In a multi-origin setup, Trickster 1.0 no longer supports the ability to select an Origin using Query Parameters. Trickster 1.0 continues to support Origin Selection via URL Path or Host Header as in 0.1.x. 
+
 ### Config File
 
 Trickster 1.0 is incompatible with a 0.1.x config file. However, it can be made compatible with a few quick migration steps:
