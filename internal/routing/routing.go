@@ -18,23 +18,3 @@ import (
 )
 
 var Router = mux.NewRouter()
-
-// // TricksterRouter ...
-// type TricksterRouter struct {
-// 	Router *mux.Router
-// }
-
-// func Init() {
-
-// 	r := &TricksterRouter{}
-// 	r.Router = mux.NewRouter()
-// 	Router = r
-// }
-
-// func (m *TricksterRouter) Handler() http.Handler {
-// 	return handlers.CompressHandler(m.Router)
-// }
-
-// func (m *TricksterRouter) Vars(r *http.Request) map[string]string {
-// 	return mux.Vars(r)
-// }

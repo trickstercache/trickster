@@ -13,8 +13,18 @@
 
 package proxy
 
-import "net/http"
+import (
+	"net/http"
 
+	"github.com/Comcast/trickster/internal/routing"
+)
+
+// RegisterPingHandler registers the application's /ping handler
+func RegisterPingHandler() {
+	routing.Router.HandleFunc("/ping", pingHandler).Methods("GET")
+}
+
+// pingHandler responds to an HTTP Request with 200 OK and "pong"
 func pingHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(hnCacheControl, hvNoCache)
 	w.WriteHeader(http.StatusOK)
