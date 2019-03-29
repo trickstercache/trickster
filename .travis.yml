@@ -8,7 +8,7 @@ matrix:
 
   - language: go
     go:
-    - "1.11.x"
+    - "1.12.x"
     - master
     script:
     - make style test build
