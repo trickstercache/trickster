@@ -20,7 +20,7 @@ go-mod-tidy:
 
 .PHONY: test-go-mod
 test-go-mod: go-mod-tidy go-mod-vendor
-	@git diff --quiet --exit-code go.mod go.sum || echo "There are changes to go.mod and go.sum which needs to be commited"
+	@git diff --quiet --exit-code go.mod go.sum || echo "There are changes to go.mod and go.sum which needs to be committed"
 
 .PHONY: build
 build:
