@@ -1,3 +1,6 @@
+env:
+  GO111MODULE: on
+
 matrix:
   include:
   - language: python
