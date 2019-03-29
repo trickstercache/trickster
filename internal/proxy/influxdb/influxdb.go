@@ -227,9 +227,8 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 			step, err := strconv.ParseInt(numericStep[0], 10, 0)
 			if err != nil {
 				return nil, err
-			} else {
-				trq.Step = step
 			}
+			trq.Step = step
 		}
 	}
 
