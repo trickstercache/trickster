@@ -4,7 +4,6 @@ GO             ?= go
 GOFMT          ?= $(GO)fmt
 FIRST_GOPATH   := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
 TRICKSTER_MAIN := cmd/trickster
-DEP            := $(FIRST_GOPATH)/bin/dep
 TRICKSTER      := $(FIRST_GOPATH)/bin/trickster
 PROGVER        := $(shell grep 'applicationVersion = ' $(TRICKSTER_MAIN)/main.go | awk '{print $$3}' | sed -e 's/\"//g')
 GO111MODULE    ?= on
