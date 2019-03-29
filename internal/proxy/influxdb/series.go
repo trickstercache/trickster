@@ -50,7 +50,7 @@ func (se SeriesEnvelope) SetExtents(extents []timeseries.Extent) {
 func (se *SeriesEnvelope) Extremes() []timeseries.Extent {
 
 	var containsIndex = contains(se.Results[0].Series[0].Columns, "time")
-	var ans []int64
+	var res []int64
 	if containsIndex != -1 {
 		resultSize := len(se.Results)
 		for index := 0; index < resultSize; index++ {
@@ -58,19 +58,19 @@ func (se *SeriesEnvelope) Extremes() []timeseries.Extent {
 			for seriesIndex := 0; seriesIndex < seriesSize; seriesIndex++ {
 				for _, v := range se.Results[index].Series[seriesIndex].Values {
 					if ts, ok := v[0].(time.Time); ok {
-						ans = append(ans, ts.UnixNano())
+						res = append(res, ts.UnixNano())
 					}
 				}
 			}
 		}
-		max := ans[0]
-		min := ans[0]
-		for i := 1; i < len(ans); i++ {
-			if ans[i] > max {
-				max = ans[i]
+		max := res[0]
+		min := res[0]
+		for i := 1; i < len(res); i++ {
+			if res[i] > max {
+				max = res[i]
 			}
-			if ans[i] < min {
-				min = ans[i]
+			if res[i] < min {
+				min = res[i]
 			}
 		}
 		se.ExtentList = []timeseries.Extent{timeseries.Extent{Start: time.Unix(min/milliSecondValue, (min%milliSecondValue)*(int64(minimumTick))), End: time.Unix(max/milliSecondValue, (max%milliSecondValue)*(int64(minimumTick)))}}
