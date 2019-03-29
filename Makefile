@@ -1,21 +1,27 @@
 DEFAULT: build
 
-GO           ?= go
-GOFMT        ?= $(GO)fmt
-FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
+GO             ?= go
+GOFMT          ?= $(GO)fmt
+FIRST_GOPATH   := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
 TRICKSTER_MAIN := cmd/trickster
-DEP          := $(FIRST_GOPATH)/bin/dep
-TRICKSTER    := $(FIRST_GOPATH)/bin/trickster
+DEP            := $(FIRST_GOPATH)/bin/dep
+TRICKSTER      := $(FIRST_GOPATH)/bin/trickster
+PROGVER        := $(shell grep 'applicationVersion = ' $(TRICKSTER_MAIN)/main.go | awk '{print $$3}' | sed -e 's/\"//g')
+GO111MODULE    ?= on
+export GO111MODULE
 
-PROGVER = $(shell grep 'applicationVersion = ' $(TRICKSTER_MAIN)/main.go | awk '{print $$3}' | sed -e 's/\"//g')
 
 .PHONY: go-mod-vendor
 go-mod-vendor:
-	GO111MODULE=on $(GO) mod vendor
+	$(GO) mod vendor
+
+.PHONY: go-mod-tidy
+go-mod-tidy:
+	$(GO) mod tidy
 
 .PHONY: build
-build: go-mod-vendor
-	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) go build -o trickster -a -v $(TRICKSTER_MAIN)/main.go
+build:
+	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) $(GO) build -o trickster -a -v $(TRICKSTER_MAIN)/main.go
 
 rpm: build
 	mkdir -p ./OPATH/SOURCES
@@ -30,16 +36,16 @@ rpm: build
 		-ba deploy/packaging/trickster.spec
 
 .PHONY: install
-install: go-mod-vendor
-	echo go build -o $(TRICKSTER) $(PROGVER)
+install:
+	$(GO) install -o $(TRICKSTER) $(PROGVER)
 
 .PHONY: release
 release: build release-artifacts docker docker-release
 
 .PHONY: release-artifacts
 release-artifacts:
-	GOOS=darwin GOARCH=amd64 go build -o ./OPATH/trickster-$(PROGVER).darwin-amd64 $(TRICKSTER_MAIN)/main.go && gzip -f ./OPATH/trickster-$(PROGVER).darwin-amd64
-	GOOS=linux  GOARCH=amd64 go build -o ./OPATH/trickster-$(PROGVER).linux-amd64  $(TRICKSTER_MAIN)/main.go && gzip -f ./OPATH/trickster-$(PROGVER).linux-amd64
+	GOOS=darwin GOARCH=amd64 $(GO) build -o ./OPATH/trickster-$(PROGVER).darwin-amd64 $(TRICKSTER_MAIN)/main.go && gzip -f ./OPATH/trickster-$(PROGVER).darwin-amd64
+	GOOS=linux  GOARCH=amd64 $(GO) build -o ./OPATH/trickster-$(PROGVER).linux-amd64  $(TRICKSTER_MAIN)/main.go && gzip -f ./OPATH/trickster-$(PROGVER).linux-amd64
 
 # Minikube and helm bootstrapping are done via deploy/helm/Makefile
 .PHONY: helm-local
@@ -75,13 +81,13 @@ style:
 	! gofmt -d $$(find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
 .PHONY: test
-test: go-mod-vendor
-	go test -v ./...
+test:
+	$(GO) test -v ./...
 
 .PHONY: test-cover
-test-cover: go-mod-vendor
-	go test -coverprofile=cover.out ./...
-	go tool cover -html=cover.out
+test-cover:
+	$(GO) test -coverprofile=cover.out ./...
+	$(GO) tool cover -html=cover.out
 
 .PHONY: clean
 clean:
