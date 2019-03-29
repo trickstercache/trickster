@@ -19,3 +19,7 @@ import "fmt"
 func ErrorMissingURLParam(param string) error {
 	return fmt.Errorf("Missing URL Parameter: [%s]", param)
 }
+
+func ErrorTimeArrayEmpty(param string) error {
+	return fmt.Errorf("Time array is nil or empty: [%s]", param)
+}

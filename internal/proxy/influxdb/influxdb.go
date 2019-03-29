@@ -135,7 +135,10 @@ func (c Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	proxy.ObjectProxyCacheRequest(proxy.NewRequest(c.Name, proxy.OtInfluxDb, "QueryHandler", r.Method, u, r.Header, r), w, &c, c.Cache, 30, false, false)
 }
 
-func getTimeValueForQueriesWithoutNow(timeParsed []string) int64 {
+func getTimeValueForQueriesWithoutNow(timeParsed []string) (int64, error) {
+	if timeParsed == nil || len(timeParsed) == 0 {
+		return 0, proxy.ErrorTimeArrayEmpty()
+	}
 	suffix := strings.SplitAfterN(timeParsed[0], " ", 2)
 	timeWithoutOperator := strings.TrimSpace(suffix[1])
 	timeWithoutOperator = timeWithoutOperator[0:]
@@ -170,15 +173,18 @@ func getTimeValueForQueriesWithoutNow(timeParsed []string) int64 {
 		panic(err)
 	}
 	timeValue := numValue * multiplier.Nanoseconds()
-	return timeValue
+	return timeValue, nil
 }
 
-func getTimeValueForQueriesWithNow(timeParsed []string) (int64, string) {
+func getTimeValueForQueriesWithNow(timeParsed []string) (int64, string, error) {
+	if timeParsed == nil || len(timeParsed) == 0 {
+		return 0, "", proxy.ErrorTimeArrayEmpty()
+	}
 	suffix := strings.SplitAfterN(timeParsed[0], "now()", 2)
 	timeWithOperator := strings.TrimSpace(suffix[1])
 	timeWithoutOperator := timeWithOperator[2:]
 	unit := timeWithoutOperator[len(timeWithoutOperator)-1]
-	var multiplier = time.Nanosecond
+	var multiplier time.Duration
 	switch unit {
 	case 'y':
 		multiplier = 365 * 24 * time.Hour
@@ -198,7 +204,7 @@ func getTimeValueForQueriesWithNow(timeParsed []string) (int64, string) {
 	num := timeWithOperator[2 : len(timeWithOperator)-1]
 	numValue, _ := (strconv.ParseInt(num, 10, 32))
 	timeValue := numValue * multiplier.Nanoseconds()
-	return timeValue, timeWithOperator
+	return timeValue, timeWithOperator, nil
 }
 
 // ParseTimeRangeQuery ...
@@ -232,7 +238,10 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 		time2Parsed := reTime2Parse.FindAllString(time2[0], -1)
 		if time2Parsed != nil && len(time2Parsed) != 0 {
 			if strings.Index(time2Parsed[0], "now()") != -1 {
-				timeValue, time2WithOperator := getTimeValueForQueriesWithNow(time2Parsed)
+				timeValue, time2WithOperator, err := getTimeValueForQueriesWithNow(time2Parsed)
+				if (err != nil) {
+					return nil, err
+				}
 				operator := time2WithOperator[0]
 				switch operator {
 				case '-':
@@ -248,7 +257,11 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 				}
 
 			} else {
-				trq.Extent.End = time.Unix(0, getTimeValueForQueriesWithoutNow(time2Parsed))
+				val, err := getTimeValueForQueriesWithoutNow(time2Parsed)
+				if (err != nil) {
+					return nil, err
+				}
+				trq.Extent.End = time.Unix(0, val)
 			}
 		}
 
@@ -264,7 +277,10 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 		time1Parsed := reTime1Parse.FindAllString(time1[0], -1)
 		if time1Parsed != nil && len(time1Parsed) != 0 {
 			if strings.Index(time1Parsed[0], "now()") != -1 {
-				timeValue, time1WithOperator := getTimeValueForQueriesWithNow(time1Parsed)
+				timeValue, time1WithOperator, err := getTimeValueForQueriesWithNow(time1Parsed)
+				if (err != nil) {
+					return nil, err
+				}
 				operator := time1WithOperator[0]
 				switch operator {
 				case '-':
@@ -284,7 +300,11 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 				}
 
 			} else {
-				trq.Extent.Start = time.Unix(0, getTimeValueForQueriesWithoutNow(time1Parsed))
+				val, err := getTimeValueForQueriesWithoutNow(time1Parsed)
+				if (err != nil) {
+					return nil, err
+				}
+				trq.Extent.Start = time.Unix(0, val)
 			}
 		}
 

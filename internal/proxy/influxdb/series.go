@@ -25,10 +25,8 @@ const (
 	// MinimumTick is the minimum supported time resolution. This has to be
 	// at least time.Second in order for the code below to work.
 	minimumTick = time.Millisecond
-	// second is the Time duration equivalent to one second.
-	second = int64(time.Second / minimumTick)
-	// The number of nanoseconds per minimum tick.
-	nanosPerTick = int64(minimumTick / time.Nanosecond)
+	// milliSecondValue is the no of milliseconds in one second (1000).
+	milliSecondValue = int64(time.Second / minimumTick)
 )
 
 func contains(arr []string, key string) int {
@@ -48,6 +46,7 @@ func (se SeriesEnvelope) SetExtents(extents []timeseries.Extent) {
 	}
 }
 
+// Extremes ...
 func (se *SeriesEnvelope) Extremes() []timeseries.Extent {
 
 	var containsIndex = contains(se.Results[0].Series[0].Columns, "time")
@@ -74,7 +73,7 @@ func (se *SeriesEnvelope) Extremes() []timeseries.Extent {
 				min = ans[i]
 			}
 		}
-		se.ExtentList = []timeseries.Extent{timeseries.Extent{Start: time.Unix(min/second, (min%second)*nanosPerTick), End: time.Unix(max/second, (max%second)*nanosPerTick)}}
+		se.ExtentList = []timeseries.Extent{timeseries.Extent{Start: time.Unix(min/milliSecondValue, (min%milliSecondValue)*(int64(minimumTick))), End: time.Unix(max/milliSecondValue, (max%milliSecondValue)*(int64(minimumTick)))}}
 		return se.ExtentList
 	}
 	return nil
@@ -89,37 +88,37 @@ func (se SeriesEnvelope) Extents() []timeseries.Extent {
 }
 
 // CalculateDeltas ...
-func (se SeriesEnvelope) CalculateDeltas(trq *timeseries.TimeRangeQuery) []timeseries.Extent {
-	se.Extremes()
-	misses := []time.Time{}
-	for i := trq.Extent.Start; trq.Extent.End.After(i) || trq.Extent.End == i; i = i.Add(time.Second * time.Duration(trq.Step)) {
-		found := false
-		for j := range se.Extents() {
-			if i == se.Extents()[j].Start || i == se.Extents()[j].End || (i.After(se.Extents()[j].Start) && se.Extents()[j].End.After(i)) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			misses = append(misses, i)
-		}
-	}
-	// Find the fill and gap ranges
-	ins := []timeseries.Extent{}
-	e := time.Unix(0, 0)
-	var inStart = e
-	l := len(misses)
-	for i := range misses {
-		if inStart == e {
-			inStart = misses[i]
-		}
-		if i+1 == l || misses[i+1] != misses[i].Add(se.Step()) {
-			ins = append(ins, timeseries.Extent{Start: inStart, End: misses[i]})
-			inStart = e
-		}
-	}
-	return ins
-}
+//func (se SeriesEnvelope) CalculateDeltas(trq *timeseries.TimeRangeQuery) []timeseries.Extent {
+//	se.Extremes()
+//	misses := []time.Time{}
+//	for i := trq.Extent.Start; trq.Extent.End.After(i) || trq.Extent.End == i; i = i.Add(time.Second * time.Duration(trq.Step)) {
+//		found := false
+//		for j := range se.Extents() {
+//			if i == se.Extents()[j].Start || i == se.Extents()[j].End || (i.After(se.Extents()[j].Start) && se.Extents()[j].End.After(i)) {
+//				found = true
+//				break
+//			}
+//		}
+//		if !found {
+//			misses = append(misses, i)
+//		}
+//	}
+//	// Find the fill and gap ranges
+//	ins := []timeseries.Extent{}
+//	e := time.Unix(0, 0)
+//	var inStart = e
+//	l := len(misses)
+//	for i := range misses {
+//		if inStart == e {
+//			inStart = misses[i]
+//		}
+//		if i+1 == l || misses[i+1] != misses[i].Add(se.Step()) {
+//			ins = append(ins, timeseries.Extent{Start: inStart, End: misses[i]})
+//			inStart = e
+//		}
+//	}
+//	return ins
+//}
 
 // Step ...
 func (se SeriesEnvelope) Step() time.Duration {
