@@ -90,8 +90,8 @@ func (c Client) BaseURL() *url.URL {
 }
 
 // UnmarshalInstantaneous ...
-func (c Client) UnmarshalInstantaneous() timeseries.Timeseries {
-	return SeriesEnvelope{}
+func (c Client) UnmarshalInstantaneous(data []byte) (timeseries.Timeseries, error) {
+	return nil, nil
 }
 
 // BuildUpstreamURL ...
@@ -124,7 +124,7 @@ func (c Client) DeriveCacheKey(path string, params url.Values, prefix string, ex
 }
 
 func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	proxy.ProxyRequest(proxy.NewRequest(c.Name, proxy.OtInfluxDb, "APIProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, r), w)
+	proxy.ProxyRequest(proxy.NewRequest(c.Name, proxy.OtInfluxDb, "APIProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.Config.Timeout, r), w)
 }
 
 func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
@@ -132,12 +132,12 @@ func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
 
 func (c Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
-	proxy.ObjectProxyCacheRequest(proxy.NewRequest(c.Name, proxy.OtInfluxDb, "QueryHandler", r.Method, u, r.Header, r), w, &c, c.Cache, 30, false, false)
+	proxy.ObjectProxyCacheRequest(proxy.NewRequest(c.Name, proxy.OtInfluxDb, "QueryHandler", r.Method, u, r.Header, c.Config.Timeout, r), w, &c, c.Cache, 30, false, false)
 }
 
 func getTimeValueForQueriesWithoutNow(timeParsed []string) (int64, error) {
 	if timeParsed == nil || len(timeParsed) == 0 {
-		return 0, proxy.ErrorTimeArrayEmpty()
+		return 0, proxy.ErrorTimeArrayEmpty("Empty value for incoming time array")
 	}
 	suffix := strings.SplitAfterN(timeParsed[0], " ", 2)
 	timeWithoutOperator := strings.TrimSpace(suffix[1])
@@ -178,7 +178,7 @@ func getTimeValueForQueriesWithoutNow(timeParsed []string) (int64, error) {
 
 func getTimeValueForQueriesWithNow(timeParsed []string) (int64, string, error) {
 	if timeParsed == nil || len(timeParsed) == 0 {
-		return 0, "", proxy.ErrorTimeArrayEmpty()
+		return 0, "", proxy.ErrorTimeArrayEmpty("Empty value for incoming time array")
 	}
 	suffix := strings.SplitAfterN(timeParsed[0], "now()", 2)
 	timeWithOperator := strings.TrimSpace(suffix[1])
@@ -316,7 +316,7 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 func (c Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BaseURL()
 	u.Path += APIPath + health
-	proxy.ProxyRequest(proxy.NewRequest(c.Name, proxy.OtInfluxDb, "HealthHandler", http.MethodGet, u, r.Header, r), w)
+	proxy.ProxyRequest(proxy.NewRequest(c.Name, proxy.OtInfluxDb, "HealthHandler", http.MethodGet, u, r.Header, c.Config.Timeout, r), w)
 }
 
 // MarshalTimeseries ...

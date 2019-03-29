@@ -12,7 +12,7 @@ require (
 	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db
 	github.com/gomodule/redigo v2.0.0+incompatible // indirect
 	github.com/gorilla/context v1.1.1 // indirect
-	github.com/gorilla/handlers v1.4.0 // indirect
+	github.com/gorilla/handlers v1.4.0
 	github.com/gorilla/mux v1.6.2
 	github.com/influxdata/influxdb v1.7.4
 	github.com/influxdata/platform v0.0.0-20190117200541-d500d3cf5589 // indirect

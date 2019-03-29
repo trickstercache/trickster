@@ -19,6 +19,8 @@ import (
 
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/influxdata/influxdb/models"
+	"github.com/Comcast/trickster/internal/proxy"
+	"net/url"
 )
 
 const (
@@ -41,9 +43,7 @@ func contains(arr []string, key string) int {
 
 // SetExtents ...
 func (se SeriesEnvelope) SetExtents(extents []timeseries.Extent) {
-	for i := 0; i < len(extents); i++ {
-		se.ExtentList[i] = extents[i]
-	}
+	copy(se.ExtentList, extents)
 }
 
 // Extremes ...
@@ -87,6 +87,25 @@ func (se SeriesEnvelope) Extents() []timeseries.Extent {
 	return se.ExtentList
 }
 
+// ValueCount returns the count of all values across all Series in the Timeseries object
+func (se SeriesEnvelope) ValueCount() int {
+	c := 0
+	for i := range se.Results {
+		c += len(se.Results[i].Series)
+	}
+	return c
+}
+
+// FastForwardURL returns the url to fetch the Fast Forward value based on a timerange url
+func (c Client) FastForwardURL(r *proxy.Request) (*url.URL, error) {
+	return nil, nil
+}
+
+// Seriescount...
+func (se SeriesEnvelope) SeriesCount() int {
+	return len(se.Results)
+}
+
 // Step ...
 func (se SeriesEnvelope) Step() time.Duration {
 	return se.StepDuration
@@ -98,7 +117,7 @@ func (se SeriesEnvelope) SetStep(step time.Duration) {
 }
 
 // Merge ...
-func (se SeriesEnvelope) Merge(collection ...timeseries.Timeseries) {
+func (se SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) {
 	seResults := make(map[int]*Result)
 
 	for _, s := range se.Results {
@@ -120,7 +139,9 @@ func (se SeriesEnvelope) Merge(collection ...timeseries.Timeseries) {
 		}
 	}
 
-	se.Sort()
+	if sort {
+		se.Sort()
+	}
 }
 
 // Copy ...
