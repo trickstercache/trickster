@@ -19,6 +19,10 @@ go-mod-vendor:
 go-mod-tidy:
 	$(GO) mod tidy
 
+.PHONY: test-go-mod
+test-go-mod: go-mod-tidy go-mod-vendor
+	@git diff --quiet --exit-code go.mod go.sum || echo "There are changes to go.mod and go.sum which needs to be commited"
+
 .PHONY: build
 build:
 	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) $(GO) build -o trickster -a -v $(TRICKSTER_MAIN)/main.go
@@ -81,7 +85,7 @@ style:
 	! gofmt -d $$(find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
 .PHONY: test
-test:
+test: test-go-mod
 	$(GO) test -v ./...
 
 .PHONY: test-cover
