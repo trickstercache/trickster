@@ -25,7 +25,7 @@ data:
 
         [caches.default]
         # cache_type defines what kind of cache Trickster uses
-        # options are 'bbolt', 'filesystem', 'memory', and 'redis'.
+        # options are 'bbolt', 'filesystem', 'memory', 'redis' and 'redis_cluster'
         # The default is 'memory'.
         type = 'memory'
 
@@ -75,6 +75,15 @@ data:
             # default is 'redis:6379'
             endpoint = 'redis:6379'
             # password provides the redis password
+            # default is empty
+            password = ''
+
+            ### Configuration options when using Redis Cluster
+            [caches.default.redis_cluster]
+            # endpoints defines a list of seed fqdn+ports for the cluster
+            # default is ['redis:6379']
+            endpoints = ['redis:6379']
+            # password provides the redis cluster password
             # default is empty
             password = ''
 
