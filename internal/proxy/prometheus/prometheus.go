@@ -33,6 +33,7 @@ const (
 	mnQueryRange = "query_range"
 	mnQuery      = "query"
 	mnLabels     = "label/" + model.MetricNameLabel + "/values"
+	mnSeries     = "series"
 	mnHealth     = "health"
 )
 

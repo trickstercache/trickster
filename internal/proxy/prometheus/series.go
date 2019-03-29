@@ -22,5 +22,7 @@ import (
 // SeriesHandler ...
 func (c Client) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
-	proxy.ProxyRequest(proxy.NewRequest(c.Name, otPrometheus, "SeriesHandler", http.MethodGet, u, r.Header, c.Config.Timeout, r), w)
+	proxy.ObjectProxyCacheRequest(
+		proxy.NewRequest(c.Name, otPrometheus, "SeriesHandler", r.Method, u, r.Header, c.Config.Timeout, r),
+		w, &c, c.Cache, c.Cache.Configuration().ObjectTTLSecs, false, false)
 }
