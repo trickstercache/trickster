@@ -3,7 +3,7 @@ module github.com/Comcast/trickster
 require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/alicebob/gopher-json v0.0.0-20180125190556-5a6b3ba71ee6 // indirect
-	github.com/alicebob/miniredis v0.0.0-20181205055656-cfad8aca71cc
+	github.com/alicebob/miniredis v2.4.6+incompatible
 	github.com/coreos/bbolt v1.3.1-coreos.6
 	github.com/go-kit/kit v0.8.0
 	github.com/go-logfmt/logfmt v0.4.0 // indirect
@@ -14,7 +14,7 @@ require (
 	github.com/gorilla/context v1.1.1 // indirect
 	github.com/gorilla/handlers v1.4.0
 	github.com/gorilla/mux v1.6.2
-	github.com/influxdata/influxdb v1.7.4
+	github.com/influxdata/influxdb v1.7.5
 	github.com/influxdata/platform v0.0.0-20190117200541-d500d3cf5589 // indirect
 	github.com/prometheus/client_golang v0.9.1
 	github.com/prometheus/common v0.0.0-20181126121408-4724e9255275
