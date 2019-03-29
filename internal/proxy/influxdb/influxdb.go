@@ -97,7 +97,6 @@ func (c Client) UnmarshalInstantaneous(data []byte) (timeseries.Timeseries, erro
 
 // BuildUpstreamURL ...
 func (c Client) BuildUpstreamURL(r *http.Request) *url.URL {
-
 	return &url.URL{}
 }
 
@@ -122,18 +121,6 @@ func (c Client) DeriveCacheKey(path string, params url.Values, prefix string, ex
 		k += extra
 	}
 	return md5.Checksum(k)
-}
-
-func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	proxy.ProxyRequest(proxy.NewRequest(c.Name, proxy.OtInfluxDb, "APIProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.Config.Timeout, r), w)
-}
-
-func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
-}
-
-func (c Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BuildUpstreamURL(r)
-	proxy.ObjectProxyCacheRequest(proxy.NewRequest(c.Name, proxy.OtInfluxDb, "QueryHandler", r.Method, u, r.Header, c.Config.Timeout, r), w, &c, c.Cache, 30, false, false)
 }
 
 func getTimeValueForQueriesWithoutNow(timeParsed []string) (int64, error) {
@@ -309,13 +296,6 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 		}
 	}
 	return trq, nil
-}
-
-// HealthHandler ...
-func (c Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BaseURL()
-	u.Path += APIPath + health
-	proxy.ProxyRequest(proxy.NewRequest(c.Name, proxy.OtInfluxDb, "HealthHandler", http.MethodGet, u, r.Header, c.Config.Timeout, r), w)
 }
 
 // MarshalTimeseries ...
