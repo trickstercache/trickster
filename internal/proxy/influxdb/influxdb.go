@@ -18,7 +18,6 @@ import (
 	"net/url"
 
 	"encoding/json"
-	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -29,6 +28,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/md5"
 )
 
@@ -96,8 +96,20 @@ func (c Client) UnmarshalInstantaneous(data []byte) (timeseries.Timeseries, erro
 }
 
 // BuildUpstreamURL ...
+// BuildUpstreamURL will merge the downstream request with the BaseURL to construct the full upstream URL
 func (c Client) BuildUpstreamURL(r *http.Request) *url.URL {
-	return &url.URL{}
+	u := c.BaseURL()
+
+	if strings.HasPrefix(r.URL.Path, "/"+c.Name+"/") {
+		u.Path += strings.Replace(r.URL.Path, "/"+c.Name+"/", "/", 1)
+	} else {
+		u.Path += r.URL.Path
+	}
+
+	u.RawQuery = r.URL.RawQuery
+	u.Fragment = r.URL.Fragment
+	u.User = r.URL.User
+	return u
 }
 
 // OriginName ...
@@ -305,9 +317,24 @@ func (c Client) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, error) {
 }
 
 // RegisterRoutes ...
+// RegisterRoutes ...
 func (c Client) RegisterRoutes(originName string, o config.OriginConfig) {
-	fmt.Println("Registering Origin Handlers"+"originType"+o.Type, "originName"+originName)
-	routing.Router.HandleFunc("/"+health, c.HealthHandler).Methods("GET")
-	routing.Router.HandleFunc("/"+originName+APIPath+mnQuery, c.QueryHandler).Methods("GET")
-	routing.Router.PathPrefix("/" + originName + APIPath).HandlerFunc(c.ProxyHandler).Methods("GET")
+
+	if originName == "default" {
+		log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.Type})
+		routing.Router.HandleFunc("/"+health, c.HealthHandler).Methods("GET")
+		routing.Router.HandleFunc("/"+mnQuery, c.QueryHandler).Methods("GET", "POST")
+		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
+	} else {
+		// Host Header-based routing
+		log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
+		routing.Router.HandleFunc("/"+health, c.HealthHandler).Methods("GET").Host(originName)
+		routing.Router.HandleFunc("/"+mnQuery, c.QueryHandler).Methods("GET", "POST").Host(originName)
+		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST").Host(originName)
+	}
+
+	routing.Router.HandleFunc("/"+originName+"/"+health, c.HealthHandler).Methods("GET")
+	routing.Router.HandleFunc("/"+originName+"/"+mnQuery, c.QueryHandler).Methods("GET", "POST")
+	routing.Router.PathPrefix("/"+originName+"/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
+
 }
