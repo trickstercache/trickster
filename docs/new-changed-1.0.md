@@ -22,10 +22,10 @@ Trickster 1.0 is incompatible with a 0.1.x config file. However, it can be made 
 
 - Make a backup of your config file.
 - Tab-indent the entire `[cache]` configuration block.
-- Search/Replace `[cache` with `[cache.default` (no trailing square bracket).
-- Unless you are using Redis, copy/paste the `[cache.default.index]` section from the [example.conf](../cmd/trickster/conf/example.conf) into your new config file under `[cache.default]` as in the example.
-- Add a line with `[caches]` (unindented) immediately above the line with `[cache]`
-- Under each of your `[origin configurations, add the following line 
+- Search/Replace `[cache` with `[caches.default` (no trailing square bracket).
+- Unless you are using Redis, copy/paste the `[caches.default.index]` section from the [example.conf](../cmd/trickster/conf/example.conf) into your new config file under `[caches.default]`, as in the example.
+- Add a line with `[caches]` (unindented) immediately above the line with `[caches.default]`
+- Under each of your `[origins.<name>]` configurations, add the following line 
 
     `cache_name = 'default'`
 
