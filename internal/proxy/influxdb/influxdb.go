@@ -19,16 +19,17 @@ import (
 
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/md5"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
 )
 
 // Client Implements the Database Client Interface
@@ -169,7 +170,7 @@ func getTimeValueForQueriesWithoutNow(timeParsed []string) (int64, error) {
 	re := regexp.MustCompile("[0-9]+")
 	number := re.FindAllString(timeWithoutOperator, -1)
 	numValue, err := (strconv.ParseInt(number[0], 10, 64))
-	if (err != nil) {
+	if err != nil {
 		panic(err)
 	}
 	timeValue := numValue * multiplier.Nanoseconds()
@@ -239,7 +240,7 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 		if time2Parsed != nil && len(time2Parsed) != 0 {
 			if strings.Index(time2Parsed[0], "now()") != -1 {
 				timeValue, time2WithOperator, err := getTimeValueForQueriesWithNow(time2Parsed)
-				if (err != nil) {
+				if err != nil {
 					return nil, err
 				}
 				operator := time2WithOperator[0]
@@ -258,7 +259,7 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 
 			} else {
 				val, err := getTimeValueForQueriesWithoutNow(time2Parsed)
-				if (err != nil) {
+				if err != nil {
 					return nil, err
 				}
 				trq.Extent.End = time.Unix(0, val)
@@ -278,7 +279,7 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 		if time1Parsed != nil && len(time1Parsed) != 0 {
 			if strings.Index(time1Parsed[0], "now()") != -1 {
 				timeValue, time1WithOperator, err := getTimeValueForQueriesWithNow(time1Parsed)
-				if (err != nil) {
+				if err != nil {
 					return nil, err
 				}
 				operator := time1WithOperator[0]
@@ -301,13 +302,12 @@ func (c Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery
 
 			} else {
 				val, err := getTimeValueForQueriesWithoutNow(time1Parsed)
-				if (err != nil) {
+				if err != nil {
 					return nil, err
 				}
 				trq.Extent.Start = time.Unix(0, val)
 			}
 		}
-
 	}
 	return trq, nil
 }

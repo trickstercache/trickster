@@ -17,10 +17,11 @@ import (
 	"sort"
 	"time"
 
+	"net/url"
+
+	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/influxdata/influxdb/models"
-	"github.com/Comcast/trickster/internal/proxy"
-	"net/url"
 )
 
 const (
