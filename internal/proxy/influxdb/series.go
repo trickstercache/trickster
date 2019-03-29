@@ -87,39 +87,6 @@ func (se SeriesEnvelope) Extents() []timeseries.Extent {
 	return se.ExtentList
 }
 
-// CalculateDeltas ...
-//func (se SeriesEnvelope) CalculateDeltas(trq *timeseries.TimeRangeQuery) []timeseries.Extent {
-//	se.Extremes()
-//	misses := []time.Time{}
-//	for i := trq.Extent.Start; trq.Extent.End.After(i) || trq.Extent.End == i; i = i.Add(time.Second * time.Duration(trq.Step)) {
-//		found := false
-//		for j := range se.Extents() {
-//			if i == se.Extents()[j].Start || i == se.Extents()[j].End || (i.After(se.Extents()[j].Start) && se.Extents()[j].End.After(i)) {
-//				found = true
-//				break
-//			}
-//		}
-//		if !found {
-//			misses = append(misses, i)
-//		}
-//	}
-//	// Find the fill and gap ranges
-//	ins := []timeseries.Extent{}
-//	e := time.Unix(0, 0)
-//	var inStart = e
-//	l := len(misses)
-//	for i := range misses {
-//		if inStart == e {
-//			inStart = misses[i]
-//		}
-//		if i+1 == l || misses[i+1] != misses[i].Add(se.Step()) {
-//			ins = append(ins, timeseries.Extent{Start: inStart, End: misses[i]})
-//			inStart = e
-//		}
-//	}
-//	return ins
-//}
-
 // Step ...
 func (se SeriesEnvelope) Step() time.Duration {
 	return se.StepDuration
@@ -152,6 +119,7 @@ func (se SeriesEnvelope) Merge(collection ...timeseries.Timeseries) {
 			se.ExtentList = append(se.ExtentList, se2.ExtentList...)
 		}
 	}
+
 	se.Sort()
 }
 
