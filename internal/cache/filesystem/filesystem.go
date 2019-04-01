@@ -102,9 +102,9 @@ func (c *Cache) retrieve(cacheKey string, atime bool) ([]byte, error) {
 	locks.Acquire(lockPrefix + cacheKey)
 	defer locks.Release(lockPrefix + cacheKey)
 
-	log.Debug("filesystem cache retrieve", log.Pairs{"key": cacheKey, "dataFile": dataFile})
 	data, err := ioutil.ReadFile(dataFile)
 	if err != nil {
+		log.Debug("filesystem cache miss", log.Pairs{"key": cacheKey, "dataFile": dataFile})
 		return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
 	}
 
@@ -114,7 +114,7 @@ func (c *Cache) retrieve(cacheKey string, atime bool) ([]byte, error) {
 	}
 
 	if o.Expiration.After(time.Now()) {
-		log.Debug("memorycache cache retrieve", log.Pairs{"cacheKey": cacheKey})
+		log.Debug("filesystem cache retrieve", log.Pairs{"key": cacheKey, "dataFile": dataFile})
 		if atime {
 			go c.Index.UpdateObjectAccessTime(cacheKey)
 		}
