@@ -131,9 +131,9 @@ data:
             endpoints = {{ .redis.endpoint | quote }}
             password = {{ .redis.password | quote }}
 
-            {{- if eq .type "redis_cluster" }}
+            {{- else if eq .type "redis_cluster" }}
             {{ printf "[caches.%s.redis_cluster]" .name }}
-            endpoint = {{ .redis_cluster.endpoints }}
+            endpoints = {{ .redis_cluster.endpoints }}
             password = {{ .redis_cluster.password | quote }}
 
             {{- else if eq .type "filesystem" }}
