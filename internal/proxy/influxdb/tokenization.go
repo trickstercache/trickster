@@ -40,7 +40,7 @@ func init() {
 	reStep = regexp.MustCompile(`(?i)\s+group\s+by\s+.*time\((?P<step>[0-9]+[mhsdwy])(.*);??`)
 
 	// Regexp for extracting the time elements from an InfluxDB Timeseries Query with equality operators: >=, >, =
-	// If it's a relative time range (e.g.,  where time >= now() - 24h  ), this expression is all that is requred
+	// If it's a relative time range (e.g.,  where time >= now() - 24h  ), this expression is all that is required
 	reTime1 = regexp.MustCompile(`(?i)(?P<preOp1>where|and)\s+(?P<timeExpr1>time\s+(?P<relationalOp1>>=|>|=)\s+(?P<value1>((?P<ts1>[0-9]+)(?P<tsUnit1>ns|µ|u|ms|s|m|h|d|w|y)|(?P<now1>now\(\))\s+(?P<operand1>[+-])\s+(?P<offset1>[0-9]+[mhsdwy]))))(\s+(?P<postOp1>and|or|group|order|limit)|$)`)
 
 	// Regexp for extracting the time elements from an InfluxDB Timeseries Query with equality operators: <=, <
@@ -76,7 +76,7 @@ func tokenizeQuery(query string, timeParts map[string]string) string {
 	}
 
 	// Then check the existence of timeExpr2, and if exists, do the replacement
-	// including any preceeding "and" or the following "and" if preceeded by "where"
+	// including any preceding "and" or the following "and" if preceded by "where"
 	// this catches anything with "time <" or "time <="
 	if expr, ok := timeParts["timeExpr2"]; ok {
 		if preOp, ok := timeParts["preOp2"]; ok {
