@@ -20,7 +20,7 @@ The Docker image is available at `tricksterio/trickster:1.0-beta`, or see the Re
 
 We'd love your help testing Trickster 1.0, as well as contributing any improvements or bug fixes. Thank you!
 
-## Breaking Changes
+## Breaking Changes from 0.1.x
 
 ### Origin Selection using Query Parameters
 
