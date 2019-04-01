@@ -26,6 +26,7 @@ type Request struct {
 	HandlerName   string
 	HTTPMethod    string
 	URL           *url.URL
+	TemplateURL   *url.URL
 	Headers       http.Header
 	ClientRequest *http.Request
 	Timeout       time.Duration
@@ -39,6 +40,7 @@ func NewRequest(originName, originType, handlerName, method string, url *url.URL
 		HandlerName:   handlerName,
 		HTTPMethod:    method,
 		URL:           url,
+		TemplateURL:   CopyURL(url),
 		Headers:       headers,
 		ClientRequest: clientRequest,
 		Timeout:       timeout,
@@ -53,6 +55,7 @@ func (r *Request) Copy() *Request {
 		HandlerName:   r.HandlerName,
 		HTTPMethod:    r.HTTPMethod,
 		URL:           CopyURL(r.URL),
+		TemplateURL:   CopyURL(r.TemplateURL),
 		Headers:       copyHeaders(r.Headers),
 		ClientRequest: r.ClientRequest,
 	}
