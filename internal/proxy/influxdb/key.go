@@ -14,6 +14,8 @@
 package influxdb
 
 import (
+	"strconv"
+
 	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/util/md5"
 )
@@ -21,5 +23,10 @@ import (
 // DeriveCacheKey ...
 func (c Client) DeriveCacheKey(r *proxy.Request, extra string) string {
 	params := r.TemplateURL.Query()
+
+	if r.TimeRangeQuery != nil && r.TimeRangeQuery.Step > 0 {
+		extra += strconv.FormatInt(r.TimeRangeQuery.Step, 10)
+	}
+
 	return md5.Checksum(r.TemplateURL.Path + params.Get(upDB) + params.Get(upQuery) + params.Get("u") + params.Get("p") + extra)
 }

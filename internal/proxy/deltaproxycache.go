@@ -36,6 +36,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		ProxyRequest(r, w)
 		return
 	}
+	r.TimeRangeQuery = trq
 	trq.NormalizeExtent()
 
 	key := client.DeriveCacheKey(r, r.Headers.Get(hnAuthorization))
