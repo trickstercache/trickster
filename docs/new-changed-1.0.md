@@ -9,9 +9,9 @@
 - The Delta Proxy is overhauled to be more efficient and performant.
 - For Gophers: we've refactored the project into packages with a much more cohesive structure, so it's much easier for you to contribute.
 - Also: The Cache Provider and Origin Proxy are exposed as Interfaces for easy extensibility.
+- InfluxDB support (very experimental)
 
 ### Still to Come in 1.0 (keep checking back!)
-- InfluxDB support 
 - Distributed Tracing support
 
 ## Breaking Changes
