@@ -104,7 +104,7 @@ func parseTime(s string) (time.Time, error) {
 
 // parseDuration converts a duration URL parameter to time.Duration.
 // Copied from https://github.com/prometheus/prometheus/blob/v2.2.1/web/api/v1/api.go#L809-L821
-func parseDuration(s string) (time.Duration, error) {
+func parseDuration1(s string) (time.Duration, error) {
 	if d, err := strconv.ParseFloat(s, 64); err == nil {
 		ts := d * float64(time.Second)
 		if ts > float64(math.MaxInt64) || ts < float64(math.MinInt64) {

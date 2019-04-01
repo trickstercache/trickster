@@ -14,30 +14,12 @@
 package influxdb
 
 import (
-	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/config"
+	"net/http"
+
+	"github.com/Comcast/trickster/internal/proxy"
 )
 
-// Client Implements the Proxy Client Interface
-type Client struct {
-	Name   string
-	User   string
-	Pass   string
-	Config config.OriginConfig
-	Cache  cache.Cache
-}
-
-// Configuration ...
-func (c Client) Configuration() config.OriginConfig {
-	return c.Config
-}
-
-// CacheInstance ...
-func (c Client) CacheInstance() cache.Cache {
-	return c.Cache
-}
-
-// OriginName ...
-func (c Client) OriginName() string {
-	return c.Name
+// ProxyHandler ...
+func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
+	proxy.ProxyRequest(proxy.NewRequest(c.Name, proxy.OtInfluxDb, "ProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.Config.Timeout, r), w)
 }

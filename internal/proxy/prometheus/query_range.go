@@ -30,7 +30,7 @@ func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // ParseTimeRangeQuery ...
-func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
+func (c *Client) ParseTimeRangeQuery(r *proxy.Request) (*timeseries.TimeRangeQuery, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	qp := r.URL.Query()

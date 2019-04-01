@@ -1,0 +1,71 @@
+/**
+* Copyright 2018 Comcast Cable Communications Management, LLC
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+* http://www.apache.org/licenses/LICENSE-2.0
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+ */
+
+package influxdb
+
+import (
+	"net/http"
+	"strings"
+
+	"github.com/Comcast/trickster/internal/proxy"
+	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/Comcast/trickster/internal/util/regexp/matching"
+)
+
+// QueryHandler ...
+func (c Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
+
+	rqlc := strings.Replace(strings.ToLower(r.URL.RawQuery), "%20", "+", -1)
+	// if it's not a select statement, just proxy it instead
+	if (!strings.HasPrefix(rqlc, "q=select+")) && (!(strings.Index(rqlc, "&q=select+") > 0)) {
+		go c.ProxyHandler(w, r)
+		return
+	}
+
+	u := c.BuildUpstreamURL(r)
+	proxy.DeltaProxyCacheRequest(
+		proxy.NewRequest(c.Name, proxy.OtInfluxDb, "QueryHandler", r.Method, u, r.Header, c.Config.Timeout, r),
+		w, c, c.Cache, c.Cache.Configuration().TimeseriesTTLSecs, false)
+}
+
+// ParseTimeRangeQuery ...
+func (c Client) ParseTimeRangeQuery(r *proxy.Request) (*timeseries.TimeRangeQuery, error) {
+
+	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
+	qi := r.TemplateURL.Query()
+	if p, ok := qi[upQuery]; ok {
+		trq.Statement = p[0]
+	} else {
+		return nil, proxy.ErrorMissingURLParam(upQuery)
+	}
+
+	// if the Step wasn't found in the query (e.g., "group by time(1m)"), just proxy it instead
+	step, found := matching.GetNamedMatch("step", reStep, trq.Statement)
+	if !found {
+		return nil, proxy.ErrorStepParse()
+	}
+
+	stepDuration, err := proxy.ParseDuration(step)
+	if err != nil {
+		return nil, proxy.ErrorStepParse()
+	}
+	trq.Step = int64(stepDuration.Seconds())
+
+	trq.Statement, trq.Extent = getQueryParts(trq.Statement)
+
+	// Swap in the Tokenzed Query in the Url Params
+	qi.Set(upQuery, trq.Statement)
+	r.TemplateURL.RawQuery = qi.Encode()
+	return trq, nil
+
+}
