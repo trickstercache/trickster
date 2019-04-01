@@ -3,19 +3,21 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/Comcast/trickster)](https://goreportcard.com/report/github.com/Comcast/trickster)
 [![CLI Best Practices](https://bestpractices.coreinfrastructure.org/projects/2518/badge)](https://bestpractices.coreinfrastructure.org/en/projects/2518)
 
-Trickster is a reverse proxy cache for the [Prometheus](https://github.com/prometheus/prometheus) [HTTP APIv1](https://prometheus.io/docs/prometheus/latest/querying/api/) that dramatically accelerates dashboard rendering times for any series queried from Prometheus.
+Trickster is an HTTP reverse proxy/cache and query accelerator for time series databases. Trickster dramatically decreases dashboard chart rendering times for end users, while eliminating redundant computations on the TSDBs it fronts. In short, Trickster makes read-heavy Dashboard/TSDB environments significantly more scalable.
+
+Trickster works with Prometheus versions that use the v1 HTTP API (Prometheus 1.x and 2.x) and InfluxDB. 
 
 <img src="./docs/images/high-level.png" width=512 />
 
 ## How it works
 
 ### 1. Delta Proxy
-Most dashboards request the entire time range of data from the time series database, every time a dashboard loads or reloads. Trickster's Delta Proxy inspects the time range of a client query to determine what data points are already cached, and requests from Prometheus only the data points still needed to service the client request. This results in dramatically faster chart load times for everyone, since Prometheus is queried only for tiny incremental changes on each dashboard load, rather than several hundred data points of duplicative data.
+Most dashboards request from a time series database the entire time range of data they wish to present, every time a user's dashboard loads, as well as on every auto-refresh. Trickster's Delta Proxy inspects the time range of a client query to determine what data points are already cached, and requests from the tsdb only the data points still needed to service the client request. This results in dramatically faster chart load times for everyone, since the tsdb is queried only for tiny incremental changes on each dashboard load, rather than several hundred data points of duplicative data.
 
 <img src="./docs/images/partial-cache-hit.png" width=1024 />
 
 ### 2. Step Boundary Normalization
-When Trickster requests data from Prometheus, it adjusts the clients's requested time range slightly to ensure that all data points returned by Prometheus are aligned to normalized step boundaries. For example, if the step is 300s, all data points will fall on the clock 0's and 5's. This ensures that the data is highly cacheable, is conveyed visually to users in a more familiar way, and that all dashboard users see identical data on their screens.
+When Trickster requests data from a tsdb, it adjusts the clients's requested time range slightly to ensure that all data points returned are aligned to normalized step boundaries. For example, if the step is 300s, all data points will fall on the clock 0's and 5's. This ensures that the data is highly cacheable, is conveyed visually to users in a more familiar way, and that all dashboard users see identical data on their screens.
 
 <img src="./docs/images/step-boundary-normalization.png" width=640 />
 
