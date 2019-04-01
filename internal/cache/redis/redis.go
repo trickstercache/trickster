@@ -57,13 +57,14 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
 
 // Retrieve gets data from the Redis Cache using the provided Key
 func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
-	log.Debug("redis cache retrieve", log.Pairs{"key": cacheKey})
 	res, err := c.client.Get(cacheKey).Result()
 	if err != nil {
+		log.Debug("redis cache miss", log.Pairs{"key": cacheKey})
 		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
 		return []byte{}, err
 	}
 	data := []byte(res)
+	log.Debug("redis cache retrieve", log.Pairs{"key": cacheKey})
 	cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(data)))
 	return data, nil
 }

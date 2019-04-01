@@ -37,7 +37,7 @@ type Client interface {
 	// RegisterRoutes provides a method to register upstream routes to HTTP Handlers
 	RegisterRoutes(string, config.OriginConfig)
 	// ParseTimeRangeQuery returns a timeseries.TimeRangeQuery based on the provided HTTP Request
-	ParseTimeRangeQuery(*http.Request) (*timeseries.TimeRangeQuery, error)
+	ParseTimeRangeQuery(*Request) (*timeseries.TimeRangeQuery, error)
 	// Configuration returns the configuration for the Proxy Client
 	Configuration() config.OriginConfig
 	// OriginName returns the name of the origin the Proxy Client is handling
@@ -47,7 +47,7 @@ type Client interface {
 	// CacheInstance returns the Cache object the Client uses in for Proxy Caching
 	CacheInstance() cache.Cache
 	// DeriveCacheKey returns a hashed key for the request, used for request synchronization and cache deconfliction
-	DeriveCacheKey(string, url.Values, string, string) string
+	DeriveCacheKey(*Request, string) string
 	// BuildUpstreamURL returns an URL for an upstream origin request based on the request URL
 	BuildUpstreamURL(*http.Request) *url.URL
 	// FastForwardURL returns the URL to the origin to collect Fast Forward data points based on the provided HTTP Request

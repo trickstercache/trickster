@@ -63,5 +63,4 @@ func main() {
 	// Start the Server
 	err = http.ListenAndServe(fmt.Sprintf("%s:%d", config.ProxyServer.ListenAddress, config.ProxyServer.ListenPort), handlers.CompressHandler(routing.Router))
 	log.Error("exiting", log.Pairs{"err": err})
-
 }

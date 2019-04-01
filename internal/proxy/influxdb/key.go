@@ -14,30 +14,42 @@
 package influxdb
 
 import (
-	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy"
+	"github.com/Comcast/trickster/internal/util/md5"
 )
 
-// Client Implements the Proxy Client Interface
-type Client struct {
-	Name   string
-	User   string
-	Pass   string
-	Config config.OriginConfig
-	Cache  cache.Cache
-}
+// DeriveCacheKey ...
+func (c Client) DeriveCacheKey(r *proxy.Request, extra string) string {
 
-// Configuration ...
-func (c Client) Configuration() config.OriginConfig {
-	return c.Config
-}
+	k := r.TemplateURL.Path
+	params := r.TemplateURL.Query()
 
-// CacheInstance ...
-func (c Client) CacheInstance() cache.Cache {
-	return c.Cache
-}
+	if p, ok := params[upDB]; ok {
+		k += p[0]
+	}
 
-// OriginName ...
-func (c Client) OriginName() string {
-	return c.Name
+	if p, ok := params[upQuery]; ok {
+		k += p[0]
+	}
+
+	// Epoch Precision Param
+	if p, ok := params[upEpoch]; ok {
+		k += "." + p[0]
+	}
+
+	// Username Param
+
+	if p, ok := params["u"]; ok {
+		k += "." + p[0]
+	}
+
+	// Password Param
+	if p, ok := params["p"]; ok {
+		k += "." + p[0]
+	}
+
+	if len(extra) > 0 {
+		k += extra
+	}
+	return md5.Checksum(k)
 }

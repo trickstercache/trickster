@@ -24,3 +24,5 @@ require (
 	golang.org/x/sys v0.0.0-20181205085412-a5c9d58dba9a
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0-20170531160350-a96e63847dc3
 )
+
+replace gotest.tools => github.com/gotestyourself/gotest.tools v2.2.0+incompatible

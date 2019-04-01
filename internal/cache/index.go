@@ -211,7 +211,7 @@ func (idx *Index) reaper() {
 	}
 }
 
-type obectsAtime []*Object
+type objectsAtime []*Object
 
 // reap makes a single iteration through the cache index to to find and remove expired elements
 // and evict least-recently-accessed elements to maintain the Maximum allowed Cache Size
@@ -221,7 +221,7 @@ func (idx *Index) reap() {
 	defer indexLock.Unlock()
 
 	removals := make([]string, 0, 0)
-	remainders := make(obectsAtime, 0, idx.ObjectCount)
+	remainders := make(objectsAtime, 0, idx.ObjectCount)
 
 	now := time.Now()
 
@@ -309,17 +309,17 @@ func (idx *Index) reap() {
 }
 
 // Len returns the length of an array of Prometheus model.Times
-func (o obectsAtime) Len() int {
+func (o objectsAtime) Len() int {
 	return len(o)
 }
 
 // Less returns true if i comes before j
-func (o obectsAtime) Less(i, j int) bool {
+func (o objectsAtime) Less(i, j int) bool {
 	return o[i].LastAccess.Before(o[j].LastAccess)
 }
 
 // Swap modifies an array by of Prometheus model.Times swapping the values in indexes i and j
-func (o obectsAtime) Swap(i, j int) {
+func (o objectsAtime) Swap(i, j int) {
 	o[i], o[j] = o[j], o[i]
 }
 

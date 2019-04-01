@@ -59,7 +59,7 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 	if ok {
 		r := record.(cache.Object)
 		if r.Expiration.After(time.Now()) {
-			log.Info("memorycache cache retrieve", log.Pairs{"cacheKey": cacheKey})
+			log.Debug("memorycache cache retrieve", log.Pairs{"cacheKey": cacheKey})
 			c.Index.UpdateObjectAccessTime(cacheKey)
 			cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(r.Value)))
 			return r.Value, nil

@@ -17,5 +17,20 @@ import "fmt"
 
 // ErrorMissingURLParam returns a Formatted Error
 func ErrorMissingURLParam(param string) error {
-	return fmt.Errorf("Missing URL Parameter: [%s]", param)
+	return fmt.Errorf("missing URL parameter: [%s]", param)
+}
+
+// ErrorTimeArrayEmpty returns a Formattted Error
+func ErrorTimeArrayEmpty(param string) error {
+	return fmt.Errorf("time array is nil or empty: [%s]", param)
+}
+
+// ErrorStepParse returns a timeseries Parsing Error
+func ErrorStepParse() error {
+	return fmt.Errorf("unable to parse timeseries step from downstream request")
+}
+
+// ErrorNotSelectStatement returns a timeseries Parsing Error
+func ErrorNotSelectStatement() error {
+	return fmt.Errorf("not a select statement")
 }

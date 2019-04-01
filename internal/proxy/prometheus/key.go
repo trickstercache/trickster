@@ -14,19 +14,15 @@
 package prometheus
 
 import (
-	"net/url"
-
+	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/util/md5"
 )
 
 // DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
-func (c *Client) DeriveCacheKey(path string, params url.Values, prefix string, extra string) string {
+func (c Client) DeriveCacheKey(r *proxy.Request, extra string) string {
 
-	k := path
-	// if we have a prefix, set it up
-	if len(prefix) > 0 {
-		k += prefix
-	}
+	k := r.URL.Path
+	params := r.URL.Query()
 
 	if p, ok := params[upQuery]; ok {
 		k += p[0]

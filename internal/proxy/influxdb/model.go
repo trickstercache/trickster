@@ -15,6 +15,7 @@ package influxdb
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/influxdata/influxdb/models"
@@ -22,20 +23,28 @@ import (
 
 // SeriesEnvelope ...
 type SeriesEnvelope struct {
-	Results []Result `json:"results"`
-	Err     string   `json:"error,omitempty"`
+	Results      []Result            `json:"results"`
+	Err          string              `json:"error,omitempty"`
+	StepDuration time.Duration       `json:"step,omitempty"`
+	ExtentList   []timeseries.Extent `json:"extents,omitempty"`
 }
 
 // Result ...
 type Result struct {
-	StatementID int          `json:"statement_id,omitempty"`
-	Series      []models.Row `json:"series"`
+	StatementID int          `json:"statement_id"`
+	Series      []models.Row `json:"series,omitempty"`
 	Err         string       `json:"error,omitempty"`
+}
+
+// MarshalTimeseries ...
+func (c Client) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, error) {
+	// Marshal the Envelope back to a json object for Cache Storage
+	return json.Marshal(ts)
 }
 
 // UnmarshalTimeseries ...
 func (c Client) UnmarshalTimeseries(data []byte) (timeseries.Timeseries, error) {
 	se := &SeriesEnvelope{}
-	err := json.Unmarshal(data, &se)
+	err := json.Unmarshal(data, se)
 	return se, err
 }

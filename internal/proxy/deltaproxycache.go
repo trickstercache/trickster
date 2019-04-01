@@ -14,6 +14,7 @@
 package proxy
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
@@ -29,23 +30,22 @@ import (
 // DeltaProxyCacheRequest ...
 func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, cache cache.Cache, ttl int, refresh bool) {
 
+	trq, err := client.ParseTimeRangeQuery(r)
+	if err != nil {
+		// err may simply mean incompatible query (e.g., non-select), so just proxy
+		ProxyRequest(r, w)
+		return
+	}
+	trq.NormalizeExtent()
+
 	a := ""
 	if h, ok := r.Headers[hnAuthorization]; ok {
 		a = h[0]
 	}
 
-	key := client.DeriveCacheKey(r.URL.Path, r.URL.Query(), "", a)
-
+	key := client.DeriveCacheKey(r, a)
 	locks.Acquire(key)
 	defer locks.Release(key)
-
-	trq, err := client.ParseTimeRangeQuery(r.ClientRequest)
-	if err != nil {
-		log.Error("parse timerange query failed", log.Pairs{"error": err})
-		ProxyRequest(r, w)
-		return
-	}
-	trq.NormalizeExtent()
 
 	// this is used to determine if Fast Forward should be activated for this request
 	normalizedNow := &timeseries.TimeRangeQuery{
@@ -116,11 +116,12 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, strconv.Itoa(doc.StatusCode), r.URL.Path).Inc()
 	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, strconv.Itoa(doc.StatusCode), r.URL.Path).Observe(elapsed.Seconds())
 
-	if len(missRanges) == 0 {
-		if cfg.FastForwardDisable {
-			Respond(w, doc.StatusCode, doc.Headers, doc.Body)
-			return
-		}
+	ffURL, err := client.FastForwardURL(r)
+
+	// if it's a cache hit and fast forward is disabled or unsupported, just return the data.
+	if cacheStatus == crHit && (cfg.FastForwardDisable || ffURL == nil) {
+		Respond(w, doc.StatusCode, doc.Headers, doc.Body)
+		return
 	}
 
 	// maintain a list of timeseries to merge into the main timeseries
@@ -137,10 +138,10 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		req := r.Copy() // copy the request headers so we avoid collisions when adjusting them
 
 		// This fetches the gaps from the origin and adds their datasets to the merge list
-		go func(e *timeseries.Extent, r *Request) {
+		go func(e *timeseries.Extent, rq *Request) {
 			defer wg.Done()
-			client.SetExtent(req, e)
-			body, resp, _ := Fetch(req)
+			client.SetExtent(rq, e)
+			body, resp, _ := Fetch(rq)
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				nts, err := client.UnmarshalTimeseries(body)
 				if err != nil {
@@ -165,8 +166,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	var ffex timeseries.Extent
 	// Only fast forward if configured and the user request is for the absolute latest datapoint
 	if (!cfg.FastForwardDisable) && (trq.Extent.End == normalizedNow.Extent.End) {
-		ffURL, err := client.FastForwardURL(r)
-		if ffURL.Scheme != "" && err == nil {
+		if ffURL != nil && ffURL.Scheme != "" && err == nil {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -246,7 +246,14 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 }
 
 func fetchTimeseries(r *Request, client Client) (timeseries.Timeseries, *HTTPDocument, time.Duration, error) {
+
 	body, resp, elapsed := Fetch(r)
+
+	if resp.StatusCode != 200 {
+		log.Error("unexpected upstream response", log.Pairs{"statusCode": resp.StatusCode})
+		return nil, nil, time.Duration(0), fmt.Errorf("Unexpected Upstream Response")
+	}
+
 	ts, err := client.UnmarshalTimeseries(body)
 	if err != nil {
 		log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
