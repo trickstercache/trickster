@@ -14,7 +14,7 @@
 ### Still to Come in 1.0 (keep checking back!)
 - Distributed Tracing support
 
-### How to Try It
+## How to Try Trickster 1.0
 
 The Docker image is available at `tricksterio/trickster:1.0-beta`, or see the Releases for downloadable binaries.
 
