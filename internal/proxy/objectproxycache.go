@@ -36,7 +36,7 @@ func FetchViaObjectProxyCache(r *Request, client Client, cache cache.Cache, ttl 
 	if h, ok := r.Headers[hnAuthorization]; ok {
 		a = h[0]
 	}
-	key := client.DeriveCacheKey(r.URL.Path, r.URL.Query(), "", a)
+	key := client.DeriveCacheKey(r, a)
 
 	if !noLock {
 		locks.Acquire(key)
