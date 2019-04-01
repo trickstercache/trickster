@@ -32,11 +32,7 @@ func ObjectProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, c
 // FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
 func FetchViaObjectProxyCache(r *Request, client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) ([]byte, *http.Response) {
 
-	a := ""
-	if h, ok := r.Headers[hnAuthorization]; ok {
-		a = h[0]
-	}
-	key := client.DeriveCacheKey(r, a)
+	key := client.DeriveCacheKey(r, r.Headers.Get(hnAuthorization))
 
 	if !noLock {
 		locks.Acquire(key)

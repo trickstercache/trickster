@@ -17,19 +17,22 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/Comcast/trickster/internal/timeseries"
 )
 
 // Request ...
 type Request struct {
-	OriginName    string
-	OriginType    string
-	HandlerName   string
-	HTTPMethod    string
-	URL           *url.URL
-	TemplateURL   *url.URL
-	Headers       http.Header
-	ClientRequest *http.Request
-	Timeout       time.Duration
+	OriginName     string
+	OriginType     string
+	HandlerName    string
+	HTTPMethod     string
+	URL            *url.URL
+	TemplateURL    *url.URL
+	Headers        http.Header
+	ClientRequest  *http.Request
+	Timeout        time.Duration
+	TimeRangeQuery *timeseries.TimeRangeQuery
 }
 
 // NewRequest returns a new proxy request object that can service the downstream request
