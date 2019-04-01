@@ -23,6 +23,9 @@ caches:
       protocol: tcp
       endpoint: redis:6379
       password: ''
+    redis_cluster:
+      endpoints: ['redis:6379']
+      password: ''
     filesystem:
       path: /tmp/trickster
     bbolt:

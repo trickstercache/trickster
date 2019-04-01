@@ -29,7 +29,7 @@ data:
 
         # [caches.default]
         # cache_type defines what kind of cache Trickster uses
-        # options are 'bbolt', 'filesystem', 'memory', and 'redis'.
+        # options are 'bbolt', 'filesystem', 'memory', 'redis' and 'redis_cluster'
         # The default is 'memory'.
         # type = 'memory'
 
@@ -80,6 +80,15 @@ data:
             # default is empty
             # password = ''
 
+            ### Configuration options when using Redis Cluster
+            [caches.default.redis_cluster]
+            # endpoints defines a list of seed fqdn+ports for the cluster
+            # default is ['redis:6379']
+            # endpoints = ['redis:6379']
+            # password provides the redis cluster password
+            # default is empty
+            # password = ''
+
             ### Configuration options when using a Filesystem Cache
             # [caches.default.filesystem]
             # cache_path defines the directory location under which the Trickster cache will be maintained
@@ -106,7 +115,7 @@ data:
         object_ttl_secs = {{ .objectTTLSecs | default(30) }}
         compression = {{ .compression }}
 
-            {{- if ne .type "redis" }}
+            {{- if or (ne .type "redis") (ne .type "redis_cluster") }}
             {{ printf "[caches.%s.redis]" .name }}
             reap_interval_secs = {{ .index.reapIntervalSecs | default(3) }}
             flush_interval_secs = {{ .index.flushIntervalSecs | default(5) }}
@@ -119,8 +128,13 @@ data:
             {{- if eq .type "redis" }}
             {{ printf "[caches.%s.redis]" .name }}
             protocol = {{ .redis.protocol | quote }}
-            endpoint = {{ .redis.endpoint | quote }}
+            endpoints = {{ .redis.endpoint | quote }}
             password = {{ .redis.password | quote }}
+
+            {{- else if eq .type "redis_cluster" }}
+            {{ printf "[caches.%s.redis_cluster]" .name }}
+            endpoints = {{ .redis_cluster.endpoints }}
+            password = {{ .redis_cluster.password | quote }}
 
             {{- else if eq .type "filesystem" }}
             {{ printf "[caches.%s.filesystem]" .name }}
