@@ -20,36 +20,6 @@ import (
 
 // DeriveCacheKey ...
 func (c Client) DeriveCacheKey(r *proxy.Request, extra string) string {
-
-	k := r.TemplateURL.Path
 	params := r.TemplateURL.Query()
-
-	if p, ok := params[upDB]; ok {
-		k += p[0]
-	}
-
-	if p, ok := params[upQuery]; ok {
-		k += p[0]
-	}
-
-	// Epoch Precision Param
-	if p, ok := params[upEpoch]; ok {
-		k += "." + p[0]
-	}
-
-	// Username Param
-
-	if p, ok := params["u"]; ok {
-		k += "." + p[0]
-	}
-
-	// Password Param
-	if p, ok := params["p"]; ok {
-		k += "." + p[0]
-	}
-
-	if len(extra) > 0 {
-		k += extra
-	}
-	return md5.Checksum(k)
+	return md5.Checksum(r.TemplateURL.Path + params.Get(upDB) + params.Get(upQuery) + params.Get("u") + params.Get("p") + extra)
 }
