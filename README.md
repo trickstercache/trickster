@@ -9,7 +9,7 @@ Trickster is an HTTP reverse proxy/cache and query accelerator for time series d
 
 ## Compatibility
 
-Trickster works with virtually any Dashboard application that makes queries to on of these TSDB's:
+Trickster works with virtually any Dashboard application that makes queries to any of these TSDB's:
 
 <img src="./docs/images/external/prom_logo_60.png" width=16 /> Prometheus
 
