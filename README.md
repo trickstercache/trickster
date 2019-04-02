@@ -5,9 +5,15 @@
 
 Trickster is an HTTP reverse proxy/cache and query accelerator for time series databases. Trickster dramatically improves dashboard chart rendering times for end users, while eliminating redundant computations on the TSDBs it fronts. In short, Trickster makes read-heavy Dashboard/TSDB environments significantly more scalable.
 
-Trickster works with Prometheus versions that use the v1 HTTP API (Prometheus 1.x and 2.x) and InfluxDB. 
-
 <img src="./docs/images/high-level.png" width=512 />
+
+## Compatibility
+
+Trickster works with virtually any Dashboard application that makes queries to on of these TSDB's:
+
+<img src="./docs/images/external/prom_logo_60.png" width=16 /> Prometheus
+
+<img src="./docs/images/external/influx_logo_60.png" width=16 /> InfluxDB
 
 ## How it works
 
