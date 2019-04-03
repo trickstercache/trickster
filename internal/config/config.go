@@ -196,6 +196,7 @@ func NewConfig() *TricksterConfig {
 				RedisCluster:       RedisClusterCacheConfig{Endpoints: []string{"redis:6379"}},
 				Filesystem:         FilesystemCacheConfig{CachePath: defaultCachePath},
 				BBolt:              BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: "trickster"},
+				Badger:             BadgerCacheConfig{Directory: defaultCachePath, ValueDirectory: defaultCachePath},
 				Index: CacheIndexConfig{
 					ReapIntervalSecs:      3,
 					FlushIntervalSecs:     5,
