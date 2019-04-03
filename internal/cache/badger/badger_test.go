@@ -95,7 +95,6 @@ func TestBadgerCache_Close(t *testing.T) {
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
 	}
-	defer bc.Close()
 
 	// it should close
 	if err := bc.Close(); err != nil {
