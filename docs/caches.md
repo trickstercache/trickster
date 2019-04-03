@@ -30,10 +30,10 @@ The BoltDB Cache is a popular key/value store, created by [Ben Johnson](https://
 
 ## BadgerDB
 
-[BadgerDB](https://github.com/dgraph-io/badger) works similarly to bbolt, in that it is a single-file key/value datastore. BadgerDB provides its own native object lifecycle management (TTL) and other additional features that distinguish it from bbolt. Since Trickster does not handle object lifecycle management for BadgerDB, Prometheus metrics that Trickster has instrumented for Memory, Filesystem and bbolt caches are not available for BadgerDB at this time. See the configuration for help using BadgerDB with Trickster.
+[BadgerDB](https://github.com/dgraph-io/badger) works similarly to bbolt, in that it is a single-file key/value datastore. BadgerDB provides its own native object lifecycle management (TTL) and other additional features that distinguish it from bbolt. Since Trickster does not handle object lifecycle management for BadgerDB, Prometheus metrics that Trickster has instrumented for Memory, Filesystem and bbolt caches are not available for BadgerDB at this time. See the example configuration for help using BadgerDB with Trickster.
 
 
-## Redis Cache
+## Redis
 
 Redis is a good option for larger dashboard setups that also have heavy user traffic, where you might see degraded performance with a Filesystem Cache. This allows Trickster to scale better than a Filesystem Cache, but you will need to provide your own Redis instance at which to point your Trickster instance. The default Redis endpoint is `redis:6379`, and should work for most docker and kube deployments with containers or services named `redis`. The sample configuration demonstrates how to customize the Redis endpoint. In addition to supporting TCP endpoints, Trickster supports Unix sockets for Trickster and Redis running on the same VM or bare-metal host.
 
