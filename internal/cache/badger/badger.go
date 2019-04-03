@@ -37,7 +37,7 @@ func (c *Cache) Connect() error {
 	return nil
 }
 
-// Store places the the data into the Redis Cache using the provided Key and TTL
+// Store places the the data into the Badger Cache using the provided Key and TTL
 func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
 	log.Debug("badger cache store", log.Pairs{"key": cacheKey, "ttl": ttl})
 	return c.dbh.Update(func(txn *badger.Txn) error {
