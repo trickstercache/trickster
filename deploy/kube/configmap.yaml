@@ -106,6 +106,15 @@ data:
             # default is 'trickster'
             bucket = 'trickster'
 
+            # Configuration options when using a Badger cache
+            [caches.default.badger]
+            # directory defines the directory location under which the Badger data will be maintained
+            # default is '/tmp/trickster'
+            directory = '/tmp/trickster'
+            # directory defines the directory location under which the Badger value log will be maintained
+            # default is '/tmp/trickster'
+            value_directory = '/tmp/trickster'
+
 
         # Example of a second cache, sans comments, that origin configs below could use with: cache_name = 'bbolt_example'
         #

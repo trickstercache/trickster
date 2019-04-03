@@ -17,6 +17,7 @@ import (
 	"fmt"
 
 	"github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/cache/badger"
 	"github.com/Comcast/trickster/internal/cache/bbolt"
 	"github.com/Comcast/trickster/internal/cache/filesystem"
 	"github.com/Comcast/trickster/internal/cache/memory"
@@ -32,6 +33,7 @@ const (
 	ctRedis        = "redis"
 	ctRedisCluster = "redis_cluster"
 	ctBBolt        = "bbolt"
+	ctBadger       = "badger"
 )
 
 // Caches maintains a list of active caches
@@ -67,6 +69,8 @@ func NewCache(cacheName string, cfg *config.CachingConfig) cache.Cache {
 		c = &cluster.Cache{Name: cacheName, Config: cfg}
 	case ctBBolt:
 		c = &bbolt.Cache{Name: cacheName, Config: cfg}
+	case ctBadger:
+		c = &badger.Cache{Name: cacheName, Config: cfg}
 	default:
 		// Default to MemoryCache
 		c = &memory.Cache{Name: cacheName, Config: cfg}
