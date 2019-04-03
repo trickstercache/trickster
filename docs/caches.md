@@ -2,14 +2,15 @@
 
 There are 4 cache types supported by Trickster
 
-* In-Memory Cache (default)
-* Filesystem Cache
-* bbolt Cache
-* Redis Cache & Redis Cluster
+* In-Memory (default)
+* Filesystem 
+* bbolt
+* BadgerDB 
+* Redis & Redis Cluster
 
 The sample configuration ([cmd/trickster/conf/example.conf](../cmd/trickster/conf/example.conf)) demonstrates how to select and configure a particular cache type, as well as how to configure generic cache configurations such as Retention Policy.
 
-## In-Memory Cache
+## In-Memory
 
 In-Memory Cache is the default type that Trickster will implement if none of the other cache types are configured. The In-Memory cache utilizes a Golang [sync.Map](https://godoc.org/sync#Map) object for caching, which ensures atomic reads/writes against the cache with no possibility of data collisions. This option is good for both development environments and most smaller dashboard deployments.
 
@@ -17,15 +18,20 @@ When running Trickster in a Docker container, ensure your node hosting the conta
 
 We are working on better profiling of Trickster's In-Memory Cache footprint and will provide some general sizing guidance on when it is best to select one of the other Cache Types in a future release.
 
-## Filesystem Cache
+## Filesystem
 
 The Filesystem Cache is a popular option when you have larger dashboard setup (e.g., many different dashboards with many varying queries, Dashboard as a Service for several teams running their own Prometheus instances, etc.) that requires more storage space than you wish to accommodate in RAM. A Filesystem Cache configuration keeps the Trickster RAM footprint small, and is generally comparable in performance to In-Memory. Trickster performance can be degraded when using the Filesystem Cache if disk i/o becomes a bottleneck (e.g., many concurrent dashboard users).
 
 The default Filesystem Cache path is `/tmp/trickster`. The sample configuration demonstrates how to specify a custom cache path. Ensure that the user account running Trickster has read/write access to the custom directory or the application will exit on startup upon testing filesystem access. All users generally have access to /tmp so there is no concern about permissions in the default case.
 
-## bbolt Cache
+## bbolt
 
 The BoltDB Cache is a popular key/value store, created by [Ben Johnson](https://github.com/benbjohnson). [CoreOS's bbolt fork](https://github.com/etcd-io/bbolt) is the version implemented in Trickster. A bbolt store is a filesystem-based solution that stores the entire database in a single file. Trickster, by default, creates the database at `trickster.db` and uses a bucket name of 'trickster' for storing key/value data. See the example config file for details on customizing this aspect of your Trickster deployment. The same guidance about filesystem permissions described in the Filesystem Cache section above apply to a bbolt Cache.
+
+## BadgerDB
+
+[BadgerDB](https://github.com/dgraph-io/badger) works similarly to bbolt, in that it is a single-file key/value datastore. BadgerDB provides its own native object lifecycle management (TTL) and other additional features that distinguish it from bbolt. Since Trickster does not handle object lifecycle management for BadgerDB, Prometheus metrics that Trickster has instrumented for Memory, Filesystem and bbolt caches are not available for BadgerDB at this time. See the configuration for help using BadgerDB with Trickster.
+
 
 ## Redis Cache
 
