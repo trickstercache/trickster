@@ -81,7 +81,7 @@ data:
             # password = ''
 
             ### Configuration options when using Redis Cluster
-            [caches.default.redis_cluster]
+            # [caches.default.redis_cluster]
             # endpoints defines a list of seed fqdn+ports for the cluster
             # default is ['redis:6379']
             # endpoints = ['redis:6379']
@@ -152,7 +152,7 @@ data:
             {{- else if eq .type "bbolt" }}
             {{ printf "[caches.%s.bbolt]" .name }}
             filename = {{ .bbolt.file | quote }}
-            bucket = {{ .boltdb.bucket | quote }}
+            bucket = {{ .bbolt.bucket | quote }}
 
             {{- else if eq .type "badger" }}
             {{ printf "[caches.%s.badger]" .name }}
