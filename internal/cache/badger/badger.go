@@ -3,6 +3,7 @@ package badger
 import (
 	"time"
 
+	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/dgraph-io/badger"
@@ -39,6 +40,7 @@ func (c *Cache) Connect() error {
 
 // Store places the the data into the Badger Cache using the provided Key and TTL
 func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
+	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
 	log.Debug("badger cache store", log.Pairs{"key": cacheKey, "ttl": ttl})
 	return c.dbh.Update(func(txn *badger.Txn) error {
 		return txn.SetWithTTL([]byte(cacheKey), data, time.Duration(ttl)*time.Second)
@@ -60,8 +62,10 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 
 	if err != nil {
 		log.Debug("badger cache miss", log.Pairs{"key": cacheKey})
+		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
 	} else {
 		log.Debug("badger cache retrieve", log.Pairs{"key": cacheKey})
+		cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(data)))
 	}
 
 	return data, err
