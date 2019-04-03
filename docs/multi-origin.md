@@ -1,5 +1,7 @@
 # Using Multiple-Origins with a single Trickster instance
 
+Trickster supports proxying to multiple origins by examining the inbound request and using a multiplexer to direct the proxied request to the correct upstream origin, in the same way that web servers support virual hosting. Multi-origin does _not_ equate to High Availability support; Trickster does not offer any kind of redundancy features. Using Multiple Origins simply means that a single Trickster instance can accelerate any number of unrelated upstream origins instead of requiring a Trickster instance per-origin.
+
 There are 2 ways to configure multi-origin support.
 
 * HTTP Pathing
@@ -7,7 +9,7 @@ There are 2 ways to configure multi-origin support.
 
 ## Basic Usage
 
-To utilize Multiple Origins, you must craft a Trickster configuration file to be read when Trickster starts up. There is a good example in [cmd/trickster/conf/example.conf](../cmd/trickster/conf/example.conf). The config file should be placed in `/etc/trickster/trickster.conf` unless you specify a different path when starting Trickster with the `-config` command line argument.
+To utilize Multiple Origins, you must craft a Trickster configuration file to be read when Trickster starts up - multi-origin is not supported with environment variables or command line arguments. The [example.conf](../cmd/trickster/conf/example.conf) provides good documentation and commented sections demonstrating multi-origin. The config file should be placed in `/etc/trickster/trickster.conf` unless you specify a different path when starting Trickster with the `-config` command line argument.
 
 Each origin that your Trickster instance supports must be explicitly enumerated in the configuration file. Trickster does not support open proxying.
 
