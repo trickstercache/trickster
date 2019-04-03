@@ -1,6 +1,6 @@
 # Using Multiple-Origins with a single Trickster instance
 
-Trickster supports proxying to multiple origins by examining the inbound request and using a multiplexer to direct the proxied request to the correct upstream origin, in the same way that web servers support virual hosting. Multi-origin does _not_ equate to High Availability support; Trickster does not offer any kind of redundancy features. Using Multiple Origins simply means that a single Trickster instance can accelerate any number of unrelated upstream origins instead of requiring a Trickster instance per-origin.
+Trickster supports proxying to multiple origins by examining the inbound request and using a multiplexer to direct the proxied request to the correct upstream origin, in the same way that web servers support virtual hosting. Multi-origin does _not_ equate to High Availability support; Trickster does not offer any kind of redundancy features. Using Multiple Origins simply means that a single Trickster instance can accelerate any number of unrelated upstream origins instead of requiring a Trickster instance per-origin.
 
 There are 2 ways to configure multi-origin support.
 
@@ -21,7 +21,7 @@ In all cases, if Trickster cannot identify a valid origin by the client-provided
 
 In this mode, Trickster will use a single FQDN but still map to multiple upstream origins. This is the simplest setup and requires the least amount of work. The client will indicate which origin is desired in URL Path for the request.
 
-Example Path-bsead Multi-Origin Configuration:
+Example Path-based Multi-Origin Configuration:
 ```
 [origins]
 
