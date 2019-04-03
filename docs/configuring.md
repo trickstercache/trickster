@@ -26,7 +26,7 @@ Trickster will then check for and evaluate the following Environment Variables:
 * `TRK_ORIGIN_TYPE=prometheus` - The type of [supported origin server](./supported-origin-types.md)
 * `TRK_LOG_LEVEL=INFO` - Level of Logging that Trickster will output
 * `TRK_PROXY_PORT=8000` -Listener port for the HTTP Proxy Endpoint
-* `TRK_METRICS_PORT=8001` - Listener port for the HTTP Metrics Endpoint
+* `TRK_METRICS_PORT=8001` - Listener port for the Metrics and pprof debugging HTTP Endpoint
 
 ## Command Line Arguments
 
@@ -37,4 +37,4 @@ Finally, Trickster will check for and evaluate the following Command Line Argume
 * `-origin http://prometheus.example.com:9090` - The default origin for proxying all http requests
 * `-origin-type prometheus` - The type of [supported origin server](./supported-origin-types.md)
 * `-proxy-port 8000` - Listener port for the HTTP Proxy Endpoint
-* `-metrics-port 8001` - Listener port for the HTTP Metrics Endpoint
+* `-metrics-port 8001` - Listener port for the Metrics and pprof debugging HTTP Endpoint
