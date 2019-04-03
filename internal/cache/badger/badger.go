@@ -53,10 +53,7 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 		if err != nil {
 			return err
 		}
-		err = item.Value(func(val []byte) error {
-			data = val
-			return nil
-		})
+		data, err = item.Value()
 		return err
 
 	})
