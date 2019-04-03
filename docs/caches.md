@@ -1,6 +1,6 @@
 # Cache Types
 
-There are 4 cache types supported by Trickster
+There are several cache types supported by Trickster
 
 * In-Memory (default)
 * Filesystem 
