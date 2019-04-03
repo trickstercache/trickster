@@ -106,6 +106,15 @@ data:
             # default is 'trickster'
             # bucket = 'trickster'
 
+            # Configuration options when using a Badger cache
+            # [caches.default.badger]
+            # directory defines the directory location under which the Badger data will be maintained
+            # default is '/tmp/trickster'
+            # directory = '/tmp/trickster'
+            # directory defines the directory location under which the Badger value log will be maintained
+            # default is '/tmp/trickster'
+            # value_directory = '/tmp/trickster'
+
 
       {{- range .Values.caches }}
         {{ printf "[caches.%s]" .name }}
@@ -144,6 +153,11 @@ data:
             {{ printf "[caches.%s.bbolt]" .name }}
             filename = {{ .bbolt.file | quote }}
             bucket = {{ .boltdb.bucket | quote }}
+
+            {{- else if eq .type "badger" }}
+            {{ printf "[caches.%s.badger]" .name }}
+            directory = {{ .badger.directory | quote }}
+            value_directory = {{ .badger.value_directory | quote }}
             {{- end }}
       {{- end }}
 

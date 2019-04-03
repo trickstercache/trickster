@@ -31,6 +31,9 @@ caches:
     bbolt:
       file: trickster.db
       bucket: trickster
+    badger:
+      directory: /tmp/trickster
+      value_directory: /tmp/trickster
 
 origins:
   - name: default
