@@ -3,7 +3,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/Comcast/trickster)](https://goreportcard.com/report/github.com/Comcast/trickster)
 [![CLI Best Practices](https://bestpractices.coreinfrastructure.org/projects/2518/badge)](https://bestpractices.coreinfrastructure.org/en/projects/2518)
 
-Trickster is an HTTP reverse proxy/cache and query accelerator for time series databases. Trickster dramatically improves dashboard chart rendering times for end users, while eliminating redundant computations on the TSDBs it fronts. In short, Trickster makes read-heavy Dashboard/TSDB environments significantly more scalable.
+Trickster is an HTTP reverse proxy/cache and query accelerator for time series databases. Trickster dramatically improves dashboard chart rendering times for end users, while eliminating redundant computations on the TSDBs it fronts. In short, Trickster makes read-heavy Dashboard/TSDB environments, as well as those with highly-cardinalized datasets, significantly more performant and scalable.
 
 <img src="./docs/images/high-level.png" width=512 />
 
