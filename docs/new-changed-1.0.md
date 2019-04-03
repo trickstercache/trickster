@@ -16,7 +16,7 @@
 
 ## How to Try Trickster 1.0
 
-The Docker image is available at `tricksterio/trickster:1.0-beta`, or see the Releases for downloadable binaries.
+The Docker image is available at `tricksterio/trickster:1.0-beta`, or see the Releases for downloadable binaries. We will push to this label each time a new beta release is ready, so you will need to `docker pull` to update to the latest beta as they are released. Additionally, we push to a monotonically incrementing beta label (e.g., `tricksterio/trickster:1.0-beta1`) to distinguish between beta builds.
 
 We'd love your help testing Trickster 1.0, as well as contributing any improvements or bug fixes. Thank you!
 
