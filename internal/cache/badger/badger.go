@@ -41,7 +41,7 @@ func (c *Cache) Connect() error {
 func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
 	log.Debug("badger cache store", log.Pairs{"key": cacheKey, "ttl": ttl})
 	return c.dbh.Update(func(txn *badger.Txn) error {
-		return txn.SetWithTTL([]byte(cacheKey), data, time.Duration(ttl))
+		return txn.SetWithTTL([]byte(cacheKey), data, time.Duration(ttl)*time.Second)
 	})
 }
 
@@ -53,7 +53,7 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 		if err != nil {
 			return err
 		}
-		data, err = item.Value()
+		data, err = item.ValueCopy(nil)
 		return err
 
 	})
