@@ -101,6 +101,7 @@ type CachingConfig struct {
 	RedisCluster       RedisClusterCacheConfig `toml:"redis_cluster"`
 	Filesystem         FilesystemCacheConfig   `toml:"filesystem"`
 	BBolt              BBoltCacheConfig        `toml:"bbolt"`
+	Badger             BadgerCacheConfig       `toml:"badger"`
 }
 
 // CacheIndexConfig defines the operation of the Cache Indexer
@@ -129,6 +130,14 @@ type RedisClusterCacheConfig struct {
 	Endpoints []string `toml:"endpoints"`
 	// Password can be set when using password protected redis instance.
 	Password string `toml:"password"`
+}
+
+// BadgerCacheConfig is a collection of Configurations for storing cached data on the Filesystem in a Badger key-value store
+type BadgerCacheConfig struct {
+	// Directory represents the path on disk where the Badger database should store data
+	Directory string `toml:"directory"`
+	// ValueDirectory represents the path on disk where the Badger database will store its value log.
+	ValueDirectory string `toml:"value_directory"`
 }
 
 // BBoltCacheConfig is a collection of Configurations for storing cached data on the Filesystem

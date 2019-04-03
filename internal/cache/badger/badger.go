@@ -1,0 +1,98 @@
+package badger
+
+import (
+	"time"
+
+	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/dgraph-io/badger"
+)
+
+// Cache describes a Badger Cache
+type Cache struct {
+	Name   string
+	Config *config.CachingConfig
+	dbh    *badger.DB
+}
+
+// Configuration returns the Configuration for the Cache object
+func (c *Cache) Configuration() *config.CachingConfig {
+	return c.Config
+}
+
+// Connect opens the configured Badger key-value store
+func (c *Cache) Connect() error {
+	log.Info("badger cache setup", log.Pairs{"cacheDir": c.Config.Badger.Directory})
+
+	opts := badger.DefaultOptions
+	opts.Dir = c.Config.Badger.Directory
+	opts.ValueDir = c.Config.Badger.ValueDirectory
+
+	var err error
+	c.dbh, err = badger.Open(opts)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Store places the the data into the Redis Cache using the provided Key and TTL
+func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
+	log.Debug("badger cache store", log.Pairs{"key": cacheKey, "ttl": ttl})
+	return c.dbh.Update(func(txn *badger.Txn) error {
+		return txn.SetWithTTL([]byte(cacheKey), data, time.Duration(ttl))
+	})
+}
+
+// Retrieve gets data from the Badger Cache using the provided Key
+func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
+	var data []byte
+	err := c.dbh.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(cacheKey))
+		if err != nil {
+			return err
+		}
+		err = item.Value(func(val []byte) error {
+			data = val
+			return nil
+		})
+		return err
+
+	})
+
+	if err != nil {
+		log.Debug("badger cache miss", log.Pairs{"key": cacheKey})
+	} else {
+		log.Debug("badger cache retrieve", log.Pairs{"key": cacheKey})
+	}
+
+	return data, err
+}
+
+// Remove removes an object in cache, if present
+func (c *Cache) Remove(cacheKey string) {
+	log.Debug("badger cache remove", log.Pairs{"key": cacheKey})
+	c.dbh.Update(func(txn *badger.Txn) error {
+		return txn.Delete([]byte(cacheKey))
+	})
+}
+
+// BulkRemove removes a list of objects from the cache. noLock is not used for Badger
+func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
+	log.Debug("badger cache bulk remove", log.Pairs{})
+
+	c.dbh.Update(func(txn *badger.Txn) error {
+		for _, key := range cacheKeys {
+			if err := txn.Delete([]byte(key)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// Close closes the Badger Cache
+func (c *Cache) Close() error {
+	return c.dbh.Close()
+}
