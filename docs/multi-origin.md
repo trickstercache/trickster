@@ -13,7 +13,7 @@ To utilize Multiple Origins, you must craft a Trickster configuration file to be
 
 Each origin that your Trickster instance supports must be explicitly enumerated in the configuration file. Trickster does not support open proxying.
 
-Each origin is identified by an Origin Name, provided in the configuration section header for the origin ([origins.NAAME]). For path-based routing configurations, the Origin Name can be simple words. For DNS Aliasing, the Origin Name must match an FQDN that resolves to your Trickster instance.
+Each origin is identified by an Origin Name, provided in the configuration section header for the origin ([origins.NAME]). For path-based routing configurations, the Origin Name can be simple words. For DNS Aliasing, the Origin Name must match an FQDN that resolves to your Trickster instance.
 
 In all cases, if Trickster cannot identify a valid origin by the client-provided Origin Name, it will proxy the request to the default origin.
 
