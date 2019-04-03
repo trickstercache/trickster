@@ -30,8 +30,7 @@ The BoltDB Cache is a popular key/value store, created by [Ben Johnson](https://
 
 ## BadgerDB
 
-[BadgerDB](https://github.com/dgraph-io/badger) works similarly to bbolt, in that it is a single-file key/value datastore. BadgerDB provides its own native object lifecycle management (TTL) and other additional features that distinguish it from bbolt. Since Trickster does not handle object lifecycle management for BadgerDB, Prometheus metrics that Trickster has instrumented for Memory, Filesystem and bbolt caches are not available for BadgerDB at this time. See the example configuration for help using BadgerDB with Trickster.
-
+[BadgerDB](https://github.com/dgraph-io/badger) works similarly to bbolt, in that it is a single-file key/value datastore. BadgerDB provides its own native object lifecycle management (TTL) and other additional features that distinguish it from bbolt. See the configuration for help using BadgerDB with Trickster.
 
 ## Redis
 
