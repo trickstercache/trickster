@@ -13,4 +13,4 @@ Trickster fully supports the [Prometheus HTTP API (v1)](https://prometheus.io/do
 
 ### InfluxDB
 
-Trickster 1.0 Beta has experimentala support for InfluxDB. Once Trickster 1.0 leaves beta and has a GA release, InfluxDB will be fully supported. Specify `influxdb` as the Origin Type when configuring Trickster.
+Trickster 1.0 Beta has experimental support for InfluxDB. Once Trickster 1.0 leaves beta and has a GA release, InfluxDB will be fully supported. Specify `influxdb` as the Origin Type when configuring Trickster.
