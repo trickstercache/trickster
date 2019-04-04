@@ -31,16 +31,16 @@ The following metrics are available for polling:
 
 * `trickster_cache_operation_objects_total` (Counter) - The total number of objects upon which the Trickster cache has operated.
   * labels:
-    * `cache_name` - the name of the configured cache performing the opertaion 
-    * `cache_type` - the type of the configured cache performing the opertaion
+    * `cache_name` - the name of the configured cache performing the operation 
+    * `cache_type` - the type of the configured cache performing the operation
     * `operation` - the name of the operation being performed (read, write, etc.)
     * `status` - the result of the operation being performed
 
 
 * `trickster_cache_operation_bytes_total` (Counter) - The total number of bytes upon which the Trickster cache has operated.
   * labels:
-    * `cache_name` - the name of the configured cache performing the opertaion 
-    * `cache_type` - the type of the configured cache performing the opertaion
+    * `cache_name` - the name of the configured cache performing the operation 
+    * `cache_type` - the type of the configured cache performing the operation
     * `operation` - the name of the operation being performed (read, write, etc.)
     * `status` - the result of the operation being performed
 
@@ -59,7 +59,7 @@ The following metrics are available for Caches Types whose object lifecycle Tric
     * `cache_type` - the type of the configured cache 
 
 * `trickster_cache_usage_bytes` (Gauge) - The current count of bytes in the Trickster cache.
- * labels:
+  * labels:
     * `cache_name` - the name of the configured cache 
     * `cache_type` - the type of the configured cache 
 
