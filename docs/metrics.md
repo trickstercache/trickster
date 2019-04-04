@@ -2,7 +2,9 @@
 
 Trickster exposes a Prometheus /metrics endpoint with a customizable listener port number (default is 8082). For more information on customizing the metrics configuration, see [configuring.md](configuring.md).
 
-The following metrics are available for polling:
+---
+
+The following metrics are available for polling with any Trickster configuration:
 
 * `trickster_proxy_requests_total` (Counter) - The total number of requests Trickster has handled.
   * labels:
@@ -44,7 +46,9 @@ The following metrics are available for polling:
     * `operation` - the name of the operation being performed (read, write, etc.)
     * `status` - the result of the operation being performed
 
-The following metrics are available for Caches Types whose object lifecycle Trickster manages internally (Memory, Filesystem and bbolt):
+------
+
+The following metrics are available only for Caches Types whose object lifecycle Trickster manages internally (Memory, Filesystem and bbolt):
 
 * `trickster_cache_events_total` (Counter) - The total number of events that change the Trickster cache, such as retention policy evictions.
   * labels:
@@ -72,5 +76,7 @@ The following metrics are available for Caches Types whose object lifecycle Tric
   * labels:
     * `cache_name` - the name of the configured cache 
     * `cache_type` - the type of the configured cache
+
+---
 
 In addition to these custom metrics, Trickster also exposes the standard Prometheus metrics that are part of the [client_golang](https://github.com/prometheus/client_golang) metrics instrumentation package, including memory and cpu utilization, etc.
