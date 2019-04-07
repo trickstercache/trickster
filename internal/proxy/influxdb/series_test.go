@@ -23,6 +23,120 @@ import (
 	"github.com/influxdata/influxdb/models"
 )
 
+func TestIndexOfString(t *testing.T) {
+
+	arr := []string{"string0", "string1", "string2"}
+
+	i := indexOfString(arr, "string0")
+	if i != 0 {
+		t.Errorf(`wanted 0. got %d`, i)
+	}
+
+	i = indexOfString(arr, "string3")
+	if i != -1 {
+		t.Errorf(`wanted -1. got %d`, i)
+	}
+
+}
+
+func TestSetExtents(t *testing.T) {
+	se := &SeriesEnvelope{}
+	ex := timeseries.ExtentList{timeseries.Extent{Start: time.Time{}, End: time.Time{}}}
+	se.SetExtents(ex)
+	if len(se.ExtentList) != 1 {
+		t.Errorf(`wanted 1. got %d`, len(se.ExtentList))
+	}
+}
+
+func TestExtents(t *testing.T) {
+	se := &SeriesEnvelope{}
+	ex := timeseries.ExtentList{timeseries.Extent{Start: time.Time{}, End: time.Time{}}}
+	se.SetExtents(ex)
+	e := se.Extents()
+	if len(e) != 1 {
+		t.Errorf(`wanted 1. got %d`, len(se.ExtentList))
+	}
+}
+
+func TestExtremes(t *testing.T) {
+	se := &SeriesEnvelope{
+		Results: []Result{
+			Result{
+				Series: []models.Row{
+					models.Row{
+						Name:    "a",
+						Columns: []string{"time", "units"},
+						Tags:    map[string]string{"tagName1": "tagValue1"},
+						Values: [][]interface{}{
+							[]interface{}{float64(1000), 1.5},
+							[]interface{}{float64(5000), 1.5},
+							[]interface{}{float64(10000), 1.5},
+						},
+					},
+				},
+			},
+		},
+	}
+	e := se.Extents()
+	if len(e) != 1 {
+		t.Errorf(`wanted 1. got %d`, len(se.ExtentList))
+	}
+}
+
+func TestCopy(t *testing.T) {
+	se := &SeriesEnvelope{
+		Results: []Result{
+			Result{
+				Series: []models.Row{
+					models.Row{
+						Name:    "a",
+						Columns: []string{"time", "units"},
+						Tags:    map[string]string{"tagName1": "tagValue1"},
+						Values: [][]interface{}{
+							[]interface{}{float64(1000), 1.5},
+							[]interface{}{float64(5000), 1.5},
+							[]interface{}{float64(10000), 1.5},
+						},
+					},
+					models.Row{
+						Name:    "b",
+						Columns: []string{"time", "units"},
+						Tags:    map[string]string{"tagName2": "tagValue2"},
+						Values: [][]interface{}{
+							[]interface{}{float64(1000), 2.5},
+							[]interface{}{float64(5000), 2.1},
+							[]interface{}{float64(10000), 2.4},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	sec := se.Copy().(*SeriesEnvelope)
+
+	if len(sec.Results) != 1 {
+		t.Errorf(`wanted 1. got %d`, len(sec.Results))
+		return
+	}
+
+	if len(sec.Results[0].Series) != 2 {
+		t.Errorf(`wanted 2. got %d`, len(sec.Results[0].Series))
+		return
+	}
+
+	if len(sec.Results[0].Series[0].Values) != 3 {
+		t.Errorf(`wanted 3. got %d`, len(sec.Results[0].Series[0].Values))
+		return
+	}
+
+	if len(sec.Results[0].Series[1].Values) != 3 {
+		t.Errorf(`wanted 3. got %d`, len(sec.Results[0].Series[1].Values))
+		return
+	}
+
+}
+
 func TestSetStep(t *testing.T) {
 	se := SeriesEnvelope{}
 	const step = time.Duration(300) * time.Minute
@@ -38,6 +152,52 @@ func TestStep(t *testing.T) {
 	se.SetStep(step)
 	if se.Step() != step {
 		t.Errorf(`wanted "%s". got "%s"`, step, se.Step())
+	}
+}
+
+func TestSeriesCount(t *testing.T) {
+	se := &SeriesEnvelope{
+		Results: []Result{
+			Result{
+				Series: []models.Row{
+					models.Row{
+						Name:    "a",
+						Columns: []string{"time", "units"},
+						Tags:    map[string]string{"tagName1": "tagValue1"},
+						Values: [][]interface{}{
+							[]interface{}{float64(10000), 1.5},
+						},
+					},
+				},
+			},
+		},
+	}
+	if se.SeriesCount() != 1 {
+		t.Errorf("wanted 1 got %d.", se.SeriesCount())
+	}
+}
+
+func TestValueCount(t *testing.T) {
+	se := &SeriesEnvelope{
+		Results: []Result{
+			Result{
+				Series: []models.Row{
+					models.Row{
+						Name:    "a",
+						Columns: []string{"time", "units"},
+						Tags:    map[string]string{"tagName1": "tagValue1"},
+						Values: [][]interface{}{
+							[]interface{}{float64(1000), 1.5},
+							[]interface{}{float64(5000), 1.5},
+							[]interface{}{float64(10000), 1.5},
+						},
+					},
+				},
+			},
+		},
+	}
+	if se.ValueCount() != 3 {
+		t.Errorf("wanted 3 got %d.", se.ValueCount())
 	}
 }
 

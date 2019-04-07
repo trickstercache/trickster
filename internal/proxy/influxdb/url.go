@@ -66,8 +66,9 @@ func (c Client) SetExtent(r *proxy.Request, extent *timeseries.Extent) {
 	p := r.URL.Query()
 	t := r.TemplateURL.Query()
 
-	if v, ok := t[upQuery]; ok {
-		p.Set(upQuery, interpolateTimeQuery(v[0], extent))
+	q := t.Get(upQuery)
+	if q != "" {
+		p.Set(upQuery, interpolateTimeQuery(q, extent))
 	}
 
 	r.URL.RawQuery = p.Encode()

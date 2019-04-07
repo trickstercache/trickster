@@ -37,7 +37,7 @@ var reType, reTime1, reTime2, reStep, reTime1Parse, reTime2Parse *regexp.Regexp
 func init() {
 
 	// Regexp for extracting the step from an InfluxDB Timeseries Query. searches for something like: group by time(1d)
-	reStep = regexp.MustCompile(`(?i)\s+group\s+by\s+.*time\((?P<step>[0-9]+[mhsdwy])(.*);??`)
+	reStep = regexp.MustCompile(`(?i)\s+group\s+by\s+.*time\((?P<step>[0-9]+(ns|µ|u|ms|s|m|h|d|w|y))\).*;??`)
 
 	// Regexp for extracting the time elements from an InfluxDB Timeseries Query with equality operators: >=, >, =
 	// If it's a relative time range (e.g.,  where time >= now() - 24h  ), this expression is all that is required
