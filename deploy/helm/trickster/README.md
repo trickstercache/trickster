@@ -56,5 +56,6 @@ Parameter | Description | Default
 `service.externalIPs` | trickster service external IP addresses | `[]`
 `service.loadBalancerIP` | IP address to assign to load balancer (if supported) | `""`
 `service.loadBalancerSourceRanges` | list of IP CIDRs allowed access to load balancer (if supported) | `[]`
-`service.servicePort` | trickster service port | `80`
+`service.metricsPort` | trickster service port | `8080`
+`service.servicePort` | trickster service port | `9090`
 `service.type` | type of trickster service to create | `ClusterIP`
