@@ -50,7 +50,7 @@ func TestQueryHandler(t *testing.T) {
 
 	// it should return 200 OK
 	if resp.StatusCode != 200 {
-		t.Errorf("wanted 200 got %d.", resp.StatusCode)
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
@@ -59,6 +59,6 @@ func TestQueryHandler(t *testing.T) {
 	}
 
 	if string(bodyBytes) != "{}" {
-		t.Errorf("wanted '{}' got %s.", bodyBytes)
+		t.Errorf("expected '{}' got %s.", bodyBytes)
 	}
 }

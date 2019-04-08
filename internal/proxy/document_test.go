@@ -28,11 +28,11 @@ func TestDocumentFromHTTPResponse(t *testing.T) {
 	d := DocumentFromHTTPResponse(resp, []byte("1234"))
 
 	if string(d.Body) != string(expected) {
-		t.Errorf("wanted %s got %s", string(expected), string(d.Body))
+		t.Errorf("expected %s got %s", string(expected), string(d.Body))
 	}
 
 	if d.StatusCode != 200 {
-		t.Errorf("wanted %d got %d", 200, d.StatusCode)
+		t.Errorf("expected %d got %d", 200, d.StatusCode)
 	}
 
 }

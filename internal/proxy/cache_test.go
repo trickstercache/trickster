@@ -52,16 +52,16 @@ func TestQueryCache(t *testing.T) {
 	}
 
 	if string(d2.Body) != string(expected) {
-		t.Errorf("wanted %s got %s", string(expected), string(d2.Body))
+		t.Errorf("expected %s got %s", string(expected), string(d2.Body))
 	}
 
 	if d2.StatusCode != 200 {
-		t.Errorf("wanted %d got %d", 200, d2.StatusCode)
+		t.Errorf("expected %d got %d", 200, d2.StatusCode)
 	}
 
 	_, err = QueryCache(cache, "testKey2")
 	if err == nil {
-		t.Errorf("wanted error")
+		t.Errorf("expected error")
 	}
 
 }

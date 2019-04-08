@@ -29,7 +29,7 @@ func TestDeriveCacheKey(t *testing.T) {
 	key := client.DeriveCacheKey(r, "extra")
 
 	if key != "122a36be99b2a8997fd609888f62e861" {
-		t.Errorf("wanted %s got %s", "122a36be99b2a8997fd609888f62e861", key)
+		t.Errorf("expected %s got %s", "122a36be99b2a8997fd609888f62e861", key)
 	}
 
 }

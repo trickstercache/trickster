@@ -100,7 +100,7 @@ func TestSetStep(t *testing.T) {
 	const step = time.Duration(300) * time.Minute
 	me.SetStep(step)
 	if me.StepDuration != step {
-		t.Errorf(`wanted "%s". got "%s"`, step, me.StepDuration)
+		t.Errorf(`expected "%s". got "%s"`, step, me.StepDuration)
 	}
 }
 
@@ -109,7 +109,7 @@ func TestStep(t *testing.T) {
 	const step = time.Duration(300) * time.Minute
 	me.SetStep(step)
 	if me.Step() != step {
-		t.Errorf(`wanted "%s". got "%s"`, step, me.Step())
+		t.Errorf(`expected "%s". got "%s"`, step, me.Step())
 	}
 }
 
@@ -596,7 +596,7 @@ func TestSetExtents(t *testing.T) {
 	ex := timeseries.ExtentList{timeseries.Extent{Start: time.Time{}, End: time.Time{}}}
 	me.SetExtents(ex)
 	if len(me.ExtentList) != 1 {
-		t.Errorf(`wanted 1. got %d`, len(me.ExtentList))
+		t.Errorf(`expected 1. got %d`, len(me.ExtentList))
 	}
 }
 
@@ -606,7 +606,7 @@ func TestExtents(t *testing.T) {
 	me.SetExtents(ex)
 	e := me.Extents()
 	if len(e) != 1 {
-		t.Errorf(`wanted 1. got %d`, len(me.ExtentList))
+		t.Errorf(`expected 1. got %d`, len(me.ExtentList))
 	}
 }
 
@@ -628,7 +628,7 @@ func TestExtremes(t *testing.T) {
 	}
 	e := me.Extents()
 	if len(e) != 1 {
-		t.Errorf(`wanted 1. got %d`, len(me.ExtentList))
+		t.Errorf(`expected 1. got %d`, len(me.ExtentList))
 	}
 }
 
@@ -649,7 +649,7 @@ func TestSeriesCount(t *testing.T) {
 		},
 	}
 	if me.SeriesCount() != 1 {
-		t.Errorf("wanted 1 got %d.", me.SeriesCount())
+		t.Errorf("expected 1 got %d.", me.SeriesCount())
 	}
 }
 
@@ -670,6 +670,6 @@ func TestValueCount(t *testing.T) {
 		},
 	}
 	if me.ValueCount() != 3 {
-		t.Errorf("wanted 3 got %d.", me.ValueCount())
+		t.Errorf("expected 3 got %d.", me.ValueCount())
 	}
 }

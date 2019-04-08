@@ -57,7 +57,7 @@ func TestExtractHeader(t *testing.T) {
 		t.Errorf("missing header %s", hnXForwardedFor)
 	} else {
 		if h != testIP {
-			t.Errorf(`wanted "%s". got "%s"`, testIP, h)
+			t.Errorf(`expected "%s". got "%s"`, testIP, h)
 		}
 	}
 
@@ -65,7 +65,7 @@ func TestExtractHeader(t *testing.T) {
 		t.Errorf("missing header %s", hnXForwardedBy)
 	} else {
 		if h != appString {
-			t.Errorf(`wanted "%s". got "%s"`, appString, h)
+			t.Errorf(`expected "%s". got "%s"`, appString, h)
 		}
 	}
 

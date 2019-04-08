@@ -31,7 +31,7 @@ func TestPingHandler(t *testing.T) {
 
 	// it should return 200 OK and "pong"
 	if resp.StatusCode != 200 {
-		t.Errorf("wanted 200 got %d.", resp.StatusCode)
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
@@ -40,7 +40,7 @@ func TestPingHandler(t *testing.T) {
 	}
 
 	if string(bodyBytes) != "pong" {
-		t.Errorf("wanted 'pong' got %s.", bodyBytes)
+		t.Errorf("expected 'pong' got %s.", bodyBytes)
 	}
 
 }

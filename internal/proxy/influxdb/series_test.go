@@ -29,12 +29,12 @@ func TestIndexOfString(t *testing.T) {
 
 	i := indexOfString(arr, "string0")
 	if i != 0 {
-		t.Errorf(`wanted 0. got %d`, i)
+		t.Errorf(`expected 0. got %d`, i)
 	}
 
 	i = indexOfString(arr, "string3")
 	if i != -1 {
-		t.Errorf(`wanted -1. got %d`, i)
+		t.Errorf(`expected -1. got %d`, i)
 	}
 
 }
@@ -44,7 +44,7 @@ func TestSetExtents(t *testing.T) {
 	ex := timeseries.ExtentList{timeseries.Extent{Start: time.Time{}, End: time.Time{}}}
 	se.SetExtents(ex)
 	if len(se.ExtentList) != 1 {
-		t.Errorf(`wanted 1. got %d`, len(se.ExtentList))
+		t.Errorf(`expected 1. got %d`, len(se.ExtentList))
 	}
 }
 
@@ -54,7 +54,7 @@ func TestExtents(t *testing.T) {
 	se.SetExtents(ex)
 	e := se.Extents()
 	if len(e) != 1 {
-		t.Errorf(`wanted 1. got %d`, len(se.ExtentList))
+		t.Errorf(`expected 1. got %d`, len(se.ExtentList))
 	}
 }
 
@@ -79,7 +79,7 @@ func TestExtremes(t *testing.T) {
 	}
 	e := se.Extents()
 	if len(e) != 1 {
-		t.Errorf(`wanted 1. got %d`, len(se.ExtentList))
+		t.Errorf(`expected 1. got %d`, len(se.ExtentList))
 	}
 }
 
@@ -116,22 +116,22 @@ func TestCopy(t *testing.T) {
 	sec := se.Copy().(*SeriesEnvelope)
 
 	if len(sec.Results) != 1 {
-		t.Errorf(`wanted 1. got %d`, len(sec.Results))
+		t.Errorf(`expected 1. got %d`, len(sec.Results))
 		return
 	}
 
 	if len(sec.Results[0].Series) != 2 {
-		t.Errorf(`wanted 2. got %d`, len(sec.Results[0].Series))
+		t.Errorf(`expected 2. got %d`, len(sec.Results[0].Series))
 		return
 	}
 
 	if len(sec.Results[0].Series[0].Values) != 3 {
-		t.Errorf(`wanted 3. got %d`, len(sec.Results[0].Series[0].Values))
+		t.Errorf(`expected 3. got %d`, len(sec.Results[0].Series[0].Values))
 		return
 	}
 
 	if len(sec.Results[0].Series[1].Values) != 3 {
-		t.Errorf(`wanted 3. got %d`, len(sec.Results[0].Series[1].Values))
+		t.Errorf(`expected 3. got %d`, len(sec.Results[0].Series[1].Values))
 		return
 	}
 
@@ -142,7 +142,7 @@ func TestSetStep(t *testing.T) {
 	const step = time.Duration(300) * time.Minute
 	se.SetStep(step)
 	if se.StepDuration != step {
-		t.Errorf(`wanted "%s". got "%s"`, step, se.StepDuration)
+		t.Errorf(`expected "%s". got "%s"`, step, se.StepDuration)
 	}
 }
 
@@ -151,7 +151,7 @@ func TestStep(t *testing.T) {
 	const step = time.Duration(300) * time.Minute
 	se.SetStep(step)
 	if se.Step() != step {
-		t.Errorf(`wanted "%s". got "%s"`, step, se.Step())
+		t.Errorf(`expected "%s". got "%s"`, step, se.Step())
 	}
 }
 
@@ -173,7 +173,7 @@ func TestSeriesCount(t *testing.T) {
 		},
 	}
 	if se.SeriesCount() != 1 {
-		t.Errorf("wanted 1 got %d.", se.SeriesCount())
+		t.Errorf("expected 1 got %d.", se.SeriesCount())
 	}
 }
 
@@ -197,7 +197,7 @@ func TestValueCount(t *testing.T) {
 		},
 	}
 	if se.ValueCount() != 3 {
-		t.Errorf("wanted 3 got %d.", se.ValueCount())
+		t.Errorf("expected 3 got %d.", se.ValueCount())
 	}
 }
 
