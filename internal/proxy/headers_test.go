@@ -15,7 +15,6 @@ package proxy
 
 import (
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/Comcast/trickster/internal/config"
@@ -39,7 +38,7 @@ func TestAddProxyHeaders(t *testing.T) {
 
 }
 
-func TestExractHeader(t *testing.T) {
+func TestExtractHeader(t *testing.T) {
 
 	headers := http.Header{}
 
@@ -54,21 +53,37 @@ func TestExractHeader(t *testing.T) {
 
 	addProxyHeaders(testIP, headers)
 
-	if h, ok := headers[hnXForwardedFor]; !ok {
+	if h, ok := extractHeader(headers, hnXForwardedFor); !ok {
 		t.Errorf("missing header %s", hnXForwardedFor)
 	} else {
-		v := strings.Join(h, "")
-		if v != testIP {
-			t.Errorf(`wanted "%s". got "%s"`, testIP, v)
+		if h != testIP {
+			t.Errorf(`wanted "%s". got "%s"`, testIP, h)
 		}
 	}
 
-	if h, ok := headers[hnXForwardedBy]; !ok {
+	if h, ok := extractHeader(headers, hnXForwardedBy); !ok {
 		t.Errorf("missing header %s", hnXForwardedBy)
 	} else {
-		v := strings.Join(h, "")
-		if v != appString {
-			t.Errorf(`wanted "%s". got "%s"`, appString, v)
+		if h != appString {
+			t.Errorf(`wanted "%s". got "%s"`, appString, h)
 		}
 	}
+
+	if _, ok := extractHeader(headers, hnAllowOrigin); ok {
+		t.Errorf("unexpected header %s", hnAllowOrigin)
+	}
+
+}
+
+func TestRemoveClientHeader(t *testing.T) {
+
+	headers := http.Header{}
+	headers.Set(hnAcceptEncoding, "test")
+
+	removeClientHeaders(headers)
+
+	if _, ok := extractHeader(headers, hnAcceptEncoding); ok {
+		t.Errorf("unexpected header %s", hnAcceptEncoding)
+	}
+
 }

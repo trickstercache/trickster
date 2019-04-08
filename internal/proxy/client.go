@@ -28,9 +28,6 @@ const (
 	OtInfluxDb   = "influxdb"
 )
 
-// Clients ...
-var Clients = make(map[string]Client)
-
 // Client ...
 type Client interface {
 

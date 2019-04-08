@@ -11,17 +11,36 @@
 * limitations under the License.
  */
 
-package prometheus
+package proxy
 
 import (
-	"net/http"
-
-	"github.com/Comcast/trickster/internal/proxy"
+	"io/ioutil"
+	"net/http/httptest"
+	"testing"
 )
 
-// HealthHandler checks the health of the Configured Upstream Origin
-func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BaseURL()
-	u.Path += APIPath + mnLabels
-	proxy.ProxyRequest(proxy.NewRequest(c.Name, otPrometheus, "HealthHandler", http.MethodGet, u, r.Header, c.Config.Timeout, r), w)
+func TestPingHandler(t *testing.T) {
+
+	RegisterPingHandler()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/health", nil)
+
+	pingHandler(w, r)
+	resp := w.Result()
+
+	// it should return 200 OK and "pong"
+	if resp.StatusCode != 200 {
+		t.Errorf("wanted 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != "pong" {
+		t.Errorf("wanted 'pong' got %s.", bodyBytes)
+	}
+
 }

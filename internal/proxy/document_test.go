@@ -12,3 +12,27 @@
  */
 
 package proxy
+
+import (
+	"net/http"
+	"testing"
+)
+
+func TestDocumentFromHTTPResponse(t *testing.T) {
+
+	expected := []byte("1234")
+
+	resp := &http.Response{}
+	resp.Header = make(http.Header)
+	resp.StatusCode = 200
+	d := DocumentFromHTTPResponse(resp, []byte("1234"))
+
+	if string(d.Body) != string(expected) {
+		t.Errorf("wanted %s got %s", string(expected), string(d.Body))
+	}
+
+	if d.StatusCode != 200 {
+		t.Errorf("wanted %d got %d", 200, d.StatusCode)
+	}
+
+}

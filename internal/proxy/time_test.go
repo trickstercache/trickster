@@ -11,17 +11,27 @@
 * limitations under the License.
  */
 
-package prometheus
+package proxy
 
 import (
-	"net/http"
-
-	"github.com/Comcast/trickster/internal/proxy"
+	"testing"
+	"time"
 )
 
-// HealthHandler checks the health of the Configured Upstream Origin
-func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BaseURL()
-	u.Path += APIPath + mnLabels
-	proxy.ProxyRequest(proxy.NewRequest(c.Name, otPrometheus, "HealthHandler", http.MethodGet, u, r.Header, c.Config.Timeout, r), w)
+func TestParseDuration(t *testing.T) {
+	expected := time.Duration(1) * time.Hour
+	d, err := ParseDuration("1h")
+	if err != nil {
+		t.Error(err)
+	}
+	if d != expected {
+		t.Errorf("expected %d got %d", expected, d)
+	}
+}
+
+func TestParseDurationFailed(t *testing.T) {
+	_, err := ParseDuration("1x")
+	if err == nil {
+		t.Errorf("expected 'unable to parse duration 1x' error")
+	}
 }
