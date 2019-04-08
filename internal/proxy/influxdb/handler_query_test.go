@@ -24,7 +24,7 @@ import (
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy"
-	rr "github.com/Comcast/trickster/internal/routing/registration"
+
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 
@@ -67,7 +67,6 @@ func TestQueryHandlerWithSelect(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	rr.RegisterProxyRoutes()
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/query?q=select%20test", nil)
