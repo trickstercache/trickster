@@ -35,14 +35,13 @@ func (c *Client) ParseTimeRangeQuery(r *proxy.Request) (*timeseries.TimeRangeQue
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	qp := r.URL.Query()
 
-	if p, ok := qp[upQuery]; ok {
-		trq.Statement = p[0]
-	} else {
+	trq.Statement = qp.Get(upQuery)
+	if trq.Statement == "" {
 		return nil, proxy.ErrorMissingURLParam(upQuery)
 	}
 
-	if p, ok := qp[upStart]; ok {
-		t, err := parseTime(p[0])
+	if p := qp.Get(upStart); p != "" {
+		t, err := parseTime(p)
 		if err != nil {
 			return nil, err
 		}
@@ -51,8 +50,8 @@ func (c *Client) ParseTimeRangeQuery(r *proxy.Request) (*timeseries.TimeRangeQue
 		return nil, proxy.ErrorMissingURLParam(upStart)
 	}
 
-	if p, ok := qp[upEnd]; ok {
-		t, err := parseTime(p[0])
+	if p := qp.Get(upEnd); p != "" {
+		t, err := parseTime(p)
 		if err != nil {
 			return nil, err
 		}
@@ -61,8 +60,8 @@ func (c *Client) ParseTimeRangeQuery(r *proxy.Request) (*timeseries.TimeRangeQue
 		return nil, proxy.ErrorMissingURLParam(upEnd)
 	}
 
-	if p, ok := qp[upStep]; ok {
-		step, err := strconv.ParseInt(p[0], 10, 32)
+	if p := qp.Get(upStep); p != "" {
+		step, err := strconv.ParseInt(p, 10, 32)
 		if err != nil {
 			return nil, err
 		}

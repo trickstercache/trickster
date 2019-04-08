@@ -11,7 +11,7 @@
 * limitations under the License.
  */
 
-package influxdb
+package prometheus
 
 import (
 	"io/ioutil"
@@ -19,24 +19,29 @@ import (
 	"testing"
 
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
-func TestProxyHandler(t *testing.T) {
+func init() {
+	metrics.Init()
+}
 
-	es := tu.NewTestServer(200, "test")
+func TestHealthHandler(t *testing.T) {
+
+	es := tu.NewTestServer(200, "{}")
 	defer es.Close()
 
-	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "influxdb"})
+	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "prometheus"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL, nil)
+	r := httptest.NewRequest("GET", "http://0/health", nil)
 
 	client := &Client{Name: "default", Config: config.Origins["default"]}
-	client.ProxyHandler(w, r)
+	client.HealthHandler(w, r)
 	resp := w.Result()
 
 	// it should return 200 OK
@@ -49,8 +54,8 @@ func TestProxyHandler(t *testing.T) {
 		t.Error(err)
 	}
 
-	if string(bodyBytes) != "test" {
-		t.Errorf("wanted 'test' got %s.", bodyBytes)
+	if string(bodyBytes) != "{}" {
+		t.Errorf("wanted '{}' got %s.", bodyBytes)
 	}
 
 }

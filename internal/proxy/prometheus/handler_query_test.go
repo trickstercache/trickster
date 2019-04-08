@@ -11,32 +11,41 @@
 * limitations under the License.
  */
 
-package influxdb
+package prometheus
 
 import (
 	"io/ioutil"
 	"net/http/httptest"
 	"testing"
 
+	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
-func TestProxyHandler(t *testing.T) {
+func TestQueryHandler(t *testing.T) {
 
-	es := tu.NewTestServer(200, "test")
+	es := tu.NewTestServer(200, "{}")
 	defer es.Close()
 
-	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "influxdb"})
+	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL, nil)
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+	}
 
-	client := &Client{Name: "default", Config: config.Origins["default"]}
-	client.ProxyHandler(w, r)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/query_range?q=up&time=0", nil)
+
+	client := &Client{Name: "default", Config: config.Origins["default"], Cache: cache}
+
+	client.QueryHandler(w, r)
+
 	resp := w.Result()
 
 	// it should return 200 OK
@@ -49,8 +58,7 @@ func TestProxyHandler(t *testing.T) {
 		t.Error(err)
 	}
 
-	if string(bodyBytes) != "test" {
-		t.Errorf("wanted 'test' got %s.", bodyBytes)
+	if string(bodyBytes) != "{}" {
+		t.Errorf("wanted '{}' got %s.", bodyBytes)
 	}
-
 }

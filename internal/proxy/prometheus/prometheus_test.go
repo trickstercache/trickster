@@ -13,7 +13,12 @@
 
 package prometheus
 
-import "testing"
+import (
+	"testing"
+
+	cr "github.com/Comcast/trickster/internal/cache/registration"
+	"github.com/Comcast/trickster/internal/config"
+)
 
 func TestParseTime(t *testing.T) {
 	fixtures := []struct {
@@ -36,4 +41,51 @@ func TestParseTime(t *testing.T) {
 			t.Errorf("Expected %s, got %s for input %s", f.output, outStr, f.input)
 		}
 	}
+}
+
+func TestParseTimeFails(t *testing.T) {
+	_, err := parseTime("a")
+	if err == nil {
+		t.Errorf(`expected error 'cannot parse "a" to a valid timestamp'`)
+	}
+}
+
+func TestConfiguration(t *testing.T) {
+	oc := config.OriginConfig{Type: "TEST"}
+	client := Client{Config: oc}
+	c := client.Configuration()
+	if c.Type != "TEST" {
+		t.Errorf("expected %s got %s", "TEST", c.Type)
+	}
+}
+
+func TestCacheInstance(t *testing.T) {
+
+	err := config.Load("trickster", "test", nil)
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+	}
+	client := Client{Cache: cache}
+	c := client.CacheInstance()
+
+	if c.Configuration().Type != "memory" {
+		t.Errorf("expected %s got %s", "memory", c.Configuration().Type)
+	}
+}
+
+func TestOriginName(t *testing.T) {
+
+	client := Client{Name: "TEST"}
+	c := client.OriginName()
+
+	if c != "TEST" {
+		t.Errorf("expected %s got %s", "TEST", c)
+	}
+
 }

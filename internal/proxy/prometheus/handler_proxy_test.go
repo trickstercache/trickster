@@ -11,7 +11,7 @@
 * limitations under the License.
  */
 
-package influxdb
+package prometheus
 
 import (
 	"io/ioutil"
@@ -27,7 +27,7 @@ func TestProxyHandler(t *testing.T) {
 	es := tu.NewTestServer(200, "test")
 	defer es.Close()
 
-	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "influxdb"})
+	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "prometheus"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -50,7 +50,7 @@ func TestProxyHandler(t *testing.T) {
 	}
 
 	if string(bodyBytes) != "test" {
-		t.Errorf("wanted 'test' got %s.", bodyBytes)
+		t.Errorf("wanted '{}' got %s.", bodyBytes)
 	}
 
 }

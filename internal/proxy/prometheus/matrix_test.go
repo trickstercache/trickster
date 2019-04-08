@@ -590,3 +590,86 @@ func TestSort(t *testing.T) {
 		})
 	}
 }
+
+func TestSetExtents(t *testing.T) {
+	me := &MatrixEnvelope{}
+	ex := timeseries.ExtentList{timeseries.Extent{Start: time.Time{}, End: time.Time{}}}
+	me.SetExtents(ex)
+	if len(me.ExtentList) != 1 {
+		t.Errorf(`wanted 1. got %d`, len(me.ExtentList))
+	}
+}
+
+func TestExtents(t *testing.T) {
+	me := &MatrixEnvelope{}
+	ex := timeseries.ExtentList{timeseries.Extent{Start: time.Time{}, End: time.Time{}}}
+	me.SetExtents(ex)
+	e := me.Extents()
+	if len(e) != 1 {
+		t.Errorf(`wanted 1. got %d`, len(me.ExtentList))
+	}
+}
+
+func TestExtremes(t *testing.T) {
+	me := &MatrixEnvelope{
+		Data: MatrixData{
+			ResultType: "matrix",
+			Result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{"__name__": "d"},
+					Values: []model.SamplePair{
+						model.SamplePair{Timestamp: 99000, Value: 1.5},
+						model.SamplePair{Timestamp: 199000, Value: 1.5},
+						model.SamplePair{Timestamp: 299000, Value: 1.5},
+					},
+				},
+			},
+		},
+	}
+	e := me.Extents()
+	if len(e) != 1 {
+		t.Errorf(`wanted 1. got %d`, len(me.ExtentList))
+	}
+}
+
+func TestSeriesCount(t *testing.T) {
+	me := &MatrixEnvelope{
+		Data: MatrixData{
+			ResultType: "matrix",
+			Result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{"__name__": "d"},
+					Values: []model.SamplePair{
+						model.SamplePair{Timestamp: 99000, Value: 1.5},
+						model.SamplePair{Timestamp: 199000, Value: 1.5},
+						model.SamplePair{Timestamp: 299000, Value: 1.5},
+					},
+				},
+			},
+		},
+	}
+	if me.SeriesCount() != 1 {
+		t.Errorf("wanted 1 got %d.", me.SeriesCount())
+	}
+}
+
+func TestValueCount(t *testing.T) {
+	me := &MatrixEnvelope{
+		Data: MatrixData{
+			ResultType: "matrix",
+			Result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{"__name__": "d"},
+					Values: []model.SamplePair{
+						model.SamplePair{Timestamp: 99000, Value: 1.5},
+						model.SamplePair{Timestamp: 199000, Value: 1.5},
+						model.SamplePair{Timestamp: 299000, Value: 1.5},
+					},
+				},
+			},
+		},
+	}
+	if me.ValueCount() != 3 {
+		t.Errorf("wanted 3 got %d.", me.ValueCount())
+	}
+}
