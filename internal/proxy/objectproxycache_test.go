@@ -17,15 +17,11 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache"
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/internal/util/md5"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
@@ -96,57 +92,3 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 	}
 
 }
-
-// TestClient Implements Proxy Client Interface
-type TestClient struct {
-	Name   string
-	User   string
-	Pass   string
-	Config config.OriginConfig
-	Cache  cache.Cache
-}
-
-func (c TestClient) BaseURL() *url.URL {
-	u := &url.URL{}
-	return u
-}
-func (c TestClient) BuildUpstreamURL(r *http.Request) *url.URL {
-	u := c.BaseURL()
-	return u
-}
-func (c TestClient) Configuration() config.OriginConfig {
-	return c.Config
-}
-func (c TestClient) OriginName() string {
-	return c.Name
-}
-func (c TestClient) CacheInstance() cache.Cache {
-	return c.Cache
-}
-func (c TestClient) DeriveCacheKey(r *Request, extra string) string {
-	return md5.Checksum("test" + extra)
-}
-func (c TestClient) FastForwardURL(r *Request) (*url.URL, error) {
-	u := c.BaseURL()
-	return u, nil
-}
-func (c TestClient) HealthHandler(w http.ResponseWriter, r *http.Request) {}
-func (c TestClient) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, error) {
-	return nil, nil
-}
-func (c TestClient) UnmarshalTimeseries(data []byte) (timeseries.Timeseries, error) {
-	return nil, nil
-}
-func (c TestClient) UnmarshalInstantaneous(data []byte) (timeseries.Timeseries, error) {
-	return nil, nil
-}
-func (c TestClient) ParseTimeRangeQuery(r *Request) (*timeseries.TimeRangeQuery, error) {
-	trq := &timeseries.TimeRangeQuery{
-		Statement: "up",
-		Step:      60,
-		Extent:    timeseries.Extent{Start: time.Unix(60000000, 0), End: time.Unix(120000000, 0)},
-	}
-	return trq, nil
-}
-func (c TestClient) RegisterRoutes(originName string, o config.OriginConfig) {}
-func (c TestClient) SetExtent(r *Request, extent *timeseries.Extent)         {}

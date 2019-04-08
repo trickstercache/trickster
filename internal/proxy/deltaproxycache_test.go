@@ -13,70 +13,149 @@
 
 package proxy
 
-// func TestDeltaProxyCacheRequest(t *testing.T) {
+import (
+	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
 
-// 	es := tu.NewTestServer(200, "test")
-// 	defer es.Close()
+	cr "github.com/Comcast/trickster/internal/cache/registration"
+	"github.com/Comcast/trickster/internal/config"
+	tu "github.com/Comcast/trickster/internal/util/testing"
+)
 
-// 	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
-// 	if err != nil {
-// 		t.Errorf("Could not load configuration: %s", err.Error())
-// 	}
+func TestDeltaProxyCacheRequest(t *testing.T) {
 
-// 	cr.LoadCachesFromConfig()
-// 	cache, err := cr.GetCache("default")
-// 	if err != nil {
-// 		t.Error(err)
-// 		return
-// 	}
+	es := tu.NewTestServer(200, sampleOutput1)
+	defer es.Close()
 
-// 	client := TestClient{}
+	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
 
-// 	w := httptest.NewRecorder()
-// 	r := httptest.NewRequest("GET", es.URL, nil)
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+		return
+	}
 
-// 	// get URL
+	client := TestClient{}
 
-// 	req := NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", es.URL, nil)
 
-// 	DeltaProxyCacheRequest(req, w, client, cache, 60, false)
+	// get URL
 
-// 	resp := w.Result()
+	req := NewRequest("default", "test", "TestDeltaProxyCacheRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
 
-// 	// it should return 200 OK
-// 	if resp.StatusCode != 200 {
-// 		t.Errorf("expected 200 got %d.", resp.StatusCode)
-// 	}
+	DeltaProxyCacheRequest(req, w, client, cache, 60, false)
 
-// 	bodyBytes, err := ioutil.ReadAll(resp.Body)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
+	resp := w.Result()
 
-// 	if string(bodyBytes) != "test" {
-// 		t.Errorf("expected 'test' got '%s'.", bodyBytes)
-// 	}
+	// it should return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
 
-// 	// get cache hit coverage too by repeating:
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
 
-// 	w = httptest.NewRecorder()
-// 	r = httptest.NewRequest("GET", es.URL, nil)
-// 	req = NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
-// 	ObjectProxyCacheRequest(req, w, client, cache, 60, false, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
-// 	resp = w.Result()
+	if string(bodyBytes) != sampleOutput1 {
+		t.Errorf("expected '%s' got '%s'.", sampleOutput1, bodyBytes)
+	}
 
-// 	// it should return 200 OK
-// 	if resp.StatusCode != 200 {
-// 		t.Errorf("expected 200 got %d.", resp.StatusCode)
-// 	}
+	// get cache hit coverage too by repeating:
 
-// 	bodyBytes, err = ioutil.ReadAll(resp.Body)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest("GET", es.URL, nil)
+	req = NewRequest("default", "test", "TestDeltaProxyCacheRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
+	ObjectProxyCacheRequest(req, w, client, cache, 60, false, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
+	resp = w.Result()
 
-// 	if string(bodyBytes) != "test" {
-// 		t.Errorf("expected 'test' got '%s'.", bodyBytes)
-// 	}
+	// it should return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
 
-// }
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != sampleOutput1 {
+		t.Errorf("expected '%s' got '%s'.", sampleOutput1, bodyBytes)
+	}
+
+}
+
+func TestDeltaProxyCacheRequestBadGateway(t *testing.T) {
+
+	es := tu.NewTestServer(502, "")
+	defer es.Close()
+
+	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	client := TestClient{}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", es.URL, nil)
+
+	// get URL
+
+	req := NewRequest("default", "test", "TestDeltaProxyCacheRequestBadGateway", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
+
+	DeltaProxyCacheRequest(req, w, client, cache, 60, false)
+
+	resp := w.Result()
+
+	// it should return 502 Bad Gateway
+	if resp.StatusCode != 502 {
+		t.Errorf("expected 502 got %d.", resp.StatusCode)
+	}
+
+}
+
+func TestDeltaProxyCacheRequestParseError(t *testing.T) {
+
+	es := tu.NewTestServer(502, "")
+	defer es.Close()
+
+	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	client := TestClient{}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", es.URL, nil)
+
+	// get URL
+
+	req := NewRequest("default", "test", "TestProxyRequestParseError", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
+
+	DeltaProxyCacheRequest(req, w, client, cache, 60, false)
+
+}

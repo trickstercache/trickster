@@ -68,6 +68,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		cacheStatus = crPurge
 		cts, doc, elapsed, err = fetchTimeseries(r, client)
 		if err != nil {
+			Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 			return // fetchTimeseries logs the error
 		}
 	} else {
@@ -75,6 +76,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		if err != nil {
 			cts, doc, elapsed, err = fetchTimeseries(r, client)
 			if err != nil {
+				Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 				return // fetchTimeseries logs the error
 			}
 		} else {
@@ -84,6 +86,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 				log.Error("cache object unmarshaling failed", log.Pairs{"key": key, "originName": client.OriginName})
 				cts, doc, elapsed, err = fetchTimeseries(r, client)
 				if err != nil {
+					Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 					return // fetchTimeseries logs the error
 				}
 			} else {
@@ -245,22 +248,24 @@ func fetchTimeseries(r *Request, client Client) (timeseries.Timeseries, *HTTPDoc
 
 	body, resp, elapsed := Fetch(r)
 
-	if resp.StatusCode != 200 {
-		log.Error("unexpected upstream response", log.Pairs{"statusCode": resp.StatusCode})
-		return nil, nil, time.Duration(0), fmt.Errorf("Unexpected Upstream Response")
-	}
-
-	ts, err := client.UnmarshalTimeseries(body)
-	if err != nil {
-		log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
-		return nil, nil, time.Duration(0), err
-	}
 	d := &HTTPDocument{
 		Status:     resp.Status,
 		StatusCode: resp.StatusCode,
 		Headers:    resp.Header,
 		Body:       body,
 	}
+
+	if resp.StatusCode != 200 {
+		log.Error("unexpected upstream response", log.Pairs{"statusCode": resp.StatusCode})
+		return nil, d, time.Duration(0), fmt.Errorf("Unexpected Upstream Response")
+	}
+
+	ts, err := client.UnmarshalTimeseries(body)
+	if err != nil {
+		log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
+		return nil, d, time.Duration(0), err
+	}
+
 	if resp.StatusCode >= 400 {
 		elapsed = 0
 	}
