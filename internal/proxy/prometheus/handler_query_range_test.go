@@ -14,7 +14,6 @@
 package prometheus
 
 import (
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -46,7 +45,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	client := &Client{}
 	res, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL})
 	if err != nil {
-		fmt.Println("***", err.Error())
+		t.Error(err)
 	} else {
 		assert.Equal(t, int(res.Step), 15)
 		assert.Equal(t, int(res.Extent.End.Sub(res.Extent.Start).Hours()), 6)
