@@ -21,10 +21,8 @@ import (
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy/prometheus"
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/md5"
-	"github.com/prometheus/common/model"
 )
 
 // TestClient Implements Proxy Client Interface
@@ -34,6 +32,9 @@ type TestClient struct {
 	Pass   string
 	Config config.OriginConfig
 	Cache  cache.Cache
+}
+
+type TestTimeseries struct {
 }
 
 func (c TestClient) BaseURL() *url.URL {
@@ -73,29 +74,7 @@ func (c TestClient) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, error) 
 // Returns a fake object without actually unmarshaling anything
 // this allows us to test the delta proxy cache
 func (c TestClient) UnmarshalTimeseries(data []byte) (timeseries.Timeseries, error) {
-	me := &prometheus.MatrixEnvelope{
-		Data: prometheus.MatrixData{
-			ResultType: "matrix",
-			Result: model.Matrix{
-				&model.SampleStream{
-					Metric: model.Metric{"__name__": "a"},
-					Values: []model.SamplePair{
-						model.SamplePair{Timestamp: 99000, Value: 1.5},
-						model.SamplePair{Timestamp: 199000, Value: 1.5},
-						model.SamplePair{Timestamp: 299000, Value: 1.5},
-					},
-				},
-				&model.SampleStream{
-					Metric: model.Metric{"__name__": "b"},
-					Values: []model.SamplePair{
-						model.SamplePair{Timestamp: 99000, Value: 1.5},
-						model.SamplePair{Timestamp: 199000, Value: 1.5},
-						model.SamplePair{Timestamp: 299000, Value: 1.5},
-					},
-				},
-			},
-		},
-	}
+	me := &TestTimeseries{}
 	return me, nil
 }
 func (c TestClient) UnmarshalInstantaneous(data []byte) (timeseries.Timeseries, error) {
@@ -115,3 +94,27 @@ func (c TestClient) ParseTimeRangeQuery(r *Request) (*timeseries.TimeRangeQuery,
 }
 func (c TestClient) RegisterRoutes(originName string, o config.OriginConfig) {}
 func (c TestClient) SetExtent(r *Request, extent *timeseries.Extent)         {}
+
+func (c TestTimeseries) SetExtents([]timeseries.Extent) {}
+func (c TestTimeseries) SetStep(time.Duration)          {}
+func (c TestTimeseries) Extents() []timeseries.Extent {
+	return nil
+}
+func (c TestTimeseries) Step() time.Duration {
+	return time.Duration(0)
+}
+func (c TestTimeseries) Merge(bool, ...timeseries.Timeseries) {}
+func (c TestTimeseries) Sort()                                {}
+
+func (c TestTimeseries) Copy() timeseries.Timeseries {
+	return TestTimeseries{}
+}
+func (c TestTimeseries) Crop(timeseries.Extent) timeseries.Timeseries {
+	return TestTimeseries{}
+}
+func (c TestTimeseries) SeriesCount() int {
+	return 0
+}
+func (c TestTimeseries) ValueCount() int {
+	return 0
+}
