@@ -31,15 +31,6 @@ const (
 	milliSecondValue = int64(time.Second / minimumTick)
 )
 
-func containsString(arr []string, val string) bool {
-	for _, v := range arr {
-		if v == val {
-			return true
-		}
-	}
-	return false
-}
-
 func indexOfString(arr []string, val string) int {
 	for i, v := range arr {
 		if v == val {
@@ -51,6 +42,7 @@ func indexOfString(arr []string, val string) int {
 
 // SetExtents ...
 func (se *SeriesEnvelope) SetExtents(extents []timeseries.Extent) {
+	se.ExtentList = make([]timeseries.Extent, len(extents))
 	copy(se.ExtentList, extents)
 }
 
@@ -106,7 +98,9 @@ func (se *SeriesEnvelope) Extents() []timeseries.Extent {
 func (se *SeriesEnvelope) ValueCount() int {
 	c := 0
 	for i := range se.Results {
-		c += len(se.Results[i].Series)
+		for j := range se.Results[i].Series {
+			c += len(se.Results[i].Series[j].Values)
+		}
 	}
 	return c
 }
@@ -181,7 +175,7 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 func (se *SeriesEnvelope) Copy() timeseries.Timeseries {
 	resultSe := &SeriesEnvelope{
 		Err:     se.Err,
-		Results: make([]Result, 0, len(se.Results)),
+		Results: make([]Result, len(se.Results)),
 	}
 	for index := range se.Results {
 		resResult := se.Results[index]

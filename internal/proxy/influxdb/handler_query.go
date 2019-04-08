@@ -28,7 +28,7 @@ func (c Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	rqlc := strings.Replace(strings.ToLower(r.URL.RawQuery), "%20", "+", -1)
 	// if it's not a select statement, just proxy it instead
 	if (!strings.HasPrefix(rqlc, "q=select+")) && (!(strings.Index(rqlc, "&q=select+") > 0)) {
-		go c.ProxyHandler(w, r)
+		c.ProxyHandler(w, r)
 		return
 	}
 

@@ -14,48 +14,43 @@
 package influxdb
 
 import (
+	"io/ioutil"
+	"net/http/httptest"
 	"testing"
 
-	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
-func TestConfiguration(t *testing.T) {
-	oc := config.OriginConfig{Type: "TEST"}
-	client := Client{Config: oc}
-	c := client.Configuration()
-	if c.Type != "TEST" {
-		t.Errorf("expected %s got %s", "TEST", c.Type)
-	}
-}
+func TestProxyHandler(t *testing.T) {
 
-func TestCacheInstance(t *testing.T) {
+	es := tu.NewTestServer(200, "test")
+	defer es.Close()
 
-	err := config.Load("trickster", "test", nil)
+	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "influxdb"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", es.URL, nil)
+
+	client := &Client{Name: "default", Config: config.Origins["default"]}
+	client.ProxyHandler(w, r)
+	resp := w.Result()
+
+	// it should return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("wanted 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
-	client := Client{Cache: cache}
-	c := client.CacheInstance()
 
-	if c.Configuration().Type != "memory" {
-		t.Errorf("expected %s got %s", "memory", c.Configuration().Type)
-	}
-}
-
-func TestOriginName(t *testing.T) {
-
-	client := Client{Name: "TEST"}
-	c := client.OriginName()
-
-	if c != "TEST" {
-		t.Errorf("expected %s got %s", "TEST", c)
+	if string(bodyBytes) != "test" {
+		t.Errorf("wanted 'pong' got %s.", bodyBytes)
 	}
 
 }
