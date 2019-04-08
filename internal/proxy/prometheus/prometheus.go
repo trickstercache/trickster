@@ -16,7 +16,6 @@ package prometheus
 import (
 	"fmt"
 	"math"
-	"net/http"
 	"strconv"
 	"time"
 
@@ -24,7 +23,6 @@ import (
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy"
 )
 
 // Prometheus API
@@ -81,11 +79,6 @@ func (c *Client) OriginName() string {
 // CacheInstance ...
 func (c *Client) CacheInstance() cache.Cache {
 	return c.Cache
-}
-
-// ProxyHandler sends a request through the basic reverse proxy to the origin, and services non-cacheable Prometheus API calls.
-func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	proxy.ProxyRequest(proxy.NewRequest(c.Name, otPrometheus, "APIProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.Config.Timeout, r), w)
 }
 
 // parseTime converts a query time URL parameter to time.Time.

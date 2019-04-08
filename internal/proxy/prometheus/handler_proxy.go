@@ -14,22 +14,12 @@
 package prometheus
 
 import (
-	"net/url"
-	"testing"
+	"net/http"
 
 	"github.com/Comcast/trickster/internal/proxy"
-	"github.com/Comcast/trickster/internal/timeseries"
 )
 
-func TestDeriveCacheKey(t *testing.T) {
-
-	client := &Client{}
-	u := &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
-	r := &proxy.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}}
-	key := client.DeriveCacheKey(r, "extra")
-
-	if key != "6667a75e76dea9a5cd6c6ba73e5825b5" {
-		t.Errorf("wanted %s got %s", "6667a75e76dea9a5cd6c6ba73e5825b5", key)
-	}
-
+// ProxyHandler sends a request through the basic reverse proxy to the origin, and services non-cacheable Prometheus API calls.
+func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
+	proxy.ProxyRequest(proxy.NewRequest(c.Name, otPrometheus, "APIProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.Config.Timeout, r), w)
 }
