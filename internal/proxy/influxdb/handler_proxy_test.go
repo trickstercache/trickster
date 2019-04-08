@@ -50,7 +50,7 @@ func TestProxyHandler(t *testing.T) {
 	}
 
 	if string(bodyBytes) != "test" {
-		t.Errorf("wanted '{}' got %s.", bodyBytes)
+		t.Errorf("wanted 'test' got %s.", bodyBytes)
 	}
 
 }
