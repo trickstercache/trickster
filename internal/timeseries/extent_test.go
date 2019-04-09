@@ -26,6 +26,11 @@ func TestCompressExtents(t *testing.T) {
 		uncompressed, compressed []Extent
 	}{
 		{
+			[]Extent{},
+			[]Extent{},
+		},
+
+		{
 			[]Extent{
 				Extent{Start: time.Unix(90, 0), End: time.Unix(120, 0)},
 				Extent{Start: time.Unix(120, 0), End: time.Unix(180, 0)},
