@@ -15,7 +15,6 @@ package prometheus
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/timeseries"
@@ -61,7 +60,7 @@ func (c *Client) ParseTimeRangeQuery(r *proxy.Request) (*timeseries.TimeRangeQue
 	}
 
 	if p := qp.Get(upStep); p != "" {
-		step, err := strconv.ParseInt(p, 10, 32)
+		step, err := parseDuration(p)
 		if err != nil {
 			return nil, err
 		}
