@@ -11,21 +11,23 @@
 * limitations under the License.
  */
 
-package prometheus
+package proxy
 
 import (
 	"io/ioutil"
+	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
-func TestQueryHandler(t *testing.T) {
+func TestObjectProxyCacheRequest(t *testing.T) {
 
-	es := tu.NewTestServer(200, "{}")
+	es := tu.NewTestServer(200, "test")
 	defer es.Close()
 
 	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
@@ -37,14 +39,19 @@ func TestQueryHandler(t *testing.T) {
 	cache, err := cr.GetCache("default")
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
+	client := TestClient{}
+
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://0/query_range?q=up&time=0", nil)
+	r := httptest.NewRequest("GET", es.URL, nil)
 
-	client := &Client{Name: "default", Config: config.Origins["default"], Cache: cache}
+	// get URL
 
-	client.QueryHandler(w, r)
+	req := NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
+
+	ObjectProxyCacheRequest(req, w, client, cache, 60, false, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
 
 	resp := w.Result()
 
@@ -58,7 +65,30 @@ func TestQueryHandler(t *testing.T) {
 		t.Error(err)
 	}
 
-	if string(bodyBytes) != "{}" {
-		t.Errorf("expected '{}' got %s.", bodyBytes)
+	if string(bodyBytes) != "test" {
+		t.Errorf("expected 'test' got '%s'.", bodyBytes)
 	}
+
+	// get cache hit coverage too by repeating:
+
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest("GET", es.URL, nil)
+	req = NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
+	ObjectProxyCacheRequest(req, w, client, cache, 60, false, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
+	resp = w.Result()
+
+	// it should return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != "test" {
+		t.Errorf("expected 'test' got '%s'.", bodyBytes)
+	}
+
 }

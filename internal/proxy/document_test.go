@@ -11,25 +11,28 @@
 * limitations under the License.
  */
 
-package influxdb
+package proxy
 
 import (
-	"net/url"
+	"net/http"
 	"testing"
-
-	"github.com/Comcast/trickster/internal/proxy"
-	"github.com/Comcast/trickster/internal/timeseries"
 )
 
-func TestDeriveCacheKey(t *testing.T) {
+func TestDocumentFromHTTPResponse(t *testing.T) {
 
-	client := &Client{}
-	tu := &url.URL{Path: "/", RawQuery: "db=test&u=test&p=test&q=select * where <$TIME_TOKEN$> group by time(1m)"}
-	r := &proxy.Request{TemplateURL: tu, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 60000}}
-	key := client.DeriveCacheKey(r, "extra")
+	expected := []byte("1234")
 
-	if key != "122a36be99b2a8997fd609888f62e861" {
-		t.Errorf("expected %s got %s", "122a36be99b2a8997fd609888f62e861", key)
+	resp := &http.Response{}
+	resp.Header = make(http.Header)
+	resp.StatusCode = 200
+	d := DocumentFromHTTPResponse(resp, []byte("1234"))
+
+	if string(d.Body) != string(expected) {
+		t.Errorf("expected %s got %s", string(expected), string(d.Body))
+	}
+
+	if d.StatusCode != 200 {
+		t.Errorf("expected %d got %d", 200, d.StatusCode)
 	}
 
 }

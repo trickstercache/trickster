@@ -79,7 +79,7 @@ func CopyURL(u *url.URL) *url.URL {
 func copyHeaders(h http.Header) http.Header {
 	headers := make(http.Header)
 	for k, v := range h {
-		headers[k] = make([]string, 0, len(v))
+		headers[k] = make([]string, len(v))
 		copy(headers[k], v)
 	}
 	return headers

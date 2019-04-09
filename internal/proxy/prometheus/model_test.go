@@ -45,7 +45,7 @@ func TestMarshalTimeseries(t *testing.T) {
 		},
 	}
 
-	wanted := `{"status":"","data":{"resultType":"matrix","result":[{"metric":{"__name__":"a"},"values":[[99,"1.5"],[199,"1.5"],[299,"1.5"]]},{"metric":{"__name__":"b"},"values":[[99,"1.5"],[199,"1.5"],[299,"1.5"]]}]}}`
+	expected := `{"status":"","data":{"resultType":"matrix","result":[{"metric":{"__name__":"a"},"values":[[99,"1.5"],[199,"1.5"],[299,"1.5"]]},{"metric":{"__name__":"b"},"values":[[99,"1.5"],[199,"1.5"],[299,"1.5"]]}]}}`
 	client := &Client{}
 	bytes, err := client.MarshalTimeseries(me)
 	if err != nil {
@@ -53,8 +53,8 @@ func TestMarshalTimeseries(t *testing.T) {
 		return
 	}
 
-	if string(bytes) != wanted {
-		t.Errorf("expected [%s] got [%s]", wanted, string(bytes))
+	if string(bytes) != expected {
+		t.Errorf("expected [%s] got [%s]", expected, string(bytes))
 	}
 
 }
@@ -72,17 +72,17 @@ func TestUnmarshalTimeseries(t *testing.T) {
 	me := ts.(*MatrixEnvelope)
 
 	if len(me.Data.Result) != 2 {
-		t.Errorf(`wanted 2. got %d`, len(me.Data.Result))
+		t.Errorf(`expected 2. got %d`, len(me.Data.Result))
 		return
 	}
 
 	if len(me.Data.Result[0].Values) != 3 {
-		t.Errorf(`wanted 3. got %d`, len(me.Data.Result[0].Values))
+		t.Errorf(`expected 3. got %d`, len(me.Data.Result[0].Values))
 		return
 	}
 
 	if len(me.Data.Result[1].Values) != 3 {
-		t.Errorf(`wanted 3. got %d`, len(me.Data.Result[1].Values))
+		t.Errorf(`expected 3. got %d`, len(me.Data.Result[1].Values))
 		return
 	}
 
@@ -101,17 +101,17 @@ func TestUnmarshalInstantaneous(t *testing.T) {
 	me := ts.(*MatrixEnvelope)
 
 	if len(me.Data.Result) != 1 {
-		t.Errorf(`wanted 1. got %d`, len(me.Data.Result))
+		t.Errorf(`expected 1. got %d`, len(me.Data.Result))
 		return
 	}
 
 	if len(me.Data.Result[0].Values) != 1 {
-		t.Errorf(`wanted 3. got %d`, len(me.Data.Result[0].Values))
+		t.Errorf(`expected 3. got %d`, len(me.Data.Result[0].Values))
 		return
 	}
 
 	if me.Data.Result[0].Values[0].Value != 1 {
-		t.Errorf(`wanted 1. got %d`, len(me.Data.Result[0].Values))
+		t.Errorf(`expected 1. got %d`, len(me.Data.Result[0].Values))
 		return
 	}
 

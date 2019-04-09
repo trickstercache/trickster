@@ -50,7 +50,7 @@ func TestMarshalTimeseries(t *testing.T) {
 		},
 	}
 
-	wanted := `{"results":[{"statement_id":0,"series":[{"name":"a","tags":{"tagName1":"tagValue1"},"columns":["time","units"],"values":[[1000,1.5],[5000,1.5],[10000,1.5]]},{"name":"b","tags":{"tagName2":"tagValue2"},"columns":["time","units"],"values":[[1000,2.5],[5000,2.1],[10000,2.4]]}]}]}`
+	expected := `{"results":[{"statement_id":0,"series":[{"name":"a","tags":{"tagName1":"tagValue1"},"columns":["time","units"],"values":[[1000,1.5],[5000,1.5],[10000,1.5]]},{"name":"b","tags":{"tagName2":"tagValue2"},"columns":["time","units"],"values":[[1000,2.5],[5000,2.1],[10000,2.4]]}]}]}`
 	client := &Client{}
 	bytes, err := client.MarshalTimeseries(se)
 	if err != nil {
@@ -58,8 +58,8 @@ func TestMarshalTimeseries(t *testing.T) {
 		return
 	}
 
-	if string(bytes) != wanted {
-		t.Errorf("expected [%s] got [%s]", wanted, string(bytes))
+	if string(bytes) != expected {
+		t.Errorf("expected [%s] got [%s]", expected, string(bytes))
 	}
 
 }
@@ -77,22 +77,22 @@ func TestUnmarshalTimeseries(t *testing.T) {
 	se := ts.(*SeriesEnvelope)
 
 	if len(se.Results) != 1 {
-		t.Errorf(`wanted 1. got %d`, len(se.Results))
+		t.Errorf(`expected 1. got %d`, len(se.Results))
 		return
 	}
 
 	if len(se.Results[0].Series) != 2 {
-		t.Errorf(`wanted 2. got %d`, len(se.Results[0].Series))
+		t.Errorf(`expected 2. got %d`, len(se.Results[0].Series))
 		return
 	}
 
 	if len(se.Results[0].Series[0].Values) != 3 {
-		t.Errorf(`wanted 3. got %d`, len(se.Results[0].Series[0].Values))
+		t.Errorf(`expected 3. got %d`, len(se.Results[0].Series[0].Values))
 		return
 	}
 
 	if len(se.Results[0].Series[1].Values) != 3 {
-		t.Errorf(`wanted 3. got %d`, len(se.Results[0].Series[1].Values))
+		t.Errorf(`expected 3. got %d`, len(se.Results[0].Series[1].Values))
 		return
 	}
 

@@ -12,3 +12,35 @@
  */
 
 package proxy
+
+import (
+	"io/ioutil"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestPingHandler(t *testing.T) {
+
+	RegisterPingHandler()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/health", nil)
+
+	pingHandler(w, r)
+	resp := w.Result()
+
+	// it should return 200 OK and "pong"
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != "pong" {
+		t.Errorf("expected 'pong' got %s.", bodyBytes)
+	}
+
+}

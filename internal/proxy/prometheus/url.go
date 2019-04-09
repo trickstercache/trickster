@@ -24,7 +24,7 @@ import (
 )
 
 // BaseURL returns a URL in the form of schme://host/path based on the proxy configuration
-func (c Client) BaseURL() *url.URL {
+func (c *Client) BaseURL() *url.URL {
 	u := &url.URL{}
 	u.Scheme = c.Config.Scheme
 	u.Host = c.Config.Host
@@ -33,7 +33,7 @@ func (c Client) BaseURL() *url.URL {
 }
 
 // BuildUpstreamURL will merge the downstream request with the BaseURL to construct the full upstream URL
-func (c Client) BuildUpstreamURL(r *http.Request) *url.URL {
+func (c *Client) BuildUpstreamURL(r *http.Request) *url.URL {
 	u := c.BaseURL()
 	u.Path += r.URL.Path
 	u.RawQuery = r.URL.RawQuery
@@ -43,7 +43,7 @@ func (c Client) BuildUpstreamURL(r *http.Request) *url.URL {
 }
 
 // SetExtent will change the upstream request query to use the provided Extent
-func (c Client) SetExtent(r *proxy.Request, extent *timeseries.Extent) {
+func (c *Client) SetExtent(r *proxy.Request, extent *timeseries.Extent) {
 	params := r.URL.Query()
 	params.Set(upStart, strconv.FormatInt(extent.Start.Unix(), 10))
 	params.Set(upEnd, strconv.FormatInt(extent.End.Unix(), 10))
@@ -51,7 +51,7 @@ func (c Client) SetExtent(r *proxy.Request, extent *timeseries.Extent) {
 }
 
 // FastForwardURL returns the url to fetch the Fast Forward value based on a timerange url
-func (c Client) FastForwardURL(r *proxy.Request) (*url.URL, error) {
+func (c *Client) FastForwardURL(r *proxy.Request) (*url.URL, error) {
 
 	u := proxy.CopyURL(r.URL)
 

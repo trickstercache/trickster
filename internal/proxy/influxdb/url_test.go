@@ -27,7 +27,7 @@ func TestSetExtent(t *testing.T) {
 
 	start := time.Now().Add(time.Duration(-6) * time.Hour)
 	end := time.Now()
-	wanted := "q=select+%2A+where+time+%3E%3D+" + fmt.Sprintf("%d", start.Unix()*1000) + "ms+AND+time+%3C%3D+" + fmt.Sprintf("%d", end.Unix()*1000) + "ms+group+by+time%281m%29"
+	expected := "q=select+%2A+where+time+%3E%3D+" + fmt.Sprintf("%d", start.Unix()*1000) + "ms+AND+time+%3C%3D+" + fmt.Sprintf("%d", end.Unix()*1000) + "ms+group+by+time%281m%29"
 
 	client := &Client{}
 	u := &url.URL{}
@@ -36,7 +36,7 @@ func TestSetExtent(t *testing.T) {
 	e := &timeseries.Extent{Start: start, End: end}
 	client.SetExtent(r, e)
 
-	if wanted != r.URL.RawQuery {
-		t.Errorf("\nwanted [%s]\ngot    [%s]", wanted, r.URL.RawQuery)
+	if expected != r.URL.RawQuery {
+		t.Errorf("\nexpected [%s]\ngot    [%s]", expected, r.URL.RawQuery)
 	}
 }

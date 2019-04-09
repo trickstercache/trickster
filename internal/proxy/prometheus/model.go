@@ -49,20 +49,20 @@ type MatrixData struct {
 }
 
 // MarshalTimeseries ...
-func (c Client) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, error) {
+func (c *Client) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, error) {
 	// Marshal the Envelope back to a json object for Cache Storage
 	return json.Marshal(ts)
 }
 
 // UnmarshalTimeseries ...
-func (c Client) UnmarshalTimeseries(data []byte) (timeseries.Timeseries, error) {
+func (c *Client) UnmarshalTimeseries(data []byte) (timeseries.Timeseries, error) {
 	me := &MatrixEnvelope{}
 	err := json.Unmarshal(data, &me)
 	return me, err
 }
 
 // UnmarshalInstantaneous ...
-func (c Client) UnmarshalInstantaneous(data []byte) (timeseries.Timeseries, error) {
+func (c *Client) UnmarshalInstantaneous(data []byte) (timeseries.Timeseries, error) {
 	ve := &VectorEnvelope{}
 	err := json.Unmarshal(data, &ve)
 	if err != nil {

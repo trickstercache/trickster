@@ -41,7 +41,7 @@ func TestProxyHandler(t *testing.T) {
 
 	// it should return 200 OK
 	if resp.StatusCode != 200 {
-		t.Errorf("wanted 200 got %d.", resp.StatusCode)
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
@@ -50,7 +50,7 @@ func TestProxyHandler(t *testing.T) {
 	}
 
 	if string(bodyBytes) != "test" {
-		t.Errorf("wanted 'test' got %s.", bodyBytes)
+		t.Errorf("expected 'test' got %s.", bodyBytes)
 	}
 
 }

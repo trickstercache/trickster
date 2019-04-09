@@ -20,7 +20,7 @@ import (
 )
 
 // RegisterRoutes ...
-func (c Client) RegisterRoutes(originName string, o config.OriginConfig) {
+func (c *Client) RegisterRoutes(originName string, o config.OriginConfig) {
 
 	if originName == "default" {
 		log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.Type})

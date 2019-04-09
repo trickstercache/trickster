@@ -11,24 +11,21 @@
 * limitations under the License.
  */
 
-package prometheus
+package proxy
 
 import (
-	"io/ioutil"
-	"net/http/httptest"
+	"net/http"
 	"testing"
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
-	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
-func TestQueryHandler(t *testing.T) {
+func TestQueryCache(t *testing.T) {
 
-	es := tu.NewTestServer(200, "{}")
-	defer es.Close()
+	expected := "1234"
 
-	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
+	err := config.Load("trickster", "test", []string{})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -39,26 +36,32 @@ func TestQueryHandler(t *testing.T) {
 		t.Error(err)
 	}
 
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://0/query_range?q=up&time=0", nil)
+	resp := &http.Response{}
+	resp.Header = make(http.Header)
+	resp.StatusCode = 200
+	d := DocumentFromHTTPResponse(resp, []byte(expected))
 
-	client := &Client{Name: "default", Config: config.Origins["default"], Cache: cache}
-
-	client.QueryHandler(w, r)
-
-	resp := w.Result()
-
-	// it should return 200 OK
-	if resp.StatusCode != 200 {
-		t.Errorf("expected 200 got %d.", resp.StatusCode)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	err = WriteCache(cache, "testKey", d, 60)
 	if err != nil {
 		t.Error(err)
 	}
 
-	if string(bodyBytes) != "{}" {
-		t.Errorf("expected '{}' got %s.", bodyBytes)
+	d2, err := QueryCache(cache, "testKey")
+	if err != nil {
+		t.Error(err)
 	}
+
+	if string(d2.Body) != string(expected) {
+		t.Errorf("expected %s got %s", string(expected), string(d2.Body))
+	}
+
+	if d2.StatusCode != 200 {
+		t.Errorf("expected %d got %d", 200, d2.StatusCode)
+	}
+
+	_, err = QueryCache(cache, "testKey2")
+	if err == nil {
+		t.Errorf("expected error")
+	}
+
 }

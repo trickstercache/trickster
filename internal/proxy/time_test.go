@@ -11,25 +11,27 @@
 * limitations under the License.
  */
 
-package influxdb
+package proxy
 
 import (
-	"net/url"
 	"testing"
-
-	"github.com/Comcast/trickster/internal/proxy"
-	"github.com/Comcast/trickster/internal/timeseries"
+	"time"
 )
 
-func TestDeriveCacheKey(t *testing.T) {
-
-	client := &Client{}
-	tu := &url.URL{Path: "/", RawQuery: "db=test&u=test&p=test&q=select * where <$TIME_TOKEN$> group by time(1m)"}
-	r := &proxy.Request{TemplateURL: tu, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 60000}}
-	key := client.DeriveCacheKey(r, "extra")
-
-	if key != "122a36be99b2a8997fd609888f62e861" {
-		t.Errorf("expected %s got %s", "122a36be99b2a8997fd609888f62e861", key)
+func TestParseDuration(t *testing.T) {
+	expected := time.Duration(1) * time.Hour
+	d, err := ParseDuration("1h")
+	if err != nil {
+		t.Error(err)
 	}
+	if d != expected {
+		t.Errorf("expected %d got %d", expected, d)
+	}
+}
 
+func TestParseDurationFailed(t *testing.T) {
+	_, err := ParseDuration("1x")
+	if err == nil {
+		t.Errorf("expected 'unable to parse duration 1x' error")
+	}
 }
