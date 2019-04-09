@@ -20,7 +20,7 @@ import (
 )
 
 // HealthHandler checks the health of the Configured Upstream Origin
-func (c Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
+func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BaseURL()
 	u.Path += APIPath + mnLabels
 	proxy.ProxyRequest(proxy.NewRequest(c.Name, otPrometheus, "HealthHandler", http.MethodGet, u, r.Header, c.Config.Timeout, r), w)

@@ -14,6 +14,7 @@
 package registration
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/Comcast/trickster/internal/cache"
@@ -24,6 +25,17 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/prometheus"
 	"github.com/Comcast/trickster/internal/util/log"
 )
+
+// ProxyClients ...
+var ProxyClients = make(map[string]proxy.Client)
+
+// GetProxyClient returns the proxy.Client named proxyName if it exists
+func GetProxyClient(proxyName string) (proxy.Client, error) {
+	if c, ok := ProxyClients[proxyName]; ok {
+		return c, nil
+	}
+	return nil, fmt.Errorf("Could not find proxy.Client named [%s]", proxyName)
+}
 
 // RegisterProxyRoutes ...
 func RegisterProxyRoutes() {
@@ -48,8 +60,9 @@ func RegisterProxyRoutes() {
 			client = &influxdb.Client{Name: k, Config: o, Cache: c}
 		}
 
-		client.RegisterRoutes(k, o)
-		proxy.Clients[k] = client
-
+		if client != nil {
+			ProxyClients[k] = client
+			client.RegisterRoutes(k, o)
+		}
 	}
 }

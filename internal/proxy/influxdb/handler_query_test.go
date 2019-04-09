@@ -14,7 +14,6 @@
 package influxdb
 
 import (
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -45,7 +44,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	client := &Client{}
 	res, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err != nil {
-		fmt.Println(err.Error())
+		t.Error(err)
 	} else {
 		assert.Equal(t, int(res.Step), 15)
 		assert.Equal(t, int(res.Extent.End.Sub(res.Extent.Start).Hours()), 6)
@@ -79,7 +78,7 @@ func TestQueryHandlerWithSelect(t *testing.T) {
 
 	// it should return 200 OK
 	if resp.StatusCode != 200 {
-		t.Errorf("wanted 200 got %d.", resp.StatusCode)
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
@@ -88,7 +87,7 @@ func TestQueryHandlerWithSelect(t *testing.T) {
 	}
 
 	if string(bodyBytes) != "{}" {
-		t.Errorf("wanted '{}' got %s.", bodyBytes)
+		t.Errorf("expected '{}' got %s.", bodyBytes)
 	}
 }
 
@@ -113,7 +112,7 @@ func TestQueryHandlerNotSelect(t *testing.T) {
 
 	// it should return 200 OK
 	if resp.StatusCode != 200 {
-		t.Errorf("wanted 200 got %d.", resp.StatusCode)
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
@@ -122,12 +121,12 @@ func TestQueryHandlerNotSelect(t *testing.T) {
 	}
 
 	if string(bodyBytes) != "{}" {
-		t.Errorf("wanted '{}' got %s.", bodyBytes)
+		t.Errorf("expected '{}' got %s.", bodyBytes)
 	}
 }
 
 func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
-	wanted := proxy.ErrorMissingURLParam(upQuery).Error()
+	expected := proxy.ErrorMissingURLParam(upQuery).Error()
 	req := &http.Request{URL: &url.URL{
 		Scheme: "https",
 		Host:   "blah.com",
@@ -140,17 +139,17 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 	client := &Client{}
 	_, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
-		t.Errorf(`Expected "%s", got NO ERROR`, wanted)
+		t.Errorf(`Expected "%s", got NO ERROR`, expected)
 		return
 	}
-	if err.Error() != wanted {
-		t.Errorf(`Expected "%s", got "%s"`, wanted, err.Error())
+	if err.Error() != expected {
+		t.Errorf(`Expected "%s", got "%s"`, expected, err.Error())
 	}
 }
 
 func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 
-	wanted := proxy.ErrorStepParse().Error()
+	expected := proxy.ErrorStepParse().Error()
 
 	req := &http.Request{URL: &url.URL{
 		Scheme: "https",
@@ -164,11 +163,11 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 	client := &Client{}
 	_, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
-		t.Errorf(`Expected "%s", got NO ERROR`, wanted)
+		t.Errorf(`Expected "%s", got NO ERROR`, expected)
 		return
 	}
-	if err.Error() != wanted {
-		t.Errorf(`Expected "%s", got "%s"`, wanted, err.Error())
+	if err.Error() != expected {
+		t.Errorf(`Expected "%s", got "%s"`, expected, err.Error())
 	}
 }
 

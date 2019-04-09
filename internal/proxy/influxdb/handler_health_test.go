@@ -40,7 +40,7 @@ func TestHealthHandler(t *testing.T) {
 
 	// it should return 204 No Content
 	if resp.StatusCode != 204 {
-		t.Errorf("wanted 204 got %d.", resp.StatusCode)
+		t.Errorf("expected 204 got %d.", resp.StatusCode)
 	}
 
 }
