@@ -13,7 +13,10 @@
 
 package proxy
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // ErrorMissingURLParam returns a Formatted Error
 func ErrorMissingURLParam(param string) error {
@@ -33,4 +36,9 @@ func ErrorStepParse() error {
 // ErrorNotSelectStatement returns a timeseries Parsing Error
 func ErrorNotSelectStatement() error {
 	return fmt.Errorf("not a select statement")
+}
+
+// ParseDurationError returns a Duration Parsing Error
+func ParseDurationError(input string) (time.Duration, error) {
+	return time.Duration(0), fmt.Errorf("Unable to parse duration: %s", input)
 }
