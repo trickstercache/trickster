@@ -117,8 +117,9 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, strconv.Itoa(doc.StatusCode), r.URL.Path).Observe(elapsed.Seconds())
 
 	var ffURL *url.URL
-	// if the step resolution is <= 15s, no need to try FastForward
-	if trq.Step > 15000000000 {
+	// if the step resolution <= Fast Forward TTL, then no need to even try Fast Forward
+	cacheConfig := cache.Configuration()
+	if int64(trq.Step) > int64(cacheConfig.FastForwardTTLSecs)*int64(time.Second) {
 		ffURL, err = client.FastForwardURL(r)
 		if err != nil {
 			ffURL = nil
@@ -178,7 +179,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 			defer wg.Done()
 			req := r.Copy()
 			req.URL = ffURL
-			body, resp := FetchViaObjectProxyCache(req, client, cache, cache.Configuration().FastForwardTTLSecs, false, true)
+			body, resp := FetchViaObjectProxyCache(req, client, cache, cacheConfig.FastForwardTTLSecs, false, true)
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				ffts, err = client.UnmarshalInstantaneous(body)
 				if err != nil {
