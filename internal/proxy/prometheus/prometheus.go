@@ -96,7 +96,7 @@ func parseTime(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
 }
 
-// parseDuration parses prometheus step paramaters, which can be float64 or durations like 1d, 5m, etc
+// parseDuration parses prometheus step parameters, which can be float64 or durations like 1d, 5m, etc
 // the proxy.ParseDuration handles the second kind, and the float64's are handled here
 func parseDuration(input string) (time.Duration, error) {
 	v, err := strconv.ParseFloat(input, 64)

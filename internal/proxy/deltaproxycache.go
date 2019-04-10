@@ -97,7 +97,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	}
 
 	// On the first load from cache, tell the Cached Timeseries its step
-	if cts.Step().Seconds() == 0 {
+	if cts.Step() == 0 {
 		cts.SetStep(trq.Step)
 	}
 
