@@ -149,8 +149,7 @@ func (t *TricksterHandler) promFullProxyHandler(w http.ResponseWriter, r *http.R
 		w.Header().Set(k, strings.Join(v, ","))
 	}
 
-	w.WriteHeader(resp.StatusCode)
-	w.Write(body)
+	writeResponse(w, body, resp)
 }
 
 // promQueryHandler handles calls to /query (for instantaneous values)
