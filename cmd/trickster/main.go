@@ -32,7 +32,7 @@ import (
 
 const (
 	applicationName    = "trickster"
-	applicationVersion = "1.0.1"
+	applicationVersion = "1.0.3"
 )
 
 func main() {
