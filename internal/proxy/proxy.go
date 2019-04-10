@@ -47,8 +47,6 @@ func Fetch(r *Request) ([]byte, *http.Response, time.Duration) {
 
 	if r != nil {
 		addProxyHeaders(r.ClientRequest.RemoteAddr, r.Headers)
-	} else {
-		addClientHeaders(r.Headers)
 	}
 
 	removeClientHeaders(r.Headers)
@@ -85,10 +83,11 @@ func Fetch(r *Request) ([]byte, *http.Response, time.Duration) {
 
 // Respond ...
 func Respond(w http.ResponseWriter, code int, headers http.Header, body []byte) {
+	h := w.Header()
 	for k, v := range headers {
-		w.Header().Set(k, strings.Join(v, ","))
+		h.Set(k, strings.Join(v, ","))
 	}
-	w.Header().Set(hnXAccelerator, config.ApplicationName+" "+config.ApplicationVersion)
+	addResponseHeaders(h)
 	w.WriteHeader(code)
 	w.Write(body)
 }
