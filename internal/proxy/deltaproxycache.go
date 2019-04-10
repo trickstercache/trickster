@@ -67,6 +67,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 
 	if refresh {
 		cacheStatus = crPurge
+		cache.Remove(key)
 		cts, doc, elapsed, err = fetchTimeseries(r, client)
 		if err != nil {
 			Respond(w, doc.StatusCode, doc.Headers, doc.Body)
@@ -85,6 +86,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 			cts, err = client.UnmarshalTimeseries(doc.Body)
 			if err != nil {
 				log.Error("cache object unmarshaling failed", log.Pairs{"key": key, "originName": client.OriginName})
+				cache.Remove(key)
 				cts, doc, elapsed, err = fetchTimeseries(r, client)
 				if err != nil {
 					Respond(w, doc.StatusCode, doc.Headers, doc.Body)
@@ -227,12 +229,18 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 			// Crop the Cached Object down to the Sample Age Retention Policy before storing
 			re := timeseries.Extent{End: bf.End, Start: time.Now().Add(-time.Duration(cfg.MaxValueAgeSecs) * time.Second)}
 			cts = cts.Crop(re)
-			cdata, err := client.MarshalTimeseries(cts)
-			if err != nil {
-				return
+			// Don't cache empty datasets, ensure there is at least 1 value
+			if cts.ValueCount() > 0 {
+				cdata, err := client.MarshalTimeseries(cts)
+				if err != nil {
+					return
+				}
+				doc.Body = cdata
+				WriteCache(cache, key, doc, ttl)
+			} else if cacheStatus == crRangeMiss || cacheStatus == crPartialHit {
+				// Delete the expired dataset still in the cache; it's all outside of retention as the cropped ValueCount() is 0
+				cache.Remove(key)
 			}
-			doc.Body = cdata
-			WriteCache(cache, key, doc, ttl)
 		}()
 	}
 
