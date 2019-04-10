@@ -23,6 +23,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy"
 )
 
 // Prometheus API
@@ -93,4 +94,15 @@ func parseTime(s string) (time.Time, error) {
 		return t, nil
 	}
 	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
+}
+
+// parseDuration parses prometheus step parameters, which can be float64 or durations like 1d, 5m, etc
+// the proxy.ParseDuration handles the second kind, and the float64's are handled here
+func parseDuration(input string) (time.Duration, error) {
+	v, err := strconv.ParseFloat(input, 64)
+	if err != nil {
+		return proxy.ParseDuration(input)
+	}
+	// assume v is in seconds
+	return time.Duration(int64(v)) * time.Second, nil
 }

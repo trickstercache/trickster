@@ -51,12 +51,11 @@ func Fetch(r *Request) ([]byte, *http.Response, time.Duration) {
 
 	removeClientHeaders(r.Headers)
 
-	u := r.URL.String()
 	start := time.Now()
 	client := &http.Client{Timeout: r.Timeout}
 	resp, err := client.Do(&http.Request{Method: r.ClientRequest.Method, URL: r.URL, Header: r.Headers})
 	if err != nil {
-		log.Error("error downloading url", log.Pairs{"url": u, "detail": err.Error()})
+		log.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		// if there is an err and the response is nil, the server could not be reached; make a 502 for the downstream response
 		if resp == nil {
 			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r.ClientRequest}
@@ -69,14 +68,14 @@ func Fetch(r *Request) ([]byte, *http.Response, time.Duration) {
 	body, err := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
-		log.Error("error reading body from http response", log.Pairs{"url": u, "detail": err.Error()})
+		log.Error("error reading body from http response", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		return []byte{}, resp, 0
 	}
 
 	latency := time.Since(start) // includes any time required to decompress the document for deserialization
 
 	if config.Logging.LogLevel == "debug" || config.Logging.LogLevel == "trace" {
-		go logUpstreamRequest(r.OriginName, r.OriginType, r.HandlerName, r.HTTPMethod, u, r.ClientRequest.UserAgent(), resp.StatusCode, len(body), latency.Seconds())
+		go logUpstreamRequest(r.OriginName, r.OriginType, r.HandlerName, r.HTTPMethod, r.URL.String(), r.ClientRequest.UserAgent(), resp.StatusCode, len(body), latency.Seconds())
 	}
 
 	return body, resp, latency

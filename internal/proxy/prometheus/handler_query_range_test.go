@@ -47,7 +47,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	} else {
-		assert.Equal(t, int(res.Step), 15)
+		assert.Equal(t, int(res.Step.Seconds()), 15)
 		assert.Equal(t, int(res.Extent.End.Sub(res.Extent.Start).Hours()), 6)
 	}
 }
@@ -77,7 +77,7 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 
 func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 
-	expected := `strconv.ParseInt: parsing "x": invalid syntax`
+	expected := `Unable to parse duration: x`
 
 	req := &http.Request{URL: &url.URL{
 		Scheme: "https",

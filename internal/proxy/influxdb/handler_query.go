@@ -59,7 +59,7 @@ func (c Client) ParseTimeRangeQuery(r *proxy.Request) (*timeseries.TimeRangeQuer
 	if err != nil {
 		return nil, proxy.ErrorStepParse()
 	}
-	trq.Step = int64(stepDuration.Seconds())
+	trq.Step = stepDuration
 
 	trq.Statement, trq.Extent = getQueryParts(trq.Statement)
 

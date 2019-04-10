@@ -16,6 +16,7 @@ package influxdb
 import (
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/timeseries"
@@ -25,11 +26,11 @@ func TestDeriveCacheKey(t *testing.T) {
 
 	client := &Client{}
 	tu := &url.URL{Path: "/", RawQuery: "db=test&u=test&p=test&q=select * where <$TIME_TOKEN$> group by time(1m)"}
-	r := &proxy.Request{TemplateURL: tu, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 60000}}
+	r := &proxy.Request{TemplateURL: tu, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: time.Duration(60) * time.Second}}
 	key := client.DeriveCacheKey(r, "extra")
 
-	if key != "122a36be99b2a8997fd609888f62e861" {
-		t.Errorf("expected %s got %s", "122a36be99b2a8997fd609888f62e861", key)
+	if key != "147fe576515e5ac107195a3eb69c8cbe" {
+		t.Errorf("expected %s got %s", "147fe576515e5ac107195a3eb69c8cbe", key)
 	}
 
 }

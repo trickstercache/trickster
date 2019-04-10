@@ -22,9 +22,9 @@ import (
 func TestCalculateDeltas(t *testing.T) {
 
 	tests := []struct {
-		have               []Extent
-		expected           []Extent
-		start, end, stepMS int64
+		have                 []Extent
+		expected             []Extent
+		start, end, stepSecs int64
 	}{
 		{
 			[]Extent{Extent{Start: time.Unix(50, 0), End: time.Unix(100, 0)}},
@@ -46,7 +46,7 @@ func TestCalculateDeltas(t *testing.T) {
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 
-			trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(test.start, 0), End: time.Unix(test.end, 0)}, Step: test.stepMS}
+			trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(test.start, 0), End: time.Unix(test.end, 0)}, Step: time.Duration(test.stepSecs) * time.Second}
 			trq.NormalizeExtent()
 			d := trq.CalculateDeltas(test.have)
 
@@ -73,9 +73,9 @@ func TestNormalizeExtent(t *testing.T) {
 	expected := (time.Now().Unix() / 10) * 10
 
 	tests := []struct {
-		start, end, stepMS, now int64
-		rangeStart, rangeEnd    int64
-		err                     bool
+		start, end, stepSecs, now int64
+		rangeStart, rangeEnd      int64
+		err                       bool
 	}{
 		// Basic test
 		{
@@ -100,7 +100,7 @@ func TestNormalizeExtent(t *testing.T) {
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 
-			trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(test.start, 0), End: time.Unix(test.end, 0)}, Step: test.stepMS}
+			trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(test.start, 0), End: time.Unix(test.end, 0)}, Step: time.Duration(test.stepSecs) * time.Second}
 
 			trq.NormalizeExtent()
 

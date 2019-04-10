@@ -16,6 +16,7 @@ package proxy
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"sync"
 	"time"
@@ -96,8 +97,8 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	}
 
 	// On the first load from cache, tell the Cached Timeseries its step
-	if cts.Step().Seconds() == 0 {
-		cts.SetStep(time.Duration(trq.Step) * time.Second)
+	if cts.Step() == 0 {
+		cts.SetStep(trq.Step)
 	}
 
 	// Find the ranges that we want, but which are not currently cached
@@ -115,7 +116,15 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, strconv.Itoa(doc.StatusCode), r.URL.Path).Inc()
 	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, strconv.Itoa(doc.StatusCode), r.URL.Path).Observe(elapsed.Seconds())
 
-	ffURL, err := client.FastForwardURL(r)
+	var ffURL *url.URL
+	// if the step resolution <= Fast Forward TTL, then no need to even try Fast Forward
+	cacheConfig := cache.Configuration()
+	if int64(trq.Step) > int64(cacheConfig.FastForwardTTLSecs)*int64(time.Second) {
+		ffURL, err = client.FastForwardURL(r)
+		if err != nil {
+			ffURL = nil
+		}
+	}
 
 	// if it's a cache hit and fast forward is disabled or unsupported, just return the data.
 	if cacheStatus == crHit && (cfg.FastForwardDisable || ffURL == nil) {
@@ -161,33 +170,26 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		}(&missRanges[i], req)
 	}
 
+	var hasFastForwardData bool
 	var ffts timeseries.Timeseries
-	var ffex timeseries.Extent
 	// Only fast forward if configured and the user request is for the absolute latest datapoint
-	if (!cfg.FastForwardDisable) && (trq.Extent.End == normalizedNow.Extent.End) {
-		if ffURL != nil && ffURL.Scheme != "" && err == nil {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				req := r.Copy()
-				req.URL = ffURL
-				body, resp := FetchViaObjectProxyCache(req, client, cache, cache.Configuration().FastForwardTTLSecs, false, true)
-				if resp.StatusCode == http.StatusOK && len(body) > 0 {
-
-					ffts, err = client.UnmarshalInstantaneous(body)
-					if err != nil {
-						log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
-						return
-					}
-
-					x := ffts.Extents()
-					if len(x) > 0 {
-						ffex = x[0]
-					}
-
+	if ffURL != nil && (!cfg.FastForwardDisable) && (trq.Extent.End == normalizedNow.Extent.End) && ffURL.Scheme != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := r.Copy()
+			req.URL = ffURL
+			body, resp := FetchViaObjectProxyCache(req, client, cache, cacheConfig.FastForwardTTLSecs, false, true)
+			if resp.StatusCode == http.StatusOK && len(body) > 0 {
+				ffts, err = client.UnmarshalInstantaneous(body)
+				if err != nil {
+					log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
+					return
 				}
-			}()
-		}
+				x := ffts.Extents()
+				hasFastForwardData = len(x) > 0 && x[0].End.After(trq.Extent.End)
+			}
+		}()
 	}
 
 	wg.Wait()
@@ -211,7 +213,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 
 	// Merge Fast Forward data if present. This must be done after the Downstream Crop since
 	// the cropped extent was normalized to stepboundaries and would remove fast forward data
-	if !cfg.FastForwardDisable && ffts != nil && ffex.End.After(trq.Extent.End) {
+	if hasFastForwardData {
 		rts.Merge(false, ffts)
 	}
 	rdata, err := client.MarshalTimeseries(rts)
