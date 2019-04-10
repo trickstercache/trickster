@@ -187,9 +187,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 					return
 				}
 				x := ffts.Extents()
-				if len(x) > 0 {
-					hasFastForwardData = x[0].End.After(trq.Extent.End)
-				}
+				hasFastForwardData = len(x) > 0 && x[0].End.After(trq.Extent.End)
 			}
 		}()
 	}
