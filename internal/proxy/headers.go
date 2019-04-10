@@ -45,7 +45,10 @@ func addProxyHeaders(remoteAddr string, headers http.Header) {
 	}
 }
 
-func addClientHeaders(headers http.Header) {
+func addResponseHeaders(headers http.Header) {
+	// We're read only and a harmless API, so allow all CORS
+	headers.Set(hnAllowOrigin, "*")
+	headers.Set(hnXAccelerator, config.ApplicationName+" "+config.ApplicationVersion)
 }
 
 func extractHeader(headers http.Header, header string) (string, bool) {
@@ -56,7 +59,5 @@ func extractHeader(headers http.Header, header string) (string, bool) {
 }
 
 func removeClientHeaders(headers http.Header) {
-
 	headers.Del(hnAcceptEncoding)
-
 }
