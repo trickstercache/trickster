@@ -47,8 +47,6 @@ func TestDeltaProxyCacheRequest(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)
 
-	// get URL
-
 	req := NewRequest("default", "test", "TestDeltaProxyCacheRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
 
 	DeltaProxyCacheRequest(req, w, client, cache, 60, false)

@@ -43,6 +43,9 @@ func (trq *TimeRangeQuery) NormalizeExtent() {
 
 // CalculateDeltas provides a list of extents that are not in a cached timeseries, when provided a list of extents that are cached.
 func (trq *TimeRangeQuery) CalculateDeltas(have []Extent) []Extent {
+	if len(have) == 0 {
+		return []Extent{trq.Extent}
+	}
 	misses := []time.Time{}
 	for i := trq.Extent.Start; trq.Extent.End.After(i) || trq.Extent.End == i; i = i.Add(trq.Step) {
 		found := false
