@@ -224,6 +224,39 @@ func TestCrop(t *testing.T) {
 		before, after *MatrixEnvelope
 		extent        timeseries.Extent
 	}{
+		// Case where the very first element in the matrix has a timestamp matching the extent's end
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 1644004600000, Value: 1.5},
+							},
+						},
+					},
+				},
+			},
+			after: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 1644004600000, Value: 1.5},
+							},
+						},
+					},
+				},
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(0, 0),
+				End:   time.Unix(1644004600, 0),
+			},
+		},
 		// Case where we trim nothing
 		{
 			before: &MatrixEnvelope{
