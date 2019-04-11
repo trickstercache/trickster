@@ -222,7 +222,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	}
 	rdata, err := client.MarshalTimeseries(rts)
 
-	// Don't write the cache unless it has chnaged
+	// Don't write the cache unless it has changed
 	if cacheStatus != crHit {
 		wg.Add(1)
 		// Write the newly-merged object back to the cache
