@@ -15,7 +15,7 @@ package timeseries
 
 import "time"
 
-// Timeseries ...
+// Timeseries represents a Response Object from a Timeseries Database
 type Timeseries interface {
 	// SetExtents sets the Extents of the Timeseries
 	SetExtents([]Extent)
