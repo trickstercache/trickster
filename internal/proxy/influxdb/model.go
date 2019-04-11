@@ -21,7 +21,7 @@ import (
 	"github.com/influxdata/influxdb/models"
 )
 
-// SeriesEnvelope ...
+// SeriesEnvelope represents a response object from the InfluxDB HTTP API
 type SeriesEnvelope struct {
 	Results      []Result            `json:"results"`
 	Err          string              `json:"error,omitempty"`
@@ -29,20 +29,20 @@ type SeriesEnvelope struct {
 	ExtentList   []timeseries.Extent `json:"extents,omitempty"`
 }
 
-// Result ...
+// Result represents a Result returned from the InfluxDB HTTP API
 type Result struct {
 	StatementID int          `json:"statement_id"`
 	Series      []models.Row `json:"series,omitempty"`
 	Err         string       `json:"error,omitempty"`
 }
 
-// MarshalTimeseries ...
+// MarshalTimeseries converts a Timeseries into a JSON blob
 func (c Client) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, error) {
 	// Marshal the Envelope back to a json object for Cache Storage
 	return json.Marshal(ts)
 }
 
-// UnmarshalTimeseries ...
+// UnmarshalTimeseries converts a JSON blob into a Timeseries
 func (c Client) UnmarshalTimeseries(data []byte) (timeseries.Timeseries, error) {
 	se := &SeriesEnvelope{}
 	err := json.Unmarshal(data, se)

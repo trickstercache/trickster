@@ -40,13 +40,13 @@ func indexOfString(arr []string, val string) int {
 	return -1
 }
 
-// SetExtents ...
+// SetExtents overwrites a Timeseries's known extents with the provided extent list
 func (se *SeriesEnvelope) SetExtents(extents []timeseries.Extent) {
 	se.ExtentList = make([]timeseries.Extent, len(extents))
 	copy(se.ExtentList, extents)
 }
 
-// Extremes ...
+// Extremes returns the absolute start end times of a Timeseries, without respect to uncached gaps
 func (se *SeriesEnvelope) Extremes() []timeseries.Extent {
 
 	// Bail if the results are empty
@@ -86,7 +86,7 @@ func (se *SeriesEnvelope) Extremes() []timeseries.Extent {
 	return se.ExtentList
 }
 
-// Extents ...
+// Extents returns the Timeseries's ExentList
 func (se *SeriesEnvelope) Extents() []timeseries.Extent {
 	if len(se.ExtentList) == 0 {
 		return se.Extremes()
@@ -94,7 +94,7 @@ func (se *SeriesEnvelope) Extents() []timeseries.Extent {
 	return se.ExtentList
 }
 
-// ValueCount returns the count of all values across all Series in the Timeseries object
+// ValueCount returns the count of all values across all series in the Timeseries
 func (se *SeriesEnvelope) ValueCount() int {
 	c := 0
 	for i := range se.Results {
@@ -105,17 +105,18 @@ func (se *SeriesEnvelope) ValueCount() int {
 	return c
 }
 
-// SeriesCount ...
+// SeriesCount returns the count of all Results in the Timeseries
+// it is called SeriesCount due to Interface conformity and the disparity in nomenclature between various TSDBs.
 func (se *SeriesEnvelope) SeriesCount() int {
 	return len(se.Results)
 }
 
-// Step ...
+// Step returns the step for the Timeseries
 func (se *SeriesEnvelope) Step() time.Duration {
 	return se.StepDuration
 }
 
-// SetStep ...
+// SetStep sets the step for the Timeseries
 func (se *SeriesEnvelope) SetStep(step time.Duration) {
 	se.StepDuration = step
 }
@@ -137,7 +138,7 @@ func (t tags) String() string {
 	return pairs
 }
 
-// Merge ...
+// Merge merges the provided Timeseries list into the base Timeseries (in the order provided) and optionally sorts the merged Timeseries
 func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) {
 
 	series := make(map[seriesKey]*models.Row)
@@ -171,7 +172,7 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 	}
 }
 
-// Copy ...
+// Copy returns a perfect copy of the base Timeseries
 func (se *SeriesEnvelope) Copy() timeseries.Timeseries {
 	resultSe := &SeriesEnvelope{
 		Err:     se.Err,
@@ -209,7 +210,8 @@ func (se *SeriesEnvelope) Copy() timeseries.Timeseries {
 	return resultSe
 }
 
-// Crop ...
+// Crop returns a copy of the base Timeseries that has been cropped down to the provided Extents.
+// Crop assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
 func (se *SeriesEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 
 	if len(se.Results) == 0 {
@@ -278,7 +280,7 @@ func (se *SeriesEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 	return ts
 }
 
-// Sort ...
+// Sort sorts all Values in each Series chronologically by their timestamp
 func (se *SeriesEnvelope) Sort() {
 
 	if len(se.Results) == 0 || len(se.Results[0].Series) == 0 {

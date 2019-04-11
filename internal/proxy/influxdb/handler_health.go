@@ -19,7 +19,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy"
 )
 
-// HealthHandler ...
+// HealthHandler checks the health of the configured upstream Origin
 func (c Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BaseURL()
 	u.Path += "/" + health

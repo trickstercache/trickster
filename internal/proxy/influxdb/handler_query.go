@@ -22,7 +22,7 @@ import (
 	"github.com/Comcast/trickster/internal/util/regexp/matching"
 )
 
-// QueryHandler ...
+// QueryHandler handles timeseries requests for InfluxDB and processes them through the delta proxy cache
 func (c Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
 	rqlc := strings.Replace(strings.ToLower(r.URL.RawQuery), "%20", "+", -1)
@@ -38,7 +38,7 @@ func (c Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 		w, c, c.Cache, c.Cache.Configuration().TimeseriesTTLSecs, false)
 }
 
-// ParseTimeRangeQuery ...
+// ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
 func (c Client) ParseTimeRangeQuery(r *proxy.Request) (*timeseries.TimeRangeQuery, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}

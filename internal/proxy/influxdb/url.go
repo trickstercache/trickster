@@ -35,7 +35,7 @@ const (
 	upEpoch = "epoch"
 )
 
-// BaseURL ...
+// BaseURL returns a URL in the form of schme://host/path based on the proxy configuration
 func (c Client) BaseURL() *url.URL {
 	u := &url.URL{}
 	u.Scheme = c.Config.Scheme
@@ -60,7 +60,7 @@ func (c Client) BuildUpstreamURL(r *http.Request) *url.URL {
 	return u
 }
 
-// SetExtent ...
+// SetExtent will change the upstream request query to use the provided Extent
 func (c Client) SetExtent(r *proxy.Request, extent *timeseries.Extent) {
 
 	p := r.URL.Query()
