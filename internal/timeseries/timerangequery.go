@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-// TimeRangeQuery ...
+// TimeRangeQuery represents a timeseries database query parsed from an inbound HTTP request
 type TimeRangeQuery struct {
 	// Statement is the timeseries database query (with tokenized timeranges where present) requested by the user
 	Statement string

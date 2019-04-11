@@ -21,7 +21,7 @@ import (
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
-// Request ...
+// Request contains information about an inbound HTTP request
 type Request struct {
 	OriginName     string
 	OriginType     string
@@ -50,7 +50,7 @@ func NewRequest(originName, originType, handlerName, method string, url *url.URL
 	}
 }
 
-// Copy ...
+// Copy returns a true copy of the request
 func (r *Request) Copy() *Request {
 	return &Request{
 		OriginName:    r.OriginName,

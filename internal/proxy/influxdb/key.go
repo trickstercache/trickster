@@ -20,7 +20,7 @@ import (
 	"github.com/Comcast/trickster/internal/util/md5"
 )
 
-// DeriveCacheKey ...
+// DeriveCacheKey calculates a query-specific keyname based on the query in the user request
 func (c Client) DeriveCacheKey(r *proxy.Request, extra string) string {
 	params := r.TemplateURL.Query()
 

@@ -187,7 +187,7 @@ func (idx *Index) RemoveObject(key string, noLock bool) {
 
 }
 
-// flusher continually iterates through the cache to find expired elements and removes them
+// flusher periodically calls the cache's index flush func that writes the cache index to disk
 func (idx *Index) flusher() {
 	for {
 

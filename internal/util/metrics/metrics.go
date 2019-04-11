@@ -31,34 +31,34 @@ const (
 	proxySubsystem  = "proxy"
 )
 
-// ProxyRequestStatus ...
+// ProxyRequestStatus is a Counter of downstream client requests handled by Trickster
 var ProxyRequestStatus *prometheus.CounterVec
 
-// ProxyRequestElements ...
+// ProxyRequestElements is a Counter of data points in the timeseries returned to the requesting client
 var ProxyRequestElements *prometheus.CounterVec
 
-// ProxyRequestDuration ...
+// ProxyRequestDuration is a Histogram of time required in seconds to proxy a given Prometheus query
 var ProxyRequestDuration *prometheus.HistogramVec
 
-// CacheObjectOperations ...
+// CacheObjectOperations is a Counter of operations (in # of objects) performed on a Trickster cache
 var CacheObjectOperations *prometheus.CounterVec
 
-// CacheByteOperations ...
+// CacheByteOperations is a Counter of operations (in # of bytes) performed on a Trickster cache
 var CacheByteOperations *prometheus.CounterVec
 
-// CacheEvents ...
+// CacheEvents is a Counter of events performed on a Trickster cache
 var CacheEvents *prometheus.CounterVec
 
-// CacheObjects ...
+// CacheObjects is a Gauge representing the number of objects in a Trickster cache
 var CacheObjects *prometheus.GaugeVec
 
-// CacheBytes ...
+// CacheBytes is a Gauge representing the number of bytes in a Trickster cache
 var CacheBytes *prometheus.GaugeVec
 
-// CacheMaxObjects ...
+// CacheMaxObjects is a Gauge representing the Trickster cache's Max Object Threshold for triggering an eviction exercise
 var CacheMaxObjects *prometheus.GaugeVec
 
-// CacheMaxBytes ...
+// CacheMaxBytes is a Gauge representing the Trickster cache's Max Object Threshold for triggering an eviction exercise
 var CacheMaxBytes *prometheus.GaugeVec
 
 // Init initializes the instrumented metrics and starts the listener endpoint
@@ -69,7 +69,7 @@ func Init() {
 			Namespace: metricNamespace,
 			Subsystem: proxySubsystem,
 			Name:      "requests_total",
-			Help:      "Count of downstream client requests handled by trickster",
+			Help:      "Count of downstream client requests handled by Trickster",
 		},
 		[]string{"origin_name", "origin_type", "method", "cache_status", "http_status", "path"},
 	)

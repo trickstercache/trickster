@@ -67,17 +67,17 @@ type Client struct {
 	Cache  cache.Cache
 }
 
-// Configuration ...
+// Configuration returns the upstream Configuration for this Client
 func (c *Client) Configuration() config.OriginConfig {
 	return c.Config
 }
 
-// OriginName ...
+// OriginName returns the name of the upstream Configuration proxied by the Client
 func (c *Client) OriginName() string {
 	return c.Name
 }
 
-// CacheInstance ...
+// CacheInstance returns and handle to the Cache instance used by the Client
 func (c *Client) CacheInstance() cache.Cache {
 	return c.Cache
 }

@@ -29,7 +29,7 @@ const (
 	CrPurge      = "purge"
 )
 
-// QueryCache ...
+// QueryCache queries the cache for an HTTPDocument and returns it
 func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
 
 	inflate := c.Configuration().Compression
@@ -54,7 +54,7 @@ func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
 	return d, nil
 }
 
-// WriteCache ...
+// WriteCache writes an HTTPDocument to the cache
 func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl int) error {
 	// Delete Date Header, http.ReponseWriter will insert as Now() on cache retrieval
 	delete(d.Headers, "Date")

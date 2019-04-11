@@ -28,7 +28,7 @@ const (
 	OtInfluxDb   = "influxdb"
 )
 
-// Client ...
+// Client is the primary interface for interoperating with Trickster and upstream TSDB's
 type Client interface {
 
 	// RegisterRoutes provides a method to register upstream routes to HTTP Handlers

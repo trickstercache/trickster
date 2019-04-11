@@ -20,7 +20,7 @@ import (
 var locks = make(map[string]*sync.Mutex)
 var mapLock = sync.Mutex{}
 
-// Acquire ...
+// Acquire returns a named lock, and blocks until it is acquired
 func Acquire(lockName string) *sync.Mutex {
 
 	var l *sync.Mutex
@@ -41,7 +41,7 @@ func Acquire(lockName string) *sync.Mutex {
 	return l
 }
 
-// Release ...
+// Release unlocks and releases a named lock
 func Release(lockName string) {
 	mapLock.Lock()
 	defer mapLock.Unlock()

@@ -27,6 +27,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 )
 
+// Logger is the handle to the common TricksterLogger
 var Logger *TricksterLogger
 
 func mapToArray(event string, detail Pairs) []interface{} {
@@ -58,7 +59,7 @@ func init() {
 	Logger = ConsoleLogger("info")
 }
 
-// ConsoleLogger ...
+// ConsoleLogger returns a TricksterLogger object that prints log events to the Console
 func ConsoleLogger(logLevel string) *TricksterLogger {
 	l := &TricksterLogger{}
 
@@ -220,7 +221,7 @@ type pkgCaller struct {
 	c stack.Call
 }
 
-// String ...
+// String returns a path from the call stack that is relative to the root of the project
 func (pc pkgCaller) String() string {
 	return strings.TrimPrefix(fmt.Sprintf("%+v", pc.c), "github.com/Comcast/trickster/internal/")
 }
