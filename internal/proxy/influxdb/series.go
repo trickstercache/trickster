@@ -244,6 +244,9 @@ func (se *SeriesEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 					t := int64(v[ti].(float64) / 1000)
 
 					if t == endSecs {
+						if vi == 0 {
+							start = 0
+						}
 						end = vi + 1
 						break
 					}

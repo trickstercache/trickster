@@ -90,6 +90,11 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 		for i, val := range s.Values {
 			t := val.Timestamp.Time()
 			if t == e.End {
+				// for cases where the first element is the only qualifying element,
+				// start must be incremented or an empty response is returned
+				if i == 0 {
+					start = 0
+				}
 				end = i + 1
 				break
 			}
