@@ -48,6 +48,7 @@ type Index struct {
 	reapInterval   time.Duration                      `msg="-"`
 	flushInterval  time.Duration                      `msg="-"`
 	flushFunc      func(cacheKey string, data []byte) `msg="-"`
+	lastWrite      time.Time                          `msg="-"`
 }
 
 // ToBytes returns a serialized byte slice representing the Index
@@ -151,6 +152,8 @@ func (idx *Index) UpdateObject(obj Object) {
 	indexLock.Lock()
 	defer indexLock.Unlock()
 
+	idx.lastWrite = time.Now()
+
 	obj.Size = int64(len(obj.Value))
 	obj.Value = nil
 	obj.LastAccess = time.Now()
@@ -174,6 +177,7 @@ func (idx *Index) RemoveObject(key string, noLock bool) {
 	if !noLock {
 		indexLock.Lock()
 		defer indexLock.Unlock()
+		idx.lastWrite = time.Now()
 	}
 	if o, ok := idx.Objects[key]; ok {
 		idx.CacheSize -= o.Size
@@ -189,9 +193,12 @@ func (idx *Index) RemoveObject(key string, noLock bool) {
 
 // flusher periodically calls the cache's index flush func that writes the cache index to disk
 func (idx *Index) flusher() {
+	var lastFlush time.Time
 	for {
-
 		time.Sleep(idx.flushInterval)
+		if idx.lastWrite.Before(lastFlush) {
+			continue
+		}
 		indexLock.Lock()
 		bytes, err := idx.MarshalMsg(nil)
 		indexLock.Unlock()
@@ -200,6 +207,7 @@ func (idx *Index) flusher() {
 			continue
 		}
 		idx.flushFunc(IndexKey, bytes)
+		lastFlush = time.Now()
 	}
 }
 
@@ -223,6 +231,8 @@ func (idx *Index) reap() {
 	removals := make([]string, 0, 0)
 	remainders := make(objectsAtime, 0, idx.ObjectCount)
 
+	var cacheChanged bool
+
 	now := time.Now()
 
 	for _, o := range idx.Objects {
@@ -239,6 +249,7 @@ func (idx *Index) reap() {
 	if len(removals) > 0 {
 		ObserveCacheEvent(idx.name, idx.cacheType, "eviction", "ttl")
 		idx.bulkRemoveFunc(removals, true)
+		cacheChanged = true
 	}
 
 	if ((idx.config.MaxSizeBytes > 0 && idx.CacheSize > idx.config.MaxSizeBytes) || (idx.config.MaxSizeObjects > 0 && idx.ObjectCount > idx.config.MaxSizeObjects)) && len(remainders) > 0 {
@@ -296,6 +307,7 @@ func (idx *Index) reap() {
 			ObserveCacheEvent(idx.name, idx.cacheType, "eviction", evictionType)
 			fmt.Println("Removals Found", removals)
 			idx.bulkRemoveFunc(removals, true)
+			cacheChanged = true
 		}
 
 		log.Debug("size-based cache eviction exercise completed",
@@ -305,6 +317,9 @@ func (idx *Index) reap() {
 				"cacheSizeObjects": idx.ObjectCount, "maxSizeObjects": idx.config.MaxSizeObjects,
 			})
 
+	}
+	if cacheChanged {
+		idx.lastWrite = time.Now()
 	}
 }
 
