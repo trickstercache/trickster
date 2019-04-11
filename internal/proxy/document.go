@@ -17,7 +17,7 @@ import "net/http"
 
 //go:generate msgp
 
-// HTTPDocument ...
+// HTTPDocument represents a full HTTP Respose/Cache Document with unbuffered body
 type HTTPDocument struct {
 	StatusCode int                 `msg:"status_code"`
 	Status     string              `msg:"status"`
@@ -25,7 +25,7 @@ type HTTPDocument struct {
 	Body       []byte              `msg:"body"`
 }
 
-// DocumentFromHTTPResponse ...
+// DocumentFromHTTPResponse returns an HTTPDocument from the provided HTTP Response and Body
 func DocumentFromHTTPResponse(resp *http.Response, body []byte) *HTTPDocument {
 	d := &HTTPDocument{}
 	d.Headers = resp.Header

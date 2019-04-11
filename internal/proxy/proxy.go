@@ -34,7 +34,7 @@ const (
 	crPurge      = "purge"
 )
 
-// ProxyRequest ...
+// ProxyRequest proxies an inbound request to its corresponding upstream origin with no caching features
 func ProxyRequest(r *Request, w http.ResponseWriter) {
 	body, resp, elapsed := Fetch(r)
 	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, "none", strconv.Itoa(resp.StatusCode), r.URL.Path).Inc()
@@ -81,7 +81,7 @@ func Fetch(r *Request) ([]byte, *http.Response, time.Duration) {
 	return body, resp, latency
 }
 
-// Respond ...
+// Respond sends an HTTP Response down to the requesting client
 func Respond(w http.ResponseWriter, code int, headers http.Header, body []byte) {
 	h := w.Header()
 	for k, v := range headers {
