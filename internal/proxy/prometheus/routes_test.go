@@ -37,7 +37,7 @@ func TestRegisterRoutesNoDefault(t *testing.T) {
 	}
 
 	oc := config.Origins["default"]
-	client := Client{Config: oc}
+	client := Client{config: oc}
 	client.RegisterRoutes("test_default", oc)
 
 	// This should be false
@@ -69,7 +69,7 @@ func TestRegisterRoutesDefault(t *testing.T) {
 	}
 
 	oc := config.Origins["default"]
-	client := Client{Config: oc}
+	client := Client{config: oc}
 	client.RegisterRoutes("default", oc)
 
 	// This should be false

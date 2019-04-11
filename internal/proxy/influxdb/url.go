@@ -38,9 +38,9 @@ const (
 // BaseURL returns a URL in the form of schme://host/path based on the proxy configuration
 func (c Client) BaseURL() *url.URL {
 	u := &url.URL{}
-	u.Scheme = c.Config.Scheme
-	u.Host = c.Config.Host
-	u.Path = c.Config.PathPrefix
+	u.Scheme = c.config.Scheme
+	u.Host = c.config.Host
+	u.Path = c.config.PathPrefix
 	return u
 }
 
@@ -48,8 +48,8 @@ func (c Client) BaseURL() *url.URL {
 func (c Client) BuildUpstreamURL(r *http.Request) *url.URL {
 	u := c.BaseURL()
 
-	if strings.HasPrefix(r.URL.Path, "/"+c.Name+"/") {
-		u.Path += strings.Replace(r.URL.Path, "/"+c.Name+"/", "/", 1)
+	if strings.HasPrefix(r.URL.Path, "/"+c.name+"/") {
+		u.Path += strings.Replace(r.URL.Path, "/"+c.name+"/", "/", 1)
 	} else {
 		u.Path += r.URL.Path
 	}

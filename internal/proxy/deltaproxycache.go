@@ -87,7 +87,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 			// Load the Cached Timeseries
 			cts, err = client.UnmarshalTimeseries(doc.Body)
 			if err != nil {
-				log.Error("cache object unmarshaling failed", log.Pairs{"key": key, "originName": client.OriginName})
+				log.Error("cache object unmarshaling failed", log.Pairs{"key": key, "originName": client.Name()})
 				cache.Remove(key)
 				cts, doc, elapsed, err = fetchTimeseries(r, client)
 				if err != nil {

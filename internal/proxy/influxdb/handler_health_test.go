@@ -34,7 +34,7 @@ func TestHealthHandler(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/health", nil)
 
-	client := &Client{Name: "default", Config: config.Origins["default"]}
+	client := &Client{name: "default", config: config.Origins["default"]}
 	client.HealthHandler(w, r)
 	resp := w.Result()
 

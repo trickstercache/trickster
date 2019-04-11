@@ -23,5 +23,5 @@ import (
 func (c Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BaseURL()
 	u.Path += "/" + health
-	proxy.ProxyRequest(proxy.NewRequest(c.Name, proxy.OtInfluxDb, "HealthHandler", http.MethodGet, u, r.Header, c.Config.Timeout, r), w)
+	proxy.ProxyRequest(proxy.NewRequest(c.name, proxy.OtInfluxDb, "HealthHandler", http.MethodGet, u, r.Header, c.config.Timeout, r), w)
 }

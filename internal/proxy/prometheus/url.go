@@ -26,9 +26,9 @@ import (
 // BaseURL returns a URL in the form of schme://host/path based on the proxy configuration
 func (c *Client) BaseURL() *url.URL {
 	u := &url.URL{}
-	u.Scheme = c.Config.Scheme
-	u.Host = c.Config.Host
-	u.Path = c.Config.PathPrefix
+	u.Scheme = c.config.Scheme
+	u.Host = c.config.Host
+	u.Path = c.config.PathPrefix
 	return u
 }
 
