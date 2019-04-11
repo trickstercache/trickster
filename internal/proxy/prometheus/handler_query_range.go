@@ -20,7 +20,7 @@ import (
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
-// QueryRangeHandler ...
+// QueryRangeHandler handles timeseries requests for Prometheus and processes them through the delta proxy cache
 func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	proxy.DeltaProxyCacheRequest(
@@ -28,7 +28,7 @@ func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
 		w, c, c.Cache, c.Cache.Configuration().TimeseriesTTLSecs, false)
 }
 
-// ParseTimeRangeQuery ...
+// ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
 func (c *Client) ParseTimeRangeQuery(r *proxy.Request) (*timeseries.TimeRangeQuery, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}

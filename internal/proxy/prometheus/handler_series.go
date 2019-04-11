@@ -19,7 +19,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy"
 )
 
-// SeriesHandler ...
+// SeriesHandler proxies requests for path /series to the origin by way of the object proxy cache
 func (c *Client) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	proxy.ObjectProxyCacheRequest(

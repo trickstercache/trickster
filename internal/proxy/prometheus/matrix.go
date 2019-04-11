@@ -24,17 +24,17 @@ import (
 // Times represents an array of Prometheus Times
 type Times []model.Time
 
-// Step ...
+// Step returns the step for the Timeseries
 func (me *MatrixEnvelope) Step() time.Duration {
 	return me.StepDuration
 }
 
-// SetStep ...
+// SetStep sets the step for the Timeseries
 func (me *MatrixEnvelope) SetStep(step time.Duration) {
 	me.StepDuration = step
 }
 
-// Merge ...
+// Merge merges the provided Timeseries list into the base Timeseries (in the order provided) and optionally sorts the merged Timeseries
 func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) {
 	meMetrics := make(map[string]*model.SampleStream)
 	for _, s := range me.Data.Result {
@@ -63,7 +63,7 @@ func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 	}
 }
 
-// Copy ...
+// Copy returns a perfect copy of the base Timeseries
 func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 	resMe := &MatrixEnvelope{
 		Status: me.Status,
@@ -80,7 +80,8 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 	return resMe
 }
 
-// Crop ...
+// Crop returns a copy of the base Timeseries that has been cropped down to the provided Extents.
+// Crop assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
 func (me *MatrixEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 	ts := me.Copy().(*MatrixEnvelope)
 	for i, s := range ts.Data.Result {
@@ -121,7 +122,7 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 	return ts
 }
 
-// Sort ...
+// Sort sorts all Values in each Series chronologically by their timestamp
 func (me *MatrixEnvelope) Sort() {
 	for i, s := range me.Data.Result { // []SampleStream
 		m := make(map[model.Time]model.SamplePair)
@@ -141,12 +142,12 @@ func (me *MatrixEnvelope) Sort() {
 	}
 }
 
-// SetExtents ...
+// SetExtents overwrites a Timeseries's known extents with the provided extent list
 func (me *MatrixEnvelope) SetExtents(extents []timeseries.Extent) {
 	me.ExtentList = extents
 }
 
-// Extents ...
+// Extents returns the Timeseries's ExentList
 func (me *MatrixEnvelope) Extents() []timeseries.Extent {
 	if len(me.ExtentList) == 0 {
 		me.Extremes()
@@ -168,7 +169,7 @@ func (me *MatrixEnvelope) ValueCount() int {
 	return c
 }
 
-// Extremes returns the times of the oldest and newest cached data points for the given query.
+// Extremes returns the absolute start end times of a Timeseries, without respect to uncached gaps
 func (me *MatrixEnvelope) Extremes() []timeseries.Extent {
 	r := me.Data.Result
 	stamps := map[model.Time]bool{}

@@ -19,7 +19,7 @@ import (
 	"github.com/Comcast/trickster/internal/util/log"
 )
 
-// RegisterRoutes ...
+// RegisterRoutes registers the routes for the Client into the proxy's HTTP multiplexer
 func (c *Client) RegisterRoutes(originName string, o config.OriginConfig) {
 
 	if originName == "default" {

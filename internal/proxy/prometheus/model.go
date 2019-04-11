@@ -48,20 +48,20 @@ type MatrixData struct {
 	Result     model.Matrix `json:"result"`
 }
 
-// MarshalTimeseries ...
+// MarshalTimeseries converts a Timeseries into a JSON blob
 func (c *Client) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, error) {
 	// Marshal the Envelope back to a json object for Cache Storage
 	return json.Marshal(ts)
 }
 
-// UnmarshalTimeseries ...
+// UnmarshalTimeseries converts a JSON blob into a Timeseries
 func (c *Client) UnmarshalTimeseries(data []byte) (timeseries.Timeseries, error) {
 	me := &MatrixEnvelope{}
 	err := json.Unmarshal(data, &me)
 	return me, err
 }
 
-// UnmarshalInstantaneous ...
+// UnmarshalInstantaneous converts a JSON blob into an Instantaneous Data Point
 func (c *Client) UnmarshalInstantaneous(data []byte) (timeseries.Timeseries, error) {
 	ve := &VectorEnvelope{}
 	err := json.Unmarshal(data, &ve)
