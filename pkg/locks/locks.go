@@ -41,7 +41,7 @@ func Acquire(lockName string) *sync.Mutex {
 	return l
 }
 
-// Release unlocks and relases a named lock
+// Release unlocks and releases a named lock
 func Release(lockName string) {
 	mapLock.Lock()
 	defer mapLock.Unlock()

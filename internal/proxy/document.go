@@ -17,7 +17,7 @@ import "net/http"
 
 //go:generate msgp
 
-// HTTPDocument represents a full HTTP Respose/Cache Document with unbuffered body
+// HTTPDocument represents a full HTTP Response/Cache Document with unbuffered body
 type HTTPDocument struct {
 	StatusCode int                 `msg:"status_code"`
 	Status     string              `msg:"status"`
