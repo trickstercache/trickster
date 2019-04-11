@@ -492,7 +492,6 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		return nil, errors.Wrap(err, "error aligning step boundary")
 	}
-
 	// setup some variables to determine and track the status of the query vs what's in the cache
 	ctx.Matrix = defaultPrometheusMatrixEnvelope()
 	ctx.CacheLookupResult = crKeyMiss
@@ -500,6 +499,13 @@ func (t *TricksterHandler) buildRequestContext(w http.ResponseWriter, r *http.Re
 	// parameters for filling gap on the upper bound
 	ctx.OriginUpperExtents.Start = ctx.RequestExtents.Start
 	ctx.OriginUpperExtents.End = ctx.RequestExtents.End
+
+	// If the entire request is outside of the MaxValueAgeSecs, then lets not look in the
+	// cache, we won't have it
+	if (ctx.Time*1000 - ctx.RequestExtents.End) > ctx.Origin.MaxValueAgeSecs*1000 {
+		ctx.CacheLookupResult = crRangeMiss
+		return ctx, nil
+	}
 
 	// Get the cached result set if present
 	cachedBody, err := t.Cacher.Retrieve(ctx.CacheKey)
@@ -858,8 +864,12 @@ func (t *TricksterHandler) originRangeProxyHandler(cacheKey string, originRangeR
 				ctx.Matrix = t.mergeMatrix(upperDeltaData, ctx.Matrix)
 			}
 
+			// If the request is entirely outside of the cache window, we don't want to cache it
+			// otherwise we actually *clear* the cache of any data it has in it!
+			skipCache := (ctx.Time*1000 - ctx.RequestExtents.End) > ctx.Origin.MaxValueAgeSecs*1000
+
 			// If it's not a full cache hit, we want to write this back to the cache
-			if ctx.CacheLookupResult != crHit {
+			if ctx.CacheLookupResult != crHit && !skipCache {
 				cacheMatrix := ctx.Matrix.copy()
 
 				// Prune any old points based on retention policy
