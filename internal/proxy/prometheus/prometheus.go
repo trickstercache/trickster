@@ -60,26 +60,31 @@ const (
 
 // Client Implements Proxy Client Interface
 type Client struct {
-	Name   string
-	User   string
-	Pass   string
-	Config config.OriginConfig
-	Cache  cache.Cache
+	name   string
+	user   string
+	pass   string
+	config config.OriginConfig
+	cache  cache.Cache
+}
+
+// NewClient returns a new Client Instance
+func NewClient(name string, config config.OriginConfig, cache cache.Cache) *Client {
+	return &Client{name: name, config: config, cache: cache}
 }
 
 // Configuration returns the upstream Configuration for this Client
 func (c *Client) Configuration() config.OriginConfig {
-	return c.Config
+	return c.config
 }
 
-// OriginName returns the name of the upstream Configuration proxied by the Client
-func (c *Client) OriginName() string {
-	return c.Name
+// Name returns the name of the upstream Configuration proxied by the Client
+func (c *Client) Name() string {
+	return c.name
 }
 
-// CacheInstance returns and handle to the Cache instance used by the Client
-func (c *Client) CacheInstance() cache.Cache {
-	return c.Cache
+// Cache returns and handle to the Cache instance used by the Client
+func (c *Client) Cache() cache.Cache {
+	return c.cache
 }
 
 // parseTime converts a query time URL parameter to time.Time.

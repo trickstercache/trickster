@@ -27,11 +27,11 @@ import (
 
 // TestClient Implements Proxy Client Interface
 type TestClient struct {
-	Name   string
-	User   string
-	Pass   string
-	Config config.OriginConfig
-	Cache  cache.Cache
+	name   string
+	user   string
+	pass   string
+	config config.OriginConfig
+	cache  cache.Cache
 }
 
 type TestTimeseries struct {
@@ -46,13 +46,13 @@ func (c TestClient) BuildUpstreamURL(r *http.Request) *url.URL {
 	return u
 }
 func (c TestClient) Configuration() config.OriginConfig {
-	return c.Config
+	return c.config
 }
-func (c TestClient) OriginName() string {
-	return c.Name
+func (c TestClient) Name() string {
+	return c.name
 }
-func (c TestClient) CacheInstance() cache.Cache {
-	return c.Cache
+func (c TestClient) Cache() cache.Cache {
+	return c.cache
 }
 func (c TestClient) DeriveCacheKey(r *Request, extra string) string {
 	return md5.Checksum("test" + extra)

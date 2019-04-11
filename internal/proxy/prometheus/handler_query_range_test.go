@@ -192,7 +192,7 @@ func TestQueryRangeHandler(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/query_range?q=up&start=0&end=900&step=15", nil)
 
-	client := &Client{Name: "default", Config: config.Origins["default"], Cache: cache}
+	client := &Client{name: "default", config: config.Origins["default"], cache: cache}
 
 	client.QueryRangeHandler(w, r)
 

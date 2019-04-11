@@ -54,10 +54,10 @@ func RegisterProxyRoutes() {
 		switch strings.ToLower(o.Type) {
 		case proxy.OtPrometheus, "":
 			log.Info("Registering Prometheus Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
-			client = &prometheus.Client{Name: k, Config: o, Cache: c}
+			client = prometheus.NewClient(k, o, c)
 		case proxy.OtInfluxDb:
 			log.Info("Registering Influxdb Route Paths", log.Pairs{"originName": k})
-			client = &influxdb.Client{Name: k, Config: o, Cache: c}
+			client = influxdb.NewClient(k, o, c)
 		}
 
 		if client != nil {

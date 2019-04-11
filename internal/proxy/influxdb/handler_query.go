@@ -23,7 +23,7 @@ import (
 )
 
 // QueryHandler handles timeseries requests for InfluxDB and processes them through the delta proxy cache
-func (c Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
+func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
 	rqlc := strings.Replace(strings.ToLower(r.URL.RawQuery), "%20", "+", -1)
 	// if it's not a select statement, just proxy it instead
@@ -34,12 +34,12 @@ func (c Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
 	u := c.BuildUpstreamURL(r)
 	proxy.DeltaProxyCacheRequest(
-		proxy.NewRequest(c.Name, proxy.OtInfluxDb, "QueryHandler", r.Method, u, r.Header, c.Config.Timeout, r),
-		w, c, c.Cache, c.Cache.Configuration().TimeseriesTTLSecs, false)
+		proxy.NewRequest(c.name, proxy.OtInfluxDb, "QueryHandler", r.Method, u, r.Header, c.config.Timeout, r),
+		w, c, c.cache, c.cache.Configuration().TimeseriesTTLSecs, false)
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
-func (c Client) ParseTimeRangeQuery(r *proxy.Request) (*timeseries.TimeRangeQuery, error) {
+func (c *Client) ParseTimeRangeQuery(r *proxy.Request) (*timeseries.TimeRangeQuery, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	qi := r.TemplateURL.Query()

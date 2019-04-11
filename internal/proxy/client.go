@@ -37,12 +37,12 @@ type Client interface {
 	ParseTimeRangeQuery(*Request) (*timeseries.TimeRangeQuery, error)
 	// Configuration returns the configuration for the Proxy Client
 	Configuration() config.OriginConfig
-	// OriginName returns the name of the origin the Proxy Client is handling
-	OriginName() string
+	// Name returns the name of the origin the Proxy Client is handling
+	Name() string
 	// BaseURL returns the base URL (schema://host:port/path_prefix) for accessing an upstream origin
 	BaseURL() *url.URL
-	// CacheInstance returns the Cache object the Client uses in for Proxy Caching
-	CacheInstance() cache.Cache
+	// Cache returns the Cache object the Client uses in for Proxy Caching
+	Cache() cache.Cache
 	// DeriveCacheKey returns a hashed key for the request, used for request synchronization and cache deconfliction
 	DeriveCacheKey(*Request, string) string
 	// BuildUpstreamURL returns an URL for an upstream origin request based on the request URL
