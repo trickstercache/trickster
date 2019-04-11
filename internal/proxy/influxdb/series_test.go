@@ -326,7 +326,6 @@ func TestCrop(t *testing.T) {
 		before, after *SeriesEnvelope
 		extent        timeseries.Extent
 	}{
-
 		// Case where the very first element in the matrix has a timestamp matching the extent's end
 		{
 			before: &SeriesEnvelope{
@@ -366,7 +365,6 @@ func TestCrop(t *testing.T) {
 				End:   time.Unix(1544004600, 0),
 			},
 		},
-
 		// Case where we trim nothing
 		{
 			before: &SeriesEnvelope{
