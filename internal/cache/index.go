@@ -106,9 +106,9 @@ func NewIndex(cacheName, cacheType string, indexData []byte, cfg config.CacheInd
 
 	i.name = cacheName
 	i.cacheType = cacheType
-	i.flushInterval = time.Duration(cfg.FlushIntervalSecs) * time.Second
+	i.flushInterval = cfg.FlushInterval
 	i.flushFunc = flushFunc
-	i.reapInterval = time.Duration(cfg.ReapIntervalSecs) * time.Second
+	i.reapInterval = cfg.ReapInterval
 	i.bulkRemoveFunc = bulkRemoveFunc
 	i.config = cfg
 

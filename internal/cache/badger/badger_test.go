@@ -17,6 +17,7 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
@@ -59,7 +60,7 @@ func TestBadgerCache_Store(t *testing.T) {
 	defer bc.Close()
 
 	// it should store a value
-	err = bc.Store("cacheKey", []byte("data"), 60000)
+	err = bc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
@@ -80,7 +81,7 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 	}
 	defer bc.Close()
 
-	err = bc.Store("cacheKey", []byte("data"), 60000)
+	err = bc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}

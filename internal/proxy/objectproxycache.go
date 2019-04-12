@@ -16,6 +16,7 @@ package proxy
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/util/log"
@@ -24,13 +25,13 @@ import (
 )
 
 // ObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache
-func ObjectProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
+func ObjectProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, cache cache.Cache, ttl time.Duration, refresh bool, noLock bool) {
 	body, resp := FetchViaObjectProxyCache(r, client, cache, ttl, refresh, noLock)
 	Respond(w, resp.StatusCode, resp.Header, body)
 }
 
 // FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
-func FetchViaObjectProxyCache(r *Request, client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) ([]byte, *http.Response) {
+func FetchViaObjectProxyCache(r *Request, client Client, cache cache.Cache, ttl time.Duration, refresh bool, noLock bool) ([]byte, *http.Response) {
 
 	key := client.DeriveCacheKey(r, r.Headers.Get(hnAuthorization))
 

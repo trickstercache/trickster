@@ -52,11 +52,11 @@ func (c *Cache) Connect() error {
 }
 
 // Store places the the data into the Badger Cache using the provided Key and TTL
-func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
+func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
 	log.Debug("badger cache store", log.Pairs{"key": cacheKey, "ttl": ttl})
 	return c.dbh.Update(func(txn *badger.Txn) error {
-		return txn.SetWithTTL([]byte(cacheKey), data, time.Duration(ttl)*time.Second)
+		return txn.SetWithTTL([]byte(cacheKey), data, ttl)
 	})
 }
 

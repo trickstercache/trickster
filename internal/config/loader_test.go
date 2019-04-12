@@ -15,6 +15,7 @@ package config
 
 import (
 	"testing"
+	"time"
 )
 
 func TestLoadConfiguration(t *testing.T) {
@@ -24,4 +25,17 @@ func TestLoadConfiguration(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+
+	if Origins["default"].MaxValueAge == 0 {
+		t.Errorf("Expected 86400, got %s", Origins["default"].MaxValueAge)
+	}
+
+	if Caches["default"].FastForwardTTL != time.Duration(15)*time.Second {
+		t.Errorf("Expected 15, got %s", Caches["default"].FastForwardTTL)
+	}
+
+	if Caches["default"].Index.ReapInterval != time.Duration(3)*time.Second {
+		t.Errorf("Expected 3, got %s", Caches["default"].Index.ReapInterval)
+	}
+
 }

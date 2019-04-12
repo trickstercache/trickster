@@ -15,6 +15,7 @@ package redis
 
 import (
 	"testing"
+	"time"
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
@@ -63,7 +64,7 @@ func TestRedisCache_Store(t *testing.T) {
 	}
 
 	// it should store a value
-	err = rc.Store("cacheKey", []byte("data"), 60000)
+	err = rc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
@@ -77,7 +78,7 @@ func TestRedisCache_Retrieve(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	err = rc.Store("cacheKey", []byte("data"), 60000)
+	err = rc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}

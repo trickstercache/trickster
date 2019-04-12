@@ -67,8 +67,22 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	Logging = &c.Logging
 	Metrics = &c.Metrics
 
-	for _, o := range Origins {
+	for k, o := range Origins {
 		o.Timeout = time.Duration(o.TimeoutSecs) * time.Second
+		o.BackfillTolerance = time.Duration(o.BackfillToleranceSecs) * time.Second
+		o.MaxValueAge = time.Duration(o.MaxValueAgeSecs) * time.Second
+		Origins[k] = o
+	}
+
+	for k, c := range Caches {
+		c.TimeseriesTTL = time.Duration(c.TimeseriesTTLSecs) * time.Second
+		c.ObjectTTL = time.Duration(c.ObjectTTLSecs) * time.Second
+		c.FastForwardTTL = time.Duration(c.FastForwardTTLSecs) * time.Second
+
+		c.Index.FlushInterval = time.Duration(c.Index.FlushIntervalSecs) * time.Second
+		c.Index.ReapInterval = time.Duration(c.Index.ReapIntervalSecs) * time.Second
+
+		Caches[k] = c
 	}
 
 	return nil

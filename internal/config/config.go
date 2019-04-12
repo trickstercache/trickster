@@ -74,18 +74,21 @@ type MainConfig struct {
 // OriginConfig is a collection of configurations for prometheus origins proxied by Trickster
 // You can override these on a per-request basis with url-params
 type OriginConfig struct {
-	Type                  string        `toml:"type"`
-	Scheme                string        `toml:"scheme"`
-	Host                  string        `toml:"host"`
-	PathPrefix            string        `toml:"path_prefix"`
-	APIPath               string        `toml:"api_path"`
-	IgnoreNoCacheHeader   bool          `toml:"ignore_no_cache_header"`
-	MaxValueAgeSecs       int64         `toml:"max_value_age_secs"`
-	FastForwardDisable    bool          `toml:"fast_forward_disable"`
-	BackfillToleranceSecs int64         `toml:"backfill_tolerance_secs"`
-	TimeoutSecs           int64         `toml:"timeout_secs"`
-	CacheName             string        `toml:"cache_name"`
-	Timeout               time.Duration `toml:"-"`
+	Type                  string `toml:"type"`
+	Scheme                string `toml:"scheme"`
+	Host                  string `toml:"host"`
+	PathPrefix            string `toml:"path_prefix"`
+	APIPath               string `toml:"api_path"`
+	IgnoreNoCacheHeader   bool   `toml:"ignore_no_cache_header"`
+	MaxValueAgeSecs       int64  `toml:"max_value_age_secs"`
+	FastForwardDisable    bool   `toml:"fast_forward_disable"`
+	BackfillToleranceSecs int64  `toml:"backfill_tolerance_secs"`
+	TimeoutSecs           int64  `toml:"timeout_secs"`
+	CacheName             string `toml:"cache_name"`
+
+	Timeout           time.Duration `toml:"-"`
+	BackfillTolerance time.Duration `toml:"-"`
+	MaxValueAge       time.Duration `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -102,6 +105,10 @@ type CachingConfig struct {
 	Filesystem         FilesystemCacheConfig   `toml:"filesystem"`
 	BBolt              BBoltCacheConfig        `toml:"bbolt"`
 	Badger             BadgerCacheConfig       `toml:"badger"`
+
+	TimeseriesTTL  time.Duration `toml:"-"`
+	ObjectTTL      time.Duration `toml:"-"`
+	FastForwardTTL time.Duration `toml:"-"`
 }
 
 // CacheIndexConfig defines the operation of the Cache Indexer
@@ -112,6 +119,9 @@ type CacheIndexConfig struct {
 	MaxSizeBackoffBytes   int64 `toml:"max_size_backoff_bytes"`
 	MaxSizeObjects        int64 `toml:"max_size_objects"`
 	MaxSizeBackoffObjects int64 `toml:"max_size_backoff_objects"`
+
+	ReapInterval  time.Duration `toml:"-"`
+	FlushInterval time.Duration `toml:"-"`
 }
 
 // RedisCacheConfig is a collection of Configurations for Connecting to Redis

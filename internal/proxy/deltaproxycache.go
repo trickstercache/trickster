@@ -31,10 +31,12 @@ import (
 // DeltaProxyCacheRequest identifies the gaps between the cache and a new timeseries request,
 // requests the gaps from the origin server and returns the reconstituted dataset tto the downstream request
 // while caching the results for subsequent requests of the same data
-func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, cache cache.Cache, ttl int, refresh bool) {
+func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, cache cache.Cache, ttl time.Duration, refresh bool) {
+
+	cfg := client.Configuration()
 
 	trq, err := client.ParseTimeRangeQuery(r)
-	if err != nil {
+	if err != nil || trq.Extent.End.Before(time.Now().Add(-cfg.MaxValueAge)) {
 		// err may simply mean incompatible query (e.g., non-select), so just proxy
 		ProxyRequest(r, w)
 		return
@@ -53,12 +55,10 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	}
 	normalizedNow.NormalizeExtent()
 
-	cfg := client.Configuration()
-
 	// this is used to ensure the head of the cache respects the BackFill Tolerance
 	bf := timeseries.Extent{Start: time.Unix(0, 0), End: normalizedNow.Extent.End}
-	if cfg.BackfillToleranceSecs > 0 {
-		bf.End = bf.End.Add(time.Duration(-cfg.BackfillToleranceSecs) * time.Second)
+	if cfg.BackfillTolerance > 0 {
+		bf.End = bf.End.Add(-cfg.BackfillTolerance)
 	}
 
 	var cts timeseries.Timeseries
@@ -123,7 +123,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	var ffURL *url.URL
 	// if the step resolution <= Fast Forward TTL, then no need to even try Fast Forward
 	cacheConfig := cache.Configuration()
-	if int64(trq.Step) > int64(cacheConfig.FastForwardTTLSecs)*int64(time.Second) {
+	if trq.Step > cacheConfig.FastForwardTTL {
 		ffURL, err = client.FastForwardURL(r)
 		if err != nil {
 			ffURL = nil
@@ -183,7 +183,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 			defer wg.Done()
 			req := r.Copy()
 			req.URL = ffURL
-			body, resp := FetchViaObjectProxyCache(req, client, cache, cacheConfig.FastForwardTTLSecs, false, true)
+			body, resp := FetchViaObjectProxyCache(req, client, cache, cacheConfig.FastForwardTTL, false, true)
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				ffts, err = client.UnmarshalInstantaneous(body)
 				if err != nil {
@@ -229,7 +229,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		go func() {
 			defer wg.Done()
 			// Crop the Cached Object down to the Sample Age Retention Policy before storing
-			re := timeseries.Extent{End: bf.End, Start: time.Now().Add(-time.Duration(cfg.MaxValueAgeSecs) * time.Second)}
+			re := timeseries.Extent{End: bf.End, Start: time.Now().Add(-cfg.MaxValueAge)}
 			cts = cts.Crop(re)
 			// Don't cache empty datasets, ensure there is at least 1 value
 			if cts.ValueCount() > 0 {

@@ -16,6 +16,7 @@ package proxy
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
@@ -41,7 +42,7 @@ func TestQueryCache(t *testing.T) {
 	resp.StatusCode = 200
 	d := DocumentFromHTTPResponse(resp, []byte(expected))
 
-	err = WriteCache(cache, "testKey", d, 60)
+	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}

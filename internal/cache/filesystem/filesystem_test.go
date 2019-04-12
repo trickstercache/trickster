@@ -15,6 +15,7 @@ package filesystem
 
 import (
 	"testing"
+	"time"
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
@@ -26,7 +27,7 @@ func init() {
 
 func TestFilesystemCache_Connect(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapIntervalSecs: 1}}
+	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
 	fc := Cache{Config: &cacheConfig}
 
 	// it should connect
@@ -38,7 +39,7 @@ func TestFilesystemCache_Connect(t *testing.T) {
 
 func TestFilesystemCache_Store(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapIntervalSecs: 1}}
+	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
 	fc := Cache{Config: &cacheConfig}
 
 	err := fc.Connect()
@@ -47,7 +48,7 @@ func TestFilesystemCache_Store(t *testing.T) {
 	}
 
 	// it should store a value
-	err = fc.Store("cacheKey", []byte("data"), 60000)
+	err = fc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
@@ -55,14 +56,14 @@ func TestFilesystemCache_Store(t *testing.T) {
 
 func TestFilesystemCache_Retrieve(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapIntervalSecs: 1}}
+	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
 	fc := Cache{Config: &cacheConfig}
 
 	err := fc.Connect()
 	if err != nil {
 		t.Error(err)
 	}
-	err = fc.Store("cacheKey", []byte("data"), 60000)
+	err = fc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
