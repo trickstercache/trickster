@@ -14,6 +14,8 @@
 package proxy
 
 import (
+	"time"
+
 	"github.com/golang/snappy"
 
 	"github.com/Comcast/trickster/internal/cache"
@@ -55,7 +57,7 @@ func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
 }
 
 // WriteCache writes an HTTPDocument to the cache
-func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl int) error {
+func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl time.Duration) error {
 	// Delete Date Header, http.ReponseWriter will insert as Now() on cache retrieval
 	delete(d.Headers, "Date")
 	bytes, err := d.MarshalMsg(nil)
@@ -69,5 +71,5 @@ func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl int) error {
 		bytes = snappy.Encode(nil, bytes)
 	}
 
-	return c.Store(key, bytes, int64(ttl))
+	return c.Store(key, bytes, ttl)
 }

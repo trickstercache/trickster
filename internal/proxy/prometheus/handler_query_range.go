@@ -25,7 +25,7 @@ func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	proxy.DeltaProxyCacheRequest(
 		proxy.NewRequest(c.name, otPrometheus, "QueryRangeHandler", r.Method, u, r.Header, c.config.Timeout, r),
-		w, c, c.cache, c.cache.Configuration().TimeseriesTTLSecs, false)
+		w, c, c.cache, c.cache.Configuration().TimeseriesTTL, false)
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request

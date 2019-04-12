@@ -49,10 +49,10 @@ func (c *Cache) Connect() error {
 }
 
 // Store places the the data into the Redis Cluster using the provided Key and TTL
-func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
+func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
 	log.Debug("redis cluster cache store", log.Pairs{"key": cacheKey})
-	return c.client.Set(cacheKey, data, time.Second*time.Duration(ttl)).Err()
+	return c.client.Set(cacheKey, data, ttl).Err()
 }
 
 // Retrieve gets data from the Redis Cluster using the provided Key

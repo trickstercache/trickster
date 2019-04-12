@@ -44,10 +44,10 @@ func (c *Cache) Connect() error {
 }
 
 // Store places an object in the cache using the specified key and ttl
-func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
+func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
 	log.Debug("memorycache cache store", log.Pairs{"cacheKey": cacheKey, "length": len(data), "ttl": ttl})
-	o := cache.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(time.Duration(ttl) * time.Second)}
+	o := cache.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	c.client.Store(cacheKey, o)
 	go c.Index.UpdateObject(o)
 	return nil

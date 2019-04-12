@@ -15,6 +15,7 @@ package bbolt
 
 import (
 	"testing"
+	"time"
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
@@ -24,9 +25,9 @@ func init() {
 	metrics.Init()
 }
 
-func TestBoltDBCache_Connect(t *testing.T) {
+func TestBboltCache_Connect(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapIntervalSecs: 1}}
+	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
 	bc := Cache{Config: &cacheConfig}
 
 	// it should connect
@@ -39,9 +40,9 @@ func TestBoltDBCache_Connect(t *testing.T) {
 
 }
 
-func TestBoltDBCache_Store(t *testing.T) {
+func TestBboltCache_Store(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapIntervalSecs: 1}}
+	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
 	bc := Cache{Config: &cacheConfig}
 
 	err := bc.Connect()
@@ -51,15 +52,15 @@ func TestBoltDBCache_Store(t *testing.T) {
 	defer bc.Close()
 
 	// it should store a value
-	err = bc.Store("cacheKey", []byte("data"), 60000)
+	err = bc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
 }
 
-func TestBoltDBCache_Delete(t *testing.T) {
+func TestBboltCache_Delete(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapIntervalSecs: 1}}
+	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
 	bc := Cache{Config: &cacheConfig}
 
 	err := bc.Connect()
@@ -69,7 +70,7 @@ func TestBoltDBCache_Delete(t *testing.T) {
 	defer bc.Close()
 
 	// it should store a value
-	err = bc.Store("cacheKey", []byte("data"), 60000)
+	err = bc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
@@ -82,9 +83,9 @@ func TestBoltDBCache_Delete(t *testing.T) {
 
 }
 
-func TestBoltDBCache_Retrieve(t *testing.T) {
+func TestBboltCache_Retrieve(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapIntervalSecs: 1}}
+	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
 	bc := Cache{Config: &cacheConfig}
 
 	err := bc.Connect()
@@ -93,7 +94,7 @@ func TestBoltDBCache_Retrieve(t *testing.T) {
 	}
 	defer bc.Close()
 
-	err = bc.Store("cacheKey", []byte("data"), 60000)
+	err = bc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}

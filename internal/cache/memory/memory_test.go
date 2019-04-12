@@ -15,6 +15,7 @@ package memory
 
 import (
 	"testing"
+	"time"
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
@@ -26,7 +27,7 @@ func init() {
 
 func TestCache_Connect(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "memory", Index: config.CacheIndexConfig{ReapIntervalSecs: 0}}
+	cacheConfig := config.CachingConfig{Type: "memory", Index: config.CacheIndexConfig{ReapInterval: 0}}
 	mc := Cache{Config: &cacheConfig}
 
 	// it should connect
@@ -37,7 +38,7 @@ func TestCache_Connect(t *testing.T) {
 }
 
 func TestCache_Store(t *testing.T) {
-	cacheConfig := config.CachingConfig{Type: "memory", Index: config.CacheIndexConfig{ReapIntervalSecs: 0}}
+	cacheConfig := config.CachingConfig{Type: "memory", Index: config.CacheIndexConfig{ReapInterval: 0}}
 	mc := Cache{Config: &cacheConfig}
 
 	err := mc.Connect()
@@ -46,7 +47,7 @@ func TestCache_Store(t *testing.T) {
 	}
 
 	// it should store a value
-	err = mc.Store("cacheKey", []byte("data"), 60000)
+	err = mc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
@@ -54,7 +55,7 @@ func TestCache_Store(t *testing.T) {
 
 func TestCache_Retrieve(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "memory", Index: config.CacheIndexConfig{ReapIntervalSecs: 0}}
+	cacheConfig := config.CachingConfig{Type: "memory", Index: config.CacheIndexConfig{ReapInterval: 0}}
 	mc := Cache{Config: &cacheConfig}
 
 	err := mc.Connect()
@@ -62,7 +63,7 @@ func TestCache_Retrieve(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = mc.Store("cacheKey", []byte("data"), 60000)
+	err = mc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
@@ -79,7 +80,7 @@ func TestCache_Retrieve(t *testing.T) {
 }
 
 func TestCache_Close(t *testing.T) {
-	cacheConfig := config.CachingConfig{Type: "memory", Index: config.CacheIndexConfig{ReapIntervalSecs: 1}}
+	cacheConfig := config.CachingConfig{Type: "memory", Index: config.CacheIndexConfig{ReapInterval: time.Second}}
 	mc := Cache{Config: &cacheConfig}
 	mc.Close()
 }

@@ -57,7 +57,7 @@ func (c *Cache) Connect() error {
 }
 
 // Store places an object in the cache using the specified key and ttl
-func (c *Cache) Store(cacheKey string, data []byte, ttl int64) error {
+func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 	return c.store(cacheKey, data, ttl, true)
 }
 
@@ -68,7 +68,7 @@ func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 	}
 }
 
-func (c *Cache) store(cacheKey string, data []byte, ttl int64, updateIndex bool) error {
+func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateIndex bool) error {
 
 	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
 
@@ -77,7 +77,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl int64, updateIndex bool)
 	locks.Acquire(lockPrefix + cacheKey)
 	defer locks.Release(lockPrefix + cacheKey)
 
-	o := cache.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(time.Duration(ttl) * time.Second)}
+	o := cache.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	err := ioutil.WriteFile(dataFile, o.ToBytes(), os.FileMode(0777))
 	if err != nil {
 		return err

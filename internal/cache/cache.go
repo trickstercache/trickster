@@ -15,6 +15,7 @@ package cache
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/Comcast/trickster/internal/config"
 )
@@ -23,7 +24,7 @@ import (
 // When making new cache types, Retrieve() must return an error on cache miss
 type Cache interface {
 	Connect() error
-	Store(cacheKey string, data []byte, ttl int64) error
+	Store(cacheKey string, data []byte, ttl time.Duration) error
 	Retrieve(cacheKey string) ([]byte, error)
 	Remove(cacheKey string)
 	BulkRemove(cacheKeys []string, noLock bool)
