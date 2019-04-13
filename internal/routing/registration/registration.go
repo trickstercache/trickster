@@ -14,7 +14,6 @@
 package registration
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/Comcast/trickster/internal/cache"
@@ -28,14 +27,6 @@ import (
 
 // ProxyClients maintains a list of proxy clients configured for use by Trickster
 var ProxyClients = make(map[string]proxy.Client)
-
-// GetProxyClient returns the proxy.Client named proxyName if it exists
-func GetProxyClient(proxyName string) (proxy.Client, error) {
-	if c, ok := ProxyClients[proxyName]; ok {
-		return c, nil
-	}
-	return nil, fmt.Errorf("Could not find proxy.Client named [%s]", proxyName)
-}
 
 // RegisterProxyRoutes iterates the Trickster Configuration and registers the routes for the configured origins
 func RegisterProxyRoutes() {
