@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
 // Cache is the interface for the supported caching fabrics
@@ -42,4 +43,23 @@ func ObserveCacheMiss(cacheKey, cacheName, cacheType string) ([]byte, error) {
 func CacheError(cacheKey, cacheName, cacheType string, msg string) ([]byte, error) {
 	ObserveCacheEvent(cacheName, cacheType, "error", msg)
 	return nil, fmt.Errorf(msg, cacheKey)
+}
+
+// ObserveCacheOperation increments counters as cache operations occur
+func ObserveCacheOperation(cache, cacheType, operation, status string, bytes float64) {
+	metrics.CacheObjectOperations.WithLabelValues(cache, cacheType, operation, status).Inc()
+	if bytes > 0 {
+		metrics.CacheByteOperations.WithLabelValues(cache, cacheType, operation, status).Add(float64(bytes))
+	}
+}
+
+// ObserveCacheEvent increments counters as cache events occur
+func ObserveCacheEvent(cache, cacheType, event, reason string) {
+	metrics.CacheEvents.WithLabelValues(cache, cacheType, event, reason).Inc()
+}
+
+// ObserveCacheSizeChange adjust counters and gauges as the cache size changes due to object operations
+func ObserveCacheSizeChange(cache, cacheType string, byteCount, objectCount int64) {
+	metrics.CacheObjects.WithLabelValues(cache, cacheType).Set(float64(objectCount))
+	metrics.CacheBytes.WithLabelValues(cache, cacheType).Set(float64(byteCount))
 }
