@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/cache/index"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 )
@@ -27,7 +28,7 @@ type Cache struct {
 	Name   string
 	client sync.Map
 	Config *config.CachingConfig
-	Index  *cache.Index
+	Index  *index.Index
 }
 
 // Configuration returns the Configuration for the Cache object
@@ -39,7 +40,7 @@ func (c *Cache) Configuration() *config.CachingConfig {
 func (c *Cache) Connect() error {
 	log.Info("memorycache setup", log.Pairs{})
 	c.client = sync.Map{}
-	c.Index = cache.NewIndex(c.Name, c.Config.Type, nil, c.Config.Index, c.BulkRemove, nil)
+	c.Index = index.NewIndex(c.Name, c.Config.Type, nil, c.Config.Index, c.BulkRemove, nil)
 	return nil
 }
 
@@ -47,7 +48,7 @@ func (c *Cache) Connect() error {
 func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
 	log.Debug("memorycache cache store", log.Pairs{"cacheKey": cacheKey, "length": len(data), "ttl": ttl})
-	o := cache.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
+	o := index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	c.client.Store(cacheKey, o)
 	go c.Index.UpdateObject(o)
 	return nil
@@ -57,7 +58,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 	record, ok := c.client.Load(cacheKey)
 	if ok {
-		r := record.(cache.Object)
+		r := record.(index.Object)
 		if r.Expiration.After(time.Now()) {
 			log.Debug("memorycache cache retrieve", log.Pairs{"cacheKey": cacheKey})
 			c.Index.UpdateObjectAccessTime(cacheKey)

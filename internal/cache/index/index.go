@@ -11,7 +11,7 @@
 * limitations under the License.
  */
 
-package cache
+package index
 
 import (
 	"fmt"
@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
@@ -64,7 +65,7 @@ func IndexFromBytes(data []byte) (*Index, error) {
 	return i, err
 }
 
-// Object contains metadataa about an item in the Cache
+// Object contains metadata about an item in the Cache
 type Object struct {
 	// Key represents the name of the Object and is the accessor in a hashed collection of Cache Objects
 	Key string `msg:"key"`
@@ -166,7 +167,7 @@ func (idx *Index) UpdateObject(obj Object) {
 		idx.ObjectCount++
 	}
 
-	ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
+	cache.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
 
 	idx.Objects[key] = &obj
 }
@@ -183,10 +184,10 @@ func (idx *Index) RemoveObject(key string, noLock bool) {
 		idx.CacheSize -= o.Size
 		idx.ObjectCount--
 
-		ObserveCacheOperation(idx.name, idx.cacheType, "del", "none", float64(o.Size))
+		cache.ObserveCacheOperation(idx.name, idx.cacheType, "del", "none", float64(o.Size))
 
 		delete(idx.Objects, key)
-		ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
+		cache.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
 	}
 
 }
@@ -247,7 +248,7 @@ func (idx *Index) reap() {
 	}
 
 	if len(removals) > 0 {
-		ObserveCacheEvent(idx.name, idx.cacheType, "eviction", "ttl")
+		cache.ObserveCacheEvent(idx.name, idx.cacheType, "eviction", "ttl")
 		idx.bulkRemoveFunc(removals, true)
 		cacheChanged = true
 	}
@@ -304,7 +305,7 @@ func (idx *Index) reap() {
 		}
 
 		if len(removals) > 0 {
-			ObserveCacheEvent(idx.name, idx.cacheType, "eviction", evictionType)
+			cache.ObserveCacheEvent(idx.name, idx.cacheType, "eviction", evictionType)
 			fmt.Println("Removals Found", removals)
 			idx.bulkRemoveFunc(removals, true)
 			cacheChanged = true
@@ -336,23 +337,4 @@ func (o objectsAtime) Less(i, j int) bool {
 // Swap modifies an array by of Prometheus model.Times swapping the values in indexes i and j
 func (o objectsAtime) Swap(i, j int) {
 	o[i], o[j] = o[j], o[i]
-}
-
-// ObserveCacheOperation increments counters as cache operations occur
-func ObserveCacheOperation(cache, cacheType, operation, status string, bytes float64) {
-	metrics.CacheObjectOperations.WithLabelValues(cache, cacheType, operation, status).Inc()
-	if bytes > 0 {
-		metrics.CacheByteOperations.WithLabelValues(cache, cacheType, operation, status).Add(float64(bytes))
-	}
-}
-
-// ObserveCacheEvent increments counters as cache events occur
-func ObserveCacheEvent(cache, cacheType, event, reason string) {
-	metrics.CacheEvents.WithLabelValues(cache, cacheType, event, reason).Inc()
-}
-
-// ObserveCacheSizeChange adjust counters and gauges as the cache size changes due to object operations
-func ObserveCacheSizeChange(cache, cacheType string, byteCount, objectCount int64) {
-	metrics.CacheObjects.WithLabelValues(cache, cacheType).Set(float64(objectCount))
-	metrics.CacheBytes.WithLabelValues(cache, cacheType).Set(float64(byteCount))
 }

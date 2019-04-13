@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/cache/index"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/pkg/locks"
@@ -34,7 +35,7 @@ var lockPrefix string
 type Cache struct {
 	Name   string
 	Config *config.CachingConfig
-	Index  *cache.Index
+	Index  *index.Index
 }
 
 // Configuration returns the Configuration for the Cache object
@@ -51,8 +52,8 @@ func (c *Cache) Connect() error {
 	lockPrefix = c.Name + ".file."
 
 	// Load Index here and pass bytes as param2
-	indexData, _ := c.retrieve(cache.IndexKey, false)
-	c.Index = cache.NewIndex(c.Name, c.Config.Type, indexData, c.Config.Index, c.BulkRemove, c.storeNoIndex)
+	indexData, _ := c.retrieve(index.IndexKey, false)
+	c.Index = index.NewIndex(c.Name, c.Config.Type, indexData, c.Config.Index, c.BulkRemove, c.storeNoIndex)
 	return nil
 }
 
@@ -77,7 +78,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 	locks.Acquire(lockPrefix + cacheKey)
 	defer locks.Release(lockPrefix + cacheKey)
 
-	o := cache.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
+	o := index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	err := ioutil.WriteFile(dataFile, o.ToBytes(), os.FileMode(0777))
 	if err != nil {
 		return err
@@ -108,7 +109,7 @@ func (c *Cache) retrieve(cacheKey string, atime bool) ([]byte, error) {
 		return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
 	}
 
-	o, err := cache.ObjectFromBytes(data)
+	o, err := index.ObjectFromBytes(data)
 	if err != nil {
 		return cache.CacheError(cacheKey, c.Name, c.Config.Type, "value for key [%s] could not be deserialized from cache")
 	}
