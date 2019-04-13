@@ -17,4 +17,4 @@ matrix:
     - go get github.com/mattn/goveralls
     script:
     - make style test build
-    - $GOPATH/bin/goveralls -service=travis-ci
+    - $GOPATH/bin/goveralls  -coverprofile=.coverprofile -service=travis-ci

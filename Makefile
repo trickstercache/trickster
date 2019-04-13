@@ -85,12 +85,11 @@ style:
 
 .PHONY: test
 test: test-go-mod
-	$(GO) test -v ./...
+	$(GO) test -v -coverprofile=.coverprofile ./...
 
 .PHONY: test-cover
-test-cover:
-	$(GO) test -coverprofile=cover.out ./...
-	$(GO) tool cover -html=cover.out
+test-cover: test
+	$(GO) tool cover -html=.coverprofile
 
 .PHONY: clean
 clean:

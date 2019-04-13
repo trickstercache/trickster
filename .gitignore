@@ -13,6 +13,9 @@
 # Project-local glide cache, RE: https://github.com/Masterminds/glide/issues/736
 .glide/
 
+# Test Coverage Profile Output
+.coverprofile
+
 # output path
 OPATH
 
