@@ -26,16 +26,16 @@ func TestLoadConfiguration(t *testing.T) {
 		t.Error(err)
 	}
 
-	if Origins["default"].MaxValueAge == 0 {
-		t.Errorf("Expected 86400, got %s", Origins["default"].MaxValueAge)
+	if Origins["default"].ValueRetention != 1024 {
+		t.Errorf("expected 1024, got %d", Origins["default"].ValueRetention)
 	}
 
 	if Caches["default"].FastForwardTTL != time.Duration(15)*time.Second {
-		t.Errorf("Expected 15, got %s", Caches["default"].FastForwardTTL)
+		t.Errorf("expected 15, got %s", Caches["default"].FastForwardTTL)
 	}
 
 	if Caches["default"].Index.ReapInterval != time.Duration(3)*time.Second {
-		t.Errorf("Expected 3, got %s", Caches["default"].Index.ReapInterval)
+		t.Errorf("expected 3, got %s", Caches["default"].Index.ReapInterval)
 	}
 
 }

@@ -36,11 +36,18 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	cfg := client.Configuration()
 
 	trq, err := client.ParseTimeRangeQuery(r)
-	if err != nil || trq.Extent.End.Before(time.Now().Add(-cfg.MaxValueAge)) {
+	if err != nil {
 		// err may simply mean incompatible query (e.g., non-select), so just proxy
 		ProxyRequest(r, w)
 		return
 	}
+
+	OldestRetainedTimestamp := time.Now().Add(-(trq.Step * time.Duration(cfg.ValueRetention)))
+	if trq.Extent.End.Before(OldestRetainedTimestamp) {
+		ProxyRequest(r, w)
+		return
+	}
+
 	r.TimeRangeQuery = trq
 	trq.NormalizeExtent()
 
@@ -229,7 +236,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		go func() {
 			defer wg.Done()
 			// Crop the Cached Object down to the Sample Age Retention Policy before storing
-			re := timeseries.Extent{End: bf.End, Start: time.Now().Add(-cfg.MaxValueAge)}
+			re := timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp}
 			cts = cts.Crop(re)
 			// Don't cache empty datasets, ensure there is at least 1 value
 			if cts.ValueCount() > 0 {

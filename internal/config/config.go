@@ -80,7 +80,7 @@ type OriginConfig struct {
 	PathPrefix            string `toml:"path_prefix"`
 	APIPath               string `toml:"api_path"`
 	IgnoreNoCacheHeader   bool   `toml:"ignore_no_cache_header"`
-	MaxValueAgeSecs       int64  `toml:"max_value_age_secs"`
+	ValueRetentionFactor  int    `toml:"value_retention_factor"`
 	FastForwardDisable    bool   `toml:"fast_forward_disable"`
 	BackfillToleranceSecs int64  `toml:"backfill_tolerance_secs"`
 	TimeoutSecs           int64  `toml:"timeout_secs"`
@@ -88,7 +88,7 @@ type OriginConfig struct {
 
 	Timeout           time.Duration `toml:"-"`
 	BackfillTolerance time.Duration `toml:"-"`
-	MaxValueAge       time.Duration `toml:"-"`
+	ValueRetention    time.Duration `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -238,14 +238,14 @@ func NewConfig() *TricksterConfig {
 
 func defaultOriginConfig() OriginConfig {
 	return OriginConfig{
-		Type:                "prometheus",
-		Scheme:              "http",
-		Host:                "prometheus:9090",
-		APIPath:             "/api/v1/",
-		IgnoreNoCacheHeader: true,
-		MaxValueAgeSecs:     86400, // Keep datapoints up to 24 hours old
-		TimeoutSecs:         180,
-		CacheName:           "default",
+		Type:                 "prometheus",
+		Scheme:               "http",
+		Host:                 "prometheus:9090",
+		APIPath:              "/api/v1/",
+		IgnoreNoCacheHeader:  true,
+		ValueRetentionFactor: 1024, // Cache a max of 1024 recent timestamps of data for each query
+		TimeoutSecs:          180,
+		CacheName:            "default",
 	}
 }
 
