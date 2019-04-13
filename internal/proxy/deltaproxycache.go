@@ -42,7 +42,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		return
 	}
 
-	OldestRetainedTimestamp := time.Now().Add(-(trq.Step * time.Duration(cfg.ValueRetention)))
+	OldestRetainedTimestamp := time.Now().Add(-(trq.Step * cfg.ValueRetention))
 	if trq.Extent.End.Before(OldestRetainedTimestamp) {
 		ProxyRequest(r, w)
 		return
