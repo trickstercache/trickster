@@ -33,9 +33,6 @@ func (trq *TimeRangeQuery) NormalizeExtent() {
 	stepSecs := int64(trq.Step / time.Second)
 
 	if stepSecs > 0 {
-		if trq.Extent.End.After(time.Now()) {
-			trq.Extent.End = time.Now()
-		}
 		trq.Extent.Start = time.Unix((trq.Extent.Start.Unix()/stepSecs)*stepSecs, 0)
 		trq.Extent.End = time.Unix((trq.Extent.End.Unix()/stepSecs)*stepSecs, 0)
 	}
