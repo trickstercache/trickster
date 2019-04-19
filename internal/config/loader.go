@@ -70,7 +70,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	for k, o := range Origins {
 		o.Timeout = time.Duration(o.TimeoutSecs) * time.Second
 		o.BackfillTolerance = time.Duration(o.BackfillToleranceSecs) * time.Second
-		o.MaxValueAge = time.Duration(o.MaxValueAgeSecs) * time.Second
+		o.ValueRetention = time.Duration(o.ValueRetentionFactor)
 		Origins[k] = o
 	}
 
