@@ -23,16 +23,17 @@ import (
 
 // Request contains information about an inbound HTTP request
 type Request struct {
-	OriginName     string
-	OriginType     string
-	HandlerName    string
-	HTTPMethod     string
-	URL            *url.URL
-	TemplateURL    *url.URL
-	Headers        http.Header
-	ClientRequest  *http.Request
-	Timeout        time.Duration
-	TimeRangeQuery *timeseries.TimeRangeQuery
+	OriginName         string
+	OriginType         string
+	HandlerName        string
+	HTTPMethod         string
+	URL                *url.URL
+	TemplateURL        *url.URL
+	Headers            http.Header
+	ClientRequest      *http.Request
+	Timeout            time.Duration
+	TimeRangeQuery     *timeseries.TimeRangeQuery
+	FastForwardDisable bool
 }
 
 // NewRequest returns a new proxy request object that can service the downstream request
