@@ -25,6 +25,8 @@ type TimeRangeQuery struct {
 	Extent Extent
 	// Step indicates the amount of time in seconds between each datapoint in a TimeRangeQuery's resulting timeseries
 	Step time.Duration
+	// IsOffset is true if the query uses a relative offset modifier
+	IsOffset bool
 }
 
 // NormalizeExtent adjusts the Start and End of a TimeRangeQuery's Extent to align against normalized boundaries.
@@ -33,7 +35,7 @@ func (trq *TimeRangeQuery) NormalizeExtent() {
 	stepSecs := int64(trq.Step / time.Second)
 
 	if stepSecs > 0 {
-		if trq.Extent.End.After(time.Now()) {
+		if !trq.IsOffset && trq.Extent.End.After(time.Now()) {
 			trq.Extent.End = time.Now()
 		}
 		trq.Extent.Start = time.Unix((trq.Extent.Start.Unix()/stepSecs)*stepSecs, 0)

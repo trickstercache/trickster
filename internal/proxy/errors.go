@@ -40,5 +40,5 @@ func ErrorNotSelectStatement() error {
 
 // ParseDurationError returns a Duration Parsing Error
 func ParseDurationError(input string) (time.Duration, error) {
-	return time.Duration(0), fmt.Errorf("Unable to parse duration: %s", input)
+	return time.Duration(0), fmt.Errorf("unable to parse duration: %s", input)
 }

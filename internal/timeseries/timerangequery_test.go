@@ -27,6 +27,11 @@ func TestCalculateDeltas(t *testing.T) {
 		start, end, stepSecs int64
 	}{
 		{
+			[]Extent{},
+			[]Extent{Extent{Start: time.Unix(1, 0), End: time.Unix(100, 0)}},
+			1, 100, 1,
+		},
+		{
 			[]Extent{Extent{Start: time.Unix(50, 0), End: time.Unix(100, 0)}},
 			[]Extent{Extent{Start: time.Unix(1, 0), End: time.Unix(49, 0)}},
 			1, 100, 1,

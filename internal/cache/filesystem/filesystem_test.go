@@ -14,6 +14,8 @@
 package filesystem
 
 import (
+	"io/ioutil"
+	"os"
 	"testing"
 	"time"
 
@@ -25,9 +27,31 @@ func init() {
 	metrics.Init()
 }
 
+const cacheType = "filesystem"
+const cacheKey = "cacheKey"
+
+func newCacheConfig(t *testing.T) config.CachingConfig {
+	dir, err := ioutil.TempDir("/tmp", cacheType)
+	if err != nil {
+		t.Fatalf("could not create temp directory (%s): %s", dir, err)
+	}
+	return config.CachingConfig{Type: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: dir}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+}
+
+func TestConfiguration(t *testing.T) {
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
+	fc := Cache{Config: &cacheConfig}
+	cfg := fc.Configuration()
+	if cfg.Type != cacheType {
+		t.Fatalf("expected %s got %s", cacheType, cfg.Type)
+	}
+}
+
 func TestFilesystemCache_Connect(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
 	fc := Cache{Config: &cacheConfig}
 
 	// it should connect
@@ -39,7 +63,8 @@ func TestFilesystemCache_Connect(t *testing.T) {
 
 func TestFilesystemCache_Store(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
 	fc := Cache{Config: &cacheConfig}
 
 	err := fc.Connect()
@@ -48,32 +73,133 @@ func TestFilesystemCache_Store(t *testing.T) {
 	}
 
 	// it should store a value
-	err = fc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
+	err = fc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
 }
 
-func TestFilesystemCache_Retrieve(t *testing.T) {
+func TestFilesystemCache_StoreNoIndex(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "filesystem", Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
 	fc := Cache{Config: &cacheConfig}
 
 	err := fc.Connect()
 	if err != nil {
 		t.Error(err)
 	}
-	err = fc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
-	if err != nil {
-		t.Error(err)
-	}
+	defer fc.Close()
+
+	// it should store a value
+	fc.storeNoIndex(cacheKey, []byte("data"))
 
 	// it should retrieve a value
-	data, err := fc.Retrieve("cacheKey")
+	data, err := fc.Retrieve(cacheKey)
 	if err != nil {
 		t.Error(err)
 	}
 	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
+
+}
+
+func TestFilesystemCache_Retrieve(t *testing.T) {
+
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
+	fc := Cache{Config: &cacheConfig}
+
+	err := fc.Connect()
+	if err != nil {
+		t.Error(err)
+	}
+	err = fc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// it should retrieve a value
+	data, err := fc.Retrieve(cacheKey)
+	if err != nil {
+		t.Error(err)
+	}
+	if string(data) != "data" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+}
+
+func TestFilesystemCache_Remove(t *testing.T) {
+
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
+	fc := Cache{Config: &cacheConfig}
+
+	err := fc.Connect()
+	if err != nil {
+		t.Error(err)
+	}
+	defer fc.Close()
+
+	// it should store a value
+	err = fc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// it should retrieve a value
+	data, err := fc.Retrieve(cacheKey)
+	if err != nil {
+		t.Error(err)
+	}
+	if string(data) != "data" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+
+	fc.Remove(cacheKey)
+
+	// it should be a cache miss
+	data, err = fc.Retrieve(cacheKey)
+	if err == nil {
+		t.Errorf("expected key not found error for %s", cacheKey)
+	}
+
+}
+
+func TestFilesystemCache_BulkRemove(t *testing.T) {
+
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
+	fc := Cache{Config: &cacheConfig}
+
+	err := fc.Connect()
+	if err != nil {
+		t.Error(err)
+	}
+	defer fc.Close()
+
+	// it should store a value
+	err = fc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// it should retrieve a value
+	data, err := fc.Retrieve(cacheKey)
+	if err != nil {
+		t.Error(err)
+	}
+	if string(data) != "data" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+
+	fc.BulkRemove([]string{cacheKey}, true)
+
+	// it should be a cache miss
+	data, err = fc.Retrieve(cacheKey)
+	if err == nil {
+		t.Errorf("expected key not found error for %s", cacheKey)
+	}
+
 }

@@ -15,6 +15,7 @@ package prometheus
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/timeseries"
@@ -67,6 +68,11 @@ func (c *Client) ParseTimeRangeQuery(r *proxy.Request) (*timeseries.TimeRangeQue
 		trq.Step = step
 	} else {
 		return nil, proxy.ErrorMissingURLParam(upStep)
+	}
+
+	if strings.Index(trq.Statement, " offset ") > -1 {
+		trq.IsOffset = true
+		r.FastForwardDisable = true
 	}
 
 	return trq, nil

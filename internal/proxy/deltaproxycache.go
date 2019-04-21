@@ -34,6 +34,7 @@ import (
 func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, cache cache.Cache, ttl time.Duration, refresh bool) {
 
 	cfg := client.Configuration()
+	r.FastForwardDisable = cfg.FastForwardDisable
 
 	trq, err := client.ParseTimeRangeQuery(r)
 	if err != nil {
@@ -63,8 +64,8 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	normalizedNow.NormalizeExtent()
 
 	// this is used to ensure the head of the cache respects the BackFill Tolerance
-	bf := timeseries.Extent{Start: time.Unix(0, 0), End: normalizedNow.Extent.End}
-	if cfg.BackfillTolerance > 0 {
+	bf := timeseries.Extent{Start: time.Unix(0, 0), End: trq.Extent.End}
+	if !trq.IsOffset && cfg.BackfillTolerance > 0 {
 		bf.End = bf.End.Add(-cfg.BackfillTolerance)
 	}
 
@@ -130,15 +131,18 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	var ffURL *url.URL
 	// if the step resolution <= Fast Forward TTL, then no need to even try Fast Forward
 	cacheConfig := cache.Configuration()
-	if trq.Step > cacheConfig.FastForwardTTL {
-		ffURL, err = client.FastForwardURL(r)
-		if err != nil {
-			ffURL = nil
+	if !r.FastForwardDisable {
+		if trq.Step > cacheConfig.FastForwardTTL {
+			ffURL, err = client.FastForwardURL(r)
+			if err != nil || ffURL == nil {
+				r.FastForwardDisable = true
+			}
+		} else {
+			r.FastForwardDisable = true
 		}
 	}
-
 	// if it's a cache hit and fast forward is disabled or unsupported, just return the data.
-	if cacheStatus == crHit && (cfg.FastForwardDisable || ffURL == nil) {
+	if cacheStatus == crHit && (r.FastForwardDisable) {
 		Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 		return
 	}
@@ -184,7 +188,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	var hasFastForwardData bool
 	var ffts timeseries.Timeseries
 	// Only fast forward if configured and the user request is for the absolute latest datapoint
-	if ffURL != nil && (!cfg.FastForwardDisable) && (trq.Extent.End == normalizedNow.Extent.End) && ffURL.Scheme != "" {
+	if (!r.FastForwardDisable) && (trq.Extent.End == normalizedNow.Extent.End) && ffURL.Scheme != "" {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
