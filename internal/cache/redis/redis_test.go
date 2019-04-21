@@ -1,5 +1,5 @@
 /**
-* Copyright 2018 Comcast Cable Communications Management, LLC
+* Copyright 2018 Corcast Cable Communications Management, LLC
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
 * You may obtain a copy of the License at
@@ -27,6 +27,9 @@ func init() {
 	metrics.Init()
 }
 
+const cacheType = `redis`
+const cacheKey = `cacheKey`
+
 func setupRedisCache() (*Cache, func()) {
 	s, err := miniredis.Run()
 	if err != nil {
@@ -37,10 +40,20 @@ func setupRedisCache() (*Cache, func()) {
 	close := func() {
 		s.Close()
 	}
-	cacheConfig := config.CachingConfig{Type: "redis", Redis: rcfg}
+	cacheConfig := config.CachingConfig{Type: cacheType, Redis: rcfg}
 	config.Caches = map[string]config.CachingConfig{"default": cacheConfig}
 
 	return &Cache{Config: &cacheConfig}, close
+}
+
+func TestConfiguration(t *testing.T) {
+	rc, close := setupRedisCache()
+	defer close()
+
+	cfg := rc.Configuration()
+	if cfg.Type != cacheType {
+		t.Fatalf("expected %s got %s", cacheType, cfg.Type)
+	}
 }
 
 func TestRedisCache_Connect(t *testing.T) {
@@ -64,7 +77,7 @@ func TestRedisCache_Store(t *testing.T) {
 	}
 
 	// it should store a value
-	err = rc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
+	err = rc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
@@ -78,13 +91,13 @@ func TestRedisCache_Retrieve(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	err = rc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
+	err = rc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// it should retrieve a value
-	data, err := rc.Retrieve("cacheKey")
+	data, err := rc.Retrieve(cacheKey)
 	if err != nil {
 		t.Error(err)
 	}
@@ -107,4 +120,76 @@ func TestRedisCache_Close(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+func TestCache_Remove(t *testing.T) {
+
+	rc, close := setupRedisCache()
+	defer close()
+
+	err := rc.Connect()
+	if err != nil {
+		t.Error(err)
+	}
+	defer rc.Close()
+
+	// it should store a value
+	err = rc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// it should retrieve a value
+	data, err := rc.Retrieve(cacheKey)
+	if err != nil {
+		t.Error(err)
+	}
+	if string(data) != "data" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+
+	rc.Remove(cacheKey)
+
+	// it should be a cache miss
+	data, err = rc.Retrieve(cacheKey)
+	if err == nil {
+		t.Errorf("expected key not found error for %s", cacheKey)
+	}
+
+}
+
+func TestCache_BulkRemove(t *testing.T) {
+
+	rc, close := setupRedisCache()
+	defer close()
+
+	err := rc.Connect()
+	if err != nil {
+		t.Error(err)
+	}
+	defer rc.Close()
+
+	// it should store a value
+	err = rc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// it should retrieve a value
+	data, err := rc.Retrieve(cacheKey)
+	if err != nil {
+		t.Error(err)
+	}
+	if string(data) != "data" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+
+	rc.BulkRemove([]string{cacheKey}, true)
+
+	// it should be a cache miss
+	data, err = rc.Retrieve(cacheKey)
+	if err == nil {
+		t.Errorf("expected key not found error for %s", cacheKey)
+	}
+
 }
