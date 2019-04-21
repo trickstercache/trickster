@@ -14,6 +14,7 @@
 package bbolt
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -28,8 +29,12 @@ func init() {
 const cacheType = "bbolt"
 const cacheKey = "cacheKey"
 
+func newCacheConfig() config.CachingConfig {
+	return config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+}
+
 func TestConfiguration(t *testing.T) {
-	cacheConfig := config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig()
 	bc := Cache{Config: &cacheConfig}
 	cfg := bc.Configuration()
 	if cfg.Type != cacheType {
@@ -38,7 +43,8 @@ func TestConfiguration(t *testing.T) {
 }
 
 func TestBboltCache_Connect(t *testing.T) {
-	cacheConfig := config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig()
+	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 	bc := Cache{Config: &cacheConfig}
 	// it should connect
 	err := bc.Connect()
@@ -50,8 +56,9 @@ func TestBboltCache_Connect(t *testing.T) {
 
 func TestBboltCache_Store(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig()
 	bc := Cache{Config: &cacheConfig}
+	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
 	if err != nil {
@@ -68,8 +75,9 @@ func TestBboltCache_Store(t *testing.T) {
 
 func TestBboltCache_StoreNoIndex(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig()
 	bc := Cache{Config: &cacheConfig}
+	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
 	if err != nil {
@@ -93,8 +101,9 @@ func TestBboltCache_StoreNoIndex(t *testing.T) {
 
 func TestBboltCache_Remove(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig()
 	bc := Cache{Config: &cacheConfig}
+	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
 	if err != nil {
@@ -129,8 +138,9 @@ func TestBboltCache_Remove(t *testing.T) {
 
 func TestBboltCache_BulkRemove(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig()
 	bc := Cache{Config: &cacheConfig}
+	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
 	if err != nil {
@@ -165,8 +175,9 @@ func TestBboltCache_BulkRemove(t *testing.T) {
 
 func TestBboltCache_Retrieve(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig()
 	bc := Cache{Config: &cacheConfig}
+	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
 	if err != nil {

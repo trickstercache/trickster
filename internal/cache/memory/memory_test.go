@@ -14,6 +14,7 @@
 package memory
 
 import (
+	"io/ioutil"
 	"testing"
 	"time"
 
@@ -28,8 +29,16 @@ func init() {
 const cacheType = "memory"
 const cacheKey = "cacheKey"
 
+func newCacheConfig(t *testing.T) config.CachingConfig {
+	dir, err := ioutil.TempDir("/tmp", cacheType)
+	if err != nil {
+		t.Fatalf("could not create temp directory (%s): %s", dir, err)
+	}
+	return config.CachingConfig{Type: cacheType, Index: config.CacheIndexConfig{ReapInterval: 0}}
+}
+
 func TestConfiguration(t *testing.T) {
-	cacheConfig := config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig(t)
 	mc := Cache{Config: &cacheConfig}
 	cfg := mc.Configuration()
 	if cfg.Type != cacheType {
@@ -39,7 +48,7 @@ func TestConfiguration(t *testing.T) {
 
 func TestCache_Connect(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: cacheType, Index: config.CacheIndexConfig{ReapInterval: 0}}
+	cacheConfig := newCacheConfig(t)
 	mc := Cache{Config: &cacheConfig}
 
 	// it should connect
@@ -50,7 +59,7 @@ func TestCache_Connect(t *testing.T) {
 }
 
 func TestCache_Store(t *testing.T) {
-	cacheConfig := config.CachingConfig{Type: cacheType, Index: config.CacheIndexConfig{ReapInterval: 0}}
+	cacheConfig := newCacheConfig(t)
 	mc := Cache{Config: &cacheConfig}
 
 	err := mc.Connect()
@@ -66,8 +75,7 @@ func TestCache_Store(t *testing.T) {
 }
 
 func TestCache_Retrieve(t *testing.T) {
-
-	cacheConfig := config.CachingConfig{Type: cacheType, Index: config.CacheIndexConfig{ReapInterval: 0}}
+	cacheConfig := newCacheConfig(t)
 	mc := Cache{Config: &cacheConfig}
 
 	err := mc.Connect()
@@ -92,14 +100,13 @@ func TestCache_Retrieve(t *testing.T) {
 }
 
 func TestCache_Close(t *testing.T) {
-	cacheConfig := config.CachingConfig{Type: cacheType, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig(t)
 	mc := Cache{Config: &cacheConfig}
 	mc.Close()
 }
 
 func TestCache_Remove(t *testing.T) {
-
-	cacheConfig := config.CachingConfig{Type: cacheType, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig(t)
 	mc := Cache{Config: &cacheConfig}
 
 	err := mc.Connect()
@@ -134,8 +141,7 @@ func TestCache_Remove(t *testing.T) {
 }
 
 func TestCache_BulkRemove(t *testing.T) {
-
-	cacheConfig := config.CachingConfig{Type: cacheType, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig(t)
 	mc := Cache{Config: &cacheConfig}
 
 	err := mc.Connect()

@@ -30,12 +30,19 @@ func init() {
 const cacheType = "badger"
 const cacheKey = "cacheKey"
 
-func TestConfiguration(t *testing.T) {
+func newCacheConfig(t *testing.T) config.CachingConfig {
 	dir, err := ioutil.TempDir("/tmp", cacheType)
 	if err != nil {
-		t.Error(err)
+		t.Fatalf("could not create temp directory (%s): %s", dir, err)
 	}
-	bc := Cache{Config: &config.CachingConfig{Type: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}}
+	return config.CachingConfig{Type: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
+}
+
+func TestConfiguration(t *testing.T) {
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Badger.Directory)
+	bc := Cache{Config: &cacheConfig}
+
 	cfg := bc.Configuration()
 	if cfg.Type != cacheType {
 		t.Fatalf("expected %s got %s", cacheType, cfg.Type)
@@ -43,13 +50,8 @@ func TestConfiguration(t *testing.T) {
 }
 
 func TestBadgerCache_Connect(t *testing.T) {
-	dir, err := ioutil.TempDir("/tmp", cacheType)
-	if err != nil {
-		t.Fatalf("could not create temp directory (%s): %s", dir, err)
-	}
-	defer os.RemoveAll(dir)
-
-	cacheConfig := config.CachingConfig{Type: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Badger.Directory)
 	bc := Cache{Config: &cacheConfig}
 
 	// it should connect
@@ -60,13 +62,8 @@ func TestBadgerCache_Connect(t *testing.T) {
 }
 
 func TestBadgerCache_Store(t *testing.T) {
-	dir, err := ioutil.TempDir("/tmp", cacheType)
-	if err != nil {
-		t.Fatalf("could not create temp directory (%s): %s", dir, err)
-	}
-	defer os.RemoveAll(dir)
-
-	cacheConfig := config.CachingConfig{Type: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Badger.Directory)
 	bc := Cache{Config: &cacheConfig}
 
 	if err := bc.Connect(); err != nil {
@@ -75,20 +72,15 @@ func TestBadgerCache_Store(t *testing.T) {
 	defer bc.Close()
 
 	// it should store a value
-	err = bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
+	err := bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
 }
 
 func TestBadgerCache_Remove(t *testing.T) {
-	dir, err := ioutil.TempDir("/tmp", cacheType)
-	if err != nil {
-		t.Fatalf("could not create temp directory (%s): %s", dir, err)
-	}
-	defer os.RemoveAll(dir)
-
-	cacheConfig := config.CachingConfig{Type: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Badger.Directory)
 	bc := Cache{Config: &cacheConfig}
 
 	if err := bc.Connect(); err != nil {
@@ -97,7 +89,7 @@ func TestBadgerCache_Remove(t *testing.T) {
 	defer bc.Close()
 
 	// it should store a value
-	err = bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
+	err := bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
@@ -122,13 +114,8 @@ func TestBadgerCache_Remove(t *testing.T) {
 }
 
 func TestBadgerCache_BulkRemove(t *testing.T) {
-	dir, err := ioutil.TempDir("/tmp", cacheType)
-	if err != nil {
-		t.Fatalf("could not create temp directory (%s): %s", dir, err)
-	}
-	defer os.RemoveAll(dir)
-
-	cacheConfig := config.CachingConfig{Type: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Badger.Directory)
 	bc := Cache{Config: &cacheConfig}
 
 	if err := bc.Connect(); err != nil {
@@ -137,7 +124,7 @@ func TestBadgerCache_BulkRemove(t *testing.T) {
 	defer bc.Close()
 
 	// it should store a value
-	err = bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
+	err := bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
@@ -162,13 +149,8 @@ func TestBadgerCache_BulkRemove(t *testing.T) {
 }
 
 func TestBadgerCache_Retrieve(t *testing.T) {
-	dir, err := ioutil.TempDir("/tmp", cacheType)
-	if err != nil {
-		t.Fatalf("could not create temp directory (%s): %s", dir, err)
-	}
-	defer os.RemoveAll(dir)
-
-	cacheConfig := config.CachingConfig{Type: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Badger.Directory)
 	bc := Cache{Config: &cacheConfig}
 
 	if err := bc.Connect(); err != nil {

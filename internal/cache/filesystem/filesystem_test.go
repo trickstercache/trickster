@@ -14,6 +14,8 @@
 package filesystem
 
 import (
+	"io/ioutil"
+	"os"
 	"testing"
 	"time"
 
@@ -25,11 +27,20 @@ func init() {
 	metrics.Init()
 }
 
-const cacheType = "filestystem"
+const cacheType = "filesystem"
 const cacheKey = "cacheKey"
 
+func newCacheConfig(t *testing.T) config.CachingConfig {
+	dir, err := ioutil.TempDir("/tmp", cacheType)
+	if err != nil {
+		t.Fatalf("could not create temp directory (%s): %s", dir, err)
+	}
+	return config.CachingConfig{Type: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: dir}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+}
+
 func TestConfiguration(t *testing.T) {
-	cacheConfig := config.CachingConfig{Type: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
 	fc := Cache{Config: &cacheConfig}
 	cfg := fc.Configuration()
 	if cfg.Type != cacheType {
@@ -39,7 +50,8 @@ func TestConfiguration(t *testing.T) {
 
 func TestFilesystemCache_Connect(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
 	fc := Cache{Config: &cacheConfig}
 
 	// it should connect
@@ -51,7 +63,8 @@ func TestFilesystemCache_Connect(t *testing.T) {
 
 func TestFilesystemCache_Store(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
 	fc := Cache{Config: &cacheConfig}
 
 	err := fc.Connect()
@@ -68,7 +81,8 @@ func TestFilesystemCache_Store(t *testing.T) {
 
 func TestFilesystemCache_StoreNoIndex(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
 	fc := Cache{Config: &cacheConfig}
 
 	err := fc.Connect()
@@ -93,7 +107,8 @@ func TestFilesystemCache_StoreNoIndex(t *testing.T) {
 
 func TestFilesystemCache_Retrieve(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
 	fc := Cache{Config: &cacheConfig}
 
 	err := fc.Connect()
@@ -117,7 +132,8 @@ func TestFilesystemCache_Retrieve(t *testing.T) {
 
 func TestFilesystemCache_Remove(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
 	fc := Cache{Config: &cacheConfig}
 
 	err := fc.Connect()
@@ -153,7 +169,8 @@ func TestFilesystemCache_Remove(t *testing.T) {
 
 func TestFilesystemCache_BulkRemove(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: "."}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := newCacheConfig(t)
+	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
 	fc := Cache{Config: &cacheConfig}
 
 	err := fc.Connect()
