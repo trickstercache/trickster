@@ -29,10 +29,19 @@ func TestParseDuration(t *testing.T) {
 	}
 }
 
-func TestParseDurationFailed(t *testing.T) {
-	_, err := ParseDuration("1x")
+func TestParseDurationDecimalFailed(t *testing.T) {
+	val := "1.2341"
+	_, err := ParseDuration(val)
 	if err == nil {
-		t.Errorf("expected 'unable to parse duration 1x' error")
+		t.Errorf("expected 'unable to parse duration: %s' error", val)
+	}
+}
+
+func TestParseDurationFailed(t *testing.T) {
+	val := "1x"
+	_, err := ParseDuration(val)
+	if err == nil {
+		t.Errorf("expected 'unable to parse duration: %s' error", val)
 	}
 }
 
