@@ -25,24 +25,32 @@ func init() {
 	metrics.Init()
 }
 
-func TestBboltCache_Connect(t *testing.T) {
+const cacheType = "bbolt"
+const cacheKey = "cacheKey"
 
-	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+func TestConfiguration(t *testing.T) {
+	cacheConfig := config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
 	bc := Cache{Config: &cacheConfig}
+	cfg := bc.Configuration()
+	if cfg.Type != cacheType {
+		t.Fatalf("expected %s got %s", cacheType, cfg.Type)
+	}
+}
 
+func TestBboltCache_Connect(t *testing.T) {
+	cacheConfig := config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	bc := Cache{Config: &cacheConfig}
 	// it should connect
 	err := bc.Connect()
 	if err != nil {
 		t.Error(err)
 	}
-
 	bc.Close()
-
 }
 
 func TestBboltCache_Store(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
 	bc := Cache{Config: &cacheConfig}
 
 	err := bc.Connect()
@@ -52,15 +60,15 @@ func TestBboltCache_Store(t *testing.T) {
 	defer bc.Close()
 
 	// it should store a value
-	err = bc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
+	err = bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
 }
 
-func TestBboltCache_Delete(t *testing.T) {
+func TestBboltCache_StoreNoIndex(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
 	bc := Cache{Config: &cacheConfig}
 
 	err := bc.Connect()
@@ -70,22 +78,94 @@ func TestBboltCache_Delete(t *testing.T) {
 	defer bc.Close()
 
 	// it should store a value
-	err = bc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
+	bc.storeNoIndex(cacheKey, []byte("data"))
+
+	// it should retrieve a value
+	data, err := bc.Retrieve(cacheKey)
+	if err != nil {
+		t.Error(err)
+	}
+	if string(data) != "data" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+
+}
+
+func TestBboltCache_Remove(t *testing.T) {
+
+	cacheConfig := config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	bc := Cache{Config: &cacheConfig}
+
+	err := bc.Connect()
+	if err != nil {
+		t.Error(err)
+	}
+	defer bc.Close()
+
+	// it should store a value
+	err = bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
 
-	// it should store a value
-	err = bc.remove("cacheKey")
+	// it should retrieve a value
+	data, err := bc.Retrieve(cacheKey)
 	if err != nil {
 		t.Error(err)
+	}
+	if string(data) != "data" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+
+	bc.Remove(cacheKey)
+
+	// it should be a cache miss
+	data, err = bc.Retrieve(cacheKey)
+	if err == nil {
+		t.Errorf("expected key not found error for %s", cacheKey)
+	}
+
+}
+
+func TestBboltCache_BulkRemove(t *testing.T) {
+
+	cacheConfig := config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	bc := Cache{Config: &cacheConfig}
+
+	err := bc.Connect()
+	if err != nil {
+		t.Error(err)
+	}
+	defer bc.Close()
+
+	// it should store a value
+	err = bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// it should retrieve a value
+	data, err := bc.Retrieve(cacheKey)
+	if err != nil {
+		t.Error(err)
+	}
+	if string(data) != "data" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+
+	bc.BulkRemove([]string{cacheKey}, true)
+
+	// it should be a cache miss
+	data, err = bc.Retrieve(cacheKey)
+	if err == nil {
+		t.Errorf("expected key not found error for %s", cacheKey)
 	}
 
 }
 
 func TestBboltCache_Retrieve(t *testing.T) {
 
-	cacheConfig := config.CachingConfig{Type: "bbolt", BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
 	bc := Cache{Config: &cacheConfig}
 
 	err := bc.Connect()
@@ -94,13 +174,13 @@ func TestBboltCache_Retrieve(t *testing.T) {
 	}
 	defer bc.Close()
 
-	err = bc.Store("cacheKey", []byte("data"), time.Duration(60)*time.Second)
+	err = bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// it should retrieve a value
-	data, err := bc.Retrieve("cacheKey")
+	data, err := bc.Retrieve(cacheKey)
 	if err != nil {
 		t.Error(err)
 	}
