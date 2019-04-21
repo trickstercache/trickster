@@ -14,6 +14,7 @@
 package prometheus
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -71,6 +72,54 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 		return
 	}
 	if err.Error() != expected {
+		t.Errorf(`Expected "%s", got "%s"`, expected, err.Error())
+	}
+}
+
+func TestParseTimeRangeBadStartTime(t *testing.T) {
+	const color = "red"
+	expected := fmt.Errorf(`cannot parse "%s" to a valid timestamp`, color)
+	req := &http.Request{URL: &url.URL{
+		Scheme: "https",
+		Host:   "blah.com",
+		Path:   "/",
+		RawQuery: url.Values(map[string][]string{
+			"query": []string{`up`},
+			"start": []string{color},
+			"end":   []string{strconv.Itoa(int(time.Now().Unix()))},
+			"step":  []string{"15"}}).Encode(),
+	}}
+	client := &Client{}
+	_, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	if err == nil {
+		t.Errorf(`Expected "%s", got NO ERROR`, expected)
+		return
+	}
+	if err.Error() != expected.Error() {
+		t.Errorf(`Expected "%s", got "%s"`, expected, err.Error())
+	}
+}
+
+func TestParseTimeRangeBadEndTime(t *testing.T) {
+	const color = "blue"
+	expected := fmt.Errorf(`cannot parse "%s" to a valid timestamp`, color)
+	req := &http.Request{URL: &url.URL{
+		Scheme: "https",
+		Host:   "blah.com",
+		Path:   "/",
+		RawQuery: url.Values(map[string][]string{
+			"query": []string{`up`},
+			"start": []string{strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+			"end":   []string{color},
+			"step":  []string{"15"}}).Encode(),
+	}}
+	client := &Client{}
+	_, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	if err == nil {
+		t.Errorf(`Expected "%s", got NO ERROR`, expected)
+		return
+	}
+	if err.Error() != expected.Error() {
 		t.Errorf(`Expected "%s", got "%s"`, expected, err.Error())
 	}
 }
