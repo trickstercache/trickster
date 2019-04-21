@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/go-kit/kit/log"
@@ -103,7 +104,6 @@ func ConsoleLogger(logLevel string) *TricksterLogger {
 // returned TricksterLogger will write to files distinguished from other TricksterLoggers by the
 // instance string.
 func Init() {
-
 	l := &TricksterLogger{}
 
 	var wr io.Writer
@@ -113,7 +113,7 @@ func Init() {
 	} else {
 		logFile := config.Logging.LogFile
 		if config.Main.InstanceID > 0 {
-			logFile = strings.Replace(logFile, ".log", "."+string(config.Main.InstanceID)+".log", 1)
+			logFile = strings.Replace(logFile, ".log", "."+strconv.Itoa(config.Main.InstanceID)+".log", 1)
 		}
 
 		wr = &lumberjack.Logger{
@@ -191,7 +191,7 @@ func Debug(event string, detail Pairs) {
 	level.Debug(Logger.logger).Log(mapToArray(event, detail)...)
 }
 
-// Trace sends a "TRACE" event to the TricksterLogger and exits the program with the provided exit code
+// Trace sends a "TRACE" event to the TricksterLogger
 func Trace(event string, detail Pairs) {
 	// go-kit/log/level does not support Trace, so implemented separately here
 	if Logger.level == "trace" {

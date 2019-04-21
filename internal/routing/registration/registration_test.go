@@ -32,7 +32,29 @@ func TestRegisterProxyRoutes(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 	registration.LoadCachesFromConfig()
-
 	RegisterProxyRoutes()
+
+	if len(ProxyClients) == 0 {
+		t.Errorf("expected %d got %d", 1, 0)
+	}
+
+}
+
+func TestRegisterProxyRoutesInflux(t *testing.T) {
+
+	err := config.Load("trickster", "test", []string{"-log-level", "debug"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	do := config.Origins["default"]
+	do.Type = "influxdb"
+	config.Origins["default"] = do
+	registration.LoadCachesFromConfig()
+	RegisterProxyRoutes()
+
+	if len(ProxyClients) == 0 {
+		t.Errorf("expected %d got %d", 1, 0)
+	}
 
 }
