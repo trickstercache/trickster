@@ -68,11 +68,11 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 	client := &Client{}
 	_, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
-		t.Errorf(`Expected "%s", got NO ERROR`, expected)
+		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
 	}
 	if err.Error() != expected {
-		t.Errorf(`Expected "%s", got "%s"`, expected, err.Error())
+		t.Errorf(`expected "%s", got "%s"`, expected, err.Error())
 	}
 }
 
@@ -92,11 +92,11 @@ func TestParseTimeRangeBadStartTime(t *testing.T) {
 	client := &Client{}
 	_, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
-		t.Errorf(`Expected "%s", got NO ERROR`, expected)
+		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
 	}
 	if err.Error() != expected.Error() {
-		t.Errorf(`Expected "%s", got "%s"`, expected, err.Error())
+		t.Errorf(`expected "%s", got "%s"`, expected, err.Error())
 	}
 }
 
@@ -116,17 +116,17 @@ func TestParseTimeRangeBadEndTime(t *testing.T) {
 	client := &Client{}
 	_, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
-		t.Errorf(`Expected "%s", got NO ERROR`, expected)
+		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
 	}
 	if err.Error() != expected.Error() {
-		t.Errorf(`Expected "%s", got "%s"`, expected, err.Error())
+		t.Errorf(`expected "%s", got "%s"`, expected, err.Error())
 	}
 }
 
 func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 
-	expected := `Unable to parse duration: x`
+	expected := `unable to parse duration: x`
 
 	req := &http.Request{URL: &url.URL{
 		Scheme: "https",
@@ -141,11 +141,11 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 	client := &Client{}
 	_, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
-		t.Errorf(`Expected "%s", got NO ERROR`, expected)
+		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
 	}
 	if err.Error() != expected {
-		t.Errorf(`Expected "%s", got "%s"`, expected, err.Error())
+		t.Errorf(`expected "%s", got "%s"`, expected, err.Error())
 	}
 }
 
@@ -165,11 +165,11 @@ func TestParseTimeRangeQueryNoStart(t *testing.T) {
 	client := &Client{}
 	_, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
-		t.Errorf(`Expected "%s", got NO ERROR`, expected)
+		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
 	}
 	if err.Error() != expected {
-		t.Errorf(`Expected "%s", got "%s"`, expected, err.Error())
+		t.Errorf(`expected "%s", got "%s"`, expected, err.Error())
 	}
 }
 
@@ -189,11 +189,11 @@ func TestParseTimeRangeQueryNoEnd(t *testing.T) {
 	client := &Client{}
 	_, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
-		t.Errorf(`Expected "%s", got NO ERROR`, expected)
+		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
 	}
 	if err.Error() != expected {
-		t.Errorf(`Expected "%s", got "%s"`, expected, err.Error())
+		t.Errorf(`expected "%s", got "%s"`, expected, err.Error())
 	}
 }
 
@@ -214,11 +214,11 @@ func TestParseTimeRangeQueryNoStep(t *testing.T) {
 	client := &Client{}
 	_, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
-		t.Errorf(`Expected "%s", got NO ERROR`, expected)
+		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
 	}
 	if err.Error() != expected {
-		t.Errorf(`Expected "%s", got "%s"`, expected, err.Error())
+		t.Errorf(`expected "%s", got "%s"`, expected, err.Error())
 	}
 }
 
