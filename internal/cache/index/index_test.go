@@ -14,6 +14,7 @@
 package index
 
 import (
+	"sort"
 	"testing"
 	"time"
 
@@ -114,6 +115,38 @@ func TestRemoveObject(t *testing.T) {
 	idx.RemoveObject("test", false)
 	if _, ok := idx.Objects["test"]; ok {
 		t.Errorf("test object should be missing from index")
+	}
+
+}
+
+func TestSort(t *testing.T) {
+
+	o := objectsAtime{
+		&Object{
+			Key:        "3",
+			LastAccess: time.Unix(3, 0),
+		},
+		&Object{
+			Key:        "1",
+			LastAccess: time.Unix(1, 0),
+		},
+		&Object{
+			Key:        "2",
+			LastAccess: time.Unix(2, 0),
+		},
+	}
+	sort.Sort(o)
+
+	if o[0].Key != "1" {
+		t.Errorf("expected %s got %s", "1", o[0].Key)
+	}
+
+	if o[1].Key != "2" {
+		t.Errorf("expected %s got %s", "2", o[1].Key)
+	}
+
+	if o[2].Key != "3" {
+		t.Errorf("expected %s got %s", "3", o[2].Key)
 	}
 
 }
