@@ -50,6 +50,7 @@ Trickster 1.0 is incompatible with a 0.1.x config file. However, it can be made 
 - Under each of your `[origins.<name>]` configurations, add the following line 
 
     `cache_name = 'default'`
+- Search and replace `boltdb` with `bbolt`
 
 - For more information, refer to the [example.conf](../cmd/trickster/conf/example.conf), which is well-documented.
 
