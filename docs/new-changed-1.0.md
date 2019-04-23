@@ -51,6 +51,7 @@ Trickster 1.0 is incompatible with a 0.1.x config file. However, it can be made 
 
     `cache_name = 'default'`
 - Search and replace `boltdb` with `bbolt`
+- Examine each `max_value_age_secs` setting in your config and convert to a `value_retention_factor` setting as per the above section. The recommended value for `value_retention_factor` is `1024`.
 
 - For more information, refer to the [example.conf](../cmd/trickster/conf/example.conf), which is well-documented.
 
