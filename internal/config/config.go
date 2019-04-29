@@ -129,7 +129,7 @@ type RedisCacheConfig struct {
 	ClientType string `toml:"client_type"`
 	// Protocol represents the connection method (e.g., "tcp", "unix", etc.)
 	Protocol string `toml:"protocol"`
-	// Endpoint represents FQDN:port or IPAddress:Port of the Redis/Sentinel Enpoint
+	// Endpoint represents FQDN:port or IPAddress:Port of the Redis/Sentinel Endpoint
 	Endpoint string `toml:"endpoint"`
 	// Endpoints represents FQDN:port or IPAddress:Port collection of a Redis Cluster
 	Endpoints []string `toml:"endpoints"`
