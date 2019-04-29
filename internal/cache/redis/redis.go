@@ -18,7 +18,9 @@ import (
 
 	"github.com/go-redis/redis"
 
+	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/util/log"
 )
 
 // Cache represents a redis cache object that conforms to the Cache interface
@@ -31,7 +33,7 @@ type Cache struct {
 
 	connectFunc    func() error
 	closeFunc      func() error
-	retrieveFunc   func(string) ([]byte, error)
+	retrieveFunc   func(string) (string, error)
 	storeFunc      func(string, []byte, time.Duration) error
 	removeFunc     func(string)
 	bulkRemoveFunc func([]string, bool)
@@ -77,26 +79,40 @@ func (c *Cache) Connect() error {
 
 // Store places the the data into the Redis Cache using the provided Key and TTL
 func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
+	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
+	log.Debug("redis cache store", log.Pairs{"key": cacheKey})
 	return c.storeFunc(cacheKey, data, ttl)
 }
 
 // Retrieve gets data from the Redis Cache using the provided Key
 func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
-	return c.retrieveFunc(cacheKey)
+	res, err := c.retrieveFunc(cacheKey)
+	if err != nil {
+		log.Debug("redis cache miss", log.Pairs{"key": cacheKey})
+		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
+		return []byte{}, err
+	}
+	data := []byte(res)
+	log.Debug("redis cache retrieve", log.Pairs{"key": cacheKey})
+	cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(data)))
+	return data, nil
 }
 
 // Remove removes an object in cache, if present
 func (c *Cache) Remove(cacheKey string) {
+	log.Debug("redis cache remove", log.Pairs{"key": cacheKey})
 	c.removeFunc(cacheKey)
 }
 
 // BulkRemove removes a list of objects from the cache. noLock is not used for Redis
 func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
+	log.Debug("redis cache bulk remove", log.Pairs{})
 	c.bulkRemoveFunc(cacheKeys, noLock)
 }
 
 // Close disconnects from the Redis Cache
 func (c *Cache) Close() error {
+	log.Info("closing redis connection", log.Pairs{})
 	return c.closeFunc()
 }
 

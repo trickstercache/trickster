@@ -20,7 +20,6 @@ import (
 
 	"github.com/go-redis/redis"
 
-	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/util/log"
 )
 
@@ -37,33 +36,21 @@ func (c *Cache) clusterConnect() error {
 
 // Store places the the data into the Redis Cluster using the provided Key and TTL
 func (c *Cache) clusterStore(cacheKey string, data []byte, ttl time.Duration) error {
-	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
-	log.Debug("redis cluster cache store", log.Pairs{"key": cacheKey})
 	return c.clusterClient.Set(cacheKey, data, ttl).Err()
 }
 
 // Retrieve gets data from the Redis Cluster using the provided Key
-func (c *Cache) clusterRetrieve(cacheKey string) ([]byte, error) {
-	log.Debug("redis cluster cache retrieve", log.Pairs{"key": cacheKey})
-	res, err := c.clusterClient.Get(cacheKey).Result()
-	if err != nil {
-		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
-		return []byte{}, err
-	}
-	data := []byte(res)
-	cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(data)))
-	return data, nil
+func (c *Cache) clusterRetrieve(cacheKey string) (string, error) {
+	return c.clusterClient.Get(cacheKey).Result()
 }
 
 // Remove removes an object in cache, if present
 func (c *Cache) clusterRemove(cacheKey string) {
-	log.Debug("redis cluster cache remove", log.Pairs{"key": cacheKey})
 	c.clusterClient.Del(cacheKey)
 }
 
 // BulkRemove removes a list of objects from the cache. noLock is ignored for Redis Clusteer
 func (c *Cache) clusterBulkRemove(cacheKeys []string, noLock bool) {
-	log.Debug("redis cluster cache bulk remove", log.Pairs{})
 	c.clusterClient.Del(cacheKeys...)
 }
 

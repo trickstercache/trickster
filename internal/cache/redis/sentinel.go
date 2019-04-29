@@ -15,16 +15,16 @@ package redis
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/go-redis/redis"
 )
 
 // Connect connects to the configured Redis endpoint
 func (c *Cache) sentinelConnect() error {
-	log.Info("connecting to redis", log.Pairs{"protocol": c.Config.Redis.Protocol, "Endpoints": c.Config.Redis.Endpoints})
+	log.Info("connecting to redis", log.Pairs{"protocol": c.Config.Redis.Protocol, "Endpoints": strings.Join(c.Config.Redis.Endpoints, ",")})
 	opts, err := c.sentinelOpts()
 	if err != nil {
 		return err
@@ -35,34 +35,21 @@ func (c *Cache) sentinelConnect() error {
 
 // Store places the the data into the Redis Cache using the provided Key and TTL
 func (c *Cache) sentinelStore(cacheKey string, data []byte, ttl time.Duration) error {
-	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
-	log.Debug("redis cache store", log.Pairs{"key": cacheKey})
 	return c.client.Set(cacheKey, data, ttl).Err()
 }
 
 // Retrieve gets data from the Redis Cache using the provided Key
-func (c *Cache) sentinelRetrieve(cacheKey string) ([]byte, error) {
-	res, err := c.client.Get(cacheKey).Result()
-	if err != nil {
-		log.Debug("redis cache miss", log.Pairs{"key": cacheKey})
-		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
-		return []byte{}, err
-	}
-	data := []byte(res)
-	log.Debug("redis cache retrieve", log.Pairs{"key": cacheKey})
-	cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(data)))
-	return data, nil
+func (c *Cache) sentinelRetrieve(cacheKey string) (string, error) {
+	return c.client.Get(cacheKey).Result()
 }
 
 // Remove removes an object in cache, if present
 func (c *Cache) sentinelRemove(cacheKey string) {
-	log.Debug("redis cache remove", log.Pairs{"key": cacheKey})
 	c.client.Del(cacheKey)
 }
 
 // BulkRemove removes a list of objects from the cache. noLock is not used for Redis
 func (c *Cache) sentinelBulkRemove(cacheKeys []string, noLock bool) {
-	log.Debug("redis cache bulk remove", log.Pairs{})
 	c.client.Del(cacheKeys...)
 }
 
@@ -85,6 +72,7 @@ func (c *Cache) sentinelOpts() (*redis.FailoverOptions, error) {
 
 	o := &redis.FailoverOptions{
 		SentinelAddrs: c.Config.Redis.Endpoints,
+		MasterName:    c.Config.Redis.SentinelMaster,
 	}
 
 	if c.Config.Redis.Password != "" {
