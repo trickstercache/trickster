@@ -270,11 +270,13 @@ func (t *TricksterHandler) getOrigin(r *http.Request) PrometheusOriginConfig {
 
 // setResponseHeaders adds any needed headers to the response object.
 // this should be called before the body is written
-func setResponseHeaders(w http.ResponseWriter) {
+func setResponseHeaders(w http.ResponseWriter, resp *http.Response) {
 	// We're read only and a harmless API, so allow all CORS
 	w.Header().Set(hnAllowOrigin, "*")
-	// Set the Content-Type so browser's jQuery will auto-parse the response payload
-	w.Header().Set(hnContentType, hvApplicationJSON)
+	// Set the Content-Type to what the response header is
+	if contentType, ok := resp.Header["Content-Type"]; ok && len(contentType) > 0 {
+		w.Header().Set(hnContentType, contentType[0])
+	}
 }
 
 // getURL makes an HTTP request to the provided URL with the provided parameters and returns the response body
@@ -648,7 +650,7 @@ func (t *TricksterHandler) respondToCacheHit(ctx *ClientRequestContext) {
 
 func writeResponse(w http.ResponseWriter, body []byte, resp *http.Response) {
 	// Now we need to respond to the user request with the dataset
-	setResponseHeaders(w)
+	setResponseHeaders(w, resp)
 
 	if resp.StatusCode == 0 {
 		resp.StatusCode = http.StatusOK
