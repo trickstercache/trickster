@@ -291,7 +291,12 @@ func (t *TricksterHandler) getURL(o PrometheusOriginConfig, method string, uri s
 	}
 
 	startTime := time.Now()
-	client := &http.Client{Timeout: time.Duration(o.TimeoutSecs * time.Second.Nanoseconds())}
+	client := &http.Client{
+		Timeout: time.Duration(o.TimeoutSecs * time.Second.Nanoseconds()),
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 
 	resp, err := client.Do(&http.Request{Method: method, URL: parsedURL})
 	if err != nil {
