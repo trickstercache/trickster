@@ -114,7 +114,10 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	}
 
 	// Find the ranges that we want, but which are not currently cached
-	missRanges := trq.CalculateDeltas(cts.Extents())
+	var missRanges []timeseries.Extent
+	if cacheStatus == crPartialHit {
+		missRanges = trq.CalculateDeltas(cts.Extents())
+	}
 
 	if len(missRanges) == 0 {
 		if cacheStatus == crPartialHit {
@@ -141,8 +144,8 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 			r.FastForwardDisable = true
 		}
 	}
-	// if it's a cache hit and fast forward is disabled or unsupported, just return the data.
-	if cacheStatus == crHit && (r.FastForwardDisable) {
+	// if it's a cache hit or cache miss (thus already fetched) and fast forward is disabled or unsupported, just return the data.
+	if (cacheStatus == crHit || cacheStatus == crKeyMiss) && (r.FastForwardDisable) {
 		Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 		return
 	}
@@ -151,8 +154,6 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	mts := make([]timeseries.Timeseries, 0, len(missRanges))
 	wg := sync.WaitGroup{}
 	appendLock := sync.Mutex{}
-	var rh http.Header
-
 	uncachedValueCount := 0
 
 	// iterate each time range that the client needs and fetch from the upstream origin
@@ -177,10 +178,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 				defer appendLock.Unlock()
 
 				mts = append(mts, nts)
-				if rh == nil {
-					// Use the response headers from the first successful delta request to complete as our downstream response headers
-					rh = resp.Header
-				}
+
 			}
 		}(&missRanges[i], req)
 	}
@@ -232,6 +230,8 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		rts.Merge(false, ffts)
 	}
 	rdata, err := client.MarshalTimeseries(rts)
+
+	rh := doc.Headers
 
 	// Don't write the cache unless it has changed
 	if cacheStatus != crHit {
