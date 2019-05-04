@@ -144,8 +144,8 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 			r.FastForwardDisable = true
 		}
 	}
-	// if it's a cache hit or cache miss (thus already fetched) and fast forward is disabled or unsupported, just return the data.
-	if (cacheStatus == crHit || cacheStatus == crKeyMiss) && (r.FastForwardDisable) {
+	// if it's a cache hit and fast forward is disabled or unsupported, just return the data.
+	if cacheStatus == crHit && (r.FastForwardDisable) {
 		Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 		return
 	}
