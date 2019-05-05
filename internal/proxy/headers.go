@@ -38,6 +38,15 @@ const (
 	hnAcceptEncoding  = "Accept-Encoding"
 )
 
+func copyHeaders(h http.Header) http.Header {
+	headers := make(http.Header)
+	for k, v := range h {
+		headers[k] = make([]string, len(v))
+		copy(headers[k], v)
+	}
+	return headers
+}
+
 func addProxyHeaders(remoteAddr string, headers http.Header) {
 	if remoteAddr != "" {
 		headers.Add(hnXForwardedFor, remoteAddr)

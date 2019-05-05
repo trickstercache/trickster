@@ -229,7 +229,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		rts.Merge(false, ffts)
 	}
 	rdata, err := client.MarshalTimeseries(rts)
-	rh := doc.Headers
+	rh := copyHeaders(doc.Headers)
 
 	// Don't write the cache unless it has changed
 	if cacheStatus != crHit {
