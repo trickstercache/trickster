@@ -14,6 +14,7 @@
 package redis
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -44,6 +45,30 @@ func setupRedisCache() (*Cache, func()) {
 	config.Caches = map[string]config.CachingConfig{"default": cacheConfig}
 
 	return &Cache{Config: &cacheConfig}, close
+}
+
+func TestDurationFromMS(t *testing.T) {
+
+	tests := []struct {
+		input    int
+		expected time.Duration
+	}{
+		{0, time.Duration(0)},
+		{5000, time.Duration(5000) * time.Millisecond},
+		{60000, time.Duration(60000) * time.Millisecond},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+
+			res := durationFromMS(test.input)
+
+			if res != test.expected {
+				t.Fatalf("Mismatch in durationFromMS: expected=%f actual=%f", test.expected.Seconds(), res.Seconds())
+			}
+		})
+	}
+
 }
 
 func TestConfiguration(t *testing.T) {

@@ -94,17 +94,16 @@ type OriginConfig struct {
 // CachingConfig is a collection of defining the Trickster Caching Behavior
 type CachingConfig struct {
 	// Type represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
-	Type               string                  `toml:"type"`
-	Compression        bool                    `toml:"compression"`
-	TimeseriesTTLSecs  int                     `toml:"timeseries_ttl_secs"`
-	ObjectTTLSecs      int                     `toml:"object_ttl_secs"`
-	FastForwardTTLSecs int                     `toml:"fastforward_ttl_secs"`
-	Index              CacheIndexConfig        `toml:"index"`
-	Redis              RedisCacheConfig        `toml:"redis"`
-	RedisCluster       RedisClusterCacheConfig `toml:"redis_cluster"`
-	Filesystem         FilesystemCacheConfig   `toml:"filesystem"`
-	BBolt              BBoltCacheConfig        `toml:"bbolt"`
-	Badger             BadgerCacheConfig       `toml:"badger"`
+	Type               string                `toml:"type"`
+	Compression        bool                  `toml:"compression"`
+	TimeseriesTTLSecs  int                   `toml:"timeseries_ttl_secs"`
+	ObjectTTLSecs      int                   `toml:"object_ttl_secs"`
+	FastForwardTTLSecs int                   `toml:"fastforward_ttl_secs"`
+	Index              CacheIndexConfig      `toml:"index"`
+	Redis              RedisCacheConfig      `toml:"redis"`
+	Filesystem         FilesystemCacheConfig `toml:"filesystem"`
+	BBolt              BBoltCacheConfig      `toml:"bbolt"`
+	Badger             BadgerCacheConfig     `toml:"badger"`
 
 	TimeseriesTTL  time.Duration `toml:"-"`
 	ObjectTTL      time.Duration `toml:"-"`
@@ -126,20 +125,44 @@ type CacheIndexConfig struct {
 
 // RedisCacheConfig is a collection of Configurations for Connecting to Redis
 type RedisCacheConfig struct {
+	// ClientType defines the type of Redis Client ("standard", "cluster", "sentinel")
+	ClientType string `toml:"client_type"`
 	// Protocol represents the connection method (e.g., "tcp", "unix", etc.)
 	Protocol string `toml:"protocol"`
-	// Endpoint represents FQDN:port or IPAddress:Port of the Redis server
+	// Endpoint represents FQDN:port or IPAddress:Port of the Redis/Sentinel Endpoint
 	Endpoint string `toml:"endpoint"`
-	// Password can be set when using password protected redis instance.
-	Password string `toml:"password"`
-}
-
-// RedisClusterCacheConfig is a collection of Configurations for Connecting to Redis Cluster
-type RedisClusterCacheConfig struct {
-	// Endpoint represents FQDN:port or IPAddress:Port of the Redis server
+	// Endpoints represents FQDN:port or IPAddress:Port collection of a Redis Cluster
 	Endpoints []string `toml:"endpoints"`
 	// Password can be set when using password protected redis instance.
 	Password string `toml:"password"`
+	// SentinelMaster should be set when using Redis Sentinel to indicate the Master Node
+	SentinelMaster string `toml:"sentinel_master"`
+	// DB is the Database to be selected after connecting to the server.
+	DB int `toml:"db"`
+	// Maximum number of retries before giving up on the command
+	MaxRetries int `toml:"max_retries"`
+	// Minimum backoff between each retry.
+	MinRetryBackoffMS int `toml:"min_retry_backoff_ms"`
+	// MaxRetryBackoffMS is the Maximum backoff between each retry.
+	MaxRetryBackoffMS int `toml:"max_retry_backoff_ms"`
+	// DialTimeoutMS is the timeout for establishing new connections.
+	DialTimeoutMS int `toml:"dial_timeout_ms"`
+	// ReadTimeoutMS is the timeout for socket reads. If reached, commands will fail with a timeout instead of blocking.
+	ReadTimeoutMS int `toml:"read_timeout_ms"`
+	// WriteTimeoutMS is the timeout for socket writes. If reached, commands will fail with a timeout instead of blocking.
+	WriteTimeoutMS int `toml:"write_timeout_ms"`
+	// PoolSize is the maximum number of socket connections.
+	PoolSize int `toml:"pool_size"`
+	// MinIdleConns is the minimum number of idle connections which is useful when establishing new connection is slow.
+	MinIdleConns int `toml:"min_idle_conns"`
+	// MaxConnAgeMS is the connection age at which client retires (closes) the connection.
+	MaxConnAgeMS int `toml:"max_conn_age_ms"`
+	// PoolTimeoutMS is the amount of time client waits for connection if all connections are busy before returning an error.
+	PoolTimeoutMS int `toml:"pool_timeout_ms"`
+	// IdleTimeoutMS is the amount of time after which client closes idle connections.
+	IdleTimeoutMS int `toml:"idle_timeout_ms"`
+	// IdleCheckFrequencyMS is the frequency of idle checks made by idle connections reaper.
+	IdleCheckFrequencyMS int `toml:"idle_check_frequency_ms"`
 }
 
 // BadgerCacheConfig is a collection of Configurations for storing cached data on the Filesystem in a Badger key-value store
@@ -202,8 +225,7 @@ func NewConfig() *TricksterConfig {
 				TimeseriesTTLSecs:  21600,
 				FastForwardTTLSecs: 15,
 				ObjectTTLSecs:      30,
-				Redis:              RedisCacheConfig{Protocol: "tcp", Endpoint: "redis:6379"},
-				RedisCluster:       RedisClusterCacheConfig{Endpoints: []string{"redis:6379"}},
+				Redis:              RedisCacheConfig{ClientType: "standard", Protocol: "tcp", Endpoint: "redis:6379", Endpoints: []string{"redis:6379"}},
 				Filesystem:         FilesystemCacheConfig{CachePath: defaultCachePath},
 				BBolt:              BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: "trickster"},
 				Badger:             BadgerCacheConfig{Directory: defaultCachePath, ValueDirectory: defaultCachePath},

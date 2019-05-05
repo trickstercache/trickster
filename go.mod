@@ -23,6 +23,7 @@ require (
 	github.com/prometheus/common v0.2.0
 	github.com/tinylib/msgp v1.1.0
 	github.com/yuin/gopher-lua v0.0.0-20190206043414-8bfc7677f583 // indirect
+	go.etcd.io/bbolt v1.3.2 // indirect
 	golang.org/x/sys v0.0.0-20190405154228-4b34438f7a67
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
