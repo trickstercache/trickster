@@ -7,7 +7,7 @@
 - Cache management is improved, with enhancements like a configurable max cache size and better metrics.
 - Configuration now allows per-origin cache provider selection.
 - The Delta Proxy is overhauled to be more efficient and performant.
-- We now suppport Redis Cluster and Redis Sentinel (see [example.conf](../cmd/trickster/conf/example.conf))
+- We now support Redis Cluster and Redis Sentinel (see [example.conf](../cmd/trickster/conf/example.conf))
 - For Gophers: we've refactored the project into packages with a much more cohesive structure, so it's much easier for you to contribute.
 - Also: The Cache Provider and Origin Proxy are exposed as Interfaces for easy extensibility.
 - InfluxDB support (very experimental)
