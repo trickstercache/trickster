@@ -87,5 +87,4 @@ func (c *TricksterConfig) loadFlags() {
 	if Flags.InstanceID > 0 {
 		c.Main.InstanceID = Flags.InstanceID
 	}
-
 }
