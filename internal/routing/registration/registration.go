@@ -47,7 +47,7 @@ func RegisterProxyRoutes() {
 			log.Info("Registering Prometheus Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 			client = prometheus.NewClient(k, o, c)
 		case proxy.OtInfluxDb:
-			log.Info("Registering Influxdb Route Paths", log.Pairs{"originName": k})
+			log.Info("Registering Influxdb Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 			client = influxdb.NewClient(k, o, c)
 		}
 
