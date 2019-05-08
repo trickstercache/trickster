@@ -73,7 +73,7 @@ func TestLoadCachesFromConfig(t *testing.T) {
 
 }
 
-func newCacheConfig(t *testing.T, cacheType string) config.CachingConfig {
+func newCacheConfig(t *testing.T, cacheType string) *config.CachingConfig {
 
 	bd := "."
 	fd := "."
@@ -93,7 +93,7 @@ func newCacheConfig(t *testing.T, cacheType string) config.CachingConfig {
 		}
 	}
 
-	return config.CachingConfig{
+	return &config.CachingConfig{
 		Type:               cacheType,
 		Compression:        true,
 		TimeseriesTTLSecs:  21600,
