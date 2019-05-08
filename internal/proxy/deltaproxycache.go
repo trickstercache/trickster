@@ -45,6 +45,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 
 	OldestRetainedTimestamp := time.Now().Add(-(trq.Step * cfg.ValueRetention))
 	if trq.Extent.End.Before(OldestRetainedTimestamp) {
+		log.Debug("timerange end is too early to consider caching", log.Pairs{"OldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.ValueRetention})
 		ProxyRequest(r, w)
 		return
 	}
@@ -144,8 +145,12 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 			r.FastForwardDisable = true
 		}
 	}
+
+	dpStatus := log.Pairs{"cacheKey": key, "cacheStatus": cacheStatus, "reqStart": trq.Extent.Start, "reqEnd": trq.Extent.End}
+
 	// if it's a cache hit and fast forward is disabled or unsupported, just return the data.
 	if cacheStatus == crHit && (r.FastForwardDisable) {
+		logDeltaRoutine(dpStatus)
 		Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 		return
 	}
@@ -259,11 +264,14 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	go func() {
 		defer wg.Done()
 		// Respond to the user. Using the response headers from a Delta Response, so as to not map conflict with cacheData on WriteCache
+		logDeltaRoutine(dpStatus)
 		Respond(w, doc.StatusCode, rh, rdata)
 	}()
 
 	wg.Wait()
 }
+
+func logDeltaRoutine(p log.Pairs) { log.Debug("delta routine completed", p) }
 
 func fetchTimeseries(r *Request, client Client) (timeseries.Timeseries, *HTTPDocument, time.Duration, error) {
 
