@@ -218,20 +218,20 @@ func NewConfig() *TricksterConfig {
 			"default": DefaultCachingConfig(),
 		},
 		Logging: &LoggingConfig{
-			LogFile:  "",
-			LogLevel: "INFO",
+			LogFile:  defaultLogFile,
+			LogLevel: defaultLogLevel,
 		},
 		Main: &MainConfig{
-			Hostname: "localhost.unknown",
+			Hostname: defaultHostname,
 		},
 		Metrics: &MetricsConfig{
-			ListenPort: 8082,
+			ListenPort: defaultMetricsListenPort,
 		},
 		Origins: map[string]*OriginConfig{
 			"default": DefaultOriginConfig(),
 		},
 		ProxyServer: &ProxyServerConfig{
-			ListenPort: 9090,
+			ListenPort: defaultProxyListenPort,
 		},
 	}
 }
@@ -239,26 +239,23 @@ func NewConfig() *TricksterConfig {
 // DefaultCachingConfig will return a pointer to an OriginConfig with the default configuration settings
 func DefaultCachingConfig() *CachingConfig {
 
-	const defaultCachePath = "/tmp/trickster"
-	const defaultBBoltFile = "trickster.db"
-
 	return &CachingConfig{
-		Type:               "memory",
-		Compression:        true,
-		TimeseriesTTLSecs:  21600,
-		FastForwardTTLSecs: 15,
-		ObjectTTLSecs:      30,
-		Redis:              RedisCacheConfig{ClientType: "standard", Protocol: "tcp", Endpoint: "redis:6379", Endpoints: []string{"redis:6379"}},
+		Type:               defaultCacheType,
+		Compression:        defaultCacheCompression,
+		TimeseriesTTLSecs:  defaultTimeseriesTTLSecs,
+		FastForwardTTLSecs: defaultFastForwardTTLSecs,
+		ObjectTTLSecs:      defaultObjectTTLSecs,
+		Redis:              RedisCacheConfig{ClientType: defaultRedisClientType, Protocol: defaultRedisProtocol, Endpoint: defaultRedisEndpoint, Endpoints: []string{defaultRedisEndpoint}},
 		Filesystem:         FilesystemCacheConfig{CachePath: defaultCachePath},
-		BBolt:              BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: "trickster"},
+		BBolt:              BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: defaultBBoltBucket},
 		Badger:             BadgerCacheConfig{Directory: defaultCachePath, ValueDirectory: defaultCachePath},
 		Index: CacheIndexConfig{
-			ReapIntervalSecs:      3,
-			FlushIntervalSecs:     5,
-			MaxSizeBytes:          536870912,
-			MaxSizeBackoffBytes:   16777216,
-			MaxSizeObjects:        0,
-			MaxSizeBackoffObjects: 100,
+			ReapIntervalSecs:      defaultCacheIndexReap,
+			FlushIntervalSecs:     defaultCacheIndexFlush,
+			MaxSizeBytes:          defaultCacheMaxSizeBytes,
+			MaxSizeBackoffBytes:   defaultMaxSizeBackoffBytes,
+			MaxSizeObjects:        defaultMaxSizeObjects,
+			MaxSizeBackoffObjects: defaultMaxSizeBackoffObjects,
 		},
 	}
 }
@@ -266,18 +263,18 @@ func DefaultCachingConfig() *CachingConfig {
 // DefaultOriginConfig will return a pointer to an OriginConfig with the default configuration settings
 func DefaultOriginConfig() *OriginConfig {
 	return &OriginConfig{
-		Type:                  "prometheus",
-		Scheme:                "http",
-		Host:                  "prometheus:9090",
-		APIPath:               "/api/v1/",
-		IgnoreNoCacheHeader:   true,
-		ValueRetentionFactor:  1024, // Cache a max of 1024 recent timestamps of data for each query
-		TimeoutSecs:           180,
-		CacheName:             "default",
-		ValueRetention:        1024,
-		Timeout:               time.Second * 180,
-		BackfillToleranceSecs: 0,
-		BackfillTolerance:     0,
+		Type:                  defaultOriginServerType,
+		Scheme:                defaultOriginScheme,
+		Host:                  defaultOriginHost,
+		APIPath:               defaultOriginAPIPath,
+		IgnoreNoCacheHeader:   defaultOriginINCH,
+		ValueRetentionFactor:  defaultOriginVRF, // Cache a max of 1024 recent timestamps of data for each query
+		TimeoutSecs:           defaultOriginTimeoutSecs,
+		CacheName:             defaultOriginCacheName,
+		BackfillToleranceSecs: defaultBackfillToleranceSecs,
+		ValueRetention:        defaultOriginVRF,
+		Timeout:               time.Second * defaultOriginTimeoutSecs,
+		BackfillTolerance:     defaultBackfillToleranceSecs,
 	}
 }
 
