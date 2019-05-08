@@ -87,8 +87,8 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected test_type, got %s", o.Type)
 	}
 
-	if o.CacheName != "test_cache_name" {
-		t.Errorf("expected test_cache_name, got %s", o.CacheName)
+	if o.CacheName != "test" {
+		t.Errorf("expected test, got %s", o.CacheName)
 	}
 
 	if o.Scheme != "test_scheme" {
@@ -131,7 +131,7 @@ func TestFullLoadConfiguration(t *testing.T) {
 
 	c, ok := Caches["test"]
 	if !ok {
-		t.Errorf("unable to find origin config: %s", "test")
+		t.Errorf("unable to find cache config: %s", "test")
 		return
 	}
 
@@ -284,6 +284,12 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Error(err)
 	}
 
+	if len(Origins) != 1 {
+		// we define a "test" cache, but never reference it by an origin,
+		// so it should not make it into the running config
+		t.Errorf("expected %d, got %d", 1, len(Origins))
+	}
+
 	// Test Proxy Server
 	if ProxyServer.ListenPort != defaultProxyListenPort {
 		t.Errorf("expected %d, got %d", defaultProxyListenPort, ProxyServer.ListenPort)
@@ -363,11 +369,9 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %d, got %d", defaultOriginTimeoutSecs, o.TimeoutSecs)
 	}
 
-	// Test Caches
-
-	c, ok := Caches["test"]
+	c, ok := Caches["default"]
 	if !ok {
-		t.Errorf("unable to find origin config: %s", "test")
+		t.Errorf("unable to find cache config: %s", "default")
 		return
 	}
 

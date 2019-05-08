@@ -297,7 +297,7 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 
 	// If the user has configured their own origins, and one of them is not "default"
 	// then Trickster will not use the auto-created default origin
-	if (len(c.Origins) > 0) && (!metadata.IsDefined("origins", "default")) {
+	if (len(c.Origins) > 1) && (!metadata.IsDefined("origins", "default")) {
 		delete(c.Origins, "default")
 	}
 
