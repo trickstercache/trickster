@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/timeseries"
+	str "github.com/Comcast/trickster/internal/util/strings"
+
 	"github.com/influxdata/influxdb/models"
 )
 
@@ -30,15 +32,6 @@ const (
 	// milliSecondValue is the no of milliseconds in one second (1000).
 	milliSecondValue = int64(time.Second / minimumTick)
 )
-
-func indexOfString(arr []string, val string) int {
-	for i, v := range arr {
-		if v == val {
-			return i
-		}
-	}
-	return -1
-}
 
 // SetExtents overwrites a Timeseries's known extents with the provided extent list
 func (se *SeriesEnvelope) SetExtents(extents []timeseries.Extent) {
@@ -59,7 +52,7 @@ func (se *SeriesEnvelope) Extremes() []timeseries.Extent {
 	for i := range se.Results {
 		for j := range se.Results[i].Series {
 			// check the index of the time column again just in case it changed in the next series
-			ti := indexOfString(se.Results[i].Series[j].Columns, "time")
+			ti := str.IndexOfString(se.Results[i].Series[j].Columns, "time")
 			if ti != -1 {
 				for k := range se.Results[i].Series[j].Values {
 					times = append(times, int64(se.Results[i].Series[j].Values[k][ti].(float64)))
@@ -234,7 +227,7 @@ func (se *SeriesEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 		for j, s := range r.Series {
 
 			// check the index of the time column again just in case it changed in the next series
-			ti := indexOfString(s.Columns, "time")
+			ti := str.IndexOfString(s.Columns, "time")
 			if ti != -1 {
 
 				ss := &models.Row{Name: s.Name, Tags: s.Tags, Columns: s.Columns, Values: make([][]interface{}, 0, len(s.Values)), Partial: s.Partial}
@@ -288,7 +281,7 @@ func (se *SeriesEnvelope) Sort() {
 	}
 
 	m := make(map[int64][]interface{})
-	if ti := indexOfString(se.Results[0].Series[0].Columns, "time"); ti != -1 {
+	if ti := str.IndexOfString(se.Results[0].Series[0].Columns, "time"); ti != -1 {
 		for ri := range se.Results {
 			for si := range se.Results[ri].Series {
 				for _, v := range se.Results[ri].Series[si].Values {
