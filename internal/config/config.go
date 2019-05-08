@@ -59,6 +59,8 @@ type TricksterConfig struct {
 	ProxyServer *ProxyServerConfig        `toml:"proxy_server"`
 	Logging     *LoggingConfig            `toml:"logging"`
 	Metrics     *MetricsConfig            `toml:"metrics"`
+
+	activeCaches map[string]bool
 }
 
 // MainConfig is a collection of general configuration values.
@@ -85,6 +87,7 @@ type OriginConfig struct {
 	BackfillToleranceSecs int64  `toml:"backfill_tolerance_secs"`
 	TimeoutSecs           int64  `toml:"timeout_secs"`
 	CacheName             string `toml:"cache_name"`
+	IsDefault             bool   `toml:"is_default"`
 
 	Timeout           time.Duration `toml:"-"`
 	BackfillTolerance time.Duration `toml:"-"`
@@ -286,11 +289,19 @@ func (c *TricksterConfig) loadFile() error {
 }
 
 func (c *TricksterConfig) setDefaults(metadata toml.MetaData) {
-	c.setCachingDefaults(metadata)
 	c.setOriginDefaults(metadata)
+	c.setCachingDefaults(metadata)
 }
 
 func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
+
+	// If the user has configured their own origins, and one of them is not "default"
+	// then Trickster will not use the auto-created default origin
+	if (len(c.Origins) > 0) && (!metadata.IsDefined("origins", "default")) {
+		delete(c.Origins, "default")
+	}
+
+	c.activeCaches = make(map[string]bool)
 
 	for k, v := range c.Origins {
 
@@ -299,6 +310,14 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 			oc.Type = v.Type
 		}
 
+		if metadata.IsDefined("origins", k, "is_default") {
+			oc.IsDefault = v.IsDefault
+		}
+		// If there is only one origin and is_default is not explicitly false, make it true
+		if len(c.Origins) == 1 && (!metadata.IsDefined("origins", k, "is_default")) {
+			oc.IsDefault = true
+		}
+
 		if metadata.IsDefined("origins", k, "cache_name") {
 			oc.CacheName = v.CacheName
 		}
@@ -306,6 +325,7 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 		if metadata.IsDefined("origins", k, "cache_name") {
 			oc.CacheName = v.CacheName
 		}
+		c.activeCaches[oc.CacheName] = true
 
 		if metadata.IsDefined("origins", k, "scheme") {
 			oc.Scheme = v.Scheme
@@ -349,7 +369,15 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 
 func (c *TricksterConfig) setCachingDefaults(metadata toml.MetaData) {
 
+	// setCachingDefaults assumes that setOriginDefaults was just ran
+
 	for k, v := range c.Caches {
+
+		if _, ok := c.activeCaches[k]; !ok {
+			// a configured cache was not used by any origin. don't even instantiate it
+			delete(c.Caches, k)
+			continue
+		}
 
 		cc := DefaultCachingConfig()
 

@@ -22,12 +22,7 @@ import (
 // RegisterRoutes registers the routes for the Client into the proxy's HTTP multiplexer
 func (c Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 
-	if originName == "default" {
-		log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.Type})
-		routing.Router.HandleFunc("/"+health, c.HealthHandler).Methods("GET")
-		routing.Router.HandleFunc("/"+mnQuery, c.QueryHandler).Methods("GET", "POST")
-		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
-	} else {
+	if !o.IsDefault {
 		// Host Header-based routing
 		log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
 		routing.Router.HandleFunc("/"+health, c.HealthHandler).Methods("GET").Host(originName)
@@ -35,8 +30,16 @@ func (c Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST").Host(originName)
 	}
 
+	// Path-based routing
 	routing.Router.HandleFunc("/"+originName+"/"+health, c.HealthHandler).Methods("GET")
 	routing.Router.HandleFunc("/"+originName+"/"+mnQuery, c.QueryHandler).Methods("GET", "POST")
 	routing.Router.PathPrefix("/"+originName+"/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
 
+	// Default Origin Routing
+	if o.IsDefault {
+		log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.Type})
+		routing.Router.HandleFunc("/"+health, c.HealthHandler).Methods("GET")
+		routing.Router.HandleFunc("/"+mnQuery, c.QueryHandler).Methods("GET", "POST")
+		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
+	}
 }

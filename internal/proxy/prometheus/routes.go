@@ -22,16 +22,8 @@ import (
 // RegisterRoutes registers the routes for the Client into the proxy's HTTP multiplexer
 func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 
-	if originName == "default" {
-		log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.Type})
-		routing.Router.HandleFunc("/"+mnHealth, c.HealthHandler).Methods("GET")
-		routing.Router.HandleFunc(APIPath+mnQueryRange, c.QueryRangeHandler).Methods("GET", "POST")
-		routing.Router.HandleFunc(APIPath+mnQuery, c.QueryHandler).Methods("GET", "POST")
-		routing.Router.HandleFunc(APIPath+mnSeries, c.SeriesHandler).Methods("GET", "POST")
-		routing.Router.PathPrefix(APIPath).HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
-		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
-	} else {
-		// Host Header-based routing
+	// Host Header-based routing
+	if !o.IsDefault {
 		log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
 		routing.Router.HandleFunc("/"+mnHealth, c.HealthHandler).Methods("GET").Host(originName)
 		routing.Router.HandleFunc(APIPath+mnQueryRange, c.QueryRangeHandler).Methods("GET", "POST").Host(originName)
@@ -41,11 +33,23 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST").Host(originName)
 	}
 
+	// Path based routing
 	routing.Router.HandleFunc("/"+originName+"/"+mnHealth, c.HealthHandler).Methods("GET")
 	routing.Router.HandleFunc("/"+originName+APIPath+mnQueryRange, c.QueryRangeHandler).Methods("GET", "POST")
 	routing.Router.HandleFunc("/"+originName+APIPath+mnQuery, c.QueryHandler).Methods("GET", "POST")
 	routing.Router.HandleFunc("/"+originName+APIPath+mnSeries, c.SeriesHandler).Methods("GET", "POST")
 	routing.Router.PathPrefix("/"+originName+APIPath).HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
 	routing.Router.PathPrefix("/"+originName+"/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
+
+	// If default origin, set those routes too
+	if o.IsDefault {
+		log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.Type})
+		routing.Router.HandleFunc("/"+mnHealth, c.HealthHandler).Methods("GET")
+		routing.Router.HandleFunc(APIPath+mnQueryRange, c.QueryRangeHandler).Methods("GET", "POST")
+		routing.Router.HandleFunc(APIPath+mnQuery, c.QueryHandler).Methods("GET", "POST")
+		routing.Router.HandleFunc(APIPath+mnSeries, c.SeriesHandler).Methods("GET", "POST")
+		routing.Router.PathPrefix(APIPath).HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
+		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
+	}
 
 }
