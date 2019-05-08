@@ -213,31 +213,9 @@ type MetricsConfig struct {
 
 // NewConfig returns a Config initialized with default values.
 func NewConfig() *TricksterConfig {
-
-	defaultCachePath := "/tmp/trickster"
-	defaultBBoltFile := "trickster.db"
-
 	return &TricksterConfig{
 		Caches: map[string]*CachingConfig{
-			"default": &CachingConfig{
-				Type:               "memory",
-				Compression:        true,
-				TimeseriesTTLSecs:  21600,
-				FastForwardTTLSecs: 15,
-				ObjectTTLSecs:      30,
-				Redis:              RedisCacheConfig{ClientType: "standard", Protocol: "tcp", Endpoint: "redis:6379", Endpoints: []string{"redis:6379"}},
-				Filesystem:         FilesystemCacheConfig{CachePath: defaultCachePath},
-				BBolt:              BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: "trickster"},
-				Badger:             BadgerCacheConfig{Directory: defaultCachePath, ValueDirectory: defaultCachePath},
-				Index: CacheIndexConfig{
-					ReapIntervalSecs:      3,
-					FlushIntervalSecs:     5,
-					MaxSizeBytes:          536870912,
-					MaxSizeBackoffBytes:   16777216,
-					MaxSizeObjects:        0,
-					MaxSizeBackoffObjects: 100,
-				},
-			},
+			"default": DefaultCachingConfig(),
 		},
 		Logging: &LoggingConfig{
 			LogFile:  "",
@@ -258,6 +236,34 @@ func NewConfig() *TricksterConfig {
 	}
 }
 
+// DefaultCachingConfig will return a pointer to an OriginConfig with the default configuration settings
+func DefaultCachingConfig() *CachingConfig {
+
+	const defaultCachePath = "/tmp/trickster"
+	const defaultBBoltFile = "trickster.db"
+
+	return &CachingConfig{
+		Type:               "memory",
+		Compression:        true,
+		TimeseriesTTLSecs:  21600,
+		FastForwardTTLSecs: 15,
+		ObjectTTLSecs:      30,
+		Redis:              RedisCacheConfig{ClientType: "standard", Protocol: "tcp", Endpoint: "redis:6379", Endpoints: []string{"redis:6379"}},
+		Filesystem:         FilesystemCacheConfig{CachePath: defaultCachePath},
+		BBolt:              BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: "trickster"},
+		Badger:             BadgerCacheConfig{Directory: defaultCachePath, ValueDirectory: defaultCachePath},
+		Index: CacheIndexConfig{
+			ReapIntervalSecs:      3,
+			FlushIntervalSecs:     5,
+			MaxSizeBytes:          536870912,
+			MaxSizeBackoffBytes:   16777216,
+			MaxSizeObjects:        0,
+			MaxSizeBackoffObjects: 100,
+		},
+	}
+}
+
+// DefaultOriginConfig will return a pointer to an OriginConfig with the default configuration settings
 func DefaultOriginConfig() *OriginConfig {
 	return &OriginConfig{
 		Type:                  "prometheus",
@@ -277,6 +283,219 @@ func DefaultOriginConfig() *OriginConfig {
 
 // loadFile loads application configuration from a TOML-formatted file.
 func (c *TricksterConfig) loadFile() error {
-	_, err := toml.DecodeFile(Flags.ConfigPath, &c)
+	md, err := toml.DecodeFile(Flags.ConfigPath, c)
+	c.setDefaults(md)
 	return err
+}
+
+func (c *TricksterConfig) setDefaults(metadata toml.MetaData) {
+	c.setCachingDefaults(metadata)
+	c.setOriginDefaults(metadata)
+}
+
+func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
+
+	for k, v := range c.Origins {
+
+		oc := DefaultOriginConfig()
+		if metadata.IsDefined("origins", k, "type") {
+			oc.Type = v.Type
+		}
+
+		if metadata.IsDefined("origins", k, "cache_name") {
+			oc.CacheName = v.CacheName
+		}
+
+		if metadata.IsDefined("origins", k, "cache_name") {
+			oc.CacheName = v.CacheName
+		}
+
+		if metadata.IsDefined("origins", k, "scheme") {
+			oc.Scheme = v.Scheme
+		}
+
+		if metadata.IsDefined("origins", k, "host") {
+			oc.Host = v.Host
+		}
+
+		if metadata.IsDefined("origins", k, "path_prefix") {
+			oc.PathPrefix = v.PathPrefix
+		}
+
+		if metadata.IsDefined("origins", k, "timeout_secs") {
+			oc.TimeoutSecs = v.TimeoutSecs
+		}
+
+		if metadata.IsDefined("origins", k, "api_path") {
+			oc.APIPath = v.APIPath
+		}
+
+		if metadata.IsDefined("origins", k, "ignore_no_cache_header") {
+			oc.IgnoreNoCacheHeader = v.IgnoreNoCacheHeader
+		}
+
+		if metadata.IsDefined("origins", k, "value_retention_factor") {
+			oc.ValueRetentionFactor = v.ValueRetentionFactor
+		}
+
+		if metadata.IsDefined("origins", k, "fast_forward_disable") {
+			oc.FastForwardDisable = v.FastForwardDisable
+		}
+
+		if metadata.IsDefined("origins", k, "backfill_tolerance_secs") {
+			oc.BackfillToleranceSecs = v.BackfillToleranceSecs
+		}
+
+		c.Origins[k] = oc
+	}
+}
+
+func (c *TricksterConfig) setCachingDefaults(metadata toml.MetaData) {
+
+	for k, v := range c.Caches {
+
+		cc := DefaultCachingConfig()
+
+		if metadata.IsDefined("caches", k, "type") {
+			cc.Type = v.Type
+		}
+
+		if metadata.IsDefined("caches", k, "compression") {
+			cc.Compression = v.Compression
+		}
+
+		if metadata.IsDefined("caches", k, "timeseries_ttl_secs") {
+			cc.TimeseriesTTLSecs = v.TimeseriesTTLSecs
+		}
+
+		if metadata.IsDefined("caches", k, "fastforward_ttl_secs") {
+			cc.FastForwardTTLSecs = v.FastForwardTTLSecs
+		}
+
+		if metadata.IsDefined("caches", k, "object_ttl_secs") {
+			cc.ObjectTTLSecs = v.ObjectTTLSecs
+		}
+
+		if metadata.IsDefined("caches", k, "index", "reap_interval_secs") {
+			cc.Index.ReapIntervalSecs = v.Index.ReapIntervalSecs
+		}
+
+		if metadata.IsDefined("caches", k, "index", "flush_interval_secs") {
+			cc.Index.FlushIntervalSecs = v.Index.FlushIntervalSecs
+		}
+
+		if metadata.IsDefined("caches", k, "index", "max_size_bytes") {
+			cc.Index.MaxSizeBytes = v.Index.MaxSizeBytes
+		}
+
+		if metadata.IsDefined("caches", k, "index", "max_size_backoff_bytes") {
+			cc.Index.MaxSizeBackoffBytes = v.Index.MaxSizeBackoffBytes
+		}
+
+		if metadata.IsDefined("caches", k, "index", "max_size_objects") {
+			cc.Index.MaxSizeObjects = v.Index.MaxSizeObjects
+		}
+
+		if metadata.IsDefined("caches", k, "index", "max_size_backoff_objects") {
+			cc.Index.MaxSizeBackoffObjects = v.Index.MaxSizeBackoffObjects
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "client_type") {
+			cc.Redis.ClientType = v.Redis.ClientType
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "protocol") {
+			cc.Redis.Protocol = v.Redis.Protocol
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "endpoint") {
+			cc.Redis.Endpoint = v.Redis.Endpoint
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "endpoints") {
+			cc.Redis.Endpoints = v.Redis.Endpoints
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "sentinel_master") {
+			cc.Redis.SentinelMaster = v.Redis.SentinelMaster
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "password") {
+			cc.Redis.Password = v.Redis.Password
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "db") {
+			cc.Redis.DB = v.Redis.DB
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "max_retries") {
+			cc.Redis.MaxRetries = v.Redis.MaxRetries
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "min_retry_backoff_ms") {
+			cc.Redis.MinRetryBackoffMS = v.Redis.MinRetryBackoffMS
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "max_retry_backoff_ms") {
+			cc.Redis.MaxRetryBackoffMS = v.Redis.MaxRetryBackoffMS
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "dial_timeout_ms") {
+			cc.Redis.DialTimeoutMS = v.Redis.DialTimeoutMS
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "read_timeout_ms") {
+			cc.Redis.ReadTimeoutMS = v.Redis.ReadTimeoutMS
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "write_timeout_ms") {
+			cc.Redis.WriteTimeoutMS = v.Redis.WriteTimeoutMS
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "pool_size") {
+			cc.Redis.PoolSize = v.Redis.PoolSize
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "min_idle_conns") {
+			cc.Redis.MinIdleConns = v.Redis.MinIdleConns
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "max_conn_age_ms") {
+			cc.Redis.MaxConnAgeMS = v.Redis.MaxConnAgeMS
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "pool_timeout_ms") {
+			cc.Redis.PoolTimeoutMS = v.Redis.PoolTimeoutMS
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "idle_timeout_ms") {
+			cc.Redis.IdleTimeoutMS = v.Redis.IdleTimeoutMS
+		}
+
+		if metadata.IsDefined("caches", k, "redis", "idle_check_frequency_ms") {
+			cc.Redis.IdleCheckFrequencyMS = v.Redis.IdleCheckFrequencyMS
+		}
+
+		if metadata.IsDefined("caches", k, "filesystem", "cache_path") {
+			cc.Filesystem.CachePath = v.Filesystem.CachePath
+		}
+
+		if metadata.IsDefined("caches", k, "bbolt", "filename") {
+			cc.BBolt.Filename = v.BBolt.Filename
+		}
+
+		if metadata.IsDefined("caches", k, "bbolt", "bucket") {
+			cc.BBolt.Bucket = v.BBolt.Bucket
+		}
+
+		if metadata.IsDefined("caches", k, "badger", "directory") {
+			cc.Badger.Directory = v.Badger.Directory
+		}
+
+		if metadata.IsDefined("caches", k, "badger", "value_directory") {
+			cc.Badger.ValueDirectory = v.Badger.ValueDirectory
+		}
+
+		c.Caches[k] = cc
+	}
 }
