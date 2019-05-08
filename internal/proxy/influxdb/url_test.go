@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
@@ -29,7 +30,14 @@ func TestSetExtent(t *testing.T) {
 	end := time.Now()
 	expected := "q=select+%2A+where+time+%3E%3D+" + fmt.Sprintf("%d", start.Unix()*1000) + "ms+AND+time+%3C%3D+" + fmt.Sprintf("%d", end.Unix()*1000) + "ms+group+by+time%281m%29"
 
-	client := &Client{}
+	err := config.Load("trickster", "test", []string{"-origin", "none:9090", "-origin-type", "influxdb", "-log-level", "debug"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	oc := config.Origins["default"]
+	client := Client{config: oc}
+
 	u := &url.URL{}
 	tu := &url.URL{RawQuery: "q=select * where <$TIME_TOKEN$> group by time(1m)"}
 	r := &proxy.Request{URL: u, TemplateURL: tu}
