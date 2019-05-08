@@ -23,17 +23,17 @@ type Client struct {
 	name   string
 	user   string
 	pass   string
-	config config.OriginConfig
+	config *config.OriginConfig
 	cache  cache.Cache
 }
 
 // NewClient returns a new Client Instance
-func NewClient(name string, config config.OriginConfig, cache cache.Cache) *Client {
+func NewClient(name string, config *config.OriginConfig, cache cache.Cache) *Client {
 	return &Client{name: name, config: config, cache: cache}
 }
 
 // Configuration returns the upstream Configuration for this Client
-func (c *Client) Configuration() config.OriginConfig {
+func (c *Client) Configuration() *config.OriginConfig {
 	return c.config
 }
 

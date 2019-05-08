@@ -51,7 +51,7 @@ func main() {
 
 	log.Init()
 	defer log.Logger.Close()
-	log.Info("application start up", log.Pairs{"name": applicationName, "version": applicationVersion})
+	log.Info("application start up", log.Pairs{"name": applicationName, "version": applicationVersion, "logLevel": config.Logging.LogLevel})
 
 	metrics.Init()
 	cr.LoadCachesFromConfig()

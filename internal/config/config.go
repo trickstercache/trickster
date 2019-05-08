@@ -26,10 +26,10 @@ var Config *TricksterConfig
 var Main *MainConfig
 
 // Origins is the Origin Map subsection of the Running Configuration
-var Origins map[string]OriginConfig
+var Origins map[string]*OriginConfig
 
 // Caches is the Cache Map subsection of the Running Configuration
-var Caches map[string]CachingConfig
+var Caches map[string]*CachingConfig
 
 // ProxyServer is the Proxy Server subsection of the Running Configuration
 var ProxyServer *ProxyServerConfig
@@ -53,12 +53,12 @@ var ApplicationVersion string
 
 // TricksterConfig is the main configuration object
 type TricksterConfig struct {
-	Main        MainConfig               `toml:"main"`
-	Origins     map[string]OriginConfig  `toml:"origins"`
-	Caches      map[string]CachingConfig `toml:"caches"`
-	ProxyServer ProxyServerConfig        `toml:"proxy_server"`
-	Logging     LoggingConfig            `toml:"logging"`
-	Metrics     MetricsConfig            `toml:"metrics"`
+	Main        *MainConfig               `toml:"main"`
+	Origins     map[string]*OriginConfig  `toml:"origins"`
+	Caches      map[string]*CachingConfig `toml:"caches"`
+	ProxyServer *ProxyServerConfig        `toml:"proxy_server"`
+	Logging     *LoggingConfig            `toml:"logging"`
+	Metrics     *MetricsConfig            `toml:"metrics"`
 }
 
 // MainConfig is a collection of general configuration values.
@@ -218,8 +218,8 @@ func NewConfig() *TricksterConfig {
 	defaultBBoltFile := "trickster.db"
 
 	return &TricksterConfig{
-		Caches: map[string]CachingConfig{
-			"default": {
+		Caches: map[string]*CachingConfig{
+			"default": &CachingConfig{
 				Type:               "memory",
 				Compression:        true,
 				TimeseriesTTLSecs:  21600,
@@ -239,27 +239,27 @@ func NewConfig() *TricksterConfig {
 				},
 			},
 		},
-		Logging: LoggingConfig{
+		Logging: &LoggingConfig{
 			LogFile:  "",
 			LogLevel: "INFO",
 		},
-		Main: MainConfig{
+		Main: &MainConfig{
 			Hostname: "localhost.unknown",
 		},
-		Metrics: MetricsConfig{
+		Metrics: &MetricsConfig{
 			ListenPort: 8082,
 		},
-		Origins: map[string]OriginConfig{
+		Origins: map[string]*OriginConfig{
 			"default": defaultOriginConfig(),
 		},
-		ProxyServer: ProxyServerConfig{
+		ProxyServer: &ProxyServerConfig{
 			ListenPort: 9090,
 		},
 	}
 }
 
-func defaultOriginConfig() OriginConfig {
-	return OriginConfig{
+func defaultOriginConfig() *OriginConfig {
+	return &OriginConfig{
 		Type:                 "prometheus",
 		Scheme:               "http",
 		Host:                 "prometheus:9090",

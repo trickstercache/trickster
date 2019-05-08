@@ -48,7 +48,7 @@ func GetCache(cacheName string) (cache.Cache, error) {
 // LoadCachesFromConfig iterates the Caching Confi and Connects/Maps each Cache
 func LoadCachesFromConfig() {
 	for k, v := range config.Caches {
-		c := NewCache(k, &v)
+		c := NewCache(k, v)
 		Caches[k] = c
 	}
 }
