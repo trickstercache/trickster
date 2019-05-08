@@ -250,7 +250,7 @@ func NewConfig() *TricksterConfig {
 			ListenPort: 8082,
 		},
 		Origins: map[string]*OriginConfig{
-			"default": defaultOriginConfig(),
+			"default": DefaultOriginConfig(),
 		},
 		ProxyServer: &ProxyServerConfig{
 			ListenPort: 9090,
@@ -258,16 +258,20 @@ func NewConfig() *TricksterConfig {
 	}
 }
 
-func defaultOriginConfig() *OriginConfig {
+func DefaultOriginConfig() *OriginConfig {
 	return &OriginConfig{
-		Type:                 "prometheus",
-		Scheme:               "http",
-		Host:                 "prometheus:9090",
-		APIPath:              "/api/v1/",
-		IgnoreNoCacheHeader:  true,
-		ValueRetentionFactor: 1024, // Cache a max of 1024 recent timestamps of data for each query
-		TimeoutSecs:          180,
-		CacheName:            "default",
+		Type:                  "prometheus",
+		Scheme:                "http",
+		Host:                  "prometheus:9090",
+		APIPath:               "/api/v1/",
+		IgnoreNoCacheHeader:   true,
+		ValueRetentionFactor:  1024, // Cache a max of 1024 recent timestamps of data for each query
+		TimeoutSecs:           180,
+		CacheName:             "default",
+		ValueRetention:        1024,
+		Timeout:               time.Second * 180,
+		BackfillToleranceSecs: 0,
+		BackfillTolerance:     0,
 	}
 }
 

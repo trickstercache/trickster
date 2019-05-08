@@ -30,7 +30,7 @@ type TestClient struct {
 	name   string
 	user   string
 	pass   string
-	config config.OriginConfig
+	config *config.OriginConfig
 	cache  cache.Cache
 }
 
@@ -45,7 +45,7 @@ func (c TestClient) BuildUpstreamURL(r *http.Request) *url.URL {
 	u := c.BaseURL()
 	return u
 }
-func (c TestClient) Configuration() config.OriginConfig {
+func (c TestClient) Configuration() *config.OriginConfig {
 	return c.config
 }
 func (c TestClient) Name() string {
@@ -92,8 +92,8 @@ func (c TestClient) ParseTimeRangeQuery(r *Request) (*timeseries.TimeRangeQuery,
 	}
 	return trq, nil
 }
-func (c TestClient) RegisterRoutes(originName string, o config.OriginConfig) {}
-func (c TestClient) SetExtent(r *Request, extent *timeseries.Extent)         {}
+func (c TestClient) RegisterRoutes(originName string, o *config.OriginConfig) {}
+func (c TestClient) SetExtent(r *Request, extent *timeseries.Extent)          {}
 
 func (c TestTimeseries) SetExtents([]timeseries.Extent) {}
 func (c TestTimeseries) SetStep(time.Duration)          {}

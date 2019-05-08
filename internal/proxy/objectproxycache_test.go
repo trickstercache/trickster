@@ -42,7 +42,7 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 		return
 	}
 
-	client := TestClient{}
+	client := TestClient{config: config.Origins["default"]}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)
