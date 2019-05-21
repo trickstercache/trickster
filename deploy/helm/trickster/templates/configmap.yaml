@@ -119,19 +119,19 @@ data:
       {{- range .Values.caches }}
         {{ printf "[caches.%s]" .name }}
         type = {{ .type | quote }}
-        timeseries_ttl_secs = {{ .timeSeriesTTLSecs | default(21600) }}
-        fastforward_ttl_secs = {{ .fastforwardTTLSecs | default(15) }}
-        object_ttl_secs = {{ .objectTTLSecs | default(30) }}
+        timeseries_ttl_secs = {{ .timeSeriesTTLSecs }}
+        fastforward_ttl_secs = {{ .fastforwardTTLSecs }}
+        object_ttl_secs = {{ .objectTTLSecs }}
         compression = {{ .compression }}
 
             {{- if or (ne .type "redis") (ne .type "redis_cluster") }}
-            {{ printf "[caches.%s.redis]" .name }}
-            reap_interval_secs = {{ .index.reapIntervalSecs | default(3) }}
-            flush_interval_secs = {{ .index.flushIntervalSecs | default(5) }}
-            max_size_bytes = {{ .index.maxSizeBytes | default(536870912) }}
-            max_size_backoff_bytes = {{ .index.maxSizeBackoffBytes | default(16777216) }}
-            max_size_objects = {{ .index.objectTTLSecs | default(0) }}
-            max_size_backoff_objects = {{ .index.objectTTLSecs | default(30) }}
+            {{ printf "[caches.%s.index]" .name }}
+            reap_interval_secs = {{ .index.reapIntervalSecs }}
+            flush_interval_secs = {{ .index.flushIntervalSecs }}
+            max_size_bytes = {{ .index.maxSizeBytes }}
+            max_size_backoff_bytes = {{ .index.maxSizeBackoffBytes }}
+            max_size_objects = {{ .index.maxSizeObjects }}
+            max_size_backoff_objects = {{ .index.maxSizeBackoffObjects }}
             {{- end }}
 
             {{- if eq .type "redis" }}
@@ -229,14 +229,14 @@ data:
     {{- range .Values.origins }}
         {{ printf "[origins.%s]" .name }}
         type = {{ .type | quote }}
-        cache_name = {{ .name }}
+        cache_name = {{ .name | quote }}
         scheme = {{ .scheme | quote }}
         host = {{ .host | quote }}
         path_prefix = {{ .pathPrefix | quote }}
         api_path = {{ .apiPath | quote }}
         ignore_no_cache_header = {{ .ignoreNoCacheHeader }}
-        max_value_age_secs = {{ .maxValueAgeSecs | default(86400) }}
-        timeout_secs = {{ .timeoutSecs | default(180) }}
+        value_retention_factor = {{ .valueRetentionFactor }}
+        timeout_secs = {{ .timeoutSecs }}
         backfill_tolerance_secs = {{ .backfillToleranceSecs }}
         fast_forward_disable = {{ .fastForwardDisable }}
     {{- end }}
@@ -256,7 +256,7 @@ data:
     # Configuration Options for Metrics Instrumentation
     [metrics]
     # listen_port defines the port that Trickster's metrics server listens on at /metrics
-    listen_port =  {{ .Values.service.metricsPort }}
+    listen_port = {{ .Values.service.metricsPort }}
     # listen_address defines the ip that Trickster's metrics server listens on at /metrics
     # empty by default, listening on all interfaces
     # listen_address =
