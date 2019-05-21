@@ -15,6 +15,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -49,7 +50,7 @@ func TestLoadEnvVars(t *testing.T) {
 		t.Errorf("expected %s got %s", "1.1.1.1:9090", d.Host)
 	}
 
-	if Logging.LogLevel != "INFO" {
+	if strings.ToUpper(Logging.LogLevel) != "INFO" {
 		t.Errorf("expected %s got %s", "INFO", Logging.LogLevel)
 	}
 

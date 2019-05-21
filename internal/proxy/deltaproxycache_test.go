@@ -42,7 +42,7 @@ func TestDeltaProxyCacheRequest(t *testing.T) {
 		return
 	}
 
-	client := TestClient{}
+	client := TestClient{config: config.Origins["default"]}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)
@@ -108,7 +108,7 @@ func TestDeltaProxyCacheRequestBadGateway(t *testing.T) {
 		return
 	}
 
-	client := TestClient{}
+	client := TestClient{config: config.Origins["default"]}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)
@@ -145,7 +145,7 @@ func TestDeltaProxyCacheRequestParseError(t *testing.T) {
 		return
 	}
 
-	client := TestClient{}
+	client := TestClient{config: config.Origins["default"]}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)

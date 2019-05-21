@@ -33,7 +33,7 @@ func TestNewClient(t *testing.T) {
 		t.Error(err)
 	}
 
-	oc := config.OriginConfig{Type: "TEST_CLIENT"}
+	oc := &config.OriginConfig{Type: "TEST_CLIENT"}
 	c := NewClient("default", oc, cache)
 
 	if c.Name() != "default" {
@@ -80,7 +80,7 @@ func TestParseTimeFails(t *testing.T) {
 }
 
 func TestConfiguration(t *testing.T) {
-	oc := config.OriginConfig{Type: "TEST"}
+	oc := &config.OriginConfig{Type: "TEST"}
 	client := Client{config: oc}
 	c := client.Configuration()
 	if c.Type != "TEST" {

@@ -20,24 +20,9 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/timeseries"
+
 	"github.com/influxdata/influxdb/models"
 )
-
-func TestIndexOfString(t *testing.T) {
-
-	arr := []string{"string0", "string1", "string2"}
-
-	i := indexOfString(arr, "string0")
-	if i != 0 {
-		t.Errorf(`expected 0. got %d`, i)
-	}
-
-	i = indexOfString(arr, "string3")
-	if i != -1 {
-		t.Errorf(`expected -1. got %d`, i)
-	}
-
-}
 
 func TestSetExtents(t *testing.T) {
 	se := &SeriesEnvelope{}

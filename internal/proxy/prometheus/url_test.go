@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
@@ -33,7 +34,14 @@ func TestSetExtent(t *testing.T) {
 
 	expected := "end=" + endSecs + "&q=up&start=" + startSecs
 
-	client := &Client{}
+	err := config.Load("trickster", "test", []string{"-origin", "none:9090", "-origin-type", "prometheus", "-log-level", "debug"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	oc := config.Origins["default"]
+	client := Client{config: oc}
+
 	u := &url.URL{RawQuery: "q=up"}
 	r := &proxy.Request{URL: u}
 	e := &timeseries.Extent{Start: start, End: end}
@@ -48,7 +56,14 @@ func TestFasForwardURL(t *testing.T) {
 
 	expected := "q=up"
 
-	client := &Client{}
+	err := config.Load("trickster", "test", []string{"-origin", "none:9090", "-origin-type", "prometheus", "-log-level", "debug"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	oc := config.Origins["default"]
+	client := Client{config: oc}
+
 	u := &url.URL{Path: "/query_range", RawQuery: "q=up&start=1&end=1&step=1"}
 	r := &proxy.Request{URL: u}
 

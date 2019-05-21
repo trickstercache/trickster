@@ -31,8 +31,18 @@ var ProxyClients = make(map[string]proxy.Client)
 // RegisterProxyRoutes iterates the Trickster Configuration and registers the routes for the configured origins
 func RegisterProxyRoutes() {
 
+	hasDefault := false
+
 	// Iterate our origins from the config and register their path handlers into the mux.
 	for k, o := range config.Origins {
+
+		// Ensure only one default origin exists
+		if o.IsDefault {
+			if hasDefault {
+				log.Fatal(1, "too many default origins", log.Pairs{})
+			}
+			hasDefault = true
+		}
 
 		var client proxy.Client
 		var c cache.Cache
@@ -47,13 +57,19 @@ func RegisterProxyRoutes() {
 			log.Info("Registering Prometheus Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 			client = prometheus.NewClient(k, o, c)
 		case proxy.OtInfluxDb:
-			log.Info("Registering Influxdb Route Paths", log.Pairs{"originName": k})
+			log.Info("Registering Influxdb Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 			client = influxdb.NewClient(k, o, c)
 		}
 
 		if client != nil {
 			ProxyClients[k] = client
-			client.RegisterRoutes(k, o)
+
+			// If it's the default origin, register it last
+			if o.IsDefault {
+				defer client.RegisterRoutes(k, o)
+			} else {
+				client.RegisterRoutes(k, o)
+			}
 		}
 	}
 }

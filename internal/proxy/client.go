@@ -32,11 +32,11 @@ const (
 type Client interface {
 
 	// RegisterRoutes provides a method to register upstream routes to HTTP Handlers
-	RegisterRoutes(string, config.OriginConfig)
+	RegisterRoutes(string, *config.OriginConfig)
 	// ParseTimeRangeQuery returns a timeseries.TimeRangeQuery based on the provided HTTP Request
 	ParseTimeRangeQuery(*Request) (*timeseries.TimeRangeQuery, error)
 	// Configuration returns the configuration for the Proxy Client
-	Configuration() config.OriginConfig
+	Configuration() *config.OriginConfig
 	// Name returns the name of the origin the Proxy Client is handling
 	Name() string
 	// BaseURL returns the base URL (schema://host:port/path_prefix) for accessing an upstream origin

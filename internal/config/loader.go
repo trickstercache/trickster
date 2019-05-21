@@ -60,12 +60,12 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	}
 
 	Config = c
-	Main = &c.Main
+	Main = c.Main
 	Origins = c.Origins
 	Caches = c.Caches
-	ProxyServer = &c.ProxyServer
-	Logging = &c.Logging
-	Metrics = &c.Metrics
+	ProxyServer = c.ProxyServer
+	Logging = c.Logging
+	Metrics = c.Metrics
 
 	for k, o := range Origins {
 		o.Timeout = time.Duration(o.TimeoutSecs) * time.Second

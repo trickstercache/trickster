@@ -41,10 +41,10 @@ func setupRedisCache() (*Cache, func()) {
 	close := func() {
 		s.Close()
 	}
-	cacheConfig := config.CachingConfig{Type: cacheType, Redis: rcfg}
-	config.Caches = map[string]config.CachingConfig{"default": cacheConfig}
+	cacheConfig := &config.CachingConfig{Type: cacheType, Redis: rcfg}
+	config.Caches = map[string]*config.CachingConfig{"default": cacheConfig}
 
-	return &Cache{Config: &cacheConfig}, close
+	return &Cache{Config: cacheConfig}, close
 }
 
 func TestDurationFromMS(t *testing.T) {
