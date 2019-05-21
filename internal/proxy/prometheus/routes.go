@@ -23,15 +23,13 @@ import (
 func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 
 	// Host Header-based routing
-	if !o.IsDefault {
-		log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
-		routing.Router.HandleFunc("/"+mnHealth, c.HealthHandler).Methods("GET").Host(originName)
-		routing.Router.HandleFunc(APIPath+mnQueryRange, c.QueryRangeHandler).Methods("GET", "POST").Host(originName)
-		routing.Router.HandleFunc(APIPath+mnQuery, c.QueryHandler).Methods("GET", "POST").Host(originName)
-		routing.Router.HandleFunc(APIPath+mnSeries, c.SeriesHandler).Methods("GET", "POST").Host(originName)
-		routing.Router.PathPrefix(APIPath).HandlerFunc(c.ProxyHandler).Methods("GET", "POST").Host(originName)
-		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST").Host(originName)
-	}
+	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
+	routing.Router.HandleFunc("/"+mnHealth, c.HealthHandler).Methods("GET").Host(originName)
+	routing.Router.HandleFunc(APIPath+mnQueryRange, c.QueryRangeHandler).Methods("GET", "POST").Host(originName)
+	routing.Router.HandleFunc(APIPath+mnQuery, c.QueryHandler).Methods("GET", "POST").Host(originName)
+	routing.Router.HandleFunc(APIPath+mnSeries, c.SeriesHandler).Methods("GET", "POST").Host(originName)
+	routing.Router.PathPrefix(APIPath).HandlerFunc(c.ProxyHandler).Methods("GET", "POST").Host(originName)
+	routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST").Host(originName)
 
 	// Path based routing
 	routing.Router.HandleFunc("/"+originName+"/"+mnHealth, c.HealthHandler).Methods("GET")

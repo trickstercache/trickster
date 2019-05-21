@@ -22,13 +22,11 @@ import (
 // RegisterRoutes registers the routes for the Client into the proxy's HTTP multiplexer
 func (c Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 
-	if !o.IsDefault {
-		// Host Header-based routing
-		log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
-		routing.Router.HandleFunc("/"+health, c.HealthHandler).Methods("GET").Host(originName)
-		routing.Router.HandleFunc("/"+mnQuery, c.QueryHandler).Methods("GET", "POST").Host(originName)
-		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST").Host(originName)
-	}
+	// Host Header-based routing
+	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
+	routing.Router.HandleFunc("/"+health, c.HealthHandler).Methods("GET").Host(originName)
+	routing.Router.HandleFunc("/"+mnQuery, c.QueryHandler).Methods("GET", "POST").Host(originName)
+	routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST").Host(originName)
 
 	// Path-based routing
 	routing.Router.HandleFunc("/"+originName+"/"+health, c.HealthHandler).Methods("GET")
