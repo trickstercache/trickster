@@ -46,8 +46,6 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	}
 
 	OldestRetainedTimestamp := time.Now().Add(-(trq.Step * cfg.ValueRetention))
-	fmt.Println(OldestRetainedTimestamp, cfg.ValueRetention, trq.Step)
-	fmt.Println(time.Now())
 	if trq.Extent.End.Before(OldestRetainedTimestamp) {
 		log.Debug("timerange end is too early to consider caching", log.Pairs{"OldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.ValueRetention})
 		ProxyRequest(r, w)

@@ -53,9 +53,7 @@ func TestDeltaProxyCacheRequest(t *testing.T) {
 	query := "some_query_here{}"
 	step := time.Duration(300) * time.Second
 	start := time.Now().Add(-time.Duration(6) * time.Hour).Truncate(step)
-	fmt.Println("*", start)
 	end := time.Now().Truncate(step)
-	fmt.Println("*", end)
 
 	expected, _ := promsim.GetTimeSeriesData(query, start, end, step)
 
