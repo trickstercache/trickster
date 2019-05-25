@@ -22,6 +22,7 @@ import (
 	"github.com/Comcast/trickster/internal/routing" // need to eliminate this dependency
 )
 
+// NewTestServer launches a Test Prometheus Server (for unit testing)
 func NewTestServer() *httptest.Server {
 	routing.Router.HandleFunc("/api/v1/query_range", queryRangeHandler).Methods("GET", "POST")
 	s := httptest.NewServer(routing.Router)
