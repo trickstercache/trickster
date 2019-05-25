@@ -11,13 +11,14 @@
 * limitations under the License.
  */
 
-package proxy
+package model
 
 import (
 	"net/http"
 	"net/url"
 	"time"
 
+	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -60,7 +61,7 @@ func (r *Request) Copy() *Request {
 		HTTPMethod:    r.HTTPMethod,
 		URL:           CopyURL(r.URL),
 		TemplateURL:   CopyURL(r.TemplateURL),
-		Headers:       copyHeaders(r.Headers),
+		Headers:       headers.CopyHeaders(r.Headers),
 		ClientRequest: r.ClientRequest,
 	}
 }

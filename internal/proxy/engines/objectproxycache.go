@@ -11,7 +11,7 @@
 * limitations under the License.
  */
 
-package proxy
+package engines
 
 import (
 	"net/http"
@@ -19,21 +19,23 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/proxy/headers"
+	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	"github.com/Comcast/trickster/pkg/locks"
 )
 
 // ObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache
-func ObjectProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, cache cache.Cache, ttl time.Duration, refresh bool, noLock bool) {
+func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, cache cache.Cache, ttl time.Duration, refresh bool, noLock bool) {
 	body, resp := FetchViaObjectProxyCache(r, client, cache, ttl, refresh, noLock)
 	Respond(w, resp.StatusCode, resp.Header, body)
 }
 
 // FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
-func FetchViaObjectProxyCache(r *Request, client Client, cache cache.Cache, ttl time.Duration, refresh bool, noLock bool) ([]byte, *http.Response) {
+func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache.Cache, ttl time.Duration, refresh bool, noLock bool) ([]byte, *http.Response) {
 
-	key := client.Configuration().Host + "." + client.DeriveCacheKey(r, r.Headers.Get(hnAuthorization))
+	key := client.Configuration().Host + "." + client.DeriveCacheKey(r, r.Headers.Get(headers.NameAuthorization))
 
 	if !noLock {
 		locks.Acquire(key)
@@ -59,7 +61,7 @@ func FetchViaObjectProxyCache(r *Request, client Client, cache cache.Cache, ttl 
 	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, crKeyMiss, strconv.Itoa(resp.StatusCode), r.URL.Path).Observe(elapsed.Seconds())
 
 	if resp.StatusCode == http.StatusOK && len(body) > 0 {
-		WriteCache(cache, key, DocumentFromHTTPResponse(resp, body), ttl)
+		WriteCache(cache, key, model.DocumentFromHTTPResponse(resp, body), ttl)
 	}
 
 	return body, resp

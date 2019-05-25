@@ -11,36 +11,28 @@
 * limitations under the License.
  */
 
-package proxy
+package model
 
 import (
-	"io/ioutil"
-	"net/http/httptest"
+	"net/http"
 	"testing"
 )
 
-func TestPingHandler(t *testing.T) {
+func TestDocumentFromHTTPResponse(t *testing.T) {
 
-	RegisterPingHandler()
+	expected := []byte("1234")
 
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://0/health", nil)
+	resp := &http.Response{}
+	resp.Header = make(http.Header)
+	resp.StatusCode = 200
+	d := DocumentFromHTTPResponse(resp, []byte("1234"))
 
-	pingHandler(w, r)
-	resp := w.Result()
-
-	// it should return 200 OK and "pong"
-	if resp.StatusCode != 200 {
-		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	if string(d.Body) != string(expected) {
+		t.Errorf("expected %s got %s", string(expected), string(d.Body))
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	if string(bodyBytes) != "pong" {
-		t.Errorf("expected 'pong' got %s.", bodyBytes)
+	if d.StatusCode != 200 {
+		t.Errorf("expected %d got %d", 200, d.StatusCode)
 	}
 
 }

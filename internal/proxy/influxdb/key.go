@@ -16,12 +16,12 @@ package influxdb
 import (
 	"strconv"
 
-	"github.com/Comcast/trickster/internal/proxy"
+	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/util/md5"
 )
 
 // DeriveCacheKey calculates a query-specific keyname based on the query in the user request
-func (c Client) DeriveCacheKey(r *proxy.Request, extra string) string {
+func (c Client) DeriveCacheKey(r *model.Request, extra string) string {
 	params := r.TemplateURL.Query()
 
 	if r.TimeRangeQuery != nil && r.TimeRangeQuery.Step > 0 {

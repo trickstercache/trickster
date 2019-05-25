@@ -11,16 +11,14 @@
 * limitations under the License.
  */
 
-package influxdb
+package promsim
 
 import (
-	"net/http"
-
-	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/model"
+	"fmt"
+	"testing"
+	"time"
 )
 
-// ProxyHandler sends a request through the basic reverse proxy to the origin, and services non-cacheable InfluxDB API calls
-func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	engines.ProxyRequest(model.NewRequest(c.name, OtInfluxDb, "ProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r), w)
+func TestGetTimeSeriesData(t *testing.T) {
+	fmt.Println(GetTimeSeriesData("myQuery{other_label=5,latency_ms=0,range_latency_ms=0,series_count=2,test}", time.Unix(0, 0), time.Unix(3600, 0), time.Duration(60)*time.Second))
 }

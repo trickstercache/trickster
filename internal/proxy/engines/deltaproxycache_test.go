@@ -11,9 +11,10 @@
 * limitations under the License.
  */
 
-package proxy
+package engines
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -22,12 +23,14 @@ import (
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/model"
 	tu "github.com/Comcast/trickster/internal/util/testing"
+	"github.com/Comcast/trickster/pkg/promsim"
 )
 
 func TestDeltaProxyCacheRequest(t *testing.T) {
 
-	es := tu.NewTestServer(200, sampleOutput1)
+	es := promsim.NewTestServer()
 	defer es.Close()
 
 	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
@@ -42,12 +45,25 @@ func TestDeltaProxyCacheRequest(t *testing.T) {
 		return
 	}
 
-	client := TestClient{config: config.Origins["default"]}
+	client := &PromTestClient{config: config.Origins["default"]}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)
 
-	req := NewRequest("default", "test", "TestDeltaProxyCacheRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
+	query := "some_query_here{}"
+	step := time.Duration(300) * time.Second
+	start := time.Now().Add(-time.Duration(6) * time.Hour).Truncate(step)
+	fmt.Println("*", start)
+	end := time.Now().Truncate(step)
+	fmt.Println("*", end)
+
+	expected, _ := promsim.GetTimeSeriesData(query, start, end, step)
+
+	u := r.URL
+	u.Path = "/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), start.Unix(), end.Unix(), query)
+
+	req := model.NewRequest("default", "test", "TestDeltaProxyCacheRequest", "GET", u, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
 
 	DeltaProxyCacheRequest(req, w, client, cache, 60, false)
 
@@ -63,16 +79,15 @@ func TestDeltaProxyCacheRequest(t *testing.T) {
 		t.Error(err)
 	}
 
-	if string(bodyBytes) != sampleOutput1 {
-		t.Errorf("expected '%s' got '%s'.", sampleOutput1, bodyBytes)
+	if string(bodyBytes) != expected {
+		t.Errorf("expected '%s' got '%s'.", expected, bodyBytes)
 	}
 
 	// get cache hit coverage too by repeating:
 
 	w = httptest.NewRecorder()
 	r = httptest.NewRequest("GET", es.URL, nil)
-	req = NewRequest("default", "test", "TestDeltaProxyCacheRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
-	ObjectProxyCacheRequest(req, w, client, cache, 60, false, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
+	DeltaProxyCacheRequest(req, w, client, cache, 60, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
 	resp = w.Result()
 
 	// it should return 200 OK
@@ -85,8 +100,8 @@ func TestDeltaProxyCacheRequest(t *testing.T) {
 		t.Error(err)
 	}
 
-	if string(bodyBytes) != sampleOutput1 {
-		t.Errorf("expected '%s' got '%s'.", sampleOutput1, bodyBytes)
+	if string(bodyBytes) != expected {
+		t.Errorf("expected '%s' got '%s'.", expected, bodyBytes)
 	}
 
 }
@@ -108,14 +123,14 @@ func TestDeltaProxyCacheRequestBadGateway(t *testing.T) {
 		return
 	}
 
-	client := TestClient{config: config.Origins["default"]}
+	client := &PromTestClient{config: config.Origins["default"]}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)
 
 	// get URL
 
-	req := NewRequest("default", "test", "TestDeltaProxyCacheRequestBadGateway", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
+	req := model.NewRequest("default", "test", "TestDeltaProxyCacheRequestBadGateway", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
 
 	DeltaProxyCacheRequest(req, w, client, cache, 60, false)
 
@@ -145,14 +160,14 @@ func TestDeltaProxyCacheRequestParseError(t *testing.T) {
 		return
 	}
 
-	client := TestClient{config: config.Origins["default"]}
+	client := &PromTestClient{config: config.Origins["default"]}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)
 
 	// get URL
 
-	req := NewRequest("default", "test", "TestProxyRequestParseError", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
+	req := model.NewRequest("default", "test", "TestProxyRequestParseError", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
 
 	DeltaProxyCacheRequest(req, w, client, cache, 60, false)
 

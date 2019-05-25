@@ -11,7 +11,7 @@
 * limitations under the License.
  */
 
-package proxy
+package engines
 
 import (
 	"time"
@@ -19,6 +19,7 @@ import (
 	"github.com/golang/snappy"
 
 	"github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/util/log"
 )
 
@@ -32,14 +33,14 @@ const (
 )
 
 // QueryCache queries the cache for an HTTPDocument and returns it
-func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
+func QueryCache(c cache.Cache, key string) (*model.HTTPDocument, error) {
 
 	inflate := c.Configuration().Compression
 	if inflate {
 		key += ".sz"
 	}
 
-	d := &HTTPDocument{}
+	d := &model.HTTPDocument{}
 	bytes, err := c.Retrieve(key)
 	if err != nil {
 		return d, err
@@ -57,7 +58,7 @@ func QueryCache(c cache.Cache, key string) (*HTTPDocument, error) {
 }
 
 // WriteCache writes an HTTPDocument to the cache
-func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl time.Duration) error {
+func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Duration) error {
 	// Delete Date Header, http.ReponseWriter will insert as Now() on cache retrieval
 	delete(d.Headers, "Date")
 	bytes, err := d.MarshalMsg(nil)

@@ -14,10 +14,17 @@
 package prometheus
 
 import (
+	"fmt"
+	"net/http"
+	"net/url"
+	"strconv"
 	"testing"
+	"time"
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/errors"
+	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
 func TestNewClient(t *testing.T) {
@@ -117,4 +124,200 @@ func TestName(t *testing.T) {
 		t.Errorf("expected %s got %s", "TEST", c)
 	}
 
+}
+
+func TestParseTimeRangeQuery(t *testing.T) {
+	req := &http.Request{URL: &url.URL{
+		Scheme: "https",
+		Host:   "blah.com",
+		Path:   "/",
+		RawQuery: url.Values(map[string][]string{
+			"query": []string{`up`},
+			"start": []string{strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+			"end":   []string{strconv.Itoa(int(time.Now().Unix()))},
+			"step":  []string{"15"},
+		}).Encode(),
+	}}
+	client := &Client{}
+	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL})
+	if err != nil {
+		t.Error(err)
+	} else {
+		if int(res.Step.Seconds()) != 15 {
+			t.Errorf("expected 15 got %d", int(res.Step.Seconds()))
+		}
+
+		if int(res.Extent.End.Sub(res.Extent.Start).Hours()) != 6 {
+			t.Errorf("expected 6 got %d", int(res.Extent.End.Sub(res.Extent.Start).Hours()))
+		}
+	}
+}
+
+func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
+	expected := errors.MissingURLParam(upQuery).Error()
+	req := &http.Request{URL: &url.URL{
+		Scheme: "https",
+		Host:   "blah.com",
+		Path:   "/",
+		RawQuery: url.Values(map[string][]string{
+			"query_": []string{`up`},
+			"start":  []string{strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+			"end":    []string{strconv.Itoa(int(time.Now().Unix()))},
+			"step":   []string{"15"}}).Encode(),
+	}}
+	client := &Client{}
+	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	if err == nil {
+		t.Errorf(`expected "%s", got NO ERROR`, expected)
+		return
+	}
+	if err.Error() != expected {
+		t.Errorf(`expected "%s", got "%s"`, expected, err.Error())
+	}
+}
+
+func TestParseTimeRangeBadStartTime(t *testing.T) {
+	const color = "red"
+	expected := fmt.Errorf(`cannot parse "%s" to a valid timestamp`, color)
+	req := &http.Request{URL: &url.URL{
+		Scheme: "https",
+		Host:   "blah.com",
+		Path:   "/",
+		RawQuery: url.Values(map[string][]string{
+			"query": []string{`up`},
+			"start": []string{color},
+			"end":   []string{strconv.Itoa(int(time.Now().Unix()))},
+			"step":  []string{"15"}}).Encode(),
+	}}
+	client := &Client{}
+	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	if err == nil {
+		t.Errorf(`expected "%s", got NO ERROR`, expected)
+		return
+	}
+	if err.Error() != expected.Error() {
+		t.Errorf(`expected "%s", got "%s"`, expected, err.Error())
+	}
+}
+
+func TestParseTimeRangeBadEndTime(t *testing.T) {
+	const color = "blue"
+	expected := fmt.Errorf(`cannot parse "%s" to a valid timestamp`, color)
+	req := &http.Request{URL: &url.URL{
+		Scheme: "https",
+		Host:   "blah.com",
+		Path:   "/",
+		RawQuery: url.Values(map[string][]string{
+			"query": []string{`up`},
+			"start": []string{strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+			"end":   []string{color},
+			"step":  []string{"15"}}).Encode(),
+	}}
+	client := &Client{}
+	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	if err == nil {
+		t.Errorf(`expected "%s", got NO ERROR`, expected)
+		return
+	}
+	if err.Error() != expected.Error() {
+		t.Errorf(`expected "%s", got "%s"`, expected, err.Error())
+	}
+}
+
+func TestParseTimeRangeQueryBadDuration(t *testing.T) {
+
+	expected := `unable to parse duration: x`
+
+	req := &http.Request{URL: &url.URL{
+		Scheme: "https",
+		Host:   "blah.com",
+		Path:   "/",
+		RawQuery: url.Values(map[string][]string{
+			"query": []string{`up`},
+			"start": []string{strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+			"end":   []string{strconv.Itoa(int(time.Now().Unix()))},
+			"step":  []string{"x"}}).Encode(),
+	}}
+	client := &Client{}
+	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	if err == nil {
+		t.Errorf(`expected "%s", got NO ERROR`, expected)
+		return
+	}
+	if err.Error() != expected {
+		t.Errorf(`expected "%s", got "%s"`, expected, err.Error())
+	}
+}
+
+func TestParseTimeRangeQueryNoStart(t *testing.T) {
+
+	expected := `missing URL parameter: [start]`
+
+	req := &http.Request{URL: &url.URL{
+		Scheme: "https",
+		Host:   "blah.com",
+		Path:   "/",
+		RawQuery: url.Values(map[string][]string{
+			"query": []string{`up`},
+			"end":   []string{strconv.Itoa(int(time.Now().Unix()))},
+			"step":  []string{"x"}}).Encode(),
+	}}
+	client := &Client{}
+	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	if err == nil {
+		t.Errorf(`expected "%s", got NO ERROR`, expected)
+		return
+	}
+	if err.Error() != expected {
+		t.Errorf(`expected "%s", got "%s"`, expected, err.Error())
+	}
+}
+
+func TestParseTimeRangeQueryNoEnd(t *testing.T) {
+
+	expected := `missing URL parameter: [end]`
+
+	req := &http.Request{URL: &url.URL{
+		Scheme: "https",
+		Host:   "blah.com",
+		Path:   "/",
+		RawQuery: url.Values(map[string][]string{
+			"query": []string{`up`},
+			"start": []string{strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+			"step":  []string{"x"}}).Encode(),
+	}}
+	client := &Client{}
+	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	if err == nil {
+		t.Errorf(`expected "%s", got NO ERROR`, expected)
+		return
+	}
+	if err.Error() != expected {
+		t.Errorf(`expected "%s", got "%s"`, expected, err.Error())
+	}
+}
+
+func TestParseTimeRangeQueryNoStep(t *testing.T) {
+
+	expected := `missing URL parameter: [step]`
+
+	req := &http.Request{URL: &url.URL{
+		Scheme: "https",
+		Host:   "blah.com",
+		Path:   "/",
+		RawQuery: url.Values(map[string][]string{
+			"query": []string{`up`},
+			"start": []string{strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+			"end":   []string{strconv.Itoa(int(time.Now().Unix()))}},
+		).Encode(),
+	}}
+	client := &Client{}
+	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	if err == nil {
+		t.Errorf(`expected "%s", got NO ERROR`, expected)
+		return
+	}
+	if err.Error() != expected {
+		t.Errorf(`expected "%s", got "%s"`, expected, err.Error())
+	}
 }

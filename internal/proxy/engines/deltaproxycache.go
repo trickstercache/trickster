@@ -11,7 +11,7 @@
 * limitations under the License.
  */
 
-package proxy
+package engines
 
 import (
 	"fmt"
@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/proxy/headers"
+	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
@@ -31,7 +33,7 @@ import (
 // DeltaProxyCacheRequest identifies the gaps between the cache and a new timeseries request,
 // requests the gaps from the origin server and returns the reconstituted dataset tto the downstream request
 // while caching the results for subsequent requests of the same data
-func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, cache cache.Cache, ttl time.Duration, refresh bool) {
+func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, cache cache.Cache, ttl time.Duration, refresh bool) {
 
 	cfg := client.Configuration()
 	r.FastForwardDisable = cfg.FastForwardDisable
@@ -44,6 +46,8 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	}
 
 	OldestRetainedTimestamp := time.Now().Add(-(trq.Step * cfg.ValueRetention))
+	fmt.Println(OldestRetainedTimestamp, cfg.ValueRetention, trq.Step)
+	fmt.Println(time.Now())
 	if trq.Extent.End.Before(OldestRetainedTimestamp) {
 		log.Debug("timerange end is too early to consider caching", log.Pairs{"OldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.ValueRetention})
 		ProxyRequest(r, w)
@@ -53,7 +57,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	r.TimeRangeQuery = trq
 	trq.NormalizeExtent()
 
-	key := cfg.Host + "." + client.DeriveCacheKey(r, r.Headers.Get(hnAuthorization))
+	key := cfg.Host + "." + client.DeriveCacheKey(r, r.Headers.Get(headers.NameAuthorization))
 	locks.Acquire(key)
 	defer locks.Release(key)
 
@@ -71,7 +75,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 	}
 
 	var cts timeseries.Timeseries
-	var doc *HTTPDocument
+	var doc *model.HTTPDocument
 	var elapsed time.Duration
 
 	cacheStatus := crKeyMiss
@@ -167,7 +171,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		req := r.Copy() // copy the request headers so we avoid collisions when adjusting them
 
 		// This fetches the gaps from the origin and adds their datasets to the merge list
-		go func(e *timeseries.Extent, rq *Request) {
+		go func(e *timeseries.Extent, rq *model.Request) {
 			defer wg.Done()
 			client.SetExtent(rq, e)
 			body, resp, _ := Fetch(rq)
@@ -234,7 +238,7 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 		rts.Merge(false, ffts)
 	}
 	rdata, err := client.MarshalTimeseries(rts)
-	rh := copyHeaders(doc.Headers)
+	rh := headers.CopyHeaders(doc.Headers)
 
 	// Don't write the cache unless it has changed
 	if cacheStatus != crHit {
@@ -273,11 +277,11 @@ func DeltaProxyCacheRequest(r *Request, w http.ResponseWriter, client Client, ca
 
 func logDeltaRoutine(p log.Pairs) { log.Debug("delta routine completed", p) }
 
-func fetchTimeseries(r *Request, client Client) (timeseries.Timeseries, *HTTPDocument, time.Duration, error) {
+func fetchTimeseries(r *model.Request, client model.Client) (timeseries.Timeseries, *model.HTTPDocument, time.Duration, error) {
 
 	body, resp, elapsed := Fetch(r)
 
-	d := &HTTPDocument{
+	d := &model.HTTPDocument{
 		Status:     resp.Status,
 		StatusCode: resp.StatusCode,
 		Headers:    resp.Header,

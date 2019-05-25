@@ -18,6 +18,10 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 )
 
+const (
+	OtInfluxDb = "influxdb"
+)
+
 // Client Implements the Proxy Client Interface
 type Client struct {
 	name   string
@@ -25,6 +29,10 @@ type Client struct {
 	pass   string
 	config *config.OriginConfig
 	cache  cache.Cache
+
+	// DeltaProxyCacheRequest  func(r *tm.Request, w http.ResponseWriter, client tm.Client, cache cache.Cache, ttl time.Duration, refresh bool)
+	// ObjectProxyCacheRequest func(r *tm.Request, w http.ResponseWriter, client tm.Client, cache cache.Cache, ttl time.Duration, refresh bool, noLock bool)
+	// ProxyRequest            func(r *tm.Request, w http.ResponseWriter)
 }
 
 // NewClient returns a new Client Instance

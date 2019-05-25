@@ -11,7 +11,7 @@
 * limitations under the License.
  */
 
-package proxy
+package engines
 
 import (
 	"io/ioutil"
@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
@@ -44,7 +45,7 @@ func TestProxyRequest(t *testing.T) {
 
 	// get URL
 
-	req := NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
+	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
 	ProxyRequest(req, w)
 	resp := w.Result()
 
@@ -78,7 +79,7 @@ func TestProxyRequestBadGateway(t *testing.T) {
 
 	// get URL
 
-	req := NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, make(http.Header), time.Duration(30)*time.Second, r)
+	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, make(http.Header), time.Duration(30)*time.Second, r)
 	ProxyRequest(req, w)
 	resp := w.Result()
 

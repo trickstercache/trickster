@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Comcast/trickster/internal/proxy"
+	"github.com/Comcast/trickster/internal/proxy/timeconv"
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/regexp/matching"
 )
@@ -117,7 +117,7 @@ func timeFromParts(clauseNum string, timeParts map[string]string) time.Time {
 
 	if _, ok := timeParts["now"+clauseNum]; ok {
 		if offset, ok := timeParts["offset"+clauseNum]; ok {
-			s, err := proxy.ParseDuration(offset)
+			s, err := timeconv.ParseDuration(offset)
 			if err == nil {
 				if operand, ok := timeParts["operand"+clauseNum]; ok {
 					if operand == "+" {
@@ -129,7 +129,7 @@ func timeFromParts(clauseNum string, timeParts map[string]string) time.Time {
 			}
 		}
 	} else if v, ok := timeParts["value"+clauseNum]; ok {
-		s, err := proxy.ParseDuration(v)
+		s, err := time.ParseDuration(v)
 		if err == nil {
 			ts = int64(s.Seconds())
 		}

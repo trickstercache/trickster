@@ -17,7 +17,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Comcast/trickster/internal/proxy"
+	"github.com/Comcast/trickster/internal/proxy/engines"
+	"github.com/Comcast/trickster/internal/proxy/errors"
+	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/proxy/timeconv"
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/regexp/matching"
 )
@@ -33,31 +36,31 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	u := c.BuildUpstreamURL(r)
-	proxy.DeltaProxyCacheRequest(
-		proxy.NewRequest(c.name, proxy.OtInfluxDb, "QueryHandler", r.Method, u, r.Header, c.config.Timeout, r),
+	engines.DeltaProxyCacheRequest(
+		model.NewRequest(c.name, OtInfluxDb, "QueryHandler", r.Method, u, r.Header, c.config.Timeout, r),
 		w, c, c.cache, c.cache.Configuration().TimeseriesTTL, false)
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
-func (c *Client) ParseTimeRangeQuery(r *proxy.Request) (*timeseries.TimeRangeQuery, error) {
+func (c *Client) ParseTimeRangeQuery(r *model.Request) (*timeseries.TimeRangeQuery, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	qi := r.TemplateURL.Query()
 	if p, ok := qi[upQuery]; ok {
 		trq.Statement = p[0]
 	} else {
-		return nil, proxy.ErrorMissingURLParam(upQuery)
+		return nil, errors.MissingURLParam(upQuery)
 	}
 
 	// if the Step wasn't found in the query (e.g., "group by time(1m)"), just proxy it instead
 	step, found := matching.GetNamedMatch("step", reStep, trq.Statement)
 	if !found {
-		return nil, proxy.ErrorStepParse()
+		return nil, errors.StepParse()
 	}
 
-	stepDuration, err := proxy.ParseDuration(step)
+	stepDuration, err := timeconv.ParseDuration(step)
 	if err != nil {
-		return nil, proxy.ErrorStepParse()
+		return nil, errors.StepParse()
 	}
 	trq.Step = stepDuration
 

@@ -11,22 +11,36 @@
 * limitations under the License.
  */
 
-package proxy
+package handlers
 
 import (
-	"net/http"
-
-	"github.com/Comcast/trickster/internal/routing"
+	"io/ioutil"
+	"net/http/httptest"
+	"testing"
 )
 
-// RegisterPingHandler registers the application's /ping handler
-func RegisterPingHandler() {
-	routing.Router.HandleFunc("/ping", pingHandler).Methods("GET")
-}
+func TestPingHandler(t *testing.T) {
 
-// pingHandler responds to an HTTP Request with 200 OK and "pong"
-func pingHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set(hnCacheControl, hvNoCache)
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("pong"))
+	RegisterPingHandler()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/health", nil)
+
+	pingHandler(w, r)
+	resp := w.Result()
+
+	// it should return 200 OK and "pong"
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != "pong" {
+		t.Errorf("expected 'pong' got %s.", bodyBytes)
+	}
+
 }

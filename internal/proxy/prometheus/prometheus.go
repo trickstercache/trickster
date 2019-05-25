@@ -17,13 +17,17 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
-
-	"github.com/prometheus/common/model"
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy"
+	"github.com/Comcast/trickster/internal/proxy/errors"
+	tm "github.com/Comcast/trickster/internal/proxy/model"
+	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
+	"github.com/Comcast/trickster/internal/timeseries"
+
+	"github.com/prometheus/common/model"
 )
 
 // Prometheus API
@@ -34,6 +38,11 @@ const (
 	mnLabels     = "label/" + model.MetricNameLabel + "/values"
 	mnSeries     = "series"
 	mnHealth     = "health"
+)
+
+// Origin Types
+const (
+	otPrometheus = "prometheus"
 )
 
 // Prometheus Response Values
@@ -53,11 +62,6 @@ const (
 	upTime    = "time"
 )
 
-// Origin Types
-const (
-	otPrometheus = "prometheus"
-)
-
 // Client Implements Proxy Client Interface
 type Client struct {
 	name   string
@@ -65,6 +69,10 @@ type Client struct {
 	pass   string
 	config *config.OriginConfig
 	cache  cache.Cache
+
+	// DeltaProxyCacheRequest  func(r *tm.Request, w http.ResponseWriter, client tm.Client, cache cache.Cache, ttl time.Duration, refresh bool)
+	// ObjectProxyCacheRequest func(r *tm.Request, w http.ResponseWriter, client tm.Client, cache cache.Cache, ttl time.Duration, refresh bool, noLock bool)
+	// ProxyRequest            func(r *tm.Request, w http.ResponseWriter)
 }
 
 // NewClient returns a new Client Instance
@@ -106,8 +114,57 @@ func parseTime(s string) (time.Time, error) {
 func parseDuration(input string) (time.Duration, error) {
 	v, err := strconv.ParseFloat(input, 64)
 	if err != nil {
-		return proxy.ParseDuration(input)
+		return tt.ParseDuration(input)
 	}
 	// assume v is in seconds
 	return time.Duration(int64(v)) * time.Second, nil
+}
+
+// ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
+func (c *Client) ParseTimeRangeQuery(r *tm.Request) (*timeseries.TimeRangeQuery, error) {
+
+	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
+	qp := r.URL.Query()
+
+	trq.Statement = qp.Get(upQuery)
+	if trq.Statement == "" {
+		return nil, errors.MissingURLParam(upQuery)
+	}
+
+	if p := qp.Get(upStart); p != "" {
+		t, err := parseTime(p)
+		if err != nil {
+			return nil, err
+		}
+		trq.Extent.Start = t
+	} else {
+		return nil, errors.MissingURLParam(upStart)
+	}
+
+	if p := qp.Get(upEnd); p != "" {
+		t, err := parseTime(p)
+		if err != nil {
+			return nil, err
+		}
+		trq.Extent.End = t
+	} else {
+		return nil, errors.MissingURLParam(upEnd)
+	}
+
+	if p := qp.Get(upStep); p != "" {
+		step, err := parseDuration(p)
+		if err != nil {
+			return nil, err
+		}
+		trq.Step = step
+	} else {
+		return nil, errors.MissingURLParam(upStep)
+	}
+
+	if strings.Index(trq.Statement, " offset ") > -1 {
+		trq.IsOffset = true
+		r.FastForwardDisable = true
+	}
+
+	return trq, nil
 }

@@ -11,16 +11,23 @@
 * limitations under the License.
  */
 
-package influxdb
+package handlers
 
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/proxy/headers"
+	"github.com/Comcast/trickster/internal/routing"
 )
 
-// ProxyHandler sends a request through the basic reverse proxy to the origin, and services non-cacheable InfluxDB API calls
-func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	engines.ProxyRequest(model.NewRequest(c.name, OtInfluxDb, "ProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r), w)
+// RegisterPingHandler registers the application's /ping handler
+func RegisterPingHandler() {
+	routing.Router.HandleFunc("/ping", pingHandler).Methods("GET")
+}
+
+// pingHandler responds to an HTTP Request with 200 OK and "pong"
+func pingHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("pong"))
 }

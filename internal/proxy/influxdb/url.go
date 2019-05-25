@@ -18,7 +18,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/Comcast/trickster/internal/proxy"
+	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -61,7 +61,7 @@ func (c Client) BuildUpstreamURL(r *http.Request) *url.URL {
 }
 
 // SetExtent will change the upstream request query to use the provided Extent
-func (c Client) SetExtent(r *proxy.Request, extent *timeseries.Extent) {
+func (c Client) SetExtent(r *model.Request, extent *timeseries.Extent) {
 
 	p := r.URL.Query()
 	t := r.TemplateURL.Query()

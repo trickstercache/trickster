@@ -16,13 +16,14 @@ package prometheus
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/proxy"
+	"github.com/Comcast/trickster/internal/proxy/engines"
+	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
 // SeriesHandler proxies requests for path /series to the origin by way of the object proxy cache
 func (c *Client) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
-	proxy.ObjectProxyCacheRequest(
-		proxy.NewRequest(c.name, otPrometheus, "SeriesHandler", r.Method, u, r.Header, c.config.Timeout, r),
+	engines.ObjectProxyCacheRequest(
+		model.NewRequest(c.name, otPrometheus, "SeriesHandler", r.Method, u, r.Header, c.config.Timeout, r),
 		w, c, c.cache, c.cache.Configuration().ObjectTTL, false, false)
 }

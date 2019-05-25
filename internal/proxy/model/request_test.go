@@ -11,28 +11,30 @@
 * limitations under the License.
  */
 
-package proxy
+package model
 
 import (
 	"net/http"
+	"net/url"
 	"testing"
+	"time"
 )
 
-func TestDocumentFromHTTPResponse(t *testing.T) {
-
-	expected := []byte("1234")
-
-	resp := &http.Response{}
-	resp.Header = make(http.Header)
-	resp.StatusCode = 200
-	d := DocumentFromHTTPResponse(resp, []byte("1234"))
-
-	if string(d.Body) != string(expected) {
-		t.Errorf("expected %s got %s", string(expected), string(d.Body))
+func TestNewRequest(t *testing.T) {
+	url := &url.URL{}
+	headers := make(http.Header)
+	r := NewRequest("test", "testType", "testhandler", "testMethod", url, headers, time.Duration(1)*time.Second, nil)
+	if r.OriginType != "testType" {
+		t.Errorf("expected 'testType' got '%s'", r.OriginType)
 	}
+}
 
-	if d.StatusCode != 200 {
-		t.Errorf("expected %d got %d", 200, d.StatusCode)
+func TestCopy(t *testing.T) {
+	url := &url.URL{}
+	headers := make(http.Header)
+	r := NewRequest("test", "testType", "testhandler", "testMethod", url, headers, time.Duration(1)*time.Second, nil)
+	r2 := r.Copy()
+	if r2.OriginType != "testType" {
+		t.Errorf("expected 'testType' got '%s'", r2.OriginType)
 	}
-
 }

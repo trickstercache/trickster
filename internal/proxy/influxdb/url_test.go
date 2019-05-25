@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy"
+	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -40,7 +40,7 @@ func TestSetExtent(t *testing.T) {
 
 	u := &url.URL{}
 	tu := &url.URL{RawQuery: "q=select * where <$TIME_TOKEN$> group by time(1m)"}
-	r := &proxy.Request{URL: u, TemplateURL: tu}
+	r := &model.Request{URL: u, TemplateURL: tu}
 	e := &timeseries.Extent{Start: start, End: end}
 	client.SetExtent(r, e)
 

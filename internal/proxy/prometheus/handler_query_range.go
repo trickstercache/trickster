@@ -15,65 +15,15 @@ package prometheus
 
 import (
 	"net/http"
-	"strings"
 
-	"github.com/Comcast/trickster/internal/proxy"
-	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/Comcast/trickster/internal/proxy/engines"
+	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
 // QueryRangeHandler handles timeseries requests for Prometheus and processes them through the delta proxy cache
 func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
-	proxy.DeltaProxyCacheRequest(
-		proxy.NewRequest(c.name, otPrometheus, "QueryRangeHandler", r.Method, u, r.Header, c.config.Timeout, r),
+	engines.DeltaProxyCacheRequest(
+		model.NewRequest(c.name, otPrometheus, "QueryRangeHandler", r.Method, u, r.Header, c.config.Timeout, r),
 		w, c, c.cache, c.cache.Configuration().TimeseriesTTL, false)
-}
-
-// ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
-func (c *Client) ParseTimeRangeQuery(r *proxy.Request) (*timeseries.TimeRangeQuery, error) {
-
-	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
-	qp := r.URL.Query()
-
-	trq.Statement = qp.Get(upQuery)
-	if trq.Statement == "" {
-		return nil, proxy.ErrorMissingURLParam(upQuery)
-	}
-
-	if p := qp.Get(upStart); p != "" {
-		t, err := parseTime(p)
-		if err != nil {
-			return nil, err
-		}
-		trq.Extent.Start = t
-	} else {
-		return nil, proxy.ErrorMissingURLParam(upStart)
-	}
-
-	if p := qp.Get(upEnd); p != "" {
-		t, err := parseTime(p)
-		if err != nil {
-			return nil, err
-		}
-		trq.Extent.End = t
-	} else {
-		return nil, proxy.ErrorMissingURLParam(upEnd)
-	}
-
-	if p := qp.Get(upStep); p != "" {
-		step, err := parseDuration(p)
-		if err != nil {
-			return nil, err
-		}
-		trq.Step = step
-	} else {
-		return nil, proxy.ErrorMissingURLParam(upStep)
-	}
-
-	if strings.Index(trq.Statement, " offset ") > -1 {
-		trq.IsOffset = true
-		r.FastForwardDisable = true
-	}
-
-	return trq, nil
 }
