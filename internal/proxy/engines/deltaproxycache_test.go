@@ -1162,7 +1162,7 @@ func TestDeltaProxyCacheRequestOutOfWindow(t *testing.T) {
 	start := time.Unix(0, 0)
 	end := time.Unix(1800, 0)
 
-	// we stil expect the same results
+	// we still expect the same results
 	expected, _, _ := promsim.GetTimeSeriesData(query, start, end, step)
 
 	u := r.URL
