@@ -23,6 +23,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
@@ -39,8 +40,7 @@ const (
 // ProxyRequest proxies an inbound request to its corresponding upstream origin with no caching features
 func ProxyRequest(r *model.Request, w http.ResponseWriter) {
 	body, resp, elapsed := Fetch(r)
-	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, "none", strconv.Itoa(resp.StatusCode), r.URL.Path).Inc()
-	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, "none", strconv.Itoa(resp.StatusCode), r.URL.Path).Observe(elapsed.Seconds())
+	recordProxyResults(r, strconv.Itoa(resp.StatusCode), r.URL.Path, elapsed.Seconds(), resp.Header)
 	Respond(w, resp.StatusCode, resp.Header, body)
 }
 
@@ -65,7 +65,7 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 		log.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		// if there is an err and the response is nil, the server could not be reached; make a 502 for the downstream response
 		if resp == nil {
-			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r.ClientRequest}
+			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r.ClientRequest, Header: make(http.Header)}
 		}
 		return []byte{}, resp, -1
 	}
@@ -97,4 +97,20 @@ func Respond(w http.ResponseWriter, code int, header http.Header, body []byte) {
 	headers.AddResponseHeaders(h)
 	w.WriteHeader(code)
 	w.Write(body)
+}
+
+func recordProxyResults(r *model.Request, httpStatus, path string, elapsed float64, header http.Header) {
+	recordResults(r, "HTTPProxy", "", httpStatus, path, "", elapsed, nil, header)
+}
+
+func recordResults(r *model.Request, engine, cacheStatus, httpStatus, path, ffStatus string, elapsed float64, extents timeseries.ExtentList, header http.Header) {
+	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, httpStatus, path).Inc()
+	if elapsed > 0 {
+		metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, httpStatus, path).Observe(elapsed)
+	}
+	headers.SetResultsHeader(header, engine, cacheStatus, ffStatus, extents)
+}
+
+func isRefresh(reqHeader http.Header) bool {
+	return strings.ToLower(reqHeader.Get(headers.NameCacheControl)) == headers.ValueNoCache
 }

@@ -39,7 +39,15 @@ type Directives struct {
 	// MaxValue limits the maximum value of any data in the query result
 	MaxValue int64
 	// MinValue limits the minimum value of any data in the query result
+	// Not currently implemented
 	MinValue int64
+	// StatusCode indicates the desired return status code, to simulate errors
+	StatusCode int
+	// InvalidResponseBody when > 0 causes the server to respond with a payload that cannot be unmarshaled
+	// useful for causing and testing unmarshling failure cases
+	InvalidResponseBody int
+
+	seriesID int
 }
 
 // Result is a simplified version of a Prometheus timeseries response
@@ -48,13 +56,46 @@ type Result struct {
 	Values string
 }
 
-// GetTimeSeriesData returns a simulated Matrix Envelope with repeatable results
-func GetTimeSeriesData(query string, start time.Time, end time.Time, step time.Duration) (string, error) {
+// GetInstantData returns a simulated Vector Envelope with repeatable results
+func GetInstantData(query string, t time.Time) (string, int, error) {
+
+	if t.IsZero() {
+		t = time.Now()
+	}
 
 	d := getDirectives(query)
 	if d.Latency > 0 {
 		time.Sleep(d.Latency)
 	}
+
+	if d.InvalidResponseBody > 0 {
+		return "foo", d.StatusCode, nil
+	}
+
+	status := "success"
+	series := make([]string, 0, d.SeriesCount)
+	queryVal := getQueryVal(query)
+
+	for i := 0; d.SeriesCount > i; i++ {
+		m := getDirectives(d.RawString + fmt.Sprintf(`,"series_id":"%d"`, i))
+		series = append(series, fmt.Sprintf(`{"metric":{%s},"value":[%d,"%d"]}`, m.RawString, t.Unix(), calculateValue(queryVal, i, t, d)))
+	}
+	return fmt.Sprintf(`{"status":"%s","data":{"resultType":"vector","result":[`, status) + strings.Join(series, ",") + "]}}", d.StatusCode, nil
+}
+
+// GetTimeSeriesData returns a simulated Matrix Envelope with repeatable results
+func GetTimeSeriesData(query string, start time.Time, end time.Time, step time.Duration) (string, int, error) {
+
+	d := getDirectives(query)
+
+	if d.Latency > 0 {
+		time.Sleep(d.Latency)
+	}
+
+	if d.InvalidResponseBody > 0 {
+		return "foo", d.StatusCode, nil
+	}
+
 	status := "success"
 	seriesLen := int(end.Sub(start) / step)
 	start = end.Add(time.Duration(-seriesLen) * step)
@@ -62,15 +103,18 @@ func GetTimeSeriesData(query string, start time.Time, end time.Time, step time.D
 	queryVal := getQueryVal(query)
 
 	for i := 0; d.SeriesCount > i; i++ {
-		m := d.RawString + fmt.Sprintf(`,"series_id":"%d"`, i)
+		m := getDirectives(d.RawString + fmt.Sprintf(`,"series_id":"%d"`, i))
 		v := make([]string, 0, seriesLen)
-		for j := 0; j < seriesLen; j++ {
+		for j := 0; j <= seriesLen; j++ {
 			t := start.Add(time.Duration(j) * step)
 			v = append(v, fmt.Sprintf(`[%d,"%d"]`, t.Unix(), calculateValue(queryVal, i, t, d)))
 		}
-		series = append(series, fmt.Sprintf(`{"metric":{%s},"values":%s}`, m, "["+strings.Join(v, ",")+"]"))
+		series = append(series, fmt.Sprintf(`{"metric":{%s},"values":[%s]}`, m.RawString, strings.Join(v, ",")))
 	}
-	return fmt.Sprintf(`{"status":"%s","data":{"resultType":"matrix","result":[`, status) + strings.Join(series, ",") + "]}}", nil
+
+	out := fmt.Sprintf(`{"status":"%s","data":{"resultType":"matrix","result":[`, status) + strings.Join(series, ",") + "]}}"
+
+	return out, d.StatusCode, nil
 }
 
 func getDirectives(query string) *Directives {
@@ -80,11 +124,14 @@ func getDirectives(query string) *Directives {
 	var i int64
 
 	d := &Directives{
-		SeriesCount:  1,
-		Latency:      0,
-		RangeLatency: 0,
-		MaxValue:     100,
-		MinValue:     0,
+		InvalidResponseBody: 0,
+		Latency:             0,
+		RangeLatency:        0,
+		MaxValue:            100,
+		MinValue:            0,
+		SeriesCount:         1,
+		seriesID:            0,
+		StatusCode:          200,
 	}
 
 	extras := []string{}
@@ -121,6 +168,12 @@ func getDirectives(query string) *Directives {
 					d.MaxValue = i
 				case "min_val":
 					d.MinValue = i
+				case "series_id":
+					d.seriesID = int(i)
+				case "status_code":
+					d.StatusCode = int(i)
+				case "invalid_response_body":
+					d.InvalidResponseBody = int(i)
 				default:
 					extras = append(extras, fmt.Sprintf(`"%s":"%s"`, parts[0], parts[1]))
 				}
@@ -133,8 +186,8 @@ func getDirectives(query string) *Directives {
 		sep = ","
 	}
 
-	d.RawString = fmt.Sprintf(`"latency_ms":"%d","max_value":"%d","min_value":"%d","range_latency_ms":"%d","series_count":"%d"%s%s`,
-		d.SeriesCount, d.Latency/1000000, d.RangeLatency/1000000, d.MaxValue, d.MinValue, sep, strings.Join(extras, ","))
+	d.RawString = fmt.Sprintf(`"invalid_response_body":"%d","latency_ms":"%d","max_value":"%d","min_value":"%d","range_latency_ms":"%d","series_count":"%d","series_id":"%d","status_code":"%d"%s%s`,
+		d.InvalidResponseBody, d.Latency/1000000, d.MaxValue, d.MinValue, d.RangeLatency/1000000, d.SeriesCount, d.seriesID, d.StatusCode, sep, strings.Join(extras, ","))
 
 	return d
 }

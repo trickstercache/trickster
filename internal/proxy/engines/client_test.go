@@ -75,6 +75,10 @@ type PromTestClient struct {
 	pass   string
 	config *config.OriginConfig
 	cache  cache.Cache
+
+	fftime          time.Time
+	InstantCacheKey string
+	RangeCacheKey   string
 }
 
 func newPromTestClient(name string, config *config.OriginConfig, cache cache.Cache) *PromTestClient {
@@ -172,8 +176,21 @@ func (c *PromTestClient) ParseTimeRangeQuery(r *tm.Request) (*timeseries.TimeRan
 
 // DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
 func (c *PromTestClient) DeriveCacheKey(r *tm.Request, extra string) string {
+
+	isInstant := strings.HasSuffix(r.URL.Path, "/query")
+	isRange := strings.HasSuffix(r.URL.Path, "/query_range")
+
+	if isInstant && c.InstantCacheKey != "" {
+		return c.InstantCacheKey
+	}
+	if isRange && c.RangeCacheKey != "" {
+		return c.RangeCacheKey
+	}
+
 	params := r.URL.Query()
-	return md5.Checksum(r.URL.Path + params.Get(upQuery) + params.Get(upStep) + params.Get(upTime) + extra)
+	key := md5.Checksum(r.URL.Path + params.Get(upQuery) + params.Get(upStep) + params.Get(upTime) + extra)
+
+	return key
 }
 
 // BaseURL returns a URL in the form of scheme://host/path based on the proxy configuration
@@ -218,10 +235,21 @@ func (c *PromTestClient) FastForwardURL(r *tm.Request) (*url.URL, error) {
 		u.Path = u.Path[0 : len(u.Path)-6]
 	}
 
+	// let the test client have a way to throw an error
+	if strings.Index(u.RawQuery, "throw_ffurl_error=1") != -1 {
+		return nil, fmt.Errorf("This is an intentional test error: %s", ":)")
+	}
+
 	p := u.Query()
 	p.Del(upStart)
 	p.Del(upEnd)
 	p.Del(upStep)
+
+	if c.fftime.IsZero() {
+		c.fftime = time.Now()
+	}
+	p.Set("time", strconv.FormatInt(c.fftime.Unix(), 10))
+
 	u.RawQuery = p.Encode()
 
 	return u, nil
@@ -257,6 +285,9 @@ type MatrixData struct {
 // MarshalTimeseries converts a Timeseries into a JSON blob
 func (c *PromTestClient) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, error) {
 	// Marshal the Envelope back to a json object for Cache Storage
+	if c.RangeCacheKey == "failkey" {
+		return nil, fmt.Errorf("generic failure for testing purposes (key: %s)", c.RangeCacheKey)
+	}
 	return json.Marshal(ts)
 }
 
@@ -519,7 +550,7 @@ func (c *PromTestClient) QueryRangeHandler(w http.ResponseWriter, r *http.Reques
 	u := c.BuildUpstreamURL(r)
 	DeltaProxyCacheRequest(
 		tm.NewRequest(c.name, otPrometheus, "QueryRangeHandler", r.Method, u, r.Header, c.config.Timeout, r),
-		w, c, c.cache, c.cache.Configuration().TimeseriesTTL, false)
+		w, c, c.cache, c.cache.Configuration().TimeseriesTTL)
 }
 
 func (c *PromTestClient) QueryHandler(w http.ResponseWriter, r *http.Request) {
@@ -538,4 +569,40 @@ func (c *PromTestClient) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 
 func (c *PromTestClient) ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	ProxyRequest(tm.NewRequest(c.name, otPrometheus, "APIProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r), w)
+}
+
+func testResultHeaderPartMatch(header http.Header, kvp map[string]string) error {
+	if len(kvp) == 0 {
+		return nil
+	}
+	if header == nil || len(header) == 0 {
+		return fmt.Errorf("missing response headers%s", "")
+	}
+
+	if h, ok := header["X-Trickster-Result"]; ok {
+		res := strings.Join(h, "; ")
+		for k, v := range kvp {
+			if strings.Index(res, fmt.Sprintf("; %s=%s", k, v)) == -1 && strings.Index(res, fmt.Sprintf("%s=%s", k, v)) != 0 {
+				return fmt.Errorf("invalid status, expected %s=%s in %s", k, v, h)
+			}
+		}
+	} else {
+		return fmt.Errorf("missing X-Trickster-Result header%s", "")
+	}
+
+	return nil
+}
+
+func testStatusCodeMatch(have, expected int) error {
+	if have != expected {
+		return fmt.Errorf("expected http status %d got %d", expected, have)
+	}
+	return nil
+}
+
+func testStringMatch(have, expected string) error {
+	if have != expected {
+		return fmt.Errorf("expected string `%s` got `%s`", expected, have)
+	}
+	return nil
 }

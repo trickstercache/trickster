@@ -25,6 +25,7 @@ import (
 // NewTestServer launches a Test Prometheus Server (for unit testing)
 func NewTestServer() *httptest.Server {
 	routing.Router.HandleFunc("/api/v1/query_range", queryRangeHandler).Methods("GET", "POST")
+	routing.Router.HandleFunc("/api/v1/query", queryHandler).Methods("GET", "POST")
 	s := httptest.NewServer(routing.Router)
 	return s
 }
@@ -64,8 +65,50 @@ func queryRangeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		step = time.Duration(i) * time.Second
 
-		json, _ := GetTimeSeriesData(q, start, end, step)
-		w.WriteHeader(200)
+		json, code, _ := GetTimeSeriesData(q, start, end, step)
+
+		if code == http.StatusOK {
+			w.Header().Set("Content-Type", "application/json")
+		}
+
+		w.WriteHeader(code)
+
+		if code == http.StatusOK {
+			w.Write([]byte(json))
+		} else {
+			w.Write([]byte{})
+		}
+
+		return
+	}
+	writeError(http.StatusBadRequest, w)
+}
+
+func queryHandler(w http.ResponseWriter, r *http.Request) {
+
+	w.Header().Set("Content-Type", "application/json")
+
+	params := r.URL.Query()
+	q := params.Get("query")
+	t := params.Get("time")
+
+	var err error
+	if q != "" {
+
+		var i int64
+
+		tm := time.Time{}
+		if t != "" {
+			i, err = strconv.ParseInt(t, 10, 64)
+			if err != nil {
+				writeError(http.StatusBadRequest, w)
+				return
+			}
+			tm = time.Unix(i, 0)
+		}
+
+		json, code, _ := GetInstantData(q, tm)
+		w.WriteHeader(code)
 		w.Write([]byte(json))
 		return
 	}

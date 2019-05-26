@@ -14,10 +14,12 @@
 package headers
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/timeseries"
 )
 
 const (
@@ -33,6 +35,7 @@ const (
 	NameContentLength   = "Content-Length"
 	NameAuthorization   = "Authorization"
 	NameXAccelerator    = "X-Accelerator"
+	NameTricksterResult = "X-Trickster-Result"
 	NameXForwardedBy    = "X-Forwarded-By"
 	NameXForwardedFor   = "X-Forwarded-For"
 	NameAcceptEncoding  = "Accept-Encoding"
@@ -59,6 +62,34 @@ func AddResponseHeaders(headers http.Header) {
 	// We're read only and a harmless API, so allow all CORS
 	headers.Set(NameAllowOrigin, "*")
 	headers.Set(NameXAccelerator, config.ApplicationName+" "+config.ApplicationVersion)
+}
+
+func SetResultsHeader(headers http.Header, engine, status, ffstatus string, fetched timeseries.ExtentList) {
+
+	if headers == nil || engine == "" {
+		return
+	}
+
+	parts := append(make([]string, 0, 4), fmt.Sprintf("engine=%s", engine))
+
+	if status != "" {
+		parts = append(parts, fmt.Sprintf("status=%s", status))
+	}
+
+	if fetched != nil && len(fetched) > 0 {
+		fp := make([]string, 0, len(fetched))
+		for _, v := range fetched {
+			fp = append(fp, fmt.Sprintf("%d:%d", v.Start.Unix(), v.End.Unix()))
+		}
+		parts = append(parts, fmt.Sprintf("fetched=[%s]", strings.Join(fp, ",")))
+	}
+
+	if ffstatus != "" {
+		parts = append(parts, fmt.Sprintf("ffstatus=%s", ffstatus))
+	}
+
+	headers.Set(NameTricksterResult, strings.Join(parts, "; "))
+
 }
 
 func ExtractHeader(headers http.Header, header string) (string, bool) {

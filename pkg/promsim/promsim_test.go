@@ -22,3 +22,7 @@ import (
 func TestGetTimeSeriesData(t *testing.T) {
 	fmt.Println(GetTimeSeriesData("myQuery{other_label=5,latency_ms=0,range_latency_ms=0,series_count=2,test}", time.Unix(0, 0), time.Unix(3600, 0), time.Duration(60)*time.Second))
 }
+
+func TestGetInstantData(t *testing.T) {
+	fmt.Println(GetInstantData("myQuery{other_label=5,latency_ms=0,range_latency_ms=0,series_count=2,test}", time.Unix(0, 0)))
+}
