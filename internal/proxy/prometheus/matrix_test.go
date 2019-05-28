@@ -308,11 +308,7 @@ func TestCrop(t *testing.T) {
 			after: &MatrixEnvelope{
 				Data: MatrixData{
 					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "b"},
-							Values: []model.SamplePair{},
-						}},
+					Result:     model.Matrix{},
 				},
 			},
 			extent: timeseries.Extent{
@@ -338,12 +334,8 @@ func TestCrop(t *testing.T) {
 			after: &MatrixEnvelope{
 				Data: MatrixData{
 					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "c"},
-							Values: []model.SamplePair{},
-						},
-					}},
+					Result:     model.Matrix{},
+				},
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(10000, 0),
@@ -472,12 +464,7 @@ func TestCrop(t *testing.T) {
 			after: &MatrixEnvelope{
 				Data: MatrixData{
 					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "g"},
-							Values: []model.SamplePair{},
-						},
-					},
+					Result:     model.Matrix{},
 				},
 			},
 			extent: timeseries.Extent{
@@ -506,16 +493,35 @@ func TestCrop(t *testing.T) {
 			after: &MatrixEnvelope{
 				Data: MatrixData{
 					ResultType: "matrix",
+					Result:     model.Matrix{},
+				},
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(200, 0),
+				End:   time.Unix(300, 0),
+			},
+		},
+		// Case where we have more series than points
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
 					Result: model.Matrix{
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "h"},
-							Values: []model.SamplePair{},
+							Values: []model.SamplePair{model.SamplePair{Timestamp: 99000, Value: 1.5}},
 						},
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "h"},
-							Values: []model.SamplePair{},
+							Values: []model.SamplePair{model.SamplePair{Timestamp: 99000, Value: 1.5}},
 						},
 					},
+				},
+			},
+			after: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result:     model.Matrix{},
 				},
 			},
 			extent: timeseries.Extent{

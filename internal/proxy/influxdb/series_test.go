@@ -411,14 +411,7 @@ func TestCrop(t *testing.T) {
 			after: &SeriesEnvelope{
 				Results: []Result{
 					Result{
-						Series: []models.Row{
-							models.Row{
-								Name:    "a",
-								Columns: []string{"time", "units"},
-								Tags:    map[string]string{"tagName1": "tagValue1"},
-								Values:  [][]interface{}{},
-							},
-						},
+						Series: []models.Row{},
 					},
 				},
 			},
@@ -449,14 +442,7 @@ func TestCrop(t *testing.T) {
 			after: &SeriesEnvelope{
 				Results: []Result{
 					Result{
-						Series: []models.Row{
-							models.Row{
-								Name:    "a",
-								Columns: []string{"time", "units"},
-								Tags:    map[string]string{"tagName1": "tagValue1"},
-								Values:  [][]interface{}{},
-							},
-						},
+						Series: []models.Row{},
 					},
 				},
 			},
@@ -612,14 +598,7 @@ func TestCrop(t *testing.T) {
 			after: &SeriesEnvelope{
 				Results: []Result{
 					Result{
-						Series: []models.Row{
-							models.Row{
-								Name:    "a",
-								Columns: []string{"time", "units"},
-								Tags:    map[string]string{"tagName1": "tagValue1"},
-								Values:  [][]interface{}{},
-							},
-						},
+						Series: []models.Row{},
 					},
 				},
 			},
@@ -658,20 +637,7 @@ func TestCrop(t *testing.T) {
 			after: &SeriesEnvelope{
 				Results: []Result{
 					Result{
-						Series: []models.Row{
-							models.Row{
-								Name:    "a",
-								Columns: []string{"time", "units"},
-								Tags:    map[string]string{"tagName1": "tagValue1"},
-								Values:  [][]interface{}{},
-							},
-							models.Row{
-								Name:    "a",
-								Columns: []string{"time", "units"},
-								Tags:    map[string]string{"tagName1": "tagValue1"},
-								Values:  [][]interface{}{},
-							},
-						},
+						Series: []models.Row{},
 					},
 				},
 			},
