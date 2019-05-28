@@ -85,7 +85,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		cache.Remove(key)
 		cts, doc, elapsed, err = fetchTimeseries(r, client)
 		if err != nil {
-			recordDPCResult(r, "", strconv.Itoa(doc.StatusCode), r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
+			recordDPCResult(r, "proxy-error", strconv.Itoa(doc.StatusCode), r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 			Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 			return // fetchTimeseries logs the error
 		}
@@ -94,7 +94,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		if err != nil {
 			cts, doc, elapsed, err = fetchTimeseries(r, client)
 			if err != nil {
-				recordDPCResult(r, "", strconv.Itoa(doc.StatusCode), r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
+				recordDPCResult(r, "proxy-error", strconv.Itoa(doc.StatusCode), r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 				Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 				return // fetchTimeseries logs the error
 			}
@@ -106,7 +106,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 				cache.Remove(key)
 				cts, doc, elapsed, err = fetchTimeseries(r, client)
 				if err != nil {
-					recordDPCResult(r, "", strconv.Itoa(doc.StatusCode), r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
+					recordDPCResult(r, "proxy-error", strconv.Itoa(doc.StatusCode), r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 					Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 					return // fetchTimeseries logs the error
 				}
