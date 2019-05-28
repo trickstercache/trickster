@@ -116,8 +116,14 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 			}
 			ss.Metric = s.Metric
 			ss.Values = s.Values[start:end]
+			if len(ss.Values) > 0 {
+				ts.Data.Result[i] = ss
+			} else {
+				ts.Data.Result = append(ts.Data.Result[:i], ts.Data.Result[i+1:]...)
+			}
+		} else {
+			ts.Data.Result = append(ts.Data.Result[:i], ts.Data.Result[i+1:]...)
 		}
-		ts.Data.Result[i] = ss
 	}
 	return ts
 }
