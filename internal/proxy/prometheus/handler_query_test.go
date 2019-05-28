@@ -42,7 +42,7 @@ func TestQueryHandler(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/query_range?q=up&time=0", nil)
 
-	client := &Client{name: "default", config: config.Origins["default"], cache: cache}
+	client := &Client{name: "default", config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
 
 	client.QueryHandler(w, r)
 

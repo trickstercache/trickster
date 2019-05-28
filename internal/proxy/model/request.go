@@ -35,10 +35,11 @@ type Request struct {
 	Timeout            time.Duration
 	TimeRangeQuery     *timeseries.TimeRangeQuery
 	FastForwardDisable bool
+	HTTPClient         *http.Client
 }
 
 // NewRequest returns a new proxy request object that can service the downstream request
-func NewRequest(originName, originType, handlerName, method string, url *url.URL, headers http.Header, timeout time.Duration, clientRequest *http.Request) *Request {
+func NewRequest(originName, originType, handlerName, method string, url *url.URL, headers http.Header, timeout time.Duration, clientRequest *http.Request, client *http.Client) *Request {
 	return &Request{
 		OriginName:    originName,
 		OriginType:    originType,
@@ -49,6 +50,7 @@ func NewRequest(originName, originType, handlerName, method string, url *url.URL
 		Headers:       headers,
 		ClientRequest: clientRequest,
 		Timeout:       timeout,
+		HTTPClient:    client,
 	}
 }
 
@@ -63,6 +65,7 @@ func (r *Request) Copy() *Request {
 		TemplateURL:   CopyURL(r.TemplateURL),
 		Headers:       headers.CopyHeaders(r.Headers),
 		ClientRequest: r.ClientRequest,
+		HTTPClient:    r.HTTPClient,
 	}
 }
 

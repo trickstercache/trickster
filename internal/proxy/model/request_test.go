@@ -18,12 +18,14 @@ import (
 	"net/url"
 	"testing"
 	"time"
+
+	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
 func TestNewRequest(t *testing.T) {
 	url := &url.URL{}
 	headers := make(http.Header)
-	r := NewRequest("test", "testType", "testhandler", "testMethod", url, headers, time.Duration(1)*time.Second, nil)
+	r := NewRequest("test", "testType", "testhandler", "testMethod", url, headers, time.Duration(1)*time.Second, nil, tu.NewTestWebClient())
 	if r.OriginType != "testType" {
 		t.Errorf("expected 'testType' got '%s'", r.OriginType)
 	}
@@ -32,7 +34,7 @@ func TestNewRequest(t *testing.T) {
 func TestCopy(t *testing.T) {
 	url := &url.URL{}
 	headers := make(http.Header)
-	r := NewRequest("test", "testType", "testhandler", "testMethod", url, headers, time.Duration(1)*time.Second, nil)
+	r := NewRequest("test", "testType", "testhandler", "testMethod", url, headers, time.Duration(1)*time.Second, nil, tu.NewTestWebClient())
 	r2 := r.Copy()
 	if r2.OriginType != "testType" {
 		t.Errorf("expected 'testType' got '%s'", r2.OriginType)

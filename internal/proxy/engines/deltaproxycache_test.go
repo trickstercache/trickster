@@ -25,6 +25,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/timeseries"
+	tu "github.com/Comcast/trickster/internal/util/testing"
 	"github.com/Comcast/trickster/pkg/promsim"
 )
 
@@ -54,7 +55,7 @@ func setupTestServer() (*httptest.Server, *config.OriginConfig, *PromTestClient,
 		return nil, nil, nil, err
 	}
 
-	client := &PromTestClient{config: config.Origins["default"], cache: cache}
+	client := &PromTestClient{config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
 	cfg := client.Configuration()
 
 	return es, cfg, client, nil
@@ -1270,7 +1271,7 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 		return
 	}
 
-	client := &PromTestClient{config: config.Origins["default"], cache: cache}
+	client := &PromTestClient{config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
 
 	cfg := client.Configuration()
 	cfg.BackfillTolerance = time.Duration(300) * time.Second

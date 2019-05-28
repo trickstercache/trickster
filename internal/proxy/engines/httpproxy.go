@@ -54,13 +54,13 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 	headers.RemoveClientHeaders(r.Headers)
 
 	start := time.Now()
-	client := &http.Client{
-		Timeout: r.Timeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-	resp, err := client.Do(&http.Request{Method: r.ClientRequest.Method, URL: r.URL, Header: r.Headers})
+	// client := &http.Client{
+	// 	Timeout: r.Timeout,
+	// 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	// 		return http.ErrUseLastResponse
+	// 	},
+	// }
+	resp, err := r.HTTPClient.Do(&http.Request{Method: r.ClientRequest.Method, URL: r.URL, Header: r.Headers})
 	if err != nil {
 		log.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		// if there is an err and the response is nil, the server could not be reached; make a 502 for the downstream response

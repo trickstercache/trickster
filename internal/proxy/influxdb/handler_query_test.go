@@ -70,7 +70,7 @@ func TestQueryHandlerWithSelect(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/query?q=select%20test", nil)
 
-	client := &Client{name: "default", config: config.Origins["default"], cache: cache}
+	client := &Client{name: "default", config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
 
 	client.QueryHandler(w, r)
 
@@ -104,7 +104,7 @@ func TestQueryHandlerNotSelect(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/query", nil)
 
-	client := &Client{name: "default", config: config.Origins["default"]}
+	client := &Client{name: "default", config: config.Origins["default"], webClient: tu.NewTestWebClient()}
 
 	client.QueryHandler(w, r)
 

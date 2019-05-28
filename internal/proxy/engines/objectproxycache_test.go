@@ -50,7 +50,7 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 
 	// get URL
 
-	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
+	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 
 	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
 

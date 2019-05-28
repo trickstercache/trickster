@@ -45,7 +45,7 @@ func TestProxyRequest(t *testing.T) {
 
 	// get URL
 
-	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
+	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	ProxyRequest(req, w)
 	resp := w.Result()
 
@@ -84,7 +84,7 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", badUpstream, nil)
 
-	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, make(http.Header), time.Duration(30)*time.Second, r)
+	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	ProxyRequest(req, w)
 	resp := w.Result()
 

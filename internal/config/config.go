@@ -86,6 +86,8 @@ type OriginConfig struct {
 	FastForwardDisable    bool   `toml:"fast_forward_disable"`
 	BackfillToleranceSecs int64  `toml:"backfill_tolerance_secs"`
 	TimeoutSecs           int64  `toml:"timeout_secs"`
+	KeepAliveTimeoutSecs  int64  `toml:"keep_alive_timeout_secs"`
+	MaxIdleConns          int    `toml:"max_idle_conns"`
 	CacheName             string `toml:"cache_name"`
 	IsDefault             bool   `toml:"is_default"`
 
@@ -273,11 +275,14 @@ func DefaultOriginConfig() *OriginConfig {
 		IgnoreNoCacheHeader:   defaultOriginINCH,
 		ValueRetentionFactor:  defaultOriginVRF, // Cache a max of 1024 recent timestamps of data for each query
 		TimeoutSecs:           defaultOriginTimeoutSecs,
+		KeepAliveTimeoutSecs:  defaultKeepAliveTimeoutSecs,
+		MaxIdleConns:          defaultMaxIdleConns,
 		CacheName:             defaultOriginCacheName,
 		BackfillToleranceSecs: defaultBackfillToleranceSecs,
 		ValueRetention:        defaultOriginVRF,
 		Timeout:               time.Second * defaultOriginTimeoutSecs,
-		BackfillTolerance:     defaultBackfillToleranceSecs,
+
+		BackfillTolerance: defaultBackfillToleranceSecs,
 	}
 }
 
@@ -341,6 +346,14 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "timeout_secs") {
 			oc.TimeoutSecs = v.TimeoutSecs
+		}
+
+		if metadata.IsDefined("origins", k, "max_idle_conns") {
+			oc.MaxIdleConns = v.MaxIdleConns
+		}
+
+		if metadata.IsDefined("origins", k, "keep_alive_timeout_secs") {
+			oc.KeepAliveTimeoutSecs = v.KeepAliveTimeoutSecs
 		}
 
 		if metadata.IsDefined("origins", k, "api_path") {

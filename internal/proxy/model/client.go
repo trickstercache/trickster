@@ -14,6 +14,7 @@
 package model
 
 import (
+	"net/http"
 	"net/url"
 
 	"github.com/Comcast/trickster/internal/config"
@@ -22,28 +23,6 @@ import (
 
 // Client is the primary interface for interoperating with Trickster and upstream TSDB's
 type Client interface {
-
-	/*
-		unused by engines
-			RegisterRoutes(string, *config.OriginConfig) // *
-			BaseURL() *url.URL // *
-			Cache() cache.Cache
-			BuildUpstreamURL(*http.Request) *url.URL
-			HealthHandler(http.ResponseWriter, *http.Request)
-
-		// Used by engines
-			client.Configuration()
-			client.ParseTimeRangeQuery(r)
-			client.DeriveCacheKey(r, r.Headers.Get(headers.NameAuthorization))
-			client.UnmarshalTimeseries(doc.Body)
-			client.Name()
-			client.FastForwardURL(r)
-			client.SetExtent(rq, e)
-			client.UnmarshalTimeseries(body)
-			client.UnmarshalInstantaneous(body)
-			client.MarshalTimeseries(rts)
-	*/
-
 	// RegisterRoutes provides a method to register upstream routes to HTTP Handlers
 	RegisterRoutes(string, *config.OriginConfig)
 	// ParseTimeRangeQuery returns a timeseries.TimeRangeQuery based on the provided HTTP Request
@@ -72,4 +51,6 @@ type Client interface {
 	MarshalTimeseries(timeseries.Timeseries) ([]byte, error)
 	// UnmarshalInstantaneous will return an Instantaneous Timeseries (only one value instead of a series) from the provided byte slice
 	UnmarshalInstantaneous([]byte) (timeseries.Timeseries, error)
+	// HTTPClient will return the HTTP Client for this Origin
+	HTTPClient() *http.Client
 }

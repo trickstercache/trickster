@@ -16,6 +16,8 @@ package prometheus
 import (
 	"fmt"
 	"math"
+	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -64,25 +66,40 @@ const (
 
 // Client Implements Proxy Client Interface
 type Client struct {
-	name   string
-	user   string
-	pass   string
-	config *config.OriginConfig
-	cache  cache.Cache
-
-	// DeltaProxyCacheRequest  func(r *tm.Request, w http.ResponseWriter, client tm.Client, cache cache.Cache, ttl time.Duration, refresh bool)
-	// ObjectProxyCacheRequest func(r *tm.Request, w http.ResponseWriter, client tm.Client, cache cache.Cache, ttl time.Duration, refresh bool, noLock bool)
-	// ProxyRequest            func(r *tm.Request, w http.ResponseWriter)
+	name      string
+	user      string
+	pass      string
+	config    *config.OriginConfig
+	cache     cache.Cache
+	webClient *http.Client
 }
 
 // NewClient returns a new Client Instance
 func NewClient(name string, config *config.OriginConfig, cache cache.Cache) *Client {
-	return &Client{name: name, config: config, cache: cache}
+
+	c := &http.Client{
+		Timeout: config.Timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+		Transport: &http.Transport{
+			Dial:                (&net.Dialer{KeepAlive: time.Duration(config.KeepAliveTimeoutSecs) * time.Second}).Dial,
+			MaxIdleConns:        config.MaxIdleConns,
+			MaxIdleConnsPerHost: config.MaxIdleConns,
+		},
+	}
+
+	return &Client{name: name, config: config, cache: cache, webClient: c}
 }
 
 // Configuration returns the upstream Configuration for this Client
 func (c *Client) Configuration() *config.OriginConfig {
 	return c.config
+}
+
+// HTTPClient returns the HTTP Client for this origin
+func (c *Client) HTTPClient() *http.Client {
+	return c.webClient
 }
 
 // Name returns the name of the upstream Configuration proxied by the Client
