@@ -76,7 +76,6 @@ type Client struct {
 
 // NewClient returns a new Client Instance
 func NewClient(name string, config *config.OriginConfig, cache cache.Cache) *Client {
-
 	c := &http.Client{
 		Timeout: config.Timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -88,7 +87,6 @@ func NewClient(name string, config *config.OriginConfig, cache cache.Cache) *Cli
 			MaxIdleConnsPerHost: config.MaxIdleConns,
 		},
 	}
-
 	return &Client{name: name, config: config, cache: cache, webClient: c}
 }
 
