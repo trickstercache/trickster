@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Comcast/trickster/internal/proxy"
+	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -49,7 +49,7 @@ func (c *Client) BuildUpstreamURL(r *http.Request) *url.URL {
 }
 
 // SetExtent will change the upstream request query to use the provided Extent
-func (c *Client) SetExtent(r *proxy.Request, extent *timeseries.Extent) {
+func (c *Client) SetExtent(r *model.Request, extent *timeseries.Extent) {
 	params := r.URL.Query()
 	params.Set(upStart, strconv.FormatInt(extent.Start.Unix(), 10))
 	params.Set(upEnd, strconv.FormatInt(extent.End.Unix(), 10))
@@ -57,9 +57,9 @@ func (c *Client) SetExtent(r *proxy.Request, extent *timeseries.Extent) {
 }
 
 // FastForwardURL returns the url to fetch the Fast Forward value based on a timerange url
-func (c *Client) FastForwardURL(r *proxy.Request) (*url.URL, error) {
+func (c *Client) FastForwardURL(r *model.Request) (*url.URL, error) {
 
-	u := proxy.CopyURL(r.URL)
+	u := model.CopyURL(r.URL)
 
 	if strings.HasSuffix(u.Path, "/query_range") {
 		u.Path = u.Path[0 : len(u.Path)-6]

@@ -11,7 +11,7 @@
 * limitations under the License.
  */
 
-package proxy
+package engines
 
 import (
 	"net/http"

@@ -11,34 +11,34 @@
 * limitations under the License.
  */
 
-package proxy
+package errors
 
 import (
 	"fmt"
 	"time"
 )
 
-// ErrorMissingURLParam returns a Formatted Error
-func ErrorMissingURLParam(param string) error {
+// MissingURLParam returns a Formatted Error
+func MissingURLParam(param string) error {
 	return fmt.Errorf("missing URL parameter: [%s]", param)
 }
 
-// ErrorTimeArrayEmpty returns a Formatted Error
-func ErrorTimeArrayEmpty(param string) error {
+// TimeArrayEmpty returns a Formatted Error
+func TimeArrayEmpty(param string) error {
 	return fmt.Errorf("time array is nil or empty: [%s]", param)
 }
 
-// ErrorStepParse returns a timeseries Parsing Error
-func ErrorStepParse() error {
+// StepParse returns a timeseries Parsing Error
+func StepParse() error {
 	return fmt.Errorf("unable to parse timeseries step from downstream request")
 }
 
-// ErrorNotSelectStatement returns a timeseries Parsing Error
-func ErrorNotSelectStatement() error {
+// NotSelectStatement returns a timeseries Parsing Error
+func NotSelectStatement() error {
 	return fmt.Errorf("not a select statement")
 }
 
-// ParseDurationError returns a Duration Parsing Error
-func ParseDurationError(input string) (time.Duration, error) {
+// ParseDuration returns a Duration Parsing Error
+func ParseDuration(input string) (time.Duration, error) {
 	return time.Duration(0), fmt.Errorf("unable to parse duration: %s", input)
 }

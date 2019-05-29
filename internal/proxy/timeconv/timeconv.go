@@ -11,12 +11,14 @@
 * limitations under the License.
  */
 
-package proxy
+package timeconv
 
 import (
 	"fmt"
 	"strconv"
 	"time"
+
+	"github.com/Comcast/trickster/internal/proxy/errors"
 )
 
 // ParseDuration returns a duration from a string. Slightly improved over the builtin, since it supports units larger than hour.
@@ -31,23 +33,23 @@ func ParseDuration(input string) (time.Duration, error) {
 		if i > 0 {
 			units, ok := UnitMap[input[i:]]
 			if !ok {
-				return ParseDurationError(input)
+				return errors.ParseDuration(input)
 			}
 			v, err := strconv.ParseInt(input[0:i], 10, 64)
 			if err != nil {
-				return ParseDurationError(input)
+				return errors.ParseDuration(input)
 			}
 			v = v * units
 			return time.Duration(v), nil
 		}
 	}
-	return ParseDurationError(input)
+	return errors.ParseDuration(input)
 }
 
 // ParseDurationParts returns a time.Duration from a value and unit
 func ParseDurationParts(value int64, units string) (time.Duration, error) {
 	if _, ok := UnitMap[units]; !ok {
-		return ParseDurationError(fmt.Sprintf("%d%s", value, units))
+		return errors.ParseDuration(fmt.Sprintf("%d%s", value, units))
 	}
 	return time.Duration(value * UnitMap[units]), nil
 }

@@ -11,13 +11,14 @@
 * limitations under the License.
  */
 
-package proxy
+package model
 
 import (
 	"net/http"
 	"net/url"
 	"time"
 
+	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -34,10 +35,11 @@ type Request struct {
 	Timeout            time.Duration
 	TimeRangeQuery     *timeseries.TimeRangeQuery
 	FastForwardDisable bool
+	HTTPClient         *http.Client
 }
 
 // NewRequest returns a new proxy request object that can service the downstream request
-func NewRequest(originName, originType, handlerName, method string, url *url.URL, headers http.Header, timeout time.Duration, clientRequest *http.Request) *Request {
+func NewRequest(originName, originType, handlerName, method string, url *url.URL, headers http.Header, timeout time.Duration, clientRequest *http.Request, client *http.Client) *Request {
 	return &Request{
 		OriginName:    originName,
 		OriginType:    originType,
@@ -48,6 +50,7 @@ func NewRequest(originName, originType, handlerName, method string, url *url.URL
 		Headers:       headers,
 		ClientRequest: clientRequest,
 		Timeout:       timeout,
+		HTTPClient:    client,
 	}
 }
 
@@ -60,8 +63,9 @@ func (r *Request) Copy() *Request {
 		HTTPMethod:    r.HTTPMethod,
 		URL:           CopyURL(r.URL),
 		TemplateURL:   CopyURL(r.TemplateURL),
-		Headers:       copyHeaders(r.Headers),
+		Headers:       headers.CopyHeaders(r.Headers),
 		ClientRequest: r.ClientRequest,
+		HTTPClient:    r.HTTPClient,
 	}
 }
 

@@ -11,7 +11,7 @@
 * limitations under the License.
  */
 
-package proxy
+package engines
 
 import (
 	"io/ioutil"
@@ -22,12 +22,13 @@ import (
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/model"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
 func TestObjectProxyCacheRequest(t *testing.T) {
 
-	es := tu.NewTestServer(200, "test")
+	es := tu.NewTestServer(http.StatusOK, "test")
 	defer es.Close()
 
 	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
@@ -42,22 +43,22 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 		return
 	}
 
-	client := TestClient{config: config.Origins["default"]}
+	client := &PromTestClient{config: config.Origins["default"], cache: cache}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)
 
 	// get URL
 
-	req := NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
+	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 
 	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
 
 	resp := w.Result()
 
-	// it should return 200 OK
-	if resp.StatusCode != 200 {
-		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
@@ -65,21 +66,25 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 		t.Error(err)
 	}
 
-	if string(bodyBytes) != "test" {
-		t.Errorf("expected 'test' got '%s'.", bodyBytes)
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
 	}
 
 	// get cache hit coverage too by repeating:
 
 	w = httptest.NewRecorder()
-	r = httptest.NewRequest("GET", es.URL, nil)
-	req = NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
 	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
 	resp = w.Result()
 
-	// it should return 200 OK
-	if resp.StatusCode != 200 {
-		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
 	}
 
 	bodyBytes, err = ioutil.ReadAll(resp.Body)
@@ -87,8 +92,14 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 		t.Error(err)
 	}
 
-	if string(bodyBytes) != "test" {
-		t.Errorf("expected 'test' got '%s'.", bodyBytes)
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "hit"})
+	if err != nil {
+		t.Error(err)
 	}
 
 }

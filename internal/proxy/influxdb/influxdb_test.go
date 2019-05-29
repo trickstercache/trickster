@@ -88,3 +88,13 @@ func TestName(t *testing.T) {
 	}
 
 }
+
+func TestHTTPClient(t *testing.T) {
+	oc := &config.OriginConfig{Type: "TEST"}
+
+	client := NewClient("test", oc, nil)
+
+	if client.HTTPClient() == nil {
+		t.Errorf("missing http client")
+	}
+}

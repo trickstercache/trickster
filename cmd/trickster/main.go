@@ -21,7 +21,7 @@ import (
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy"
+	th "github.com/Comcast/trickster/internal/proxy/handlers"
 	"github.com/Comcast/trickster/internal/routing"
 	rr "github.com/Comcast/trickster/internal/routing/registration"
 	"github.com/Comcast/trickster/internal/util/log"
@@ -55,7 +55,7 @@ func main() {
 
 	metrics.Init()
 	cr.LoadCachesFromConfig()
-	proxy.RegisterPingHandler()
+	th.RegisterPingHandler()
 	rr.RegisterProxyRoutes()
 
 	log.Info("proxy http endpoint starting", log.Pairs{"address": config.ProxyServer.ListenAddress, "port": config.ProxyServer.ListenPort})

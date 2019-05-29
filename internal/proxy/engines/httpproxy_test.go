@@ -11,7 +11,7 @@
 * limitations under the License.
  */
 
-package proxy
+package engines
 
 import (
 	"io/ioutil"
@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
@@ -31,7 +32,7 @@ func init() {
 
 func TestProxyRequest(t *testing.T) {
 
-	es := tu.NewTestServer(200, "test")
+	es := tu.NewTestServer(http.StatusOK, "test")
 	defer es.Close()
 
 	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "test", "-log-level", "debug"})
@@ -44,13 +45,13 @@ func TestProxyRequest(t *testing.T) {
 
 	// get URL
 
-	req := NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r)
+	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	ProxyRequest(req, w)
 	resp := w.Result()
 
-	// it should return 200 OK
-	if resp.StatusCode != 200 {
-		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
@@ -58,9 +59,16 @@ func TestProxyRequest(t *testing.T) {
 		t.Error(err)
 	}
 
-	if string(bodyBytes) != "test" {
-		t.Errorf("expected 'test' got '%s'.", bodyBytes)
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
 	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"engine": "HTTPProxy"})
+	if err != nil {
+		t.Error(err)
+	}
+
 }
 
 func TestProxyRequestBadGateway(t *testing.T) {
@@ -76,15 +84,18 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", badUpstream, nil)
 
-	// get URL
-
-	req := NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, make(http.Header), time.Duration(30)*time.Second, r)
+	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	ProxyRequest(req, w)
 	resp := w.Result()
 
-	// it should return 502 Bad Gateway
-	if resp.StatusCode != 502 {
-		t.Errorf("expected 502 got %d.", resp.StatusCode)
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadGateway)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"engine": "HTTPProxy"})
+	if err != nil {
+		t.Error(err)
 	}
 
 }

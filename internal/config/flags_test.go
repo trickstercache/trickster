@@ -28,6 +28,10 @@ func TestLoadFlags(t *testing.T) {
 		"9092",
 		"-origin-type",
 		"prometheus",
+		"-log-level",
+		"info",
+		"-instance-id",
+		"1",
 	}
 
 	// it should read command line flags

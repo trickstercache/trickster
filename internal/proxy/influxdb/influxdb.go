@@ -14,27 +14,52 @@
 package influxdb
 
 import (
+	"net"
+	"net/http"
+	"time"
+
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 )
 
+const (
+	OtInfluxDb = "influxdb"
+)
+
 // Client Implements the Proxy Client Interface
 type Client struct {
-	name   string
-	user   string
-	pass   string
-	config *config.OriginConfig
-	cache  cache.Cache
+	name      string
+	user      string
+	pass      string
+	config    *config.OriginConfig
+	cache     cache.Cache
+	webClient *http.Client
 }
 
 // NewClient returns a new Client Instance
 func NewClient(name string, config *config.OriginConfig, cache cache.Cache) *Client {
-	return &Client{name: name, config: config, cache: cache}
+	c := &http.Client{
+		Timeout: config.Timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+		Transport: &http.Transport{
+			Dial:                (&net.Dialer{KeepAlive: time.Duration(config.KeepAliveTimeoutSecs) * time.Second}).Dial,
+			MaxIdleConns:        config.MaxIdleConns,
+			MaxIdleConnsPerHost: config.MaxIdleConns,
+		},
+	}
+	return &Client{name: name, config: config, cache: cache, webClient: c}
 }
 
 // Configuration returns the upstream Configuration for this Client
 func (c *Client) Configuration() *config.OriginConfig {
 	return c.config
+}
+
+// HTTPClient returns the HTTP Transport the client is using
+func (c *Client) HTTPClient() *http.Client {
+	return c.webClient
 }
 
 // Cache returns and handle to the Cache instance used by the Client

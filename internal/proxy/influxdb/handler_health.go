@@ -16,12 +16,13 @@ package influxdb
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/proxy"
+	"github.com/Comcast/trickster/internal/proxy/engines"
+	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
 // HealthHandler checks the health of the configured upstream Origin
 func (c Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BaseURL()
 	u.Path += "/" + health
-	proxy.ProxyRequest(proxy.NewRequest(c.name, proxy.OtInfluxDb, "HealthHandler", http.MethodGet, u, r.Header, c.config.Timeout, r), w)
+	engines.ProxyRequest(model.NewRequest(c.name, OtInfluxDb, "HealthHandler", http.MethodGet, u, r.Header, c.config.Timeout, r, c.webClient), w)
 }

@@ -19,14 +19,14 @@ import (
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/proxy/influxdb"
+	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/proxy/prometheus"
 	"github.com/Comcast/trickster/internal/util/log"
 )
 
 // ProxyClients maintains a list of proxy clients configured for use by Trickster
-var ProxyClients = make(map[string]proxy.Client)
+var ProxyClients = make(map[string]model.Client)
 
 // RegisterProxyRoutes iterates the Trickster Configuration and registers the routes for the configured origins
 func RegisterProxyRoutes() {
@@ -44,7 +44,7 @@ func RegisterProxyRoutes() {
 			hasDefault = true
 		}
 
-		var client proxy.Client
+		var client model.Client
 		var c cache.Cache
 		var err error
 
@@ -53,14 +53,13 @@ func RegisterProxyRoutes() {
 			log.Fatal(1, "invalid cache name in origin config", log.Pairs{"originName": k, "cacheName": o.CacheName})
 		}
 		switch strings.ToLower(o.Type) {
-		case proxy.OtPrometheus, "":
+		case "prometheus", "":
 			log.Info("Registering Prometheus Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 			client = prometheus.NewClient(k, o, c)
-		case proxy.OtInfluxDb:
+		case "influxdb":
 			log.Info("Registering Influxdb Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 			client = influxdb.NewClient(k, o, c)
 		}
-
 		if client != nil {
 			ProxyClients[k] = client
 

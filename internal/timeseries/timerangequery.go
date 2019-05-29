@@ -31,15 +31,12 @@ type TimeRangeQuery struct {
 
 // NormalizeExtent adjusts the Start and End of a TimeRangeQuery's Extent to align against normalized boundaries.
 func (trq *TimeRangeQuery) NormalizeExtent() {
-
-	stepSecs := int64(trq.Step / time.Second)
-
-	if stepSecs > 0 {
+	if trq.Step.Seconds() > 0 {
 		if !trq.IsOffset && trq.Extent.End.After(time.Now()) {
 			trq.Extent.End = time.Now()
 		}
-		trq.Extent.Start = time.Unix((trq.Extent.Start.Unix()/stepSecs)*stepSecs, 0)
-		trq.Extent.End = time.Unix((trq.Extent.End.Unix()/stepSecs)*stepSecs, 0)
+		trq.Extent.Start = trq.Extent.Start.Truncate(trq.Step)
+		trq.Extent.End = trq.Extent.End.Truncate(trq.Step)
 	}
 }
 

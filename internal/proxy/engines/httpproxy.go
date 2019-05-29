@@ -11,7 +11,7 @@
 * limitations under the License.
  */
 
-package proxy
+package engines
 
 import (
 	"io/ioutil"
@@ -21,6 +21,9 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/headers"
+	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
@@ -35,40 +38,33 @@ const (
 )
 
 // ProxyRequest proxies an inbound request to its corresponding upstream origin with no caching features
-func ProxyRequest(r *Request, w http.ResponseWriter) {
+func ProxyRequest(r *model.Request, w http.ResponseWriter) {
 	body, resp, elapsed := Fetch(r)
-	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, "none", strconv.Itoa(resp.StatusCode), r.URL.Path).Inc()
-	metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, "none", strconv.Itoa(resp.StatusCode), r.URL.Path).Observe(elapsed.Seconds())
+	recordProxyResults(r, strconv.Itoa(resp.StatusCode), r.URL.Path, elapsed.Seconds(), resp.Header)
 	Respond(w, resp.StatusCode, resp.Header, body)
 }
 
 // Fetch makes an HTTP request to the provided Origin URL
-func Fetch(r *Request) ([]byte, *http.Response, time.Duration) {
+func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 
 	if r != nil {
-		addProxyHeaders(r.ClientRequest.RemoteAddr, r.Headers)
+		headers.AddProxyHeaders(r.ClientRequest.RemoteAddr, r.Headers)
 	}
 
-	removeClientHeaders(r.Headers)
+	headers.RemoveClientHeaders(r.Headers)
 
 	start := time.Now()
-	client := &http.Client{
-		Timeout: r.Timeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-	resp, err := client.Do(&http.Request{Method: r.ClientRequest.Method, URL: r.URL, Header: r.Headers})
+	resp, err := r.HTTPClient.Do(&http.Request{Method: r.ClientRequest.Method, URL: r.URL, Header: r.Headers})
 	if err != nil {
 		log.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		// if there is an err and the response is nil, the server could not be reached; make a 502 for the downstream response
 		if resp == nil {
-			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r.ClientRequest}
+			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r.ClientRequest, Header: make(http.Header)}
 		}
 		return []byte{}, resp, -1
 	}
 
-	resp.Header.Del(hnContentLength)
+	resp.Header.Del(headers.NameContentLength)
 
 	body, err := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
@@ -87,12 +83,28 @@ func Fetch(r *Request) ([]byte, *http.Response, time.Duration) {
 }
 
 // Respond sends an HTTP Response down to the requesting client
-func Respond(w http.ResponseWriter, code int, headers http.Header, body []byte) {
+func Respond(w http.ResponseWriter, code int, header http.Header, body []byte) {
 	h := w.Header()
-	for k, v := range headers {
+	for k, v := range header {
 		h.Set(k, strings.Join(v, ","))
 	}
-	addResponseHeaders(h)
+	headers.AddResponseHeaders(h)
 	w.WriteHeader(code)
 	w.Write(body)
+}
+
+func recordProxyResults(r *model.Request, httpStatus, path string, elapsed float64, header http.Header) {
+	recordResults(r, "HTTPProxy", "", httpStatus, path, "", elapsed, nil, header)
+}
+
+func recordResults(r *model.Request, engine, cacheStatus, httpStatus, path, ffStatus string, elapsed float64, extents timeseries.ExtentList, header http.Header) {
+	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, httpStatus, path).Inc()
+	if elapsed > 0 {
+		metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, httpStatus, path).Observe(elapsed)
+	}
+	headers.SetResultsHeader(header, engine, cacheStatus, ffStatus, extents)
+}
+
+func isRefresh(reqHeader http.Header) bool {
+	return strings.ToLower(reqHeader.Get(headers.NameCacheControl)) == headers.ValueNoCache
 }

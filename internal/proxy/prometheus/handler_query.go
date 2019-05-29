@@ -16,13 +16,14 @@ package prometheus
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/proxy"
+	"github.com/Comcast/trickster/internal/proxy/engines"
+	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
 // QueryHandler handles calls to /query (for instantaneous values)
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
-	proxy.ObjectProxyCacheRequest(
-		proxy.NewRequest(c.name, otPrometheus, "QueryHandler", r.Method, u, r.Header, c.config.Timeout, r),
+	engines.ObjectProxyCacheRequest(
+		model.NewRequest(c.name, otPrometheus, "QueryHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
 		w, c, c.cache, c.cache.Configuration().ObjectTTL, false, false)
 }

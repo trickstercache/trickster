@@ -11,7 +11,7 @@
 * limitations under the License.
  */
 
-package proxy
+package engines
 
 import (
 	"net/http"
@@ -20,6 +20,7 @@ import (
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
 func TestQueryCache(t *testing.T) {
@@ -40,7 +41,7 @@ func TestQueryCache(t *testing.T) {
 	resp := &http.Response{}
 	resp.Header = make(http.Header)
 	resp.StatusCode = 200
-	d := DocumentFromHTTPResponse(resp, []byte(expected))
+	d := model.DocumentFromHTTPResponse(resp, []byte(expected))
 
 	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second)
 	if err != nil {

@@ -11,28 +11,23 @@
 * limitations under the License.
  */
 
-package proxy
+package handlers
 
 import (
 	"net/http"
-	"testing"
+
+	"github.com/Comcast/trickster/internal/proxy/headers"
+	"github.com/Comcast/trickster/internal/routing"
 )
 
-func TestDocumentFromHTTPResponse(t *testing.T) {
+// RegisterPingHandler registers the application's /ping handler
+func RegisterPingHandler() {
+	routing.Router.HandleFunc("/ping", pingHandler).Methods("GET")
+}
 
-	expected := []byte("1234")
-
-	resp := &http.Response{}
-	resp.Header = make(http.Header)
-	resp.StatusCode = 200
-	d := DocumentFromHTTPResponse(resp, []byte("1234"))
-
-	if string(d.Body) != string(expected) {
-		t.Errorf("expected %s got %s", string(expected), string(d.Body))
-	}
-
-	if d.StatusCode != 200 {
-		t.Errorf("expected %d got %d", 200, d.StatusCode)
-	}
-
+// pingHandler responds to an HTTP Request with 200 OK and "pong"
+func pingHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("pong"))
 }

@@ -57,4 +57,6 @@ const (
 	defaultOriginTimeoutSecs     = 180
 	defaultOriginCacheName       = "default"
 	defaultBackfillToleranceSecs = 0
+	defaultKeepAliveTimeoutSecs  = 300
+	defaultMaxIdleConns          = 20
 )

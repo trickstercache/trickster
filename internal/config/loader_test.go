@@ -515,3 +515,37 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected /tmp/trickster, got %s", c.Badger.ValueDirectory)
 	}
 }
+
+func TestLoadConfigurationVersion(t *testing.T) {
+	a := []string{"-version"}
+	// it should not error if config path is not set
+	err := Load("trickster-test", "0", a)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if !Flags.PrintVersion {
+		t.Errorf("expected true got false")
+	}
+}
+
+func TestLoadConfigurationBadPath(t *testing.T) {
+
+	const badPath = "/afeas/aasdvasvasdf48/ag4a4gas"
+
+	a := []string{"-config", badPath}
+	// it should not error if config path is not set
+	err := Load("trickster-test", "0", a)
+	if err == nil {
+		t.Errorf("Expected error: open %s: no such file or directory", badPath)
+	}
+}
+
+func TestLoadConfigurationBadUrl(t *testing.T) {
+	const badURL = ":httap:]/]/example.com9091"
+	a := []string{"-origin", badURL}
+	err := Load("trickster-test", "0", a)
+	if err == nil {
+		t.Errorf("Expected error: parse %s: missing protocol scheme", badURL)
+	}
+}

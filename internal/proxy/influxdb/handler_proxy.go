@@ -16,10 +16,11 @@ package influxdb
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/proxy"
+	"github.com/Comcast/trickster/internal/proxy/engines"
+	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
 // ProxyHandler sends a request through the basic reverse proxy to the origin, and services non-cacheable InfluxDB API calls
 func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	proxy.ProxyRequest(proxy.NewRequest(c.name, proxy.OtInfluxDb, "ProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r), w)
+	engines.ProxyRequest(model.NewRequest(c.name, OtInfluxDb, "ProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r, c.webClient), w)
 }

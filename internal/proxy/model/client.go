@@ -11,26 +11,18 @@
 * limitations under the License.
  */
 
-package proxy
+package model
 
 import (
 	"net/http"
 	"net/url"
 
-	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
-// Origin Database Types
-const (
-	OtPrometheus = "prometheus"
-	OtInfluxDb   = "influxdb"
-)
-
 // Client is the primary interface for interoperating with Trickster and upstream TSDB's
 type Client interface {
-
 	// RegisterRoutes provides a method to register upstream routes to HTTP Handlers
 	RegisterRoutes(string, *config.OriginConfig)
 	// ParseTimeRangeQuery returns a timeseries.TimeRangeQuery based on the provided HTTP Request
@@ -39,24 +31,26 @@ type Client interface {
 	Configuration() *config.OriginConfig
 	// Name returns the name of the origin the Proxy Client is handling
 	Name() string
-	// BaseURL returns the base URL (schema://host:port/path_prefix) for accessing an upstream origin
-	BaseURL() *url.URL
-	// Cache returns the Cache object the Client uses in for Proxy Caching
-	Cache() cache.Cache
+	// // BaseURL returns the base URL (schema://host:port/path_prefix) for accessing an upstream origin
+	// BaseURL() *url.URL // *
+	// // Cache returns the Cache object the Client uses in for Proxy Caching
+	// Cache() cache.Cache
 	// DeriveCacheKey returns a hashed key for the request, used for request synchronization and cache deconfliction
 	DeriveCacheKey(*Request, string) string
-	// BuildUpstreamURL returns an URL for an upstream origin request based on the request URL
-	BuildUpstreamURL(*http.Request) *url.URL
+	// // BuildUpstreamURL returns an URL for an upstream origin request based on the request URL
+	// BuildUpstreamURL(*http.Request) *url.URL
 	// FastForwardURL returns the URL to the origin to collect Fast Forward data points based on the provided HTTP Request
 	FastForwardURL(*Request) (*url.URL, error)
 	// SetExtent will update an upstream request's timerange parameters based on the provided timeseries.Extent
 	SetExtent(*Request, *timeseries.Extent)
-	// HealthHandler is an HTTP Handler that checks the health of the upstream origin
-	HealthHandler(http.ResponseWriter, *http.Request)
+	// // HealthHandler is an HTTP Handler that checks the health of the upstream origin
+	// HealthHandler(http.ResponseWriter, *http.Request)
 	// UnmarshalTimeseries will return a Timeseries from the provided byte slice
 	UnmarshalTimeseries([]byte) (timeseries.Timeseries, error)
 	// MarshalTimeseries will return a byte slice from  the provided Timeseries
 	MarshalTimeseries(timeseries.Timeseries) ([]byte, error)
 	// UnmarshalInstantaneous will return an Instantaneous Timeseries (only one value instead of a series) from the provided byte slice
 	UnmarshalInstantaneous([]byte) (timeseries.Timeseries, error)
+	// HTTPClient will return the HTTP Client for this Origin
+	HTTPClient() *http.Client
 }

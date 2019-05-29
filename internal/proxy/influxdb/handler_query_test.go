@@ -22,8 +22,8 @@ import (
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy"
-
+	"github.com/Comcast/trickster/internal/proxy/errors"
+	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 
@@ -42,7 +42,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		RawQuery: url.Values(map[string][]string{"q": []string{`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY time(15s), "cluster" fill(null)`}, "epoch": []string{"ms"}}).Encode(),
 	}}
 	client := &Client{}
-	res, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -70,7 +70,7 @@ func TestQueryHandlerWithSelect(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/query?q=select%20test", nil)
 
-	client := &Client{name: "default", config: config.Origins["default"], cache: cache}
+	client := &Client{name: "default", config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
 
 	client.QueryHandler(w, r)
 
@@ -104,7 +104,7 @@ func TestQueryHandlerNotSelect(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/query", nil)
 
-	client := &Client{name: "default", config: config.Origins["default"]}
+	client := &Client{name: "default", config: config.Origins["default"], webClient: tu.NewTestWebClient()}
 
 	client.QueryHandler(w, r)
 
@@ -126,7 +126,7 @@ func TestQueryHandlerNotSelect(t *testing.T) {
 }
 
 func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
-	expected := proxy.ErrorMissingURLParam(upQuery).Error()
+	expected := errors.MissingURLParam(upQuery).Error()
 	req := &http.Request{URL: &url.URL{
 		Scheme: "https",
 		Host:   "blah.com",
@@ -137,7 +137,7 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 		}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
 		t.Errorf(`Expected "%s", got NO ERROR`, expected)
 		return
@@ -149,7 +149,7 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 
 func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 
-	expected := proxy.ErrorStepParse().Error()
+	expected := errors.StepParse().Error()
 
 	req := &http.Request{URL: &url.URL{
 		Scheme: "https",
@@ -161,7 +161,7 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 		}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
 		t.Errorf(`Expected "%s", got NO ERROR`, expected)
 		return
@@ -179,7 +179,7 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 // 		RawQuery: url.Values(map[string][]string{"q": []string{`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h AND time < now() - 3h GROUP BY time(15s), "cluster" fill(null)`}, "epoch": []string{"ms"}}).Encode(),
 // 	}}
 // 	client := &Client{}
-// 	res, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+// 	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 // 	if err != nil {
 // 		fmt.Println(err.Error())
 // 	} else {
@@ -196,7 +196,7 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 // 		RawQuery: url.Values(map[string][]string{"q": []string{`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time > 2052926911485ms AND time < 52926911486ms GROUP BY time(15s), "cluster" fill(null)`}, "epoch": []string{"ms"}}).Encode(),
 // 	}}
 // 	client := &Client{}
-// 	res, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+// 	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 // 	if err != nil {
 // 		fmt.Println(err.Error())
 // 	} else {
@@ -213,7 +213,7 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 // 		RawQuery: url.Values(map[string][]string{"q": []string{`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time < 2052926911486ms GROUP BY time(15s), "cluster" fill(null)`}, "epoch": []string{"ms"}}).Encode(),
 // 	}}
 // 	client := &Client{}
-// 	res, err := client.ParseTimeRangeQuery(&proxy.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+// 	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 // 	if err != nil {
 // 		fmt.Println(err.Error())
 // 	} else {

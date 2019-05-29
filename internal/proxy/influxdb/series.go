@@ -265,8 +265,8 @@ func (se *SeriesEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 						end = len(s.Values)
 					}
 					ss.Values = s.Values[start:end]
+					ts.Results[i].Series = append(ts.Results[i].Series, *ss)
 				}
-				ts.Results[i].Series = append(ts.Results[i].Series, *ss)
 			}
 		}
 	}

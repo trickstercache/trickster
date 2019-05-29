@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/proxy"
+	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -26,7 +26,7 @@ func TestDeriveCacheKey(t *testing.T) {
 
 	client := &Client{}
 	tu := &url.URL{Path: "/", RawQuery: "db=test&u=test&p=test&q=select * where <$TIME_TOKEN$> group by time(1m)"}
-	r := &proxy.Request{TemplateURL: tu, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: time.Duration(60) * time.Second}}
+	r := &model.Request{TemplateURL: tu, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: time.Duration(60) * time.Second}}
 	key := client.DeriveCacheKey(r, "extra")
 
 	if key != "147fe576515e5ac107195a3eb69c8cbe" {

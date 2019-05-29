@@ -16,10 +16,11 @@ package prometheus
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/proxy"
+	"github.com/Comcast/trickster/internal/proxy/engines"
+	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
 // ProxyHandler sends a request through the basic reverse proxy to the origin, and services non-cacheable Prometheus API calls.
 func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	proxy.ProxyRequest(proxy.NewRequest(c.name, otPrometheus, "APIProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r), w)
+	engines.ProxyRequest(model.NewRequest(c.name, otPrometheus, "APIProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r, c.webClient), w)
 }
