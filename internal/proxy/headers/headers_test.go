@@ -16,8 +16,10 @@ package headers
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/timeseries"
 )
 
 func TestAddProxyHeaders(t *testing.T) {
@@ -113,4 +115,21 @@ func TestAddResponseHeaders(t *testing.T) {
 		t.Errorf("missing header %s", NameXAccelerator)
 	}
 
+}
+
+func TestSetResultsHeader(t *testing.T) {
+	h := http.Header{}
+	SetResultsHeader(h, "test-engine", "test-status", "test-ffstatus", timeseries.ExtentList{timeseries.Extent{Start: time.Unix(1, 0), End: time.Unix(2, 0)}})
+	const expected = "engine=test-engine; status=test-status; fetched=[1:2]; ffstatus=test-ffstatus"
+	if h.Get(NameTricksterResult) != expected {
+		t.Errorf("expected %s got %s", expected, h.Get(NameTricksterResult))
+	}
+}
+
+func TestSetResultsHeaderEmtpy(t *testing.T) {
+	h := http.Header{}
+	SetResultsHeader(h, "", "test-status", "test-ffstatus", timeseries.ExtentList{timeseries.Extent{Start: time.Unix(1, 0), End: time.Unix(2, 0)}})
+	if len(h) > 0 {
+		t.Errorf("Expected header length of %d", 0)
+	}
 }
