@@ -81,7 +81,7 @@ The `status_code` label will cause PromSim to return the provided status code in
 
 Example query that returns 400 Bad Request: `query=my_test_query{status_code=400}&start=2&end=2&step=15`
 
-### Invalid Reponse Body
+### Invalid Response Body
 
 The `invalid_response_body` label, when provided and set to a value other than 0, will cause PromSim to return a response that cannot be deserialized into a Prometheus Matrix or Vector object, which is again useful for testing failure handling within your app.
 
