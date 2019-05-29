@@ -36,7 +36,7 @@ func TestClusterConnect(t *testing.T) {
 	const expectedIT = 20000
 	const expectedICF = 2000
 
-	c, close := setupRedisCache()
+	c, close := setupRedisCache("cluster")
 	defer close()
 
 	c.Config.Redis.ClientType = "cluster"

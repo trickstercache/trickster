@@ -28,16 +28,15 @@ func init() {
 	metrics.Init()
 }
 
-const cacheType = `redis`
 const cacheKey = `cacheKey`
 
-func setupRedisCache() (*Cache, func()) {
+func setupRedisCache(cacheType string) (*Cache, func()) {
 	s, err := miniredis.Run()
 	if err != nil {
 		panic(err)
 	}
 	config.Config = config.NewConfig()
-	rcfg := config.RedisCacheConfig{Endpoint: s.Addr()}
+	rcfg := config.RedisCacheConfig{Endpoint: s.Addr(), ClientType: cacheType}
 	close := func() {
 		s.Close()
 	}
@@ -71,18 +70,20 @@ func TestDurationFromMS(t *testing.T) {
 
 }
 
+const ctStandard = "standard"
+
 func TestConfiguration(t *testing.T) {
-	rc, close := setupRedisCache()
+	rc, close := setupRedisCache(ctStandard)
 	defer close()
 
 	cfg := rc.Configuration()
-	if cfg.Type != cacheType {
-		t.Fatalf("expected %s got %s", cacheType, cfg.Type)
+	if cfg.Type != ctStandard {
+		t.Fatalf("expected %s got %s", ctStandard, cfg.Type)
 	}
 }
 
 func TestRedisCache_Connect(t *testing.T) {
-	rc, close := setupRedisCache()
+	rc, close := setupRedisCache(ctStandard)
 	defer close()
 
 	// it should connect
@@ -93,7 +94,7 @@ func TestRedisCache_Connect(t *testing.T) {
 }
 
 func TestRedisCache_Store(t *testing.T) {
-	rc, close := setupRedisCache()
+	rc, close := setupRedisCache(ctStandard)
 	defer close()
 
 	err := rc.Connect()
@@ -109,7 +110,7 @@ func TestRedisCache_Store(t *testing.T) {
 }
 
 func TestRedisCache_Retrieve(t *testing.T) {
-	rc, close := setupRedisCache()
+	rc, close := setupRedisCache(ctStandard)
 	defer close()
 
 	err := rc.Connect()
@@ -132,7 +133,7 @@ func TestRedisCache_Retrieve(t *testing.T) {
 }
 
 func TestRedisCache_Close(t *testing.T) {
-	rc, close := setupRedisCache()
+	rc, close := setupRedisCache(ctStandard)
 	defer close()
 
 	err := rc.Connect()
@@ -149,7 +150,7 @@ func TestRedisCache_Close(t *testing.T) {
 
 func TestCache_Remove(t *testing.T) {
 
-	rc, close := setupRedisCache()
+	rc, close := setupRedisCache(ctStandard)
 	defer close()
 
 	err := rc.Connect()
@@ -185,7 +186,7 @@ func TestCache_Remove(t *testing.T) {
 
 func TestCache_BulkRemove(t *testing.T) {
 
-	rc, close := setupRedisCache()
+	rc, close := setupRedisCache(ctStandard)
 	defer close()
 
 	err := rc.Connect()
@@ -215,6 +216,24 @@ func TestCache_BulkRemove(t *testing.T) {
 	data, err = rc.Retrieve(cacheKey)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
+	}
+
+}
+
+func TestMapOpFuncs(t *testing.T) {
+
+	// test sentinel
+	rc, _ := setupRedisCache("sentinel")
+	rc.mapOpFuncs()
+	if rc.connectFunc == nil {
+		t.Errorf("invalid function mapping for sentinel")
+	}
+
+	// test cluster
+	rc, _ = setupRedisCache("cluster")
+	rc.mapOpFuncs()
+	if rc.connectFunc == nil {
+		t.Errorf("invalid function mapping for cluster")
 	}
 
 }

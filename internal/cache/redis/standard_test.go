@@ -37,7 +37,7 @@ func TestClientConnect(t *testing.T) {
 	const expectedIT = 20000
 	const expectedICF = 2000
 
-	c, close := setupRedisCache()
+	c, close := setupRedisCache(ctStandard)
 	defer close()
 
 	c.Config.Redis.Protocol = expectedProto
