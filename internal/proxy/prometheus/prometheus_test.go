@@ -95,6 +95,16 @@ func TestConfiguration(t *testing.T) {
 	}
 }
 
+func TestHTTPClient(t *testing.T) {
+	oc := &config.OriginConfig{Type: "TEST"}
+
+	client := NewClient("test", oc, nil)
+
+	if client.HTTPClient() == nil {
+		t.Errorf("missing http client")
+	}
+}
+
 func TestCache(t *testing.T) {
 
 	err := config.Load("trickster", "test", nil)
@@ -320,4 +330,29 @@ func TestParseTimeRangeQueryNoStep(t *testing.T) {
 	if err.Error() != expected {
 		t.Errorf(`expected "%s", got "%s"`, expected, err.Error())
 	}
+}
+
+func TestParseTimeRangeQueryWithOffset(t *testing.T) {
+	req := &http.Request{URL: &url.URL{
+		Scheme: "https",
+		Host:   "blah.com",
+		Path:   "/",
+		RawQuery: url.Values(map[string][]string{
+			"query": []string{`up and has offset `},
+			"start": []string{strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+			"end":   []string{strconv.Itoa(int(time.Now().Unix()))},
+			"step":  []string{"15"},
+		}).Encode(),
+	}}
+	client := &Client{}
+	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if !res.IsOffset {
+		t.Errorf("exected true got %t", res.IsOffset)
+	}
+
 }
