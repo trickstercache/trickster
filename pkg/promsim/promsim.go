@@ -21,6 +21,7 @@ package promsim
 
 import (
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"time"
@@ -28,8 +29,6 @@ import (
 
 // Directives represents a collection of modifiers for the simulator's behavior provided by the user
 type Directives struct {
-	// RawString returns the raw directives found in the provided query
-	RawString string
 	// SeriesCount defines how many series to return
 	SeriesCount int
 	// Latency introduces a static delay in responding to each request
@@ -37,17 +36,17 @@ type Directives struct {
 	// RangeLatency introduces an additional delay as a multiple of the number of timestamps in the series
 	RangeLatency time.Duration
 	// MaxValue limits the maximum value of any data in the query result
-	MaxValue int64
+	MaxValue int
 	// MinValue limits the minimum value of any data in the query result
-	// Not currently implemented
-	MinValue int64
+	MinValue int
 	// StatusCode indicates the desired return status code, to simulate errors
 	StatusCode int
 	// InvalidResponseBody when > 0 causes the server to respond with a payload that cannot be unmarshaled
 	// useful for causing and testing unmarshling failure cases
 	InvalidResponseBody int
 
-	seriesID int
+	rawString string
+	seriesID  int
 }
 
 // Result is a simplified version of a Prometheus timeseries response
@@ -77,8 +76,9 @@ func GetInstantData(query string, t time.Time) (string, int, error) {
 	queryVal := getQueryVal(query)
 
 	for i := 0; d.SeriesCount > i; i++ {
-		m := getDirectives(d.RawString + fmt.Sprintf(`,"series_id":"%d"`, i))
-		series = append(series, fmt.Sprintf(`{"metric":{%s},"value":[%d,"%d"]}`, m.RawString, t.Unix(), calculateValue(queryVal, i, t, d)))
+		d1 := &Directives{rawString: d.rawString}
+		d1.addLabel(fmt.Sprintf(`"series_id":"%d"`, i))
+		series = append(series, fmt.Sprintf(`{"metric":{%s},"value":[%d,"%d"]}`, d1.rawString, t.Unix(), seededVal(d, i, queryVal, t)))
 	}
 	return fmt.Sprintf(`{"status":"%s","data":{"resultType":"vector","result":[`, status) + strings.Join(series, ",") + "]}}", d.StatusCode, nil
 }
@@ -103,13 +103,14 @@ func GetTimeSeriesData(query string, start time.Time, end time.Time, step time.D
 	queryVal := getQueryVal(query)
 
 	for i := 0; d.SeriesCount > i; i++ {
-		m := getDirectives(d.RawString + fmt.Sprintf(`,"series_id":"%d"`, i))
+		d1 := &Directives{rawString: d.rawString}
+		d1.addLabel(fmt.Sprintf(`"series_id":"%d"`, i))
 		v := make([]string, 0, seriesLen)
 		for j := 0; j <= seriesLen; j++ {
 			t := start.Add(time.Duration(j) * step)
-			v = append(v, fmt.Sprintf(`[%d,"%d"]`, t.Unix(), calculateValue(queryVal, i, t, d)))
+			v = append(v, fmt.Sprintf(`[%d,"%d"]`, t.Unix(), seededVal(d, i, queryVal, t)))
 		}
-		series = append(series, fmt.Sprintf(`{"metric":{%s},"values":[%s]}`, m.RawString, strings.Join(v, ",")))
+		series = append(series, fmt.Sprintf(`{"metric":{%s},"values":[%s]}`, d1.rawString, strings.Join(v, ",")))
 	}
 
 	out := fmt.Sprintf(`{"status":"%s","data":{"resultType":"matrix","result":[`, status) + strings.Join(series, ",") + "]}}"
@@ -134,7 +135,7 @@ func getDirectives(query string) *Directives {
 		StatusCode:          200,
 	}
 
-	extras := []string{}
+	provided := []string{}
 
 	start := strings.Index(query, "{")
 	if start > -1 {
@@ -148,12 +149,12 @@ func getDirectives(query string) *Directives {
 				if len(parts) == 2 {
 					i, err = strconv.ParseInt(parts[1], 10, 64)
 					if err != nil {
-						extras = append(extras, fmt.Sprintf(`"%s":"%s"`, parts[0], parts[1]))
+						provided = append(provided, fmt.Sprintf(`"%s":"%s"`, parts[0], parts[1]))
 						continue
 					}
 					k = parts[0]
 				} else {
-					extras = append(extras, fmt.Sprintf(`"%s":""`, dir))
+					provided = append(provided, fmt.Sprintf(`"%s":""`, dir))
 					continue
 				}
 
@@ -165,50 +166,47 @@ func getDirectives(query string) *Directives {
 				case "range_latency_ms":
 					d.RangeLatency = time.Duration(i) * time.Millisecond
 				case "max_val":
-					d.MaxValue = i
+					d.MaxValue = int(i)
 				case "min_val":
-					d.MinValue = i
+					d.MinValue = int(i)
 				case "series_id":
 					d.seriesID = int(i)
 				case "status_code":
 					d.StatusCode = int(i)
 				case "invalid_response_body":
 					d.InvalidResponseBody = int(i)
-				default:
-					extras = append(extras, fmt.Sprintf(`"%s":"%s"`, parts[0], parts[1]))
 				}
+				provided = append(provided, fmt.Sprintf(`"%s":"%s"`, parts[0], parts[1]))
 			}
 		}
 	}
-
-	sep := ""
-	if len(extras) > 0 {
-		sep = ","
-	}
-
-	d.RawString = fmt.Sprintf(`"invalid_response_body":"%d","latency_ms":"%d","max_value":"%d","min_value":"%d","range_latency_ms":"%d","series_count":"%d","series_id":"%d","status_code":"%d"%s%s`,
-		d.InvalidResponseBody, d.Latency/1000000, d.MaxValue, d.MinValue, d.RangeLatency/1000000, d.SeriesCount, d.seriesID, d.StatusCode, sep, strings.Join(extras, ","))
-
+	d.rawString = strings.Join(provided, ",")
 	return d
 }
 
-func calculateValue(queryVal int64, seriesIndex int, t time.Time, d *Directives) int64 {
-
+func seededVal(d *Directives, seriesIndex int, querySeed int64, t time.Time) int {
 	if d.RangeLatency > 0 {
 		time.Sleep(d.RangeLatency)
 	}
-
-	v := ((((queryVal+int64(seriesIndex))*t.Unix() + queryVal) / queryVal * 427879) % 23455379) % d.MaxValue
-
-	return v
-
+	rand.Seed(querySeed + int64(seriesIndex) + t.Unix())
+	return d.MinValue + rand.Intn(d.MaxValue-d.MinValue)
 }
 
+// Calculates a number for the Query Value
 func getQueryVal(query string) int64 {
 	l := len(query)
 	var v int64
 	for i := 0; i < l; i++ {
 		v += int64(query[i])
 	}
+	v = v * v * v
 	return v
+}
+
+func (d *Directives) addLabel(in string) {
+	if len(d.rawString) == 0 {
+		d.rawString = in
+		return
+	}
+	d.rawString += "," + in
 }
