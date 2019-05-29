@@ -352,7 +352,7 @@ func TestParseTimeRangeQueryWithOffset(t *testing.T) {
 	}
 
 	if !res.IsOffset {
-		t.Errorf("exected true got %t", res.IsOffset)
+		t.Errorf("expected true got %t", res.IsOffset)
 	}
 
 }
