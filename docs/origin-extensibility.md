@@ -41,7 +41,7 @@ The Proxy Client Interface Methods you will need to implement are broken into se
 
 - `Name` returns the configured name of the Origin Type instance.
 
-- `HTTPClient` returns the reusable *http.Client object that communicates with the Origin.
+- `HTTPClient` returns the reusable \*http.Client object that communicates with the Origin.
 
 #### HTTP Request Routing and Handling
 
