@@ -31,20 +31,14 @@ type Client interface {
 	Configuration() *config.OriginConfig
 	// Name returns the name of the origin the Proxy Client is handling
 	Name() string
-	// // BaseURL returns the base URL (schema://host:port/path_prefix) for accessing an upstream origin
-	// BaseURL() *url.URL // *
-	// // Cache returns the Cache object the Client uses in for Proxy Caching
-	// Cache() cache.Cache
 	// DeriveCacheKey returns a hashed key for the request, used for request synchronization and cache deconfliction
 	DeriveCacheKey(*Request, string) string
-	// // BuildUpstreamURL returns an URL for an upstream origin request based on the request URL
-	// BuildUpstreamURL(*http.Request) *url.URL
 	// FastForwardURL returns the URL to the origin to collect Fast Forward data points based on the provided HTTP Request
 	FastForwardURL(*Request) (*url.URL, error)
 	// SetExtent will update an upstream request's timerange parameters based on the provided timeseries.Extent
 	SetExtent(*Request, *timeseries.Extent)
-	// // HealthHandler is an HTTP Handler that checks the health of the upstream origin
-	// HealthHandler(http.ResponseWriter, *http.Request)
+	// HealthHandler is an HTTP Handler that checks the health of the upstream origin
+	HealthHandler(http.ResponseWriter, *http.Request)
 	// UnmarshalTimeseries will return a Timeseries from the provided byte slice
 	UnmarshalTimeseries([]byte) (timeseries.Timeseries, error)
 	// MarshalTimeseries will return a byte slice from  the provided Timeseries
