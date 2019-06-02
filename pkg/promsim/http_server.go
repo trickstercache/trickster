@@ -17,17 +17,21 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"time"
-
-	"github.com/Comcast/trickster/internal/routing" // need to eliminate this dependency
 )
 
 // NewTestServer launches a Test Prometheus Server (for unit testing)
 func NewTestServer() *httptest.Server {
-	routing.Router.HandleFunc("/api/v1/query_range", queryRangeHandler).Methods("GET", "POST")
-	routing.Router.HandleFunc("/api/v1/query", queryHandler).Methods("GET", "POST")
-	s := httptest.NewServer(routing.Router)
-	return s
+	return httptest.NewServer(MuxWithRoutes())
+}
+
+// MuxWithRoutes returns a ServeMux that includes the PromSim handlers already registered
+func MuxWithRoutes() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/query_range", queryRangeHandler)
+	mux.HandleFunc("/api/v1/query", queryHandler)
+	return mux
 }
 
 func queryRangeHandler(w http.ResponseWriter, r *http.Request) {
@@ -44,23 +48,31 @@ func queryRangeHandler(w http.ResponseWriter, r *http.Request) {
 		var start, end time.Time
 		var step time.Duration
 
+		if j := strings.Index(s, "."); j != -1 {
+			s = s[:j]
+		}
+
+		if j := strings.Index(e, "."); j != -1 {
+			e = e[:j]
+		}
+
 		i, err = strconv.ParseInt(s, 10, 64)
 		if err != nil {
-			writeError(http.StatusBadRequest, w)
+			writeError(http.StatusBadRequest, []byte("unable to parse start time"), w)
 			return
 		}
 		start = time.Unix(i, 0)
 
 		i, err = strconv.ParseInt(e, 10, 64)
 		if err != nil {
-			writeError(http.StatusBadRequest, w)
+			writeError(http.StatusBadRequest, []byte("unable to parse end time"), w)
 			return
 		}
 		end = time.Unix(i, 0)
 
 		i, err = strconv.ParseInt(p, 10, 64)
 		if err != nil {
-			writeError(http.StatusBadRequest, w)
+			writeError(http.StatusBadRequest, []byte("unable to parse step"), w)
 			return
 		}
 		step = time.Duration(i) * time.Second
@@ -81,7 +93,7 @@ func queryRangeHandler(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	writeError(http.StatusBadRequest, w)
+	writeError(http.StatusBadRequest, []byte("missing required parameter"), w)
 }
 
 func queryHandler(w http.ResponseWriter, r *http.Request) {
@@ -97,11 +109,16 @@ func queryHandler(w http.ResponseWriter, r *http.Request) {
 
 		var i int64
 
-		tm := time.Time{}
+		tm := time.Now()
 		if t != "" {
+			j := strings.Index(t, ".")
+			if j != -1 {
+				t = t[:j]
+			}
+
 			i, err = strconv.ParseInt(t, 10, 64)
 			if err != nil {
-				writeError(http.StatusBadRequest, w)
+				writeError(http.StatusBadRequest, []byte("unable to parse time parameter"), w)
 				return
 			}
 			tm = time.Unix(i, 0)
@@ -112,10 +129,10 @@ func queryHandler(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(json))
 		return
 	}
-	writeError(http.StatusBadRequest, w)
+	writeError(http.StatusBadRequest, []byte("missing required parameter 'query'"), w)
 }
 
-func writeError(code int, w http.ResponseWriter) {
+func writeError(code int, body []byte, w http.ResponseWriter) {
 	w.WriteHeader(code)
-	w.Write([]byte{})
+	w.Write(body)
 }
