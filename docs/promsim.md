@@ -45,7 +45,7 @@ func TestPromSim(t *testing.T) {
 
 ## Behavior Modifiers
 
-PromSim's behavior can be modified in several ways, on a per-query basis, to produce a desired behavior. This is done by providing specific query label values as part of your test queries. All modifier labels are optional, and can be used together in any possible combination without conflict. Providing the same modifer label more than once in a query will result in the last instance of the modifer to be used when constructing the response values.
+PromSim's behavior can be modified in several ways, on a per-query basis, to produce a desired behavior. This is done by providing specific query label values as part of your test queries. All modifier labels are optional, and can be used together in any possible combination without conflict. Providing the same modifier label more than once in a query will result in the last instance of the modifier to be used when constructing the response values.
 
 ### Series Count
 
