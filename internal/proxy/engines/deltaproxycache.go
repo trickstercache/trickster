@@ -46,7 +46,8 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		return
 	}
 
-	OldestRetainedTimestamp := time.Now().Truncate(trq.Step).Add(-(trq.Step * cfg.ValueRetention))
+	now := time.Now()
+	OldestRetainedTimestamp := now.Truncate(trq.Step).Add(-(trq.Step * cfg.ValueRetention))
 	if trq.Extent.End.Before(OldestRetainedTimestamp) {
 		log.Debug("timerange end is too early to consider caching", log.Pairs{"OldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.ValueRetention})
 		ProxyRequest(r, w)
@@ -63,7 +64,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 
 	// this is used to determine if Fast Forward should be activated for this request
 	normalizedNow := &timeseries.TimeRangeQuery{
-		Extent: timeseries.Extent{Start: time.Unix(0, 0), End: time.Now()},
+		Extent: timeseries.Extent{Start: time.Unix(0, 0), End: now},
 		Step:   trq.Step,
 	}
 	normalizedNow.NormalizeExtent()
@@ -160,8 +161,6 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	appendLock := sync.Mutex{}
 	uncachedValueCount := 0
 
-	deltaProxyStart := time.Now()
-
 	// iterate each time range that the client needs and fetch from the upstream origin
 	for i := range missRanges {
 		wg.Add(1)
@@ -224,7 +223,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	// Merge the new delta timeseries into the cached timeseries
 	if len(mts) > 0 {
 		// on a partial hit, elapsed should record the amount of time waiting for all upstream requests to complete
-		elapsed = time.Now().Sub(deltaProxyStart)
+		elapsed = time.Now().Sub(now)
 		cts.Merge(true, mts...)
 	}
 
@@ -241,7 +240,8 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 
 	// Merge Fast Forward data if present. This must be done after the Downstream Crop since
 	// the cropped extent was normalized to stepboundaries and would remove fast forward data
-	if hasFastForwardData {
+	// If the fast forward data point is older (e.g. cached) than the last datapoint in the returned time series, it will not be merged
+	if hasFastForwardData && len(ffts.Extents()) == 1 && ffts.Extents()[0].Start.Truncate(time.Second).After(normalizedNow.Extent.End) {
 		rts.Merge(false, ffts)
 	}
 	rts.SetExtents(nil) // so they are not included in the client response json

@@ -722,8 +722,11 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 		t.Error(err)
 	}
 
-	em.Merge(false, ev)
+	if len(ev.Extents()) == 1 && len(em.Extents()) > 0 && ev.Extents()[0].Start.Truncate(time.Second).After(em.Extents()[0].End) {
+		em.Merge(false, ev)
+	}
 
+	em.SetExtents(nil)
 	b, err := client.MarshalTimeseries(em)
 	if err != nil {
 		t.Error(err)
