@@ -28,8 +28,6 @@ import (
 	tm "github.com/Comcast/trickster/internal/proxy/model"
 	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
 	"github.com/Comcast/trickster/internal/timeseries"
-
-	"github.com/prometheus/common/model"
 )
 
 // Prometheus API
@@ -37,7 +35,6 @@ const (
 	APIPath      = "/api/v1/"
 	mnQueryRange = "query_range"
 	mnQuery      = "query"
-	mnLabels     = "label/" + model.MetricNameLabel + "/values"
 	mnSeries     = "series"
 	mnHealth     = "health"
 )
