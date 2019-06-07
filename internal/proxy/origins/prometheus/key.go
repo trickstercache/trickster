@@ -14,7 +14,6 @@
 package prometheus
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 
@@ -33,7 +32,6 @@ func (c *Client) DeriveCacheKey(r *model.Request, extra string) string {
 			sort.Strings(p)
 			matchString = strings.Join(p, ",")
 		}
-		fmt.Println(r.HandlerName)
 		return md5.Checksum(r.URL.Path + params.Get(upStart) + params.Get(upEnd) + matchString + extra)
 	}
 
