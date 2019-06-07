@@ -14,7 +14,9 @@
 package timeseries
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -54,6 +56,19 @@ func CompressExtents(extents []Extent, step time.Duration) []Extent {
 
 // ExtentList is a type of []Extent used for sorting the slice
 type ExtentList []Extent
+
+// String returns a string representation of the extentlist
+// in the format startEpochSec1-endEpochSec1;startEpochSec2-endEpochSec2
+func (el ExtentList) String() string {
+	if len(el) == 0 {
+		return ""
+	}
+	lines := make([]string, 0, len(el))
+	for _, e := range el {
+		lines = append(lines, fmt.Sprintf("%d-%d", e.Start.Unix(), e.End.Unix()))
+	}
+	return strings.Join(lines, ";")
+}
 
 // Copy returns a true copy of the ExtentList
 func (el ExtentList) Copy() ExtentList {
