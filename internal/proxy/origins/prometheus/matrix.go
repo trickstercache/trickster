@@ -40,24 +40,22 @@ func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 	for _, s := range me.Data.Result {
 		meMetrics[s.Metric.String()] = s
 	}
-	if len(meMetrics) > 0 {
-		for _, ts := range collection {
-			if ts != nil {
-				me2 := ts.(*MatrixEnvelope)
-				for _, s := range me2.Data.Result {
-					name := s.Metric.String()
-					if _, ok := meMetrics[name]; !ok {
-						meMetrics[name] = s
-						me.Data.Result = append(me.Data.Result, s)
-						continue
-					}
-					meMetrics[name].Values = append(meMetrics[name].Values, s.Values...)
+	for _, ts := range collection {
+		if ts != nil {
+			me2 := ts.(*MatrixEnvelope)
+			for _, s := range me2.Data.Result {
+				name := s.Metric.String()
+				if _, ok := meMetrics[name]; !ok {
+					meMetrics[name] = s
+					me.Data.Result = append(me.Data.Result, s)
+					continue
 				}
-				me.ExtentList = append(me.ExtentList, me2.ExtentList...)
+				meMetrics[name].Values = append(meMetrics[name].Values, s.Values...)
 			}
+			me.ExtentList = append(me.ExtentList, me2.ExtentList...)
 		}
-		me.ExtentList = timeseries.CompressExtents(me.ExtentList, me.StepDuration)
 	}
+	me.ExtentList = timeseries.CompressExtents(me.ExtentList, me.StepDuration)
 	if sort {
 		me.Sort()
 	}
