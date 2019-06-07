@@ -14,6 +14,10 @@
 package prometheus
 
 import (
+	"fmt"
+	"sort"
+	"strings"
+
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/util/md5"
 )
@@ -21,5 +25,17 @@ import (
 // DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
 func (c *Client) DeriveCacheKey(r *model.Request, extra string) string {
 	params := r.URL.Query()
+
+	switch r.HandlerName {
+	case "SeriesHandler":
+		var matchString string
+		if p, ok := params[upMatch]; ok {
+			sort.Strings(p)
+			matchString = strings.Join(p, ",")
+		}
+		fmt.Println(r.HandlerName)
+		return md5.Checksum(r.URL.Path + params.Get(upStart) + params.Get(upEnd) + matchString + extra)
+	}
+
 	return md5.Checksum(r.URL.Path + params.Get(upQuery) + params.Get(upStep) + params.Get(upTime) + extra)
 }

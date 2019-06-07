@@ -59,6 +59,7 @@ const (
 	upStep    = "step"
 	upTimeout = "timeout"
 	upTime    = "time"
+	upMatch   = "match[]"
 )
 
 // Client Implements Proxy Client Interface
