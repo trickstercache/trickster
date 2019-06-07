@@ -32,11 +32,18 @@ import (
 
 // Prometheus API
 const (
-	APIPath      = "/api/v1/"
-	mnQueryRange = "query_range"
-	mnQuery      = "query"
-	mnSeries     = "series"
-	mnHealth     = "health"
+	APIPath         = "/api/v1/"
+	mnQueryRange    = "query_range"
+	mnQuery         = "query"
+	mnLabels        = "labels"
+	mnLabel         = "label"
+	mnSeries        = "series"
+	mnTargets       = "targets"
+	mnRules         = "rules"
+	mnAlerts        = "alerts"
+	mnAlertManagers = "alertmanagers"
+	mnStatus        = "status"
+	mnHealth        = "health"
 )
 
 // Origin Types
