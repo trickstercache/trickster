@@ -46,10 +46,22 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		return
 	}
 
+	// this is used to ensure the head of the cache respects the BackFill Tolerance
+	bf := timeseries.Extent{Start: time.Unix(0, 0), End: trq.Extent.End}
+	if !trq.IsOffset && cfg.BackfillTolerance > 0 {
+		bf.End = bf.End.Add(-cfg.BackfillTolerance)
+	}
+
 	now := time.Now()
 	OldestRetainedTimestamp := now.Truncate(trq.Step).Add(-(trq.Step * cfg.ValueRetention))
 	if trq.Extent.End.Before(OldestRetainedTimestamp) {
-		log.Debug("timerange end is too early to consider caching", log.Pairs{"OldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.ValueRetention})
+		log.Debug("timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.ValueRetention})
+		ProxyRequest(r, w)
+		return
+	}
+
+	if trq.Extent.Start.After(bf.End) {
+		log.Debug("timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": cfg.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
 		ProxyRequest(r, w)
 		return
 	}
@@ -68,12 +80,6 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		Step:   trq.Step,
 	}
 	normalizedNow.NormalizeExtent()
-
-	// this is used to ensure the head of the cache respects the BackFill Tolerance
-	bf := timeseries.Extent{Start: time.Unix(0, 0), End: trq.Extent.End}
-	if !trq.IsOffset && cfg.BackfillTolerance > 0 {
-		bf.End = bf.End.Add(-cfg.BackfillTolerance)
-	}
 
 	var cts timeseries.Timeseries
 	var doc *model.HTTPDocument
@@ -248,28 +254,25 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	rdata, err := client.MarshalTimeseries(rts)
 	rh := headers.CopyHeaders(doc.Headers)
 
-	wg.Add(1)
-	// Write the newly-merged object back to the cache
-	go func() {
-		defer wg.Done()
-		// Crop the Cached Object down to the Sample Age Retention Policy before storing
-		re := timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp}
-		ovc := cts.ValueCount()
-		cts = cts.Crop(re)
-		nvc := cts.ValueCount()
-		// Don't cache empty datasets, ensure there is at least 1 value
-		if cacheStatus == crHit && ovc != nvc || cacheStatus != crHit && cts.ValueCount() > 0 {
-			cdata, err := client.MarshalTimeseries(cts)
-			if err != nil {
-				return
+	switch cacheStatus {
+	case crKeyMiss, crPartialHit, crRangeMiss:
+		wg.Add(1)
+		// Write the newly-merged object back to the cache
+		go func() {
+			defer wg.Done()
+			// Crop the Cache Object down to the Sample Age Retention Policy and the Backfill Tolerance before storing to cache
+			cts = cts.Crop(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
+			// Don't cache empty datasets, ensure there is at least 1 value (e.g., all of your cached time is in the backfill tolerance)
+			if len(cts.Extents()) > 0 {
+				cdata, err := client.MarshalTimeseries(cts)
+				if err != nil {
+					return
+				}
+				doc.Body = cdata
+				WriteCache(cache, key, doc, ttl)
 			}
-			doc.Body = cdata
-			WriteCache(cache, key, doc, ttl)
-		} else if nvc == 0 {
-			// Delete the expired dataset still in the cache; it's all outside of retention as the cropped ValueCount() is 0
-			cache.Remove(key)
-		}
-	}()
+		}()
+	}
 
 	wg.Add(1)
 	go func() {
@@ -286,7 +289,6 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 func logDeltaRoutine(p log.Pairs) { log.Debug("delta routine completed", p) }
 
 func fetchTimeseries(r *model.Request, client model.Client) (timeseries.Timeseries, *model.HTTPDocument, time.Duration, error) {
-
 	body, resp, elapsed := Fetch(r)
 
 	d := &model.HTTPDocument{
@@ -307,9 +309,6 @@ func fetchTimeseries(r *model.Request, client model.Client) (timeseries.Timeseri
 		return nil, d, time.Duration(0), err
 	}
 
-	if resp.StatusCode >= 400 {
-		elapsed = 0
-	}
 	return ts, d, elapsed, nil
 }
 

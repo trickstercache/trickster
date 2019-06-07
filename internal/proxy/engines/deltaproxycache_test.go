@@ -137,6 +137,56 @@ func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 	}
 }
 
+func TestDeltaProxyCacheRequestAllItemsTooNew(t *testing.T) {
+
+	es, cfg, client, err := setupTestServer()
+	if err != nil {
+		t.Error(err)
+	}
+	defer es.Close()
+
+	cfg.FastForwardDisable = true
+	cfg.BackfillToleranceSecs = 600
+	cfg.BackfillTolerance = time.Second * time.Duration(cfg.BackfillToleranceSecs)
+
+	r := httptest.NewRequest("GET", es.URL, nil)
+
+	step := time.Duration(300) * time.Second
+	end := time.Now()
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(5) * time.Minute), End: end}
+
+	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extr.Start, extr.End, step)
+
+	u := r.URL
+	u.Path = "/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	w := httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if resp.Header.Get("status") != "" {
+		t.Errorf("status header should not be present. Found with value %s", resp.Header.Get("stattus"))
+	}
+
+}
+
 func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 
 	es, cfg, client, err := setupTestServer()
@@ -1110,7 +1160,7 @@ func TestDeltaProxyCacheRequest_BadParams(t *testing.T) {
 
 }
 
-func TestDeltaProxyCacheRequest_CacheHitUnmarshalFailed(t *testing.T) {
+func TestDeltaProxyCacheRequestCacheMissUnmarshalFailed(t *testing.T) {
 	es, cfg, client, err := setupTestServer()
 	if err != nil {
 		t.Error(err)
@@ -1143,6 +1193,27 @@ func TestDeltaProxyCacheRequest_CacheHitUnmarshalFailed(t *testing.T) {
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadRequest)
 	if err != nil {
 		t.Error(err)
+	}
+
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadPayload)
+
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	_, err = client.UnmarshalTimeseries(body)
+	if err == nil {
+		t.Errorf("expected unmarshaling error for %s", string(body))
 	}
 
 }

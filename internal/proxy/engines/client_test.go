@@ -429,6 +429,7 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 		}
 		ts.Data.Result[i] = ss
 	}
+	ts.ExtentList = nil
 	return ts
 }
 
