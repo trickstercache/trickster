@@ -15,6 +15,8 @@ package prometheus
 
 import (
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/model"
@@ -23,6 +25,16 @@ import (
 // QueryHandler handles calls to /query (for instantaneous values)
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
+
+	params := r.URL.Query()
+
+	// Round time param down to the nearest 15 seconds if it exists
+	if p := params.Get(upTime); p != "" {
+		if i, err := strconv.ParseInt(p, 10, 64); err == nil {
+			params.Set(upTime, strconv.FormatInt(time.Unix(i, 0).Truncate(time.Second*time.Duration(15)).Unix(), 10))
+		}
+	}
+
 	engines.ObjectProxyCacheRequest(
 		model.NewRequest(c.name, otPrometheus, "QueryHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
 		w, c, c.cache, c.cache.Configuration().ObjectTTL, false, false)
