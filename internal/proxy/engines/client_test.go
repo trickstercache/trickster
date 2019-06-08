@@ -483,13 +483,6 @@ func (me *MatrixEnvelope) SetExtents(extents timeseries.ExtentList) {
 
 // Extents returns the Timeseries's ExentList
 func (me *MatrixEnvelope) Extents() timeseries.ExtentList {
-	if me.ExtentList == nil {
-		fmt.Println("NIL EXTENTLIST ahhh")
-	}
-	if len(me.ExtentList) == 0 {
-		fmt.Println("Gotta Call Extremes")
-		me.Extremes()
-	}
 	return timeseries.ExtentList(me.ExtentList)
 }
 
@@ -505,31 +498,6 @@ func (me *MatrixEnvelope) ValueCount() int {
 		c += len(me.Data.Result[i].Values)
 	}
 	return c
-}
-
-// Extremes returns the absolute start end times of a Timeseries, without respect to uncached gaps
-func (me *MatrixEnvelope) Extremes() []timeseries.Extent {
-	fmt.Println("CALLING EXTREMES WHY")
-	r := me.Data.Result
-	stamps := map[model.Time]bool{}
-	// Get unique timestamps
-	for s := range r {
-		for v := range r[s].Values {
-			stamps[r[s].Values[v].Timestamp] = true
-		}
-	}
-	var keys Times
-	// Sort the timestamps
-	if len(stamps) > 0 {
-		keys = make(Times, 0, len(stamps))
-		for k := range stamps {
-			keys = append(keys, k)
-		}
-		sort.Sort(keys)
-		me.ExtentList = []timeseries.Extent{timeseries.Extent{Start: keys[0].Time(), End: keys[len(keys)-1].Time()}}
-	}
-	fmt.Println(me.ExtentList)
-	return me.ExtentList
 }
 
 // methods required for sorting Prometheus model.Times

@@ -208,7 +208,6 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 					return
 				}
 				ffts.SetStep(trq.Step)
-				fmt.Println("calling ffts extents")
 				x := ffts.Extents()
 				if isHit {
 					ffStatus = "hit"
