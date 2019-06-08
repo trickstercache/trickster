@@ -117,7 +117,7 @@ func TestMerge(t *testing.T) {
 	tests := []struct {
 		a, b, merged *MatrixEnvelope
 	}{
-		// Series that adhere to rule
+		// Run 0: Series that adhere to rule
 		{
 			a: &MatrixEnvelope{
 				Status: rvSuccess,
@@ -132,6 +132,10 @@ func TestMerge(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(10000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
 			},
 			b: &MatrixEnvelope{
 				Status: rvSuccess,
@@ -141,12 +145,17 @@ func TestMerge(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "a"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 1000, Value: 1.5},
 								model.SamplePair{Timestamp: 5000, Value: 1.5},
+								model.SamplePair{Timestamp: 15000, Value: 1.5},
 							},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(5000, 0), End: time.Unix(5000, 0)},
+					timeseries.Extent{Start: time.Unix(15000, 0), End: time.Unix(15000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
 			},
 			merged: &MatrixEnvelope{
 				Status: rvSuccess,
@@ -156,16 +165,20 @@ func TestMerge(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "a"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 1000, Value: 1.5},
 								model.SamplePair{Timestamp: 5000, Value: 1.5},
 								model.SamplePair{Timestamp: 10000, Value: 1.5},
+								model.SamplePair{Timestamp: 15000, Value: 1.5},
 							},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(5000, 0), End: time.Unix(15000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
 			},
 		},
-		// Empty second series
+		// Run 1: Empty second series
 		{
 			a: &MatrixEnvelope{
 				Status: rvSuccess,
@@ -175,11 +188,15 @@ func TestMerge(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "b"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 10000, Value: 1.5},
+								model.SamplePair{Timestamp: 10000000, Value: 1.5},
 							},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(10000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
 			},
 			b: &MatrixEnvelope{
 				Status: rvSuccess,
@@ -192,6 +209,8 @@ func TestMerge(t *testing.T) {
 						},
 					},
 				},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: time.Duration(5000) * time.Second,
 			},
 			merged: &MatrixEnvelope{
 				Status: rvSuccess,
@@ -201,20 +220,86 @@ func TestMerge(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "b"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 10000, Value: 1.5},
+								model.SamplePair{Timestamp: 10000000, Value: 1.5},
 							},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(10000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
+			},
+		},
+		// Run 2: second series has new metric
+		{
+			a: &MatrixEnvelope{
+				Status: rvSuccess,
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(10000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
+			},
+			b: &MatrixEnvelope{
+				Status: rvSuccess,
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "c"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(15000, 0), End: time.Unix(15000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
+			},
+			merged: &MatrixEnvelope{
+				Status: rvSuccess,
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "c"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(15000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
 			},
 		},
 	}
-
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			test.a.Merge(true, test.b)
 			if !reflect.DeepEqual(test.merged, test.a) {
-				t.Fatalf("Mismatch\nactual=%v\nexpected=%v", test.a, test.merged)
+				t.Errorf("mismatch\nactual=%v\nexpected=%v", test.a, test.merged)
 			}
 		})
 	}
@@ -224,7 +309,7 @@ func TestCrop(t *testing.T) {
 		before, after *MatrixEnvelope
 		extent        timeseries.Extent
 	}{
-		// Case where the very first element in the matrix has a timestamp matching the extent's end
+		// Run 0: Case where the very first element in the matrix has a timestamp matching the extent's end
 		{
 			before: &MatrixEnvelope{
 				Data: MatrixData{
@@ -257,7 +342,7 @@ func TestCrop(t *testing.T) {
 				End:   time.Unix(1644004600, 0),
 			},
 		},
-		// Case where we trim nothing
+		// Run 1: Case where we trim nothing
 		{
 			before: &MatrixEnvelope{
 				Data: MatrixData{
@@ -290,7 +375,7 @@ func TestCrop(t *testing.T) {
 				End:   time.Unix(1644004600, 0),
 			},
 		},
-		// Case where we trim everything (all data is too late)
+		// Run 2: Case where we trim everything (all data is too late)
 		{
 			before: &MatrixEnvelope{
 				Data: MatrixData{
@@ -304,19 +389,25 @@ func TestCrop(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
+				},
+				StepDuration: time.Duration(10) * time.Second,
 			},
 			after: &MatrixEnvelope{
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result:     model.Matrix{},
 				},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: time.Duration(10) * time.Second,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(0, 0),
 				End:   time.Unix(10, 0),
 			},
 		},
-		// Case where we trim everything (all data is too early)
+		// Run 3: Case where we trim everything (all data is too early)
 		{
 			before: &MatrixEnvelope{
 				Data: MatrixData{
@@ -330,19 +421,25 @@ func TestCrop(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(100, 0)},
+				},
+				StepDuration: time.Duration(10) * time.Second,
 			},
 			after: &MatrixEnvelope{
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result:     model.Matrix{},
 				},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: time.Duration(10) * time.Second,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(10000, 0),
 				End:   time.Unix(20000, 0),
 			},
 		},
-		// Case where we trim some off the beginning
+		// Run 4: Case where we trim some off the beginning
 		{
 			before: &MatrixEnvelope{
 				Data: MatrixData{
@@ -351,13 +448,17 @@ func TestCrop(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "d"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 99000, Value: 1.5},
-								model.SamplePair{Timestamp: 199000, Value: 1.5},
-								model.SamplePair{Timestamp: 299000, Value: 1.5},
+								model.SamplePair{Timestamp: 100000, Value: 1.5},
+								model.SamplePair{Timestamp: 200000, Value: 1.5},
+								model.SamplePair{Timestamp: 300000, Value: 1.5},
 							},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
 			},
 			after: &MatrixEnvelope{
 				Data: MatrixData{
@@ -366,89 +467,109 @@ func TestCrop(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "d"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 299000, Value: 1.5},
+								model.SamplePair{Timestamp: 300000, Value: 1.5},
 							},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(300, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(300, 0),
+				End:   time.Unix(400, 0),
+			},
+		},
+		// Run 5: Case where we trim some off the ends
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "e"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 100000, Value: 1.5},
+								model.SamplePair{Timestamp: 200000, Value: 1.5},
+								model.SamplePair{Timestamp: 300000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "e"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 200000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(200, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(200, 0),
+				End:   time.Unix(200, 0),
+			},
+		},
+		// Run 6: Case where the last datapoint is on the Crop extent
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "f"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 100000, Value: 1.5},
+								model.SamplePair{Timestamp: 200000, Value: 1.5},
+								model.SamplePair{Timestamp: 300000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "f"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 200000, Value: 1.5},
+								model.SamplePair{Timestamp: 300000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(200, 0),
 				End:   time.Unix(300, 0),
 			},
 		},
-		// Case where we trim some off the ends
-		{
-			before: &MatrixEnvelope{
-				Data: MatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "e"},
-							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 99000, Value: 1.5},
-								model.SamplePair{Timestamp: 199000, Value: 1.5},
-								model.SamplePair{Timestamp: 299000, Value: 1.5},
-							},
-						},
-					},
-				},
-			},
-			after: &MatrixEnvelope{
-				Data: MatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "e"},
-							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 199000, Value: 1.5},
-							},
-						},
-					},
-				},
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(100, 0),
-				End:   time.Unix(200, 0),
-			},
-		},
-		// Case where the last datapoint is on the Crop extent
-		{
-			before: &MatrixEnvelope{
-				Data: MatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "f"},
-							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 99000, Value: 1.5},
-								model.SamplePair{Timestamp: 199000, Value: 1.5},
-								model.SamplePair{Timestamp: 299000, Value: 1.5},
-							},
-						},
-					},
-				},
-			},
-			after: &MatrixEnvelope{
-				Data: MatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "f"},
-							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 199000, Value: 1.5},
-								model.SamplePair{Timestamp: 299000, Value: 1.5},
-							},
-						},
-					},
-				},
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(100, 0),
-				End:   time.Unix(299, 0),
-			},
-		},
-		// Case where we aren't given any datapoints
+		// Run 7: Case where we aren't given any datapoints
 		{
 			before: &MatrixEnvelope{
 				Data: MatrixData{
@@ -460,12 +581,16 @@ func TestCrop(t *testing.T) {
 						},
 					},
 				},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: time.Duration(100) * time.Second,
 			},
 			after: &MatrixEnvelope{
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result:     model.Matrix{},
 				},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: time.Duration(100) * time.Second,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(200, 0),
@@ -473,7 +598,7 @@ func TestCrop(t *testing.T) {
 			},
 		},
 
-		// Case where we have more series than points
+		// Run 8: Case where we have more series than points
 		{
 			before: &MatrixEnvelope{
 				Data: MatrixData{
@@ -481,48 +606,26 @@ func TestCrop(t *testing.T) {
 					Result: model.Matrix{
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "h"},
-							Values: []model.SamplePair{model.SamplePair{Timestamp: 99000, Value: 1.5}},
+							Values: []model.SamplePair{model.SamplePair{Timestamp: 100000, Value: 1.5}},
 						},
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "h"},
-							Values: []model.SamplePair{model.SamplePair{Timestamp: 99000, Value: 1.5}},
+							Values: []model.SamplePair{model.SamplePair{Timestamp: 100000, Value: 1.5}},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(100, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
 			},
 			after: &MatrixEnvelope{
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result:     model.Matrix{},
 				},
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(200, 0),
-				End:   time.Unix(300, 0),
-			},
-		},
-		// Case where we have more series than points
-		{
-			before: &MatrixEnvelope{
-				Data: MatrixData{
-					ResultType: "matrix",
-					Result: model.Matrix{
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "h"},
-							Values: []model.SamplePair{model.SamplePair{Timestamp: 99000, Value: 1.5}},
-						},
-						&model.SampleStream{
-							Metric: model.Metric{"__name__": "h"},
-							Values: []model.SamplePair{model.SamplePair{Timestamp: 99000, Value: 1.5}},
-						},
-					},
-				},
-			},
-			after: &MatrixEnvelope{
-				Data: MatrixData{
-					ResultType: "matrix",
-					Result:     model.Matrix{},
-				},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: time.Duration(100) * time.Second,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(200, 0),
@@ -533,12 +636,79 @@ func TestCrop(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			result := test.before.Crop(test.extent).(*MatrixEnvelope)
-			if !reflect.DeepEqual(result, test.after) {
-				t.Fatalf("mismatch\nexpected=%v\nactual=%v", test.after, result)
+			test.before.Crop(test.extent)
+			if !reflect.DeepEqual(test.before, test.after) {
+				t.Errorf("mismatch\nexpected=%v\ngot=%v", test.after, test.before)
 			}
 		})
 	}
+}
+
+func TestCopy(t *testing.T) {
+
+	tests := []struct {
+		before *MatrixEnvelope
+	}{
+		// Run 0
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 1644001200000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1644001200, 0), End: time.Unix(1644001200, 0)},
+				},
+				StepDuration: time.Duration(3600) * time.Second,
+			},
+		},
+
+		// Run 1
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 1644001200000, Value: 1.5},
+							},
+						},
+
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 1644001200000, Value: 1.5},
+								model.SamplePair{Timestamp: 1644004800000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1644001200, 0), End: time.Unix(1644004800, 0)},
+				},
+				StepDuration: time.Duration(3600) * time.Second,
+			},
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			after := test.before.Copy()
+			if !reflect.DeepEqual(test.before, after) {
+				t.Errorf("mismatch\nexpected %v\ngot      %v", test.before, after)
+			}
+		})
+	}
+
 }
 
 func TestSort(t *testing.T) {
@@ -624,7 +794,7 @@ func TestSort(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			test.before.Sort()
 			if !reflect.DeepEqual(test.before, test.after) {
-				t.Fatalf("mismatch\nexpected=%v\nactual=%v", test.after, test.before)
+				t.Errorf("mismatch\nexpected=%v\nactual=%v", test.after, test.before)
 			}
 		})
 	}
@@ -643,28 +813,6 @@ func TestExtents(t *testing.T) {
 	me := &MatrixEnvelope{}
 	ex := timeseries.ExtentList{timeseries.Extent{Start: time.Time{}, End: time.Time{}}}
 	me.SetExtents(ex)
-	e := me.Extents()
-	if len(e) != 1 {
-		t.Errorf(`expected 1. got %d`, len(me.ExtentList))
-	}
-}
-
-func TestExtremes(t *testing.T) {
-	me := &MatrixEnvelope{
-		Data: MatrixData{
-			ResultType: "matrix",
-			Result: model.Matrix{
-				&model.SampleStream{
-					Metric: model.Metric{"__name__": "d"},
-					Values: []model.SamplePair{
-						model.SamplePair{Timestamp: 99000, Value: 1.5},
-						model.SamplePair{Timestamp: 199000, Value: 1.5},
-						model.SamplePair{Timestamp: 299000, Value: 1.5},
-					},
-				},
-			},
-		},
-	}
 	e := me.Extents()
 	if len(e) != 1 {
 		t.Errorf(`expected 1. got %d`, len(me.ExtentList))

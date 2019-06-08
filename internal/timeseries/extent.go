@@ -26,18 +26,80 @@ type Extent struct {
 	End   time.Time `json:"end"`
 }
 
-// CompressExtents takes an []Extent slice, sorts it, and returns a version with
-// any time-adjacent Extents merged into a single element in the slice
-func CompressExtents(extents []Extent, step time.Duration) []Extent {
+// Includes returns true if the Extent includes the provided Time
+func (e *Extent) Includes(t time.Time) bool {
+	return !t.Before(e.Start) && !t.After(e.End)
+}
 
-	if len(extents) == 0 {
-		return extents
+// StartsAt returns true if the t is equal to the Extent's start time
+func (e *Extent) StartsAt(t time.Time) bool {
+	return t == e.Start
+}
+
+// EndsAt returns true if the t is equal to the Extent's end time
+func (e *Extent) EndsAt(t time.Time) bool {
+	return t == e.End
+}
+
+// After returns true if the range of the Extent is completely after the provided time
+func (e *Extent) After(t time.Time) bool {
+	return t.Before(e.Start)
+}
+
+// Crop ...
+func (el ExtentList) Crop(e Extent) ExtentList {
+
+	var startIndex = -1
+	var endIndex = -1
+
+	for i, f := range el {
+		if startIndex == -1 {
+			if f.Includes(e.Start) {
+				if !f.StartsAt(e.Start) {
+					el[i].Start = e.Start
+				}
+				startIndex = i
+			} else if f.After(e.Start) && !f.After(e.End) {
+				startIndex = i
+			} else if f.After(e.Start) && f.After(e.End) {
+				return make(ExtentList, 0, 0)
+			}
+		}
+		if endIndex == -1 {
+			if f.Includes(e.End) {
+				if !f.EndsAt(e.End) {
+					el[i].End = e.End
+				}
+				endIndex = i
+			}
+		}
+	}
+
+	if startIndex != -1 {
+		if endIndex == -1 {
+			endIndex = len(el) - 1
+		}
+		endIndex++
+		if endIndex >= startIndex {
+			return el[startIndex:endIndex]
+		}
+	}
+
+	return make(ExtentList, 0, 0)
+}
+
+// Compress sorts an ExtentList and merges time-adjacent Extents so that the total extent of
+// data is accurately represented in as few Extents as possible
+func (el ExtentList) Compress(step time.Duration) ExtentList {
+
+	exc := ExtentList(el).Copy()
+	if len(el) == 0 {
+		return exc
 	}
 
 	var notime time.Time
-	l := len(extents)
-	exc := ExtentList(extents).Copy()
-	compressed := make([]Extent, 0, l)
+	l := len(el)
+	compressed := make(ExtentList, 0, l)
 	sort.Sort(exc)
 	e := Extent{}
 	for i := range exc {
@@ -80,17 +142,17 @@ func (el ExtentList) Copy() ExtentList {
 	return c
 }
 
-// Len returns the length of an array of type []Extent
+// Len returns the length of an array of type ExtentList
 func (el ExtentList) Len() int {
 	return len(el)
 }
 
-// Less returns true if element i in the []Extent comes before j
+// Less returns true if element i in the ExtentList comes before j
 func (el ExtentList) Less(i, j int) bool {
 	return el[i].Start.Before(el[j].Start)
 }
 
-// Swap modifies an []Extent by swapping the values in indexes i and j
+// Swap modifies an ExtentList by swapping the values in indexes i and j
 func (el ExtentList) Swap(i, j int) {
 	el[i], el[j] = el[j], el[i]
 }

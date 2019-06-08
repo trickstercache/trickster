@@ -18,9 +18,9 @@ import "time"
 // Timeseries represents a Response Object from a Timeseries Database
 type Timeseries interface {
 	// SetExtents sets the Extents of the Timeseries
-	SetExtents([]Extent)
+	SetExtents(ExtentList)
 	// Extents should return the list of time Extents having data present in the Timeseries
-	Extents() []Extent
+	Extents() ExtentList
 	// Step should return the Step Interval of the Timeseries
 	Step() time.Duration
 	// SetStep should update the Step Interval of the Timeseries
@@ -32,7 +32,7 @@ type Timeseries interface {
 	// Copy should returns an exact duplicate source the Timeseries
 	Copy() Timeseries
 	// Crop should return a cropped copy of the Timeseries, leaving the original unchanged
-	Crop(Extent) Timeseries
+	Crop(Extent)
 	// SeriesCount returns the number of individual Series in the Timeseries object
 	SeriesCount() int
 	// ValueCount returns the count of all values across all Series in the Timeseries object

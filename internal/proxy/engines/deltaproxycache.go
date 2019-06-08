@@ -123,21 +123,14 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		}
 	}
 
-	// On the first load from cache, tell the Cached Timeseries its step
-	if cts.Step() == 0 {
-		cts.SetStep(trq.Step)
-	}
-
 	// Find the ranges that we want, but which are not currently cached
 	var missRanges []timeseries.Extent
 	if cacheStatus == crPartialHit {
 		missRanges = trq.CalculateDeltas(cts.Extents())
 	}
 
-	if len(missRanges) == 0 {
-		if cacheStatus == crPartialHit {
-			cacheStatus = crHit
-		}
+	if len(missRanges) == 0 && cacheStatus == crPartialHit {
+		cacheStatus = crHit
 	} else if len(missRanges) == 1 && missRanges[0].Start == trq.Extent.Start && missRanges[0].End == trq.Extent.End {
 		cacheStatus = crRangeMiss
 	}
@@ -214,6 +207,8 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 					log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
 					return
 				}
+				ffts.SetStep(trq.Step)
+				fmt.Println("calling ffts extents")
 				x := ffts.Extents()
 				if isHit {
 					ffStatus = "hit"
@@ -236,7 +231,10 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		cts.Merge(true, mts...)
 	}
 
-	rts := cts.Crop(trq.Extent)
+	rts := cts.Copy()
+	if cacheStatus != crKeyMiss {
+		rts.Crop(trq.Extent)
+	}
 	cachedValueCount := rts.ValueCount() - uncachedValueCount
 
 	if uncachedValueCount > 0 {
@@ -254,6 +252,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		rts.Merge(false, ffts)
 	}
 	rts.SetExtents(nil) // so they are not included in the client response json
+	rts.SetStep(0)
 	rdata, err := client.MarshalTimeseries(rts)
 	rh := headers.CopyHeaders(doc.Headers)
 
@@ -264,9 +263,9 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		go func() {
 			defer wg.Done()
 			// Crop the Cache Object down to the Sample Age Retention Policy and the Backfill Tolerance before storing to cache
-			cts = cts.Crop(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
+			cts.Crop(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
 			// Don't cache empty datasets, ensure there is at least 1 value (e.g., all of your cached time is in the backfill tolerance)
-			if len(cts.Extents()) > 0 {
+			if cts.ValueCount() > 0 {
 				cdata, err := client.MarshalTimeseries(cts)
 				if err != nil {
 					return
@@ -311,6 +310,9 @@ func fetchTimeseries(r *model.Request, client model.Client) (timeseries.Timeseri
 		log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
 		return nil, d, time.Duration(0), err
 	}
+
+	ts.SetExtents([]timeseries.Extent{r.TimeRangeQuery.Extent})
+	ts.SetStep(r.TimeRangeQuery.Step)
 
 	return ts, d, elapsed, nil
 }

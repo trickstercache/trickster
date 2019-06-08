@@ -55,8 +55,8 @@ func setupTestServer() (*httptest.Server, *config.OriginConfig, *PromTestClient,
 		return nil, nil, nil, err
 	}
 
-	client := &PromTestClient{config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
-	cfg := client.Configuration()
+	cfg := config.Origins["default"]
+	client := &PromTestClient{config: cfg, cache: cache, webClient: tu.NewTestWebClient()}
 
 	return es, cfg, client, nil
 }
@@ -185,6 +185,12 @@ func TestDeltaProxyCacheRequestAllItemsTooNew(t *testing.T) {
 		t.Errorf("status header should not be present. Found with value %s", resp.Header.Get("stattus"))
 	}
 
+	// ensure the request was sent through the proxy instead of the DeltaProxyCache
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"engine": "HTTPProxy"})
+	if err != nil {
+		t.Error(err)
+	}
+
 }
 
 func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
@@ -240,7 +246,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 
 	cfg.ValueRetention = 10
 
-	extr = timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: time.Now()}
+	extr = timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: now}
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	w = httptest.NewRecorder()
@@ -610,7 +616,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	cfg.FastForwardDisable = true
 	r := httptest.NewRequest("GET", es.URL, nil)
 
-	step := time.Duration(300) * time.Second
+	step := time.Duration(3600) * time.Second
 
 	now := time.Now()
 	end := now.Add(-time.Duration(12) * time.Hour)
@@ -695,9 +701,9 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 
 	// Test Range Miss High End
 
-	extr.Start = extr.End.Add(time.Duration(2) * time.Hour)
+	extr.Start = now.Add(time.Duration(-10) * time.Hour)
 	extn.Start = extr.Start.Truncate(step)
-	extr.End = extr.Start.Add(time.Duration(1) * time.Hour)
+	extr.End = now.Add(time.Duration(-8) * time.Hour)
 	extn.End = extr.End.Truncate(step)
 
 	expectedFetched = fmt.Sprintf("[%d:%d", extn.Start.Unix(), extn.End.Unix())
@@ -760,22 +766,33 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
+	fmt.Println("------- 1")
 	expectedMatrix, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 	em, err := client.UnmarshalTimeseries([]byte(expectedMatrix))
 	if err != nil {
 		t.Error(err)
 	}
+	em.SetExtents(timeseries.ExtentList{extn})
 
+	fmt.Println("------- 2")
 	expectedVector, _, _ := promsim.GetInstantData(queryReturnsOKNoLatency, client.fftime)
 	ev, err := client.UnmarshalInstantaneous([]byte(expectedVector))
 	if err != nil {
 		t.Error(err)
 	}
+	ev.SetStep(step)
 
+	fmt.Println("------- 2a")
+
+	ev.Extents()
+
+	fmt.Println("------- 3")
 	if len(ev.Extents()) == 1 && len(em.Extents()) > 0 && ev.Extents()[0].Start.Truncate(time.Second).After(em.Extents()[0].End) {
+		fmt.Println("merging fake ff")
 		em.Merge(false, ev)
 	}
 
+	fmt.Println("------- 4")
 	em.SetExtents(nil)
 	b, err := client.MarshalTimeseries(em)
 	if err != nil {
@@ -783,6 +800,8 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	}
 
 	expected := string(b)
+
+	fmt.Println("------- 5")
 
 	w := httptest.NewRecorder()
 	client.QueryRangeHandler(w, r)
@@ -814,6 +833,8 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	}
 
 	// do it again and look for a cache hit on the timeseries and fast forward
+
+	fmt.Println("------- 6")
 
 	w = httptest.NewRecorder()
 	client.QueryRangeHandler(w, r)
@@ -851,6 +872,8 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadPayload)
 
+	fmt.Println("------- 7")
+
 	w = httptest.NewRecorder()
 	client.QueryRangeHandler(w, r)
 	resp = w.Result()
@@ -870,6 +893,8 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	client.cache.Remove(key)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadRequest)
+
+	fmt.Println("------- 8")
 
 	w = httptest.NewRecorder()
 	client.QueryRangeHandler(w, r)

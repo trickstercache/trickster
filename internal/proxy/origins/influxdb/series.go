@@ -34,13 +34,13 @@ const (
 )
 
 // SetExtents overwrites a Timeseries's known extents with the provided extent list
-func (se *SeriesEnvelope) SetExtents(extents []timeseries.Extent) {
-	se.ExtentList = make([]timeseries.Extent, len(extents))
+func (se *SeriesEnvelope) SetExtents(extents timeseries.ExtentList) {
+	se.ExtentList = make(timeseries.ExtentList, len(extents))
 	copy(se.ExtentList, extents)
 }
 
 // Extremes returns the absolute start end times of a Timeseries, without respect to uncached gaps
-func (se *SeriesEnvelope) Extremes() []timeseries.Extent {
+func (se *SeriesEnvelope) Extremes() timeseries.ExtentList {
 
 	// Bail if the results are empty
 	if len(se.Results) == 0 || len(se.Results[0].Series) == 0 {
@@ -75,12 +75,12 @@ func (se *SeriesEnvelope) Extremes() []timeseries.Extent {
 			min = times[i]
 		}
 	}
-	se.ExtentList = []timeseries.Extent{timeseries.Extent{Start: time.Unix(min/milliSecondValue, (min%milliSecondValue)*(int64(minimumTick))), End: time.Unix(max/milliSecondValue, (max%milliSecondValue)*(int64(minimumTick)))}}
+	se.ExtentList = timeseries.ExtentList{timeseries.Extent{Start: time.Unix(min/milliSecondValue, (min%milliSecondValue)*(int64(minimumTick))), End: time.Unix(max/milliSecondValue, (max%milliSecondValue)*(int64(minimumTick)))}}
 	return se.ExtentList
 }
 
 // Extents returns the Timeseries's ExentList
-func (se *SeriesEnvelope) Extents() []timeseries.Extent {
+func (se *SeriesEnvelope) Extents() timeseries.ExtentList {
 	if len(se.ExtentList) == 0 {
 		return se.Extremes()
 	}
@@ -158,8 +158,7 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 		}
 	}
 
-	se.ExtentList = timeseries.CompressExtents(se.ExtentList, se.StepDuration)
-
+	se.ExtentList = se.ExtentList.Compress(se.StepDuration)
 	if sort {
 		se.Sort()
 	}
@@ -205,10 +204,10 @@ func (se *SeriesEnvelope) Copy() timeseries.Timeseries {
 
 // Crop returns a copy of the base Timeseries that has been cropped down to the provided Extents.
 // Crop assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
-func (se *SeriesEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
+func (se *SeriesEnvelope) Crop(e timeseries.Extent) {
 
 	if len(se.Results) == 0 {
-		return se
+		return
 	}
 
 	ts := &SeriesEnvelope{
@@ -270,7 +269,7 @@ func (se *SeriesEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
 			}
 		}
 	}
-	return ts
+	se.ExtentList = se.ExtentList.Crop(e)
 }
 
 // Sort sorts all Values in each Series chronologically by their timestamp
