@@ -323,6 +323,10 @@ func TestCrop(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1644004600, 0), End: time.Unix(1644004600, 0)},
+				},
+				StepDuration: time.Duration(10) * time.Second,
 			},
 			after: &MatrixEnvelope{
 				Data: MatrixData{
@@ -336,6 +340,10 @@ func TestCrop(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1644004600, 0), End: time.Unix(1644004600, 0)},
+				},
+				StepDuration: time.Duration(10) * time.Second,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(0, 0),
@@ -356,6 +364,10 @@ func TestCrop(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
+				},
+				StepDuration: time.Duration(10) * time.Second,
 			},
 			after: &MatrixEnvelope{
 				Data: MatrixData{
@@ -369,6 +381,10 @@ func TestCrop(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
+				},
+				StepDuration: time.Duration(10) * time.Second,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(0, 0),

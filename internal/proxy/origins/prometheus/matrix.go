@@ -86,17 +86,26 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
 
 	x := len(me.ExtentList)
-	if x < 1 ||
-		((!me.ExtentList[0].Start.Before(e.Start)) &&
-			(!me.ExtentList[0].Start.After(e.End)) &&
-			(!me.ExtentList[x-1].End.Before(e.Start)) &&
-			(!me.ExtentList[x-1].End.After(e.End)) &&
-			(!me.ExtentList[0].Start.After(me.ExtentList[x-1].End))) {
+	// The Series has no extents, so no need to do anything
+	if x < 1 {
+		me.Data.Result = model.Matrix{}
+		me.ExtentList = timeseries.ExtentList{}
+		return
+	}
 
+	// if the extent of the series is entirely outside the extent of the crop range, return empty set and bail
+	if me.ExtentList.OutsideOf(e) {
+		me.Data.Result = model.Matrix{}
+		me.ExtentList = timeseries.ExtentList{}
+		return
+	}
+
+	// if the series extent is entirely inside the extent of the crop range, simple adjust down its ExtentList
+	if me.ExtentList.Contains(e) {
 		if me.ValueCount() == 0 {
 			me.Data.Result = model.Matrix{}
 		}
-
+		me.ExtentList = me.ExtentList.Crop(e)
 		return
 	}
 
@@ -108,7 +117,7 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
 			if t == e.End {
 				// for cases where the first element is the only qualifying element,
 				// start must be incremented or an empty response is returned
-				if j == 0 || t == e.Start {
+				if j == 0 || t == e.Start || start == -1 {
 					start = j
 				}
 				end = j + 1

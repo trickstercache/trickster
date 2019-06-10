@@ -46,6 +46,29 @@ func (e *Extent) After(t time.Time) bool {
 	return t.Before(e.Start)
 }
 
+// Contains ...
+func (el ExtentList) Contains(e Extent) bool {
+
+	x := len(el)
+	if x == 0 {
+		return false
+	}
+	return ((!el[0].Start.Before(e.Start)) &&
+		(!el[0].Start.After(e.End)) &&
+		(!el[x-1].End.Before(e.Start)) &&
+		(!el[x-1].End.After(e.End)) &&
+		(!el[0].Start.After(el[x-1].End)))
+}
+
+// OutsideOf ...
+func (el ExtentList) OutsideOf(e Extent) bool {
+	x := len(el)
+	if x == 0 {
+		return true
+	}
+	return e.After(el[x-1].End) || el[0].After(e.End)
+}
+
 // Crop ...
 func (el ExtentList) Crop(e Extent) ExtentList {
 
