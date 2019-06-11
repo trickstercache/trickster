@@ -21,6 +21,7 @@ package promsim
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -30,14 +31,15 @@ import (
 const (
 	lpRepeatableRandom = "repeatable_random"
 	lpUsageCurve       = "usage_curve"
+	secondsPerDay      = 86400
 )
 
 const (
 	mdSeriesCount  = "series_count"
 	mdLatency      = "latency_ms"
 	mdRangeLatency = "range_latency_ms"
-	mdMaxVal       = "max_val"
-	mdMinVal       = "min_val"
+	mdMaxVal       = "max_value"
+	mdMinVal       = "min_value"
 	mdSeriesID     = "series_id"
 	mdStatusCode   = "status_code"
 	mdInvalidBody  = "invalid_response_body"
@@ -231,8 +233,20 @@ func usageCurveVal(d *Modifiers, seriesIndex int, querySeed int64, t time.Time) 
 		time.Sleep(d.RangeLatency)
 	}
 
-	// TODO: implement the usage curve via trigonometric function
-	return 0
+	// Scale the max randomly if it is not index 0
+	max := d.MaxValue
+	if seriesIndex != 0 {
+		rand.Seed(int64(seriesIndex) + querySeed)
+		scale := rand.Float32()*.5 + .5
+		max = int(float32(max-d.MinValue)*scale) + d.MinValue
+	}
+	_, offset := t.Zone()
+	seconds := (t.Unix() + int64(offset)) % secondsPerDay
+	A := float64(max-d.MinValue) / 2 // Amplitude
+	B := math.Pi * 2 / secondsPerDay // Period
+	C := 4.0 * 3600.0                // Phase shift back to 8pm
+	D := A + float64(d.MinValue)     // Vertical shift
+	return int(A*math.Cos(B*(float64(seconds)+C)) + D)
 }
 
 // Calculates a number for the Query Value
