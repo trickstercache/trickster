@@ -352,30 +352,28 @@ func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 	for _, s := range me.Data.Result {
 		meMetrics[s.Metric.String()] = s
 	}
-	if len(meMetrics) > 0 {
-		for _, ts := range collection {
-			if ts != nil {
-				me2 := ts.(*MatrixEnvelope)
-				for _, s := range me2.Data.Result {
-					name := s.Metric.String()
-					if _, ok := meMetrics[name]; !ok {
-						meMetrics[name] = s
-						me.Data.Result = append(me.Data.Result, s)
-						continue
-					}
-					meMetrics[name].Values = append(meMetrics[name].Values, s.Values...)
+	for _, ts := range collection {
+		if ts != nil {
+			me2 := ts.(*MatrixEnvelope)
+			for _, s := range me2.Data.Result {
+				name := s.Metric.String()
+				if _, ok := meMetrics[name]; !ok {
+					meMetrics[name] = s
+					me.Data.Result = append(me.Data.Result, s)
+					continue
 				}
-				me.ExtentList = append(me.ExtentList, me2.ExtentList...)
+				meMetrics[name].Values = append(meMetrics[name].Values, s.Values...)
 			}
+			me.ExtentList = append(me.ExtentList, me2.ExtentList...)
 		}
-		me.ExtentList = me.ExtentList.Compress(me.StepDuration)
 	}
+	me.ExtentList = me.ExtentList.Compress(me.StepDuration)
 	if sort {
 		me.Sort()
 	}
 }
 
-// Copy returns a shallow copy of the base Timeseries
+// Copy returns a perfect copy of the base Timeseries
 func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 	resMe := &MatrixEnvelope{
 		Status: me.Status,
@@ -384,7 +382,7 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 			Result:     make([]*model.SampleStream, 0, len(me.Data.Result)),
 		},
 		StepDuration: me.StepDuration,
-		ExtentList:   make([]timeseries.Extent, len(me.ExtentList)),
+		ExtentList:   make(timeseries.ExtentList, len(me.ExtentList)),
 	}
 	copy(resMe.ExtentList, me.ExtentList)
 	for _, ss := range me.Data.Result {
@@ -395,22 +393,31 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 	return resMe
 }
 
-// Crop reduces the size of the Timeseries down to the provided extent.
+// Crop returns a copy of the base Timeseries that has been cropped down to the provided Extents.
 // Crop assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
 func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
 
 	x := len(me.ExtentList)
-	if x < 1 ||
-		((!me.ExtentList[0].Start.Before(e.Start)) &&
-			(!me.ExtentList[0].Start.After(e.End)) &&
-			(!me.ExtentList[x-1].End.Before(e.Start)) &&
-			(!me.ExtentList[x-1].End.After(e.End)) &&
-			(!me.ExtentList[0].Start.After(me.ExtentList[x-1].End))) {
+	// The Series has no extents, so no need to do anything
+	if x < 1 {
+		me.Data.Result = model.Matrix{}
+		me.ExtentList = timeseries.ExtentList{}
+		return
+	}
 
+	// if the extent of the series is entirely outside the extent of the crop range, return empty set and bail
+	if me.ExtentList.OutsideOf(e) {
+		me.Data.Result = model.Matrix{}
+		me.ExtentList = timeseries.ExtentList{}
+		return
+	}
+
+	// if the series extent is entirely inside the extent of the crop range, simple adjust down its ExtentList
+	if me.ExtentList.Contains(e) {
 		if me.ValueCount() == 0 {
 			me.Data.Result = model.Matrix{}
 		}
-
+		me.ExtentList = me.ExtentList.Crop(e)
 		return
 	}
 
@@ -422,7 +429,7 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
 			if t == e.End {
 				// for cases where the first element is the only qualifying element,
 				// start must be incremented or an empty response is returned
-				if j == 0 || t == e.Start {
+				if j == 0 || t == e.Start || start == -1 {
 					start = j
 				}
 				end = j + 1
