@@ -134,11 +134,11 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
 				start = j
 			}
 		}
-		if start != -1 {
+		if start != -1 && len(s.Values) > 0 {
 			if end == -1 {
 				end = len(s.Values)
 			}
-			me.Data.Result[i].Values = me.Data.Result[i].Values[start:end]
+			me.Data.Result[i].Values = s.Values[start:end]
 		} else {
 			if i < len(me.Data.Result) {
 				me.Data.Result = append(me.Data.Result[:i], me.Data.Result[i+1:]...)
