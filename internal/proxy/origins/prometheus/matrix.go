@@ -114,10 +114,10 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
 		end := -1
 		for j, val := range s.Values {
 			t := val.Timestamp.Time()
-			if t == e.End {
+			if t.Equal(e.End) {
 				// for cases where the first element is the only qualifying element,
 				// start must be incremented or an empty response is returned
-				if j == 0 || t == e.Start || start == -1 {
+				if j == 0 || t.Equal(e.Start) || start == -1 {
 					start = j
 				}
 				end = j + 1
@@ -130,7 +130,7 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
 			if t.Before(e.Start) {
 				continue
 			}
-			if start == -1 && (t == e.Start || (e.End.After(t) && t.After(e.Start))) {
+			if start == -1 && (t.Equal(e.Start) || (e.End.After(t) && t.After(e.Start))) {
 				start = j
 			}
 		}
