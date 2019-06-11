@@ -51,6 +51,31 @@ func TestQueryRangeHandler(t *testing.T) {
 	}
 }
 
+func TestQueryRangeHandlerFloatTime(t *testing.T) {
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/query_range?query=up&start=0.000&end=30.456&step=15", nil)
+	queryRangeHandler(w, r)
+
+	resp := w.Result()
+
+	// it should return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	const expected = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"series_id":"0"},"values":[[0,"29"],[15,"81"],[30,"23"]]}]}}`
+
+	if string(bodyBytes) != expected {
+		t.Errorf("expected %s got %s", expected, bodyBytes)
+	}
+}
+
 func TestQueryRangeHandlerMissingParam(t *testing.T) {
 
 	w := httptest.NewRecorder()
@@ -126,6 +151,31 @@ func TestQueryHandler(t *testing.T) {
 	}
 
 	const expected = `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"series_id":"0"},"value":[0,"29"]}]}}`
+
+	if string(bodyBytes) != expected {
+		t.Errorf("expected %s got %s", expected, bodyBytes)
+	}
+}
+
+func TestQueryHandlerFloatTime(t *testing.T) {
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/query?query=up&time=30.456", nil)
+	queryHandler(w, r)
+
+	resp := w.Result()
+
+	// it should return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	const expected = `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"series_id":"0"},"value":[30,"23"]}]}}`
 
 	if string(bodyBytes) != expected {
 		t.Errorf("expected %s got %s", expected, bodyBytes)

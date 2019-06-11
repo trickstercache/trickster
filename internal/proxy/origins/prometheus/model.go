@@ -35,11 +35,11 @@ type VectorData struct {
 
 // MatrixEnvelope represents a Matrix response object from the Prometheus HTTP API
 type MatrixEnvelope struct {
-	Status       string              `json:"status"`
-	Data         MatrixData          `json:"data"`
-	ExtentList   []timeseries.Extent `json:"extents,omitempty"`
-	Gaps         []timeseries.Extent `json:"gaps,omitempty"`
-	StepDuration time.Duration       `json:"step,omitempty"`
+	Status     string                `json:"status"`
+	Data       MatrixData            `json:"data"`
+	ExtentList timeseries.ExtentList `json:"extents,omitempty"`
+	//Gaps         []timeseries.Extent `json:"gaps,omitempty"`
+	StepDuration time.Duration `json:"step,omitempty"`
 }
 
 // MatrixData represents the Data body of a Matrix response object from the Prometheus HTTP API
@@ -79,9 +79,13 @@ func (ve *VectorEnvelope) ToMatrix() *MatrixEnvelope {
 		ResultType: "matrix",
 		Result:     make(model.Matrix, 0, len(ve.Data.Result)),
 	}
+
+	var ts time.Time
 	for _, v := range ve.Data.Result {
 		v.Timestamp = model.TimeFromUnix(v.Timestamp.Unix()) // Round to nearest Second
+		ts = v.Timestamp.Time()
 		me.Data.Result = append(me.Data.Result, &model.SampleStream{Metric: v.Metric, Values: []model.SamplePair{model.SamplePair{Timestamp: v.Timestamp, Value: v.Value}}})
 	}
+	me.ExtentList = timeseries.ExtentList{timeseries.Extent{Start: ts, End: ts}}
 	return me
 }

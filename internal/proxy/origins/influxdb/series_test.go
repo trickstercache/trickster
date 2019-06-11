@@ -43,31 +43,6 @@ func TestExtents(t *testing.T) {
 	}
 }
 
-func TestExtremes(t *testing.T) {
-	se := &SeriesEnvelope{
-		Results: []Result{
-			Result{
-				Series: []models.Row{
-					models.Row{
-						Name:    "a",
-						Columns: []string{"time", "units"},
-						Tags:    map[string]string{"tagName1": "tagValue1"},
-						Values: [][]interface{}{
-							[]interface{}{float64(1000), 1.5},
-							[]interface{}{float64(5000), 1.5},
-							[]interface{}{float64(10000), 1.5},
-						},
-					},
-				},
-			},
-		},
-	}
-	e := se.Extents()
-	if len(e) != 1 {
-		t.Errorf(`expected 1. got %d`, len(se.ExtentList))
-	}
-}
-
 func TestCopy(t *testing.T) {
 	se := &SeriesEnvelope{
 		Results: []Result{
@@ -201,12 +176,16 @@ func TestMerge(t *testing.T) {
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(10000), 1.5},
+									[]interface{}{float64(15000), 1.5},
 								},
 							},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(15, 0), End: time.Unix(15, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			b: &SeriesEnvelope{
 				Results: []Result{
@@ -217,13 +196,17 @@ func TestMerge(t *testing.T) {
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(1000), 1.5},
 									[]interface{}{float64(5000), 1.5},
+									[]interface{}{float64(10000), 1.5},
 								},
 							},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(10, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			merged: &SeriesEnvelope{
 				Results: []Result{
@@ -234,14 +217,18 @@ func TestMerge(t *testing.T) {
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(1000), 1.5},
 									[]interface{}{float64(5000), 1.5},
 									[]interface{}{float64(10000), 1.5},
+									[]interface{}{float64(15000), 1.5},
 								},
 							},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(15, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 		},
 
@@ -262,6 +249,10 @@ func TestMerge(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10, 0), End: time.Unix(10, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			b: &SeriesEnvelope{
 				Results: []Result{
@@ -276,6 +267,10 @@ func TestMerge(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10, 0), End: time.Unix(10, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			merged: &SeriesEnvelope{
 				Results: []Result{
@@ -292,6 +287,10 @@ func TestMerge(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10, 0), End: time.Unix(10, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 		},
 	}
@@ -312,7 +311,7 @@ func TestCrop(t *testing.T) {
 		extent        timeseries.Extent
 	}{
 		// Case where the very first element in the matrix has a timestamp matching the extent's end
-		{
+		{ // Run 0
 			before: &SeriesEnvelope{
 				Results: []Result{
 					Result{
@@ -328,6 +327,10 @@ func TestCrop(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
@@ -344,6 +347,10 @@ func TestCrop(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(0, 0),
@@ -351,7 +358,7 @@ func TestCrop(t *testing.T) {
 			},
 		},
 		// Case where we trim nothing
-		{
+		{ // Run 1
 			before: &SeriesEnvelope{
 				Results: []Result{
 					Result{
@@ -367,6 +374,10 @@ func TestCrop(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
@@ -383,6 +394,10 @@ func TestCrop(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(0, 0),
@@ -390,8 +405,8 @@ func TestCrop(t *testing.T) {
 			},
 		},
 
-		// Case where we trim nothing
-		{
+		// Case where we trim everything (all data is too old)
+		{ // Run 2
 			before: &SeriesEnvelope{
 				Results: []Result{
 					Result{
@@ -407,6 +422,10 @@ func TestCrop(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
@@ -414,6 +433,8 @@ func TestCrop(t *testing.T) {
 						Series: []models.Row{},
 					},
 				},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(0, 0),
@@ -422,7 +443,7 @@ func TestCrop(t *testing.T) {
 		},
 
 		// Case where we trim everything (all data is too early)
-		{
+		{ // Run 3
 			before: &SeriesEnvelope{
 				Results: []Result{
 					Result{
@@ -438,6 +459,10 @@ func TestCrop(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(100, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
@@ -445,6 +470,8 @@ func TestCrop(t *testing.T) {
 						Series: []models.Row{},
 					},
 				},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(10000, 0),
@@ -453,7 +480,7 @@ func TestCrop(t *testing.T) {
 		},
 
 		// Case where we trim some off the beginning
-		{
+		{ // Run 4
 			before: &SeriesEnvelope{
 				Results: []Result{
 					Result{
@@ -463,14 +490,18 @@ func TestCrop(t *testing.T) {
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(99000), 1.5},
-									[]interface{}{float64(199000), 1.5},
-									[]interface{}{float64(299000), 1.5},
+									[]interface{}{float64(100000), 1.5},
+									[]interface{}{float64(200000), 1.5},
+									[]interface{}{float64(300000), 1.5},
 								},
 							},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
@@ -481,12 +512,117 @@ func TestCrop(t *testing.T) {
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(299000), 1.5},
+									[]interface{}{float64(300000), 1.5},
 								},
 							},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(300, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(300, 0),
+				End:   time.Unix(300, 0),
+			},
+		},
+
+		// Case where we trim some off the ends
+		{ // Run 5
+			before: &SeriesEnvelope{
+				Results: []Result{
+					Result{
+						Series: []models.Row{
+							models.Row{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									[]interface{}{float64(100000), 1.5},
+									[]interface{}{float64(200000), 1.5},
+									[]interface{}{float64(300000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &SeriesEnvelope{
+				Results: []Result{
+					Result{
+						Series: []models.Row{
+							models.Row{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									[]interface{}{float64(200000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(200, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(200, 0),
+				End:   time.Unix(200, 0),
+			},
+		},
+
+		// Case where the last datapoint is on the Crop extent
+		{ // Run 6
+			before: &SeriesEnvelope{
+				Results: []Result{
+					Result{
+						Series: []models.Row{
+							models.Row{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									[]interface{}{float64(100000), 1.5},
+									[]interface{}{float64(200000), 1.5},
+									[]interface{}{float64(300000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &SeriesEnvelope{
+				Results: []Result{
+					Result{
+						Series: []models.Row{
+							models.Row{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									[]interface{}{float64(200000), 1.5},
+									[]interface{}{float64(300000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(200, 0),
@@ -494,93 +630,8 @@ func TestCrop(t *testing.T) {
 			},
 		},
 
-		// Case where we trim some off the ends
-		{
-			before: &SeriesEnvelope{
-				Results: []Result{
-					Result{
-						Series: []models.Row{
-							models.Row{
-								Name:    "a",
-								Columns: []string{"time", "units"},
-								Tags:    map[string]string{"tagName1": "tagValue1"},
-								Values: [][]interface{}{
-									[]interface{}{float64(99000), 1.5},
-									[]interface{}{float64(199000), 1.5},
-									[]interface{}{float64(299000), 1.5},
-								},
-							},
-						},
-					},
-				},
-			},
-			after: &SeriesEnvelope{
-				Results: []Result{
-					Result{
-						Series: []models.Row{
-							models.Row{
-								Name:    "a",
-								Columns: []string{"time", "units"},
-								Tags:    map[string]string{"tagName1": "tagValue1"},
-								Values: [][]interface{}{
-									[]interface{}{float64(199000), 1.5},
-								},
-							},
-						},
-					},
-				},
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(100, 0),
-				End:   time.Unix(200, 0),
-			},
-		},
-
-		// Case where the last datapoint is on the Crop extent
-		{
-			before: &SeriesEnvelope{
-				Results: []Result{
-					Result{
-						Series: []models.Row{
-							models.Row{
-								Name:    "a",
-								Columns: []string{"time", "units"},
-								Tags:    map[string]string{"tagName1": "tagValue1"},
-								Values: [][]interface{}{
-									[]interface{}{float64(99000), 1.5},
-									[]interface{}{float64(199000), 1.5},
-									[]interface{}{float64(299000), 1.5},
-								},
-							},
-						},
-					},
-				},
-			},
-			after: &SeriesEnvelope{
-				Results: []Result{
-					Result{
-						Series: []models.Row{
-							models.Row{
-								Name:    "a",
-								Columns: []string{"time", "units"},
-								Tags:    map[string]string{"tagName1": "tagValue1"},
-								Values: [][]interface{}{
-									[]interface{}{float64(199000), 1.5},
-									[]interface{}{float64(299000), 1.5},
-								},
-							},
-						},
-					},
-				},
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(100, 0),
-				End:   time.Unix(299, 0),
-			},
-		},
-
 		// Case where we aren't given any datapoints
-		{
+		{ // Run 7
 			before: &SeriesEnvelope{
 				Results: []Result{
 					Result{
@@ -594,6 +645,8 @@ func TestCrop(t *testing.T) {
 						},
 					},
 				},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: time.Duration(100) * time.Second,
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
@@ -601,15 +654,17 @@ func TestCrop(t *testing.T) {
 						Series: []models.Row{},
 					},
 				},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: time.Duration(100) * time.Second,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(100, 0),
-				End:   time.Unix(299, 0),
+				End:   time.Unix(300, 0),
 			},
 		},
 
 		// Case where we have more series than points
-		{
+		{ // Run 8
 			before: &SeriesEnvelope{
 				Results: []Result{
 					Result{
@@ -619,7 +674,7 @@ func TestCrop(t *testing.T) {
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(99000), 1.5},
+									[]interface{}{float64(400000), 1.5},
 								},
 							},
 							models.Row{
@@ -627,12 +682,16 @@ func TestCrop(t *testing.T) {
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(99000), 1.5},
+									[]interface{}{float64(400000), 1.5},
 								},
 							},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(400, 0), End: time.Unix(400, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
@@ -640,19 +699,21 @@ func TestCrop(t *testing.T) {
 						Series: []models.Row{},
 					},
 				},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: time.Duration(100) * time.Second,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(100, 0),
-				End:   time.Unix(299, 0),
+				End:   time.Unix(300, 0),
 			},
 		},
 	}
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			result := test.before.Crop(test.extent).(*SeriesEnvelope)
-			if !reflect.DeepEqual(result, test.after) {
-				t.Fatalf("mismatch\nexpected=%v\nactual=%v", test.after, result)
+			test.before.Crop(test.extent)
+			if !reflect.DeepEqual(test.before, test.after) {
+				t.Errorf("mismatch got=%v expected=%v", test.before, test.after)
 			}
 		})
 	}

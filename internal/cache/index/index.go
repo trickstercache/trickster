@@ -14,7 +14,6 @@
 package index
 
 import (
-	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -296,7 +295,6 @@ func (idx *Index) reap() {
 				objectsNeeded += idx.config.MaxSizeBackoffObjects
 			}
 			objectsSelected := int64(0)
-			fmt.Println(objectsSelected, objectsNeeded, i, j)
 			for objectsSelected < objectsNeeded && i < j {
 				removals = append(removals, remainders[i].Key)
 				objectsSelected++
@@ -306,7 +304,6 @@ func (idx *Index) reap() {
 
 		if len(removals) > 0 {
 			cache.ObserveCacheEvent(idx.name, idx.cacheType, "eviction", evictionType)
-			fmt.Println("Removals Found", removals)
 			idx.bulkRemoveFunc(removals, true)
 			cacheChanged = true
 		}

@@ -55,8 +55,8 @@ func setupTestServer() (*httptest.Server, *config.OriginConfig, *PromTestClient,
 		return nil, nil, nil, err
 	}
 
-	client := &PromTestClient{config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
-	cfg := client.Configuration()
+	cfg := config.Origins["default"]
+	client := &PromTestClient{config: cfg, cache: cache, webClient: tu.NewTestWebClient()}
 
 	return es, cfg, client, nil
 }
@@ -137,6 +137,62 @@ func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 	}
 }
 
+func TestDeltaProxyCacheRequestAllItemsTooNew(t *testing.T) {
+
+	es, cfg, client, err := setupTestServer()
+	if err != nil {
+		t.Error(err)
+	}
+	defer es.Close()
+
+	cfg.FastForwardDisable = true
+	cfg.BackfillToleranceSecs = 600
+	cfg.BackfillTolerance = time.Second * time.Duration(cfg.BackfillToleranceSecs)
+
+	r := httptest.NewRequest("GET", es.URL, nil)
+
+	step := time.Duration(300) * time.Second
+	end := time.Now()
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(5) * time.Minute), End: end}
+
+	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extr.Start, extr.End, step)
+
+	u := r.URL
+	u.Path = "/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	w := httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if resp.Header.Get("status") != "" {
+		t.Errorf("status header should not be present. Found with value %s", resp.Header.Get("stattus"))
+	}
+
+	// ensure the request was sent through the proxy instead of the DeltaProxyCache
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"engine": "HTTPProxy"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
 func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 
 	es, cfg, client, err := setupTestServer()
@@ -190,7 +246,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 
 	cfg.ValueRetention = 10
 
-	extr = timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: time.Now()}
+	extr = timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: now}
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	w = httptest.NewRecorder()
@@ -259,6 +315,11 @@ func TestDeltaProxyCacheRequestMarshalFailure(t *testing.T) {
 
 }
 
+func normalizeTime(t time.Time, d time.Duration) time.Time {
+	return time.Unix((t.Unix()/int64(d.Seconds()))*int64(d.Seconds()), 0)
+	//return t.Truncate(d)
+}
+
 func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 
 	es, cfg, client, err := setupTestServer()
@@ -279,7 +340,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
 
 	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
@@ -312,11 +373,11 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	}
 
 	// test partial hit (needing an upper fragment)
-	phitStart := extr.End.Add(step)
+	phitStart := normalizeTime(extr.End.Add(step), step)
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
-	extn.End = extr.End.Truncate(step)
+	extn.End = normalizeTime(extr.End, step)
 
-	expectedFetched := fmt.Sprintf("[%d:%d]", phitStart.Truncate(step).Unix(), extn.End.Unix())
+	expectedFetched := fmt.Sprintf("[%d:%d]", phitStart.Unix(), extn.End.Unix())
 	expected, _, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
@@ -351,11 +412,11 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	}
 
 	// test partial hit (needing a lower fragment)
-	phitEnd := extr.Start.Add(-step)
+	phitEnd := extn.Start.Add(-step)
 	extr.Start = extr.Start.Add(time.Duration(-1) * time.Hour)
-	extn.Start = extr.Start.Truncate(step)
+	extn.Start = normalizeTime(extr.Start, step)
 
-	expectedFetched = fmt.Sprintf("[%d:%d]", extn.Start.Unix(), phitEnd.Truncate(step).Unix())
+	expectedFetched = fmt.Sprintf("[%d:%d]", extn.Start.Unix(), phitEnd.Unix())
 	expected, _, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
@@ -390,16 +451,16 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	}
 
 	// test partial hit (needing both upper and lower fragments)
-	phitEnd = extr.Start.Add(-step)
-	phitStart = extr.End.Add(step)
+	phitEnd = normalizeTime(extr.Start.Add(-step), step)
+	phitStart = normalizeTime(extr.End.Add(step), step)
 
 	extr.Start = extr.Start.Add(time.Duration(-1) * time.Hour)
-	extn.Start = extr.Start.Truncate(step)
+	extn.Start = normalizeTime(extr.Start, step)
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
-	extn.End = extr.End.Truncate(step)
+	extn.End = normalizeTime(extr.End, step)
 
 	expectedFetched = fmt.Sprintf("[%d:%d,%d:%d]",
-		extn.Start.Unix(), phitEnd.Truncate(step).Unix(), phitStart.Truncate(step).Unix(), extn.End.Unix())
+		extn.Start.Unix(), phitEnd.Unix(), phitStart.Unix(), extn.End.Unix())
 
 	expected, _, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
@@ -436,7 +497,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 
 	// test partial hit returns an error
 	extr.Start = extr.Start.Add(time.Duration(-1) * time.Hour)
-	extn.Start = extr.Start.Truncate(step)
+	extn.Start = normalizeTime(extr.Start, step)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadPayload)
 
@@ -485,7 +546,7 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
 
 	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
@@ -560,7 +621,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	cfg.FastForwardDisable = true
 	r := httptest.NewRequest("GET", es.URL, nil)
 
-	step := time.Duration(300) * time.Second
+	step := time.Duration(3600) * time.Second
 
 	now := time.Now()
 	end := now.Add(-time.Duration(12) * time.Hour)
@@ -645,9 +706,9 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 
 	// Test Range Miss High End
 
-	extr.Start = extr.End.Add(time.Duration(2) * time.Hour)
+	extr.Start = now.Add(time.Duration(-10) * time.Hour)
 	extn.Start = extr.Start.Truncate(step)
-	extr.End = extr.Start.Add(time.Duration(1) * time.Hour)
+	extr.End = now.Add(time.Duration(-8) * time.Hour)
 	extn.End = extr.End.Truncate(step)
 
 	expectedFetched = fmt.Sprintf("[%d:%d", extn.Start.Unix(), extn.End.Unix())
@@ -715,15 +776,20 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	em.SetExtents(timeseries.ExtentList{extn})
 
 	expectedVector, _, _ := promsim.GetInstantData(queryReturnsOKNoLatency, client.fftime)
 	ev, err := client.UnmarshalInstantaneous([]byte(expectedVector))
 	if err != nil {
 		t.Error(err)
 	}
+	ev.SetStep(step)
 
-	em.Merge(false, ev)
+	if len(ev.Extents()) == 1 && len(em.Extents()) > 0 && ev.Extents()[0].Start.Truncate(time.Second).After(em.Extents()[0].End) {
+		em.Merge(false, ev)
+	}
 
+	em.SetExtents(nil)
 	b, err := client.MarshalTimeseries(em)
 	if err != nil {
 		t.Error(err)
@@ -1107,7 +1173,7 @@ func TestDeltaProxyCacheRequest_BadParams(t *testing.T) {
 
 }
 
-func TestDeltaProxyCacheRequest_CacheHitUnmarshalFailed(t *testing.T) {
+func TestDeltaProxyCacheRequestCacheMissUnmarshalFailed(t *testing.T) {
 	es, cfg, client, err := setupTestServer()
 	if err != nil {
 		t.Error(err)
@@ -1140,6 +1206,27 @@ func TestDeltaProxyCacheRequest_CacheHitUnmarshalFailed(t *testing.T) {
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadRequest)
 	if err != nil {
 		t.Error(err)
+	}
+
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadPayload)
+
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	_, err = client.UnmarshalTimeseries(body)
+	if err == nil {
+		t.Errorf("expected unmarshaling error for %s", string(body))
 	}
 
 }

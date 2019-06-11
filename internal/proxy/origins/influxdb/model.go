@@ -23,10 +23,10 @@ import (
 
 // SeriesEnvelope represents a response object from the InfluxDB HTTP API
 type SeriesEnvelope struct {
-	Results      []Result            `json:"results"`
-	Err          string              `json:"error,omitempty"`
-	StepDuration time.Duration       `json:"step,omitempty"`
-	ExtentList   []timeseries.Extent `json:"extents,omitempty"`
+	Results      []Result              `json:"results"`
+	Err          string                `json:"error,omitempty"`
+	StepDuration time.Duration         `json:"step,omitempty"`
+	ExtentList   timeseries.ExtentList `json:"extents,omitempty"`
 }
 
 // Result represents a Result returned from the InfluxDB HTTP API

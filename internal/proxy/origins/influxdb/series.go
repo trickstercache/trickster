@@ -34,56 +34,13 @@ const (
 )
 
 // SetExtents overwrites a Timeseries's known extents with the provided extent list
-func (se *SeriesEnvelope) SetExtents(extents []timeseries.Extent) {
-	se.ExtentList = make([]timeseries.Extent, len(extents))
+func (se *SeriesEnvelope) SetExtents(extents timeseries.ExtentList) {
+	se.ExtentList = make(timeseries.ExtentList, len(extents))
 	copy(se.ExtentList, extents)
 }
 
-// Extremes returns the absolute start end times of a Timeseries, without respect to uncached gaps
-func (se *SeriesEnvelope) Extremes() []timeseries.Extent {
-
-	// Bail if the results are empty
-	if len(se.Results) == 0 || len(se.Results[0].Series) == 0 {
-		return nil
-	}
-
-	times := make([]int64, 0, len(se.Results)*len(se.Results[0].Series))
-
-	for i := range se.Results {
-		for j := range se.Results[i].Series {
-			// check the index of the time column again just in case it changed in the next series
-			ti := str.IndexOfString(se.Results[i].Series[j].Columns, "time")
-			if ti != -1 {
-				for k := range se.Results[i].Series[j].Values {
-					times = append(times, int64(se.Results[i].Series[j].Values[k][ti].(float64)))
-				}
-			}
-		}
-	}
-
-	if len(times) == 0 {
-		return nil
-	}
-
-	max := times[0]
-	min := times[0]
-	for i := range times {
-		if times[i] > max {
-			max = times[i]
-		}
-		if times[i] < min {
-			min = times[i]
-		}
-	}
-	se.ExtentList = []timeseries.Extent{timeseries.Extent{Start: time.Unix(min/milliSecondValue, (min%milliSecondValue)*(int64(minimumTick))), End: time.Unix(max/milliSecondValue, (max%milliSecondValue)*(int64(minimumTick)))}}
-	return se.ExtentList
-}
-
 // Extents returns the Timeseries's ExentList
-func (se *SeriesEnvelope) Extents() []timeseries.Extent {
-	if len(se.ExtentList) == 0 {
-		return se.Extremes()
-	}
+func (se *SeriesEnvelope) Extents() timeseries.ExtentList {
 	return se.ExtentList
 }
 
@@ -133,14 +90,12 @@ func (t tags) String() string {
 
 // Merge merges the provided Timeseries list into the base Timeseries (in the order provided) and optionally sorts the merged Timeseries
 func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) {
-
 	series := make(map[seriesKey]*models.Row)
 	for i, r := range se.Results {
 		for j, s := range se.Results[i].Series {
 			series[seriesKey{StatementID: r.StatementID, Name: s.Name, Tags: tags(s.Tags).String(), Columns: strings.Join(s.Columns, ",")}] = &se.Results[i].Series[j]
 		}
 	}
-
 	for _, ts := range collection {
 		if ts != nil {
 			se2 := ts.(*SeriesEnvelope)
@@ -157,9 +112,7 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 			se.ExtentList = append(se.ExtentList, se2.ExtentList...)
 		}
 	}
-
-	se.ExtentList = timeseries.CompressExtents(se.ExtentList, se.StepDuration)
-
+	se.ExtentList = se.ExtentList.Compress(se.StepDuration)
 	if sort {
 		se.Sort()
 	}
@@ -168,9 +121,12 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 // Copy returns a perfect copy of the base Timeseries
 func (se *SeriesEnvelope) Copy() timeseries.Timeseries {
 	resultSe := &SeriesEnvelope{
-		Err:     se.Err,
-		Results: make([]Result, len(se.Results)),
+		Err:          se.Err,
+		Results:      make([]Result, len(se.Results)),
+		StepDuration: se.StepDuration,
+		ExtentList:   make(timeseries.ExtentList, len(se.ExtentList)),
 	}
+	copy(resultSe.ExtentList, se.ExtentList)
 	for index := range se.Results {
 		resResult := se.Results[index]
 		resResult.Err = se.Results[index].Err
@@ -205,72 +161,84 @@ func (se *SeriesEnvelope) Copy() timeseries.Timeseries {
 
 // Crop returns a copy of the base Timeseries that has been cropped down to the provided Extents.
 // Crop assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
-func (se *SeriesEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
+func (se *SeriesEnvelope) Crop(e timeseries.Extent) {
 
-	if len(se.Results) == 0 {
-		return se
+	x := len(se.ExtentList)
+	// The Series has no extents, so no need to do anything
+	if x < 1 {
+		for i := range se.Results {
+			se.Results[i].Series = []models.Row{}
+		}
+		se.ExtentList = timeseries.ExtentList{}
+		return
 	}
 
-	ts := &SeriesEnvelope{
-		Err:     se.Err,
-		Results: make([]Result, 0, len(se.Results)),
+	// if the extent of the series is entirely outside the extent of the crop range, return empty set and bail
+	if se.ExtentList.OutsideOf(e) {
+		for i := range se.Results {
+			se.Results[i].Series = []models.Row{}
+		}
+		se.ExtentList = timeseries.ExtentList{}
+		return
+	}
+
+	// if the series extent is entirely inside the extent of the crop range, simple adjust down its ExtentList
+	if se.ExtentList.Contains(e) {
+		if se.ValueCount() == 0 {
+			for i := range se.Results {
+				se.Results[i].Series = []models.Row{}
+			}
+		}
+		se.ExtentList = se.ExtentList.Crop(e)
+		return
 	}
 
 	startSecs := e.Start.Unix()
 	endSecs := e.End.Unix()
 
 	for i, r := range se.Results {
-
-		nr := Result{StatementID: r.StatementID, Err: r.Err, Series: make([]models.Row, 0, len(r.Series))}
-		ts.Results = append(ts.Results, nr)
-
 		for j, s := range r.Series {
-
 			// check the index of the time column again just in case it changed in the next series
 			ti := str.IndexOfString(s.Columns, "time")
 			if ti != -1 {
-
-				ss := &models.Row{Name: s.Name, Tags: s.Tags, Columns: s.Columns, Values: make([][]interface{}, 0, len(s.Values)), Partial: s.Partial}
 				start := -1
 				end := -1
-
 				for vi, v := range se.Results[i].Series[j].Values {
-
 					t := int64(v[ti].(float64) / 1000)
-
 					if t == endSecs {
-						if vi == 0 {
-							start = 0
+						if vi == 0 || t == startSecs || start == -1 {
+							start = vi
 						}
 						end = vi + 1
 						break
 					}
-
 					if t > endSecs {
 						end = vi
 						break
 					}
-
 					if t < startSecs {
 						continue
 					}
-
 					if start == -1 && (t == startSecs || (endSecs > t && t > startSecs)) {
 						start = vi
 					}
 				}
-
 				if start != -1 {
 					if end == -1 {
 						end = len(s.Values)
 					}
-					ss.Values = s.Values[start:end]
-					ts.Results[i].Series = append(ts.Results[i].Series, *ss)
+					se.Results[i].Series[j].Values = s.Values[start:end]
+				} else {
+					if i < len(se.Results[i].Series) {
+						se.Results[i].Series = append(se.Results[i].Series[:j], se.Results[i].Series[j+1:]...)
+					} else {
+						se.Results[i].Series = se.Results[i].Series[:len(se.Results[i].Series)-1]
+					}
 				}
 			}
 		}
 	}
-	return ts
+	se.ExtentList = se.ExtentList.Crop(e)
 }
 
 // Sort sorts all Values in each Series chronologically by their timestamp
