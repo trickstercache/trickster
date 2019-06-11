@@ -315,6 +315,11 @@ func TestDeltaProxyCacheRequestMarshalFailure(t *testing.T) {
 
 }
 
+func normalizeTime(t time.Time, d time.Duration) time.Time {
+	return time.Unix((t.Unix()/int64(d.Seconds()))*int64(d.Seconds()), 0)
+	//return t.Truncate(d)
+}
+
 func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 
 	es, cfg, client, err := setupTestServer()
@@ -335,7 +340,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
 
 	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
@@ -368,11 +373,11 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	}
 
 	// test partial hit (needing an upper fragment)
-	phitStart := extr.End.Add(step)
+	phitStart := normalizeTime(extr.End.Add(step), step)
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
-	extn.End = extr.End.Truncate(step)
+	extn.End = normalizeTime(extr.End, step)
 
-	expectedFetched := fmt.Sprintf("[%d:%d]", phitStart.Truncate(step).Unix(), extn.End.Unix())
+	expectedFetched := fmt.Sprintf("[%d:%d]", phitStart.Unix(), extn.End.Unix())
 	expected, _, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
@@ -407,11 +412,11 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	}
 
 	// test partial hit (needing a lower fragment)
-	phitEnd := extr.Start.Add(-step)
+	phitEnd := extn.Start.Add(-step)
 	extr.Start = extr.Start.Add(time.Duration(-1) * time.Hour)
-	extn.Start = extr.Start.Truncate(step)
+	extn.Start = normalizeTime(extr.Start, step)
 
-	expectedFetched = fmt.Sprintf("[%d:%d]", extn.Start.Unix(), phitEnd.Truncate(step).Unix())
+	expectedFetched = fmt.Sprintf("[%d:%d]", extn.Start.Unix(), phitEnd.Unix())
 	expected, _, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
@@ -446,16 +451,16 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	}
 
 	// test partial hit (needing both upper and lower fragments)
-	phitEnd = extr.Start.Add(-step)
-	phitStart = extr.End.Add(step)
+	phitEnd = normalizeTime(extr.Start.Add(-step), step)
+	phitStart = normalizeTime(extr.End.Add(step), step)
 
 	extr.Start = extr.Start.Add(time.Duration(-1) * time.Hour)
-	extn.Start = extr.Start.Truncate(step)
+	extn.Start = normalizeTime(extr.Start, step)
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
-	extn.End = extr.End.Truncate(step)
+	extn.End = normalizeTime(extr.End, step)
 
 	expectedFetched = fmt.Sprintf("[%d:%d,%d:%d]",
-		extn.Start.Unix(), phitEnd.Truncate(step).Unix(), phitStart.Truncate(step).Unix(), extn.End.Unix())
+		extn.Start.Unix(), phitEnd.Unix(), phitStart.Unix(), extn.End.Unix())
 
 	expected, _, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
@@ -492,7 +497,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 
 	// test partial hit returns an error
 	extr.Start = extr.Start.Add(time.Duration(-1) * time.Hour)
-	extn.Start = extr.Start.Truncate(step)
+	extn.Start = normalizeTime(extr.Start, step)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadPayload)
 
@@ -541,7 +546,7 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
 
 	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 

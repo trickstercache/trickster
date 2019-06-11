@@ -33,12 +33,12 @@ func (e *Extent) Includes(t time.Time) bool {
 
 // StartsAt returns true if the t is equal to the Extent's start time
 func (e *Extent) StartsAt(t time.Time) bool {
-	return t == e.Start
+	return t.Equal(e.Start)
 }
 
 // EndsAt returns true if the t is equal to the Extent's end time
 func (e *Extent) EndsAt(t time.Time) bool {
-	return t == e.End
+	return t.Equal(e.End)
 }
 
 // After returns true if the range of the Extent is completely after the provided time
@@ -120,16 +120,15 @@ func (el ExtentList) Compress(step time.Duration) ExtentList {
 		return exc
 	}
 
-	var notime time.Time
 	l := len(el)
 	compressed := make(ExtentList, 0, l)
 	sort.Sort(exc)
 	e := Extent{}
 	for i := range exc {
-		if e.Start == notime {
+		if e.Start.IsZero() {
 			e.Start = exc[i].Start
 		}
-		if i+1 < l && (exc[i].End.Add(step) == exc[i+1].Start || exc[i].End == exc[i+1].Start) {
+		if i+1 < l && (exc[i].End.Add(step).Equal(exc[i+1].Start) || exc[i].End.Equal(exc[i+1].Start)) {
 			continue
 		}
 		e.End = exc[i].End

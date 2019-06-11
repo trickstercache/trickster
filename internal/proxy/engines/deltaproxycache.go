@@ -131,7 +131,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 
 	if len(missRanges) == 0 && cacheStatus == crPartialHit {
 		cacheStatus = crHit
-	} else if len(missRanges) == 1 && missRanges[0].Start == trq.Extent.Start && missRanges[0].End == trq.Extent.End {
+	} else if len(missRanges) == 1 && missRanges[0].Start.Equal(trq.Extent.Start) && missRanges[0].End.Equal(trq.Extent.End) {
 		cacheStatus = crRangeMiss
 	}
 
@@ -193,7 +193,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	var ffts timeseries.Timeseries
 	// Only fast forward if configured and the user request is for the absolute latest datapoint
 
-	if (!r.FastForwardDisable) && (trq.Extent.End == normalizedNow.Extent.End) && ffURL.Scheme != "" {
+	if (!r.FastForwardDisable) && (trq.Extent.End.Equal(normalizedNow.Extent.End)) && ffURL.Scheme != "" {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -231,6 +231,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	}
 
 	rts := cts.Copy()
+
 	if cacheStatus != crKeyMiss {
 		rts.Crop(trq.Extent)
 	}
