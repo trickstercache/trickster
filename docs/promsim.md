@@ -57,11 +57,11 @@ Example query that returns 3 series: `query=my_test_query{series_count="3"}&star
 
 By default, PromSim uses a "repeatable number generator" to output data. Under the hood, it works by re-seeding `math.Rand` with a hashed value for the provided query string and the timestamp for which a value is needed, and returning the first value from the generator after seeding.
 
-You can provide a `line_pattern` label to utilize other supported number generators. The options are `repeatable_random` (default, described above) and `usage_curve_us`.
+You can provide a `line_pattern` label to utilize other supported number generators. The options are `repeatable_random` (default, described above) and `usage_curve`.
 
-`usage_curve_us` will return numbers that follow a simulated usage curve pattern (rising in the afternoon, peaking in the evening, troughing overnight).
+`usage_curve` will return numbers that follow a simulated usage curve pattern (rising in the afternoon, peaking in the evening, troughing overnight).
 
-Example using the usage_curve_us line pattern: `query=my_test_query{line_pattern="usage_curve_us"}&start=2&end=2&step=15`
+Example using the usage_curve line pattern: `query=my_test_query{series_count="3",max_value="250",min_value="10",line_pattern="usage_curve"}&start=2&end=2&step=15`
 
 ### Latency
 
@@ -77,7 +77,7 @@ Example adding 300ms of upfront latency: `query=my_test_query{latency_ms="300"}&
 
 The `range_latency_ms` label produces a per-unique-value latency effect. The result is that the response from PromSim will be delayed by a certain amount, depending upon on the number of series, size of desired timerange and step value. This is useful in simulating very broad label scopes that slow down query response times in the real world.
 
-Example adding 5ms of range latency: `query=my_test_query{range_latency_ms="5",series_count="2"}&start=0&end=1800&step=15`. In this example, 1.2s of total latency is introduced (120 datapoints * 2 series * 5ms) into the HTTP response.
+Example adding 5ms of range latency: `query=my_test_query{range_latency_ms="5",series_count="2"}&start=0&end=1800&step=15`. In this example, 1.2s of total latency is introduced (120 datapoints _ 2 series _ 5ms) into the HTTP response.
 
 ### Min and Max Values
 

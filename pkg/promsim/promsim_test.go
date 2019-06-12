@@ -24,7 +24,7 @@ const expectedRangeOutput = `{"status":"success","data":{"resultType":"matrix","
 const expectedInstantOutput = `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"other_label":"5","latency_ms":"1","range_latency_ms":"1","series_count":"1","test":"","series_id":"0"},"value":[0,"25"]}]}}`
 
 const testQueryUsageCurve = `myQuery{other_label=5,latency_ms=1,range_latency_ms=1,series_count=1,line_pattern="usage_curve",test}`
-const expectedRangeUsageCurveOutput = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"other_label":"5","latency_ms":"1","range_latency_ms":"1","series_count":"1","line_pattern":"usage_curve","test":"","series_id":"0"},"values":[[0,"0"],[1800,"0"],[3600,"0"]]}]}}`
+const expectedRangeUsageCurveOutput = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"other_label":"5","latency_ms":"1","range_latency_ms":"1","series_count":"1","line_pattern":"usage_curve","test":"","series_id":"0"},"values":[[233438400,"100"],[233481600,"0"],[233524800,"100"]]}]}}`
 
 const testQueryInvalidResponse = "myQuery{invalid_response_body=1}"
 const expectedInvalidResponse = "foo"
@@ -48,7 +48,9 @@ func TestGetTimeSeriesDataRandomVals(t *testing.T) {
 }
 
 func TestGetTimeSeriesDataUsageCurve(t *testing.T) {
-	out, code, err := GetTimeSeriesData(testQueryUsageCurve, time.Unix(0, 0), time.Unix(3600, 0), time.Duration(1800)*time.Second)
+	start := time.Date(1977, 5, 25, 20, 0, 0, 0, time.UTC)
+	end := time.Date(1977, 5, 26, 20, 0, 0, 0, time.UTC)
+	out, code, err := GetTimeSeriesData(testQueryUsageCurve, start, end, time.Duration(secondsPerDay/2)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
