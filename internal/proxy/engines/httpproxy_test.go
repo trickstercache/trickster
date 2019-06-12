@@ -35,7 +35,7 @@ func TestProxyRequest(t *testing.T) {
 	es := tu.NewTestServer(http.StatusOK, "test")
 	defer es.Close()
 
-	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "test", "-log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -76,7 +76,7 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	const badUpstream = "http://127.0.0.1:64389"
 
 	// assume nothing listens on badUpstream, so this should force the proxy to generate a 502 Bad Gateway
-	err := config.Load("trickster", "test", []string{"-origin", badUpstream, "-origin-type", "test", "-log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-origin-url", badUpstream, "-origin-type", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}

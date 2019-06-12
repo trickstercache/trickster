@@ -30,7 +30,7 @@ func fakeBulkRemoveFunc([]string, bool) {}
 func fakeFlusherFunc(string, []byte)    {}
 
 func TestNewIndex(t *testing.T) {
-	cacheConfig := &config.CachingConfig{Type: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
+	cacheConfig := &config.CachingConfig{CacheType: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, fakeBulkRemoveFunc, fakeFlusherFunc)
 
 	if idx.name != "test" {
@@ -71,7 +71,7 @@ func TestObjectFromBytes(t *testing.T) {
 func TestUpdateObject(t *testing.T) {
 
 	obj := Object{Key: "", Value: []byte("test_value")}
-	cacheConfig := &config.CachingConfig{Type: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
+	cacheConfig := &config.CachingConfig{CacheType: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, fakeBulkRemoveFunc, fakeFlusherFunc)
 
 	idx.UpdateObject(obj)
@@ -104,7 +104,7 @@ func TestUpdateObject(t *testing.T) {
 func TestRemoveObject(t *testing.T) {
 
 	obj := Object{Key: "test", Value: []byte("test_value")}
-	cacheConfig := &config.CachingConfig{Type: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
+	cacheConfig := &config.CachingConfig{CacheType: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, fakeBulkRemoveFunc, fakeFlusherFunc)
 
 	idx.UpdateObject(obj)

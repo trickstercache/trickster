@@ -26,7 +26,7 @@ func TestHealthHandler(t *testing.T) {
 	es := tu.NewTestServer(204, "")
 	defer es.Close()
 
-	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "influxdb"})
+	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "influxdb"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}

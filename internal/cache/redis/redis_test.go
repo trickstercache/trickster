@@ -30,17 +30,17 @@ func init() {
 
 const cacheKey = `cacheKey`
 
-func setupRedisCache(cacheType string) (*Cache, func()) {
+func setupRedisCache(clientType string) (*Cache, func()) {
 	s, err := miniredis.Run()
 	if err != nil {
 		panic(err)
 	}
 	config.Config = config.NewConfig()
-	rcfg := config.RedisCacheConfig{Endpoint: s.Addr(), ClientType: cacheType}
+	rcfg := config.RedisCacheConfig{Endpoint: s.Addr(), ClientType: clientType}
 	close := func() {
 		s.Close()
 	}
-	cacheConfig := &config.CachingConfig{Type: cacheType, Redis: rcfg}
+	cacheConfig := &config.CachingConfig{CacheType: "redis", Redis: rcfg}
 	config.Caches = map[string]*config.CachingConfig{"default": cacheConfig}
 
 	return &Cache{Config: cacheConfig}, close
@@ -77,8 +77,8 @@ func TestConfiguration(t *testing.T) {
 	defer close()
 
 	cfg := rc.Configuration()
-	if cfg.Type != ctStandard {
-		t.Fatalf("expected %s got %s", ctStandard, cfg.Type)
+	if cfg.Redis.ClientType != ctStandard {
+		t.Fatalf("expected %s got %s", ctStandard, cfg.Redis.ClientType)
 	}
 }
 

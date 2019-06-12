@@ -34,7 +34,7 @@ const Redis = `redis`
 
 func TestLoadCachesFromConfig(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -94,7 +94,7 @@ func newCacheConfig(t *testing.T, cacheType string) *config.CachingConfig {
 	}
 
 	return &config.CachingConfig{
-		Type:               cacheType,
+		CacheType:          cacheType,
 		Compression:        true,
 		TimeseriesTTLSecs:  21600,
 		FastForwardTTLSecs: 15,

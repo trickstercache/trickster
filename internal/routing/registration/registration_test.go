@@ -27,7 +27,7 @@ func init() {
 
 func TestRegisterProxyRoutes(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "prometheus"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -42,13 +42,12 @@ func TestRegisterProxyRoutes(t *testing.T) {
 
 func TestRegisterProxyRoutesInflux(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "influxdb"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
 	do := config.Origins["default"]
-	do.OriginType = "influxdb"
 	config.Origins["default"] = do
 	registration.LoadCachesFromConfig()
 	RegisterProxyRoutes()

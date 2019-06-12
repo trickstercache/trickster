@@ -23,6 +23,9 @@ import (
 	"github.com/Comcast/trickster/internal/util/log"
 )
 
+// Redis is the string "redis"
+const Redis = "redis"
+
 // Cache represents a redis cache object that conforms to the Cache interface
 type Cache struct {
 	Name   string

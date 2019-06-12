@@ -30,7 +30,7 @@ func TestSetExtent(t *testing.T) {
 	end := time.Now()
 	expected := "q=select+%2A+where+time+%3E%3D+" + fmt.Sprintf("%d", start.Unix()*1000) + "ms+AND+time+%3C%3D+" + fmt.Sprintf("%d", end.Unix()*1000) + "ms+group+by+time%281m%29"
 
-	err := config.Load("trickster", "test", []string{"-origin", "none:9090", "-origin-type", "influxdb", "-log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "influxdb", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}

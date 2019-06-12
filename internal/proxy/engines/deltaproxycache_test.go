@@ -44,7 +44,7 @@ func setupTestServer() (*httptest.Server, *config.OriginConfig, *PromTestClient,
 	// simuated prometheus timeseries database server
 	es := promsim.NewTestServer()
 
-	err := config.Load("trickster", "test", []string{"-origin", es.URL, "--origin-type", "prometheus", "--log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "--origin-type", "prometheus", "--log-level", "debug"})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -1259,7 +1259,7 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 	es := promsim.NewTestServer()
 	defer es.Close()
 
-	err := config.Load("trickster", "test", []string{"-origin", es.URL, "--origin-type", "prometheus", "--log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "--origin-type", "prometheus", "--log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
