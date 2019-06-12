@@ -94,8 +94,6 @@ type OriginConfig struct {
 	CacheName string `toml:"cache_name"`
 	// IgnoreCachingHeaders will cause the orgin client to ignore any upstream or downstream HTTP caching headers
 	IgnoreCachingHeaders bool `toml:"ignore_caching_headers"`
-	// APIPath will be deprecated in a commit very soon
-	APIPath string `toml:"api_path"`
 
 	// Object Proxy Cache and Delta Proxy Cache Configurations
 	// ValueRetentionFactor limits the maxiumum the number of chronological timestamps worth of data to store in cache for each query
@@ -365,10 +363,6 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "keep_alive_timeout_secs") {
 			oc.KeepAliveTimeoutSecs = v.KeepAliveTimeoutSecs
-		}
-
-		if metadata.IsDefined("origins", k, "api_path") {
-			oc.APIPath = v.APIPath
 		}
 
 		if metadata.IsDefined("origins", k, "ignore_caching_headers") {

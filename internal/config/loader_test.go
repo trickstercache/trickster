@@ -103,10 +103,6 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected test_path_prefix, got %s", o.PathPrefix)
 	}
 
-	if o.APIPath != "test_api_path" {
-		t.Errorf("expected test_api_path, got %s", o.APIPath)
-	}
-
 	if !o.IgnoreCachingHeaders {
 		t.Errorf("expected ignore_caching_headers true, got %t", o.IgnoreCachingHeaders)
 	}
