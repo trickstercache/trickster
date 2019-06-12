@@ -30,11 +30,11 @@ const (
 func (c *TricksterConfig) loadEnvVars() {
 	// Origin
 	if x := os.Getenv(evOrigin); x != "" {
-		defaultOriginURL = x
+		providedOriginURL = x
 	}
 
 	if x := os.Getenv(evOriginType); x != "" {
-		defaultOriginType = x
+		providedOriginType = x
 	}
 
 	// Proxy Port

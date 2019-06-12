@@ -83,8 +83,8 @@ func TestFullLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if o.Type != "test_type" {
-		t.Errorf("expected test_type, got %s", o.Type)
+	if o.OriginType != "test_type" {
+		t.Errorf("expected test_type, got %s", o.OriginType)
 	}
 
 	if o.CacheName != "test" {
@@ -107,8 +107,8 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected test_api_path, got %s", o.APIPath)
 	}
 
-	if !o.IgnoreNoCacheHeader {
-		t.Errorf("expected ignore_no_cache_header true, got %t", o.IgnoreNoCacheHeader)
+	if !o.IgnoreCachingHeaders {
+		t.Errorf("expected ignore_caching_headers true, got %t", o.IgnoreCachingHeaders)
 	}
 
 	if o.ValueRetentionFactor != 666 {
@@ -135,8 +135,8 @@ func TestFullLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if c.Type != "test_type" {
-		t.Errorf("expected test_type, got %s", c.Type)
+	if c.CacheType != "test_type" {
+		t.Errorf("expected test_type, got %s", c.CacheType)
 	}
 
 	if !c.Compression {
@@ -325,8 +325,8 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if o.Type != defaultOriginServerType {
-		t.Errorf("expected %s, got %s", defaultOriginServerType, o.Type)
+	if o.OriginType != defaultOriginType {
+		t.Errorf("expected %s, got %s", defaultOriginType, o.OriginType)
 	}
 
 	if o.CacheName != defaultOriginCacheName {
@@ -349,8 +349,8 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %s, got %s", defaultOriginAPIPath, o.APIPath)
 	}
 
-	if o.IgnoreNoCacheHeader != defaultOriginINCH {
-		t.Errorf("expected ignore_no_cache_header %t, got %t", defaultOriginINCH, o.IgnoreNoCacheHeader)
+	if o.IgnoreCachingHeaders != defaultOriginINCH {
+		t.Errorf("expected ignore_caching_headers %t, got %t", defaultOriginINCH, o.IgnoreCachingHeaders)
 	}
 
 	if o.ValueRetentionFactor != defaultOriginVRF {
@@ -375,8 +375,8 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if c.Type != defaultCacheType {
-		t.Errorf("expected %s, got %s", defaultCacheType, c.Type)
+	if c.CacheType != defaultCacheType {
+		t.Errorf("expected %s, got %s", defaultCacheType, c.CacheType)
 	}
 
 	if !c.Compression {

@@ -47,7 +47,7 @@ const (
 	defaultMaxSizeObjects        = 0
 	defaultMaxSizeBackoffObjects = 100
 
-	defaultOriginServerType      = "prometheus"
+	defaultOriginType            = "prometheus"
 	defaultOriginScheme          = "http"
 	defaultOriginHost            = "prometheus:9090"
 	defaultOriginPathPrefix      = ""

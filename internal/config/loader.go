@@ -39,19 +39,15 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	c.loadFlags() // load parsed flags to override file and envs
 
 	// set the default origin url from the flags
-	if defaultOriginURL != "" {
-
-		url, err := url.Parse(defaultOriginURL)
+	if providedOriginURL != "" {
+		url, err := url.Parse(providedOriginURL)
 		if err != nil {
 			return err
 		}
-
 		if d, ok := c.Origins["default"]; ok {
-
-			if defaultOriginType != "" {
-				d.Type = defaultOriginType
+			if providedOriginType != "" {
+				d.OriginType = providedOriginType
 			}
-
 			d.Scheme = url.Scheme
 			d.Host = url.Host
 			d.PathPrefix = url.Path

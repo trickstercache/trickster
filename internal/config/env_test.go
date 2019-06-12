@@ -34,8 +34,8 @@ func TestLoadEnvVars(t *testing.T) {
 	}
 
 	d := Origins["default"]
-	if d.Type != "testing" {
-		t.Errorf("expected %s got %s", "testing", d.Type)
+	if d.OriginType != "testing" {
+		t.Errorf("expected %s got %s", "testing", d.OriginType)
 	}
 
 	if ProxyServer.ListenPort != 4001 {
