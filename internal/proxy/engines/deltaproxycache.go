@@ -37,7 +37,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 
 	cfg := client.Configuration()
 	r.FastForwardDisable = cfg.FastForwardDisable
-	refresh := isRefresh(r.ClientRequest.Header) && !cfg.IgnoreNoCacheHeader
+	refresh := isRefresh(r.ClientRequest.Header) && !cfg.IgnoreCachingHeaders
 
 	trq, err := client.ParseTimeRangeQuery(r)
 	if err != nil {

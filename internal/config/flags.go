@@ -23,7 +23,7 @@ const (
 	cfVersion     = "version"
 	cfLogLevel    = "log-level"
 	cfInstanceID  = "instance-id"
-	cfOrigin      = "origin"
+	cfOrigin      = "origin-url"
 	cfOriginType  = "origin-type"
 	cfProxyPort   = "proxy-port"
 	cfMetricsPort = "metrics-port"

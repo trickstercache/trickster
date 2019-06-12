@@ -30,15 +30,15 @@ const cacheType = "bbolt"
 const cacheKey = "cacheKey"
 
 func newCacheConfig() config.CachingConfig {
-	return config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	return config.CachingConfig{CacheType: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
 }
 
 func TestConfiguration(t *testing.T) {
 	cacheConfig := newCacheConfig()
 	bc := Cache{Config: &cacheConfig}
 	cfg := bc.Configuration()
-	if cfg.Type != cacheType {
-		t.Fatalf("expected %s got %s", cacheType, cfg.Type)
+	if cfg.CacheType != cacheType {
+		t.Fatalf("expected %s got %s", cacheType, cfg.CacheType)
 	}
 }
 

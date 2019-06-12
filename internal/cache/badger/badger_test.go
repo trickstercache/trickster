@@ -35,7 +35,7 @@ func newCacheConfig(t *testing.T) config.CachingConfig {
 	if err != nil {
 		t.Fatalf("could not create temp directory (%s): %s", dir, err)
 	}
-	return config.CachingConfig{Type: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
+	return config.CachingConfig{CacheType: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
 }
 
 func TestConfiguration(t *testing.T) {
@@ -44,8 +44,8 @@ func TestConfiguration(t *testing.T) {
 	bc := Cache{Config: &cacheConfig}
 
 	cfg := bc.Configuration()
-	if cfg.Type != cacheType {
-		t.Fatalf("expected %s got %s", cacheType, cfg.Type)
+	if cfg.CacheType != cacheType {
+		t.Fatalf("expected %s got %s", cacheType, cfg.CacheType)
 	}
 }
 
@@ -186,7 +186,7 @@ func TestBadgerCache_Close(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	cacheConfig := config.CachingConfig{Type: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
+	cacheConfig := config.CachingConfig{CacheType: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
 	bc := Cache{Config: &cacheConfig}
 
 	if err := bc.Connect(); err != nil {

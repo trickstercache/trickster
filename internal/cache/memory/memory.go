@@ -40,13 +40,13 @@ func (c *Cache) Configuration() *config.CachingConfig {
 func (c *Cache) Connect() error {
 	log.Info("memorycache setup", log.Pairs{})
 	c.client = sync.Map{}
-	c.Index = index.NewIndex(c.Name, c.Config.Type, nil, c.Config.Index, c.BulkRemove, nil)
+	c.Index = index.NewIndex(c.Name, c.Config.CacheType, nil, c.Config.Index, c.BulkRemove, nil)
 	return nil
 }
 
 // Store places an object in the cache using the specified key and ttl
 func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
-	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
+	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 	log.Debug("memorycache cache store", log.Pairs{"cacheKey": cacheKey, "length": len(data), "ttl": ttl})
 	o := index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	c.client.Store(cacheKey, o)
@@ -62,7 +62,7 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 		if r.Expiration.After(time.Now()) {
 			log.Debug("memorycache cache retrieve", log.Pairs{"cacheKey": cacheKey})
 			c.Index.UpdateObjectAccessTime(cacheKey)
-			cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(r.Value)))
+			cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(r.Value)))
 			return r.Value, nil
 		}
 
@@ -70,7 +70,7 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 		go c.Remove(cacheKey)
 	}
 
-	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
+	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 }
 
 // Remove removes an object from the cache

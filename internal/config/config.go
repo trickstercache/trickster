@@ -81,8 +81,9 @@ type OriginConfig struct {
 	IsDefault bool `toml:"is_default"`
 	// OriginType describes the type of origin (e.g., 'prometheus')
 	OriginType string `toml:"origin_type"`
-	Scheme     string `toml:"scheme"`
-	Host       string `toml:"host"`
+	// OriginURL provides the base upstream URL for all proxied requests to this origin.
+	// it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
+	OriginURL string `toml:"origin_url"`
 	// TimeoutSecs defines how long the HTTP request will wait for a response before timing out
 	TimeoutSecs int64 `toml:"timeout_secs"`
 	// KeepAliveTimeoutSecs defines how long an open keep-alive HTTP connection remains idle before closing
@@ -93,9 +94,8 @@ type OriginConfig struct {
 	CacheName string `toml:"cache_name"`
 	// IgnoreCachingHeaders will cause the orgin client to ignore any upstream or downstream HTTP caching headers
 	IgnoreCachingHeaders bool `toml:"ignore_caching_headers"`
-	// PathPrefix provides any prefix added to the front of the requested path when constructing the upstream request url
-	PathPrefix string `toml:"path_prefix"`
-	APIPath    string `toml:"api_path"`
+	// APIPath will be deprecated in a commit very soon
+	APIPath string `toml:"api_path"`
 
 	// Object Proxy Cache and Delta Proxy Cache Configurations
 	// ValueRetentionFactor limits the maxiumum the number of chronological timestamps worth of data to store in cache for each query
@@ -114,6 +114,12 @@ type OriginConfig struct {
 	BackfillTolerance time.Duration `toml:"-"`
 	// ValueRetention is the time.Duration representation of ValueRetentionSecs
 	ValueRetention time.Duration `toml:"-"`
+	// Scheme is the layer 7 protocol indicator (e.g. 'http'), derived from OriginURL
+	Scheme string `toml:"-"`
+	// Host is the upstream hostname/IP[:port] the origin client will connect to when fetching uncached data, derived from OriginURL
+	Host string `toml:"-"`
+	// PathPrefix provides any prefix added to the front of the requested path when constructing the upstream request url, derived from OriginURL
+	PathPrefix string `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -288,10 +294,6 @@ func DefaultCachingConfig() *CachingConfig {
 // DefaultOriginConfig will return a pointer to an OriginConfig with the default configuration settings
 func DefaultOriginConfig() *OriginConfig {
 	return &OriginConfig{
-		OriginType:            defaultOriginType,
-		Scheme:                defaultOriginScheme,
-		Host:                  defaultOriginHost,
-		APIPath:               defaultOriginAPIPath,
 		IgnoreCachingHeaders:  defaultOriginINCH,
 		ValueRetentionFactor:  defaultOriginVRF, // Cache a max of 1024 recent timestamps of data for each query
 		TimeoutSecs:           defaultOriginTimeoutSecs,
@@ -349,16 +351,8 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 
 		c.activeCaches[oc.CacheName] = true
 
-		if metadata.IsDefined("origins", k, "scheme") {
-			oc.Scheme = v.Scheme
-		}
-
-		if metadata.IsDefined("origins", k, "host") {
-			oc.Host = v.Host
-		}
-
-		if metadata.IsDefined("origins", k, "path_prefix") {
-			oc.PathPrefix = v.PathPrefix
+		if metadata.IsDefined("origins", k, "origin_url") {
+			oc.OriginURL = v.OriginURL
 		}
 
 		if metadata.IsDefined("origins", k, "timeout_secs") {

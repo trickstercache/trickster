@@ -14,6 +14,7 @@
 package config
 
 import (
+	"fmt"
 	"net/url"
 	"time"
 )
@@ -48,10 +49,11 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 			if providedOriginType != "" {
 				d.OriginType = providedOriginType
 			}
+			d.OriginURL = providedOriginURL
 			d.Scheme = url.Scheme
 			d.Host = url.Host
 			d.PathPrefix = url.Path
-			c.Origins["default"] = d
+			//c.Origins["default"] = d
 		}
 	}
 
@@ -63,22 +65,36 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	Logging = c.Logging
 	Metrics = c.Metrics
 
-	for k, o := range Origins {
+	for k, o := range c.Origins {
+
+		if o.OriginURL == "" {
+			return fmt.Errorf(`missing origin-url for origin "%s"`, k)
+		}
+
+		url, err := url.Parse(o.OriginURL)
+		if err != nil {
+			return err
+		}
+
+		if o.OriginType == "" {
+			return fmt.Errorf(`missing origin-type for origin "%s"`, k)
+		}
+
+		o.Scheme = url.Scheme
+		o.Host = url.Host
+		o.PathPrefix = url.Path
 		o.Timeout = time.Duration(o.TimeoutSecs) * time.Second
 		o.BackfillTolerance = time.Duration(o.BackfillToleranceSecs) * time.Second
 		o.ValueRetention = time.Duration(o.ValueRetentionFactor)
 		Origins[k] = o
 	}
 
-	for k, c := range Caches {
+	for _, c := range Caches {
 		c.TimeseriesTTL = time.Duration(c.TimeseriesTTLSecs) * time.Second
 		c.ObjectTTL = time.Duration(c.ObjectTTLSecs) * time.Second
 		c.FastForwardTTL = time.Duration(c.FastForwardTTLSecs) * time.Second
-
 		c.Index.FlushInterval = time.Duration(c.Index.FlushIntervalSecs) * time.Second
 		c.Index.ReapInterval = time.Duration(c.Index.ReapIntervalSecs) * time.Second
-
-		Caches[k] = c
 	}
 
 	return nil

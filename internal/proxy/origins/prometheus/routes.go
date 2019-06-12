@@ -23,7 +23,7 @@ import (
 func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 
 	// Host Header-based routing
-	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
+	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.OriginType, "originName": originName})
 	routing.Router.HandleFunc("/"+mnHealth, c.HealthHandler).Methods("GET").Host(originName)
 	routing.Router.HandleFunc(APIPath+mnQueryRange, c.QueryRangeHandler).Methods("GET", "POST").Host(originName)
 	routing.Router.HandleFunc(APIPath+mnQuery, c.QueryHandler).Methods("GET", "POST").Host(originName)
@@ -41,7 +41,7 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 
 	// If default origin, set those routes too
 	if o.IsDefault {
-		log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.Type})
+		log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.OriginType})
 		routing.Router.HandleFunc("/"+mnHealth, c.HealthHandler).Methods("GET")
 		routing.Router.HandleFunc(APIPath+mnQueryRange, c.QueryRangeHandler).Methods("GET", "POST")
 		routing.Router.HandleFunc(APIPath+mnQuery, c.QueryHandler).Methods("GET", "POST")

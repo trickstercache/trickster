@@ -900,7 +900,7 @@ func TestDeltaProxyCacheRequestWithRefresh(t *testing.T) {
 	defer es.Close()
 
 	cfg.FastForwardDisable = true
-	cfg.IgnoreNoCacheHeader = false
+	cfg.IgnoreCachingHeaders = false
 
 	r := httptest.NewRequest("GET", es.URL, nil)
 	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
@@ -953,7 +953,7 @@ func TestDeltaProxyCacheRequestWithRefreshError(t *testing.T) {
 	defer es.Close()
 
 	cfg.FastForwardDisable = true
-	cfg.IgnoreNoCacheHeader = false
+	cfg.IgnoreCachingHeaders = false
 
 	r := httptest.NewRequest("GET", es.URL, nil)
 	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
@@ -1227,7 +1227,7 @@ func TestDeltaProxyCacheRequestBadGateway(t *testing.T) {
 	defer es.Close()
 
 	cfg.FastForwardDisable = true
-	cfg.IgnoreNoCacheHeader = false
+	cfg.IgnoreCachingHeaders = false
 
 	r := httptest.NewRequest("GET", es.URL, nil)
 	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)

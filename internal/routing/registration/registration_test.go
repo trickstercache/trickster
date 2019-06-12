@@ -48,7 +48,7 @@ func TestRegisterProxyRoutesInflux(t *testing.T) {
 	}
 
 	do := config.Origins["default"]
-	do.Type = "influxdb"
+	do.OriginType = "influxdb"
 	config.Origins["default"] = do
 	registration.LoadCachesFromConfig()
 	RegisterProxyRoutes()

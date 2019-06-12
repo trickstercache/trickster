@@ -53,7 +53,7 @@ func (c *Cache) Connect() error {
 
 	// Load Index here and pass bytes as param2
 	indexData, _ := c.retrieve(index.IndexKey, false)
-	c.Index = index.NewIndex(c.Name, c.Config.Type, indexData, c.Config.Index, c.BulkRemove, c.storeNoIndex)
+	c.Index = index.NewIndex(c.Name, c.Config.CacheType, indexData, c.Config.Index, c.BulkRemove, c.storeNoIndex)
 	return nil
 }
 
@@ -71,7 +71,7 @@ func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 
 func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateIndex bool) error {
 
-	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
+	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 
 	dataFile := c.getFileName(cacheKey)
 
@@ -106,12 +106,12 @@ func (c *Cache) retrieve(cacheKey string, atime bool) ([]byte, error) {
 	data, err := ioutil.ReadFile(dataFile)
 	if err != nil {
 		log.Debug("filesystem cache miss", log.Pairs{"key": cacheKey, "dataFile": dataFile})
-		return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
+		return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 	}
 
 	o, err := index.ObjectFromBytes(data)
 	if err != nil {
-		return cache.CacheError(cacheKey, c.Name, c.Config.Type, "value for key [%s] could not be deserialized from cache")
+		return cache.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
 	}
 
 	if o.Expiration.After(time.Now()) {
@@ -119,12 +119,12 @@ func (c *Cache) retrieve(cacheKey string, atime bool) ([]byte, error) {
 		if atime {
 			go c.Index.UpdateObjectAccessTime(cacheKey)
 		}
-		cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(data)))
+		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
 		return o.Value, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
 	go c.Remove(cacheKey)
-	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
+	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 
 }
 

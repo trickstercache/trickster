@@ -47,11 +47,6 @@ const (
 	defaultMaxSizeObjects        = 0
 	defaultMaxSizeBackoffObjects = 100
 
-	defaultOriginType            = "prometheus"
-	defaultOriginScheme          = "http"
-	defaultOriginHost            = "prometheus:9090"
-	defaultOriginPathPrefix      = ""
-	defaultOriginAPIPath         = "/api/v1/"
 	defaultOriginINCH            = true
 	defaultOriginVRF             = 1024
 	defaultOriginTimeoutSecs     = 180

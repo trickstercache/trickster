@@ -78,7 +78,7 @@ func (c *Cache) Connect() error {
 
 // Store places the the data into the Redis Cache using the provided Key and TTL
 func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
-	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
+	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 	log.Debug("redis cache store", log.Pairs{"key": cacheKey})
 	return c.storeFunc(cacheKey, data, ttl)
 }
@@ -88,12 +88,12 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 	res, err := c.retrieveFunc(cacheKey)
 	if err != nil {
 		log.Debug("redis cache miss", log.Pairs{"key": cacheKey})
-		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
+		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 		return []byte{}, err
 	}
 	data := []byte(res)
 	log.Debug("redis cache retrieve", log.Pairs{"key": cacheKey})
-	cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(data)))
+	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
 	return data, nil
 }
 

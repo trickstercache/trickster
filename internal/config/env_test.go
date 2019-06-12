@@ -21,7 +21,7 @@ import (
 
 func TestLoadEnvVars(t *testing.T) {
 
-	os.Setenv(evOrigin, "http://1.1.1.1:9090")
+	os.Setenv(evOriginURL, "http://1.1.1.1:9090/some/path")
 	os.Setenv(evOriginType, "testing")
 	os.Setenv(evProxyPort, "4001")
 	os.Setenv(evMetricsPort, "4002")
@@ -46,15 +46,23 @@ func TestLoadEnvVars(t *testing.T) {
 		t.Errorf("expected %d got %d", 4002, Metrics.ListenPort)
 	}
 
+	if d.Scheme != "http" {
+		t.Errorf("expected %s got %s", "http", d.Scheme)
+	}
+
 	if d.Host != "1.1.1.1:9090" {
 		t.Errorf("expected %s got %s", "1.1.1.1:9090", d.Host)
+	}
+
+	if d.PathPrefix != "/some/path" {
+		t.Errorf("expected %s got %s", "/some/path", d.PathPrefix)
 	}
 
 	if strings.ToUpper(Logging.LogLevel) != "INFO" {
 		t.Errorf("expected %s got %s", "INFO", Logging.LogLevel)
 	}
 
-	os.Unsetenv(evOrigin)
+	os.Unsetenv(evOriginURL)
 	os.Unsetenv(evOriginType)
 	os.Unsetenv(evProxyPort)
 	os.Unsetenv(evMetricsPort)

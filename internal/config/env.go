@@ -20,7 +20,7 @@ import (
 
 const (
 	// Environment variables
-	evOrigin      = "TRK_ORIGIN"
+	evOriginURL   = "TRK_ORIGIN_URL"
 	evOriginType  = "TRK_ORIGIN_TYPE"
 	evProxyPort   = "TRK_PROXY_PORT"
 	evMetricsPort = "TRK_METRICS_PORT"
@@ -29,7 +29,7 @@ const (
 
 func (c *TricksterConfig) loadEnvVars() {
 	// Origin
-	if x := os.Getenv(evOrigin); x != "" {
+	if x := os.Getenv(evOriginURL); x != "" {
 		providedOriginURL = x
 	}
 

@@ -20,7 +20,7 @@ import (
 func TestLoadFlags(t *testing.T) {
 	c := NewConfig()
 	a := []string{
-		"-origin",
+		"-origin-url",
 		"http://prometheus.example.com:9090",
 		"-proxy-port",
 		"9091",

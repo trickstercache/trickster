@@ -35,7 +35,7 @@ func newCacheConfig(t *testing.T) config.CachingConfig {
 	if err != nil {
 		t.Fatalf("could not create temp directory (%s): %s", dir, err)
 	}
-	return config.CachingConfig{Type: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: dir}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	return config.CachingConfig{CacheType: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: dir}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
 }
 
 func TestConfiguration(t *testing.T) {
@@ -43,8 +43,8 @@ func TestConfiguration(t *testing.T) {
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
 	fc := Cache{Config: &cacheConfig}
 	cfg := fc.Configuration()
-	if cfg.Type != cacheType {
-		t.Fatalf("expected %s got %s", cacheType, cfg.Type)
+	if cfg.CacheType != cacheType {
+		t.Fatalf("expected %s got %s", cacheType, cfg.CacheType)
 	}
 }
 

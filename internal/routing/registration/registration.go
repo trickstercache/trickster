@@ -52,17 +52,18 @@ func RegisterProxyRoutes() {
 		if err != nil {
 			log.Fatal(1, "invalid cache name in origin config", log.Pairs{"originName": k, "cacheName": o.CacheName})
 		}
-		switch strings.ToLower(o.Type) {
+		switch strings.ToLower(o.OriginType) {
 		case "prometheus", "":
 			log.Info("Registering Prometheus Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 			client = prometheus.NewClient(k, o, c)
 		case "influxdb":
 			log.Info("Registering Influxdb Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 			client = influxdb.NewClient(k, o, c)
+		default:
+			log.Fatal(1, "unknown origin type", log.Pairs{"originType": o.OriginType})
 		}
 		if client != nil {
 			ProxyClients[k] = client
-
 			// If it's the default origin, register it last
 			if o.IsDefault {
 				defer client.RegisterRoutes(k, o)

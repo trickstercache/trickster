@@ -34,15 +34,15 @@ func newCacheConfig(t *testing.T) config.CachingConfig {
 	if err != nil {
 		t.Fatalf("could not create temp directory (%s): %s", dir, err)
 	}
-	return config.CachingConfig{Type: cacheType, Index: config.CacheIndexConfig{ReapInterval: 0}}
+	return config.CachingConfig{CacheType: cacheType, Index: config.CacheIndexConfig{ReapInterval: 0}}
 }
 
 func TestConfiguration(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	mc := Cache{Config: &cacheConfig}
 	cfg := mc.Configuration()
-	if cfg.Type != cacheType {
-		t.Fatalf("expected %s got %s", cacheType, cfg.Type)
+	if cfg.CacheType != cacheType {
+		t.Fatalf("expected %s got %s", cacheType, cfg.CacheType)
 	}
 }
 
