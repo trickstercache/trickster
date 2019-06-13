@@ -22,6 +22,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/proxy/origins/influxdb"
 	"github.com/Comcast/trickster/internal/proxy/origins/prometheus"
+	"github.com/Comcast/trickster/internal/proxy/origins/reverseproxycache"
 	"github.com/Comcast/trickster/internal/util/log"
 )
 
@@ -59,6 +60,9 @@ func RegisterProxyRoutes() {
 		case "influxdb":
 			log.Info("Registering Influxdb Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 			client = influxdb.NewClient(k, o, c)
+		case "rpc", "reverseproxycache":
+			log.Info("Registering ReverseProxyCache Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
+			client = reverseproxycache.NewClient(k, o, c)
 		default:
 			log.Fatal(1, "unknown origin type", log.Pairs{"originType": o.OriginType})
 		}
