@@ -23,6 +23,9 @@ import (
 // then overriding with any provided config file, then env vars, and finally flags
 func Load(applicationName string, applicationVersion string, arguments []string) error {
 
+	providedOriginURL = ""
+	providedOriginType = ""
+
 	ApplicationName = applicationName
 	ApplicationVersion = applicationVersion
 
