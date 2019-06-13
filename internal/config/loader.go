@@ -43,12 +43,12 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	c.loadFlags() // load parsed flags to override file and envs
 
 	// set the default origin url from the flags
-	if providedOriginURL != "" {
-		url, err := url.Parse(providedOriginURL)
-		if err != nil {
-			return err
-		}
-		if d, ok := c.Origins["default"]; ok {
+	if d, ok := c.Origins["default"]; ok {
+		if providedOriginURL != "" {
+			url, err := url.Parse(providedOriginURL)
+			if err != nil {
+				return err
+			}
 			if providedOriginType != "" {
 				d.OriginType = providedOriginType
 			}
@@ -56,8 +56,16 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 			d.Scheme = url.Scheme
 			d.Host = url.Host
 			d.PathPrefix = url.Path
-			//c.Origins["default"] = d
 		}
+		// If the user has configured their own origins, and one of them is not "default"
+		// then Trickster will not use the auto-created default origin
+		if d.OriginURL == "" {
+			delete(c.Origins, "default")
+		}
+	}
+
+	if len(c.Origins) == 0 {
+		return fmt.Errorf("no valid origins configured%s", "")
 	}
 
 	Config = c
@@ -69,7 +77,6 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	Metrics = c.Metrics
 
 	for k, o := range c.Origins {
-
 		if o.OriginURL == "" {
 			return fmt.Errorf(`missing origin-url for origin "%s"`, k)
 		}

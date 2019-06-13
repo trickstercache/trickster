@@ -330,12 +330,6 @@ func (c *TricksterConfig) setDefaults(metadata toml.MetaData) {
 
 func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 
-	// If the user has configured their own origins, and one of them is not "default"
-	// then Trickster will not use the auto-created default origin
-	if (len(c.Origins) > 1) && (!metadata.IsDefined("origins", "default")) {
-		delete(c.Origins, "default")
-	}
-
 	c.activeCaches = make(map[string]bool)
 
 	for k, v := range c.Origins {
