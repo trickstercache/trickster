@@ -13,6 +13,8 @@
 
 package config
 
+import "net/http"
+
 const (
 	defaultLogFile  = ""
 	defaultLogLevel = "INFO"
@@ -54,4 +56,9 @@ const (
 	defaultBackfillToleranceSecs = 0
 	defaultKeepAliveTimeoutSecs  = 300
 	defaultMaxIdleConns          = 20
+
+	defaultHealthEndpoint          = "/health"
+	defaultHealthCheckPath         = "/"
+	defaultHealthCheckVerb         = http.MethodGet
+	defaultHealthCheckResponseCode = http.StatusOK
 )

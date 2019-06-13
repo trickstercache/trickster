@@ -94,6 +94,14 @@ type OriginConfig struct {
 	CacheName string `toml:"cache_name"`
 	// IgnoreCachingHeaders will cause the orgin client to ignore any upstream or downstream HTTP caching headers
 	IgnoreCachingHeaders bool `toml:"ignore_caching_headers"`
+	// HealthCheckEndpoint provides the route path Trickster will register for mapping the Health Endpoint
+	HealthCheckEndpoint string `toml:"health_check_endpoint"`
+	// HealthCheckUpstreamPath provides the path + query parameters for the upstream health check
+	HealthCheckUpstreamPath string `toml:"health_check_upstream_path"`
+	// HealthCheckVerb provides the HTTP verb to use when making an upstream health check
+	HealthCheckVerb string `toml:"health_check_verb"`
+	// HealthCheckResponseCode specifies the expected HTTP Response Code
+	HealthCheckResponseCode int `toml:"health_check_response_code"`
 
 	// Object Proxy Cache and Delta Proxy Cache Configurations
 	// ValueRetentionFactor limits the maxiumum the number of chronological timestamps worth of data to store in cache for each query
@@ -292,17 +300,20 @@ func DefaultCachingConfig() *CachingConfig {
 // DefaultOriginConfig will return a pointer to an OriginConfig with the default configuration settings
 func DefaultOriginConfig() *OriginConfig {
 	return &OriginConfig{
-		IgnoreCachingHeaders:  defaultOriginINCH,
-		ValueRetentionFactor:  defaultOriginVRF, // Cache a max of 1024 recent timestamps of data for each query
-		TimeoutSecs:           defaultOriginTimeoutSecs,
-		KeepAliveTimeoutSecs:  defaultKeepAliveTimeoutSecs,
-		MaxIdleConns:          defaultMaxIdleConns,
-		CacheName:             defaultOriginCacheName,
-		BackfillToleranceSecs: defaultBackfillToleranceSecs,
-		ValueRetention:        defaultOriginVRF,
-		Timeout:               time.Second * defaultOriginTimeoutSecs,
-
-		BackfillTolerance: defaultBackfillToleranceSecs,
+		HealthCheckEndpoint:     defaultHealthEndpoint,
+		HealthCheckUpstreamPath: defaultHealthCheckPath,
+		HealthCheckResponseCode: defaultHealthCheckResponseCode,
+		HealthCheckVerb:         defaultHealthCheckVerb,
+		IgnoreCachingHeaders:    defaultOriginINCH,
+		ValueRetentionFactor:    defaultOriginVRF, // Cache a max of 1024 recent timestamps of data for each query
+		TimeoutSecs:             defaultOriginTimeoutSecs,
+		KeepAliveTimeoutSecs:    defaultKeepAliveTimeoutSecs,
+		MaxIdleConns:            defaultMaxIdleConns,
+		CacheName:               defaultOriginCacheName,
+		BackfillToleranceSecs:   defaultBackfillToleranceSecs,
+		ValueRetention:          defaultOriginVRF,
+		Timeout:                 time.Second * defaultOriginTimeoutSecs,
+		BackfillTolerance:       defaultBackfillToleranceSecs,
 	}
 }
 
@@ -379,6 +390,22 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "backfill_tolerance_secs") {
 			oc.BackfillToleranceSecs = v.BackfillToleranceSecs
+		}
+
+		if metadata.IsDefined("origins", k, "health_check_endpoint") {
+			oc.HealthCheckEndpoint = v.HealthCheckEndpoint
+		}
+
+		if metadata.IsDefined("origins", k, "health_check_upstream_path") {
+			oc.HealthCheckUpstreamPath = v.HealthCheckUpstreamPath
+		}
+
+		if metadata.IsDefined("origins", k, "health_check_verb") {
+			oc.HealthCheckVerb = v.HealthCheckVerb
+		}
+
+		if metadata.IsDefined("origins", k, "health_check_response_code") {
+			oc.HealthCheckResponseCode = v.HealthCheckResponseCode
 		}
 
 		c.Origins[k] = oc
