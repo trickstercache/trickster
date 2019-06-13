@@ -29,7 +29,7 @@ import (
 
 func TestNewClient(t *testing.T) {
 
-	err := config.Load("trickster", "test", nil)
+	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -107,7 +107,7 @@ func TestHTTPClient(t *testing.T) {
 
 func TestCache(t *testing.T) {
 
-	err := config.Load("trickster", "test", nil)
+	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}

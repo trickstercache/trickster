@@ -16,6 +16,7 @@ package prometheus
 import (
 	"io/ioutil"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/Comcast/trickster/internal/config"
@@ -41,6 +42,48 @@ func TestHealthHandler(t *testing.T) {
 	r := httptest.NewRequest("GET", "http://0/health", nil)
 
 	client := &Client{name: "default", config: config.Origins["default"], webClient: tu.NewTestWebClient()}
+	client.HealthHandler(w, r)
+	resp := w.Result()
+
+	// it should return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != "{}" {
+		t.Errorf("expected '{}' got %s.", bodyBytes)
+	}
+
+}
+
+func TestHealthHandlerCustomPath(t *testing.T) {
+
+	es := tu.NewTestServer(200, "{}")
+	defer es.Close()
+
+	a := []string{"-config", "../../../../testdata/test.custom_health.conf"}
+	err := config.Load("trickster", "test", a)
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	c := config.Origins["test"]
+	c.OriginURL = es.URL
+
+	u, _ := url.Parse(es.URL)
+	c.Scheme = u.Scheme
+	c.Host = u.Host
+	c.PathPrefix = u.Path
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://1/health", nil)
+
+	client := &Client{name: "test", config: c, webClient: tu.NewTestWebClient()}
 	client.HealthHandler(w, r)
 	resp := w.Result()
 
