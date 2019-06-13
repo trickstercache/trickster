@@ -59,6 +59,7 @@ const (
 
 	defaultHealthEndpoint          = "/health"
 	defaultHealthCheckPath         = "/"
+	defaultHealthCheckQuery        = ""
 	defaultHealthCheckVerb         = http.MethodGet
 	defaultHealthCheckResponseCode = http.StatusOK
 )

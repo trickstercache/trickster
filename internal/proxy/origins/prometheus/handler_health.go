@@ -31,6 +31,7 @@ func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 		r.Method = cfg.HealthCheckVerb
 	} else {
 		u.Path += cfg.HealthCheckUpstreamPath
+		u.RawQuery = cfg.HealthCheckQuery
 	}
 
 	engines.ProxyRequest(model.NewRequest(c.name, otPrometheus, "HealthHandler", u, r.Header, c.config.Timeout, r, c.webClient), w)
