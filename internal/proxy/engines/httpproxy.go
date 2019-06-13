@@ -76,7 +76,7 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 	latency := time.Since(start) // includes any time required to decompress the document for deserialization
 
 	if config.Logging.LogLevel == "debug" || config.Logging.LogLevel == "trace" {
-		go logUpstreamRequest(r.OriginName, r.OriginType, r.HandlerName, r.HTTPMethod, r.URL.String(), r.ClientRequest.UserAgent(), resp.StatusCode, len(body), latency.Seconds())
+		go logUpstreamRequest(r.OriginName, r.OriginType, r.HandlerName, r.ClientRequest.Method, r.URL.String(), r.ClientRequest.UserAgent(), resp.StatusCode, len(body), latency.Seconds())
 	}
 
 	return body, resp, latency
@@ -98,9 +98,9 @@ func recordProxyResults(r *model.Request, httpStatus, path string, elapsed float
 }
 
 func recordResults(r *model.Request, engine, cacheStatus, httpStatus, path, ffStatus string, elapsed float64, extents timeseries.ExtentList, header http.Header) {
-	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, httpStatus, path).Inc()
+	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.ClientRequest.Method, cacheStatus, httpStatus, path).Inc()
 	if elapsed > 0 {
-		metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, httpStatus, path).Observe(elapsed)
+		metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.ClientRequest.Method, cacheStatus, httpStatus, path).Observe(elapsed)
 	}
 	headers.SetResultsHeader(header, engine, cacheStatus, ffStatus, extents)
 }

@@ -27,7 +27,6 @@ type Request struct {
 	OriginName         string
 	OriginType         string
 	HandlerName        string
-	HTTPMethod         string
 	URL                *url.URL
 	TemplateURL        *url.URL
 	Headers            http.Header
@@ -44,7 +43,6 @@ func NewRequest(originName, originType, handlerName, method string, url *url.URL
 		OriginName:    originName,
 		OriginType:    originType,
 		HandlerName:   handlerName,
-		HTTPMethod:    method,
 		URL:           url,
 		TemplateURL:   CopyURL(url),
 		Headers:       headers,
@@ -60,7 +58,6 @@ func (r *Request) Copy() *Request {
 		OriginName:    r.OriginName,
 		OriginType:    r.OriginType,
 		HandlerName:   r.HandlerName,
-		HTTPMethod:    r.HTTPMethod,
 		URL:           CopyURL(r.URL),
 		TemplateURL:   CopyURL(r.TemplateURL),
 		Headers:       headers.CopyHeaders(r.Headers),

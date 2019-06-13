@@ -318,9 +318,9 @@ func fetchTimeseries(r *model.Request, client model.Client) (timeseries.Timeseri
 }
 
 func recordDPCResult(r *model.Request, cacheStatus, httpStatus, path, ffStatus string, elapsed float64, needed []timeseries.Extent, header http.Header) {
-	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, httpStatus, path).Inc()
+	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.ClientRequest.Method, cacheStatus, httpStatus, path).Inc()
 	if elapsed > 0 {
-		metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, httpStatus, path).Observe(elapsed)
+		metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.ClientRequest.Method, cacheStatus, httpStatus, path).Observe(elapsed)
 	}
 	headers.SetResultsHeader(header, "DeltaProxyCache", cacheStatus, ffStatus, timeseries.ExtentList(needed))
 }
