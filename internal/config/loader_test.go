@@ -14,6 +14,7 @@
 package config
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -38,6 +39,39 @@ func TestLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 3, got %s", Caches["default"].Index.ReapInterval)
 	}
 
+}
+
+func TestLoadConfigurationMissingOriginURL(t *testing.T) {
+	expected := `missing origin-url for origin "default"`
+	a := []string{"-origin-type", "testing"}
+	err := Load("trickster-test", "0", a)
+	if err == nil {
+		t.Errorf("expected error `%s` got nothing", expected)
+	} else if err.Error() != expected {
+		t.Errorf("expected error `%s` got `%s`", expected, err.Error())
+	}
+}
+
+func TestLoadConfigurationBadOriginURL(t *testing.T) {
+	expected := fmt.Sprintf(`parse %s: first path segment in URL cannot contain colon`, "sasdf_asd[as;://asdf923_-=a*")
+	a := []string{"-config", "../../testdata/test.bad_origin_url.conf"}
+	err := Load("trickster-test", "0", a)
+	if err == nil {
+		t.Errorf("expected error `%s` got nothing", expected)
+	} else if err.Error() != expected {
+		t.Errorf("expected error `%s` got `%s`", expected, err.Error())
+	}
+}
+
+func TestLoadConfigurationMissingOriginType(t *testing.T) {
+	expected := `missing origin-type for origin "test"`
+	a := []string{"-config", "../../testdata/test.missing_origin_type.conf"}
+	err := Load("trickster-test", "0", a)
+	if err == nil {
+		t.Errorf("expected error `%s` got nothing", expected)
+	} else if err.Error() != expected {
+		t.Errorf("expected error `%s` got `%s`", expected, err.Error())
+	}
 }
 
 func TestFullLoadConfiguration(t *testing.T) {
@@ -321,31 +355,25 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	// TODO fix this up
-	// if o.OriginType != defaultOriginType {
-	// 	t.Errorf("expected %s, got %s", defaultOriginType, o.OriginType)
-	// }
+	if o.OriginType != "test" {
+		t.Errorf("expected %s orgin type, got %s", "test", o.OriginType)
+	}
 
 	if o.CacheName != defaultOriginCacheName {
 		t.Errorf("expected %s, got %s", defaultOriginCacheName, o.CacheName)
 	}
 
-	// TODO fix this up
-	// if o.Scheme != defaultOriginScheme {
-	// 	t.Errorf("expected %s, got %s", defaultOriginScheme, o.Scheme)
-	// }
+	if o.Scheme != "http" {
+		t.Errorf("expected %s, got %s", "http", o.Scheme)
+	}
 
-	// if o.Host != defaultOriginHost {
-	// 	t.Errorf("expected %s, got %s", defaultOriginHost, o.Host)
-	// }
+	if o.Host != "1" {
+		t.Errorf("expected %s, got %s", "1", o.Host)
+	}
 
-	// if o.PathPrefix != defaultOriginPathPrefix {
-	// 	t.Errorf("expected '%s', got '%s'", defaultOriginPathPrefix, o.PathPrefix)
-	// }
-
-	// if o.APIPath != defaultOriginAPIPath {
-	// 	t.Errorf("expected %s, got %s", defaultOriginAPIPath, o.APIPath)
-	// }
+	if o.PathPrefix != "" {
+		t.Errorf("expected '%s', got '%s'", "", o.PathPrefix)
+	}
 
 	if o.IgnoreCachingHeaders != defaultOriginINCH {
 		t.Errorf("expected ignore_caching_headers %t, got %t", defaultOriginINCH, o.IgnoreCachingHeaders)
