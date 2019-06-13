@@ -232,6 +232,247 @@ func TestMerge(t *testing.T) {
 				StepDuration: time.Duration(5000) * time.Second,
 			},
 		},
+		// Run 3: merge one metric, one metric unchanged
+		{
+			a: &MatrixEnvelope{
+				Status: rvSuccess,
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "c"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(10000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
+			},
+			b: &MatrixEnvelope{
+				Status: rvSuccess,
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "c"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(15000, 0), End: time.Unix(15000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
+			},
+			merged: &MatrixEnvelope{
+				Status: rvSuccess,
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "c"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(15000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
+			},
+		},
+		// Run 4: merge multiple extents
+		{
+			a: &MatrixEnvelope{
+				Status: rvSuccess,
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(15000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
+			},
+			b: &MatrixEnvelope{
+				Status: rvSuccess,
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 30000000, Value: 1.5},
+								model.SamplePair{Timestamp: 35000000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 30000000, Value: 1.5},
+								model.SamplePair{Timestamp: 35000000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(30000, 0), End: time.Unix(35000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
+			},
+			merged: &MatrixEnvelope{
+				Status: rvSuccess,
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+								model.SamplePair{Timestamp: 30000000, Value: 1.5},
+								model.SamplePair{Timestamp: 35000000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+								model.SamplePair{Timestamp: 30000000, Value: 1.5},
+								model.SamplePair{Timestamp: 35000000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(15000, 0)},
+					timeseries.Extent{Start: time.Unix(30000, 0), End: time.Unix(35000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
+			},
+		},
+		//
+		//
+		// Run 5: merge with some overlapping extents
+		{
+			a: &MatrixEnvelope{
+				Status: rvSuccess,
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(15000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
+			},
+			b: &MatrixEnvelope{
+				Status: rvSuccess,
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+								model.SamplePair{Timestamp: 20000000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+								model.SamplePair{Timestamp: 20000000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(15000, 0), End: time.Unix(20000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
+			},
+			merged: &MatrixEnvelope{
+				Status: rvSuccess,
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+								model.SamplePair{Timestamp: 20000000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+								model.SamplePair{Timestamp: 20000000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(20000, 0)},
+				},
+				StepDuration: time.Duration(5000) * time.Second,
+			},
+		},
 	}
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
