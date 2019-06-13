@@ -31,68 +31,6 @@ const (
 	exampleRangeQueryStart     = "2015-07-01T20:10:30.781Z"
 	exampleRangeQueryEnd       = "2015-07-01T20:11:00.781Z"
 	exampleRangeQueryStep      = "15"
-
-	// this example should have 2 data points later than those in exampleRangeResponse
-	exampleResponse = `{
-   "status" : "success",
-   "data" : {
-      "resultType" : "vector",
-      "result" : [
-         {
-            "metric" : {
-               "__name__" : "up",
-               "job" : "prometheus",
-               "instance" : "localhost:9090"
-            },
-            "value": [ 1435781475.781, "1" ]
-         },
-         {
-            "metric" : {
-               "__name__" : "up",
-               "job" : "node",
-               "instance" : "localhost:9091"
-            },
-            "value" : [ 1435781475.781, "0" ]
-         }
-      ]
-   }
-}`
-
-	// this example should have 6 data points
-	// NOTE: Times in this response should end with '.781' not '.000'. Had
-	//       to truncate due to how extents are measured in TricksterHandler.
-	exampleRangeResponse = `{
-   "status" : "success",
-   "data" : {
-      "resultType" : "matrix",
-      "result" : [
-         {
-            "metric" : {
-               "__name__" : "up",
-               "job" : "prometheus",
-               "instance" : "localhost:9090"
-            },
-            "values" : [
-               [ 1435781430.000, "1" ],
-               [ 1435781445.000, "1" ],
-               [ 1435781460.000, "1" ]
-            ]
-         },
-         {
-            "metric" : {
-               "__name__" : "up",
-               "job" : "node",
-               "instance" : "localhost:9091"
-            },
-            "values" : [
-               [ 1435781430.000, "0" ],
-               [ 1435781445.000, "0" ],
-               [ 1435781460.000, "1" ]
-            ]
-         }
-      ]
-   }
-}`
 )
 
 func TestSetStep(t *testing.T) {
