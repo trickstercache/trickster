@@ -37,7 +37,6 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	if len(ProxyClients) == 0 {
 		t.Errorf("expected %d got %d", 1, 0)
 	}
-
 }
 
 func TestRegisterProxyRoutesInflux(t *testing.T) {
@@ -47,13 +46,71 @@ func TestRegisterProxyRoutesInflux(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	do := config.Origins["default"]
-	config.Origins["default"] = do
 	registration.LoadCachesFromConfig()
 	RegisterProxyRoutes()
 
 	if len(ProxyClients) == 0 {
 		t.Errorf("expected %d got %d", 1, 0)
 	}
+}
 
+func TestRegisterProxyRoutesMultipleDefaults(t *testing.T) {
+	expected := "too many default origins"
+	a := []string{"-config", "../../../testdata/test.too_many_defaults.conf"}
+	err := config.Load("trickster", "test", a)
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+	registration.LoadCachesFromConfig()
+	err = RegisterProxyRoutes()
+	if err == nil {
+		t.Errorf("expected error `%s` got nothing", expected)
+	} else if err.Error() != expected {
+		t.Errorf("expected error `%s` got `%s`", expected, err.Error())
+	}
+}
+
+func TestRegisterProxyRoutesBadCacheName(t *testing.T) {
+	expected := "invalid cache name in origin config. originName: test, cacheName: test2"
+	a := []string{"-config", "../../../testdata/test.bad_cache_name.conf"}
+	err := config.Load("trickster", "test", a)
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+	registration.LoadCachesFromConfig()
+	err = RegisterProxyRoutes()
+	if err == nil {
+		t.Errorf("expected error `%s` got nothing", expected)
+	} else if err.Error() != expected {
+		t.Errorf("expected error `%s` got `%s`", expected, err.Error())
+	}
+}
+
+func TestRegisterProxyRoutesBadOriginType(t *testing.T) {
+	expected := "unknown origin type in origin config. originName: test, originType: foo"
+	a := []string{"-config", "../../../testdata/test.unknown_origin_type.conf"}
+	err := config.Load("trickster", "test", a)
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+	registration.LoadCachesFromConfig()
+	err = RegisterProxyRoutes()
+	if err == nil {
+		t.Errorf("expected error `%s` got nothing", expected)
+	} else if err.Error() != expected {
+		t.Errorf("expected error `%s` got `%s`", expected, err.Error())
+	}
+}
+
+func TestRegisterMultipleOrigins(t *testing.T) {
+	a := []string{"-config", "../../../testdata/test.multiple_origins.conf"}
+	err := config.Load("trickster", "test", a)
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+	registration.LoadCachesFromConfig()
+	err = RegisterProxyRoutes()
+	if err != nil {
+		t.Error(err)
+	}
 }

@@ -14,6 +14,7 @@
 package registration
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/Comcast/trickster/internal/cache"
@@ -30,17 +31,20 @@ import (
 var ProxyClients = make(map[string]model.Client)
 
 // RegisterProxyRoutes iterates the Trickster Configuration and registers the routes for the configured origins
-func RegisterProxyRoutes() {
+func RegisterProxyRoutes() error {
 
 	hasDefault := false
 
 	// Iterate our origins from the config and register their path handlers into the mux.
 	for k, o := range config.Origins {
 
+		fmt.Println(k)
+
 		// Ensure only one default origin exists
 		if o.IsDefault {
 			if hasDefault {
-				log.Fatal(1, "too many default origins", log.Pairs{})
+				log.Error("too many default origins", log.Pairs{})
+				return fmt.Errorf("too many default origins%s", "")
 			}
 			hasDefault = true
 		}
@@ -51,7 +55,8 @@ func RegisterProxyRoutes() {
 
 		c, err = registration.GetCache(o.CacheName)
 		if err != nil {
-			log.Fatal(1, "invalid cache name in origin config", log.Pairs{"originName": k, "cacheName": o.CacheName})
+			log.Error("invalid cache name in origin config", log.Pairs{"originName": k, "cacheName": o.CacheName})
+			return fmt.Errorf("invalid cache name in origin config. originName: %s, cacheName: %s", k, o.CacheName)
 		}
 		switch strings.ToLower(o.OriginType) {
 		case "prometheus", "":
@@ -64,7 +69,8 @@ func RegisterProxyRoutes() {
 			log.Info("Registering ReverseProxyCache Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 			client = reverseproxycache.NewClient(k, o, c)
 		default:
-			log.Fatal(1, "unknown origin type", log.Pairs{"originType": o.OriginType})
+			log.Error("unknown origin type", log.Pairs{"originName": k, "originType": o.OriginType})
+			return fmt.Errorf("unknown origin type in origin config. originName: %s, originType: %s", k, o.OriginType)
 		}
 		if client != nil {
 			ProxyClients[k] = client
@@ -76,4 +82,5 @@ func RegisterProxyRoutes() {
 			}
 		}
 	}
+	return nil
 }
