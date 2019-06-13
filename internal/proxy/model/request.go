@@ -38,7 +38,7 @@ type Request struct {
 }
 
 // NewRequest returns a new proxy request object that can service the downstream request
-func NewRequest(originName, originType, handlerName, method string, url *url.URL, headers http.Header, timeout time.Duration, clientRequest *http.Request, client *http.Client) *Request {
+func NewRequest(originName, originType, handlerName string, url *url.URL, headers http.Header, timeout time.Duration, clientRequest *http.Request, client *http.Client) *Request {
 	return &Request{
 		OriginName:    originName,
 		OriginType:    originType,

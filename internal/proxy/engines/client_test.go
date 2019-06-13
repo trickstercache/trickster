@@ -556,32 +556,32 @@ func (c *PromTestClient) RegisterRoutes(originName string, o *config.OriginConfi
 func (c *PromTestClient) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BaseURL()
 	u.Path += APIPath + mnLabels
-	ProxyRequest(tm.NewRequest(c.name, otPrometheus, "HealthHandler", http.MethodGet, u, r.Header, c.config.Timeout, r, c.webClient), w)
+	ProxyRequest(tm.NewRequest(c.name, otPrometheus, "HealthHandler", u, r.Header, c.config.Timeout, r, c.webClient), w)
 }
 
 func (c *PromTestClient) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	DeltaProxyCacheRequest(
-		tm.NewRequest(c.name, otPrometheus, "QueryRangeHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
+		tm.NewRequest(c.name, otPrometheus, "QueryRangeHandler", u, r.Header, c.config.Timeout, r, c.webClient),
 		w, c, c.cache, c.cache.Configuration().TimeseriesTTL)
 }
 
 func (c *PromTestClient) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	ObjectProxyCacheRequest(
-		tm.NewRequest(c.name, otPrometheus, "QueryHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
+		tm.NewRequest(c.name, otPrometheus, "QueryHandler", u, r.Header, c.config.Timeout, r, c.webClient),
 		w, c, c.cache, c.cache.Configuration().ObjectTTL, false, false)
 }
 
 func (c *PromTestClient) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	ObjectProxyCacheRequest(
-		tm.NewRequest(c.name, otPrometheus, "SeriesHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
+		tm.NewRequest(c.name, otPrometheus, "SeriesHandler", u, r.Header, c.config.Timeout, r, c.webClient),
 		w, c, c.cache, c.cache.Configuration().ObjectTTL, false, false)
 }
 
 func (c *PromTestClient) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	ProxyRequest(tm.NewRequest(c.name, otPrometheus, "APIProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r, c.webClient), w)
+	ProxyRequest(tm.NewRequest(c.name, otPrometheus, "APIProxyHandler", c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r, c.webClient), w)
 }
 
 func testResultHeaderPartMatch(header http.Header, kvp map[string]string) error {

@@ -23,6 +23,15 @@ import (
 // HealthHandler checks the health of the Configured Upstream Origin
 func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BaseURL()
-	u.Path += APIPath + "query?query=up"
-	engines.ProxyRequest(model.NewRequest(c.name, otPrometheus, "HealthHandler", http.MethodGet, u, r.Header, c.config.Timeout, r, c.webClient), w)
+
+	cfg := c.Configuration()
+	if cfg.HealthCheckUpstreamPath == "/" {
+		u.Path += APIPath + "query"
+		u.RawQuery = "query=up"
+		r.Method = cfg.HealthCheckVerb
+	} else {
+		u.Path += cfg.HealthCheckUpstreamPath
+	}
+
+	engines.ProxyRequest(model.NewRequest(c.name, otPrometheus, "HealthHandler", u, r.Header, c.config.Timeout, r, c.webClient), w)
 }

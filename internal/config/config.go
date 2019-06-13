@@ -100,8 +100,6 @@ type OriginConfig struct {
 	HealthCheckUpstreamPath string `toml:"health_check_upstream_path"`
 	// HealthCheckVerb provides the HTTP verb to use when making an upstream health check
 	HealthCheckVerb string `toml:"health_check_verb"`
-	// HealthCheckResponseCode specifies the expected HTTP Response Code
-	HealthCheckResponseCode int `toml:"health_check_response_code"`
 
 	// Object Proxy Cache and Delta Proxy Cache Configurations
 	// ValueRetentionFactor limits the maxiumum the number of chronological timestamps worth of data to store in cache for each query
@@ -302,7 +300,6 @@ func DefaultOriginConfig() *OriginConfig {
 	return &OriginConfig{
 		HealthCheckEndpoint:     defaultHealthEndpoint,
 		HealthCheckUpstreamPath: defaultHealthCheckPath,
-		HealthCheckResponseCode: defaultHealthCheckResponseCode,
 		HealthCheckVerb:         defaultHealthCheckVerb,
 		IgnoreCachingHeaders:    defaultOriginINCH,
 		ValueRetentionFactor:    defaultOriginVRF, // Cache a max of 1024 recent timestamps of data for each query
@@ -402,10 +399,6 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "health_check_verb") {
 			oc.HealthCheckVerb = v.HealthCheckVerb
-		}
-
-		if metadata.IsDefined("origins", k, "health_check_response_code") {
-			oc.HealthCheckResponseCode = v.HealthCheckResponseCode
 		}
 
 		c.Origins[k] = oc

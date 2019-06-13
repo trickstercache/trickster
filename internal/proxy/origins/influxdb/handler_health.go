@@ -22,7 +22,15 @@ import (
 
 // HealthHandler checks the health of the configured upstream Origin
 func (c Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
+
 	u := c.BaseURL()
-	u.Path += "/" + health
-	engines.ProxyRequest(model.NewRequest(c.name, OtInfluxDb, "HealthHandler", http.MethodGet, u, r.Header, c.config.Timeout, r, c.webClient), w)
+
+	cfg := c.Configuration()
+	if cfg.HealthCheckUpstreamPath == "/" {
+		u.Path += "/" + health
+		r.Method = cfg.HealthCheckVerb
+	} else {
+		u.Path += cfg.HealthCheckUpstreamPath
+	}
+	engines.ProxyRequest(model.NewRequest(c.name, OtInfluxDb, "HealthHandler", u, r.Header, c.config.Timeout, r, c.webClient), w)
 }

@@ -24,6 +24,6 @@ import (
 func (c *Client) ObjectProxyCacheHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	engines.ObjectProxyCacheRequest(
-		model.NewRequest(c.name, otPrometheus, "ObjectProxyCacheHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
+		model.NewRequest(c.name, otPrometheus, "ObjectProxyCacheHandler", u, r.Header, c.config.Timeout, r, c.webClient),
 		w, c, c.cache, c.cache.Configuration().ObjectTTL, false, false)
 }
