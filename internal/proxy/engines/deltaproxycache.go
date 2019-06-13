@@ -55,13 +55,13 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	now := time.Now()
 	OldestRetainedTimestamp := now.Truncate(trq.Step).Add(-(trq.Step * cfg.ValueRetention))
 	if trq.Extent.End.Before(OldestRetainedTimestamp) {
-		log.Debug("timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.ValueRetention})
+		log.Debug("timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp.Unix(), "step": trq.Step, "retention": cfg.ValueRetention})
 		ProxyRequest(r, w)
 		return
 	}
 
 	if trq.Extent.Start.After(bf.End) {
-		log.Debug("timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": cfg.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
+		log.Debug("timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": cfg.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End.Unix(), "queryStart": trq.Extent.Start.Unix()})
 		ProxyRequest(r, w)
 		return
 	}
@@ -152,7 +152,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		}
 	}
 
-	dpStatus := log.Pairs{"cacheKey": key, "cacheStatus": cacheStatus, "reqStart": trq.Extent.Start, "reqEnd": trq.Extent.End}
+	dpStatus := log.Pairs{"cacheKey": key, "cacheStatus": cacheStatus, "reqStart": trq.Extent.Start.Unix(), "reqEnd": trq.Extent.End.Unix()}
 	if len(missRanges) > 0 {
 		dpStatus["extentsFetched"] = timeseries.ExtentList(missRanges).String()
 	}
