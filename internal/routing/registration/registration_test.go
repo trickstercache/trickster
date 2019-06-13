@@ -114,3 +114,19 @@ func TestRegisterMultipleOrigins(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestRegisterMultipleOriginsPlusDefault(t *testing.T) {
+	a := []string{"-config", "../../../testdata/test.multiple_origins_plus_default.conf"}
+	err := config.Load("trickster", "test", a)
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+	registration.LoadCachesFromConfig()
+	err = RegisterProxyRoutes()
+	if err != nil {
+		t.Error(err)
+	}
+	if !config.Origins["default"].IsDefault {
+		t.Errorf("expected origin %s.IsDefault to be true", "default")
+	}
+}

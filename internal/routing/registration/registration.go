@@ -34,21 +34,32 @@ var ProxyClients = make(map[string]model.Client)
 func RegisterProxyRoutes() error {
 
 	hasDefault := false
+	hasNamedDefault := false
+
+	// This iteration will ensure default origins are handled properly
+	for k, o := range config.Origins {
+		hasNamedDefault = hasNamedDefault || k == "default"
+		if hasDefault && o.IsDefault {
+			// If more than one origin's IsDefault is true, error out
+			log.Error("too many default origins", log.Pairs{})
+			return fmt.Errorf("too many default origins%s", "")
+		}
+		if len(config.Origins) == 1 {
+			// If there is only one origin defined, set its IsDefault to true
+			o.IsDefault = true
+			hasDefault = true
+			break
+		}
+		hasDefault = hasDefault || o.IsDefault
+	}
+
+	// if there are multiple origins, none have IsDefault=true, but one is named "default", set its IsDefault to true for backwards compatibility
+	if hasNamedDefault && !hasDefault {
+		config.Origins["default"].IsDefault = true
+	}
 
 	// Iterate our origins from the config and register their path handlers into the mux.
 	for k, o := range config.Origins {
-
-		fmt.Println(k)
-
-		// Ensure only one default origin exists
-		if o.IsDefault {
-			if hasDefault {
-				log.Error("too many default origins", log.Pairs{})
-				return fmt.Errorf("too many default origins%s", "")
-			}
-			hasDefault = true
-		}
-
 		var client model.Client
 		var c cache.Cache
 		var err error
@@ -82,5 +93,6 @@ func RegisterProxyRoutes() error {
 			}
 		}
 	}
+
 	return nil
 }
