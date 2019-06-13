@@ -22,7 +22,7 @@ import (
 
 func TestNewClient(t *testing.T) {
 
-	err := config.Load("trickster", "test", nil)
+	err := config.Load("trickster", "test", []string{"-origin-type", "influxdb", "-origin-url", "http://1"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -60,7 +60,7 @@ func TestConfiguration(t *testing.T) {
 
 func TestCache(t *testing.T) {
 
-	err := config.Load("trickster", "test", nil)
+	err := config.Load("trickster", "test", []string{"-origin-type", "influxdb", "-origin-url", "http://1"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
