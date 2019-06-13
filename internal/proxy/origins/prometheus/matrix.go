@@ -40,24 +40,22 @@ func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 	for _, s := range me.Data.Result {
 		meMetrics[s.Metric.String()] = s
 	}
-	if len(meMetrics) > 0 {
-		for _, ts := range collection {
-			if ts != nil {
-				me2 := ts.(*MatrixEnvelope)
-				for _, s := range me2.Data.Result {
-					name := s.Metric.String()
-					if _, ok := meMetrics[name]; !ok {
-						meMetrics[name] = s
-						me.Data.Result = append(me.Data.Result, s)
-						continue
-					}
-					meMetrics[name].Values = append(meMetrics[name].Values, s.Values...)
+	for _, ts := range collection {
+		if ts != nil {
+			me2 := ts.(*MatrixEnvelope)
+			for _, s := range me2.Data.Result {
+				name := s.Metric.String()
+				if _, ok := meMetrics[name]; !ok {
+					meMetrics[name] = s
+					me.Data.Result = append(me.Data.Result, s)
+					continue
 				}
-				me.ExtentList = append(me.ExtentList, me2.ExtentList...)
+				meMetrics[name].Values = append(meMetrics[name].Values, s.Values...)
 			}
+			me.ExtentList = append(me.ExtentList, me2.ExtentList...)
 		}
-		me.ExtentList = timeseries.CompressExtents(me.ExtentList, me.StepDuration)
 	}
+	me.ExtentList = me.ExtentList.Compress(me.StepDuration)
 	if sort {
 		me.Sort()
 	}
@@ -71,10 +69,13 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 			ResultType: me.Data.ResultType,
 			Result:     make([]*model.SampleStream, 0, len(me.Data.Result)),
 		},
+		StepDuration: me.StepDuration,
+		ExtentList:   make(timeseries.ExtentList, len(me.ExtentList)),
 	}
+	copy(resMe.ExtentList, me.ExtentList)
 	for _, ss := range me.Data.Result {
 		newSS := &model.SampleStream{Metric: ss.Metric}
-		newSS.Values = ss.Values
+		newSS.Values = ss.Values[:]
 		resMe.Data.Result = append(resMe.Data.Result, newSS)
 	}
 	return resMe
@@ -82,50 +83,72 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 
 // Crop returns a copy of the base Timeseries that has been cropped down to the provided Extents.
 // Crop assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
-func (me *MatrixEnvelope) Crop(e timeseries.Extent) timeseries.Timeseries {
-	ts := me.Copy().(*MatrixEnvelope)
-	for i, s := range ts.Data.Result {
-		ss := &model.SampleStream{Metric: s.Metric, Values: []model.SamplePair{}}
+func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
+
+	x := len(me.ExtentList)
+	// The Series has no extents, so no need to do anything
+	if x < 1 {
+		me.Data.Result = model.Matrix{}
+		me.ExtentList = timeseries.ExtentList{}
+		return
+	}
+
+	// if the extent of the series is entirely outside the extent of the crop range, return empty set and bail
+	if me.ExtentList.OutsideOf(e) {
+		me.Data.Result = model.Matrix{}
+		me.ExtentList = timeseries.ExtentList{}
+		return
+	}
+
+	// if the series extent is entirely inside the extent of the crop range, simple adjust down its ExtentList
+	if me.ExtentList.Contains(e) {
+		if me.ValueCount() == 0 {
+			me.Data.Result = model.Matrix{}
+		}
+		me.ExtentList = me.ExtentList.Crop(e)
+		return
+	}
+
+	for i, s := range me.Data.Result {
 		start := -1
 		end := -1
-		for i, val := range s.Values {
+		for j, val := range s.Values {
 			t := val.Timestamp.Time()
-			if t == e.End {
+			if t.Equal(e.End) {
 				// for cases where the first element is the only qualifying element,
 				// start must be incremented or an empty response is returned
-				if i == 0 {
-					start = 0
+				if j == 0 || t.Equal(e.Start) || start == -1 {
+					start = j
 				}
-				end = i + 1
+				end = j + 1
 				break
 			}
 			if t.After(e.End) {
-				end = i
+				end = j
 				break
 			}
 			if t.Before(e.Start) {
 				continue
 			}
-			if start == -1 && (t == e.Start || (e.End.After(t) && t.After(e.Start))) {
-				start = i
+			if start == -1 && (t.Equal(e.Start) || (e.End.After(t) && t.After(e.Start))) {
+				start = j
 			}
 		}
-		if start != -1 {
+		if start != -1 && len(s.Values) > 0 {
 			if end == -1 {
 				end = len(s.Values)
 			}
-			ss.Metric = s.Metric
-			ss.Values = s.Values[start:end]
-			ts.Data.Result[i] = ss
+			me.Data.Result[i].Values = s.Values[start:end]
 		} else {
-			if i < len(ts.Data.Result) {
-				ts.Data.Result = append(ts.Data.Result[:i], ts.Data.Result[i+1:]...)
+			if i < len(me.Data.Result) {
+				me.Data.Result = append(me.Data.Result[:i], me.Data.Result[i+1:]...)
 			} else {
-				ts.Data.Result = ts.Data.Result[:len(ts.Data.Result)-1]
+				me.Data.Result = me.Data.Result[:len(me.Data.Result)-1]
 			}
 		}
+
 	}
-	return ts
+	me.ExtentList = me.ExtentList.Crop(e)
 }
 
 // Sort sorts all Values in each Series chronologically by their timestamp
@@ -149,15 +172,12 @@ func (me *MatrixEnvelope) Sort() {
 }
 
 // SetExtents overwrites a Timeseries's known extents with the provided extent list
-func (me *MatrixEnvelope) SetExtents(extents []timeseries.Extent) {
+func (me *MatrixEnvelope) SetExtents(extents timeseries.ExtentList) {
 	me.ExtentList = extents
 }
 
 // Extents returns the Timeseries's ExentList
-func (me *MatrixEnvelope) Extents() []timeseries.Extent {
-	if len(me.ExtentList) == 0 {
-		me.Extremes()
-	}
+func (me *MatrixEnvelope) Extents() timeseries.ExtentList {
 	return me.ExtentList
 }
 
@@ -173,29 +193,6 @@ func (me *MatrixEnvelope) ValueCount() int {
 		c += len(me.Data.Result[i].Values)
 	}
 	return c
-}
-
-// Extremes returns the absolute start end times of a Timeseries, without respect to uncached gaps
-func (me *MatrixEnvelope) Extremes() []timeseries.Extent {
-	r := me.Data.Result
-	stamps := map[model.Time]bool{}
-	// Get unique timestamps
-	for s := range r {
-		for v := range r[s].Values {
-			stamps[r[s].Values[v].Timestamp] = true
-		}
-	}
-	var keys Times
-	// Sort the timestamps
-	if len(stamps) > 0 {
-		keys = make(Times, 0, len(stamps))
-		for k := range stamps {
-			keys = append(keys, k)
-		}
-		sort.Sort(keys)
-		me.ExtentList = []timeseries.Extent{timeseries.Extent{Start: keys[0].Time(), End: keys[len(keys)-1].Time()}}
-	}
-	return me.ExtentList
 }
 
 // methods required for sorting Prometheus model.Times

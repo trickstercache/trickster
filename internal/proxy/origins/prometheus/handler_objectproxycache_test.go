@@ -23,12 +23,12 @@ import (
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
-func TestSeriesHandler(t *testing.T) {
+func TestObjectProxyCacheHandler(t *testing.T) {
 
-	var es = tu.NewTestServer(200, "{}")
+	es := tu.NewTestServer(200, "{}")
 	defer es.Close()
 
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -40,11 +40,11 @@ func TestSeriesHandler(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL+`/default/api/v1/series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}&start=100&end=100`, nil)
+	r := httptest.NewRequest("GET", "http://0/query_range?q=up&time=0", nil)
 
 	client := &Client{name: "default", config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
 
-	client.SeriesHandler(w, r)
+	client.ObjectProxyCacheHandler(w, r)
 
 	resp := w.Result()
 

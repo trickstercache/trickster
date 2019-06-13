@@ -21,14 +21,33 @@ package promsim
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// Directives represents a collection of modifiers for the simulator's behavior provided by the user
-type Directives struct {
+const (
+	lpRepeatableRandom = "repeatable_random"
+	lpUsageCurve       = "usage_curve"
+	secondsPerDay      = 86400
+)
+
+const (
+	mdSeriesCount  = "series_count"
+	mdLatency      = "latency_ms"
+	mdRangeLatency = "range_latency_ms"
+	mdMaxVal       = "max_value"
+	mdMinVal       = "min_value"
+	mdSeriesID     = "series_id"
+	mdStatusCode   = "status_code"
+	mdInvalidBody  = "invalid_response_body"
+	mdLinePattern  = "line_pattern"
+)
+
+// Modifiers represents a collection of modifiers for the simulator's behavior provided by the user
+type Modifiers struct {
 	// SeriesCount defines how many series to return
 	SeriesCount int
 	// Latency introduces a static delay in responding to each request
@@ -44,9 +63,12 @@ type Directives struct {
 	// InvalidResponseBody when > 0 causes the server to respond with a payload that cannot be unmarshaled
 	// useful for causing and testing unmarshling failure cases
 	InvalidResponseBody int
+	// LinePattern indicates the pattern/shape of the resulting timeseries
+	LinePattern string
 
 	rawString string
 	seriesID  int
+	seedFunc  func(d *Modifiers, seriesIndex int, querySeed int64, t time.Time) int
 }
 
 // Result is a simplified version of a Prometheus timeseries response
@@ -62,7 +84,7 @@ func GetInstantData(query string, t time.Time) (string, int, error) {
 		t = time.Now()
 	}
 
-	d := getDirectives(query)
+	d := getModifiers(query)
 	if d.Latency > 0 {
 		time.Sleep(d.Latency)
 	}
@@ -76,9 +98,9 @@ func GetInstantData(query string, t time.Time) (string, int, error) {
 	queryVal := getQueryVal(query)
 
 	for i := 0; d.SeriesCount > i; i++ {
-		d1 := &Directives{rawString: d.rawString}
-		d1.addLabel(fmt.Sprintf(`"series_id":"%d"`, i))
-		series = append(series, fmt.Sprintf(`{"metric":{%s},"value":[%d,"%d"]}`, d1.rawString, t.Unix(), seededVal(d, i, queryVal, t)))
+		d1 := &Modifiers{rawString: d.rawString}
+		d1.addLabel(fmt.Sprintf(`"%s":"%d"`, mdSeriesID, i))
+		series = append(series, fmt.Sprintf(`{"metric":{%s},"value":[%d,"%d"]}`, d1.rawString, t.Unix(), d.seedFunc(d, i, queryVal, t)))
 	}
 	return fmt.Sprintf(`{"status":"%s","data":{"resultType":"vector","result":[`, status) + strings.Join(series, ",") + "]}}", d.StatusCode, nil
 }
@@ -86,7 +108,7 @@ func GetInstantData(query string, t time.Time) (string, int, error) {
 // GetTimeSeriesData returns a simulated Matrix Envelope with repeatable results
 func GetTimeSeriesData(query string, start time.Time, end time.Time, step time.Duration) (string, int, error) {
 
-	d := getDirectives(query)
+	d := getModifiers(query)
 
 	if d.Latency > 0 {
 		time.Sleep(d.Latency)
@@ -103,12 +125,12 @@ func GetTimeSeriesData(query string, start time.Time, end time.Time, step time.D
 	queryVal := getQueryVal(query)
 
 	for i := 0; d.SeriesCount > i; i++ {
-		d1 := &Directives{rawString: d.rawString}
-		d1.addLabel(fmt.Sprintf(`"series_id":"%d"`, i))
+		d1 := &Modifiers{rawString: d.rawString}
+		d1.addLabel(fmt.Sprintf(`"%s":"%d"`, mdSeriesID, i))
 		v := make([]string, 0, seriesLen)
 		for j := 0; j <= seriesLen; j++ {
 			t := start.Add(time.Duration(j) * step)
-			v = append(v, fmt.Sprintf(`[%d,"%d"]`, t.Unix(), seededVal(d, i, queryVal, t)))
+			v = append(v, fmt.Sprintf(`[%d,"%d"]`, t.Unix(), d.seedFunc(d, i, queryVal, t)))
 		}
 		series = append(series, fmt.Sprintf(`{"metric":{%s},"values":[%s]}`, d1.rawString, strings.Join(v, ",")))
 	}
@@ -118,13 +140,12 @@ func GetTimeSeriesData(query string, start time.Time, end time.Time, step time.D
 	return out, d.StatusCode, nil
 }
 
-func getDirectives(query string) *Directives {
+func getModifiers(query string) *Modifiers {
 
 	var err error
-	var k string
 	var i int64
 
-	d := &Directives{
+	d := &Modifiers{
 		InvalidResponseBody: 0,
 		Latency:             0,
 		RangeLatency:        0,
@@ -133,6 +154,8 @@ func getDirectives(query string) *Directives {
 		SeriesCount:         1,
 		seriesID:            0,
 		StatusCode:          200,
+		LinePattern:         lpRepeatableRandom,
+		seedFunc:            repeatableRandomVal,
 	}
 
 	provided := []string{}
@@ -142,54 +165,88 @@ func getDirectives(query string) *Directives {
 		start++
 		end := strings.LastIndex(query, "}")
 		if end > start {
-			dirs := strings.Split(query[start:end], ",")
-			for _, dir := range dirs {
-
-				parts := strings.SplitN(dir, "=", 2)
-				if len(parts) == 2 {
-					i, err = strconv.ParseInt(parts[1], 10, 64)
-					if err != nil {
-						provided = append(provided, fmt.Sprintf(`"%s":"%s"`, parts[0], parts[1]))
-						continue
-					}
-					k = parts[0]
-				} else {
-					provided = append(provided, fmt.Sprintf(`"%s":""`, dir))
+			mods := strings.Split(query[start:end], ",")
+			for _, mod := range mods {
+				parts := strings.SplitN(mod, "=", 2)
+				if len(parts) != 2 {
+					provided = append(provided, fmt.Sprintf(`"%s":""`, mod))
 					continue
 				}
-
-				switch k {
-				case "series_count":
-					d.SeriesCount = int(i)
-				case "latency_ms":
-					d.Latency = time.Duration(i) * time.Millisecond
-				case "range_latency_ms":
-					d.RangeLatency = time.Duration(i) * time.Millisecond
-				case "max_val":
-					d.MaxValue = int(i)
-				case "min_val":
-					d.MinValue = int(i)
-				case "series_id":
-					d.seriesID = int(i)
-				case "status_code":
-					d.StatusCode = int(i)
-				case "invalid_response_body":
-					d.InvalidResponseBody = int(i)
+				parts[1] = strings.Replace(parts[1], `"`, ``, -1)
+				i, err = strconv.ParseInt(parts[1], 10, 64)
+				if err != nil {
+					switch parts[0] {
+					case mdLinePattern:
+						d.LinePattern = parts[1]
+					}
+				} else {
+					switch parts[0] {
+					case mdSeriesCount:
+						d.SeriesCount = int(i)
+					case mdLatency:
+						d.Latency = time.Duration(i) * time.Millisecond
+					case mdRangeLatency:
+						d.RangeLatency = time.Duration(i) * time.Millisecond
+					case mdMaxVal:
+						d.MaxValue = int(i)
+					case mdMinVal:
+						d.MinValue = int(i)
+					case mdSeriesID:
+						d.seriesID = int(i)
+					case mdStatusCode:
+						d.StatusCode = int(i)
+					case mdInvalidBody:
+						d.InvalidResponseBody = int(i)
+					}
 				}
 				provided = append(provided, fmt.Sprintf(`"%s":"%s"`, parts[0], parts[1]))
 			}
 		}
 	}
+
+	// this determines, based on the provided LinePattern, what value generator function to call
+	// if the LinePattern is not provided, or the pattern name is not registered below in seedFuncs
+	// then the repeatable random value generator func will be used
+	if lp, ok := seedFuncs[d.LinePattern]; ok {
+		d.seedFunc = lp
+	}
+
 	d.rawString = strings.Join(provided, ",")
 	return d
 }
 
-func seededVal(d *Directives, seriesIndex int, querySeed int64, t time.Time) int {
+var seedFuncs = map[string]func(d *Modifiers, seriesIndex int, querySeed int64, t time.Time) int{
+	lpRepeatableRandom: repeatableRandomVal,
+	lpUsageCurve:       usageCurveVal,
+}
+
+func repeatableRandomVal(d *Modifiers, seriesIndex int, querySeed int64, t time.Time) int {
 	if d.RangeLatency > 0 {
 		time.Sleep(d.RangeLatency)
 	}
 	rand.Seed(querySeed + int64(seriesIndex) + t.Unix())
 	return d.MinValue + rand.Intn(d.MaxValue-d.MinValue)
+}
+
+func usageCurveVal(d *Modifiers, seriesIndex int, querySeed int64, t time.Time) int {
+	if d.RangeLatency > 0 {
+		time.Sleep(d.RangeLatency)
+	}
+
+	// Scale the max randomly if it is not index 0
+	max := d.MaxValue
+	if seriesIndex != 0 {
+		rand.Seed(int64(seriesIndex) + querySeed)
+		scale := rand.Float32()*.5 + .5
+		max = int(float32(max-d.MinValue)*scale) + d.MinValue
+	}
+	_, offset := t.Zone()
+	seconds := (t.Unix() + int64(offset)) % secondsPerDay
+	A := float64(max-d.MinValue) / 2 // Amplitude
+	B := math.Pi * 2 / secondsPerDay // Period
+	C := 4.0 * 3600.0                // Phase shift back to 8pm
+	D := A + float64(d.MinValue)     // Vertical shift
+	return int(A*math.Cos(B*(float64(seconds)+C)) + D)
 }
 
 // Calculates a number for the Query Value
@@ -203,7 +260,7 @@ func getQueryVal(query string) int64 {
 	return v
 }
 
-func (d *Directives) addLabel(in string) {
+func (d *Modifiers) addLabel(in string) {
 	if len(d.rawString) == 0 {
 		d.rawString = in
 		return

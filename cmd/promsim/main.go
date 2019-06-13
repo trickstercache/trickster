@@ -11,16 +11,27 @@
 * limitations under the License.
  */
 
-package prometheus
+package main
 
 import (
+	"fmt"
 	"net/http"
+	"os"
 
-	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/pkg/promsim"
 )
 
-// ProxyHandler sends a request through the basic reverse proxy to the origin, and services non-cacheable Prometheus API calls.
-func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	engines.ProxyRequest(model.NewRequest(c.name, otPrometheus, "ProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r, c.webClient), w)
+func main() {
+
+	port := "9090"
+	if len(os.Args) > 1 && os.Args[1] != "" {
+		port = os.Args[1]
+	}
+
+	fmt.Println("Starting up PromSim on port", port)
+	err := http.ListenAndServe(fmt.Sprintf(":%s", port), promsim.MuxWithRoutes())
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(0)
+	}
 }

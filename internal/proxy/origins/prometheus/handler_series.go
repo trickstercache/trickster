@@ -15,6 +15,8 @@ package prometheus
 
 import (
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/model"
@@ -23,6 +25,24 @@ import (
 // SeriesHandler proxies requests for path /series to the origin by way of the object proxy cache
 func (c *Client) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
+
+	params := r.URL.Query()
+
+	// Round Start and End times down to top of most recent minute for cacheability
+	if p := params.Get(upStart); p != "" {
+		if i, err := strconv.ParseInt(p, 10, 64); err == nil {
+			params.Set(upStart, strconv.FormatInt(time.Unix(i, 0).Truncate(time.Second*time.Duration(60)).Unix(), 10))
+		}
+	}
+
+	if p := params.Get(upEnd); p != "" {
+		if i, err := strconv.ParseInt(p, 10, 64); err == nil {
+			params.Set(upEnd, strconv.FormatInt(time.Unix(i, 0).Truncate(time.Second*time.Duration(60)).Unix(), 10))
+		}
+	}
+
+	r.URL.RawQuery = params.Encode()
+
 	engines.ObjectProxyCacheRequest(
 		model.NewRequest(c.name, otPrometheus, "SeriesHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
 		w, c, c.cache, c.cache.Configuration().ObjectTTL, false, false)

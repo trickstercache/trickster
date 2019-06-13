@@ -52,7 +52,7 @@ func TestSetExtent(t *testing.T) {
 	}
 }
 
-func TestFasForwardURL(t *testing.T) {
+func TestFastForwardURL(t *testing.T) {
 
 	expected := "q=up"
 
