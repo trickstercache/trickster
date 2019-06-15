@@ -393,7 +393,7 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 	return resMe
 }
 
-// Crop returns a copy of the base Timeseries that has been cropped down to the provided Extents.
+// Crop reduces the Timeseries down to timestamps contained within the provided Extents (inclusive).
 // Crop assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
 func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
 
@@ -412,7 +412,7 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
 		return
 	}
 
-	// if the series extent is entirely inside the extent of the crop range, simple adjust down its ExtentList
+	// if the series extent is entirely inside the extent of the crop range, simply adjust down its ExtentList
 	if me.ExtentList.Contains(e) {
 		if me.ValueCount() == 0 {
 			me.Data.Result = model.Matrix{}
@@ -421,15 +421,17 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
 		return
 	}
 
+	deletes := make(map[int]bool)
+
 	for i, s := range me.Data.Result {
 		start := -1
 		end := -1
 		for j, val := range s.Values {
 			t := val.Timestamp.Time()
-			if t == e.End {
+			if t.Equal(e.End) {
 				// for cases where the first element is the only qualifying element,
 				// start must be incremented or an empty response is returned
-				if j == 0 || t == e.Start || start == -1 {
+				if j == 0 || t.Equal(e.Start) || start == -1 {
 					start = j
 				}
 				end = j + 1
@@ -442,23 +444,27 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
 			if t.Before(e.Start) {
 				continue
 			}
-			if start == -1 && (t == e.Start || (e.End.After(t) && t.After(e.Start))) {
+			if start == -1 && (t.Equal(e.Start) || (e.End.After(t) && t.After(e.Start))) {
 				start = j
 			}
 		}
-		if start != -1 {
+		if start != -1 && len(s.Values) > 0 {
 			if end == -1 {
 				end = len(s.Values)
 			}
-			me.Data.Result[i].Values = me.Data.Result[i].Values[start:end]
+			me.Data.Result[i].Values = s.Values[start:end]
 		} else {
-			if i < len(me.Data.Result) {
-				me.Data.Result = append(me.Data.Result[:i], me.Data.Result[i+1:]...)
-			} else {
-				me.Data.Result = me.Data.Result[:len(me.Data.Result)-1]
+			deletes[i] = true
+		}
+	}
+	if len(deletes) > 0 {
+		tmp := me.Data.Result[:0]
+		for i, r := range me.Data.Result {
+			if _, ok := deletes[i]; !ok {
+				tmp = append(tmp, r)
 			}
 		}
-
+		me.Data.Result = tmp
 	}
 	me.ExtentList = me.ExtentList.Crop(e)
 }
