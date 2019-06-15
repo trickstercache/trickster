@@ -17,13 +17,24 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
 func TestDeriveCacheKey(t *testing.T) {
 
-	client := &Client{}
+	client := &Client{
+		config: &config.OriginConfig{
+			PathsLookup: map[string]*config.ProxyPathConfig{
+				"/": &config.ProxyPathConfig{
+					CacheKeyParams:  []string{"query", "step", "time"},
+					CacheKeyHeaders: []string{},
+				},
+			},
+		},
+	}
+
 	u := &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
 	r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}}
 	key := client.DeriveCacheKey(r, "extra")

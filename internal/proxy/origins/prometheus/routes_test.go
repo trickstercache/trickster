@@ -17,6 +17,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/routing"
 	tu "github.com/Comcast/trickster/internal/util/testing"
@@ -36,9 +37,15 @@ func TestRegisterRoutesNoDefault(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+	}
+
 	oc := config.Origins["default"]
 	oc.IsDefault = false
-	client := Client{config: oc}
+	client := Client{config: oc, cache: cache}
 	client.RegisterRoutes("test_default", oc)
 
 	// This should be false
@@ -69,8 +76,14 @@ func TestRegisterRoutesDefault(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+	}
+
 	oc := config.Origins["default"]
-	client := Client{config: oc}
+	client := Client{config: oc, cache: cache}
 	client.RegisterRoutes("default", oc)
 
 	// This should be false
