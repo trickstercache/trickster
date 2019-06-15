@@ -23,13 +23,11 @@ import (
 // DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
 func (c *Client) DeriveCacheKey(r *model.Request, extra string) string {
 
-	cfg := c.Configuration()
-
 	var hashParams []string
 	var hashHeaders []string
 
 	matchLen := -1
-	for k, p := range cfg.PathsLookup {
+	for k, p := range c.config.PathsLookup {
 		if strings.Index(r.URL.Path, k) > -1 && len(k) > matchLen {
 			matchLen = len(k)
 			hashParams = p.CacheKeyParams
