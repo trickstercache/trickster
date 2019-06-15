@@ -77,6 +77,7 @@ type MainConfig struct {
 type OriginConfig struct {
 
 	// HTTP and Proxy Configurations
+	//
 	// IsDefault indicates if this is the default origin for any request not matching a configured route
 	IsDefault bool `toml:"is_default"`
 	// OriginType describes the type of origin (e.g., 'prometheus')
@@ -113,6 +114,7 @@ type OriginConfig struct {
 
 	// Synthesized Configurations
 	// These configurations are parsed versions of those defined above, and are what Trickster uses internally
+	//
 	// Timeout is the time.Duration representation of TimeoutSecs
 	Timeout time.Duration `toml:"-"`
 	// BackfillTolerance is the time.Duration representation of BackfillToleranceSecs
@@ -251,7 +253,7 @@ type MetricsConfig struct {
 func NewConfig() *TricksterConfig {
 	return &TricksterConfig{
 		Caches: map[string]*CachingConfig{
-			"default": DefaultCachingConfig(),
+			"default": NewCacheConfig(),
 		},
 		Logging: &LoggingConfig{
 			LogFile:  defaultLogFile,
@@ -264,7 +266,7 @@ func NewConfig() *TricksterConfig {
 			ListenPort: defaultMetricsListenPort,
 		},
 		Origins: map[string]*OriginConfig{
-			"default": DefaultOriginConfig(),
+			"default": NewOriginConfig(),
 		},
 		ProxyServer: &ProxyServerConfig{
 			ListenPort: defaultProxyListenPort,
@@ -272,8 +274,8 @@ func NewConfig() *TricksterConfig {
 	}
 }
 
-// DefaultCachingConfig will return a pointer to an OriginConfig with the default configuration settings
-func DefaultCachingConfig() *CachingConfig {
+// NewCacheConfig will return a pointer to an OriginConfig with the default configuration settings
+func NewCacheConfig() *CachingConfig {
 
 	return &CachingConfig{
 		CacheType:          defaultCacheType,
@@ -296,8 +298,8 @@ func DefaultCachingConfig() *CachingConfig {
 	}
 }
 
-// DefaultOriginConfig will return a pointer to an OriginConfig with the default configuration settings
-func DefaultOriginConfig() *OriginConfig {
+// NewOriginConfig will return a pointer to an OriginConfig with the default configuration settings
+func NewOriginConfig() *OriginConfig {
 	return &OriginConfig{
 		HealthCheckEndpoint:     defaultHealthEndpoint,
 		HealthCheckUpstreamPath: defaultHealthCheckPath,
@@ -334,7 +336,7 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 
 	for k, v := range c.Origins {
 
-		oc := DefaultOriginConfig()
+		oc := NewOriginConfig()
 		if metadata.IsDefined("origins", k, "origin_type") {
 			oc.OriginType = v.OriginType
 		}
@@ -417,7 +419,7 @@ func (c *TricksterConfig) setCachingDefaults(metadata toml.MetaData) {
 			continue
 		}
 
-		cc := DefaultCachingConfig()
+		cc := NewCacheConfig()
 
 		if metadata.IsDefined("caches", k, "cache_type") {
 			cc.CacheType = v.CacheType
