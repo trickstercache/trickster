@@ -14,7 +14,6 @@
 package prometheus
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -27,9 +26,6 @@ import (
 // BaseURL returns a URL in the form of scheme://host/path based on the proxy configuration
 func (c *Client) BaseURL() *url.URL {
 	u := &url.URL{}
-
-	fmt.Println("config", c.config)
-
 	u.Scheme = c.config.Scheme
 	u.Host = c.config.Host
 	u.Path = c.config.PathPrefix

@@ -14,7 +14,6 @@
 package prometheus
 
 import (
-	"sort"
 	"strings"
 
 	"github.com/Comcast/trickster/internal/proxy/model"
@@ -23,17 +22,35 @@ import (
 
 // DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
 func (c *Client) DeriveCacheKey(r *model.Request, extra string) string {
-	params := r.URL.Query()
 
-	switch r.HandlerName {
-	case "SeriesHandler":
-		var matchString string
-		if p, ok := params[upMatch]; ok {
-			sort.Strings(p)
-			matchString = strings.Join(p, ",")
+	cfg := c.Configuration()
+
+	var hashParams []string
+	var hashHeaders []string
+
+	matchLen := -1
+	for k, p := range cfg.PathsLookup {
+		if strings.Index(r.URL.Path, k) > -1 && len(k) > matchLen {
+			matchLen = len(k)
+			hashParams = p.CacheKeyParams
+			hashHeaders = p.CacheKeyHeaders
 		}
-		return md5.Checksum(r.URL.Path + params.Get(upStart) + params.Get(upEnd) + matchString + extra)
 	}
 
-	return md5.Checksum(r.URL.Path + params.Get(upQuery) + params.Get(upStep) + params.Get(upTime) + extra)
+	params := r.URL.Query()
+	vals := make([]string, 0, len(hashParams)+len(hashHeaders))
+
+	for _, p := range hashParams {
+		if v := params.Get(p); v != "" {
+			vals = append(vals, v)
+		}
+	}
+
+	for _, p := range hashHeaders {
+		if v := r.Headers.Get(p); v != "" {
+			vals = append(vals, v)
+		}
+	}
+
+	return md5.Checksum(r.URL.Path + strings.Join(vals, "") + extra)
 }
