@@ -90,6 +90,12 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 			return fmt.Errorf(`missing origin-type for origin "%s"`, k)
 		}
 
+		for _, p := range o.Paths {
+			if p.Path != "" {
+				o.PathsLookup[p.Path] = p
+			}
+		}
+
 		o.Scheme = url.Scheme
 		o.Host = url.Host
 		o.PathPrefix = url.Path

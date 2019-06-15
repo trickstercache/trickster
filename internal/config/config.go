@@ -14,6 +14,7 @@
 package config
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -111,6 +112,8 @@ type OriginConfig struct {
 	// BackfillToleranceSecs prevents values with timestamps newer than the provided number of seconds from being cached
 	// this allows propagation of upstream backfill operations that modify recently-served data
 	BackfillToleranceSecs int64 `toml:"backfill_tolerance_secs"`
+	// Paths is a list of ProxyPathConfigs that control the behavior of the given paths when requested
+	Paths map[string]*ProxyPathConfig `toml:"paths"`
 
 	// Synthesized Configurations
 	// These configurations are parsed versions of those defined above, and are what Trickster uses internally
@@ -127,6 +130,33 @@ type OriginConfig struct {
 	Host string `toml:"-"`
 	// PathPrefix provides any prefix added to the front of the requested path when constructing the upstream request url, derived from OriginURL
 	PathPrefix string `toml:"-"`
+	// PathsLookup provides a map for looking up specific Paths by configured /path
+	PathsLookup map[string]*ProxyPathConfig `toml:"-"`
+}
+
+// ProxyPathConfig ...
+type ProxyPathConfig struct {
+	// Path indicates the HTTP Request's URL PATH to which this configuration applies
+	Path string `toml:"path"`
+	// HandlerName provides the name of the HTTP handler to use
+	HandlerName string `toml:"handler"`
+	// Methods provides the list of permitted HTTP request methods for this Path
+	Methods []string `toml:"methods"`
+	// CacheKeyParams provides the list of http request query parameters to be included in the hash for each query's cache key
+	CacheKeyParams []string `toml:"cache_key_params"`
+	// CacheKeyHeaders provides the list of http request headers to be included in the hash for each query's cache key
+	CacheKeyHeaders []string `toml:"cache_key_headers"`
+	// DefaultTTLSecs indicates the TTL Cache for this path. If
+	DefaultTTLSecs int `toml:"default_ttl_secs"`
+
+	// Synthesized ProxyPathConfig Values
+	//
+	// DefaultTTL is the time.Duration representation of DefaultTTLSecs
+	DefaultTTL time.Duration `toml:"-"`
+	// Handler is a pointer to the HTTP Handler method represented by the HandlerName
+	Handler func(w http.ResponseWriter, r *http.Request) `toml:"-"`
+	// Order is this Path's order index in the list of configured Paths
+	Order int `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -315,6 +345,8 @@ func NewOriginConfig() *OriginConfig {
 		ValueRetention:          defaultOriginVRF,
 		Timeout:                 time.Second * defaultOriginTimeoutSecs,
 		BackfillTolerance:       defaultBackfillToleranceSecs,
+		Paths:                   make(map[string]*ProxyPathConfig),
+		PathsLookup:             make(map[string]*ProxyPathConfig),
 	}
 }
 
@@ -401,6 +433,11 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "health_check_query") {
 			oc.HealthCheckQuery = v.HealthCheckQuery
+		}
+
+		i := 0
+		for _, p := range v.Paths {
+			p.Order = i
 		}
 
 		c.Origins[k] = oc

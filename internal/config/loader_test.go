@@ -42,7 +42,7 @@ func TestLoadConfiguration(t *testing.T) {
 }
 
 func TestLoadConfigurationMissingOriginURL(t *testing.T) {
-	expected := `missing origin-url for origin "default"`
+	expected := `no valid origins configured`
 	a := []string{"-origin-type", "testing"}
 	err := Load("trickster-test", "0", a)
 	if err == nil {
