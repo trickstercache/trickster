@@ -15,13 +15,38 @@ package engines
 
 import (
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/timeseries"
 )
+
+func TestDeriveCacheKey(t *testing.T) {
+
+	client := &PromTestClient{
+		config: &config.OriginConfig{
+			PathsLookup: map[string]*config.ProxyPathConfig{
+				"/": &config.ProxyPathConfig{
+					CacheKeyParams:  []string{"query", "step", "time"},
+					CacheKeyHeaders: []string{},
+				},
+			},
+		},
+	}
+
+	u := &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
+	r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}}
+	key := DeriveCacheKey(client, client.config, r, "extra")
+
+	if key != "6667a75e76dea9a5cd6c6ba73e5825b5" {
+		t.Errorf("expected %s got %s", "6667a75e76dea9a5cd6c6ba73e5825b5", key)
+	}
+
+}
 
 func TestQueryCache(t *testing.T) {
 

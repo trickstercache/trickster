@@ -31,7 +31,8 @@ import (
 	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
 	"github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/internal/util/md5"
+	"github.com/Comcast/trickster/internal/util/log"
+	ts "github.com/Comcast/trickster/internal/util/strings"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 
 	"github.com/prometheus/common/model"
@@ -180,25 +181,6 @@ func (c *PromTestClient) ParseTimeRangeQuery(r *tm.Request) (*timeseries.TimeRan
 	}
 
 	return trq, nil
-}
-
-// DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
-func (c *PromTestClient) DeriveCacheKey(r *tm.Request, extra string) string {
-
-	isInstant := strings.HasSuffix(r.URL.Path, "/query")
-	isRange := strings.HasSuffix(r.URL.Path, "/query_range")
-
-	if isInstant && c.InstantCacheKey != "" {
-		return c.InstantCacheKey
-	}
-	if isRange && c.RangeCacheKey != "" {
-		return c.RangeCacheKey
-	}
-
-	params := r.URL.Query()
-	key := md5.Checksum(r.URL.Path + params.Get(upQuery) + params.Get(upStep) + params.Get(upTime) + extra)
-
-	return key
 }
 
 // BaseURL returns a URL in the form of scheme://host/path based on the proxy configuration
@@ -524,31 +506,87 @@ func (t Times) Swap(i, j int) {
 	t[i], t[j] = t[j], t[i]
 }
 
+var handlers = map[string]func(w http.ResponseWriter, r *http.Request){}
+
 // RegisterRoutes registers the routes for the Client into the proxy's HTTP multiplexer
 func (c *PromTestClient) RegisterRoutes(originName string, o *config.OriginConfig) {
-	routing.Router.HandleFunc("/"+mnHealth, c.HealthHandler).Methods("GET").Host(originName)
-	routing.Router.HandleFunc(APIPath+mnQueryRange, c.QueryRangeHandler).Methods("GET", "POST").Host(originName)
-	routing.Router.HandleFunc(APIPath+mnQuery, c.QueryHandler).Methods("GET", "POST").Host(originName)
-	routing.Router.HandleFunc(APIPath+mnSeries, c.SeriesHandler).Methods("GET", "POST").Host(originName)
-	routing.Router.PathPrefix(APIPath).HandlerFunc(c.ProxyHandler).Methods("GET", "POST").Host(originName)
-	routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST").Host(originName)
 
-	// Path based routing
-	routing.Router.HandleFunc("/"+originName+"/"+mnHealth, c.HealthHandler).Methods("GET")
-	routing.Router.HandleFunc("/"+originName+APIPath+mnQueryRange, c.QueryRangeHandler).Methods("GET", "POST")
-	routing.Router.HandleFunc("/"+originName+APIPath+mnQuery, c.QueryHandler).Methods("GET", "POST")
-	routing.Router.HandleFunc("/"+originName+APIPath+mnSeries, c.SeriesHandler).Methods("GET", "POST")
-	routing.Router.PathPrefix("/"+originName+APIPath).HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
-	routing.Router.PathPrefix("/"+originName+"/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
+	const hnAuthorization = "Authorization"
 
-	// If default origin, set those routes too
+	// Ensure the configured health check endpoint starts with "/""
+	if !strings.HasPrefix(o.HealthCheckEndpoint, "/") {
+		o.HealthCheckEndpoint = "/" + o.HealthCheckEndpoint
+	}
+
+	handlers["health"] = c.HealthHandler
+	handlers[mnQueryRange] = c.QueryRangeHandler
+	handlers[mnQuery] = c.QueryHandler
+	handlers[mnSeries] = c.SeriesHandler
+
+	o.PathsLookup[o.HealthCheckEndpoint] = &config.ProxyPathConfig{
+		Path:            o.HealthCheckEndpoint,
+		HandlerName:     "health",
+		Methods:         []string{http.MethodGet, http.MethodPost},
+		CacheKeyParams:  []string{upQuery, upStep},
+		CacheKeyHeaders: []string{hnAuthorization},
+		DefaultTTLSecs:  c.cache.Configuration().TimeseriesTTLSecs,
+		DefaultTTL:      c.cache.Configuration().TimeseriesTTL,
+	}
+
+	if _, ok := o.PathsLookup[APIPath+mnQueryRange]; !ok {
+		o.PathsLookup[APIPath+mnQueryRange] = &config.ProxyPathConfig{
+			Path:            APIPath + mnQueryRange,
+			HandlerName:     mnQueryRange,
+			Methods:         []string{http.MethodGet, http.MethodPost},
+			CacheKeyParams:  []string{upQuery, upStep},
+			CacheKeyHeaders: []string{"Authorization"},
+			DefaultTTLSecs:  c.cache.Configuration().TimeseriesTTLSecs,
+			DefaultTTL:      c.cache.Configuration().TimeseriesTTL,
+		}
+	}
+
+	if _, ok := o.PathsLookup[APIPath+mnQuery]; !ok {
+		o.PathsLookup[APIPath+mnQuery] = &config.ProxyPathConfig{
+			Path:            APIPath + mnQuery,
+			HandlerName:     mnQuery,
+			Methods:         []string{http.MethodGet, http.MethodPost},
+			CacheKeyParams:  []string{upQuery, upTime},
+			CacheKeyHeaders: []string{"Authorization"},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		}
+	}
+
+	orderedPaths := []string{o.HealthCheckEndpoint, APIPath + mnQueryRange, APIPath + mnQuery}
+
+	for _, p := range o.PathsLookup {
+		if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
+			orderedPaths = append(orderedPaths, p.Path)
+		}
+		if h, ok := handlers[p.HandlerName]; ok {
+			p.Handler = h
+		}
+	}
+
+	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.OriginType, "originName": originName})
+
+	for _, v := range orderedPaths {
+		p := o.PathsLookup[v]
+		if p.Handler != nil && len(p.Methods) > 0 {
+			// Host Header Routing
+			routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...).Host(originName)
+			// Path Routing
+			routing.Router.HandleFunc("/"+originName+p.Path, p.Handler).Methods(p.Methods...)
+		}
+	}
+
 	if o.IsDefault {
-		routing.Router.HandleFunc("/"+mnHealth, c.HealthHandler).Methods("GET")
-		routing.Router.HandleFunc(APIPath+mnQueryRange, c.QueryRangeHandler).Methods("GET", "POST")
-		routing.Router.HandleFunc(APIPath+mnQuery, c.QueryHandler).Methods("GET", "POST")
-		routing.Router.HandleFunc(APIPath+mnSeries, c.SeriesHandler).Methods("GET", "POST")
-		routing.Router.PathPrefix(APIPath).HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
-		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
+		for _, v := range orderedPaths {
+			p := o.PathsLookup[v]
+			if p.Handler != nil && len(p.Methods) > 0 {
+				routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...)
+			}
+		}
 	}
 
 }

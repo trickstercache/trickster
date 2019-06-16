@@ -31,8 +31,6 @@ type Client interface {
 	Configuration() *config.OriginConfig
 	// Name returns the name of the origin the Proxy Client is handling
 	Name() string
-	// DeriveCacheKey returns a hashed key for the request, used for request synchronization and cache deconfliction
-	DeriveCacheKey(*Request, string) string
 	// FastForwardURL returns the URL to the origin to collect Fast Forward data points based on the provided HTTP Request
 	FastForwardURL(*Request) (*url.URL, error)
 	// SetExtent will update an upstream request's timerange parameters based on the provided timeseries.Extent

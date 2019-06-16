@@ -18,6 +18,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/Comcast/trickster/internal/util/md5"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 	"github.com/Comcast/trickster/pkg/promsim"
 )
@@ -57,6 +59,19 @@ func setupTestServer() (*httptest.Server, *config.OriginConfig, *PromTestClient,
 
 	cfg := config.Origins["default"]
 	client := &PromTestClient{config: cfg, cache: cache, webClient: tu.NewTestWebClient()}
+	client.RegisterRoutes("default", cfg)
+
+	p, ok := cfg.PathsLookup["/api/v1/query_range"]
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("could not find path %s", "/api/v1/query_range")
+	}
+	p.CacheKeyParams = []string{"rangeKey"}
+
+	p, ok = cfg.PathsLookup["/api/v1/query"]
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("could not find path %s", "/api/v1/query")
+	}
+	p.CacheKeyParams = []string{"instantKey"}
 
 	return es, cfg, client, nil
 }
@@ -769,7 +784,8 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 
 	u := r.URL
 	u.Path = "/api/v1/query_range"
-	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+	u.RawQuery = fmt.Sprintf("instantKey=%s&rangeKey=%s&step=%d&start=%d&end=%d&query=%s",
+		client.InstantCacheKey, client.RangeCacheKey, int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	expectedMatrix, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 	em, err := client.UnmarshalTimeseries([]byte(expectedMatrix))
@@ -857,12 +873,11 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 		t.Error(err)
 	}
 
-	// Now test a payload error
+	instantKey := cfg.Host + "." + md5.Checksum(strings.Replace(u.Path, "_range", "", -1)+client.InstantCacheKey) + ".sz"
+	client.cache.Remove(instantKey)
 
-	key := cfg.Host + "." + client.InstantCacheKey + ".sz"
-	client.cache.Remove(key)
-
-	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadPayload)
+	u.RawQuery = fmt.Sprintf("instantKey=%s&rangeKey=%s&step=%d&start=%d&end=%d&query=%s",
+		client.InstantCacheKey, client.RangeCacheKey, int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadPayload)
 
 	w = httptest.NewRecorder()
 	client.QueryRangeHandler(w, r)
@@ -880,9 +895,10 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 
 	// Now test a Response Code error
 
-	client.cache.Remove(key)
+	client.cache.Remove(instantKey)
 
-	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadRequest)
+	u.RawQuery = fmt.Sprintf("instantKey=%s&rangeKey=%s&step=%d&start=%d&end=%d&query=%s",
+		client.InstantCacheKey, client.RangeCacheKey, int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadRequest)
 
 	w = httptest.NewRecorder()
 	client.QueryRangeHandler(w, r)
@@ -1092,7 +1108,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 		t.Error(err)
 	}
 
-	key := cfg.Host + "." + client.RangeCacheKey + ".sz"
+	key := cfg.Host + ".546ecac4cc8b7ed423920fa7ebd5f230.sz"
 
 	_, err = client.cache.Retrieve(key)
 	if err != nil {

@@ -14,13 +14,16 @@
 package engines
 
 import (
+	"strings"
 	"time"
 
 	"github.com/golang/snappy"
 
 	"github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/Comcast/trickster/internal/util/md5"
 )
 
 // Cache Lookup Results
@@ -73,4 +76,36 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 	}
 
 	return c.Store(key, bytes, ttl)
+}
+
+// DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
+func DeriveCacheKey(c model.Client, cfg *config.OriginConfig, r *model.Request, extra string) string {
+	var hashParams []string
+	var hashHeaders []string
+
+	matchLen := -1
+	for k, p := range cfg.PathsLookup {
+		if strings.Index(r.URL.Path, k) > -1 && len(k) > matchLen {
+			matchLen = len(k)
+			hashParams = p.CacheKeyParams
+			hashHeaders = p.CacheKeyHeaders
+		}
+	}
+
+	params := r.URL.Query()
+	vals := make([]string, 0, len(hashParams)+len(hashHeaders))
+
+	for _, p := range hashParams {
+		if v := params.Get(p); v != "" {
+			vals = append(vals, v)
+		}
+	}
+
+	for _, p := range hashHeaders {
+		if v := r.Headers.Get(p); v != "" {
+			vals = append(vals, v)
+		}
+	}
+
+	return md5.Checksum(r.URL.Path + strings.Join(vals, "") + extra)
 }
