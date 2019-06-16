@@ -43,13 +43,9 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 	handlers["proxy"] = c.ProxyHandler
 
 	o.PathsLookup[o.HealthCheckEndpoint] = &config.ProxyPathConfig{
-		Path:            o.HealthCheckEndpoint,
-		HandlerName:     "health",
-		Methods:         []string{http.MethodGet, http.MethodPost},
-		CacheKeyParams:  []string{upQuery, upStep},
-		CacheKeyHeaders: []string{hnAuthorization},
-		DefaultTTLSecs:  c.cache.Configuration().TimeseriesTTLSecs,
-		DefaultTTL:      c.cache.Configuration().TimeseriesTTL,
+		Path:        o.HealthCheckEndpoint,
+		HandlerName: "health",
+		Methods:     []string{http.MethodGet, http.MethodHead},
 	}
 
 	if _, ok := o.PathsLookup[APIPath+mnQueryRange]; !ok {
@@ -174,42 +170,31 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 
 	if _, ok := o.PathsLookup[APIPath]; !ok {
 		o.PathsLookup[APIPath] = &config.ProxyPathConfig{
-			Path:            APIPath,
-			HandlerName:     "proxy",
-			Methods:         []string{http.MethodGet, http.MethodPost},
-			CacheKeyParams:  []string{},
-			CacheKeyHeaders: []string{"Authorization"},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+			Path:        APIPath,
+			HandlerName: "proxy",
+			Methods:     []string{http.MethodGet, http.MethodPost},
 		}
 	}
 
 	if _, ok := o.PathsLookup[APIPath]; !ok {
 		o.PathsLookup[APIPath] = &config.ProxyPathConfig{
-			Path:            APIPath,
-			HandlerName:     "proxy",
-			Methods:         []string{http.MethodGet, http.MethodPost},
-			CacheKeyParams:  []string{},
-			CacheKeyHeaders: []string{"Authorization"},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+			Path:        APIPath,
+			HandlerName: "proxy",
+			Methods:     []string{http.MethodGet, http.MethodPost},
 		}
 	}
 
 	if _, ok := o.PathsLookup["/"]; !ok {
 		o.PathsLookup["/"] = &config.ProxyPathConfig{
-			Path:            "/",
-			HandlerName:     "proxy",
-			Methods:         []string{http.MethodGet, http.MethodPost},
-			CacheKeyParams:  []string{},
-			CacheKeyHeaders: []string{"Authorization"},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+			Path:        "/",
+			HandlerName: "proxy",
+			Methods:     []string{http.MethodGet, http.MethodPost},
 		}
 	}
 
-	orderedPaths := []string{o.HealthCheckEndpoint, APIPath + mnQueryRange, APIPath + mnQuery, APIPath + mnSeries, APIPath + mnLabels,
-		APIPath + mnLabel, APIPath + mnTargets, APIPath + mnRules, APIPath + mnAlerts, APIPath + mnAlertManagers, APIPath + mnStatus, APIPath}
+	orderedPaths := []string{o.HealthCheckEndpoint, APIPath + mnQueryRange, APIPath + mnQuery,
+		APIPath + mnSeries, APIPath + mnLabels, APIPath + mnLabel, APIPath + mnTargets, APIPath + mnRules,
+		APIPath + mnAlerts, APIPath + mnAlertManagers, APIPath + mnStatus, APIPath, "/"}
 
 	for _, p := range o.PathsLookup {
 		if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
