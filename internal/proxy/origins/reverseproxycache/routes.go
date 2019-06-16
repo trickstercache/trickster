@@ -14,13 +14,84 @@
 package reverseproxycache
 
 import (
+	"net/http"
+	"strings"
+
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/util/log"
+	ts "github.com/Comcast/trickster/internal/util/strings"
 )
+
+var handlers = map[string]func(w http.ResponseWriter, r *http.Request){}
 
 // RegisterRoutes registers the routes for the Client into the proxy's HTTP multiplexer
 func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
+
+	const hnAuthorization = "Authorization"
+
+	// Ensure the configured health check endpoint starts with "/""
+	if !strings.HasPrefix(o.HealthCheckEndpoint, "/") {
+		o.HealthCheckEndpoint = "/" + o.HealthCheckEndpoint
+	}
+
+	handlers["health"] = c.HealthHandler
+	handlers["proxy"] = c.ProxyHandler
+	handlers["proxycache"] = c.ProxyCacheHandler
+
+	o.PathsLookup[o.HealthCheckEndpoint] = &config.ProxyPathConfig{
+		Path:        o.HealthCheckEndpoint,
+		HandlerName: "health",
+		Methods:     []string{http.MethodGet, http.MethodHead},
+	}
+
+	// By default we proxy everything
+	if _, ok := o.PathsLookup["/"]; !ok {
+		o.PathsLookup["/"] = &config.ProxyPathConfig{
+			Path:        "/",
+			HandlerName: "proxy",
+			Methods:     []string{http.MethodGet, http.MethodPost},
+		}
+	}
+
+	orderedPaths := []string{o.HealthCheckEndpoint}
+
+	for _, p := range o.PathsLookup {
+		if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
+			orderedPaths = append(orderedPaths, p.Path)
+		}
+		if h, ok := handlers[p.HandlerName]; ok {
+			p.Handler = h
+		}
+	}
+
+	orderedPaths = append(orderedPaths, "/")
+
+	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.OriginType, "originName": originName})
+
+	for _, v := range orderedPaths {
+		p := o.PathsLookup[v]
+		if p.Handler != nil && len(p.Methods) > 0 {
+			// Host Header Routing
+			routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...).Host(originName)
+			// Path Routing
+			routing.Router.HandleFunc("/"+originName+p.Path, p.Handler).Methods(p.Methods...)
+		}
+	}
+
+	if o.IsDefault {
+		for _, v := range orderedPaths {
+			p := o.PathsLookup[v]
+			if p.Handler != nil && len(p.Methods) > 0 {
+				routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...)
+			}
+		}
+	}
+
+}
+
+// RegisterRoutes registers the routes for the Client into the proxy's HTTP multiplexer
+func (c *Client) OldRegisterRoutes(originName string, o *config.OriginConfig) {
 
 	// Host Header-based routing
 	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.OriginType, "originName": originName})
