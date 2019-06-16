@@ -14,30 +14,87 @@
 package influxdb
 
 import (
+	"net/http"
+	"strings"
+
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/util/log"
+	ts "github.com/Comcast/trickster/internal/util/strings"
 )
 
+var handlers = map[string]func(w http.ResponseWriter, r *http.Request){}
+
 // RegisterRoutes registers the routes for the Client into the proxy's HTTP multiplexer
-func (c Client) RegisterRoutes(originName string, o *config.OriginConfig) {
+func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 
-	// Host Header-based routing
-	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.OriginType, "originName": originName})
-	routing.Router.HandleFunc("/"+health, c.HealthHandler).Methods("GET").Host(originName)
-	routing.Router.HandleFunc("/"+mnQuery, c.QueryHandler).Methods("GET", "POST").Host(originName)
-	routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST").Host(originName)
+	const hnAuthorization = "Authorization"
 
-	// Path-based routing
-	routing.Router.HandleFunc("/"+originName+"/"+health, c.HealthHandler).Methods("GET")
-	routing.Router.HandleFunc("/"+originName+"/"+mnQuery, c.QueryHandler).Methods("GET", "POST")
-	routing.Router.PathPrefix("/"+originName+"/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
-
-	// Default Origin Routing
-	if o.IsDefault {
-		log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.OriginType})
-		routing.Router.HandleFunc("/"+health, c.HealthHandler).Methods("GET")
-		routing.Router.HandleFunc("/"+mnQuery, c.QueryHandler).Methods("GET", "POST")
-		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
+	// Ensure the configured health check endpoint starts with "/""
+	if !strings.HasPrefix(o.HealthCheckEndpoint, "/") {
+		o.HealthCheckEndpoint = "/" + o.HealthCheckEndpoint
 	}
+
+	handlers["health"] = c.HealthHandler
+	handlers[mnQuery] = c.QueryHandler
+	handlers["proxy"] = c.ProxyHandler
+
+	o.PathsLookup[o.HealthCheckEndpoint] = &config.ProxyPathConfig{
+		Path:        o.HealthCheckEndpoint,
+		HandlerName: "health",
+		Methods:     []string{http.MethodGet, http.MethodHead},
+	}
+
+	if _, ok := o.PathsLookup["/"+mnQuery]; !ok {
+		o.PathsLookup["/"+mnQuery] = &config.ProxyPathConfig{
+			Path:            "/" + mnQuery,
+			HandlerName:     mnQuery,
+			Methods:         []string{http.MethodGet, http.MethodPost},
+			CacheKeyParams:  []string{upDB, upQuery, "u", "p"},
+			CacheKeyHeaders: []string{hnAuthorization},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		}
+	}
+
+	if _, ok := o.PathsLookup["/"]; !ok {
+		o.PathsLookup["/"] = &config.ProxyPathConfig{
+			Path:        "/",
+			HandlerName: "proxy",
+			Methods:     []string{http.MethodGet, http.MethodPost},
+		}
+	}
+
+	orderedPaths := []string{o.HealthCheckEndpoint, "/" + mnQuery, "/"}
+
+	for _, p := range o.PathsLookup {
+		if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
+			orderedPaths = append(orderedPaths, p.Path)
+		}
+		if h, ok := handlers[p.HandlerName]; ok {
+			p.Handler = h
+		}
+	}
+
+	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.OriginType, "originName": originName})
+
+	for _, v := range orderedPaths {
+		p := o.PathsLookup[v]
+		if p.Handler != nil && len(p.Methods) > 0 {
+			// Host Header Routing
+			routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...).Host(originName)
+			// Path Routing
+			routing.Router.HandleFunc("/"+originName+p.Path, p.Handler).Methods(p.Methods...)
+		}
+	}
+
+	if o.IsDefault {
+		for _, v := range orderedPaths {
+			p := o.PathsLookup[v]
+			if p.Handler != nil && len(p.Methods) > 0 {
+				routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...)
+			}
+		}
+	}
+
 }
