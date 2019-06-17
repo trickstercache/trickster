@@ -55,11 +55,11 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 }
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)
-func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
+func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
 	record, ok := c.client.Load(cacheKey)
 	if ok {
 		r := record.(index.Object)
-		if r.Expiration.After(time.Now()) {
+		if allowExpired || r.Expiration.After(time.Now()) {
 			log.Debug("memorycache cache retrieve", log.Pairs{"cacheKey": cacheKey})
 			c.Index.UpdateObjectAccessTime(cacheKey)
 			cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(r.Value)))
@@ -71,6 +71,11 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 	}
 
 	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+}
+
+// SetTTL updates the TTL for the provided cache object
+func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
+	c.Index.UpdateObjectTTL(cacheKey, ttl)
 }
 
 // Remove removes an object from the cache

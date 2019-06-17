@@ -123,7 +123,7 @@ func TestRedisCache_Retrieve(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := rc.Retrieve(cacheKey)
+	data, err := rc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -166,7 +166,7 @@ func TestCache_Remove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := rc.Retrieve(cacheKey)
+	data, err := rc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -177,7 +177,7 @@ func TestCache_Remove(t *testing.T) {
 	rc.Remove(cacheKey)
 
 	// it should be a cache miss
-	data, err = rc.Retrieve(cacheKey)
+	data, err = rc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -202,7 +202,7 @@ func TestCache_BulkRemove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := rc.Retrieve(cacheKey)
+	data, err := rc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -213,7 +213,7 @@ func TestCache_BulkRemove(t *testing.T) {
 	rc.BulkRemove([]string{cacheKey}, true)
 
 	// it should be a cache miss
-	data, err = rc.Retrieve(cacheKey)
+	data, err = rc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}

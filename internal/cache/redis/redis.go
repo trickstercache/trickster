@@ -87,7 +87,8 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 }
 
 // Retrieve gets data from the Redis Cache using the provided Key
-func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
+// because Redis manages Object Expiration internally, allowExpired is not used.
+func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
 	res, err := c.retrieveFunc(cacheKey)
 	if err != nil {
 		log.Debug("redis cache miss", log.Pairs{"key": cacheKey})
@@ -104,6 +105,12 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 func (c *Cache) Remove(cacheKey string) {
 	log.Debug("redis cache remove", log.Pairs{"key": cacheKey})
 	c.removeFunc(cacheKey)
+}
+
+// SetTTL updates the TTL for the provided cache object
+// Not supported yet
+func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
+	//c.Index.UpdateObjectTTL(cacheKey, ttl)
 }
 
 // BulkRemove removes a list of objects from the cache. noLock is not used for Redis

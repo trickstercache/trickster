@@ -95,7 +95,7 @@ func TestFilesystemCache_StoreNoIndex(t *testing.T) {
 	fc.storeNoIndex(cacheKey, []byte("data"))
 
 	// it should retrieve a value
-	data, err := fc.Retrieve(cacheKey)
+	data, err := fc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -121,7 +121,7 @@ func TestFilesystemCache_Retrieve(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := fc.Retrieve(cacheKey)
+	data, err := fc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -149,7 +149,7 @@ func TestFilesystemCache_Remove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := fc.Retrieve(cacheKey)
+	data, err := fc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -160,7 +160,7 @@ func TestFilesystemCache_Remove(t *testing.T) {
 	fc.Remove(cacheKey)
 
 	// it should be a cache miss
-	data, err = fc.Retrieve(cacheKey)
+	data, err = fc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -186,7 +186,7 @@ func TestFilesystemCache_BulkRemove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := fc.Retrieve(cacheKey)
+	data, err := fc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -197,7 +197,7 @@ func TestFilesystemCache_BulkRemove(t *testing.T) {
 	fc.BulkRemove([]string{cacheKey}, true)
 
 	// it should be a cache miss
-	data, err = fc.Retrieve(cacheKey)
+	data, err = fc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}

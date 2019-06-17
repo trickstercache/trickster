@@ -89,7 +89,7 @@ func TestBboltCache_StoreNoIndex(t *testing.T) {
 	bc.storeNoIndex(cacheKey, []byte("data"))
 
 	// it should retrieve a value
-	data, err := bc.Retrieve(cacheKey)
+	data, err := bc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -118,7 +118,7 @@ func TestBboltCache_Remove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := bc.Retrieve(cacheKey)
+	data, err := bc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -129,7 +129,7 @@ func TestBboltCache_Remove(t *testing.T) {
 	bc.Remove(cacheKey)
 
 	// it should be a cache miss
-	data, err = bc.Retrieve(cacheKey)
+	data, err = bc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -155,7 +155,7 @@ func TestBboltCache_BulkRemove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := bc.Retrieve(cacheKey)
+	data, err := bc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -166,7 +166,7 @@ func TestBboltCache_BulkRemove(t *testing.T) {
 	bc.BulkRemove([]string{cacheKey}, true)
 
 	// it should be a cache miss
-	data, err = bc.Retrieve(cacheKey)
+	data, err = bc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -191,7 +191,7 @@ func TestBboltCache_Retrieve(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := bc.Retrieve(cacheKey)
+	data, err := bc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}

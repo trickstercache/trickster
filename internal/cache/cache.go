@@ -26,7 +26,8 @@ import (
 type Cache interface {
 	Connect() error
 	Store(cacheKey string, data []byte, ttl time.Duration) error
-	Retrieve(cacheKey string) ([]byte, error)
+	Retrieve(cacheKey string, allowExpired bool) ([]byte, error)
+	SetTTL(cacheKey string, ttl time.Duration)
 	Remove(cacheKey string)
 	BulkRemove(cacheKeys []string, noLock bool)
 	Close() error

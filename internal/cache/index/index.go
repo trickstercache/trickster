@@ -141,6 +141,15 @@ func (idx *Index) UpdateObjectAccessTime(key string) {
 	}
 }
 
+// UpdateObjectTTL updates the Expiration for the object with the provided key
+func (idx *Index) UpdateObjectTTL(key string, ttl time.Duration) {
+	indexLock.Lock()
+	defer indexLock.Unlock()
+	if _, ok := idx.Objects[key]; ok {
+		idx.Objects[key].Expiration = time.Now().Add(ttl)
+	}
+}
+
 // UpdateObject writes or updates the Index Metadata for the provided Object
 func (idx *Index) UpdateObject(obj Object) {
 
