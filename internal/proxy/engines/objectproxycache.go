@@ -18,20 +18,26 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Comcast/trickster/internal/proxy/headers"
+	"github.com/Comcast/trickster/internal/util/log"
+
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/proxy/model"
-	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/pkg/locks"
 )
 
+var cacheableResponse = map[int]bool{
+	http.StatusOK: true,
+}
+
 // ObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache
-func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, cache cache.Cache, ttl time.Duration, refresh bool, noLock bool) {
-	body, resp, _ := FetchViaObjectProxyCache(r, client, cache, ttl, refresh, noLock)
+func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, cache cache.Cache, ttl time.Duration, noLock bool) {
+	body, resp, _ := FetchViaObjectProxyCache(r, client, cache, ttl, noLock)
 	Respond(w, resp.StatusCode, resp.Header, body)
 }
 
 // FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
-func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache.Cache, ttl time.Duration, refresh bool, noLock bool) ([]byte, *http.Response, bool) {
+func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache.Cache, ttl time.Duration, noLock bool) ([]byte, *http.Response, bool) {
 
 	cfg := client.Configuration()
 	key := cfg.Host + "." + DeriveCacheKey(client, cfg, r, "")
@@ -41,30 +47,118 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache
 		defer locks.Release(key)
 	}
 
-	if !refresh {
-		if d, err := QueryCache(cache, key); err == nil {
-			recordOPCResult(r, crHit, "200", r.URL.Path, 0, d.Headers)
-			log.Debug("cache hit", log.Pairs{"key": key})
-			rsp := &http.Response{
-				Header:     d.Headers,
-				StatusCode: d.StatusCode,
-				Status:     d.Status,
+	cpReq := GetRequestCachingPolicy(r.Headers)
+	if cpReq.NoCache {
+		// if the client provided Cache-Control: no-cache or Pragma: no-cache header, the request is proxy only.
+		body, resp, _ := Fetch(r)
+		cache.Remove(key)
+		return body, resp, false
+	}
+
+	hasINMV := cpReq.IfNoneMatchValue != ""
+	hasIMS := !cpReq.IfModifiedSinceTime.IsZero()
+	hasIMV := cpReq.IfMatchValue != ""
+	hasIUS := !cpReq.IfUnmodifiedSinceTime.IsZero()
+	clientConditional := hasINMV || hasIMS || hasIMV || hasIUS
+
+	// don't proxy these up, their scope is only between Trickster and client
+	if clientConditional {
+		delete(r.Headers, headers.NameIfMatch)
+		delete(r.Headers, headers.NameIfUnmodifiedSince)
+		delete(r.Headers, headers.NameIfNoneMatch)
+		delete(r.Headers, headers.NameIfModifiedSince)
+	}
+
+	revalidatingCache := false
+
+	var cacheStatus = CrKeyMiss
+
+	d, err := QueryCache(cache, key)
+	if err == nil {
+		d.CachingPolicy.IsFresh = !d.CachingPolicy.Expires.Before(time.Now())
+		if !d.CachingPolicy.IsFresh {
+			if !d.CachingPolicy.CanRevalidate {
+				// The cache entry has expired and lacks any data for validating freshness
+				cache.Remove(key)
+			} else {
+				if d.CachingPolicy.ETag != "" {
+					r.Headers.Set(headers.NameIfNoneMatch, d.CachingPolicy.ETag)
+				}
+				if !d.CachingPolicy.LastModified.IsZero() {
+					r.Headers.Set(headers.NameIfModifiedSince, d.CachingPolicy.LastModified.Format(time.RFC1123))
+				}
+				revalidatingCache = true
 			}
-			return d.Body, rsp, true
 		}
 	}
 
-	body, resp, elapsed := Fetch(r)
-	recordOPCResult(r, crKeyMiss, strconv.Itoa(resp.StatusCode), r.URL.Path, elapsed.Seconds(), resp.Header)
+	var body []byte
+	var resp *http.Response
+	var elapsed time.Duration
 
-	if resp.StatusCode == http.StatusOK && len(body) > 0 {
-		WriteCache(cache, key, model.DocumentFromHTTPResponse(resp, body), ttl)
+	if d.CachingPolicy.IsFresh {
+		cacheStatus = CrHit
+	} else {
+
+		// TODO: Inject any configured response headers here
+
+		body, resp, elapsed = Fetch(r)
+		// Cache is revalidated, update headers and resulting caching policy
+		if revalidatingCache && resp.StatusCode == http.StatusNotModified {
+			for k, v := range resp.Header {
+				d.Headers[k] = v
+			}
+			d.CachingPolicy = GetResponseCachingPolicy(resp.StatusCode, resp.Header)
+		} else {
+			d = model.DocumentFromHTTPResponse(resp, body, GetResponseCachingPolicy(resp.StatusCode, resp.Header))
+		}
 	}
 
-	return body, resp, false
+	recordOPCResult(r, cacheStatus, strconv.Itoa(d.StatusCode), r.URL.Path, elapsed, d.Headers)
+
+	log.Debug("http object cache lookup status", log.Pairs{"key": key, "cacheStatus": cacheStatus})
+
+	// the client provided a conditional request to us, determine if Trickster responds with 304 or 200
+	// based on client-provided validators vs our now-fresh cache
+	if clientConditional {
+		isClientFresh := true
+		if hasINMV {
+			// need to do real matching of etag lists - package
+			isClientFresh = isClientFresh && d.CachingPolicy.ETag == cpReq.IfNoneMatchValue
+		}
+		if hasIMV {
+			// need to do real matching of etag lists -> package
+			isClientFresh = isClientFresh && d.CachingPolicy.ETag != cpReq.IfMatchValue
+		}
+		if hasIMS {
+			isClientFresh = isClientFresh && !d.CachingPolicy.LastModified.After(cpReq.IfModifiedSinceTime)
+		}
+		if hasIUS {
+			isClientFresh = isClientFresh && d.CachingPolicy.LastModified.After(cpReq.IfUnmodifiedSinceTime)
+		}
+		cpReq.IsFresh = isClientFresh
+	}
+
+	d.CachingPolicy.NoTransform = d.CachingPolicy.NoTransform || cpReq.NoTransform
+	d.CachingPolicy.NoCache = d.CachingPolicy.NoCache || cpReq.NoCache
+
+	if !d.CachingPolicy.NoCache {
+		WriteCache(cache, key, d, time.Duration(d.CachingPolicy.FreshnessLifetime)*time.Second)
+	} else {
+		cache.Remove(key)
+	}
+
+	// TODO: Inject any configured response headers here
+
+	if clientConditional && cpReq.IsFresh {
+		resp.StatusCode = http.StatusNotModified
+		body = nil
+	}
+
+	return body, resp, cacheStatus == CrHit
 
 }
 
-func recordOPCResult(r *model.Request, cacheStatus, httpStatus, path string, elapsed float64, header http.Header) {
+func recordOPCResult(r *model.Request, cacheStatus, httpStatus, path string, elapsed time.Duration, header http.Header) {
 	recordResults(r, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, header)
 }

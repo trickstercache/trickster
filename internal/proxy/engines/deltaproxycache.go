@@ -37,7 +37,6 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 
 	cfg := client.Configuration()
 	r.FastForwardDisable = cfg.FastForwardDisable
-	refresh := isRefresh(r.ClientRequest.Header) && !cfg.IgnoreCachingHeaders
 
 	trq, err := client.ParseTimeRangeQuery(r)
 	if err != nil {
@@ -85,10 +84,11 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	var doc *model.HTTPDocument
 	var elapsed time.Duration
 
-	cacheStatus := crKeyMiss
+	cacheStatus := CrKeyMiss
 
-	if refresh {
-		cacheStatus = crPurge
+	coReq := GetRequestCachingPolicy(r.Headers)
+	if coReq.NoCache {
+		cacheStatus = CrPurge
 		cache.Remove(key)
 		cts, doc, elapsed, err = fetchTimeseries(r, client)
 		if err != nil {
@@ -118,21 +118,21 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 					return // fetchTimeseries logs the error
 				}
 			} else {
-				cacheStatus = crPartialHit
+				cacheStatus = CrPartialHit
 			}
 		}
 	}
 
 	// Find the ranges that we want, but which are not currently cached
 	var missRanges []timeseries.Extent
-	if cacheStatus == crPartialHit {
+	if cacheStatus == CrPartialHit {
 		missRanges = trq.CalculateDeltas(cts.Extents())
 	}
 
-	if len(missRanges) == 0 && cacheStatus == crPartialHit {
-		cacheStatus = crHit
+	if len(missRanges) == 0 && cacheStatus == CrPartialHit {
+		cacheStatus = CrHit
 	} else if len(missRanges) == 1 && missRanges[0].Start.Equal(trq.Extent.Start) && missRanges[0].End.Equal(trq.Extent.End) {
-		cacheStatus = crRangeMiss
+		cacheStatus = CrRangeMiss
 	}
 
 	ffStatus := "off"
@@ -199,7 +199,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 			defer wg.Done()
 			req := r.Copy()
 			req.URL = ffURL
-			body, resp, isHit := FetchViaObjectProxyCache(req, client, cache, cacheConfig.FastForwardTTL, false, true)
+			body, resp, isHit := FetchViaObjectProxyCache(req, client, cache, cacheConfig.FastForwardTTL, true)
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				ffts, err = client.UnmarshalInstantaneous(body)
 				if err != nil {
@@ -232,7 +232,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 
 	rts := cts.Copy()
 
-	if cacheStatus != crKeyMiss {
+	if cacheStatus != CrKeyMiss {
 		rts.Crop(trq.Extent)
 	}
 	cachedValueCount := rts.ValueCount() - uncachedValueCount
@@ -257,7 +257,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	rh := headers.CopyHeaders(doc.Headers)
 
 	switch cacheStatus {
-	case crKeyMiss, crPartialHit, crRangeMiss:
+	case CrKeyMiss, CrPartialHit, CrRangeMiss:
 		wg.Add(1)
 		// Write the newly-merged object back to the cache
 		go func() {

@@ -16,8 +16,11 @@ package engines
 import (
 	"net/http"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
+
+	"github.com/Comcast/trickster/internal/proxy/headers"
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
@@ -89,6 +92,164 @@ func TestQueryCache(t *testing.T) {
 	_, err = QueryCache(cache, "testKey2")
 	if err == nil {
 		t.Errorf("expected error")
+	}
+
+}
+
+// example headers:
+// date: Sun, 16 Jun 2019 14:19:04 GMT
+// expires: -1
+// cache-control: private, max-age=0
+// content-type: text/html; charset=ISO-8859-1
+// p3p: CP="This is not a P3P policy! See g.co/p3phelp for more info."
+// server: gws
+// x-xss-protection: 0
+// x-frame-options: SAMEORIGIN
+// set-cookie: 1P_JAR=2019-06-16-14; expires=Tue, 16-Jul-2019 14:19:04 GMT; path=/; domain=.google.com
+// set-cookie: NID=185=RXv4GLcLUhGFKcGW1Yo6cKvRKddyqh9xO4Ehex3VCcRz5karTWvsfwUbjKUJR-ENolG76IjNX07dY7RFr41cH5wpNOUadbUyQ9TX8jNmTI2C5NAyl_ORwrvwhmhvNFF3u_CrSaYi4mOqOqt6Q1brO0whSpzwxOIYvbQ8F8Q4vEs; expires=Mon, 16-Dec-2019 14:19:04 GMT; path=/; domain=.google.com; HttpOnly
+// alt-svc: quic=":443"; ma=2592000; v="46,44,43,39"
+// accept-ranges: none
+// vary: Accept-Encoding
+
+func TestCheckResponseCacheability(t *testing.T) {
+
+	now := time.Now().Truncate(time.Second)
+
+	tests := []struct {
+		a           http.Header
+		expectedTTL time.Duration
+	}{
+		{ // 0 - Cache-Control: no-store
+			a: http.Header{
+				headers.NameCacheControl: []string{ccdNoStore},
+			},
+			expectedTTL: -1,
+		},
+		{ // 1 -  Cache-Control: no-cache
+			a: http.Header{
+				headers.NameCacheControl: []string{ccdNoCache},
+			},
+			expectedTTL: -1,
+		},
+		{ // 2 - Cache-Control: max-age=300
+			a: http.Header{
+				headers.NameCacheControl: []string{ccdMaxAge + "=300"},
+			},
+			expectedTTL: time.Minute * time.Duration(5),
+		},
+		{ // 3 - Cache-Control: max-age=   should come back as 0 ttl
+			a: http.Header{
+				headers.NameCacheControl: []string{ccdMaxAge + "="},
+			},
+			expectedTTL: 0,
+		},
+		{ // 4 - Cache-Control: max-age (no =anything)  should come back as 0 ttl
+			a: http.Header{
+				headers.NameCacheControl: []string{ccdMaxAge},
+			},
+			expectedTTL: 0,
+		},
+		{ // 5 - Cache-Control: private,max-age=300  should be treated as non-cacheable by proxy
+			a: http.Header{
+				headers.NameCacheControl: []string{ccdPrivate + "," + ccdMaxAge + "=300"},
+			},
+			expectedTTL: -1,
+		},
+		{ // 6 - Cache-Control: public,max-age=300  should be treated as cacheable by proxy
+			a: http.Header{
+				headers.NameCacheControl: []string{ccdPublic + "," + ccdMaxAge + "=300"},
+			},
+			expectedTTL: time.Minute * time.Duration(5),
+		},
+		{ // 7 - Cache-Control and Expires, Cache-Control should win
+			a: http.Header{
+				headers.NameCacheControl: []string{ccdPublic + "," + ccdMaxAge + "=300"},
+				headers.NameExpires:      []string{"-1"},
+			},
+			expectedTTL: time.Minute * time.Duration(5),
+		},
+		{ // 8 - Cache-Control and LastModified, Cache-Control should win
+			a: http.Header{
+				headers.NameCacheControl: []string{ccdPublic + "," + ccdMaxAge + "=300"},
+				headers.NameLastModified: []string{"Sun, 16 Jun 2019 14:19:04 GMT"},
+			},
+			expectedTTL: time.Minute * time.Duration(5),
+		},
+		{ // 9 - Already Expired (could not parse)
+			a: http.Header{
+				headers.NameExpires: []string{"-1"},
+			},
+			expectedTTL: 0,
+		},
+		{ // 10 - Already Expired (parseable in the past)
+			a: http.Header{
+				headers.NameExpires: []string{"Sun, 16 Jun 2019 14:19:04 GMT"},
+			},
+			expectedTTL: 0,
+		},
+		{ // 11 - Expires in an hour
+			a: http.Header{
+				headers.NameDate:    []string{now.Format(time.RFC1123)},
+				headers.NameExpires: []string{now.Add(time.Hour * time.Duration(1)).Format(time.RFC1123)},
+			},
+			expectedTTL: time.Hour * time.Duration(1),
+		},
+		{ // 12 - Synthesized TTL from Last Modified
+			a: http.Header{
+				headers.NameDate:         []string{now.Format(time.RFC1123)},
+				headers.NameLastModified: []string{now.Add(-time.Hour * time.Duration(5)).Format(time.RFC1123)},
+			},
+			expectedTTL: time.Hour * time.Duration(1),
+		},
+		{ // 13 - No Cache Control Response Headers
+			a: http.Header{
+				headers.NameDate: []string{now.Format(time.RFC1123)},
+			},
+			expectedTTL: -1,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			ttl := CheckResponseCacheability(test.a)
+			if ttl != test.expectedTTL {
+				t.Errorf("mismatch ttl expected %v got %v", test.expectedTTL, ttl)
+			}
+		})
+	}
+}
+
+func TestCheckRequestCacheability(t *testing.T) {
+
+	tests := []struct {
+		a           http.Header
+		isCacheable bool
+	}{
+		{ // 0 - Cache-Control: no-store
+			a: http.Header{
+				headers.NameCacheControl: []string{ccdNoStore},
+			},
+			isCacheable: false,
+		},
+		{ // 1 -  Cache-Control: no-cache
+			a: http.Header{
+				headers.NameCacheControl: []string{ccdNoCache},
+			},
+			isCacheable: false,
+		},
+		{ // 5 - No Cache Control Request Headers
+			a:           http.Header{},
+			isCacheable: true,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			ic := CheckRequestCacheability(test.a)
+			if ic != test.isCacheable {
+				t.Errorf("mismatch isCacheable expected %v got %v", test.isCacheable, ic)
+			}
+		})
 	}
 
 }

@@ -28,17 +28,27 @@ const (
 	ValueApplicationJSON = "application/json"
 
 	// Common HTTP Header Names
-	NameCacheControl    = "Cache-Control"
-	NameAllowOrigin     = "Access-Control-Allow-Origin"
-	NameContentType     = "Content-Type"
-	NameContentEncoding = "Content-Encoding"
-	NameContentLength   = "Content-Length"
-	NameAuthorization   = "Authorization"
-	NameXAccelerator    = "X-Accelerator"
-	NameTricksterResult = "X-Trickster-Result"
-	NameXForwardedBy    = "X-Forwarded-By"
-	NameXForwardedFor   = "X-Forwarded-For"
-	NameAcceptEncoding  = "Accept-Encoding"
+	NameCacheControl      = "cache-control"
+	NameAllowOrigin       = "access-control-allow-origin"
+	NameContentType       = "content-type"
+	NameContentEncoding   = "content-encoding"
+	NameContentLength     = "content-length"
+	NameAuthorization     = "authorization"
+	NameAcceptEncoding    = "accept-encoding"
+	NamePragma            = "pragma"
+	NameExpires           = "expires"
+	NameDate              = "date"
+	NameLastModified      = "last-modified"
+	NameIfModifiedSince   = "if-modified-since"
+	NameIfUnmodifiedSince = "if-unmodified-since"
+	NameIfMatch           = "if-match"
+	NameIfNoneMatch       = "if-none-match"
+	NameETag              = "etag"
+
+	NameXAccelerator    = "x-accelerator"
+	NameTricksterResult = "x-trickster-result"
+	NameXForwardedBy    = "x-forwarded-by"
+	NameXForwardedFor   = "x-forwarded-for"
 )
 
 // CopyHeaders returns an exact copy of an http.Header collection
