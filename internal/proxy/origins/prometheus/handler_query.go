@@ -37,5 +37,5 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
 	engines.ObjectProxyCacheRequest(
 		model.NewRequest(c.name, otPrometheus, "QueryHandler", u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, c.cache, c.cache.Configuration().ObjectTTL, false, false)
+		w, c, c.cache, c.cache.Configuration().ObjectTTL, false)
 }
