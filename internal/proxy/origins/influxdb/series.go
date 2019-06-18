@@ -197,6 +197,9 @@ func (se *SeriesEnvelope) Crop(e timeseries.Extent) {
 	endSecs := e.End.Unix()
 
 	for i, r := range se.Results {
+
+		deletes := make(map[int]bool)
+
 		for j, s := range r.Series {
 			// check the index of the time column again just in case it changed in the next series
 			ti := str.IndexOfString(s.Columns, "time")
@@ -229,13 +232,18 @@ func (se *SeriesEnvelope) Crop(e timeseries.Extent) {
 					}
 					se.Results[i].Series[j].Values = s.Values[start:end]
 				} else {
-					if i < len(se.Results[i].Series) {
-						se.Results[i].Series = append(se.Results[i].Series[:j], se.Results[i].Series[j+1:]...)
-					} else {
-						se.Results[i].Series = se.Results[i].Series[:len(se.Results[i].Series)-1]
-					}
+					deletes[i] = true
 				}
 			}
+		}
+		if len(deletes) > 0 {
+			tmp := se.Results[i].Series[:0]
+			for i, r := range se.Results[i].Series {
+				if _, ok := deletes[i]; !ok {
+					tmp = append(tmp, r)
+				}
+			}
+			se.Results[i].Series = tmp
 		}
 	}
 	se.ExtentList = se.ExtentList.Crop(e)

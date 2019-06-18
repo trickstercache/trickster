@@ -14,10 +14,11 @@
 package promsim
 
 import (
+	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -43,36 +44,27 @@ func queryRangeHandler(w http.ResponseWriter, r *http.Request) {
 	p := params.Get("step")
 
 	var err error
+
 	if q != "" && s != "" && e != "" && p != "" {
 		var i int64
 		var start, end time.Time
 		var step time.Duration
 
-		if j := strings.Index(s, "."); j != -1 {
-			s = s[:j]
-		}
-
-		if j := strings.Index(e, "."); j != -1 {
-			e = e[:j]
-		}
-
-		i, err = strconv.ParseInt(s, 10, 64)
+		start, err = parseTime(s)
 		if err != nil {
-			writeError(http.StatusBadRequest, []byte("unable to parse start time"), w)
+			writeError(http.StatusBadRequest, []byte("unable to parse start time parameter"), w)
 			return
 		}
-		start = time.Unix(i, 0)
 
-		i, err = strconv.ParseInt(e, 10, 64)
+		end, err = parseTime(e)
 		if err != nil {
-			writeError(http.StatusBadRequest, []byte("unable to parse end time"), w)
+			writeError(http.StatusBadRequest, []byte("unable to parse end time parameter"), w)
 			return
 		}
-		end = time.Unix(i, 0)
 
 		i, err = strconv.ParseInt(p, 10, 64)
 		if err != nil {
-			writeError(http.StatusBadRequest, []byte("unable to parse step"), w)
+			writeError(http.StatusBadRequest, []byte("unable to parse step parameter"), w)
 			return
 		}
 		step = time.Duration(i) * time.Second
@@ -104,24 +96,11 @@ func queryHandler(w http.ResponseWriter, r *http.Request) {
 	q := params.Get("query")
 	t := params.Get("time")
 
-	var err error
 	if q != "" {
-
-		var i int64
-
-		tm := time.Now()
-		if t != "" {
-			j := strings.Index(t, ".")
-			if j != -1 {
-				t = t[:j]
-			}
-
-			i, err = strconv.ParseInt(t, 10, 64)
-			if err != nil {
-				writeError(http.StatusBadRequest, []byte("unable to parse time parameter"), w)
-				return
-			}
-			tm = time.Unix(i, 0)
+		tm, err := parseTime(t)
+		if err != nil {
+			writeError(http.StatusBadRequest, []byte("unable to parse time parameter"), w)
+			return
 		}
 
 		json, code, _ := GetInstantData(q, tm)
@@ -135,4 +114,18 @@ func queryHandler(w http.ResponseWriter, r *http.Request) {
 func writeError(code int, body []byte, w http.ResponseWriter) {
 	w.WriteHeader(code)
 	w.Write(body)
+}
+
+// parseTime converts a query time URL parameter to time.Time.
+// Copied from https://github.com/prometheus/prometheus/blob/master/web/api/v1/api.go
+func parseTime(s string) (time.Time, error) {
+	if t, err := strconv.ParseFloat(s, 64); err == nil {
+		s, ns := math.Modf(t)
+		ns = math.Round(ns*1000) / 1000
+		return time.Unix(int64(s), int64(ns*float64(time.Second))), nil
+	}
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
 }
