@@ -167,6 +167,7 @@ type CachingConfig struct {
 	TimeseriesTTLSecs  int                   `toml:"timeseries_ttl_secs"`
 	ObjectTTLSecs      int                   `toml:"object_ttl_secs"`
 	FastForwardTTLSecs int                   `toml:"fastforward_ttl_secs"`
+	MaxObjectSizeBytes int                   `toml:"max_object_size_bytes"`
 	Index              CacheIndexConfig      `toml:"index"`
 	Redis              RedisCacheConfig      `toml:"redis"`
 	Filesystem         FilesystemCacheConfig `toml:"filesystem"`
@@ -312,6 +313,7 @@ func NewCacheConfig() *CachingConfig {
 		Compression:        defaultCacheCompression,
 		TimeseriesTTLSecs:  defaultTimeseriesTTLSecs,
 		FastForwardTTLSecs: defaultFastForwardTTLSecs,
+		MaxObjectSizeBytes: defaultMaxObjectSizeBytes,
 		ObjectTTLSecs:      defaultObjectTTLSecs,
 		Redis:              RedisCacheConfig{ClientType: defaultRedisClientType, Protocol: defaultRedisProtocol, Endpoint: defaultRedisEndpoint, Endpoints: []string{defaultRedisEndpoint}},
 		Filesystem:         FilesystemCacheConfig{CachePath: defaultCachePath},
@@ -472,6 +474,10 @@ func (c *TricksterConfig) setCachingDefaults(metadata toml.MetaData) {
 
 		if metadata.IsDefined("caches", k, "fastforward_ttl_secs") {
 			cc.FastForwardTTLSecs = v.FastForwardTTLSecs
+		}
+
+		if metadata.IsDefined("caches", k, "max_object_size_bytes") {
+			cc.MaxObjectSizeBytes = v.MaxObjectSizeBytes
 		}
 
 		if metadata.IsDefined("caches", k, "object_ttl_secs") {

@@ -48,6 +48,7 @@ const (
 	defaultMaxSizeBackoffBytes   = 16777216
 	defaultMaxSizeObjects        = 0
 	defaultMaxSizeBackoffObjects = 100
+	defaultMaxObjectSizeBytes    = 524288
 
 	defaultOriginINCH            = true
 	defaultOriginVRF             = 1024
