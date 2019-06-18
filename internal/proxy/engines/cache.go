@@ -138,7 +138,7 @@ func DeriveCacheKey(c model.Client, cfg *config.OriginConfig, r *model.Request, 
 // a returns a CachingPolicy reference
 func GetResponseCachingPolicy(code int, h http.Header) *model.CachingPolicy {
 
-	cp := &model.CachingPolicy{}
+	cp := &model.CachingPolicy{LocalDate: time.Now()}
 
 	// make a lowercase copy of the headers
 	// to allow for quick map lookups on both http/1.x and http/2
@@ -160,21 +160,21 @@ func GetResponseCachingPolicy(code int, h http.Header) *model.CachingPolicy {
 	_, hasExpires := lch[headers.NameLastModified]
 	_, hasETag := lch[headers.NameETag]
 
+	// Get the date header or, if it is not found or parsed, set it
+	if v, ok := lch[headers.NameDate]; ok {
+		if date, err := time.Parse(time.RFC1123, strings.Join(v, "")); err != nil {
+			cp.Date = cp.LocalDate
+			h.Set(headers.NameDate, cp.Date.Format(time.RFC1123))
+		} else {
+			cp.Date = date
+		}
+	} else {
+		cp.Date = cp.LocalDate
+		h.Set(headers.NameDate, cp.Date.Format(time.RFC1123))
+	}
+
 	// otherwise look for expiration and/or validators
 	if cp.FreshnessLifetime > 0 || hasExpires {
-
-		// Get the date header or, if it is not found or parsed, set it
-		if v, ok := lch[headers.NameDate]; ok {
-			if date, err := time.Parse(time.RFC1123, strings.Join(v, "")); err != nil {
-				cp.Date = time.Now()
-				h.Set(headers.NameDate, cp.Date.Format(time.RFC1123))
-			} else {
-				cp.Date = date
-			}
-		} else {
-			cp.Date = time.Now()
-			h.Set(headers.NameDate, cp.Date.Format(time.RFC1123))
-		}
 
 		// no Max-Age provided yet, look for expires
 		if cp.FreshnessLifetime == 0 {
@@ -284,7 +284,7 @@ func hasPragmaNoCache(h http.Header) bool {
 // GetRequestCachingPolicy examines HTTP request headers for caching headers
 // and true if the corresponding response is OK to cache
 func GetRequestCachingPolicy(h http.Header) *model.CachingPolicy {
-	cp := &model.CachingPolicy{}
+	cp := &model.CachingPolicy{LocalDate: time.Now()}
 	// make a lowercase copy of the headers
 	// to allow for quick map lookups on both http/1.x and http/2
 	lch := make(http.Header)

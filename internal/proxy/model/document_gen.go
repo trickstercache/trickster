@@ -67,6 +67,11 @@ func (z *CachingPolicy) DecodeMsg(dc *msgp.Reader) (err error) {
 			if err != nil {
 				return
 			}
+		case "local_date":
+			z.LocalDate, err = dc.ReadTime()
+			if err != nil {
+				return
+			}
 		case "etag":
 			z.ETag, err = dc.ReadString()
 			if err != nil {
@@ -104,9 +109,9 @@ func (z *CachingPolicy) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 14
+	// map header, size 15
 	// write "is_fresh"
-	err = en.Append(0x8e, 0xa8, 0x69, 0x73, 0x5f, 0x66, 0x72, 0x65, 0x73, 0x68)
+	err = en.Append(0x8f, 0xa8, 0x69, 0x73, 0x5f, 0x66, 0x72, 0x65, 0x73, 0x68)
 	if err != nil {
 		return
 	}
@@ -186,6 +191,15 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
+	// write "local_date"
+	err = en.Append(0xaa, 0x6c, 0x6f, 0x63, 0x61, 0x6c, 0x5f, 0x64, 0x61, 0x74, 0x65)
+	if err != nil {
+		return
+	}
+	err = en.WriteTime(z.LocalDate)
+	if err != nil {
+		return
+	}
 	// write "etag"
 	err = en.Append(0xa4, 0x65, 0x74, 0x61, 0x67)
 	if err != nil {
@@ -237,9 +251,9 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 // MarshalMsg implements msgp.Marshaler
 func (z *CachingPolicy) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 14
+	// map header, size 15
 	// string "is_fresh"
-	o = append(o, 0x8e, 0xa8, 0x69, 0x73, 0x5f, 0x66, 0x72, 0x65, 0x73, 0x68)
+	o = append(o, 0x8f, 0xa8, 0x69, 0x73, 0x5f, 0x66, 0x72, 0x65, 0x73, 0x68)
 	o = msgp.AppendBool(o, z.IsFresh)
 	// string "nocache"
 	o = append(o, 0xa7, 0x6e, 0x6f, 0x63, 0x61, 0x63, 0x68, 0x65)
@@ -265,6 +279,9 @@ func (z *CachingPolicy) MarshalMsg(b []byte) (o []byte, err error) {
 	// string "date"
 	o = append(o, 0xa4, 0x64, 0x61, 0x74, 0x65)
 	o = msgp.AppendTime(o, z.Date)
+	// string "local_date"
+	o = append(o, 0xaa, 0x6c, 0x6f, 0x63, 0x61, 0x6c, 0x5f, 0x64, 0x61, 0x74, 0x65)
+	o = msgp.AppendTime(o, z.LocalDate)
 	// string "etag"
 	o = append(o, 0xa4, 0x65, 0x74, 0x61, 0x67)
 	o = msgp.AppendString(o, z.ETag)
@@ -344,6 +361,11 @@ func (z *CachingPolicy) UnmarshalMsg(bts []byte) (o []byte, err error) {
 			if err != nil {
 				return
 			}
+		case "local_date":
+			z.LocalDate, bts, err = msgp.ReadTimeBytes(bts)
+			if err != nil {
+				return
+			}
 		case "etag":
 			z.ETag, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
@@ -382,7 +404,7 @@ func (z *CachingPolicy) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *CachingPolicy) Msgsize() (s int) {
-	s = 1 + 9 + msgp.BoolSize + 8 + msgp.BoolSize + 12 + msgp.BoolSize + 19 + msgp.IntSize + 15 + msgp.BoolSize + 16 + msgp.BoolSize + 14 + msgp.TimeSize + 8 + msgp.TimeSize + 5 + msgp.TimeSize + 5 + msgp.StringPrefixSize + len(z.ETag) + 20 + msgp.StringPrefixSize + len(z.IfNoneMatchValue) + 15 + msgp.StringPrefixSize + len(z.IfMatchValue) + 23 + msgp.TimeSize + 25 + msgp.TimeSize
+	s = 1 + 9 + msgp.BoolSize + 8 + msgp.BoolSize + 12 + msgp.BoolSize + 19 + msgp.IntSize + 15 + msgp.BoolSize + 16 + msgp.BoolSize + 14 + msgp.TimeSize + 8 + msgp.TimeSize + 5 + msgp.TimeSize + 11 + msgp.TimeSize + 5 + msgp.StringPrefixSize + len(z.ETag) + 20 + msgp.StringPrefixSize + len(z.IfNoneMatchValue) + 15 + msgp.StringPrefixSize + len(z.IfMatchValue) + 23 + msgp.TimeSize + 25 + msgp.TimeSize
 	return
 }
 

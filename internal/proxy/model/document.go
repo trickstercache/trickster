@@ -40,6 +40,7 @@ type CachingPolicy struct {
 	LastModified          time.Time `msg:"last_modified"`
 	Expires               time.Time `msg:"expires"`
 	Date                  time.Time `msg:"date"`
+	LocalDate             time.Time `msg:"local_date"`
 	ETag                  string    `msg:"etag"`
 	IfNoneMatchValue      string    `msg:"if_none_match_value"`
 	IfMatchValue          string    `msg:"if_match_value"`

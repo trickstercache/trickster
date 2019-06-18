@@ -37,7 +37,7 @@ func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mod
 }
 
 // FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
-func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache.Cache, ttl time.Duration, noLock bool) ([]byte, *http.Response, bool) {
+func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache.Cache, defaultTTL time.Duration, noLock bool) ([]byte, *http.Response, bool) {
 
 	cfg := client.Configuration()
 	key := cfg.Host + "." + DeriveCacheKey(client, cfg, r, "")
@@ -75,7 +75,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache
 
 	d, err := QueryCache(cache, key)
 	if err == nil {
-		d.CachingPolicy.IsFresh = !d.CachingPolicy.Expires.Before(time.Now())
+		d.CachingPolicy.IsFresh = !d.CachingPolicy.LocalDate.Add(time.Duration(d.CachingPolicy.FreshnessLifetime) * time.Second).Before(time.Now())
 		if !d.CachingPolicy.IsFresh {
 			if !d.CachingPolicy.CanRevalidate {
 				// The cache entry has expired and lacks any data for validating freshness
@@ -96,7 +96,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache
 	var resp *http.Response
 	var elapsed time.Duration
 
-	if d.CachingPolicy.IsFresh {
+	if d.CachingPolicy != nil && d.CachingPolicy.IsFresh {
 		cacheStatus = CrHit
 	} else {
 
@@ -109,6 +109,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache
 				d.Headers[k] = v
 			}
 			d.CachingPolicy = GetResponseCachingPolicy(resp.StatusCode, resp.Header)
+			// TODO: update any cache metadata like TTL
 		} else {
 			d = model.DocumentFromHTTPResponse(resp, body, GetResponseCachingPolicy(resp.StatusCode, resp.Header))
 		}
@@ -142,10 +143,21 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache
 	d.CachingPolicy.NoTransform = d.CachingPolicy.NoTransform || cpReq.NoTransform
 	d.CachingPolicy.NoCache = d.CachingPolicy.NoCache || cpReq.NoCache
 
-	if !d.CachingPolicy.NoCache {
+	if !d.CachingPolicy.MustRevalidate && !d.CachingPolicy.NoCache && d.CachingPolicy.FreshnessLifetime <= 0 {
+		d.CachingPolicy.FreshnessLifetime = int(defaultTTL.Seconds())
+	}
+
+	if d.CachingPolicy.NoCache || (!d.CachingPolicy.CanRevalidate && d.CachingPolicy.FreshnessLifetime <= 0) {
+		cache.Remove(key)
+	} else if !d.CachingPolicy.IsFresh {
 		WriteCache(cache, key, d, time.Duration(d.CachingPolicy.FreshnessLifetime)*time.Second)
 	} else {
-		cache.Remove(key)
+		body = d.Body
+		resp = &http.Response{
+			Header:     d.Headers,
+			StatusCode: d.StatusCode,
+			Status:     d.Status,
+		}
 	}
 
 	// TODO: Inject any configured response headers here
