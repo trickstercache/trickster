@@ -113,6 +113,7 @@ func (c *Cache) Close() error {
 }
 
 // SetTTL updates the TTL for the provided cache object
+// Not supported yet
 func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
-	c.Index.UpdateObjectTTL(cacheKey, ttl)
+	//c.Index.UpdateObjectTTL(cacheKey, ttl)
 }
