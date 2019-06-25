@@ -162,7 +162,18 @@ func (se *SeriesEnvelope) Copy() timeseries.Timeseries {
 // Crop returns a copy of the base Timeseries that has been cropped down to the provided Extents.
 // Crop assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
 func (se *SeriesEnvelope) Crop(e timeseries.Extent) {
+	if e.Start.IsZero() {
+		se.cropToSize(e.End)
+		return
+	}
+	se.cropToTime(e)
+}
 
+func (se *SeriesEnvelope) cropToSize(n time.Time) {
+
+}
+
+func (se *SeriesEnvelope) cropToTime(e timeseries.Extent) {
 	x := len(se.ExtentList)
 	// The Series has no extents, so no need to do anything
 	if x < 1 {

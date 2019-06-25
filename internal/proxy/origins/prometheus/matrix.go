@@ -84,7 +84,18 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 // Crop reduces the Timeseries down to timestamps contained within the provided Extents (inclusive).
 // Crop assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
 func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
+	if e.Start.IsZero() {
+		me.cropToSize(e.End)
+		return
+	}
+	me.cropToTime(e)
+}
 
+func (me *MatrixEnvelope) cropToSize(n time.Time) {
+
+}
+
+func (me *MatrixEnvelope) cropToTime(e timeseries.Extent) {
 	x := len(me.ExtentList)
 	// The Series has no extents, so no need to do anything
 	if x < 1 {
