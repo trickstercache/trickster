@@ -154,7 +154,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		}
 	}
 
-	dpStatus := log.Pairs{"cacheKey": key, "cacheStatus": cacheStatus, "reqStart": trq.Extent.Start, "reqEnd": trq.Extent.End}
+	dpStatus := log.Pairs{"cacheKey": key, "cacheStatus": cacheStatus, "reqStart": trq.Extent.Start.Unix(), "reqEnd": trq.Extent.End.Unix()}
 	if len(missRanges) > 0 {
 		dpStatus["extentsFetched"] = timeseries.ExtentList(missRanges).String()
 	}
