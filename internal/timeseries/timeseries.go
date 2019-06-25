@@ -31,8 +31,12 @@ type Timeseries interface {
 	Sort()
 	// Copy should returns an exact duplicate source the Timeseries
 	Copy() Timeseries
-	// Crop should return a cropped copy of the Timeseries, leaving the original unchanged
-	Crop(Extent)
+	// CropToRange should reduce time range of the Timeseries to the provided Extent
+	CropToRange(Extent)
+	// CropToSize should reduce time range of the Timeseries to the provided element size using
+	// a least-recently-used methodology, while limiting the upper extent to the provided time,
+	// in order to support backfill tolerance
+	CropToSize(int, time.Time)
 	// SeriesCount returns the number of individual Series in the Timeseries object
 	SeriesCount() int
 	// ValueCount returns the count of all values across all Series in the Timeseries object
