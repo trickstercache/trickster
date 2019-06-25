@@ -6,6 +6,8 @@
 
 Trickster is a reverse proxy cache for the [Prometheus](https://github.com/prometheus/prometheus) [HTTP APIv1](https://prometheus.io/docs/prometheus/latest/querying/api/) that dramatically accelerates dashboard rendering times for any series queried from Prometheus.
 
+#### NOTE: Trickster is currently actively developed under the [next](https://github.com/Comcast/trickster/tree/next) Branch for our milestone 1.0 Release.
+
 <img src="./docs/images/high-level.png" width=512 />
 
 ## How it works
