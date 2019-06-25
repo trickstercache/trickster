@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache"
+	tc "github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
@@ -33,7 +33,7 @@ import (
 // DeltaProxyCacheRequest identifies the gaps between the cache and a new timeseries request,
 // requests the gaps from the origin server and returns the reconstituted dataset tto the downstream request
 // while caching the results for subsequent requests of the same data
-func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, cache cache.Cache, ttl time.Duration) {
+func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, cache tc.Cache, ttl time.Duration) {
 
 	cfg := client.Configuration()
 	r.FastForwardDisable = cfg.FastForwardDisable
@@ -85,14 +85,14 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	var doc *model.HTTPDocument
 	var elapsed time.Duration
 
-	cacheStatus := crKeyMiss
+	cacheStatus := tc.LookupStatusKeyMiss
 
 	if refresh {
-		cacheStatus = crPurge
+		cacheStatus = tc.LookupStatusPurge
 		cache.Remove(key)
 		cts, doc, elapsed, err = fetchTimeseries(r, client)
 		if err != nil {
-			recordDPCResult(r, "proxy-error", strconv.Itoa(doc.StatusCode), r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
+			recordDPCResult(r, tc.LookupStatusProxyError, strconv.Itoa(doc.StatusCode), r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 			Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 			return // fetchTimeseries logs the error
 		}
@@ -101,7 +101,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		if err != nil {
 			cts, doc, elapsed, err = fetchTimeseries(r, client)
 			if err != nil {
-				recordDPCResult(r, "proxy-error", strconv.Itoa(doc.StatusCode), r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
+				recordDPCResult(r, tc.LookupStatusProxyError, strconv.Itoa(doc.StatusCode), r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 				Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 				return // fetchTimeseries logs the error
 			}
@@ -113,28 +113,28 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 				cache.Remove(key)
 				cts, doc, elapsed, err = fetchTimeseries(r, client)
 				if err != nil {
-					recordDPCResult(r, "proxy-error", strconv.Itoa(doc.StatusCode), r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
+					recordDPCResult(r, tc.LookupStatusProxyError, strconv.Itoa(doc.StatusCode), r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 					Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 					return // fetchTimeseries logs the error
 				}
 			} else {
-				cacheStatus = crPartialHit
+				cacheStatus = tc.LookupStatusPartialHit
 			}
 		}
 	}
 
 	// Find the ranges that we want, but which are not currently cached
 	var missRanges []timeseries.Extent
-	if cacheStatus == crPartialHit {
+	if cacheStatus == tc.LookupStatusPartialHit {
 		missRanges = trq.CalculateDeltas(cts.Extents())
 	}
 
-	if len(missRanges) == 0 && cacheStatus == crPartialHit {
+	if len(missRanges) == 0 && cacheStatus == tc.LookupStatusPartialHit {
 		// on full cache hit, elapsed records the time taken to query the cache and definitively conclude that it is a full cache hit
 		elapsed = time.Now().Sub(now)
-		cacheStatus = crHit
+		cacheStatus = tc.LookupStatusHit
 	} else if len(missRanges) == 1 && missRanges[0].Start.Equal(trq.Extent.Start) && missRanges[0].End.Equal(trq.Extent.End) {
-		cacheStatus = crRangeMiss
+		cacheStatus = tc.LookupStatusRangeMiss
 	}
 
 	ffStatus := "off"
@@ -236,7 +236,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	rts := cts.Copy()
 
 	// if it was a cache key miss, there is no need to undergo Crop since the extents are identical
-	if cacheStatus != crKeyMiss {
+	if cacheStatus != tc.LookupStatusKeyMiss {
 		rts.Crop(trq.Extent)
 	}
 	cachedValueCount := rts.ValueCount() - uncachedValueCount
@@ -261,7 +261,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	rh := headers.CopyHeaders(doc.Headers)
 
 	switch cacheStatus {
-	case crKeyMiss, crPartialHit, crRangeMiss:
+	case tc.LookupStatusKeyMiss, tc.LookupStatusPartialHit, tc.LookupStatusRangeMiss:
 		wg.Add(1)
 		// Write the newly-merged object back to the cache
 		go func() {
@@ -321,10 +321,10 @@ func fetchTimeseries(r *model.Request, client model.Client) (timeseries.Timeseri
 	return ts, d, elapsed, nil
 }
 
-func recordDPCResult(r *model.Request, cacheStatus, httpStatus, path, ffStatus string, elapsed float64, needed []timeseries.Extent, header http.Header) {
-	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, httpStatus, path).Inc()
+func recordDPCResult(r *model.Request, cacheStatus tc.LookupStatus, httpStatus, path, ffStatus string, elapsed float64, needed []timeseries.Extent, header http.Header) {
+	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus.String(), httpStatus, path).Inc()
 	if elapsed > 0 {
-		metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, httpStatus, path).Observe(elapsed)
+		metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus.String(), httpStatus, path).Observe(elapsed)
 	}
-	headers.SetResultsHeader(header, "DeltaProxyCache", cacheStatus, ffStatus, timeseries.ExtentList(needed))
+	headers.SetResultsHeader(header, "DeltaProxyCache", cacheStatus.String(), ffStatus, timeseries.ExtentList(needed))
 }
