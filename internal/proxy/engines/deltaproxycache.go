@@ -130,6 +130,8 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	}
 
 	if len(missRanges) == 0 && cacheStatus == crPartialHit {
+		// on full cache hit, elapsed records the time taken to query the cache and definitively conclude that it is a full cache hit
+		elapsed = time.Now().Sub(now)
 		cacheStatus = crHit
 	} else if len(missRanges) == 1 && missRanges[0].Start.Equal(trq.Extent.Start) && missRanges[0].End.Equal(trq.Extent.End) {
 		cacheStatus = crRangeMiss
