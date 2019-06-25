@@ -36,34 +36,17 @@ func (el ExtentList) String() string {
 	return strings.Join(lines, ";")
 }
 
-// Copy returns a true copy of the ExtentList
-func (el ExtentList) Copy() ExtentList {
-	c := make(ExtentList, len(el))
-	for i := range el {
-		c[i].Start = el[i].Start
-		c[i].End = el[i].End
+// TimestampCount returns the number of expected timestamps in an ExtentList given the provided step
+func (el ExtentList) TimestampCount(step time.Duration) int {
+	tc := 0
+	for _, e := range el {
+		tc += int(e.End.Sub(e.Start) / step)
 	}
-	return c
-}
-
-// Len returns the length of an array of type ExtentList
-func (el ExtentList) Len() int {
-	return len(el)
-}
-
-// Less returns true if element i in the ExtentList comes before j
-func (el ExtentList) Less(i, j int) bool {
-	return el[i].Start.Before(el[j].Start)
-}
-
-// Swap modifies an ExtentList by swapping the values in indexes i and j
-func (el ExtentList) Swap(i, j int) {
-	el[i], el[j] = el[j], el[i]
+	return tc
 }
 
 // Contains ...
 func (el ExtentList) Contains(e Extent) bool {
-
 	x := len(el)
 	if x == 0 {
 		return false
@@ -86,10 +69,8 @@ func (el ExtentList) OutsideOf(e Extent) bool {
 
 // Crop ...
 func (el ExtentList) Crop(e Extent) ExtentList {
-
 	var startIndex = -1
 	var endIndex = -1
-
 	for i, f := range el {
 		if startIndex == -1 {
 			if f.Includes(e.Start) {
@@ -112,7 +93,6 @@ func (el ExtentList) Crop(e Extent) ExtentList {
 			}
 		}
 	}
-
 	if startIndex != -1 {
 		if endIndex == -1 {
 			endIndex = len(el) - 1
@@ -122,28 +102,16 @@ func (el ExtentList) Crop(e Extent) ExtentList {
 			return el[startIndex:endIndex]
 		}
 	}
-
 	return make(ExtentList, 0, 0)
-}
-
-// TimestampCount returns the number of expected timestamps in an ExtentList given the provided step
-func (el ExtentList) TimestampCount(step time.Duration) int {
-	tc := 0
-	for _, e := range el {
-		tc += int(e.End.Sub(e.Start) / step)
-	}
-	return tc
 }
 
 // Compress sorts an ExtentList and merges time-adjacent Extents so that the total extent of
 // data is accurately represented in as few Extents as possible
 func (el ExtentList) Compress(step time.Duration) ExtentList {
-
 	exc := ExtentList(el).Copy()
 	if len(el) == 0 {
 		return exc
 	}
-
 	l := len(el)
 	compressed := make(ExtentList, 0, l)
 	sort.Sort(exc)
@@ -160,4 +128,29 @@ func (el ExtentList) Compress(step time.Duration) ExtentList {
 		e = Extent{}
 	}
 	return compressed
+}
+
+// Len returns the length of an array of type ExtentList
+func (el ExtentList) Len() int {
+	return len(el)
+}
+
+// Less returns true if element i in the ExtentList comes before j
+func (el ExtentList) Less(i, j int) bool {
+	return el[i].Start.Before(el[j].Start)
+}
+
+// Swap modifies an ExtentList by swapping the values in indexes i and j
+func (el ExtentList) Swap(i, j int) {
+	el[i], el[j] = el[j], el[i]
+}
+
+// Copy returns a true copy of the ExtentList
+func (el ExtentList) Copy() ExtentList {
+	c := make(ExtentList, len(el))
+	for i := range el {
+		c[i].Start = el[i].Start
+		c[i].End = el[i].End
+	}
+	return c
 }
