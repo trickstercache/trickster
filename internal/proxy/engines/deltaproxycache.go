@@ -257,7 +257,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 
 	// if it was a cache key miss, there is no need to undergo Crop since the extents are identical
 	if cacheStatus != tc.LookupStatusKeyMiss {
-		rts.Crop(trq.Extent)
+		rts.CropToRange(trq.Extent)
 	}
 	cachedValueCount := rts.ValueCount() - uncachedValueCount
 
@@ -287,7 +287,12 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		go func() {
 			defer wg.Done()
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the Backfill Tolerance before storing to cache
-			cts.Crop(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
+			switch cfg.ValueRetentionPolicy {
+			case config.RetentionPolicySize:
+				cts.CropToSize(cfg.ValueRetentionFactor, bf.End)
+			default:
+				cts.CropToRange(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
+			}
 			// Don't cache datasets with empty extents (everything was cropped so there is nothing to cache)
 			if len(cts.Extents()) > 0 {
 				cdata, err := client.MarshalTimeseries(cts)
