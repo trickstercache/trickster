@@ -14,6 +14,7 @@
 package config
 
 import (
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -76,24 +77,26 @@ type MainConfig struct {
 // OriginConfig is a collection of configurations for prometheus origins proxied by Trickster
 // You can override these on a per-request basis with url-params
 type OriginConfig struct {
-	Type                  string `toml:"type"`
-	Scheme                string `toml:"scheme"`
-	Host                  string `toml:"host"`
-	PathPrefix            string `toml:"path_prefix"`
-	APIPath               string `toml:"api_path"`
-	IgnoreNoCacheHeader   bool   `toml:"ignore_no_cache_header"`
-	ValueRetentionFactor  int    `toml:"value_retention_factor"`
-	FastForwardDisable    bool   `toml:"fast_forward_disable"`
-	BackfillToleranceSecs int64  `toml:"backfill_tolerance_secs"`
-	TimeoutSecs           int64  `toml:"timeout_secs"`
-	KeepAliveTimeoutSecs  int64  `toml:"keep_alive_timeout_secs"`
-	MaxIdleConns          int    `toml:"max_idle_conns"`
-	CacheName             string `toml:"cache_name"`
-	IsDefault             bool   `toml:"is_default"`
+	Type                     string `toml:"type"`
+	Scheme                   string `toml:"scheme"`
+	Host                     string `toml:"host"`
+	PathPrefix               string `toml:"path_prefix"`
+	APIPath                  string `toml:"api_path"`
+	IgnoreNoCacheHeader      bool   `toml:"ignore_no_cache_header"`
+	ValueRetentionFactor     int    `toml:"value_retention_factor"`
+	ValueRetentionPolicyName string `toml:"value_retention_policy_name"`
+	FastForwardDisable       bool   `toml:"fast_forward_disable"`
+	BackfillToleranceSecs    int64  `toml:"backfill_tolerance_secs"`
+	TimeoutSecs              int64  `toml:"timeout_secs"`
+	KeepAliveTimeoutSecs     int64  `toml:"keep_alive_timeout_secs"`
+	MaxIdleConns             int    `toml:"max_idle_conns"`
+	CacheName                string `toml:"cache_name"`
+	IsDefault                bool   `toml:"is_default"`
 
-	Timeout           time.Duration `toml:"-"`
-	BackfillTolerance time.Duration `toml:"-"`
-	ValueRetention    time.Duration `toml:"-"`
+	Timeout              time.Duration        `toml:"-"`
+	BackfillTolerance    time.Duration        `toml:"-"`
+	ValueRetention       time.Duration        `toml:"-"`
+	ValueRetentionPolicy ValueRetentionPolicy `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -268,19 +271,21 @@ func DefaultCachingConfig() *CachingConfig {
 // DefaultOriginConfig will return a pointer to an OriginConfig with the default configuration settings
 func DefaultOriginConfig() *OriginConfig {
 	return &OriginConfig{
-		Type:                  defaultOriginServerType,
-		Scheme:                defaultOriginScheme,
-		Host:                  defaultOriginHost,
-		APIPath:               defaultOriginAPIPath,
-		IgnoreNoCacheHeader:   defaultOriginINCH,
-		ValueRetentionFactor:  defaultOriginVRF, // Cache a max of 1024 recent timestamps of data for each query
-		TimeoutSecs:           defaultOriginTimeoutSecs,
-		KeepAliveTimeoutSecs:  defaultKeepAliveTimeoutSecs,
-		MaxIdleConns:          defaultMaxIdleConns,
-		CacheName:             defaultOriginCacheName,
-		BackfillToleranceSecs: defaultBackfillToleranceSecs,
-		ValueRetention:        defaultOriginVRF,
-		Timeout:               time.Second * defaultOriginTimeoutSecs,
+		Type:                     defaultOriginServerType,
+		Scheme:                   defaultOriginScheme,
+		Host:                     defaultOriginHost,
+		APIPath:                  defaultOriginAPIPath,
+		IgnoreNoCacheHeader:      defaultOriginINCH,
+		ValueRetentionFactor:     defaultOriginVRF, // Cache a max of 1024 recent timestamps of data for each query
+		ValueRetentionPolicy:     defaultOriginVRP,
+		ValueRetentionPolicyName: defaultOriginVRPName,
+		TimeoutSecs:              defaultOriginTimeoutSecs,
+		KeepAliveTimeoutSecs:     defaultKeepAliveTimeoutSecs,
+		MaxIdleConns:             defaultMaxIdleConns,
+		CacheName:                defaultOriginCacheName,
+		BackfillToleranceSecs:    defaultBackfillToleranceSecs,
+		ValueRetention:           defaultOriginVRF,
+		Timeout:                  time.Second * defaultOriginTimeoutSecs,
 
 		BackfillTolerance: defaultBackfillToleranceSecs,
 	}
@@ -366,6 +371,13 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "value_retention_factor") {
 			oc.ValueRetentionFactor = v.ValueRetentionFactor
+		}
+
+		if metadata.IsDefined("origins", k, "value_retention_policy_name") {
+			oc.ValueRetentionPolicyName = strings.ToLower(v.ValueRetentionPolicyName)
+			if p, ok := valueRetentionPolicyNames[oc.ValueRetentionPolicyName]; ok {
+				oc.ValueRetentionPolicy = p
+			}
 		}
 
 		if metadata.IsDefined("origins", k, "fast_forward_disable") {

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	tc "github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
@@ -53,17 +54,20 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	}
 
 	now := time.Now()
-	OldestRetainedTimestamp := now.Truncate(trq.Step).Add(-(trq.Step * cfg.ValueRetention))
-	if trq.Extent.End.Before(OldestRetainedTimestamp) {
-		log.Debug("timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.ValueRetention})
-		ProxyRequest(r, w)
-		return
-	}
 
-	if trq.Extent.Start.After(bf.End) {
-		log.Debug("timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": cfg.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
-		ProxyRequest(r, w)
-		return
+	OldestRetainedTimestamp := time.Time{}
+	if cfg.ValueRetentionPolicy == config.RetentionPolicyDate {
+		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * cfg.ValueRetention))
+		if trq.Extent.End.Before(OldestRetainedTimestamp) {
+			log.Debug("timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.ValueRetention})
+			ProxyRequest(r, w)
+			return
+		}
+		if trq.Extent.Start.After(bf.End) {
+			log.Debug("timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": cfg.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
+			ProxyRequest(r, w)
+			return
+		}
 	}
 
 	r.TimeRangeQuery = trq
@@ -118,6 +122,22 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 					return // fetchTimeseries logs the error
 				}
 			} else {
+				if cfg.ValueRetentionPolicy == config.RetentionPolicySize {
+					el := cts.Extents()
+					if len(el) > 0 &&
+						el.TimestampCount(trq.Step) >= cfg.ValueRetentionFactor {
+						if trq.Extent.End.Before(el[0].Start) {
+							log.Debug("timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.ValueRetention})
+							ProxyRequest(r, w)
+							return
+						}
+						if trq.Extent.Start.After(el[len(el)-1].End) {
+							log.Debug("timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": cfg.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
+							ProxyRequest(r, w)
+							return
+						}
+					}
+				}
 				cacheStatus = tc.LookupStatusPartialHit
 			}
 		}
@@ -266,7 +286,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		// Write the newly-merged object back to the cache
 		go func() {
 			defer wg.Done()
-			// Crop the Cache Object down to the Sample Age Retention Policy and the Backfill Tolerance before storing to cache
+			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the Backfill Tolerance before storing to cache
 			cts.Crop(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
 			// Don't cache datasets with empty extents (everything was cropped so there is nothing to cache)
 			if len(cts.Extents()) > 0 {

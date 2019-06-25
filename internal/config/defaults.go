@@ -54,6 +54,8 @@ const (
 	defaultOriginAPIPath         = "/api/v1/"
 	defaultOriginINCH            = true
 	defaultOriginVRF             = 1024
+	defaultOriginVRP             = RetentionPolicyDate
+	defaultOriginVRPName         = "date"
 	defaultOriginTimeoutSecs     = 180
 	defaultOriginCacheName       = "default"
 	defaultBackfillToleranceSecs = 0

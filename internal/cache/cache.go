@@ -23,7 +23,7 @@ import (
 )
 
 // LookupStatus defines the possible status of a cache lookup
-type LookupStatus uint8
+type LookupStatus int
 
 const (
 	// LookupStatusHit indicates a full cache hit on lookup
@@ -45,12 +45,11 @@ const (
 
 func (s LookupStatus) String() string {
 	name := []string{"hit", "phit", "rmiss", "kmiss"}
-	i := uint8(s)
 	switch {
-	case i <= uint8(LookupStatusKeyMiss):
-		return name[i]
+	case s <= LookupStatusKeyMiss:
+		return name[int(s)]
 	default:
-		return strconv.Itoa(int(i))
+		return strconv.Itoa(int(s))
 	}
 }
 

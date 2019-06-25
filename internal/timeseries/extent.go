@@ -111,6 +111,15 @@ func (el ExtentList) Crop(e Extent) ExtentList {
 	return make(ExtentList, 0, 0)
 }
 
+// TimestampCount returns the number of expected timestamps in an ExtentList given the provided step
+func (el ExtentList) TimestampCount(step time.Duration) int {
+	tc := 0
+	for _, e := range el {
+		tc += int(e.End.Sub(e.Start) / step)
+	}
+	return tc
+}
+
 // Compress sorts an ExtentList and merges time-adjacent Extents so that the total extent of
 // data is accurately represented in as few Extents as possible
 func (el ExtentList) Compress(step time.Duration) ExtentList {
