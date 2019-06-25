@@ -15,11 +15,44 @@ package cache
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
+
+// LookupStatus defines the possible status of a cache lookup
+type LookupStatus uint8
+
+const (
+	// LookupStatusHit indicates a full cache hit on lookup
+	LookupStatusHit = LookupStatus(iota)
+	// LookupStatusPartialHit indicates a partial cache hit (key exists and has some data
+	// for requested time range, but not all) on lookup
+	LookupStatusPartialHit
+	// LookupStatusRangeMiss indicates a range miss (key exists but no data for requested time range) on lookup
+	LookupStatusRangeMiss
+	// LookupStatusKeyMiss indicates a full key miss (cache key does not exist) on lookup
+	LookupStatusKeyMiss
+	// LookupStatusPurge indicates a the cache key, if it existed, was purged as directed
+	// in upstream response or down stream request http headers
+	LookupStatusPurge
+	// LookupStatusProxyError indicates a that a proxy error occurred retreiving a cacheable dataset
+	// in upstream response or down stream request http headers
+	LookupStatusProxyError
+)
+
+func (s LookupStatus) String() string {
+	name := []string{"hit", "phit", "rmiss", "kmiss"}
+	i := uint8(s)
+	switch {
+	case i <= uint8(LookupStatusKeyMiss):
+		return name[i]
+	default:
+		return strconv.Itoa(int(i))
+	}
+}
 
 // Cache is the interface for the supported caching fabrics
 // When making new cache types, Retrieve() must return an error on cache miss
