@@ -36,15 +36,6 @@ func (el ExtentList) String() string {
 	return strings.Join(lines, ";")
 }
 
-// TimestampCount returns the number of expected timestamps in an ExtentList given the provided step
-func (el ExtentList) TimestampCount(step time.Duration) int {
-	tc := 0
-	for _, e := range el {
-		tc += int(e.End.Sub(e.Start) / step)
-	}
-	return tc
-}
-
 // Contains ...
 func (el ExtentList) Contains(e Extent) bool {
 	x := len(el)
