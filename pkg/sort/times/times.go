@@ -13,12 +13,28 @@
 
 package times
 
-import "time"
+import (
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+)
 
-// Times represents an array of time.Times
+// Times represents a slice of time.Time
 type Times []time.Time
 
-// Len returns the length of an array of time.Times
+// FromMap returns a times.Times from a map of time.Time
+func FromMap(m map[time.Time]bool) Times {
+
+	l := make(Times, 0, len(m))
+	for t := range m {
+		l = append(l, t)
+	}
+	sort.Sort(l)
+	return l
+}
+
+// Len returns the length of a slice of time.Times
 func (t Times) Len() int {
 	return len(t)
 }
@@ -28,7 +44,15 @@ func (t Times) Less(i, j int) bool {
 	return t[i].Before(t[j])
 }
 
-// Swap modifies an array by of time.Times swapping the values in indexes i and j
+// Swap modifies a slice of time.Times by swapping the values in indexes i and j
 func (t Times) Swap(i, j int) {
 	t[i], t[j] = t[j], t[i]
+}
+
+func (t Times) String() string {
+	l := make([]string, 0, len(t))
+	for _, v := range t {
+		l = append(l, strconv.FormatInt(v.Unix(), 10))
+	}
+	return "[ " + strings.Join(l, ", ") + " ]"
 }
