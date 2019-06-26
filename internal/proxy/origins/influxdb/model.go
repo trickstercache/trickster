@@ -27,6 +27,9 @@ type SeriesEnvelope struct {
 	Err          string                `json:"error,omitempty"`
 	StepDuration time.Duration         `json:"step,omitempty"`
 	ExtentList   timeseries.ExtentList `json:"extents,omitempty"`
+
+	timestamps []float64
+	isSorted   bool
 }
 
 // Result represents a Result returned from the InfluxDB HTTP API

@@ -35,11 +35,13 @@ type VectorData struct {
 
 // MatrixEnvelope represents a Matrix response object from the Prometheus HTTP API
 type MatrixEnvelope struct {
-	Status     string                `json:"status"`
-	Data       MatrixData            `json:"data"`
-	ExtentList timeseries.ExtentList `json:"extents,omitempty"`
-	//Gaps         []timeseries.Extent `json:"gaps,omitempty"`
-	StepDuration time.Duration `json:"step,omitempty"`
+	Status       string                `json:"status"`
+	Data         MatrixData            `json:"data"`
+	ExtentList   timeseries.ExtentList `json:"extents,omitempty"`
+	StepDuration time.Duration         `json:"step,omitempty"`
+
+	timestamps []time.Time
+	isSorted   bool
 }
 
 // MatrixData represents the Data body of a Matrix response object from the Prometheus HTTP API
