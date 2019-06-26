@@ -124,8 +124,9 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 			} else {
 				if cfg.ValueRetentionPolicy == config.RetentionPolicySize {
 					el := cts.Extents()
-					if len(el) > 0 &&
-						el.TimestampCount(trq.Step) >= cfg.ValueRetentionFactor {
+					tsc := cts.TimestampCount()
+					if tsc > 0 &&
+						tsc >= cfg.ValueRetentionFactor {
 						if trq.Extent.End.Before(el[0].Start) {
 							log.Debug("timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.ValueRetention})
 							ProxyRequest(r, w)
