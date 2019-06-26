@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Comcast/trickster/pkg/sort/times"
+
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/prometheus/common/model"
 )
@@ -133,9 +135,9 @@ func TestMerge(t *testing.T) {
 					},
 				},
 				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(10000, 0)},
+					timeseries.Extent{Start: time.Unix(10, 0), End: time.Unix(10, 0)},
 				},
-				StepDuration: time.Duration(5000) * time.Second,
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			b: &MatrixEnvelope{
 				Status: rvSuccess,
@@ -152,13 +154,16 @@ func TestMerge(t *testing.T) {
 					},
 				},
 				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(5000, 0), End: time.Unix(5000, 0)},
-					timeseries.Extent{Start: time.Unix(15000, 0), End: time.Unix(15000, 0)},
+					timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(5, 0)},
+					timeseries.Extent{Start: time.Unix(15, 0), End: time.Unix(15, 0)},
 				},
-				StepDuration: time.Duration(5000) * time.Second,
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			merged: &MatrixEnvelope{
-				Status: rvSuccess,
+				isCounted:  true,
+				isSorted:   true,
+				timestamps: times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
+				Status:     rvSuccess,
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
@@ -173,9 +178,9 @@ func TestMerge(t *testing.T) {
 					},
 				},
 				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(5000, 0), End: time.Unix(15000, 0)},
+					timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(15, 0)},
 				},
-				StepDuration: time.Duration(5000) * time.Second,
+				StepDuration: time.Duration(5) * time.Second,
 			},
 		},
 		// Run 1: Empty second series
@@ -213,7 +218,10 @@ func TestMerge(t *testing.T) {
 				StepDuration: time.Duration(5000) * time.Second,
 			},
 			merged: &MatrixEnvelope{
-				Status: rvSuccess,
+				isCounted:  true,
+				isSorted:   true,
+				timestamps: times.Times{time.Unix(10000, 0)},
+				Status:     rvSuccess,
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
@@ -270,7 +278,10 @@ func TestMerge(t *testing.T) {
 				StepDuration: time.Duration(5000) * time.Second,
 			},
 			merged: &MatrixEnvelope{
-				Status: rvSuccess,
+				isCounted:  true,
+				isSorted:   true,
+				timestamps: times.Times{time.Unix(10000, 0), time.Unix(15000, 0)},
+				Status:     rvSuccess,
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
@@ -298,8 +309,6 @@ func TestMerge(t *testing.T) {
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			test.a.Merge(true, test.b)
-			test.a.timestamps = nil
-			test.a.isSorted = false
 			if !reflect.DeepEqual(test.merged, test.a) {
 				t.Errorf("mismatch\nactual=%v\nexpected=%v", test.a, test.merged)
 			}
@@ -895,6 +904,7 @@ func TestCopy(t *testing.T) {
 		// Run 0
 		{
 			before: &MatrixEnvelope{
+				timestamps: times.Times{time.Unix(1644001200, 0)},
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
@@ -916,6 +926,7 @@ func TestCopy(t *testing.T) {
 		// Run 1
 		{
 			before: &MatrixEnvelope{
+				timestamps: times.Times{time.Unix(1644001200, 0), time.Unix(1644004800, 0)},
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
@@ -998,6 +1009,7 @@ func TestSort(t *testing.T) {
 			},
 			after: &MatrixEnvelope{
 				isSorted:   true,
+				isCounted:  true,
 				timestamps: []time.Time{time.Unix(1544004000, 0), time.Unix(1544004200, 0), time.Unix(1544004600, 0), time.Unix(1544004800, 0)},
 				Data: MatrixData{
 					ResultType: "matrix",

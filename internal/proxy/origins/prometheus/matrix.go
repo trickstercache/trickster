@@ -55,6 +55,7 @@ func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 	}
 	me.ExtentList = me.ExtentList.Compress(me.StepDuration)
 	me.isSorted = false
+	me.isCounted = false
 	if sort {
 		me.Sort()
 	}
@@ -62,9 +63,11 @@ func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 
 // Copy returns a perfect copy of the base Timeseries
 func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
-	// TODO - add new fields to copy
 	resMe := &MatrixEnvelope{
-		Status: me.Status,
+		isCounted:  me.isCounted,
+		isSorted:   me.isSorted,
+		timestamps: make(times.Times, len(me.timestamps)),
+		Status:     me.Status,
 		Data: MatrixData{
 			ResultType: me.Data.ResultType,
 			Result:     make([]*model.SampleStream, 0, len(me.Data.Result)),
@@ -73,6 +76,7 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 		ExtentList:   make(timeseries.ExtentList, len(me.ExtentList)),
 	}
 	copy(resMe.ExtentList, me.ExtentList)
+	copy(resMe.timestamps, me.timestamps)
 	for _, ss := range me.Data.Result {
 		newSS := &model.SampleStream{Metric: ss.Metric}
 		newSS.Values = ss.Values[:]
@@ -85,7 +89,7 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 // using a least-recently-used methodology. Any timestamps newer than the provided time are removed before
 // sizing, in order to support backfill tolerance
 func (me *MatrixEnvelope) CropToSize(c int, t time.Time) {
-
+	me.isCounted = false
 	x := len(me.ExtentList)
 	// The Series has no extents, so no need to do anything
 	if x < 1 {
@@ -114,6 +118,7 @@ func (me *MatrixEnvelope) CropToSize(c int, t time.Time) {
 // CropToRange reduces the Timeseries down to timestamps contained within the provided Extents (inclusive).
 // CropToRange assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
 func (me *MatrixEnvelope) CropToRange(e timeseries.Extent) {
+	me.isCounted = false
 	x := len(me.ExtentList)
 	// The Series has no extents, so no need to do anything
 	if x < 1 {
@@ -218,19 +223,29 @@ func (me *MatrixEnvelope) Sort() {
 		}
 		me.Data.Result[i].Values = sm
 	}
-
-	tsl := make(times.Times, 0, len(tsm))
-	for t := range tsm {
-		tsl = append(tsl, t)
-	}
-	sort.Sort(tsl)
-	me.timestamps = tsl
+	me.timestamps = times.FromMap(tsm)
+	me.isCounted = true
 	me.isSorted = true
+}
 
+func (me *MatrixEnvelope) updateTimestamps() {
+	if me.isCounted {
+		return
+	}
+	m := make(map[time.Time]bool)
+	for _, s := range me.Data.Result { // []SampleStream
+		for _, v := range s.Values { // []SamplePair
+			t := v.Timestamp.Time()
+			m[t] = true
+		}
+	}
+	me.timestamps = times.FromMap(m)
+	me.isCounted = true
 }
 
 // SetExtents overwrites a Timeseries's known extents with the provided extent list
 func (me *MatrixEnvelope) SetExtents(extents timeseries.ExtentList) {
+	me.isCounted = false
 	me.ExtentList = extents
 }
 
@@ -241,7 +256,7 @@ func (me *MatrixEnvelope) Extents() timeseries.ExtentList {
 
 // TimestampCount returns the number of unique timestamps across the timeseries
 func (me *MatrixEnvelope) TimestampCount() int {
-	me.Sort() // triggers the update of timestamps if needed
+	me.updateTimestamps()
 	return len(me.timestamps)
 }
 
