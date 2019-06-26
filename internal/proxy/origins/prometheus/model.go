@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/Comcast/trickster/pkg/sort/times"
 	"github.com/prometheus/common/model"
 )
 
@@ -40,8 +41,9 @@ type MatrixEnvelope struct {
 	ExtentList   timeseries.ExtentList `json:"extents,omitempty"`
 	StepDuration time.Duration         `json:"step,omitempty"`
 
-	timestamps []time.Time
-	isSorted   bool
+	timestamps times.Times // tracks unique timestamps in the matrix data
+	isSorted   bool        // tracks if the matrix data is currently sorted
+	isCounted  bool        // tracks if timestamps slice is up-to-date
 }
 
 // MatrixData represents the Data body of a Matrix response object from the Prometheus HTTP API
