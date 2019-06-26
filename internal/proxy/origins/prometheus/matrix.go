@@ -18,11 +18,9 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/Comcast/trickster/pkg/sort/times"
 	"github.com/prometheus/common/model"
 )
-
-// Times represents an array of Prometheus Times
-type Times []model.Time
 
 // Step returns the step for the Timeseries
 func (me *MatrixEnvelope) Step() time.Duration {
@@ -56,6 +54,7 @@ func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 		}
 	}
 	me.ExtentList = me.ExtentList.Compress(me.StepDuration)
+	me.isSorted = false
 	if sort {
 		me.Sort()
 	}
@@ -63,6 +62,7 @@ func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 
 // Copy returns a perfect copy of the base Timeseries
 func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
+	// TODO - add new fields to copy
 	resMe := &MatrixEnvelope{
 		Status: me.Status,
 		Data: MatrixData{
@@ -82,10 +82,33 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 }
 
 // CropToSize reduces the number of elements in the Timeseries to the provided count, by evicting elements
-// using a least-recently-used methodology. The time parameter limits the upper extent to the provided time,
-// in order to support backfill tolerance
+// using a least-recently-used methodology. Any timestamps newer than the provided time are removed before
+// sizing, in order to support backfill tolerance
 func (me *MatrixEnvelope) CropToSize(c int, t time.Time) {
 
+	x := len(me.ExtentList)
+	// The Series has no extents, so no need to do anything
+	if x < 1 {
+		me.Data.Result = model.Matrix{}
+		me.ExtentList = timeseries.ExtentList{}
+		return
+	}
+
+	// Crop to the Backfill Tolerance Value if needed
+	if me.ExtentList[x-1].End.After(t) {
+		me.CropToRange(timeseries.Extent{Start: me.ExtentList[0].Start, End: t})
+	}
+
+	if len(me.Data.Result) == 0 || me.TimestampCount() <= c {
+		return
+	}
+
+	for _, s := range me.Data.Result {
+		l := len(s.Values)
+		if l > 0 {
+
+		}
+	}
 }
 
 // CropToRange reduces the Timeseries down to timestamps contained within the provided Extents (inclusive).
@@ -111,6 +134,11 @@ func (me *MatrixEnvelope) CropToRange(e timeseries.Extent) {
 		if me.ValueCount() == 0 {
 			me.Data.Result = model.Matrix{}
 		}
+		me.ExtentList = me.ExtentList.Crop(e)
+		return
+	}
+
+	if len(me.Data.Result) == 0 {
 		me.ExtentList = me.ExtentList.Crop(e)
 		return
 	}
@@ -165,12 +193,21 @@ func (me *MatrixEnvelope) CropToRange(e timeseries.Extent) {
 
 // Sort sorts all Values in each Series chronologically by their timestamp
 func (me *MatrixEnvelope) Sort() {
+
+	if me.isSorted {
+		return
+	}
+
+	tsm := map[time.Time]bool{}
+
 	for i, s := range me.Data.Result { // []SampleStream
-		m := make(map[model.Time]model.SamplePair)
+		m := make(map[time.Time]model.SamplePair)
 		for _, v := range s.Values { // []SamplePair
-			m[v.Timestamp] = v
+			t := v.Timestamp.Time()
+			tsm[t] = true
+			m[t] = v
 		}
-		keys := make(Times, 0, len(m))
+		keys := make(times.Times, 0, len(m))
 		for key := range m {
 			keys = append(keys, key)
 		}
@@ -181,6 +218,15 @@ func (me *MatrixEnvelope) Sort() {
 		}
 		me.Data.Result[i].Values = sm
 	}
+
+	tsl := make(times.Times, 0, len(tsm))
+	for t := range tsm {
+		tsl = append(tsl, t)
+	}
+	sort.Sort(tsl)
+	me.timestamps = tsl
+	me.isSorted = true
+
 }
 
 // SetExtents overwrites a Timeseries's known extents with the provided extent list
@@ -191,6 +237,12 @@ func (me *MatrixEnvelope) SetExtents(extents timeseries.ExtentList) {
 // Extents returns the Timeseries's ExentList
 func (me *MatrixEnvelope) Extents() timeseries.ExtentList {
 	return me.ExtentList
+}
+
+// TimestampCount returns the number of unique timestamps across the timeseries
+func (me *MatrixEnvelope) TimestampCount() int {
+	me.Sort() // triggers the update of timestamps if needed
+	return len(me.timestamps)
 }
 
 // SeriesCount returns the number of individual Series in the Timeseries object
@@ -205,21 +257,4 @@ func (me *MatrixEnvelope) ValueCount() int {
 		c += len(me.Data.Result[i].Values)
 	}
 	return c
-}
-
-// methods required for sorting Prometheus model.Times
-
-// Len returns the length of an array of Prometheus model.Times
-func (t Times) Len() int {
-	return len(t)
-}
-
-// Less returns true if i comes before j
-func (t Times) Less(i, j int) bool {
-	return t[i].Before(t[j])
-}
-
-// Swap modifies an array by of Prometheus model.Times swapping the values in indexes i and j
-func (t Times) Swap(i, j int) {
-	t[i], t[j] = t[j], t[i]
 }

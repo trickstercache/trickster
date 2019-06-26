@@ -298,13 +298,15 @@ func TestMerge(t *testing.T) {
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			test.a.Merge(true, test.b)
+			test.a.timestamps = nil
+			test.a.isSorted = false
 			if !reflect.DeepEqual(test.merged, test.a) {
 				t.Errorf("mismatch\nactual=%v\nexpected=%v", test.a, test.merged)
 			}
 		})
 	}
 }
-func TestCrop(t *testing.T) {
+func TestCropToRange(t *testing.T) {
 	tests := []struct {
 		before, after *MatrixEnvelope
 		extent        timeseries.Extent
@@ -877,7 +879,7 @@ func TestCrop(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			test.before.Crop(test.extent)
+			test.before.CropToRange(test.extent)
 			if !reflect.DeepEqual(test.before, test.after) {
 				t.Errorf("mismatch\nexpected=%v\ngot=%v", test.after, test.before)
 			}
@@ -995,6 +997,8 @@ func TestSort(t *testing.T) {
 				},
 			},
 			after: &MatrixEnvelope{
+				isSorted:   true,
+				timestamps: []time.Time{time.Unix(1544004000, 0), time.Unix(1544004200, 0), time.Unix(1544004600, 0), time.Unix(1544004800, 0)},
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
@@ -1033,6 +1037,12 @@ func TestSort(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			test.before.isSorted = false
+			test.before.Sort()
+			if !reflect.DeepEqual(test.before, test.after) {
+				t.Errorf("mismatch\nexpected=%v\nactual=%v", test.after, test.before)
+			}
+			// test isSorted short circuit
 			test.before.Sort()
 			if !reflect.DeepEqual(test.before, test.after) {
 				t.Errorf("mismatch\nexpected=%v\nactual=%v", test.after, test.before)
@@ -1099,5 +1109,84 @@ func TestValueCount(t *testing.T) {
 	}
 	if me.ValueCount() != 3 {
 		t.Errorf("expected 3 got %d.", me.ValueCount())
+	}
+}
+
+func TestTimestampCount(t *testing.T) {
+
+	tests := []struct {
+		ts       *MatrixEnvelope
+		expected int
+	}{
+		{
+			ts: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "d"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 99000, Value: 1.5},
+								model.SamplePair{Timestamp: 199000, Value: 1.5},
+								model.SamplePair{Timestamp: 299000, Value: 1.5},
+							},
+						},
+					},
+				},
+			},
+			expected: 3,
+		},
+
+		{
+			ts: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "d"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 99000, Value: 1.5},
+								model.SamplePair{Timestamp: 199000, Value: 1.5},
+							},
+						},
+					},
+				},
+			},
+			expected: 2,
+		},
+
+		{
+			ts: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "d"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 99000, Value: 1.5},
+								model.SamplePair{Timestamp: 199000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "e"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 99000, Value: 1.5},
+								model.SamplePair{Timestamp: 299000, Value: 1.5},
+							},
+						},
+					},
+				},
+			},
+			expected: 3,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			tc := test.ts.TimestampCount()
+			if tc != test.expected {
+				t.Errorf("expected %d got %d.", test.expected, tc)
+			}
+		})
 	}
 }
