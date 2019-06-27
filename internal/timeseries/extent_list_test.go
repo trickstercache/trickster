@@ -14,6 +14,7 @@
 package timeseries
 
 import (
+	"fmt"
 	"reflect"
 	"strconv"
 	"testing"
@@ -26,6 +27,7 @@ var t100 = time.Unix(100, 0)
 var t101 = time.Unix(101, 0)
 var t200 = time.Unix(200, 0)
 var t201 = time.Unix(201, 0)
+var t300 = time.Unix(300, 0)
 var t600 = time.Unix(600, 0)
 var t900 = time.Unix(900, 0)
 var t1000 = time.Unix(1000, 0)
@@ -33,6 +35,83 @@ var t1100 = time.Unix(1100, 0)
 var t1200 = time.Unix(1200, 0)
 var t1300 = time.Unix(1300, 0)
 var t1400 = time.Unix(1400, 0)
+
+func TestUpdateLastUsed(t *testing.T) {
+
+	now := time.Now().Truncate(time.Second).Unix()
+
+	tests := []struct {
+		el       ExtentListLRU
+		lu       Extent
+		step     time.Duration
+		expected string
+	}{
+		{ // Run 0 - split 1 into 3
+			el:       ExtentListLRU{Extent{Start: t100, End: t1300, LastUsed: t1300}},
+			lu:       Extent{Start: t200, End: t600},
+			step:     time.Duration(100) * time.Second,
+			expected: fmt.Sprintf("100-100:1300;200-600:%d;700-1300:1300", now),
+		},
+
+		{
+			el: ExtentListLRU{
+				Extent{Start: t100, End: t200, LastUsed: t200},
+				Extent{Start: t600, End: t900, LastUsed: t900},
+				Extent{Start: t1100, End: t1300, LastUsed: t900},
+				Extent{Start: t1400, End: t1400, LastUsed: t1400},
+			},
+			lu:       Extent{Start: t1100, End: t1400},
+			step:     time.Duration(100) * time.Second,
+			expected: fmt.Sprintf("100-200:200;600-900:900;1100-1400:%d", now),
+		},
+
+		{
+			el: ExtentListLRU{
+				Extent{Start: t100, End: t200, LastUsed: t200},
+				Extent{Start: t600, End: t900, LastUsed: t900},
+				Extent{Start: t1100, End: t1300, LastUsed: t900},
+				Extent{Start: t1400, End: t1400, LastUsed: t1400},
+			},
+			lu:       Extent{Start: t1200, End: t1400},
+			step:     time.Duration(100) * time.Second,
+			expected: fmt.Sprintf("100-200:200;600-900:900;1100-1100:900;1200-1400:%d", now),
+		},
+
+		{
+			el: ExtentListLRU{
+				Extent{Start: t100, End: t200, LastUsed: t200},
+				Extent{Start: t600, End: t900, LastUsed: t900},
+				Extent{Start: t1100, End: t1300, LastUsed: t900},
+				Extent{Start: t1400, End: t1400, LastUsed: t1400},
+			},
+			lu:       Extent{Start: t600, End: t900},
+			step:     time.Duration(100) * time.Second,
+			expected: fmt.Sprintf("100-200:200;600-900:%d;1100-1300:900;1400-1400:1400", now),
+		},
+
+		{
+			el: ExtentListLRU{
+				Extent{Start: t100, End: t200, LastUsed: t200},
+				Extent{Start: t300, End: t900, LastUsed: t900},
+				Extent{Start: t1000, End: t1300, LastUsed: t900},
+				Extent{Start: t1400, End: t1400, LastUsed: t1400},
+			},
+			lu:       Extent{Start: t200, End: t1300},
+			step:     time.Duration(100) * time.Second,
+			expected: fmt.Sprintf("100-100:200;200-1300:%d;1400-1400:1400", now),
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			el := test.el.UpdateLastUsed(test.lu, test.step)
+			if el.String() != test.expected {
+				t.Errorf("got %s expected %s", el.String(), test.expected)
+			}
+		})
+	}
+
+}
 
 func TestString(t *testing.T) {
 

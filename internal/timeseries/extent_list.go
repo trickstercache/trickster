@@ -108,10 +108,11 @@ func (el ExtentList) Compress(step time.Duration) ExtentList {
 	sort.Sort(exc)
 	e := Extent{}
 	for i := range exc {
+		e.LastUsed = exc[i].LastUsed
 		if e.Start.IsZero() {
 			e.Start = exc[i].Start
 		}
-		if i+1 < l && (exc[i].End.Add(step).Equal(exc[i+1].Start) || exc[i].End.Equal(exc[i+1].Start)) {
+		if i+1 < l && (exc[i].End.Add(step).Equal(exc[i+1].Start) || exc[i].End.Equal(exc[i+1].Start)) && exc[i].LastUsed == exc[i+1].LastUsed {
 			continue
 		}
 		e.End = exc[i].End
@@ -142,6 +143,117 @@ func (el ExtentList) Copy() ExtentList {
 	for i := range el {
 		c[i].Start = el[i].Start
 		c[i].End = el[i].End
+		c[i].LastUsed = el[i].LastUsed
 	}
 	return c
+}
+
+// ExtentListLRU is a type of []Extent used for sorting the slice by LRU
+type ExtentListLRU []Extent
+
+// Less returns true if element i in the ExtentListLRU comes before j
+func (el ExtentListLRU) Less(i, j int) bool {
+	return el[i].LastUsed.Before(el[j].LastUsed)
+}
+
+// Swap modifies an ExtentListLRU by swapping the values in indexes i and j
+func (el ExtentListLRU) Swap(i, j int) {
+	el[i], el[j] = el[j], el[i]
+}
+
+// Copy returns a true copy of the ExtentListLRU
+func (el ExtentListLRU) Copy() ExtentListLRU {
+	c := make(ExtentListLRU, len(el))
+	for i := range el {
+		c[i].Start = el[i].Start
+		c[i].End = el[i].End
+		c[i].LastUsed = el[i].LastUsed
+	}
+	return c
+}
+
+func (el ExtentListLRU) String() string {
+	if len(el) == 0 {
+		return ""
+	}
+	lines := make([]string, 0, len(el))
+	for _, e := range el {
+		lines = append(lines, fmt.Sprintf("%d-%d:%d", e.Start.Unix(), e.End.Unix(), e.LastUsed.Unix()))
+	}
+	return strings.Join(lines, ";")
+}
+
+// UpdateLastUsed updates the ExtentListLRU's LastUsed field for the provided extent.
+// The step is required in order to properly split extents.
+func (el ExtentListLRU) UpdateLastUsed(lur Extent, step time.Duration) ExtentListLRU {
+
+	if el == nil {
+		return nil
+	}
+
+	if len(el) == 0 {
+		return ExtentListLRU{}
+	}
+
+	now := time.Now().Truncate(time.Second)
+	el2 := make(ExtentList, 0, len(el))
+
+	for _, x := range el {
+
+		// This case captures when extent x is sandwiched between the
+		// extents in the list containing lur.Start and lur.End
+		// So we'll mark its Last Used and move on without splitting.
+		if !lur.Start.After(x.Start) && !lur.End.Before(x.End) {
+			fmt.Println("fully consumed")
+			x.LastUsed = now
+			el2 = append(el2, x)
+			continue
+		}
+
+		// The LastUsed extent is before or after this entire extent
+		// so we don't do anything
+		if x.Start.After(lur.End) || x.End.Before(lur.Start) {
+			fmt.Println("out of window")
+			el2 = append(el2, x)
+			continue
+		}
+
+		fmt.Println(">>>>", ExtentListLRU{x})
+		// The Last Used Range starts in this extent, but not on the starting edge
+		// So we'll break it up into two pieces on that start point
+		if lur.Start.After(x.Start) && !lur.Start.After(x.End) {
+			fmt.Println("Found an in-range start!!")
+			// v will serve as the left portion of x that we broke off
+			// it is outside of the Last Used Range so LU is untouched
+			v := Extent{Start: x.Start, End: lur.Start.Add(-step), LastUsed: x.LastUsed}
+			x.Start = lur.Start
+			el2 = append(el2, v)
+
+			fmt.Println(el2)
+
+			fmt.Println("*****", ExtentListLRU{x, v, lur})
+
+			// The right portion may be fully enclosed by the LUR, if so
+			// go ahead an mark the usage time, append to our new ExtentList and move on
+			if !lur.End.Before(x.End) {
+				x.LastUsed = now
+				el2 = append(el2, x)
+				continue
+			}
+		}
+
+		// If we got here, the LUR covers a left portion of this extent, break it up and append
+		if lur.End.Before(x.End) && !lur.End.Before(x.Start) {
+			fmt.Println("Found an in-range end!!")
+			y := Extent{Start: lur.End.Add(step), End: x.End, LastUsed: x.LastUsed}
+			x.End = lur.End
+			x.LastUsed = now
+			el2 = append(el2, x, y)
+			continue
+		}
+
+		fmt.Println(ExtentListLRU{x, lur})
+		fmt.Println("SHOULD NEVER GET HERE!!")
+	}
+	return ExtentListLRU(el2.Compress(step))
 }
