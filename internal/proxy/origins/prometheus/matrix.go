@@ -88,7 +88,7 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 // CropToSize reduces the number of elements in the Timeseries to the provided count, by evicting elements
 // using a least-recently-used methodology. Any timestamps newer than the provided time are removed before
 // sizing, in order to support backfill tolerance
-func (me *MatrixEnvelope) CropToSize(c int, t time.Time) {
+func (me *MatrixEnvelope) CropToSize(c int, t time.Time, lur timeseries.Extent) {
 	me.isCounted = false
 	x := len(me.ExtentList)
 	// The Series has no extents, so no need to do anything
@@ -103,9 +103,15 @@ func (me *MatrixEnvelope) CropToSize(c int, t time.Time) {
 		me.CropToRange(timeseries.Extent{Start: me.ExtentList[0].Start, End: t})
 	}
 
-	if len(me.Data.Result) == 0 || me.TimestampCount() <= c {
+	tc := me.TimestampCount()
+	if len(me.Data.Result) == 0 || tc <= c {
 		return
 	}
+
+	el := timeseries.ExtentListLRU(me.ExtentList).UpdateLastUsed(lur, me.StepDuration)
+	sort.Sort(el)
+
+	rc := tc - c
 
 	for _, s := range me.Data.Result {
 		l := len(s.Values)
@@ -113,6 +119,9 @@ func (me *MatrixEnvelope) CropToSize(c int, t time.Time) {
 
 		}
 	}
+
+	me.ExtentList = timeseries.ExtentList(el)
+	sort.Sort(me.ExtentList)
 }
 
 // CropToRange reduces the Timeseries down to timestamps contained within the provided Extents (inclusive).

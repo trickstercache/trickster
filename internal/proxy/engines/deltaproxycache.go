@@ -290,7 +290,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the Backfill Tolerance before storing to cache
 			switch cfg.ValueRetentionPolicy {
 			case config.RetentionPolicySize:
-				cts.CropToSize(cfg.ValueRetentionFactor, bf.End)
+				cts.CropToSize(cfg.ValueRetentionFactor, bf.End, trq.Extent)
 			default:
 				cts.CropToRange(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
 			}

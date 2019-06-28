@@ -38,7 +38,7 @@ type Timeseries interface {
 	// CropToSize should reduce time range of the Timeseries to the provided element size using
 	// a least-recently-used methodology, while limiting the upper extent to the provided time,
 	// in order to support backfill tolerance
-	CropToSize(int, time.Time)
+	CropToSize(int, time.Time, Extent)
 	// SeriesCount returns the number of individual Series in the Timeseries object
 	SeriesCount() int
 	// ValueCount returns the count of all values across all Series in the Timeseries object
