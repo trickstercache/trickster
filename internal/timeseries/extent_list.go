@@ -204,7 +204,6 @@ func (el ExtentListLRU) UpdateLastUsed(lur Extent, step time.Duration) ExtentLis
 		// extents in the list containing lur.Start and lur.End
 		// So we'll mark its Last Used and move on without splitting.
 		if !lur.Start.After(x.Start) && !lur.End.Before(x.End) {
-			fmt.Println("fully consumed")
 			x.LastUsed = now
 			el2 = append(el2, x)
 			continue
@@ -213,25 +212,18 @@ func (el ExtentListLRU) UpdateLastUsed(lur Extent, step time.Duration) ExtentLis
 		// The LastUsed extent is before or after this entire extent
 		// so we don't do anything
 		if x.Start.After(lur.End) || x.End.Before(lur.Start) {
-			fmt.Println("out of window")
 			el2 = append(el2, x)
 			continue
 		}
 
-		fmt.Println(">>>>", ExtentListLRU{x})
 		// The Last Used Range starts in this extent, but not on the starting edge
 		// So we'll break it up into two pieces on that start point
 		if lur.Start.After(x.Start) && !lur.Start.After(x.End) {
-			fmt.Println("Found an in-range start!!")
 			// v will serve as the left portion of x that we broke off
 			// it is outside of the Last Used Range so LU is untouched
 			v := Extent{Start: x.Start, End: lur.Start.Add(-step), LastUsed: x.LastUsed}
 			x.Start = lur.Start
 			el2 = append(el2, v)
-
-			fmt.Println(el2)
-
-			fmt.Println("*****", ExtentListLRU{x, v, lur})
 
 			// The right portion may be fully enclosed by the LUR, if so
 			// go ahead an mark the usage time, append to our new ExtentList and move on
@@ -244,7 +236,6 @@ func (el ExtentListLRU) UpdateLastUsed(lur Extent, step time.Duration) ExtentLis
 
 		// If we got here, the LUR covers a left portion of this extent, break it up and append
 		if lur.End.Before(x.End) && !lur.End.Before(x.Start) {
-			fmt.Println("Found an in-range end!!")
 			y := Extent{Start: lur.End.Add(step), End: x.End, LastUsed: x.LastUsed}
 			x.End = lur.End
 			x.LastUsed = now
