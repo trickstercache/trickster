@@ -70,7 +70,7 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 		Status:     me.Status,
 		Data: MatrixData{
 			ResultType: me.Data.ResultType,
-			Result:     make([]*model.SampleStream, 0, len(me.Data.Result)),
+			Result:     make(model.Matrix, 0, len(me.Data.Result)),
 		},
 		StepDuration: me.StepDuration,
 		ExtentList:   make(timeseries.ExtentList, len(me.ExtentList)),
