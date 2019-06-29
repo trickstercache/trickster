@@ -162,7 +162,8 @@ func TestMerge(t *testing.T) {
 			merged: &MatrixEnvelope{
 				isCounted:  true,
 				isSorted:   true,
-				timestamps: times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
+				tslist:     times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
+				timestamps: map[time.Time]bool{time.Unix(5, 0): true, time.Unix(10, 0): true, time.Unix(15, 0): true},
 				Status:     rvSuccess,
 				Data: MatrixData{
 					ResultType: "matrix",
@@ -220,7 +221,8 @@ func TestMerge(t *testing.T) {
 			merged: &MatrixEnvelope{
 				isCounted:  true,
 				isSorted:   true,
-				timestamps: times.Times{time.Unix(10000, 0)},
+				tslist:     times.Times{time.Unix(10000, 0)},
+				timestamps: map[time.Time]bool{time.Unix(10000, 0): true},
 				Status:     rvSuccess,
 				Data: MatrixData{
 					ResultType: "matrix",
@@ -280,7 +282,8 @@ func TestMerge(t *testing.T) {
 			merged: &MatrixEnvelope{
 				isCounted:  true,
 				isSorted:   true,
-				timestamps: times.Times{time.Unix(10000, 0), time.Unix(15000, 0)},
+				tslist:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0)},
+				timestamps: map[time.Time]bool{time.Unix(10000, 0): true, time.Unix(15000, 0): true},
 				Status:     rvSuccess,
 				Data: MatrixData{
 					ResultType: "matrix",
@@ -904,7 +907,8 @@ func TestCopy(t *testing.T) {
 		// Run 0
 		{
 			before: &MatrixEnvelope{
-				timestamps: times.Times{time.Unix(1644001200, 0)},
+				tslist:     times.Times{time.Unix(1644001200, 0)},
+				timestamps: map[time.Time]bool{time.Unix(1644001200, 0): true},
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
@@ -926,7 +930,8 @@ func TestCopy(t *testing.T) {
 		// Run 1
 		{
 			before: &MatrixEnvelope{
-				timestamps: times.Times{time.Unix(1644001200, 0), time.Unix(1644004800, 0)},
+				tslist:     times.Times{time.Unix(1644001200, 0), time.Unix(1644004800, 0)},
+				timestamps: map[time.Time]bool{time.Unix(1644001200, 0): true, time.Unix(1644004800, 0): true},
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
@@ -1008,9 +1013,11 @@ func TestSort(t *testing.T) {
 				},
 			},
 			after: &MatrixEnvelope{
-				isSorted:   true,
-				isCounted:  true,
-				timestamps: []time.Time{time.Unix(1544004000, 0), time.Unix(1544004200, 0), time.Unix(1544004600, 0), time.Unix(1544004800, 0)},
+				isSorted:  true,
+				isCounted: true,
+				tslist:    []time.Time{time.Unix(1544004000, 0), time.Unix(1544004200, 0), time.Unix(1544004600, 0), time.Unix(1544004800, 0)},
+				timestamps: map[time.Time]bool{time.Unix(1544004000, 0): true, time.Unix(1544004200, 0): true,
+					time.Unix(1544004600, 0): true, time.Unix(1544004800, 0): true},
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
