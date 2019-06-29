@@ -122,7 +122,7 @@ func (el ExtentList) Compress(step time.Duration) ExtentList {
 	return compressed
 }
 
-// Len returns the length of an array of type ExtentList
+// Len returns the length of a slice of type ExtentList
 func (el ExtentList) Len() int {
 	return len(el)
 }
@@ -150,6 +150,11 @@ func (el ExtentList) Copy() ExtentList {
 
 // ExtentListLRU is a type of []Extent used for sorting the slice by LRU
 type ExtentListLRU []Extent
+
+// Len returns the length of an slice of type ExtentListLRU
+func (el ExtentListLRU) Len() int {
+	return len(el)
+}
 
 // Less returns true if element i in the ExtentListLRU comes before j
 func (el ExtentListLRU) Less(i, j int) bool {
