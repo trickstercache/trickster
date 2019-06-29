@@ -16,6 +16,7 @@ package timeseries
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -100,6 +101,20 @@ func TestUpdateLastUsed(t *testing.T) {
 			step:     time.Duration(100) * time.Second,
 			expected: fmt.Sprintf("100-100:200;200-1300:%d;1400-1400:1400", now),
 		},
+
+		{
+			el:       nil,
+			lu:       Extent{Start: t200, End: t1300},
+			step:     time.Duration(100) * time.Second,
+			expected: "",
+		},
+
+		{
+			el:       ExtentListLRU{},
+			lu:       Extent{Start: t200, End: t1300},
+			step:     time.Duration(100) * time.Second,
+			expected: "",
+		},
 	}
 
 	for i, test := range tests {
@@ -109,6 +124,78 @@ func TestUpdateLastUsed(t *testing.T) {
 				t.Errorf("got %s expected %s", el.String(), test.expected)
 			}
 		})
+	}
+
+}
+
+func TestContains(t *testing.T) {
+
+	el := ExtentList{
+		Extent{Start: t100, End: t200},
+		Extent{Start: t600, End: t900},
+		Extent{Start: t1100, End: t1300},
+	}
+
+	if !el.Contains(Extent{Start: t100, End: t100}) {
+		t.Errorf("exected true got %t", false)
+	}
+
+	if !el.Contains(Extent{Start: time.Unix(0, 0), End: t100}) {
+		t.Errorf("exected true got %t", false)
+	}
+
+	if el.Contains(Extent{Start: time.Unix(0, 0), End: time.Unix(0, 0)}) {
+		t.Errorf("exected false got %t", true)
+	}
+
+	if el.Contains(Extent{Start: t201, End: t201}) {
+		t.Errorf("exected false got %t", true)
+	}
+
+	if el.Contains(Extent{Start: t1400, End: t1400}) {
+		t.Errorf("exected false got %t", true)
+	}
+
+	// test empty
+	el = ExtentList{}
+	if el.Contains(Extent{Start: t100, End: t100}) {
+		t.Errorf("exected false got %t", true)
+	}
+
+}
+
+func TestOutsideOf(t *testing.T) {
+
+	el := ExtentList{
+		Extent{Start: t100, End: t200},
+		Extent{Start: t600, End: t900},
+		Extent{Start: t1100, End: t1300},
+	}
+
+	if el.OutsideOf(Extent{Start: t100, End: t100}) {
+		t.Errorf("exected false got %t", true)
+	}
+
+	if el.OutsideOf(Extent{Start: time.Unix(0, 0), End: t100}) {
+		t.Errorf("exected false got %t", true)
+	}
+
+	if !el.OutsideOf(Extent{Start: time.Unix(0, 0), End: time.Unix(0, 0)}) {
+		t.Errorf("exected true got %t", false)
+	}
+
+	if el.OutsideOf(Extent{Start: t201, End: t201}) {
+		t.Errorf("exected false got %t", true)
+	}
+
+	if !el.OutsideOf(Extent{Start: t1400, End: t1400}) {
+		t.Errorf("exected true got %t", false)
+	}
+
+	// test empty
+	el = ExtentList{}
+	if !el.OutsideOf(Extent{Start: t100, End: t100}) {
+		t.Errorf("exected true got %t", false)
 	}
 
 }
@@ -403,6 +490,39 @@ func TestCrop(t *testing.T) {
 				t.Errorf("mismatch in Crop: expected=%s got=%s", test.expected, result)
 			}
 		})
+	}
+
+}
+
+func TestExtentListLRUSort(t *testing.T) {
+	el := ExtentListLRU{
+		Extent{Start: t600, End: t900, LastUsed: t900},
+		Extent{Start: t100, End: t200, LastUsed: t200},
+		Extent{Start: t1100, End: t1300, LastUsed: t1100},
+	}
+	el2 := ExtentListLRU{
+		Extent{Start: t100, End: t200, LastUsed: t200},
+		Extent{Start: t600, End: t900, LastUsed: t900},
+		Extent{Start: t1100, End: t1300, LastUsed: t1100},
+	}
+	sort.Sort(el)
+	if !reflect.DeepEqual(el, el2) {
+		t.Errorf("mismatch in sort: expected=%s got=%s", el2, el)
+	}
+
+}
+
+func TestExtentListLRUCopy(t *testing.T) {
+	el := ExtentListLRU{
+		Extent{Start: t100, End: t200, LastUsed: t200},
+		Extent{Start: t600, End: t900, LastUsed: t900},
+		Extent{Start: t1100, End: t1300, LastUsed: t1100},
+	}
+
+	el2 := el.Copy()
+
+	if !reflect.DeepEqual(el, el2) {
+		t.Errorf("mismatch in sort: expected=%s got=%s", el2, el)
 	}
 
 }
