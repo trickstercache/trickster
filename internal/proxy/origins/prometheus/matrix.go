@@ -93,9 +93,10 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 
 // CropToSize reduces the number of elements in the Timeseries to the provided count, by evicting elements
 // using a least-recently-used methodology. Any timestamps newer than the provided time are removed before
-// sizing, in order to support backfill tolerance
+// sizing, in order to support backfill tolerance. The provided extent will be marked as used during crop.
 func (me *MatrixEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent) {
 	me.isCounted = false
+	me.isSorted = false
 	x := len(me.ExtentList)
 	// The Series has no extents, so no need to do anything
 	if x < 1 {
@@ -117,7 +118,7 @@ func (me *MatrixEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 	el := timeseries.ExtentListLRU(me.ExtentList).UpdateLastUsed(lur, me.StepDuration)
 	sort.Sort(el)
 
-	rc := tc - sz // # of required timestamps we must delete meet the rentention policy
+	rc := tc - sz // # of required timestamps we must delete to meet the rentention policy
 	removals := make(map[time.Time]bool)
 	done := false
 	ok := false
@@ -134,18 +135,30 @@ func (me *MatrixEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 		}
 	}
 
-	for i, s := range me.Data.Result {
+	for _, s := range me.Data.Result {
 		tmp := s.Values[:0]
 		for _, r := range s.Values {
-			if _, ok := removals[r.Timestamp.Time()]; !ok {
+			t = r.Timestamp.Time()
+			if _, ok := removals[t]; !ok {
 				tmp = append(tmp, r)
 			}
 		}
-		me.Data.Result[i].Values = tmp
+		s.Values = tmp
 	}
 
-	me.ExtentList = timeseries.ExtentList(el)
-	sort.Sort(me.ExtentList)
+	// TODO: get crop out span from removals map and adjust the extent list for the envelope as needed
+	tl := times.FromMap(removals)
+	sort.Sort(tl)
+	for _, t := range tl {
+		for i, e := range el {
+			if e.StartsAt(t) {
+				el[i].Start = e.Start.Add(me.StepDuration)
+			}
+		}
+	}
+
+	me.ExtentList = timeseries.ExtentList(el).Compress(me.StepDuration)
+	me.Sort()
 }
 
 // CropToRange reduces the Timeseries down to timestamps contained within the provided Extents (inclusive).
@@ -256,6 +269,9 @@ func (me *MatrixEnvelope) Sort() {
 		}
 		me.Data.Result[i].Values = sm
 	}
+
+	sort.Sort(me.ExtentList)
+
 	me.timestamps = tsm
 	me.tslist = times.FromMap(tsm)
 	me.isCounted = true

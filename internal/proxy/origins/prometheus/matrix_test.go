@@ -246,6 +246,7 @@ func TestMerge(t *testing.T) {
 		})
 	}
 }
+
 func TestCropToRange(t *testing.T) {
 	tests := []struct {
 		before, after *MatrixEnvelope
@@ -820,6 +821,125 @@ func TestCropToRange(t *testing.T) {
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			test.before.CropToRange(test.extent)
+			if !reflect.DeepEqual(test.before, test.after) {
+				t.Errorf("mismatch\nexpected=%v\ngot=%v", test.after, test.before)
+			}
+		})
+	}
+}
+
+func TestCropToSize(t *testing.T) {
+	tests := []struct {
+		before, after *MatrixEnvelope
+		size          int
+		bft           time.Time
+		extent        timeseries.Extent
+	}{
+		// case 0: where we already have the number of timestamps we are cropping to
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 1444004600000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004600, 0)},
+				},
+				StepDuration: time.Duration(10) * time.Second,
+			},
+			after: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 1444004600000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004600, 0)},
+				},
+				StepDuration: time.Duration(10) * time.Second,
+				timestamps:   map[time.Time]bool{time.Unix(1444004600, 0): true},
+				tslist:       times.Times{time.Unix(1444004600, 0)},
+				isCounted:    true,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(0, 0),
+				End:   time.Unix(1444004600, 0),
+			},
+			size: 1,
+			bft:  time.Now(),
+		},
+
+		// case 1
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 1444004600000, Value: 1.5},
+								model.SamplePair{Timestamp: 1444004610000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004610, 0)},
+				},
+				StepDuration: time.Duration(10) * time.Second,
+			},
+			after: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 1444004610000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004610, 0), End: time.Unix(1444004610, 0)},
+				},
+				StepDuration: time.Duration(10) * time.Second,
+				timestamps:   map[time.Time]bool{time.Unix(1444004610, 0): true},
+				tslist:       times.Times{time.Unix(1444004610, 0)},
+				isCounted:    true,
+				isSorted:     true,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(0, 0),
+				End:   time.Unix(1444004610, 0),
+			},
+			size: 1,
+			bft:  time.Now(),
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			test.before.CropToSize(test.size, test.bft, test.extent)
+
+			for i := range test.before.ExtentList {
+				test.before.ExtentList[i].LastUsed = time.Time{}
+			}
+
 			if !reflect.DeepEqual(test.before, test.after) {
 				t.Errorf("mismatch\nexpected=%v\ngot=%v", test.after, test.before)
 			}
