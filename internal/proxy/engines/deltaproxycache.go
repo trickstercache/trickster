@@ -56,10 +56,10 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	now := time.Now()
 
 	OldestRetainedTimestamp := time.Time{}
-	if cfg.ValueRetentionPolicy == config.RetentionPolicyDate {
-		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * cfg.ValueRetention))
+	if cfg.TimeseriesEvictionMethod == config.RetentionPolicyOldest {
+		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * cfg.TimeseriesRetention))
 		if trq.Extent.End.Before(OldestRetainedTimestamp) {
-			log.Debug("timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.ValueRetention})
+			log.Debug("timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.TimeseriesRetention})
 			ProxyRequest(r, w)
 			return
 		}
@@ -122,13 +122,13 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 					return // fetchTimeseries logs the error
 				}
 			} else {
-				if cfg.ValueRetentionPolicy == config.RetentionPolicySize {
+				if cfg.TimeseriesEvictionMethod == config.RetentionPolicyLRU {
 					el := cts.Extents()
 					tsc := cts.TimestampCount()
 					if tsc > 0 &&
-						tsc >= cfg.ValueRetentionFactor {
+						tsc >= cfg.TimeseriesRetentionFactor {
 						if trq.Extent.End.Before(el[0].Start) {
-							log.Debug("timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.ValueRetention})
+							log.Debug("timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.TimeseriesRetention})
 							ProxyRequest(r, w)
 							return
 						}
@@ -288,9 +288,9 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		go func() {
 			defer wg.Done()
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the Backfill Tolerance before storing to cache
-			switch cfg.ValueRetentionPolicy {
-			case config.RetentionPolicySize:
-				cts.CropToSize(cfg.ValueRetentionFactor, bf.End, trq.Extent)
+			switch cfg.TimeseriesEvictionMethod {
+			case config.RetentionPolicyLRU:
+				cts.CropToSize(cfg.TimeseriesRetentionFactor, bf.End, trq.Extent)
 			default:
 				cts.CropToRange(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
 			}
