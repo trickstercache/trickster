@@ -43,14 +43,29 @@ const (
 	LookupStatusProxyError
 )
 
+var cacheLookupStatusNames = map[string]LookupStatus{
+	"hit":         LookupStatusHit,
+	"phit":        LookupStatusPartialHit,
+	"rmiss":       LookupStatusRangeMiss,
+	"kmiss":       LookupStatusKeyMiss,
+	"purge":       LookupStatusPurge,
+	"proxy-error": LookupStatusProxyError,
+}
+
+var cacheLookupStatusValues = map[LookupStatus]string{
+	LookupStatusHit:        "hit",
+	LookupStatusPartialHit: "phit",
+	LookupStatusRangeMiss:  "rmiss",
+	LookupStatusKeyMiss:    "kmiss",
+	LookupStatusPurge:      "purge",
+	LookupStatusProxyError: "proxy-error",
+}
+
 func (s LookupStatus) String() string {
-	name := []string{"hit", "phit", "rmiss", "kmiss"}
-	switch {
-	case s <= LookupStatusKeyMiss:
-		return name[int(s)]
-	default:
-		return strconv.Itoa(int(s))
+	if v, ok := cacheLookupStatusValues[s]; ok {
+		return v
 	}
+	return strconv.Itoa(int(s))
 }
 
 // Cache is the interface for the supported caching fabrics
