@@ -128,41 +128,41 @@ func TestUpdateLastUsed(t *testing.T) {
 
 }
 
-// func estContains(t *testing.T) {
+func TestInsideOf(t *testing.T) {
 
-// 	el := ExtentList{
-// 		Extent{Start: t100, End: t200},
-// 		Extent{Start: t600, End: t900},
-// 		Extent{Start: t1100, End: t1300},
-// 	}
+	el := ExtentList{
+		Extent{Start: t100, End: t200},
+		Extent{Start: t600, End: t900},
+		Extent{Start: t1100, End: t1300},
+	}
 
-// 	if !el.Contains(Extent{Start: t100, End: t100}) {
-// 		t.Errorf("exected true got %t", false)
-// 	}
+	if el.InsideOf(Extent{Start: t100, End: t100}) {
+		t.Errorf("exected false got %t", true)
+	}
 
-// 	if !el.Contains(Extent{Start: time.Unix(0, 0), End: t100}) {
-// 		t.Errorf("exected true got %t", false)
-// 	}
+	if el.InsideOf(Extent{Start: time.Unix(0, 0), End: t100}) {
+		t.Errorf("exected false got %t", true)
+	}
 
-// 	if el.Contains(Extent{Start: time.Unix(0, 0), End: time.Unix(0, 0)}) {
-// 		t.Errorf("exected false got %t", true)
-// 	}
+	if el.InsideOf(Extent{Start: time.Unix(0, 0), End: time.Unix(0, 0)}) {
+		t.Errorf("exected false got %t", true)
+	}
 
-// 	if el.Contains(Extent{Start: t201, End: t201}) {
-// 		t.Errorf("exected false got %t", true)
-// 	}
+	if el.InsideOf(Extent{Start: t201, End: t201}) {
+		t.Errorf("exected false got %t", true)
+	}
 
-// 	if el.Contains(Extent{Start: t1400, End: t1400}) {
-// 		t.Errorf("exected false got %t", true)
-// 	}
+	if el.InsideOf(Extent{Start: t1400, End: t1400}) {
+		t.Errorf("exected false got %t", true)
+	}
 
-// 	// test empty
-// 	el = ExtentList{}
-// 	if el.Contains(Extent{Start: t100, End: t100}) {
-// 		t.Errorf("exected false got %t", true)
-// 	}
+	// test empty
+	el = ExtentList{}
+	if el.InsideOf(Extent{Start: t100, End: t100}) {
+		t.Errorf("exected false got %t", true)
+	}
 
-// }
+}
 
 func TestOutsideOf(t *testing.T) {
 
