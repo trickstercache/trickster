@@ -26,8 +26,8 @@ func TestLoadConfiguration(t *testing.T) {
 		t.Error(err)
 	}
 
-	if Origins["default"].ValueRetention != 1024 {
-		t.Errorf("expected 1024, got %d", Origins["default"].ValueRetention)
+	if Origins["default"].TimeseriesRetention != 1024 {
+		t.Errorf("expected 1024, got %d", Origins["default"].TimeseriesRetention)
 	}
 
 	if Caches["default"].FastForwardTTL != time.Duration(15)*time.Second {
@@ -111,8 +111,8 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected ignore_no_cache_header true, got %t", o.IgnoreNoCacheHeader)
 	}
 
-	if o.ValueRetentionFactor != 666 {
-		t.Errorf("expected 666, got %d", o.ValueRetentionFactor)
+	if o.TimeseriesRetentionFactor != 666 {
+		t.Errorf("expected 666, got %d", o.TimeseriesRetentionFactor)
 	}
 
 	if !o.FastForwardDisable {
@@ -353,8 +353,8 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected ignore_no_cache_header %t, got %t", defaultOriginINCH, o.IgnoreNoCacheHeader)
 	}
 
-	if o.ValueRetentionFactor != defaultOriginVRF {
-		t.Errorf("expected %d, got %d", defaultOriginVRF, o.ValueRetentionFactor)
+	if o.TimeseriesRetentionFactor != defaultOriginTRF {
+		t.Errorf("expected %d, got %d", defaultOriginTRF, o.TimeseriesRetentionFactor)
 	}
 
 	if o.FastForwardDisable {
