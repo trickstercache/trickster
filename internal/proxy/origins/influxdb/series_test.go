@@ -305,7 +305,7 @@ func TestMerge(t *testing.T) {
 	}
 }
 
-func TestCrop(t *testing.T) {
+func TestCropToRange(t *testing.T) {
 	tests := []struct {
 		before, after *SeriesEnvelope
 		extent        timeseries.Extent
@@ -711,7 +711,7 @@ func TestCrop(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			test.before.Crop(test.extent)
+			test.before.CropToRange(test.extent)
 			if !reflect.DeepEqual(test.before, test.after) {
 				t.Errorf("mismatch got=%v expected=%v", test.before, test.after)
 			}

@@ -55,6 +55,11 @@ func (se *SeriesEnvelope) ValueCount() int {
 	return c
 }
 
+// TimestampCount returns the count unique timestampes in across all series in the Timeseries
+func (se *SeriesEnvelope) TimestampCount() int {
+	return 0
+}
+
 // SeriesCount returns the count of all Results in the Timeseries
 // it is called SeriesCount due to Interface conformity and the disparity in nomenclature between various TSDBs.
 func (se *SeriesEnvelope) SeriesCount() int {
@@ -162,7 +167,7 @@ func (se *SeriesEnvelope) Copy() timeseries.Timeseries {
 // CropToSize reduces the number of elements in the Timeseries to the provided count, by evicting elements
 // using a least-recently-used methodology. The time parameter limits the upper extent to the provided time,
 // in order to support backfill tolerance
-func (se *SeriesEnvelope) CropToSize(c int, t time.Time) {
+func (se *SeriesEnvelope) CropToSize(c int, t time.Time, e timeseries.Extent) {
 
 }
 
@@ -189,7 +194,7 @@ func (se *SeriesEnvelope) CropToRange(e timeseries.Extent) {
 	}
 
 	// if the series extent is entirely inside the extent of the crop range, simple adjust down its ExtentList
-	if se.ExtentList.Contains(e) {
+	if se.ExtentList.InsideOf(e) {
 		if se.ValueCount() == 0 {
 			for i := range se.Results {
 				se.Results[i].Series = []models.Row{}
