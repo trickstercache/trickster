@@ -245,7 +245,7 @@ func (me *MatrixEnvelope) CropToRange(e timeseries.Extent) {
 // Sort sorts all Values in each Series chronologically by their timestamp
 func (me *MatrixEnvelope) Sort() {
 
-	if me.isSorted {
+	if me.isSorted || len(me.Data.Result) == 0 {
 		return
 	}
 
