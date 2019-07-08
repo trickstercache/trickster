@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Comcast/trickster/pkg/sort/times"
+
 	"github.com/Comcast/trickster/internal/timeseries"
 
 	"github.com/influxdata/influxdb/models"
@@ -229,6 +231,10 @@ func TestMerge(t *testing.T) {
 					timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(15, 0)},
 				},
 				StepDuration: time.Duration(5) * time.Second,
+				timestamps:   map[time.Time]bool{time.Unix(5, 0): true, time.Unix(10, 0): true, time.Unix(15, 0): true},
+				tslist:       times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
+				isSorted:     true,
+				isCounted:    true,
 			},
 		},
 
@@ -291,6 +297,10 @@ func TestMerge(t *testing.T) {
 					timeseries.Extent{Start: time.Unix(10, 0), End: time.Unix(10, 0)},
 				},
 				StepDuration: time.Duration(5) * time.Second,
+				timestamps:   map[time.Time]bool{time.Unix(10, 0): true},
+				tslist:       times.Times{time.Unix(10, 0)},
+				isSorted:     true,
+				isCounted:    true,
 			},
 		},
 	}
