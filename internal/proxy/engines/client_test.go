@@ -33,6 +33,7 @@ import (
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/md5"
 	tu "github.com/Comcast/trickster/internal/util/testing"
+	"github.com/Comcast/trickster/pkg/sort/times"
 
 	"github.com/prometheus/common/model"
 )
@@ -281,6 +282,11 @@ type MatrixEnvelope struct {
 	Data         MatrixData            `json:"data"`
 	ExtentList   timeseries.ExtentList `json:"extents,omitempty"`
 	StepDuration time.Duration         `json:"step,omitempty"`
+
+	timestamps map[time.Time]bool // tracks unique timestamps in the matrix data
+	tslist     times.Times
+	isSorted   bool // tracks if the matrix data is currently sorted
+	isCounted  bool // tracks if timestamps slice is up-to-date
 }
 
 // MatrixData represents the Data body of a Matrix response object from the Prometheus HTTP API
@@ -368,6 +374,8 @@ func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 		}
 	}
 	me.ExtentList = me.ExtentList.Compress(me.StepDuration)
+	me.isSorted = false
+	me.isCounted = false
 	if sort {
 		me.Sort()
 	}
@@ -376,15 +384,25 @@ func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 // Copy returns a perfect copy of the base Timeseries
 func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 	resMe := &MatrixEnvelope{
-		Status: me.Status,
+		isCounted:  me.isCounted,
+		isSorted:   me.isSorted,
+		tslist:     make(times.Times, len(me.tslist)),
+		timestamps: make(map[time.Time]bool),
+		Status:     me.Status,
 		Data: MatrixData{
 			ResultType: me.Data.ResultType,
-			Result:     make([]*model.SampleStream, 0, len(me.Data.Result)),
+			Result:     make(model.Matrix, 0, len(me.Data.Result)),
 		},
 		StepDuration: me.StepDuration,
 		ExtentList:   make(timeseries.ExtentList, len(me.ExtentList)),
 	}
 	copy(resMe.ExtentList, me.ExtentList)
+	copy(resMe.tslist, me.tslist)
+
+	for k, v := range me.timestamps {
+		resMe.timestamps[k] = v
+	}
+
 	for _, ss := range me.Data.Result {
 		newSS := &model.SampleStream{Metric: ss.Metric}
 		newSS.Values = ss.Values[:]
@@ -393,10 +411,12 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 	return resMe
 }
 
-// Crop reduces the Timeseries down to timestamps contained within the provided Extents (inclusive).
-// Crop assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
-func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
-
+// CropToSize reduces the number of elements in the Timeseries to the provided count, by evicting elements
+// using a least-recently-used methodology. Any timestamps newer than the provided time are removed before
+// sizing, in order to support backfill tolerance. The provided extent will be marked as used during crop.
+func (me *MatrixEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent) {
+	me.isCounted = false
+	me.isSorted = false
 	x := len(me.ExtentList)
 	// The Series has no extents, so no need to do anything
 	if x < 1 {
@@ -405,6 +425,77 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
 		return
 	}
 
+	// Crop to the Backfill Tolerance Value if needed
+	if me.ExtentList[x-1].End.After(t) {
+		me.CropToRange(timeseries.Extent{Start: me.ExtentList[0].Start, End: t})
+	}
+
+	tc := me.TimestampCount()
+	if len(me.Data.Result) == 0 || tc <= sz {
+		return
+	}
+
+	el := timeseries.ExtentListLRU(me.ExtentList).UpdateLastUsed(lur, me.StepDuration)
+	sort.Sort(el)
+
+	rc := tc - sz // # of required timestamps we must delete to meet the rentention policy
+	removals := make(map[time.Time]bool)
+	done := false
+	ok := false
+
+	for _, x := range el {
+		for ts := x.Start; !x.End.Before(ts) && !done; ts = ts.Add(me.StepDuration) {
+			if _, ok = me.timestamps[ts]; ok {
+				removals[ts] = true
+				done = len(removals) >= rc
+			}
+		}
+		if done {
+			break
+		}
+	}
+
+	for _, s := range me.Data.Result {
+		tmp := s.Values[:0]
+		for _, r := range s.Values {
+			t = r.Timestamp.Time()
+			if _, ok := removals[t]; !ok {
+				tmp = append(tmp, r)
+			}
+		}
+		s.Values = tmp
+	}
+
+	// TODO: get crop out span from removals map and adjust the extent list for the envelope as needed
+	tl := times.FromMap(removals)
+	sort.Sort(tl)
+	for _, t := range tl {
+		for i, e := range el {
+			if e.StartsAt(t) {
+				el[i].Start = e.Start.Add(me.StepDuration)
+			}
+		}
+	}
+
+	me.ExtentList = timeseries.ExtentList(el).Compress(me.StepDuration)
+	me.Sort()
+}
+
+// CropToRange reduces the Timeseries down to timestamps contained within the provided Extents (inclusive).
+// CropToRange assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
+func (me *MatrixEnvelope) CropToRange(e timeseries.Extent) {
+	fmt.Println("CROP TO RANGE", e)
+	me.isCounted = false
+	x := len(me.ExtentList)
+	// The Series has no extents, so no need to do anything
+	if x < 1 {
+		me.Data.Result = model.Matrix{}
+		me.ExtentList = timeseries.ExtentList{}
+		return
+	}
+
+	fmt.Println(1)
+
 	// if the extent of the series is entirely outside the extent of the crop range, return empty set and bail
 	if me.ExtentList.OutsideOf(e) {
 		me.Data.Result = model.Matrix{}
@@ -412,14 +503,25 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
 		return
 	}
 
+	fmt.Println(2)
+
 	// if the series extent is entirely inside the extent of the crop range, simply adjust down its ExtentList
-	if me.ExtentList.Contains(e) {
+	if me.ExtentList.InsideOf(e) {
 		if me.ValueCount() == 0 {
 			me.Data.Result = model.Matrix{}
 		}
 		me.ExtentList = me.ExtentList.Crop(e)
 		return
 	}
+
+	fmt.Println(3)
+
+	if len(me.Data.Result) == 0 {
+		me.ExtentList = me.ExtentList.Crop(e)
+		return
+	}
+
+	fmt.Println(4)
 
 	deletes := make(map[int]bool)
 
@@ -453,11 +555,15 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
 				end = len(s.Values)
 			}
 			me.Data.Result[i].Values = s.Values[start:end]
+			fmt.Println(s.Values)
+			fmt.Println(5)
 		} else {
 			deletes[i] = true
+			fmt.Println(6)
 		}
 	}
 	if len(deletes) > 0 {
+		fmt.Println("Found deletes")
 		tmp := me.Data.Result[:0]
 		for i, r := range me.Data.Result {
 			if _, ok := deletes[i]; !ok {
@@ -471,12 +577,21 @@ func (me *MatrixEnvelope) Crop(e timeseries.Extent) {
 
 // Sort sorts all Values in each Series chronologically by their timestamp
 func (me *MatrixEnvelope) Sort() {
+
+	if me.isSorted {
+		return
+	}
+
+	tsm := map[time.Time]bool{}
+
 	for i, s := range me.Data.Result { // []SampleStream
-		m := make(map[model.Time]model.SamplePair)
+		m := make(map[time.Time]model.SamplePair)
 		for _, v := range s.Values { // []SamplePair
-			m[v.Timestamp] = v
+			t := v.Timestamp.Time()
+			tsm[t] = true
+			m[t] = v
 		}
-		keys := make(Times, 0, len(m))
+		keys := make(times.Times, 0, len(m))
 		for key := range m {
 			keys = append(keys, key)
 		}
@@ -487,16 +602,46 @@ func (me *MatrixEnvelope) Sort() {
 		}
 		me.Data.Result[i].Values = sm
 	}
+
+	sort.Sort(me.ExtentList)
+
+	me.timestamps = tsm
+	me.tslist = times.FromMap(tsm)
+	me.isCounted = true
+	me.isSorted = true
+}
+
+func (me *MatrixEnvelope) updateTimestamps() {
+	if me.isCounted {
+		return
+	}
+	m := make(map[time.Time]bool)
+	for _, s := range me.Data.Result { // []SampleStream
+		for _, v := range s.Values { // []SamplePair
+			t := v.Timestamp.Time()
+			m[t] = true
+		}
+	}
+	me.timestamps = m
+	me.tslist = times.FromMap(m)
+	me.isCounted = true
 }
 
 // SetExtents overwrites a Timeseries's known extents with the provided extent list
 func (me *MatrixEnvelope) SetExtents(extents timeseries.ExtentList) {
+	me.isCounted = false
 	me.ExtentList = extents
 }
 
 // Extents returns the Timeseries's ExentList
 func (me *MatrixEnvelope) Extents() timeseries.ExtentList {
-	return timeseries.ExtentList(me.ExtentList)
+	return me.ExtentList
+}
+
+// TimestampCount returns the number of unique timestamps across the timeseries
+func (me *MatrixEnvelope) TimestampCount() int {
+	me.updateTimestamps()
+	return len(me.timestamps)
 }
 
 // SeriesCount returns the number of individual Series in the Timeseries object

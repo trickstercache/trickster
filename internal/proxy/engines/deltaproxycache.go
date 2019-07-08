@@ -47,11 +47,18 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		return
 	}
 
+	trq.NormalizeExtent()
+
 	// this is used to ensure the head of the cache respects the BackFill Tolerance
 	bf := timeseries.Extent{Start: time.Unix(0, 0), End: trq.Extent.End}
+
+	fmt.Println(bf)
+
 	if !trq.IsOffset && cfg.BackfillTolerance > 0 {
 		bf.End = bf.End.Add(-cfg.BackfillTolerance)
 	}
+
+	fmt.Println(bf)
 
 	now := time.Now()
 
@@ -71,7 +78,6 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	}
 
 	r.TimeRangeQuery = trq
-	trq.NormalizeExtent()
 	client.SetExtent(r, &trq.Extent)
 
 	key := cfg.Host + "." + client.DeriveCacheKey(r, r.Headers.Get(headers.NameAuthorization))
@@ -258,6 +264,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 
 	// if it was a cache key miss, there is no need to undergo Crop since the extents are identical
 	if cacheStatus != tc.LookupStatusKeyMiss {
+		fmt.Println("Cropping Response", trq.Extent)
 		rts.CropToRange(trq.Extent)
 	}
 	cachedValueCount := rts.ValueCount() - uncachedValueCount
@@ -292,6 +299,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 			case config.RetentionPolicyLRU:
 				cts.CropToSize(cfg.TimeseriesRetentionFactor, bf.End, trq.Extent)
 			default:
+				fmt.Println("Cropping Cache", timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
 				cts.CropToRange(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
 			}
 			// Don't cache datasets with empty extents (everything was cropped so there is nothing to cache)
