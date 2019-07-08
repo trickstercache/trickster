@@ -36,17 +36,18 @@ func (el ExtentList) String() string {
 	return strings.Join(lines, ";")
 }
 
-// Contains ...
-func (el ExtentList) Contains(e Extent) bool {
+// InsideOf ...
+func (el ExtentList) InsideOf(e Extent) bool {
 	x := len(el)
 	if x == 0 {
 		return false
 	}
+
 	return ((!el[0].Start.Before(e.Start)) &&
 		(!el[0].Start.After(e.End)) &&
 		(!el[x-1].End.Before(e.Start)) &&
-		(!el[x-1].End.Before(e.End)) &&
-		(!el[0].Start.After(el[x-1].End)))
+		(!el[x-1].End.After(e.End)))
+
 }
 
 // OutsideOf ...

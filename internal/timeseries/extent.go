@@ -14,6 +14,7 @@
 package timeseries
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -42,4 +43,9 @@ func (e *Extent) EndsAt(t time.Time) bool {
 // After returns true if the range of the Extent is completely after the provided time
 func (e *Extent) After(t time.Time) bool {
 	return t.Before(e.Start)
+}
+
+// After returns true if the range of the Extent is completely after the provided time
+func (e Extent) String() string {
+	return fmt.Sprintf("%d-%d", e.Start.Unix(), e.End.Unix())
 }

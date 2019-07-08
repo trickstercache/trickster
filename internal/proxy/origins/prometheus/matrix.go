@@ -181,7 +181,7 @@ func (me *MatrixEnvelope) CropToRange(e timeseries.Extent) {
 	}
 
 	// if the series extent is entirely inside the extent of the crop range, simply adjust down its ExtentList
-	if me.ExtentList.Contains(e) {
+	if me.ExtentList.InsideOf(e) {
 		if me.ValueCount() == 0 {
 			me.Data.Result = model.Matrix{}
 		}
