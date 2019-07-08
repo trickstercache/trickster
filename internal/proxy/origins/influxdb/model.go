@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/Comcast/trickster/pkg/sort/times"
 	"github.com/influxdata/influxdb/models"
 )
 
@@ -28,8 +29,10 @@ type SeriesEnvelope struct {
 	StepDuration time.Duration         `json:"step,omitempty"`
 	ExtentList   timeseries.ExtentList `json:"extents,omitempty"`
 
-	timestamps []float64
-	isSorted   bool
+	timestamps map[time.Time]bool // tracks unique timestamps in the matrix data
+	tslist     times.Times
+	isSorted   bool // tracks if the matrix data is currently sorted
+	isCounted  bool // tracks if timestamps slice is up-to-date
 }
 
 // Result represents a Result returned from the InfluxDB HTTP API
