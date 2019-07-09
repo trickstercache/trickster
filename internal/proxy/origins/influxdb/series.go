@@ -192,10 +192,80 @@ func (se *SeriesEnvelope) Copy() timeseries.Timeseries {
 // CropToSize reduces the number of elements in the Timeseries to the provided count, by evicting elements
 // using a least-recently-used methodology. The time parameter limits the upper extent to the provided time,
 // in order to support backfill tolerance
-func (se *SeriesEnvelope) CropToSize(c int, t time.Time, e timeseries.Extent) {
+func (se *SeriesEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent) {
+
 	se.isCounted = false
 	se.isSorted = false
+	x := len(se.ExtentList)
+	// The Series has no extents, so no need to do anything
+	if x < 1 {
+		for i := range se.Results {
+			se.Results[i].Series = []models.Row{}
+		}
+		se.ExtentList = timeseries.ExtentList{}
+		return
+	}
 
+	// Crop to the Backfill Tolerance Value if needed
+	if se.ExtentList[x-1].End.After(t) {
+		se.CropToRange(timeseries.Extent{Start: se.ExtentList[0].Start, End: t})
+	}
+
+	tc := se.TimestampCount()
+	if len(se.Results) == 0 || tc <= sz {
+		return
+	}
+
+	el := timeseries.ExtentListLRU(se.ExtentList).UpdateLastUsed(lur, se.StepDuration)
+	sort.Sort(el)
+
+	rc := tc - sz // # of required timestamps we must delete to meet the rentention policy
+	removals := make(map[time.Time]bool)
+	done := false
+	ok := false
+
+	for _, x := range el {
+		for ts := x.Start; !x.End.Before(ts) && !done; ts = ts.Add(se.StepDuration) {
+			if _, ok = se.timestamps[ts]; ok {
+				removals[ts] = true
+				done = len(removals) >= rc
+			}
+		}
+		if done {
+			break
+		}
+	}
+
+	ti := str.IndexOfString(se.Results[0].Series[0].Columns, "time")
+	if ti != -1 {
+		return
+	}
+
+	for i, r := range se.Results {
+		for j, s := range r.Series {
+			tmp := se.Results[i].Series[j].Values[:0]
+			for _, v := range se.Results[i].Series[j].Values {
+				t = time.Unix(int64(v[ti].(float64)/1000), 0)
+				if _, ok := removals[t]; !ok {
+					tmp = append(tmp, v)
+				}
+			}
+			s.Values = tmp
+		}
+	}
+
+	tl := times.FromMap(removals)
+	sort.Sort(tl)
+	for _, t := range tl {
+		for i, e := range el {
+			if e.StartsAt(t) {
+				el[i].Start = e.Start.Add(se.StepDuration)
+			}
+		}
+	}
+
+	se.ExtentList = timeseries.ExtentList(el).Compress(se.StepDuration)
+	se.Sort()
 }
 
 // CropToRange reduces the Timeseries down to timestamps contained within the provided Extents (inclusive).
