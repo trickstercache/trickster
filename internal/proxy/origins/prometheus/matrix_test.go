@@ -941,7 +941,7 @@ func TestCropToSize(t *testing.T) {
 			}
 
 			if !reflect.DeepEqual(test.before, test.after) {
-				t.Errorf("mismatch\nexpected=%v\ngot=%v", test.after, test.before)
+				t.Errorf("mismatch\nexpected=%v\n     got=%v", test.after, test.before)
 			}
 		})
 	}
