@@ -237,7 +237,7 @@ func (se *SeriesEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 	}
 
 	ti := str.IndexOfString(se.Results[0].Series[0].Columns, "time")
-	if ti != -1 {
+	if ti == -1 {
 		return
 	}
 
