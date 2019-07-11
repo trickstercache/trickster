@@ -315,6 +315,138 @@ func TestMerge(t *testing.T) {
 	}
 }
 
+func TestCropToSize(t *testing.T) {
+	tests := []struct {
+		before, after *SeriesEnvelope
+		size          int
+		bft           time.Time
+		extent        timeseries.Extent
+	}{
+		// case 0: where we already have the number of timestamps we are cropping to
+		{
+			before: &SeriesEnvelope{
+				Results: []Result{
+					Result{
+						Series: []models.Row{
+							models.Row{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									[]interface{}{float64(1444004600000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004600, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
+			},
+			after: &SeriesEnvelope{
+				Results: []Result{
+					Result{
+						Series: []models.Row{
+							models.Row{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									[]interface{}{float64(1444004600000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004600, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
+				timestamps:   map[time.Time]bool{time.Unix(1444004600, 0): true},
+				tslist:       times.Times{time.Unix(1444004600, 0)},
+				isCounted:    true,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(0, 0),
+				End:   time.Unix(1444004600, 0),
+			},
+			size: 1,
+			bft:  time.Now(),
+		},
+
+		// case 1
+		{
+
+			before: &SeriesEnvelope{
+				Results: []Result{
+					Result{
+						Series: []models.Row{
+							models.Row{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									[]interface{}{float64(1444004600000), 1.5},
+									[]interface{}{float64(1444004610000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004610, 0)},
+				},
+				StepDuration: time.Duration(10) * time.Second,
+			},
+			after: &SeriesEnvelope{
+				Results: []Result{
+					Result{
+						Series: []models.Row{
+							models.Row{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									[]interface{}{float64(1444004610000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004610, 0), End: time.Unix(1444004610, 0)},
+				},
+				StepDuration: time.Duration(10) * time.Second,
+				timestamps:   map[time.Time]bool{time.Unix(1444004610, 0): true},
+				tslist:       times.Times{time.Unix(1444004610, 0)},
+				isCounted:    true,
+				isSorted:     true,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(0, 0),
+				End:   time.Unix(1444004610, 0),
+			},
+			size: 1,
+			bft:  time.Now(),
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			test.before.CropToSize(test.size, test.bft, test.extent)
+
+			for i := range test.before.ExtentList {
+				test.before.ExtentList[i].LastUsed = time.Time{}
+			}
+
+			if !reflect.DeepEqual(test.before, test.after) {
+				t.Errorf("mismatch\nexpected=%v\n     got=%v", test.after, test.before)
+			}
+		})
+	}
+}
+
 func TestCropToRange(t *testing.T) {
 	tests := []struct {
 		before, after *SeriesEnvelope
