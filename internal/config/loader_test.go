@@ -115,6 +115,10 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 666, got %d", o.TimeseriesRetentionFactor)
 	}
 
+	if o.TimeseriesEvictionMethod != EvictionMethodLRU {
+		t.Errorf("expected %s, got %s", EvictionMethodLRU, o.TimeseriesEvictionMethod)
+	}
+
 	if !o.FastForwardDisable {
 		t.Errorf("expected fast_forward_disable true, got %t", o.FastForwardDisable)
 	}
