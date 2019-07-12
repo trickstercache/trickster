@@ -613,6 +613,9 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 
 		cc.Filesystem.CachePath = v.Filesystem.CachePath
 
+		cc.BBolt.Bucket = v.BBolt.Bucket
+		cc.BBolt.Filename = v.BBolt.Filename
+
 		cc.Redis.ClientType = v.Redis.ClientType
 		cc.Redis.DB = v.Redis.DB
 		cc.Redis.DialTimeoutMS = v.Redis.DialTimeoutMS
