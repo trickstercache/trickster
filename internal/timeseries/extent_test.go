@@ -20,6 +20,7 @@ import (
 	"time"
 )
 
+var t0 = time.Unix(0, 0)
 var t98 = time.Unix(98, 0)
 var t99 = time.Unix(99, 0)
 var t100 = time.Unix(100, 0)
@@ -326,6 +327,34 @@ func TestCrop(t *testing.T) {
 		})
 	}
 
+}
+
+func TestOutsideOf(t *testing.T) {
+
+	el := ExtentList{
+		Extent{Start: t100, End: t200},
+		Extent{Start: t600, End: t900},
+		Extent{Start: t1100, End: t1300},
+	}
+
+	tests := []struct {
+		seed      ExtentList
+		testRange Extent
+		expected  bool
+	}{
+		{el, Extent{Start: t0, End: t0}, true},
+		{el, Extent{Start: t100, End: t1400}, false},
+		{ExtentList{}, Extent{Start: t100, End: t1400}, true},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			result := test.seed.OutsideOf(test.testRange)
+			if result != test.expected {
+				t.Errorf("expected=%t got=%t", test.expected, result)
+			}
+		})
+	}
 }
 
 func TestCompress(t *testing.T) {
