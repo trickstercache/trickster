@@ -29,6 +29,7 @@ const (
 	ValueNoCache = "no-cache"
 	// ValueApplicationJSON represents the HTTP Header Value of "application/json"
 	ValueApplicationJSON = "application/json"
+	ValueTextPlain       = "text/plain"
 
 	// Common HTTP Header Names
 

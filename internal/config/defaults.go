@@ -59,4 +59,7 @@ const (
 	defaultBackfillToleranceSecs = 0
 	defaultKeepAliveTimeoutSecs  = 300
 	defaultMaxIdleConns          = 20
+
+	defaultConfigHandlerPath = "/trickster/config"
+	defaultPingHandlerPath   = "/trickster/ping"
 )
