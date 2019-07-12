@@ -24,6 +24,10 @@ We'd love your help testing Trickster 1.0, as well as contributing any improveme
 
 ## Breaking Changes from 0.1.x
 
+### Ping URL Path (and Config URL Path)
+
+In Trickster 1.0, we are moving non-proxied / administrative endpoints behind a /trickster root path. The previous `/ping` path for checking if Trickster is up is now at `/trickster/ping`. A new path to expose the running configuration is at `/trickster/config`
+
 ### Origin Selection using Query Parameters
 
 In a multi-origin setup, Trickster 1.0 no longer supports the ability to select an Origin using Query Parameters. Trickster 1.0 continues to support Origin Selection via URL Path or Host Header as in 0.1.x.

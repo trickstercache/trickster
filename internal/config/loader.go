@@ -24,6 +24,9 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 
 	ApplicationName = applicationName
 	ApplicationVersion = applicationVersion
+	defaultOriginURL = ""
+	defaultOriginType = ""
+	LoaderWarnings = make([]string, 0, 0)
 
 	c := NewConfig()
 	c.parseFlags(applicationName, arguments) // Parse here to get config file path and version flags

@@ -53,9 +53,14 @@ func main() {
 	defer log.Logger.Close()
 	log.Info("application start up", log.Pairs{"name": applicationName, "version": applicationVersion, "logLevel": config.Logging.LogLevel})
 
+	for _, w := range config.LoaderWarnings {
+		log.Warn(w, log.Pairs{})
+	}
+
 	metrics.Init()
 	cr.LoadCachesFromConfig()
 	th.RegisterPingHandler()
+	th.RegisterConfigHandler()
 	rr.RegisterProxyRoutes()
 
 	log.Info("proxy http endpoint starting", log.Pairs{"address": config.ProxyServer.ListenAddress, "port": config.ProxyServer.ListenPort})

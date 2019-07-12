@@ -26,6 +26,7 @@ const (
 	// Common HTTP Header Values
 	ValueNoCache         = "no-cache"
 	ValueApplicationJSON = "application/json"
+	ValueTextPlain       = "text/plain"
 
 	// Common HTTP Header Names
 	NameCacheControl    = "Cache-Control"

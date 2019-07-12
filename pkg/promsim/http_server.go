@@ -97,10 +97,14 @@ func queryHandler(w http.ResponseWriter, r *http.Request) {
 	t := params.Get("time")
 
 	if q != "" {
-		tm, err := parseTime(t)
-		if err != nil {
-			writeError(http.StatusBadRequest, []byte("unable to parse time parameter"), w)
-			return
+		tm := time.Now()
+		if t != "" {
+			var err error
+			tm, err = parseTime(t)
+			if err != nil {
+				writeError(http.StatusBadRequest, []byte("unable to parse time parameter"), w)
+				return
+			}
 		}
 
 		json, code, _ := GetInstantData(q, tm)

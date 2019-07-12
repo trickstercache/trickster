@@ -11,36 +11,26 @@
 * limitations under the License.
  */
 
-package handlers
+package config
 
 import (
-	"io/ioutil"
-	"net/http/httptest"
+	"reflect"
+	"strings"
 	"testing"
 )
 
-func TestPingHandler(t *testing.T) {
-
-	RegisterPingHandler()
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://0/health", nil)
-
-	pingHandler(w, r)
-	resp := w.Result()
-
-	// it should return 200 OK and "pong"
-	if resp.StatusCode != 200 {
-		t.Errorf("expected 200 got %d.", resp.StatusCode)
+func TestCopy(t *testing.T) {
+	c1 := NewConfig()
+	c2 := c1.copy()
+	if !reflect.DeepEqual(c1, c2) {
+		t.Errorf("copy mistmatch")
 	}
+}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
+func TestString(t *testing.T) {
+	c1 := NewConfig()
+	s := c1.String()
+	if strings.Index(s, `password = "*****"`) < 0 {
+		t.Errorf("missing password mask: %s", "*****")
 	}
-
-	if string(bodyBytes) != "pong" {
-		t.Errorf("expected 'pong' got %s.", bodyBytes)
-	}
-
 }
