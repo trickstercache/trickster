@@ -54,7 +54,7 @@ const (
 	defaultOriginAPIPath         = "/api/v1/"
 	defaultOriginINCH            = true
 	defaultOriginTRF             = 1024
-	defaultOriginTEM             = RetentionPolicyOldest
+	defaultOriginTEM             = EvictionMethodOldest
 	defaultOriginTEMName         = "oldest"
 	defaultOriginTimeoutSecs     = 180
 	defaultOriginCacheName       = "default"

@@ -19,27 +19,27 @@ import "strconv"
 type TimeseriesEvictionMethod int
 
 const (
-	// RetentionPolicyOldest indicates that a time series cache object only holds values newer than an explicit date,
+	// EvictionMethodOldest indicates that a time series cache object only holds values newer than an explicit date,
 	// called the Oldest Cacheable Timestamp, which is calculated with this formula on each request:
 	// time.Now().Add(-(config.ValueRetentionFactor * query.Step))
 	// This policy is the more performant methodology, because out-of-cache-range determination does not require querying
 	// the cache; thus the cache is only accessed for requests that are pre-determined to be cacheable
-	RetentionPolicyOldest = TimeseriesEvictionMethod(iota)
-	// RetentionPolicyLRU indicates a that a time series cache object hold up to ValueRetentionFactor number of
+	EvictionMethodOldest = TimeseriesEvictionMethod(iota)
+	// EvictionMethodLRU indicates a that a time series cache object hold up to ValueRetentionFactor number of
 	// unique timestamps, removing the least-recently-used timestamps as necessary to to remain at the ValueRetentionFactor
 	// This policy is the more compute-intensive, since we must maintain an LRU on each timestamp in each cache object,
 	// and retreive the object from cache on each request
-	RetentionPolicyLRU
+	EvictionMethodLRU
 )
 
 var timeseriesEvictionMethodNames = map[string]TimeseriesEvictionMethod{
-	"oldest": RetentionPolicyOldest,
-	"lru":    RetentionPolicyLRU,
+	"oldest": EvictionMethodOldest,
+	"lru":    EvictionMethodLRU,
 }
 
 var timeseriesEvictionMethodValues = map[TimeseriesEvictionMethod]string{
-	RetentionPolicyOldest: "oldest",
-	RetentionPolicyLRU:    "lru",
+	EvictionMethodOldest: "oldest",
+	EvictionMethodLRU:    "lru",
 }
 
 func (t TimeseriesEvictionMethod) String() string {
