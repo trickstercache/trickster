@@ -61,4 +61,5 @@ const (
 	defaultMaxIdleConns          = 20
 
 	defaultConfigHandlerPath = "/trickster/config"
+	defaultPingHandlerPath   = "/trickster/ping"
 )

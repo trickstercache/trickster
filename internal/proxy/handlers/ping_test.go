@@ -17,14 +17,17 @@ import (
 	"io/ioutil"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/Comcast/trickster/internal/config"
 )
 
 func TestPingHandler(t *testing.T) {
 
+	config.Load("trickster-test", "test", nil)
 	RegisterPingHandler()
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://0/health", nil)
+	r := httptest.NewRequest("GET", "http://0/trickster/ping", nil)
 
 	pingHandler(w, r)
 	resp := w.Result()

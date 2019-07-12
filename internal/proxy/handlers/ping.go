@@ -16,17 +16,19 @@ package handlers
 import (
 	"net/http"
 
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/routing"
 )
 
 // RegisterPingHandler registers the application's /ping handler
 func RegisterPingHandler() {
-	routing.Router.HandleFunc("/ping", pingHandler).Methods("GET")
+	routing.Router.HandleFunc(config.Main.PingHandlerPath, pingHandler).Methods("GET")
 }
 
 // pingHandler responds to an HTTP Request with 200 OK and "pong"
 func pingHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 	w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("pong"))

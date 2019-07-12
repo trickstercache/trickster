@@ -75,6 +75,8 @@ type MainConfig struct {
 
 	// ConfigHandlerPath provides the path to register the Config Handler for outputting the running configuration
 	ConfigHandlerPath string `toml:"config_handler_path"`
+	// PingHandlerPath provides the path to register the Ping Handler for checking that Trickster is running
+	PingHandlerPath string `toml:"ping_handler_path"`
 }
 
 // OriginConfig is a collection of configurations for prometheus origins proxied by Trickster
@@ -233,6 +235,7 @@ func NewConfig() *TricksterConfig {
 		Main: &MainConfig{
 			Hostname:          defaultHostname,
 			ConfigHandlerPath: defaultConfigHandlerPath,
+			PingHandlerPath:   defaultPingHandlerPath,
 		},
 		Metrics: &MetricsConfig{
 			ListenPort: defaultMetricsListenPort,
