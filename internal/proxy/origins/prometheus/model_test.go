@@ -28,17 +28,17 @@ func TestMarshalTimeseries(t *testing.T) {
 				&model.SampleStream{
 					Metric: model.Metric{"__name__": "a"},
 					Values: []model.SamplePair{
-						model.SamplePair{Timestamp: 99000, Value: 1.5},
-						model.SamplePair{Timestamp: 199000, Value: 1.5},
-						model.SamplePair{Timestamp: 299000, Value: 1.5},
+						{Timestamp: 99000, Value: 1.5},
+						{Timestamp: 199000, Value: 1.5},
+						{Timestamp: 299000, Value: 1.5},
 					},
 				},
 				&model.SampleStream{
 					Metric: model.Metric{"__name__": "b"},
 					Values: []model.SamplePair{
-						model.SamplePair{Timestamp: 99000, Value: 1.5},
-						model.SamplePair{Timestamp: 199000, Value: 1.5},
-						model.SamplePair{Timestamp: 299000, Value: 1.5},
+						{Timestamp: 99000, Value: 1.5},
+						{Timestamp: 199000, Value: 1.5},
+						{Timestamp: 299000, Value: 1.5},
 					},
 				},
 			},
