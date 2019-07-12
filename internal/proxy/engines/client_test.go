@@ -466,7 +466,6 @@ func (me *MatrixEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 		s.Values = tmp
 	}
 
-	// TODO: get crop out span from removals map and adjust the extent list for the envelope as needed
 	tl := times.FromMap(removals)
 	sort.Sort(tl)
 	for _, t := range tl {
