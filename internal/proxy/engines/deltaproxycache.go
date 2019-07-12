@@ -59,7 +59,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	now := time.Now()
 
 	OldestRetainedTimestamp := time.Time{}
-	if cfg.TimeseriesEvictionMethod == config.RetentionPolicyOldest {
+	if cfg.TimeseriesEvictionMethod == config.EvictionMethodOldest {
 		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * cfg.TimeseriesRetention))
 		if trq.Extent.End.Before(OldestRetainedTimestamp) {
 			log.Debug("timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.TimeseriesRetention})
@@ -124,7 +124,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 					return // fetchTimeseries logs the error
 				}
 			} else {
-				if cfg.TimeseriesEvictionMethod == config.RetentionPolicyLRU {
+				if cfg.TimeseriesEvictionMethod == config.EvictionMethodLRU {
 					el := cts.Extents()
 					tsc := cts.TimestampCount()
 					if tsc > 0 &&
@@ -291,7 +291,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 			defer wg.Done()
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the Backfill Tolerance before storing to cache
 			switch cfg.TimeseriesEvictionMethod {
-			case config.RetentionPolicyLRU:
+			case config.EvictionMethodLRU:
 				cts.CropToSize(cfg.TimeseriesRetentionFactor, bf.End, trq.Extent)
 			default:
 				cts.CropToRange(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
