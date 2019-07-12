@@ -60,7 +60,7 @@ func (el ExtentList) Contains(e Extent) bool {
 		(!el[0].Start.After(el[x-1].End)))
 }
 
-// OutsideOf ...
+// OutsideOf returns true if the timestamps in the ExtentList are entirely outside of the provided extent
 func (el ExtentList) OutsideOf(e Extent) bool {
 	x := len(el)
 	if x == 0 {
@@ -69,7 +69,7 @@ func (el ExtentList) OutsideOf(e Extent) bool {
 	return e.After(el[x-1].End) || el[0].After(e.End)
 }
 
-// Crop ...
+// Crop adjusts an ExtentList to include only the range of the provided Extent
 func (el ExtentList) Crop(e Extent) ExtentList {
 
 	var startIndex = -1
