@@ -61,7 +61,10 @@ func main() {
 	cr.LoadCachesFromConfig()
 	th.RegisterPingHandler()
 	th.RegisterConfigHandler()
-	rr.RegisterProxyRoutes()
+	err = rr.RegisterProxyRoutes()
+	if err != nil {
+		log.Fatal(1, err.Error(), log.Pairs{})
+	}
 
 	log.Info("proxy http endpoint starting", log.Pairs{"address": config.ProxyServer.ListenAddress, "port": config.ProxyServer.ListenPort})
 
