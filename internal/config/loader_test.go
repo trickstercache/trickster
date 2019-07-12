@@ -127,6 +127,18 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 37, got %d", o.TimeoutSecs)
 	}
 
+	if o.IsDefault != true {
+		t.Errorf("expected true got %t", o.IsDefault)
+	}
+
+	if o.MaxIdleConns != 23 {
+		t.Errorf("expected %d got %d", 23, o.MaxIdleConns)
+	}
+
+	if o.KeepAliveTimeoutSecs != 7 {
+		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeoutSecs)
+	}
+
 	// Test Caches
 
 	c, ok := Caches["test"]
