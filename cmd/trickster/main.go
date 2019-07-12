@@ -60,6 +60,7 @@ func main() {
 	metrics.Init()
 	cr.LoadCachesFromConfig()
 	th.RegisterPingHandler()
+	th.RegisterConfigHandler()
 	rr.RegisterProxyRoutes()
 
 	log.Info("proxy http endpoint starting", log.Pairs{"address": config.ProxyServer.ListenAddress, "port": config.ProxyServer.ListenPort})
