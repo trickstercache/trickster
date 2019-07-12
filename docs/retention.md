@@ -8,7 +8,7 @@ Pro tip: If you want to map multiple origins into the same cache while using dif
 
 ## Cache Object Evictions
 
-If you use a Trickster-managed cache (Memory, Filesystem, bbolt), then a maximum cache size is maintained by Trickster. You can configure the maximum size in number of bytes, number of objects, or both. See the example configuration for more infomation.
+If you use a Trickster-managed cache (Memory, Filesystem, bbolt), then a maximum cache size is maintained by Trickster. You can configure the maximum size in number of bytes, number of objects, or both. See the example configuration for more information.
 
 Once the cache has reached its configured maximum size of objects or bytes, Trickster will undergo an eviction routine that removes cache objects until the size has fallen below the configured maximums. Trickster-managed caches maintain a last access time for each cache object, and utilizes a Least Recently Used (LRU) methodology when selecting objects for eviction.
 

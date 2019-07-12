@@ -28,7 +28,7 @@ const (
 	// EvictionMethodLRU indicates a that a time series cache object hold up to ValueRetentionFactor number of
 	// unique timestamps, removing the least-recently-used timestamps as necessary to to remain at the ValueRetentionFactor
 	// This policy is the more compute-intensive, since we must maintain an LRU on each timestamp in each cache object,
-	// and retreive the object from cache on each request
+	// and retrieve the object from cache on each request
 	EvictionMethodLRU
 )
 

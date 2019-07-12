@@ -137,29 +137,29 @@ func TestInsideOf(t *testing.T) {
 	}
 
 	if el.InsideOf(Extent{Start: t100, End: t100}) {
-		t.Errorf("exected false got %t", true)
+		t.Errorf("expected false got %t", true)
 	}
 
 	if el.InsideOf(Extent{Start: time.Unix(0, 0), End: t100}) {
-		t.Errorf("exected false got %t", true)
+		t.Errorf("expected false got %t", true)
 	}
 
 	if el.InsideOf(Extent{Start: time.Unix(0, 0), End: time.Unix(0, 0)}) {
-		t.Errorf("exected false got %t", true)
+		t.Errorf("expected false got %t", true)
 	}
 
 	if el.InsideOf(Extent{Start: t201, End: t201}) {
-		t.Errorf("exected false got %t", true)
+		t.Errorf("expected false got %t", true)
 	}
 
 	if el.InsideOf(Extent{Start: t1400, End: t1400}) {
-		t.Errorf("exected false got %t", true)
+		t.Errorf("expected false got %t", true)
 	}
 
 	// test empty
 	el = ExtentList{}
 	if el.InsideOf(Extent{Start: t100, End: t100}) {
-		t.Errorf("exected false got %t", true)
+		t.Errorf("expected false got %t", true)
 	}
 
 }
@@ -173,29 +173,29 @@ func TestOutsideOf(t *testing.T) {
 	}
 
 	if el.OutsideOf(Extent{Start: t100, End: t100}) {
-		t.Errorf("exected false got %t", true)
+		t.Errorf("expected false got %t", true)
 	}
 
 	if el.OutsideOf(Extent{Start: time.Unix(0, 0), End: t100}) {
-		t.Errorf("exected false got %t", true)
+		t.Errorf("expected false got %t", true)
 	}
 
 	if !el.OutsideOf(Extent{Start: time.Unix(0, 0), End: time.Unix(0, 0)}) {
-		t.Errorf("exected true got %t", false)
+		t.Errorf("expected true got %t", false)
 	}
 
 	if el.OutsideOf(Extent{Start: t201, End: t201}) {
-		t.Errorf("exected false got %t", true)
+		t.Errorf("expected false got %t", true)
 	}
 
 	if !el.OutsideOf(Extent{Start: t1400, End: t1400}) {
-		t.Errorf("exected true got %t", false)
+		t.Errorf("expected true got %t", false)
 	}
 
 	// test empty
 	el = ExtentList{}
 	if !el.OutsideOf(Extent{Start: t100, End: t100}) {
-		t.Errorf("exected true got %t", false)
+		t.Errorf("expected true got %t", false)
 	}
 
 }

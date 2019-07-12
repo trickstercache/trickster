@@ -38,7 +38,7 @@ const (
 	// LookupStatusPurge indicates a the cache key, if it existed, was purged as directed
 	// in upstream response or down stream request http headers
 	LookupStatusPurge
-	// LookupStatusProxyError indicates a that a proxy error occurred retreiving a cacheable dataset
+	// LookupStatusProxyError indicates a that a proxy error occurred retrieving a cacheable dataset
 	// in upstream response or down stream request http headers
 	LookupStatusProxyError
 )
