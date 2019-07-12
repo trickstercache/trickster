@@ -14,6 +14,7 @@
 package config
 
 import (
+	"bytes"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -71,6 +72,9 @@ type MainConfig struct {
 	Environment string
 	// Hostname is populated with the self-resolved Hostname where the instance is running
 	Hostname string
+
+	// ConfigHandlerPath provides the path to register the Config Handler for outputting the running configuration
+	ConfigHandlerPath string `toml:"config_handler_path"`
 }
 
 // OriginConfig is a collection of configurations for prometheus origins proxied by Trickster
@@ -227,7 +231,8 @@ func NewConfig() *TricksterConfig {
 			LogLevel: defaultLogLevel,
 		},
 		Main: &MainConfig{
-			Hostname: defaultHostname,
+			Hostname:          defaultHostname,
+			ConfigHandlerPath: defaultConfigHandlerPath,
 		},
 		Metrics: &MetricsConfig{
 			ListenPort: defaultMetricsListenPort,
@@ -536,4 +541,14 @@ func (c *TricksterConfig) setCachingDefaults(metadata toml.MetaData) {
 
 		c.Caches[k] = cc
 	}
+}
+
+func (c *TricksterConfig) String() string {
+	var buf bytes.Buffer
+	e := toml.NewEncoder(&buf)
+	err := e.Encode(c)
+	if err != nil {
+		return ""
+	}
+	return buf.String()
 }
