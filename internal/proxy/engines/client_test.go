@@ -484,7 +484,6 @@ func (me *MatrixEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 // CropToRange reduces the Timeseries down to timestamps contained within the provided Extents (inclusive).
 // CropToRange assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
 func (me *MatrixEnvelope) CropToRange(e timeseries.Extent) {
-	fmt.Println("CROP TO RANGE", e)
 	me.isCounted = false
 	x := len(me.ExtentList)
 	// The Series has no extents, so no need to do anything
@@ -494,16 +493,12 @@ func (me *MatrixEnvelope) CropToRange(e timeseries.Extent) {
 		return
 	}
 
-	fmt.Println(1)
-
 	// if the extent of the series is entirely outside the extent of the crop range, return empty set and bail
 	if me.ExtentList.OutsideOf(e) {
 		me.Data.Result = model.Matrix{}
 		me.ExtentList = timeseries.ExtentList{}
 		return
 	}
-
-	fmt.Println(2)
 
 	// if the series extent is entirely inside the extent of the crop range, simply adjust down its ExtentList
 	if me.ExtentList.InsideOf(e) {
@@ -514,14 +509,10 @@ func (me *MatrixEnvelope) CropToRange(e timeseries.Extent) {
 		return
 	}
 
-	fmt.Println(3)
-
 	if len(me.Data.Result) == 0 {
 		me.ExtentList = me.ExtentList.Crop(e)
 		return
 	}
-
-	fmt.Println(4)
 
 	deletes := make(map[int]bool)
 
@@ -555,15 +546,11 @@ func (me *MatrixEnvelope) CropToRange(e timeseries.Extent) {
 				end = len(s.Values)
 			}
 			me.Data.Result[i].Values = s.Values[start:end]
-			fmt.Println(s.Values)
-			fmt.Println(5)
 		} else {
 			deletes[i] = true
-			fmt.Println(6)
 		}
 	}
 	if len(deletes) > 0 {
-		fmt.Println("Found deletes")
 		tmp := me.Data.Result[:0]
 		for i, r := range me.Data.Result {
 			if _, ok := deletes[i]; !ok {

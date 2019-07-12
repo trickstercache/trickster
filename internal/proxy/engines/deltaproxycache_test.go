@@ -661,8 +661,6 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 
 	// Test Range Miss Low End
 
-	fmt.Println(cfg.TimeseriesEvictionMethodName, cfg.TimeseriesRetentionFactor, "****")
-
 	extr.Start = extr.Start.Add(time.Duration(-3) * time.Hour)
 	extn.Start = extr.Start.Truncate(step)
 	extr.End = extr.Start.Add(time.Duration(1) * time.Hour)
@@ -672,20 +670,14 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	expected, _, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	fmt.Println(extn, step.Seconds())
-
 	w = httptest.NewRecorder()
 	client.QueryRangeHandler(w, r)
 	resp = w.Result()
-
-	fmt.Println("request completed; checking status")
 
 	bodyBytes, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
-
-	fmt.Println("bytes read")
 
 	err = testStringMatch(string(bodyBytes), expected)
 	if err != nil {
@@ -711,8 +703,6 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
-	return
 
 	// Test Range Miss High End
 
