@@ -236,7 +236,7 @@ func (idx *Index) reap() {
 		if o.Key == IndexKey {
 			continue
 		}
-		if o.Expiration.Before(now) {
+		if o.Expiration.Before(now) && !o.Expiration.IsZero() {
 			removals = append(removals, o.Key)
 		} else {
 			remainders = append(remainders, o)
@@ -252,9 +252,9 @@ func (idx *Index) reap() {
 	if ((idx.config.MaxSizeBytes > 0 && idx.CacheSize > idx.config.MaxSizeBytes) || (idx.config.MaxSizeObjects > 0 && idx.ObjectCount > idx.config.MaxSizeObjects)) && len(remainders) > 0 {
 
 		var evictionType string
-		if idx.CacheSize > idx.config.MaxSizeBytes {
+		if idx.config.MaxSizeBytes > 0 && idx.CacheSize > idx.config.MaxSizeBytes {
 			evictionType = "size_bytes"
-		} else if idx.ObjectCount > idx.config.MaxSizeObjects {
+		} else if idx.config.MaxSizeObjects > 0 && idx.ObjectCount > idx.config.MaxSizeObjects {
 			evictionType = "size_objects"
 		} else {
 			return
