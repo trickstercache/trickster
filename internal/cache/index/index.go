@@ -57,13 +57,6 @@ func (idx *Index) ToBytes() []byte {
 	return bytes
 }
 
-// IndexFromBytes returns a deserialized Cache Object from a seralized byte slice
-func IndexFromBytes(data []byte) (*Index, error) {
-	i := &Index{}
-	_, err := i.UnmarshalMsg(data)
-	return i, err
-}
-
 // Object contains metadata about an item in the Cache
 type Object struct {
 	// Key represents the name of the Object and is the accessor in a hashed collection of Cache Objects
@@ -199,16 +192,20 @@ func (idx *Index) flusher() {
 		if idx.lastWrite.Before(lastFlush) {
 			continue
 		}
-		indexLock.Lock()
-		bytes, err := idx.MarshalMsg(nil)
-		indexLock.Unlock()
-		if err != nil {
-			log.Warn("unable to serialize index for flushing", log.Pairs{"cacheName": idx.name, "detail": err.Error()})
-			continue
-		}
-		idx.flushFunc(IndexKey, bytes)
+		idx.flushOnce()
 		lastFlush = time.Now()
 	}
+}
+
+func (idx *Index) flushOnce() {
+	indexLock.Lock()
+	bytes, err := idx.MarshalMsg(nil)
+	indexLock.Unlock()
+	if err != nil {
+		log.Warn("unable to serialize index for flushing", log.Pairs{"cacheName": idx.name, "detail": err.Error()})
+		return
+	}
+	idx.flushFunc(IndexKey, bytes)
 }
 
 // reaper continually iterates through the cache to find expired elements and removes them

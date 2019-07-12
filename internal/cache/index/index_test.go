@@ -32,22 +32,21 @@ func fakeFlusherFunc(string, []byte)    {}
 func TestNewIndex(t *testing.T) {
 	cacheConfig := &config.CachingConfig{Type: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, fakeBulkRemoveFunc, fakeFlusherFunc)
-
 	if idx.name != "test" {
 		t.Errorf("expected test got %s", idx.name)
 	}
-}
 
-func TestIndexFromBytes(t *testing.T) {
+	idx.flushOnce()
 
-	idx := Index{}
-	b := idx.ToBytes()
-	idx2, err := IndexFromBytes(b)
-	if err != nil {
-		t.Error(err)
+	idx2 := NewIndex("test", "test", idx.ToBytes(), cacheConfig.Index, fakeBulkRemoveFunc, fakeFlusherFunc)
+	if idx2 == nil {
+		t.Errorf("nil cache index")
 	}
 
-	if idx2 == nil {
+	cacheConfig.Index.FlushInterval = 0
+	cacheConfig.Index.ReapInterval = 0
+	idx3 := NewIndex("test", "test", nil, cacheConfig.Index, fakeBulkRemoveFunc, fakeFlusherFunc)
+	if idx3 == nil {
 		t.Errorf("nil cache index")
 	}
 
