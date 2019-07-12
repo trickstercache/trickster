@@ -14,6 +14,8 @@
 package config
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -50,6 +52,10 @@ var ApplicationName string
 
 // ApplicationVersion holds the version of the Application
 var ApplicationVersion string
+
+// LoaderWarnings holds warnings generated during config load (before the logger is initialized),
+// so they can be logged at the end of the loading process
+var LoaderWarnings = make([]string, 0, 0)
 
 // TricksterConfig is the main configuration object
 type TricksterConfig struct {
@@ -395,7 +401,7 @@ func (c *TricksterConfig) setCachingDefaults(metadata toml.MetaData) {
 		cc := DefaultCachingConfig()
 
 		if metadata.IsDefined("caches", k, "type") {
-			cc.Type = v.Type
+			cc.Type = strings.ToLower(v.Type)
 		}
 
 		if metadata.IsDefined("caches", k, "compression") {
@@ -438,80 +444,98 @@ func (c *TricksterConfig) setCachingDefaults(metadata toml.MetaData) {
 			cc.Index.MaxSizeBackoffObjects = v.Index.MaxSizeBackoffObjects
 		}
 
-		if metadata.IsDefined("caches", k, "redis", "client_type") {
-			cc.Redis.ClientType = v.Redis.ClientType
-		}
+		if cc.Type == "redis" {
 
-		if metadata.IsDefined("caches", k, "redis", "protocol") {
-			cc.Redis.Protocol = v.Redis.Protocol
-		}
+			var hasEndpoint, hasEndpoints bool
 
-		if metadata.IsDefined("caches", k, "redis", "endpoint") {
-			cc.Redis.Endpoint = v.Redis.Endpoint
-		}
+			ct := strings.ToLower(v.Redis.ClientType)
+			if metadata.IsDefined("caches", k, "redis", "client_type") {
+				cc.Redis.ClientType = ct
+			}
 
-		if metadata.IsDefined("caches", k, "redis", "endpoints") {
-			cc.Redis.Endpoints = v.Redis.Endpoints
-		}
+			if metadata.IsDefined("caches", k, "redis", "protocol") {
+				cc.Redis.Protocol = v.Redis.Protocol
+			}
 
-		if metadata.IsDefined("caches", k, "redis", "sentinel_master") {
-			cc.Redis.SentinelMaster = v.Redis.SentinelMaster
-		}
+			if metadata.IsDefined("caches", k, "redis", "endpoint") {
+				cc.Redis.Endpoint = v.Redis.Endpoint
+				hasEndpoint = true
+			}
 
-		if metadata.IsDefined("caches", k, "redis", "password") {
-			cc.Redis.Password = v.Redis.Password
-		}
+			if metadata.IsDefined("caches", k, "redis", "endpoints") {
+				cc.Redis.Endpoints = v.Redis.Endpoints
+				hasEndpoints = true
+			}
 
-		if metadata.IsDefined("caches", k, "redis", "db") {
-			cc.Redis.DB = v.Redis.DB
-		}
+			if cc.Redis.ClientType == "standard" {
+				if hasEndpoints && !hasEndpoint {
+					LoaderWarnings = append(LoaderWarnings, "'standard' redis type configured, but 'endpoints' value is provided instead of 'endpoint'")
+				}
+			} else {
+				if hasEndpoint && !hasEndpoints {
+					LoaderWarnings = append(LoaderWarnings, fmt.Sprintf("'%s' redis type configured, but 'endpoint' value is provided instead of 'endpoints'", cc.Redis.ClientType))
+				}
+			}
 
-		if metadata.IsDefined("caches", k, "redis", "max_retries") {
-			cc.Redis.MaxRetries = v.Redis.MaxRetries
-		}
+			if metadata.IsDefined("caches", k, "redis", "sentinel_master") {
+				cc.Redis.SentinelMaster = v.Redis.SentinelMaster
+			}
 
-		if metadata.IsDefined("caches", k, "redis", "min_retry_backoff_ms") {
-			cc.Redis.MinRetryBackoffMS = v.Redis.MinRetryBackoffMS
-		}
+			if metadata.IsDefined("caches", k, "redis", "password") {
+				cc.Redis.Password = v.Redis.Password
+			}
 
-		if metadata.IsDefined("caches", k, "redis", "max_retry_backoff_ms") {
-			cc.Redis.MaxRetryBackoffMS = v.Redis.MaxRetryBackoffMS
-		}
+			if metadata.IsDefined("caches", k, "redis", "db") {
+				cc.Redis.DB = v.Redis.DB
+			}
 
-		if metadata.IsDefined("caches", k, "redis", "dial_timeout_ms") {
-			cc.Redis.DialTimeoutMS = v.Redis.DialTimeoutMS
-		}
+			if metadata.IsDefined("caches", k, "redis", "max_retries") {
+				cc.Redis.MaxRetries = v.Redis.MaxRetries
+			}
 
-		if metadata.IsDefined("caches", k, "redis", "read_timeout_ms") {
-			cc.Redis.ReadTimeoutMS = v.Redis.ReadTimeoutMS
-		}
+			if metadata.IsDefined("caches", k, "redis", "min_retry_backoff_ms") {
+				cc.Redis.MinRetryBackoffMS = v.Redis.MinRetryBackoffMS
+			}
 
-		if metadata.IsDefined("caches", k, "redis", "write_timeout_ms") {
-			cc.Redis.WriteTimeoutMS = v.Redis.WriteTimeoutMS
-		}
+			if metadata.IsDefined("caches", k, "redis", "max_retry_backoff_ms") {
+				cc.Redis.MaxRetryBackoffMS = v.Redis.MaxRetryBackoffMS
+			}
 
-		if metadata.IsDefined("caches", k, "redis", "pool_size") {
-			cc.Redis.PoolSize = v.Redis.PoolSize
-		}
+			if metadata.IsDefined("caches", k, "redis", "dial_timeout_ms") {
+				cc.Redis.DialTimeoutMS = v.Redis.DialTimeoutMS
+			}
 
-		if metadata.IsDefined("caches", k, "redis", "min_idle_conns") {
-			cc.Redis.MinIdleConns = v.Redis.MinIdleConns
-		}
+			if metadata.IsDefined("caches", k, "redis", "read_timeout_ms") {
+				cc.Redis.ReadTimeoutMS = v.Redis.ReadTimeoutMS
+			}
 
-		if metadata.IsDefined("caches", k, "redis", "max_conn_age_ms") {
-			cc.Redis.MaxConnAgeMS = v.Redis.MaxConnAgeMS
-		}
+			if metadata.IsDefined("caches", k, "redis", "write_timeout_ms") {
+				cc.Redis.WriteTimeoutMS = v.Redis.WriteTimeoutMS
+			}
 
-		if metadata.IsDefined("caches", k, "redis", "pool_timeout_ms") {
-			cc.Redis.PoolTimeoutMS = v.Redis.PoolTimeoutMS
-		}
+			if metadata.IsDefined("caches", k, "redis", "pool_size") {
+				cc.Redis.PoolSize = v.Redis.PoolSize
+			}
 
-		if metadata.IsDefined("caches", k, "redis", "idle_timeout_ms") {
-			cc.Redis.IdleTimeoutMS = v.Redis.IdleTimeoutMS
-		}
+			if metadata.IsDefined("caches", k, "redis", "min_idle_conns") {
+				cc.Redis.MinIdleConns = v.Redis.MinIdleConns
+			}
 
-		if metadata.IsDefined("caches", k, "redis", "idle_check_frequency_ms") {
-			cc.Redis.IdleCheckFrequencyMS = v.Redis.IdleCheckFrequencyMS
+			if metadata.IsDefined("caches", k, "redis", "max_conn_age_ms") {
+				cc.Redis.MaxConnAgeMS = v.Redis.MaxConnAgeMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "pool_timeout_ms") {
+				cc.Redis.PoolTimeoutMS = v.Redis.PoolTimeoutMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "idle_timeout_ms") {
+				cc.Redis.IdleTimeoutMS = v.Redis.IdleTimeoutMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "idle_check_frequency_ms") {
+				cc.Redis.IdleCheckFrequencyMS = v.Redis.IdleCheckFrequencyMS
+			}
 		}
 
 		if metadata.IsDefined("caches", k, "filesystem", "cache_path") {
