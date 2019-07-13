@@ -32,7 +32,7 @@ import (
 
 const (
 	applicationName    = "trickster"
-	applicationVersion = "1.0.7"
+	applicationVersion = "1.0.8"
 )
 
 func main() {
@@ -53,9 +53,14 @@ func main() {
 	defer log.Logger.Close()
 	log.Info("application start up", log.Pairs{"name": applicationName, "version": applicationVersion, "logLevel": config.Logging.LogLevel})
 
+	for _, w := range config.LoaderWarnings {
+		log.Warn(w, log.Pairs{})
+	}
+
 	metrics.Init()
 	cr.LoadCachesFromConfig()
 	th.RegisterPingHandler()
+	th.RegisterConfigHandler()
 	err = rr.RegisterProxyRoutes()
 	if err != nil {
 		log.Fatal(1, "route registration failed", log.Pairs{"detail": err.Error()})

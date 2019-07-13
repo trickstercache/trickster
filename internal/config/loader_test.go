@@ -165,8 +165,8 @@ func TestFullLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if c.CacheType != "test_type" {
-		t.Errorf("expected test_type, got %s", c.CacheType)
+	if c.CacheType != "redis" {
+		t.Errorf("expected redis, got %s", c.CacheType)
 	}
 
 	if !c.Compression {
@@ -563,7 +563,7 @@ func TestLoadConfigurationBadPath(t *testing.T) {
 	// it should not error if config path is not set
 	err := Load("trickster-test", "0", a)
 	if err == nil {
-		t.Errorf("Expected error: open %s: no such file or directory", badPath)
+		t.Errorf("expected error: open %s: no such file or directory", badPath)
 	}
 }
 
@@ -572,6 +572,42 @@ func TestLoadConfigurationBadUrl(t *testing.T) {
 	a := []string{"-origin-url", badURL}
 	err := Load("trickster-test", "0", a)
 	if err == nil {
-		t.Errorf("Expected error: parse %s: missing protocol scheme", badURL)
+		t.Errorf("expected error: parse %s: missing protocol scheme", badURL)
 	}
+}
+
+func TestLoadConfigurationWarning1(t *testing.T) {
+
+	a := []string{"-config", "../../testdata/test.warning1.conf"}
+	// it should not error if config path is not set
+	err := Load("trickster-test", "0", a)
+	if err != nil {
+		t.Error(err)
+	}
+
+	expected := 1
+	l := len(LoaderWarnings)
+
+	if l != expected {
+		t.Errorf("exepcted %d got %d", expected, l)
+	}
+
+}
+
+func TestLoadConfigurationWarning2(t *testing.T) {
+
+	a := []string{"-config", "../../testdata/test.warning2.conf"}
+	// it should not error if config path is not set
+	err := Load("trickster-test", "0", a)
+	if err != nil {
+		t.Error(err)
+	}
+
+	expected := 1
+	l := len(LoaderWarnings)
+
+	if l != expected {
+		t.Errorf("exepcted %d got %d", expected, l)
+	}
+
 }

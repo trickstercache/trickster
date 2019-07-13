@@ -63,4 +63,7 @@ const (
 	defaultHealthCheckQuery        = ""
 	defaultHealthCheckVerb         = http.MethodGet
 	defaultHealthCheckResponseCode = http.StatusOK
+
+	defaultConfigHandlerPath = "/trickster/config"
+	defaultPingHandlerPath   = "/trickster/ping"
 )

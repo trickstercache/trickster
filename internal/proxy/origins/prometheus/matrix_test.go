@@ -827,6 +827,231 @@ func TestCrop(t *testing.T) {
 				End:   time.Unix(300, 0),
 			},
 		},
+		// Run 9: Case where after cropping, an inner series is empty/removed
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 100000, Value: 1.5},
+								model.SamplePair{Timestamp: 200000, Value: 1.5},
+								model.SamplePair{Timestamp: 300000, Value: 1.5},
+								model.SamplePair{Timestamp: 400000, Value: 1.5},
+								model.SamplePair{Timestamp: 500000, Value: 1.5},
+								model.SamplePair{Timestamp: 600000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 100000, Value: 1.5},
+								model.SamplePair{Timestamp: 200000, Value: 1.5},
+								model.SamplePair{Timestamp: 300000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "c"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 100000, Value: 1.5},
+								model.SamplePair{Timestamp: 200000, Value: 1.5},
+								model.SamplePair{Timestamp: 300000, Value: 1.5},
+								model.SamplePair{Timestamp: 400000, Value: 1.5},
+								model.SamplePair{Timestamp: 500000, Value: 1.5},
+								model.SamplePair{Timestamp: 600000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 400000, Value: 1.5},
+								model.SamplePair{Timestamp: 500000, Value: 1.5},
+								model.SamplePair{Timestamp: 600000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "c"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 400000, Value: 1.5},
+								model.SamplePair{Timestamp: 500000, Value: 1.5},
+								model.SamplePair{Timestamp: 600000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(400, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(400, 0),
+				End:   time.Unix(600, 0),
+			},
+		},
+		// Run 10: Case where after cropping, the front series is empty/removed
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 100000, Value: 1.5},
+								model.SamplePair{Timestamp: 200000, Value: 1.5},
+								model.SamplePair{Timestamp: 300000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 100000, Value: 1.5},
+								model.SamplePair{Timestamp: 200000, Value: 1.5},
+								model.SamplePair{Timestamp: 300000, Value: 1.5},
+								model.SamplePair{Timestamp: 400000, Value: 1.5},
+								model.SamplePair{Timestamp: 500000, Value: 1.5},
+								model.SamplePair{Timestamp: 600000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "c"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 100000, Value: 1.5},
+								model.SamplePair{Timestamp: 200000, Value: 1.5},
+								model.SamplePair{Timestamp: 300000, Value: 1.5},
+								model.SamplePair{Timestamp: 400000, Value: 1.5},
+								model.SamplePair{Timestamp: 500000, Value: 1.5},
+								model.SamplePair{Timestamp: 600000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 400000, Value: 1.5},
+								model.SamplePair{Timestamp: 500000, Value: 1.5},
+								model.SamplePair{Timestamp: 600000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "c"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 400000, Value: 1.5},
+								model.SamplePair{Timestamp: 500000, Value: 1.5},
+								model.SamplePair{Timestamp: 600000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(400, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(400, 0),
+				End:   time.Unix(600, 0),
+			},
+		},
+		// Run 10: Case where after cropping, the back series is empty/removed
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 100000, Value: 1.5},
+								model.SamplePair{Timestamp: 200000, Value: 1.5},
+								model.SamplePair{Timestamp: 300000, Value: 1.5},
+								model.SamplePair{Timestamp: 400000, Value: 1.5},
+								model.SamplePair{Timestamp: 500000, Value: 1.5},
+								model.SamplePair{Timestamp: 600000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 100000, Value: 1.5},
+								model.SamplePair{Timestamp: 200000, Value: 1.5},
+								model.SamplePair{Timestamp: 300000, Value: 1.5},
+								model.SamplePair{Timestamp: 400000, Value: 1.5},
+								model.SamplePair{Timestamp: 500000, Value: 1.5},
+								model.SamplePair{Timestamp: 600000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "c"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 100000, Value: 1.5},
+								model.SamplePair{Timestamp: 200000, Value: 1.5},
+								model.SamplePair{Timestamp: 300000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 400000, Value: 1.5},
+								model.SamplePair{Timestamp: 500000, Value: 1.5},
+								model.SamplePair{Timestamp: 600000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 400000, Value: 1.5},
+								model.SamplePair{Timestamp: 500000, Value: 1.5},
+								model.SamplePair{Timestamp: 600000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(400, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(400, 0),
+				End:   time.Unix(600, 0),
+			},
+		},
 	}
 
 	for i, test := range tests {

@@ -230,6 +230,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		cts.Merge(true, mts...)
 	}
 
+	// cts is the timeseries we will cache, rts is the timeseries we will respond to the user with
 	rts := cts.Copy()
 
 	if cacheStatus != CrKeyMiss {
@@ -264,8 +265,8 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 			defer wg.Done()
 			// Crop the Cache Object down to the Sample Age Retention Policy and the Backfill Tolerance before storing to cache
 			cts.Crop(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
-			// Don't cache empty datasets, ensure there is at least 1 value (e.g., all of your cached time is in the backfill tolerance)
-			if cts.ValueCount() > 0 {
+			// Don't cache datasets with empty extents (everything was cropped so there is nothing to cache)
+			if len(cts.Extents()) > 0 {
 				cdata, err := client.MarshalTimeseries(cts)
 				if err != nil {
 					return
