@@ -31,11 +31,12 @@ Example Path-based Multi-Origin Configuration:
 ```
 [origins]
 
-    # default origin
-    [origins.default]
+    # origin1 origin
+    [origins.origin1]
         origin_url = 'http://prometheus.example.com:9090'
         origin_type = 'prometheus'
         cache_name = 'default'
+        is_default = true
 
     # "foo" origin
     [origins.foo]
@@ -62,9 +63,9 @@ Example Client Request URLs:
 
 * To Request from Origin `bar`: <http://trickster.example.com:9090/bar/query?query=xxx>
 
-* To Request from Origin `default` (Method 1, no Origin Name): <http://trickster.example.com:9090/query?query=xxx>
+* To Request from Origin `origin1` as default: <http://trickster.example.com:9090/query?query=xxx>
 
-* To Request from Origin `default` (Method 2, with Origin Name): <http://trickster.example.com:9090/default/query?query=xxx>
+* To Request from Origin `origin1` (Method 2, with Origin Name): <http://trickster.example.com:9090/origin1/query?query=xxx>
 
 * Configuring Grafana to request from origin `foo` via Trickster:
 
@@ -78,26 +79,24 @@ Example DNS-based Origin Configuration:
 ```
 [origins]
 
-    # default origin
+    # origin1 origin
     [origins.origin1]
         origin_url = 'http://prometheus.example.com:9090'
-        api_path = '/api/v1'
-        ignore_no_cache_header = false
-        max_value_age_secs = 86400
+        origin_type = 'prometheus'
+        cache_name = 'default'
+        is_default = true
 
     # "foo" origin
     [origins.trickster-foo.example.com]
         origin_url = 'http://prometheus-foo.example.com:9090'
-        api_path = '/api/v1'
-        ignore_no_cache_header = false
-        max_value_age_secs = 86400
+        origin_type = 'prometheus'
+        cache_name = 'default'
 
     # "bar" origin
     [origins.trickster-bar.example.com]
         origin_url = 'http://prometheus-bar.example.com:9090'
-        api_path = '/api/v1'
-        ignore_no_cache_header = false
-        max_value_age_secs = 86400
+        origin_type = 'prometheus'
+        cache_name = 'default'
 
 ```
 
@@ -107,4 +106,6 @@ Example Client Request URLs:
 
 * To Request from Origin `bar`: <http://trickster-bar.example.com:9090/query?query=xxx>
 
-* To Request from Origin `default`: <http://trickster.example.com:9090/query?query=xxx>
+* To Request from Origin `origin1` as default: <http://trickster.example.com:9090/query?query=xxx> 
+
+* To Request from Origin `origin1` (Method 2, via FQDN): <http://origin1.example.com:9090/query?query=xxx>
