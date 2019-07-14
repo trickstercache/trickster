@@ -239,11 +239,11 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	cachedValueCount := rts.ValueCount() - uncachedValueCount
 
 	if uncachedValueCount > 0 {
-		metrics.ProxyRequestElements.WithLabelValues(r.OriginName, r.OriginType, "uncached", r.URL.Path).Add(float64(uncachedValueCount))
+		metrics.ProxyRequestElements.WithLabelValues(cfg.Name, cfg.OriginType, "uncached", r.URL.Path).Add(float64(uncachedValueCount))
 	}
 
 	if cachedValueCount > 0 {
-		metrics.ProxyRequestElements.WithLabelValues(r.OriginName, r.OriginType, "cached", r.URL.Path).Add(float64(cachedValueCount))
+		metrics.ProxyRequestElements.WithLabelValues(cfg.Name, cfg.OriginType, "cached", r.URL.Path).Add(float64(cachedValueCount))
 	}
 
 	// Merge Fast Forward data if present. This must be done after the Downstream Crop since
@@ -319,9 +319,9 @@ func fetchTimeseries(r *model.Request, client model.Client) (timeseries.Timeseri
 }
 
 func recordDPCResult(r *model.Request, cacheStatus, httpStatus, path, ffStatus string, elapsed float64, needed []timeseries.Extent, header http.Header) {
-	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.ClientRequest.Method, cacheStatus, httpStatus, path).Inc()
+	metrics.ProxyRequestStatus.WithLabelValues(r.OriginConfig.Name, r.OriginConfig.OriginType, r.ClientRequest.Method, cacheStatus, httpStatus, path).Inc()
 	if elapsed > 0 {
-		metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.ClientRequest.Method, cacheStatus, httpStatus, path).Observe(elapsed)
+		metrics.ProxyRequestDuration.WithLabelValues(r.OriginConfig.Name, r.OriginConfig.OriginType, r.ClientRequest.Method, cacheStatus, httpStatus, path).Observe(elapsed)
 	}
 	headers.SetResultsHeader(header, "DeltaProxyCache", cacheStatus, ffStatus, timeseries.ExtentList(needed))
 }

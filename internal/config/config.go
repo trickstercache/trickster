@@ -130,6 +130,8 @@ type OriginConfig struct {
 	// Synthesized Configurations
 	// These configurations are parsed versions of those defined above, and are what Trickster uses internally
 	//
+	// Name is the Name of the origin, taken from the Key in the Origins map[string]*OriginConfig
+	Name string `toml:"-"`
 	// Timeout is the time.Duration representation of TimeoutSecs
 	Timeout time.Duration `toml:"-"`
 	// BackfillTolerance is the time.Duration representation of BackfillToleranceSecs
@@ -164,6 +166,10 @@ type ProxyPathConfig struct {
 	RequestHeaders map[string]string `toml:"request_headers"`
 	// ResponseHeaders is a map of http headers that will be added to responses to the downstream client
 	ResponseHeaders map[string]string `toml:"response_headers"`
+	// ResponseCode sets a custom response code to be sent to downstream clients for this path.
+	ResponseCode int `toml:"response_code"`
+	// ResponseBody sets a custom response body to be sent to the donstream client for this path.
+	ResponseBody string `toml:"response_body"`
 
 	// Synthesized ProxyPathConfig Values
 	//

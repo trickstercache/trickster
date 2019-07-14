@@ -97,6 +97,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 			}
 		}
 
+		o.Name = k
 		o.Scheme = url.Scheme
 		o.Host = url.Host
 		o.PathPrefix = url.Path

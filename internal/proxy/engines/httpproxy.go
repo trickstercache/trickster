@@ -43,6 +43,7 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 	}
 
 	headers.RemoveClientHeaders(r.Headers)
+	headers.UpdateHeaders(r.Headers, r.PathConfig.RequestHeaders)
 
 	start := time.Now()
 	resp, err := r.HTTPClient.Do(&http.Request{Method: r.ClientRequest.Method, URL: r.URL, Header: r.Headers})
@@ -56,6 +57,7 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 	}
 
 	resp.Header.Del(headers.NameContentLength)
+	headers.UpdateHeaders(resp.Header, r.PathConfig.ResponseHeaders)
 
 	body, err := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
@@ -67,7 +69,7 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
 
 	if config.Logging.LogLevel == "debug" || config.Logging.LogLevel == "trace" {
-		go logUpstreamRequest(r.OriginName, r.OriginType, r.HandlerName, r.ClientRequest.Method, r.URL.String(), r.ClientRequest.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
+		go logUpstreamRequest(r.OriginConfig.Name, r.OriginConfig.OriginType, r.HandlerName, r.ClientRequest.Method, r.URL.String(), r.ClientRequest.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
 	}
 
 	return body, resp, elapsed
@@ -89,9 +91,9 @@ func recordProxyResults(r *model.Request, httpStatus, path string, elapsed time.
 }
 
 func recordResults(r *model.Request, engine, cacheStatus, httpStatus, path, ffStatus string, elapsed time.Duration, extents timeseries.ExtentList, header http.Header) {
-	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.ClientRequest.Method, cacheStatus, httpStatus, path).Inc()
+	metrics.ProxyRequestStatus.WithLabelValues(r.OriginConfig.Name, r.OriginConfig.OriginType, r.ClientRequest.Method, cacheStatus, httpStatus, path).Inc()
 	if elapsed > 0 {
-		metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.ClientRequest.Method, cacheStatus, httpStatus, path).Observe(elapsed.Seconds())
+		metrics.ProxyRequestDuration.WithLabelValues(r.OriginConfig.Name, r.OriginConfig.OriginType, r.ClientRequest.Method, cacheStatus, httpStatus, path).Observe(elapsed.Seconds())
 	}
 	headers.SetResultsHeader(header, engine, cacheStatus, ffStatus, extents)
 }

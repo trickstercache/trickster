@@ -14,18 +14,21 @@
 package model
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
 // Request contains information about an inbound HTTP request
 type Request struct {
-	OriginName         string
-	OriginType         string
+	OriginConfig       *config.OriginConfig
+	PathConfig         *config.ProxyPathConfig
 	HandlerName        string
 	URL                *url.URL
 	TemplateURL        *url.URL
@@ -38,10 +41,10 @@ type Request struct {
 }
 
 // NewRequest returns a new proxy request object that can service the downstream request
-func NewRequest(originName, originType, handlerName string, url *url.URL, headers http.Header, timeout time.Duration, clientRequest *http.Request, client *http.Client) *Request {
-	return &Request{
-		OriginName:    originName,
-		OriginType:    originType,
+func NewRequest(originConfig *config.OriginConfig, handlerName string, url *url.URL, headers http.Header, timeout time.Duration, clientRequest *http.Request, client *http.Client) *Request {
+
+	r := &Request{
+		OriginConfig:  originConfig,
 		HandlerName:   handlerName,
 		URL:           url,
 		TemplateURL:   CopyURL(url),
@@ -50,13 +53,27 @@ func NewRequest(originName, originType, handlerName string, url *url.URL, header
 		Timeout:       timeout,
 		HTTPClient:    client,
 	}
+
+	// Determine PathConfig
+	var path string
+	for p := range originConfig.PathsLookup {
+		if strings.HasPrefix(url.Path, p) && len(p) > len(path) {
+			path = p
+		}
+	}
+
+	if path != "" {
+		fmt.Println("Found path config")
+		r.PathConfig = originConfig.PathsLookup[path]
+	}
+
+	return r
 }
 
 // Copy returns a true copy of the request
 func (r *Request) Copy() *Request {
 	return &Request{
-		OriginName:    r.OriginName,
-		OriginType:    r.OriginType,
+		OriginConfig:  r.OriginConfig,
 		HandlerName:   r.HandlerName,
 		URL:           CopyURL(r.URL),
 		TemplateURL:   CopyURL(r.TemplateURL),

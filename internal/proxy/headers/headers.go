@@ -62,6 +62,29 @@ func CopyHeaders(h http.Header) http.Header {
 	return headers
 }
 
+// UpdateHeaders updates the provided headers collection with the provided updates
+func UpdateHeaders(headers http.Header, updates map[string]string) {
+	if updates == nil || len(updates) == 0 {
+		return
+	}
+	for k, v := range updates {
+		if len(k) == 0 {
+			continue
+		}
+		if k[0:1] == "-" {
+			k = k[1:]
+			headers.Del(k)
+			continue
+		}
+		if k[0:1] == "+" {
+			k = k[1:]
+			headers.Add(k, v)
+			continue
+		}
+		headers.Set(k, v)
+	}
+}
+
 func AddProxyHeaders(remoteAddr string, headers http.Header) {
 	if remoteAddr != "" {
 		headers.Add(NameXForwardedFor, remoteAddr)
