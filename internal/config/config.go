@@ -760,3 +760,22 @@ func (c *TricksterConfig) String() string {
 	}
 	return buf.String()
 }
+
+// LookupPathConfig will return a ProxyPathConfig based on the provided path and lookup dictionary
+func LookupPathConfig(dict map[string]*ProxyPathConfig, path string) *ProxyPathConfig {
+
+	// Determine PathConfig
+	var configuredPath string
+	for p := range dict {
+		if strings.HasPrefix(path, p) && len(p) > len(path) {
+			configuredPath = p
+		}
+	}
+
+	if configuredPath != "" {
+		fmt.Println("Found path config")
+		return dict[configuredPath]
+	}
+
+	return nil
+}
