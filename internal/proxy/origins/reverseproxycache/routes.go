@@ -14,6 +14,7 @@
 package reverseproxycache
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -72,20 +73,28 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 	for _, v := range orderedPaths {
 		p := o.PathsLookup[v]
 		if p.Handler != nil && len(p.Methods) > 0 {
+			fmt.Println("REGISTERING ROUTE", v, p.Path, p.Methods)
 			// Host Header Routing
 			routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...).Host(originName)
 			// Path Routing
 			routing.Router.HandleFunc("/"+originName+p.Path, p.Handler).Methods(p.Methods...)
 		}
+		// Host Header Routing
+		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyCacheHandler).Methods(http.MethodGet, http.MethodPost).Host(originName)
+		// Path Routing
+		routing.Router.PathPrefix("/"+originName+"/").HandlerFunc(c.ProxyCacheHandler).Methods(http.MethodGet, http.MethodPost).Host(originName)
+
 	}
 
 	if o.IsDefault {
 		for _, v := range orderedPaths {
 			p := o.PathsLookup[v]
 			if p.Handler != nil && len(p.Methods) > 0 {
+				fmt.Println("OH HRM", p.Path, p.HandlerName, p.Methods)
 				routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...)
 			}
 		}
+		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyCacheHandler).Methods(http.MethodGet, http.MethodPost)
 	}
 
 }

@@ -38,12 +38,14 @@ func ProxyRequest(r *model.Request, w http.ResponseWriter) {
 // Fetch makes an HTTP request to the provided Origin URL
 func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 
-	if r != nil {
+	if r != nil && r.Headers != nil {
 		headers.AddProxyHeaders(r.ClientRequest.RemoteAddr, r.Headers)
 	}
 
 	headers.RemoveClientHeaders(r.Headers)
-	headers.UpdateHeaders(r.Headers, r.PathConfig.RequestHeaders)
+	if r.PathConfig != nil {
+		headers.UpdateHeaders(r.Headers, r.PathConfig.RequestHeaders)
+	}
 
 	start := time.Now()
 	resp, err := r.HTTPClient.Do(&http.Request{Method: r.ClientRequest.Method, URL: r.URL, Header: r.Headers})
@@ -57,11 +59,13 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 	}
 
 	resp.Header.Del(headers.NameContentLength)
-	headers.UpdateHeaders(resp.Header, r.PathConfig.ResponseHeaders)
+	if r.PathConfig != nil {
+		headers.UpdateHeaders(resp.Header, r.PathConfig.ResponseHeaders)
+	}
 
 	var body []byte
 
-	if r.PathConfig.HasCustomResponseBody {
+	if r.PathConfig != nil && r.PathConfig.HasCustomResponseBody {
 		body = r.PathConfig.ResponseBodyBytes
 	} else {
 		body, err = ioutil.ReadAll(resp.Body)
