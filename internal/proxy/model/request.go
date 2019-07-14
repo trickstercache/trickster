@@ -14,10 +14,8 @@
 package model
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
@@ -54,19 +52,7 @@ func NewRequest(originConfig *config.OriginConfig, handlerName string, url *url.
 		HTTPClient:    client,
 	}
 
-	// Determine PathConfig
-	var path string
-	for p := range originConfig.PathsLookup {
-		if strings.HasPrefix(url.Path, p) && len(p) > len(path) {
-			path = p
-		}
-	}
-
-	if path != "" {
-		fmt.Println("Found path config")
-		r.PathConfig = originConfig.PathsLookup[path]
-	}
-
+	r.PathConfig = config.LookupPathConfig(originConfig.PathsLookup, url.Path)
 	return r
 }
 
