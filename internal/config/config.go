@@ -110,7 +110,7 @@ type OriginConfig struct {
 	IgnoreCachingHeaders bool `toml:"ignore_caching_headers"`
 	// HealthCheckEndpoint provides the route path Trickster will register for mapping the Health Endpoint
 	HealthCheckEndpoint string `toml:"health_check_endpoint"`
-	// HealthCheckUpstreamPath provides the path + query parameters for the upstream health check
+	// HealthCheckUpstreamPath provides the URL path for the upstream health check
 	HealthCheckUpstreamPath string `toml:"health_check_upstream_path"`
 	// HealthCheckVerb provides the HTTP verb to use when making an upstream health check
 	HealthCheckVerb string `toml:"health_check_verb"`
@@ -160,6 +160,10 @@ type ProxyPathConfig struct {
 	CacheKeyHeaders []string `toml:"cache_key_headers"`
 	// DefaultTTLSecs indicates the TTL Cache for this path. If
 	DefaultTTLSecs int `toml:"default_ttl_secs"`
+	// RequestHeaders is a map of headers that will be added to requests to the upstream Origin for this path
+	RequestHeaders map[string]string `toml:"request_headers"`
+	// ResponseHeaders is a map of http headers that will be added to responses to the downstream client
+	ResponseHeaders map[string]string `toml:"response_headers"`
 
 	// Synthesized ProxyPathConfig Values
 	//
