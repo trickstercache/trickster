@@ -97,6 +97,12 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 			}
 		}
 
+		for c, s := range o.NegativeCacheSecs {
+			if c > 200 && c < 600 {
+				o.NegativeCache[c] = time.Duration(s) * time.Second
+			}
+		}
+
 		o.Name = k
 		o.Scheme = url.Scheme
 		o.Host = url.Host

@@ -59,11 +59,17 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 	resp.Header.Del(headers.NameContentLength)
 	headers.UpdateHeaders(resp.Header, r.PathConfig.ResponseHeaders)
 
-	body, err := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		log.Error("error reading body from http response", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
-		return []byte{}, resp, 0
+	var body []byte
+
+	if r.PathConfig.HasCustomResponseBody {
+		body = r.PathConfig.ResponseBodyBytes
+	} else {
+		body, err = ioutil.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			log.Error("error reading body from http response", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
+			return []byte{}, resp, 0
+		}
 	}
 
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization

@@ -136,9 +136,14 @@ func DeriveCacheKey(c model.Client, cfg *config.OriginConfig, r *model.Request, 
 
 // GetResponseCachingPolicy examines HTTP response headers for caching headers
 // a returns a CachingPolicy reference
-func GetResponseCachingPolicy(code int, h http.Header) *model.CachingPolicy {
+func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h http.Header) *model.CachingPolicy {
 
 	cp := &model.CachingPolicy{LocalDate: time.Now()}
+
+	if d, ok := negativeCache[code]; ok {
+		cp.Expires = cp.LocalDate.Add(d)
+		return cp
+	}
 
 	// make a lowercase copy of the headers
 	// to allow for quick map lookups on both http/1.x and http/2

@@ -126,6 +126,8 @@ type OriginConfig struct {
 	BackfillToleranceSecs int64 `toml:"backfill_tolerance_secs"`
 	// Paths is a list of ProxyPathConfigs that control the behavior of the given paths when requested
 	Paths map[string]*ProxyPathConfig `toml:"paths"`
+	// NegativeCache is a map of HTTP Status Codes that are cached for the provided duration, usually used for failures (e.g., 404's for 10s)
+	NegativeCacheSecs map[int]int `toml:"negative_cache"`
 
 	// Synthesized Configurations
 	// These configurations are parsed versions of those defined above, and are what Trickster uses internally
@@ -146,6 +148,8 @@ type OriginConfig struct {
 	PathPrefix string `toml:"-"`
 	// PathsLookup provides a map for looking up specific Paths by configured /path
 	PathsLookup map[string]*ProxyPathConfig `toml:"-"`
+	// NegativeCache provides a map for the negative cache, with TTLs converted to time.Durations
+	NegativeCache map[int]time.Duration `toml:"-"`
 }
 
 // ProxyPathConfig ...
@@ -179,6 +183,11 @@ type ProxyPathConfig struct {
 	Handler func(w http.ResponseWriter, r *http.Request) `toml:"-"`
 	// Order is this Path's order index in the list of configured Paths
 	Order int `toml:"-"`
+	// HasCustomResponseBody is a boolean indicating if the response body is custom
+	// this flag allows an empty string response to be configured as a return value
+	HasCustomResponseBody bool `toml:"-"`
+	// ResponseBodyBytes provides a byte slice version of the ResponseBody value
+	ResponseBodyBytes []byte `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -373,6 +382,8 @@ func NewOriginConfig() *OriginConfig {
 		BackfillTolerance:       defaultBackfillToleranceSecs,
 		Paths:                   make(map[string]*ProxyPathConfig),
 		PathsLookup:             make(map[string]*ProxyPathConfig),
+		NegativeCacheSecs:       make(map[int]int),
+		NegativeCache:           make(map[int]time.Duration),
 	}
 }
 
@@ -443,6 +454,31 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "backfill_tolerance_secs") {
 			oc.BackfillToleranceSecs = v.BackfillToleranceSecs
+		}
+
+		if metadata.IsDefined("origins", k, "paths") {
+			oc.Paths = v.Paths
+
+			j := 0
+			for l, p := range oc.Paths {
+
+				// Set Default TTL?
+				// Set Handler?
+
+				// Set Order
+				p.Order = j
+
+				// Set HasCustomResponseBody and if true, the Byte Slice version of ResponseBody
+				p.HasCustomResponseBody = metadata.IsDefined("origins", k, "paths", l, "response_body")
+				if p.HasCustomResponseBody {
+					p.ResponseBodyBytes = []byte(p.ResponseBody)
+				}
+				j++
+			}
+		}
+
+		if metadata.IsDefined("origins", k, "negative_cache") {
+			oc.NegativeCacheSecs = v.NegativeCacheSecs
 		}
 
 		if metadata.IsDefined("origins", k, "health_check_endpoint") {

@@ -26,10 +26,6 @@ import (
 	"github.com/Comcast/trickster/pkg/locks"
 )
 
-var cacheableResponse = map[int]bool{
-	http.StatusOK: true,
-}
-
 // ObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache
 func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, cache cache.Cache, ttl time.Duration, noLock bool) {
 	body, resp, _ := FetchViaObjectProxyCache(r, client, cache, ttl, noLock)
@@ -100,18 +96,19 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache
 		cacheStatus = CrHit
 	} else {
 
-		// TODO: Inject any configured response headers here
-
 		body, resp, elapsed = Fetch(r)
+
+		cp := GetResponseCachingPolicy(resp.StatusCode, r.OriginConfig.NegativeCache, resp.Header)
+
 		// Cache is revalidated, update headers and resulting caching policy
 		if revalidatingCache && resp.StatusCode == http.StatusNotModified {
 			for k, v := range resp.Header {
 				d.Headers[k] = v
 			}
-			d.CachingPolicy = GetResponseCachingPolicy(resp.StatusCode, resp.Header)
+			d.CachingPolicy = cp
 			// TODO: update any cache metadata like TTL
 		} else {
-			d = model.DocumentFromHTTPResponse(resp, body, GetResponseCachingPolicy(resp.StatusCode, resp.Header))
+			d = model.DocumentFromHTTPResponse(resp, body, cp)
 		}
 	}
 
@@ -159,8 +156,6 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache
 			Status:     d.Status,
 		}
 	}
-
-	// TODO: Inject any configured response headers here
 
 	if clientConditional && cpReq.IsFresh {
 		resp.StatusCode = http.StatusNotModified
