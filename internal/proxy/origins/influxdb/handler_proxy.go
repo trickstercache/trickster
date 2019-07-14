@@ -22,5 +22,5 @@ import (
 
 // ProxyHandler sends a request through the basic reverse proxy to the origin, and services non-cacheable InfluxDB API calls
 func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	engines.ProxyRequest(model.NewRequest(c.name, OtInfluxDb, "ProxyHandler", c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r, c.webClient), w)
+	engines.ProxyRequest(model.NewRequest(c.Configuration(), "ProxyHandler", c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r, c.webClient), w)
 }

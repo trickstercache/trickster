@@ -22,10 +22,6 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 )
 
-const (
-	OtInfluxDb = "influxdb"
-)
-
 // Client Implements the Proxy Client Interface
 type Client struct {
 	name      string
