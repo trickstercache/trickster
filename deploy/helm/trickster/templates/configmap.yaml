@@ -57,7 +57,7 @@ data:
             # default is 'trickster'
             bucket = {{ .Values.config.cache.boltdb.bucket | quote }}
             {{- end }}
-
+		{{- if not .Values.rawOrigins }}
     # Configuration options for mapping Origin(s)
     [origins]
 
@@ -92,6 +92,9 @@ data:
             #default_step = 300
             #ignore_no_cache_header = false
             #max_value_age_secs = 86400
+      {{- else }}
+      {{ .Values.rawOrigins | nindent 2 }}
+      {{- end }}
 
     # Configuration Options for Metrics Instrumentation
     [metrics]
@@ -109,3 +112,4 @@ data:
         # log_file defines the file location to store logs. These will be auto-rolled and maintained for you.
         # not specifying a log_file (this is the default behavior) will print logs to STDOUT
         #log_file = '/some/path/to/trickster.log'
+
