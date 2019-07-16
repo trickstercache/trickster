@@ -37,32 +37,12 @@ config:
   fastForwardDisable: false
   logLevel: info
 
-## rawConfig - Provide a trickster config via values.yaml to pass
-## through to the pod.
-rawOrigins: |
-      [origins]
-        # default origin
-        [origins.default]
-            origin_url = 'http://preview-prometheus-server.management-api-preview.svc.cluster.local'
-            api_path = '/api/v1'
-            default_step = 300
-            ignore_no_cache_header = false
-            max_value_age_secs = 86400
-        # "preview" origin
-        [origins.preview]
-            origin_url = 'http://preview-prometheus-server.management-api-preview.svc.cluster.local'
-            api_path = '/api/v1'
-            default_step = 300
-            ignore_no_cache_header = false
-            max_value_age_secs = 86400
-        # "dev" origin
-        [origins.dev]
-            origin_url = 'http://dev-prometheus-server.management-api-dev.svc.cluster.local'
-            api_path = '/api/v1'
-            default_step = 300
-            ignore_no_cache_header = false
-            max_value_age_secs = 86400
-
+## rawConfig - Provide a trickster origins config segment via values.yaml to pass
+## through to the pod. see the code example here:
+## https://github.com/Comcast/trickster/blob/master/docs/multi-origin.md#path-and-url-param-configurations
+## Note, the entire origins block must be provided, in perpetuity, when using
+## this configuration option.
+rawOrigins: ""
 
 ## trickster priorityClassName
 ##

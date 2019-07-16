@@ -46,6 +46,7 @@ Parameter | Description | Default
 `persistentVolume.size` | trickster data Persistent Volume size | `15Gi`
 `persistentVolume.storageClass` | trickster data Persistent Volume Storage Class | `unset`
 `podAnnotations` | annotations to be added to trickster pods | `{}`
+`rawOrigins` | manual origin TOML segment to provide the trickster configmap | `""`
 `replicaCount` | desired number of trickster pods | `1`
 `statefulSet.enabled` | If true, use a statefulset instead of a deployment for pod management | `false`
 `priorityClassName` | trickster priorityClassName | `nil`

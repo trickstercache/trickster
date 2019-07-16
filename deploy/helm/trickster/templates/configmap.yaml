@@ -57,7 +57,7 @@ data:
             # default is 'trickster'
             bucket = {{ .Values.config.cache.boltdb.bucket | quote }}
             {{- end }}
-		{{- if not .Values.rawOrigins }}
+    {{- if not .Values.rawOrigins }}
     # Configuration options for mapping Origin(s)
     [origins]
 
