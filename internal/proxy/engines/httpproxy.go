@@ -28,15 +28,6 @@ import (
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
-const (
-	// Cache lookup results
-	crKeyMiss    = "kmiss"
-	crRangeMiss  = "rmiss"
-	crHit        = "hit"
-	crPartialHit = "phit"
-	crPurge      = "purge"
-)
-
 // ProxyRequest proxies an inbound request to its corresponding upstream origin with no caching features
 func ProxyRequest(r *model.Request, w http.ResponseWriter) {
 	body, resp, elapsed := Fetch(r)

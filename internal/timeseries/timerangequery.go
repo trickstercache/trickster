@@ -46,7 +46,7 @@ func (trq *TimeRangeQuery) CalculateDeltas(have ExtentList) ExtentList {
 		return ExtentList{trq.Extent}
 	}
 	misses := make([]time.Time, 0, trq.Extent.End.Sub(trq.Extent.Start)/trq.Step)
-	for i := trq.Extent.Start; trq.Extent.End.After(i) || trq.Extent.End == i; i = i.Add(trq.Step) {
+	for i := trq.Extent.Start; !trq.Extent.End.Before(i); i = i.Add(trq.Step) {
 		found := false
 		for j := range have {
 			if j == 0 && i.Before(have[j].Start) {
