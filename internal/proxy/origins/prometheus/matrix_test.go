@@ -844,7 +844,7 @@ func TestCropToSize(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "a"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 1444004600000, Value: 1.5},
+								{Timestamp: 1444004600000, Value: 1.5},
 							},
 						},
 					},
@@ -861,7 +861,7 @@ func TestCropToSize(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "a"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 1444004600000, Value: 1.5},
+								{Timestamp: 1444004600000, Value: 1.5},
 							},
 						},
 					},
@@ -891,8 +891,8 @@ func TestCropToSize(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "a"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 1444004600000, Value: 1.5},
-								model.SamplePair{Timestamp: 1444004610000, Value: 1.5},
+								{Timestamp: 1444004600000, Value: 1.5},
+								{Timestamp: 1444004610000, Value: 1.5},
 							},
 						},
 					},
@@ -909,7 +909,7 @@ func TestCropToSize(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "a"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 1444004610000, Value: 1.5},
+								{Timestamp: 1444004610000, Value: 1.5},
 							},
 						},
 					},
@@ -1193,9 +1193,9 @@ func TestTimestampCount(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "d"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 99000, Value: 1.5},
-								model.SamplePair{Timestamp: 199000, Value: 1.5},
-								model.SamplePair{Timestamp: 299000, Value: 1.5},
+								{Timestamp: 99000, Value: 1.5},
+								{Timestamp: 199000, Value: 1.5},
+								{Timestamp: 299000, Value: 1.5},
 							},
 						},
 					},
@@ -1212,8 +1212,8 @@ func TestTimestampCount(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "d"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 99000, Value: 1.5},
-								model.SamplePair{Timestamp: 199000, Value: 1.5},
+								{Timestamp: 99000, Value: 1.5},
+								{Timestamp: 199000, Value: 1.5},
 							},
 						},
 					},
@@ -1230,15 +1230,15 @@ func TestTimestampCount(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "d"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 99000, Value: 1.5},
-								model.SamplePair{Timestamp: 199000, Value: 1.5},
+								{Timestamp: 99000, Value: 1.5},
+								{Timestamp: 199000, Value: 1.5},
 							},
 						},
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "e"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 99000, Value: 1.5},
-								model.SamplePair{Timestamp: 299000, Value: 1.5},
+								{Timestamp: 99000, Value: 1.5},
+								{Timestamp: 299000, Value: 1.5},
 							},
 						},
 					},

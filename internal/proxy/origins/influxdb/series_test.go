@@ -326,14 +326,14 @@ func TestCropToSize(t *testing.T) {
 		{
 			before: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(1444004600000), 1.5},
+									{float64(1444004600000), 1.5},
 								},
 							},
 						},
@@ -346,14 +346,14 @@ func TestCropToSize(t *testing.T) {
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(1444004600000), 1.5},
+									{float64(1444004600000), 1.5},
 								},
 							},
 						},
@@ -380,15 +380,15 @@ func TestCropToSize(t *testing.T) {
 
 			before: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(1444004600000), 1.5},
-									[]interface{}{float64(1444004610000), 1.5},
+									{float64(1444004600000), 1.5},
+									{float64(1444004610000), 1.5},
 								},
 							},
 						},
@@ -401,14 +401,14 @@ func TestCropToSize(t *testing.T) {
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(1444004610000), 1.5},
+									{float64(1444004610000), 1.5},
 								},
 							},
 						},
