@@ -53,7 +53,9 @@ const (
 	defaultOriginPathPrefix      = ""
 	defaultOriginAPIPath         = "/api/v1/"
 	defaultOriginINCH            = true
-	defaultOriginVRF             = 1024
+	defaultOriginTRF             = 1024
+	defaultOriginTEM             = EvictionMethodOldest
+	defaultOriginTEMName         = "oldest"
 	defaultOriginTimeoutSecs     = 180
 	defaultOriginCacheName       = "default"
 	defaultBackfillToleranceSecs = 0

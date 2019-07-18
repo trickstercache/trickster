@@ -19,80 +19,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Comcast/trickster/pkg/sort/times"
+
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/prometheus/common/model"
-)
-
-const (
-	nonexistantOrigin          = "http://nonexistent-origin:54321"
-	exampleQuery               = "/api/v1/query?query=up&time=2015-07-01T20:11:15.781Z"
-	exampleRangeQuery          = "/api/v1/query_range?query=up&start=2015-07-01T20:10:30.781Z&end=2015-07-01T20:11:00.781Z&step=15"
-	exampleRangeQueryStatement = "up"
-	exampleRangeQueryStart     = "2015-07-01T20:10:30.781Z"
-	exampleRangeQueryEnd       = "2015-07-01T20:11:00.781Z"
-	exampleRangeQueryStep      = "15"
-
-	// this example should have 2 data points later than those in exampleRangeResponse
-	exampleResponse = `{
-   "status" : "success",
-   "data" : {
-      "resultType" : "vector",
-      "result" : [
-         {
-            "metric" : {
-               "__name__" : "up",
-               "job" : "prometheus",
-               "instance" : "localhost:9090"
-            },
-            "value": [ 1435781475.781, "1" ]
-         },
-         {
-            "metric" : {
-               "__name__" : "up",
-               "job" : "node",
-               "instance" : "localhost:9091"
-            },
-            "value" : [ 1435781475.781, "0" ]
-         }
-      ]
-   }
-}`
-
-	// this example should have 6 data points
-	// NOTE: Times in this response should end with '.781' not '.000'. Had
-	//       to truncate due to how extents are measured in TricksterHandler.
-	exampleRangeResponse = `{
-   "status" : "success",
-   "data" : {
-      "resultType" : "matrix",
-      "result" : [
-         {
-            "metric" : {
-               "__name__" : "up",
-               "job" : "prometheus",
-               "instance" : "localhost:9090"
-            },
-            "values" : [
-               [ 1435781430.000, "1" ],
-               [ 1435781445.000, "1" ],
-               [ 1435781460.000, "1" ]
-            ]
-         },
-         {
-            "metric" : {
-               "__name__" : "up",
-               "job" : "node",
-               "instance" : "localhost:9091"
-            },
-            "values" : [
-               [ 1435781430.000, "0" ],
-               [ 1435781445.000, "0" ],
-               [ 1435781460.000, "1" ]
-            ]
-         }
-      ]
-   }
-}`
 )
 
 func TestSetStep(t *testing.T) {
@@ -133,9 +63,9 @@ func TestMerge(t *testing.T) {
 					},
 				},
 				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(10000, 0)},
+					timeseries.Extent{Start: time.Unix(10, 0), End: time.Unix(10, 0)},
 				},
-				StepDuration: time.Duration(5000) * time.Second,
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			b: &MatrixEnvelope{
 				Status: rvSuccess,
@@ -152,13 +82,17 @@ func TestMerge(t *testing.T) {
 					},
 				},
 				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(5000, 0), End: time.Unix(5000, 0)},
-					timeseries.Extent{Start: time.Unix(15000, 0), End: time.Unix(15000, 0)},
+					timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(5, 0)},
+					timeseries.Extent{Start: time.Unix(15, 0), End: time.Unix(15, 0)},
 				},
-				StepDuration: time.Duration(5000) * time.Second,
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			merged: &MatrixEnvelope{
-				Status: rvSuccess,
+				isCounted:  true,
+				isSorted:   true,
+				tslist:     times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
+				timestamps: map[time.Time]bool{time.Unix(5, 0): true, time.Unix(10, 0): true, time.Unix(15, 0): true},
+				Status:     rvSuccess,
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
@@ -173,9 +107,9 @@ func TestMerge(t *testing.T) {
 					},
 				},
 				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(5000, 0), End: time.Unix(15000, 0)},
+					timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(15, 0)},
 				},
-				StepDuration: time.Duration(5000) * time.Second,
+				StepDuration: time.Duration(5) * time.Second,
 			},
 		},
 		// Run 1: Empty second series
@@ -213,7 +147,11 @@ func TestMerge(t *testing.T) {
 				StepDuration: time.Duration(5000) * time.Second,
 			},
 			merged: &MatrixEnvelope{
-				Status: rvSuccess,
+				isCounted:  true,
+				isSorted:   true,
+				tslist:     times.Times{time.Unix(10000, 0)},
+				timestamps: map[time.Time]bool{time.Unix(10000, 0): true},
+				Status:     rvSuccess,
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
@@ -270,7 +208,11 @@ func TestMerge(t *testing.T) {
 				StepDuration: time.Duration(5000) * time.Second,
 			},
 			merged: &MatrixEnvelope{
-				Status: rvSuccess,
+				isCounted:  true,
+				isSorted:   true,
+				tslist:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0)},
+				timestamps: map[time.Time]bool{time.Unix(10000, 0): true, time.Unix(15000, 0): true},
+				Status:     rvSuccess,
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
@@ -304,7 +246,8 @@ func TestMerge(t *testing.T) {
 		})
 	}
 }
-func TestCrop(t *testing.T) {
+
+func TestCropToRange(t *testing.T) {
 	tests := []struct {
 		before, after *MatrixEnvelope
 		extent        timeseries.Extent
@@ -877,9 +820,128 @@ func TestCrop(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			test.before.Crop(test.extent)
+			test.before.CropToRange(test.extent)
 			if !reflect.DeepEqual(test.before, test.after) {
 				t.Errorf("mismatch\nexpected=%v\ngot=%v", test.after, test.before)
+			}
+		})
+	}
+}
+
+func TestCropToSize(t *testing.T) {
+	tests := []struct {
+		before, after *MatrixEnvelope
+		size          int
+		bft           time.Time
+		extent        timeseries.Extent
+	}{
+		// case 0: where we already have the number of timestamps we are cropping to
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 1444004600000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004600, 0)},
+				},
+				StepDuration: time.Duration(10) * time.Second,
+			},
+			after: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 1444004600000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004600, 0)},
+				},
+				StepDuration: time.Duration(10) * time.Second,
+				timestamps:   map[time.Time]bool{time.Unix(1444004600, 0): true},
+				tslist:       times.Times{time.Unix(1444004600, 0)},
+				isCounted:    true,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(0, 0),
+				End:   time.Unix(1444004600, 0),
+			},
+			size: 1,
+			bft:  time.Now(),
+		},
+
+		// case 1
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 1444004600000, Value: 1.5},
+								model.SamplePair{Timestamp: 1444004610000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004610, 0)},
+				},
+				StepDuration: time.Duration(10) * time.Second,
+			},
+			after: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 1444004610000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004610, 0), End: time.Unix(1444004610, 0)},
+				},
+				StepDuration: time.Duration(10) * time.Second,
+				timestamps:   map[time.Time]bool{time.Unix(1444004610, 0): true},
+				tslist:       times.Times{time.Unix(1444004610, 0)},
+				isCounted:    true,
+				isSorted:     true,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(0, 0),
+				End:   time.Unix(1444004610, 0),
+			},
+			size: 1,
+			bft:  time.Now(),
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			test.before.CropToSize(test.size, test.bft, test.extent)
+
+			for i := range test.before.ExtentList {
+				test.before.ExtentList[i].LastUsed = time.Time{}
+			}
+
+			if !reflect.DeepEqual(test.before, test.after) {
+				t.Errorf("mismatch\nexpected=%v\n     got=%v", test.after, test.before)
 			}
 		})
 	}
@@ -893,6 +955,8 @@ func TestCopy(t *testing.T) {
 		// Run 0
 		{
 			before: &MatrixEnvelope{
+				tslist:     times.Times{time.Unix(1644001200, 0)},
+				timestamps: map[time.Time]bool{time.Unix(1644001200, 0): true},
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
@@ -914,6 +978,8 @@ func TestCopy(t *testing.T) {
 		// Run 1
 		{
 			before: &MatrixEnvelope{
+				tslist:     times.Times{time.Unix(1644001200, 0), time.Unix(1644004800, 0)},
+				timestamps: map[time.Time]bool{time.Unix(1644001200, 0): true, time.Unix(1644004800, 0): true},
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
@@ -995,6 +1061,11 @@ func TestSort(t *testing.T) {
 				},
 			},
 			after: &MatrixEnvelope{
+				isSorted:  true,
+				isCounted: true,
+				tslist:    []time.Time{time.Unix(1544004000, 0), time.Unix(1544004200, 0), time.Unix(1544004600, 0), time.Unix(1544004800, 0)},
+				timestamps: map[time.Time]bool{time.Unix(1544004000, 0): true, time.Unix(1544004200, 0): true,
+					time.Unix(1544004600, 0): true, time.Unix(1544004800, 0): true},
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
@@ -1033,6 +1104,12 @@ func TestSort(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			test.before.isSorted = false
+			test.before.Sort()
+			if !reflect.DeepEqual(test.before, test.after) {
+				t.Errorf("mismatch\nexpected=%v\nactual=%v", test.after, test.before)
+			}
+			// test isSorted short circuit
 			test.before.Sort()
 			if !reflect.DeepEqual(test.before, test.after) {
 				t.Errorf("mismatch\nexpected=%v\nactual=%v", test.after, test.before)
@@ -1099,5 +1176,84 @@ func TestValueCount(t *testing.T) {
 	}
 	if me.ValueCount() != 3 {
 		t.Errorf("expected 3 got %d.", me.ValueCount())
+	}
+}
+
+func TestTimestampCount(t *testing.T) {
+
+	tests := []struct {
+		ts       *MatrixEnvelope
+		expected int
+	}{
+		{
+			ts: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "d"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 99000, Value: 1.5},
+								model.SamplePair{Timestamp: 199000, Value: 1.5},
+								model.SamplePair{Timestamp: 299000, Value: 1.5},
+							},
+						},
+					},
+				},
+			},
+			expected: 3,
+		},
+
+		{
+			ts: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "d"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 99000, Value: 1.5},
+								model.SamplePair{Timestamp: 199000, Value: 1.5},
+							},
+						},
+					},
+				},
+			},
+			expected: 2,
+		},
+
+		{
+			ts: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "d"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 99000, Value: 1.5},
+								model.SamplePair{Timestamp: 199000, Value: 1.5},
+							},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "e"},
+							Values: []model.SamplePair{
+								model.SamplePair{Timestamp: 99000, Value: 1.5},
+								model.SamplePair{Timestamp: 299000, Value: 1.5},
+							},
+						},
+					},
+				},
+			},
+			expected: 3,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			tc := test.ts.TimestampCount()
+			if tc != test.expected {
+				t.Errorf("expected %d got %d.", test.expected, tc)
+			}
+		})
 	}
 }

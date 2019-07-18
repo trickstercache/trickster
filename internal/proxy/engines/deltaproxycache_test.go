@@ -244,7 +244,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 
 	// get cache hit coverage too by repeating:
 
-	cfg.ValueRetention = 10
+	cfg.TimeseriesRetention = 10
 
 	extr = timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: now}
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
@@ -666,7 +666,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	extr.End = extr.Start.Add(time.Duration(1) * time.Hour)
 	extn.End = extr.End.Truncate(step)
 
-	expectedFetched := fmt.Sprintf("[%d:%d", extn.Start.Unix(), extn.End.Unix())
+	expectedFetched := fmt.Sprintf("[%d:%d]", extn.Start.Unix(), extn.End.Unix())
 	expected, _, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 

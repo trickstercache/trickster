@@ -21,6 +21,8 @@ type Timeseries interface {
 	SetExtents(ExtentList)
 	// Extents should return the list of time Extents having data present in the Timeseries
 	Extents() ExtentList
+	// TimeStampCount should return the number of unique timestamps across the timeseries
+	TimestampCount() int
 	// Step should return the Step Interval of the Timeseries
 	Step() time.Duration
 	// SetStep should update the Step Interval of the Timeseries
@@ -31,8 +33,12 @@ type Timeseries interface {
 	Sort()
 	// Copy should returns an exact duplicate source the Timeseries
 	Copy() Timeseries
-	// Crop should return a cropped copy of the Timeseries, leaving the original unchanged
-	Crop(Extent)
+	// CropToRange should reduce time range of the Timeseries to the provided Extent
+	CropToRange(Extent)
+	// CropToSize should reduce time range of the Timeseries to the provided element size using
+	// a least-recently-used methodology, while limiting the upper extent to the provided time,
+	// in order to support backfill tolerance
+	CropToSize(int, time.Time, Extent)
 	// SeriesCount returns the number of individual Series in the Timeseries object
 	SeriesCount() int
 	// ValueCount returns the count of all values across all Series in the Timeseries object
