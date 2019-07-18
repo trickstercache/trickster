@@ -222,7 +222,7 @@ func (se *SeriesEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 	rc := tc - sz // # of required timestamps we must delete to meet the rentention policy
 	removals := make(map[time.Time]bool)
 	done := false
-	ok := false
+	var ok bool
 
 	for _, x := range el {
 		for ts := x.Start; !x.End.Before(ts) && !done; ts = ts.Add(se.StepDuration) {

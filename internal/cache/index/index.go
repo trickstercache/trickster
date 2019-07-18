@@ -35,33 +35,26 @@ var indexLock = sync.Mutex{}
 // like memory or bbolt. It is not used for independently managed caches like Redis.
 type Index struct {
 	// CacheSize represents the size of the cache in bytes
-	CacheSize int64 `msg="cache_size"`
+	CacheSize int64 `msg:"cache_size"`
 	// ObjectCount represents the count of objects in the Cache
-	ObjectCount int64 `msg="object_count`
+	ObjectCount int64 `msg:"object_count"`
 	// Objects is a map of Objects in the Cache
-	Objects map[string]*Object `msg="objects"`
+	Objects map[string]*Object `msg:"objects"`
 
-	name           string                             `msg="-"`
-	cacheType      string                             `msg="-"`
-	config         config.CacheIndexConfig            `msg="-"`
-	bulkRemoveFunc func([]string, bool)               `msg="-"`
-	reapInterval   time.Duration                      `msg="-"`
-	flushInterval  time.Duration                      `msg="-"`
-	flushFunc      func(cacheKey string, data []byte) `msg="-"`
-	lastWrite      time.Time                          `msg="-"`
+	name           string                             `msg:"-"`
+	cacheType      string                             `msg:"-"`
+	config         config.CacheIndexConfig            `msg:"-"`
+	bulkRemoveFunc func([]string, bool)               `msg:"-"`
+	reapInterval   time.Duration                      `msg:"-"`
+	flushInterval  time.Duration                      `msg:"-"`
+	flushFunc      func(cacheKey string, data []byte) `msg:"-"`
+	lastWrite      time.Time                          `msg:"-"`
 }
 
 // ToBytes returns a serialized byte slice representing the Index
 func (idx *Index) ToBytes() []byte {
 	bytes, _ := idx.MarshalMsg(nil)
 	return bytes
-}
-
-// IndexFromBytes returns a deserialized Cache Object from a seralized byte slice
-func IndexFromBytes(data []byte) (*Index, error) {
-	i := &Index{}
-	_, err := i.UnmarshalMsg(data)
-	return i, err
 }
 
 // Object contains metadata about an item in the Cache
@@ -199,16 +192,20 @@ func (idx *Index) flusher() {
 		if idx.lastWrite.Before(lastFlush) {
 			continue
 		}
-		indexLock.Lock()
-		bytes, err := idx.MarshalMsg(nil)
-		indexLock.Unlock()
-		if err != nil {
-			log.Warn("unable to serialize index for flushing", log.Pairs{"cacheName": idx.name, "detail": err.Error()})
-			continue
-		}
-		idx.flushFunc(IndexKey, bytes)
+		idx.flushOnce()
 		lastFlush = time.Now()
 	}
+}
+
+func (idx *Index) flushOnce() {
+	indexLock.Lock()
+	bytes, err := idx.MarshalMsg(nil)
+	indexLock.Unlock()
+	if err != nil {
+		log.Warn("unable to serialize index for flushing", log.Pairs{"cacheName": idx.name, "detail": err.Error()})
+		return
+	}
+	idx.flushFunc(IndexKey, bytes)
 }
 
 // reaper continually iterates through the cache to find expired elements and removes them
@@ -239,7 +236,7 @@ func (idx *Index) reap() {
 		if o.Key == IndexKey {
 			continue
 		}
-		if o.Expiration.Before(now) {
+		if o.Expiration.Before(now) && !o.Expiration.IsZero() {
 			removals = append(removals, o.Key)
 		} else {
 			remainders = append(remainders, o)
@@ -255,9 +252,9 @@ func (idx *Index) reap() {
 	if ((idx.config.MaxSizeBytes > 0 && idx.CacheSize > idx.config.MaxSizeBytes) || (idx.config.MaxSizeObjects > 0 && idx.ObjectCount > idx.config.MaxSizeObjects)) && len(remainders) > 0 {
 
 		var evictionType string
-		if idx.CacheSize > idx.config.MaxSizeBytes {
+		if idx.config.MaxSizeBytes > 0 && idx.CacheSize > idx.config.MaxSizeBytes {
 			evictionType = "size_bytes"
-		} else if idx.ObjectCount > idx.config.MaxSizeObjects {
+		} else if idx.config.MaxSizeObjects > 0 && idx.ObjectCount > idx.config.MaxSizeObjects {
 			evictionType = "size_objects"
 		} else {
 			return

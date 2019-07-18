@@ -333,7 +333,7 @@ func (ve *VectorEnvelope) ToMatrix() *MatrixEnvelope {
 	for _, v := range ve.Data.Result {
 		v.Timestamp = model.TimeFromUnix(v.Timestamp.Unix()) // Round to nearest Second
 		ts = v.Timestamp.Time()
-		me.Data.Result = append(me.Data.Result, &model.SampleStream{Metric: v.Metric, Values: []model.SamplePair{model.SamplePair{Timestamp: v.Timestamp, Value: v.Value}}})
+		me.Data.Result = append(me.Data.Result, &model.SampleStream{Metric: v.Metric, Values: []model.SamplePair{{Timestamp: v.Timestamp, Value: v.Value}}})
 	}
 	me.ExtentList = timeseries.ExtentList{timeseries.Extent{Start: ts, End: ts}}
 	return me
@@ -441,7 +441,7 @@ func (me *MatrixEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 	rc := tc - sz // # of required timestamps we must delete to meet the rentention policy
 	removals := make(map[time.Time]bool)
 	done := false
-	ok := false
+	var ok bool
 
 	for _, x := range el {
 		for ts := x.Start; !x.End.Before(ts) && !done; ts = ts.Add(me.StepDuration) {

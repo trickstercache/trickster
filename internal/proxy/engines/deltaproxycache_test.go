@@ -253,7 +253,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	_, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -584,7 +584,7 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	extn.End = extr.End.Truncate(step)
 
 	expectedFetched := fmt.Sprintf("[%d:%d]", phitStart.Truncate(step).Unix(), extn.End.Unix())
-	expected, _, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	// Switch to the failed query.
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadGateway)
@@ -1276,7 +1276,7 @@ func TestDeltaProxyCacheRequestOutOfWindow(t *testing.T) {
 	}
 
 	// Fully Out-of-Window Requests should be proxied and not cached
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"engine": "HTTPProxy"})
+	testResultHeaderPartMatch(resp.Header, map[string]string{"engine": "HTTPProxy"})
 
 	// do it again to ensure another cache miss
 	w = httptest.NewRecorder()

@@ -689,9 +689,6 @@ func (c *TricksterConfig) String() string {
 
 	var buf bytes.Buffer
 	e := toml.NewEncoder(&buf)
-	err := e.Encode(cp)
-	if err != nil {
-		return ""
-	}
+	e.Encode(cp)
 	return buf.String()
 }

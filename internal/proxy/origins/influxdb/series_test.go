@@ -48,26 +48,26 @@ func TestExtents(t *testing.T) {
 func TestCopy(t *testing.T) {
 	se := &SeriesEnvelope{
 		Results: []Result{
-			Result{
+			{
 				Series: []models.Row{
-					models.Row{
+					{
 						Name:    "a",
 						Columns: []string{"time", "units"},
 						Tags:    map[string]string{"tagName1": "tagValue1"},
 						Values: [][]interface{}{
-							[]interface{}{float64(1000), 1.5},
-							[]interface{}{float64(5000), 1.5},
-							[]interface{}{float64(10000), 1.5},
+							{float64(1000), 1.5},
+							{float64(5000), 1.5},
+							{float64(10000), 1.5},
 						},
 					},
-					models.Row{
+					{
 						Name:    "b",
 						Columns: []string{"time", "units"},
 						Tags:    map[string]string{"tagName2": "tagValue2"},
 						Values: [][]interface{}{
-							[]interface{}{float64(1000), 2.5},
-							[]interface{}{float64(5000), 2.1},
-							[]interface{}{float64(10000), 2.4},
+							{float64(1000), 2.5},
+							{float64(5000), 2.1},
+							{float64(10000), 2.4},
 						},
 					},
 				},
@@ -120,14 +120,14 @@ func TestStep(t *testing.T) {
 func TestSeriesCount(t *testing.T) {
 	se := &SeriesEnvelope{
 		Results: []Result{
-			Result{
+			{
 				Series: []models.Row{
-					models.Row{
+					{
 						Name:    "a",
 						Columns: []string{"time", "units"},
 						Tags:    map[string]string{"tagName1": "tagValue1"},
 						Values: [][]interface{}{
-							[]interface{}{float64(10000), 1.5},
+							{float64(10000), 1.5},
 						},
 					},
 				},
@@ -142,16 +142,16 @@ func TestSeriesCount(t *testing.T) {
 func TestValueCount(t *testing.T) {
 	se := &SeriesEnvelope{
 		Results: []Result{
-			Result{
+			{
 				Series: []models.Row{
-					models.Row{
+					{
 						Name:    "a",
 						Columns: []string{"time", "units"},
 						Tags:    map[string]string{"tagName1": "tagValue1"},
 						Values: [][]interface{}{
-							[]interface{}{float64(1000), 1.5},
-							[]interface{}{float64(5000), 1.5},
-							[]interface{}{float64(10000), 1.5},
+							{float64(1000), 1.5},
+							{float64(5000), 1.5},
+							{float64(10000), 1.5},
 						},
 					},
 				},
@@ -171,14 +171,14 @@ func TestMerge(t *testing.T) {
 		{
 			a: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(15000), 1.5},
+									{float64(15000), 1.5},
 								},
 							},
 						},
@@ -191,15 +191,15 @@ func TestMerge(t *testing.T) {
 			},
 			b: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(5000), 1.5},
-									[]interface{}{float64(10000), 1.5},
+									{float64(5000), 1.5},
+									{float64(10000), 1.5},
 								},
 							},
 						},
@@ -212,16 +212,16 @@ func TestMerge(t *testing.T) {
 			},
 			merged: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(5000), 1.5},
-									[]interface{}{float64(10000), 1.5},
-									[]interface{}{float64(15000), 1.5},
+									{float64(5000), 1.5},
+									{float64(10000), 1.5},
+									{float64(15000), 1.5},
 								},
 							},
 						},
@@ -242,14 +242,14 @@ func TestMerge(t *testing.T) {
 		{
 			a: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(10000), 1.5},
+									{float64(10000), 1.5},
 								},
 							},
 						},
@@ -262,9 +262,9 @@ func TestMerge(t *testing.T) {
 			},
 			b: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
@@ -280,14 +280,14 @@ func TestMerge(t *testing.T) {
 			},
 			merged: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(10000), 1.5},
+									{float64(10000), 1.5},
 								},
 							},
 						},
@@ -326,14 +326,14 @@ func TestCropToSize(t *testing.T) {
 		{
 			before: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(1444004600000), 1.5},
+									{float64(1444004600000), 1.5},
 								},
 							},
 						},
@@ -346,14 +346,14 @@ func TestCropToSize(t *testing.T) {
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(1444004600000), 1.5},
+									{float64(1444004600000), 1.5},
 								},
 							},
 						},
@@ -380,15 +380,15 @@ func TestCropToSize(t *testing.T) {
 
 			before: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(1444004600000), 1.5},
-									[]interface{}{float64(1444004610000), 1.5},
+									{float64(1444004600000), 1.5},
+									{float64(1444004610000), 1.5},
 								},
 							},
 						},
@@ -401,14 +401,14 @@ func TestCropToSize(t *testing.T) {
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(1444004610000), 1.5},
+									{float64(1444004610000), 1.5},
 								},
 							},
 						},
@@ -456,14 +456,14 @@ func TestCropToRange(t *testing.T) {
 		{ // Run 0
 			before: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(1544004600000), 1.5},
+									{float64(1544004600000), 1.5},
 								},
 							},
 						},
@@ -476,14 +476,14 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(1544004600000), 1.5},
+									{float64(1544004600000), 1.5},
 								},
 							},
 						},
@@ -503,14 +503,14 @@ func TestCropToRange(t *testing.T) {
 		{ // Run 1
 			before: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(1544004600000), 1.5},
+									{float64(1544004600000), 1.5},
 								},
 							},
 						},
@@ -523,14 +523,14 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(1544004600000), 1.5},
+									{float64(1544004600000), 1.5},
 								},
 							},
 						},
@@ -551,14 +551,14 @@ func TestCropToRange(t *testing.T) {
 		{ // Run 2
 			before: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(1544004600000), 1.5},
+									{float64(1544004600000), 1.5},
 								},
 							},
 						},
@@ -571,7 +571,7 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{},
 					},
 				},
@@ -588,14 +588,14 @@ func TestCropToRange(t *testing.T) {
 		{ // Run 3
 			before: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(100000), 1.5},
+									{float64(100000), 1.5},
 								},
 							},
 						},
@@ -608,7 +608,7 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{},
 					},
 				},
@@ -625,16 +625,16 @@ func TestCropToRange(t *testing.T) {
 		{ // Run 4
 			before: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(100000), 1.5},
-									[]interface{}{float64(200000), 1.5},
-									[]interface{}{float64(300000), 1.5},
+									{float64(100000), 1.5},
+									{float64(200000), 1.5},
+									{float64(300000), 1.5},
 								},
 							},
 						},
@@ -647,14 +647,14 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(300000), 1.5},
+									{float64(300000), 1.5},
 								},
 							},
 						},
@@ -675,16 +675,16 @@ func TestCropToRange(t *testing.T) {
 		{ // Run 5
 			before: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(100000), 1.5},
-									[]interface{}{float64(200000), 1.5},
-									[]interface{}{float64(300000), 1.5},
+									{float64(100000), 1.5},
+									{float64(200000), 1.5},
+									{float64(300000), 1.5},
 								},
 							},
 						},
@@ -697,14 +697,14 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(200000), 1.5},
+									{float64(200000), 1.5},
 								},
 							},
 						},
@@ -725,16 +725,16 @@ func TestCropToRange(t *testing.T) {
 		{ // Run 6
 			before: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(100000), 1.5},
-									[]interface{}{float64(200000), 1.5},
-									[]interface{}{float64(300000), 1.5},
+									{float64(100000), 1.5},
+									{float64(200000), 1.5},
+									{float64(300000), 1.5},
 								},
 							},
 						},
@@ -747,15 +747,15 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(200000), 1.5},
-									[]interface{}{float64(300000), 1.5},
+									{float64(200000), 1.5},
+									{float64(300000), 1.5},
 								},
 							},
 						},
@@ -776,9 +776,9 @@ func TestCropToRange(t *testing.T) {
 		{ // Run 7
 			before: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
@@ -792,7 +792,7 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{},
 					},
 				},
@@ -809,22 +809,22 @@ func TestCropToRange(t *testing.T) {
 		{ // Run 8
 			before: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(400000), 1.5},
+									{float64(400000), 1.5},
 								},
 							},
-							models.Row{
+							{
 								Name:    "a",
 								Columns: []string{"time", "units"},
 								Tags:    map[string]string{"tagName1": "tagValue1"},
 								Values: [][]interface{}{
-									[]interface{}{float64(400000), 1.5},
+									{float64(400000), 1.5},
 								},
 							},
 						},
@@ -837,7 +837,7 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
-					Result{
+					{
 						Series: []models.Row{},
 					},
 				},
