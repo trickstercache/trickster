@@ -35,20 +35,20 @@ var indexLock = sync.Mutex{}
 // like memory or bbolt. It is not used for independently managed caches like Redis.
 type Index struct {
 	// CacheSize represents the size of the cache in bytes
-	CacheSize int64 `msg="cache_size"`
+	CacheSize int64 `msg:"cache_size"`
 	// ObjectCount represents the count of objects in the Cache
-	ObjectCount int64 `msg="object_count`
+	ObjectCount int64 `msg:"object_count"`
 	// Objects is a map of Objects in the Cache
-	Objects map[string]*Object `msg="objects"`
+	Objects map[string]*Object `msg:"objects"`
 
-	name           string                             `msg="-"`
-	cacheType      string                             `msg="-"`
-	config         config.CacheIndexConfig            `msg="-"`
-	bulkRemoveFunc func([]string, bool)               `msg="-"`
-	reapInterval   time.Duration                      `msg="-"`
-	flushInterval  time.Duration                      `msg="-"`
-	flushFunc      func(cacheKey string, data []byte) `msg="-"`
-	lastWrite      time.Time                          `msg="-"`
+	name           string                             `msg:"-"`
+	cacheType      string                             `msg:"-"`
+	config         config.CacheIndexConfig            `msg:"-"`
+	bulkRemoveFunc func([]string, bool)               `msg:"-"`
+	reapInterval   time.Duration                      `msg:"-"`
+	flushInterval  time.Duration                      `msg:"-"`
+	flushFunc      func(cacheKey string, data []byte) `msg:"-"`
+	lastWrite      time.Time                          `msg:"-"`
 }
 
 // ToBytes returns a serialized byte slice representing the Index
