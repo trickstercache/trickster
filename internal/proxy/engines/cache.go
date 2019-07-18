@@ -108,7 +108,7 @@ func DeriveCacheKey(c model.Client, cfg *config.OriginConfig, r *model.Request, 
 	var hashHeaders []string
 
 	matchLen := -1
-	for k, p := range cfg.PathsLookup {
+	for k, p := range cfg.Paths {
 		if strings.Index(r.URL.Path, k) > -1 && len(k) > matchLen {
 			matchLen = len(k)
 			hashParams = p.CacheKeyParams

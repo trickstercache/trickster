@@ -124,7 +124,7 @@ type OriginConfig struct {
 	// BackfillToleranceSecs prevents values with timestamps newer than the provided number of seconds from being cached
 	// this allows propagation of upstream backfill operations that modify recently-served data
 	BackfillToleranceSecs int64 `toml:"backfill_tolerance_secs"`
-	// Paths is a list of ProxyPathConfigs that control the behavior of the given paths when requested
+	// PathList is a list of ProxyPathConfigs that control the behavior of the given paths when requested
 	Paths map[string]*ProxyPathConfig `toml:"paths"`
 	// NegativeCache is a map of HTTP Status Codes that are cached for the provided duration, usually used for failures (e.g., 404's for 10s)
 	NegativeCacheSecs map[int]int `toml:"negative_cache"`
@@ -146,8 +146,6 @@ type OriginConfig struct {
 	Host string `toml:"-"`
 	// PathPrefix provides any prefix added to the front of the requested path when constructing the upstream request url, derived from OriginURL
 	PathPrefix string `toml:"-"`
-	// PathsLookup provides a map for looking up specific Paths by configured /path
-	PathsLookup map[string]*ProxyPathConfig `toml:"-"`
 	// NegativeCache provides a map for the negative cache, with TTLs converted to time.Durations
 	NegativeCache map[int]time.Duration `toml:"-"`
 }
@@ -381,7 +379,6 @@ func NewOriginConfig() *OriginConfig {
 		Timeout:                 time.Second * defaultOriginTimeoutSecs,
 		BackfillTolerance:       defaultBackfillToleranceSecs,
 		Paths:                   make(map[string]*ProxyPathConfig),
-		PathsLookup:             make(map[string]*ProxyPathConfig),
 		NegativeCacheSecs:       make(map[int]int),
 		NegativeCache:           make(map[int]time.Duration),
 	}
@@ -457,22 +454,14 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 		}
 
 		if metadata.IsDefined("origins", k, "paths") {
-			oc.Paths = v.Paths
-
-			j := 0
-			for l, p := range oc.Paths {
+			var j = 0
+			for _, p := range v.Paths {
+				p.Order = j
+				p.ResponseBodyBytes = []byte(p.ResponseBody)
 
 				// Set Default TTL?
 				// Set Handler?
-
-				// Set Order
-				p.Order = j
-
-				// Set HasCustomResponseBody and if true, the Byte Slice version of ResponseBody
-				p.HasCustomResponseBody = metadata.IsDefined("origins", k, "paths", l, "response_body")
-				if p.HasCustomResponseBody {
-					p.ResponseBodyBytes = []byte(p.ResponseBody)
-				}
+				oc.Paths[p.Path] = p
 				j++
 			}
 		}
@@ -495,11 +484,6 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "health_check_query") {
 			oc.HealthCheckQuery = v.HealthCheckQuery
-		}
-
-		i := 0
-		for _, p := range v.Paths {
-			p.Order = i
 		}
 
 		c.Origins[k] = oc

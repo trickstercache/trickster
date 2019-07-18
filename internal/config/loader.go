@@ -91,12 +91,6 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 			return fmt.Errorf(`missing origin-type for origin "%s"`, k)
 		}
 
-		for _, p := range o.Paths {
-			if p.Path != "" {
-				o.PathsLookup[p.Path] = p
-			}
-		}
-
 		for c, s := range o.NegativeCacheSecs {
 			if c > 200 && c < 600 {
 				o.NegativeCache[c] = time.Duration(s) * time.Second

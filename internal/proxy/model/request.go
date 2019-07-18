@@ -52,7 +52,7 @@ func NewRequest(originConfig *config.OriginConfig, handlerName string, url *url.
 		HTTPClient:    client,
 	}
 
-	r.PathConfig = config.LookupPathConfig(originConfig.PathsLookup, url.Path)
+	r.PathConfig = config.LookupPathConfig(originConfig.Paths, url.Path)
 	return r
 }
 

@@ -42,14 +42,14 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 	handlers["proxycache"] = c.ObjectProxyCacheHandler
 	handlers["proxy"] = c.ProxyHandler
 
-	o.PathsLookup[o.HealthCheckEndpoint] = &config.ProxyPathConfig{
+	o.Paths[o.HealthCheckEndpoint] = &config.ProxyPathConfig{
 		Path:        o.HealthCheckEndpoint,
 		HandlerName: "health",
 		Methods:     []string{http.MethodGet, http.MethodHead},
 	}
 
-	if _, ok := o.PathsLookup[APIPath+mnQueryRange]; !ok {
-		o.PathsLookup[APIPath+mnQueryRange] = &config.ProxyPathConfig{
+	if _, ok := o.Paths[APIPath+mnQueryRange]; !ok {
+		o.Paths[APIPath+mnQueryRange] = &config.ProxyPathConfig{
 			Path:            APIPath + mnQueryRange,
 			HandlerName:     mnQueryRange,
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -60,8 +60,8 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		}
 	}
 
-	if _, ok := o.PathsLookup[APIPath+mnQuery]; !ok {
-		o.PathsLookup[APIPath+mnQuery] = &config.ProxyPathConfig{
+	if _, ok := o.Paths[APIPath+mnQuery]; !ok {
+		o.Paths[APIPath+mnQuery] = &config.ProxyPathConfig{
 			Path:            APIPath + mnQuery,
 			HandlerName:     mnQuery,
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -72,8 +72,8 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		}
 	}
 
-	if _, ok := o.PathsLookup[APIPath+mnSeries]; !ok {
-		o.PathsLookup[APIPath+mnSeries] = &config.ProxyPathConfig{
+	if _, ok := o.Paths[APIPath+mnSeries]; !ok {
+		o.Paths[APIPath+mnSeries] = &config.ProxyPathConfig{
 			Path:            APIPath + mnSeries,
 			HandlerName:     mnSeries,
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -84,8 +84,8 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		}
 	}
 
-	if _, ok := o.PathsLookup[APIPath+mnLabels]; !ok {
-		o.PathsLookup[APIPath+mnLabels] = &config.ProxyPathConfig{
+	if _, ok := o.Paths[APIPath+mnLabels]; !ok {
+		o.Paths[APIPath+mnLabels] = &config.ProxyPathConfig{
 			Path:            APIPath + mnLabels,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -96,8 +96,8 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		}
 	}
 
-	if _, ok := o.PathsLookup[APIPath+mnLabel]; !ok {
-		o.PathsLookup[APIPath+mnLabel] = &config.ProxyPathConfig{
+	if _, ok := o.Paths[APIPath+mnLabel]; !ok {
+		o.Paths[APIPath+mnLabel] = &config.ProxyPathConfig{
 			Path:            APIPath + mnLabel,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -108,8 +108,8 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		}
 	}
 
-	if _, ok := o.PathsLookup[APIPath+mnTargets]; !ok {
-		o.PathsLookup[APIPath+mnTargets] = &config.ProxyPathConfig{
+	if _, ok := o.Paths[APIPath+mnTargets]; !ok {
+		o.Paths[APIPath+mnTargets] = &config.ProxyPathConfig{
 			Path:            APIPath + mnTargets,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -120,8 +120,8 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		}
 	}
 
-	if _, ok := o.PathsLookup[APIPath+mnRules]; !ok {
-		o.PathsLookup[APIPath+mnRules] = &config.ProxyPathConfig{
+	if _, ok := o.Paths[APIPath+mnRules]; !ok {
+		o.Paths[APIPath+mnRules] = &config.ProxyPathConfig{
 			Path:            APIPath + mnRules,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -132,8 +132,8 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		}
 	}
 
-	if _, ok := o.PathsLookup[APIPath+mnAlerts]; !ok {
-		o.PathsLookup[APIPath+mnAlerts] = &config.ProxyPathConfig{
+	if _, ok := o.Paths[APIPath+mnAlerts]; !ok {
+		o.Paths[APIPath+mnAlerts] = &config.ProxyPathConfig{
 			Path:            APIPath + mnAlerts,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -144,8 +144,8 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		}
 	}
 
-	if _, ok := o.PathsLookup[APIPath+mnAlertManagers]; !ok {
-		o.PathsLookup[APIPath+mnAlertManagers] = &config.ProxyPathConfig{
+	if _, ok := o.Paths[APIPath+mnAlertManagers]; !ok {
+		o.Paths[APIPath+mnAlertManagers] = &config.ProxyPathConfig{
 			Path:            APIPath + mnAlertManagers,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -156,8 +156,8 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		}
 	}
 
-	if _, ok := o.PathsLookup[APIPath+mnStatus]; !ok {
-		o.PathsLookup[APIPath+mnStatus] = &config.ProxyPathConfig{
+	if _, ok := o.Paths[APIPath+mnStatus]; !ok {
+		o.Paths[APIPath+mnStatus] = &config.ProxyPathConfig{
 			Path:            APIPath + mnStatus,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -168,24 +168,24 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		}
 	}
 
-	if _, ok := o.PathsLookup[APIPath]; !ok {
-		o.PathsLookup[APIPath] = &config.ProxyPathConfig{
+	if _, ok := o.Paths[APIPath]; !ok {
+		o.Paths[APIPath] = &config.ProxyPathConfig{
 			Path:        APIPath,
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet, http.MethodPost},
 		}
 	}
 
-	if _, ok := o.PathsLookup[APIPath]; !ok {
-		o.PathsLookup[APIPath] = &config.ProxyPathConfig{
+	if _, ok := o.Paths[APIPath]; !ok {
+		o.Paths[APIPath] = &config.ProxyPathConfig{
 			Path:        APIPath,
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet, http.MethodPost},
 		}
 	}
 
-	if _, ok := o.PathsLookup["/"]; !ok {
-		o.PathsLookup["/"] = &config.ProxyPathConfig{
+	if _, ok := o.Paths["/"]; !ok {
+		o.Paths["/"] = &config.ProxyPathConfig{
 			Path:        "/",
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet, http.MethodPost},
@@ -196,7 +196,7 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		APIPath + mnSeries, APIPath + mnLabels, APIPath + mnLabel, APIPath + mnTargets, APIPath + mnRules,
 		APIPath + mnAlerts, APIPath + mnAlertManagers, APIPath + mnStatus, APIPath, "/"}
 
-	for _, p := range o.PathsLookup {
+	for _, p := range o.Paths {
 		if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
 			orderedPaths = append(orderedPaths, p.Path)
 		}
@@ -208,7 +208,7 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.OriginType, "originName": originName})
 
 	for _, v := range orderedPaths {
-		p := o.PathsLookup[v]
+		p := o.Paths[v]
 		if p.Handler != nil && len(p.Methods) > 0 {
 			// Host Header Routing
 			routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...).Host(originName)
@@ -219,7 +219,7 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 
 	if o.IsDefault {
 		for _, v := range orderedPaths {
-			p := o.PathsLookup[v]
+			p := o.Paths[v]
 			if p.Handler != nil && len(p.Methods) > 0 {
 				routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...)
 			}

@@ -39,16 +39,17 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 	handlers["health"] = c.HealthHandler
 	handlers["proxy"] = c.ProxyHandler
 	handlers["proxycache"] = c.ProxyCacheHandler
+	handlers["localresponse"] = c.LocalResponseHandler
 
-	o.PathsLookup[o.HealthCheckEndpoint] = &config.ProxyPathConfig{
+	o.Paths[o.HealthCheckEndpoint] = &config.ProxyPathConfig{
 		Path:        o.HealthCheckEndpoint,
 		HandlerName: "health",
 		Methods:     []string{http.MethodGet, http.MethodHead},
 	}
 
 	// By default we proxy everything
-	if _, ok := o.PathsLookup["/"]; !ok {
-		o.PathsLookup["/"] = &config.ProxyPathConfig{
+	if _, ok := o.Paths["/"]; !ok {
+		o.Paths["/"] = &config.ProxyPathConfig{
 			Path:        "/",
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet, http.MethodPost},
@@ -57,7 +58,7 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 
 	orderedPaths := []string{o.HealthCheckEndpoint}
 
-	for _, p := range o.PathsLookup {
+	for _, p := range o.Paths {
 		if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
 			orderedPaths = append(orderedPaths, p.Path)
 		}
@@ -71,7 +72,7 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.OriginType, "originName": originName})
 
 	for _, v := range orderedPaths {
-		p := o.PathsLookup[v]
+		p := o.Paths[v]
 		if p.Handler != nil && len(p.Methods) > 0 {
 			fmt.Println("REGISTERING ROUTE", v, p.Path, p.Methods)
 			// Host Header Routing
@@ -88,7 +89,7 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 
 	if o.IsDefault {
 		for _, v := range orderedPaths {
-			p := o.PathsLookup[v]
+			p := o.Paths[v]
 			if p.Handler != nil && len(p.Methods) > 0 {
 				fmt.Println("OH HRM", p.Path, p.HandlerName, p.Methods)
 				routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...)
