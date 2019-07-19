@@ -23,26 +23,26 @@ func TestMarshalTimeseries(t *testing.T) {
 
 	se := &SeriesEnvelope{
 		Results: []Result{
-			Result{
+			{
 				Series: []models.Row{
-					models.Row{
+					{
 						Name:    "a",
 						Columns: []string{"time", "units"},
 						Tags:    map[string]string{"tagName1": "tagValue1"},
 						Values: [][]interface{}{
-							[]interface{}{float64(1000), 1.5},
-							[]interface{}{float64(5000), 1.5},
-							[]interface{}{float64(10000), 1.5},
+							{float64(1000), 1.5},
+							{float64(5000), 1.5},
+							{float64(10000), 1.5},
 						},
 					},
-					models.Row{
+					{
 						Name:    "b",
 						Columns: []string{"time", "units"},
 						Tags:    map[string]string{"tagName2": "tagValue2"},
 						Values: [][]interface{}{
-							[]interface{}{float64(1000), 2.5},
-							[]interface{}{float64(5000), 2.1},
-							[]interface{}{float64(10000), 2.4},
+							{float64(1000), 2.5},
+							{float64(5000), 2.1},
+							{float64(10000), 2.4},
 						},
 					},
 				},

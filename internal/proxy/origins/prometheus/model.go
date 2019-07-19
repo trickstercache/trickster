@@ -17,6 +17,8 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/Comcast/trickster/pkg/sort/times"
+
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/prometheus/common/model"
 )
@@ -35,11 +37,15 @@ type VectorData struct {
 
 // MatrixEnvelope represents a Matrix response object from the Prometheus HTTP API
 type MatrixEnvelope struct {
-	Status     string                `json:"status"`
-	Data       MatrixData            `json:"data"`
-	ExtentList timeseries.ExtentList `json:"extents,omitempty"`
-	//Gaps         []timeseries.Extent `json:"gaps,omitempty"`
-	StepDuration time.Duration `json:"step,omitempty"`
+	Status       string                `json:"status"`
+	Data         MatrixData            `json:"data"`
+	ExtentList   timeseries.ExtentList `json:"extents,omitempty"`
+	StepDuration time.Duration         `json:"step,omitempty"`
+
+	timestamps map[time.Time]bool // tracks unique timestamps in the matrix data
+	tslist     times.Times
+	isSorted   bool // tracks if the matrix data is currently sorted
+	isCounted  bool // tracks if timestamps slice is up-to-date
 }
 
 // MatrixData represents the Data body of a Matrix response object from the Prometheus HTTP API
@@ -84,7 +90,7 @@ func (ve *VectorEnvelope) ToMatrix() *MatrixEnvelope {
 	for _, v := range ve.Data.Result {
 		v.Timestamp = model.TimeFromUnix(v.Timestamp.Unix()) // Round to nearest Second
 		ts = v.Timestamp.Time()
-		me.Data.Result = append(me.Data.Result, &model.SampleStream{Metric: v.Metric, Values: []model.SamplePair{model.SamplePair{Timestamp: v.Timestamp, Value: v.Value}}})
+		me.Data.Result = append(me.Data.Result, &model.SampleStream{Metric: v.Metric, Values: []model.SamplePair{{Timestamp: v.Timestamp, Value: v.Value}}})
 	}
 	me.ExtentList = timeseries.ExtentList{timeseries.Extent{Start: ts, End: ts}}
 	return me

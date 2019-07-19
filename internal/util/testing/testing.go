@@ -31,7 +31,7 @@ func NewTestServer(responseCode int, responseBody string) *httptest.Server {
 	return s
 }
 
-// NewTestServer returns a new *http.Client configured with reasonable defaults
+// NewTestWebClient returns a new *http.Client configured with reasonable defaults
 func NewTestWebClient() *http.Client {
 	return &http.Client{
 		Timeout: 30 * time.Second,

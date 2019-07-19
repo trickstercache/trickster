@@ -11,11 +11,22 @@
 * limitations under the License.
  */
 
-package routing
+package floats
 
-import (
-	"github.com/gorilla/mux"
-)
+// Floats represents an array of float64's
+type Floats []float64
 
-// Router is the HTTP Routing Object
-var Router = mux.NewRouter()
+// Len returns the length of an array of float64's
+func (t Floats) Len() int {
+	return len(t)
+}
+
+// Less returns true if i comes before j
+func (t Floats) Less(i, j int) bool {
+	return t[i] < t[j]
+}
+
+// Swap modifies an array of float64's by swapping the values in indexes i and j
+func (t Floats) Swap(i, j int) {
+	t[i], t[j] = t[j], t[i]
+}

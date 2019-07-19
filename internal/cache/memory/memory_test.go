@@ -133,7 +133,7 @@ func TestCache_Remove(t *testing.T) {
 	mc.Remove(cacheKey)
 
 	// it should be a cache miss
-	data, err = mc.Retrieve(cacheKey, false)
+	_, err = mc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -168,7 +168,7 @@ func TestCache_BulkRemove(t *testing.T) {
 	mc.BulkRemove([]string{cacheKey}, true)
 
 	// it should be a cache miss
-	data, err = mc.Retrieve(cacheKey, false)
+	_, err = mc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}

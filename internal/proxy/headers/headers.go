@@ -24,32 +24,56 @@ import (
 
 const (
 	// Common HTTP Header Values
-	ValueNoCache         = "no-cache"
+
+	// ValueNoCache represents the HTTP Header Value of "no-cache"
+	ValueNoCache = "no-cache"
+	// ValueApplicationJSON represents the HTTP Header Value of "application/json"
 	ValueApplicationJSON = "application/json"
-	ValueTextPlain       = "text/plain"
+	// ValueTextPlain represents the HTTP Header Value of "text/plain"
+	ValueTextPlain = "text/plain"
+
+	ValuePrivate         = "private"
+	ValueMaxAge          = "max-age"
+	ValueShareMaxAge     = "shared-max-age"
+	ValueMustRevalidate  = "must-revalidate"
+	ValueNoStore         = "no-store"
+	ValueProxyRevalidate = "proxy-revalidate"
+	ValueNoTransform     = "no-transform"
 
 	// Common HTTP Header Names
-	NameCacheControl      = "cache-control"
-	NameAllowOrigin       = "access-control-allow-origin"
-	NameContentType       = "content-type"
-	NameContentEncoding   = "content-encoding"
-	NameContentLength     = "content-length"
-	NameAuthorization     = "authorization"
-	NameAcceptEncoding    = "accept-encoding"
-	NamePragma            = "pragma"
+
+	// NameCacheControl represents the HTTP Header Name of "Cache-Control"
+	NameCacheControl = "Cache-Control"
+	// NameAllowOrigin represents the HTTP Header Name of "Access-Control-Allow-Origin"
+	NameAllowOrigin = "Access-Control-Allow-Origin"
+	// NameContentType represents the HTTP Header Name of "Content-Type"
+	NameContentType = "Content-Type"
+	// NameContentEncoding represents the HTTP Header Name of "Content-Encoding"
+	NameContentEncoding = "Content-Encoding"
+	// NameContentLength represents the HTTP Header Name of "Content-Length"
+	NameContentLength = "Content-Length"
+	// NameAuthorization represents the HTTP Header Name of "Authorization"
+	NameAuthorization = "Authorization"
+	// NameXAccelerator represents the HTTP Header Name of "X-Accelerator"
+	NameXAccelerator = "X-Accelerator"
+	// NameTricksterResult represents the HTTP Header Name of "X-Trickster-Result"
+	NameTricksterResult = "X-Trickster-Result"
+	// NameXForwardedBy represents the HTTP Header Name of "X-Forwarded-By"
+	NameXForwardedBy = "X-Forwarded-By"
+	// NameXForwardedFor represents the HTTP Header Name of "X-Forwarded-For"
+	NameXForwardedFor = "X-Forwarded-For"
+	// NameAcceptEncoding represents the HTTP Header Name of "Accept-Encoding"
+	NameAcceptEncoding = "Accept-Encoding"
+
 	NameExpires           = "expires"
-	NameDate              = "date"
 	NameLastModified      = "last-modified"
+	NameDate              = "date"
+	NameETag              = "etag"
+	NamePragma            = "pragma"
 	NameIfModifiedSince   = "if-modified-since"
 	NameIfUnmodifiedSince = "if-unmodified-since"
-	NameIfMatch           = "if-match"
 	NameIfNoneMatch       = "if-none-match"
-	NameETag              = "etag"
-
-	NameXAccelerator    = "x-accelerator"
-	NameTricksterResult = "x-trickster-result"
-	NameXForwardedBy    = "x-forwarded-by"
-	NameXForwardedFor   = "x-forwarded-for"
+	NameIfMatch           = "if-match"
 )
 
 // CopyHeaders returns an exact copy of an http.Header collection
@@ -85,6 +109,7 @@ func UpdateHeaders(headers http.Header, updates map[string]string) {
 	}
 }
 
+// AddProxyHeaders injects standard Trickster headers into proxied upstream HTTP requests
 func AddProxyHeaders(remoteAddr string, headers http.Header) {
 	if remoteAddr != "" {
 		headers.Add(NameXForwardedFor, remoteAddr)
@@ -92,12 +117,14 @@ func AddProxyHeaders(remoteAddr string, headers http.Header) {
 	}
 }
 
+// AddResponseHeaders injects standard Trickster headers into downstream HTTP responses
 func AddResponseHeaders(headers http.Header) {
 	// We're read only and a harmless API, so allow all CORS
 	headers.Set(NameAllowOrigin, "*")
 	headers.Set(NameXAccelerator, config.ApplicationName+" "+config.ApplicationVersion)
 }
 
+// SetResultsHeader adds a response header summarizing Trickster's handling of the HTTP request
 func SetResultsHeader(headers http.Header, engine, status, ffstatus string, fetched timeseries.ExtentList) {
 
 	if headers == nil || engine == "" {
@@ -126,6 +153,7 @@ func SetResultsHeader(headers http.Header, engine, status, ffstatus string, fetc
 
 }
 
+// ExtractHeader returns the value for the provided header name, and a boolean indicating if the header was present
 func ExtractHeader(headers http.Header, header string) (string, bool) {
 	if Value, ok := headers[header]; ok {
 		return strings.Join(Value, "; "), true
@@ -133,6 +161,7 @@ func ExtractHeader(headers http.Header, header string) (string, bool) {
 	return "", false
 }
 
+// RemoveClientHeaders strips certain headers from the HTTP request to facililate acceleration
 func RemoveClientHeaders(headers http.Header) {
 	headers.Del(NameAcceptEncoding)
 }

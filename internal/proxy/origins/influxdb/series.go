@@ -21,6 +21,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/timeseries"
 	str "github.com/Comcast/trickster/internal/util/strings"
+	"github.com/Comcast/trickster/pkg/sort/times"
 
 	"github.com/influxdata/influxdb/models"
 )
@@ -37,6 +38,7 @@ const (
 func (se *SeriesEnvelope) SetExtents(extents timeseries.ExtentList) {
 	se.ExtentList = make(timeseries.ExtentList, len(extents))
 	copy(se.ExtentList, extents)
+	se.isCounted = false
 }
 
 // Extents returns the Timeseries's ExentList
@@ -53,6 +55,32 @@ func (se *SeriesEnvelope) ValueCount() int {
 		}
 	}
 	return c
+}
+
+// TimestampCount returns the count unique timestampes in across all series in the Timeseries
+func (se *SeriesEnvelope) TimestampCount() int {
+	se.updateTimestamps()
+	return len(se.timestamps)
+}
+
+func (se *SeriesEnvelope) updateTimestamps() {
+	if se.isCounted {
+		return
+	}
+	m := make(map[time.Time]bool)
+
+	for i := range se.Results {
+		for j, s := range se.Results[i].Series {
+			ti := str.IndexOfString(s.Columns, "time")
+			for k := range se.Results[i].Series[j].Values {
+				m[time.Unix(int64(se.Results[i].Series[j].Values[k][ti].(float64)/1000), 0)] = true
+			}
+		}
+	}
+
+	se.timestamps = m
+	se.tslist = times.FromMap(m)
+	se.isCounted = true
 }
 
 // SeriesCount returns the count of all Results in the Timeseries
@@ -113,6 +141,8 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 		}
 	}
 	se.ExtentList = se.ExtentList.Compress(se.StepDuration)
+	se.isSorted = false
+	se.isCounted = false
 	if sort {
 		se.Sort()
 	}
@@ -159,10 +189,89 @@ func (se *SeriesEnvelope) Copy() timeseries.Timeseries {
 	return resultSe
 }
 
-// Crop returns a copy of the base Timeseries that has been cropped down to the provided Extents.
-// Crop assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
-func (se *SeriesEnvelope) Crop(e timeseries.Extent) {
+// CropToSize reduces the number of elements in the Timeseries to the provided count, by evicting elements
+// using a least-recently-used methodology. The time parameter limits the upper extent to the provided time,
+// in order to support backfill tolerance
+func (se *SeriesEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent) {
 
+	se.isCounted = false
+	se.isSorted = false
+	x := len(se.ExtentList)
+	// The Series has no extents, so no need to do anything
+	if x < 1 {
+		for i := range se.Results {
+			se.Results[i].Series = []models.Row{}
+		}
+		se.ExtentList = timeseries.ExtentList{}
+		return
+	}
+
+	// Crop to the Backfill Tolerance Value if needed
+	if se.ExtentList[x-1].End.After(t) {
+		se.CropToRange(timeseries.Extent{Start: se.ExtentList[0].Start, End: t})
+	}
+
+	tc := se.TimestampCount()
+	if len(se.Results) == 0 || tc <= sz {
+		return
+	}
+
+	el := timeseries.ExtentListLRU(se.ExtentList).UpdateLastUsed(lur, se.StepDuration)
+	sort.Sort(el)
+
+	rc := tc - sz // # of required timestamps we must delete to meet the rentention policy
+	removals := make(map[time.Time]bool)
+	done := false
+	var ok bool
+
+	for _, x := range el {
+		for ts := x.Start; !x.End.Before(ts) && !done; ts = ts.Add(se.StepDuration) {
+			if _, ok = se.timestamps[ts]; ok {
+				removals[ts] = true
+				done = len(removals) >= rc
+			}
+		}
+		if done {
+			break
+		}
+	}
+
+	ti := str.IndexOfString(se.Results[0].Series[0].Columns, "time")
+	if ti == -1 {
+		return
+	}
+
+	for i, r := range se.Results {
+		for j, s := range r.Series {
+			tmp := se.Results[i].Series[j].Values[:0]
+			for _, v := range se.Results[i].Series[j].Values {
+				t = time.Unix(int64(v[ti].(float64)/1000), 0)
+				if _, ok := removals[t]; !ok {
+					tmp = append(tmp, v)
+				}
+			}
+			s.Values = tmp
+		}
+	}
+
+	tl := times.FromMap(removals)
+	sort.Sort(tl)
+	for _, t := range tl {
+		for i, e := range el {
+			if e.StartsAt(t) {
+				el[i].Start = e.Start.Add(se.StepDuration)
+			}
+		}
+	}
+
+	se.ExtentList = timeseries.ExtentList(el).Compress(se.StepDuration)
+	se.Sort()
+}
+
+// CropToRange reduces the Timeseries down to timestamps contained within the provided Extents (inclusive).
+// CropToRange assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
+func (se *SeriesEnvelope) CropToRange(e timeseries.Extent) {
+	se.isCounted = false
 	x := len(se.ExtentList)
 	// The Series has no extents, so no need to do anything
 	if x < 1 {
@@ -183,7 +292,7 @@ func (se *SeriesEnvelope) Crop(e timeseries.Extent) {
 	}
 
 	// if the series extent is entirely inside the extent of the crop range, simple adjust down its ExtentList
-	if se.ExtentList.Contains(e) {
+	if se.ExtentList.InsideOf(e) {
 		if se.ValueCount() == 0 {
 			for i := range se.Results {
 				se.Results[i].Series = []models.Row{}
@@ -252,16 +361,18 @@ func (se *SeriesEnvelope) Crop(e timeseries.Extent) {
 // Sort sorts all Values in each Series chronologically by their timestamp
 func (se *SeriesEnvelope) Sort() {
 
-	if len(se.Results) == 0 || len(se.Results[0].Series) == 0 {
+	if se.isSorted || len(se.Results) == 0 || len(se.Results[0].Series) == 0 {
 		return
 	}
 
+	tsm := map[time.Time]bool{}
 	m := make(map[int64][]interface{})
 	if ti := str.IndexOfString(se.Results[0].Series[0].Columns, "time"); ti != -1 {
 		for ri := range se.Results {
 			for si := range se.Results[ri].Series {
 				for _, v := range se.Results[ri].Series[si].Values {
 					m[int64(v[ti].(float64))] = v
+					tsm[time.Unix(int64(v[ti].(float64))/1000, 0)] = true
 				}
 
 				keys := make([]int64, 0, len(m))
@@ -278,4 +389,11 @@ func (se *SeriesEnvelope) Sort() {
 			}
 		}
 	}
+
+	sort.Sort(se.ExtentList)
+
+	se.timestamps = tsm
+	se.tslist = times.FromMap(tsm)
+	se.isCounted = true
+	se.isSorted = true
 }

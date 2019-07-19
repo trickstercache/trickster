@@ -26,29 +26,119 @@ func init() {
 	metrics.Init()
 }
 
-func fakeBulkRemoveFunc([]string, bool) {}
-func fakeFlusherFunc(string, []byte)    {}
+var testBulkIndex *Index
+
+func testBulkRemoveFunc(cacheKeys []string, noLock bool) {
+	for _, cacheKey := range cacheKeys {
+		testBulkIndex.RemoveObject(cacheKey, noLock)
+	}
+}
+func fakeFlusherFunc(string, []byte) {}
 
 func TestNewIndex(t *testing.T) {
 	cacheConfig := &config.CachingConfig{CacheType: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
-	idx := NewIndex("test", "test", nil, cacheConfig.Index, fakeBulkRemoveFunc, fakeFlusherFunc)
+	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
 
 	if idx.name != "test" {
 		t.Errorf("expected test got %s", idx.name)
 	}
-}
 
-func TestIndexFromBytes(t *testing.T) {
+	idx.flushOnce()
 
-	idx := Index{}
-	b := idx.ToBytes()
-	idx2, err := IndexFromBytes(b)
-	if err != nil {
-		t.Error(err)
-	}
-
+	idx2 := NewIndex("test", "test", idx.ToBytes(), cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
 	if idx2 == nil {
 		t.Errorf("nil cache index")
+	}
+
+	cacheConfig.Index.FlushInterval = 0
+	cacheConfig.Index.ReapInterval = 0
+	idx3 := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
+	if idx3 == nil {
+		t.Errorf("nil cache index")
+	}
+
+}
+
+func TestReap(t *testing.T) {
+
+	cacheConfig := &config.CachingConfig{CacheType: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
+	cacheConfig.Index.MaxSizeObjects = 5
+	cacheConfig.Index.MaxSizeBackoffObjects = 3
+	cacheConfig.Index.MaxSizeBytes = 100
+	cacheConfig.Index.MaxSizeBackoffBytes = 30
+
+	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
+	if idx.name != "test" {
+		t.Errorf("expected test got %s", idx.name)
+	}
+
+	testBulkIndex = idx
+
+	// add fake index key to cover the case that the reaper must skip it
+	idx.UpdateObject(Object{Key: "cache.index", Value: []byte("test_value")})
+
+	// add expired key to cover the case that the reaper remove it
+	idx.UpdateObject(Object{Key: "test.1", Value: []byte("test_value"), Expiration: time.Now().Add(-time.Minute)})
+
+	// add key with no expiration which should not be reaped
+	idx.UpdateObject(Object{Key: "test.2", Value: []byte("test_value")})
+
+	// add key with future expiration which should not be reaped
+	idx.UpdateObject(Object{Key: "test.3", Value: []byte("test_value"), Expiration: time.Now().Add(time.Minute)})
+
+	// trigger a reap that will only remove expired elements but not size down the full cache
+	idx.reap()
+
+	// add key with future expiration which should not be reaped
+	idx.UpdateObject(Object{Key: "test.4", Value: []byte("test_value"), Expiration: time.Now().Add(time.Minute)})
+
+	// add key with future expiration which should not be reaped
+	idx.UpdateObject(Object{Key: "test.5", Value: []byte("test_value"), Expiration: time.Now().Add(time.Minute)})
+
+	// add key with future expiration which should not be reaped
+	idx.UpdateObject(Object{Key: "test.6", Value: []byte("test_value"), Expiration: time.Now().Add(time.Minute)})
+
+	// trigger size-based reap eviction of some elements
+	idx.reap()
+
+	if _, ok := idx.Objects["test.1"]; ok {
+		t.Errorf("expected key %s to be missing", "test.1")
+	}
+
+	if _, ok := idx.Objects["test.2"]; ok {
+		t.Errorf("expected key %s to be missing", "test.2")
+	}
+
+	if _, ok := idx.Objects["test.3"]; ok {
+		t.Errorf("expected key %s to be missing", "test.3")
+	}
+
+	if _, ok := idx.Objects["test.4"]; ok {
+		t.Errorf("expected key %s to be missing", "test.4")
+	}
+
+	if _, ok := idx.Objects["test.5"]; ok {
+		t.Errorf("expected key %s to be missing", "test.5")
+	}
+
+	if _, ok := idx.Objects["test.6"]; !ok {
+		t.Errorf("expected key %s to be present", "test.6")
+	}
+
+	// add key with large body to reach byte size threshold
+	idx.UpdateObject(Object{Key: "test.7", Value: []byte("test_value00000000000000000000000000000000000000000000000000000000000000000000000000000"), Expiration: time.Now().Add(time.Minute)})
+
+	// trigger a byte-based reap
+	idx.reap()
+
+	// only cache index should be left
+
+	if _, ok := idx.Objects["test.6"]; ok {
+		t.Errorf("expected key %s to be missing", "test.6")
+	}
+
+	if _, ok := idx.Objects["test.7"]; ok {
+		t.Errorf("expected key %s to be missing", "test.7")
 	}
 
 }
@@ -72,7 +162,7 @@ func TestUpdateObject(t *testing.T) {
 
 	obj := Object{Key: "", Value: []byte("test_value")}
 	cacheConfig := &config.CachingConfig{CacheType: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
-	idx := NewIndex("test", "test", nil, cacheConfig.Index, fakeBulkRemoveFunc, fakeFlusherFunc)
+	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
 
 	idx.UpdateObject(obj)
 	if _, ok := idx.Objects["test"]; ok {
@@ -105,7 +195,7 @@ func TestRemoveObject(t *testing.T) {
 
 	obj := Object{Key: "test", Value: []byte("test_value")}
 	cacheConfig := &config.CachingConfig{CacheType: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
-	idx := NewIndex("test", "test", nil, cacheConfig.Index, fakeBulkRemoveFunc, fakeFlusherFunc)
+	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
 
 	idx.UpdateObject(obj)
 	if _, ok := idx.Objects["test"]; !ok {

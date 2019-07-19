@@ -21,19 +21,19 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/util/log"
 
-	"github.com/Comcast/trickster/internal/cache"
+	tc "github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/pkg/locks"
 )
 
 // ObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache
-func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, cache cache.Cache, ttl time.Duration, noLock bool) {
+func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, cache tc.Cache, ttl time.Duration, noLock bool) {
 	body, resp, _ := FetchViaObjectProxyCache(r, client, cache, ttl, noLock)
 	Respond(w, resp.StatusCode, resp.Header, body)
 }
 
 // FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
-func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache.Cache, defaultTTL time.Duration, noLock bool) ([]byte, *http.Response, bool) {
+func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Cache, ttl time.Duration, noLock bool) ([]byte, *http.Response, bool) {
 
 	cfg := client.Configuration()
 	key := cfg.Host + "." + DeriveCacheKey(client, cfg, r, "")
@@ -67,7 +67,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache
 
 	revalidatingCache := false
 
-	var cacheStatus = CrKeyMiss
+	var cacheStatus = tc.LookupStatusKeyMiss
 
 	d, err := QueryCache(cache, key)
 	if err == nil {
@@ -93,7 +93,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache
 	var elapsed time.Duration
 
 	if d.CachingPolicy != nil && d.CachingPolicy.IsFresh {
-		cacheStatus = CrHit
+		cacheStatus = tc.LookupStatusHit
 	} else {
 
 		body, resp, elapsed = Fetch(r)
@@ -141,7 +141,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache
 	d.CachingPolicy.NoCache = d.CachingPolicy.NoCache || cpReq.NoCache || len(body) <= cache.Configuration().MaxObjectSizeBytes
 
 	if !d.CachingPolicy.MustRevalidate && !d.CachingPolicy.NoCache && d.CachingPolicy.FreshnessLifetime <= 0 {
-		d.CachingPolicy.FreshnessLifetime = int(defaultTTL.Seconds())
+		d.CachingPolicy.FreshnessLifetime = int(r.PathConfig.DefaultTTL.Seconds())
 	}
 
 	if d.CachingPolicy.NoCache || (!d.CachingPolicy.CanRevalidate && d.CachingPolicy.FreshnessLifetime <= 0) {
@@ -162,10 +162,10 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache cache
 		body = nil
 	}
 
-	return body, resp, cacheStatus == CrHit
+	return body, resp, cacheStatus == tc.LookupStatusHit
 
 }
 
-func recordOPCResult(r *model.Request, cacheStatus, httpStatus, path string, elapsed time.Duration, header http.Header) {
-	recordResults(r, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, header)
+func recordOPCResult(r *model.Request, cacheStatus tc.LookupStatus, httpStatus, path string, elapsed time.Duration, header http.Header) {
+	recordResults(r, "ObjectProxyCache", cacheStatus.String(), httpStatus, path, "", elapsed, nil, header)
 }

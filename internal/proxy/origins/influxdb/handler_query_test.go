@@ -39,7 +39,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		Scheme:   "https",
 		Host:     "blah.com",
 		Path:     "/",
-		RawQuery: url.Values(map[string][]string{"q": []string{`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY time(15s), "cluster" fill(null)`}, "epoch": []string{"ms"}}).Encode(),
+		RawQuery: url.Values(map[string][]string{"q": {`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY time(15s), "cluster" fill(null)`}, "epoch": {"ms"}}).Encode(),
 	}}
 	client := &Client{}
 	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
@@ -132,8 +132,8 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 		Host:   "blah.com",
 		Path:   "/",
 		RawQuery: url.Values(map[string][]string{
-			"q_":    []string{`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY time(15s), "cluster" fill(null)`},
-			"epoch": []string{"ms"},
+			"q_":    {`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY time(15s), "cluster" fill(null)`},
+			"epoch": {"ms"},
 		}).Encode(),
 	}}
 	client := &Client{}
@@ -156,8 +156,8 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 		Host:   "blah.com",
 		Path:   "/",
 		RawQuery: url.Values(map[string][]string{
-			"q":     []string{`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY times(15s), "cluster" fill(null)`},
-			"epoch": []string{"ms"},
+			"q":     {`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY times(15s), "cluster" fill(null)`},
+			"epoch": {"ms"},
 		}).Encode(),
 	}}
 	client := &Client{}

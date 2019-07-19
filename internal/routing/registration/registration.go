@@ -53,11 +53,6 @@ func RegisterProxyRoutes() error {
 		hasDefault = hasDefault || o.IsDefault
 	}
 
-	// if there are multiple origins, none have IsDefault=true, but one is named "default", set its IsDefault to true for backwards compatibility
-	if hasNamedDefault && !hasDefault {
-		config.Origins["default"].IsDefault = true
-	}
-
 	// Iterate our origins from the config and register their path handlers into the mux.
 	for k, o := range config.Origins {
 		var client model.Client
@@ -93,6 +88,5 @@ func RegisterProxyRoutes() error {
 			}
 		}
 	}
-
 	return nil
 }

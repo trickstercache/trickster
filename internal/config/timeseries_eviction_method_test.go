@@ -11,11 +11,21 @@
 * limitations under the License.
  */
 
-package routing
+package config
 
-import (
-	"github.com/gorilla/mux"
-)
+import "testing"
 
-// Router is the HTTP Routing Object
-var Router = mux.NewRouter()
+func TestTEMString(t *testing.T) {
+
+	t1 := EvictionMethodLRU
+	t2 := EvictionMethodOldest
+
+	if t1.String() != "lru" {
+		t.Errorf("expected %s got %s", "lru", t1.String())
+	}
+
+	if t2.String() != "oldest" {
+		t.Errorf("expected %s got %s", "oldest", t2.String())
+	}
+
+}

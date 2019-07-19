@@ -29,36 +29,6 @@ import (
 	"github.com/Comcast/trickster/internal/util/md5"
 )
 
-// Cache Lookup Results
-const (
-	CrKeyMiss    = "kmiss"
-	CrRangeMiss  = "rmiss"
-	CrHit        = "hit"
-	CrPartialHit = "phit"
-	CrPurge      = "purge"
-)
-
-// HTTP Cache-Control Directives
-const (
-	// For both HTTP Requests and Responses
-	ccdNoCache     = "no-cache"
-	ccdNoStore     = "no-store"
-	ccdMaxAge      = "max-age" // implemented in response only
-	ccdNoTransform = "no-transform"
-
-	// For HTTP Responses Only
-	ccdPrivate         = "private"
-	ccdPublic          = "public"
-	ccdMustRevalidate  = "must-revalidate"
-	ccdProxyRevalidate = "proxy-revalidate"
-	ccdSharedMaxAge    = "s-maxage"
-
-	// For HTTP Requests Only - not currently implemented
-	ccdMinFresh     = "min-fresh"
-	ccdMaxStale     = "max-stale"
-	ccdOnlyIfCached = "only-if-cached"
-)
-
 // QueryCache queries the cache for an HTTPDocument and returns it
 func QueryCache(c cache.Cache, key string) (*model.HTTPDocument, error) {
 
@@ -80,7 +50,7 @@ func QueryCache(c cache.Cache, key string) (*model.HTTPDocument, error) {
 			bytes = b
 		}
 	}
-	_, err = d.UnmarshalMsg(bytes)
+	d.UnmarshalMsg(bytes)
 	return d, nil
 }
 
@@ -228,13 +198,13 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 }
 
 var supportedCCD = map[string]bool{
-	ccdPrivate:         true,
-	ccdNoCache:         true,
-	ccdNoStore:         true,
-	ccdMaxAge:          false,
-	ccdSharedMaxAge:    false,
-	ccdMustRevalidate:  false,
-	ccdProxyRevalidate: false,
+	headers.ValuePrivate:         true,
+	headers.ValueNoCache:         true,
+	headers.ValueNoStore:         true,
+	headers.ValueMaxAge:          false,
+	headers.ValueShareMaxAge:     false,
+	headers.ValueMustRevalidate:  false,
+	headers.ValueProxyRevalidate: false,
 }
 
 func parseCacheControlDirectives(directives string, cp *model.CachingPolicy) {
@@ -255,7 +225,7 @@ func parseCacheControlDirectives(directives string, cp *model.CachingPolicy) {
 			cp.NoCache = true
 			return
 		}
-		if d == ccdSharedMaxAge && dsub != "" {
+		if d == headers.ValueShareMaxAge && dsub != "" {
 			foundFreshnessDirective = true
 			secs, err := strconv.Atoi(dsub)
 			if err == nil {
@@ -263,25 +233,26 @@ func parseCacheControlDirectives(directives string, cp *model.CachingPolicy) {
 				cp.FreshnessLifetime = secs
 			}
 		}
-		if (!hasSharedMaxAge) && d == ccdMaxAge && dsub != "" {
+		if (!hasSharedMaxAge) && d == headers.ValueMaxAge && dsub != "" {
 			foundFreshnessDirective = true
 			secs, err := strconv.Atoi(dsub)
 			if err == nil {
 				cp.FreshnessLifetime = secs
 			}
 		}
-		if (d == ccdMustRevalidate || d == ccdProxyRevalidate) || (cp.FreshnessLifetime == 0 && foundFreshnessDirective) {
+		if (d == headers.ValueMustRevalidate || d == headers.ValueProxyRevalidate) || (cp.FreshnessLifetime == 0 && foundFreshnessDirective) {
 			cp.MustRevalidate = true
 		}
-		if d == ccdNoTransform {
+		if d == headers.ValueNoTransform {
 			cp.NoTransform = true
 		}
 	}
+
 }
 
 func hasPragmaNoCache(h http.Header) bool {
 	if v, ok := h[headers.NamePragma]; ok {
-		return strings.ToLower(strings.Join(v, ",")) == ccdNoCache
+		return strings.ToLower(strings.Join(v, ",")) == headers.ValueNoCache
 	}
 	return false
 }

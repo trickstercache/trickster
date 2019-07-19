@@ -117,8 +117,8 @@ type OriginConfig struct {
 	// HealthCheckQuery provides the HTTP query parameters to use when making an upstream health check
 	HealthCheckQuery string `toml:"health_check_query"`
 	// Object Proxy Cache and Delta Proxy Cache Configurations
-	// ValueRetentionFactor limits the maxiumum the number of chronological timestamps worth of data to store in cache for each query
-	ValueRetentionFactor int `toml:"value_retention_factor"`
+	// TimeseriesRetentionFactor limits the maxiumum the number of chronological timestamps worth of data to store in cache for each query
+	TimeseriesRetentionFactor int `toml:"timeseries_retention_factor"`
 	// FastForwardDisable indicates whether the FastForward feature should be disabled for this origin
 	FastForwardDisable bool `toml:"fast_forward_disable"`
 	// BackfillToleranceSecs prevents values with timestamps newer than the provided number of seconds from being cached
@@ -128,6 +128,7 @@ type OriginConfig struct {
 	Paths map[string]*ProxyPathConfig `toml:"paths"`
 	// NegativeCache is a map of HTTP Status Codes that are cached for the provided duration, usually used for failures (e.g., 404's for 10s)
 	NegativeCacheSecs map[int]int `toml:"negative_cache"`
+	// TimeseriesEvictionMethod
 
 	// Synthesized Configurations
 	// These configurations are parsed versions of those defined above, and are what Trickster uses internally
@@ -148,6 +149,11 @@ type OriginConfig struct {
 	PathPrefix string `toml:"-"`
 	// NegativeCache provides a map for the negative cache, with TTLs converted to time.Durations
 	NegativeCache map[int]time.Duration `toml:"-"`
+
+	TimeseriesEvictionMethodName string
+
+	TimeseriesRetention      time.Duration            `toml:"-"`
+	TimeseriesEvictionMethod TimeseriesEvictionMethod `toml:"-"`
 }
 
 // ProxyPathConfig ...
@@ -364,23 +370,26 @@ func NewCacheConfig() *CachingConfig {
 // NewOriginConfig will return a pointer to an OriginConfig with the default configuration settings
 func NewOriginConfig() *OriginConfig {
 	return &OriginConfig{
-		HealthCheckEndpoint:     defaultHealthEndpoint,
-		HealthCheckUpstreamPath: defaultHealthCheckPath,
-		HealthCheckVerb:         defaultHealthCheckVerb,
-		HealthCheckQuery:        defaultHealthCheckQuery,
-		IgnoreCachingHeaders:    defaultOriginINCH,
-		ValueRetentionFactor:    defaultOriginVRF, // Cache a max of 1024 recent timestamps of data for each query
-		TimeoutSecs:             defaultOriginTimeoutSecs,
-		KeepAliveTimeoutSecs:    defaultKeepAliveTimeoutSecs,
-		MaxIdleConns:            defaultMaxIdleConns,
-		CacheName:               defaultOriginCacheName,
-		BackfillToleranceSecs:   defaultBackfillToleranceSecs,
-		ValueRetention:          defaultOriginVRF,
-		Timeout:                 time.Second * defaultOriginTimeoutSecs,
-		BackfillTolerance:       defaultBackfillToleranceSecs,
-		Paths:                   make(map[string]*ProxyPathConfig),
-		NegativeCacheSecs:       make(map[int]int),
-		NegativeCache:           make(map[int]time.Duration),
+		BackfillTolerance:            defaultBackfillToleranceSecs,
+		BackfillToleranceSecs:        defaultBackfillToleranceSecs,
+		CacheName:                    defaultOriginCacheName,
+		HealthCheckEndpoint:          defaultHealthEndpoint,
+		HealthCheckQuery:             defaultHealthCheckQuery,
+		HealthCheckUpstreamPath:      defaultHealthCheckPath,
+		HealthCheckVerb:              defaultHealthCheckVerb,
+		IgnoreCachingHeaders:         defaultOriginINCH,
+		KeepAliveTimeoutSecs:         defaultKeepAliveTimeoutSecs,
+		MaxIdleConns:                 defaultMaxIdleConns,
+		NegativeCache:                make(map[int]time.Duration),
+		NegativeCacheSecs:            make(map[int]int),
+		Paths:                        make(map[string]*ProxyPathConfig),
+		Timeout:                      time.Second * defaultOriginTimeoutSecs,
+		TimeoutSecs:                  defaultOriginTimeoutSecs,
+		TimeseriesEvictionMethod:     defaultOriginTEM,
+		TimeseriesEvictionMethodName: defaultOriginTEMName,
+		TimeseriesRetention:          defaultOriginTRF,
+		TimeseriesRetentionFactor:    defaultOriginTRF, // Cache a max of 1024 recent timestamps of data for each query
+		//OriginType:                   defaultOriginServerType,
 	}
 }
 
@@ -441,8 +450,15 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 			oc.IgnoreCachingHeaders = v.IgnoreCachingHeaders
 		}
 
-		if metadata.IsDefined("origins", k, "value_retention_factor") {
-			oc.ValueRetentionFactor = v.ValueRetentionFactor
+		if metadata.IsDefined("origins", k, "timeseries_retention_factor") {
+			oc.TimeseriesRetentionFactor = v.TimeseriesRetentionFactor
+		}
+
+		if metadata.IsDefined("origins", k, "timeseries_eviction_method") {
+			oc.TimeseriesEvictionMethodName = strings.ToLower(v.TimeseriesEvictionMethodName)
+			if p, ok := timeseriesEvictionMethodNames[oc.TimeseriesEvictionMethodName]; ok {
+				oc.TimeseriesEvictionMethod = p
+			}
 		}
 
 		if metadata.IsDefined("origins", k, "fast_forward_disable") {
@@ -704,8 +720,10 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 		o.Timeout = v.Timeout
 		o.TimeoutSecs = v.TimeoutSecs
 		o.OriginType = v.OriginType
-		o.ValueRetention = v.ValueRetention
-		o.ValueRetentionFactor = v.ValueRetentionFactor
+		o.TimeseriesRetention = v.TimeseriesRetention
+		o.TimeseriesRetentionFactor = v.TimeseriesRetentionFactor
+		o.TimeseriesEvictionMethodName = v.TimeseriesEvictionMethodName
+		o.TimeseriesEvictionMethod = v.TimeseriesEvictionMethod
 		nc.Origins[k] = o
 	}
 
@@ -774,10 +792,7 @@ func (c *TricksterConfig) String() string {
 
 	var buf bytes.Buffer
 	e := toml.NewEncoder(&buf)
-	err := e.Encode(cp)
-	if err != nil {
-		return ""
-	}
+	e.Encode(cp)
 	return buf.String()
 }
 

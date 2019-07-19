@@ -27,8 +27,8 @@ func TestLoadConfiguration(t *testing.T) {
 		t.Error(err)
 	}
 
-	if Origins["default"].ValueRetention != 1024 {
-		t.Errorf("expected 1024, got %d", Origins["default"].ValueRetention)
+	if Origins["default"].TimeseriesRetention != 1024 {
+		t.Errorf("expected 1024, got %d", Origins["default"].TimeseriesRetention)
 	}
 
 	if Caches["default"].FastForwardTTL != time.Duration(15)*time.Second {
@@ -141,8 +141,12 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected ignore_caching_headers true, got %t", o.IgnoreCachingHeaders)
 	}
 
-	if o.ValueRetentionFactor != 666 {
-		t.Errorf("expected 666, got %d", o.ValueRetentionFactor)
+	if o.TimeseriesRetentionFactor != 666 {
+		t.Errorf("expected 666, got %d", o.TimeseriesRetentionFactor)
+	}
+
+	if o.TimeseriesEvictionMethod != EvictionMethodLRU {
+		t.Errorf("expected %s, got %s", EvictionMethodLRU, o.TimeseriesEvictionMethod)
 	}
 
 	if !o.FastForwardDisable {
@@ -155,6 +159,18 @@ func TestFullLoadConfiguration(t *testing.T) {
 
 	if o.TimeoutSecs != 37 {
 		t.Errorf("expected 37, got %d", o.TimeoutSecs)
+	}
+
+	if o.IsDefault != true {
+		t.Errorf("expected true got %t", o.IsDefault)
+	}
+
+	if o.MaxIdleConns != 23 {
+		t.Errorf("expected %d got %d", 23, o.MaxIdleConns)
+	}
+
+	if o.KeepAliveTimeoutSecs != 7 {
+		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeoutSecs)
 	}
 
 	// Test Caches
@@ -379,8 +395,8 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected ignore_caching_headers %t, got %t", defaultOriginINCH, o.IgnoreCachingHeaders)
 	}
 
-	if o.ValueRetentionFactor != defaultOriginVRF {
-		t.Errorf("expected %d, got %d", defaultOriginVRF, o.ValueRetentionFactor)
+	if o.TimeseriesRetentionFactor != defaultOriginTRF {
+		t.Errorf("expected %d, got %d", defaultOriginTRF, o.TimeseriesRetentionFactor)
 	}
 
 	if o.FastForwardDisable {
