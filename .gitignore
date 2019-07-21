@@ -42,5 +42,8 @@ cacheKey.expiration
 #Goland IDE
 .idea/
 
+# VSCode editor
+.vscode/
+
 #log testing
 out.log

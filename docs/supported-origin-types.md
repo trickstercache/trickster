@@ -6,6 +6,8 @@ Trickster currently supports the following Origin Types:
 
 <img src="./images/external/influx_logo_60.png" width=16 /> InfluxDB
 
+<img src="./images/external/irondb_logo_60.png" width=16 /> Circonus IRONdb
+
 
 ### Prometheus
 
@@ -14,3 +16,7 @@ Trickster fully supports the [Prometheus HTTP API (v1)](https://prometheus.io/do
 ### InfluxDB
 
 Trickster 1.0 Beta has experimental support for InfluxDB. Once Trickster 1.0 leaves beta and has a GA release, InfluxDB will be fully supported. Specify `influxdb` as the Origin Type when configuring Trickster.
+
+### Circonus IRONdb
+
+Experimental support has been included for the Circonus IRONdb time-series database. Specify `irondb` as the origin type when configuring Trickster. If Grafana is used for visualizations, the Circonus IRONdb datasource plug-in for Grafana can be configured to use Trickster as its data source. All IRONdb data retrival operations, including CAQL queries, are supported.
