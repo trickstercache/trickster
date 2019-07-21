@@ -18,7 +18,6 @@ const (
 // IRONdb API path segments.
 const (
 	mnHealth    = "health"
-	mnIRONdb    = "irondb"
 	mnRaw       = "raw"
 	mnRollup    = "rollup"
 	mnRead      = "read"

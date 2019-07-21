@@ -50,7 +50,7 @@ func TestRegisterRoutesDefault(t *testing.T) {
 	defer es.Close()
 	err := config.Load("trickster", "test",
 		[]string{"-origin", es.URL,
-			"-origin-type", "prometheus",
+			"-origin-type", "irondb",
 			"-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
