@@ -181,6 +181,16 @@ func (se *SeriesEnvelope) ValueCount() int {
 	return len(se.Data)
 }
 
+// TimestampCount returns the number of unique timestamps across the timeseries.
+func (se *SeriesEnvelope) TimestampCount() int {
+	ts := map[int64]struct{}{}
+	for _, dp := range se.Data {
+		ts[dp.Time.Unix()] = struct{}{}
+	}
+
+	return len(ts)
+}
+
 // Merge merges the provided Timeseries list into the base Timeseries (in the
 // order provided) and optionally sorts the merged Timeseries.
 func (se *SeriesEnvelope) Merge(sort bool,
@@ -217,10 +227,10 @@ func (se *SeriesEnvelope) Copy() timeseries.Timeseries {
 	return b
 }
 
-// Crop crops down a Timeseries value to the provided Extent.
+// CropToRange crops down a Timeseries value to the provided Extent.
 // Crop assumes the base Timeseries is already sorted, and will corrupt an
 // unsorted Timeseries.
-func (se *SeriesEnvelope) Crop(e timeseries.Extent) {
+func (se *SeriesEnvelope) CropToRange(e timeseries.Extent) {
 	newData := DataPoints{}
 	for _, dv := range se.Data {
 		if (dv.Time.After(e.Start) || dv.Time.Equal(e.Start)) &&
@@ -231,6 +241,61 @@ func (se *SeriesEnvelope) Crop(e timeseries.Extent) {
 
 	se.Data = newData
 	se.ExtentList = se.ExtentList.Crop(e)
+}
+
+// CropToSize reduces the number of elements in the Timeseries to the provided
+// count, by evicting elements using a least-recently-used methodology. Any
+// timestamps newer than the provided time are removed before sizing, in order
+// to support backfill tolerance. The provided extent will be marked as used
+// during crop.
+func (se *SeriesEnvelope) CropToSize(sz int, t time.Time,
+	lur timeseries.Extent) {
+	// The Series has no extents, so no need to do anything
+	if len(se.ExtentList) < 1 {
+		se.Data = DataPoints{}
+		se.ExtentList = timeseries.ExtentList{}
+		return
+	}
+
+	// Crop to the Backfill Tolerance Value if needed
+	if se.ExtentList[len(se.ExtentList)-1].End.After(t) {
+		se.CropToRange(timeseries.Extent{Start: se.ExtentList[0].Start, End: t})
+	}
+
+	ts := map[int64]struct{}{}
+	for _, dp := range se.Data {
+		ts[dp.Time.Unix()] = struct{}{}
+	}
+
+	if len(se.Data) == 0 || len(ts) <= sz {
+		return
+	}
+
+	tsl := []int{}
+	for k := range ts {
+		tsl = append(tsl, int(k))
+	}
+
+	sort.Ints(tsl)
+	tsl = tsl[len(ts)-sz:]
+	tsm := map[int64]struct{}{}
+	for _, t := range tsl {
+		tsm[int64(t)] = struct{}{}
+	}
+
+	newData := DataPoints{}
+	for _, dp := range se.Data {
+		if _, ok := tsm[dp.Time.Unix()]; ok {
+			newData = append(newData, dp)
+		}
+	}
+
+	el := timeseries.ExtentListLRU(se.ExtentList).UpdateLastUsed(lur,
+		se.StepDuration)
+	sort.Sort(el)
+	se.Data = newData
+	se.ExtentList = timeseries.ExtentList(el).Compress(se.StepDuration)
+	se.Sort()
 }
 
 // Sort sorts all data in the Timeseries chronologically by their timestamp.

@@ -1,6 +1,7 @@
 package irondb
 
 import (
+	"sort"
 	"time"
 
 	"github.com/Comcast/trickster/internal/timeseries"
@@ -60,6 +61,11 @@ func (se *DF4SeriesEnvelope) ValueCount() int {
 	}
 
 	return n
+}
+
+// TimestampCount returns the number of unique timestamps across the timeseries.
+func (se *DF4SeriesEnvelope) TimestampCount() int {
+	return int(se.Head.Count)
 }
 
 type metricData struct {
@@ -190,10 +196,10 @@ func (se *DF4SeriesEnvelope) Copy() timeseries.Timeseries {
 	return b
 }
 
-// Crop crops down a Timeseries value to the provided Extent.
+// CropToRange crops down a Timeseries value to the provided Extent.
 // Crop assumes the base Timeseries is already sorted, and will corrupt an
 // unsorted Timeseries.
-func (se *DF4SeriesEnvelope) Crop(e timeseries.Extent) {
+func (se *DF4SeriesEnvelope) CropToRange(e timeseries.Extent) {
 	// Align crop extents with step period.
 	e.Start = time.Unix(e.Start.Unix()-(e.Start.Unix()%se.Head.Period), 0)
 	e.End = time.Unix(e.End.Unix()-(e.End.Unix()%se.Head.Period), 0)
@@ -252,6 +258,52 @@ func (se *DF4SeriesEnvelope) Crop(e timeseries.Extent) {
 	se.Meta = newMeta
 	se.Head = newHead
 	se.ExtentList = se.ExtentList.Crop(e)
+}
+
+// CropToSize reduces the number of elements in the Timeseries to the provided
+// count, by evicting elements using a least-recently-used methodology. Any
+// timestamps newer than the provided time are removed before sizing, in order
+// to support backfill tolerance. The provided extent will be marked as used
+// during crop.
+func (se *DF4SeriesEnvelope) CropToSize(sz int, t time.Time,
+	lur timeseries.Extent) {
+	// The Series has no extents, so no need to do anything
+	if len(se.ExtentList) < 1 {
+		se.Data = [][]interface{}{}
+		se.Meta = []map[string]interface{}{}
+		se.Head.Start = 0
+		se.Head.Count = 0
+		se.ExtentList = timeseries.ExtentList{}
+		return
+	}
+
+	// Crop to the Backfill Tolerance Value if needed.
+	if se.ExtentList[len(se.ExtentList)-1].End.After(t) {
+		se.CropToRange(timeseries.Extent{Start: se.ExtentList[0].Start, End: t})
+	}
+
+	tc := se.TimestampCount()
+	if len(se.Data) == 0 || tc <= sz {
+		return
+	}
+
+	lur.Start = time.Unix(lur.Start.Unix()-
+		(lur.Start.Unix()%se.Head.Period), 0)
+	lur.End = time.Unix(lur.End.Unix()-
+		(lur.End.Unix()%se.Head.Period), 0)
+	el := timeseries.ExtentListLRU(se.ExtentList).UpdateLastUsed(lur,
+		se.StepDuration)
+	sort.Sort(el)
+	rc := tc - sz // removal count
+	newData := [][]interface{}{}
+	for _, data := range se.Data {
+		newData = append(newData, data[rc:])
+	}
+
+	se.Head.Start += int64(rc) * se.Head.Period
+	se.Head.Count -= int64(rc)
+	se.Data = newData
+	se.ExtentList = timeseries.ExtentList(el).Compress(se.StepDuration)
 }
 
 // Sort sorts all data in the Timeseries chronologically by their timestamp.

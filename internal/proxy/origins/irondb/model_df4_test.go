@@ -122,13 +122,13 @@ func TestDF4SeriesEnvelopeExtents(t *testing.T) {
 
 func TestDF4SeriesEnvelopeSeriesCount(t *testing.T) {
 	client := &Client{}
-	ts, err := client.UnmarshalTimeseries([]byte(testResponse))
+	ts, err := client.UnmarshalTimeseries([]byte(testDF4Response))
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	se := ts.(*SeriesEnvelope)
+	se := ts.(*DF4SeriesEnvelope)
 	if se.SeriesCount() != 1 {
 		t.Errorf("Expected count: 1, got %d", se.SeriesCount())
 	}
@@ -136,15 +136,29 @@ func TestDF4SeriesEnvelopeSeriesCount(t *testing.T) {
 
 func TestDF4SeriesEnvelopeValueCount(t *testing.T) {
 	client := &Client{}
-	ts, err := client.UnmarshalTimeseries([]byte(testResponse))
+	ts, err := client.UnmarshalTimeseries([]byte(testDF4Response))
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	se := ts.(*SeriesEnvelope)
+	se := ts.(*DF4SeriesEnvelope)
 	if se.ValueCount() != 3 {
 		t.Errorf("Expected count: 3, got %d", se.ValueCount())
+	}
+}
+
+func TestDF4SeriesEnvelopeTimestampCount(t *testing.T) {
+	client := &Client{}
+	ts, err := client.UnmarshalTimeseries([]byte(testDF4Response2))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	se := ts.(*DF4SeriesEnvelope)
+	if se.TimestampCount() != 3 {
+		t.Errorf("Expected count: 3, got %d", se.TimestampCount())
 	}
 }
 
@@ -210,7 +224,7 @@ func TestDF4SeriesEnvelopeCopy(t *testing.T) {
 	}
 }
 
-func TestDF4SeriesEnvelopeCrop(t *testing.T) {
+func TestDF4SeriesEnvelopeCropToRange(t *testing.T) {
 	client := &Client{}
 	ts1, err := client.UnmarshalTimeseries([]byte(testDF4Response))
 	if err != nil {
@@ -224,7 +238,7 @@ func TestDF4SeriesEnvelopeCrop(t *testing.T) {
 		End:   time.Unix(600, 0),
 	}})
 
-	se1.Crop(timeseries.Extent{
+	se1.CropToRange(timeseries.Extent{
 		Start: time.Unix(100, 0),
 		End:   time.Unix(500, 0),
 	})
@@ -245,7 +259,7 @@ func TestDF4SeriesEnvelopeCrop(t *testing.T) {
 	}
 
 	// Test crop outside extents.
-	se1.Crop(timeseries.Extent{
+	se1.CropToRange(timeseries.Extent{
 		Start: time.Unix(900, 0),
 		End:   time.Unix(1200, 0),
 	})
@@ -260,6 +274,52 @@ func TestDF4SeriesEnvelopeCrop(t *testing.T) {
 		`"head":{"count":0,"start":900,"period":300}}`
 	if string(b) != exp {
 		t.Errorf("Expected JSON: %s, got: %s", exp, string(b))
+	}
+}
+
+func TestDF4SeriesEnvelopeCropToSize(t *testing.T) {
+	client := &Client{}
+	ts1, err := client.UnmarshalTimeseries([]byte(testDF4Response))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	se1 := ts1.(*DF4SeriesEnvelope)
+	se1.SetExtents(timeseries.ExtentList{timeseries.Extent{
+		Start: time.Unix(0, 0),
+		End:   time.Unix(600, 0),
+	}})
+
+	se1.CropToSize(2, time.Unix(600, 0), timeseries.Extent{
+		Start: time.Unix(0, 0),
+		End:   time.Unix(600, 0),
+	})
+
+	b, err := client.MarshalTimeseries(se1)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	exp := `{"data":[[2,3]],"meta":[{"kind":"numeric","label":"test",` +
+		`"tags":["__check_uuid:11223344-5566-7788-9900-aabbccddeeff",` +
+		`"__name:test"]}],"version":"DF4","head":{"count":2,` +
+		`"start":300,"period":300},` +
+		`"extents":[{"start":"1969-12-31T19:00:00-05:00",` +
+		`"end":"1969-12-31T19:10:00-05:00"}]}`
+	if string(b) != exp {
+		t.Errorf("Expected JSON: %s, got: %s", exp, string(b))
+	}
+
+	se1.ExtentList = timeseries.ExtentList{}
+	se1.CropToSize(2, time.Unix(600, 0), timeseries.Extent{
+		Start: time.Unix(0, 0),
+		End:   time.Unix(600, 0),
+	})
+
+	if len(se1.Data) > 0 {
+		t.Errorf("Expected data length: 0, got: %v", len(se1.Data))
 	}
 }
 

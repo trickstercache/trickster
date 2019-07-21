@@ -8,17 +8,17 @@ import (
 )
 
 const testResponse = `[
-	[1435781460.750,1.75],
-	[1435781430.000,1],
-	[1435781445.500,1.5]
+	[600.000,1.75],
+	[0,1],
+	[300.000,1.5]
 ]
 `
 const testResponse2 = `[
-	[1435781431.000,2],
-	[1435781461.750,2.75],
-	[1435781446.500,2.5]
-]
-`
+	[300.000,2],
+	[900.000,2.75],
+	[600.000,2.5],
+	[1200.000,3]
+]`
 
 func TestDataPointMarshalJSON(t *testing.T) {
 	dp := &DataPoint{
@@ -135,6 +135,20 @@ func TestSeriesEnvelopeValueCount(t *testing.T) {
 	}
 }
 
+func TestSeriesEnvelopeTimestampCount(t *testing.T) {
+	client := &Client{}
+	ts, err := client.UnmarshalTimeseries([]byte(testResponse2))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	se := ts.(*SeriesEnvelope)
+	if se.TimestampCount() != 4 {
+		t.Errorf("Expected count: 4, got %d", se.TimestampCount())
+	}
+}
+
 func TestSeriesEnvelopeMerge(t *testing.T) {
 	client := &Client{}
 	ts1, err := client.UnmarshalTimeseries([]byte(testResponse))
@@ -152,16 +166,16 @@ func TestSeriesEnvelopeMerge(t *testing.T) {
 
 	se2 := ts2.(*SeriesEnvelope)
 	se1.Merge(true, se2)
-	if se1.ValueCount() != 6 {
-		t.Errorf("Expected count: 6, got: %v", se1.ValueCount())
+	if se1.ValueCount() != 7 {
+		t.Errorf("Expected count: 7, got: %v", se1.ValueCount())
 	}
 
 	if se1.Data[0].Value != 1.0 {
 		t.Errorf("Expected first value: 1, got: %v", se1.Data[0].Value)
 	}
 
-	if se1.Data[5].Value != 2.75 {
-		t.Errorf("Expected last value: 2.75, got: %v", se1.Data[5].Value)
+	if se1.Data[6].Value != 3.0 {
+		t.Errorf("Expected last value: 3, got: %v", se1.Data[6].Value)
 	}
 }
 
@@ -216,7 +230,7 @@ func TestSeriesEnvelopeCopy(t *testing.T) {
 	}
 }
 
-func TestSeriesEnvelopeCrop(t *testing.T) {
+func TestSeriesEnvelopeCropToRange(t *testing.T) {
 	client := &Client{}
 	ts1, err := client.UnmarshalTimeseries([]byte(testResponse))
 	if err != nil {
@@ -226,8 +240,8 @@ func TestSeriesEnvelopeCrop(t *testing.T) {
 
 	se1 := ts1.(*SeriesEnvelope)
 	se1.SetExtents(timeseries.ExtentList{timeseries.Extent{
-		Start: time.Unix(1435781430, 0),
-		End:   time.Unix(1435781460, 750000000),
+		Start: time.Unix(0, 0),
+		End:   time.Unix(600, 0),
 	}})
 
 	ts2, err := client.UnmarshalTimeseries([]byte(testResponse2))
@@ -238,14 +252,14 @@ func TestSeriesEnvelopeCrop(t *testing.T) {
 
 	se2 := ts2.(*SeriesEnvelope)
 	se2.SetExtents(timeseries.ExtentList{timeseries.Extent{
-		Start: time.Unix(1435781430, 0),
-		End:   time.Unix(1435781460, 750000000),
+		Start: time.Unix(300, 0),
+		End:   time.Unix(1200, 0),
 	}})
 
 	se1.Merge(true, se2)
-	se1.Crop(timeseries.Extent{
-		Start: time.Unix(1435781430, 0),
-		End:   time.Unix(1435781440, 0),
+	se1.CropToRange(timeseries.Extent{
+		Start: time.Unix(0, 0),
+		End:   time.Unix(300, 0),
 	})
 
 	s1, err := client.MarshalTimeseries(se1)
@@ -254,11 +268,67 @@ func TestSeriesEnvelopeCrop(t *testing.T) {
 		return
 	}
 
-	exp := `{"data":[[1435781430,1],[1435781431,2]],` +
-		`"extents":[{"start":"2015-07-01T16:10:30-04:00",` +
-		`"end":"2015-07-01T16:10:40-04:00"}]}`
+	exp := `{"data":[[0,1],[300,1.5],[300,2]],` +
+		`"extents":[{"start":"1969-12-31T19:00:00-05:00",` +
+		`"end":"1969-12-31T19:05:00-05:00"}]}`
 	if string(s1) != exp {
 		t.Errorf("Expected JSON: %s, got: %s", exp, string(s1))
+	}
+}
+
+func TestSeriesEnvelopeCropToSize(t *testing.T) {
+	client := &Client{}
+	ts1, err := client.UnmarshalTimeseries([]byte(testResponse))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	se1 := ts1.(*SeriesEnvelope)
+	se1.SetExtents(timeseries.ExtentList{timeseries.Extent{
+		Start: time.Unix(0, 0),
+		End:   time.Unix(300, 0),
+	}})
+
+	ts2, err := client.UnmarshalTimeseries([]byte(testResponse2))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	se2 := ts2.(*SeriesEnvelope)
+	se2.SetExtents(timeseries.ExtentList{timeseries.Extent{
+		Start: time.Unix(300, 0),
+		End:   time.Unix(1200, 0),
+	}})
+
+	se1.Merge(true, se2)
+	se1.CropToSize(2, time.Unix(900, 0), timeseries.Extent{
+		Start: time.Unix(0, 0),
+		End:   time.Unix(900, 0),
+	})
+
+	s1, err := client.MarshalTimeseries(se1)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	exp := `{"data":[[600,1.75],[600,2.5],[900,2.75]],` +
+		`"extents":[{"start":"1969-12-31T19:00:00-05:00",` +
+		`"end":"1969-12-31T19:15:00-05:00"}]}`
+	if string(s1) != exp {
+		t.Errorf("Expected JSON: %s, got: %s", exp, string(s1))
+	}
+
+	se1.ExtentList = timeseries.ExtentList{}
+	se1.CropToSize(2, time.Unix(900, 0), timeseries.Extent{
+		Start: time.Unix(0, 0),
+		End:   time.Unix(900, 0),
+	})
+
+	if len(se1.Data) > 0 {
+		t.Errorf("Expected data length: 0, got: %v", len(se1.Data))
 	}
 }
 
