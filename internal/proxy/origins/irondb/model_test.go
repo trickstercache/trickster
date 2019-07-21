@@ -315,7 +315,7 @@ func TestSeriesEnvelopeCropToSize(t *testing.T) {
 	}
 
 	exp := `{"data":[[600,1.75],[600,2.5],[900,2.75]],` +
-		`"extents":[{"start":"1969-12-31T19:00:00-05:00",` +
+		`"extents":[{"start":"1969-12-31T19:10:00-05:00",` +
 		`"end":"1969-12-31T19:15:00-05:00"}]}`
 	if string(s1) != exp {
 		t.Errorf("Expected JSON: %s, got: %s", exp, string(s1))

@@ -250,14 +250,14 @@ func (se *SeriesEnvelope) CropToRange(e timeseries.Extent) {
 // during crop.
 func (se *SeriesEnvelope) CropToSize(sz int, t time.Time,
 	lur timeseries.Extent) {
-	// The Series has no extents, so no need to do anything
+	// The Series has no extents, so no need to do anything.
 	if len(se.ExtentList) < 1 {
 		se.Data = DataPoints{}
 		se.ExtentList = timeseries.ExtentList{}
 		return
 	}
 
-	// Crop to the Backfill Tolerance Value if needed
+	// Crop to the Backfill Tolerance Value if needed.
 	if se.ExtentList[len(se.ExtentList)-1].End.After(t) {
 		se.CropToRange(timeseries.Extent{Start: se.ExtentList[0].Start, End: t})
 	}
@@ -271,30 +271,41 @@ func (se *SeriesEnvelope) CropToSize(sz int, t time.Time,
 		return
 	}
 
+	rc := len(ts) - sz // removal count
 	tsl := []int{}
 	for k := range ts {
 		tsl = append(tsl, int(k))
 	}
 
 	sort.Ints(tsl)
-	tsl = tsl[len(ts)-sz:]
+	tsl = tsl[rc:]
 	tsm := map[int64]struct{}{}
 	for _, t := range tsl {
 		tsm[int64(t)] = struct{}{}
 	}
 
+	min, max := time.Now().Unix(), int64(0)
 	newData := DataPoints{}
 	for _, dp := range se.Data {
-		if _, ok := tsm[dp.Time.Unix()]; ok {
+		t := dp.Time.Unix()
+		if _, ok := tsm[t]; ok {
 			newData = append(newData, dp)
+			if t < min {
+				min = t
+			}
+
+			if t > max {
+				max = t
+			}
 		}
 	}
 
-	el := timeseries.ExtentListLRU(se.ExtentList).UpdateLastUsed(lur,
-		se.StepDuration)
-	sort.Sort(el)
 	se.Data = newData
-	se.ExtentList = timeseries.ExtentList(el).Compress(se.StepDuration)
+	se.ExtentList = timeseries.ExtentList{timeseries.Extent{
+		Start: time.Unix(min, 0),
+		End:   time.Unix(max, 0),
+	}}
+
 	se.Sort()
 }
 

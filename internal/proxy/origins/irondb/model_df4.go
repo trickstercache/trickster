@@ -1,7 +1,6 @@
 package irondb
 
 import (
-	"sort"
 	"time"
 
 	"github.com/Comcast/trickster/internal/timeseries"
@@ -287,13 +286,6 @@ func (se *DF4SeriesEnvelope) CropToSize(sz int, t time.Time,
 		return
 	}
 
-	lur.Start = time.Unix(lur.Start.Unix()-
-		(lur.Start.Unix()%se.Head.Period), 0)
-	lur.End = time.Unix(lur.End.Unix()-
-		(lur.End.Unix()%se.Head.Period), 0)
-	el := timeseries.ExtentListLRU(se.ExtentList).UpdateLastUsed(lur,
-		se.StepDuration)
-	sort.Sort(el)
 	rc := tc - sz // removal count
 	newData := [][]interface{}{}
 	for _, data := range se.Data {
@@ -303,7 +295,10 @@ func (se *DF4SeriesEnvelope) CropToSize(sz int, t time.Time,
 	se.Head.Start += int64(rc) * se.Head.Period
 	se.Head.Count -= int64(rc)
 	se.Data = newData
-	se.ExtentList = timeseries.ExtentList(el).Compress(se.StepDuration)
+	se.ExtentList = timeseries.ExtentList{timeseries.Extent{
+		Start: time.Unix(se.Head.Start, 0),
+		End:   time.Unix(se.Head.Start+((se.Head.Count-1)*se.Head.Period), 0),
+	}}
 }
 
 // Sort sorts all data in the Timeseries chronologically by their timestamp.

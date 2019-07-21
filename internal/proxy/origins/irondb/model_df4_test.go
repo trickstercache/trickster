@@ -306,7 +306,7 @@ func TestDF4SeriesEnvelopeCropToSize(t *testing.T) {
 		`"tags":["__check_uuid:11223344-5566-7788-9900-aabbccddeeff",` +
 		`"__name:test"]}],"version":"DF4","head":{"count":2,` +
 		`"start":300,"period":300},` +
-		`"extents":[{"start":"1969-12-31T19:00:00-05:00",` +
+		`"extents":[{"start":"1969-12-31T19:05:00-05:00",` +
 		`"end":"1969-12-31T19:10:00-05:00"}]}`
 	if string(b) != exp {
 		t.Errorf("Expected JSON: %s, got: %s", exp, string(b))
