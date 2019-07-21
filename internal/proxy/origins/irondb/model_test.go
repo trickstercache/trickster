@@ -269,8 +269,8 @@ func TestSeriesEnvelopeCropToRange(t *testing.T) {
 	}
 
 	exp := `{"data":[[0,1],[300,1.5],[300,2]],` +
-		`"extents":[{"start":"1969-12-31T19:00:00-05:00",` +
-		`"end":"1969-12-31T19:05:00-05:00"}]}`
+		`"extents":[{"start":"` + time.Unix(0, 0).Format(time.RFC3339) + `",` +
+		`"end":"` + time.Unix(300, 0).Format(time.RFC3339) + `"}]}`
 	if string(s1) != exp {
 		t.Errorf("Expected JSON: %s, got: %s", exp, string(s1))
 	}
@@ -315,8 +315,8 @@ func TestSeriesEnvelopeCropToSize(t *testing.T) {
 	}
 
 	exp := `{"data":[[600,1.75],[600,2.5],[900,2.75]],` +
-		`"extents":[{"start":"1969-12-31T19:10:00-05:00",` +
-		`"end":"1969-12-31T19:15:00-05:00"}]}`
+		`"extents":[{"start":"` + time.Unix(600, 0).Format(time.RFC3339) +
+		`","end":"` + time.Unix(900, 0).Format(time.RFC3339) + `"}]}`
 	if string(s1) != exp {
 		t.Errorf("Expected JSON: %s, got: %s", exp, string(s1))
 	}
