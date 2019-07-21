@@ -26,8 +26,8 @@ func TestLoadConfiguration(t *testing.T) {
 		t.Error(err)
 	}
 
-	if Origins["default"].ValueRetention != 1024 {
-		t.Errorf("expected 1024, got %d", Origins["default"].ValueRetention)
+	if Origins["default"].TimeseriesRetention != 1024 {
+		t.Errorf("expected 1024, got %d", Origins["default"].TimeseriesRetention)
 	}
 
 	if Caches["default"].FastForwardTTL != time.Duration(15)*time.Second {
@@ -111,8 +111,12 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected ignore_no_cache_header true, got %t", o.IgnoreNoCacheHeader)
 	}
 
-	if o.ValueRetentionFactor != 666 {
-		t.Errorf("expected 666, got %d", o.ValueRetentionFactor)
+	if o.TimeseriesRetentionFactor != 666 {
+		t.Errorf("expected 666, got %d", o.TimeseriesRetentionFactor)
+	}
+
+	if o.TimeseriesEvictionMethod != EvictionMethodLRU {
+		t.Errorf("expected %s, got %s", EvictionMethodLRU, o.TimeseriesEvictionMethod)
 	}
 
 	if !o.FastForwardDisable {
@@ -127,6 +131,18 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 37, got %d", o.TimeoutSecs)
 	}
 
+	if o.IsDefault != true {
+		t.Errorf("expected true got %t", o.IsDefault)
+	}
+
+	if o.MaxIdleConns != 23 {
+		t.Errorf("expected %d got %d", 23, o.MaxIdleConns)
+	}
+
+	if o.KeepAliveTimeoutSecs != 7 {
+		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeoutSecs)
+	}
+
 	// Test Caches
 
 	c, ok := Caches["test"]
@@ -135,8 +151,8 @@ func TestFullLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if c.Type != "test_type" {
-		t.Errorf("expected test_type, got %s", c.Type)
+	if c.Type != "redis" {
+		t.Errorf("expected redis, got %s", c.Type)
 	}
 
 	if !c.Compression {
@@ -353,8 +369,8 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected ignore_no_cache_header %t, got %t", defaultOriginINCH, o.IgnoreNoCacheHeader)
 	}
 
-	if o.ValueRetentionFactor != defaultOriginVRF {
-		t.Errorf("expected %d, got %d", defaultOriginVRF, o.ValueRetentionFactor)
+	if o.TimeseriesRetentionFactor != defaultOriginTRF {
+		t.Errorf("expected %d, got %d", defaultOriginTRF, o.TimeseriesRetentionFactor)
 	}
 
 	if o.FastForwardDisable {
@@ -537,7 +553,7 @@ func TestLoadConfigurationBadPath(t *testing.T) {
 	// it should not error if config path is not set
 	err := Load("trickster-test", "0", a)
 	if err == nil {
-		t.Errorf("Expected error: open %s: no such file or directory", badPath)
+		t.Errorf("expected error: open %s: no such file or directory", badPath)
 	}
 }
 
@@ -546,6 +562,42 @@ func TestLoadConfigurationBadUrl(t *testing.T) {
 	a := []string{"-origin", badURL}
 	err := Load("trickster-test", "0", a)
 	if err == nil {
-		t.Errorf("Expected error: parse %s: missing protocol scheme", badURL)
+		t.Errorf("expected error: parse %s: missing protocol scheme", badURL)
 	}
+}
+
+func TestLoadConfigurationWarning1(t *testing.T) {
+
+	a := []string{"-config", "../../testdata/test.warning1.conf"}
+	// it should not error if config path is not set
+	err := Load("trickster-test", "0", a)
+	if err != nil {
+		t.Error(err)
+	}
+
+	expected := 1
+	l := len(LoaderWarnings)
+
+	if l != expected {
+		t.Errorf("exepcted %d got %d", expected, l)
+	}
+
+}
+
+func TestLoadConfigurationWarning2(t *testing.T) {
+
+	a := []string{"-config", "../../testdata/test.warning2.conf"}
+	// it should not error if config path is not set
+	err := Load("trickster-test", "0", a)
+	if err != nil {
+		t.Error(err)
+	}
+
+	expected := 1
+	l := len(LoaderWarnings)
+
+	if l != expected {
+		t.Errorf("exepcted %d got %d", expected, l)
+	}
+
 }

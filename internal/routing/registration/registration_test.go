@@ -38,6 +38,33 @@ func TestRegisterProxyRoutes(t *testing.T) {
 		t.Errorf("expected %d got %d", 1, 0)
 	}
 
+	// Test Too Many Defaults
+	o1 := config.Origins["default"]
+	o2 := config.DefaultOriginConfig()
+
+	o1.IsDefault = true
+	o2.IsDefault = true
+
+	config.Origins["2"] = o2
+
+	err = RegisterProxyRoutes()
+	if err == nil {
+		t.Errorf("Expected error for too many default origins.%s", "")
+	}
+
+	o2.IsDefault = false
+	o2.CacheName = "invalid"
+	err = RegisterProxyRoutes()
+	if err == nil {
+		t.Errorf("Expected error for invalid cache name%s", "")
+	}
+
+	o2.CacheName = "default"
+	err = RegisterProxyRoutes()
+	if err != nil {
+		t.Error(err)
+	}
+
 }
 
 func TestRegisterProxyRoutesInflux(t *testing.T) {

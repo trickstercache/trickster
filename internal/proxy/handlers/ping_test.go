@@ -11,21 +11,39 @@
 * limitations under the License.
  */
 
-package gzip
+package handlers
 
 import (
-	"bytes"
-	"compress/gzip"
 	"io/ioutil"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/Comcast/trickster/internal/config"
 )
 
-// Inflate returns the inflated version of a gzip-deflated byte slice
-func Inflate(in []byte) ([]byte, error) {
-	gr, err := gzip.NewReader(bytes.NewBuffer(in))
-	if err != nil {
-		return []byte{}, err
+func TestPingHandler(t *testing.T) {
+
+	config.Load("trickster-test", "test", nil)
+	RegisterPingHandler()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/trickster/ping", nil)
+
+	pingHandler(w, r)
+	resp := w.Result()
+
+	// it should return 200 OK and "pong"
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
 	}
 
-	out, err := ioutil.ReadAll(gr)
-	return out, err
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != "pong" {
+		t.Errorf("expected 'pong' got %s.", bodyBytes)
+	}
+
 }

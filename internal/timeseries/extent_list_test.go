@@ -14,18 +14,22 @@
 package timeseries
 
 import (
+	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
 )
 
+var t0 = time.Unix(0, 0)
 var t98 = time.Unix(98, 0)
 var t99 = time.Unix(99, 0)
 var t100 = time.Unix(100, 0)
 var t101 = time.Unix(101, 0)
 var t200 = time.Unix(200, 0)
 var t201 = time.Unix(201, 0)
+var t300 = time.Unix(300, 0)
 var t600 = time.Unix(600, 0)
 var t900 = time.Unix(900, 0)
 var t1000 = time.Unix(1000, 0)
@@ -33,6 +37,168 @@ var t1100 = time.Unix(1100, 0)
 var t1200 = time.Unix(1200, 0)
 var t1300 = time.Unix(1300, 0)
 var t1400 = time.Unix(1400, 0)
+
+func TestUpdateLastUsed(t *testing.T) {
+
+	now := time.Now().Truncate(time.Second).Unix()
+
+	tests := []struct {
+		el       ExtentListLRU
+		lu       Extent
+		step     time.Duration
+		expected string
+	}{
+		{ // Run 0 - split 1 into 3
+			el:       ExtentListLRU{Extent{Start: t100, End: t1300, LastUsed: t1300}},
+			lu:       Extent{Start: t200, End: t600},
+			step:     time.Duration(100) * time.Second,
+			expected: fmt.Sprintf("100-100:1300;200-600:%d;700-1300:1300", now),
+		},
+
+		{
+			el: ExtentListLRU{
+				Extent{Start: t100, End: t200, LastUsed: t200},
+				Extent{Start: t600, End: t900, LastUsed: t900},
+				Extent{Start: t1100, End: t1300, LastUsed: t900},
+				Extent{Start: t1400, End: t1400, LastUsed: t1400},
+			},
+			lu:       Extent{Start: t1100, End: t1400},
+			step:     time.Duration(100) * time.Second,
+			expected: fmt.Sprintf("100-200:200;600-900:900;1100-1400:%d", now),
+		},
+
+		{
+			el: ExtentListLRU{
+				Extent{Start: t100, End: t200, LastUsed: t200},
+				Extent{Start: t600, End: t900, LastUsed: t900},
+				Extent{Start: t1100, End: t1300, LastUsed: t900},
+				Extent{Start: t1400, End: t1400, LastUsed: t1400},
+			},
+			lu:       Extent{Start: t1200, End: t1400},
+			step:     time.Duration(100) * time.Second,
+			expected: fmt.Sprintf("100-200:200;600-900:900;1100-1100:900;1200-1400:%d", now),
+		},
+
+		{
+			el: ExtentListLRU{
+				Extent{Start: t100, End: t200, LastUsed: t200},
+				Extent{Start: t600, End: t900, LastUsed: t900},
+				Extent{Start: t1100, End: t1300, LastUsed: t900},
+				Extent{Start: t1400, End: t1400, LastUsed: t1400},
+			},
+			lu:       Extent{Start: t600, End: t900},
+			step:     time.Duration(100) * time.Second,
+			expected: fmt.Sprintf("100-200:200;600-900:%d;1100-1300:900;1400-1400:1400", now),
+		},
+
+		{
+			el: ExtentListLRU{
+				Extent{Start: t100, End: t200, LastUsed: t200},
+				Extent{Start: t300, End: t900, LastUsed: t900},
+				Extent{Start: t1000, End: t1300, LastUsed: t900},
+				Extent{Start: t1400, End: t1400, LastUsed: t1400},
+			},
+			lu:       Extent{Start: t200, End: t1300},
+			step:     time.Duration(100) * time.Second,
+			expected: fmt.Sprintf("100-100:200;200-1300:%d;1400-1400:1400", now),
+		},
+
+		{
+			el:       nil,
+			lu:       Extent{Start: t200, End: t1300},
+			step:     time.Duration(100) * time.Second,
+			expected: "",
+		},
+
+		{
+			el:       ExtentListLRU{},
+			lu:       Extent{Start: t200, End: t1300},
+			step:     time.Duration(100) * time.Second,
+			expected: "",
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			el := test.el.UpdateLastUsed(test.lu, test.step)
+			if el.String() != test.expected {
+				t.Errorf("got %s expected %s", el.String(), test.expected)
+			}
+		})
+	}
+
+}
+
+func TestInsideOf(t *testing.T) {
+
+	el := ExtentList{
+		Extent{Start: t100, End: t200},
+		Extent{Start: t600, End: t900},
+		Extent{Start: t1100, End: t1300},
+	}
+
+	if el.InsideOf(Extent{Start: t100, End: t100}) {
+		t.Errorf("expected false got %t", true)
+	}
+
+	if el.InsideOf(Extent{Start: time.Unix(0, 0), End: t100}) {
+		t.Errorf("expected false got %t", true)
+	}
+
+	if el.InsideOf(Extent{Start: time.Unix(0, 0), End: time.Unix(0, 0)}) {
+		t.Errorf("expected false got %t", true)
+	}
+
+	if el.InsideOf(Extent{Start: t201, End: t201}) {
+		t.Errorf("expected false got %t", true)
+	}
+
+	if el.InsideOf(Extent{Start: t1400, End: t1400}) {
+		t.Errorf("expected false got %t", true)
+	}
+
+	// test empty
+	el = ExtentList{}
+	if el.InsideOf(Extent{Start: t100, End: t100}) {
+		t.Errorf("expected false got %t", true)
+	}
+
+}
+
+func TestOutsideOf(t *testing.T) {
+
+	el := ExtentList{
+		Extent{Start: t100, End: t200},
+		Extent{Start: t600, End: t900},
+		Extent{Start: t1100, End: t1300},
+	}
+
+	if el.OutsideOf(Extent{Start: t100, End: t100}) {
+		t.Errorf("expected false got %t", true)
+	}
+
+	if el.OutsideOf(Extent{Start: time.Unix(0, 0), End: t100}) {
+		t.Errorf("expected false got %t", true)
+	}
+
+	if !el.OutsideOf(Extent{Start: time.Unix(0, 0), End: time.Unix(0, 0)}) {
+		t.Errorf("expected true got %t", false)
+	}
+
+	if el.OutsideOf(Extent{Start: t201, End: t201}) {
+		t.Errorf("expected false got %t", true)
+	}
+
+	if !el.OutsideOf(Extent{Start: t1400, End: t1400}) {
+		t.Errorf("expected true got %t", false)
+	}
+
+	// test empty
+	el = ExtentList{}
+	if !el.OutsideOf(Extent{Start: t100, End: t100}) {
+		t.Errorf("expected true got %t", false)
+	}
+}
 
 func TestString(t *testing.T) {
 
@@ -324,6 +490,67 @@ func TestCrop(t *testing.T) {
 				t.Errorf("mismatch in Crop: expected=%s got=%s", test.expected, result)
 			}
 		})
+	}
+
+}
+
+// func TestOutsideOf(t *testing.T) {
+
+// 	el := ExtentList{
+// 		Extent{Start: t100, End: t200},
+// 		Extent{Start: t600, End: t900},
+// 		Extent{Start: t1100, End: t1300},
+// 	}
+
+// 	tests := []struct {
+// 		seed      ExtentList
+// 		testRange Extent
+// 		expected  bool
+// 	}{
+// 		{el, Extent{Start: t0, End: t0}, true},
+// 		{el, Extent{Start: t100, End: t1400}, false},
+// 		{ExtentList{}, Extent{Start: t100, End: t1400}, true},
+// 	}
+
+// 	for i, test := range tests {
+// 		t.Run(strconv.Itoa(i), func(t *testing.T) {
+// 			result := test.seed.OutsideOf(test.testRange)
+// 			if result != test.expected {
+// 				t.Errorf("expected=%t got=%t", test.expected, result)
+// 			}
+// 		})
+// 	}
+// }
+
+func TestExtentListLRUSort(t *testing.T) {
+	el := ExtentListLRU{
+		Extent{Start: t600, End: t900, LastUsed: t900},
+		Extent{Start: t100, End: t200, LastUsed: t200},
+		Extent{Start: t1100, End: t1300, LastUsed: t1100},
+	}
+	el2 := ExtentListLRU{
+		Extent{Start: t100, End: t200, LastUsed: t200},
+		Extent{Start: t600, End: t900, LastUsed: t900},
+		Extent{Start: t1100, End: t1300, LastUsed: t1100},
+	}
+	sort.Sort(el)
+	if !reflect.DeepEqual(el, el2) {
+		t.Errorf("mismatch in sort: expected=%s got=%s", el2, el)
+	}
+
+}
+
+func TestExtentListLRUCopy(t *testing.T) {
+	el := ExtentListLRU{
+		Extent{Start: t100, End: t200, LastUsed: t200},
+		Extent{Start: t600, End: t900, LastUsed: t900},
+		Extent{Start: t1100, End: t1300, LastUsed: t1100},
+	}
+
+	el2 := el.Copy()
+
+	if !reflect.DeepEqual(el, el2) {
+		t.Errorf("mismatch in sort: expected=%s got=%s", el2, el)
 	}
 
 }

@@ -142,10 +142,10 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		Host:   "blah.com",
 		Path:   "/",
 		RawQuery: url.Values(map[string][]string{
-			"query": []string{`up`},
-			"start": []string{strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
-			"end":   []string{strconv.Itoa(int(time.Now().Unix()))},
-			"step":  []string{"15"},
+			"query": {`up`},
+			"start": {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+			"end":   {strconv.Itoa(int(time.Now().Unix()))},
+			"step":  {"15"},
 		}).Encode(),
 	}}
 	client := &Client{}
@@ -170,10 +170,10 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 		Host:   "blah.com",
 		Path:   "/",
 		RawQuery: url.Values(map[string][]string{
-			"query_": []string{`up`},
-			"start":  []string{strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
-			"end":    []string{strconv.Itoa(int(time.Now().Unix()))},
-			"step":   []string{"15"}}).Encode(),
+			"query_": {`up`},
+			"start":  {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+			"end":    {strconv.Itoa(int(time.Now().Unix()))},
+			"step":   {"15"}}).Encode(),
 	}}
 	client := &Client{}
 	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
@@ -194,10 +194,10 @@ func TestParseTimeRangeBadStartTime(t *testing.T) {
 		Host:   "blah.com",
 		Path:   "/",
 		RawQuery: url.Values(map[string][]string{
-			"query": []string{`up`},
-			"start": []string{color},
-			"end":   []string{strconv.Itoa(int(time.Now().Unix()))},
-			"step":  []string{"15"}}).Encode(),
+			"query": {`up`},
+			"start": {color},
+			"end":   {strconv.Itoa(int(time.Now().Unix()))},
+			"step":  {"15"}}).Encode(),
 	}}
 	client := &Client{}
 	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
@@ -218,10 +218,10 @@ func TestParseTimeRangeBadEndTime(t *testing.T) {
 		Host:   "blah.com",
 		Path:   "/",
 		RawQuery: url.Values(map[string][]string{
-			"query": []string{`up`},
-			"start": []string{strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
-			"end":   []string{color},
-			"step":  []string{"15"}}).Encode(),
+			"query": {`up`},
+			"start": {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+			"end":   {color},
+			"step":  {"15"}}).Encode(),
 	}}
 	client := &Client{}
 	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
@@ -243,10 +243,10 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 		Host:   "blah.com",
 		Path:   "/",
 		RawQuery: url.Values(map[string][]string{
-			"query": []string{`up`},
-			"start": []string{strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
-			"end":   []string{strconv.Itoa(int(time.Now().Unix()))},
-			"step":  []string{"x"}}).Encode(),
+			"query": {`up`},
+			"start": {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+			"end":   {strconv.Itoa(int(time.Now().Unix()))},
+			"step":  {"x"}}).Encode(),
 	}}
 	client := &Client{}
 	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
@@ -268,9 +268,9 @@ func TestParseTimeRangeQueryNoStart(t *testing.T) {
 		Host:   "blah.com",
 		Path:   "/",
 		RawQuery: url.Values(map[string][]string{
-			"query": []string{`up`},
-			"end":   []string{strconv.Itoa(int(time.Now().Unix()))},
-			"step":  []string{"x"}}).Encode(),
+			"query": {`up`},
+			"end":   {strconv.Itoa(int(time.Now().Unix()))},
+			"step":  {"x"}}).Encode(),
 	}}
 	client := &Client{}
 	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
@@ -292,9 +292,9 @@ func TestParseTimeRangeQueryNoEnd(t *testing.T) {
 		Host:   "blah.com",
 		Path:   "/",
 		RawQuery: url.Values(map[string][]string{
-			"query": []string{`up`},
-			"start": []string{strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
-			"step":  []string{"x"}}).Encode(),
+			"query": {`up`},
+			"start": {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+			"step":  {"x"}}).Encode(),
 	}}
 	client := &Client{}
 	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
@@ -316,9 +316,9 @@ func TestParseTimeRangeQueryNoStep(t *testing.T) {
 		Host:   "blah.com",
 		Path:   "/",
 		RawQuery: url.Values(map[string][]string{
-			"query": []string{`up`},
-			"start": []string{strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
-			"end":   []string{strconv.Itoa(int(time.Now().Unix()))}},
+			"query": {`up`},
+			"start": {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+			"end":   {strconv.Itoa(int(time.Now().Unix()))}},
 		).Encode(),
 	}}
 	client := &Client{}
@@ -338,10 +338,10 @@ func TestParseTimeRangeQueryWithOffset(t *testing.T) {
 		Host:   "blah.com",
 		Path:   "/",
 		RawQuery: url.Values(map[string][]string{
-			"query": []string{`up and has offset `},
-			"start": []string{strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
-			"end":   []string{strconv.Itoa(int(time.Now().Unix()))},
-			"step":  []string{"15"},
+			"query": {`up and has offset `},
+			"start": {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+			"end":   {strconv.Itoa(int(time.Now().Unix()))},
+			"step":  {"15"},
 		}).Encode(),
 	}}
 	client := &Client{}

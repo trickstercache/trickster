@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	OtInfluxDb = "influxdb"
+	otInfluxDb = "influxdb"
 )
 
 // Client Implements the Proxy Client Interface

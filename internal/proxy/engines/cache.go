@@ -23,15 +23,6 @@ import (
 	"github.com/Comcast/trickster/internal/util/log"
 )
 
-// Cache Lookup Results
-const (
-	CrKeyMiss    = "kmiss"
-	CrRangeMiss  = "rmiss"
-	CrHit        = "hit"
-	CrPartialHit = "phit"
-	CrPurge      = "purge"
-)
-
 // QueryCache queries the cache for an HTTPDocument and returns it
 func QueryCache(c cache.Cache, key string) (*model.HTTPDocument, error) {
 
@@ -53,7 +44,7 @@ func QueryCache(c cache.Cache, key string) (*model.HTTPDocument, error) {
 			bytes = b
 		}
 	}
-	_, err = d.UnmarshalMsg(bytes)
+	d.UnmarshalMsg(bytes)
 	return d, nil
 }
 

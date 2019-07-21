@@ -13,7 +13,7 @@
 
 // Package promsim is a rudimentary Prometheus HTTP APIv1 output simulator,
 // intended for use with unit testing that would normally require a running Prometheus server.
-// PromSim outputs repeatable, promethues-formatted data, synthetically generated from query and timestamp.
+// PromSim outputs repeatable, Prometheus-formatted data, synthetically generated from query and timestamp.
 // It does not validate queries and does not produce output that accurately depicts data shapes expected of the query.
 // They will probably look really ugly on an actual graph
 // PromSim currently only supports matrix responses to a query_range request

@@ -28,22 +28,22 @@ func TestCalculateDeltas(t *testing.T) {
 	}{
 		{
 			[]Extent{},
-			[]Extent{Extent{Start: time.Unix(1, 0), End: time.Unix(100, 0)}},
+			[]Extent{{Start: time.Unix(1, 0), End: time.Unix(100, 0)}},
 			1, 100, 1,
 		},
 		{
-			[]Extent{Extent{Start: time.Unix(50, 0), End: time.Unix(100, 0)}},
-			[]Extent{Extent{Start: time.Unix(1, 0), End: time.Unix(49, 0)}},
+			[]Extent{{Start: time.Unix(50, 0), End: time.Unix(100, 0)}},
+			[]Extent{{Start: time.Unix(1, 0), End: time.Unix(49, 0)}},
 			1, 100, 1,
 		},
 		{
-			[]Extent{Extent{Start: time.Unix(50, 0), End: time.Unix(100, 0)}},
-			[]Extent{Extent{Start: time.Unix(1, 0), End: time.Unix(49, 0)}, Extent{Start: time.Unix(101, 0), End: time.Unix(101, 0)}},
+			[]Extent{{Start: time.Unix(50, 0), End: time.Unix(100, 0)}},
+			[]Extent{{Start: time.Unix(1, 0), End: time.Unix(49, 0)}, {Start: time.Unix(101, 0), End: time.Unix(101, 0)}},
 			1, 101, 1,
 		},
 		{
-			[]Extent{Extent{Start: time.Unix(1, 0), End: time.Unix(100, 0)}},
-			[]Extent{Extent{Start: time.Unix(101, 0), End: time.Unix(101, 0)}},
+			[]Extent{{Start: time.Unix(1, 0), End: time.Unix(100, 0)}},
+			[]Extent{{Start: time.Unix(101, 0), End: time.Unix(101, 0)}},
 			1, 101, 1,
 		},
 	}

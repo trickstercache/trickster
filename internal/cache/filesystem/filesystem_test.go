@@ -160,7 +160,7 @@ func TestFilesystemCache_Remove(t *testing.T) {
 	fc.Remove(cacheKey)
 
 	// it should be a cache miss
-	data, err = fc.Retrieve(cacheKey)
+	_, err = fc.Retrieve(cacheKey)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -197,7 +197,7 @@ func TestFilesystemCache_BulkRemove(t *testing.T) {
 	fc.BulkRemove([]string{cacheKey}, true)
 
 	// it should be a cache miss
-	data, err = fc.Retrieve(cacheKey)
+	_, err = fc.Retrieve(cacheKey)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
