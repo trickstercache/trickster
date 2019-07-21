@@ -19,4 +19,6 @@ Trickster 1.0 Beta has experimental support for InfluxDB. Once Trickster 1.0 lea
 
 ### Circonus IRONdb
 
-Experimental support has been included for the Circonus IRONdb time-series database. Specify `irondb` as the origin type when configuring Trickster. If Grafana is used for visualizations, the Circonus IRONdb datasource plug-in for Grafana can be configured to use Trickster as its data source. All IRONdb data retrival operations, including CAQL queries, are supported.
+Experimental support has been included for the Circonus IRONdb time-series database. If Grafana is used for visualizations, the Circonus IRONdb data source plug-in for Grafana can be configured to use Trickster as its data source. All IRONdb data retrieval operations, including CAQL queries, are supported.
+
+When configuring an IRONdb origin, specify `irondb` as the origin type in the Trickster configuration. The `host` value can be set directly to the address and port of an IRONdb node, but it is recommended to use the Circonus API proxy service. When using the proxy service, set the `host` value to the adress and port of the proxy service, and set the `api_path` value to `'irondb'`.
