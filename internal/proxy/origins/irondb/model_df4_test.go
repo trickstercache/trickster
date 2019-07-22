@@ -327,8 +327,8 @@ func TestDF4SeriesEnvelopeCropToSize(t *testing.T) {
 
 func TestMarshalDF4Timeseries(t *testing.T) {
 	se := &DF4SeriesEnvelope{
-		Data: [][]interface{}{[]interface{}{1, 2, 3}},
-		Meta: []map[string]interface{}{map[string]interface{}{
+		Data: [][]interface{}{{1, 2, 3}},
+		Meta: []map[string]interface{}{{
 			"tags": []string{
 				"__check_uuid:11223344-5566-7788-9900-aabbccddeeff",
 				"__name:test",
