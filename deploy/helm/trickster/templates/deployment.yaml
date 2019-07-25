@@ -39,7 +39,7 @@ spec:
               protocol: TCP
           livenessProbe:
             httpGet:
-              path: /ping
+              path: /trickster/ping
               port: http
           readinessProbe:
             httpGet:
