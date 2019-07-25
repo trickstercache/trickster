@@ -45,7 +45,7 @@ origins:
     apiPath: /api/v1
     ignoreNoCacheHeader: false
     # 24h
-    valueRetentionFactor: "1024"
+    timeseriesRetentionFactor: "1024"
     fastForwardDisable: false
     backfillToleranceSecs: "0"
 
