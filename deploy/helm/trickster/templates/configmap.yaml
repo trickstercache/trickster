@@ -235,7 +235,7 @@ data:
         path_prefix = {{ .pathPrefix | quote }}
         api_path = {{ .apiPath | quote }}
         ignore_no_cache_header = {{ .ignoreNoCacheHeader }}
-        value_retention_factor = {{ .valueRetentionFactor }}
+        timeseries_retention_factor = {{ .timeseriesRetentionFactor }}
         timeout_secs = {{ .timeoutSecs }}
         backfill_tolerance_secs = {{ .backfillToleranceSecs }}
         fast_forward_disable = {{ .fastForwardDisable }}
