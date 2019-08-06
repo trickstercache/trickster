@@ -22,6 +22,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/proxy/origins/influxdb"
+	"github.com/Comcast/trickster/internal/proxy/origins/irondb"
 	"github.com/Comcast/trickster/internal/proxy/origins/prometheus"
 	"github.com/Comcast/trickster/internal/util/log"
 )
@@ -60,6 +61,9 @@ func RegisterProxyRoutes() error {
 		case "influxdb":
 			log.Info("Registering Influxdb Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 			client = influxdb.NewClient(k, o, c)
+		case "irondb":
+			log.Info("Registering IRONdb Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
+			client = irondb.NewClient(k, o, c)
 		}
 		if client != nil {
 			ProxyClients[k] = client
