@@ -1,7 +1,11 @@
 package irondb
 
 import (
+	"bytes"
+	"io/ioutil"
+	"net/http"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -30,8 +34,10 @@ func TestSetExtent(t *testing.T) {
 	cases := []struct {
 		handler  string
 		u        *url.URL
+		body     string
 		expPath  string
 		expQuery string
+		expBody  string
 	}{
 		{
 			handler: "CAQLHandler",
@@ -82,6 +88,33 @@ func TestSetExtent(t *testing.T) {
 				formatTimestamp(stFl, true) + "&type=count",
 		},
 		{
+			handler: "FetchHandler",
+			u: &url.URL{
+				Path: "/fetch",
+			},
+			body: `{
+				"start":` + strconv.FormatInt(start.Unix(), 10) + `,
+				"period":300,
+				"count":10,
+				"streams":[
+				  {
+					"uuid":"00112233-4455-6677-8899-aabbccddeeff",
+					"name":"test",
+					"kind":"numeric",
+					"transform": "average"
+				  }
+				],
+				"reduce":[{"label":"test","method":"average"}]
+			}`,
+			expPath:  "/fetch",
+			expQuery: "",
+			expBody: `{"count":72,"period":300,"reduce":[{"label":"test",` +
+				`"method":"average"}],"start":` +
+				strconv.FormatInt(stFl.Unix(), 10) + `,"streams":[{"kind":` +
+				`"numeric","name":"test","transform":"average","uuid":` +
+				`"00112233-4455-6677-8899-aabbccddeeff"}]}`,
+		},
+		{
 			handler: "TextHandler",
 			u: &url.URL{
 				Path: "/read/0/900/00112233-4455-6677-8899-aabbccddeeff" +
@@ -100,6 +133,9 @@ func TestSetExtent(t *testing.T) {
 			HandlerName: c.handler,
 			URL:         c.u,
 			TemplateURL: c.u,
+			ClientRequest: &http.Request{
+				Body: ioutil.NopCloser(bytes.NewBufferString(c.body)),
+			},
 		}
 
 		client.SetExtent(r, e)
@@ -109,6 +145,19 @@ func TestSetExtent(t *testing.T) {
 
 		if r.URL.RawQuery != c.expQuery {
 			t.Errorf("Expected query: %s, got: %s", c.expQuery, r.URL.RawQuery)
+		}
+
+		if c.expBody != "" {
+			b, err := ioutil.ReadAll(r.ClientRequest.Body)
+			if err != nil {
+				t.Errorf("Unable to read request body: %v", err)
+				return
+			}
+
+			if string(b) != (c.expBody + "\n") {
+				t.Errorf("Expected request body: %v, got: %v", c.expBody,
+					string(b))
+			}
 		}
 	}
 }

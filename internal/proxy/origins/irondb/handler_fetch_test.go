@@ -10,7 +10,7 @@ import (
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
-func TestHistogramHandler(t *testing.T) {
+func TestFetchHandler(t *testing.T) {
 	es := tu.NewTestServer(200, "{}")
 	defer es.Close()
 	err := config.Load("trickster", "test",
@@ -29,8 +29,8 @@ func TestHistogramHandler(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET",
-		"http://0/histogram/0/900/300/00112233-4455-6677-8899-aabbccddeeff/"+
-			"metric", nil)
+		"http://0/rollup/00112233-4455-6677-8899-aabbccddeeff/metric"+
+			"?start_ts=0&end_ts=900&rollup_span=300s&type=average", nil)
 	client := &Client{
 		name:      "default",
 		config:    config.Origins["default"],
@@ -38,7 +38,7 @@ func TestHistogramHandler(t *testing.T) {
 		webClient: tu.NewTestWebClient(),
 	}
 
-	client.HistogramHandler(w, r)
+	client.FetchHandler(w, r)
 	resp := w.Result()
 
 	// it should return 200 OK
@@ -47,28 +47,6 @@ func TestHistogramHandler(t *testing.T) {
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	if string(bodyBytes) != "{}" {
-		t.Errorf("expected '{}' got %s.", bodyBytes)
-	}
-
-	w = httptest.NewRecorder()
-	r = httptest.NewRequest("GET",
-		"http://0/irondb/histogram/0/900/300/"+
-			"00112233-4455-6677-8899-aabbccddeeff/"+
-			"metric", nil)
-	client.HistogramHandler(w, r)
-	resp = w.Result()
-
-	// it should return 200 OK
-	if resp.StatusCode != 200 {
-		t.Errorf("expected 200 got %d.", resp.StatusCode)
-	}
-
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}

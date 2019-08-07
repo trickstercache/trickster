@@ -237,7 +237,7 @@ func (se *DF4SeriesEnvelope) CropToRange(e timeseries.Extent) {
 	newData := [][]interface{}{}
 	newMeta := []map[string]interface{}{}
 	newHead := DF4Info{
-		Count:  (e.End.Unix()-e.Start.Unix())/se.Head.Period + 1,
+		Count:  (e.End.Unix() - e.Start.Unix()) / se.Head.Period,
 		Start:  e.Start.Unix(),
 		Period: se.Head.Period,
 	}
@@ -266,7 +266,7 @@ func (se *DF4SeriesEnvelope) CropToRange(e timeseries.Extent) {
 // during crop.
 func (se *DF4SeriesEnvelope) CropToSize(sz int, t time.Time,
 	lur timeseries.Extent) {
-	// The Series has no extents, so no need to do anything
+	// The Series has no extents, so no need to do anything.
 	if len(se.ExtentList) < 1 {
 		se.Data = [][]interface{}{}
 		se.Meta = []map[string]interface{}{}

@@ -14,6 +14,7 @@
 package engines
 
 import (
+	"bytes"
 	"io/ioutil"
 	"net/http"
 	"strconv"
@@ -45,7 +46,19 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 	headers.RemoveClientHeaders(r.Headers)
 
 	start := time.Now()
-	resp, err := r.HTTPClient.Do(&http.Request{Method: r.ClientRequest.Method, URL: r.URL, Header: r.Headers})
+	req := &http.Request{Method: r.ClientRequest.Method}
+	b, err := ioutil.ReadAll(r.ClientRequest.Body)
+	if err == nil && len(b) > 0 {
+		req, err = http.NewRequest(r.ClientRequest.Method, r.URL.String(),
+			bytes.NewBuffer(b))
+		if err != nil {
+			return []byte{}, nil, -1
+		}
+	}
+
+	req.Header = r.Headers
+	req.URL = r.URL
+	resp, err := r.HTTPClient.Do(req)
 	if err != nil {
 		log.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		// if there is an err and the response is nil, the server could not be reached; make a 502 for the downstream response

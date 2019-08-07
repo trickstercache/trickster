@@ -20,6 +20,7 @@ const (
 	mnHealth    = "health"
 	mnRaw       = "raw"
 	mnRollup    = "rollup"
+	mnFetch     = "fetch"
 	mnRead      = "read"
 	mnHistogram = "histogram"
 	mnFind      = "find"
@@ -39,9 +40,17 @@ const (
 	upType       = "type"
 	upActStart   = "activity_start_seconds"
 	upActEnd     = "activity_end_seconds"
+	upCAQLQuery  = "q"
 	upCAQLStart  = "start"
 	upCAQLEnd    = "end"
 	upCAQLPeriod = "period"
+)
+
+// IRONdb request body field names.
+const (
+	rbStart  = "start"
+	rbCount  = "count"
+	rbPeriod = "period"
 )
 
 // Client values provide access to IRONdb and implement the Trickster proxy

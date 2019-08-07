@@ -37,6 +37,10 @@ func (c Client) rollupHandlerSetExtent(r *model.Request,
 
 	st := extent.Start.UnixNano() - (extent.Start.UnixNano() % int64(trq.Step))
 	et := extent.End.UnixNano() - (extent.End.UnixNano() % int64(trq.Step))
+	if st == et {
+		et += int64(trq.Step)
+	}
+
 	q := r.URL.Query()
 	q.Set(upStart, formatTimestamp(time.Unix(0, st), true))
 	q.Set(upEnd, formatTimestamp(time.Unix(0, et), true))

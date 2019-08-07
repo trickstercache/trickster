@@ -18,6 +18,8 @@ func (c Client) DeriveCacheKey(r *model.Request, extra string) string {
 		return c.rawHandlerDeriveCacheKey(r, extra)
 	case "RollupHandler":
 		return c.rollupHandlerDeriveCacheKey(r, extra)
+	case "FetchHandler":
+		return c.fetchHandlerDeriveCacheKey(r, extra)
 	case "TextHandler":
 		return c.textHandlerDeriveCacheKey(r, extra)
 	default:

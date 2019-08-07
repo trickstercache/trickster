@@ -205,6 +205,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 					return
 				}
 				uncachedValueCount += nts.ValueCount()
+				nts.SetStep(trq.Step)
 				nts.SetExtents([]timeseries.Extent{*e})
 				appendLock.Lock()
 				defer appendLock.Unlock()
