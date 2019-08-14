@@ -15,8 +15,10 @@ package testing
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"time"
 )
 
 // NewTestServer returns a new httptest.Server that responds with the provided code and body
@@ -27,4 +29,19 @@ func NewTestServer(responseCode int, responseBody string) *httptest.Server {
 	}
 	s := httptest.NewServer(http.HandlerFunc(handler))
 	return s
+}
+
+// NewTestWebClient returns a new *http.Client configured with reasonable defaults
+func NewTestWebClient() *http.Client {
+	return &http.Client{
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+		Transport: &http.Transport{
+			Dial:                (&net.Dialer{KeepAlive: 300 * time.Second}).Dial,
+			MaxIdleConns:        20,
+			MaxIdleConnsPerHost: 20,
+		},
+	}
 }

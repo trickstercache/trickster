@@ -17,4 +17,5 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// Router is the HTTP Routing Object
 var Router = mux.NewRouter()

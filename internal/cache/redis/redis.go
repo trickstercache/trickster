@@ -67,7 +67,6 @@ func (c *Cache) mapOpFuncs() {
 		c.storeFunc = c.clientStore
 		c.removeFunc = c.clientRemove
 		c.bulkRemoveFunc = c.clientBulkRemove
-
 	}
 }
 

@@ -21,7 +21,7 @@ import (
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy"
+	th "github.com/Comcast/trickster/internal/proxy/handlers"
 	"github.com/Comcast/trickster/internal/routing"
 	rr "github.com/Comcast/trickster/internal/routing/registration"
 	"github.com/Comcast/trickster/internal/util/log"
@@ -32,7 +32,7 @@ import (
 
 const (
 	applicationName    = "trickster"
-	applicationVersion = "1.0.5"
+	applicationVersion = "1.0.9"
 )
 
 func main() {
@@ -51,12 +51,20 @@ func main() {
 
 	log.Init()
 	defer log.Logger.Close()
-	log.Info("application start up", log.Pairs{"name": applicationName, "version": applicationVersion})
+	log.Info("application start up", log.Pairs{"name": applicationName, "version": applicationVersion, "logLevel": config.Logging.LogLevel})
+
+	for _, w := range config.LoaderWarnings {
+		log.Warn(w, log.Pairs{})
+	}
 
 	metrics.Init()
 	cr.LoadCachesFromConfig()
-	proxy.RegisterPingHandler()
-	rr.RegisterProxyRoutes()
+	th.RegisterPingHandler()
+	th.RegisterConfigHandler()
+	err = rr.RegisterProxyRoutes()
+	if err != nil {
+		log.Fatal(1, err.Error(), log.Pairs{})
+	}
 
 	log.Info("proxy http endpoint starting", log.Pairs{"address": config.ProxyServer.ListenAddress, "port": config.ProxyServer.ListenPort})
 

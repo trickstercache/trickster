@@ -14,46 +14,67 @@
 package registration
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy"
-	"github.com/Comcast/trickster/internal/proxy/influxdb"
-	"github.com/Comcast/trickster/internal/proxy/prometheus"
+	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/proxy/origins/influxdb"
+	"github.com/Comcast/trickster/internal/proxy/origins/irondb"
+	"github.com/Comcast/trickster/internal/proxy/origins/prometheus"
 	"github.com/Comcast/trickster/internal/util/log"
 )
 
 // ProxyClients maintains a list of proxy clients configured for use by Trickster
-var ProxyClients = make(map[string]proxy.Client)
+var ProxyClients = make(map[string]model.Client)
 
 // RegisterProxyRoutes iterates the Trickster Configuration and registers the routes for the configured origins
-func RegisterProxyRoutes() {
+func RegisterProxyRoutes() error {
+
+	defaultOrigin := ""
 
 	// Iterate our origins from the config and register their path handlers into the mux.
 	for k, o := range config.Origins {
 
-		var client proxy.Client
+		// Ensure only one default origin exists
+		if o.IsDefault {
+			if defaultOrigin != "" {
+				return fmt.Errorf("only one origin can be marked as default. Found both %s and %s", defaultOrigin, k)
+			}
+			defaultOrigin = k
+		}
+
+		var client model.Client
 		var c cache.Cache
 		var err error
 
 		c, err = registration.GetCache(o.CacheName)
 		if err != nil {
-			log.Fatal(1, "invalid cache name in origin config", log.Pairs{"originName": k, "cacheName": o.CacheName})
+			return err
 		}
 		switch strings.ToLower(o.Type) {
-		case proxy.OtPrometheus, "":
+		case "prometheus", "":
 			log.Info("Registering Prometheus Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 			client = prometheus.NewClient(k, o, c)
-		case proxy.OtInfluxDb:
-			log.Info("Registering Influxdb Route Paths", log.Pairs{"originName": k})
+		case "influxdb":
+			log.Info("Registering Influxdb Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 			client = influxdb.NewClient(k, o, c)
+		case "irondb":
+			log.Info("Registering IRONdb Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
+			client = irondb.NewClient(k, o, c)
 		}
-
 		if client != nil {
 			ProxyClients[k] = client
-			client.RegisterRoutes(k, o)
+
+			// If it's the default origin, register it last
+			if o.IsDefault {
+				defer client.RegisterRoutes(k, o)
+			} else {
+				client.RegisterRoutes(k, o)
+			}
 		}
 	}
+	return nil
 }

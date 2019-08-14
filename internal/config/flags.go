@@ -53,7 +53,7 @@ func (c *TricksterConfig) parseFlags(applicationName string, arguments []string)
 	f := flag.NewFlagSet(applicationName, flag.ExitOnError)
 	f.BoolVar(&Flags.PrintVersion, cfVersion, false, "Prints trickster version")
 	f.StringVar(&Flags.ConfigPath, cfConfig, "", "Path to Trickster Config File")
-	f.StringVar(&Flags.LogLevel, cfLogLevel, c.Logging.LogLevel, "Level of Logging to use (debug, info, warn, error)")
+	f.StringVar(&Flags.LogLevel, cfLogLevel, "", "Level of Logging to use (debug, info, warn, error)")
 	f.IntVar(&Flags.InstanceID, cfInstanceID, 0, "Instance ID is for running multiple Trickster processes from the same config while logging to their own files.")
 	f.StringVar(&Flags.Origin, cfOrigin, "", "URL to the Origin. Enter it like you would in grafana, e.g., http://prometheus:9090")
 	f.StringVar(&Flags.OriginType, cfOriginType, "", "Type of origin (prometheus, influxdb)")
@@ -81,7 +81,10 @@ func (c *TricksterConfig) loadFlags() {
 	if Flags.MetricsListenPort > 0 {
 		c.Metrics.ListenPort = Flags.MetricsListenPort
 	}
-	c.Logging.LogLevel = Flags.LogLevel
-	c.Main.InstanceID = Flags.InstanceID
-
+	if Flags.LogLevel != "" {
+		c.Logging.LogLevel = Flags.LogLevel
+	}
+	if Flags.InstanceID > 0 {
+		c.Main.InstanceID = Flags.InstanceID
+	}
 }

@@ -24,6 +24,9 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 
 	ApplicationName = applicationName
 	ApplicationVersion = applicationVersion
+	defaultOriginURL = ""
+	defaultOriginType = ""
+	LoaderWarnings = make([]string, 0, 0)
 
 	c := NewConfig()
 	c.parseFlags(applicationName, arguments) // Parse here to get config file path and version flags
@@ -60,17 +63,17 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	}
 
 	Config = c
-	Main = &c.Main
+	Main = c.Main
 	Origins = c.Origins
 	Caches = c.Caches
-	ProxyServer = &c.ProxyServer
-	Logging = &c.Logging
-	Metrics = &c.Metrics
+	ProxyServer = c.ProxyServer
+	Logging = c.Logging
+	Metrics = c.Metrics
 
 	for k, o := range Origins {
 		o.Timeout = time.Duration(o.TimeoutSecs) * time.Second
 		o.BackfillTolerance = time.Duration(o.BackfillToleranceSecs) * time.Second
-		o.ValueRetention = time.Duration(o.ValueRetentionFactor)
+		o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
 		Origins[k] = o
 	}
 

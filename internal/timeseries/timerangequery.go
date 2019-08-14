@@ -31,32 +31,29 @@ type TimeRangeQuery struct {
 
 // NormalizeExtent adjusts the Start and End of a TimeRangeQuery's Extent to align against normalized boundaries.
 func (trq *TimeRangeQuery) NormalizeExtent() {
-
-	stepSecs := int64(trq.Step / time.Second)
-
-	if stepSecs > 0 {
+	if trq.Step.Seconds() > 0 {
 		if !trq.IsOffset && trq.Extent.End.After(time.Now()) {
 			trq.Extent.End = time.Now()
 		}
-		trq.Extent.Start = time.Unix((trq.Extent.Start.Unix()/stepSecs)*stepSecs, 0)
-		trq.Extent.End = time.Unix((trq.Extent.End.Unix()/stepSecs)*stepSecs, 0)
+		trq.Extent.Start = trq.Extent.Start.Truncate(trq.Step)
+		trq.Extent.End = trq.Extent.End.Truncate(trq.Step)
 	}
 }
 
 // CalculateDeltas provides a list of extents that are not in a cached timeseries, when provided a list of extents that are cached.
-func (trq *TimeRangeQuery) CalculateDeltas(have []Extent) []Extent {
+func (trq *TimeRangeQuery) CalculateDeltas(have ExtentList) ExtentList {
 	if len(have) == 0 {
-		return []Extent{trq.Extent}
+		return ExtentList{trq.Extent}
 	}
-	misses := []time.Time{}
-	for i := trq.Extent.Start; trq.Extent.End.After(i) || trq.Extent.End == i; i = i.Add(trq.Step) {
+	misses := make([]time.Time, 0, trq.Extent.End.Sub(trq.Extent.Start)/trq.Step)
+	for i := trq.Extent.Start; !trq.Extent.End.Before(i); i = i.Add(trq.Step) {
 		found := false
 		for j := range have {
 			if j == 0 && i.Before(have[j].Start) {
 				// our earliest datapoint in cache is after the first point the user wants
 				break
 			}
-			if i == have[j].Start || i == have[j].End || (i.After(have[j].Start) && have[j].End.After(i)) {
+			if i.Equal(have[j].Start) || i.Equal(have[j].End) || (i.After(have[j].Start) && have[j].End.After(i)) {
 				found = true
 				break
 			}
@@ -66,17 +63,16 @@ func (trq *TimeRangeQuery) CalculateDeltas(have []Extent) []Extent {
 		}
 	}
 	// Find the fill and gap ranges
-	ins := []Extent{}
-	e := time.Unix(0, 0)
-	var inStart = e
+	ins := ExtentList{}
+	var inStart = time.Time{}
 	l := len(misses)
 	for i := range misses {
-		if inStart == e {
+		if inStart.IsZero() {
 			inStart = misses[i]
 		}
-		if i+1 == l || misses[i+1] != misses[i].Add(trq.Step) {
+		if i+1 == l || !misses[i+1].Equal(misses[i].Add(trq.Step)) {
 			ins = append(ins, Extent{Start: inStart, End: misses[i]})
-			inStart = e
+			inStart = time.Time{}
 		}
 	}
 	return ins

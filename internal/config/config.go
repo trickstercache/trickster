@@ -14,6 +14,9 @@
 package config
 
 import (
+	"bytes"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -26,10 +29,10 @@ var Config *TricksterConfig
 var Main *MainConfig
 
 // Origins is the Origin Map subsection of the Running Configuration
-var Origins map[string]OriginConfig
+var Origins map[string]*OriginConfig
 
 // Caches is the Cache Map subsection of the Running Configuration
-var Caches map[string]CachingConfig
+var Caches map[string]*CachingConfig
 
 // ProxyServer is the Proxy Server subsection of the Running Configuration
 var ProxyServer *ProxyServerConfig
@@ -51,14 +54,20 @@ var ApplicationName string
 // ApplicationVersion holds the version of the Application
 var ApplicationVersion string
 
+// LoaderWarnings holds warnings generated during config load (before the logger is initialized),
+// so they can be logged at the end of the loading process
+var LoaderWarnings = make([]string, 0, 0)
+
 // TricksterConfig is the main configuration object
 type TricksterConfig struct {
-	Main        MainConfig               `toml:"main"`
-	Origins     map[string]OriginConfig  `toml:"origins"`
-	Caches      map[string]CachingConfig `toml:"caches"`
-	ProxyServer ProxyServerConfig        `toml:"proxy_server"`
-	Logging     LoggingConfig            `toml:"logging"`
-	Metrics     MetricsConfig            `toml:"metrics"`
+	Main        *MainConfig               `toml:"main"`
+	Origins     map[string]*OriginConfig  `toml:"origins"`
+	Caches      map[string]*CachingConfig `toml:"caches"`
+	ProxyServer *ProxyServerConfig        `toml:"proxy_server"`
+	Logging     *LoggingConfig            `toml:"logging"`
+	Metrics     *MetricsConfig            `toml:"metrics"`
+
+	activeCaches map[string]bool
 }
 
 // MainConfig is a collection of general configuration values.
@@ -69,26 +78,36 @@ type MainConfig struct {
 	Environment string
 	// Hostname is populated with the self-resolved Hostname where the instance is running
 	Hostname string
+
+	// ConfigHandlerPath provides the path to register the Config Handler for outputting the running configuration
+	ConfigHandlerPath string `toml:"config_handler_path"`
+	// PingHandlerPath provides the path to register the Ping Handler for checking that Trickster is running
+	PingHandlerPath string `toml:"ping_handler_path"`
 }
 
 // OriginConfig is a collection of configurations for prometheus origins proxied by Trickster
 // You can override these on a per-request basis with url-params
 type OriginConfig struct {
-	Type                  string `toml:"type"`
-	Scheme                string `toml:"scheme"`
-	Host                  string `toml:"host"`
-	PathPrefix            string `toml:"path_prefix"`
-	APIPath               string `toml:"api_path"`
-	IgnoreNoCacheHeader   bool   `toml:"ignore_no_cache_header"`
-	ValueRetentionFactor  int    `toml:"value_retention_factor"`
-	FastForwardDisable    bool   `toml:"fast_forward_disable"`
-	BackfillToleranceSecs int64  `toml:"backfill_tolerance_secs"`
-	TimeoutSecs           int64  `toml:"timeout_secs"`
-	CacheName             string `toml:"cache_name"`
+	Type                         string `toml:"type"`
+	Scheme                       string `toml:"scheme"`
+	Host                         string `toml:"host"`
+	PathPrefix                   string `toml:"path_prefix"`
+	APIPath                      string `toml:"api_path"`
+	IgnoreNoCacheHeader          bool   `toml:"ignore_no_cache_header"`
+	TimeseriesRetentionFactor    int    `toml:"timeseries_retention_factor"`
+	TimeseriesEvictionMethodName string `toml:"timeseries_eviction_method"`
+	FastForwardDisable           bool   `toml:"fast_forward_disable"`
+	BackfillToleranceSecs        int64  `toml:"backfill_tolerance_secs"`
+	TimeoutSecs                  int64  `toml:"timeout_secs"`
+	KeepAliveTimeoutSecs         int64  `toml:"keep_alive_timeout_secs"`
+	MaxIdleConns                 int    `toml:"max_idle_conns"`
+	CacheName                    string `toml:"cache_name"`
+	IsDefault                    bool   `toml:"is_default"`
 
-	Timeout           time.Duration `toml:"-"`
-	BackfillTolerance time.Duration `toml:"-"`
-	ValueRetention    time.Duration `toml:"-"`
+	Timeout                  time.Duration            `toml:"-"`
+	BackfillTolerance        time.Duration            `toml:"-"`
+	TimeseriesRetention      time.Duration            `toml:"-"`
+	TimeseriesEvictionMethod TimeseriesEvictionMethod `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -213,66 +232,463 @@ type MetricsConfig struct {
 
 // NewConfig returns a Config initialized with default values.
 func NewConfig() *TricksterConfig {
-
-	defaultCachePath := "/tmp/trickster"
-	defaultBBoltFile := "trickster.db"
-
 	return &TricksterConfig{
-		Caches: map[string]CachingConfig{
-			"default": {
-				Type:               "memory",
-				Compression:        true,
-				TimeseriesTTLSecs:  21600,
-				FastForwardTTLSecs: 15,
-				ObjectTTLSecs:      30,
-				Redis:              RedisCacheConfig{ClientType: "standard", Protocol: "tcp", Endpoint: "redis:6379", Endpoints: []string{"redis:6379"}},
-				Filesystem:         FilesystemCacheConfig{CachePath: defaultCachePath},
-				BBolt:              BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: "trickster"},
-				Badger:             BadgerCacheConfig{Directory: defaultCachePath, ValueDirectory: defaultCachePath},
-				Index: CacheIndexConfig{
-					ReapIntervalSecs:      3,
-					FlushIntervalSecs:     5,
-					MaxSizeBytes:          536870912,
-					MaxSizeBackoffBytes:   16777216,
-					MaxSizeObjects:        0,
-					MaxSizeBackoffObjects: 100,
-				},
-			},
+		Caches: map[string]*CachingConfig{
+			"default": DefaultCachingConfig(),
 		},
-		Logging: LoggingConfig{
-			LogFile:  "",
-			LogLevel: "INFO",
+		Logging: &LoggingConfig{
+			LogFile:  defaultLogFile,
+			LogLevel: defaultLogLevel,
 		},
-		Main: MainConfig{
-			Hostname: "localhost.unknown",
+		Main: &MainConfig{
+			Hostname:          defaultHostname,
+			ConfigHandlerPath: defaultConfigHandlerPath,
+			PingHandlerPath:   defaultPingHandlerPath,
 		},
-		Metrics: MetricsConfig{
-			ListenPort: 8082,
+		Metrics: &MetricsConfig{
+			ListenPort: defaultMetricsListenPort,
 		},
-		Origins: map[string]OriginConfig{
-			"default": defaultOriginConfig(),
+		Origins: map[string]*OriginConfig{
+			"default": DefaultOriginConfig(),
 		},
-		ProxyServer: ProxyServerConfig{
-			ListenPort: 9090,
+		ProxyServer: &ProxyServerConfig{
+			ListenPort: defaultProxyListenPort,
 		},
 	}
 }
 
-func defaultOriginConfig() OriginConfig {
-	return OriginConfig{
-		Type:                 "prometheus",
-		Scheme:               "http",
-		Host:                 "prometheus:9090",
-		APIPath:              "/api/v1/",
-		IgnoreNoCacheHeader:  true,
-		ValueRetentionFactor: 1024, // Cache a max of 1024 recent timestamps of data for each query
-		TimeoutSecs:          180,
-		CacheName:            "default",
+// DefaultCachingConfig will return a pointer to an OriginConfig with the default configuration settings
+func DefaultCachingConfig() *CachingConfig {
+
+	return &CachingConfig{
+		Type:               defaultCacheType,
+		Compression:        defaultCacheCompression,
+		TimeseriesTTLSecs:  defaultTimeseriesTTLSecs,
+		FastForwardTTLSecs: defaultFastForwardTTLSecs,
+		ObjectTTLSecs:      defaultObjectTTLSecs,
+		Redis:              RedisCacheConfig{ClientType: defaultRedisClientType, Protocol: defaultRedisProtocol, Endpoint: defaultRedisEndpoint, Endpoints: []string{defaultRedisEndpoint}},
+		Filesystem:         FilesystemCacheConfig{CachePath: defaultCachePath},
+		BBolt:              BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: defaultBBoltBucket},
+		Badger:             BadgerCacheConfig{Directory: defaultCachePath, ValueDirectory: defaultCachePath},
+		Index: CacheIndexConfig{
+			ReapIntervalSecs:      defaultCacheIndexReap,
+			FlushIntervalSecs:     defaultCacheIndexFlush,
+			MaxSizeBytes:          defaultCacheMaxSizeBytes,
+			MaxSizeBackoffBytes:   defaultMaxSizeBackoffBytes,
+			MaxSizeObjects:        defaultMaxSizeObjects,
+			MaxSizeBackoffObjects: defaultMaxSizeBackoffObjects,
+		},
+	}
+}
+
+// DefaultOriginConfig will return a pointer to an OriginConfig with the default configuration settings
+func DefaultOriginConfig() *OriginConfig {
+	return &OriginConfig{
+		Type:                         defaultOriginServerType,
+		Scheme:                       defaultOriginScheme,
+		Host:                         defaultOriginHost,
+		APIPath:                      defaultOriginAPIPath,
+		IgnoreNoCacheHeader:          defaultOriginINCH,
+		TimeseriesRetentionFactor:    defaultOriginTRF, // Cache a max of 1024 recent timestamps of data for each query
+		TimeseriesRetention:          defaultOriginTRF,
+		TimeseriesEvictionMethod:     defaultOriginTEM,
+		TimeseriesEvictionMethodName: defaultOriginTEMName,
+		TimeoutSecs:                  defaultOriginTimeoutSecs,
+		KeepAliveTimeoutSecs:         defaultKeepAliveTimeoutSecs,
+		MaxIdleConns:                 defaultMaxIdleConns,
+		CacheName:                    defaultOriginCacheName,
+		BackfillToleranceSecs:        defaultBackfillToleranceSecs,
+		Timeout:                      time.Second * defaultOriginTimeoutSecs,
+
+		BackfillTolerance: defaultBackfillToleranceSecs,
 	}
 }
 
 // loadFile loads application configuration from a TOML-formatted file.
 func (c *TricksterConfig) loadFile() error {
-	_, err := toml.DecodeFile(Flags.ConfigPath, &c)
+	md, err := toml.DecodeFile(Flags.ConfigPath, c)
+	c.setDefaults(md)
 	return err
+}
+
+func (c *TricksterConfig) setDefaults(metadata toml.MetaData) {
+	c.setOriginDefaults(metadata)
+	c.setCachingDefaults(metadata)
+}
+
+func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
+
+	// If the user has configured their own origins, and one of them is not "default"
+	// then Trickster will not use the auto-created default origin
+	if (len(c.Origins) > 1) && (!metadata.IsDefined("origins", "default")) {
+		delete(c.Origins, "default")
+	}
+
+	c.activeCaches = make(map[string]bool)
+
+	for k, v := range c.Origins {
+
+		oc := DefaultOriginConfig()
+		if metadata.IsDefined("origins", k, "type") {
+			oc.Type = v.Type
+		}
+
+		if metadata.IsDefined("origins", k, "is_default") {
+			oc.IsDefault = v.IsDefault
+		}
+		// If there is only one origin and is_default is not explicitly false, make it true
+		if len(c.Origins) == 1 && (!metadata.IsDefined("origins", k, "is_default")) {
+			oc.IsDefault = true
+		}
+
+		if metadata.IsDefined("origins", k, "cache_name") {
+			oc.CacheName = v.CacheName
+		}
+
+		if metadata.IsDefined("origins", k, "cache_name") {
+			oc.CacheName = v.CacheName
+		}
+		c.activeCaches[oc.CacheName] = true
+
+		if metadata.IsDefined("origins", k, "scheme") {
+			oc.Scheme = v.Scheme
+		}
+
+		if metadata.IsDefined("origins", k, "host") {
+			oc.Host = v.Host
+		}
+
+		if metadata.IsDefined("origins", k, "path_prefix") {
+			oc.PathPrefix = v.PathPrefix
+		}
+
+		if metadata.IsDefined("origins", k, "timeout_secs") {
+			oc.TimeoutSecs = v.TimeoutSecs
+		}
+
+		if metadata.IsDefined("origins", k, "max_idle_conns") {
+			oc.MaxIdleConns = v.MaxIdleConns
+		}
+
+		if metadata.IsDefined("origins", k, "keep_alive_timeout_secs") {
+			oc.KeepAliveTimeoutSecs = v.KeepAliveTimeoutSecs
+		}
+
+		if metadata.IsDefined("origins", k, "api_path") {
+			oc.APIPath = v.APIPath
+		}
+
+		if metadata.IsDefined("origins", k, "ignore_no_cache_header") {
+			oc.IgnoreNoCacheHeader = v.IgnoreNoCacheHeader
+		}
+
+		if metadata.IsDefined("origins", k, "timeseries_retention_factor") {
+			oc.TimeseriesRetentionFactor = v.TimeseriesRetentionFactor
+		}
+
+		if metadata.IsDefined("origins", k, "timeseries_eviction_method") {
+			oc.TimeseriesEvictionMethodName = strings.ToLower(v.TimeseriesEvictionMethodName)
+			if p, ok := timeseriesEvictionMethodNames[oc.TimeseriesEvictionMethodName]; ok {
+				oc.TimeseriesEvictionMethod = p
+			}
+		}
+
+		if metadata.IsDefined("origins", k, "fast_forward_disable") {
+			oc.FastForwardDisable = v.FastForwardDisable
+		}
+
+		if metadata.IsDefined("origins", k, "backfill_tolerance_secs") {
+			oc.BackfillToleranceSecs = v.BackfillToleranceSecs
+		}
+
+		c.Origins[k] = oc
+	}
+}
+
+func (c *TricksterConfig) setCachingDefaults(metadata toml.MetaData) {
+
+	// setCachingDefaults assumes that setOriginDefaults was just ran
+
+	for k, v := range c.Caches {
+
+		if _, ok := c.activeCaches[k]; !ok {
+			// a configured cache was not used by any origin. don't even instantiate it
+			delete(c.Caches, k)
+			continue
+		}
+
+		cc := DefaultCachingConfig()
+
+		if metadata.IsDefined("caches", k, "type") {
+			cc.Type = strings.ToLower(v.Type)
+		}
+
+		if metadata.IsDefined("caches", k, "compression") {
+			cc.Compression = v.Compression
+		}
+
+		if metadata.IsDefined("caches", k, "timeseries_ttl_secs") {
+			cc.TimeseriesTTLSecs = v.TimeseriesTTLSecs
+		}
+
+		if metadata.IsDefined("caches", k, "fastforward_ttl_secs") {
+			cc.FastForwardTTLSecs = v.FastForwardTTLSecs
+		}
+
+		if metadata.IsDefined("caches", k, "object_ttl_secs") {
+			cc.ObjectTTLSecs = v.ObjectTTLSecs
+		}
+
+		if metadata.IsDefined("caches", k, "index", "reap_interval_secs") {
+			cc.Index.ReapIntervalSecs = v.Index.ReapIntervalSecs
+		}
+
+		if metadata.IsDefined("caches", k, "index", "flush_interval_secs") {
+			cc.Index.FlushIntervalSecs = v.Index.FlushIntervalSecs
+		}
+
+		if metadata.IsDefined("caches", k, "index", "max_size_bytes") {
+			cc.Index.MaxSizeBytes = v.Index.MaxSizeBytes
+		}
+
+		if metadata.IsDefined("caches", k, "index", "max_size_backoff_bytes") {
+			cc.Index.MaxSizeBackoffBytes = v.Index.MaxSizeBackoffBytes
+		}
+
+		if metadata.IsDefined("caches", k, "index", "max_size_objects") {
+			cc.Index.MaxSizeObjects = v.Index.MaxSizeObjects
+		}
+
+		if metadata.IsDefined("caches", k, "index", "max_size_backoff_objects") {
+			cc.Index.MaxSizeBackoffObjects = v.Index.MaxSizeBackoffObjects
+		}
+
+		if cc.Type == "redis" {
+
+			var hasEndpoint, hasEndpoints bool
+
+			ct := strings.ToLower(v.Redis.ClientType)
+			if metadata.IsDefined("caches", k, "redis", "client_type") {
+				cc.Redis.ClientType = ct
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "protocol") {
+				cc.Redis.Protocol = v.Redis.Protocol
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "endpoint") {
+				cc.Redis.Endpoint = v.Redis.Endpoint
+				hasEndpoint = true
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "endpoints") {
+				cc.Redis.Endpoints = v.Redis.Endpoints
+				hasEndpoints = true
+			}
+
+			if cc.Redis.ClientType == "standard" {
+				if hasEndpoints && !hasEndpoint {
+					LoaderWarnings = append(LoaderWarnings, "'standard' redis type configured, but 'endpoints' value is provided instead of 'endpoint'")
+				}
+			} else {
+				if hasEndpoint && !hasEndpoints {
+					LoaderWarnings = append(LoaderWarnings, fmt.Sprintf("'%s' redis type configured, but 'endpoint' value is provided instead of 'endpoints'", cc.Redis.ClientType))
+				}
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "sentinel_master") {
+				cc.Redis.SentinelMaster = v.Redis.SentinelMaster
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "password") {
+				cc.Redis.Password = v.Redis.Password
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "db") {
+				cc.Redis.DB = v.Redis.DB
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "max_retries") {
+				cc.Redis.MaxRetries = v.Redis.MaxRetries
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "min_retry_backoff_ms") {
+				cc.Redis.MinRetryBackoffMS = v.Redis.MinRetryBackoffMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "max_retry_backoff_ms") {
+				cc.Redis.MaxRetryBackoffMS = v.Redis.MaxRetryBackoffMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "dial_timeout_ms") {
+				cc.Redis.DialTimeoutMS = v.Redis.DialTimeoutMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "read_timeout_ms") {
+				cc.Redis.ReadTimeoutMS = v.Redis.ReadTimeoutMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "write_timeout_ms") {
+				cc.Redis.WriteTimeoutMS = v.Redis.WriteTimeoutMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "pool_size") {
+				cc.Redis.PoolSize = v.Redis.PoolSize
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "min_idle_conns") {
+				cc.Redis.MinIdleConns = v.Redis.MinIdleConns
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "max_conn_age_ms") {
+				cc.Redis.MaxConnAgeMS = v.Redis.MaxConnAgeMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "pool_timeout_ms") {
+				cc.Redis.PoolTimeoutMS = v.Redis.PoolTimeoutMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "idle_timeout_ms") {
+				cc.Redis.IdleTimeoutMS = v.Redis.IdleTimeoutMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "idle_check_frequency_ms") {
+				cc.Redis.IdleCheckFrequencyMS = v.Redis.IdleCheckFrequencyMS
+			}
+		}
+
+		if metadata.IsDefined("caches", k, "filesystem", "cache_path") {
+			cc.Filesystem.CachePath = v.Filesystem.CachePath
+		}
+
+		if metadata.IsDefined("caches", k, "bbolt", "filename") {
+			cc.BBolt.Filename = v.BBolt.Filename
+		}
+
+		if metadata.IsDefined("caches", k, "bbolt", "bucket") {
+			cc.BBolt.Bucket = v.BBolt.Bucket
+		}
+
+		if metadata.IsDefined("caches", k, "badger", "directory") {
+			cc.Badger.Directory = v.Badger.Directory
+		}
+
+		if metadata.IsDefined("caches", k, "badger", "value_directory") {
+			cc.Badger.ValueDirectory = v.Badger.ValueDirectory
+		}
+
+		c.Caches[k] = cc
+	}
+}
+
+func (c *TricksterConfig) copy() *TricksterConfig {
+
+	nc := NewConfig()
+
+	nc.Main.ConfigHandlerPath = c.Main.ConfigHandlerPath
+	nc.Main.Environment = c.Main.Environment
+	nc.Main.Hostname = c.Main.Hostname
+	nc.Main.InstanceID = c.Main.InstanceID
+	nc.Main.PingHandlerPath = c.Main.PingHandlerPath
+
+	nc.Logging.LogFile = c.Logging.LogFile
+	nc.Logging.LogLevel = c.Logging.LogLevel
+
+	nc.Metrics.ListenAddress = c.Metrics.ListenAddress
+	nc.Metrics.ListenPort = c.Metrics.ListenPort
+
+	nc.ProxyServer.ListenAddress = c.ProxyServer.ListenAddress
+	nc.ProxyServer.ListenPort = c.ProxyServer.ListenPort
+
+	for k, v := range c.Origins {
+		o := DefaultOriginConfig()
+		o.APIPath = v.APIPath
+		o.BackfillTolerance = v.BackfillTolerance
+		o.BackfillToleranceSecs = v.BackfillToleranceSecs
+		o.CacheName = v.CacheName
+		o.FastForwardDisable = v.FastForwardDisable
+		o.Host = v.Host
+		o.IgnoreNoCacheHeader = v.IgnoreNoCacheHeader
+		o.IsDefault = v.IsDefault
+		o.KeepAliveTimeoutSecs = v.KeepAliveTimeoutSecs
+		o.MaxIdleConns = v.MaxIdleConns
+		o.PathPrefix = v.PathPrefix
+		o.Scheme = v.Scheme
+		o.Timeout = v.Timeout
+		o.TimeoutSecs = v.TimeoutSecs
+		o.Type = v.Type
+		o.TimeseriesRetention = v.TimeseriesRetention
+		o.TimeseriesRetentionFactor = v.TimeseriesRetentionFactor
+		o.TimeseriesEvictionMethodName = v.TimeseriesEvictionMethodName
+		o.TimeseriesEvictionMethod = v.TimeseriesEvictionMethod
+		nc.Origins[k] = o
+	}
+
+	for k, v := range c.Caches {
+
+		cc := DefaultCachingConfig()
+		cc.Compression = v.Compression
+		cc.FastForwardTTL = v.FastForwardTTL
+		cc.FastForwardTTLSecs = v.FastForwardTTLSecs
+		cc.ObjectTTL = v.ObjectTTL
+		cc.ObjectTTLSecs = v.ObjectTTLSecs
+		cc.TimeseriesTTL = v.TimeseriesTTL
+		cc.TimeseriesTTLSecs = v.TimeseriesTTLSecs
+		cc.Type = v.Type
+
+		cc.Index.FlushInterval = v.Index.FlushInterval
+		cc.Index.FlushIntervalSecs = v.Index.FlushIntervalSecs
+		cc.Index.MaxSizeBackoffBytes = v.Index.MaxSizeBackoffBytes
+		cc.Index.MaxSizeBackoffObjects = v.Index.MaxSizeBackoffObjects
+		cc.Index.MaxSizeBytes = v.Index.MaxSizeBytes
+		cc.Index.MaxSizeObjects = v.Index.MaxSizeObjects
+		cc.Index.ReapInterval = v.Index.ReapInterval
+		cc.Index.ReapIntervalSecs = v.Index.ReapIntervalSecs
+
+		cc.Badger.Directory = v.Badger.Directory
+		cc.Badger.ValueDirectory = v.Badger.ValueDirectory
+
+		cc.Filesystem.CachePath = v.Filesystem.CachePath
+
+		cc.BBolt.Bucket = v.BBolt.Bucket
+		cc.BBolt.Filename = v.BBolt.Filename
+
+		cc.Redis.ClientType = v.Redis.ClientType
+		cc.Redis.DB = v.Redis.DB
+		cc.Redis.DialTimeoutMS = v.Redis.DialTimeoutMS
+		cc.Redis.Endpoint = v.Redis.Endpoint
+		cc.Redis.Endpoints = v.Redis.Endpoints
+		cc.Redis.IdleCheckFrequencyMS = v.Redis.IdleCheckFrequencyMS
+		cc.Redis.IdleTimeoutMS = v.Redis.IdleTimeoutMS
+		cc.Redis.MaxConnAgeMS = v.Redis.MaxConnAgeMS
+		cc.Redis.MaxRetries = v.Redis.MaxRetries
+		cc.Redis.MaxRetryBackoffMS = v.Redis.MaxRetryBackoffMS
+		cc.Redis.MinIdleConns = v.Redis.MinIdleConns
+		cc.Redis.MinRetryBackoffMS = v.Redis.MinRetryBackoffMS
+		cc.Redis.Password = v.Redis.Password
+		cc.Redis.PoolSize = v.Redis.PoolSize
+		cc.Redis.PoolTimeoutMS = v.Redis.PoolTimeoutMS
+		cc.Redis.Protocol = v.Redis.Protocol
+		cc.Redis.ReadTimeoutMS = v.Redis.ReadTimeoutMS
+		cc.Redis.SentinelMaster = v.Redis.SentinelMaster
+		cc.Redis.WriteTimeoutMS = v.Redis.WriteTimeoutMS
+
+		nc.Caches[k] = cc
+	}
+
+	return nc
+}
+
+func (c *TricksterConfig) String() string {
+	cp := c.copy()
+	for k, v := range cp.Caches {
+		if v != nil {
+			cp.Caches[k].Redis.Password = "*****"
+		}
+	}
+
+	var buf bytes.Buffer
+	e := toml.NewEncoder(&buf)
+	e.Encode(cp)
+	return buf.String()
 }

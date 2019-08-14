@@ -18,6 +18,8 @@ Trickster works with virtually any Dashboard application that makes queries to a
 
 <img src="./docs/images/external/influx_logo_60.png" width=16 /> InfluxDB
 
+<img src="./docs/images/external/irondb_logo_60.png" width=16 /> Circonus IRONdb
+
 ## How it works
 
 ### 1. Delta Proxy
@@ -90,4 +92,5 @@ As the Trickster community grows, we'd like to keep track of who is using it in 
 
 1. [Comcast](https://comcast.github.io) [[@jranson](https://github.com/jranson)]
 2. [Selfnet e.V.](https://www.selfnet.de/) [[@ThoreKr](https://github.com/ThoreKr)]
+3. [swarmstack](https://github.com/swarmstack) [[@mh720](https://github.com/mh720)]
 
