@@ -19,46 +19,25 @@ import (
 	_ "net/http/pprof" // Comment to disable. Available on :METRICS_PORT/debug/pprof
 	"os"
 
-	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	th "github.com/Comcast/trickster/internal/proxy/handlers"
 	"github.com/Comcast/trickster/internal/routing"
 	rr "github.com/Comcast/trickster/internal/routing/registration"
 	"github.com/Comcast/trickster/internal/util/log"
-	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/Comcast/trickster/pkg/trickster"
 
 	"github.com/gorilla/handlers"
 )
 
-const (
-	applicationName    = "trickster"
-	applicationVersion = "1.0.9"
-)
-
 func main() {
-
-	var err error
-	err = config.Load(applicationName, applicationVersion, os.Args[1:])
+	err := trickster.InitTrickster(os.Args[1:])
 	if err != nil {
 		fmt.Println("Could not load configuration:", err.Error())
 		os.Exit(1)
 	}
 
-	if config.Flags.PrintVersion {
-		fmt.Println(applicationVersion)
-		os.Exit(0)
-	}
+	defer trickster.FinTrickster()
 
-	log.Init()
-	defer log.Logger.Close()
-	log.Info("application start up", log.Pairs{"name": applicationName, "version": applicationVersion, "logLevel": config.Logging.LogLevel})
-
-	for _, w := range config.LoaderWarnings {
-		log.Warn(w, log.Pairs{})
-	}
-
-	metrics.Init()
-	cr.LoadCachesFromConfig()
 	th.RegisterPingHandler()
 	th.RegisterConfigHandler()
 	err = rr.RegisterProxyRoutes()
