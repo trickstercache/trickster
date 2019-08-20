@@ -152,6 +152,7 @@ func (c *Cache) remove(cacheKey string) error {
 		log.Error("bbolt cache key delete failure", log.Pairs{"cacheKey": cacheKey, "reason": err.Error()})
 		return err
 	}
+	cache.ObserveCacheDel(c.Name, c.Config.Type, 0)
 	log.Debug("bbolt cache key delete", log.Pairs{"key": cacheKey})
 	return nil
 }

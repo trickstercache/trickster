@@ -90,6 +90,7 @@ func (c *Cache) Remove(cacheKey string) {
 	c.dbh.Update(func(txn *badger.Txn) error {
 		return txn.Delete([]byte(cacheKey))
 	})
+	cache.ObserveCacheDel(c.Name, c.Config.Type, 0)
 }
 
 // BulkRemove removes a list of objects from the cache. noLock is not used for Badger
@@ -101,6 +102,7 @@ func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
 			if err := txn.Delete([]byte(key)); err != nil {
 				return err
 			}
+			cache.ObserveCacheDel(c.Name, c.Config.Type, 0)
 		}
 		return nil
 	})
