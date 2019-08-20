@@ -42,7 +42,7 @@ func TestSeriesHandler(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL+`/default/api/v1/series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}&start=100&end=100`, nil)
 
-	client := &Client{name: "default", config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
+	client := &Client{name: "default", config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient(), logger: logger}
 
 	client.SeriesHandler(w, r)
 

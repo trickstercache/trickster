@@ -99,7 +99,7 @@ func TestParseTimeFails(t *testing.T) {
 
 func TestConfiguration(t *testing.T) {
 	oc := &config.OriginConfig{Type: "TEST"}
-	client := Client{config: oc}
+	client := Client{config: oc, logger: logger}
 	c := client.Configuration()
 	if c.Type != "TEST" {
 		t.Errorf("expected %s got %s", "TEST", c.Type)

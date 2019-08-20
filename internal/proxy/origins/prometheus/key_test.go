@@ -23,7 +23,7 @@ import (
 
 func TestDeriveCacheKey(t *testing.T) {
 
-	client := &Client{}
+	client := &Client{logger: logger}
 	u := &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
 	r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}}
 	key := client.DeriveCacheKey(r, "extra")

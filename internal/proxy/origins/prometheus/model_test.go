@@ -46,7 +46,7 @@ func TestMarshalTimeseries(t *testing.T) {
 	}
 
 	expected := `{"status":"","data":{"resultType":"matrix","result":[{"metric":{"__name__":"a"},"values":[[99,"1.5"],[199,"1.5"],[299,"1.5"]]},{"metric":{"__name__":"b"},"values":[[99,"1.5"],[199,"1.5"],[299,"1.5"]]}]}}`
-	client := &Client{}
+	client := &Client{logger: logger}
 	bytes, err := client.MarshalTimeseries(me)
 	if err != nil {
 		t.Error(err)
@@ -62,7 +62,7 @@ func TestMarshalTimeseries(t *testing.T) {
 func TestUnmarshalTimeseries(t *testing.T) {
 
 	bytes := []byte(`{"status":"","data":{"resultType":"matrix","result":[{"metric":{"__name__":"a"},"values":[[99,"1.5"],[199,"1.5"],[299,"1.5"]]},{"metric":{"__name__":"b"},"values":[[99,"1.5"],[199,"1.5"],[299,"1.5"]]}]}}`)
-	client := &Client{}
+	client := &Client{logger: logger}
 	ts, err := client.UnmarshalTimeseries(bytes)
 	if err != nil {
 		t.Error(err)
@@ -91,7 +91,7 @@ func TestUnmarshalTimeseries(t *testing.T) {
 func TestUnmarshalInstantaneous(t *testing.T) {
 
 	bytes := []byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"up","instance":"localhost:9090","job":"prometheus"},"value":[1554730772.113,"1"]}]}}`)
-	client := &Client{}
+	client := &Client{logger: logger}
 	ts, err := client.UnmarshalInstantaneous(bytes)
 	if err != nil {
 		t.Error(err)
@@ -120,7 +120,7 @@ func TestUnmarshalInstantaneous(t *testing.T) {
 func TestUnmarshalInstantaneousFails(t *testing.T) {
 
 	bytes := []byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"up","instance":"localhost:9090","job":"prometheus"},"value":[1554730772.113,"1"]}]}`)
-	client := &Client{}
+	client := &Client{logger: logger}
 	_, err := client.UnmarshalInstantaneous(bytes)
 	if err == nil {
 		t.Errorf("expected error: 'unexpected end of JSON input'")
