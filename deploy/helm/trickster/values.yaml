@@ -37,6 +37,8 @@ caches:
 
 origins:
   - name: default
+    isDefault: true
+    cacheName: 'default'
     type: prometheus
     scheme: http
     host: 'prometheus:9090'

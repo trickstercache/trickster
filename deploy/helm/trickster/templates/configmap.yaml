@@ -229,7 +229,14 @@ data:
     {{- range .Values.origins }}
         {{ printf "[origins.%s]" .name }}
         type = {{ .type | quote }}
+        {{- if .isDefault }}
+        is_default = {{ .isDefault }}
+        {{- end }}
+        {{- if .cacheName }}
+        cache_name = {{ .cacheName | quote }}
+        {{- else }}
         cache_name = {{ .name | quote }}
+        {{- end }}
         scheme = {{ .scheme | quote }}
         host = {{ .host | quote }}
         path_prefix = {{ .pathPrefix | quote }}
