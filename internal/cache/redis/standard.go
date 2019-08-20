@@ -23,7 +23,7 @@ import (
 // Connect connects to the configured Redis endpoint
 func (c *Cache) clientConnect() error {
 
-	log.Info("connecting to redis", log.Pairs{"protocol": c.Config.Redis.Protocol, "Endpoint": c.Config.Redis.Endpoint})
+	log.Info(c.logger, "connecting to redis", log.Pairs{"protocol": c.Config.Redis.Protocol, "Endpoint": c.Config.Redis.Endpoint})
 	opts, err := c.clientOpts()
 	if err != nil {
 		return err

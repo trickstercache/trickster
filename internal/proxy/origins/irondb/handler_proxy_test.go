@@ -26,6 +26,7 @@ func TestProxyHandler(t *testing.T) {
 		name:      "default",
 		config:    config.Origins["default"],
 		webClient: tu.NewTestWebClient(),
+		logger:    logger,
 	}
 
 	client.ProxyHandler(w, r)

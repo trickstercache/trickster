@@ -24,15 +24,10 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/model"
-	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 
 	"github.com/influxdata/influxdb/pkg/testing/assert"
 )
-
-func init() {
-	metrics.Init()
-}
 
 func TestParseTimeRangeQuery(t *testing.T) {
 	req := &http.Request{URL: &url.URL{
@@ -41,7 +36,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		Path:     "/",
 		RawQuery: url.Values(map[string][]string{"q": {`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY time(15s), "cluster" fill(null)`}, "epoch": {"ms"}}).Encode(),
 	}}
-	client := &Client{}
+	client := &Client{logger: logger}
 	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err != nil {
 		t.Error(err)
@@ -61,7 +56,7 @@ func TestQueryHandlerWithSelect(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
+	cr.LoadCachesFromConfig(logger)
 	cache, err := cr.GetCache("default")
 	if err != nil {
 		t.Error(err)
@@ -70,7 +65,7 @@ func TestQueryHandlerWithSelect(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/query?q=select%20test", nil)
 
-	client := &Client{name: "default", config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
+	client := &Client{name: "default", config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient(), logger: logger}
 
 	client.QueryHandler(w, r)
 
@@ -104,7 +99,7 @@ func TestQueryHandlerNotSelect(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/query", nil)
 
-	client := &Client{name: "default", config: config.Origins["default"], webClient: tu.NewTestWebClient()}
+	client := &Client{name: "default", config: config.Origins["default"], webClient: tu.NewTestWebClient(), logger: logger}
 
 	client.QueryHandler(w, r)
 
@@ -136,7 +131,7 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 			"epoch": {"ms"},
 		}).Encode(),
 	}}
-	client := &Client{}
+	client := &Client{logger: logger}
 	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
 		t.Errorf(`Expected "%s", got NO ERROR`, expected)

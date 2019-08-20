@@ -14,18 +14,23 @@
 package redis
 
 import (
+	"os"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/go-kit/kit/log"
 
 	"github.com/alicebob/miniredis"
 )
 
+var logger log.Logger
+
 func init() {
-	metrics.Init()
+	logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
+	metrics.Init(logger)
 }
 
 const cacheKey = `cacheKey`
@@ -43,7 +48,7 @@ func setupRedisCache(cacheType string) (*Cache, func()) {
 	cacheConfig := &config.CachingConfig{Type: cacheType, Redis: rcfg}
 	config.Caches = map[string]*config.CachingConfig{"default": cacheConfig}
 
-	return &Cache{Config: cacheConfig}, close
+	return New("", cacheConfig, logger), close
 }
 
 func TestDurationFromMS(t *testing.T) {

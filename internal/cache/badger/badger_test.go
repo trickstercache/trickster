@@ -21,10 +21,14 @@ import (
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/go-kit/kit/log"
 )
 
+var logger log.Logger
+
 func init() {
-	metrics.Init()
+	logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
+	metrics.Init(logger)
 }
 
 const cacheType = "badger"
@@ -41,7 +45,7 @@ func newCacheConfig(t *testing.T) config.CachingConfig {
 func TestConfiguration(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Badger.Directory)
-	bc := Cache{Config: &cacheConfig}
+	bc := New("", &cacheConfig, logger)
 
 	cfg := bc.Configuration()
 	if cfg.Type != cacheType {
@@ -52,7 +56,7 @@ func TestConfiguration(t *testing.T) {
 func TestBadgerCache_Connect(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Badger.Directory)
-	bc := Cache{Config: &cacheConfig}
+	bc := New("", &cacheConfig, logger)
 
 	// it should connect
 	if err := bc.Connect(); err != nil {
@@ -64,7 +68,7 @@ func TestBadgerCache_Connect(t *testing.T) {
 func TestBadgerCache_Store(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Badger.Directory)
-	bc := Cache{Config: &cacheConfig}
+	bc := New("", &cacheConfig, logger)
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -81,7 +85,7 @@ func TestBadgerCache_Store(t *testing.T) {
 func TestBadgerCache_Remove(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Badger.Directory)
-	bc := Cache{Config: &cacheConfig}
+	bc := New("", &cacheConfig, logger)
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -116,7 +120,7 @@ func TestBadgerCache_Remove(t *testing.T) {
 func TestBadgerCache_BulkRemove(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Badger.Directory)
-	bc := Cache{Config: &cacheConfig}
+	bc := New("", &cacheConfig, logger)
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -151,7 +155,7 @@ func TestBadgerCache_BulkRemove(t *testing.T) {
 func TestBadgerCache_Retrieve(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Badger.Directory)
-	bc := Cache{Config: &cacheConfig}
+	bc := New("", &cacheConfig, logger)
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -187,7 +191,7 @@ func TestBadgerCache_Close(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	cacheConfig := config.CachingConfig{Type: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
-	bc := Cache{Config: &cacheConfig}
+	bc := New("", &cacheConfig, logger)
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)

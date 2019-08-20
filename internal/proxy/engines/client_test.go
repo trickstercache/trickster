@@ -19,6 +19,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,6 +36,7 @@ import (
 	tu "github.com/Comcast/trickster/internal/util/testing"
 	"github.com/Comcast/trickster/pkg/sort/times"
 
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
 )
 
@@ -70,6 +72,12 @@ const (
 	upTime    = "time"
 )
 
+var logger log.Logger
+
+func init() {
+	logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
+}
+
 // Client Implements Proxy Client Interface
 type PromTestClient struct {
 	name      string
@@ -78,15 +86,16 @@ type PromTestClient struct {
 	config    *config.OriginConfig
 	cache     cache.Cache
 	webClient *http.Client
+	logger    log.Logger
 
 	fftime          time.Time
 	InstantCacheKey string
 	RangeCacheKey   string
 }
 
-func newPromTestClient(name string, config *config.OriginConfig, cache cache.Cache) *PromTestClient {
+func newPromTestClient(name string, config *config.OriginConfig, cache cache.Cache, logger log.Logger) *PromTestClient {
 
-	return &PromTestClient{name: name, config: config, cache: cache, webClient: tu.NewTestWebClient()}
+	return &PromTestClient{name: name, config: config, cache: cache, webClient: tu.NewTestWebClient(), logger: logger}
 }
 
 // Configuration returns the upstream Configuration for this Client
@@ -107,6 +116,11 @@ func (c *PromTestClient) Name() string {
 // Cache returns and handle to the Cache instance used by the Client
 func (c *PromTestClient) Cache() cache.Cache {
 	return c.cache
+}
+
+// Logger will return the Logger instance
+func (c *PromTestClient) Logger() log.Logger {
+	return c.logger
 }
 
 // parseTime converts a query time URL parameter to time.Time.
@@ -693,7 +707,7 @@ func (c *PromTestClient) RegisterRoutes(originName string, o *config.OriginConfi
 func (c *PromTestClient) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BaseURL()
 	u.Path += APIPath + mnLabels
-	ProxyRequest(tm.NewRequest(c.name, otPrometheus, "HealthHandler", http.MethodGet, u, r.Header, c.config.Timeout, r, c.webClient), w)
+	ProxyRequest(tm.NewRequest(c.name, otPrometheus, "HealthHandler", http.MethodGet, u, r.Header, c.config.Timeout, r, c.webClient), w, c.Logger())
 }
 
 func (c *PromTestClient) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
@@ -718,7 +732,7 @@ func (c *PromTestClient) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *PromTestClient) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	ProxyRequest(tm.NewRequest(c.name, otPrometheus, "APIProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r, c.webClient), w)
+	ProxyRequest(tm.NewRequest(c.name, otPrometheus, "APIProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r, c.webClient), w, c.Logger())
 }
 
 func testResultHeaderPartMatch(header http.Header, kvp map[string]string) error {

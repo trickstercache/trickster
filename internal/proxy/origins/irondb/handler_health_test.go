@@ -23,6 +23,7 @@ func TestHealthHandler(t *testing.T) {
 		name:      "default",
 		config:    config.Origins["default"],
 		webClient: tu.NewTestWebClient(),
+		logger:    logger,
 	}
 
 	client.HealthHandler(w, r)

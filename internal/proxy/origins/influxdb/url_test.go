@@ -36,7 +36,7 @@ func TestSetExtent(t *testing.T) {
 	}
 
 	oc := config.Origins["default"]
-	client := Client{config: oc}
+	client := Client{config: oc, logger: logger}
 
 	u := &url.URL{}
 	tu := &url.URL{RawQuery: "q=select * where <$TIME_TOKEN$> group by time(1m)"}

@@ -26,6 +26,7 @@ func TestStateHandler(t *testing.T) {
 		name:      "default",
 		config:    config.Origins["default"],
 		webClient: tu.NewTestWebClient(),
+		logger:    logger,
 	}
 
 	client.StateHandler(w, r)

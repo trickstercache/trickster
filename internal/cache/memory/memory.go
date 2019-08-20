@@ -21,6 +21,7 @@ import (
 	"github.com/Comcast/trickster/internal/cache/index"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
+	kitlog "github.com/go-kit/kit/log"
 )
 
 // Cache defines a a Memory Cache client that conforms to the Cache interface
@@ -29,6 +30,11 @@ type Cache struct {
 	client sync.Map
 	Config *config.CachingConfig
 	Index  *index.Index
+	logger kitlog.Logger
+}
+
+func New(name string, cfg *config.CachingConfig, logger kitlog.Logger) *Cache {
+	return &Cache{Name: name, Config: cfg, logger: logger}
 }
 
 // Configuration returns the Configuration for the Cache object
@@ -38,16 +44,16 @@ func (c *Cache) Configuration() *config.CachingConfig {
 
 // Connect initializes the Cache
 func (c *Cache) Connect() error {
-	log.Info("memorycache setup", log.Pairs{})
+	log.Info(c.logger, "memorycache setup", log.Pairs{})
 	c.client = sync.Map{}
-	c.Index = index.NewIndex(c.Name, c.Config.Type, nil, c.Config.Index, c.BulkRemove, nil)
+	c.Index = index.NewIndex(c.Name, c.Config.Type, nil, c.Config.Index, c.BulkRemove, nil, c.logger)
 	return nil
 }
 
 // Store places an object in the cache using the specified key and ttl
 func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
-	log.Debug("memorycache cache store", log.Pairs{"cacheKey": cacheKey, "length": len(data), "ttl": ttl})
+	log.Debug(c.logger, "memorycache cache store", log.Pairs{"cacheKey": cacheKey, "length": len(data), "ttl": ttl})
 	o := index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	c.client.Store(cacheKey, o)
 	go c.Index.UpdateObject(o)
@@ -60,7 +66,7 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 	if ok {
 		r := record.(index.Object)
 		if r.Expiration.After(time.Now()) {
-			log.Debug("memorycache cache retrieve", log.Pairs{"cacheKey": cacheKey})
+			log.Debug(c.logger, "memorycache cache retrieve", log.Pairs{"cacheKey": cacheKey})
 			c.Index.UpdateObjectAccessTime(cacheKey)
 			cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(r.Value)))
 			return r.Value, nil

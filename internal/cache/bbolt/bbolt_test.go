@@ -20,10 +20,14 @@ import (
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/go-kit/kit/log"
 )
 
+var logger log.Logger
+
 func init() {
-	metrics.Init()
+	logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
+	metrics.Init(logger)
 }
 
 const cacheType = "bbolt"
@@ -35,7 +39,7 @@ func newCacheConfig() config.CachingConfig {
 
 func TestConfiguration(t *testing.T) {
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig}
+	bc := New("", &cacheConfig, logger)
 	cfg := bc.Configuration()
 	if cfg.Type != cacheType {
 		t.Fatalf("expected %s got %s", cacheType, cfg.Type)
@@ -45,7 +49,7 @@ func TestConfiguration(t *testing.T) {
 func TestBboltCache_Connect(t *testing.T) {
 	cacheConfig := newCacheConfig()
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
-	bc := Cache{Config: &cacheConfig}
+	bc := New("", &cacheConfig, logger)
 	// it should connect
 	err := bc.Connect()
 	if err != nil {
@@ -57,7 +61,7 @@ func TestBboltCache_Connect(t *testing.T) {
 func TestBboltCache_Store(t *testing.T) {
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig}
+	bc := New("", &cacheConfig, logger)
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
@@ -76,7 +80,7 @@ func TestBboltCache_Store(t *testing.T) {
 func TestBboltCache_StoreNoIndex(t *testing.T) {
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig}
+	bc := New("", &cacheConfig, logger)
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
@@ -102,7 +106,7 @@ func TestBboltCache_StoreNoIndex(t *testing.T) {
 func TestBboltCache_Remove(t *testing.T) {
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig}
+	bc := New("", &cacheConfig, logger)
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
@@ -139,7 +143,7 @@ func TestBboltCache_Remove(t *testing.T) {
 func TestBboltCache_BulkRemove(t *testing.T) {
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig}
+	bc := New("", &cacheConfig, logger)
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
@@ -176,7 +180,7 @@ func TestBboltCache_BulkRemove(t *testing.T) {
 func TestBboltCache_Retrieve(t *testing.T) {
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig}
+	bc := New("", &cacheConfig, logger)
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()

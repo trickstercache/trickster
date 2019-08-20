@@ -24,7 +24,7 @@ import (
 
 // Connect connects to the configured Redis endpoint
 func (c *Cache) sentinelConnect() error {
-	log.Info("connecting to redis", log.Pairs{"protocol": c.Config.Redis.Protocol, "Endpoints": strings.Join(c.Config.Redis.Endpoints, ",")})
+	log.Info(c.logger, "connecting to redis", log.Pairs{"protocol": c.Config.Redis.Protocol, "Endpoints": strings.Join(c.Config.Redis.Endpoints, ",")})
 	opts, err := c.sentinelOpts()
 	if err != nil {
 		return err
@@ -55,7 +55,7 @@ func (c *Cache) sentinelBulkRemove(cacheKeys []string, noLock bool) {
 
 // Close disconnects from the Redis Cache
 func (c *Cache) sentinelClose() error {
-	log.Info("closing redis connection", log.Pairs{})
+	log.Info(c.logger, "closing redis connection", log.Pairs{})
 	c.client.Close()
 	return nil
 }

@@ -21,7 +21,7 @@ func TestFindHandler(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
+	cr.LoadCachesFromConfig(logger)
 	cache, err := cr.GetCache("default")
 	if err != nil {
 		t.Error(err)
@@ -35,6 +35,7 @@ func TestFindHandler(t *testing.T) {
 		config:    config.Origins["default"],
 		cache:     cache,
 		webClient: tu.NewTestWebClient(),
+		logger:    logger,
 	}
 
 	client.FindHandler(w, r)

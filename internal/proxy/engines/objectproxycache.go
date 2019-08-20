@@ -41,9 +41,9 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Ca
 	}
 
 	if !refresh {
-		if d, err := QueryCache(cache, key); err == nil {
+		if d, err := QueryCache(cache, key, client.Logger()); err == nil {
 			recordOPCResult(r, tc.LookupStatusHit, "200", r.URL.Path, 0, d.Headers)
-			log.Debug("cache hit", log.Pairs{"key": key})
+			log.Debug(client.Logger(), "cache hit", log.Pairs{"key": key})
 			rsp := &http.Response{
 				Header:     d.Headers,
 				StatusCode: d.StatusCode,
@@ -53,11 +53,11 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Ca
 		}
 	}
 
-	body, resp, elapsed := Fetch(r)
+	body, resp, elapsed := Fetch(r, client.Logger())
 	recordOPCResult(r, tc.LookupStatusKeyMiss, strconv.Itoa(resp.StatusCode), r.URL.Path, elapsed.Seconds(), resp.Header)
 
 	if resp.StatusCode == http.StatusOK && len(body) > 0 {
-		WriteCache(cache, key, model.DocumentFromHTTPResponse(resp, body), ttl)
+		WriteCache(cache, key, model.DocumentFromHTTPResponse(resp, body), ttl, client.Logger())
 	}
 
 	return body, resp, false

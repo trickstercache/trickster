@@ -19,13 +19,8 @@ import (
 	"testing"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
-
-func init() {
-	metrics.Init()
-}
 
 func TestHealthHandler(t *testing.T) {
 
@@ -40,7 +35,7 @@ func TestHealthHandler(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/health", nil)
 
-	client := &Client{name: "default", config: config.Origins["default"], webClient: tu.NewTestWebClient()}
+	client := &Client{name: "default", config: config.Origins["default"], webClient: tu.NewTestWebClient(), logger: logger}
 	client.HealthHandler(w, r)
 	resp := w.Result()
 

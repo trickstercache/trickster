@@ -25,7 +25,7 @@ import (
 
 // Connect connects to the configured Redis endpoint
 func (c *Cache) clusterConnect() error {
-	log.Info("connecting to redis cluster", log.Pairs{"Endpoints": strings.Join(c.Config.Redis.Endpoints, ",")})
+	log.Info(c.logger, "connecting to redis cluster", log.Pairs{"Endpoints": strings.Join(c.Config.Redis.Endpoints, ",")})
 	opts, err := c.clusterOpts()
 	if err != nil {
 		return err
@@ -56,7 +56,7 @@ func (c *Cache) clusterBulkRemove(cacheKeys []string, noLock bool) {
 
 // Close disconnects from the Redis Cluster
 func (c *Cache) clusterClose() error {
-	log.Info("closing redis cluster connection", log.Pairs{})
+	log.Info(c.logger, "closing redis cluster connection", log.Pairs{})
 	c.clusterClient.Close()
 	return nil
 }

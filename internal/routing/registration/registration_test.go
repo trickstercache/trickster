@@ -14,15 +14,20 @@
 package registration
 
 import (
+	"os"
 	"testing"
 
 	"github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/go-kit/kit/log"
 )
 
+var logger log.Logger
+
 func init() {
-	metrics.Init()
+	logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	metrics.Init(logger)
 }
 
 func TestRegisterProxyRoutes(t *testing.T) {
@@ -31,8 +36,8 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
-	registration.LoadCachesFromConfig()
-	RegisterProxyRoutes()
+	registration.LoadCachesFromConfig(logger)
+	RegisterProxyRoutes(logger)
 
 	if len(ProxyClients) == 0 {
 		t.Errorf("expected %d got %d", 1, 0)
@@ -47,20 +52,20 @@ func TestRegisterProxyRoutes(t *testing.T) {
 
 	config.Origins["2"] = o2
 
-	err = RegisterProxyRoutes()
+	err = RegisterProxyRoutes(logger)
 	if err == nil {
 		t.Errorf("Expected error for too many default origins.%s", "")
 	}
 
 	o2.IsDefault = false
 	o2.CacheName = "invalid"
-	err = RegisterProxyRoutes()
+	err = RegisterProxyRoutes(logger)
 	if err == nil {
 		t.Errorf("Expected error for invalid cache name%s", "")
 	}
 
 	o2.CacheName = "default"
-	err = RegisterProxyRoutes()
+	err = RegisterProxyRoutes(logger)
 	if err != nil {
 		t.Error(err)
 	}
@@ -77,8 +82,8 @@ func TestRegisterProxyRoutesInflux(t *testing.T) {
 	do := config.Origins["default"]
 	do.Type = "influxdb"
 	config.Origins["default"] = do
-	registration.LoadCachesFromConfig()
-	RegisterProxyRoutes()
+	registration.LoadCachesFromConfig(logger)
+	RegisterProxyRoutes(logger)
 
 	if len(ProxyClients) == 0 {
 		t.Errorf("expected %d got %d", 1, 0)

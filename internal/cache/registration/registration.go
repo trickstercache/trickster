@@ -23,6 +23,7 @@ import (
 	"github.com/Comcast/trickster/internal/cache/memory"
 	"github.com/Comcast/trickster/internal/cache/redis"
 	"github.com/Comcast/trickster/internal/config"
+	kitlog "github.com/go-kit/kit/log"
 )
 
 // Cache Interface Types
@@ -46,30 +47,30 @@ func GetCache(cacheName string) (cache.Cache, error) {
 }
 
 // LoadCachesFromConfig iterates the Caching Confi and Connects/Maps each Cache
-func LoadCachesFromConfig() {
+func LoadCachesFromConfig(l kitlog.Logger) {
 	for k, v := range config.Caches {
-		c := NewCache(k, v)
+		c := NewCache(k, v, l)
 		Caches[k] = c
 	}
 }
 
 // NewCache returns a Cache object based on the provided config.CachingConfig
-func NewCache(cacheName string, cfg *config.CachingConfig) cache.Cache {
+func NewCache(cacheName string, cfg *config.CachingConfig, logger kitlog.Logger) cache.Cache {
 
 	var c cache.Cache
 
 	switch cfg.Type {
 	case ctFilesystem:
-		c = &filesystem.Cache{Name: cacheName, Config: cfg}
+		c = filesystem.New(cacheName, cfg, logger)
 	case ctRedis:
-		c = &redis.Cache{Name: cacheName, Config: cfg}
+		c = redis.New(cacheName, cfg, logger)
 	case ctBBolt:
-		c = &bbolt.Cache{Name: cacheName, Config: cfg}
+		c = bbolt.New(cacheName, cfg, logger)
 	case ctBadger:
-		c = &badger.Cache{Name: cacheName, Config: cfg}
+		c = badger.New(cacheName, cfg, logger)
 	default:
 		// Default to MemoryCache
-		c = &memory.Cache{Name: cacheName, Config: cfg}
+		c = memory.New(cacheName, cfg, logger)
 	}
 
 	c.Connect()

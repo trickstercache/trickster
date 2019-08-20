@@ -36,14 +36,14 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
+	cr.LoadCachesFromConfig(logger)
 	cache, err := cr.GetCache("default")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	client := &PromTestClient{config: config.Origins["default"], cache: cache}
+	client := newPromTestClient("", config.Origins["default"], cache, logger)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)

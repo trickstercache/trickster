@@ -14,16 +14,21 @@
 package index
 
 import (
+	"os"
 	"sort"
 	"testing"
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/go-kit/kit/log"
 )
 
+var logger log.Logger
+
 func init() {
-	metrics.Init()
+	logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
+	metrics.Init(logger)
 }
 
 var testBulkIndex *Index
@@ -37,21 +42,21 @@ func fakeFlusherFunc(string, []byte) {}
 
 func TestNewIndex(t *testing.T) {
 	cacheConfig := &config.CachingConfig{Type: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
-	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
+	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, logger)
 	if idx.name != "test" {
 		t.Errorf("expected test got %s", idx.name)
 	}
 
-	idx.flushOnce()
+	idx.flushOnce(logger)
 
-	idx2 := NewIndex("test", "test", idx.ToBytes(), cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
+	idx2 := NewIndex("test", "test", idx.ToBytes(), cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, logger)
 	if idx2 == nil {
 		t.Errorf("nil cache index")
 	}
 
 	cacheConfig.Index.FlushInterval = 0
 	cacheConfig.Index.ReapInterval = 0
-	idx3 := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
+	idx3 := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, logger)
 	if idx3 == nil {
 		t.Errorf("nil cache index")
 	}
@@ -66,7 +71,7 @@ func TestReap(t *testing.T) {
 	cacheConfig.Index.MaxSizeBytes = 100
 	cacheConfig.Index.MaxSizeBackoffBytes = 30
 
-	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
+	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, logger)
 	if idx.name != "test" {
 		t.Errorf("expected test got %s", idx.name)
 	}
@@ -86,7 +91,7 @@ func TestReap(t *testing.T) {
 	idx.UpdateObject(Object{Key: "test.3", Value: []byte("test_value"), Expiration: time.Now().Add(time.Minute)})
 
 	// trigger a reap that will only remove expired elements but not size down the full cache
-	idx.reap()
+	idx.reap(logger)
 
 	// add key with future expiration which should not be reaped
 	idx.UpdateObject(Object{Key: "test.4", Value: []byte("test_value"), Expiration: time.Now().Add(time.Minute)})
@@ -98,7 +103,7 @@ func TestReap(t *testing.T) {
 	idx.UpdateObject(Object{Key: "test.6", Value: []byte("test_value"), Expiration: time.Now().Add(time.Minute)})
 
 	// trigger size-based reap eviction of some elements
-	idx.reap()
+	idx.reap(logger)
 
 	if _, ok := idx.Objects["test.1"]; ok {
 		t.Errorf("expected key %s to be missing", "test.1")
@@ -128,7 +133,7 @@ func TestReap(t *testing.T) {
 	idx.UpdateObject(Object{Key: "test.7", Value: []byte("test_value00000000000000000000000000000000000000000000000000000000000000000000000000000"), Expiration: time.Now().Add(time.Minute)})
 
 	// trigger a byte-based reap
-	idx.reap()
+	idx.reap(logger)
 
 	// only cache index should be left
 
@@ -161,7 +166,7 @@ func TestUpdateObject(t *testing.T) {
 
 	obj := Object{Key: "", Value: []byte("test_value")}
 	cacheConfig := &config.CachingConfig{Type: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
-	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
+	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, logger)
 
 	idx.UpdateObject(obj)
 	if _, ok := idx.Objects["test"]; ok {
@@ -194,7 +199,7 @@ func TestRemoveObject(t *testing.T) {
 
 	obj := Object{Key: "test", Value: []byte("test_value")}
 	cacheConfig := &config.CachingConfig{Type: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
-	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
+	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, logger)
 
 	idx.UpdateObject(obj)
 	if _, ok := idx.Objects["test"]; !ok {

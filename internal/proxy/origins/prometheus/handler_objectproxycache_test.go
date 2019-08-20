@@ -33,7 +33,7 @@ func TestObjectProxyCacheHandler(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
+	cr.LoadCachesFromConfig(logger)
 	cache, err := cr.GetCache("default")
 	if err != nil {
 		t.Error(err)
@@ -42,7 +42,7 @@ func TestObjectProxyCacheHandler(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/query_range?q=up&time=0", nil)
 
-	client := &Client{name: "default", config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
+	client := &Client{name: "default", config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient(), logger: logger}
 
 	client.ObjectProxyCacheHandler(w, r)
 

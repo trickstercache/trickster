@@ -19,7 +19,7 @@ import (
 
 func TestFastForwardURL(t *testing.T) {
 
-	client := &Client{}
+	client := &Client{logger: logger}
 	u, err := client.FastForwardURL(nil)
 	if u != nil {
 		t.Errorf("Expected nil url, got %s", u)
@@ -32,7 +32,7 @@ func TestFastForwardURL(t *testing.T) {
 
 func TestUnmarshalInstantaneous(t *testing.T) {
 
-	client := &Client{}
+	client := &Client{logger: logger}
 	tr, err := client.UnmarshalInstantaneous(nil)
 
 	if tr != nil {
@@ -46,6 +46,6 @@ func TestUnmarshalInstantaneous(t *testing.T) {
 }
 
 func TestQueryRangeHandler(t *testing.T) {
-	client := &Client{}
+	client := &Client{logger: logger}
 	client.QueryRangeHandler(nil, nil)
 }

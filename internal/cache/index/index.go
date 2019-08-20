@@ -22,6 +22,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	kitlog "github.com/go-kit/kit/log"
 )
 
 //go:generate msgp
@@ -88,7 +89,7 @@ func ObjectFromBytes(data []byte) (*Object, error) {
 }
 
 // NewIndex returns a new Index based on the provided inputs
-func NewIndex(cacheName, cacheType string, indexData []byte, cfg config.CacheIndexConfig, bulkRemoveFunc func([]string, bool), flushFunc func(cacheKey string, data []byte)) *Index {
+func NewIndex(cacheName, cacheType string, indexData []byte, cfg config.CacheIndexConfig, bulkRemoveFunc func([]string, bool), flushFunc func(cacheKey string, data []byte), logger kitlog.Logger) *Index {
 	i := &Index{}
 
 	if len(indexData) > 0 {
@@ -107,16 +108,16 @@ func NewIndex(cacheName, cacheType string, indexData []byte, cfg config.CacheInd
 
 	if flushFunc != nil {
 		if i.flushInterval > 0 {
-			go i.flusher()
+			go i.flusher(logger)
 		} else {
-			log.Warn("cache index flusher did not start", log.Pairs{"cacheName": i.name, "flushInterval": i.flushInterval})
+			log.Warn(logger, "cache index flusher did not start", log.Pairs{"cacheName": i.name, "flushInterval": i.flushInterval})
 		}
 	}
 
 	if i.reapInterval > 0 {
-		go i.reaper()
+		go i.reaper(logger)
 	} else {
-		log.Warn("cache reaper did not start", log.Pairs{"cacheName": i.name, "reapInterval": i.reapInterval})
+		log.Warn(logger, "cache reaper did not start", log.Pairs{"cacheName": i.name, "reapInterval": i.reapInterval})
 	}
 
 	metrics.CacheMaxObjects.WithLabelValues(cacheName, cacheType).Set(float64(cfg.MaxSizeObjects))
@@ -185,33 +186,33 @@ func (idx *Index) RemoveObject(key string, noLock bool) {
 }
 
 // flusher periodically calls the cache's index flush func that writes the cache index to disk
-func (idx *Index) flusher() {
+func (idx *Index) flusher(logger kitlog.Logger) {
 	var lastFlush time.Time
 	for {
 		time.Sleep(idx.flushInterval)
 		if idx.lastWrite.Before(lastFlush) {
 			continue
 		}
-		idx.flushOnce()
+		idx.flushOnce(logger)
 		lastFlush = time.Now()
 	}
 }
 
-func (idx *Index) flushOnce() {
+func (idx *Index) flushOnce(logger kitlog.Logger) {
 	indexLock.Lock()
 	bytes, err := idx.MarshalMsg(nil)
 	indexLock.Unlock()
 	if err != nil {
-		log.Warn("unable to serialize index for flushing", log.Pairs{"cacheName": idx.name, "detail": err.Error()})
+		log.Warn(logger, "unable to serialize index for flushing", log.Pairs{"cacheName": idx.name, "detail": err.Error()})
 		return
 	}
 	idx.flushFunc(IndexKey, bytes)
 }
 
 // reaper continually iterates through the cache to find expired elements and removes them
-func (idx *Index) reaper() {
+func (idx *Index) reaper(logger kitlog.Logger) {
 	for {
-		idx.reap()
+		idx.reap(logger)
 		time.Sleep(idx.reapInterval)
 	}
 }
@@ -220,7 +221,7 @@ type objectsAtime []*Object
 
 // reap makes a single iteration through the cache index to to find and remove expired elements
 // and evict least-recently-accessed elements to maintain the Maximum allowed Cache Size
-func (idx *Index) reap() {
+func (idx *Index) reap(logger kitlog.Logger) {
 
 	indexLock.Lock()
 	defer indexLock.Unlock()
@@ -260,7 +261,7 @@ func (idx *Index) reap() {
 			return
 		}
 
-		log.Debug("max cache size reached. evicting least-recently-accessed records",
+		log.Debug(logger, "max cache size reached. evicting least-recently-accessed records",
 			log.Pairs{
 				"reason":         evictionType,
 				"cacheSizeBytes": idx.CacheSize, "maxSizeBytes": idx.config.MaxSizeBytes,
@@ -305,7 +306,7 @@ func (idx *Index) reap() {
 			cacheChanged = true
 		}
 
-		log.Debug("size-based cache eviction exercise completed",
+		log.Debug(logger, "size-based cache eviction exercise completed",
 			log.Pairs{
 				"reason":         evictionType,
 				"cacheSizeBytes": idx.CacheSize, "maxSizeBytes": idx.config.MaxSizeBytes,

@@ -32,7 +32,7 @@ func TestQueryCache(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
+	cr.LoadCachesFromConfig(logger)
 	cache, err := cr.GetCache("default")
 	if err != nil {
 		t.Error(err)
@@ -43,12 +43,12 @@ func TestQueryCache(t *testing.T) {
 	resp.StatusCode = 200
 	d := model.DocumentFromHTTPResponse(resp, []byte(expected))
 
-	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second)
+	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, logger)
 	if err != nil {
 		t.Error(err)
 	}
 
-	d2, err := QueryCache(cache, "testKey")
+	d2, err := QueryCache(cache, "testKey", logger)
 	if err != nil {
 		t.Error(err)
 	}
@@ -61,7 +61,7 @@ func TestQueryCache(t *testing.T) {
 		t.Errorf("expected %d got %d", 200, d2.StatusCode)
 	}
 
-	_, err = QueryCache(cache, "testKey2")
+	_, err = QueryCache(cache, "testKey2", logger)
 	if err == nil {
 		t.Errorf("expected error")
 	}

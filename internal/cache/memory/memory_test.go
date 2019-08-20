@@ -15,15 +15,20 @@ package memory
 
 import (
 	"io/ioutil"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/go-kit/kit/log"
 )
 
+var logger log.Logger
+
 func init() {
-	metrics.Init()
+	logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
+	metrics.Init(logger)
 }
 
 const cacheType = "memory"
@@ -39,7 +44,7 @@ func newCacheConfig(t *testing.T) config.CachingConfig {
 
 func TestConfiguration(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := New("", &cacheConfig, logger)
 	cfg := mc.Configuration()
 	if cfg.Type != cacheType {
 		t.Fatalf("expected %s got %s", cacheType, cfg.Type)
@@ -49,7 +54,7 @@ func TestConfiguration(t *testing.T) {
 func TestCache_Connect(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := New("", &cacheConfig, logger)
 
 	// it should connect
 	err := mc.Connect()
@@ -60,7 +65,7 @@ func TestCache_Connect(t *testing.T) {
 
 func TestCache_Store(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := New("", &cacheConfig, logger)
 
 	err := mc.Connect()
 	if err != nil {
@@ -76,7 +81,7 @@ func TestCache_Store(t *testing.T) {
 
 func TestCache_Retrieve(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := New("", &cacheConfig, logger)
 
 	err := mc.Connect()
 	if err != nil {
@@ -101,13 +106,13 @@ func TestCache_Retrieve(t *testing.T) {
 
 func TestCache_Close(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := New("", &cacheConfig, logger)
 	mc.Close()
 }
 
 func TestCache_Remove(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := New("", &cacheConfig, logger)
 
 	err := mc.Connect()
 	if err != nil {
@@ -142,7 +147,7 @@ func TestCache_Remove(t *testing.T) {
 
 func TestCache_BulkRemove(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := New("", &cacheConfig, logger)
 
 	err := mc.Connect()
 	if err != nil {

@@ -49,14 +49,14 @@ func setupTestServer() (*httptest.Server, *config.OriginConfig, *PromTestClient,
 		return nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
+	cr.LoadCachesFromConfig(logger)
 	cache, err := cr.GetCache("default")
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
 	cfg := config.Origins["default"]
-	client := &PromTestClient{config: cfg, cache: cache, webClient: tu.NewTestWebClient()}
+	client := &PromTestClient{config: cfg, cache: cache, webClient: tu.NewTestWebClient(), logger: logger}
 
 	return es, cfg, client, nil
 }
@@ -1351,14 +1351,14 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
+	cr.LoadCachesFromConfig(logger)
 	cache, err := cr.GetCache("default")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	client := &PromTestClient{config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
+	client := &PromTestClient{config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient(), logger: logger}
 
 	cfg := client.Configuration()
 	cfg.BackfillTolerance = time.Duration(300) * time.Second

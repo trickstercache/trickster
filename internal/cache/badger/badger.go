@@ -20,6 +20,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/dgraph-io/badger"
+	kitlog "github.com/go-kit/kit/log"
 )
 
 // Cache describes a Badger Cache
@@ -27,6 +28,11 @@ type Cache struct {
 	Name   string
 	Config *config.CachingConfig
 	dbh    *badger.DB
+	logger kitlog.Logger
+}
+
+func New(name string, cfg *config.CachingConfig, logger kitlog.Logger) *Cache {
+	return &Cache{Name: name, Config: cfg, logger: logger}
 }
 
 // Configuration returns the Configuration for the Cache object
@@ -36,7 +42,7 @@ func (c *Cache) Configuration() *config.CachingConfig {
 
 // Connect opens the configured Badger key-value store
 func (c *Cache) Connect() error {
-	log.Info("badger cache setup", log.Pairs{"cacheDir": c.Config.Badger.Directory})
+	log.Info(c.logger, "badger cache setup", log.Pairs{"cacheDir": c.Config.Badger.Directory})
 
 	opts := badger.DefaultOptions
 	opts.Dir = c.Config.Badger.Directory
@@ -54,7 +60,7 @@ func (c *Cache) Connect() error {
 // Store places the the data into the Badger Cache using the provided Key and TTL
 func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
-	log.Debug("badger cache store", log.Pairs{"key": cacheKey, "ttl": ttl})
+	log.Debug(c.logger, "badger cache store", log.Pairs{"key": cacheKey, "ttl": ttl})
 	return c.dbh.Update(func(txn *badger.Txn) error {
 		return txn.SetWithTTL([]byte(cacheKey), data, ttl)
 	})
@@ -74,10 +80,10 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 	})
 
 	if err != nil {
-		log.Debug("badger cache miss", log.Pairs{"key": cacheKey})
+		log.Debug(c.logger, "badger cache miss", log.Pairs{"key": cacheKey})
 		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
 	} else {
-		log.Debug("badger cache retrieve", log.Pairs{"key": cacheKey})
+		log.Debug(c.logger, "badger cache retrieve", log.Pairs{"key": cacheKey})
 		cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(data)))
 	}
 
@@ -86,7 +92,7 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 
 // Remove removes an object in cache, if present
 func (c *Cache) Remove(cacheKey string) {
-	log.Debug("badger cache remove", log.Pairs{"key": cacheKey})
+	log.Debug(c.logger, "badger cache remove", log.Pairs{"key": cacheKey})
 	c.dbh.Update(func(txn *badger.Txn) error {
 		return txn.Delete([]byte(cacheKey))
 	})
@@ -94,7 +100,7 @@ func (c *Cache) Remove(cacheKey string) {
 
 // BulkRemove removes a list of objects from the cache. noLock is not used for Badger
 func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
-	log.Debug("badger cache bulk remove", log.Pairs{})
+	log.Debug(c.logger, "badger cache bulk remove", log.Pairs{})
 
 	c.dbh.Update(func(txn *badger.Txn) error {
 		for _, key := range cacheKeys {

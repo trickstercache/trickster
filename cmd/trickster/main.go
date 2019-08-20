@@ -58,10 +58,10 @@ func main() {
 	}
 
 	metrics.Init(logger)
-	cr.LoadCachesFromConfig()
+	cr.LoadCachesFromConfig(logger)
 	th.RegisterPingHandler()
 	th.RegisterConfigHandler()
-	err = rr.RegisterProxyRoutes()
+	err = rr.RegisterProxyRoutes(logger)
 	if err != nil {
 		logger.Fatal(1, err.Error(), log.Pairs{})
 	}

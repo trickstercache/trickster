@@ -27,6 +27,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/pkg/locks"
+	kitlog "github.com/go-kit/kit/log"
 )
 
 var lockPrefix string
@@ -36,6 +37,11 @@ type Cache struct {
 	Name   string
 	Config *config.CachingConfig
 	Index  *index.Index
+	logger kitlog.Logger
+}
+
+func New(name string, cfg *config.CachingConfig, logger kitlog.Logger) *Cache {
+	return &Cache{Name: name, Config: cfg, logger: logger}
 }
 
 // Configuration returns the Configuration for the Cache object
@@ -45,7 +51,7 @@ func (c *Cache) Configuration() *config.CachingConfig {
 
 // Connect instantiates the Cache mutex map and starts the Expired Entry Reaper goroutine
 func (c *Cache) Connect() error {
-	log.Info("filesystem cache setup", log.Pairs{"cachePath": c.Config.Filesystem.CachePath})
+	log.Info(c.logger, "filesystem cache setup", log.Pairs{"cachePath": c.Config.Filesystem.CachePath})
 	if err := makeDirectory(c.Config.Filesystem.CachePath); err != nil {
 		return err
 	}
@@ -53,7 +59,7 @@ func (c *Cache) Connect() error {
 
 	// Load Index here and pass bytes as param2
 	indexData, _ := c.retrieve(index.IndexKey, false)
-	c.Index = index.NewIndex(c.Name, c.Config.Type, indexData, c.Config.Index, c.BulkRemove, c.storeNoIndex)
+	c.Index = index.NewIndex(c.Name, c.Config.Type, indexData, c.Config.Index, c.BulkRemove, c.storeNoIndex, c.logger)
 	return nil
 }
 
@@ -65,7 +71,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 	err := c.store(cacheKey, data, 31536000, false)
 	if err != nil {
-		log.Error("cache failed to write non-indexed object", log.Pairs{"cacheName": c.Name, "cacheType": "filesystem", "cacheKey": cacheKey, "objectSize": len(data)})
+		log.Error(c.logger, "cache failed to write non-indexed object", log.Pairs{"cacheName": c.Name, "cacheType": "filesystem", "cacheKey": cacheKey, "objectSize": len(data)})
 	}
 }
 
@@ -83,7 +89,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 	if err != nil {
 		return err
 	}
-	log.Debug("filesystem cache store", log.Pairs{"key": cacheKey, "dataFile": dataFile, "indexed": updateIndex})
+	log.Debug(c.logger, "filesystem cache store", log.Pairs{"key": cacheKey, "dataFile": dataFile, "indexed": updateIndex})
 	if updateIndex {
 		go c.Index.UpdateObject(o)
 	}
@@ -105,7 +111,7 @@ func (c *Cache) retrieve(cacheKey string, atime bool) ([]byte, error) {
 
 	data, err := ioutil.ReadFile(dataFile)
 	if err != nil {
-		log.Debug("filesystem cache miss", log.Pairs{"key": cacheKey, "dataFile": dataFile})
+		log.Debug(c.logger, "filesystem cache miss", log.Pairs{"key": cacheKey, "dataFile": dataFile})
 		return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
 	}
 
@@ -115,7 +121,7 @@ func (c *Cache) retrieve(cacheKey string, atime bool) ([]byte, error) {
 	}
 
 	if o.Expiration.After(time.Now()) {
-		log.Debug("filesystem cache retrieve", log.Pairs{"key": cacheKey, "dataFile": dataFile})
+		log.Debug(c.logger, "filesystem cache retrieve", log.Pairs{"key": cacheKey, "dataFile": dataFile})
 		if atime {
 			go c.Index.UpdateObjectAccessTime(cacheKey)
 		}

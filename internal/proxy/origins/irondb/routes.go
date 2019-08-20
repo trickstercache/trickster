@@ -15,7 +15,7 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 	}
 
 	// Setup host header based routing.
-	log.Debug("Registering Origin Handlers",
+	log.Debug(c.Logger(), "Registering Origin Handlers",
 		log.Pairs{"originType": o.Type, "originName": originName})
 	routing.Router.PathPrefix("/" + mnHealth).
 		HandlerFunc(c.HealthHandler).Methods("GET").Host(originName)
@@ -62,7 +62,7 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 
 	// If default origin, setup those routes too.
 	if o.IsDefault {
-		log.Debug("Registering Default Origin Handlers",
+		log.Debug(c.Logger(), "Registering Default Origin Handlers",
 			log.Pairs{"originType": o.Type})
 		routing.Router.PathPrefix("/" + mnHealth).
 			HandlerFunc(c.HealthHandler).Methods("GET")

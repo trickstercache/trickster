@@ -8,6 +8,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/go-kit/kit/log"
 )
 
 // Origin types.
@@ -53,11 +54,12 @@ type Client struct {
 	config    *config.OriginConfig
 	cache     cache.Cache
 	webClient *http.Client
+	logger    log.Logger
 }
 
 // NewClient returns a new Client instance.
 func NewClient(name string, config *config.OriginConfig,
-	cache cache.Cache) *Client {
+	cache cache.Cache, logger log.Logger) *Client {
 	c := &http.Client{
 		Timeout: config.Timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -73,7 +75,7 @@ func NewClient(name string, config *config.OriginConfig,
 		},
 	}
 
-	return &Client{name: name, config: config, cache: cache, webClient: c}
+	return &Client{name: name, config: config, cache: cache, webClient: c, logger: logger}
 }
 
 // Configuration returns the upstream Configuration for this Client.
@@ -94,4 +96,9 @@ func (c *Client) Cache() cache.Cache {
 // Name returns the name of the origin Configuration proxied by the Client.
 func (c *Client) Name() string {
 	return c.name
+}
+
+// Logger will return the Logger instance
+func (c *Client) Logger() log.Logger {
+	return c.logger
 }

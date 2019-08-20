@@ -35,7 +35,7 @@ func TestProxyHandler(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)
 
-	client := &Client{name: "default", config: config.Origins["default"], webClient: tu.NewTestWebClient()}
+	client := &Client{name: "default", config: config.Origins["default"], webClient: tu.NewTestWebClient(), logger: logger}
 	client.ProxyHandler(w, r)
 	resp := w.Result()
 

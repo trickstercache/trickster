@@ -26,8 +26,16 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/util/metrics"
 	"github.com/go-kit/kit/log"
 )
+
+var logger log.Logger
+
+func init() {
+	logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
+	metrics.Init(logger)
+}
 
 func TestNewClient(t *testing.T) {
 
@@ -36,7 +44,7 @@ func TestNewClient(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
+	cr.LoadCachesFromConfig(logger)
 	cache, err := cr.GetCache("default")
 	if err != nil {
 		t.Error(err)
@@ -116,12 +124,12 @@ func TestCache(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
+	cr.LoadCachesFromConfig(logger)
 	cache, err := cr.GetCache("default")
 	if err != nil {
 		t.Error(err)
 	}
-	client := Client{cache: cache}
+	client := Client{cache: cache, logger: logger}
 	c := client.Cache()
 
 	if c.Configuration().Type != "memory" {
@@ -131,7 +139,7 @@ func TestCache(t *testing.T) {
 
 func TestName(t *testing.T) {
 
-	client := Client{name: "TEST"}
+	client := Client{name: "TEST", logger: logger}
 	c := client.Name()
 
 	if c != "TEST" {
@@ -152,7 +160,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 			"step":  {"15"},
 		}).Encode(),
 	}}
-	client := &Client{}
+	client := &Client{logger: logger}
 	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL})
 	if err != nil {
 		t.Error(err)
@@ -179,7 +187,7 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 			"end":    {strconv.Itoa(int(time.Now().Unix()))},
 			"step":   {"15"}}).Encode(),
 	}}
-	client := &Client{}
+	client := &Client{logger: logger}
 	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
@@ -203,7 +211,7 @@ func TestParseTimeRangeBadStartTime(t *testing.T) {
 			"end":   {strconv.Itoa(int(time.Now().Unix()))},
 			"step":  {"15"}}).Encode(),
 	}}
-	client := &Client{}
+	client := &Client{logger: logger}
 	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
@@ -227,7 +235,7 @@ func TestParseTimeRangeBadEndTime(t *testing.T) {
 			"end":   {color},
 			"step":  {"15"}}).Encode(),
 	}}
-	client := &Client{}
+	client := &Client{logger: logger}
 	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
@@ -252,7 +260,7 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 			"end":   {strconv.Itoa(int(time.Now().Unix()))},
 			"step":  {"x"}}).Encode(),
 	}}
-	client := &Client{}
+	client := &Client{logger: logger}
 	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
@@ -276,7 +284,7 @@ func TestParseTimeRangeQueryNoStart(t *testing.T) {
 			"end":   {strconv.Itoa(int(time.Now().Unix()))},
 			"step":  {"x"}}).Encode(),
 	}}
-	client := &Client{}
+	client := &Client{logger: logger}
 	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
@@ -300,7 +308,7 @@ func TestParseTimeRangeQueryNoEnd(t *testing.T) {
 			"start": {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
 			"step":  {"x"}}).Encode(),
 	}}
-	client := &Client{}
+	client := &Client{logger: logger}
 	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
@@ -325,7 +333,7 @@ func TestParseTimeRangeQueryNoStep(t *testing.T) {
 			"end":   {strconv.Itoa(int(time.Now().Unix()))}},
 		).Encode(),
 	}}
-	client := &Client{}
+	client := &Client{logger: logger}
 	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
@@ -348,7 +356,7 @@ func TestParseTimeRangeQueryWithOffset(t *testing.T) {
 			"step":  {"15"},
 		}).Encode(),
 	}}
-	client := &Client{}
+	client := &Client{logger: logger}
 	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL})
 	if err != nil {
 		t.Error(err)

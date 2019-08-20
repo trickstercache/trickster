@@ -12,5 +12,5 @@ import (
 func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	engines.ProxyRequest(model.NewRequest(c.name, otIRONdb, "ProxyHandler",
 		r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r,
-		c.webClient), w)
+		c.webClient), w, c.Logger())
 }

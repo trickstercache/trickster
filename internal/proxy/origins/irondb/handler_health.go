@@ -12,5 +12,5 @@ func (c Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BaseURL()
 	u.Path += "/" + mnState
 	engines.ProxyRequest(model.NewRequest(c.name, otIRONdb, "HealthHandler",
-		http.MethodGet, u, r.Header, c.config.Timeout, r, c.webClient), w)
+		http.MethodGet, u, r.Header, c.config.Timeout, r, c.webClient), w, c.Logger())
 }

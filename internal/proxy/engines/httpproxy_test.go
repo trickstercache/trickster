@@ -27,7 +27,7 @@ import (
 )
 
 func init() {
-	metrics.Init()
+	metrics.Init(logger)
 }
 
 func TestProxyRequest(t *testing.T) {
@@ -46,7 +46,7 @@ func TestProxyRequest(t *testing.T) {
 	// get URL
 
 	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-	ProxyRequest(req, w)
+	ProxyRequest(req, w, logger)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -85,7 +85,7 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	r := httptest.NewRequest("GET", badUpstream, nil)
 
 	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-	ProxyRequest(req, w)
+	ProxyRequest(req, w, logger)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadGateway)

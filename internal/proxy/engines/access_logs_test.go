@@ -28,12 +28,12 @@ func TestLogUpstreamRequest(t *testing.T) {
 	config.Config = config.NewConfig()
 	config.Main = &config.MainConfig{InstanceID: 0}
 	config.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "debug"}
-	log.Init()
-	logUpstreamRequest("testOrigin", "testType", "testHandler", "testMethod", "testPath", "testUserAgent", 200, 0, 1.0)
+	logger := log.New(config.Logging, config.Main.InstanceID)
+	logUpstreamRequest("testOrigin", "testType", "testHandler", "testMethod", "testPath", "testUserAgent", 200, 0, 1.0, logger)
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
 	}
-	log.Logger.Close()
+	logger.Close()
 	os.Remove(fileName)
 }
 
@@ -43,18 +43,18 @@ func TestLogDownstreamRequest(t *testing.T) {
 	config.Config = config.NewConfig()
 	config.Main = &config.MainConfig{InstanceID: 0}
 	config.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "debug"}
-	log.Init()
+	logger := log.New(config.Logging, config.Main.InstanceID)
 
 	r, err := http.NewRequest("get", "http://testOrigin", nil)
 	if err != nil {
 		t.Error(err)
 	}
 
-	logDownstreamRequest(r)
+	logDownstreamRequest(r, logger)
 
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
 	}
-	log.Logger.Close()
+	logger.Close()
 	os.Remove(fileName)
 }

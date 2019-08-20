@@ -29,6 +29,7 @@ import (
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	"github.com/Comcast/trickster/pkg/locks"
+	kitlog "github.com/go-kit/kit/log"
 )
 
 // DeltaProxyCacheRequest identifies the gaps between the cache and a new timeseries request,
@@ -43,7 +44,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	trq, err := client.ParseTimeRangeQuery(r)
 	if err != nil {
 		// err may simply mean incompatible query (e.g., non-select), so just proxy
-		ProxyRequest(r, w)
+		ProxyRequest(r, w, client.Logger())
 		return
 	}
 
@@ -63,12 +64,12 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * cfg.TimeseriesRetention))
 		if trq.Extent.End.Before(OldestRetainedTimestamp) {
 			log.Debug(client.Logger(), "timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.TimeseriesRetention})
-			ProxyRequest(r, w)
+			ProxyRequest(r, w, client.Logger())
 			return
 		}
 		if trq.Extent.Start.After(bf.End) {
 			log.Debug(client.Logger(), "timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": cfg.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
-			ProxyRequest(r, w)
+			ProxyRequest(r, w, client.Logger())
 			return
 		}
 	}
@@ -103,7 +104,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 			return // fetchTimeseries logs the error
 		}
 	} else {
-		doc, err = QueryCache(cache, key)
+		doc, err = QueryCache(cache, key, client.Logger())
 		if err != nil {
 			cts, doc, elapsed, err = fetchTimeseries(r, client)
 			if err != nil {
@@ -115,7 +116,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 			// Load the Cached Timeseries
 			cts, err = client.UnmarshalTimeseries(doc.Body)
 			if err != nil {
-				log.Error("cache object unmarshaling failed", log.Pairs{"key": key, "originName": client.Name()})
+				log.Error(client.Logger(), "cache object unmarshaling failed", log.Pairs{"key": key, "originName": client.Name()})
 				cache.Remove(key)
 				cts, doc, elapsed, err = fetchTimeseries(r, client)
 				if err != nil {
@@ -130,13 +131,13 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 					if tsc > 0 &&
 						tsc >= cfg.TimeseriesRetentionFactor {
 						if trq.Extent.End.Before(el[0].Start) {
-							log.Debug("timerange end is too early to consider caching", log.Pairs{"step": trq.Step, "retention": cfg.TimeseriesRetention})
-							ProxyRequest(r, w)
+							log.Debug(client.Logger(), "timerange end is too early to consider caching", log.Pairs{"step": trq.Step, "retention": cfg.TimeseriesRetention})
+							ProxyRequest(r, w, client.Logger())
 							return
 						}
 						if trq.Extent.Start.After(el[len(el)-1].End) {
-							log.Debug("timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": cfg.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
-							ProxyRequest(r, w)
+							log.Debug(client.Logger(), "timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": cfg.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
+							ProxyRequest(r, w, client.Logger())
 							return
 						}
 					}
@@ -229,7 +230,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 				ffts, err = client.UnmarshalInstantaneous(body)
 				if err != nil {
 					ffStatus = "err"
-					log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
+					log.Error(client.Logger(), "proxy object unmarshaling failed", log.Pairs{"body": string(body)})
 					return
 				}
 				ffts.SetStep(trq.Step)
@@ -303,7 +304,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 					return
 				}
 				doc.Body = cdata
-				WriteCache(cache, key, doc, ttl)
+				WriteCache(cache, key, doc, ttl, client.Logger())
 			}
 		}()
 	}
@@ -312,7 +313,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	go func() {
 		defer wg.Done()
 		// Respond to the user. Using the response headers from a Delta Response, so as to not map conflict with cacheData on WriteCache
-		logDeltaRoutine(dpStatus)
+		logDeltaRoutine(client.Logger(), dpStatus)
 		recordDPCResult(r, cacheStatus, strconv.Itoa(doc.StatusCode), r.URL.Path, ffStatus, elapsed.Seconds(), missRanges, rh)
 		Respond(w, doc.StatusCode, rh, rdata)
 	}()
@@ -320,10 +321,10 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	wg.Wait()
 }
 
-func logDeltaRoutine(p log.Pairs) { log.Debug("delta routine completed", p) }
+func logDeltaRoutine(l kitlog.Logger, p log.Pairs) { log.Debug(l, "delta routine completed", p) }
 
 func fetchTimeseries(r *model.Request, client model.Client) (timeseries.Timeseries, *model.HTTPDocument, time.Duration, error) {
-	body, resp, elapsed := Fetch(r)
+	body, resp, elapsed := Fetch(r, client.Logger())
 
 	d := &model.HTTPDocument{
 		Status:     resp.Status,
@@ -333,13 +334,13 @@ func fetchTimeseries(r *model.Request, client model.Client) (timeseries.Timeseri
 	}
 
 	if resp.StatusCode != 200 {
-		log.Error("unexpected upstream response", log.Pairs{"statusCode": resp.StatusCode})
+		log.Error(client.Logger(), "unexpected upstream response", log.Pairs{"statusCode": resp.StatusCode})
 		return nil, d, time.Duration(0), fmt.Errorf("Unexpected Upstream Response")
 	}
 
 	ts, err := client.UnmarshalTimeseries(body)
 	if err != nil {
-		log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
+		log.Error(client.Logger(), "proxy object unmarshaling failed", log.Pairs{"body": string(body)})
 		return nil, d, time.Duration(0), err
 	}
 

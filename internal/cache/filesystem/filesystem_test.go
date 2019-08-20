@@ -21,10 +21,14 @@ import (
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/go-kit/kit/log"
 )
 
+var logger log.Logger
+
 func init() {
-	metrics.Init()
+	logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	metrics.Init(logger)
 }
 
 const cacheType = "filesystem"
@@ -41,7 +45,7 @@ func newCacheConfig(t *testing.T) config.CachingConfig {
 func TestConfiguration(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig}
+	fc := New("", &cacheConfig, logger)
 	cfg := fc.Configuration()
 	if cfg.Type != cacheType {
 		t.Fatalf("expected %s got %s", cacheType, cfg.Type)
@@ -52,7 +56,7 @@ func TestFilesystemCache_Connect(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig}
+	fc := New("", &cacheConfig, logger)
 
 	// it should connect
 	err := fc.Connect()
@@ -65,7 +69,7 @@ func TestFilesystemCache_Store(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig}
+	fc := New("", &cacheConfig, logger)
 
 	err := fc.Connect()
 	if err != nil {
@@ -83,7 +87,7 @@ func TestFilesystemCache_StoreNoIndex(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig}
+	fc := New("", &cacheConfig, logger)
 
 	err := fc.Connect()
 	if err != nil {
@@ -109,7 +113,7 @@ func TestFilesystemCache_Retrieve(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig}
+	fc := New("", &cacheConfig, logger)
 
 	err := fc.Connect()
 	if err != nil {
@@ -134,7 +138,7 @@ func TestFilesystemCache_Remove(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig}
+	fc := New("", &cacheConfig, logger)
 
 	err := fc.Connect()
 	if err != nil {
@@ -171,7 +175,7 @@ func TestFilesystemCache_BulkRemove(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig}
+	fc := New("", &cacheConfig, logger)
 
 	err := fc.Connect()
 	if err != nil {

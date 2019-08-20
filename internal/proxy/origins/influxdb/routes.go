@@ -23,7 +23,7 @@ import (
 func (c Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 
 	// Host Header-based routing
-	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
+	log.Debug(c.Logger(), "Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
 	routing.Router.HandleFunc("/"+health, c.HealthHandler).Methods("GET").Host(originName)
 	routing.Router.HandleFunc("/"+mnQuery, c.QueryHandler).Methods("GET", "POST").Host(originName)
 	routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST").Host(originName)
@@ -35,7 +35,7 @@ func (c Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 
 	// Default Origin Routing
 	if o.IsDefault {
-		log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.Type})
+		log.Debug(c.Logger(), "Registering Default Origin Handlers", log.Pairs{"originType": o.Type})
 		routing.Router.HandleFunc("/"+health, c.HealthHandler).Methods("GET")
 		routing.Router.HandleFunc("/"+mnQuery, c.QueryHandler).Methods("GET", "POST")
 		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST")

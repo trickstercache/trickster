@@ -20,10 +20,14 @@ import (
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/go-kit/kit/log"
 )
 
+var logger log.Logger
+
 func init() {
-	metrics.Init()
+	logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	metrics.Init(logger)
 }
 
 const Bbolt = `bbolt`
@@ -53,7 +57,7 @@ func TestLoadCachesFromConfig(t *testing.T) {
 		}
 	}
 
-	LoadCachesFromConfig()
+	LoadCachesFromConfig(logger)
 	_, err = GetCache("default")
 	if err != nil {
 		t.Error(err)

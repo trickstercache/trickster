@@ -25,13 +25,14 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/origins/irondb"
 	"github.com/Comcast/trickster/internal/proxy/origins/prometheus"
 	"github.com/Comcast/trickster/internal/util/log"
+	kitlog "github.com/go-kit/kit/log"
 )
 
 // ProxyClients maintains a list of proxy clients configured for use by Trickster
 var ProxyClients = make(map[string]model.Client)
 
 // RegisterProxyRoutes iterates the Trickster Configuration and registers the routes for the configured origins
-func RegisterProxyRoutes() error {
+func RegisterProxyRoutes(l kitlog.Logger) error {
 
 	defaultOrigin := ""
 
@@ -56,14 +57,14 @@ func RegisterProxyRoutes() error {
 		}
 		switch strings.ToLower(o.Type) {
 		case "prometheus", "":
-			log.Info("Registering Prometheus Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
-			client = prometheus.NewClient(k, o, c)
+			log.Info(l, "Registering Prometheus Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
+			client = prometheus.NewClient(k, o, c, l)
 		case "influxdb":
-			log.Info("Registering Influxdb Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
-			client = influxdb.NewClient(k, o, c)
+			log.Info(l, "Registering Influxdb Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
+			client = influxdb.NewClient(k, o, c, l)
 		case "irondb":
-			log.Info("Registering IRONdb Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
-			client = irondb.NewClient(k, o, c)
+			log.Info(l, "Registering IRONdb Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
+			client = irondb.NewClient(k, o, c, l)
 		}
 		if client != nil {
 			ProxyClients[k] = client

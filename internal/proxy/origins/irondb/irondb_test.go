@@ -1,16 +1,20 @@
 package irondb
 
 import (
+	"os"
 	"testing"
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/go-kit/kit/log"
 )
 
+var logger log.Logger
+
 func init() {
-	// Initialize Trickster instrumentation metrics.
-	metrics.Init()
+	logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
+	metrics.Init(logger)
 }
 
 func TestNewClient(t *testing.T) {
@@ -19,14 +23,14 @@ func TestNewClient(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
+	cr.LoadCachesFromConfig(logger)
 	cache, err := cr.GetCache("default")
 	if err != nil {
 		t.Error(err)
 	}
 
 	oc := &config.OriginConfig{Type: "TEST_CLIENT"}
-	c := NewClient("default", oc, cache)
+	c := NewClient("default", oc, cache, logger)
 	if c.Name() != "default" {
 		t.Errorf("expected %s got %s", "default", c.Name())
 	}
@@ -55,7 +59,7 @@ func TestCache(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
+	cr.LoadCachesFromConfig(logger)
 	cache, err := cr.GetCache("default")
 	if err != nil {
 		t.Error(err)
@@ -78,7 +82,7 @@ func TestName(t *testing.T) {
 
 func TestHTTPClient(t *testing.T) {
 	oc := &config.OriginConfig{Type: "TEST"}
-	client := NewClient("test", oc, nil)
+	client := NewClient("test", oc, nil, logger)
 	if client.HTTPClient() == nil {
 		t.Errorf("missing http client")
 	}
