@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/go-kit/kit/log"
 )
 
 func TestNewClient(t *testing.T) {
@@ -40,8 +42,9 @@ func TestNewClient(t *testing.T) {
 		t.Error(err)
 	}
 
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	oc := &config.OriginConfig{Type: "TEST_CLIENT"}
-	c := NewClient("default", oc, cache)
+	c := NewClient("default", oc, cache, logger)
 
 	if c.Name() != "default" {
 		t.Errorf("expected %s got %s", "default", c.Name())
@@ -96,9 +99,10 @@ func TestConfiguration(t *testing.T) {
 }
 
 func TestHTTPClient(t *testing.T) {
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	oc := &config.OriginConfig{Type: "TEST"}
 
-	client := NewClient("test", oc, nil)
+	client := NewClient("test", oc, nil, logger)
 
 	if client.HTTPClient() == nil {
 		t.Errorf("missing http client")

@@ -23,6 +23,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
+	kitlog "github.com/go-kit/kit/log"
 )
 
 const (
@@ -62,7 +63,7 @@ var CacheMaxObjects *prometheus.GaugeVec
 var CacheMaxBytes *prometheus.GaugeVec
 
 // Init initializes the instrumented metrics and starts the listener endpoint
-func Init() {
+func Init(logger kitlog.Logger) {
 
 	ProxyRequestStatus = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -181,11 +182,11 @@ func Init() {
 	if config.Metrics != nil && config.Metrics.ListenPort > 0 {
 		go func() {
 
-			log.Info("metrics http endpoint starting", log.Pairs{"address": config.Metrics.ListenAddress, "port": fmt.Sprintf("%d", config.Metrics.ListenPort)})
+			log.Info(logger, "metrics http endpoint starting", log.Pairs{"address": config.Metrics.ListenAddress, "port": fmt.Sprintf("%d", config.Metrics.ListenPort)})
 
 			http.Handle("/metrics", promhttp.Handler())
 			if err := http.ListenAndServe(fmt.Sprintf("%s:%d", config.Metrics.ListenAddress, config.Metrics.ListenPort), nil); err != nil {
-				log.Error("unable to start metrics http server", log.Pairs{"detail": err.Error()})
+				log.Error(logger, "unable to start metrics http server", log.Pairs{"detail": err.Error()})
 				os.Exit(1)
 			}
 		}()

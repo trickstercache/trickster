@@ -17,10 +17,11 @@ import (
 	"net/http"
 
 	"github.com/Comcast/trickster/internal/util/log"
+	kitlog "github.com/go-kit/kit/log"
 )
 
-func logUpstreamRequest(originName, originType, handlerName, method, path, userAgent string, responseCode, size int, requestDuration float64) {
-	log.Debug("upstream request",
+func logUpstreamRequest(originName, originType, handlerName, method, path, userAgent string, responseCode, size int, requestDuration float64, logger kitlog.Logger) {
+	log.Debug(logger, "upstream request",
 		log.Pairs{
 			"originName":  originName,
 			"originType":  originType,
@@ -34,8 +35,8 @@ func logUpstreamRequest(originName, originType, handlerName, method, path, userA
 		})
 }
 
-func logDownstreamRequest(r *http.Request) {
-	log.Debug("downtream request",
+func logDownstreamRequest(r *http.Request, logger kitlog.Logger) {
+	log.Debug(logger, "downtream request",
 		log.Pairs{
 			"uri":       r.RequestURI,
 			"method":    r.Method,

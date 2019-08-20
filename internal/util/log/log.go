@@ -20,16 +20,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/go-stack/stack"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
-
-	"github.com/Comcast/trickster/internal/config"
 )
-
-// Logger is the handle to the common TricksterLogger
-var Logger *TricksterLogger
 
 func mapToArray(event string, detail Pairs) []interface{} {
 	a := make([]interface{}, (len(detail)*2)+2)
@@ -54,10 +50,6 @@ func mapToArray(event string, detail Pairs) []interface{} {
 		i += 2
 	}
 	return a
-}
-
-func init() {
-	Logger = ConsoleLogger("info")
 }
 
 // ConsoleLogger returns a TricksterLogger object that prints log events to the Console
@@ -100,20 +92,20 @@ func ConsoleLogger(logLevel string) *TricksterLogger {
 	return l
 }
 
-// Init returns a TricksterLogger for the provided logging configuration. The
+// New returns a TricksterLogger for the provided logging configuration. The
 // returned TricksterLogger will write to files distinguished from other TricksterLoggers by the
 // instance string.
-func Init() {
+func New(config *config.LoggingConfig, instanceID int) *TricksterLogger {
 	l := &TricksterLogger{}
 
 	var wr io.Writer
 
-	if config.Logging.LogFile == "" {
+	if config.LogFile == "" {
 		wr = os.Stdout
 	} else {
-		logFile := config.Logging.LogFile
-		if config.Main.InstanceID > 0 {
-			logFile = strings.Replace(logFile, ".log", "."+strconv.Itoa(config.Main.InstanceID)+".log", 1)
+		logFile := config.LogFile
+		if instanceID > 0 {
+			logFile = strings.Replace(logFile, ".log", "."+strconv.Itoa(instanceID)+".log", 1)
 		}
 
 		wr = &lumberjack.Logger{
@@ -134,7 +126,7 @@ func Init() {
 		}),
 	)
 
-	l.level = strings.ToLower(config.Logging.LogLevel)
+	l.level = strings.ToLower(config.LogLevel)
 
 	// wrap logger depending on log level
 	switch l.level {
@@ -157,7 +149,7 @@ func Init() {
 		l.closer = c
 	}
 
-	Logger = l
+	return l
 
 }
 
@@ -172,47 +164,52 @@ type TricksterLogger struct {
 }
 
 // Info sends an "INFO" event to the TricksterLogger
-func Info(event string, detail Pairs) {
-	level.Info(Logger.logger).Log(mapToArray(event, detail)...)
+func Info(logger log.Logger, event string, detail Pairs) {
+	level.Info(logger).Log(mapToArray(event, detail)...)
 }
 
 // Warn sends an "WARN" event to the TricksterLogger
-func Warn(event string, detail Pairs) {
-	level.Warn(Logger.logger).Log(mapToArray(event, detail)...)
+func Warn(logger log.Logger, event string, detail Pairs) {
+	level.Warn(logger).Log(mapToArray(event, detail)...)
 }
 
 // Error sends an "ERROR" event to the TricksterLogger
-func Error(event string, detail Pairs) {
-	level.Error(Logger.logger).Log(mapToArray(event, detail)...)
+func Error(logger log.Logger, event string, detail Pairs) {
+	level.Error(logger).Log(mapToArray(event, detail)...)
 }
 
 // Debug sends an "DEBUG" event to the TricksterLogger
-func Debug(event string, detail Pairs) {
-	level.Debug(Logger.logger).Log(mapToArray(event, detail)...)
+func Debug(logger log.Logger, event string, detail Pairs) {
+	level.Debug(logger).Log(mapToArray(event, detail)...)
 }
 
 // Trace sends a "TRACE" event to the TricksterLogger
-func Trace(event string, detail Pairs) {
+func (l *TricksterLogger) Trace(event string, detail Pairs) {
 	// go-kit/log/level does not support Trace, so implemented separately here
-	if Logger.level == "trace" {
+	if l.level == "trace" {
 		detail["level"] = "trace"
-		Logger.logger.Log(mapToArray(event, detail)...)
+		l.logger.Log(mapToArray(event, detail)...)
 	}
 }
 
 // Fatal sends a "FATAL" event to the TricksterLogger and exits the program with the provided exit code
-func Fatal(code int, event string, detail Pairs) {
+func (l *TricksterLogger) Fatal(code int, event string, detail Pairs) {
 	// go-kit/log/level does not support Fatal, so implemented separately here
 	detail["level"] = "fatal"
-	Logger.logger.Log(mapToArray(event, detail)...)
+	l.logger.Log(mapToArray(event, detail)...)
 	os.Exit(code)
 }
 
 // Close closes any opened file handles that were used for logging.
-func (l TricksterLogger) Close() {
+func (l *TricksterLogger) Close() {
 	if l.closer != nil {
 		l.closer.Close()
 	}
+}
+
+// Log implements log.Logger interface
+func (l *TricksterLogger) Log(keyvals ...interface{}) error {
+	return l.logger.Log(keyvals...)
 }
 
 // pkgCaller wraps a stack.Call to make the default string output include the

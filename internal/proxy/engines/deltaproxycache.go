@@ -62,12 +62,12 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	if cfg.TimeseriesEvictionMethod == config.EvictionMethodOldest {
 		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * cfg.TimeseriesRetention))
 		if trq.Extent.End.Before(OldestRetainedTimestamp) {
-			log.Debug("timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.TimeseriesRetention})
+			log.Debug(client.Logger(), "timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.TimeseriesRetention})
 			ProxyRequest(r, w)
 			return
 		}
 		if trq.Extent.Start.After(bf.End) {
-			log.Debug("timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": cfg.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
+			log.Debug(client.Logger(), "timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": cfg.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
 			ProxyRequest(r, w)
 			return
 		}
@@ -197,11 +197,11 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		go func(e *timeseries.Extent, rq *model.Request) {
 			defer wg.Done()
 			client.SetExtent(rq, e)
-			body, resp, _ := Fetch(rq)
+			body, resp, _ := Fetch(rq, client.Logger())
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				nts, err := client.UnmarshalTimeseries(body)
 				if err != nil {
-					log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
+					log.Error(client.Logger(), "proxy object unmarshaling failed", log.Pairs{"body": string(body)})
 					return
 				}
 				uncachedValueCount += nts.ValueCount()

@@ -26,17 +26,18 @@ import (
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	kitlog "github.com/go-kit/kit/log"
 )
 
 // ProxyRequest proxies an inbound request to its corresponding upstream origin with no caching features
-func ProxyRequest(r *model.Request, w http.ResponseWriter) {
-	body, resp, elapsed := Fetch(r)
+func ProxyRequest(r *model.Request, w http.ResponseWriter, l kitlog.Logger) {
+	body, resp, elapsed := Fetch(r, l)
 	recordProxyResults(r, strconv.Itoa(resp.StatusCode), r.URL.Path, elapsed.Seconds(), resp.Header)
 	Respond(w, resp.StatusCode, resp.Header, body)
 }
 
 // Fetch makes an HTTP request to the provided Origin URL
-func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
+func Fetch(r *model.Request, l kitlog.Logger) ([]byte, *http.Response, time.Duration) {
 
 	if r != nil {
 		headers.AddProxyHeaders(r.ClientRequest.RemoteAddr, r.Headers)
@@ -47,7 +48,7 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 	start := time.Now()
 	resp, err := r.HTTPClient.Do(&http.Request{Method: r.ClientRequest.Method, URL: r.URL, Header: r.Headers})
 	if err != nil {
-		log.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
+		log.Error(l, "error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		// if there is an err and the response is nil, the server could not be reached; make a 502 for the downstream response
 		if resp == nil {
 			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r.ClientRequest, Header: make(http.Header)}
@@ -60,14 +61,14 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 	body, err := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
-		log.Error("error reading body from http response", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
+		log.Error(l, "error reading body from http response", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		return []byte{}, resp, 0
 	}
 
 	latency := time.Since(start) // includes any time required to decompress the document for deserialization
 
 	if config.Logging.LogLevel == "debug" || config.Logging.LogLevel == "trace" {
-		go logUpstreamRequest(r.OriginName, r.OriginType, r.HandlerName, r.HTTPMethod, r.URL.String(), r.ClientRequest.UserAgent(), resp.StatusCode, len(body), latency.Seconds())
+		go logUpstreamRequest(r.OriginName, r.OriginType, r.HandlerName, r.HTTPMethod, r.URL.String(), r.ClientRequest.UserAgent(), resp.StatusCode, len(body), latency.Seconds(), l)
 	}
 
 	return body, resp, latency

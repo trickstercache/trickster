@@ -19,35 +19,56 @@ import (
 	_ "net/http/pprof" // Comment to disable. Available on :METRICS_PORT/debug/pprof
 	"os"
 
+	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	th "github.com/Comcast/trickster/internal/proxy/handlers"
 	"github.com/Comcast/trickster/internal/routing"
 	rr "github.com/Comcast/trickster/internal/routing/registration"
 	"github.com/Comcast/trickster/internal/util/log"
-	"github.com/Comcast/trickster/pkg/trickster"
+	"github.com/Comcast/trickster/internal/util/metrics"
 
 	"github.com/gorilla/handlers"
 )
 
+const (
+	applicationName    = "trickster"
+	applicationVersion = "1.0.9"
+)
+
 func main() {
-	err := trickster.InitTrickster(os.Args[1:])
+
+	var err error
+	err = config.Load(applicationName, applicationVersion, os.Args[1:])
 	if err != nil {
 		fmt.Println("Could not load configuration:", err.Error())
 		os.Exit(1)
 	}
 
-	defer trickster.FinTrickster()
+	if config.Flags.PrintVersion {
+		fmt.Println(applicationVersion)
+		os.Exit(0)
+	}
 
+	logger := log.New(config.Logging, config.Main.InstanceID)
+	defer logger.Close()
+	log.Info(logger, "application start up", log.Pairs{"name": applicationName, "version": applicationVersion, "logLevel": config.Logging.LogLevel})
+
+	for _, w := range config.LoaderWarnings {
+		log.Warn(logger, w, log.Pairs{})
+	}
+
+	metrics.Init(logger)
+	cr.LoadCachesFromConfig()
 	th.RegisterPingHandler()
 	th.RegisterConfigHandler()
 	err = rr.RegisterProxyRoutes()
 	if err != nil {
-		log.Fatal(1, err.Error(), log.Pairs{})
+		logger.Fatal(1, err.Error(), log.Pairs{})
 	}
 
-	log.Info("proxy http endpoint starting", log.Pairs{"address": config.ProxyServer.ListenAddress, "port": config.ProxyServer.ListenPort})
+	log.Info(logger, "proxy http endpoint starting", log.Pairs{"address": config.ProxyServer.ListenAddress, "port": config.ProxyServer.ListenPort})
 
 	// Start the Server
 	err = http.ListenAndServe(fmt.Sprintf("%s:%d", config.ProxyServer.ListenAddress, config.ProxyServer.ListenPort), handlers.CompressHandler(routing.Router))
-	log.Error("exiting", log.Pairs{"err": err})
+	log.Error(logger, "exiting", log.Pairs{"err": err})
 }

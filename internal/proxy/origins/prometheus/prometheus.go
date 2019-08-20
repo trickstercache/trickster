@@ -28,6 +28,7 @@ import (
 	tm "github.com/Comcast/trickster/internal/proxy/model"
 	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
 	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/go-kit/kit/log"
 )
 
 // Prometheus API
@@ -77,10 +78,11 @@ type Client struct {
 	config    *config.OriginConfig
 	cache     cache.Cache
 	webClient *http.Client
+	logger    log.Logger
 }
 
 // NewClient returns a new Client Instance
-func NewClient(name string, config *config.OriginConfig, cache cache.Cache) *Client {
+func NewClient(name string, config *config.OriginConfig, cache cache.Cache, logger log.Logger) *Client {
 	c := &http.Client{
 		Timeout: config.Timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -92,7 +94,7 @@ func NewClient(name string, config *config.OriginConfig, cache cache.Cache) *Cli
 			MaxIdleConnsPerHost: config.MaxIdleConns,
 		},
 	}
-	return &Client{name: name, config: config, cache: cache, webClient: c}
+	return &Client{name: name, config: config, cache: cache, webClient: c, logger: logger}
 }
 
 // Configuration returns the upstream Configuration for this Client
@@ -113,6 +115,11 @@ func (c *Client) Name() string {
 // Cache returns and handle to the Cache instance used by the Client
 func (c *Client) Cache() cache.Cache {
 	return c.cache
+}
+
+// Logger returns the Logger instance used by the Client
+func (c *Client) Logger() log.Logger {
+	return c.logger
 }
 
 // parseTime converts a query time URL parameter to time.Time.

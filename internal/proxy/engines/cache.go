@@ -21,10 +21,11 @@ import (
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/util/log"
+	kitlog "github.com/go-kit/kit/log"
 )
 
 // QueryCache queries the cache for an HTTPDocument and returns it
-func QueryCache(c cache.Cache, key string) (*model.HTTPDocument, error) {
+func QueryCache(c cache.Cache, key string, l kitlog.Logger) (*model.HTTPDocument, error) {
 
 	inflate := c.Configuration().Compression
 	if inflate {
@@ -38,7 +39,7 @@ func QueryCache(c cache.Cache, key string) (*model.HTTPDocument, error) {
 	}
 
 	if inflate {
-		log.Debug("decompressing cached data", log.Pairs{"cacheKey": key})
+		log.Debug(l, "decompressing cached data", log.Pairs{"cacheKey": key})
 		b, err := snappy.Decode(nil, bytes)
 		if err == nil {
 			bytes = b
@@ -49,7 +50,7 @@ func QueryCache(c cache.Cache, key string) (*model.HTTPDocument, error) {
 }
 
 // WriteCache writes an HTTPDocument to the cache
-func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Duration) error {
+func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Duration, l kitlog.Logger) error {
 	// Delete Date Header, http.ReponseWriter will insert as Now() on cache retrieval
 	delete(d.Headers, "Date")
 	bytes, err := d.MarshalMsg(nil)
@@ -59,7 +60,7 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 
 	if c.Configuration().Compression {
 		key += ".sz"
-		log.Debug("compressing cached data", log.Pairs{"cacheKey": key})
+		log.Debug(l, "compressing cached data", log.Pairs{"cacheKey": key})
 		bytes = snappy.Encode(nil, bytes)
 	}
 

@@ -19,6 +19,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/go-kit/kit/log"
 )
 
 // Client is the primary interface for interoperating with Trickster and upstream TSDB's
@@ -47,4 +48,6 @@ type Client interface {
 	UnmarshalInstantaneous([]byte) (timeseries.Timeseries, error)
 	// HTTPClient will return the HTTP Client for this Origin
 	HTTPClient() *http.Client
+	// Logger will return the Logger instance
+	Logger() log.Logger
 }
