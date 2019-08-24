@@ -10,7 +10,7 @@ import (
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
-// NewListener create a new network listener wich obeys to the configuration max
+// NewListener create a new network listener which obeys to the configuration max
 // connection limit, and also monitors connections with prometheus metrics.
 //
 // The way this works is by creating a listener and wrapping it with a

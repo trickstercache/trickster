@@ -118,7 +118,7 @@ func Init() {
 			Namespace: metricNamespace,
 			Subsystem: proxySubsystem,
 			Name:      "max_connections",
-			Help:      "Trickster max numer of active connections.",
+			Help:      "Trickster max number of active connections.",
 		},
 	)
 
@@ -127,7 +127,7 @@ func Init() {
 			Namespace: metricNamespace,
 			Subsystem: proxySubsystem,
 			Name:      "active_connections",
-			Help:      "Trickster numer of active connections.",
+			Help:      "Trickster number of active connections.",
 		},
 	)
 
@@ -136,7 +136,7 @@ func Init() {
 			Namespace: metricNamespace,
 			Subsystem: proxySubsystem,
 			Name:      "requested_connections_total",
-			Help:      "Trickster total numer of connections requested by clients.",
+			Help:      "Trickster total number of connections requested by clients.",
 		},
 	)
 	ProxyConnectionAccepted = prometheus.NewCounter(
@@ -144,7 +144,7 @@ func Init() {
 			Namespace: metricNamespace,
 			Subsystem: proxySubsystem,
 			Name:      "accepted_connections_total",
-			Help:      "Trickster total numer of accepted connections.",
+			Help:      "Trickster total number of accepted connections.",
 		},
 	)
 
@@ -153,7 +153,7 @@ func Init() {
 			Namespace: metricNamespace,
 			Subsystem: proxySubsystem,
 			Name:      "closed_connections_total",
-			Help:      "Trickster total numer of closed connections.",
+			Help:      "Trickster total number of closed connections.",
 		},
 	)
 
@@ -162,7 +162,7 @@ func Init() {
 			Namespace: metricNamespace,
 			Subsystem: proxySubsystem,
 			Name:      "failed_connections_total",
-			Help:      "Trickster total numer of failed connections.",
+			Help:      "Trickster total number of failed connections.",
 		},
 	)
 
