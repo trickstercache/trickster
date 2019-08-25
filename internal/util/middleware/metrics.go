@@ -25,26 +25,29 @@ import (
 // perspective
 func Decorate(originName, originType, path string, f func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		statusObserver := &writerStatusObserver{
+		observer := &responseObserver{
 			w,
 			"unknown",
+			0,
 		}
 
 		n := time.Now()
-		f(statusObserver, r)
+		f(observer, r)
 
-		metrics.FrontendRequestDuration.WithLabelValues(originName, originType, r.Method, path, statusObserver.status).Observe(time.Now().Sub(n).Seconds())
-		metrics.FrontendRequestStatus.WithLabelValues(originName, originType, r.Method, path, statusObserver.status).Inc()
+		metrics.FrontendRequestDuration.WithLabelValues(originName, originType, r.Method, path, observer.status).Observe(time.Now().Sub(n).Seconds())
+		metrics.FrontendRequestStatus.WithLabelValues(originName, originType, r.Method, path, observer.status).Inc()
+		metrics.FrontendRequestWrittenBytes.WithLabelValues(originName, originType, r.Method, path, observer.status).Add(float64(observer.bytesWritten))
 	}
 }
 
-type writerStatusObserver struct {
+type responseObserver struct {
 	http.ResponseWriter
 
-	status string
+	status       string
+	bytesWritten float64
 }
 
-func (w *writerStatusObserver) WriteHeader(statusCode int) {
+func (w *responseObserver) WriteHeader(statusCode int) {
 	w.ResponseWriter.WriteHeader(statusCode)
 	switch {
 	case statusCode >= 100 && statusCode < 199:
@@ -58,4 +61,12 @@ func (w *writerStatusObserver) WriteHeader(statusCode int) {
 	case statusCode >= 500 && statusCode < 599:
 		w.status = "5xx"
 	}
+}
+
+func (w *responseObserver) Write(b []byte) (int, error) {
+	bytesWritten, err := w.ResponseWriter.Write(b)
+
+	w.bytesWritten += float64(bytesWritten)
+
+	return bytesWritten, err
 }

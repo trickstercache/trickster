@@ -43,6 +43,9 @@ var FrontendRequestStatus *prometheus.CounterVec
 // FrontendRequestDuration is a histogram that tracks the time it takes to process a request
 var FrontendRequestDuration *prometheus.HistogramVec
 
+// FrontendRequestWrittenBytes is a Counter of bytes written for front end requests
+var FrontendRequestWrittenBytes *prometheus.CounterVec
+
 // ProxyRequestStatus is a Counter of downstream client requests handled by Trickster
 var ProxyRequestStatus *prometheus.CounterVec
 
@@ -96,6 +99,15 @@ func Init() {
 		},
 		[]string{"origin_name", "origin_type", "method", "path", "http_status"},
 	)
+
+	FrontendRequestWrittenBytes = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: frontendSubsystem,
+			Name:      "written_bytes_total",
+			Help:      "Count of bytes written in front end requests handled by Trickster",
+		},
+		[]string{"origin_name", "origin_type", "method", "path", "http_status"})
 
 	ProxyRequestStatus = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -201,6 +213,7 @@ func Init() {
 	// Register Metrics
 	prometheus.MustRegister(FrontendRequestStatus)
 	prometheus.MustRegister(FrontendRequestDuration)
+	prometheus.MustRegister(FrontendRequestWrittenBytes)
 	prometheus.MustRegister(ProxyRequestStatus)
 	prometheus.MustRegister(ProxyRequestElements)
 	prometheus.MustRegister(ProxyRequestDuration)
