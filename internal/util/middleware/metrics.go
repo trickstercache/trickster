@@ -20,12 +20,12 @@ import (
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
-// RequestObserver is a middleware that decorates a function in such a way that
-// it captures both the returned status and the time used to execute a request
-// from the front end perspective
-func RequestObserver(originName, originType string, f func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
+// Decorate decorates a function in such a way that it captures both the
+// returned status and the time used to execute a request from the front end
+// perspective
+func Decorate(originName, originType, path string, f func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		statusObserver := writerStatusObserver{
+		statusObserver := &writerStatusObserver{
 			w,
 			"unknown",
 		}
@@ -33,8 +33,8 @@ func RequestObserver(originName, originType string, f func(http.ResponseWriter, 
 		n := time.Now()
 		f(statusObserver, r)
 
-		metrics.FrontendRequestDuration.WithLabelValues(originName, originType, statusObserver.status).Observe(time.Now().Sub(n).Seconds())
-		metrics.FrontendRequestStatus.WithLabelValues(originName, originType, statusObserver.status).Inc()
+		metrics.FrontendRequestDuration.WithLabelValues(originName, originType, r.Method, path, statusObserver.status).Observe(time.Now().Sub(n).Seconds())
+		metrics.FrontendRequestStatus.WithLabelValues(originName, originType, r.Method, path, statusObserver.status).Inc()
 	}
 }
 
@@ -44,7 +44,7 @@ type writerStatusObserver struct {
 	status string
 }
 
-func (w *writerStatusObserver) WriterHeader(statusCode int) {
+func (w *writerStatusObserver) WriteHeader(statusCode int) {
 	w.ResponseWriter.WriteHeader(statusCode)
 	switch {
 	case statusCode >= 100 && statusCode < 199:

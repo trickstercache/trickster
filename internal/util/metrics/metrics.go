@@ -83,7 +83,7 @@ func Init() {
 			Name:      "requests_total",
 			Help:      "Count of front end requests handled by Trickster",
 		},
-		[]string{"origin_name", "origin_type", "http_status"},
+		[]string{"origin_name", "origin_type", "method", "path", "http_status"},
 	)
 
 	FrontendRequestDuration = prometheus.NewHistogramVec(
@@ -94,7 +94,7 @@ func Init() {
 			Help:      "Histogram of front end request durations handled by Trickster",
 			Buckets:   defaultBuckets,
 		},
-		[]string{"origin_name", "origin_type", "origin", "http_status"},
+		[]string{"origin_name", "origin_type", "method", "path", "http_status"},
 	)
 
 	ProxyRequestStatus = prometheus.NewCounterVec(
