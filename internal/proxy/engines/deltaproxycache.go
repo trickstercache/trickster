@@ -32,7 +32,7 @@ import (
 )
 
 // DeltaProxyCacheRequest identifies the gaps between the cache and a new timeseries request,
-// requests the gaps from the origin server and returns the reconstituted dataset tto the downstream request
+// requests the gaps from the origin server and returns the reconstituted dataset to the downstream request
 // while caching the results for subsequent requests of the same data
 func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, cache tc.Cache, ttl time.Duration) {
 
