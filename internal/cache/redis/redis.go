@@ -101,12 +101,14 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 func (c *Cache) Remove(cacheKey string) {
 	log.Debug("redis cache remove", log.Pairs{"key": cacheKey})
 	c.removeFunc(cacheKey)
+	cache.ObserveCacheDel(c.Name, c.Config.Type, 0)
 }
 
 // BulkRemove removes a list of objects from the cache. noLock is not used for Redis
 func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
 	log.Debug("redis cache bulk remove", log.Pairs{})
 	c.bulkRemoveFunc(cacheKeys, noLock)
+	cache.ObserveCacheDel(c.Name, c.Config.Type, float64(len(cacheKeys)))
 }
 
 // Close disconnects from the Redis Cache

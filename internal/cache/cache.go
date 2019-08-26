@@ -86,6 +86,11 @@ func ObserveCacheMiss(cacheKey, cacheName, cacheType string) ([]byte, error) {
 	return nil, fmt.Errorf("value  for key [%s] not in cache", cacheKey)
 }
 
+// ObserveCacheDel records a cache deletion event
+func ObserveCacheDel(cache, cacheType string, count float64) {
+	ObserveCacheOperation(cache, cacheType, "del", "none", count)
+}
+
 // CacheError returns an empty cache object and the formatted error
 func CacheError(cacheKey, cacheName, cacheType string, msg string) ([]byte, error) {
 	ObserveCacheEvent(cacheName, cacheType, "error", msg)

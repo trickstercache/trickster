@@ -77,13 +77,13 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 func (c *Cache) Remove(cacheKey string) {
 	c.client.Delete(cacheKey)
 	c.Index.RemoveObject(cacheKey, false)
+	cache.ObserveCacheDel(c.Name, c.Config.Type, 0)
 }
 
 // BulkRemove removes a list of objects from the cache
 func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
 	for _, cacheKey := range cacheKeys {
-		c.client.Delete(cacheKey)
-		c.Index.RemoveObject(cacheKey, noLock)
+		c.Remove(cacheKey)
 	}
 }
 

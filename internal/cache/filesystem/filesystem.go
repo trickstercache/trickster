@@ -137,17 +137,13 @@ func (c *Cache) Remove(cacheKey string) {
 	if err := os.Remove(c.getFileName(cacheKey)); err == nil {
 		c.Index.RemoveObject(cacheKey, false)
 	}
+	cache.ObserveCacheDel(c.Name, c.Config.Type, 0)
 }
 
 // BulkRemove removes a list of objects from the cache
 func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
 	for _, cacheKey := range cacheKeys {
-		locks.Acquire(lockPrefix + cacheKey)
-		defer locks.Release(lockPrefix + cacheKey)
-
-		if err := os.Remove(c.getFileName(cacheKey)); err == nil {
-			c.Index.RemoveObject(cacheKey, noLock)
-		}
+		c.Remove(cacheKey)
 	}
 }
 
