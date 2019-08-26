@@ -38,6 +38,10 @@ func (c Client) histogramHandlerSetExtent(r *model.Request,
 
 	st := extent.Start.UnixNano() - (extent.Start.UnixNano() % int64(trq.Step))
 	et := extent.End.UnixNano() - (extent.End.UnixNano() % int64(trq.Step))
+	if st == et {
+		et += int64(trq.Step)
+	}
+
 	ps := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 6)
 	if len(ps) < 6 || ps[0] != "histogram" {
 		return
@@ -60,8 +64,16 @@ func (c Client) histogramHandlerSetExtent(r *model.Request,
 func (c *Client) histogramHandlerParseTimeRangeQuery(
 	r *model.Request) (*timeseries.TimeRangeQuery, error) {
 	trq := &timeseries.TimeRangeQuery{}
-	p := r.URL.Path
-	ps := strings.SplitN(strings.TrimPrefix(p, "/"), "/", 6)
+	ps := []string{}
+	if strings.HasPrefix(r.URL.Path, "/irondb") {
+		ps = strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 7)
+		if len(ps) > 0 {
+			ps = ps[1:]
+		}
+	} else {
+		ps = strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 6)
+	}
+
 	if len(ps) < 6 || ps[0] != "histogram" {
 		return nil, errors.NotTimeRangeQuery()
 	}
@@ -77,10 +89,6 @@ func (c *Client) histogramHandlerParseTimeRangeQuery(
 		return nil, err
 	}
 
-	if !strings.HasSuffix(ps[3], "s") {
-		ps[3] += "s"
-	}
-
 	if trq.Step, err = parseDuration(ps[3]); err != nil {
 		return nil, err
 	}
@@ -94,7 +102,16 @@ func (c Client) histogramHandlerDeriveCacheKey(r *model.Request,
 	extra string) string {
 	var sb strings.Builder
 	sb.WriteString(r.URL.Path)
-	ps := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 6)
+	ps := []string{}
+	if strings.HasPrefix(r.URL.Path, "/irondb") {
+		ps = strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 7)
+		if len(ps) > 0 {
+			ps = ps[1:]
+		}
+	} else {
+		ps = strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 6)
+	}
+
 	if len(ps) >= 6 || ps[0] == "histogram" {
 		sb.WriteString("/histogram/" + strings.Join(ps[3:], "/"))
 	}

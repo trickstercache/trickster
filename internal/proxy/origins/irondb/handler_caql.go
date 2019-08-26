@@ -37,6 +37,10 @@ func (c Client) caqlHandlerSetExtent(r *model.Request,
 
 	st := extent.Start.UnixNano() - (extent.Start.UnixNano() % int64(trq.Step))
 	et := extent.End.UnixNano() - (extent.End.UnixNano() % int64(trq.Step))
+	if st == et {
+		et += int64(trq.Step)
+	}
+
 	q := r.URL.Query()
 	q.Set(upCAQLStart, formatTimestamp(time.Unix(0, st), false))
 	q.Set(upCAQLEnd, formatTimestamp(time.Unix(0, et), false))
@@ -54,7 +58,9 @@ func (c *Client) caqlHandlerParseTimeRangeQuery(
 	var err error
 	p := ""
 	if p = qp.Get(upQuery); p == "" {
-		return nil, errors.MissingURLParam(upQuery)
+		if p = qp.Get(upCAQLQuery); p == "" {
+			return nil, errors.MissingURLParam(upQuery + " or " + upCAQLQuery)
+		}
 	}
 
 	trq.Statement = p
@@ -98,6 +104,7 @@ func (c Client) caqlHandlerDeriveCacheKey(r *model.Request,
 	sb.WriteString(r.URL.Path)
 	qp := r.URL.Query()
 	sb.WriteString(qp.Get(upQuery))
+	sb.WriteString(qp.Get(upCAQLQuery))
 	sb.WriteString(qp.Get(upCAQLPeriod))
 	sb.WriteString(extra)
 	return md5.Checksum(sb.String())

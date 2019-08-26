@@ -23,6 +23,8 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		HandlerFunc(c.RawHandler).Methods("GET").Host(originName)
 	routing.Router.PathPrefix(prefix + mnRollup).
 		HandlerFunc(c.RollupHandler).Methods("GET").Host(originName)
+	routing.Router.PathPrefix(prefix + mnFetch).
+		HandlerFunc(c.FetchHandler).Methods("POST").Host(originName)
 	routing.Router.PathPrefix(prefix + mnRead).
 		HandlerFunc(c.TextHandler).Methods("GET").Host(originName)
 	routing.Router.PathPrefix(prefix + mnHistogram).
@@ -45,6 +47,8 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		HandlerFunc(c.RawHandler).Methods("GET")
 	routing.Router.PathPrefix("/" + originName + prefix + mnRollup).
 		HandlerFunc(c.RollupHandler).Methods("GET")
+	routing.Router.PathPrefix("/" + originName + prefix + mnFetch).
+		HandlerFunc(c.FetchHandler).Methods("POST")
 	routing.Router.PathPrefix("/" + originName + prefix + mnRead).
 		HandlerFunc(c.TextHandler).Methods("GET")
 	routing.Router.PathPrefix("/" + originName + prefix + mnHistogram).
@@ -68,8 +72,10 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 			HandlerFunc(c.HealthHandler).Methods("GET")
 		routing.Router.PathPrefix(prefix + mnRaw).
 			HandlerFunc(c.RawHandler).Methods("GET")
-		routing.Router.PathPrefix(prefix + mnRollup + "/").
+		routing.Router.PathPrefix(prefix + mnRollup).
 			HandlerFunc(c.RollupHandler).Methods("GET")
+		routing.Router.PathPrefix(prefix + mnFetch).
+			HandlerFunc(c.FetchHandler).Methods("POST")
 		routing.Router.PathPrefix(prefix + mnRead).
 			HandlerFunc(c.TextHandler).Methods("GET")
 		routing.Router.PathPrefix(prefix + mnHistogram).

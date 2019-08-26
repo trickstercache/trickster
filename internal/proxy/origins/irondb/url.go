@@ -47,6 +47,8 @@ func (c Client) SetExtent(r *model.Request, extent *timeseries.Extent) {
 		c.rawHandlerSetExtent(r, extent)
 	case "RollupHandler":
 		c.rollupHandlerSetExtent(r, extent)
+	case "FetchHandler":
+		c.fetchHandlerSetExtent(r, extent)
 	case "TextHandler":
 		c.textHandlerSetExtent(r, extent)
 	case "HistogramHandler":
@@ -110,6 +112,10 @@ func parseTimestamp(s string) (time.Time, error) {
 // parseDuration attempts to parse an IRONdb API duration string into a valid
 // duration value.
 func parseDuration(s string) (time.Duration, error) {
+	if !strings.HasSuffix(s, "s") {
+		s += "s"
+	}
+
 	d, err := time.ParseDuration(s)
 	if err != nil {
 		return 0, fmt.Errorf("unable to parse duration %s: %s",
@@ -128,6 +134,8 @@ func (c *Client) ParseTimeRangeQuery(
 		return c.rawHandlerParseTimeRangeQuery(r)
 	case "RollupHandler":
 		return c.rollupHandlerParseTimeRangeQuery(r)
+	case "FetchHandler":
+		return c.fetchHandlerParseTimeRangeQuery(r)
 	case "TextHandler":
 		return c.textHandlerParseTimeRangeQuery(r)
 	case "HistogramHandler":

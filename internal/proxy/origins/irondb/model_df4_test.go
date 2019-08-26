@@ -76,16 +76,7 @@ const testDF4Response2 = `{
 `
 
 func TestDF4SeriesEnvelopeSetStep(t *testing.T) {
-	se := SeriesEnvelope{}
-	const step = time.Duration(300) * time.Minute
-	se.SetStep(step)
-	if se.StepDuration != step {
-		t.Errorf("Expected step: %v, got: %v", step, se.StepDuration)
-	}
-}
-
-func TestDF4SeriesEnvelopeStep(t *testing.T) {
-	se := SeriesEnvelope{}
+	se := DF4SeriesEnvelope{}
 	const step = time.Duration(300) * time.Minute
 	se.SetStep(step)
 	if se.Step() != step {
@@ -94,20 +85,7 @@ func TestDF4SeriesEnvelopeStep(t *testing.T) {
 }
 
 func TestDF4SeriesEnvelopeSetExtents(t *testing.T) {
-	se := &SeriesEnvelope{}
-	ex := timeseries.ExtentList{timeseries.Extent{
-		Start: time.Time{},
-		End:   time.Time{},
-	}}
-
-	se.SetExtents(ex)
-	if len(se.ExtentList) != 1 {
-		t.Errorf("Expected length: 1, got: %d", len(se.ExtentList))
-	}
-}
-
-func TestDF4SeriesEnvelopeExtents(t *testing.T) {
-	se := &SeriesEnvelope{}
+	se := &DF4SeriesEnvelope{}
 	ex := timeseries.ExtentList{timeseries.Extent{
 		Start: time.Time{},
 		End:   time.Time{},
@@ -249,9 +227,9 @@ func TestDF4SeriesEnvelopeCropToRange(t *testing.T) {
 		return
 	}
 
-	exp := `{"data":[[1,2]],"meta":[{"kind":"numeric","label":"test",` +
+	exp := `{"data":[[1]],"meta":[{"kind":"numeric","label":"test",` +
 		`"tags":["__check_uuid:11223344-5566-7788-9900-aabbccddeeff",` +
-		`"__name:test"]}],"version":"DF4","head":{"count":2,"start":0,` +
+		`"__name:test"]}],"version":"DF4","head":{"count":1,"start":0,` +
 		`"period":300},"extents":[{"start":"` +
 		time.Unix(0, 0).Format(time.RFC3339) +
 		`","end":"` + time.Unix(300, 0).Format(time.RFC3339) + `"}]}`
@@ -351,8 +329,8 @@ func TestMarshalDF4Timeseries(t *testing.T) {
 		return
 	}
 
-	exp := strings.ReplaceAll(strings.ReplaceAll(testDF4Response, "\n", ""),
-		" ", "")
+	exp := strings.Replace(strings.Replace(testDF4Response, "\n", "", -1),
+		" ", "", -1)
 	if string(bytes) != exp {
 		t.Errorf("Expected JSON: %s, got: %s", exp, string(bytes))
 	}

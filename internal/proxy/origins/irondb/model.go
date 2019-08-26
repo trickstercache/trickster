@@ -322,7 +322,7 @@ func (c *Client) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, error) {
 // UnmarshalTimeseries converts a JSON blob into a Timeseries value.
 func (c *Client) UnmarshalTimeseries(data []byte) (timeseries.Timeseries,
 	error) {
-	if strings.Contains(strings.ReplaceAll(string(data), " ", ""),
+	if strings.Contains(strings.Replace(string(data), " ", "", -1),
 		`"version":"DF4"`) {
 		se := &DF4SeriesEnvelope{}
 		err := json.Unmarshal(data, &se)

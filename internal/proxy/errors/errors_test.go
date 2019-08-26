@@ -54,3 +54,31 @@ func TestParseDurationError(t *testing.T) {
 func ParseDurationError(input string) (time.Duration, error) {
 	return time.Duration(0), fmt.Errorf("unable to parse duration: %s", input)
 }
+
+func TestNotTimeRangeQuery(t *testing.T) {
+	err := NotTimeRangeQuery()
+	if err.Error() != "not a time range query" {
+		t.Errorf("ErrorParseDuration failed, got: %v", err.Error())
+	}
+}
+
+func TestInvalidPath(t *testing.T) {
+	err := InvalidPath("test")
+	if err.Error() != "invalid request path: test" {
+		t.Errorf("ErrorInvalidPath failed, got: %v", err.Error())
+	}
+}
+
+func TestParseRequestBody(t *testing.T) {
+	err := ParseRequestBody(fmt.Errorf("test"))
+	if err.Error() != "unable to parse request body: test" {
+		t.Errorf("ErrorParseDuration failed, got: %v", err.Error())
+	}
+}
+
+func TestMissingRequestParam(t *testing.T) {
+	err := MissingRequestParam("test")
+	if err.Error() != "missing request parameter: test" {
+		t.Errorf("ErrorMissingRequestParam failed, got: %v", err.Error())
+	}
+}
