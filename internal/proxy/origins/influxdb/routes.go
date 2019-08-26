@@ -14,30 +14,37 @@
 package influxdb
 
 import (
+	"net/http"
+
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/Comcast/trickster/internal/util/middleware"
 )
 
 // RegisterRoutes registers the routes for the Client into the proxy's HTTP multiplexer
 func (c Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 
+	decorate := func(path string, f func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
+		return middleware.Decorate(originName, otInfluxDb, path, f)
+	}
+
 	// Host Header-based routing
 	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
-	routing.Router.HandleFunc("/"+health, c.HealthHandler).Methods("GET").Host(originName)
-	routing.Router.HandleFunc("/"+mnQuery, c.QueryHandler).Methods("GET", "POST").Host(originName)
-	routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST").Host(originName)
+	routing.Router.HandleFunc("/"+health, decorate("health", c.HealthHandler)).Methods("GET").Host(originName)
+	routing.Router.HandleFunc("/"+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST").Host(originName)
+	routing.Router.PathPrefix("/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST").Host(originName)
 
 	// Path-based routing
-	routing.Router.HandleFunc("/"+originName+"/"+health, c.HealthHandler).Methods("GET")
-	routing.Router.HandleFunc("/"+originName+"/"+mnQuery, c.QueryHandler).Methods("GET", "POST")
-	routing.Router.PathPrefix("/"+originName+"/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
+	routing.Router.HandleFunc("/"+originName+"/"+health, decorate("health", c.HealthHandler)).Methods("GET")
+	routing.Router.HandleFunc("/"+originName+"/"+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST")
+	routing.Router.PathPrefix("/"+originName+"/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST")
 
 	// Default Origin Routing
 	if o.IsDefault {
 		log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.Type})
-		routing.Router.HandleFunc("/"+health, c.HealthHandler).Methods("GET")
-		routing.Router.HandleFunc("/"+mnQuery, c.QueryHandler).Methods("GET", "POST")
-		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyHandler).Methods("GET", "POST")
+		routing.Router.HandleFunc("/"+health, decorate("health", c.HealthHandler)).Methods("GET")
+		routing.Router.HandleFunc("/"+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST")
+		routing.Router.PathPrefix("/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST")
 	}
 }
