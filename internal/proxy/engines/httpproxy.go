@@ -98,7 +98,7 @@ func Respond(w http.ResponseWriter, code int, header http.Header, body []byte) {
 }
 
 func recordProxyResults(r *model.Request, httpStatus, path string, elapsed float64, header http.Header) {
-	recordResults(r, "HTTPProxy", "", httpStatus, path, "", elapsed, nil, header)
+	recordResults(r, "HTTPProxy", "proxy-only", httpStatus, path, "", elapsed, nil, header)
 }
 
 func recordResults(r *model.Request, engine, cacheStatus, httpStatus, path, ffStatus string, elapsed float64, extents timeseries.ExtentList, header http.Header) {
