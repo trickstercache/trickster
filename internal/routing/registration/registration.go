@@ -43,6 +43,7 @@ func RegisterProxyRoutes() error {
 			if defaultOrigin != "" {
 				return fmt.Errorf("only one origin can be marked as default. Found both %s and %s", defaultOrigin, k)
 			}
+			log.Debug("default origin identified", log.Pairs{"name": k})
 			defaultOrigin = k
 		}
 
@@ -56,13 +57,13 @@ func RegisterProxyRoutes() error {
 		}
 		switch strings.ToLower(o.Type) {
 		case "prometheus", "":
-			log.Info("Registering Prometheus Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
+			log.Info("registering Prometheus route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 			client = prometheus.NewClient(k, o, c)
 		case "influxdb":
-			log.Info("Registering Influxdb Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
+			log.Info("registering Influxdb route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 			client = influxdb.NewClient(k, o, c)
 		case "irondb":
-			log.Info("Registering IRONdb Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
+			log.Info("registering IRONdb route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 			client = irondb.NewClient(k, o, c)
 		}
 		if client != nil {
