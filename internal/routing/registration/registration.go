@@ -34,7 +34,7 @@ var ProxyClients = make(map[string]model.Client)
 func RegisterProxyRoutes() error {
 
 	defaultOrigin := ""
-	var ndo *config.OriginConfig // points to the origin config named "default" 
+	var ndo *config.OriginConfig // points to the origin config named "default"
 	var cdo *config.OriginConfig // points to the origin config with IsDefault set to true
 
 	// Iterate our origins from the config and register their path handlers into the mux.
@@ -99,8 +99,8 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 	}
 	if client != nil {
 		ProxyClients[k] = client
-			client.RegisterRoutes(k, o)
+		client.RegisterRoutes(k, o)
 	}
-		
+
 	return nil
 }
