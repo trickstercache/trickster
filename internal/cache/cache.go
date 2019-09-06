@@ -41,6 +41,8 @@ const (
 	// LookupStatusProxyError indicates a that a proxy error occurred retrieving a cacheable dataset
 	// in upstream response or down stream request http headers
 	LookupStatusProxyError
+	// LookupStatusProxyOnly indicates a that the request was fully proxied to the origin without using the cache
+	LookupStatusProxyOnly
 )
 
 var cacheLookupStatusNames = map[string]LookupStatus{
@@ -50,6 +52,7 @@ var cacheLookupStatusNames = map[string]LookupStatus{
 	"kmiss":       LookupStatusKeyMiss,
 	"purge":       LookupStatusPurge,
 	"proxy-error": LookupStatusProxyError,
+	"proxy-only":  LookupStatusProxyOnly,
 }
 
 var cacheLookupStatusValues = map[LookupStatus]string{
@@ -59,6 +62,7 @@ var cacheLookupStatusValues = map[LookupStatus]string{
 	LookupStatusKeyMiss:    "kmiss",
 	LookupStatusPurge:      "purge",
 	LookupStatusProxyError: "proxy-error",
+	LookupStatusProxyOnly:  "proxy-only",
 }
 
 func (s LookupStatus) String() string {
