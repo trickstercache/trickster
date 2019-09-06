@@ -49,17 +49,19 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 			return err
 		}
 
-		if d, ok := c.Origins["default"]; ok {
-
-			if defaultOriginType != "" {
-				d.Type = defaultOriginType
-			}
-
-			d.Scheme = url.Scheme
-			d.Host = url.Host
-			d.PathPrefix = url.Path
+		d, ok := c.Origins["default"]
+		if !ok {
+			d = DefaultOriginConfig()
 			c.Origins["default"] = d
 		}
+
+		if defaultOriginType != "" {
+			d.Type = defaultOriginType
+		}
+
+		d.Scheme = url.Scheme
+		d.Host = url.Host
+		d.PathPrefix = url.Path
 	}
 
 	Config = c
