@@ -62,7 +62,7 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 
 	// If default origin, set those routes too
 	if o.IsDefault {
-		log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.Type})
+		log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
 		routing.Router.HandleFunc("/"+mnHealth, decorate("health", c.HealthHandler)).Methods("GET")
 		routing.Router.HandleFunc(APIPath+mnQueryRange, decorate("query_range", c.QueryRangeHandler)).Methods("GET", "POST")
 		routing.Router.HandleFunc(APIPath+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST")
