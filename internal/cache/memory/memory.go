@@ -41,7 +41,7 @@ func (c *Cache) Configuration() *config.CachingConfig {
 
 // Connect initializes the Cache
 func (c *Cache) Connect() error {
-	log.Info("memorycache setup", log.Pairs{})
+	log.Info("memorycache setup", log.Pairs{"name": c.Name, "maxSizeBytes": c.Config.Index.MaxSizeBytes, "maxSizeObjects": c.Config.Index.MaxSizeObjects})
 	lockPrefix = c.Name + ".memory."
 	c.client = sync.Map{}
 	c.Index = index.NewIndex(c.Name, c.Config.Type, nil, c.Config.Index, c.BulkRemove, nil)
