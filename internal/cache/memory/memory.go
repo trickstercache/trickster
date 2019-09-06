@@ -21,7 +21,10 @@ import (
 	"github.com/Comcast/trickster/internal/cache/index"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/Comcast/trickster/pkg/locks"
 )
+
+var lockPrefix string
 
 // Cache defines a a Memory Cache client that conforms to the Cache interface
 type Cache struct {
@@ -38,7 +41,8 @@ func (c *Cache) Configuration() *config.CachingConfig {
 
 // Connect initializes the Cache
 func (c *Cache) Connect() error {
-	log.Info("memorycache setup", log.Pairs{})
+	log.Info("memorycache setup", log.Pairs{"name": c.Name, "maxSizeBytes": c.Config.Index.MaxSizeBytes, "maxSizeObjects": c.Config.Index.MaxSizeObjects})
+	lockPrefix = c.Name + ".memory."
 	c.client = sync.Map{}
 	c.Index = index.NewIndex(c.Name, c.Config.Type, nil, c.Config.Index, c.BulkRemove, nil)
 	return nil
@@ -46,6 +50,10 @@ func (c *Cache) Connect() error {
 
 // Store places an object in the cache using the specified key and ttl
 func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
+
+	locks.Acquire(lockPrefix + cacheKey)
+	defer locks.Release(lockPrefix + cacheKey)
+
 	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
 	log.Debug("memorycache cache store", log.Pairs{"cacheKey": cacheKey, "length": len(data), "ttl": ttl})
 	o := index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
@@ -56,6 +64,10 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)
 func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
+
+	locks.Acquire(lockPrefix + cacheKey)
+	defer locks.Release(lockPrefix + cacheKey)
+
 	record, ok := c.client.Load(cacheKey)
 	if ok {
 		r := record.(index.Object)
@@ -75,15 +87,24 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 
 // Remove removes an object from the cache
 func (c *Cache) Remove(cacheKey string) {
+	c.remove(cacheKey, false)
+}
+
+func (c *Cache) remove(cacheKey string, noLock bool) {
+
+	locks.Acquire(lockPrefix + cacheKey)
+	defer locks.Release(lockPrefix + cacheKey)
+
 	c.client.Delete(cacheKey)
-	c.Index.RemoveObject(cacheKey, false)
+	c.Index.RemoveObject(cacheKey, noLock)
 	cache.ObserveCacheDel(c.Name, c.Config.Type, 0)
+
 }
 
 // BulkRemove removes a list of objects from the cache
 func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
 	for _, cacheKey := range cacheKeys {
-		c.Remove(cacheKey)
+		c.remove(cacheKey, noLock)
 	}
 }
 
