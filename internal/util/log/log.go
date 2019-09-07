@@ -180,14 +180,18 @@ func Info(event string, detail Pairs) {
 	level.Info(Logger.logger).Log(mapToArray(event, detail)...)
 }
 
-// InfoOnce sends an "INFO" event to the TricksterLogger Only Once per key
-func InfoOnce(key string, event string, detail Pairs) {
+// InfoOnce sends a "INFO" event to the TricksterLogger Only Once per key.
+// Returns true if the invocation was this first, and thus sent to the TricksterLogger
+func InfoOnce(key string, event string, detail Pairs) bool {
 	onceMutex.Lock()
 	defer onceMutex.Unlock()
+	key = "info." + key
 	if _, ok := onces[key]; !ok {
 		onces[key] = true
 		Info(event, detail)
+		return true
 	}
+	return false
 }
 
 // Warn sends an "WARN" event to the TricksterLogger
@@ -195,14 +199,18 @@ func Warn(event string, detail Pairs) {
 	level.Warn(Logger.logger).Log(mapToArray(event, detail)...)
 }
 
-// WarnOnce sends an "WARN" event to the TricksterLogger Only Once per key
-func WarnOnce(key string, event string, detail Pairs) {
+// WarnOnce sends a "WARN" event to the TricksterLogger Only Once per key.
+// Returns true if the invocation was this first, and thus sent to the TricksterLogger
+func WarnOnce(key string, event string, detail Pairs) bool {
 	onceMutex.Lock()
 	defer onceMutex.Unlock()
+	key = "warn." + key
 	if _, ok := onces[key]; !ok {
 		onces[key] = true
 		Warn(event, detail)
+		return true
 	}
+	return false
 }
 
 // Error sends an "ERROR" event to the TricksterLogger
@@ -211,13 +219,17 @@ func Error(event string, detail Pairs) {
 }
 
 // ErrorOnce sends an "ERROR" event to the TricksterLogger Only Once per key
-func ErrorOnce(key string, event string, detail Pairs) {
+// returns true if the invocation was this first and successfully sent to the logger
+func ErrorOnce(key string, event string, detail Pairs) bool {
 	onceMutex.Lock()
 	defer onceMutex.Unlock()
+	key = "error." + key
 	if _, ok := onces[key]; !ok {
 		onces[key] = true
 		Error(event, detail)
+		return true
 	}
+	return false
 }
 
 // Debug sends an "DEBUG" event to the TricksterLogger

@@ -105,7 +105,17 @@ func TestNewLoggerWarnOnce_LogFile(t *testing.T) {
 	config.Main = &config.MainConfig{InstanceID: 0}
 	config.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "x"}
 	Init()
-	WarnOnce("warnonce-test-key", "test entry", Pairs{"testKey": "testVal"})
+
+	ok := WarnOnce("warnonce-test-key", "test entry", Pairs{"testKey": "testVal"})
+	if !ok {
+		t.Errorf("expected %t got %t", true, ok)
+	}
+
+	ok = WarnOnce("warnonce-test-key", "test entry", Pairs{"testKey": "testVal"})
+	if ok {
+		t.Errorf("expected %t got %t", false, ok)
+	}
+
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
 	}
@@ -135,7 +145,17 @@ func TestNewLoggerErrorOnce_LogFile(t *testing.T) {
 	config.Main = &config.MainConfig{InstanceID: 0}
 	config.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "x"}
 	Init()
-	ErrorOnce("erroroonce-test-key", "test entry", Pairs{"testKey": "testVal"})
+
+	ok := ErrorOnce("erroroonce-test-key", "test entry", Pairs{"testKey": "testVal"})
+	if !ok {
+		t.Errorf("expected %t got %t", true, ok)
+	}
+
+	ok = ErrorOnce("erroroonce-test-key", "test entry", Pairs{"testKey": "testVal"})
+	if ok {
+		t.Errorf("expected %t got %t", false, ok)
+	}
+
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
 	}
@@ -180,10 +200,20 @@ func TestNewLoggerInfoOnce_LogFile(t *testing.T) {
 	config.Main = &config.MainConfig{InstanceID: 0}
 	config.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "info"}
 	Init()
-	InfoOnce("infoonce-test-key", "test entry", Pairs{"testKey": "testVal"})
+	ok := InfoOnce("infoonce-test-key", "test entry", Pairs{"testKey": "testVal"})
+	if !ok {
+		t.Errorf("expected %t got %t", true, ok)
+	}
+
+	ok = InfoOnce("infoonce-test-key", "test entry", Pairs{"testKey": "testVal"})
+	if ok {
+		t.Errorf("expected %t got %t", false, ok)
+	}
+
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
 	}
+
 	Logger.Close()
 	os.Remove(fileName)
 }
