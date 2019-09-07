@@ -19,6 +19,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -56,8 +57,13 @@ func mapToArray(event string, detail Pairs) []interface{} {
 	return a
 }
 
+var onceMutex *sync.Mutex
+var onces map[string]bool
+
 func init() {
 	Logger = ConsoleLogger("info")
+	onces = make(map[string]bool)
+	onceMutex = &sync.Mutex{}
 }
 
 // ConsoleLogger returns a TricksterLogger object that prints log events to the Console
@@ -174,14 +180,44 @@ func Info(event string, detail Pairs) {
 	level.Info(Logger.logger).Log(mapToArray(event, detail)...)
 }
 
+// InfoOnce sends an "INFO" event to the TricksterLogger Only Once per key
+func InfoOnce(key string, event string, detail Pairs) {
+	onceMutex.Lock()
+	defer onceMutex.Unlock()
+	if _, ok := onces[key]; !ok {
+		onces[key] = true
+		Info(event, detail)
+	}
+}
+
 // Warn sends an "WARN" event to the TricksterLogger
 func Warn(event string, detail Pairs) {
 	level.Warn(Logger.logger).Log(mapToArray(event, detail)...)
 }
 
+// WarnOnce sends an "WARN" event to the TricksterLogger Only Once per key
+func WarnOnce(key string, event string, detail Pairs) {
+	onceMutex.Lock()
+	defer onceMutex.Unlock()
+	if _, ok := onces[key]; !ok {
+		onces[key] = true
+		Warn(event, detail)
+	}
+}
+
 // Error sends an "ERROR" event to the TricksterLogger
 func Error(event string, detail Pairs) {
 	level.Error(Logger.logger).Log(mapToArray(event, detail)...)
+}
+
+// ErrorOnce sends an "ERROR" event to the TricksterLogger Only Once per key
+func ErrorOnce(key string, event string, detail Pairs) {
+	onceMutex.Lock()
+	defer onceMutex.Unlock()
+	if _, ok := onces[key]; !ok {
+		onces[key] = true
+		Error(event, detail)
+	}
 }
 
 // Debug sends an "DEBUG" event to the TricksterLogger
@@ -203,7 +239,9 @@ func Fatal(code int, event string, detail Pairs) {
 	// go-kit/log/level does not support Fatal, so implemented separately here
 	detail["level"] = "fatal"
 	Logger.logger.Log(mapToArray(event, detail)...)
-	os.Exit(code)
+	if code >= 0 {
+		os.Exit(code)
+	}
 }
 
 // Close closes any opened file handles that were used for logging.
