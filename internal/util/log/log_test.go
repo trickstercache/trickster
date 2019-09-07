@@ -106,14 +106,28 @@ func TestNewLoggerWarnOnce_LogFile(t *testing.T) {
 	config.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "x"}
 	Init()
 
-	ok := WarnOnce("warnonce-test-key", "test entry", Pairs{"testKey": "testVal"})
+	key := "warnonce-test-key"
+
+	if HasWarnedOnce(key) {
+		t.Errorf("expected %t got %t", false, true)
+	}
+
+	ok := WarnOnce(key, "test entry", Pairs{"testKey": "testVal"})
 	if !ok {
 		t.Errorf("expected %t got %t", true, ok)
 	}
 
-	ok = WarnOnce("warnonce-test-key", "test entry", Pairs{"testKey": "testVal"})
+	if !HasWarnedOnce(key) {
+		t.Errorf("expected %t got %t", true, false)
+	}
+
+	ok = WarnOnce(key, "test entry", Pairs{"testKey": "testVal"})
 	if ok {
 		t.Errorf("expected %t got %t", false, ok)
+	}
+
+	if !HasWarnedOnce(key) {
+		t.Errorf("expected %t got %t", true, false)
 	}
 
 	if _, err := os.Stat(fileName); err != nil {

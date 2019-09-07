@@ -213,6 +213,15 @@ func WarnOnce(key string, event string, detail Pairs) bool {
 	return false
 }
 
+// HasWarnedOnce returns true if a warning for the key has already been sent to the TricksterLoggerr
+func HasWarnedOnce(key string) bool {
+	onceMutex.Lock()
+	defer onceMutex.Unlock()
+	key = "warn." + key
+	_, ok := onces[key]
+	return ok
+}
+
 // Error sends an "ERROR" event to the TricksterLogger
 func Error(event string, detail Pairs) {
 	level.Error(Logger.logger).Log(mapToArray(event, detail)...)
