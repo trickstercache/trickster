@@ -16,6 +16,7 @@ package engines
 import (
 	"bytes"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -67,6 +68,23 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r.ClientRequest, Header: make(http.Header)}
 		}
 		return []byte{}, resp, -1
+	}
+
+	// warn if the clock between trickster and the origin is off by more than 1 minute
+	if date := resp.Header.Get(headers.NameDate); date != "" {
+		d, err := http.ParseTime(date)
+		if err == nil {
+			if offset := time.Now().Sub(d); time.Duration(math.Abs(float64(offset))) > time.Minute {
+				log.WarnOnce("clockoffset."+r.OriginName,
+					"clock offset between trickster host and origin is high and may cause data anomalies",
+					log.Pairs{
+						"originName":    r.OriginName,
+						"tricksterTime": strconv.FormatInt(d.Add(offset).Unix(), 10),
+						"originTime":    strconv.FormatInt(d.Unix(), 10),
+						"offset":        strconv.FormatInt(int64(offset.Seconds()), 10) + "s",
+					})
+			}
+		}
 	}
 
 	resp.Header.Del(headers.NameContentLength)
