@@ -15,7 +15,6 @@ package engines
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	tc "github.com/Comcast/trickster/internal/cache"
@@ -42,7 +41,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Ca
 
 	if !refresh {
 		if d, err := QueryCache(cache, key); err == nil {
-			recordOPCResult(r, tc.LookupStatusHit, "200", r.URL.Path, 0, d.Headers)
+			recordOPCResult(r, tc.LookupStatusHit, http.StatusOK, r.URL.Path, 0, d.Headers)
 			log.Debug("cache hit", log.Pairs{"key": key})
 			rsp := &http.Response{
 				Header:     d.Headers,
@@ -54,7 +53,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Ca
 	}
 
 	body, resp, elapsed := Fetch(r)
-	recordOPCResult(r, tc.LookupStatusKeyMiss, strconv.Itoa(resp.StatusCode), r.URL.Path, elapsed.Seconds(), resp.Header)
+	recordOPCResult(r, tc.LookupStatusKeyMiss, resp.StatusCode, r.URL.Path, elapsed.Seconds(), resp.Header)
 
 	if resp.StatusCode == http.StatusOK && len(body) > 0 {
 		WriteCache(cache, key, model.DocumentFromHTTPResponse(resp, body), ttl)
@@ -64,6 +63,6 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Ca
 
 }
 
-func recordOPCResult(r *model.Request, cacheStatus tc.LookupStatus, httpStatus, path string, elapsed float64, header http.Header) {
-	recordResults(r, "ObjectProxyCache", cacheStatus.String(), httpStatus, path, "", elapsed, nil, header)
+func recordOPCResult(r *model.Request, cacheStatus tc.LookupStatus, httpStatus int, path string, elapsed float64, header http.Header) {
+	recordResults(r, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, header)
 }

@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	tc "github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
@@ -32,7 +33,7 @@ import (
 // ProxyRequest proxies an inbound request to its corresponding upstream origin with no caching features
 func ProxyRequest(r *model.Request, w http.ResponseWriter) {
 	body, resp, elapsed := Fetch(r)
-	recordProxyResults(r, strconv.Itoa(resp.StatusCode), r.URL.Path, elapsed.Seconds(), resp.Header)
+	recordProxyResults(r, resp.StatusCode, r.URL.Path, elapsed.Seconds(), resp.Header)
 	Respond(w, resp.StatusCode, resp.Header, body)
 }
 
@@ -97,16 +98,22 @@ func Respond(w http.ResponseWriter, code int, header http.Header, body []byte) {
 	w.Write(body)
 }
 
-func recordProxyResults(r *model.Request, httpStatus, path string, elapsed float64, header http.Header) {
-	recordResults(r, "HTTPProxy", "", httpStatus, path, "", elapsed, nil, header)
+func recordProxyResults(r *model.Request, httpStatus int, path string, elapsed float64, header http.Header) {
+	status := tc.LookupStatusProxyOnly
+	if httpStatus >= http.StatusBadRequest {
+		status = tc.LookupStatusProxyError
+	}
+	recordResults(r, "HTTPProxy", status, httpStatus, path, "", elapsed, nil, header)
 }
 
-func recordResults(r *model.Request, engine, cacheStatus, httpStatus, path, ffStatus string, elapsed float64, extents timeseries.ExtentList, header http.Header) {
-	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, httpStatus, path).Inc()
+func recordResults(r *model.Request, engine string, cacheStatus tc.LookupStatus, statusCode int, path, ffStatus string, elapsed float64, extents timeseries.ExtentList, header http.Header) {
+	httpStatus := strconv.Itoa(statusCode)
+	status := cacheStatus.String()
+	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, status, httpStatus, path).Inc()
 	if elapsed > 0 {
-		metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, httpStatus, path).Observe(elapsed)
+		metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, status, httpStatus, path).Observe(elapsed)
 	}
-	headers.SetResultsHeader(header, engine, cacheStatus, ffStatus, extents)
+	headers.SetResultsHeader(header, engine, status, ffStatus, extents)
 }
 
 func isRefresh(reqHeader http.Header) bool {
