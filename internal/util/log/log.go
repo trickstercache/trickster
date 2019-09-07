@@ -58,11 +58,11 @@ func mapToArray(event string, detail Pairs) []interface{} {
 }
 
 var onceMutex *sync.Mutex
-var onces map[string]bool
+var onceRanEntries map[string]bool
 
 func init() {
 	Logger = ConsoleLogger("info")
-	onces = make(map[string]bool)
+	onceRanEntries = make(map[string]bool)
 	onceMutex = &sync.Mutex{}
 }
 
@@ -186,8 +186,8 @@ func InfoOnce(key string, event string, detail Pairs) bool {
 	onceMutex.Lock()
 	defer onceMutex.Unlock()
 	key = "info." + key
-	if _, ok := onces[key]; !ok {
-		onces[key] = true
+	if _, ok := onceRanEntries[key]; !ok {
+		onceRanEntries[key] = true
 		Info(event, detail)
 		return true
 	}
@@ -205,8 +205,8 @@ func WarnOnce(key string, event string, detail Pairs) bool {
 	onceMutex.Lock()
 	defer onceMutex.Unlock()
 	key = "warn." + key
-	if _, ok := onces[key]; !ok {
-		onces[key] = true
+	if _, ok := onceRanEntries[key]; !ok {
+		onceRanEntries[key] = true
 		Warn(event, detail)
 		return true
 	}
@@ -218,7 +218,7 @@ func HasWarnedOnce(key string) bool {
 	onceMutex.Lock()
 	defer onceMutex.Unlock()
 	key = "warn." + key
-	_, ok := onces[key]
+	_, ok := onceRanEntries[key]
 	return ok
 }
 
@@ -233,8 +233,8 @@ func ErrorOnce(key string, event string, detail Pairs) bool {
 	onceMutex.Lock()
 	defer onceMutex.Unlock()
 	key = "error." + key
-	if _, ok := onces[key]; !ok {
-		onces[key] = true
+	if _, ok := onceRanEntries[key]; !ok {
+		onceRanEntries[key] = true
 		Error(event, detail)
 		return true
 	}
