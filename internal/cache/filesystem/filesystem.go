@@ -45,7 +45,7 @@ func (c *Cache) Configuration() *config.CachingConfig {
 
 // Connect instantiates the Cache mutex map and starts the Expired Entry Reaper goroutine
 func (c *Cache) Connect() error {
-	log.Info("filesystem cache setup", log.Pairs{"cachePath": c.Config.Filesystem.CachePath})
+	log.Info("filesystem cache setup", log.Pairs{"name": c.Name, "cachePath": c.Config.Filesystem.CachePath})
 	if err := makeDirectory(c.Config.Filesystem.CachePath); err != nil {
 		return err
 	}
