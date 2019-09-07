@@ -16,11 +16,13 @@ package engines
 import (
 	"bytes"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	tc "github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
@@ -32,7 +34,7 @@ import (
 // ProxyRequest proxies an inbound request to its corresponding upstream origin with no caching features
 func ProxyRequest(r *model.Request, w http.ResponseWriter) {
 	body, resp, elapsed := Fetch(r)
-	recordProxyResults(r, strconv.Itoa(resp.StatusCode), r.URL.Path, elapsed.Seconds(), resp.Header)
+	recordProxyResults(r, resp.StatusCode, r.URL.Path, elapsed.Seconds(), resp.Header)
 	Respond(w, resp.StatusCode, resp.Header, body)
 }
 
@@ -68,6 +70,23 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 		return []byte{}, resp, -1
 	}
 
+	// warn if the clock between trickster and the origin is off by more than 1 minute
+	if date := resp.Header.Get(headers.NameDate); date != "" {
+		d, err := http.ParseTime(date)
+		if err == nil {
+			if offset := time.Now().Sub(d); time.Duration(math.Abs(float64(offset))) > time.Minute {
+				log.WarnOnce("clockoffset."+r.OriginName,
+					"clock offset between trickster host and origin is high and may cause data anomalies",
+					log.Pairs{
+						"originName":    r.OriginName,
+						"tricksterTime": strconv.FormatInt(d.Add(offset).Unix(), 10),
+						"originTime":    strconv.FormatInt(d.Unix(), 10),
+						"offset":        strconv.FormatInt(int64(offset.Seconds()), 10) + "s",
+					})
+			}
+		}
+	}
+
 	resp.Header.Del(headers.NameContentLength)
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -97,16 +116,22 @@ func Respond(w http.ResponseWriter, code int, header http.Header, body []byte) {
 	w.Write(body)
 }
 
-func recordProxyResults(r *model.Request, httpStatus, path string, elapsed float64, header http.Header) {
-	recordResults(r, "HTTPProxy", "", httpStatus, path, "", elapsed, nil, header)
+func recordProxyResults(r *model.Request, httpStatus int, path string, elapsed float64, header http.Header) {
+	status := tc.LookupStatusProxyOnly
+	if httpStatus >= http.StatusBadRequest {
+		status = tc.LookupStatusProxyError
+	}
+	recordResults(r, "HTTPProxy", status, httpStatus, path, "", elapsed, nil, header)
 }
 
-func recordResults(r *model.Request, engine, cacheStatus, httpStatus, path, ffStatus string, elapsed float64, extents timeseries.ExtentList, header http.Header) {
-	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, httpStatus, path).Inc()
+func recordResults(r *model.Request, engine string, cacheStatus tc.LookupStatus, statusCode int, path, ffStatus string, elapsed float64, extents timeseries.ExtentList, header http.Header) {
+	httpStatus := strconv.Itoa(statusCode)
+	status := cacheStatus.String()
+	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, status, httpStatus, path).Inc()
 	if elapsed > 0 {
-		metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus, httpStatus, path).Observe(elapsed)
+		metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, status, httpStatus, path).Observe(elapsed)
 	}
-	headers.SetResultsHeader(header, engine, cacheStatus, ffStatus, extents)
+	headers.SetResultsHeader(header, engine, status, ffStatus, extents)
 }
 
 func isRefresh(reqHeader http.Header) bool {

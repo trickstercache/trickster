@@ -56,6 +56,8 @@ const (
 	NameXForwardedFor = "X-Forwarded-For"
 	// NameAcceptEncoding represents the HTTP Header Name of "Accept-Encoding"
 	NameAcceptEncoding = "Accept-Encoding"
+	// NameDate represents the HTTP Header Name of "Date"
+	NameDate = "Date"
 )
 
 // CopyHeaders returns an exact copy of an http.Header collection

@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strconv"
 	"sync"
 	"time"
 
@@ -98,7 +97,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		cache.Remove(key)
 		cts, doc, elapsed, err = fetchTimeseries(r, client)
 		if err != nil {
-			recordDPCResult(r, tc.LookupStatusProxyError, strconv.Itoa(doc.StatusCode), r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
+			recordDPCResult(r, tc.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 			Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 			return // fetchTimeseries logs the error
 		}
@@ -107,7 +106,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		if err != nil {
 			cts, doc, elapsed, err = fetchTimeseries(r, client)
 			if err != nil {
-				recordDPCResult(r, tc.LookupStatusProxyError, strconv.Itoa(doc.StatusCode), r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
+				recordDPCResult(r, tc.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 				Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 				return // fetchTimeseries logs the error
 			}
@@ -119,7 +118,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 				cache.Remove(key)
 				cts, doc, elapsed, err = fetchTimeseries(r, client)
 				if err != nil {
-					recordDPCResult(r, tc.LookupStatusProxyError, strconv.Itoa(doc.StatusCode), r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
+					recordDPCResult(r, tc.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 					Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 					return // fetchTimeseries logs the error
 				}
@@ -314,7 +313,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		defer wg.Done()
 		// Respond to the user. Using the response headers from a Delta Response, so as to not map conflict with cacheData on WriteCache
 		logDeltaRoutine(dpStatus)
-		recordDPCResult(r, cacheStatus, strconv.Itoa(doc.StatusCode), r.URL.Path, ffStatus, elapsed.Seconds(), missRanges, rh)
+		recordDPCResult(r, cacheStatus, doc.StatusCode, r.URL.Path, ffStatus, elapsed.Seconds(), missRanges, rh)
 		Respond(w, doc.StatusCode, rh, rdata)
 	}()
 
@@ -350,10 +349,6 @@ func fetchTimeseries(r *model.Request, client model.Client) (timeseries.Timeseri
 	return ts, d, elapsed, nil
 }
 
-func recordDPCResult(r *model.Request, cacheStatus tc.LookupStatus, httpStatus, path, ffStatus string, elapsed float64, needed []timeseries.Extent, header http.Header) {
-	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus.String(), httpStatus, path).Inc()
-	if elapsed > 0 {
-		metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, cacheStatus.String(), httpStatus, path).Observe(elapsed)
-	}
-	headers.SetResultsHeader(header, "DeltaProxyCache", cacheStatus.String(), ffStatus, timeseries.ExtentList(needed))
+func recordDPCResult(r *model.Request, cacheStatus tc.LookupStatus, httpStatus int, path, ffStatus string, elapsed float64, needed []timeseries.Extent, header http.Header) {
+	recordResults(r, "DeltaProxyCache", cacheStatus, httpStatus, path, ffStatus, elapsed, timeseries.ExtentList(needed), header)
 }
