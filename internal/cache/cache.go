@@ -35,13 +35,13 @@ const (
 	LookupStatusRangeMiss
 	// LookupStatusKeyMiss indicates a full key miss (cache key does not exist) on lookup
 	LookupStatusKeyMiss
-	// LookupStatusPurge indicates a the cache key, if it existed, was purged as directed
+	// LookupStatusPurge indicates the cache key, if it existed, was purged as directed
 	// in upstream response or down stream request http headers
 	LookupStatusPurge
-	// LookupStatusProxyError indicates a that a proxy error occurred retrieving a cacheable dataset
+	// LookupStatusProxyError indicates that a proxy error occurred retrieving a cacheable dataset
 	// in upstream response or down stream request http headers
 	LookupStatusProxyError
-	// LookupStatusProxyOnly indicates a that the request was fully proxied to the origin without using the cache
+	// LookupStatusProxyOnly indicates that the request was fully proxied to the origin without using the cache
 	LookupStatusProxyOnly
 )
 
