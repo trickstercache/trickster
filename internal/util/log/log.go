@@ -93,8 +93,6 @@ func ConsoleLogger(logLevel string) *TricksterLogger {
 		logger = level.NewFilter(logger, level.AllowInfo())
 	}
 
-	logger = level.NewFilter(logger, level.AllowInfo())
-
 	l.logger = logger
 
 	return l
