@@ -40,11 +40,6 @@ func RegisterProxyRoutes() error {
 	// Iterate our origins from the config and register their path handlers into the mux.
 	for k, o := range config.Origins {
 
-		if k == "default" {
-			ndo = o
-			continue
-		}
-
 		// Ensure only one default origin exists
 		if o.IsDefault {
 			if cdo != nil {
@@ -56,7 +51,16 @@ func RegisterProxyRoutes() error {
 			continue
 		}
 
-		registerOriginRoutes(k, o)
+		// handle origin named "default" last as it needs special handling based on a full pass over the range
+		if k == "default" {
+			ndo = o
+			continue
+		}
+
+		err := registerOriginRoutes(k, o)
+		if err != nil {
+			return err
+		}
 	}
 
 	if ndo != nil {
@@ -65,12 +69,15 @@ func RegisterProxyRoutes() error {
 			cdo = ndo
 			defaultOrigin = "default"
 		} else {
-			registerOriginRoutes("default", ndo)
+			err := registerOriginRoutes("default", ndo)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
 	if cdo != nil {
-		registerOriginRoutes(defaultOrigin, cdo)
+		return registerOriginRoutes(defaultOrigin, cdo)
 	}
 
 	return nil
