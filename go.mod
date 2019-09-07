@@ -9,24 +9,21 @@ require (
 	github.com/coreos/bbolt v1.3.3
 	github.com/dgraph-io/badger v1.6.0
 	github.com/go-kit/kit v0.9.0
-	github.com/go-redis/redis v6.15.2+incompatible
+	github.com/go-redis/redis v6.15.5+incompatible
 	github.com/go-stack/stack v1.8.0
 	github.com/golang/snappy v0.0.1
 	github.com/gomodule/redigo v2.0.0+incompatible // indirect
 	github.com/gorilla/handlers v1.4.2
 	github.com/gorilla/mux v1.7.3
-	github.com/influxdata/influxdb v1.7.7
+	github.com/influxdata/influxdb v1.7.8
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect
-	github.com/onsi/ginkgo v1.9.0 // indirect
-	github.com/onsi/gomega v1.6.0 // indirect
 	github.com/philhofer/fwd v1.0.0 // indirect
 	github.com/prometheus/client_golang v1.1.0
 	github.com/prometheus/common v0.6.0
 	github.com/tinylib/msgp v1.1.0
 	github.com/yuin/gopher-lua v0.0.0-20190514113301-1cd887cd7036 // indirect
-	go.etcd.io/bbolt v1.3.3 // indirect
-	golang.org/x/net v0.0.0-20190813141303-74dc4d7220e7
-	golang.org/x/sys v0.0.0-20190825160603-fb81701db80f
+	golang.org/x/net v0.0.0-20190827160401-ba9fcec4b297
+	golang.org/x/sys v0.0.0-20190904154756-749cb33beabd
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
