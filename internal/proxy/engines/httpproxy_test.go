@@ -21,7 +21,9 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
@@ -91,6 +93,41 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadGateway)
 	if err != nil {
 		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"engine": "HTTPProxy"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestClockOffsetWarning(t *testing.T) {
+
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add(headers.NameDate, time.Now().Add(-1*time.Hour).Format(http.TimeFormat))
+		w.WriteHeader(200)
+	}
+	s := httptest.NewServer(http.HandlerFunc(handler))
+
+	err := config.Load("trickster", "test", []string{"-origin", s.URL, "-origin-type", "test", "-log-level", "debug"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", s.URL, nil)
+
+	if log.HasWarnedOnce("clockoffset.default") {
+		t.Errorf("expected %t got %t", false, true)
+	}
+
+	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	ProxyRequest(req, w)
+	resp := w.Result()
+
+	if !log.HasWarnedOnce("clockoffset.default") {
+		t.Errorf("expected %t got %t", true, false)
 	}
 
 	err = testResultHeaderPartMatch(resp.Header, map[string]string{"engine": "HTTPProxy"})
