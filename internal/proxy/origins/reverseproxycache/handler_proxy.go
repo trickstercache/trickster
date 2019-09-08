@@ -23,5 +23,5 @@ import (
 func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	engines.ProxyRequest(
-		model.NewRequest(c.Configuration(), "ProxyCacheHandler", u, r.Header, c.config.Timeout, r, c.webClient), w)
+		model.NewRequest(c.Configuration(), "ProxyCacheHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient), w)
 }

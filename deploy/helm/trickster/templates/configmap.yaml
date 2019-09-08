@@ -10,119 +10,19 @@ metadata:
 data:
   trickster.conf: |-
     [main]
-    # instance_id allows you to run multiple trickster processes on the same host and log to separate files
-    # Useful for baremetal, not so much for elastic deployments, so only uncomment if you really need it
-    #instance_id = 1
-
-    # Configuration options for the Proxy Server
     [proxy_server]
-    # listen_port defines the port on which Trickster's Proxy server listens.
-    # The default proxy is for Prometheus, so we use 9090 by default, just like Prometheus does
-    # listen_port = 9090
     listen_port = {{ .Values.service.port }}
-    # listen_address defines the ip on which Trickster's Proxy server listens.
-    # empty by default, listening on all interfaces
-    # listen_address =
-
-
-    [caches]
-
-        # [caches.default]
-        # cache_type defines what kind of cache Trickster uses
-        # options are 'bbolt', 'filesystem', 'memory', 'redis' and 'redis_cluster'
-        # The default is 'memory'.
-        # type = 'memory'
-
-        # compression determines whether the cache should be compressed. default is true
-        # changing the compression setting will leave orphans in your cache for the duration of timeseries_ttl_secs
-        # compression = true
-
-        # timeseries_ttl_secs defines the relative expiration of cached timeseries. default is 6 hours (21600 seconds)
-        # timeseries_ttl_secs = 21600
-
-        # fastforward_ttl_secs defines the relative expiration of cached fast forward data. default is 15s
-        # fastforward_ttl_secs = 15
-
-        # object_ttl_secs defines the relative expiration of generically cached (non-timeseries) objects. default is 30s
-        # object_ttl_secs = 30
-
-            ### Configuration options for the Cache Index
-            # The Cache Index handles key management and retention for bbolt, filesystem and memory
-            # Redis handles those functions natively and does not use the Trickster's Cache Index
-            # [caches.default.index]
-
-            # reap_interval_secs defines how long the Cache Index reaper sleeps between reap cycles. Default is 3 (3s)
-            # reap_interval_secs = 3
-
-            # flush_interval_secs sets how often the Cache Index saves its metadata to the cache from application memory. Default is 5 (5s)
-            # flush_interval_secs = 5
-
-            # max_size_bytes indicates how large the cache can grow in bytes before the Index evicts least-recently-accessed items. default is 512MB
-            # max_size_bytes = 536870912
-
-            # max_size_backoff_bytes indicates how far below max_size_bytes the cache size must be to complete a byte-size-based eviction exercise. default is 16MB
-            # max_size_backoff_bytes = 16777216
-
-            # max_size_objects indicates how large the cache can grow in objects before the Index evicts least-recently-accessed items. default is 0 (infinite)
-            # max_size_objects = 0
-
-            # max_size_backoff_objects indicates how far under max_size_objects the cache size must be to complete object-size-based eviction exercise. default is 100
-            # max_size_backoff_objects = 100
-
-            ### Configuration options when using a Redis Cache
-            # [caches.default.redis]
-            # protocol defines the protocol for connecting to redis ('unix' or 'tcp') 'tcp' is default
-            # protocol = 'tcp'
-            # endpoint defines the fqdn+port or path to a unix socket file for connecting to redis
-            # default is 'redis:6379'
-            # endpoint = 'redis:6379'
-            # password provides the redis password
-            # default is empty
-            # password = ''
-
-            ### Configuration options when using Redis Cluster
-            # [caches.default.redis_cluster]
-            # endpoints defines a list of seed fqdn+ports for the cluster
-            # default is ['redis:6379']
-            # endpoints = ['redis:6379']
-            # password provides the redis cluster password
-            # default is empty
-            # password = ''
-
-            ### Configuration options when using a Filesystem Cache
-            # [caches.default.filesystem]
-            # cache_path defines the directory location under which the Trickster cache will be maintained
-            # default is '/tmp/trickster'
-            # cache_path = '/tmp/trickster'
-
-            # Configuration options when using a bbolt Cache
-            # [caches.default.bbolt]
-
-            # filename defines the file where the Trickster cache will be maintained
-            # default is 'trickster.db'
-            # filename = 'trickster.db'
-
-            # bucket defines the name of the BotlDb bucket (similar to a namespace) under which our key value store lives
-            # default is 'trickster'
-            # bucket = 'trickster'
-
-            # Configuration options when using a Badger cache
-            # [caches.default.badger]
-            # directory defines the directory location under which the Badger data will be maintained
-            # default is '/tmp/trickster'
-            # directory = '/tmp/trickster'
-            # directory defines the directory location under which the Badger value log will be maintained
-            # default is '/tmp/trickster'
-            # value_directory = '/tmp/trickster'
-
+    {{- if .Values.listenAddress }}
+    listen_address = {{ .Values.listenAddress | quote }}
+    {{- end }}
 
       {{- range .Values.caches }}
         {{ printf "[caches.%s]" .name }}
         type = {{ .type | quote }}
+        compression = {{ .compression }}
         timeseries_ttl_secs = {{ .timeSeriesTTLSecs }}
         fastforward_ttl_secs = {{ .fastforwardTTLSecs }}
         object_ttl_secs = {{ .objectTTLSecs }}
-        compression = {{ .compression }}
 
             {{- if or (ne .type "redis") (ne .type "redis_cluster") }}
             {{ printf "[caches.%s.index]" .name }}
@@ -134,17 +34,62 @@ data:
             max_size_backoff_objects = {{ .index.maxSizeBackoffObjects }}
             {{- end }}
 
+
             {{- if eq .type "redis" }}
             {{ printf "[caches.%s.redis]" .name }}
+            client_type = {{ .redis.clientType | quote }}
             protocol = {{ .redis.protocol | quote }}
-            endpoints = {{ .redis.endpoint | quote }}
             password = {{ .redis.password | quote }}
 
-            {{- else if eq .type "redis_cluster" }}
-            {{ printf "[caches.%s.redis_cluster]" .name }}
-            endpoints = {{ .redis_cluster.endpoints }}
-            password = {{ .redis_cluster.password | quote }}
+            {{- else if eq .redis.clientType "standard" }}
+            endpoint = {{ .redis.endpoint | quote }}
 
+            {{- else if or (eq .clientType "cluster") (eq .clientType "sentinel") }}
+            endpoints = {{ .redis.endpoints }}
+            {{- if eq .clientType "sentinel" }} 
+            sentinel_master = {{ .redis.sentinelMaster | quote }}
+            {{- end }}
+
+            {{- if .redis.db }}
+            db = {{ .redis.db }}
+            {{- end }}
+            {{- if .redis.maxRetries }}
+            max_retries = {{ .redis.maxRetries }}
+            {{- end }}
+            {{- if .redis.minRetryBackoffMs }}
+            min_retry_backoff_ms = {{ .redis.minRetryBackoffMs }}
+            {{- end }}
+            {{- if .redis.maxRetyBackoffMs }}
+            max_retry_backoff_ms = {{ .redis.maxRetyBackoffMs }}
+            {{- end }}
+            {{- if .redis.dialTimeoutMs }}
+            dial_timeout_ms = {{ .redis.dialTimeoutMs }}
+            {{- end }}
+            {{- if .redis.readTimeoutMs }}
+            read_timeout_ms = {{ .redis.readTimeoutMs }}
+            {{- end }}
+            {{- if .redis.writeTimeoutMs }}
+            write_timeout_ms = {{ .redis.writeTimeoutMs }}
+            {{- end }}
+            {{- if .redis.poolSize }}
+            pool_size = {{ .redis.poolSize }}
+            {{- end }}
+            {{- if .redis.minIdleConns }}
+            min_idle_conns = {{ .redis.minIdleConns }}
+            {{- end }}
+            {{- if .redis.maxConnAgeMs }}
+            max_conn_age_ms = {{ .redis.maxConnAgeMs }}
+            {{- end }}
+            {{- if .redis.poolTimeoutMs }}
+            pool_timeout_ms = {{ .redis.poolTimeoutMs }}
+            {{- end }}
+            {{- if .redis.idleTimeoutMs }}
+            idle_timeout_ms = {{ .redis.idleTimeoutMs }}
+            {{- end }}
+            {{- if .redis.idleCheckFrequencyMs }}
+            idle_check_frequency_ms = {{ .redis.idleCheckFrequencyMs }}
+            {{- end }}
+            
             {{- else if eq .type "filesystem" }}
             {{ printf "[caches.%s.filesystem]" .name }}
             cache_path = {{ .filesystem.path | quote }}
@@ -157,116 +102,36 @@ data:
             {{- else if eq .type "badger" }}
             {{ printf "[caches.%s.badger]" .name }}
             directory = {{ .badger.directory | quote }}
-            value_directory = {{ .badger.value_directory | quote }}
-            {{- end }}
+            value_directory = {{ .badger.valueDirectory | quote }}
+           {{- end }}
       {{- end }}
 
-        # Example of a second cache, sans comments, that origin configs below could use with: cache_name = 'bbolt_example'
-        #
-        # [caches.bbolt_example]
-        # type = 'bbolt'
-        # compression = true
-        # timeseries_ttl_secs = 21600
-        # fastforward_ttl_secs = 15
-        # object_ttl_secs = 30
-
-            # [caches.bbolt_example.bbolt]
-            # filename = 'trickster.db'
-            # bucket = 'trickster'
-
-            # [caches.bbolt_example.index]
-            # reap_interval_secs = 3
-            # flush_interval_secs = 5
-            # max_size_bytes = 536870912
-            # size_backoff_bytes = 16777216
-
-
-    # Configuration options for mapping Origin(s)
     [origins]
-        ### The default origin
-        # [origins.default]
-
-        # type identifies the origin type. Valid options are 'prometheus', 'influxdb'
-        # default is prometheus.
-        # type = 'prometheus'
-
-        # cache_name identifies the name of the cache (configured above) that you want to use with this origin proxy.
-        # cache_name = 'default'
-
-        # scheme identifies the scheme
-        # default is http
-        # scheme = 'http'
-
-        # host identifies the upstream origin by fqdn/IP and port
-        # default is prometheus:9090
-        # host = 'prometheus:9090'
-
-        # path_prefix provides any path that is prefixed onto the front of the client's requested path
-        # default is empty
-        # path_prefix = ''
-
-        # timeout_secs defines how many seconds Trickster will wait before aborting and upstream http request. Default: 180s
-        # timeout_secs = 180
-
-        # api_path defines the path of the Upstream Origin's API (usually '/api/v1')
-        # api_path = '/api/v1'
-
-        # ignore_no_cache_header disables a client's ability to send a no-cache to refresh a cached query. Default is false
-        # ignore_no_cache_header = false
-
-        # max_value_age_secs defines the maximum age of data in the cached timeseries. Default is 86400 (24 hours)
-        # max_value_age_secs = 86400
-
-        # fast_forward_disable, when set to true, will turn off the 'fast forward' feature for any requests proxied to this origin
-        # fast_forward_disable = false
-
-        # For multi-origin support, origins are named, and the name is the second word of the configuration section name.
-        # In this example, an origin is named "foo".
-        # Clients can indicate this origin in their path (http://trickster.example.com:9090/foo/api/v1/query_range?.....)
-        # there are other ways for clients to indicate which origin to use in a multi-origin setup. See the documentation for more information
-
-
     {{- range .Values.origins }}
         {{ printf "[origins.%s]" .name }}
+        is_default = {{ .isDefault }}
         type = {{ .type | quote }}
         cache_name = {{ .name | quote }}
         scheme = {{ .scheme | quote }}
         host = {{ .host | quote }}
         path_prefix = {{ .pathPrefix | quote }}
+        timeout_secs = {{ .timeoutSecs }}
+        keep_alive_timeout_secs = {{ .keepAliveYimeoutSecs }}
+        max_idle_conns = {{ .maxIdleConns }}
         api_path = {{ .apiPath | quote }}
         ignore_no_cache_header = {{ .ignoreNoCacheHeader }}
-        value_retention_factor = {{ .valueRetentionFactor }}
-        timeout_secs = {{ .timeoutSecs }}
-        backfill_tolerance_secs = {{ .backfillToleranceSecs }}
+        timeseries_retention_factor = {{ .timeseriesRetentionFactor }}
+        timeseries_eviction_method = {{ .timeseriesEvictionMethod | quote}}
         fast_forward_disable = {{ .fastForwardDisable }}
+        backfill_tolerance_secs = {{ .backfillToleranceSecs }}
     {{- end }}
 
-        # [origins.foo]
-        # type = 'influxdb'
-        # cache_name = 'bbolt_example'
-        # scheme = 'http'
-        # host = 'influx-origin:8086'
-        # path_prefix = ''
-        # api_path = ''
-        # ignore_no_cache_header = false
-        # max_value_age_secs = 86400
-        # timeout_secs = 180
-        # backfill_tolerance_secs = 180
-
-    # Configuration Options for Metrics Instrumentation
     [metrics]
-    # listen_port defines the port that Trickster's metrics server listens on at /metrics
-    listen_port = {{ .Values.service.metricsPort }}
-    # listen_address defines the ip that Trickster's metrics server listens on at /metrics
-    # empty by default, listening on all interfaces
-    # listen_address =
-
-    # Configuration Options for Logging Instrumentation
+        listen_port = {{ .Values.service.metricsPort }}
+        
     [logging]
-    # log_level defines the verbosity of the logger. Possible values are 'debug', 'info', 'warn', 'error'
-    # default is info
-    log_level = {{ .Values.logLevel | quote }}
-
-    # log_file defines the file location to store logs. These will be auto-rolled and maintained for you.
-    # not specifying a log_file (this is the default behavior) will print logs to STDOUT
-    # log_file = '/some/path/to/trickster.log'
+        log_level = {{ .Values.logLevel | quote }}
+        {{- if .Values.logFile }}
+        log_file = {{ .Values.logFile | quote }}
+        {{- end }}
+        

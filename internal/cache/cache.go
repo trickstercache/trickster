@@ -35,12 +35,14 @@ const (
 	LookupStatusRangeMiss
 	// LookupStatusKeyMiss indicates a full key miss (cache key does not exist) on lookup
 	LookupStatusKeyMiss
-	// LookupStatusPurge indicates a the cache key, if it existed, was purged as directed
+	// LookupStatusPurge indicates the cache key, if it existed, was purged as directed
 	// in upstream response or down stream request http headers
 	LookupStatusPurge
-	// LookupStatusProxyError indicates a that a proxy error occurred retrieving a cacheable dataset
+	// LookupStatusProxyError indicates that a proxy error occurred retrieving a cacheable dataset
 	// in upstream response or down stream request http headers
 	LookupStatusProxyError
+	// LookupStatusProxyOnly indicates that the request was fully proxied to the origin without using the cache
+	LookupStatusProxyOnly
 )
 
 var cacheLookupStatusNames = map[string]LookupStatus{
@@ -50,6 +52,7 @@ var cacheLookupStatusNames = map[string]LookupStatus{
 	"kmiss":       LookupStatusKeyMiss,
 	"purge":       LookupStatusPurge,
 	"proxy-error": LookupStatusProxyError,
+	"proxy-only":  LookupStatusProxyOnly,
 }
 
 var cacheLookupStatusValues = map[LookupStatus]string{
@@ -59,6 +62,7 @@ var cacheLookupStatusValues = map[LookupStatus]string{
 	LookupStatusKeyMiss:    "kmiss",
 	LookupStatusPurge:      "purge",
 	LookupStatusProxyError: "proxy-error",
+	LookupStatusProxyOnly:  "proxy-only",
 }
 
 func (s LookupStatus) String() string {
@@ -85,6 +89,11 @@ type Cache interface {
 func ObserveCacheMiss(cacheKey, cacheName, cacheType string) ([]byte, error) {
 	ObserveCacheOperation(cacheName, cacheType, "get", "miss", 0)
 	return nil, fmt.Errorf("value  for key [%s] not in cache", cacheKey)
+}
+
+// ObserveCacheDel records a cache deletion event
+func ObserveCacheDel(cache, cacheType string, count float64) {
+	ObserveCacheOperation(cache, cacheType, "del", "none", count)
 }
 
 // CacheError returns an empty cache object and the formatted error

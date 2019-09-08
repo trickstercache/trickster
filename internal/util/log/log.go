@@ -19,6 +19,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -56,8 +57,13 @@ func mapToArray(event string, detail Pairs) []interface{} {
 	return a
 }
 
+var onceMutex *sync.Mutex
+var onceRanEntries map[string]bool
+
 func init() {
 	Logger = ConsoleLogger("info")
+	onceRanEntries = make(map[string]bool)
+	onceMutex = &sync.Mutex{}
 }
 
 // ConsoleLogger returns a TricksterLogger object that prints log events to the Console
@@ -92,8 +98,6 @@ func ConsoleLogger(logLevel string) *TricksterLogger {
 	default:
 		logger = level.NewFilter(logger, level.AllowInfo())
 	}
-
-	logger = level.NewFilter(logger, level.AllowInfo())
 
 	l.logger = logger
 
@@ -176,14 +180,65 @@ func Info(event string, detail Pairs) {
 	level.Info(Logger.logger).Log(mapToArray(event, detail)...)
 }
 
+// InfoOnce sends a "INFO" event to the TricksterLogger only once per key.
+// Returns true if this invocation was the first, and thus sent to the TricksterLogger
+func InfoOnce(key string, event string, detail Pairs) bool {
+	onceMutex.Lock()
+	defer onceMutex.Unlock()
+	key = "info." + key
+	if _, ok := onceRanEntries[key]; !ok {
+		onceRanEntries[key] = true
+		Info(event, detail)
+		return true
+	}
+	return false
+}
+
 // Warn sends an "WARN" event to the TricksterLogger
 func Warn(event string, detail Pairs) {
 	level.Warn(Logger.logger).Log(mapToArray(event, detail)...)
 }
 
+// WarnOnce sends a "WARN" event to the TricksterLogger only once per key.
+// Returns true if this invocation was the first, and thus sent to the TricksterLogger
+func WarnOnce(key string, event string, detail Pairs) bool {
+	onceMutex.Lock()
+	defer onceMutex.Unlock()
+	key = "warn." + key
+	if _, ok := onceRanEntries[key]; !ok {
+		onceRanEntries[key] = true
+		Warn(event, detail)
+		return true
+	}
+	return false
+}
+
+// HasWarnedOnce returns true if a warning for the key has already been sent to the TricksterLoggerr
+func HasWarnedOnce(key string) bool {
+	onceMutex.Lock()
+	defer onceMutex.Unlock()
+	key = "warn." + key
+	_, ok := onceRanEntries[key]
+	return ok
+}
+
 // Error sends an "ERROR" event to the TricksterLogger
 func Error(event string, detail Pairs) {
 	level.Error(Logger.logger).Log(mapToArray(event, detail)...)
+}
+
+// ErrorOnce sends an "ERROR" event to the TricksterLogger only once per key
+// Returns true if this invocation was the first, and thus sent to the TricksterLogger
+func ErrorOnce(key string, event string, detail Pairs) bool {
+	onceMutex.Lock()
+	defer onceMutex.Unlock()
+	key = "error." + key
+	if _, ok := onceRanEntries[key]; !ok {
+		onceRanEntries[key] = true
+		Error(event, detail)
+		return true
+	}
+	return false
 }
 
 // Debug sends an "DEBUG" event to the TricksterLogger
@@ -205,7 +260,9 @@ func Fatal(code int, event string, detail Pairs) {
 	// go-kit/log/level does not support Fatal, so implemented separately here
 	detail["level"] = "fatal"
 	Logger.logger.Log(mapToArray(event, detail)...)
-	os.Exit(code)
+	if code >= 0 {
+		os.Exit(code)
+	}
 }
 
 // Close closes any opened file handles that were used for logging.

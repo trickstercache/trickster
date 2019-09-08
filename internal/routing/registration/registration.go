@@ -22,10 +22,12 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/proxy/origins/influxdb"
+	"github.com/Comcast/trickster/internal/proxy/origins/irondb"
 	"github.com/Comcast/trickster/internal/proxy/origins/prometheus"
 	"github.com/Comcast/trickster/internal/proxy/origins/reverseproxycache"
 	"github.com/Comcast/trickster/internal/util/log"
 )
+
 
 // ProxyClients maintains a list of proxy clients configured for use by Trickster
 var ProxyClients = make(map[string]model.Client)
@@ -33,60 +35,88 @@ var ProxyClients = make(map[string]model.Client)
 // RegisterProxyRoutes iterates the Trickster Configuration and registers the routes for the configured origins
 func RegisterProxyRoutes() error {
 
-	hasDefault := false
-	hasNamedDefault := false
+	defaultOrigin := ""
+	var ndo *config.OriginConfig // points to the origin config named "default"
+	var cdo *config.OriginConfig // points to the origin config with IsDefault set to true
 
 	// This iteration will ensure default origins are handled properly
 	for k, o := range config.Origins {
-		hasNamedDefault = hasNamedDefault || k == "default"
-		if hasDefault && o.IsDefault {
-			// If more than one origin's IsDefault is true, error out
-			log.Error("too many default origins", log.Pairs{})
-			return fmt.Errorf("too many default origins%s", "")
+
+		// Ensure only one default origin exists
+		if o.IsDefault {
+			if cdo != nil {
+				return fmt.Errorf("only one origin can be marked as default. Found both %s and %s", defaultOrigin, k)
+			}
+			log.Debug("default origin identified", log.Pairs{"name": k})
+			defaultOrigin = k
+			cdo = o
+			continue
 		}
-		if len(config.Origins) == 1 {
-			// If there is only one origin defined, set its IsDefault to true
-			o.IsDefault = true
-			hasDefault = true
-			break
+
+		// handle origin named "default" last as it needs special handling based on a full pass over the range
+		if k == "default" {
+			ndo = o
+			continue
 		}
-		hasDefault = hasDefault || o.IsDefault
+
+		err := registerOriginRoutes(k, o)
+		if err != nil {
+			return err
+		}
 	}
 
-	// Iterate our origins from the config and register their path handlers into the mux.
-	for k, o := range config.Origins {
-		var client model.Client
-		var c cache.Cache
-		var err error
-
-		c, err = registration.GetCache(o.CacheName)
-		if err != nil {
-			log.Error("invalid cache name in origin config", log.Pairs{"originName": k, "cacheName": o.CacheName})
-			return fmt.Errorf("invalid cache name in origin config. originName: %s, cacheName: %s", k, o.CacheName)
-		}
-		switch strings.ToLower(o.OriginType) {
-		case "prometheus", "":
-			log.Info("Registering Prometheus Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
-			client = prometheus.NewClient(k, o, c)
-		case "influxdb":
-			log.Info("Registering Influxdb Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
-			client = influxdb.NewClient(k, o, c)
-		case "rpc", "reverseproxycache":
-			log.Info("Registering ReverseProxyCache Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
-			client = reverseproxycache.NewClient(k, o, c)
-		default:
-			log.Error("unknown origin type", log.Pairs{"originName": k, "originType": o.OriginType})
-			return fmt.Errorf("unknown origin type in origin config. originName: %s, originType: %s", k, o.OriginType)
-		}
-		if client != nil {
-			ProxyClients[k] = client
-			// If it's the default origin, register it last
-			if o.IsDefault {
-				defer client.RegisterRoutes(k, o)
-			} else {
-				client.RegisterRoutes(k, o)
+	if ndo != nil {
+		if cdo == nil {
+			ndo.IsDefault = true
+			cdo = ndo
+			defaultOrigin = "default"
+		} else {
+			err := registerOriginRoutes("default", ndo)
+			if err != nil {
+				return err
 			}
 		}
 	}
+
+	if cdo != nil {
+		return registerOriginRoutes(defaultOrigin, cdo)
+	}
+
+	return nil
+}
+
+
+func registerOriginRoutes(k string, o *config.OriginConfig) error {
+
+	var client model.Client
+	var c cache.Cache
+	var err error
+
+	c, err = registration.GetCache(o.CacheName)
+	if err != nil {
+		return err
+	}
+	switch strings.ToLower(o.OriginType) {
+	case "prometheus", "":
+		log.Info("registering Prometheus route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
+		client = prometheus.NewClient(k, o, c)
+	case "influxdb":
+		log.Info("registering Influxdb route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
+		client = influxdb.NewClient(k, o, c)
+	case "irondb":
+		log.Info("registering IRONdb route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
+		client = irondb.NewClient(k, o, c)
+	case "rpc", "reverseproxycache":
+		log.Info("Registering ReverseProxyCache Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
+		client = reverseproxycache.NewClient(k, o, c)
+	default:
+		log.Error("unknown origin type", log.Pairs{"originName": k, "originType": o.OriginType})
+		return fmt.Errorf("unknown origin type in origin config. originName: %s, originType: %s", k, o.OriginType)
+	}
+	if client != nil {
+		ProxyClients[k] = client
+		client.RegisterRoutes(k, o)
+	}
+
 	return nil
 }

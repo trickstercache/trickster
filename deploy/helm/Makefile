@@ -20,9 +20,9 @@ bootstrap-trickster-dev:
 		--namespace=trickster \
 		--tiller-namespace=trickster
 
-update-dev-chart: update-trickster
+update-dev-chart:
 	kubectl config use-context minikube
-	helm upgrade dev trickster --namespace=trickster --tiller-namespace=trickster --reuse-values
+	helm upgrade dev trickster --namespace=trickster --tiller-namespace=trickster
 
 start-minikube:
 	minikube start \

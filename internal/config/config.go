@@ -297,6 +297,8 @@ type ProxyServerConfig struct {
 	ListenAddress string `toml:"listen_address"`
 	// ListenPort is TCP Port for the main http listener for the application
 	ListenPort int `toml:"listen_port"`
+	// ConnectionsLimit indicates how many concurrent front end connections trickster will handle at any time
+	ConnectionsLimit int `toml:"connections_limit"`
 }
 
 // LoggingConfig is a collection of Logging configurations

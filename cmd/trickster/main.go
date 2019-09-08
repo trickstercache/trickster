@@ -21,6 +21,7 @@ import (
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy"
 	th "github.com/Comcast/trickster/internal/proxy/handlers"
 	"github.com/Comcast/trickster/internal/routing"
 	rr "github.com/Comcast/trickster/internal/routing/registration"
@@ -66,9 +67,12 @@ func main() {
 		log.Fatal(1, "route registration failed", log.Pairs{"detail": err.Error()})
 	}
 
-	log.Info("proxy http endpoint starting", log.Pairs{"address": config.ProxyServer.ListenAddress, "port": config.ProxyServer.ListenPort})
-
 	// Start the Server
-	err = http.ListenAndServe(fmt.Sprintf("%s:%d", config.ProxyServer.ListenAddress, config.ProxyServer.ListenPort), handlers.CompressHandler(routing.Router))
+	l, err := proxy.NewListener(config.ProxyServer.ListenAddress, config.ProxyServer.ListenPort,
+		config.ProxyServer.ConnectionsLimit)
+
+	if err == nil {
+		err = http.Serve(l, handlers.CompressHandler(routing.Router))
+	}
 	log.Error("exiting", log.Pairs{"err": err})
 }

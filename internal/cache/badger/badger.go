@@ -38,8 +38,7 @@ func (c *Cache) Configuration() *config.CachingConfig {
 func (c *Cache) Connect() error {
 	log.Info("badger cache setup", log.Pairs{"cacheDir": c.Config.Badger.Directory})
 
-	opts := badger.DefaultOptions
-	opts.Dir = c.Config.Badger.Directory
+	opts := badger.DefaultOptions(c.Config.Badger.Directory)
 	opts.ValueDir = c.Config.Badger.ValueDirectory
 
 	var err error
@@ -56,7 +55,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 	log.Debug("badger cache store", log.Pairs{"key": cacheKey, "ttl": ttl})
 	return c.dbh.Update(func(txn *badger.Txn) error {
-		return txn.SetWithTTL([]byte(cacheKey), data, ttl)
+		return txn.SetEntry(&badger.Entry{Key: []byte(cacheKey), Value: data, ExpiresAt: uint64(time.Now().Add(ttl).Unix())})
 	})
 }
 
@@ -91,6 +90,7 @@ func (c *Cache) Remove(cacheKey string) {
 	c.dbh.Update(func(txn *badger.Txn) error {
 		return txn.Delete([]byte(cacheKey))
 	})
+	cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 }
 
 // BulkRemove removes a list of objects from the cache. noLock is not used for Badger
@@ -102,6 +102,7 @@ func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
 			if err := txn.Delete([]byte(key)); err != nil {
 				return err
 			}
+			cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 		}
 		return nil
 	})

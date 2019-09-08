@@ -45,7 +45,7 @@ func (c *Cache) Configuration() *config.CachingConfig {
 
 // Connect instantiates the Cache mutex map and starts the Expired Entry Reaper goroutine
 func (c *Cache) Connect() error {
-	log.Info("filesystem cache setup", log.Pairs{"cachePath": c.Config.Filesystem.CachePath})
+	log.Info("filesystem cache setup", log.Pairs{"name": c.Name, "cachePath": c.Config.Filesystem.CachePath})
 	if err := makeDirectory(c.Config.Filesystem.CachePath); err != nil {
 		return err
 	}
@@ -142,17 +142,13 @@ func (c *Cache) Remove(cacheKey string) {
 	if err := os.Remove(c.getFileName(cacheKey)); err == nil {
 		c.Index.RemoveObject(cacheKey, false)
 	}
+	cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 }
 
 // BulkRemove removes a list of objects from the cache
 func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
 	for _, cacheKey := range cacheKeys {
-		locks.Acquire(lockPrefix + cacheKey)
-		defer locks.Release(lockPrefix + cacheKey)
-
-		if err := os.Remove(c.getFileName(cacheKey)); err == nil {
-			c.Index.RemoveObject(cacheKey, noLock)
-		}
+		c.Remove(cacheKey)
 	}
 }
 

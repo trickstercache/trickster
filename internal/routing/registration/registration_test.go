@@ -38,6 +38,8 @@ func TestRegisterProxyRoutes(t *testing.T) {
 		t.Errorf("expected %d got %d", 1, 0)
 	}
 
+	config.Origins["default"] = config.DefaultOriginConfig()
+
 	// Test Too Many Defaults
 	o1 := config.Origins["default"]
 	o2 := config.DefaultOriginConfig()
@@ -50,6 +52,12 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	err = RegisterProxyRoutes()
 	if err == nil {
 		t.Errorf("Expected error for too many default origins.%s", "")
+	}
+
+	o1.IsDefault = false
+	err = RegisterProxyRoutes()
+	if err != nil {
+		t.Error(err)
 	}
 
 	o2.IsDefault = false
@@ -65,6 +73,19 @@ func TestRegisterProxyRoutes(t *testing.T) {
 		t.Error(err)
 	}
 
+	// teset the condition where no origins are IsDefault true,
+	// and no origins are named default
+
+	o1.IsDefault = false
+	o2.IsDefault = false
+	config.Origins["1"] = o1
+	delete(config.Origins, "default")
+
+	err = RegisterProxyRoutes()
+	if err != nil {
+		t.Error(err)
+	}
+
 }
 
 func TestRegisterProxyRoutesInflux(t *testing.T) {
@@ -75,7 +96,32 @@ func TestRegisterProxyRoutesInflux(t *testing.T) {
 	}
 
 	registration.LoadCachesFromConfig()
-	RegisterProxyRoutes()
+	err = RegisterProxyRoutes()
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(ProxyClients) == 0 {
+		t.Errorf("expected %d got %d", 1, 0)
+	}
+
+}
+
+func TestRegisterProxyRoutesIRONdb(t *testing.T) {
+
+	err := config.Load("trickster", "test", []string{"-log-level", "debug"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	do := config.Origins["default"]
+	do.Type = "irondb"
+	config.Origins["default"] = do
+	registration.LoadCachesFromConfig()
+	err = RegisterProxyRoutes()
+	if err != nil {
+		t.Error(err)
+	}
 
 	if len(ProxyClients) == 0 {
 		t.Errorf("expected %d got %d", 1, 0)

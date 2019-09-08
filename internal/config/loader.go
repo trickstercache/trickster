@@ -63,6 +63,10 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		if d.OriginURL == "" {
 			delete(c.Origins, "default")
 		}
+
+		if providedOriginType != "" {
+			d.OriginType = providedOriginType
+		}
 	}
 
 	if len(c.Origins) == 0 {

@@ -105,6 +105,7 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
 func (c *Cache) Remove(cacheKey string) {
 	log.Debug("redis cache remove", log.Pairs{"key": cacheKey})
 	c.removeFunc(cacheKey)
+	cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 }
 
 // SetTTL updates the TTL for the provided cache object
@@ -117,6 +118,7 @@ func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
 func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
 	log.Debug("redis cache bulk remove", log.Pairs{})
 	c.bulkRemoveFunc(cacheKeys, noLock)
+	cache.ObserveCacheDel(c.Name, c.Config.CacheType, float64(len(cacheKeys)))
 }
 
 // Close disconnects from the Redis Cache

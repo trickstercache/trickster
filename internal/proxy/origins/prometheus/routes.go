@@ -21,6 +21,7 @@ import (
 	"github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/util/log"
 	ts "github.com/Comcast/trickster/internal/util/strings"
+	//"github.com/Comcast/trickster/internal/util/middleware"
 )
 
 var handlers = map[string]func(w http.ResponseWriter, r *http.Request){}

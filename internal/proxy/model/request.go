@@ -28,6 +28,7 @@ type Request struct {
 	OriginConfig       *config.OriginConfig
 	PathConfig         *config.ProxyPathConfig
 	HandlerName        string
+	HTTPMethod         string
 	URL                *url.URL
 	TemplateURL        *url.URL
 	Headers            http.Header
@@ -39,11 +40,12 @@ type Request struct {
 }
 
 // NewRequest returns a new proxy request object that can service the downstream request
-func NewRequest(originConfig *config.OriginConfig, handlerName string, url *url.URL, headers http.Header, timeout time.Duration, clientRequest *http.Request, client *http.Client) *Request {
+func NewRequest(originConfig *config.OriginConfig, handlerName, method string, url *url.URL, headers http.Header, timeout time.Duration, clientRequest *http.Request, client *http.Client) *Request {
 
 	r := &Request{
 		OriginConfig:  originConfig,
 		HandlerName:   handlerName,
+		HTTPMethod:    method,
 		URL:           url,
 		TemplateURL:   CopyURL(url),
 		Headers:       headers,
@@ -61,6 +63,7 @@ func (r *Request) Copy() *Request {
 	return &Request{
 		OriginConfig:  r.OriginConfig,
 		HandlerName:   r.HandlerName,
+		HTTPMethod:    r.HTTPMethod,
 		URL:           CopyURL(r.URL),
 		TemplateURL:   CopyURL(r.TemplateURL),
 		Headers:       headers.CopyHeaders(r.Headers),

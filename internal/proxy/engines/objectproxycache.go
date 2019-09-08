@@ -15,7 +15,6 @@ package engines
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/Comcast/trickster/internal/proxy/headers"
@@ -112,7 +111,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Ca
 		}
 	}
 
-	recordOPCResult(r, cacheStatus, strconv.Itoa(d.StatusCode), r.URL.Path, elapsed, d.Headers)
+	recordOPCResult(r, cacheStatus, d.StatusCode, r.URL.Path, elapsed.Seconds(), d.Headers)
 
 	log.Debug("http object cache lookup status", log.Pairs{"key": key, "cacheStatus": cacheStatus})
 
@@ -166,6 +165,6 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Ca
 
 }
 
-func recordOPCResult(r *model.Request, cacheStatus tc.LookupStatus, httpStatus, path string, elapsed time.Duration, header http.Header) {
-	recordResults(r, "ObjectProxyCache", cacheStatus.String(), httpStatus, path, "", elapsed, nil, header)
+func recordOPCResult(r *model.Request, cacheStatus tc.LookupStatus, httpStatus int, path string, elapsed float64, header http.Header) {
+	recordResults(r, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, header)
 }

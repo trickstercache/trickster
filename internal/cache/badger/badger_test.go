@@ -106,7 +106,7 @@ func TestBadgerCache_Remove(t *testing.T) {
 	bc.Remove(cacheKey)
 
 	// it should be a cache miss
-	_, err = bc.Retrieve(cacheKey)
+	_, err = bc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -141,7 +141,7 @@ func TestBadgerCache_BulkRemove(t *testing.T) {
 	bc.BulkRemove([]string{cacheKey}, true)
 
 	// it should be a cache miss
-	_, err = bc.Retrieve(cacheKey)
+	_, err = bc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -159,7 +159,7 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 	defer bc.Close()
 
 	// it should be a cache miss
-	_, err := bc.Retrieve(cacheKey)
+	_, err := bc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -170,7 +170,7 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := bc.Retrieve(cacheKey)
+	data, err := bc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}

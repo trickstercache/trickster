@@ -38,7 +38,30 @@ func NotSelectStatement() error {
 	return fmt.Errorf("not a select statement")
 }
 
+// NotTimeRangeQuery returns an error indicating the request is does not contain
+// a time range query.
+func NotTimeRangeQuery() error {
+	return fmt.Errorf("not a time range query")
+}
+
+// InvalidPath returns an error indicating the request path is not valid.
+func InvalidPath(path string) error {
+	return fmt.Errorf("invalid request path: %s", path)
+}
+
 // ParseDuration returns a Duration Parsing Error
 func ParseDuration(input string) (time.Duration, error) {
 	return time.Duration(0), fmt.Errorf("unable to parse duration: %s", input)
+}
+
+// ParseRequestBody returns an error indicating the request body could not
+// parsed into a valid value.
+func ParseRequestBody(err error) error {
+	return fmt.Errorf("unable to parse request body: %v", err)
+}
+
+// MissingRequestParam returns an error indicating the request is missing a
+// required parameter.
+func MissingRequestParam(param string) error {
+	return fmt.Errorf("missing request parameter: %s", param)
 }
