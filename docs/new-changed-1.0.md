@@ -13,6 +13,11 @@
 - Also: The Cache Provider and Origin Proxy are exposed as Interfaces for easy extensibility.
 - InfluxDB support (very experimental)
 
+## Status
+
+We are currently in the beta phase of Trickster 1.0. We expect to release the 1.0 Release Candidate build by October 1, 2019, and have the 1.0 GA release before November 1, 2019.
+
+
 ### Still to Come in 1.0 (keep checking back!)
 - Distributed Tracing support
 
