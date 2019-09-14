@@ -19,11 +19,19 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"time"
+
+	th "github.com/Comcast/trickster/internal/proxy/headers"
 )
 
 // NewTestServer returns a new httptest.Server that responds with the provided code and body
 func NewTestServer(responseCode int, responseBody string) *httptest.Server {
+	return NewTestServerHeaders(responseCode, responseBody, nil)
+}
+
+// NewTestServerHeaders returns a new httptest.Server that responds with the provided code and body
+func NewTestServerHeaders(responseCode int, responseBody string, headers map[string]string) *httptest.Server {
 	handler := func(w http.ResponseWriter, r *http.Request) {
+		th.UpdateHeaders(w.Header(), headers)
 		w.WriteHeader(responseCode)
 		fmt.Fprint(w, responseBody)
 	}
