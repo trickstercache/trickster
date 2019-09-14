@@ -32,6 +32,7 @@ const (
 	// ValueTextPlain represents the HTTP Header Value of "text/plain"
 	ValueTextPlain = "text/plain"
 
+	ValuePublic          = "public"
 	ValuePrivate         = "private"
 	ValueMaxAge          = "max-age"
 	ValueShareMaxAge     = "shared-max-age"

@@ -25,27 +25,27 @@ func TestNewClient(t *testing.T) {
 		t.Error(err)
 	}
 
-	oc := &config.OriginConfig{Type: "TEST_CLIENT"}
+	oc := &config.OriginConfig{OriginType: "TEST_CLIENT"}
 	c := NewClient("default", oc, cache)
 	if c.Name() != "default" {
 		t.Errorf("expected %s got %s", "default", c.Name())
 	}
 
-	if c.Cache().Configuration().Type != "memory" {
-		t.Errorf("expected %s got %s", "memory", c.Cache().Configuration().Type)
+	if c.Cache().Configuration().CacheType != "memory" {
+		t.Errorf("expected %s got %s", "memory", c.Cache().Configuration().CacheType)
 	}
 
-	if c.Configuration().Type != "TEST_CLIENT" {
-		t.Errorf("expected %s got %s", "TEST_CLIENT", c.Configuration().Type)
+	if c.Configuration().OriginType != "TEST_CLIENT" {
+		t.Errorf("expected %s got %s", "TEST_CLIENT", c.Configuration().OriginType)
 	}
 }
 
 func TestConfiguration(t *testing.T) {
-	oc := &config.OriginConfig{Type: "TEST"}
+	oc := &config.OriginConfig{OriginType: "TEST"}
 	client := Client{config: oc}
 	c := client.Configuration()
-	if c.Type != "TEST" {
-		t.Errorf("expected %s got %s", "TEST", c.Type)
+	if c.OriginType != "TEST" {
+		t.Errorf("expected %s got %s", "TEST", c.OriginType)
 	}
 }
 
@@ -63,8 +63,8 @@ func TestCache(t *testing.T) {
 
 	client := Client{cache: cache}
 	c := client.Cache()
-	if c.Configuration().Type != "memory" {
-		t.Errorf("expected %s got %s", "memory", c.Configuration().Type)
+	if c.Configuration().CacheType != "memory" {
+		t.Errorf("expected %s got %s", "memory", c.Configuration().CacheType)
 	}
 }
 
@@ -77,7 +77,7 @@ func TestName(t *testing.T) {
 }
 
 func TestHTTPClient(t *testing.T) {
-	oc := &config.OriginConfig{Type: "TEST"}
+	oc := &config.OriginConfig{OriginType: "TEST"}
 	client := NewClient("test", oc, nil)
 	if client.HTTPClient() == nil {
 		t.Errorf("missing http client")

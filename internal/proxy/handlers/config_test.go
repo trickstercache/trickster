@@ -14,6 +14,7 @@
 package handlers
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net/http/httptest"
 	"testing"
@@ -24,6 +25,10 @@ import (
 func TestConfigHandler(t *testing.T) {
 
 	config.Load("trickster-test", "test", nil)
+	cfg := config.Config
+
+	fmt.Println(cfg)
+
 	RegisterConfigHandler()
 
 	w := httptest.NewRecorder()

@@ -47,7 +47,9 @@ func TestProxyRequest(t *testing.T) {
 
 	// get URL
 
-	req := model.NewRequest("default", "test", "TestProxyRequest", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	cfg := config.Origins["default"]
+
+	req := model.NewRequest(cfg, "TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	ProxyRequest(req, w)
 	resp := w.Result()
 
@@ -86,7 +88,9 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", badUpstream, nil)
 
-	req := model.NewRequest("default", "test", "TestProxyRequest", r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	cfg := config.Origins["default"]
+
+	req := model.NewRequest(cfg, "TestProxyRequest", r.Method, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	ProxyRequest(req, w)
 	resp := w.Result()
 
@@ -110,7 +114,7 @@ func TestClockOffsetWarning(t *testing.T) {
 	}
 	s := httptest.NewServer(http.HandlerFunc(handler))
 
-	err := config.Load("trickster", "test", []string{"-origin", s.URL, "-origin-type", "test", "-log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-origin-url", s.URL, "-origin-type", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -122,7 +126,8 @@ func TestClockOffsetWarning(t *testing.T) {
 		t.Errorf("expected %t got %t", false, true)
 	}
 
-	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	cfg := config.Origins["default"]
+	req := model.NewRequest(cfg, "TestProxyRequest", http.MethodGet, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	ProxyRequest(req, w)
 	resp := w.Result()
 

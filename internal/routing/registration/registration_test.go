@@ -38,11 +38,11 @@ func TestRegisterProxyRoutes(t *testing.T) {
 		t.Errorf("expected %d got %d", 1, 0)
 	}
 
-	config.Origins["default"] = config.DefaultOriginConfig()
+	config.Origins["default"] = config.NewOriginConfig()
 
 	// Test Too Many Defaults
 	o1 := config.Origins["default"]
-	o2 := config.DefaultOriginConfig()
+	o2 := config.NewOriginConfig()
 
 	o1.IsDefault = true
 	o2.IsDefault = true
@@ -115,7 +115,7 @@ func TestRegisterProxyRoutesIRONdb(t *testing.T) {
 	}
 
 	do := config.Origins["default"]
-	do.Type = "irondb"
+	do.OriginType = "irondb"
 	config.Origins["default"] = do
 	registration.LoadCachesFromConfig()
 	err = RegisterProxyRoutes()

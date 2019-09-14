@@ -32,7 +32,7 @@ func TestDeriveCacheKey(t *testing.T) {
 
 	client := &PromTestClient{
 		config: &config.OriginConfig{
-			PathsLookup: map[string]*config.ProxyPathConfig{
+			Paths: map[string]*config.ProxyPathConfig{
 				"/": &config.ProxyPathConfig{
 					CacheKeyParams:  []string{"query", "step", "time"},
 					CacheKeyHeaders: []string{},
@@ -69,7 +69,7 @@ func TestQueryCache(t *testing.T) {
 	resp := &http.Response{}
 	resp.Header = make(http.Header)
 	resp.StatusCode = 200
-	d := model.DocumentFromHTTPResponse(resp, []byte(expected))
+	d := model.DocumentFromHTTPResponse(resp, []byte(expected), nil)
 
 	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second)
 	if err != nil {
@@ -121,56 +121,56 @@ func TestCheckResponseCacheability(t *testing.T) {
 	}{
 		{ // 0 - Cache-Control: no-store
 			a: http.Header{
-				headers.NameCacheControl: []string{ccdNoStore},
+				headers.NameCacheControl: []string{headers.ValueNoStore},
 			},
 			expectedTTL: -1,
 		},
 		{ // 1 -  Cache-Control: no-cache
 			a: http.Header{
-				headers.NameCacheControl: []string{ccdNoCache},
+				headers.NameCacheControl: []string{headers.ValueNoCache},
 			},
 			expectedTTL: -1,
 		},
 		{ // 2 - Cache-Control: max-age=300
 			a: http.Header{
-				headers.NameCacheControl: []string{ccdMaxAge + "=300"},
+				headers.NameCacheControl: []string{headers.ValueMaxAge + "=300"},
 			},
 			expectedTTL: time.Minute * time.Duration(5),
 		},
 		{ // 3 - Cache-Control: max-age=   should come back as 0 ttl
 			a: http.Header{
-				headers.NameCacheControl: []string{ccdMaxAge + "="},
+				headers.NameCacheControl: []string{headers.ValueMaxAge + "="},
 			},
 			expectedTTL: 0,
 		},
 		{ // 4 - Cache-Control: max-age (no =anything)  should come back as 0 ttl
 			a: http.Header{
-				headers.NameCacheControl: []string{ccdMaxAge},
+				headers.NameCacheControl: []string{headers.ValueMaxAge},
 			},
 			expectedTTL: 0,
 		},
 		{ // 5 - Cache-Control: private,max-age=300  should be treated as non-cacheable by proxy
 			a: http.Header{
-				headers.NameCacheControl: []string{ccdPrivate + "," + ccdMaxAge + "=300"},
+				headers.NameCacheControl: []string{headers.ValuePrivate + "," + headers.ValueMaxAge + "=300"},
 			},
 			expectedTTL: -1,
 		},
 		{ // 6 - Cache-Control: public,max-age=300  should be treated as cacheable by proxy
 			a: http.Header{
-				headers.NameCacheControl: []string{ccdPublic + "," + ccdMaxAge + "=300"},
+				headers.NameCacheControl: []string{headers.ValuePublic + "," + headers.ValueMaxAge + "=300"},
 			},
 			expectedTTL: time.Minute * time.Duration(5),
 		},
 		{ // 7 - Cache-Control and Expires, Cache-Control should win
 			a: http.Header{
-				headers.NameCacheControl: []string{ccdPublic + "," + ccdMaxAge + "=300"},
+				headers.NameCacheControl: []string{headers.ValuePublic + "," + headers.ValueMaxAge + "=300"},
 				headers.NameExpires:      []string{"-1"},
 			},
 			expectedTTL: time.Minute * time.Duration(5),
 		},
 		{ // 8 - Cache-Control and LastModified, Cache-Control should win
 			a: http.Header{
-				headers.NameCacheControl: []string{ccdPublic + "," + ccdMaxAge + "=300"},
+				headers.NameCacheControl: []string{headers.ValuePublic + "," + headers.ValueMaxAge + "=300"},
 				headers.NameLastModified: []string{"Sun, 16 Jun 2019 14:19:04 GMT"},
 			},
 			expectedTTL: time.Minute * time.Duration(5),
@@ -211,7 +211,8 @@ func TestCheckResponseCacheability(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			ttl := CheckResponseCacheability(test.a)
+			p := GetRequestCachingPolicy(test.a)
+			ttl := time.Duration(p.FreshnessLifetime) * time.Second
 			if ttl != test.expectedTTL {
 				t.Errorf("mismatch ttl expected %v got %v", test.expectedTTL, ttl)
 			}
@@ -227,13 +228,13 @@ func TestCheckRequestCacheability(t *testing.T) {
 	}{
 		{ // 0 - Cache-Control: no-store
 			a: http.Header{
-				headers.NameCacheControl: []string{ccdNoStore},
+				headers.NameCacheControl: []string{headers.ValueNoStore},
 			},
 			isCacheable: false,
 		},
 		{ // 1 -  Cache-Control: no-cache
 			a: http.Header{
-				headers.NameCacheControl: []string{ccdNoCache},
+				headers.NameCacheControl: []string{headers.ValueNoCache},
 			},
 			isCacheable: false,
 		},
@@ -245,7 +246,8 @@ func TestCheckRequestCacheability(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			ic := CheckRequestCacheability(test.a)
+			p := GetRequestCachingPolicy(test.a)
+			ic := p.NoCache
 			if ic != test.isCacheable {
 				t.Errorf("mismatch isCacheable expected %v got %v", test.isCacheable, ic)
 			}

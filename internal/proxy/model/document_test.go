@@ -25,7 +25,7 @@ func TestDocumentFromHTTPResponse(t *testing.T) {
 	resp := &http.Response{}
 	resp.Header = make(http.Header)
 	resp.StatusCode = 200
-	d := DocumentFromHTTPResponse(resp, []byte("1234"))
+	d := DocumentFromHTTPResponse(resp, []byte("1234"), nil)
 
 	if string(d.Body) != string(expected) {
 		t.Errorf("expected %s got %s", string(expected), string(d.Body))

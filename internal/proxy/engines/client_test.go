@@ -660,7 +660,7 @@ func (c *PromTestClient) RegisterRoutes(originName string, o *config.OriginConfi
 	handlers[mnQuery] = c.QueryHandler
 	handlers[mnSeries] = c.SeriesHandler
 
-	o.PathsLookup[o.HealthCheckEndpoint] = &config.ProxyPathConfig{
+	o.Paths[o.HealthCheckEndpoint] = &config.ProxyPathConfig{
 		Path:            o.HealthCheckEndpoint,
 		HandlerName:     "health",
 		Methods:         []string{http.MethodGet, http.MethodPost},
@@ -670,8 +670,8 @@ func (c *PromTestClient) RegisterRoutes(originName string, o *config.OriginConfi
 		DefaultTTL:      c.cache.Configuration().TimeseriesTTL,
 	}
 
-	if _, ok := o.PathsLookup[APIPath+mnQueryRange]; !ok {
-		o.PathsLookup[APIPath+mnQueryRange] = &config.ProxyPathConfig{
+	if _, ok := o.Paths[APIPath+mnQueryRange]; !ok {
+		o.Paths[APIPath+mnQueryRange] = &config.ProxyPathConfig{
 			Path:            APIPath + mnQueryRange,
 			HandlerName:     mnQueryRange,
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -682,8 +682,8 @@ func (c *PromTestClient) RegisterRoutes(originName string, o *config.OriginConfi
 		}
 	}
 
-	if _, ok := o.PathsLookup[APIPath+mnQuery]; !ok {
-		o.PathsLookup[APIPath+mnQuery] = &config.ProxyPathConfig{
+	if _, ok := o.Paths[APIPath+mnQuery]; !ok {
+		o.Paths[APIPath+mnQuery] = &config.ProxyPathConfig{
 			Path:            APIPath + mnQuery,
 			HandlerName:     mnQuery,
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -696,7 +696,7 @@ func (c *PromTestClient) RegisterRoutes(originName string, o *config.OriginConfi
 
 	orderedPaths := []string{o.HealthCheckEndpoint, APIPath + mnQueryRange, APIPath + mnQuery}
 
-	for _, p := range o.PathsLookup {
+	for _, p := range o.Paths {
 		if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
 			orderedPaths = append(orderedPaths, p.Path)
 		}
@@ -708,7 +708,7 @@ func (c *PromTestClient) RegisterRoutes(originName string, o *config.OriginConfi
 	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.OriginType, "originName": originName})
 
 	for _, v := range orderedPaths {
-		p := o.PathsLookup[v]
+		p := o.Paths[v]
 		if p.Handler != nil && len(p.Methods) > 0 {
 			// Host Header Routing
 			routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...).Host(originName)
@@ -719,7 +719,7 @@ func (c *PromTestClient) RegisterRoutes(originName string, o *config.OriginConfi
 
 	if o.IsDefault {
 		for _, v := range orderedPaths {
-			p := o.PathsLookup[v]
+			p := o.Paths[v]
 			if p.Handler != nil && len(p.Methods) > 0 {
 				routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...)
 			}
@@ -731,32 +731,32 @@ func (c *PromTestClient) RegisterRoutes(originName string, o *config.OriginConfi
 func (c *PromTestClient) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BaseURL()
 	u.Path += APIPath + mnLabels
-	ProxyRequest(tm.NewRequest(c.name, otPrometheus, "HealthHandler", u, r.Header, c.config.Timeout, r, c.webClient), w)
+	ProxyRequest(tm.NewRequest(c.Configuration(), "HealthHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient), w)
 }
 
 func (c *PromTestClient) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	DeltaProxyCacheRequest(
-		tm.NewRequest(c.name, otPrometheus, "QueryRangeHandler", u, r.Header, c.config.Timeout, r, c.webClient),
+		tm.NewRequest(c.Configuration(), "QueryRangeHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
 		w, c, c.cache, c.cache.Configuration().TimeseriesTTL)
 }
 
 func (c *PromTestClient) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	ObjectProxyCacheRequest(
-		tm.NewRequest(c.name, otPrometheus, "QueryHandler", u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, c.cache, c.cache.Configuration().ObjectTTL, false, false)
+		tm.NewRequest(c.Configuration(), "QueryHandler",r.Method,  u, r.Header, c.config.Timeout, r, c.webClient),
+		w, c, c.cache, c.cache.Configuration().ObjectTTL, false)
 }
 
 func (c *PromTestClient) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	ObjectProxyCacheRequest(
-		tm.NewRequest(c.name, otPrometheus, "SeriesHandler", u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, c.cache, c.cache.Configuration().ObjectTTL, false, false)
+		tm.NewRequest(c.Configuration(), "SeriesHandler", r.Method,  u, r.Header, c.config.Timeout, r, c.webClient),
+		w, c, c.cache, c.cache.Configuration().ObjectTTL, false)
 }
 
 func (c *PromTestClient) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	ProxyRequest(tm.NewRequest(c.name, otPrometheus, "APIProxyHandler", c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r, c.webClient), w)
+	ProxyRequest(tm.NewRequest(c.Configuration(), "APIProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r, c.webClient), w)
 }
 
 func testResultHeaderPartMatch(header http.Header, kvp map[string]string) error {

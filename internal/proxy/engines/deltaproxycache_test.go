@@ -61,13 +61,13 @@ func setupTestServer() (*httptest.Server, *config.OriginConfig, *PromTestClient,
 	client := &PromTestClient{config: cfg, cache: cache, webClient: tu.NewTestWebClient()}
 	client.RegisterRoutes("default", cfg)
 
-	p, ok := cfg.PathsLookup["/api/v1/query_range"]
+	p, ok := cfg.Paths["/api/v1/query_range"]
 	if !ok {
 		return nil, nil, nil, fmt.Errorf("could not find path %s", "/api/v1/query_range")
 	}
 	p.CacheKeyParams = []string{"rangeKey"}
 
-	p, ok = cfg.PathsLookup["/api/v1/query"]
+	p, ok = cfg.Paths["/api/v1/query"]
 	if !ok {
 		return nil, nil, nil, fmt.Errorf("could not find path %s", "/api/v1/query")
 	}
@@ -1110,7 +1110,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 
 	key := cfg.Host + ".546ecac4cc8b7ed423920fa7ebd5f230.sz"
 
-	_, err = client.cache.Retrieve(key)
+	_, err = client.cache.Retrieve(key, false)
 	if err != nil {
 		t.Error(err)
 	}

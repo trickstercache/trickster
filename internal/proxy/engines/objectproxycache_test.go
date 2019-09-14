@@ -50,9 +50,10 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 
 	// get URL
 
-	req := model.NewRequest("default", "test", "TestProxyRequest", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	cfg := config.Origins["default"]
+	req := model.NewRequest(cfg, "TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 
-	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
+	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
 
 	resp := w.Result()
 
@@ -79,7 +80,7 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 	// get cache hit coverage too by repeating:
 
 	w = httptest.NewRecorder()
-	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
+	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
 	resp = w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
