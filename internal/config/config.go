@@ -119,6 +119,8 @@ type OriginConfig struct {
 	// Object Proxy Cache and Delta Proxy Cache Configurations
 	// TimeseriesRetentionFactor limits the maxiumum the number of chronological timestamps worth of data to store in cache for each query
 	TimeseriesRetentionFactor int `toml:"timeseries_retention_factor"`
+	// TimeseriesEvictionMethodName specifies which methodology ("oldest", "lru") is used to identify timeseries to evict from a full cache object
+	TimeseriesEvictionMethodName string `toml:"timeseries_eviction_method"`
 	// FastForwardDisable indicates whether the FastForward feature should be disabled for this origin
 	FastForwardDisable bool `toml:"fast_forward_disable"`
 	// BackfillToleranceSecs prevents values with timestamps newer than the provided number of seconds from being cached
@@ -149,8 +151,6 @@ type OriginConfig struct {
 	PathPrefix string `toml:"-"`
 	// NegativeCache provides a map for the negative cache, with TTLs converted to time.Durations
 	NegativeCache map[int]time.Duration `toml:"-"`
-
-	TimeseriesEvictionMethodName string
 
 	TimeseriesRetention      time.Duration            `toml:"-"`
 	TimeseriesEvictionMethod TimeseriesEvictionMethod `toml:"-"`
