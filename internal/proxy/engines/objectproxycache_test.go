@@ -23,12 +23,14 @@ import (
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/util/log"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
 func TestObjectProxyCacheRequest(t *testing.T) {
 
-	es := tu.NewTestServer(http.StatusOK, "test")
+	headers := map[string]string{"Cache-Control": "max-age=60"}
+	es := tu.NewTestServerHeaders(http.StatusOK, "test", headers)
 	defer es.Close()
 
 	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
@@ -36,6 +38,7 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
+	log.Init()
 	cr.LoadCachesFromConfig()
 	cache, err := cr.GetCache("default")
 	if err != nil {
@@ -53,8 +56,7 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 	cfg := config.Origins["default"]
 	req := model.NewRequest(cfg, "TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 
-	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
-
+	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
