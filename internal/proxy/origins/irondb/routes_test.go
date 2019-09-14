@@ -16,7 +16,7 @@ func TestRegisterRoutesNoDefault(t *testing.T) {
 	es := tu.NewTestServer(200, "{}")
 	defer es.Close()
 	err := config.Load("trickster", "test",
-		[]string{"-origin", es.URL,
+		[]string{"-origin-url", es.URL,
 			"-origin-type", "prometheus",
 			"-log-level", "debug"})
 	if err != nil {
@@ -49,7 +49,7 @@ func TestRegisterRoutesDefault(t *testing.T) {
 	es := tu.NewTestServer(200, "{}")
 	defer es.Close()
 	err := config.Load("trickster", "test",
-		[]string{"-origin", es.URL,
+		[]string{"-origin-url", es.URL,
 			"-origin-type", "irondb",
 			"-log-level", "debug"})
 	if err != nil {

@@ -13,7 +13,7 @@ func TestProxyHandler(t *testing.T) {
 	es := tu.NewTestServer(200, "test")
 	defer es.Close()
 	err := config.Load("trickster", "test",
-		[]string{"-origin", es.URL,
+		[]string{"-origin-url", es.URL,
 			"-origin-type", "irondb"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
