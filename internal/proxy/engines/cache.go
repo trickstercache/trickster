@@ -123,7 +123,7 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 	}
 
 	// Cache-Control has first precedence
-	if v, ok := lch[headers.NameCacheControl]; ok {
+	if v, ok := lch["cache-control"]; ok {
 		parseCacheControlDirectives(strings.Join(v, ","), cp)
 	}
 
