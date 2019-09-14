@@ -30,7 +30,7 @@ go-mod-tidy:
 	$(GO) mod tidy
 
 .PHONY: test-go-mod
-test-go-mod: go-mod-vendor
+test-go-mod:
 	@git diff --quiet --exit-code go.mod go.sum || echo "There are changes to go.mod and go.sum which needs to be committed"
 
 .PHONY: build
