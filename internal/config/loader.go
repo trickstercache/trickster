@@ -16,6 +16,7 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -96,8 +97,16 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		}
 
 		for c, s := range o.NegativeCacheSecs {
-			if c > 200 && c < 600 {
-				o.NegativeCache[c] = time.Duration(s) * time.Second
+
+			ci, err := strconv.Atoi(c)
+			if err != nil {
+				return fmt.Errorf(`invalid negative cache config: %s is not a valid status code`, c)
+			}
+
+			if ci > 200 && ci < 600 {
+				o.NegativeCache[ci] = time.Duration(s) * time.Second
+			} else {
+				return fmt.Errorf(`invalid negative cache config: %s is not a valid status code`, c)
 			}
 		}
 
