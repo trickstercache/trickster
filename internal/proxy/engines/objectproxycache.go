@@ -137,7 +137,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Ca
 	}
 
 	d.CachingPolicy.NoTransform = d.CachingPolicy.NoTransform || cpReq.NoTransform
-	d.CachingPolicy.NoCache = d.CachingPolicy.NoCache || cpReq.NoCache || len(body) <= cache.Configuration().MaxObjectSizeBytes
+	d.CachingPolicy.NoCache = d.CachingPolicy.NoCache || cpReq.NoCache || len(body) >= cache.Configuration().MaxObjectSizeBytes
 
 	if !d.CachingPolicy.MustRevalidate && !d.CachingPolicy.NoCache && d.CachingPolicy.FreshnessLifetime <= 0 {
 		d.CachingPolicy.FreshnessLifetime = int(r.PathConfig.DefaultTTL.Seconds())
