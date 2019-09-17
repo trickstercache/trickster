@@ -281,7 +281,11 @@ func TestMerge(t *testing.T) {
 				StepDuration: time.Duration(5000) * time.Second,
 			},
 			merged: &MatrixEnvelope{
-				Status: rvSuccess,
+				isCounted:  true,
+				isSorted:   true,
+				tslist:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0)},
+				timestamps: map[time.Time]bool{time.Unix(10000, 0): true, time.Unix(15000, 0): true},
+				Status:     rvSuccess,
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
@@ -361,7 +365,11 @@ func TestMerge(t *testing.T) {
 				StepDuration: time.Duration(5000) * time.Second,
 			},
 			merged: &MatrixEnvelope{
-				Status: rvSuccess,
+				isCounted:  true,
+				isSorted:   true,
+				tslist:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0), time.Unix(30000, 0), time.Unix(35000, 0)},
+				timestamps: map[time.Time]bool{time.Unix(10000, 0): true, time.Unix(15000, 0): true, time.Unix(30000, 0): true, time.Unix(35000, 0): true},
+				Status:     rvSuccess,
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{
@@ -449,7 +457,11 @@ func TestMerge(t *testing.T) {
 				StepDuration: time.Duration(5000) * time.Second,
 			},
 			merged: &MatrixEnvelope{
-				Status: rvSuccess,
+				isCounted:  true,
+				isSorted:   true,
+				tslist:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0), time.Unix(20000, 0)},
+				timestamps: map[time.Time]bool{time.Unix(10000, 0): true, time.Unix(15000, 0): true, time.Unix(20000, 0): true},
+				Status:     rvSuccess,
 				Data: MatrixData{
 					ResultType: "matrix",
 					Result: model.Matrix{

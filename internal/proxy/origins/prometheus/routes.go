@@ -14,10 +14,12 @@
 package prometheus
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/util/log"
 	ts "github.com/Comcast/trickster/internal/util/strings"
@@ -58,6 +60,7 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 			CacheKeyHeaders: []string{"Authorization"},
 			DefaultTTLSecs:  c.cache.Configuration().TimeseriesTTLSecs,
 			DefaultTTL:      c.cache.Configuration().TimeseriesTTL,
+			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, c.Cache().Configuration().TimeseriesTTLSecs)},
 		}
 	}
 
@@ -70,6 +73,7 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 			CacheKeyHeaders: []string{"Authorization"},
 			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, c.Cache().Configuration().ObjectTTLSecs)},
 		}
 	}
 
@@ -198,19 +202,24 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		APIPath + mnAlerts, APIPath + mnAlertManagers, APIPath + mnStatus, APIPath, "/"}
 
 	for _, p := range o.Paths {
-		if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
-			orderedPaths = append(orderedPaths, p.Path)
-		}
-		if h, ok := handlers[p.HandlerName]; ok {
+		if h, ok := handlers[p.HandlerName]; h != nil && ok {
 			p.Handler = h
+			if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
+				fmt.Println("Found unexpected path in config:", p.Path)
+				orderedPaths = append(orderedPaths, p.Path)
+			}
 		}
 	}
 
 	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.OriginType, "originName": originName})
 
 	for _, v := range orderedPaths {
+
 		p := o.Paths[v]
-		if p.Handler != nil && len(p.Methods) > 0 {
+
+		log.Info("Registering Origin Handler Path", log.Pairs{"path": v, "handlerName": p.HandlerName})
+
+		if len(p.Methods) > 0 {
 			// Host Header Routing
 			routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...).Host(originName)
 			// Path Routing

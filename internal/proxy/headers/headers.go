@@ -35,7 +35,7 @@ const (
 	ValuePublic          = "public"
 	ValuePrivate         = "private"
 	ValueMaxAge          = "max-age"
-	ValueShareMaxAge     = "shared-max-age"
+	ValueSharedMaxAge    = "s-maxage"
 	ValueMustRevalidate  = "must-revalidate"
 	ValueNoStore         = "no-store"
 	ValueProxyRevalidate = "proxy-revalidate"

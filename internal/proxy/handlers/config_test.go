@@ -14,7 +14,6 @@
 package handlers
 
 import (
-	"fmt"
 	"io/ioutil"
 	"net/http/httptest"
 	"testing"
@@ -24,10 +23,7 @@ import (
 
 func TestConfigHandler(t *testing.T) {
 
-	config.Load("trickster-test", "test", nil)
-	cfg := config.Config
-
-	fmt.Println(cfg)
+	config.Load("trickster-test", "test", []string{"-origin-url", "http://1.2.3.4", "-origin-type", "prometheus"})
 
 	RegisterConfigHandler()
 

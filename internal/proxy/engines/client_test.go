@@ -27,6 +27,7 @@ import (
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/errors"
+	"github.com/Comcast/trickster/internal/proxy/headers"
 	tm "github.com/Comcast/trickster/internal/proxy/model"
 	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
 	"github.com/Comcast/trickster/internal/routing"
@@ -679,6 +680,7 @@ func (c *PromTestClient) RegisterRoutes(originName string, o *config.OriginConfi
 			CacheKeyHeaders: []string{"Authorization"},
 			DefaultTTLSecs:  c.cache.Configuration().TimeseriesTTLSecs,
 			DefaultTTL:      c.cache.Configuration().TimeseriesTTL,
+			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, c.Cache().Configuration().TimeseriesTTLSecs)},
 		}
 	}
 
@@ -691,17 +693,18 @@ func (c *PromTestClient) RegisterRoutes(originName string, o *config.OriginConfi
 			CacheKeyHeaders: []string{"Authorization"},
 			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, c.Cache().Configuration().ObjectTTLSecs)},
 		}
 	}
 
 	orderedPaths := []string{o.HealthCheckEndpoint, APIPath + mnQueryRange, APIPath + mnQuery}
 
 	for _, p := range o.Paths {
-		if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
-			orderedPaths = append(orderedPaths, p.Path)
-		}
-		if h, ok := handlers[p.HandlerName]; ok {
+		if h, ok := handlers[p.HandlerName]; h != nil && ok {
 			p.Handler = h
+			if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
+				orderedPaths = append(orderedPaths, p.Path)
+			}
 		}
 	}
 
@@ -709,7 +712,10 @@ func (c *PromTestClient) RegisterRoutes(originName string, o *config.OriginConfi
 
 	for _, v := range orderedPaths {
 		p := o.Paths[v]
-		if p.Handler != nil && len(p.Methods) > 0 {
+		if len(p.Methods) > 0 {
+
+			log.Info("Registering Origin Handler Path", log.Pairs{"path": v, "handlerName": p.HandlerName})
+
 			// Host Header Routing
 			routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...).Host(originName)
 			// Path Routing
@@ -744,14 +750,14 @@ func (c *PromTestClient) QueryRangeHandler(w http.ResponseWriter, r *http.Reques
 func (c *PromTestClient) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	ObjectProxyCacheRequest(
-		tm.NewRequest(c.Configuration(), "QueryHandler",r.Method,  u, r.Header, c.config.Timeout, r, c.webClient),
+		tm.NewRequest(c.Configuration(), "QueryHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
 		w, c, c.cache, c.cache.Configuration().ObjectTTL, false)
 }
 
 func (c *PromTestClient) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	ObjectProxyCacheRequest(
-		tm.NewRequest(c.Configuration(), "SeriesHandler", r.Method,  u, r.Header, c.config.Timeout, r, c.webClient),
+		tm.NewRequest(c.Configuration(), "SeriesHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
 		w, c, c.cache, c.cache.Configuration().ObjectTTL, false)
 }
 

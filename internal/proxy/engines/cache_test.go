@@ -111,7 +111,7 @@ func TestQueryCache(t *testing.T) {
 // accept-ranges: none
 // vary: Accept-Encoding
 
-func TestCheckResponseCacheability(t *testing.T) {
+func TestGetResponseCacheability(t *testing.T) {
 
 	now := time.Now().Truncate(time.Second)
 
@@ -123,13 +123,13 @@ func TestCheckResponseCacheability(t *testing.T) {
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValueNoStore},
 			},
-			expectedTTL: -1,
+			expectedTTL: -1 * time.Second,
 		},
 		{ // 1 -  Cache-Control: no-cache
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValueNoCache},
 			},
-			expectedTTL: -1,
+			expectedTTL: -1 * time.Second,
 		},
 		{ // 2 - Cache-Control: max-age=300
 			a: http.Header{
@@ -137,23 +137,23 @@ func TestCheckResponseCacheability(t *testing.T) {
 			},
 			expectedTTL: time.Minute * time.Duration(5),
 		},
-		{ // 3 - Cache-Control: max-age=   should come back as 0 ttl
+		{ // 3 - Cache-Control: max-age=   should come back as -1 ttl
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValueMaxAge + "="},
 			},
-			expectedTTL: 0,
+			expectedTTL: -1 * time.Second,
 		},
 		{ // 4 - Cache-Control: max-age (no =anything)  should come back as 0 ttl
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValueMaxAge},
 			},
-			expectedTTL: 0,
+			expectedTTL: -1 * time.Second,
 		},
 		{ // 5 - Cache-Control: private,max-age=300  should be treated as non-cacheable by proxy
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValuePrivate + "," + headers.ValueMaxAge + "=300"},
 			},
-			expectedTTL: -1,
+			expectedTTL: -1 * time.Second,
 		},
 		{ // 6 - Cache-Control: public,max-age=300  should be treated as cacheable by proxy
 			a: http.Header{
@@ -179,39 +179,39 @@ func TestCheckResponseCacheability(t *testing.T) {
 			a: http.Header{
 				headers.NameExpires: []string{"-1"},
 			},
-			expectedTTL: 0,
+			expectedTTL: -1 * time.Second,
 		},
 		{ // 10 - Already Expired (parseable in the past)
 			a: http.Header{
 				headers.NameExpires: []string{"Sun, 16 Jun 2019 14:19:04 GMT"},
 			},
-			expectedTTL: 0,
+			expectedTTL: -1 * time.Second,
 		},
 		{ // 11 - Expires in an hour
 			a: http.Header{
 				headers.NameDate:    []string{now.Format(time.RFC1123)},
 				headers.NameExpires: []string{now.Add(time.Hour * time.Duration(1)).Format(time.RFC1123)},
 			},
-			expectedTTL: time.Hour * time.Duration(1),
+			expectedTTL: 1 * time.Hour,
 		},
 		{ // 12 - Synthesized TTL from Last Modified
 			a: http.Header{
 				headers.NameDate:         []string{now.Format(time.RFC1123)},
 				headers.NameLastModified: []string{now.Add(-time.Hour * time.Duration(5)).Format(time.RFC1123)},
 			},
-			expectedTTL: time.Hour * time.Duration(1),
+			expectedTTL: 1 * time.Hour,
 		},
 		{ // 13 - No Cache Control Response Headers
 			a: http.Header{
 				headers.NameDate: []string{now.Format(time.RFC1123)},
 			},
-			expectedTTL: -1,
+			expectedTTL: -1 * time.Second,
 		},
 	}
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			p := GetRequestCachingPolicy(test.a)
+			p := GetResponseCachingPolicy(200, nil, test.a, 0)
 			ttl := time.Duration(p.FreshnessLifetime) * time.Second
 			if ttl != test.expectedTTL {
 				t.Errorf("mismatch ttl expected %v got %v", test.expectedTTL, ttl)
@@ -220,7 +220,7 @@ func TestCheckResponseCacheability(t *testing.T) {
 	}
 }
 
-func TestCheckRequestCacheability(t *testing.T) {
+func TestGetRequestCacheability(t *testing.T) {
 
 	tests := []struct {
 		a           http.Header
@@ -238,7 +238,7 @@ func TestCheckRequestCacheability(t *testing.T) {
 			},
 			isCacheable: false,
 		},
-		{ // 5 - No Cache Control Request Headers
+		{ // 2 - No Cache Control Request Headers
 			a:           http.Header{},
 			isCacheable: true,
 		},
@@ -247,7 +247,7 @@ func TestCheckRequestCacheability(t *testing.T) {
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			p := GetRequestCachingPolicy(test.a)
-			ic := p.NoCache
+			ic := !p.NoCache
 			if ic != test.isCacheable {
 				t.Errorf("mismatch isCacheable expected %v got %v", test.isCacheable, ic)
 			}

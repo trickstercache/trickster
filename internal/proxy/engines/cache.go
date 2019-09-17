@@ -106,7 +106,7 @@ func DeriveCacheKey(c model.Client, cfg *config.OriginConfig, r *model.Request, 
 
 // GetResponseCachingPolicy examines HTTP response headers for caching headers
 // a returns a CachingPolicy reference
-func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h http.Header) *model.CachingPolicy {
+func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h http.Header, defaultTTL time.Duration) *model.CachingPolicy {
 
 	cp := &model.CachingPolicy{LocalDate: time.Now()}
 
@@ -128,15 +128,26 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 	}
 
 	if cp.NoCache {
+		cp.FreshnessLifetime = -1
 		return cp
 	}
 
-	_, hasLastModified := lch[headers.NameExpires]
-	_, hasExpires := lch[headers.NameLastModified]
-	_, hasETag := lch[headers.NameETag]
+	_, hasLastModified := lch["last-modified"]
+	exp, hasExpires := lch["expires"]
+	_, hasETag := lch["etag"]
+
+	if !hasLastModified && !hasExpires && !hasETag && cp.FreshnessLifetime == 0 && defaultTTL < 1 {
+		cp.NoCache = true
+		cp.FreshnessLifetime = -1
+		return cp
+	}
+
+	if cp.FreshnessLifetime < 1 && defaultTTL > 0 {
+		cp.FreshnessLifetime = int(defaultTTL.Seconds())
+	}
 
 	// Get the date header or, if it is not found or parsed, set it
-	if v, ok := lch[headers.NameDate]; ok {
+	if v, ok := lch["date"]; ok {
 		if date, err := time.Parse(time.RFC1123, strings.Join(v, "")); err != nil {
 			cp.Date = cp.LocalDate
 			h.Set(headers.NameDate, cp.Date.Format(time.RFC1123))
@@ -148,52 +159,57 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 		h.Set(headers.NameDate, cp.Date.Format(time.RFC1123))
 	}
 
-	// otherwise look for expiration and/or validators
-	if cp.FreshnessLifetime > 0 || hasExpires {
-
-		// no Max-Age provided yet, look for expires
-		if cp.FreshnessLifetime == 0 {
-			// if there is an Expires header, respect it
-			if v, ok := lch[headers.NameExpires]; ok {
-				expiresHeader := strings.Join(v, "")
-				expires, err := time.Parse(time.RFC1123, expiresHeader)
-				if err == nil {
-					cp.Expires = expires
+	// no Max-Age provided yet, look for expires
+	if cp.FreshnessLifetime == 0 {
+		// if there is an Expires header, respect it
+		if hasExpires {
+			expiresHeader := strings.Join(exp, "")
+			expires, err := time.Parse(time.RFC1123, expiresHeader)
+			if err == nil {
+				cp.Expires = expires
+				if expires.Before(cp.Date) {
+					cp.FreshnessLifetime = -1
+					cp.MustRevalidate = true
+				} else {
 					cp.FreshnessLifetime = int(cp.Expires.Sub(cp.Date).Seconds())
 				}
-			}
-		}
-
-		if !hasETag && !hasLastModified {
-			cp.CanRevalidate = false
-			return cp
-		}
-
-		cp.CanRevalidate = true
-
-		// TODO: Flush out real etag support (e.g., lists for if-non-match, *, W/, etc.)
-		if hasETag {
-			cp.ETag = strings.Join(lch[headers.NameETag], "")
-		}
-
-		if v, ok := lch[headers.NameLastModified]; ok {
-			mnHeader := strings.Join(v, "")
-			lm, err := time.Parse(time.RFC1123, mnHeader)
-			if err != nil {
-				cp.CanRevalidate = false
 			} else {
-				cp.LastModified = lm
-			}
-		}
-
-		// else, if there is a Last-Modified header, set FreshnessLifetime to 20% of age
-		if cp.CanRevalidate && cp.FreshnessLifetime == 0 && !cp.LastModified.IsZero() && cp.LastModified.Before(cp.Date) {
-			objectAge := int(cp.Date.Sub(cp.LastModified).Seconds())
-			if objectAge > 0 {
-				cp.FreshnessLifetime = objectAge / 5
+				cp.FreshnessLifetime = -1
+				cp.MustRevalidate = true
 			}
 		}
 	}
+
+	if !hasETag && !hasLastModified {
+		cp.CanRevalidate = false
+		return cp
+	}
+
+	cp.CanRevalidate = true
+
+	// TODO: Flush out real etag support (e.g., lists for if-non-match, *, W/, etc.)
+	if hasETag {
+		cp.ETag = strings.Join(lch["etag"], "")
+	}
+
+	if v, ok := lch["last-modified"]; ok {
+		mnHeader := strings.Join(v, "")
+		lm, err := time.Parse(time.RFC1123, mnHeader)
+		if err != nil {
+			cp.CanRevalidate = false
+		} else {
+			cp.LastModified = lm
+		}
+	}
+
+	// else, if there is a Last-Modified header, set FreshnessLifetime to 20% of age
+	if cp.CanRevalidate && cp.FreshnessLifetime == 0 && !cp.LastModified.IsZero() && cp.LastModified.Before(cp.Date) {
+		objectAge := int(cp.Date.Sub(cp.LastModified).Seconds())
+		if objectAge > 0 {
+			cp.FreshnessLifetime = objectAge / 5
+		}
+	}
+
 	return cp
 }
 
@@ -202,7 +218,7 @@ var supportedCCD = map[string]bool{
 	headers.ValueNoCache:         true,
 	headers.ValueNoStore:         true,
 	headers.ValueMaxAge:          false,
-	headers.ValueShareMaxAge:     false,
+	headers.ValueSharedMaxAge:    false,
 	headers.ValueMustRevalidate:  false,
 	headers.ValueProxyRevalidate: false,
 }
@@ -223,9 +239,10 @@ func parseCacheControlDirectives(directives string, cp *model.CachingPolicy) {
 		}
 		if noCache {
 			cp.NoCache = true
+			cp.FreshnessLifetime = -1
 			return
 		}
-		if d == headers.ValueShareMaxAge && dsub != "" {
+		if d == headers.ValueSharedMaxAge && dsub != "" {
 			foundFreshnessDirective = true
 			secs, err := strconv.Atoi(dsub)
 			if err == nil {
@@ -271,30 +288,30 @@ func GetRequestCachingPolicy(h http.Header) *model.CachingPolicy {
 		cp.NoCache = true
 		return cp
 	}
-	if v, ok := lch[headers.NameCacheControl]; ok {
+	if v, ok := lch["cache-control"]; ok {
 		parseCacheControlDirectives(strings.Join(v, ","), cp)
 		if cp.NoCache {
 			return cp
 		}
 	}
 
-	if v, ok := lch[headers.NameIfModifiedSince]; ok {
+	if v, ok := lch["if-modified-since"]; ok {
 		if date, err := time.Parse(time.RFC1123, strings.Join(v, "")); err == nil {
 			cp.IfModifiedSinceTime = date
 		}
 	}
 
-	if v, ok := lch[headers.NameIfUnmodifiedSince]; ok {
+	if v, ok := lch["if-unmodified-since"]; ok {
 		if date, err := time.Parse(time.RFC1123, strings.Join(v, "")); err == nil {
 			cp.IfUnmodifiedSinceTime = date
 		}
 	}
 
-	if v, ok := lch[headers.NameIfNoneMatch]; ok {
+	if v, ok := lch["if-none-match"]; ok {
 		cp.IfNoneMatchValue = strings.Join(v, "")
 	}
 
-	if v, ok := lch[headers.NameIfMatch]; ok {
+	if v, ok := lch["if-match"]; ok {
 		cp.IfMatchValue = strings.Join(v, "")
 	}
 

@@ -109,14 +109,11 @@ func TestRegisterProxyRoutesInflux(t *testing.T) {
 
 func TestRegisterProxyRoutesIRONdb(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-origin-url", "http://example.com", "-origin-type", "irondb", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	do := config.Origins["default"]
-	do.OriginType = "irondb"
-	config.Origins["default"] = do
 	registration.LoadCachesFromConfig()
 	err = RegisterProxyRoutes()
 	if err != nil {
@@ -129,7 +126,7 @@ func TestRegisterProxyRoutesIRONdb(t *testing.T) {
 }
 
 func TestRegisterProxyRoutesMultipleDefaults(t *testing.T) {
-	expected := "too many default origins"
+	expected := "only one origin can be marked as default. Found both test and test2"
 	a := []string{"-config", "../../../testdata/test.too_many_defaults.conf"}
 	err := config.Load("trickster", "test", a)
 	if err != nil {
@@ -145,7 +142,7 @@ func TestRegisterProxyRoutesMultipleDefaults(t *testing.T) {
 }
 
 func TestRegisterProxyRoutesBadCacheName(t *testing.T) {
-	expected := "invalid cache name in origin config. originName: test, cacheName: test2"
+	expected := "Could not find Cache named [test2]"
 	a := []string{"-config", "../../../testdata/test.bad_cache_name.conf"}
 	err := config.Load("trickster", "test", a)
 	if err != nil {

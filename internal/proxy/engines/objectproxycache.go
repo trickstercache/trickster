@@ -96,8 +96,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Ca
 	} else {
 
 		body, resp, elapsed = Fetch(r)
-
-		cp := GetResponseCachingPolicy(resp.StatusCode, r.OriginConfig.NegativeCache, resp.Header)
+		cp := GetResponseCachingPolicy(resp.StatusCode, r.OriginConfig.NegativeCache, resp.Header, ttl)
 
 		// Cache is revalidated, update headers and resulting caching policy
 		if revalidatingCache && resp.StatusCode == http.StatusNotModified {
