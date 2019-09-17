@@ -106,7 +106,7 @@ type OriginConfig struct {
 	MaxIdleConns int `toml:"max_idle_conns"`
 	// CacheName provides the name of the configured cache where the origin client will store it's cache data
 	CacheName string `toml:"cache_name"`
-	// IgnoreCachingHeaders will cause the orgin client to ignore any upstream or downstream HTTP caching headers
+	// IgnoreCachingHeaders will cause the origin client to ignore any upstream or downstream HTTP caching headers
 	IgnoreCachingHeaders bool `toml:"ignore_caching_headers"`
 	// HealthCheckEndpoint provides the route path Trickster will register for mapping the Health Endpoint
 	HealthCheckEndpoint string `toml:"health_check_endpoint"`
@@ -117,7 +117,7 @@ type OriginConfig struct {
 	// HealthCheckQuery provides the HTTP query parameters to use when making an upstream health check
 	HealthCheckQuery string `toml:"health_check_query"`
 	// Object Proxy Cache and Delta Proxy Cache Configurations
-	// TimeseriesRetentionFactor limits the maxiumum the number of chronological timestamps worth of data to store in cache for each query
+	// TimeseriesRetentionFactor limits the maximum the number of chronological timestamps worth of data to store in cache for each query
 	TimeseriesRetentionFactor int `toml:"timeseries_retention_factor"`
 	// TimeseriesEvictionMethodName specifies which methodology ("oldest", "lru") is used to identify timeseries to evict from a full cache object
 	TimeseriesEvictionMethodName string `toml:"timeseries_eviction_method"`

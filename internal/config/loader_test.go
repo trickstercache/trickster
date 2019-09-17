@@ -372,7 +372,7 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 	}
 
 	if o.OriginType != "test" {
-		t.Errorf("expected %s orgin type, got %s", "test", o.OriginType)
+		t.Errorf("expected %s origin type, got %s", "test", o.OriginType)
 	}
 
 	if o.CacheName != defaultOriginCacheName {
