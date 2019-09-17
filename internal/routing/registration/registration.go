@@ -28,7 +28,6 @@ import (
 	"github.com/Comcast/trickster/internal/util/log"
 )
 
-
 // ProxyClients maintains a list of proxy clients configured for use by Trickster
 var ProxyClients = make(map[string]model.Client)
 
@@ -84,7 +83,6 @@ func RegisterProxyRoutes() error {
 
 	return nil
 }
-
 
 func registerOriginRoutes(k string, o *config.OriginConfig) error {
 
