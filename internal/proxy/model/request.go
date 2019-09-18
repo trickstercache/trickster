@@ -53,8 +53,6 @@ func NewRequest(originConfig *config.OriginConfig, handlerName, method string, u
 		Timeout:       timeout,
 		HTTPClient:    client,
 	}
-
-	r.PathConfig = config.LookupPathConfig(originConfig.Paths, url.Path)
 	return r
 }
 
