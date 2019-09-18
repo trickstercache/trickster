@@ -40,8 +40,8 @@ type ProxyPathConfig struct {
 	ResponseCode int `toml:"response_code"`
 	// ResponseBody sets a custom response body to be sent to the donstream client for this path.
 	ResponseBody string `toml:"response_body"`
-	// NoDecorate, when set to true, disables metrics decoration for the path
-	NoDecorate bool `toml:"no_decorate"`
+	// NoMetrics, when set to true, disables metrics decoration for the path
+	NoMetrics bool `toml:"no_metrics"`
 
 	// Synthesized ProxyPathConfig Values
 	//
@@ -60,12 +60,36 @@ type ProxyPathConfig struct {
 	custom []string `toml:"-"`
 }
 
-// Merge merges one ProxyPathConfig into another
+// Merge merges the non-default values of the provided ProxyPathConfig into the subject ProxyPathConfig
 func (p *ProxyPathConfig) Merge(p2 *ProxyPathConfig) {
-
-	// // options must be a
-
-	// for _, c := range p.options {
-	// 	p[c] = p2[c]
-	// }
+	for _, c := range p.custom {
+		switch c {
+		case "path":
+			p.Path = p2.Path
+		case "handler":
+			p.HandlerName = p2.HandlerName
+			p.Handler = p2.Handler
+		case "methods":
+			p.Methods = p2.Methods
+		case "cache_key_params":
+			p.CacheKeyParams = p2.CacheKeyParams
+		case "cache_key_headers":
+			p.CacheKeyHeaders = p2.CacheKeyHeaders
+		case "default_ttl_secs":
+			p.DefaultTTLSecs = p2.DefaultTTLSecs
+			p.DefaultTTL = p2.DefaultTTL
+		case "request_headers":
+			p.RequestHeaders = p2.RequestHeaders
+		case "response_headers":
+			p.ResponseHeaders = p2.ResponseHeaders
+		case "response_code":
+			p.ResponseCode = p2.ResponseCode
+		case "response_body":
+			p.ResponseBody = p2.ResponseBody
+			p.HasCustomResponseBody = true
+			p.ResponseBodyBytes = p2.ResponseBodyBytes
+		case "no_metrics":
+			p.NoMetrics = p2.NoMetrics
+		}
+	}
 }
