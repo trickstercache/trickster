@@ -57,7 +57,7 @@ type ProxyPathConfig struct {
 	// ResponseBodyBytes provides a byte slice version of the ResponseBody value
 	ResponseBodyBytes []byte `toml:"-"`
 
-	options []string `toml:"-"`
+	custom []string `toml:"-"`
 }
 
 // Merge merges one ProxyPathConfig into another

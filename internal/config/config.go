@@ -368,6 +368,9 @@ func (c *TricksterConfig) setDefaults(metadata toml.MetaData) {
 	c.setCachingDefaults(metadata)
 }
 
+var pathMembers = []string{"parts", "handler", "methods", "cache_key_params", "cache_key_headers", "default_ttl_secs",
+	"request_headers", "response_headers", "response_code", "response_body", "no_metrics"}
+
 func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 
 	c.activeCaches = make(map[string]bool)
@@ -434,12 +437,17 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "paths") {
 			var j = 0
-			for _, p := range v.Paths {
+			for l, p := range v.Paths {
 				p.Order = j
-				p.ResponseBodyBytes = []byte(p.ResponseBody)
-
-				// Set Default TTL?
-				// Set Handler?
+				p.custom = make([]string, 0, 0)
+				for _, pm := range pathMembers {
+					if metadata.IsDefined("origins", k, "paths", l, pm) {
+						p.custom = append(p.custom, pm)
+					}
+				}
+				if metadata.IsDefined("origins", k, "paths", l, "response_body") {
+					p.ResponseBodyBytes = []byte(p.ResponseBody)
+				}
 				oc.Paths[p.Path] = p
 				j++
 			}
