@@ -98,18 +98,17 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 	if err != nil {
 		return err
 	}
+
+	log.Info("registering route paths", log.Pairs{"originName": k, "originType": o.OriginType, "upstreamHost": o.Host})
+
 	switch strings.ToLower(o.OriginType) {
 	case "prometheus", "":
-		log.Info("registering Prometheus route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 		client = prometheus.NewClient(k, o, c)
 	case "influxdb":
-		log.Info("registering Influxdb route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 		client = influxdb.NewClient(k, o, c)
 	case "irondb":
-		log.Info("registering IRONdb route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 		client = irondb.NewClient(k, o, c)
 	case "rpc", "reverseproxycache":
-		log.Info("Registering ReverseProxyCache Route Paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 		client = reverseproxycache.NewClient(k, o, c)
 	default:
 		log.Error("unknown origin type", log.Pairs{"originName": k, "originType": o.OriginType})
@@ -171,13 +170,12 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 		delete(paths, p)
 	}
 
-	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.OriginType, "originName": o.Name})
 	for _, v := range orderedPaths {
 		p, ok := paths[v]
 		if !ok {
 			continue
 		}
-		log.Info("Registering Origin Handler Path", log.Pairs{"path": v, "handlerName": p.HandlerName})
+		log.Debug("registering origin handler path", log.Pairs{"originName": o.Name, "path": v, "handlerName": p.HandlerName})
 		if p.Handler != nil && len(p.Methods) > 0 {
 			// Host Header Routing
 			routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...).Host(o.Name)
@@ -187,12 +185,14 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 	}
 
 	if o.IsDefault {
+		log.Info("registering default origin handler paths", log.Pairs{"originName": o.Name})
 		for _, v := range orderedPaths {
 			p, ok := paths[v]
 			if !ok {
 				continue
 			}
 			if p.Handler != nil && len(p.Methods) > 0 {
+				log.Debug("registering default origin handler paths", log.Pairs{"originName": o.Name, "path": p.Path, "handlerName": p.HandlerName})
 				routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...)
 			}
 		}
