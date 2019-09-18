@@ -23,8 +23,10 @@ import (
 
 // Client is the primary interface for interoperating with Trickster and upstream TSDB's
 type Client interface {
-	// RegisterRoutes provides a method to register upstream routes to HTTP Handlers
-	RegisterRoutes(string, *config.OriginConfig)
+	// Handlers returns a map of the HTTP Handlers the client has registered
+	Handlers() map[string]http.Handler
+	// DefaultPathConfigs returns the default PathConfigs for the given OriginType
+	DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []string)
 	// ParseTimeRangeQuery returns a timeseries.TimeRangeQuery based on the provided HTTP Request
 	ParseTimeRangeQuery(*Request) (*timeseries.TimeRangeQuery, error)
 	// Configuration returns the configuration for the Proxy Client
