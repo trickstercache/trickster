@@ -16,224 +16,158 @@ package prometheus
 import (
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
-	"github.com/Comcast/trickster/internal/routing"
-	"github.com/Comcast/trickster/internal/util/log"
-	ts "github.com/Comcast/trickster/internal/util/strings"
-	//"github.com/Comcast/trickster/internal/util/middleware"
 )
 
-var handlers = map[string]func(w http.ResponseWriter, r *http.Request){}
+var handlers = make(map[string]http.Handler)
+var handlersRegistered = false
 
-// RegisterRoutes registers the routes for the Client into the proxy's HTTP multiplexer
-func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
+func (c *Client) registerHandlers() {
+	handlersRegistered = true
+	// This is the registry of handlers that Trickster supports for Prometheus,
+	// and are able to be referenced by name (map key) in Config Files
+	handlers["health"] = http.HandlerFunc(c.HealthHandler)
+	handlers[mnQueryRange] = http.HandlerFunc(c.QueryRangeHandler)
+	handlers[mnQuery] = http.HandlerFunc(c.QueryHandler)
+	handlers[mnSeries] = http.HandlerFunc(c.SeriesHandler)
+	handlers["proxycache"] = http.HandlerFunc(c.ObjectProxyCacheHandler)
+	handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
+}
 
-	const hnAuthorization = "Authorization"
-
-	// Ensure the configured health check endpoint starts with "/""
-	if !strings.HasPrefix(o.HealthCheckEndpoint, "/") {
-		o.HealthCheckEndpoint = "/" + o.HealthCheckEndpoint
+// Handlers returns a map of the HTTP Handlers the client has registered
+func (c *Client) Handlers() map[string]http.Handler {
+	if !handlersRegistered {
+		c.registerHandlers()
 	}
+	return handlers
+}
 
-	handlers["health"] = c.HealthHandler
-	handlers[mnQueryRange] = c.QueryRangeHandler
-	handlers[mnQuery] = c.QueryHandler
-	handlers[mnSeries] = c.SeriesHandler
-	handlers["proxycache"] = c.ObjectProxyCacheHandler
-	handlers["proxy"] = c.ProxyHandler
+// DefaultPathConfigs returns the default PathConfigs for the given OriginType
+func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []string) {
 
-	o.Paths[o.HealthCheckEndpoint] = &config.ProxyPathConfig{
-		Path:        o.HealthCheckEndpoint,
-		HandlerName: "health",
-		Methods:     []string{http.MethodGet, http.MethodHead},
-	}
+	paths := map[string]*config.ProxyPathConfig{
 
-	if _, ok := o.Paths[APIPath+mnQueryRange]; !ok {
-		o.Paths[APIPath+mnQueryRange] = &config.ProxyPathConfig{
+		APIPath + mnQueryRange: &config.ProxyPathConfig{
 			Path:            APIPath + mnQueryRange,
 			HandlerName:     mnQueryRange,
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{upQuery, upStep},
-			CacheKeyHeaders: []string{"Authorization"},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
 			DefaultTTLSecs:  c.cache.Configuration().TimeseriesTTLSecs,
 			DefaultTTL:      c.cache.Configuration().TimeseriesTTL,
 			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, c.Cache().Configuration().TimeseriesTTLSecs)},
-		}
-	}
+		},
 
-	if _, ok := o.Paths[APIPath+mnQuery]; !ok {
-		o.Paths[APIPath+mnQuery] = &config.ProxyPathConfig{
+		APIPath + mnQuery: &config.ProxyPathConfig{
 			Path:            APIPath + mnQuery,
 			HandlerName:     mnQuery,
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{upQuery, upTime},
-			CacheKeyHeaders: []string{"Authorization"},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
 			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, c.Cache().Configuration().ObjectTTLSecs)},
-		}
-	}
+		},
 
-	if _, ok := o.Paths[APIPath+mnSeries]; !ok {
-		o.Paths[APIPath+mnSeries] = &config.ProxyPathConfig{
+		APIPath + mnSeries: &config.ProxyPathConfig{
 			Path:            APIPath + mnSeries,
 			HandlerName:     mnSeries,
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{upMatch, upStart, upEnd},
-			CacheKeyHeaders: []string{"Authorization"},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
 			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
-		}
-	}
+		},
 
-	if _, ok := o.Paths[APIPath+mnLabels]; !ok {
-		o.Paths[APIPath+mnLabels] = &config.ProxyPathConfig{
+		APIPath + mnLabels: &config.ProxyPathConfig{
 			Path:            APIPath + mnLabels,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{},
-			CacheKeyHeaders: []string{"Authorization"},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
 			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
-		}
-	}
+		},
 
-	if _, ok := o.Paths[APIPath+mnLabel]; !ok {
-		o.Paths[APIPath+mnLabel] = &config.ProxyPathConfig{
+		APIPath + mnLabel: &config.ProxyPathConfig{
 			Path:            APIPath + mnLabel,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
-			CacheKeyHeaders: []string{"Authorization"},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
 			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
-		}
-	}
+		},
 
-	if _, ok := o.Paths[APIPath+mnTargets]; !ok {
-		o.Paths[APIPath+mnTargets] = &config.ProxyPathConfig{
+		APIPath + mnTargets: &config.ProxyPathConfig{
 			Path:            APIPath + mnTargets,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
-			CacheKeyHeaders: []string{"Authorization"},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
 			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
-		}
-	}
+		},
 
-	if _, ok := o.Paths[APIPath+mnRules]; !ok {
-		o.Paths[APIPath+mnRules] = &config.ProxyPathConfig{
+		APIPath + mnRules: &config.ProxyPathConfig{
 			Path:            APIPath + mnRules,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
-			CacheKeyHeaders: []string{"Authorization"},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
 			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
-		}
-	}
+		},
 
-	if _, ok := o.Paths[APIPath+mnAlerts]; !ok {
-		o.Paths[APIPath+mnAlerts] = &config.ProxyPathConfig{
+		APIPath + mnAlerts: &config.ProxyPathConfig{
 			Path:            APIPath + mnAlerts,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
-			CacheKeyHeaders: []string{"Authorization"},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
 			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
-		}
-	}
+		},
 
-	if _, ok := o.Paths[APIPath+mnAlertManagers]; !ok {
-		o.Paths[APIPath+mnAlertManagers] = &config.ProxyPathConfig{
+		APIPath + mnAlertManagers: &config.ProxyPathConfig{
 			Path:            APIPath + mnAlertManagers,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
-			CacheKeyHeaders: []string{"Authorization"},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
 			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
-		}
-	}
+		},
 
-	if _, ok := o.Paths[APIPath+mnStatus]; !ok {
-		o.Paths[APIPath+mnStatus] = &config.ProxyPathConfig{
+		APIPath + mnStatus: &config.ProxyPathConfig{
 			Path:            APIPath + mnStatus,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
-			CacheKeyHeaders: []string{"Authorization"},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
 			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
-		}
-	}
+		},
 
-	if _, ok := o.Paths[APIPath]; !ok {
-		o.Paths[APIPath] = &config.ProxyPathConfig{
+		APIPath: &config.ProxyPathConfig{
 			Path:        APIPath,
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet, http.MethodPost},
-		}
-	}
+		},
 
-	if _, ok := o.Paths[APIPath]; !ok {
-		o.Paths[APIPath] = &config.ProxyPathConfig{
-			Path:        APIPath,
-			HandlerName: "proxy",
-			Methods:     []string{http.MethodGet, http.MethodPost},
-		}
-	}
-
-	if _, ok := o.Paths["/"]; !ok {
-		o.Paths["/"] = &config.ProxyPathConfig{
+		"/": &config.ProxyPathConfig{
 			Path:        "/",
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet, http.MethodPost},
-		}
+		},
 	}
 
-	orderedPaths := []string{o.HealthCheckEndpoint, APIPath + mnQueryRange, APIPath + mnQuery,
+	orderedPaths := []string{APIPath + mnQueryRange, APIPath + mnQuery,
 		APIPath + mnSeries, APIPath + mnLabels, APIPath + mnLabel, APIPath + mnTargets, APIPath + mnRules,
 		APIPath + mnAlerts, APIPath + mnAlertManagers, APIPath + mnStatus, APIPath, "/"}
 
-	for _, p := range o.Paths {
-		if h, ok := handlers[p.HandlerName]; h != nil && ok {
-			p.Handler = h
-			if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
-				fmt.Println("Found unexpected path in config:", p.Path)
-				orderedPaths = append(orderedPaths, p.Path)
-			}
-		}
-	}
-
-	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.OriginType, "originName": originName})
-
-	for _, v := range orderedPaths {
-
-		p := o.Paths[v]
-
-		log.Info("Registering Origin Handler Path", log.Pairs{"path": v, "handlerName": p.HandlerName})
-
-		if len(p.Methods) > 0 {
-			// Host Header Routing
-			routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...).Host(originName)
-			// Path Routing
-			routing.Router.HandleFunc("/"+originName+p.Path, p.Handler).Methods(p.Methods...)
-		}
-	}
-
-	if o.IsDefault {
-		for _, v := range orderedPaths {
-			p := o.Paths[v]
-			if p.Handler != nil && len(p.Methods) > 0 {
-				routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...)
-			}
-		}
-	}
+	return paths, orderedPaths
 
 }

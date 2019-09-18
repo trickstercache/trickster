@@ -14,109 +14,41 @@
 package reverseproxycache
 
 import (
-	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/routing"
-	"github.com/Comcast/trickster/internal/util/log"
-	ts "github.com/Comcast/trickster/internal/util/strings"
 )
 
-var handlers = map[string]func(w http.ResponseWriter, r *http.Request){}
+var handlers = make(map[string]http.Handler)
+var handlersRegistered = false
 
-// RegisterRoutes registers the routes for the Client into the proxy's HTTP multiplexer
-func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
+func (c *Client) registerHandlers() {
+	handlersRegistered = true
+	// This is the registry of handlers that Trickster supports for Prometheus,
+	// and are able to be referenced by name (map key) in Config Files
+	handlers["health"] = http.HandlerFunc(c.HealthHandler)
+	handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
+	handlers["proxycache"] = http.HandlerFunc(c.ProxyCacheHandler)
+	handlers["localresponse"] = http.HandlerFunc(c.LocalResponseHandler)
+}
 
-	const hnAuthorization = "Authorization"
-
-	// Ensure the configured health check endpoint starts with "/""
-	if !strings.HasPrefix(o.HealthCheckEndpoint, "/") {
-		o.HealthCheckEndpoint = "/" + o.HealthCheckEndpoint
+// Handlers returns a map of the HTTP Handlers the client has registered
+func (c *Client) Handlers() map[string]http.Handler {
+	if !handlersRegistered {
+		c.registerHandlers()
 	}
+	return handlers
+}
 
-	handlers["health"] = c.HealthHandler
-	handlers["proxy"] = c.ProxyHandler
-	handlers["proxycache"] = c.ProxyCacheHandler
-	handlers["localresponse"] = c.LocalResponseHandler
-
-	o.Paths[o.HealthCheckEndpoint] = &config.ProxyPathConfig{
-		Path:        o.HealthCheckEndpoint,
-		HandlerName: "health",
-		Methods:     []string{http.MethodGet, http.MethodHead},
-	}
-
-	// By default we proxy everything
-	if _, ok := o.Paths["/"]; !ok {
-		o.Paths["/"] = &config.ProxyPathConfig{
+// DefaultPathConfigs returns the default PathConfigs for the given OriginType
+func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []string) {
+	paths := map[string]*config.ProxyPathConfig{
+		"/": &config.ProxyPathConfig{
 			Path:        "/",
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet, http.MethodPost},
-		}
+		},
 	}
-
-	orderedPaths := []string{o.HealthCheckEndpoint}
-
-	for _, p := range o.Paths {
-		if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
-			orderedPaths = append(orderedPaths, p.Path)
-		}
-		if h, ok := handlers[p.HandlerName]; ok {
-			p.Handler = h
-		}
-	}
-
-	orderedPaths = append(orderedPaths, "/")
-
-	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.OriginType, "originName": originName})
-
-	for _, v := range orderedPaths {
-		p := o.Paths[v]
-		if p.Handler != nil && len(p.Methods) > 0 {
-			fmt.Println("REGISTERING ROUTE", v, p.Path, p.Methods)
-			// Host Header Routing
-			routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...).Host(originName)
-			// Path Routing
-			routing.Router.HandleFunc("/"+originName+p.Path, p.Handler).Methods(p.Methods...)
-		}
-		// Host Header Routing
-		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyCacheHandler).Methods(http.MethodGet, http.MethodPost).Host(originName)
-		// Path Routing
-		routing.Router.PathPrefix("/"+originName+"/").HandlerFunc(c.ProxyCacheHandler).Methods(http.MethodGet, http.MethodPost).Host(originName)
-
-	}
-
-	if o.IsDefault {
-		for _, v := range orderedPaths {
-			p := o.Paths[v]
-			if p.Handler != nil && len(p.Methods) > 0 {
-				fmt.Println("OH HRM", p.Path, p.HandlerName, p.Methods)
-				routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...)
-			}
-		}
-		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyCacheHandler).Methods(http.MethodGet, http.MethodPost)
-	}
-
-}
-
-// RegisterRoutes registers the routes for the Client into the proxy's HTTP multiplexer
-func (c *Client) OldRegisterRoutes(originName string, o *config.OriginConfig) {
-
-	// Host Header-based routing
-	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.OriginType, "originName": originName})
-	routing.Router.HandleFunc("/health", c.HealthHandler).Host(originName)
-	routing.Router.PathPrefix("/").HandlerFunc(c.ProxyCacheHandler).Host(originName)
-
-	// Path based routing
-	routing.Router.HandleFunc("/"+originName+"/health", c.HealthHandler)
-	routing.Router.PathPrefix("/" + originName + "/").HandlerFunc(c.ProxyCacheHandler)
-
-	// If default origin, set those routes too
-	if o.IsDefault {
-		log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.OriginType})
-		routing.Router.HandleFunc("/health", c.HealthHandler)
-		routing.Router.PathPrefix("/").HandlerFunc(c.ProxyCacheHandler)
-	}
-
+	orderedPaths := []string{"/"}
+	return paths, orderedPaths
 }

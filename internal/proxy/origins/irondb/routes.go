@@ -1,94 +1,143 @@
 package irondb
 
 import (
+	"net/http"
+
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/routing"
-	"github.com/Comcast/trickster/internal/util/log"
 )
 
-// RegisterRoutes registers the routes for the Client into the proxy's HTTP
-// multiplexer.
-func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
-	prefix := "/"
-	// if o.APIPath != "" {
-	// 	prefix += o.APIPath + "/"
-	// }
+var handlers = make(map[string]http.Handler)
+var handlersRegistered = false
 
-	// Setup host header based routing.
-	log.Debug("Registering Origin Handlers",
-		log.Pairs{"originType": o.OriginType, "originName": originName})
-	routing.Router.PathPrefix("/" + mnHealth).
-		HandlerFunc(c.HealthHandler).Methods("GET").Host(originName)
-	routing.Router.PathPrefix(prefix + mnRaw).
-		HandlerFunc(c.RawHandler).Methods("GET").Host(originName)
-	routing.Router.PathPrefix(prefix + mnRollup).
-		HandlerFunc(c.RollupHandler).Methods("GET").Host(originName)
-	routing.Router.PathPrefix(prefix + mnFetch).
-		HandlerFunc(c.FetchHandler).Methods("POST").Host(originName)
-	routing.Router.PathPrefix(prefix + mnRead).
-		HandlerFunc(c.TextHandler).Methods("GET").Host(originName)
-	routing.Router.PathPrefix(prefix + mnHistogram).
-		HandlerFunc(c.HistogramHandler).Methods("GET").Host(originName)
-	routing.Router.PathPrefix(prefix + mnFind).
-		HandlerFunc(c.FindHandler).Methods("GET").Host(originName)
-	routing.Router.PathPrefix(prefix + mnState).
-		HandlerFunc(c.StateHandler).Methods("GET").Host(originName)
-	routing.Router.PathPrefix(prefix + mnCAQL).
-		HandlerFunc(c.CAQLHandler).Methods("GET").Host(originName)
-	routing.Router.PathPrefix(prefix + mnCAQLPub).
-		HandlerFunc(c.CAQLHandler).Methods("GET").Host(originName)
-	routing.Router.PathPrefix("/").
-		HandlerFunc(c.ProxyHandler).Methods("GET").Host(originName)
+func (c *Client) registerHandlers() {
+	handlersRegistered = true
+	// This is the registry of handlers that Trickster supports for Prometheus,
+	// and are able to be referenced by name (map key) in Config Files
+	handlers["health"] = http.HandlerFunc(c.HealthHandler)
+	handlers[mnRaw] = http.HandlerFunc(c.RawHandler)
+	handlers[mnRollup] = http.HandlerFunc(c.RollupHandler)
+	handlers[mnFetch] = http.HandlerFunc(c.FetchHandler)
+	handlers[mnRead] = http.HandlerFunc(c.TextHandler)
+	handlers[mnHistogram] = http.HandlerFunc(c.HistogramHandler)
+	handlers[mnFind] = http.HandlerFunc(c.FindHandler)
+	handlers[mnState] = http.HandlerFunc(c.StateHandler)
+	handlers[mnCAQL] = http.HandlerFunc(c.CAQLHandler)
+	handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
+}
 
-	// Setup path based routing.
-	routing.Router.PathPrefix("/" + originName + "/" + mnHealth).
-		HandlerFunc(c.HealthHandler).Methods("GET")
-	routing.Router.PathPrefix("/" + originName + prefix + mnRaw).
-		HandlerFunc(c.RawHandler).Methods("GET")
-	routing.Router.PathPrefix("/" + originName + prefix + mnRollup).
-		HandlerFunc(c.RollupHandler).Methods("GET")
-	routing.Router.PathPrefix("/" + originName + prefix + mnFetch).
-		HandlerFunc(c.FetchHandler).Methods("POST")
-	routing.Router.PathPrefix("/" + originName + prefix + mnRead).
-		HandlerFunc(c.TextHandler).Methods("GET")
-	routing.Router.PathPrefix("/" + originName + prefix + mnHistogram).
-		HandlerFunc(c.HistogramHandler).Methods("GET")
-	routing.Router.PathPrefix("/" + originName + prefix + mnFind).
-		HandlerFunc(c.FindHandler).Methods("GET")
-	routing.Router.PathPrefix("/" + originName + prefix + mnState).
-		HandlerFunc(c.StateHandler).Methods("GET")
-	routing.Router.PathPrefix("/" + originName + prefix + mnCAQL).
-		HandlerFunc(c.CAQLHandler).Methods("GET")
-	routing.Router.PathPrefix("/" + originName + prefix + mnCAQLPub).
-		HandlerFunc(c.CAQLHandler).Methods("GET")
-	routing.Router.PathPrefix("/" + originName + "/").
-		HandlerFunc(c.ProxyHandler).Methods("GET")
-
-	// If default origin, setup those routes too.
-	if o.IsDefault {
-		log.Debug("Registering Default Origin Handlers",
-			log.Pairs{"originType": o.OriginType})
-		routing.Router.PathPrefix("/" + mnHealth).
-			HandlerFunc(c.HealthHandler).Methods("GET")
-		routing.Router.PathPrefix(prefix + mnRaw).
-			HandlerFunc(c.RawHandler).Methods("GET")
-		routing.Router.PathPrefix(prefix + mnRollup).
-			HandlerFunc(c.RollupHandler).Methods("GET")
-		routing.Router.PathPrefix(prefix + mnFetch).
-			HandlerFunc(c.FetchHandler).Methods("POST")
-		routing.Router.PathPrefix(prefix + mnRead).
-			HandlerFunc(c.TextHandler).Methods("GET")
-		routing.Router.PathPrefix(prefix + mnHistogram).
-			HandlerFunc(c.HistogramHandler).Methods("GET")
-		routing.Router.PathPrefix(prefix + mnFind).
-			HandlerFunc(c.FindHandler).Methods("GET")
-		routing.Router.PathPrefix(prefix + mnState).
-			HandlerFunc(c.StateHandler).Methods("GET")
-		routing.Router.PathPrefix(prefix + mnCAQL).
-			HandlerFunc(c.CAQLHandler).Methods("GET")
-		routing.Router.PathPrefix(prefix + mnCAQLPub).
-			HandlerFunc(c.CAQLHandler).Methods("GET")
-		routing.Router.PathPrefix("/").
-			HandlerFunc(c.ProxyHandler).Methods("GET")
+// Handlers returns a map of the HTTP Handlers the client has registered
+func (c *Client) Handlers() map[string]http.Handler {
+	if !handlersRegistered {
+		c.registerHandlers()
 	}
+	return handlers
+}
+
+// DefaultPathConfigs returns the default PathConfigs for the given OriginType
+func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []string) {
+
+	paths := map[string]*config.ProxyPathConfig{
+
+		"/" + mnRaw: &config.ProxyPathConfig{
+			Path:            "/" + mnRaw,
+			HandlerName:     mnRaw,
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{}, // TODO: Populate
+			CacheKeyHeaders: []string{},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		"/" + mnRollup: &config.ProxyPathConfig{
+			Path:            "/" + mnRollup,
+			HandlerName:     mnRollup,
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{}, // TODO: Populate
+			CacheKeyHeaders: []string{},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		"/" + mnFetch: &config.ProxyPathConfig{
+			Path:            "/" + mnFetch,
+			HandlerName:     mnFetch,
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{}, // TODO: Populate
+			CacheKeyHeaders: []string{},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		"/" + mnRead: &config.ProxyPathConfig{
+			Path:            "/" + mnRead,
+			HandlerName:     mnRead,
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{}, // TODO: Populate
+			CacheKeyHeaders: []string{},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		"/" + mnHistogram: &config.ProxyPathConfig{
+			Path:            "/" + mnHistogram,
+			HandlerName:     mnHistogram,
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{}, // TODO: Populate
+			CacheKeyHeaders: []string{},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		"/" + mnFind: &config.ProxyPathConfig{
+			Path:            "/" + mnFind,
+			HandlerName:     mnFind,
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{}, // TODO: Populate
+			CacheKeyHeaders: []string{},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		"/" + mnState: &config.ProxyPathConfig{
+			Path:            "/" + mnState,
+			HandlerName:     mnState,
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{}, // TODO: Populate
+			CacheKeyHeaders: []string{},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		"/" + mnCAQL: &config.ProxyPathConfig{
+			Path:            "/" + mnCAQL,
+			HandlerName:     mnCAQL,
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{}, // TODO: Populate
+			CacheKeyHeaders: []string{},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		"/" + mnCAQLPub: &config.ProxyPathConfig{
+			Path:            "/" + mnCAQLPub,
+			HandlerName:     mnCAQL,
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{}, // TODO: Populate
+			CacheKeyHeaders: []string{},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		"/": &config.ProxyPathConfig{
+			Path:        "/",
+			HandlerName: "proxy",
+			Methods:     []string{http.MethodGet},
+		},
+	}
+
+	orderedPaths := []string{"/" + mnRaw, "/" + mnRollup, "/" + mnFetch, "/" + mnRead,
+		"/" + mnHistogram, "/" + mnFind, "/" + mnState, "/" + mnCAQL, "/"}
+
+	return paths, orderedPaths
+
 }
