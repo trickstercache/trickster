@@ -15,6 +15,7 @@ package registration
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/Comcast/trickster/internal/cache"
@@ -25,6 +26,9 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/origins/irondb"
 	"github.com/Comcast/trickster/internal/proxy/origins/prometheus"
 	"github.com/Comcast/trickster/internal/proxy/origins/reverseproxycache"
+	"github.com/Comcast/trickster/internal/routing"
+	"github.com/Comcast/trickster/internal/util/middleware"
+	ts "github.com/Comcast/trickster/internal/util/strings"
 	"github.com/Comcast/trickster/internal/util/log"
 )
 
@@ -113,8 +117,90 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 	}
 	if client != nil {
 		ProxyClients[k] = client
-		client.RegisterRoutes(k, o)
+		paths, orderedPaths := client.DefaultPathConfigs()
+		registerPathRoutes(client.Handlers(), o, c.Configuration(), paths, orderedPaths)
 	}
 
 	return nil
+}
+
+// Client Handlers function
+
+
+func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig, c *config.CachingConfig, paths map[string]*config.ProxyPathConfig, orderedPaths []string) {
+
+	decorate := func(o *config.OriginConfig, p *config.ProxyPathConfig) http.Handler {
+		// Add Origin, Cache, and Path Configs to the HTTP Request's context
+		p.Handler = middleware.WithConfigContext(o, c, p, p.Handler)
+		if p.NoDecorate {
+			return p.Handler
+		}
+		return middleware.Decorate(o.Name, o.OriginType, p.Path, p.Handler)
+	}
+
+	for k, p := range o.Paths {
+		p.Path = k
+		if p2, ok := paths[k]; ok {
+			p.Merge(p2)
+			continue
+		}
+		paths[k] = p
+	}
+
+	
+
+	// Ensure the configured health check endpoint starts with "/""
+	if !strings.HasPrefix(o.HealthCheckEndpoint, "/") {
+		o.HealthCheckEndpoint = "/" + o.HealthCheckEndpoint
+	}
+	paths[o.HealthCheckEndpoint] = &config.ProxyPathConfig{
+		Path:        o.HealthCheckEndpoint,
+		HandlerName: "health",
+		Methods:     []string{http.MethodGet, http.MethodHead},
+	}
+	orderedPaths = append([]string{o.HealthCheckEndpoint}, orderedPaths...)
+
+	deletes := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if h, ok := handlers[p.HandlerName]; ok && h != nil {
+			p.Handler = h
+			if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
+				log.Info("found unexpected path in config", log.Pairs{"originName": o.Name, "path": p.Path})
+				orderedPaths = append(orderedPaths, p.Path)
+			}
+		} else {
+			deletes = append(deletes, p.Path)
+		}
+	}
+	for _, p := range deletes {
+		delete(paths, p)
+	}
+
+	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.OriginType, "originName": o.Name})
+	for _, v := range orderedPaths {
+		p, ok := paths[v]
+		if !ok {
+			continue
+		}
+		log.Info("Registering Origin Handler Path", log.Pairs{"path": v, "handlerName": p.HandlerName})
+		if p.Handler != nil && len(p.Methods) > 0 {
+			// Host Header Routing
+			routing.Router.Handle(p.Path, decorate(o, p)).Methods(p.Methods...).Host(o.Name)
+			// Path Routing
+			routing.Router.Handle("/"+o.Name+p.Path, decorate(o, p)).Methods(p.Methods...)
+		}
+	}
+
+	if o.IsDefault {
+		for _, v := range orderedPaths {
+			p, ok := paths[v]
+			if !ok {
+				continue
+			}
+			if p.Handler != nil && len(p.Methods) > 0 {
+				routing.Router.Handle(p.Path, decorate(o, p)).Methods(p.Methods...)
+			}
+		}
+	}
+
 }
