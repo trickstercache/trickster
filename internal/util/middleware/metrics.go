@@ -23,8 +23,8 @@ import (
 // Decorate decorates a function in such a way that it captures both the
 // returned status and the time used to execute a request from the front end
 // perspective
-func Decorate(originName, originType, path string, f func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
+func Decorate(originName, originType, path string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		observer := &responseObserver{
 			w,
 			"unknown",
@@ -32,12 +32,12 @@ func Decorate(originName, originType, path string, f func(http.ResponseWriter, *
 		}
 
 		n := time.Now()
-		f(observer, r)
+		next.ServeHTTP(observer, r)
 
 		metrics.FrontendRequestDuration.WithLabelValues(originName, originType, r.Method, path, observer.status).Observe(time.Now().Sub(n).Seconds())
 		metrics.FrontendRequestStatus.WithLabelValues(originName, originType, r.Method, path, observer.status).Inc()
 		metrics.FrontendRequestWrittenBytes.WithLabelValues(originName, originType, r.Method, path, observer.status).Add(float64(observer.bytesWritten))
-	}
+	})
 }
 
 type responseObserver struct {
