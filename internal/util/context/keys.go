@@ -16,7 +16,8 @@ package context
 type contextKey int
 
 const (
-	originKey contextKey = iota
-	cacheKey
-	pathKey
+	originConfigKey contextKey = iota
+	cacheConfigKey
+	pathConfigKey
+	cacheClientKey
 )

@@ -27,9 +27,9 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/origins/prometheus"
 	"github.com/Comcast/trickster/internal/proxy/origins/reverseproxycache"
 	"github.com/Comcast/trickster/internal/routing"
+	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/middleware"
 	ts "github.com/Comcast/trickster/internal/util/strings"
-	"github.com/Comcast/trickster/internal/util/log"
 )
 
 // ProxyClients maintains a list of proxy clients configured for use by Trickster
@@ -118,7 +118,7 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 	if client != nil {
 		ProxyClients[k] = client
 		paths, orderedPaths := client.DefaultPathConfigs()
-		registerPathRoutes(client.Handlers(), o, c.Configuration(), paths, orderedPaths)
+		registerPathRoutes(client.Handlers(), o, c, paths, orderedPaths)
 	}
 
 	return nil
@@ -126,10 +126,9 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 
 // Client Handlers function
 
+func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig, c cache.Cache, paths map[string]*config.ProxyPathConfig, orderedPaths []string) {
 
-func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig, c *config.CachingConfig, paths map[string]*config.ProxyPathConfig, orderedPaths []string) {
-
-	decorate := func(o *config.OriginConfig, p *config.ProxyPathConfig) http.Handler {
+	decorate := func(p *config.ProxyPathConfig) http.Handler {
 		// Add Origin, Cache, and Path Configs to the HTTP Request's context
 		p.Handler = middleware.WithConfigContext(o, c, p, p.Handler)
 		if p.NoDecorate {
@@ -146,8 +145,6 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 		}
 		paths[k] = p
 	}
-
-	
 
 	// Ensure the configured health check endpoint starts with "/""
 	if !strings.HasPrefix(o.HealthCheckEndpoint, "/") {
@@ -185,9 +182,9 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 		log.Info("Registering Origin Handler Path", log.Pairs{"path": v, "handlerName": p.HandlerName})
 		if p.Handler != nil && len(p.Methods) > 0 {
 			// Host Header Routing
-			routing.Router.Handle(p.Path, decorate(o, p)).Methods(p.Methods...).Host(o.Name)
+			routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...).Host(o.Name)
 			// Path Routing
-			routing.Router.Handle("/"+o.Name+p.Path, decorate(o, p)).Methods(p.Methods...)
+			routing.Router.Handle("/"+o.Name+p.Path, decorate(p)).Methods(p.Methods...)
 		}
 	}
 
@@ -198,7 +195,7 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 				continue
 			}
 			if p.Handler != nil && len(p.Methods) > 0 {
-				routing.Router.Handle(p.Path, decorate(o, p)).Methods(p.Methods...)
+				routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...)
 			}
 		}
 	}

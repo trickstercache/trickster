@@ -16,12 +16,13 @@ package middleware
 import (
 	"net/http"
 
+	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/context"
 )
 
 // WithConfigContext ...
-func WithConfigContext(o *config.OriginConfig, c *config.CachingConfig, p *config.ProxyPathConfig, next http.Handler) http.Handler {
+func WithConfigContext(o *config.OriginConfig, c cache.Cache, p *config.ProxyPathConfig, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r.WithContext(context.WithConfigs(r.Context(), o, c, p)))
 	})

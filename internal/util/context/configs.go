@@ -16,28 +16,35 @@ package context
 import (
 	"context"
 
+	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 )
 
 // WithConfigs returns a copy of the provided context that also includes the OriginConfig, CachingConfig and PathConfig for the request
-func WithConfigs(ctx context.Context, o *config.OriginConfig, c *config.CachingConfig, p *config.ProxyPathConfig) context.Context {
-	ctx = context.WithValue(ctx, originKey, o)
-	ctx = context.WithValue(ctx, cacheKey, c)
-	ctx = context.WithValue(ctx, pathKey, p)
+func WithConfigs(ctx context.Context, o *config.OriginConfig, c cache.Cache, p *config.ProxyPathConfig) context.Context {
+	ctx = context.WithValue(ctx, originConfigKey, o)
+	ctx = context.WithValue(ctx, cacheConfigKey, c.Configuration())
+	ctx = context.WithValue(ctx, cacheClientKey, c)
+	ctx = context.WithValue(ctx, pathConfigKey, p)
 	return ctx
 }
 
 // OriginConfig returns the OriginConfig reference from the request context
 func OriginConfig(ctx context.Context) *config.OriginConfig {
-	return ctx.Value(originKey).(*config.OriginConfig)
+	return ctx.Value(originConfigKey).(*config.OriginConfig)
 }
 
 // CachingConfig returns the CachingConfig reference from the request context
 func CachingConfig(ctx context.Context) *config.CachingConfig {
-	return ctx.Value(cacheKey).(*config.CachingConfig)
+	return ctx.Value(cacheConfigKey).(*config.CachingConfig)
 }
 
 // PathConfig returns the PathConfig reference from the request context
 func PathConfig(ctx context.Context) *config.ProxyPathConfig {
-	return ctx.Value(pathKey).(*config.ProxyPathConfig)
+	return ctx.Value(pathConfigKey).(*config.ProxyPathConfig)
+}
+
+// CacheClient returns the Cache Client reference from the request context
+func CacheClient(ctx context.Context) cache.Cache {
+	return ctx.Value(cacheClientKey).(cache.Cache)
 }
