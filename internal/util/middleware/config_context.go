@@ -22,7 +22,7 @@ import (
 )
 
 // WithConfigContext ...
-func WithConfigContext(o *config.OriginConfig, c cache.Cache, p *config.ProxyPathConfig, next http.Handler) http.Handler {
+func WithConfigContext(o *config.OriginConfig, c cache.Cache, p *config.PathConfig, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r.WithContext(context.WithConfigs(r.Context(), o, c, p)))
 	})

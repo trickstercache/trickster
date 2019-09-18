@@ -26,7 +26,7 @@ type Client interface {
 	// Handlers returns a map of the HTTP Handlers the client has registered
 	Handlers() map[string]http.Handler
 	// DefaultPathConfigs returns the default PathConfigs for the given OriginType
-	DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []string)
+	DefaultPathConfigs() (map[string]*config.PathConfig, []string)
 	// ParseTimeRangeQuery returns a timeseries.TimeRangeQuery based on the provided HTTP Request
 	ParseTimeRangeQuery(*Request) (*timeseries.TimeRangeQuery, error)
 	// Configuration returns the configuration for the Proxy Client

@@ -41,9 +41,9 @@ func (c *Client) Handlers() map[string]http.Handler {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []string) {
-	paths := map[string]*config.ProxyPathConfig{
-		"/": &config.ProxyPathConfig{
+func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) {
+	paths := map[string]*config.PathConfig{
+		"/": &config.PathConfig{
 			Path:        "/",
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet, http.MethodPost},

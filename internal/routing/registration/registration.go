@@ -124,9 +124,9 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 	return nil
 }
 
-func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig, c cache.Cache, paths map[string]*config.ProxyPathConfig, orderedPaths []string) {
+func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig, c cache.Cache, paths map[string]*config.PathConfig, orderedPaths []string) {
 
-	decorate := func(p *config.ProxyPathConfig) http.Handler {
+	decorate := func(p *config.PathConfig) http.Handler {
 		// Add Origin, Cache, and Path Configs to the HTTP Request's context
 		p.Handler = middleware.WithConfigContext(o, c, p, p.Handler)
 		if p.NoMetrics {
@@ -148,7 +148,7 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 	if !strings.HasPrefix(o.HealthCheckEndpoint, "/") {
 		o.HealthCheckEndpoint = "/" + o.HealthCheckEndpoint
 	}
-	paths[o.HealthCheckEndpoint] = &config.ProxyPathConfig{
+	paths[o.HealthCheckEndpoint] = &config.PathConfig{
 		Path:        o.HealthCheckEndpoint,
 		HandlerName: "health",
 		Methods:     []string{http.MethodGet, http.MethodHead},

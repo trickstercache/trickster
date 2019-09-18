@@ -21,7 +21,7 @@ import (
 )
 
 // WithConfigs returns a copy of the provided context that also includes the OriginConfig, CachingConfig and PathConfig for the request
-func WithConfigs(ctx context.Context, o *config.OriginConfig, c cache.Cache, p *config.ProxyPathConfig) context.Context {
+func WithConfigs(ctx context.Context, o *config.OriginConfig, c cache.Cache, p *config.PathConfig) context.Context {
 	ctx = context.WithValue(ctx, originConfigKey, o)
 	ctx = context.WithValue(ctx, cacheConfigKey, c.Configuration())
 	ctx = context.WithValue(ctx, cacheClientKey, c)
@@ -40,8 +40,8 @@ func CachingConfig(ctx context.Context) *config.CachingConfig {
 }
 
 // PathConfig returns the PathConfig reference from the request context
-func PathConfig(ctx context.Context) *config.ProxyPathConfig {
-	return ctx.Value(pathConfigKey).(*config.ProxyPathConfig)
+func PathConfig(ctx context.Context) *config.PathConfig {
+	return ctx.Value(pathConfigKey).(*config.PathConfig)
 }
 
 // CacheClient returns the Cache Client reference from the request context

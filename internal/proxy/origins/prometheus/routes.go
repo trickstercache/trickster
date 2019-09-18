@@ -45,11 +45,11 @@ func (c *Client) Handlers() map[string]http.Handler {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []string) {
+func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) {
 
-	paths := map[string]*config.ProxyPathConfig{
+	paths := map[string]*config.PathConfig{
 
-		APIPath + mnQueryRange: &config.ProxyPathConfig{
+		APIPath + mnQueryRange: &config.PathConfig{
 			Path:            APIPath + mnQueryRange,
 			HandlerName:     mnQueryRange,
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -60,7 +60,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, c.Cache().Configuration().TimeseriesTTLSecs)},
 		},
 
-		APIPath + mnQuery: &config.ProxyPathConfig{
+		APIPath + mnQuery: &config.PathConfig{
 			Path:            APIPath + mnQuery,
 			HandlerName:     mnQuery,
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -71,7 +71,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, c.Cache().Configuration().ObjectTTLSecs)},
 		},
 
-		APIPath + mnSeries: &config.ProxyPathConfig{
+		APIPath + mnSeries: &config.PathConfig{
 			Path:            APIPath + mnSeries,
 			HandlerName:     mnSeries,
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -81,7 +81,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		APIPath + mnLabels: &config.ProxyPathConfig{
+		APIPath + mnLabels: &config.PathConfig{
 			Path:            APIPath + mnLabels,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -91,7 +91,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		APIPath + mnLabel: &config.ProxyPathConfig{
+		APIPath + mnLabel: &config.PathConfig{
 			Path:            APIPath + mnLabel,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -101,7 +101,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		APIPath + mnTargets: &config.ProxyPathConfig{
+		APIPath + mnTargets: &config.PathConfig{
 			Path:            APIPath + mnTargets,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -111,7 +111,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		APIPath + mnRules: &config.ProxyPathConfig{
+		APIPath + mnRules: &config.PathConfig{
 			Path:            APIPath + mnRules,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -121,7 +121,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		APIPath + mnAlerts: &config.ProxyPathConfig{
+		APIPath + mnAlerts: &config.PathConfig{
 			Path:            APIPath + mnAlerts,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -131,7 +131,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		APIPath + mnAlertManagers: &config.ProxyPathConfig{
+		APIPath + mnAlertManagers: &config.PathConfig{
 			Path:            APIPath + mnAlertManagers,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -141,7 +141,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		APIPath + mnStatus: &config.ProxyPathConfig{
+		APIPath + mnStatus: &config.PathConfig{
 			Path:            APIPath + mnStatus,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -151,13 +151,13 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		APIPath: &config.ProxyPathConfig{
+		APIPath: &config.PathConfig{
 			Path:        APIPath,
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet, http.MethodPost},
 		},
 
-		"/": &config.ProxyPathConfig{
+		"/": &config.PathConfig{
 			Path:        "/",
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet, http.MethodPost},

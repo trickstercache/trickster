@@ -34,11 +34,11 @@ func (c *Client) Handlers() map[string]http.Handler {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []string) {
+func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) {
 
-	paths := map[string]*config.ProxyPathConfig{
+	paths := map[string]*config.PathConfig{
 
-		"/" + mnRaw: &config.ProxyPathConfig{
+		"/" + mnRaw: &config.PathConfig{
 			Path:            "/" + mnRaw,
 			HandlerName:     mnRaw,
 			Methods:         []string{http.MethodGet},
@@ -48,7 +48,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		"/" + mnRollup: &config.ProxyPathConfig{
+		"/" + mnRollup: &config.PathConfig{
 			Path:            "/" + mnRollup,
 			HandlerName:     mnRollup,
 			Methods:         []string{http.MethodGet},
@@ -58,7 +58,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		"/" + mnFetch: &config.ProxyPathConfig{
+		"/" + mnFetch: &config.PathConfig{
 			Path:            "/" + mnFetch,
 			HandlerName:     mnFetch,
 			Methods:         []string{http.MethodGet},
@@ -68,7 +68,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		"/" + mnRead: &config.ProxyPathConfig{
+		"/" + mnRead: &config.PathConfig{
 			Path:            "/" + mnRead,
 			HandlerName:     mnRead,
 			Methods:         []string{http.MethodGet},
@@ -78,7 +78,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		"/" + mnHistogram: &config.ProxyPathConfig{
+		"/" + mnHistogram: &config.PathConfig{
 			Path:            "/" + mnHistogram,
 			HandlerName:     mnHistogram,
 			Methods:         []string{http.MethodGet},
@@ -88,7 +88,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		"/" + mnFind: &config.ProxyPathConfig{
+		"/" + mnFind: &config.PathConfig{
 			Path:            "/" + mnFind,
 			HandlerName:     mnFind,
 			Methods:         []string{http.MethodGet},
@@ -98,7 +98,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		"/" + mnState: &config.ProxyPathConfig{
+		"/" + mnState: &config.PathConfig{
 			Path:            "/" + mnState,
 			HandlerName:     mnState,
 			Methods:         []string{http.MethodGet},
@@ -108,7 +108,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		"/" + mnCAQL: &config.ProxyPathConfig{
+		"/" + mnCAQL: &config.PathConfig{
 			Path:            "/" + mnCAQL,
 			HandlerName:     mnCAQL,
 			Methods:         []string{http.MethodGet},
@@ -118,7 +118,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		"/" + mnCAQLPub: &config.ProxyPathConfig{
+		"/" + mnCAQLPub: &config.PathConfig{
 			Path:            "/" + mnCAQLPub,
 			HandlerName:     mnCAQL,
 			Methods:         []string{http.MethodGet},
@@ -128,7 +128,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		"/": &config.ProxyPathConfig{
+		"/": &config.PathConfig{
 			Path:        "/",
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet},

@@ -18,8 +18,8 @@ import (
 	"time"
 )
 
-// ProxyPathConfig ...
-type ProxyPathConfig struct {
+// PathConfig defines a URL Path that is associated with an HTTP Handler
+type PathConfig struct {
 	// Path indicates the HTTP Request's URL PATH to which this configuration applies
 	Path string `toml:"path"`
 	// HandlerName provides the name of the HTTP handler to use
@@ -43,7 +43,7 @@ type ProxyPathConfig struct {
 	// NoMetrics, when set to true, disables metrics decoration for the path
 	NoMetrics bool `toml:"no_metrics"`
 
-	// Synthesized ProxyPathConfig Values
+	// Synthesized PathConfig Values
 	//
 	// DefaultTTL is the time.Duration representation of DefaultTTLSecs
 	DefaultTTL time.Duration `toml:"-"`
@@ -61,7 +61,7 @@ type ProxyPathConfig struct {
 }
 
 // Merge merges the non-default values of the provided ProxyPathConfig into the subject ProxyPathConfig
-func (p *ProxyPathConfig) Merge(p2 *ProxyPathConfig) {
+func (p *PathConfig) Merge(p2 *PathConfig) {
 	for _, c := range p.custom {
 		switch c {
 		case "path":

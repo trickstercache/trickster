@@ -126,7 +126,7 @@ type OriginConfig struct {
 	// this allows propagation of upstream backfill operations that modify recently-served data
 	BackfillToleranceSecs int64 `toml:"backfill_tolerance_secs"`
 	// PathList is a list of ProxyPathConfigs that control the behavior of the given paths when requested
-	Paths map[string]*ProxyPathConfig `toml:"paths"`
+	Paths map[string]*PathConfig `toml:"paths"`
 	// NegativeCache is a map of HTTP Status Codes that are cached for the provided duration, usually used for failures (e.g., 404's for 10s)
 	NegativeCacheSecs map[string]int `toml:"negative_cache"`
 	// TimeseriesEvictionMethod
@@ -345,7 +345,7 @@ func NewOriginConfig() *OriginConfig {
 		MaxIdleConns:                 defaultMaxIdleConns,
 		NegativeCache:                make(map[int]time.Duration),
 		NegativeCacheSecs:            make(map[string]int),
-		Paths:                        make(map[string]*ProxyPathConfig),
+		Paths:                        make(map[string]*PathConfig),
 		Timeout:                      time.Second * defaultOriginTimeoutSecs,
 		TimeoutSecs:                  defaultOriginTimeoutSecs,
 		TimeseriesEvictionMethod:     defaultOriginTEM,

@@ -41,11 +41,11 @@ func (c *Client) Handlers() map[string]http.Handler {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []string) {
+func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) {
 
-	paths := map[string]*config.ProxyPathConfig{
+	paths := map[string]*config.PathConfig{
 
-		"/" + mnQuery: &config.ProxyPathConfig{
+		"/" + mnQuery: &config.PathConfig{
 			Path:            "/" + mnQuery,
 			HandlerName:     mnQuery,
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -55,7 +55,7 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.ProxyPathConfig, []str
 			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
-		"/": &config.ProxyPathConfig{
+		"/": &config.PathConfig{
 			Path:        "/",
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet, http.MethodPost},
