@@ -16,7 +16,6 @@ package config
 import (
 	"bytes"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -154,44 +153,6 @@ type OriginConfig struct {
 
 	TimeseriesRetention      time.Duration            `toml:"-"`
 	TimeseriesEvictionMethod TimeseriesEvictionMethod `toml:"-"`
-}
-
-// ProxyPathConfig ...
-type ProxyPathConfig struct {
-	// Path indicates the HTTP Request's URL PATH to which this configuration applies
-	Path string `toml:"path"`
-	// HandlerName provides the name of the HTTP handler to use
-	HandlerName string `toml:"handler"`
-	// Methods provides the list of permitted HTTP request methods for this Path
-	Methods []string `toml:"methods"`
-	// CacheKeyParams provides the list of http request query parameters to be included in the hash for each query's cache key
-	CacheKeyParams []string `toml:"cache_key_params"`
-	// CacheKeyHeaders provides the list of http request headers to be included in the hash for each query's cache key
-	CacheKeyHeaders []string `toml:"cache_key_headers"`
-	// DefaultTTLSecs indicates the TTL Cache for this path. If
-	DefaultTTLSecs int `toml:"default_ttl_secs"`
-	// RequestHeaders is a map of headers that will be added to requests to the upstream Origin for this path
-	RequestHeaders map[string]string `toml:"request_headers"`
-	// ResponseHeaders is a map of http headers that will be added to responses to the downstream client
-	ResponseHeaders map[string]string `toml:"response_headers"`
-	// ResponseCode sets a custom response code to be sent to downstream clients for this path.
-	ResponseCode int `toml:"response_code"`
-	// ResponseBody sets a custom response body to be sent to the donstream client for this path.
-	ResponseBody string `toml:"response_body"`
-
-	// Synthesized ProxyPathConfig Values
-	//
-	// DefaultTTL is the time.Duration representation of DefaultTTLSecs
-	DefaultTTL time.Duration `toml:"-"`
-	// Handler is a pointer to the HTTP Handler method represented by the HandlerName
-	Handler func(w http.ResponseWriter, r *http.Request) `toml:"-"`
-	// Order is this Path's order index in the list of configured Paths
-	Order int `toml:"-"`
-	// HasCustomResponseBody is a boolean indicating if the response body is custom
-	// this flag allows an empty string response to be configured as a return value
-	HasCustomResponseBody bool `toml:"-"`
-	// ResponseBodyBytes provides a byte slice version of the ResponseBody value
-	ResponseBodyBytes []byte `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -796,31 +757,4 @@ func (c *TricksterConfig) String() string {
 	e := toml.NewEncoder(&buf)
 	e.Encode(cp)
 	return buf.String()
-}
-
-// LookupPathConfig will return a ProxyPathConfig based on the provided path and lookup dictionary
-func LookupPathConfig(dict map[string]*ProxyPathConfig, path string) *ProxyPathConfig {
-
-	// If the path is an exact match
-	if cfg, ok := dict[path]; ok {
-		return cfg
-	}
-
-	// else we iterate
-	var configuredPath string
-	pathLen := 0
-	for p := range dict {
-		lp := len(p)
-		if strings.HasPrefix(path, p) && lp > pathLen {
-			configuredPath = p
-			pathLen = lp
-		}
-	}
-
-	if pathLen > 0 {
-		fmt.Println("Found path config")
-		return dict[configuredPath]
-	}
-
-	return nil
 }
