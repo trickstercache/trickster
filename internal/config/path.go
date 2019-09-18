@@ -47,8 +47,8 @@ type ProxyPathConfig struct {
 	//
 	// DefaultTTL is the time.Duration representation of DefaultTTLSecs
 	DefaultTTL time.Duration `toml:"-"`
-	// Handler is a pointer to the HTTP Handler method represented by the HandlerName
-	Handler func(w http.ResponseWriter, r *http.Request) `toml:"-"`
+	// Handler is the HTTP Handler represented by the Path's HandlerName
+	Handler http.Handler `toml:"-"`
 	// Order is this Path's order index in the list of configured Paths
 	Order int `toml:"-"`
 	// HasCustomResponseBody is a boolean indicating if the response body is custom
@@ -58,4 +58,14 @@ type ProxyPathConfig struct {
 	ResponseBodyBytes []byte `toml:"-"`
 
 	options []string `toml:"-"`
+}
+
+// Merge merges one ProxyPathConfig into another
+func (p *ProxyPathConfig) Merge(p2 *ProxyPathConfig) {
+
+	// // options must be a
+
+	// for _, c := range p.options {
+	// 	p[c] = p2[c]
+	// }
 }
