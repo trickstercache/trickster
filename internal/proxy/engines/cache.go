@@ -25,6 +25,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/util/context"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/md5"
 )
@@ -74,28 +75,22 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 
 // DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
 func DeriveCacheKey(c model.Client, cfg *config.OriginConfig, r *model.Request, extra string) string {
-	var hashParams []string
-	var hashHeaders []string
 
-	matchLen := -1
-	for k, p := range cfg.Paths {
-		if strings.Index(r.URL.Path, k) > -1 && len(k) > matchLen {
-			matchLen = len(k)
-			hashParams = p.CacheKeyParams
-			hashHeaders = p.CacheKeyHeaders
-		}
+	p := context.PathConfig(r.ClientRequest.Context())
+	if p == nil {
+		return md5.Checksum(r.URL.Path + extra)
 	}
 
 	params := r.URL.Query()
-	vals := make([]string, 0, len(hashParams)+len(hashHeaders))
+	vals := make([]string, 0, len(p.CacheKeyParams)+len(p.CacheKeyHeaders))
 
-	for _, p := range hashParams {
+	for _, p := range p.CacheKeyParams {
 		if v := params.Get(p); v != "" {
 			vals = append(vals, v)
 		}
 	}
 
-	for _, p := range hashHeaders {
+	for _, p := range p.CacheKeyHeaders {
 		if v := r.Headers.Get(p); v != "" {
 			vals = append(vals, v)
 		}
