@@ -378,6 +378,8 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 	for k, v := range c.Origins {
 
 		oc := NewOriginConfig()
+		oc.Name = k
+
 		if metadata.IsDefined("origins", k, "origin_type") {
 			oc.OriginType = v.OriginType
 		}
