@@ -17,22 +17,22 @@ import (
 	"net/http"
 
 	"github.com/Comcast/trickster/internal/proxy/headers"
-	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/util/context"
 )
 
-// HandleLocalResponse responds to an HTTP Request with the
-func HandleLocalResponse(w http.ResponseWriter, r *http.Request, cr *model.Request) {
-
-	if len(cr.PathConfig.ResponseHeaders) > 0 {
-		headers.UpdateHeaders(w.Header(), cr.PathConfig.ResponseHeaders)
+// HandleLocalResponse responds to an HTTP Request based on the local configuration without making any upstream requests
+func HandleLocalResponse(w http.ResponseWriter, r *http.Request) {
+	p := context.PathConfig(r.Context())
+	if p == nil {
+		return
 	}
-
-	if cr.PathConfig.ResponseCode > 0 {
-		w.WriteHeader(cr.PathConfig.ResponseCode)
+	if len(p.ResponseHeaders) > 0 {
+		headers.UpdateHeaders(w.Header(), p.ResponseHeaders)
+	}
+	if p.ResponseCode > 0 {
+		w.WriteHeader(p.ResponseCode)
 	} else {
 		w.WriteHeader(http.StatusOK)
 	}
-
-	w.Write([]byte(cr.PathConfig.ResponseBody))
-
+	w.Write([]byte(p.ResponseBody))
 }

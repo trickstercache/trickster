@@ -17,10 +17,9 @@ import (
 	"net/http"
 
 	th "github.com/Comcast/trickster/internal/proxy/handlers"
-	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
 // LocalResponseHandler ...
 func (c Client) LocalResponseHandler(w http.ResponseWriter, r *http.Request) {
-	th.HandleLocalResponse(w, r, model.NewRequest(c.Configuration(), "LocalResponseHandler", r.Method, nil, r.Header, c.config.Timeout, r, c.webClient))
+	th.HandleLocalResponse(w, r)
 }
