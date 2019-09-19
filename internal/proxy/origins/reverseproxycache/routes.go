@@ -17,6 +17,7 @@ import (
 	"net/http"
 
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/handlers"
 )
 
 func (c *Client) registerHandlers() {
@@ -27,7 +28,7 @@ func (c *Client) registerHandlers() {
 	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
 	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
 	c.handlers["proxycache"] = http.HandlerFunc(c.ProxyCacheHandler)
-	c.handlers["localresponse"] = http.HandlerFunc(c.LocalResponseHandler)
+	c.handlers["localresponse"] = http.HandlerFunc(handlers.HandleLocalResponse)
 }
 
 // Handlers returns a map of the HTTP Handlers the client has registered
