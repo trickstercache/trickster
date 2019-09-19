@@ -17,11 +17,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Comcast/trickster/internal/proxy/headers"
-	"github.com/Comcast/trickster/internal/util/log"
-
 	tc "github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/pkg/locks"
 )
 
@@ -33,6 +33,8 @@ func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mod
 
 // FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
 func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Cache, ttl time.Duration, noLock bool) ([]byte, *http.Response, bool) {
+
+	p := context.PathConfig(r.ClientRequest.Context())
 
 	cfg := client.Configuration()
 	key := cfg.Host + "." + DeriveCacheKey(client, cfg, r, "")
@@ -94,8 +96,9 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Ca
 	if d.CachingPolicy != nil && d.CachingPolicy.IsFresh {
 		cacheStatus = tc.LookupStatusHit
 	} else {
-
+		headers.UpdateHeaders(r.Headers, p.RequestHeaders)
 		body, resp, elapsed = Fetch(r)
+		headers.UpdateHeaders(resp.Header, p.ResponseHeaders)
 		cp := GetResponseCachingPolicy(resp.StatusCode, r.OriginConfig.NegativeCache, resp.Header, ttl)
 
 		// Cache is revalidated, update headers and resulting caching policy
