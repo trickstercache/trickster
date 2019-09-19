@@ -175,7 +175,7 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 		if !ok {
 			continue
 		}
-		log.Debug("registering origin handler path", log.Pairs{"originName": o.Name, "path": v, "handlerName": p.HandlerName})
+		log.Debug("registering origin handler path", log.Pairs{"originName": o.Name, "path": v, "handlerName": p.HandlerName, "originHost": o.Host, "handledPath": "/"+o.Name+p.Path})
 		if p.Handler != nil && len(p.Methods) > 0 {
 			// Host Header Routing
 			routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...).Host(o.Name)
