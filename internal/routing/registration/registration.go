@@ -137,8 +137,10 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 	for k, p := range o.Paths {
 		p.Path = k
 		if p2, ok := paths[k]; ok {
-			p.Merge(p2)
+			p2.Merge(p)
 			continue
+		} else {
+			// TODO: merge to some kind of default here.
 		}
 		paths[k] = p
 	}
@@ -175,12 +177,24 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 		if !ok {
 			continue
 		}
-		log.Debug("registering origin handler path", log.Pairs{"originName": o.Name, "path": v, "handlerName": p.HandlerName, "originHost": o.Host, "handledPath": "/"+o.Name+p.Path})
+		log.Debug("registering origin handler path", 
+		log.Pairs{"originName": o.Name, "path": v, "handlerName": p.HandlerName, 
+		"originHost": o.Host, "handledPath": "/" + o.Name + p.Path, "matchType": p.MatchType})
 		if p.Handler != nil && len(p.Methods) > 0 {
-			// Host Header Routing
-			routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...).Host(o.Name)
-			// Path Routing
-			routing.Router.Handle("/"+o.Name+p.Path, decorate(p)).Methods(p.Methods...)
+			switch p.MatchType {
+			case config.PathMatchTypePrefix:
+				// Case where we path match by prefix
+				// Host Header Routing
+				routing.Router.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...).Host(o.Name)
+				// Path Routing
+				routing.Router.PathPrefix("/" + o.Name + p.Path).Handler(decorate(p)).Methods(p.Methods...)
+			default:
+				// default to exact match
+				// Host Header Routing
+				routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...).Host(o.Name)
+				// Path Routing
+				routing.Router.Handle("/"+o.Name+p.Path, decorate(p)).Methods(p.Methods...)
+			}
 		}
 	}
 
@@ -192,10 +206,17 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 				continue
 			}
 			if p.Handler != nil && len(p.Methods) > 0 {
-				log.Debug("registering default origin handler paths", log.Pairs{"originName": o.Name, "path": p.Path, "handlerName": p.HandlerName})
+				log.Debug("registering default origin handler paths", log.Pairs{"originName": o.Name, "path": p.Path, "handlerName": p.HandlerName, "matchType": p.MatchType})
+				switch p.MatchType {
+				case config.PathMatchTypePrefix:
+					// Case where we path match by prefix
+					routing.Router.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...)
+				default:
+					// default to exact match
+					routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...)
+				}
 				routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...)
 			}
 		}
 	}
-
 }
