@@ -56,12 +56,14 @@ const (
 // Client values provide access to IRONdb and implement the Trickster proxy
 // client interface.
 type Client struct {
-	name      string
-	user      string
-	pass      string
-	config    *config.OriginConfig
-	cache     cache.Cache
-	webClient *http.Client
+	name               string
+	user               string
+	pass               string
+	config             *config.OriginConfig
+	cache              cache.Cache
+	webClient          *http.Client
+	handlers           map[string]http.Handler
+	handlersRegistered bool
 }
 
 // NewClient returns a new Client instance.

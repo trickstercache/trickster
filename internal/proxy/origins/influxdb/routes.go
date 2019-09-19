@@ -20,24 +20,21 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/headers"
 )
 
-var handlers = make(map[string]http.Handler)
-var handlersRegistered = false
-
 func (c *Client) registerHandlers() {
-	handlersRegistered = true
+	c.handlersRegistered = true
 	// This is the registry of handlers that Trickster supports for Prometheus,
 	// and are able to be referenced by name (map key) in Config Files
-	handlers["health"] = http.HandlerFunc(c.HealthHandler)
-	handlers[mnQuery] = http.HandlerFunc(c.QueryHandler)
-	handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
+	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
+	c.handlers[mnQuery] = http.HandlerFunc(c.QueryHandler)
+	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
 }
 
 // Handlers returns a map of the HTTP Handlers the client has registered
 func (c *Client) Handlers() map[string]http.Handler {
-	if !handlersRegistered {
+	if !c.handlersRegistered {
 		c.registerHandlers()
 	}
-	return handlers
+	return c.handlers
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType

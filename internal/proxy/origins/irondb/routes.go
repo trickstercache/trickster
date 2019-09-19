@@ -6,31 +6,28 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 )
 
-var handlers = make(map[string]http.Handler)
-var handlersRegistered = false
-
 func (c *Client) registerHandlers() {
-	handlersRegistered = true
+	c.handlersRegistered = true
 	// This is the registry of handlers that Trickster supports for Prometheus,
 	// and are able to be referenced by name (map key) in Config Files
-	handlers["health"] = http.HandlerFunc(c.HealthHandler)
-	handlers[mnRaw] = http.HandlerFunc(c.RawHandler)
-	handlers[mnRollup] = http.HandlerFunc(c.RollupHandler)
-	handlers[mnFetch] = http.HandlerFunc(c.FetchHandler)
-	handlers[mnRead] = http.HandlerFunc(c.TextHandler)
-	handlers[mnHistogram] = http.HandlerFunc(c.HistogramHandler)
-	handlers[mnFind] = http.HandlerFunc(c.FindHandler)
-	handlers[mnState] = http.HandlerFunc(c.StateHandler)
-	handlers[mnCAQL] = http.HandlerFunc(c.CAQLHandler)
-	handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
+	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
+	c.handlers[mnRaw] = http.HandlerFunc(c.RawHandler)
+	c.handlers[mnRollup] = http.HandlerFunc(c.RollupHandler)
+	c.handlers[mnFetch] = http.HandlerFunc(c.FetchHandler)
+	c.handlers[mnRead] = http.HandlerFunc(c.TextHandler)
+	c.handlers[mnHistogram] = http.HandlerFunc(c.HistogramHandler)
+	c.handlers[mnFind] = http.HandlerFunc(c.FindHandler)
+	c.handlers[mnState] = http.HandlerFunc(c.StateHandler)
+	c.handlers[mnCAQL] = http.HandlerFunc(c.CAQLHandler)
+	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
 }
 
 // Handlers returns a map of the HTTP Handlers the client has registered
 func (c *Client) Handlers() map[string]http.Handler {
-	if !handlersRegistered {
+	if !c.handlersRegistered {
 		c.registerHandlers()
 	}
-	return handlers
+	return c.handlers
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
