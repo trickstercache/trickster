@@ -15,13 +15,43 @@ package config
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 )
+
+// PathMatchType enumerates the types of Path Matches used when registering Paths with the Router
+type PathMatchType int
+
+const (
+	// PathMatchTypeExact indicates the router will map the Path by exact match against incoming requests
+	PathMatchTypeExact = PathMatchType(iota)
+	// PathMatchTypePrefix indicates the router will map the Path by prefix against incoming requests
+	PathMatchTypePrefix
+)
+
+var pathMatchTypeNames = map[string]PathMatchType{
+	"exact":  PathMatchTypeExact,
+	"prefix": PathMatchTypePrefix,
+}
+
+var pathMatchTypeValues = map[PathMatchType]string{
+	PathMatchTypeExact:  "exact",
+	PathMatchTypePrefix: "prefix",
+}
+
+func (t PathMatchType) String() string {
+	if v, ok := pathMatchTypeValues[t]; ok {
+		return v
+	}
+	return strconv.Itoa(int(t))
+}
 
 // PathConfig defines a URL Path that is associated with an HTTP Handler
 type PathConfig struct {
 	// Path indicates the HTTP Request's URL PATH to which this configuration applies
 	Path string `toml:"path"`
+	// MatchTypeName indicates the type of path match the router will apply to the path ('exact' or 'prefix')
+	MatchTypeName string `toml:"match_type"`
 	// HandlerName provides the name of the HTTP handler to use
 	HandlerName string `toml:"handler"`
 	// Methods provides the list of permitted HTTP request methods for this Path
@@ -56,16 +86,21 @@ type PathConfig struct {
 	HasCustomResponseBody bool `toml:"-"`
 	// ResponseBodyBytes provides a byte slice version of the ResponseBody value
 	ResponseBodyBytes []byte `toml:"-"`
+	// MatchType is the PathMatchType representation of MatchTypeName
+	MatchType PathMatchType `toml:"-"`
 
 	custom []string `toml:"-"`
 }
 
 // Merge merges the non-default values of the provided ProxyPathConfig into the subject ProxyPathConfig
 func (p *PathConfig) Merge(p2 *PathConfig) {
-	for _, c := range p.custom {
+	for _, c := range p2.custom {
 		switch c {
 		case "path":
 			p.Path = p2.Path
+		case "match_type":
+			p.MatchType = p2.MatchType
+			p.MatchTypeName = p2.MatchTypeName
 		case "handler":
 			p.HandlerName = p2.HandlerName
 			p.Handler = p2.Handler
