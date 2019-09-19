@@ -368,7 +368,7 @@ func (c *TricksterConfig) setDefaults(metadata toml.MetaData) {
 	c.setCachingDefaults(metadata)
 }
 
-var pathMembers = []string{"parts", "handler", "methods", "cache_key_params", "cache_key_headers", "default_ttl_secs",
+var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers", "default_ttl_secs",
 	"request_headers", "response_headers", "response_code", "response_body", "no_metrics"}
 
 func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
@@ -449,6 +449,13 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 				}
 				if metadata.IsDefined("origins", k, "paths", l, "response_body") {
 					p.ResponseBodyBytes = []byte(p.ResponseBody)
+				}
+
+				if mt, ok := pathMatchTypeNames[strings.ToLower(p.MatchTypeName)]; ok {
+					p.MatchType = mt
+				} else {
+					p.MatchType = PathMatchTypeExact
+					p.MatchTypeName = "exact"
 				}
 				oc.Paths[p.Path] = p
 				j++
@@ -697,6 +704,7 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 		o.TimeseriesRetentionFactor = v.TimeseriesRetentionFactor
 		o.TimeseriesEvictionMethodName = v.TimeseriesEvictionMethodName
 		o.TimeseriesEvictionMethod = v.TimeseriesEvictionMethod
+		// TODO: ADD PATHS
 		nc.Origins[k] = o
 	}
 
