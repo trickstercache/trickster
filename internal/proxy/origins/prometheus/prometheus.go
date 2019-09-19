@@ -71,12 +71,14 @@ const (
 
 // Client Implements Proxy Client Interface
 type Client struct {
-	name      string
-	user      string
-	pass      string
-	config    *config.OriginConfig
-	cache     cache.Cache
-	webClient *http.Client
+	name               string
+	user               string
+	pass               string
+	config             *config.OriginConfig
+	cache              cache.Cache
+	webClient          *http.Client
+	handlers           map[string]http.Handler
+	handlersRegistered bool
 }
 
 // NewClient returns a new Client Instance
