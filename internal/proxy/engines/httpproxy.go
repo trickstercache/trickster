@@ -27,6 +27,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/Comcast/trickster/internal/util/context"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
@@ -41,13 +42,16 @@ func ProxyRequest(r *model.Request, w http.ResponseWriter) {
 // Fetch makes an HTTP request to the provided Origin URL
 func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 
+	p := context.PathConfig(r.ClientRequest.Context())
+
 	if r != nil && r.Headers != nil {
 		headers.AddProxyHeaders(r.ClientRequest.RemoteAddr, r.Headers)
 	}
 
 	headers.RemoveClientHeaders(r.Headers)
-	if r.PathConfig != nil {
-		headers.UpdateHeaders(r.Headers, r.PathConfig.RequestHeaders)
+
+	if p != nil {
+		headers.UpdateHeaders(r.Headers, p.RequestHeaders)
 	}
 
 	start := time.Now()
@@ -70,6 +74,9 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 		if resp == nil {
 			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r.ClientRequest, Header: make(http.Header)}
 		}
+		if p != nil {
+			headers.UpdateHeaders(resp.Header, p.ResponseHeaders)
+		}
 		return []byte{}, resp, -1
 	}
 
@@ -90,15 +97,18 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 		}
 	}
 
+	hasCustomResponseBody := false
 	resp.Header.Del(headers.NameContentLength)
-	if r.PathConfig != nil {
-		headers.UpdateHeaders(resp.Header, r.PathConfig.ResponseHeaders)
+
+	if p != nil {
+		headers.UpdateHeaders(resp.Header, p.ResponseHeaders)
+		hasCustomResponseBody = p.HasCustomResponseBody
 	}
 
 	var body []byte
 
-	if r.PathConfig != nil && r.PathConfig.HasCustomResponseBody {
-		body = r.PathConfig.ResponseBodyBytes
+	if hasCustomResponseBody {
+		body = p.ResponseBodyBytes
 	} else {
 		body, err = ioutil.ReadAll(resp.Body)
 		resp.Body.Close()

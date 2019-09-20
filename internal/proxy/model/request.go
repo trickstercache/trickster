@@ -26,7 +26,6 @@ import (
 // Request contains information about an inbound HTTP request
 type Request struct {
 	OriginConfig       *config.OriginConfig
-	PathConfig         *config.PathConfig
 	HandlerName        string
 	HTTPMethod         string
 	URL                *url.URL

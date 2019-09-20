@@ -47,8 +47,9 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Ca
 	cpReq := GetRequestCachingPolicy(r.Headers)
 	if cpReq.NoCache {
 		// if the client provided Cache-Control: no-cache or Pragma: no-cache header, the request is proxy only.
-		body, resp, _ := Fetch(r)
+		body, resp, elapsed := Fetch(r)
 		cache.Remove(key)
+		recordOPCResult(r, tc.LookupStatusProxyOnly, resp.StatusCode, r.URL.Path, elapsed.Seconds(), resp.Header)
 		return body, resp, false
 	}
 
@@ -96,9 +97,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Ca
 	if d.CachingPolicy != nil && d.CachingPolicy.IsFresh {
 		cacheStatus = tc.LookupStatusHit
 	} else {
-		headers.UpdateHeaders(r.Headers, p.RequestHeaders)
 		body, resp, elapsed = Fetch(r)
-		headers.UpdateHeaders(resp.Header, p.ResponseHeaders)
 		cp := GetResponseCachingPolicy(resp.StatusCode, r.OriginConfig.NegativeCache, resp.Header, ttl)
 
 		// Cache is revalidated, update headers and resulting caching policy
@@ -142,7 +141,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Ca
 	d.CachingPolicy.NoCache = d.CachingPolicy.NoCache || cpReq.NoCache || len(body) >= cache.Configuration().MaxObjectSizeBytes
 
 	if !d.CachingPolicy.MustRevalidate && !d.CachingPolicy.NoCache && d.CachingPolicy.FreshnessLifetime <= 0 {
-		d.CachingPolicy.FreshnessLifetime = int(r.PathConfig.DefaultTTL.Seconds())
+		d.CachingPolicy.FreshnessLifetime = int(p.DefaultTTL.Seconds())
 	}
 
 	if d.CachingPolicy.NoCache || (!d.CachingPolicy.CanRevalidate && d.CachingPolicy.FreshnessLifetime <= 0) {
