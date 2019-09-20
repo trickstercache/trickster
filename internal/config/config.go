@@ -768,6 +768,19 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 
 func (c *TricksterConfig) String() string {
 	cp := c.copy()
+
+	// the toml library will panic if the Handler is assigned,
+	// even though this field is annotated as skip ("-") in the prototype
+	// so we'll iterate the paths and set to nil the Handler (in our local copy only)
+	for _, v := range cp.Origins {
+		if v != nil {
+			for _, w := range v.Paths {
+				w.Handler = nil
+			}
+		}
+	}
+
+	// strip Redis password
 	for k, v := range cp.Caches {
 		if v != nil {
 			cp.Caches[k].Redis.Password = "*****"
