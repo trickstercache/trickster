@@ -12,3 +12,59 @@
  */
 
 package reverseproxycache
+
+import (
+	"testing"
+
+	cr "github.com/Comcast/trickster/internal/cache/registration"
+	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/Comcast/trickster/internal/util/metrics"
+)
+
+const localResponse = "localresponse"
+
+func TestRegisterHandlers(t *testing.T) {
+	c := &Client{}
+	c.registerHandlers()
+	if _, ok := c.handlers[localResponse]; !ok {
+		t.Errorf("expected to find handler named: %s", localResponse)
+	}
+}
+
+func TestHandlers(t *testing.T) {
+	c := &Client{}
+	m := c.Handlers()
+	if _, ok := m[localResponse]; !ok {
+		t.Errorf("expected to find handler named: %s", localResponse)
+	}
+}
+
+func TestDefaultPathConfigs(t *testing.T) {
+
+	err := config.Load("trickster", "test", []string{"-origin-url", "http://127.0.0.1", "-origin-type", "rpc", "-log-level", "debug"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+	log.Init()
+	metrics.Init()
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	c := &Client{cache: cache}
+	dpc, ordered := c.DefaultPathConfigs()
+
+	if _, ok := dpc["/"]; !ok {
+		t.Errorf("expected to find path named: %s", "/")
+	}
+
+	const expectedLen = 1
+	if len(ordered) != expectedLen {
+		t.Errorf("expected ordered length to be: %d got %d", expectedLen, len(ordered))
+	}
+
+}

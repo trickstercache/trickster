@@ -138,11 +138,12 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 		p.Path = k
 		if p2, ok := paths[k]; ok {
 			p2.Merge(p)
+			o.Paths[k] = p2
 			continue
-		} else {
-			// TODO: merge to some kind of default here.
-		}
-		paths[k] = p
+		} 
+		p3 := config.NewPathConfig()
+		p3.Merge(p)
+		o.Paths[k] = p3
 	}
 
 	// Ensure the configured health check endpoint starts with "/""

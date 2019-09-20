@@ -7,6 +7,7 @@ import (
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
@@ -27,15 +28,24 @@ func TestFindHandler(t *testing.T) {
 		t.Error(err)
 	}
 
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://0/find/1/tags?query=metric"+
-		"&activity_start_secs=0&activity_end_secs=900", nil)
+	oc := config.Origins["default"]
 	client := &Client{
 		name:      "default",
 		config:    config.Origins["default"],
 		cache:     cache,
 		webClient: tu.NewTestWebClient(),
 	}
+
+	oc.Paths, _ = client.DefaultPathConfigs()
+	p, ok := oc.Paths["/"+mnFind]
+	if !ok {
+		t.Errorf("could not find path config named %s", mnFind)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/find/1/tags?query=metric"+
+		"&activity_start_secs=0&activity_end_secs=900", nil)
+	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, p))
 
 	client.FindHandler(w, r)
 	resp := w.Result()

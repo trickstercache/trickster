@@ -89,7 +89,7 @@ func CopyHeaders(h http.Header) http.Header {
 
 // UpdateHeaders updates the provided headers collection with the provided updates
 func UpdateHeaders(headers http.Header, updates map[string]string) {
-	if updates == nil || len(updates) == 0 {
+	if headers == nil || updates == nil || len(updates) == 0 {
 		return
 	}
 	for k, v := range updates {

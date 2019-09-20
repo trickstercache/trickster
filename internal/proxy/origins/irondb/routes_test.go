@@ -1,77 +1,53 @@
 package irondb
 
 import (
-	"net/http/httptest"
 	"testing"
 
-	"github.com/gorilla/mux"
-
+	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/routing"
-	tu "github.com/Comcast/trickster/internal/util/testing"
+	"github.com/Comcast/trickster/internal/util/log"
 )
 
-func TestRegisterRoutesNoDefault(t *testing.T) {
-	routing.Router = mux.NewRouter()
-	es := tu.NewTestServer(200, "{}")
-	defer es.Close()
-	err := config.Load("trickster", "test",
-		[]string{"-origin-url", es.URL,
-			"-origin-type", "prometheus",
-			"-log-level", "debug"})
-	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
-	}
-
-	oc := config.Origins["default"]
-	oc.IsDefault = false
-	client := Client{config: oc}
-	client.RegisterRoutes("test_default", oc)
-
-	// This should be false.
-	r := httptest.NewRequest("GET", "http://0/health", nil)
-	rm := &mux.RouteMatch{}
-	if routing.Router.Match(r, rm) {
-		t.Errorf("unexpected route match")
-		return
-	}
-
-	// This should be true.
-	r = httptest.NewRequest("GET", "http://0/test_default/health", nil)
-	if !routing.Router.Match(r, rm) {
-		t.Errorf("could not match route")
-		return
+func TestRegisterHandlers(t *testing.T) {
+	c := &Client{}
+	c.registerHandlers()
+	if _, ok := c.handlers[mnCAQL]; !ok {
+		t.Errorf("expected to find handler named: %s", mnCAQL)
 	}
 }
 
-func TestRegisterRoutesDefault(t *testing.T) {
-	routing.Router = mux.NewRouter()
-	es := tu.NewTestServer(200, "{}")
-	defer es.Close()
-	err := config.Load("trickster", "test",
-		[]string{"-origin-url", es.URL,
-			"-origin-type", "irondb",
-			"-log-level", "debug"})
+func TestHandlers(t *testing.T) {
+	c := &Client{}
+	m := c.Handlers()
+	if _, ok := m[mnCAQL]; !ok {
+		t.Errorf("expected to find handler named: %s", mnCAQL)
+	}
+}
+
+func TestDefaultPathConfigs(t *testing.T) {
+
+	err := config.Load("trickster", "test", []string{"-origin-url", "http://127.0.0.1", "-origin-type", "irondb", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
-
-	oc := config.Origins["default"]
-	client := Client{config: oc}
-	client.RegisterRoutes("default", oc)
-
-	// This should be false.
-	r := httptest.NewRequest("GET", "http://0/health", nil)
-	rm := &mux.RouteMatch{}
-	if !routing.Router.Match(r, rm) {
-		t.Errorf("could not match route")
+	log.Init()
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
 		return
 	}
 
-	// This should be true.
-	r = httptest.NewRequest("GET", "http://0/default/health", nil)
-	if !routing.Router.Match(r, rm) {
-		t.Errorf("could not match route")
-		return
+	c := &Client{cache: cache}
+	dpc, ordered := c.DefaultPathConfigs()
+
+	if _, ok := dpc["/"]; !ok {
+		t.Errorf("expected to find path named: %s", "/")
 	}
+
+	const expectedLen = 9
+	if len(ordered) != expectedLen {
+		t.Errorf("expected ordered length to be: %d got %d", expectedLen, len(ordered))
+	}
+
 }

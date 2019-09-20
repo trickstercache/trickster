@@ -125,7 +125,7 @@ type OriginConfig struct {
 	// BackfillToleranceSecs prevents values with timestamps newer than the provided number of seconds from being cached
 	// this allows propagation of upstream backfill operations that modify recently-served data
 	BackfillToleranceSecs int64 `toml:"backfill_tolerance_secs"`
-	// PathList is a list of ProxyPathConfigs that control the behavior of the given paths when requested
+	// PathList is a list of PathConfigs that control the behavior of the given paths when requested
 	Paths map[string]*PathConfig `toml:"paths"`
 	// NegativeCache is a map of HTTP Status Codes that are cached for the provided duration, usually used for failures (e.g., 404's for 10s)
 	NegativeCacheSecs map[string]int `toml:"negative_cache"`

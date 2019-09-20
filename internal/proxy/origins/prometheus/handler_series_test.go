@@ -20,6 +20,7 @@ import (
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
@@ -39,10 +40,18 @@ func TestSeriesHandler(t *testing.T) {
 		t.Error(err)
 	}
 
+	oc := config.Origins["default"]
+	client := &Client{name: "default", config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
+
+	oc.Paths, _ = client.DefaultPathConfigs()
+	p, ok := oc.Paths[APIPath+mnSeries]
+	if !ok {
+		t.Errorf("could not find path config named %s", mnSeries)
+	}
+
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL+`/default/api/v1/series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}&start=100&end=100`, nil)
-
-	client := &Client{name: "default", config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
+	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, p))
 
 	client.SeriesHandler(w, r)
 

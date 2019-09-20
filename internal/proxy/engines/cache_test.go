@@ -15,6 +15,7 @@ package engines
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"testing"
@@ -26,14 +27,16 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
+	ct "github.com/Comcast/trickster/internal/util/context"
 )
 
 func TestDeriveCacheKey(t *testing.T) {
 
 	client := &PromTestClient{
 		config: &config.OriginConfig{
-			Paths: map[string]*config.ProxyPathConfig{
-				"/": &config.ProxyPathConfig{
+			Paths: map[string]*config.PathConfig{
+				"root": &config.PathConfig{
+					Path:            "/",
 					CacheKeyParams:  []string{"query", "step", "time"},
 					CacheKeyHeaders: []string{},
 				},
@@ -41,8 +44,11 @@ func TestDeriveCacheKey(t *testing.T) {
 		},
 	}
 
+	tr := httptest.NewRequest("GET", "http://127.0.0.1", nil)
+	tr = tr.WithContext(ct.WithConfigs(tr.Context(), client.Configuration(), nil, client.Configuration().Paths["root"]))
+
 	u := &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
-	r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}}
+	r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
 	key := DeriveCacheKey(client, client.config, r, "extra")
 
 	if key != "6667a75e76dea9a5cd6c6ba73e5825b5" {

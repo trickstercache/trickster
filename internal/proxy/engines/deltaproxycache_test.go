@@ -26,6 +26,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/Comcast/trickster/internal/util/context"
 	"github.com/Comcast/trickster/internal/util/md5"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 	"github.com/Comcast/trickster/pkg/promsim"
@@ -59,7 +60,8 @@ func setupTestServer() (*httptest.Server, *config.OriginConfig, *PromTestClient,
 
 	cfg := config.Origins["default"]
 	client := &PromTestClient{config: cfg, cache: cache, webClient: tu.NewTestWebClient()}
-	client.RegisterRoutes("default", cfg)
+
+	cfg.Paths, _ = client.DefaultPathConfigs()
 
 	p, ok := cfg.Paths["/api/v1/query_range"]
 	if !ok {
@@ -813,8 +815,11 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 
 	expected := string(b)
 
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+
 	w := httptest.NewRecorder()
-	client.QueryRangeHandler(w, r)
+	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, cache, cfg.Paths[APIPath+mnQueryRange])))
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -845,7 +850,7 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	// do it again and look for a cache hit on the timeseries and fast forward
 
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r)
+	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, cache, cfg.Paths[APIPath+mnQueryRange])))
 	resp = w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -888,7 +893,7 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"ffstatus": "err"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "proxy-error"})
 	if err != nil {
 		t.Error(err)
 	}
@@ -904,12 +909,12 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadRequest)
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"ffstatus": "err"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "proxy-error"})
 	if err != nil {
 		t.Error(err)
 	}

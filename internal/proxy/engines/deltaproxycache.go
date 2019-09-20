@@ -323,6 +323,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 func logDeltaRoutine(p log.Pairs) { log.Debug("delta routine completed", p) }
 
 func fetchTimeseries(r *model.Request, client model.Client) (timeseries.Timeseries, *model.HTTPDocument, time.Duration, error) {
+
 	body, resp, elapsed := Fetch(r)
 
 	d := &model.HTTPDocument{

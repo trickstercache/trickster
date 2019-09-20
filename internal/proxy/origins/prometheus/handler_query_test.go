@@ -20,6 +20,7 @@ import (
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
@@ -39,10 +40,18 @@ func TestQueryHandler(t *testing.T) {
 		t.Error(err)
 	}
 
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://0/query_range?q=up&time=0", nil)
-
+	oc := config.Origins["default"]
 	client := &Client{name: "default", config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
+
+	oc.Paths, _ = client.DefaultPathConfigs()
+	p, ok := oc.Paths[APIPath+mnQuery]
+	if !ok {
+		t.Errorf("could not find path config named %s", mnQuery)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/query?q=up&time=0", nil)
+	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, p))
 
 	client.QueryHandler(w, r)
 

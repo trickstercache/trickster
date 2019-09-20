@@ -20,6 +20,8 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/handlers"
 )
 
+const root = "/"
+
 func (c *Client) registerHandlers() {
 	c.handlersRegistered = true
 	c.handlers = make(map[string]http.Handler)

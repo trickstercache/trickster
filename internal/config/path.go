@@ -94,6 +94,22 @@ type PathConfig struct {
 	custom []string `toml:"-"`
 }
 
+// NewPathConfig returns a newly-instantiated *PathConfig
+func NewPathConfig() *PathConfig {
+	return &PathConfig{
+		Path:            "/",
+		Methods:         []string{http.MethodGet, http.MethodPost},
+		MatchTypeName:   "exact",
+		MatchType:       PathMatchTypeExact,
+		HandlerName:     "proxy",
+		CacheKeyParams:  make([]string, 0),
+		CacheKeyHeaders: make([]string, 0),
+		custom:          make([]string, 0),
+		RequestHeaders:  make(map[string]string),
+		ResponseHeaders: make(map[string]string),
+	}
+}
+
 // Copy returns an exact copy of the subject PathConfig
 func (p *PathConfig) Copy() *PathConfig {
 	c := &PathConfig{

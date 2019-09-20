@@ -30,10 +30,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	tm "github.com/Comcast/trickster/internal/proxy/model"
 	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
-	"github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/internal/util/log"
-	ts "github.com/Comcast/trickster/internal/util/strings"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 	"github.com/Comcast/trickster/pkg/sort/times"
 
@@ -42,12 +39,18 @@ import (
 
 // Prometheus API
 const (
-	APIPath      = "/api/v1/"
-	mnQueryRange = "query_range"
-	mnQuery      = "query"
-	mnLabels     = "label/" + model.MetricNameLabel + "/values"
-	mnSeries     = "series"
-	mnHealth     = "health"
+	APIPath         = "/api/v1/"
+	mnQueryRange    = "query_range"
+	mnQuery         = "query"
+	mnLabels        = "labels"
+	mnLabel         = "label"
+	mnSeries        = "series"
+	mnTargets       = "targets"
+	mnRules         = "rules"
+	mnAlerts        = "alerts"
+	mnAlertManagers = "alertmanagers"
+	mnStatus        = "status"
+	mnHealth        = "health"
 )
 
 // Origin Types
@@ -70,6 +73,7 @@ const (
 	upStep    = "step"
 	upTimeout = "timeout"
 	upTime    = "time"
+	upMatch   = "match[]"
 )
 
 // Client Implements Proxy Client Interface
@@ -84,11 +88,163 @@ type PromTestClient struct {
 	fftime          time.Time
 	InstantCacheKey string
 	RangeCacheKey   string
+
+	handlers           map[string]http.Handler
+	handlersRegistered bool
 }
 
 func newPromTestClient(name string, config *config.OriginConfig, cache cache.Cache) *PromTestClient {
 
 	return &PromTestClient{name: name, config: config, cache: cache, webClient: tu.NewTestWebClient()}
+}
+
+func (c *PromTestClient) registerHandlers() {
+	c.handlersRegistered = true
+	c.handlers = make(map[string]http.Handler)
+	// This is the registry of handlers that Trickster supports for Prometheus,
+	// and are able to be referenced by name (map key) in Config Files
+	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
+	c.handlers[mnQueryRange] = http.HandlerFunc(c.QueryRangeHandler)
+	c.handlers[mnQuery] = http.HandlerFunc(c.QueryHandler)
+	c.handlers[mnSeries] = http.HandlerFunc(c.SeriesHandler)
+	c.handlers["proxycache"] = http.HandlerFunc(c.QueryHandler)
+	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
+}
+
+// Handlers returns a map of the HTTP Handlers the client has registered
+func (c *PromTestClient) Handlers() map[string]http.Handler {
+	if !c.handlersRegistered {
+		c.registerHandlers()
+	}
+	return c.handlers
+}
+
+// DefaultPathConfigs returns the default PathConfigs for the given OriginType
+func (c *PromTestClient) DefaultPathConfigs() (map[string]*config.PathConfig, []string) {
+
+	paths := map[string]*config.PathConfig{
+
+		APIPath + mnQueryRange: &config.PathConfig{
+			Path:            APIPath + mnQueryRange,
+			HandlerName:     mnQueryRange,
+			Methods:         []string{http.MethodGet, http.MethodPost},
+			CacheKeyParams:  []string{upQuery, upStep},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			DefaultTTLSecs:  c.cache.Configuration().TimeseriesTTLSecs,
+			DefaultTTL:      c.cache.Configuration().TimeseriesTTL,
+			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, c.Cache().Configuration().TimeseriesTTLSecs)},
+		},
+
+		APIPath + mnQuery: &config.PathConfig{
+			Path:            APIPath + mnQuery,
+			HandlerName:     mnQuery,
+			Methods:         []string{http.MethodGet, http.MethodPost},
+			CacheKeyParams:  []string{upQuery, upTime},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, c.Cache().Configuration().ObjectTTLSecs)},
+		},
+
+		APIPath + mnSeries: &config.PathConfig{
+			Path:            APIPath + mnSeries,
+			HandlerName:     mnSeries,
+			Methods:         []string{http.MethodGet, http.MethodPost},
+			CacheKeyParams:  []string{upMatch, upStart, upEnd},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		APIPath + mnLabels: &config.PathConfig{
+			Path:            APIPath + mnLabels,
+			HandlerName:     "proxycache",
+			Methods:         []string{http.MethodGet, http.MethodPost},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		APIPath + mnLabel: &config.PathConfig{
+			Path:            APIPath + mnLabel,
+			HandlerName:     "proxycache",
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		APIPath + mnTargets: &config.PathConfig{
+			Path:            APIPath + mnTargets,
+			HandlerName:     "proxycache",
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		APIPath + mnRules: &config.PathConfig{
+			Path:            APIPath + mnRules,
+			HandlerName:     "proxycache",
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		APIPath + mnAlerts: &config.PathConfig{
+			Path:            APIPath + mnAlerts,
+			HandlerName:     "proxycache",
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		APIPath + mnAlertManagers: &config.PathConfig{
+			Path:            APIPath + mnAlertManagers,
+			HandlerName:     "proxycache",
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		APIPath + mnStatus: &config.PathConfig{
+			Path:            APIPath + mnStatus,
+			HandlerName:     "proxycache",
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
+			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+		},
+
+		APIPath: &config.PathConfig{
+			Path:        APIPath,
+			HandlerName: "proxy",
+			Methods:     []string{http.MethodGet, http.MethodPost},
+		},
+
+		"/": &config.PathConfig{
+			Path:        "/",
+			HandlerName: "proxy",
+			Methods:     []string{http.MethodGet, http.MethodPost},
+		},
+	}
+
+	orderedPaths := []string{APIPath + mnQueryRange, APIPath + mnQuery,
+		APIPath + mnSeries, APIPath + mnLabels, APIPath + mnLabel, APIPath + mnTargets, APIPath + mnRules,
+		APIPath + mnAlerts, APIPath + mnAlertManagers, APIPath + mnStatus, APIPath, "/"}
+
+	return paths, orderedPaths
+
 }
 
 // Configuration returns the upstream Configuration for this Client
@@ -645,94 +801,6 @@ func (t Times) Swap(i, j int) {
 }
 
 var handlers = map[string]func(w http.ResponseWriter, r *http.Request){}
-
-// RegisterRoutes registers the routes for the Client into the proxy's HTTP multiplexer
-func (c *PromTestClient) RegisterRoutes(originName string, o *config.OriginConfig) {
-
-	const hnAuthorization = "Authorization"
-
-	// Ensure the configured health check endpoint starts with "/""
-	if !strings.HasPrefix(o.HealthCheckEndpoint, "/") {
-		o.HealthCheckEndpoint = "/" + o.HealthCheckEndpoint
-	}
-
-	handlers["health"] = c.HealthHandler
-	handlers[mnQueryRange] = c.QueryRangeHandler
-	handlers[mnQuery] = c.QueryHandler
-	handlers[mnSeries] = c.SeriesHandler
-
-	o.Paths[o.HealthCheckEndpoint] = &config.ProxyPathConfig{
-		Path:            o.HealthCheckEndpoint,
-		HandlerName:     "health",
-		Methods:         []string{http.MethodGet, http.MethodPost},
-		CacheKeyParams:  []string{upQuery, upStep},
-		CacheKeyHeaders: []string{hnAuthorization},
-		DefaultTTLSecs:  c.cache.Configuration().TimeseriesTTLSecs,
-		DefaultTTL:      c.cache.Configuration().TimeseriesTTL,
-	}
-
-	if _, ok := o.Paths[APIPath+mnQueryRange]; !ok {
-		o.Paths[APIPath+mnQueryRange] = &config.ProxyPathConfig{
-			Path:            APIPath + mnQueryRange,
-			HandlerName:     mnQueryRange,
-			Methods:         []string{http.MethodGet, http.MethodPost},
-			CacheKeyParams:  []string{upQuery, upStep},
-			CacheKeyHeaders: []string{"Authorization"},
-			DefaultTTLSecs:  c.cache.Configuration().TimeseriesTTLSecs,
-			DefaultTTL:      c.cache.Configuration().TimeseriesTTL,
-			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, c.Cache().Configuration().TimeseriesTTLSecs)},
-		}
-	}
-
-	if _, ok := o.Paths[APIPath+mnQuery]; !ok {
-		o.Paths[APIPath+mnQuery] = &config.ProxyPathConfig{
-			Path:            APIPath + mnQuery,
-			HandlerName:     mnQuery,
-			Methods:         []string{http.MethodGet, http.MethodPost},
-			CacheKeyParams:  []string{upQuery, upTime},
-			CacheKeyHeaders: []string{"Authorization"},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
-			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, c.Cache().Configuration().ObjectTTLSecs)},
-		}
-	}
-
-	orderedPaths := []string{o.HealthCheckEndpoint, APIPath + mnQueryRange, APIPath + mnQuery}
-
-	for _, p := range o.Paths {
-		if h, ok := handlers[p.HandlerName]; h != nil && ok {
-			p.Handler = h
-			if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
-				orderedPaths = append(orderedPaths, p.Path)
-			}
-		}
-	}
-
-	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.OriginType, "originName": originName})
-
-	for _, v := range orderedPaths {
-		p := o.Paths[v]
-		if len(p.Methods) > 0 {
-
-			log.Info("Registering Origin Handler Path", log.Pairs{"path": v, "handlerName": p.HandlerName})
-
-			// Host Header Routing
-			routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...).Host(originName)
-			// Path Routing
-			routing.Router.HandleFunc("/"+originName+p.Path, p.Handler).Methods(p.Methods...)
-		}
-	}
-
-	if o.IsDefault {
-		for _, v := range orderedPaths {
-			p := o.Paths[v]
-			if p.Handler != nil && len(p.Methods) > 0 {
-				routing.Router.HandleFunc(p.Path, p.Handler).Methods(p.Methods...)
-			}
-		}
-	}
-
-}
 
 func (c *PromTestClient) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BaseURL()

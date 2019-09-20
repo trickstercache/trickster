@@ -126,7 +126,9 @@ func TestRegisterProxyRoutesIRONdb(t *testing.T) {
 }
 
 func TestRegisterProxyRoutesMultipleDefaults(t *testing.T) {
-	expected := "only one origin can be marked as default. Found both test and test2"
+	expected1 := "only one origin can be marked as default. Found both test and test2"
+	expected2 := "only one origin can be marked as default. Found both test2 and test"
+
 	a := []string{"-config", "../../../testdata/test.too_many_defaults.conf"}
 	err := config.Load("trickster", "test", a)
 	if err != nil {
@@ -135,9 +137,9 @@ func TestRegisterProxyRoutesMultipleDefaults(t *testing.T) {
 	registration.LoadCachesFromConfig()
 	err = RegisterProxyRoutes()
 	if err == nil {
-		t.Errorf("expected error `%s` got nothing", expected)
-	} else if err.Error() != expected {
-		t.Errorf("expected error `%s` got `%s`", expected, err.Error())
+		t.Errorf("expected error `%s` got nothing", expected1)
+	} else if err.Error() != expected1 && err.Error() != expected2 {
+		t.Errorf("expected error `%s` got `%s`", expected1, err.Error())
 	}
 }
 

@@ -23,6 +23,7 @@ import (
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/model"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	"github.com/Comcast/trickster/internal/util/log"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
@@ -32,6 +33,12 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 	headers := map[string]string{"Cache-Control": "max-age=60"}
 	es := tu.NewTestServerHeaders(http.StatusOK, "test", headers)
 	defer es.Close()
+
+	p := &config.PathConfig{
+		Path:            "/",
+		CacheKeyParams:  []string{"query", "step", "time"},
+		CacheKeyHeaders: []string{},
+	}
 
 	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
 	if err != nil {
@@ -50,6 +57,7 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)
+	r = r.WithContext(tc.WithConfigs(r.Context(), client.Configuration(), nil, p))
 
 	// get URL
 

@@ -14,91 +14,53 @@
 package prometheus
 
 import (
-	"net/http/httptest"
 	"testing"
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/routing"
-	tu "github.com/Comcast/trickster/internal/util/testing"
-
-	"github.com/gorilla/mux"
+	"github.com/Comcast/trickster/internal/util/log"
 )
 
-func TestRegisterRoutesNoDefault(t *testing.T) {
-
-	routing.Router = mux.NewRouter()
-
-	es := tu.NewTestServer(200, "{}")
-	defer es.Close()
-
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
-	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+func TestRegisterHandlers(t *testing.T) {
+	c := &Client{}
+	c.registerHandlers()
+	if _, ok := c.handlers[mnQueryRange]; !ok {
+		t.Errorf("expected to find handler named: %s", mnQueryRange)
 	}
-
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
-	if err != nil {
-		t.Error(err)
-	}
-
-	oc := config.Origins["default"]
-	oc.IsDefault = false
-	client := Client{config: oc, cache: cache}
-	client.RegisterRoutes("test_default", oc)
-
-	// This should be false
-	r := httptest.NewRequest("GET", "http://0/health", nil)
-	rm := &mux.RouteMatch{}
-	if routing.Router.Match(r, rm) {
-		t.Errorf("unexpected route match")
-		return
-	}
-
-	// This should be true
-	r = httptest.NewRequest("GET", "http://0/test_default/health", nil)
-	if !routing.Router.Match(r, rm) {
-		t.Errorf("could not match route")
-		return
-	}
-
 }
 
-func TestRegisterRoutesDefault(t *testing.T) {
+func TestHandlers(t *testing.T) {
+	c := &Client{}
+	m := c.Handlers()
+	if _, ok := m[mnQueryRange]; !ok {
+		t.Errorf("expected to find handler named: %s", mnQueryRange)
+	}
+}
 
-	routing.Router = mux.NewRouter()
-	es := tu.NewTestServer(200, "{}")
-	defer es.Close()
+func TestDefaultPathConfigs(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-origin-url", "http://127.0.0.1", "-origin-type", "prometheus", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
-
+	log.Init()
 	cr.LoadCachesFromConfig()
 	cache, err := cr.GetCache("default")
 	if err != nil {
 		t.Error(err)
-	}
-
-	oc := config.Origins["default"]
-	client := Client{config: oc, cache: cache}
-	client.RegisterRoutes("default", oc)
-
-	// This should be false
-	r := httptest.NewRequest("GET", "http://0/health", nil)
-	rm := &mux.RouteMatch{}
-	if !routing.Router.Match(r, rm) {
-		t.Errorf("could not match route")
 		return
 	}
 
-	// This should be true
-	r = httptest.NewRequest("GET", "http://0/default/health", nil)
-	if !routing.Router.Match(r, rm) {
-		t.Errorf("could not match route")
-		return
+	c := &Client{cache: cache}
+	dpc, ordered := c.DefaultPathConfigs()
+
+	if _, ok := dpc["/"]; !ok {
+		t.Errorf("expected to find path named: %s", "/")
+	}
+
+	const expectedLen = 12
+	if len(ordered) != expectedLen {
+		t.Errorf("expected ordered length to be: %d got %d", expectedLen, len(ordered))
 	}
 
 }
