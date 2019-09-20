@@ -114,3 +114,125 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 	}
 
 }
+
+func TestObjectProxyCacheRequestClientNoCache(t *testing.T) {
+
+	headers := map[string]string{"Cache-Control": "max-age=60"}
+	es := tu.NewTestServerHeaders(http.StatusOK, "test", headers)
+	defer es.Close()
+
+	p := &config.PathConfig{
+		Path:            "/",
+		CacheKeyParams:  []string{"query", "step", "time"},
+		CacheKeyHeaders: []string{},
+	}
+
+	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	log.Init()
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	client := &PromTestClient{config: config.Origins["default"], cache: cache}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", es.URL, nil)
+	r = r.WithContext(tc.WithConfigs(r.Context(), client.Configuration(), nil, p))
+
+	// get URL
+
+	cfg := config.Origins["default"]
+	req := model.NewRequest(cfg, "TestProxyRequest", r.Method, r.URL, http.Header{"Cache-Control": []string{"no-cache"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+
+	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "proxy-only"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestObjectProxyCacheRequestOriginNoCache(t *testing.T) {
+
+	headers := map[string]string{"Cache-Control": "no-cache"}
+	es := tu.NewTestServerHeaders(http.StatusOK, "test", headers)
+	defer es.Close()
+
+	p := &config.PathConfig{
+		Path:            "/",
+		CacheKeyParams:  []string{"query", "step", "time"},
+		CacheKeyHeaders: []string{},
+	}
+
+	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	log.Init()
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	client := &PromTestClient{config: config.Origins["default"], cache: cache}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", es.URL, nil)
+	r = r.WithContext(tc.WithConfigs(r.Context(), client.Configuration(), nil, p))
+
+	// get URL
+
+	cfg := config.Origins["default"]
+	req := model.NewRequest(cfg, "TestProxyRequest", r.Method, r.URL, http.Header{}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+
+	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
