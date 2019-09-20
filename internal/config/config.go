@@ -704,7 +704,10 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 		o.TimeseriesRetentionFactor = v.TimeseriesRetentionFactor
 		o.TimeseriesEvictionMethodName = v.TimeseriesEvictionMethodName
 		o.TimeseriesEvictionMethod = v.TimeseriesEvictionMethod
-		// TODO: ADD PATHS
+		o.Paths = make(map[string]*PathConfig)
+		for l, p := range v.Paths {
+			o.Paths[l] = p.Copy()
+		}
 		nc.Origins[k] = o
 	}
 

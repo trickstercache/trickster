@@ -17,6 +17,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	ts "github.com/Comcast/trickster/internal/util/strings"
 )
 
 // PathMatchType enumerates the types of Path Matches used when registering Paths with the Router
@@ -92,7 +94,37 @@ type PathConfig struct {
 	custom []string `toml:"-"`
 }
 
-// Merge merges the non-default values of the provided ProxyPathConfig into the subject ProxyPathConfig
+// Copy returns an exact copy of the subject PathConfig
+func (p *PathConfig) Copy() *PathConfig {
+	c := &PathConfig{
+		Path:                  p.Path,
+		MatchTypeName:         p.MatchTypeName,
+		MatchType:             p.MatchType,
+		HandlerName:           p.HandlerName,
+		Handler:               p.Handler,
+		DefaultTTLSecs:        p.DefaultTTLSecs,
+		DefaultTTL:            p.DefaultTTL,
+		RequestHeaders:        ts.CopyMap(p.RequestHeaders),
+		ResponseHeaders:       ts.CopyMap(p.ResponseHeaders),
+		ResponseBody:          p.ResponseBody,
+		ResponseBodyBytes:     p.ResponseBodyBytes,
+		NoMetrics:             p.NoMetrics,
+		Order:                 p.Order,
+		HasCustomResponseBody: p.HasCustomResponseBody,
+		Methods:               make([]string, len(p.Methods)),
+		CacheKeyParams:        make([]string, len(p.CacheKeyParams)),
+		CacheKeyHeaders:       make([]string, len(p.CacheKeyHeaders)),
+		custom:                make([]string, len(p.custom)),
+	}
+	copy(c.Methods, p.Methods)
+	copy(c.CacheKeyParams, p.CacheKeyParams)
+	copy(c.CacheKeyHeaders, p.CacheKeyHeaders)
+	copy(c.custom, p.custom)
+	return c
+
+}
+
+// Merge merges the non-default values of the provided PathConfig into the subject PathConfig
 func (p *PathConfig) Merge(p2 *PathConfig) {
 	for _, c := range p2.custom {
 		switch c {
