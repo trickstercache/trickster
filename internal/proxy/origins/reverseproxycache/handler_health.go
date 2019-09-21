@@ -27,5 +27,5 @@ func (c Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	u.Path += cfg.HealthCheckUpstreamPath
 	u.RawQuery = cfg.HealthCheckQuery
 	r.Method = cfg.HealthCheckVerb
-	engines.ProxyRequest(model.NewRequest(cfg, "HealthHandler", http.MethodGet, u, r.Header, c.config.Timeout, r, c.webClient), w)
+	engines.ProxyRequest(model.NewRequest("HealthHandler", http.MethodGet, u, r.Header, c.config.Timeout, r, c.webClient), w)
 }

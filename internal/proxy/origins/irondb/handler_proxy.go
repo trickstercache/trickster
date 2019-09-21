@@ -10,7 +10,7 @@ import (
 // ProxyHandler sends a request through the basic reverse proxy to the origin
 // for non-cacheable API calls.
 func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	engines.ProxyRequest(model.NewRequest(c.Configuration(), "ProxyHandler",
+	engines.ProxyRequest(model.NewRequest("ProxyHandler",
 		r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r,
 		c.webClient), w)
 }

@@ -11,6 +11,6 @@ import (
 func (c Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BaseURL()
 	u.Path += "/" + mnState
-	engines.ProxyRequest(model.NewRequest(c.Configuration(), "HealthHandler",
+	engines.ProxyRequest(model.NewRequest("HealthHandler",
 		http.MethodGet, u, r.Header, c.config.Timeout, r, c.webClient), w)
 }

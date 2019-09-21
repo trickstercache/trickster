@@ -18,7 +18,7 @@ import (
 func (c *Client) CAQLHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	engines.DeltaProxyCacheRequest(
-		model.NewRequest(c.Configuration(), "CAQLHandler",
+		model.NewRequest("CAQLHandler",
 			r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
 		w, c, c.cache, c.cache.Configuration().TimeseriesTTL)
 }
