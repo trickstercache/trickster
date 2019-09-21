@@ -223,8 +223,6 @@ func TestGetResponseCacheability(t *testing.T) {
 			if test.expectedTTL != d {
 				t.Errorf("expected ttl of %d got %d", test.expectedTTL, d)
 			}
-
-			// TODO: find suitable replacement test case here
 		})
 	}
 }
