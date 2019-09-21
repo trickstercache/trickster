@@ -18,7 +18,7 @@ func (c *Client) RawHandler(w http.ResponseWriter, r *http.Request) {
 	engines.DeltaProxyCacheRequest(
 		model.NewRequest("RawHandler",
 			r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, c.cache, c.cache.Configuration().TimeseriesTTL)
+		w, c)
 }
 
 // rawHandlerSetExtent will change the upstream request query to use the

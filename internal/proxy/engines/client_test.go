@@ -120,7 +120,7 @@ func (c *PromTestClient) Handlers() map[string]http.Handler {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *PromTestClient) DefaultPathConfigs() (map[string]*config.PathConfig, []string) {
+func (c *PromTestClient) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config.PathConfig, []string) {
 
 	paths := map[string]*config.PathConfig{
 
@@ -130,9 +130,7 @@ func (c *PromTestClient) DefaultPathConfigs() (map[string]*config.PathConfig, []
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{upQuery, upStep},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().TimeseriesTTLSecs,
-			DefaultTTL:      c.cache.Configuration().TimeseriesTTL,
-			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, c.Cache().Configuration().TimeseriesTTLSecs)},
+			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 86400)},
 		},
 
 		APIPath + mnQuery: &config.PathConfig{
@@ -141,9 +139,7 @@ func (c *PromTestClient) DefaultPathConfigs() (map[string]*config.PathConfig, []
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{upQuery, upTime},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
-			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, c.Cache().Configuration().ObjectTTLSecs)},
+			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 30)},
 		},
 
 		APIPath + mnSeries: &config.PathConfig{
@@ -152,8 +148,6 @@ func (c *PromTestClient) DefaultPathConfigs() (map[string]*config.PathConfig, []
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{upMatch, upStart, upEnd},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		APIPath + mnLabels: &config.PathConfig{
@@ -162,8 +156,6 @@ func (c *PromTestClient) DefaultPathConfigs() (map[string]*config.PathConfig, []
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		APIPath + mnLabel: &config.PathConfig{
@@ -172,8 +164,6 @@ func (c *PromTestClient) DefaultPathConfigs() (map[string]*config.PathConfig, []
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		APIPath + mnTargets: &config.PathConfig{
@@ -182,8 +172,6 @@ func (c *PromTestClient) DefaultPathConfigs() (map[string]*config.PathConfig, []
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		APIPath + mnRules: &config.PathConfig{
@@ -192,8 +180,6 @@ func (c *PromTestClient) DefaultPathConfigs() (map[string]*config.PathConfig, []
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		APIPath + mnAlerts: &config.PathConfig{
@@ -202,8 +188,6 @@ func (c *PromTestClient) DefaultPathConfigs() (map[string]*config.PathConfig, []
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		APIPath + mnAlertManagers: &config.PathConfig{
@@ -212,8 +196,6 @@ func (c *PromTestClient) DefaultPathConfigs() (map[string]*config.PathConfig, []
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		APIPath + mnStatus: &config.PathConfig{
@@ -222,8 +204,6 @@ func (c *PromTestClient) DefaultPathConfigs() (map[string]*config.PathConfig, []
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		APIPath: &config.PathConfig{
@@ -250,6 +230,11 @@ func (c *PromTestClient) DefaultPathConfigs() (map[string]*config.PathConfig, []
 // Configuration returns the upstream Configuration for this Client
 func (c *PromTestClient) Configuration() *config.OriginConfig {
 	return c.config
+}
+
+// SetCache sets the cache object the client will use for caching origin data
+func (c *PromTestClient) SetCache(cc cache.Cache) {
+	c.cache = cc
 }
 
 // HTTPClient returns the HTTP Client for this origin
@@ -812,21 +797,21 @@ func (c *PromTestClient) QueryRangeHandler(w http.ResponseWriter, r *http.Reques
 	u := c.BuildUpstreamURL(r)
 	DeltaProxyCacheRequest(
 		tm.NewRequest("QueryRangeHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, c.cache, c.cache.Configuration().TimeseriesTTL)
+		w, c)
 }
 
 func (c *PromTestClient) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	ObjectProxyCacheRequest(
 		tm.NewRequest("QueryHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, c.cache, c.cache.Configuration().ObjectTTL, false)
+		w, c, false)
 }
 
 func (c *PromTestClient) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	ObjectProxyCacheRequest(
 		tm.NewRequest("SeriesHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, c.cache, c.cache.Configuration().ObjectTTL, false)
+		w, c, false)
 }
 
 func (c *PromTestClient) ProxyHandler(w http.ResponseWriter, r *http.Request) {

@@ -25,5 +25,5 @@ func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	engines.DeltaProxyCacheRequest(
 		model.NewRequest("QueryRangeHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, c.cache, c.cache.Configuration().TimeseriesTTL)
+		w, c)
 }

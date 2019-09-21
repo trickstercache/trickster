@@ -21,7 +21,7 @@ func (c *Client) HistogramHandler(w http.ResponseWriter, r *http.Request) {
 	engines.DeltaProxyCacheRequest(
 		model.NewRequest("HistogramHandler",
 			r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, c.cache, c.cache.Configuration().TimeseriesTTL)
+		w, c)
 }
 
 // histogramHandlerSetExtent will change the upstream request query to use the

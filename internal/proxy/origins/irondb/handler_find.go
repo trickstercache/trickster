@@ -16,7 +16,7 @@ func (c *Client) FindHandler(w http.ResponseWriter, r *http.Request) {
 	engines.ObjectProxyCacheRequest(
 		model.NewRequest("FindHandler",
 			r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, c.cache, c.cache.Configuration().ObjectTTL, false)
+		w, c, false)
 }
 
 // findHandlerDeriveCacheKey calculates a query-specific keyname based on the

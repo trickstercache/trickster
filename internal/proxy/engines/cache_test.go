@@ -217,11 +217,14 @@ func TestGetResponseCacheability(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			p := GetResponseCachingPolicy(200, nil, test.a, 0)
-			ttl := time.Duration(p.FreshnessLifetime) * time.Second
-			if ttl != test.expectedTTL {
-				t.Errorf("mismatch ttl expected %v got %v", test.expectedTTL, ttl)
+
+			p := GetResponseCachingPolicy(200, nil, test.a)
+			d := time.Duration(p.FreshnessLifetime) * time.Second
+			if test.expectedTTL != d {
+				t.Errorf("expected ttl of %d got %d", test.expectedTTL, d)
 			}
+
+			// TODO: find suitable replacement test case here
 		})
 	}
 }

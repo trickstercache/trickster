@@ -15,11 +15,9 @@ package prometheus
 
 import (
 	"io/ioutil"
-	"net/http/httptest"
-	"net/url"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/config"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
@@ -30,18 +28,15 @@ func init() {
 
 func TestHealthHandler(t *testing.T) {
 
-	es := tu.NewTestServer(200, "{}")
-	defer es.Close()
-
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus"})
+	client := &Client{name: "test"}
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+	defer ts.Close()
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Error(err)
 	}
 
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://0/health", nil)
-
-	client := &Client{name: "default", config: config.Origins["default"], webClient: tu.NewTestWebClient()}
 	client.HealthHandler(w, r)
 	resp := w.Result()
 
@@ -63,27 +58,15 @@ func TestHealthHandler(t *testing.T) {
 
 func TestHealthHandlerCustomPath(t *testing.T) {
 
-	es := tu.NewTestServer(200, "{}")
-	defer es.Close()
-
-	a := []string{"-config", "../../../../testdata/test.custom_health.conf"}
-	err := config.Load("trickster", "test", a)
+	client := &Client{name: "test"}
+	ts, w, r, hc, err := tu.NewTestInstance("../../../../testdata/test.custom_health.conf", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+	defer ts.Close()
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Error(err)
 	}
 
-	c := config.Origins["test"]
-	c.OriginURL = es.URL
-
-	u, _ := url.Parse(es.URL)
-	c.Scheme = u.Scheme
-	c.Host = u.Host
-	c.PathPrefix = u.Path
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://1/health", nil)
-
-	client := &Client{name: "test", config: c, webClient: tu.NewTestWebClient()}
 	client.HealthHandler(w, r)
 	resp := w.Result()
 

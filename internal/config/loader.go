@@ -117,13 +117,12 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		o.Timeout = time.Duration(o.TimeoutSecs) * time.Second
 		o.BackfillTolerance = time.Duration(o.BackfillToleranceSecs) * time.Second
 		o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
+		o.TimeseriesTTL = time.Duration(o.TimeseriesTTLSecs) * time.Second
+		o.FastForwardTTL = time.Duration(o.FastForwardTTLSecs) * time.Second
 		Origins[k] = o
 	}
 
 	for _, c := range Caches {
-		c.TimeseriesTTL = time.Duration(c.TimeseriesTTLSecs) * time.Second
-		c.ObjectTTL = time.Duration(c.ObjectTTLSecs) * time.Second
-		c.FastForwardTTL = time.Duration(c.FastForwardTTLSecs) * time.Second
 		c.Index.FlushInterval = time.Duration(c.Index.FlushIntervalSecs) * time.Second
 		c.Index.ReapInterval = time.Duration(c.Index.ReapIntervalSecs) * time.Second
 	}

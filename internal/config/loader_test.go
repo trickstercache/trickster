@@ -31,8 +31,8 @@ func TestLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 1024, got %d", Origins["default"].TimeseriesRetention)
 	}
 
-	if Caches["default"].FastForwardTTL != time.Duration(15)*time.Second {
-		t.Errorf("expected 15, got %s", Caches["default"].FastForwardTTL)
+	if Origins["default"].FastForwardTTL != time.Duration(15)*time.Second {
+		t.Errorf("expected 15, got %s", Origins["default"].FastForwardTTL)
 	}
 
 	if Caches["default"].Index.ReapInterval != time.Duration(3)*time.Second {
@@ -173,6 +173,14 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeoutSecs)
 	}
 
+	if o.TimeseriesTTLSecs != 8666 {
+		t.Errorf("expected 8666, got %d", o.TimeseriesTTLSecs)
+	}
+
+	if o.FastForwardTTLSecs != 17 {
+		t.Errorf("expected 17, got %d", o.FastForwardTTLSecs)
+	}
+
 	// Test Caches
 
 	c, ok := Caches["test"]
@@ -187,18 +195,6 @@ func TestFullLoadConfiguration(t *testing.T) {
 
 	if !c.Compression {
 		t.Errorf("expected compression %t, got %t", defaultCacheCompression, c.Compression)
-	}
-
-	if c.TimeseriesTTLSecs != 8666 {
-		t.Errorf("expected 8666, got %d", c.TimeseriesTTLSecs)
-	}
-
-	if c.FastForwardTTLSecs != 17 {
-		t.Errorf("expected 17, got %d", c.FastForwardTTLSecs)
-	}
-
-	if c.ObjectTTLSecs != 39 {
-		t.Errorf("expected 39, got %d", c.ObjectTTLSecs)
 	}
 
 	if c.Index.ReapIntervalSecs != 4 {
@@ -411,6 +407,14 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %d, got %d", defaultOriginTimeoutSecs, o.TimeoutSecs)
 	}
 
+	if o.TimeseriesTTLSecs != defaultTimeseriesTTLSecs {
+		t.Errorf("expected %d, got %d", defaultTimeseriesTTLSecs, o.TimeseriesTTLSecs)
+	}
+
+	if o.FastForwardTTLSecs != defaultFastForwardTTLSecs {
+		t.Errorf("expected %d, got %d", defaultFastForwardTTLSecs, o.FastForwardTTLSecs)
+	}
+
 	c, ok := Caches["default"]
 	if !ok {
 		t.Errorf("unable to find cache config: %s", "default")
@@ -423,18 +427,6 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 
 	if !c.Compression {
 		t.Errorf("expected compression %t, got %t", defaultCacheCompression, c.Compression)
-	}
-
-	if c.TimeseriesTTLSecs != defaultTimeseriesTTLSecs {
-		t.Errorf("expected %d, got %d", defaultTimeseriesTTLSecs, c.TimeseriesTTLSecs)
-	}
-
-	if c.FastForwardTTLSecs != defaultFastForwardTTLSecs {
-		t.Errorf("expected %d, got %d", defaultFastForwardTTLSecs, c.FastForwardTTLSecs)
-	}
-
-	if c.ObjectTTLSecs != defaultObjectTTLSecs {
-		t.Errorf("expected %d, got %d", defaultObjectTTLSecs, c.ObjectTTLSecs)
 	}
 
 	if c.Index.ReapIntervalSecs != defaultCacheIndexReap {

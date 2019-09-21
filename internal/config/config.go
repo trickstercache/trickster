@@ -129,7 +129,10 @@ type OriginConfig struct {
 	Paths map[string]*PathConfig `toml:"paths"`
 	// NegativeCache is a map of HTTP Status Codes that are cached for the provided duration, usually used for failures (e.g., 404's for 10s)
 	NegativeCacheSecs map[string]int `toml:"negative_cache"`
-	// TimeseriesEvictionMethod
+	// TimeseriesTTLSecs is valid for time series db origins (prometheus, influxdb, etc) and specifies the cache TTL of timeseries objects
+	TimeseriesTTLSecs int `toml:"timeseries_ttl_secs"`
+	// TimeseriesTTLSecs is valid for time series db origins (prometheus, influxdb, etc) and specifies the cache TTL of fast forward data
+	FastForwardTTLSecs int `toml:"fastforward_ttl_secs"`
 
 	// Synthesized Configurations
 	// These configurations are parsed versions of those defined above, and are what Trickster uses internally
@@ -150,9 +153,14 @@ type OriginConfig struct {
 	PathPrefix string `toml:"-"`
 	// NegativeCache provides a map for the negative cache, with TTLs converted to time.Durations
 	NegativeCache map[int]time.Duration `toml:"-"`
-
-	TimeseriesRetention      time.Duration            `toml:"-"`
+	// TimeseriesRetention when subtracted from time.Now() represents the oldest allowable timestamp in a timeseries when EvictionMethod is 'oldest'
+	TimeseriesRetention time.Duration `toml:"-"`
+	// TimeseriesEvictionMethod is the parsed value of TimeseriesEvictionMethodName
 	TimeseriesEvictionMethod TimeseriesEvictionMethod `toml:"-"`
+	// TimeseriesTTL is the parsed value of TimeseriesTTLSecs
+	TimeseriesTTL time.Duration `toml:"-"`
+	// FastForwardTTL is the parsed value of FastForwardTTL
+	FastForwardTTL time.Duration `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -160,19 +168,12 @@ type CachingConfig struct {
 	// Type represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
 	CacheType          string                `toml:"cache_type"`
 	Compression        bool                  `toml:"compression"`
-	TimeseriesTTLSecs  int                   `toml:"timeseries_ttl_secs"`
-	ObjectTTLSecs      int                   `toml:"object_ttl_secs"`
-	FastForwardTTLSecs int                   `toml:"fastforward_ttl_secs"`
 	MaxObjectSizeBytes int                   `toml:"max_object_size_bytes"`
 	Index              CacheIndexConfig      `toml:"index"`
 	Redis              RedisCacheConfig      `toml:"redis"`
 	Filesystem         FilesystemCacheConfig `toml:"filesystem"`
 	BBolt              BBoltCacheConfig      `toml:"bbolt"`
 	Badger             BadgerCacheConfig     `toml:"badger"`
-
-	TimeseriesTTL  time.Duration `toml:"-"`
-	ObjectTTL      time.Duration `toml:"-"`
-	FastForwardTTL time.Duration `toml:"-"`
 }
 
 // CacheIndexConfig defines the operation of the Cache Indexer
@@ -311,10 +312,7 @@ func NewCacheConfig() *CachingConfig {
 	return &CachingConfig{
 		CacheType:          defaultCacheType,
 		Compression:        defaultCacheCompression,
-		TimeseriesTTLSecs:  defaultTimeseriesTTLSecs,
-		FastForwardTTLSecs: defaultFastForwardTTLSecs,
 		MaxObjectSizeBytes: defaultMaxObjectSizeBytes,
-		ObjectTTLSecs:      defaultObjectTTLSecs,
 		Redis:              RedisCacheConfig{ClientType: defaultRedisClientType, Protocol: defaultRedisProtocol, Endpoint: defaultRedisEndpoint, Endpoints: []string{defaultRedisEndpoint}},
 		Filesystem:         FilesystemCacheConfig{CachePath: defaultCachePath},
 		BBolt:              BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: defaultBBoltBucket},
@@ -351,8 +349,11 @@ func NewOriginConfig() *OriginConfig {
 		TimeseriesEvictionMethod:     defaultOriginTEM,
 		TimeseriesEvictionMethodName: defaultOriginTEMName,
 		TimeseriesRetention:          defaultOriginTRF,
-		TimeseriesRetentionFactor:    defaultOriginTRF, // Cache a max of 1024 recent timestamps of data for each query
-		//OriginType:                   defaultOriginServerType,
+		TimeseriesRetentionFactor:    defaultOriginTRF,
+		TimeseriesTTLSecs:            defaultTimeseriesTTLSecs,
+		FastForwardTTLSecs:           defaultFastForwardTTLSecs,
+		TimeseriesTTL:                defaultTimeseriesTTLSecs * time.Second,
+		FastForwardTTL:               defaultFastForwardTTLSecs * time.Second,
 	}
 }
 
@@ -427,6 +428,14 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 			if p, ok := timeseriesEvictionMethodNames[oc.TimeseriesEvictionMethodName]; ok {
 				oc.TimeseriesEvictionMethod = p
 			}
+		}
+
+		if metadata.IsDefined("origins", k, "timeseries_ttl_secs") {
+			oc.TimeseriesTTLSecs = v.TimeseriesTTLSecs
+		}
+
+		if metadata.IsDefined("origins", k, "fastforward_ttl_secs") {
+			oc.FastForwardTTLSecs = v.FastForwardTTLSecs
 		}
 
 		if metadata.IsDefined("origins", k, "fast_forward_disable") {
@@ -508,20 +517,8 @@ func (c *TricksterConfig) setCachingDefaults(metadata toml.MetaData) {
 			cc.Compression = v.Compression
 		}
 
-		if metadata.IsDefined("caches", k, "timeseries_ttl_secs") {
-			cc.TimeseriesTTLSecs = v.TimeseriesTTLSecs
-		}
-
-		if metadata.IsDefined("caches", k, "fastforward_ttl_secs") {
-			cc.FastForwardTTLSecs = v.FastForwardTTLSecs
-		}
-
 		if metadata.IsDefined("caches", k, "max_object_size_bytes") {
 			cc.MaxObjectSizeBytes = v.MaxObjectSizeBytes
-		}
-
-		if metadata.IsDefined("caches", k, "object_ttl_secs") {
-			cc.ObjectTTLSecs = v.ObjectTTLSecs
 		}
 
 		if metadata.IsDefined("caches", k, "index", "reap_interval_secs") {
@@ -704,6 +701,10 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 		o.TimeseriesRetentionFactor = v.TimeseriesRetentionFactor
 		o.TimeseriesEvictionMethodName = v.TimeseriesEvictionMethodName
 		o.TimeseriesEvictionMethod = v.TimeseriesEvictionMethod
+		o.FastForwardTTL = v.FastForwardTTL
+		o.FastForwardTTLSecs = v.FastForwardTTLSecs
+		o.TimeseriesTTL = v.TimeseriesTTL
+		o.TimeseriesTTLSecs = v.TimeseriesTTLSecs
 		o.Paths = make(map[string]*PathConfig)
 		for l, p := range v.Paths {
 			o.Paths[l] = p.Copy()
@@ -715,12 +716,6 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 
 		cc := NewCacheConfig()
 		cc.Compression = v.Compression
-		cc.FastForwardTTL = v.FastForwardTTL
-		cc.FastForwardTTLSecs = v.FastForwardTTLSecs
-		cc.ObjectTTL = v.ObjectTTL
-		cc.ObjectTTLSecs = v.ObjectTTLSecs
-		cc.TimeseriesTTL = v.TimeseriesTTL
-		cc.TimeseriesTTLSecs = v.TimeseriesTTLSecs
 		cc.CacheType = v.CacheType
 
 		cc.Index.FlushInterval = v.Index.FlushInterval

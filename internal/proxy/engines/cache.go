@@ -76,7 +76,7 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 func DeriveCacheKey(c model.Client, r *model.Request, extra string) string {
 
 	pc := context.PathConfig(r.ClientRequest.Context())
-	if pc == nil 	{
+	if pc == nil {
 		return md5.Checksum(r.URL.Path + extra)
 	}
 
@@ -100,7 +100,7 @@ func DeriveCacheKey(c model.Client, r *model.Request, extra string) string {
 
 // GetResponseCachingPolicy examines HTTP response headers for caching headers
 // a returns a CachingPolicy reference
-func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h http.Header, defaultTTL time.Duration) *model.CachingPolicy {
+func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h http.Header) *model.CachingPolicy {
 
 	cp := &model.CachingPolicy{LocalDate: time.Now()}
 
@@ -130,14 +130,10 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 	exp, hasExpires := lch["expires"]
 	_, hasETag := lch["etag"]
 
-	if !hasLastModified && !hasExpires && !hasETag && cp.FreshnessLifetime == 0 && defaultTTL < 1 {
+	if !hasLastModified && !hasExpires && !hasETag && cp.FreshnessLifetime == 0 {
 		cp.NoCache = true
 		cp.FreshnessLifetime = -1
 		return cp
-	}
-
-	if cp.FreshnessLifetime < 1 && defaultTTL > 0 {
-		cp.FreshnessLifetime = int(defaultTTL.Seconds())
 	}
 
 	// Get the date header or, if it is not found or parsed, set it

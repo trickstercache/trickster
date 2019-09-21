@@ -32,7 +32,7 @@ func (c *Client) Handlers() map[string]http.Handler {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) {
+func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config.PathConfig, []string) {
 
 	paths := map[string]*config.PathConfig{
 
@@ -42,8 +42,6 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{}, // TODO: Populate
 			CacheKeyHeaders: []string{},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		"/" + mnRollup: &config.PathConfig{
@@ -52,8 +50,6 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{}, // TODO: Populate
 			CacheKeyHeaders: []string{},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		"/" + mnFetch: &config.PathConfig{
@@ -62,8 +58,6 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{}, // TODO: Populate
 			CacheKeyHeaders: []string{},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		"/" + mnRead: &config.PathConfig{
@@ -72,8 +66,6 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{}, // TODO: Populate
 			CacheKeyHeaders: []string{},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		"/" + mnHistogram: &config.PathConfig{
@@ -82,8 +74,6 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{}, // TODO: Populate
 			CacheKeyHeaders: []string{},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		"/" + mnFind: &config.PathConfig{
@@ -92,8 +82,6 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{}, // TODO: Populate
 			CacheKeyHeaders: []string{},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		"/" + mnState: &config.PathConfig{
@@ -102,8 +90,6 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{}, // TODO: Populate
 			CacheKeyHeaders: []string{},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		"/" + mnCAQL: &config.PathConfig{
@@ -112,8 +98,6 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{}, // TODO: Populate
 			CacheKeyHeaders: []string{},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		"/" + mnCAQLPub: &config.PathConfig{
@@ -122,8 +106,6 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{}, // TODO: Populate
 			CacheKeyHeaders: []string{},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
 		},
 
 		"/": &config.PathConfig{
@@ -132,6 +114,8 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:     []string{http.MethodGet},
 		},
 	}
+
+	oc.Paths = paths
 
 	orderedPaths := []string{"/" + mnRaw, "/" + mnRollup, "/" + mnFetch, "/" + mnRead,
 		"/" + mnHistogram, "/" + mnFind, "/" + mnState, "/" + mnCAQL, "/"}

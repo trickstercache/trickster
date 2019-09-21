@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
@@ -26,7 +27,7 @@ type Client interface {
 	// Handlers returns a map of the HTTP Handlers the client has registered
 	Handlers() map[string]http.Handler
 	// DefaultPathConfigs returns the default PathConfigs for the given OriginType
-	DefaultPathConfigs() (map[string]*config.PathConfig, []string)
+	DefaultPathConfigs(*config.OriginConfig) (map[string]*config.PathConfig, []string)
 	// ParseTimeRangeQuery returns a timeseries.TimeRangeQuery based on the provided HTTP Request
 	ParseTimeRangeQuery(*Request) (*timeseries.TimeRangeQuery, error)
 	// Configuration returns the configuration for the Proxy Client
@@ -47,4 +48,6 @@ type Client interface {
 	UnmarshalInstantaneous([]byte) (timeseries.Timeseries, error)
 	// HTTPClient will return the HTTP Client for this Origin
 	HTTPClient() *http.Client
+	// SetCache sets the Cache object the client will use when caching origin content
+	SetCache(cache.Cache)
 }

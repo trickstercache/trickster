@@ -16,14 +16,7 @@ package testing
 import "testing"
 
 func TestNewTestServer(t *testing.T) {
-	s := NewTestServer(200, "OK")
-	if s == nil {
-		t.Errorf("Expected server pointer, got %v", s)
-	}
-}
-
-func TestNewTestServerHeaders(t *testing.T) {
-	s := NewTestServerHeaders(200, "OK", map[string]string{"Expires": "-1"})
+	s := NewTestServer(200, "OK", map[string]string{"Expires": "-1"})
 	if s == nil {
 		t.Errorf("Expected server pointer, got %v", s)
 	}

@@ -2,30 +2,21 @@ package irondb
 
 import (
 	"io/ioutil"
-	"net/http/httptest"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/config"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
 func TestStateHandler(t *testing.T) {
-	es := tu.NewTestServer(200, "test")
-	defer es.Close()
-	err := config.Load("trickster", "test",
-		[]string{"-origin-url", es.URL,
-			"-origin-type", "irondb"})
+
+	client := &Client{name: "test"}
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "irondb", "/", "debug")
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+	defer ts.Close()
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
-	}
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL, nil)
-
-	client := &Client{
-		name:      "default",
-		config:    config.Origins["default"],
-		webClient: tu.NewTestWebClient(),
+		t.Error(err)
 	}
 
 	client.StateHandler(w, r)
@@ -41,7 +32,7 @@ func TestStateHandler(t *testing.T) {
 		t.Error(err)
 	}
 
-	if string(bodyBytes) != "test" {
-		t.Errorf("expected 'test' got %s.", bodyBytes)
+	if string(bodyBytes) != "{}" {
+		t.Errorf("expected '{}' got %s.", bodyBytes)
 	}
 }

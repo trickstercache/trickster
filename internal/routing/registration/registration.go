@@ -116,7 +116,7 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 	}
 	if client != nil {
 		ProxyClients[k] = client
-		paths, orderedPaths := client.DefaultPathConfigs()
+		paths, orderedPaths := client.DefaultPathConfigs(o)
 		registerPathRoutes(client.Handlers(), o, c, paths, orderedPaths)
 	}
 
@@ -136,6 +136,7 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 
 	for k, p := range o.Paths {
 		p.Path = k
+		p.OriginConfig = o
 		if p2, ok := paths[k]; ok {
 			p2.Merge(p)
 			o.Paths[k] = p2

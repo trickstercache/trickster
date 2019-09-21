@@ -43,7 +43,13 @@ func (c *Client) Handlers() map[string]http.Handler {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) {
+func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config.PathConfig, []string) {
+
+	var rhts map[string]string
+	if oc != nil {
+		rhts = map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, oc.TimeseriesTTLSecs)}
+	}
+	rhinst := map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 30)}
 
 	paths := map[string]*config.PathConfig{
 
@@ -53,9 +59,8 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{upQuery, upStep},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().TimeseriesTTLSecs,
-			DefaultTTL:      c.cache.Configuration().TimeseriesTTL,
-			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, c.Cache().Configuration().TimeseriesTTLSecs)},
+			ResponseHeaders: rhts,
+			OriginConfig:    oc,
 		},
 
 		APIPath + mnQuery: &config.PathConfig{
@@ -64,9 +69,8 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{upQuery, upTime},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
-			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, c.Cache().Configuration().ObjectTTLSecs)},
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
 		},
 
 		APIPath + mnSeries: &config.PathConfig{
@@ -75,8 +79,8 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{upMatch, upStart, upEnd},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
 		},
 
 		APIPath + mnLabels: &config.PathConfig{
@@ -85,8 +89,8 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
 		},
 
 		APIPath + mnLabel: &config.PathConfig{
@@ -95,8 +99,9 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+			MatchTypeName:   "prefix",
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
 		},
 
 		APIPath + mnTargets: &config.PathConfig{
@@ -105,8 +110,8 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
 		},
 
 		APIPath + mnRules: &config.PathConfig{
@@ -115,8 +120,8 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
 		},
 
 		APIPath + mnAlerts: &config.PathConfig{
@@ -125,8 +130,8 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
 		},
 
 		APIPath + mnAlertManagers: &config.PathConfig{
@@ -135,8 +140,8 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
 		},
 
 		APIPath + mnStatus: &config.PathConfig{
@@ -145,22 +150,27 @@ func (c *Client) DefaultPathConfigs() (map[string]*config.PathConfig, []string) 
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			DefaultTTLSecs:  c.cache.Configuration().ObjectTTLSecs,
-			DefaultTTL:      c.cache.Configuration().ObjectTTL,
+			MatchTypeName:   "prefix",
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
 		},
 
 		APIPath: &config.PathConfig{
-			Path:        APIPath,
-			HandlerName: "proxy",
-			Methods:     []string{http.MethodGet, http.MethodPost},
+			Path:         APIPath,
+			HandlerName:  "proxy",
+			Methods:      []string{http.MethodGet, http.MethodPost},
+			OriginConfig: oc,
 		},
 
 		"/": &config.PathConfig{
-			Path:        "/",
-			HandlerName: "proxy",
-			Methods:     []string{http.MethodGet, http.MethodPost},
+			Path:         "/",
+			HandlerName:  "proxy",
+			Methods:      []string{http.MethodGet, http.MethodPost},
+			OriginConfig: oc,
 		},
 	}
+
+	oc.Paths = paths
 
 	orderedPaths := []string{APIPath + mnQueryRange, APIPath + mnQuery,
 		APIPath + mnSeries, APIPath + mnLabels, APIPath + mnLabel, APIPath + mnTargets, APIPath + mnRules,

@@ -106,3 +106,8 @@ func (c *Client) Cache() cache.Cache {
 func (c *Client) Name() string {
 	return c.name
 }
+
+// SetCache sets the Cache object the client will use for caching origin content
+func (c *Client) SetCache(cc cache.Cache) {
+	c.cache = cc
+}

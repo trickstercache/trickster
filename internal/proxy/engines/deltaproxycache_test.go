@@ -23,10 +23,9 @@ import (
 	"time"
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/internal/util/context"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	"github.com/Comcast/trickster/internal/util/md5"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 	"github.com/Comcast/trickster/pkg/promsim"
@@ -40,55 +39,44 @@ const (
 	queryReturnsBadGateway  = "some_query_here{status_code=502,latency_ms=0,range_latency_ms=0}"
 )
 
-func setupTestServer() (*httptest.Server, *config.OriginConfig, *PromTestClient, error) {
+func setupTestHarnessDPC() (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *PromTestClient, error) {
 
-	// set things up
-
-	// simuated prometheus timeseries database server
-	es := promsim.NewTestServer()
-
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "--origin-type", "prometheus", "--log-level", "debug"})
+	client := &PromTestClient{}
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "", nil, "promsim", "/api/v1/query_range", "debug")
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
+		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
-	if err != nil {
-		return nil, nil, nil, err
+	pc := tc.PathConfig(r.Context())
+
+	if pc == nil {
+		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/api/v1/query_range")
 	}
 
-	cfg := config.Origins["default"]
-	client := &PromTestClient{config: cfg, cache: cache, webClient: tu.NewTestWebClient()}
+	oc := tc.OriginConfig(r.Context())
+	cc := tc.CacheClient(r.Context())
 
-	cfg.Paths, _ = client.DefaultPathConfigs()
+	client.cache = cc
+	client.webClient = hc
+	client.config = oc
 
-	p, ok := cfg.Paths["/api/v1/query_range"]
-	if !ok {
-		return nil, nil, nil, fmt.Errorf("could not find path %s", "/api/v1/query_range")
-	}
-	p.CacheKeyParams = []string{"rangeKey"}
+	pc.CacheKeyParams = []string{"rangeKey"}
+	pc.CacheKeyParams = []string{"instantKey"}
 
-	p, ok = cfg.Paths["/api/v1/query"]
-	if !ok {
-		return nil, nil, nil, fmt.Errorf("could not find path %s", "/api/v1/query")
-	}
-	p.CacheKeyParams = []string{"instantKey"}
-
-	return es, cfg, client, nil
+	return ts, w, r, client, nil
 }
 
 func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
 
-	cfg.FastForwardDisable = true
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc := tc.OriginConfig(r.Context())
 
+	oc.FastForwardDisable = true
 	step := time.Duration(300) * time.Second
 
 	now := time.Now()
@@ -103,8 +91,7 @@ func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	w := httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
@@ -130,7 +117,7 @@ func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 	// get cache hit coverage too by repeating:
 
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	bodyBytes, err = ioutil.ReadAll(resp.Body)
@@ -156,17 +143,17 @@ func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 
 func TestDeltaProxyCacheRequestAllItemsTooNew(t *testing.T) {
 
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
 
-	cfg.FastForwardDisable = true
-	cfg.BackfillToleranceSecs = 600
-	cfg.BackfillTolerance = time.Second * time.Duration(cfg.BackfillToleranceSecs)
+	oc := tc.OriginConfig(r.Context())
 
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc.FastForwardDisable = true
+	oc.BackfillToleranceSecs = 600
+	oc.BackfillTolerance = time.Second * time.Duration(oc.BackfillToleranceSecs)
 
 	step := time.Duration(300) * time.Second
 	end := time.Now()
@@ -179,8 +166,7 @@ func TestDeltaProxyCacheRequestAllItemsTooNew(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	w := httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
@@ -212,15 +198,15 @@ func TestDeltaProxyCacheRequestAllItemsTooNew(t *testing.T) {
 
 func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
 
-	cfg.FastForwardDisable = true
+	oc := tc.OriginConfig(r.Context())
 
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc.FastForwardDisable = true
 
 	step := time.Duration(300) * time.Second
 	now := time.Now()
@@ -235,8 +221,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	w := httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
@@ -261,13 +246,13 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 
 	// get cache hit coverage too by repeating:
 
-	cfg.TimeseriesRetention = 10
+	oc.TimeseriesRetention = 10
 
 	extr = timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: now}
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	_, err = ioutil.ReadAll(resp.Body)
@@ -284,19 +269,19 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 
 func TestDeltaProxyCacheRequestMarshalFailure(t *testing.T) {
 
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
+
+	oc := tc.OriginConfig(r.Context())
 
 	client.RangeCacheKey = "failkey"
 
-	cfg.FastForwardDisable = true
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc.FastForwardDisable = true
 
 	step := time.Duration(300) * time.Second
-
 	now := time.Now()
 	end := now.Add(-time.Duration(12) * time.Hour)
 
@@ -306,8 +291,7 @@ func TestDeltaProxyCacheRequestMarshalFailure(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	w := httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
@@ -339,17 +323,18 @@ func normalizeTime(t time.Time, d time.Duration) time.Time {
 
 func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
+
+	oc := tc.OriginConfig(r.Context())
 
 	client.RangeCacheKey = "test-range-key"
 	client.InstantCacheKey = "test-instant-key"
 
-	cfg.FastForwardDisable = true
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc.FastForwardDisable = true
 
 	step := time.Duration(300) * time.Second
 
@@ -365,8 +350,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	w := httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
@@ -400,7 +384,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	bodyBytes, err = ioutil.ReadAll(resp.Body)
@@ -439,7 +423,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	bodyBytes, err = ioutil.ReadAll(resp.Body)
@@ -484,7 +468,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	bodyBytes, err = ioutil.ReadAll(resp.Body)
@@ -519,7 +503,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadPayload)
 
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	bodyBytes, err = ioutil.ReadAll(resp.Body)
@@ -546,16 +530,17 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 
 func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
+
+	oc := tc.OriginConfig(r.Context())
 
 	client.RangeCacheKey = "testkey"
 
-	cfg.FastForwardDisable = true
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc.FastForwardDisable = true
 
 	step := time.Duration(300) * time.Second
 
@@ -571,8 +556,7 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	w := httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
@@ -607,7 +591,7 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadGateway)
 
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -629,14 +613,15 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 
 func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
 
-	cfg.FastForwardDisable = true
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc := tc.OriginConfig(r.Context())
+
+	oc.FastForwardDisable = true
 
 	step := time.Duration(3600) * time.Second
 
@@ -652,8 +637,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	w := httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
@@ -688,7 +672,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	bodyBytes, err = ioutil.ReadAll(resp.Body)
@@ -733,7 +717,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -764,22 +748,23 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 
 func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
+
+	oc := tc.OriginConfig(r.Context())
 
 	client.InstantCacheKey = "test-dpc-ff-key-instant"
 	client.RangeCacheKey = "test-dpc-ff-key-range"
 
-	cfg.FastForwardDisable = false
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc.FastForwardDisable = false
 
 	step := time.Duration(300) * time.Second
 
 	now := time.Now()
-	client.fftime = now.Truncate(client.cache.Configuration().FastForwardTTL)
+	client.fftime = now.Truncate(oc.FastForwardTTL)
 
 	extr := timeseries.Extent{Start: now.Add(-time.Duration(12) * time.Hour), End: now}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
@@ -817,8 +802,7 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 
 	cr.LoadCachesFromConfig()
 
-	w := httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -849,7 +833,7 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	// do it again and look for a cache hit on the timeseries and fast forward
 
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -877,15 +861,14 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 		t.Error(err)
 	}
 
-	instantKey := cfg.Host + "." + md5.Checksum(strings.Replace(u.Path, "_range", "", -1)+client.InstantCacheKey) + ".sz"
-	fmt.Println(instantKey)
+	instantKey := oc.Host + "." + md5.Checksum(strings.Replace(u.Path, "_range", "", -1)+client.InstantCacheKey) + ".sz"
 	client.cache.Remove(instantKey)
 
 	u.RawQuery = fmt.Sprintf("instantKey=%s&rangeKey=%s&step=%d&start=%d&end=%d&query=%s",
 		client.InstantCacheKey, client.RangeCacheKey, int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadPayload)
 
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -893,20 +876,18 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "proxy-error"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"ffstatus": "err"})
 	if err != nil {
 		t.Error(err)
 	}
 
 	// Now test a Response Code error
 
-	client.cache.Remove(instantKey)
-
 	u.RawQuery = fmt.Sprintf("instantKey=%s&rangeKey=%s&step=%d&start=%d&end=%d&query=%s",
-		client.InstantCacheKey, client.RangeCacheKey, int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadRequest)
+		client.InstantCacheKey+"1", client.RangeCacheKey+"1", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadRequest)
 
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadRequest)
@@ -923,14 +904,15 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 
 func TestDeltaProxyCacheRequestFastForwardUrlError(t *testing.T) {
 
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
 
-	cfg.FastForwardDisable = true
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc := tc.OriginConfig(r.Context())
+
+	oc.FastForwardDisable = true
 
 	step := time.Duration(300) * time.Second
 
@@ -946,9 +928,8 @@ func TestDeltaProxyCacheRequestFastForwardUrlError(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("throw_ffurl_error=1&step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	w := httptest.NewRecorder()
-	cfg.FastForwardDisable = false
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	oc.FastForwardDisable = false
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -980,16 +961,17 @@ func TestDeltaProxyCacheRequestFastForwardUrlError(t *testing.T) {
 
 func TestDeltaProxyCacheRequestWithRefresh(t *testing.T) {
 
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
 
-	cfg.FastForwardDisable = true
-	cfg.IgnoreCachingHeaders = false
+	oc := tc.OriginConfig(r.Context())
 
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc.FastForwardDisable = true
+	oc.IgnoreCachingHeaders = false
+
 	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
 
 	step := time.Duration(300) * time.Second
@@ -1006,8 +988,7 @@ func TestDeltaProxyCacheRequestWithRefresh(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	w := httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -1033,16 +1014,17 @@ func TestDeltaProxyCacheRequestWithRefresh(t *testing.T) {
 
 func TestDeltaProxyCacheRequestWithRefreshError(t *testing.T) {
 
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
 
-	cfg.FastForwardDisable = true
-	cfg.IgnoreCachingHeaders = false
+	oc := tc.OriginConfig(r.Context())
 
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc.FastForwardDisable = true
+	oc.IgnoreCachingHeaders = false
+
 	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
 
 	step := time.Duration(300) * time.Second
@@ -1056,8 +1038,7 @@ func TestDeltaProxyCacheRequestWithRefreshError(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadRequest)
 
-	w := httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadRequest)
@@ -1069,16 +1050,17 @@ func TestDeltaProxyCacheRequestWithRefreshError(t *testing.T) {
 
 func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
+
+	oc := tc.OriginConfig(r.Context())
 
 	client.RangeCacheKey = "testkey"
 
-	cfg.FastForwardDisable = true
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc.FastForwardDisable = true
 
 	step := time.Duration(300) * time.Second
 
@@ -1094,8 +1076,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	w := httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -1113,7 +1094,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 		t.Error(err)
 	}
 
-	key := cfg.Host + ".546ecac4cc8b7ed423920fa7ebd5f230.sz"
+	key := oc.Host + ".546ecac4cc8b7ed423920fa7ebd5f230.sz"
 
 	_, err = client.cache.Retrieve(key, false)
 	if err != nil {
@@ -1123,7 +1104,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 	client.cache.Store(key, []byte("foo"), time.Duration(30)*time.Second)
 
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -1145,7 +1126,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 	client.cache.Store(key, []byte("foo"), time.Duration(30)*time.Second)
 
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadRequest)
@@ -1157,16 +1138,15 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 
 func TestDeltaProxyCacheRequest_BadParams(t *testing.T) {
 
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
 
-	cfg.FastForwardDisable = true
+	oc := tc.OriginConfig(r.Context())
 
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc.FastForwardDisable = true
 
 	const query = "some_query_here{}"
 	step := time.Duration(300) * time.Second
@@ -1178,7 +1158,7 @@ func TestDeltaProxyCacheRequest_BadParams(t *testing.T) {
 	// Intentional typo &q instead of &query to force a proxied request due to ParseTimeRangeQuery() error
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&q=%s", int(step.Seconds()), start.Unix(), end.Unix(), query)
 
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadRequest)
@@ -1195,14 +1175,15 @@ func TestDeltaProxyCacheRequest_BadParams(t *testing.T) {
 }
 
 func TestDeltaProxyCacheRequestCacheMissUnmarshalFailed(t *testing.T) {
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
 
-	cfg.FastForwardDisable = true
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc := tc.OriginConfig(r.Context())
+
+	oc.FastForwardDisable = true
 
 	step := time.Duration(300) * time.Second
 
@@ -1215,8 +1196,7 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailed(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadRequest)
 
-	w := httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	_, err = ioutil.ReadAll(resp.Body)
@@ -1232,7 +1212,7 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailed(t *testing.T) {
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadPayload)
 
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -1254,16 +1234,15 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailed(t *testing.T) {
 
 func TestDeltaProxyCacheRequestOutOfWindow(t *testing.T) {
 
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
 
-	cfg.FastForwardDisable = true
+	oc := tc.OriginConfig(r.Context())
 
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc.FastForwardDisable = true
 
 	query := "some_query_here{}"
 	step := time.Duration(300) * time.Second
@@ -1278,7 +1257,7 @@ func TestDeltaProxyCacheRequestOutOfWindow(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), start.Unix(), end.Unix(), query)
 
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -1301,7 +1280,7 @@ func TestDeltaProxyCacheRequestOutOfWindow(t *testing.T) {
 
 	// do it again to ensure another cache miss
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -1328,16 +1307,17 @@ func TestDeltaProxyCacheRequestOutOfWindow(t *testing.T) {
 
 func TestDeltaProxyCacheRequestBadGateway(t *testing.T) {
 
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
 
-	cfg.FastForwardDisable = true
-	cfg.IgnoreCachingHeaders = false
+	oc := tc.OriginConfig(r.Context())
 
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc.FastForwardDisable = true
+	oc.IgnoreCachingHeaders = false
+
 	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
 
 	step := time.Duration(300) * time.Second
@@ -1351,8 +1331,7 @@ func TestDeltaProxyCacheRequestBadGateway(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadGateway)
 
-	w := httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadGateway)
@@ -1364,29 +1343,16 @@ func TestDeltaProxyCacheRequestBadGateway(t *testing.T) {
 
 func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 
-	es := promsim.NewTestServer()
-	defer es.Close()
-
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "--origin-type", "prometheus", "--log-level", "debug"})
-	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
-	}
-
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
-		return
 	}
+	defer ts.Close()
 
-	client := &PromTestClient{config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
+	oc := tc.OriginConfig(r.Context())
 
-	cfg := client.Configuration()
-	cfg.BackfillTolerance = time.Duration(300) * time.Second
-	cfg.FastForwardDisable = true
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc.BackfillTolerance = time.Duration(300) * time.Second
+	oc.FastForwardDisable = true
 
 	query := "some_query_here{}"
 	step := time.Duration(300) * time.Second
@@ -1403,7 +1369,7 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), x.Start.Unix(), x.End.Unix(), query)
 
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -1428,7 +1394,7 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 
 	// get cache partial hit coverage too by repeating:
 	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -1460,17 +1426,18 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 
 func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
 
-	es, cfg, client, err := setupTestServer()
+	ts, w, r, client, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer es.Close()
+	defer ts.Close()
 
-	cfg.FastForwardDisable = false
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc := tc.OriginConfig(r.Context())
+
+	oc.FastForwardDisable = false
 
 	step := time.Duration(300) * time.Second
-	client.cache.Configuration().FastForwardTTL = step + 1
+	oc.FastForwardTTL = step + 1
 
 	now := time.Now()
 	end := now.Add(-time.Duration(12) * time.Hour)
@@ -1484,8 +1451,7 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
 	u.Path = "/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	w := httptest.NewRecorder()
-	client.QueryRangeHandler(w, r.WithContext(context.WithConfigs(r.Context(), cfg, nil, cfg.Paths[APIPath+mnQueryRange])))
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)

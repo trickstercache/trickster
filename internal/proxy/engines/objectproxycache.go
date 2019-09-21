@@ -26,16 +26,16 @@ import (
 )
 
 // ObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache
-func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, cache tc.Cache, ttl time.Duration, noLock bool) {
-	body, resp, _ := FetchViaObjectProxyCache(r, client, cache, ttl, noLock)
+func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, noLock bool) {
+	body, resp, _ := FetchViaObjectProxyCache(r, client, noLock)
 	Respond(w, resp.StatusCode, resp.Header, body)
 }
 
 // FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
-func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Cache, ttl time.Duration, noLock bool) ([]byte, *http.Response, bool) {
+func FetchViaObjectProxyCache(r *model.Request, client model.Client, noLock bool) ([]byte, *http.Response, bool) {
 
-	p := context.PathConfig(r.ClientRequest.Context())
 	oc := context.OriginConfig(r.ClientRequest.Context())
+	cache := context.CacheClient(r.ClientRequest.Context())
 
 	key := oc.Host + "." + DeriveCacheKey(client, r, "")
 
@@ -98,7 +98,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Ca
 		cacheStatus = tc.LookupStatusHit
 	} else {
 		body, resp, elapsed = Fetch(r)
-		cp := GetResponseCachingPolicy(resp.StatusCode, oc.NegativeCache, resp.Header, ttl)
+		cp := GetResponseCachingPolicy(resp.StatusCode, oc.NegativeCache, resp.Header)
 
 		// Cache is revalidated, update headers and resulting caching policy
 		if revalidatingCache && resp.StatusCode == http.StatusNotModified {
@@ -139,10 +139,6 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Ca
 
 	d.CachingPolicy.NoTransform = d.CachingPolicy.NoTransform || cpReq.NoTransform
 	d.CachingPolicy.NoCache = d.CachingPolicy.NoCache || cpReq.NoCache || len(body) >= cache.Configuration().MaxObjectSizeBytes
-
-	if !d.CachingPolicy.MustRevalidate && !d.CachingPolicy.NoCache && d.CachingPolicy.FreshnessLifetime <= 0 {
-		d.CachingPolicy.FreshnessLifetime = int(p.DefaultTTL.Seconds())
-	}
 
 	if d.CachingPolicy.NoCache || (!d.CachingPolicy.CanRevalidate && d.CachingPolicy.FreshnessLifetime <= 0) {
 		cache.Remove(key)

@@ -14,7 +14,6 @@
 package redis
 
 import (
-	"fmt"
 	"testing"
 	"time"
 )
@@ -58,7 +57,7 @@ func TestClientConnect(t *testing.T) {
 
 	o, err := c.clientOpts()
 	if err != nil {
-		fmt.Println(err.Error())
+		t.Error(err)
 	}
 
 	if o.Network != expectedProto {

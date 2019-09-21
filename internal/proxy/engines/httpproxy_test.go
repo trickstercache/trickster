@@ -35,7 +35,7 @@ func init() {
 
 func TestProxyRequest(t *testing.T) {
 
-	es := tu.NewTestServer(http.StatusOK, "test")
+	es := tu.NewTestServer(http.StatusOK, "test", nil)
 	defer es.Close()
 
 	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "test", "-log-level", "debug"})

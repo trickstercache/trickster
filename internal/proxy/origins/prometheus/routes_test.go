@@ -16,9 +16,8 @@ package prometheus
 import (
 	"testing"
 
-	cr "github.com/Comcast/trickster/internal/cache/registration"
-	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/log"
+	tc "github.com/Comcast/trickster/internal/util/context"
+	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
 func TestRegisterHandlers(t *testing.T) {
@@ -39,20 +38,16 @@ func TestHandlers(t *testing.T) {
 
 func TestDefaultPathConfigs(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-origin-url", "http://127.0.0.1", "-origin-type", "prometheus", "-log-level", "debug"})
-	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
-	}
-	log.Init()
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
+	client := &Client{name: "test"}
+	ts, _, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+	defer ts.Close()
 	if err != nil {
 		t.Error(err)
-		return
 	}
 
-	c := &Client{cache: cache}
-	dpc, ordered := c.DefaultPathConfigs()
+	dpc, ordered := client.DefaultPathConfigs(client.config)
 
 	if _, ok := dpc["/"]; !ok {
 		t.Errorf("expected to find path named: %s", "/")

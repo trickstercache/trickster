@@ -19,7 +19,7 @@ func (c *Client) TextHandler(w http.ResponseWriter, r *http.Request) {
 	engines.DeltaProxyCacheRequest(
 		model.NewRequest("TextHandler",
 			r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, c.cache, c.cache.Configuration().TimeseriesTTL)
+		w, c)
 }
 
 // textHandlerSetExtent will change the upstream request query to use the

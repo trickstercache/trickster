@@ -16,7 +16,6 @@ package config
 import (
 	"net/http"
 	"strconv"
-	"time"
 
 	ts "github.com/Comcast/trickster/internal/util/strings"
 )
@@ -62,8 +61,6 @@ type PathConfig struct {
 	CacheKeyParams []string `toml:"cache_key_params"`
 	// CacheKeyHeaders provides the list of http request headers to be included in the hash for each query's cache key
 	CacheKeyHeaders []string `toml:"cache_key_headers"`
-	// DefaultTTLSecs indicates the TTL Cache for this path. If
-	DefaultTTLSecs int `toml:"default_ttl_secs"`
 	// RequestHeaders is a map of headers that will be added to requests to the upstream Origin for this path
 	RequestHeaders map[string]string `toml:"request_headers"`
 	// ResponseHeaders is a map of http headers that will be added to responses to the downstream client
@@ -77,8 +74,6 @@ type PathConfig struct {
 
 	// Synthesized PathConfig Values
 	//
-	// DefaultTTL is the time.Duration representation of DefaultTTLSecs
-	DefaultTTL time.Duration `toml:"-"`
 	// Handler is the HTTP Handler represented by the Path's HandlerName
 	Handler http.Handler `toml:"-"`
 	// Order is this Path's order index in the list of configured Paths
@@ -90,6 +85,8 @@ type PathConfig struct {
 	ResponseBodyBytes []byte `toml:"-"`
 	// MatchType is the PathMatchType representation of MatchTypeName
 	MatchType PathMatchType `toml:"-"`
+	// OriginConfig is the refernece to the PathConfig's parent Origin Config
+	OriginConfig *OriginConfig `toml:"-"`
 
 	custom []string `toml:"-"`
 }
@@ -114,12 +111,11 @@ func NewPathConfig() *PathConfig {
 func (p *PathConfig) Copy() *PathConfig {
 	c := &PathConfig{
 		Path:                  p.Path,
+		OriginConfig:          p.OriginConfig,
 		MatchTypeName:         p.MatchTypeName,
 		MatchType:             p.MatchType,
 		HandlerName:           p.HandlerName,
 		Handler:               p.Handler,
-		DefaultTTLSecs:        p.DefaultTTLSecs,
-		DefaultTTL:            p.DefaultTTL,
 		RequestHeaders:        ts.CopyMap(p.RequestHeaders),
 		ResponseHeaders:       ts.CopyMap(p.ResponseHeaders),
 		ResponseBody:          p.ResponseBody,
@@ -142,6 +138,11 @@ func (p *PathConfig) Copy() *PathConfig {
 
 // Merge merges the non-default values of the provided PathConfig into the subject PathConfig
 func (p *PathConfig) Merge(p2 *PathConfig) {
+
+	if p2.OriginConfig != nil {
+		p.OriginConfig = p2.OriginConfig
+	}
+
 	for _, c := range p2.custom {
 		switch c {
 		case "path":
@@ -158,9 +159,6 @@ func (p *PathConfig) Merge(p2 *PathConfig) {
 			p.CacheKeyParams = p2.CacheKeyParams
 		case "cache_key_headers":
 			p.CacheKeyHeaders = p2.CacheKeyHeaders
-		case "default_ttl_secs":
-			p.DefaultTTLSecs = p2.DefaultTTLSecs
-			p.DefaultTTL = p2.DefaultTTL
 		case "request_headers":
 			p.RequestHeaders = p2.RequestHeaders
 		case "response_headers":

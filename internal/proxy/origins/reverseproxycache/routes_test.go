@@ -16,10 +16,9 @@ package reverseproxycache
 import (
 	"testing"
 
-	cr "github.com/Comcast/trickster/internal/cache/registration"
-	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/log"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
 const localResponse = "localresponse"
@@ -42,29 +41,23 @@ func TestHandlers(t *testing.T) {
 
 func TestDefaultPathConfigs(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-origin-url", "http://127.0.0.1", "-origin-type", "rpc", "-log-level", "debug"})
-	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
-	}
-	log.Init()
 	metrics.Init()
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
+	client := &Client{name: "test"}
+	ts, _, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "rpc", "/", "debug")
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+	defer ts.Close()
 	if err != nil {
 		t.Error(err)
-		return
 	}
 
-	c := &Client{cache: cache}
-	dpc, ordered := c.DefaultPathConfigs()
-
-	if _, ok := dpc["/"]; !ok {
+	if _, ok := client.config.Paths["/"]; !ok {
 		t.Errorf("expected to find path named: %s", "/")
 	}
 
 	const expectedLen = 1
-	if len(ordered) != expectedLen {
-		t.Errorf("expected ordered length to be: %d got %d", expectedLen, len(ordered))
+	if len(client.config.Paths) != expectedLen {
+		t.Errorf("expected ordered length to be: %d got %d", expectedLen, len(client.config.Paths))
 	}
 
 }

@@ -34,9 +34,10 @@ import (
 // DeltaProxyCacheRequest identifies the gaps between the cache and a new timeseries request,
 // requests the gaps from the origin server and returns the reconstituted dataset to the downstream request
 // while caching the results for subsequent requests of the same data
-func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, cache tc.Cache, ttl time.Duration) {
+func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client) {
 
 	oc := context.OriginConfig(r.ClientRequest.Context())
+	cache := context.CacheClient(r.ClientRequest.Context())
 	r.FastForwardDisable = oc.FastForwardDisable
 
 	trq, err := client.ParseTimeRangeQuery(r)
@@ -160,13 +161,13 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		cacheStatus = tc.LookupStatusRangeMiss
 	}
 
+	
 	ffStatus := "off"
 
 	var ffURL *url.URL
 	// if the step resolution <= Fast Forward TTL, then no need to even try Fast Forward
-	cacheConfig := cache.Configuration()
 	if !r.FastForwardDisable {
-		if trq.Step > cacheConfig.FastForwardTTL {
+		if trq.Step > oc.FastForwardTTL {
 			ffURL, err = client.FastForwardURL(r)
 			if err != nil || ffURL == nil {
 				ffStatus = "err"
@@ -225,7 +226,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 			defer wg.Done()
 			req := r.Copy()
 			req.URL = ffURL
-			body, resp, isHit := FetchViaObjectProxyCache(req, client, cache, cacheConfig.FastForwardTTL, true)
+			body, resp, isHit := FetchViaObjectProxyCache(req, client, true)
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				ffts, err = client.UnmarshalInstantaneous(body)
 				if err != nil {
@@ -304,7 +305,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 					return
 				}
 				doc.Body = cdata
-				WriteCache(cache, key, doc, ttl)
+				WriteCache(cache, key, doc, oc.TimeseriesTTL)
 			}
 		}()
 	}

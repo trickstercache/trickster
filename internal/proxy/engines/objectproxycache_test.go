@@ -14,56 +14,58 @@
 package engines
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	cr "github.com/Comcast/trickster/internal/cache/registration"
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	tc "github.com/Comcast/trickster/internal/util/context"
-	"github.com/Comcast/trickster/internal/util/log"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
+
+func setupTestHarnessOPC(file, body string, code int, headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *PromTestClient, error) {
+
+	client := &PromTestClient{}
+	ts, w, r, hc, err := tu.NewTestInstance(file, client.DefaultPathConfigs, code, body, headers, "prometheus", "/api/v1/query", "debug")
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	pc := tc.PathConfig(r.Context())
+
+	if pc == nil {
+		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/api/v1/query")
+	}
+
+	oc := tc.OriginConfig(r.Context())
+	cc := tc.CacheClient(r.Context())
+
+	client.cache = cc
+	client.webClient = hc
+	client.config = oc
+
+	pc.CacheKeyParams = []string{"rangeKey", "instantKey"}
+
+	return ts, w, r, client, nil
+}
 
 func TestObjectProxyCacheRequest(t *testing.T) {
 
 	headers := map[string]string{"Cache-Control": "max-age=60"}
-	es := tu.NewTestServerHeaders(http.StatusOK, "test", headers)
-	defer es.Close()
-
-	p := &config.PathConfig{
-		Path:            "/",
-		CacheKeyParams:  []string{"query", "step", "time"},
-		CacheKeyHeaders: []string{},
-	}
-
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
-	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
-	}
-
-	log.Init()
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
+	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
 	if err != nil {
 		t.Error(err)
-		return
 	}
-
-	client := &PromTestClient{config: config.Origins["default"], cache: cache}
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL, nil)
-	r = r.WithContext(tc.WithConfigs(r.Context(), client.Configuration(), nil, p))
+	defer ts.Close()
 
 	// get URL
 
 	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 
-	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false)
+	ObjectProxyCacheRequest(req, w, client, false)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -89,7 +91,7 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 	// get cache hit coverage too by repeating:
 
 	w = httptest.NewRecorder()
-	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
+	ObjectProxyCacheRequest(req, w, client, false)
 	resp = w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -117,39 +119,17 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 func TestObjectProxyCacheRequestClientNoCache(t *testing.T) {
 
 	headers := map[string]string{"Cache-Control": "max-age=60"}
-	es := tu.NewTestServerHeaders(http.StatusOK, "test", headers)
-	defer es.Close()
-
-	p := &config.PathConfig{
-		Path:            "/",
-		CacheKeyParams:  []string{"query", "step", "time"},
-		CacheKeyHeaders: []string{},
-	}
-
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
-	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
-	}
-
-	log.Init()
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
+	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
 	if err != nil {
 		t.Error(err)
-		return
 	}
-
-	client := &PromTestClient{config: config.Origins["default"], cache: cache}
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL, nil)
-	r = r.WithContext(tc.WithConfigs(r.Context(), client.Configuration(), nil, p))
+	defer ts.Close()
 
 	// get URL
 
 	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"Cache-Control": []string{"no-cache"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 
-	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false)
+	ObjectProxyCacheRequest(req, w, client, false)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -177,38 +157,16 @@ func TestObjectProxyCacheRequestClientNoCache(t *testing.T) {
 func TestObjectProxyCacheRequestOriginNoCache(t *testing.T) {
 
 	headers := map[string]string{"Cache-Control": "no-cache"}
-	es := tu.NewTestServerHeaders(http.StatusOK, "test", headers)
-	defer es.Close()
-
-	p := &config.PathConfig{
-		Path:            "/",
-		CacheKeyParams:  []string{"query", "step", "time"},
-		CacheKeyHeaders: []string{},
-	}
-
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
-	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
-	}
-
-	log.Init()
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
+	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
 	if err != nil {
 		t.Error(err)
-		return
 	}
-
-	client := &PromTestClient{config: config.Origins["default"], cache: cache}
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL, nil)
-	r = r.WithContext(tc.WithConfigs(r.Context(), client.Configuration(), nil, p))
+	defer ts.Close()
 
 	// get URL
 	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 
-	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false)
+	ObjectProxyCacheRequest(req, w, client, false)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -230,5 +188,4 @@ func TestObjectProxyCacheRequestOriginNoCache(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }

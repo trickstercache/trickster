@@ -14,7 +14,6 @@
 package redis
 
 import (
-	"fmt"
 	"testing"
 	"time"
 )
@@ -60,7 +59,7 @@ func TestSentinelConnect(t *testing.T) {
 
 	o, err := c.sentinelOpts()
 	if err != nil {
-		fmt.Println(err.Error())
+		t.Error(err)
 	}
 
 	if o.MasterName != expectedMaster {

@@ -15,43 +15,27 @@ package prometheus
 
 import (
 	"io/ioutil"
-	"net/http/httptest"
 	"testing"
 
-	cr "github.com/Comcast/trickster/internal/cache/registration"
-	"github.com/Comcast/trickster/internal/config"
 	tc "github.com/Comcast/trickster/internal/util/context"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
 func TestQueryHandler(t *testing.T) {
 
-	es := tu.NewTestServer(200, "{}")
-	defer es.Close()
-
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
-	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
-	}
-
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
+	client := &Client{name: "test"}
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/query?q=up&time=0", "debug")
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+	defer ts.Close()
 	if err != nil {
 		t.Error(err)
 	}
 
-	oc := config.Origins["default"]
-	client := &Client{name: "default", config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
-
-	oc.Paths, _ = client.DefaultPathConfigs()
-	p, ok := oc.Paths[APIPath+mnQuery]
+	_, ok := client.config.Paths[APIPath+mnQuery]
 	if !ok {
 		t.Errorf("could not find path config named %s", mnQuery)
 	}
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://0/query?q=up&time=0", nil)
-	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, p))
 
 	client.QueryHandler(w, r)
 

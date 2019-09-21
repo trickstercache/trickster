@@ -97,6 +97,11 @@ func NewClient(name string, config *config.OriginConfig, cache cache.Cache) *Cli
 	return &Client{name: name, config: config, cache: cache, webClient: c}
 }
 
+// SetCache sets the Cache object the client will use for caching origin content
+func (c *Client) SetCache(cc cache.Cache) {
+	c.cache = cc
+}
+
 // Configuration returns the upstream Configuration for this Client
 func (c *Client) Configuration() *config.OriginConfig {
 	return c.config

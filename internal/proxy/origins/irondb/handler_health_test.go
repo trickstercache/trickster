@@ -1,28 +1,21 @@
 package irondb
 
 import (
-	"net/http/httptest"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/config"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
 func TestHealthHandler(t *testing.T) {
-	es := tu.NewTestServer(200, "")
-	defer es.Close()
-	err := config.Load("trickster", "test",
-		[]string{"-origin-url", es.URL, "-origin-type", "irondb"})
-	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
-	}
 
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://0/health", nil)
-	client := &Client{
-		name:      "default",
-		config:    config.Origins["default"],
-		webClient: tu.NewTestWebClient(),
+	client := &Client{name: "test"}
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "irondb", "/health", "debug")
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+	defer ts.Close()
+	if err != nil {
+		t.Error(err)
 	}
 
 	client.HealthHandler(w, r)

@@ -16,14 +16,12 @@ package influxdb
 import (
 	"io/ioutil"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"testing"
 
-	cr "github.com/Comcast/trickster/internal/cache/registration"
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/model"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 
@@ -53,24 +51,14 @@ func TestParseTimeRangeQuery(t *testing.T) {
 
 func TestQueryHandlerWithSelect(t *testing.T) {
 
-	es := tu.NewTestServer(200, "{}")
-	defer es.Close()
-
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "influxdb", "-log-level", "debug"})
-	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
-	}
-
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
+	client := &Client{name: "test"}
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/query?q=select%20test", "debug")
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+	defer ts.Close()
 	if err != nil {
 		t.Error(err)
 	}
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://0/query?q=select%20test", nil)
-
-	client := &Client{name: "default", config: config.Origins["default"], cache: cache, webClient: tu.NewTestWebClient()}
 
 	client.QueryHandler(w, r)
 
@@ -93,18 +81,14 @@ func TestQueryHandlerWithSelect(t *testing.T) {
 
 func TestQueryHandlerNotSelect(t *testing.T) {
 
-	es := tu.NewTestServer(200, "{}")
-	defer es.Close()
-
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "influxdb", "-log-level", "debug"})
+	client := &Client{name: "test"}
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/query", "debug")
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+	defer ts.Close()
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Error(err)
 	}
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://0/query", nil)
-
-	client := &Client{name: "default", config: config.Origins["default"], webClient: tu.NewTestWebClient()}
 
 	client.QueryHandler(w, r)
 
