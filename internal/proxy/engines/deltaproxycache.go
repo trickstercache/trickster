@@ -25,8 +25,8 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	"github.com/Comcast/trickster/pkg/locks"
 )
@@ -161,7 +161,6 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		cacheStatus = tc.LookupStatusRangeMiss
 	}
 
-	
 	ffStatus := "off"
 
 	var ffURL *url.URL

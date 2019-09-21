@@ -141,7 +141,7 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 			p2.Merge(p)
 			o.Paths[k] = p2
 			continue
-		} 
+		}
 		p3 := config.NewPathConfig()
 		p3.Merge(p)
 		o.Paths[k] = p3
@@ -179,9 +179,9 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 		if !ok {
 			continue
 		}
-		log.Debug("registering origin handler path", 
-		log.Pairs{"originName": o.Name, "path": v, "handlerName": p.HandlerName, 
-		"originHost": o.Host, "handledPath": "/" + o.Name + p.Path, "matchType": p.MatchType})
+		log.Debug("registering origin handler path",
+			log.Pairs{"originName": o.Name, "path": v, "handlerName": p.HandlerName,
+				"originHost": o.Host, "handledPath": "/" + o.Name + p.Path, "matchType": p.MatchType})
 		if p.Handler != nil && len(p.Methods) > 0 {
 			switch p.MatchType {
 			case config.PathMatchTypePrefix:
