@@ -26,6 +26,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/Comcast/trickster/internal/util/context"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	"github.com/Comcast/trickster/pkg/locks"
 )
@@ -35,8 +36,8 @@ import (
 // while caching the results for subsequent requests of the same data
 func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, cache tc.Cache, ttl time.Duration) {
 
-	cfg := client.Configuration()
-	r.FastForwardDisable = cfg.FastForwardDisable
+	oc := context.OriginConfig(r.ClientRequest.Context())
+	r.FastForwardDisable = oc.FastForwardDisable
 
 	trq, err := client.ParseTimeRangeQuery(r)
 	if err != nil {
@@ -50,22 +51,22 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	// this is used to ensure the head of the cache respects the BackFill Tolerance
 	bf := timeseries.Extent{Start: time.Unix(0, 0), End: trq.Extent.End}
 
-	if !trq.IsOffset && cfg.BackfillTolerance > 0 {
-		bf.End = bf.End.Add(-cfg.BackfillTolerance)
+	if !trq.IsOffset && oc.BackfillTolerance > 0 {
+		bf.End = bf.End.Add(-oc.BackfillTolerance)
 	}
 
 	now := time.Now()
 
 	OldestRetainedTimestamp := time.Time{}
-	if cfg.TimeseriesEvictionMethod == config.EvictionMethodOldest {
-		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * cfg.TimeseriesRetention))
+	if oc.TimeseriesEvictionMethod == config.EvictionMethodOldest {
+		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * oc.TimeseriesRetention))
 		if trq.Extent.End.Before(OldestRetainedTimestamp) {
-			log.Debug("timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": cfg.TimeseriesRetention})
+			log.Debug("timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": oc.TimeseriesRetention})
 			ProxyRequest(r, w)
 			return
 		}
 		if trq.Extent.Start.After(bf.End) {
-			log.Debug("timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": cfg.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
+			log.Debug("timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": oc.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
 			ProxyRequest(r, w)
 			return
 		}
@@ -74,7 +75,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	r.TimeRangeQuery = trq
 	client.SetExtent(r, &trq.Extent)
 
-	key := cfg.Host + "." + DeriveCacheKey(client, cfg, r, "")
+	key := oc.Host + "." + DeriveCacheKey(client, r, "")
 	locks.Acquire(key)
 	defer locks.Release(key)
 
@@ -123,18 +124,18 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 					return // fetchTimeseries logs the error
 				}
 			} else {
-				if cfg.TimeseriesEvictionMethod == config.EvictionMethodLRU {
+				if oc.TimeseriesEvictionMethod == config.EvictionMethodLRU {
 					el := cts.Extents()
 					tsc := cts.TimestampCount()
 					if tsc > 0 &&
-						tsc >= cfg.TimeseriesRetentionFactor {
+						tsc >= oc.TimeseriesRetentionFactor {
 						if trq.Extent.End.Before(el[0].Start) {
-							log.Debug("timerange end is too early to consider caching", log.Pairs{"step": trq.Step, "retention": cfg.TimeseriesRetention})
+							log.Debug("timerange end is too early to consider caching", log.Pairs{"step": trq.Step, "retention": oc.TimeseriesRetention})
 							ProxyRequest(r, w)
 							return
 						}
 						if trq.Extent.Start.After(el[len(el)-1].End) {
-							log.Debug("timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": cfg.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
+							log.Debug("timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": oc.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
 							ProxyRequest(r, w)
 							return
 						}
@@ -265,11 +266,11 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	cachedValueCount := rts.ValueCount() - uncachedValueCount
 
 	if uncachedValueCount > 0 {
-		metrics.ProxyRequestElements.WithLabelValues(cfg.Name, cfg.OriginType, "uncached", r.URL.Path).Add(float64(uncachedValueCount))
+		metrics.ProxyRequestElements.WithLabelValues(oc.Name, oc.OriginType, "uncached", r.URL.Path).Add(float64(uncachedValueCount))
 	}
 
 	if cachedValueCount > 0 {
-		metrics.ProxyRequestElements.WithLabelValues(cfg.Name, cfg.OriginType, "cached", r.URL.Path).Add(float64(cachedValueCount))
+		metrics.ProxyRequestElements.WithLabelValues(oc.Name, oc.OriginType, "cached", r.URL.Path).Add(float64(cachedValueCount))
 	}
 
 	// Merge Fast Forward data if present. This must be done after the Downstream Crop since
@@ -290,9 +291,9 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		go func() {
 			defer wg.Done()
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the Backfill Tolerance before storing to cache
-			switch cfg.TimeseriesEvictionMethod {
+			switch oc.TimeseriesEvictionMethod {
 			case config.EvictionMethodLRU:
-				cts.CropToSize(cfg.TimeseriesRetentionFactor, bf.End, trq.Extent)
+				cts.CropToSize(oc.TimeseriesRetentionFactor, bf.End, trq.Extent)
 			default:
 				cts.CropToRange(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
 			}

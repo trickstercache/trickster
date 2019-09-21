@@ -18,14 +18,12 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
 // Request contains information about an inbound HTTP request
 type Request struct {
-	OriginConfig       *config.OriginConfig
 	HandlerName        string
 	HTTPMethod         string
 	URL                *url.URL
@@ -39,10 +37,8 @@ type Request struct {
 }
 
 // NewRequest returns a new proxy request object that can service the downstream request
-func NewRequest(originConfig *config.OriginConfig, handlerName, method string, url *url.URL, headers http.Header, timeout time.Duration, clientRequest *http.Request, client *http.Client) *Request {
-
+func NewRequest(handlerName, method string, url *url.URL, headers http.Header, timeout time.Duration, clientRequest *http.Request, client *http.Client) *Request {
 	r := &Request{
-		OriginConfig:  originConfig,
 		HandlerName:   handlerName,
 		HTTPMethod:    method,
 		URL:           url,
@@ -58,7 +54,6 @@ func NewRequest(originConfig *config.OriginConfig, handlerName, method string, u
 // Copy returns a true copy of the request
 func (r *Request) Copy() *Request {
 	return &Request{
-		OriginConfig:  r.OriginConfig,
 		HandlerName:   r.HandlerName,
 		HTTPMethod:    r.HTTPMethod,
 		URL:           CopyURL(r.URL),

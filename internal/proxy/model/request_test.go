@@ -31,10 +31,11 @@ func TestNewRequest(t *testing.T) {
 	cfg.OriginType = "testType"
 
 	headers := make(http.Header)
-	r := NewRequest(cfg, "testhandler", http.MethodGet, url, headers, time.Duration(1)*time.Second, nil, tu.NewTestWebClient())
-	if r.OriginConfig.OriginType != "testType" {
-		t.Errorf("expected 'testType' got '%s'", r.OriginConfig.OriginType)
+	r := NewRequest("testhandler", http.MethodGet, url, headers, time.Duration(1)*time.Second, nil, tu.NewTestWebClient())
+	if r.HandlerName != "testhandler" {
+		t.Errorf("expected 'testHandler' got '%s'", r.HandlerName)
 	}
+
 }
 
 func TestCopy(t *testing.T) {
@@ -43,9 +44,9 @@ func TestCopy(t *testing.T) {
 	cfg.OriginType = "testType"
 	url := &url.URL{}
 	headers := make(http.Header)
-	r := NewRequest(cfg, "testhandler", http.MethodGet, url, headers, time.Duration(1)*time.Second, nil, tu.NewTestWebClient())
+	r := NewRequest("testhandler", http.MethodGet, url, headers, time.Duration(1)*time.Second, nil, tu.NewTestWebClient())
 	r2 := r.Copy()
-	if r2.OriginConfig.OriginType != "testType" {
-		t.Errorf("expected 'testType' got '%s'", r2.OriginConfig.OriginType)
+	if r2.HandlerName != "testhandler" {
+		t.Errorf("expected 'testHandler' got '%s'", r2.HandlerName)
 	}
 }

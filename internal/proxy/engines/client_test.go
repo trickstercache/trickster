@@ -795,7 +795,7 @@ func (t Times) Less(i, j int) bool {
 	return t[i].Before(t[j])
 }
 
-// Swap modifies an array by of Prometheus model.Times swapping the values in indexes i and j
+// Swap modifies an array of Prometheus model.Times by swapping the values in indexes i and j
 func (t Times) Swap(i, j int) {
 	t[i], t[j] = t[j], t[i]
 }
@@ -805,32 +805,32 @@ var handlers = map[string]func(w http.ResponseWriter, r *http.Request){}
 func (c *PromTestClient) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BaseURL()
 	u.Path += APIPath + mnLabels
-	ProxyRequest(tm.NewRequest(c.Configuration(), "HealthHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient), w)
+	ProxyRequest(tm.NewRequest("HealthHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient), w)
 }
 
 func (c *PromTestClient) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	DeltaProxyCacheRequest(
-		tm.NewRequest(c.Configuration(), "QueryRangeHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
+		tm.NewRequest("QueryRangeHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
 		w, c, c.cache, c.cache.Configuration().TimeseriesTTL)
 }
 
 func (c *PromTestClient) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	ObjectProxyCacheRequest(
-		tm.NewRequest(c.Configuration(), "QueryHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
+		tm.NewRequest("QueryHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
 		w, c, c.cache, c.cache.Configuration().ObjectTTL, false)
 }
 
 func (c *PromTestClient) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	ObjectProxyCacheRequest(
-		tm.NewRequest(c.Configuration(), "SeriesHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
+		tm.NewRequest("SeriesHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
 		w, c, c.cache, c.cache.Configuration().ObjectTTL, false)
 }
 
 func (c *PromTestClient) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	ProxyRequest(tm.NewRequest(c.Configuration(), "APIProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r, c.webClient), w)
+	ProxyRequest(tm.NewRequest("APIProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r, c.webClient), w)
 }
 
 func testResultHeaderPartMatch(header http.Header, kvp map[string]string) error {

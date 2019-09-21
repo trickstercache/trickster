@@ -22,7 +22,6 @@ import (
 	"github.com/golang/snappy"
 
 	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/util/context"
@@ -74,23 +73,23 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 }
 
 // DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
-func DeriveCacheKey(c model.Client, cfg *config.OriginConfig, r *model.Request, extra string) string {
+func DeriveCacheKey(c model.Client, r *model.Request, extra string) string {
 
-	p := context.PathConfig(r.ClientRequest.Context())
-	if p == nil {
+	pc := context.PathConfig(r.ClientRequest.Context())
+	if pc == nil 	{
 		return md5.Checksum(r.URL.Path + extra)
 	}
 
 	params := r.URL.Query()
-	vals := make([]string, 0, len(p.CacheKeyParams)+len(p.CacheKeyHeaders))
+	vals := make([]string, 0, len(pc.CacheKeyParams)+len(pc.CacheKeyHeaders))
 
-	for _, p := range p.CacheKeyParams {
+	for _, p := range pc.CacheKeyParams {
 		if v := params.Get(p); v != "" {
 			vals = append(vals, v)
 		}
 	}
 
-	for _, p := range p.CacheKeyHeaders {
+	for _, p := range pc.CacheKeyHeaders {
 		if v := r.Headers.Get(p); v != "" {
 			vals = append(vals, v)
 		}

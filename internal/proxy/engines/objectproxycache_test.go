@@ -61,8 +61,7 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 
 	// get URL
 
-	cfg := config.Origins["default"]
-	req := model.NewRequest(cfg, "TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 
 	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false)
 	resp := w.Result()
@@ -148,8 +147,7 @@ func TestObjectProxyCacheRequestClientNoCache(t *testing.T) {
 
 	// get URL
 
-	cfg := config.Origins["default"]
-	req := model.NewRequest(cfg, "TestProxyRequest", r.Method, r.URL, http.Header{"Cache-Control": []string{"no-cache"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"Cache-Control": []string{"no-cache"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 
 	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false)
 	resp := w.Result()
@@ -208,9 +206,7 @@ func TestObjectProxyCacheRequestOriginNoCache(t *testing.T) {
 	r = r.WithContext(tc.WithConfigs(r.Context(), client.Configuration(), nil, p))
 
 	// get URL
-
-	cfg := config.Origins["default"]
-	req := model.NewRequest(cfg, "TestProxyRequest", r.Method, r.URL, http.Header{}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 
 	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false)
 	resp := w.Result()

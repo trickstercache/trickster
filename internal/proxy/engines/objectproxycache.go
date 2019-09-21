@@ -35,9 +35,9 @@ func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mod
 func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Cache, ttl time.Duration, noLock bool) ([]byte, *http.Response, bool) {
 
 	p := context.PathConfig(r.ClientRequest.Context())
+	oc := context.OriginConfig(r.ClientRequest.Context())
 
-	cfg := client.Configuration()
-	key := cfg.Host + "." + DeriveCacheKey(client, cfg, r, "")
+	key := oc.Host + "." + DeriveCacheKey(client, r, "")
 
 	if !noLock {
 		locks.Acquire(key)
@@ -98,7 +98,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, cache tc.Ca
 		cacheStatus = tc.LookupStatusHit
 	} else {
 		body, resp, elapsed = Fetch(r)
-		cp := GetResponseCachingPolicy(resp.StatusCode, r.OriginConfig.NegativeCache, resp.Header, ttl)
+		cp := GetResponseCachingPolicy(resp.StatusCode, oc.NegativeCache, resp.Header, ttl)
 
 		// Cache is revalidated, update headers and resulting caching policy
 		if revalidatingCache && resp.StatusCode == http.StatusNotModified {

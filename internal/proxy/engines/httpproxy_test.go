@@ -23,6 +23,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
@@ -42,14 +43,20 @@ func TestProxyRequest(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
+	oc := config.Origins["default"]
+	pc := &config.PathConfig{
+		Path:            "/",
+		RequestHeaders:  map[string]string{},
+		ResponseHeaders: map[string]string{},
+	}
+
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, nil)
+	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, pc))
 
 	// get URL
 
-	cfg := config.Origins["default"]
-
-	req := model.NewRequest(cfg, "TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	ProxyRequest(req, w)
 	resp := w.Result()
 
@@ -85,12 +92,18 @@ func TestProxyRequestBadGateway(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
+	oc := config.Origins["default"]
+	pc := &config.PathConfig{
+		Path:            "/",
+		RequestHeaders:  map[string]string{},
+		ResponseHeaders: map[string]string{},
+	}
+
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", badUpstream, nil)
+	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, pc))
 
-	cfg := config.Origins["default"]
-
-	req := model.NewRequest(cfg, "TestProxyRequest", r.Method, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	ProxyRequest(req, w)
 	resp := w.Result()
 
@@ -119,15 +132,22 @@ func TestClockOffsetWarning(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
+	oc := config.Origins["default"]
+	pc := &config.PathConfig{
+		Path:            "/",
+		RequestHeaders:  map[string]string{},
+		ResponseHeaders: map[string]string{},
+	}
+
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", s.URL, nil)
+	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, pc))
 
 	if log.HasWarnedOnce("clockoffset.default") {
 		t.Errorf("expected %t got %t", false, true)
 	}
 
-	cfg := config.Origins["default"]
-	req := model.NewRequest(cfg, "TestProxyRequest", http.MethodGet, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	req := model.NewRequest("TestProxyRequest", http.MethodGet, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	ProxyRequest(req, w)
 	resp := w.Result()
 
