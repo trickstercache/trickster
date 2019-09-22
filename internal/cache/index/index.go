@@ -144,7 +144,7 @@ func (idx *Index) UpdateObjectTTL(key string, ttl time.Duration) {
 }
 
 // UpdateObject writes or updates the Index Metadata for the provided Object
-func (idx *Index) UpdateObject(obj Object) {
+func (idx *Index) UpdateObject(obj *Object) {
 
 	key := obj.Key
 	if key == "" {
@@ -170,7 +170,7 @@ func (idx *Index) UpdateObject(obj Object) {
 
 	cache.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
 
-	idx.Objects[key] = &obj
+	idx.Objects[key] = obj
 }
 
 // RemoveObject removes an Object's Metadata from the Index
