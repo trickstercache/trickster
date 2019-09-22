@@ -164,7 +164,7 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
 
-	err = bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
+	err = bc.Store(cacheKey, []byte("data"), time.Duration(5)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
@@ -176,6 +176,44 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 	}
 	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+
+	exp1, err := bc.getExpires(cacheKey)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// the TTL is currently 1 second. udpate it to 1 hour then wait more than
+	// 1 second, to ensure it remained in cache with the correct value
+	bc.SetTTL(cacheKey, time.Duration(3600)*time.Second)
+
+	exp2, err := bc.getExpires(cacheKey)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// should be around 3595
+	diff := exp2 - exp1
+	const expected = 3590
+
+	if diff < 3590 {
+		t.Errorf("expected diff >= %d, got %d from: %d - %d", expected, diff, exp2, exp1)
+	}
+
+	// try a non-existent cacheKey
+	ck2 := cacheKey + "xxxx"
+	bc.SetTTL(ck2, time.Duration(3600)*time.Second)
+
+	// it should be a cache miss
+	_, err = bc.Retrieve(ck2, false)
+	if err == nil {
+		t.Errorf("expected key not found error for %s", ck2)
+	}
+
+	// it should also not have an expires
+	_, err = bc.getExpires(ck2)
+	if err == nil {
+		t.Errorf("expected key not found error for %s", ck2)
 	}
 }
 

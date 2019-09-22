@@ -114,7 +114,31 @@ func (c *Cache) Close() error {
 }
 
 // SetTTL updates the TTL for the provided cache object
-// Not supported yet
 func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
-	//c.Index.UpdateObjectTTL(cacheKey, ttl)
+	var data []byte
+	err := c.dbh.Update(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(cacheKey))
+		if err != nil {
+			return nil
+		}
+		data, err = item.ValueCopy(nil)
+		return txn.SetEntry(&badger.Entry{Key: []byte(cacheKey), Value: data, ExpiresAt: uint64(time.Now().Add(ttl).Unix())})
+	})
+	log.Debug("badger cache update-ttl", log.Pairs{"key": cacheKey, "ttl": ttl, "success": err == nil})
+	if err == nil {
+		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "update-ttl", "none", 0)
+	}
+}
+
+func (c *Cache) getExpires(cacheKey string) (int, error) {
+	var expires int
+	err := c.dbh.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(cacheKey))
+		if err != nil {
+			return err
+		}
+		expires = int(item.ExpiresAt())
+		return nil
+	})
+	return expires, err
 }
