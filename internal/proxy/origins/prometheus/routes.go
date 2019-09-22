@@ -171,6 +171,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 	}
 
 	oc.Paths = paths
+	oc.FastForwardPath = paths[APIPath+mnQuery]
 
 	orderedPaths := []string{APIPath + mnQueryRange, APIPath + mnQuery,
 		APIPath + mnSeries, APIPath + mnLabels, APIPath + mnLabel, APIPath + mnTargets, APIPath + mnRules,

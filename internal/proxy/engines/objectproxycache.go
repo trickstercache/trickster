@@ -18,6 +18,7 @@ import (
 	"time"
 
 	tc "github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/util/context"
@@ -27,17 +28,17 @@ import (
 
 // ObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache
 func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, noLock bool) {
-	body, resp, _ := FetchViaObjectProxyCache(r, client, noLock)
+	body, resp, _ := FetchViaObjectProxyCache(r, client, nil, noLock)
 	Respond(w, resp.StatusCode, resp.Header, body)
 }
 
 // FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
-func FetchViaObjectProxyCache(r *model.Request, client model.Client, noLock bool) ([]byte, *http.Response, bool) {
+func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config.PathConfig, noLock bool) ([]byte, *http.Response, bool) {
 
 	oc := context.OriginConfig(r.ClientRequest.Context())
 	cache := context.CacheClient(r.ClientRequest.Context())
 
-	key := oc.Host + "." + DeriveCacheKey(client, r, "")
+	key := oc.Host + "." + DeriveCacheKey(client, r, apc, "")
 
 	if !noLock {
 		locks.Acquire(key)

@@ -47,6 +47,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		return
 	}
 
+
 	trq.NormalizeExtent()
 
 	// this is used to ensure the head of the cache respects the BackFill Tolerance
@@ -76,7 +77,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	r.TimeRangeQuery = trq
 	client.SetExtent(r, &trq.Extent)
 
-	key := oc.Host + "." + DeriveCacheKey(client, r, "")
+	key := oc.Host + "." + DeriveCacheKey(client, r, nil, "")
 	locks.Acquire(key)
 	defer locks.Release(key)
 
@@ -225,7 +226,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 			defer wg.Done()
 			req := r.Copy()
 			req.URL = ffURL
-			body, resp, isHit := FetchViaObjectProxyCache(req, client, true)
+			body, resp, isHit := FetchViaObjectProxyCache(req, client, oc.FastForwardPath, true)
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				ffts, err = client.UnmarshalInstantaneous(body)
 				if err != nil {

@@ -22,6 +22,7 @@ import (
 	"github.com/golang/snappy"
 
 	"github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/util/context"
@@ -73,9 +74,12 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 }
 
 // DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
-func DeriveCacheKey(c model.Client, r *model.Request, extra string) string {
+func DeriveCacheKey(c model.Client, r *model.Request, apc *config.PathConfig, extra string) string {
 
 	pc := context.PathConfig(r.ClientRequest.Context())
+	if apc != nil {
+		pc = apc
+	}
 	if pc == nil {
 		return md5.Checksum(r.URL.Path + extra)
 	}

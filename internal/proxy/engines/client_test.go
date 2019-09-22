@@ -219,6 +219,9 @@ func (c *PromTestClient) DefaultPathConfigs(oc *config.OriginConfig) (map[string
 		},
 	}
 
+	oc.Paths = paths
+	oc.FastForwardPath = paths[APIPath+mnQuery]
+
 	orderedPaths := []string{APIPath + mnQueryRange, APIPath + mnQuery,
 		APIPath + mnSeries, APIPath + mnLabels, APIPath + mnLabel, APIPath + mnTargets, APIPath + mnRules,
 		APIPath + mnAlerts, APIPath + mnAlertManagers, APIPath + mnStatus, APIPath, "/"}
