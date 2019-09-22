@@ -247,15 +247,22 @@ func TestUpdateObjectTTL(t *testing.T) {
 	obj := Object{Key: cacheKey, Value: []byte("test_value")}
 	cacheConfig := &config.CachingConfig{CacheType: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
-	idx.UpdateObject(&obj)
 
-	if !obj.Expiration.IsZero() {
-		t.Errorf("expected zero time, got %v", obj.Expiration)
+	exp := idx.GetExpiration(cacheKey)
+	if !exp.IsZero() {
+		t.Errorf("expected zero time, got %v", exp)
 	}
+
+	idx.UpdateObject(&obj)
 
 	idx.UpdateObjectTTL(cacheKey, time.Duration(3600)*time.Second)
 
 	if obj.Expiration.IsZero() {
+		t.Errorf("expected non-zero time, got %v", obj.Expiration)
+	}
+
+	exp = idx.GetExpiration(cacheKey)
+	if exp.IsZero() {
 		t.Errorf("expected non-zero time, got %v", obj.Expiration)
 	}
 

@@ -193,6 +193,17 @@ func (idx *Index) RemoveObject(key string, noLock bool) {
 
 }
 
+// GetExpiration returns the cache index's expiration for the object of the given key
+func (idx *Index) GetExpiration(cacheKey string) time.Time {
+	indexLock.Lock()
+	defer indexLock.Unlock()
+
+	if o, ok := idx.Objects[cacheKey]; ok {
+		return o.Expiration
+	}
+	return time.Time{}
+}
+
 // flusher periodically calls the cache's index flush func that writes the cache index to disk
 func (idx *Index) flusher() {
 	var lastFlush time.Time
