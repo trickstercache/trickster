@@ -135,7 +135,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		return cache.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
 	}
 
-	// defer to the index for TTL rather than the object itself
+	// defer to the index for TTL rather than the stored object
 	if o2, ok := c.Index.Objects[cacheKey]; ok {
 		o.Expiration = o2.Expiration
 	}
