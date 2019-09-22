@@ -14,6 +14,7 @@
 package bbolt
 
 import (
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -71,6 +72,50 @@ func TestBboltCache_Store(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+func TestBboltCache_SetTTL(t *testing.T) {
+
+	cacheConfig := newCacheConfig()
+	bc := Cache{Config: &cacheConfig}
+	defer os.RemoveAll(cacheConfig.BBolt.Filename)
+
+	err := bc.Connect()
+	if err != nil {
+		t.Error(err)
+	}
+	defer bc.Close()
+
+	// it should store a value
+	err = bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
+	if err != nil {
+		t.Error(err)
+	}
+
+	exp1, err := bc.getExpires(cacheKey)
+	if err != nil {
+		t.Error(err)
+	}
+
+	fmt.Println(exp1)
+
+	bc.SetTTL(cacheKey, time.Duration(3600)*time.Second)
+
+	exp2, err := bc.getExpires(cacheKey)
+	if err != nil {
+		t.Error(err)
+	}
+
+	fmt.Println(exp2)
+
+	// should be around 3595
+	diff := exp2 - exp1
+	const expected = 3500
+
+	if diff < expected {
+		t.Errorf("expected diff >= %d, got %d from: %d - %d", expected, diff, exp2, exp1)
+	}
+
 }
 
 func TestBboltCache_StoreNoIndex(t *testing.T) {

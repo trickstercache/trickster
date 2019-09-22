@@ -100,7 +100,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 	}
 	log.Debug("bbolt cache store", log.Pairs{"key": cacheKey, "ttl": ttl, "indexed": updateIndex})
 	if updateIndex {
-		go c.Index.UpdateObject(o)
+		c.Index.UpdateObject(o)
 	}
 	return nil
 }
@@ -135,6 +135,11 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		return cache.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
 	}
 
+	// defer to the index for TTL rather than the object itself
+	if o2, ok := c.Index.Objects[cacheKey]; ok {
+		o.Expiration = o2.Expiration
+	}
+
 	if allowExpired || o.Expiration.After(time.Now()) {
 		log.Debug("bbolt cache retrieve", log.Pairs{"cacheKey": cacheKey})
 		if atime {
@@ -151,7 +156,23 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 
 // SetTTL updates the TTL for the provided cache object
 func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
+	locks.Acquire(lockPrefix + cacheKey)
+	defer locks.Release(lockPrefix + cacheKey)
 	c.Index.UpdateObjectTTL(cacheKey, ttl)
+}
+
+func (c *Cache) getExpires(cacheKey string) (int, error) {
+
+	locks.Acquire(lockPrefix + cacheKey)
+	defer locks.Release(lockPrefix + cacheKey)
+
+	if o, ok := c.Index.Objects[cacheKey]; ok {
+		fmt.Println(o.Expiration.Unix())
+		return int(o.Expiration.Unix()), nil
+	}
+
+	return 0, nil
+
 }
 
 // Remove removes an object in cache, if present
