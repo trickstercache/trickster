@@ -47,7 +47,6 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		return
 	}
 
-
 	trq.NormalizeExtent()
 
 	// this is used to ensure the head of the cache respects the BackFill Tolerance
