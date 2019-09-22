@@ -12,3 +12,125 @@
  */
 
 package handlers
+
+import (
+	"io/ioutil"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/headers"
+	tc "github.com/Comcast/trickster/internal/util/context"
+)
+
+func TestHandleLocalResponse(t *testing.T) {
+
+	config.Load("trickster-test", "test", []string{"-origin-url", "http://1.2.3.4", "-origin-type", "prometheus"})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
+
+	pc := &config.PathConfig{
+		ResponseCode:      418,
+		ResponseBody:      "[test",
+		ResponseBodyBytes: []byte("[test"),
+		ResponseHeaders:   map[string]string{headers.NameTricksterResult: "1234"},
+	}
+
+	r = r.WithContext(tc.WithConfigs(r.Context(), nil, nil, pc))
+
+	HandleLocalResponse(w, r)
+	resp := w.Result()
+
+	// it should return 418 OK and "pong"
+	if resp.StatusCode != 418 {
+		t.Errorf("expected 418 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(bodyBytes) < 1 {
+		t.Errorf("missing body in response")
+	}
+
+	if bodyBytes[0] != 91 {
+		t.Errorf("response is not toml format")
+	}
+
+	if resp.Header.Get(headers.NameTricksterResult) == "" {
+		t.Errorf("expected header valuef for %s", headers.NameTricksterResult)
+	}
+
+}
+
+func TestHandleLocalResponseBadResponseCode(t *testing.T) {
+
+	config.Load("trickster-test", "test", []string{"-origin-url", "http://1.2.3.4", "-origin-type", "prometheus"})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
+
+	pc := &config.PathConfig{
+		ResponseCode:      0,
+		ResponseBody:      "[test",
+		ResponseBodyBytes: []byte("[test"),
+		ResponseHeaders:   map[string]string{headers.NameTricksterResult: "1234"},
+	}
+
+	r = r.WithContext(tc.WithConfigs(r.Context(), nil, nil, pc))
+
+	HandleLocalResponse(w, r)
+	resp := w.Result()
+
+	// it should return 200 OK and because we passed 0
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(bodyBytes) < 1 {
+		t.Errorf("missing body in response")
+	}
+
+	if bodyBytes[0] != 91 {
+		t.Errorf("response is not toml format")
+	}
+
+	if resp.Header.Get(headers.NameTricksterResult) == "" {
+		t.Errorf("expected header valuef for %s", headers.NameTricksterResult)
+	}
+
+}
+
+func TestHandleLocalResponseNoPathConfig(t *testing.T) {
+
+	config.Load("trickster-test", "test", []string{"-origin-url", "http://1.2.3.4", "-origin-type", "prometheus"})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
+
+	HandleLocalResponse(w, r)
+	resp := w.Result()
+
+	// it should return 200 OK and "pong"
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(bodyBytes) > 0 {
+		t.Errorf("body should be empty")
+	}
+
+}

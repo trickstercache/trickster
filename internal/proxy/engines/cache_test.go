@@ -57,6 +57,63 @@ func TestDeriveCacheKey(t *testing.T) {
 
 }
 
+func TestDeriveCacheKeyAuthHeader(t *testing.T) {
+
+	client := &PromTestClient{
+		config: &config.OriginConfig{
+			Paths: map[string]*config.PathConfig{
+				"root": &config.PathConfig{
+					Path:            "/",
+					CacheKeyParams:  []string{"query", "step", "time"},
+					CacheKeyHeaders: []string{headers.NameAuthorization},
+				},
+			},
+		},
+	}
+
+	tr := httptest.NewRequest("GET", "http://127.0.0.1", nil)
+	tr = tr.WithContext(ct.WithConfigs(tr.Context(), client.Configuration(), nil, client.Configuration().Paths["root"]))
+	tr.Header.Add("Authorization", "test")
+
+	u := &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
+	r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
+	r.Headers = tr.Header
+
+	key := DeriveCacheKey(client, r, nil, "extra")
+
+	if key != "546bff5ae2105657f16a38d2cf358fd3" {
+		t.Errorf("expected %s got %s", "546bff5ae2105657f16a38d2cf358fd3", key)
+	}
+
+}
+
+func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
+
+	client := &PromTestClient{
+		config: &config.OriginConfig{
+			Paths: map[string]*config.PathConfig{
+				"root": &config.PathConfig{
+					Path:            "/",
+					CacheKeyParams:  []string{"query", "step", "time"},
+					CacheKeyHeaders: []string{},
+				},
+			},
+		},
+	}
+
+	tr := httptest.NewRequest("GET", "http://127.0.0.1", nil)
+	tr = tr.WithContext(ct.WithConfigs(tr.Context(), client.Configuration(), nil, nil))
+
+	u := &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
+	r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
+	key := DeriveCacheKey(client, r, nil, "extra")
+
+	if key != "f53b04ce5c434a7357804ae15a64ee6c" {
+		t.Errorf("expected %s got %s", "f53b04ce5c434a7357804ae15a64ee6c", key)
+	}
+
+}
+
 func TestQueryCache(t *testing.T) {
 
 	expected := "1234"
@@ -102,22 +159,7 @@ func TestQueryCache(t *testing.T) {
 
 }
 
-// example headers:
-// date: Sun, 16 Jun 2019 14:19:04 GMT
-// expires: -1
-// cache-control: private, max-age=0
-// content-type: text/html; charset=ISO-8859-1
-// p3p: CP="This is not a P3P policy! See g.co/p3phelp for more info."
-// server: gws
-// x-xss-protection: 0
-// x-frame-options: SAMEORIGIN
-// set-cookie: 1P_JAR=2019-06-16-14; expires=Tue, 16-Jul-2019 14:19:04 GMT; path=/; domain=.google.com
-// set-cookie: NID=185=RXv4GLcLUhGFKcGW1Yo6cKvRKddyqh9xO4Ehex3VCcRz5karTWvsfwUbjKUJR-ENolG76IjNX07dY7RFr41cH5wpNOUadbUyQ9TX8jNmTI2C5NAyl_ORwrvwhmhvNFF3u_CrSaYi4mOqOqt6Q1brO0whSpzwxOIYvbQ8F8Q4vEs; expires=Mon, 16-Dec-2019 14:19:04 GMT; path=/; domain=.google.com; HttpOnly
-// alt-svc: quic=":443"; ma=2592000; v="46,44,43,39"
-// accept-ranges: none
-// vary: Accept-Encoding
-
-func TestGetResponseCacheability(t *testing.T) {
+func TestGetResponseCachingPolicy(t *testing.T) {
 
 	now := time.Now().Truncate(time.Second)
 
@@ -224,6 +266,13 @@ func TestGetResponseCacheability(t *testing.T) {
 				t.Errorf("expected ttl of %d got %d", test.expectedTTL, d)
 			}
 		})
+	}
+}
+
+func TestGetResponseCachingPolicyNegativeCache(t *testing.T) {
+	p := GetResponseCachingPolicy(400, map[int]time.Duration{400: 300 * time.Second}, nil)
+	if p.FreshnessLifetime != 300 {
+		t.Errorf("expected ttl of %d got %d", 300, p.FreshnessLifetime)
 	}
 }
 
