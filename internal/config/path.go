@@ -85,7 +85,7 @@ type PathConfig struct {
 	ResponseBodyBytes []byte `toml:"-"`
 	// MatchType is the PathMatchType representation of MatchTypeName
 	MatchType PathMatchType `toml:"-"`
-	// OriginConfig is the refernece to the PathConfig's parent Origin Config
+	// OriginConfig is the reference to the PathConfig's parent Origin Config
 	OriginConfig *OriginConfig `toml:"-"`
 
 	custom []string `toml:"-"`
