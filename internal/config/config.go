@@ -161,6 +161,8 @@ type OriginConfig struct {
 	TimeseriesTTL time.Duration `toml:"-"`
 	// FastForwardTTL is the parsed value of FastForwardTTL
 	FastForwardTTL time.Duration `toml:"-"`
+	// FastForwardPath is the PathConfig to use for upstream Fast Forward Requests
+	FastForwardPath *PathConfig `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
