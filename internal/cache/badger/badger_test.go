@@ -183,7 +183,7 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 		t.Error(err)
 	}
 
-	// the TTL is currently 1 second. udpate it to 1 hour then wait more than
+	// the TTL is currently 1 second. update it to 1 hour then wait more than
 	// 1 second, to ensure it remained in cache with the correct value
 	bc.SetTTL(cacheKey, time.Duration(3600)*time.Second)
 
