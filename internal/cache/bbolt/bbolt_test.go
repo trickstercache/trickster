@@ -14,7 +14,6 @@
 package bbolt
 
 import (
-	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -86,36 +85,39 @@ func TestBboltCache_SetTTL(t *testing.T) {
 	}
 	defer bc.Close()
 
+	exp1 := bc.Index.GetExpiration(cacheKey)
+	if !exp1.IsZero() {
+		t.Errorf("expected Zero time, got %v", exp1)
+	}
+
 	// it should store a value
 	err = bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
 
-	exp1, err := bc.getExpires(cacheKey)
-	if err != nil {
-		t.Error(err)
+	exp1 = bc.Index.GetExpiration(cacheKey)
+	if exp1.IsZero() {
+		t.Errorf("expected time %d, got zero", int(time.Now().Unix())+60)
 	}
 
-	fmt.Println(exp1)
+	e1 := int(exp1.Unix())
 
 	bc.SetTTL(cacheKey, time.Duration(3600)*time.Second)
 
-	exp2, err := bc.getExpires(cacheKey)
-	if err != nil {
-		t.Error(err)
+	exp2 := bc.Index.GetExpiration(cacheKey)
+	if exp2.IsZero() {
+		t.Errorf("expected time %d, got zero", int(time.Now().Unix())+3600)
 	}
-
-	fmt.Println(exp2)
+	e2 := int(exp2.Unix())
 
 	// should be around 3595
-	diff := exp2 - exp1
+	diff := e2 - e1
 	const expected = 3500
 
 	if diff < expected {
-		t.Errorf("expected diff >= %d, got %d from: %d - %d", expected, diff, exp2, exp1)
+		t.Errorf("expected diff >= %d, got %d from: %d - %d", expected, diff, e2, e1)
 	}
-
 }
 
 func TestBboltCache_StoreNoIndex(t *testing.T) {

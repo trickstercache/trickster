@@ -90,7 +90,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 
 	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 
-	o := index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
+	o := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	err := c.dbh.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
 		return b.Put([]byte(cacheKey), o.ToBytes())
@@ -134,22 +134,18 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	if err != nil {
 		return cache.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
 	}
+	o.Expiration = c.Index.GetExpiration(cacheKey)
 
-	// defer to the index for TTL rather than the stored object
-	if o2, ok := c.Index.Objects[cacheKey]; ok {
-		o.Expiration = o2.Expiration
-	}
-
-	if allowExpired || o.Expiration.After(time.Now()) {
+	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
 		log.Debug("bbolt cache retrieve", log.Pairs{"cacheKey": cacheKey})
 		if atime {
-			go c.Index.UpdateObjectAccessTime(cacheKey)
+			c.Index.UpdateObjectAccessTime(cacheKey)
 		}
 		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
 		return o.Value, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
-	go c.Remove(cacheKey)
+	c.remove(cacheKey, false)
 	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 
 }
@@ -161,29 +157,14 @@ func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
 	c.Index.UpdateObjectTTL(cacheKey, ttl)
 }
 
-func (c *Cache) getExpires(cacheKey string) (int, error) {
-
-	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
-
-	if o, ok := c.Index.Objects[cacheKey]; ok {
-		fmt.Println(o.Expiration.Unix())
-		return int(o.Expiration.Unix()), nil
-	}
-
-	return 0, nil
-
-}
-
 // Remove removes an object in cache, if present
 func (c *Cache) Remove(cacheKey string) {
+	locks.Acquire(lockPrefix + cacheKey)
+	defer locks.Release(lockPrefix + cacheKey)
 	c.remove(cacheKey, false)
 }
 
 func (c *Cache) remove(cacheKey string, noLock bool) error {
-
-	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
 
 	err := c.dbh.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))

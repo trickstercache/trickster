@@ -50,39 +50,56 @@ func (c *Cache) Connect() error {
 
 // Store places an object in the cache using the specified key and ttl
 func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
+	return c.store(cacheKey, data, ttl, true)
+}
+
+func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateIndex bool) error {
 
 	locks.Acquire(lockPrefix + cacheKey)
 	defer locks.Release(lockPrefix + cacheKey)
 
 	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
+
+	o1 := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
+	o2 := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	log.Debug("memorycache cache store", log.Pairs{"cacheKey": cacheKey, "length": len(data), "ttl": ttl})
-	o := index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
-	c.client.Store(cacheKey, o)
-	go c.Index.UpdateObject(o)
+	c.client.Store(cacheKey, o1)
+
+	if updateIndex {
+		c.Index.UpdateObject(o2)
+	}
 	return nil
 }
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)
 func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
+	return c.retrieve(cacheKey, allowExpired, true)
+}
+
+func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte, error) {
 
 	locks.Acquire(lockPrefix + cacheKey)
 	defer locks.Release(lockPrefix + cacheKey)
 
 	record, ok := c.client.Load(cacheKey)
+
 	if ok {
-		r := record.(index.Object)
-		if allowExpired || r.Expiration.After(time.Now()) {
-			log.Debug("memorycache cache retrieve", log.Pairs{"cacheKey": cacheKey})
-			c.Index.UpdateObjectAccessTime(cacheKey)
-			cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(r.Value)))
-			return r.Value, nil
+		o := record.(*index.Object)
+		o.Expiration = c.Index.GetExpiration(cacheKey)
+
+		if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
+			log.Debug("bbolt cache retrieve", log.Pairs{"cacheKey": cacheKey})
+			if atime {
+				c.Index.UpdateObjectAccessTime(cacheKey)
+			}
+			cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(o.Value)))
+			return o.Value, nil
 		}
-
 		// Cache Object has been expired but not reaped, go ahead and delete it
-		go c.Remove(cacheKey)
+		c.remove(cacheKey, false)
 	}
-
 	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+
 }
 
 // SetTTL updates the TTL for the provided cache object

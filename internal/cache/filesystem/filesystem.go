@@ -78,14 +78,14 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 	locks.Acquire(lockPrefix + cacheKey)
 	defer locks.Release(lockPrefix + cacheKey)
 
-	o := index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
+	o := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	err := ioutil.WriteFile(dataFile, o.ToBytes(), os.FileMode(0777))
 	if err != nil {
 		return err
 	}
 	log.Debug("filesystem cache store", log.Pairs{"key": cacheKey, "dataFile": dataFile, "indexed": updateIndex})
 	if updateIndex {
-		go c.Index.UpdateObject(o)
+		c.Index.UpdateObject(o)
 	}
 	return nil
 
@@ -113,17 +113,18 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	if err != nil {
 		return cache.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
 	}
+	o.Expiration = c.Index.GetExpiration(cacheKey)
 
-	if allowExpired || o.Expiration.After(time.Now()) {
+	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
 		log.Debug("filesystem cache retrieve", log.Pairs{"key": cacheKey, "dataFile": dataFile})
 		if atime {
-			go c.Index.UpdateObjectAccessTime(cacheKey)
+			c.Index.UpdateObjectAccessTime(cacheKey)
 		}
 		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
 		return o.Value, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
-	go c.Remove(cacheKey)
+	c.remove(cacheKey, false)
 	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 
 }
@@ -135,12 +136,15 @@ func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
 
 // Remove removes an object from the cache
 func (c *Cache) Remove(cacheKey string) {
-
 	locks.Acquire(lockPrefix + cacheKey)
 	defer locks.Release(lockPrefix + cacheKey)
+	c.remove(cacheKey, false)
+}
+
+func (c *Cache) remove(cacheKey string, noLock bool) {
 
 	if err := os.Remove(c.getFileName(cacheKey)); err == nil {
-		c.Index.RemoveObject(cacheKey, false)
+		c.Index.RemoveObject(cacheKey, noLock)
 	}
 	cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 }

@@ -105,6 +105,54 @@ func TestFilesystemCache_StoreNoIndex(t *testing.T) {
 
 }
 
+func TestFilesystemCache_SetTTL(t *testing.T) {
+
+	cacheConfig := newCacheConfig(t)
+	fc := Cache{Config: &cacheConfig}
+	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
+
+	err := fc.Connect()
+	if err != nil {
+		t.Error(err)
+	}
+	defer fc.Close()
+
+	exp1 := fc.Index.GetExpiration(cacheKey)
+	if !exp1.IsZero() {
+		t.Errorf("expected Zero time, got %v", exp1)
+	}
+
+	// it should store a value
+	err = fc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
+	if err != nil {
+		t.Error(err)
+	}
+
+	exp1 = fc.Index.GetExpiration(cacheKey)
+	if exp1.IsZero() {
+		t.Errorf("expected time %d, got zero", int(time.Now().Unix())+60)
+	}
+
+	e1 := int(exp1.Unix())
+
+	fc.SetTTL(cacheKey, time.Duration(3600)*time.Second)
+
+	exp2 := fc.Index.GetExpiration(cacheKey)
+	if exp2.IsZero() {
+		t.Errorf("expected time %d, got zero", int(time.Now().Unix())+3600)
+	}
+	e2 := int(exp2.Unix())
+
+	// should be around 3595
+	diff := e2 - e1
+	const expected = 3500
+
+	if diff < expected {
+		t.Errorf("expected diff >= %d, got %d from: %d - %d", expected, diff, e2, e1)
+	}
+
+}
+
 func TestFilesystemCache_Retrieve(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
