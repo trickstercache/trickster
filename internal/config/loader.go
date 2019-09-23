@@ -103,7 +103,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 				return fmt.Errorf(`invalid negative cache config: %s is not a valid status code`, c)
 			}
 
-			if ci > 200 && ci < 600 {
+			if ci >= 400 && ci < 600 {
 				o.NegativeCache[ci] = time.Duration(s) * time.Second
 			} else {
 				return fmt.Errorf(`invalid negative cache config: %s is not a valid status code`, c)
