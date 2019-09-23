@@ -44,11 +44,11 @@ func TestNewPathConfig(t *testing.T) {
 	pc := NewPathConfig()
 
 	if pc == nil {
-		t.Errorf("exected non-nil value you for %s", "PathConfig")
+		t.Errorf("expected non-nil value you for %s", "PathConfig")
 	}
 
 	if pc.HandlerName != "proxy" {
-		t.Errorf("exected value %s, got %s", "proxy", pc.HandlerName)
+		t.Errorf("expected value %s, got %s", "proxy", pc.HandlerName)
 	}
 
 }
@@ -59,11 +59,11 @@ func TestPathCopy(t *testing.T) {
 	pc2 := pc.Copy()
 
 	if pc2 == nil {
-		t.Errorf("exected non-nil value you for %s", "PathConfig")
+		t.Errorf("expected non-nil value you for %s", "PathConfig")
 	}
 
 	if pc2.HandlerName != "proxy" {
-		t.Errorf("exected value %s, got %s", "proxy", pc2.HandlerName)
+		t.Errorf("expected value %s, got %s", "proxy", pc2.HandlerName)
 	}
 
 }
@@ -96,15 +96,15 @@ func TestPathMerge(t *testing.T) {
 	pc.Merge(pc2)
 
 	if pc.Path != expectedPath {
-		t.Errorf("exected %s got %s", expectedPath, pc.Path)
+		t.Errorf("expected %s got %s", expectedPath, pc.Path)
 	}
 
 	if pc.MatchType != PathMatchTypePrefix {
-		t.Errorf("exected %s got %s", PathMatchTypePrefix, pc.MatchType)
+		t.Errorf("expected %s got %s", PathMatchTypePrefix, pc.MatchType)
 	}
 
 	if pc.HandlerName != expectedHandlerName {
-		t.Errorf("exected %s got %s", expectedHandlerName, pc.HandlerName)
+		t.Errorf("expected %s got %s", expectedHandlerName, pc.HandlerName)
 	}
 
 	if len(pc.CacheKeyParams) != 1 {
@@ -140,7 +140,7 @@ func TestPathMerge(t *testing.T) {
 	}
 
 	if pc.OriginConfig == nil {
-		t.Errorf("exected non-nil value you for %s", "OriginConfig")
+		t.Errorf("expected non-nil value you for %s", "OriginConfig")
 	}
 
 }
