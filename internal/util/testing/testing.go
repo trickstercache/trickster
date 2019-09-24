@@ -24,6 +24,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	th "github.com/Comcast/trickster/internal/proxy/headers"
 	ct "github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/util/metrics"
 	"github.com/Comcast/trickster/pkg/promsim"
 )
 
@@ -60,6 +61,8 @@ func NewTestInstance(
 	respCode int, respBody string, respHeaders map[string]string,
 	originType, urlPath, logLevel string,
 ) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *http.Client, error) {
+
+	metrics.Init()
 
 	var ts *httptest.Server
 	if originType == "promsim" {

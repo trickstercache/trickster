@@ -13,13 +13,18 @@
 
 package testing
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/Comcast/trickster/internal/config"
+)
 
 func TestNewTestServer(t *testing.T) {
 	s := NewTestServer(200, "OK", map[string]string{"Expires": "-1"})
 	if s == nil {
 		t.Errorf("Expected server pointer, got %v", s)
 	}
+
 }
 
 func TestNewTestWebClient(t *testing.T) {
@@ -27,4 +32,46 @@ func TestNewTestWebClient(t *testing.T) {
 	if s == nil {
 		t.Errorf("Expected webclient pointer, got %v", s)
 	}
+}
+
+func TestNewTestInstance(t *testing.T) {
+	s, w, r, c, err := NewTestInstance("", nil, 200, "", nil, "test", "test", "debug")
+
+	if s == nil {
+		t.Errorf("Expected server pointer, got %v", "nil")
+	}
+
+	if r == nil {
+		t.Errorf("Expected server pointer, got %v", "nil")
+	}
+
+	if c == nil {
+		t.Errorf("Expected server pointer, got %v", "nil")
+	}
+
+	if w == nil {
+		t.Errorf("Expected server pointer, got %v", "nil")
+	}
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	// cover promsim conditional and path generation
+
+	f := func(*config.OriginConfig) (map[string]*config.PathConfig, []string) {
+
+		m := map[string]*config.PathConfig{
+			"path1": &config.PathConfig{},
+			"path2": &config.PathConfig{},
+		}
+
+		return m, []string{"path1", "path2"}
+	}
+
+	s, w, r, c, err = NewTestInstance("", f, 200, "", nil, "promsim", "test", "debug")
+	if s == nil {
+		t.Errorf("Expected server pointer, got %v", "nil")
+	}
+
 }
