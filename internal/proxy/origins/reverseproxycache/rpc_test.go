@@ -12,3 +12,45 @@
  */
 
 package reverseproxycache
+
+import (
+	"testing"
+
+	"github.com/Comcast/trickster/internal/config"
+)
+
+func TestNewNewClient(t *testing.T) {
+	c := NewClient("test", config.NewOriginConfig(), nil)
+	if c == nil {
+		t.Errorf("expected client named %s", "test")
+	}
+}
+
+func TestHTTPClient(t *testing.T) {
+	c := NewClient("test", config.NewOriginConfig(), nil)
+	if c.HTTPClient() == nil {
+		t.Errorf("expected HTTPClient for RPC client named %s", "test")
+	}
+}
+
+func TestGetCache(t *testing.T) {
+	c := NewClient("test", config.NewOriginConfig(), nil)
+	if c.Cache() != nil {
+		t.Errorf("expected nil Cache for RPC client named %s", "test")
+	}
+}
+
+func TestClientName(t *testing.T) {
+	c := NewClient("test", config.NewOriginConfig(), nil)
+	if c.Name() != "test" {
+		t.Errorf("expected RPC client named %s", "test")
+	}
+}
+
+func TestSetCache(t *testing.T) {
+	c := NewClient("test", config.NewOriginConfig(), nil)
+	c.SetCache(nil)
+	if c.Cache() != nil {
+		t.Errorf("expected nil cache for client named %s", "test")
+	}
+}
