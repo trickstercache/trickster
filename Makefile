@@ -13,8 +13,16 @@ go-mod-vendor:
 	GO111MODULE=on $(GO) mod vendor
 
 .PHONY: build
-build: go-mod-vendor
-	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) go build -a -v
+build:  go-mod-vendor git-common
+	@date +%s > $(CURDIR)/_time_$@.txt	
+	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) go build -a -v 
+	@tput setaf 4; echo "Build took $$(($$(date +%s)-$$(cat  _time_$@.txt))) seconds"; tput sgr0
+	@rm $(CURDIR)/_time_$@.txt
+	    
+.PHONY: git-common
+git-common:
+	@tput setaf 4; echo "$(subst /,-,$(shell git rev-parse --abbrev-ref HEAD)) \
+		: $$(git rev-parse HEAD)"; tput sgr0
 
 rpm: build
 	mkdir -p ./OPATH/SOURCES
