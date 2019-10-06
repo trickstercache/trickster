@@ -116,7 +116,7 @@ data:
         host = {{ .host | quote }}
         path_prefix = {{ .pathPrefix | quote }}
         timeout_secs = {{ .timeoutSecs }}
-        keep_alive_timeout_secs = {{ .keepAliveYimeoutSecs }}
+        keep_alive_timeout_secs = {{ .keepAliveTimeoutSecs }}
         max_idle_conns = {{ .maxIdleConns }}
         api_path = {{ .apiPath | quote }}
         ignore_no_cache_header = {{ .ignoreNoCacheHeader }}
