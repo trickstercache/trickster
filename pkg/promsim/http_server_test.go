@@ -49,6 +49,28 @@ func TestQueryRangeHandler(t *testing.T) {
 	if string(bodyBytes) != expected {
 		t.Errorf("expected %s got %s", expected, bodyBytes)
 	}
+
+	// Test with a duration that includes a unit of measurement
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest("GET", "http://0/query_range?query=up&start=0&end=30&step=15s", nil)
+	queryRangeHandler(w, r)
+
+	resp = w.Result()
+
+	// it should return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d", resp.StatusCode)
+	}
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != expected {
+		t.Errorf("expected %s got %s", expected, bodyBytes)
+	}
+
 }
 
 func TestQueryRangeHandlerFloatTime(t *testing.T) {
@@ -204,4 +226,50 @@ func TestQueryHandlerInvalidParam(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected %d got %d", http.StatusBadRequest, resp.StatusCode)
 	}
+}
+
+func TestParseDuration(t *testing.T) {
+
+	// Test inferred seconds
+	d, err := parseDuration("15")
+	if err != nil {
+		t.Error(err)
+	}
+	if d != 15 {
+		t.Errorf("expected %d got %d", 15, d)
+	}
+
+	// Test unit of h
+	d, err = parseDuration("1h")
+	if err != nil {
+		t.Error(err)
+	}
+	if d != 3600 {
+		t.Errorf("expected %d got %d", 3600, d)
+	}
+
+	// Test invalid unit
+	d, err = parseDuration("1x")
+	if err == nil {
+		t.Errorf("expected parseDuration error for input [%s] got [%d]", "1x", d)
+	}
+
+	// Test decimal
+	d, err = parseDuration("1.3")
+	if err == nil {
+		t.Errorf("expected parseDuration error for input [%s] got [%d]", "1.3", d)
+	}
+
+	// Test empty
+	d, err = parseDuration("")
+	if err == nil {
+		t.Errorf("expected parseDuration error for input [%s] got [%d]", "", d)
+	}
+
+	// Test Negative
+	d, err = parseDuration("-1")
+	if err != nil {
+		t.Error(err)
+	}
+
 }
