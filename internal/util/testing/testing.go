@@ -18,6 +18,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"time"
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
@@ -81,6 +82,10 @@ func NewTestInstance(
 	cache, err := cr.GetCache("default")
 	if err != nil {
 		return nil, nil, nil, nil, err
+	}
+
+	if !strings.HasPrefix(urlPath, "/") {
+		urlPath = "/" + urlPath
 	}
 
 	w := httptest.NewRecorder()
