@@ -27,7 +27,7 @@ func TestWithConfigs(t *testing.T) {
 	metrics.Init()
 	ctx := context.Background()
 
-	// test empty reponses
+	// test empty responses
 	pc := PathConfig(ctx)
 	if pc != nil {
 		t.Errorf("expected nil path config, got one named %s", pc.Path)
