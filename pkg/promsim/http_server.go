@@ -64,7 +64,7 @@ func queryRangeHandler(w http.ResponseWriter, r *http.Request) {
 
 		i, err = parseDuration(p)
 		if err != nil {
-			writeError(http.StatusBadRequest, []byte("unable to parse step parameter"), w)
+			writeError(http.StatusBadRequest, []byte(fmt.Sprintf("unable to parse step parameter: %s", p)), w)
 			return
 		}
 		step = time.Duration(i) * time.Second
@@ -135,6 +135,12 @@ func parseTime(s string) (time.Time, error) {
 }
 
 func parseDuration(input string) (int64, error) {
+
+	v, err := strconv.ParseInt(input, 10, 64)
+	if err == nil {
+		return v, nil
+	}
+
 	for i := range input {
 		if input[i] > 47 && input[i] < 58 {
 			continue
