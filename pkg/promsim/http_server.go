@@ -62,7 +62,7 @@ func queryRangeHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		i, err = strconv.ParseInt(p, 10, 64)
+		i, err = parseDuration(p)
 		if err != nil {
 			writeError(http.StatusBadRequest, []byte("unable to parse step parameter"), w)
 			return
@@ -132,4 +132,47 @@ func parseTime(s string) (time.Time, error) {
 		return t, nil
 	}
 	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
+}
+
+func parseDuration(input string) (int64, error) {
+	for i := range input {
+		if input[i] > 47 && input[i] < 58 {
+			continue
+		}
+		if input[i] == 46 {
+			break
+		}
+		if i > 0 {
+			units, ok := UnitMap[input[i:]]
+			if !ok {
+				return 0, durationError(input)
+			}
+			v, err := strconv.ParseInt(input[0:i], 10, 64)
+			if err != nil {
+				return 0, durationError(input)
+			}
+			v = v * units
+			return int64(time.Duration(v).Seconds()), nil
+		}
+	}
+	return 0, durationError(input)
+}
+
+func durationError(input string) error {
+	return fmt.Errorf("cannot parse %q to a valid duration", input)
+}
+
+// UnitMap provides a map of common time unit indicators to nanoseconds of duration per unit
+var UnitMap = map[string]int64{
+	"ns": int64(time.Nanosecond),
+	"us": int64(time.Microsecond),
+	"µs": int64(time.Microsecond), // U+00B5 = micro symbol
+	"μs": int64(time.Microsecond), // U+03BC = Greek letter mu
+	"ms": int64(time.Millisecond),
+	"s":  int64(time.Second),
+	"m":  int64(time.Minute),
+	"h":  int64(time.Hour),
+	"d":  int64(24 * time.Hour),
+	"w":  int64(24 * 7 * time.Hour),
+	"y":  int64(24 * 365 * time.Hour),
 }
