@@ -25,6 +25,7 @@ type Config struct {
 	Profiler         ProfilerConfig                    `toml:"profiler"`
 	Origins          map[string]PrometheusOriginConfig `toml:"origins"`
 	ProxyServer      ProxyServerConfig                 `toml:"proxy_server"`
+	TLS              TLSConfig                         `toml:"tls"`
 }
 
 // GeneralConfig is a collection of general configuration values.
@@ -119,6 +120,16 @@ type LoggingConfig struct {
 	LogLevel string `toml:"log_level"`
 }
 
+// TLSConfig is a collection of TLS configurations for the main http listenr for the application
+type TLSConfig struct {
+	// Enabled specifies whether or not the tls endpoint should be exposed
+	Enabled bool `toml:"enabled"`
+	// FullChainCertPath specifies the path of the concat file of the server certification and the intermediate certification for the tls endpoint
+	FullChainCertPath string `toml:"full_chain_cert_path"`
+	// PrivateKeyPath specifies the path of the private key file for the tls endpoint
+	PrivateKeyPath string `toml:"private_key_path"`
+}
+
 // NewConfig returns a Config initialized with default values.
 func NewConfig() *Config {
 
@@ -158,6 +169,11 @@ func NewConfig() *Config {
 		},
 		ProxyServer: ProxyServerConfig{
 			ListenPort: 9090,
+		},
+		TLS: TLSConfig{
+			Enabled:           false,
+			FullChainCertPath: "",
+			PrivateKeyPath:    "",
 		},
 	}
 }
