@@ -30,10 +30,12 @@ import (
 
 	"github.com/gorilla/handlers"
 )
+
 var (
-    applicationGitCommitID string
-    applicationBuildTime string
+	applicationGitCommitID string
+	applicationBuildTime   string
 )
+
 const (
 	applicationName    = "trickster"
 	applicationVersion = "1.0.9"
