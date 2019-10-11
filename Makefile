@@ -17,6 +17,9 @@ FIRST_GOPATH   := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
 TRICKSTER_MAIN := cmd/trickster
 TRICKSTER      := $(FIRST_GOPATH)/bin/trickster
 PROGVER        := $(shell grep 'applicationVersion = ' $(TRICKSTER_MAIN)/main.go | awk '{print $$3}' | sed -e 's/\"//g')
+BUILD_TIME     := $(shell date -u +%FT%T%z)
+GIT_LATEST_COMMIT_ID     := $(shell git rev-parse HEAD)
+LDFLAGS=-ldflags "-s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicationGitCommitID=$(GIT_LATEST_COMMIT_ID)"
 GO111MODULE    ?= on
 export GO111MODULE
 
@@ -35,7 +38,7 @@ test-go-mod: go-mod-vendor
 
 .PHONY: build
 build:
-	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) $(GO) build -o trickster -a -v $(TRICKSTER_MAIN)/main.go
+	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o trickster -a -v $(TRICKSTER_MAIN)/main.go 
 
 rpm: build
 	mkdir -p ./OPATH/SOURCES

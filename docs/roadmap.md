@@ -19,9 +19,9 @@ Trickster 1.0 will have the following enhancements:
 
 We intend to provide a Trickster 1.0 Beta Release by the end of Q1 2019 that will include the majority of features listed above. Our progress is indicated above via the checkboxes.
 
-### Q2 2019 - Trickster 1.0 GA Release
+### Q4 2019 - Trickster 1.0 GA Release
 
-We hope to provdie a Trickster 1.0 GA Release in the first half of Q2 2019 that includes all of the features listed above.
+We hope to provdie a Trickster 1.0 GA Release in the first half of Q4 2019 that includes all of the features listed above.
 
 ## How to Help
 
