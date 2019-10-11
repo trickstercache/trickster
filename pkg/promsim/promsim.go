@@ -121,23 +121,32 @@ func GetTimeSeriesData(query string, start time.Time, end time.Time, step time.D
 	status := "success"
 	seriesLen := int(end.Sub(start) / step)
 	start = end.Add(time.Duration(-seriesLen) * step)
-	series := make([]string, 0, d.SeriesCount)
 	queryVal := getQueryVal(query)
 
+	var b strings.Builder
+	b.Grow(d.SeriesCount * seriesLen * 18)
+	sep1 := ","
+	fmt.Fprintf(&b, `{"status":"%s","data":{"resultType":"matrix","result":[`, status)
 	for i := 0; d.SeriesCount > i; i++ {
+		sep2 := ","
+		if i == d.SeriesCount-1 {
+			sep1 = ""
+		}
 		d1 := &Modifiers{rawString: d.rawString}
 		d1.addLabel(fmt.Sprintf(`"%s":"%d"`, mdSeriesID, i))
-		v := make([]string, 0, seriesLen)
+		fmt.Fprintf(&b, fmt.Sprintf(`{"metric":{%s},"values":[`, d1.rawString))
 		for j := 0; j <= seriesLen; j++ {
+			if j == seriesLen {
+				sep2 = ""
+			}
 			t := start.Add(time.Duration(j) * step)
-			v = append(v, fmt.Sprintf(`[%d,"%d"]`, t.Unix(), d.seedFunc(d, i, queryVal, t)))
+			fmt.Fprintf(&b, `[%d,"%d"]%s`, t.Unix(), d.seedFunc(d, i, queryVal, t), sep2)
 		}
-		series = append(series, fmt.Sprintf(`{"metric":{%s},"values":[%s]}`, d1.rawString, strings.Join(v, ",")))
+		fmt.Fprintf(&b, fmt.Sprintf(`]}%s`, sep1))
 	}
+	b.WriteString("]}}")
 
-	out := fmt.Sprintf(`{"status":"%s","data":{"resultType":"matrix","result":[`, status) + strings.Join(series, ",") + "]}}"
-
-	return out, d.StatusCode, nil
+	return b.String(), d.StatusCode, nil
 }
 
 func getModifiers(query string) *Modifiers {
