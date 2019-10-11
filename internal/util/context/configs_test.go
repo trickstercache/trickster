@@ -54,27 +54,28 @@ func TestWithConfigs(t *testing.T) {
 	co = cr.NewCache("testing", cc)
 
 	oc.Name = "testing"
-	pc.HandlerName = "testing"
+	pc.Path = "/test/path"
+	cc.Name = "testing"
 
 	ctx = WithConfigs(ctx, oc, co, pc)
 
 	pc = PathConfig(ctx)
-	if pc == nil {
-		t.Errorf("expected path config response named %s", "testing")
+	if pc == nil || pc.Path != "/test/path" {
+		t.Errorf("expected path config response named %s", "/test/path")
 	}
 
 	oc = OriginConfig(ctx)
-	if oc == nil {
+	if oc == nil || oc.Name != "testing" {
 		t.Errorf("expected origin config response named %s", "testing")
 	}
 
 	cc = CachingConfig(ctx)
-	if cc == nil {
+	if cc == nil || cc.Name != "testing" {
 		t.Errorf("expected caching config response named %s", "testing")
 	}
 
 	co = CacheClient(ctx)
-	if co == nil {
+	if co == nil || co.Configuration().Name != "testing" {
 		t.Errorf("expected cache client response named %s", "testing")
 	}
 

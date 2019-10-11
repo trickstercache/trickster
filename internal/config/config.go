@@ -167,6 +167,8 @@ type OriginConfig struct {
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
 type CachingConfig struct {
+	// Name is the Name of the cache, taken from the Key in the Caches map[string]*CacheConfig
+	Name string `toml:"-"`
 	// Type represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
 	CacheType          string                `toml:"cache_type"`
 	Compression        bool                  `toml:"compression"`
@@ -510,6 +512,7 @@ func (c *TricksterConfig) setCachingDefaults(metadata toml.MetaData) {
 		}
 
 		cc := NewCacheConfig()
+		cc.Name = k
 
 		if metadata.IsDefined("caches", k, "cache_type") {
 			cc.CacheType = strings.ToLower(v.CacheType)
