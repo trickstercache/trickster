@@ -31,6 +31,11 @@ import (
 	"github.com/gorilla/handlers"
 )
 
+var (
+	applicationGitCommitID string
+	applicationBuildTime   string
+)
+
 const (
 	applicationName    = "trickster"
 	applicationVersion = "1.0.9"
@@ -46,13 +51,21 @@ func main() {
 	}
 
 	if config.Flags.PrintVersion {
-		fmt.Println(applicationVersion)
+		fmt.Println(applicationName, applicationVersion, applicationBuildTime, applicationGitCommitID)
 		os.Exit(0)
 	}
 
 	log.Init()
 	defer log.Logger.Close()
-	log.Info("application start up", log.Pairs{"name": applicationName, "version": applicationVersion, "logLevel": config.Logging.LogLevel})
+	log.Info("application start up",
+		log.Pairs{
+			"name":      applicationName,
+			"version":   applicationVersion,
+			"commitID":  applicationGitCommitID,
+			"buildTime": applicationBuildTime,
+			"logLevel":  config.Logging.LogLevel,
+		},
+	)
 
 	for _, w := range config.LoaderWarnings {
 		log.Warn(w, log.Pairs{})
