@@ -100,8 +100,13 @@ func main() {
 	level.Info(t.Logger).Log("event", "proxy http endpoint starting", "address", t.Config.ProxyServer.ListenAddress, "port", t.Config.ProxyServer.ListenPort)
 
 	// Start the Server
-	err := http.ListenAndServe(fmt.Sprintf("%s:%d", t.Config.ProxyServer.ListenAddress, t.Config.ProxyServer.ListenPort), handlers.CompressHandler(router))
-	level.Error(t.Logger).Log("event", "exiting", "err", err)
+	if t.Config.TLS.Enabled {
+		err := http.ListenAndServeTLS(fmt.Sprintf("%s:%d", t.Config.ProxyServer.ListenAddress, t.Config.ProxyServer.ListenPort), t.Config.TLS.FullChainCertPath, t.Config.TLS.PrivateKeyPath, handlers.CompressHandler(router))
+		level.Error(t.Logger).Log("event", "exiting", "err", err)
+	} else {
+		err := http.ListenAndServe(fmt.Sprintf("%s:%d", t.Config.ProxyServer.ListenAddress, t.Config.ProxyServer.ListenPort), handlers.CompressHandler(router))
+		level.Error(t.Logger).Log("event", "exiting", "err", err)
+	}
 }
 
 func exposeProfilerEndpoint(c *Config, l log.Logger) {
