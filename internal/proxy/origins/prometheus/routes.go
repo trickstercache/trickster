@@ -14,7 +14,6 @@
 package prometheus
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/Comcast/trickster/internal/config"
@@ -82,9 +81,6 @@ func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 	}
 
 	if !o.RequireTLS {
-
-		fmt.Println("REGISTERING NON-TLS ON ", originName)
-
 		// Host Header-based routing
 		log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
 		routing.Router.HandleFunc("/"+mnHealth, decorate("health", c.HealthHandler)).Methods("GET").Host(originName)
