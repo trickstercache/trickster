@@ -18,6 +18,7 @@ import (
 	"net/http"
 	_ "net/http/pprof" // Comment to disable. Available on :METRICS_PORT/debug/pprof
 	"os"
+	"sync"
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
@@ -72,23 +73,40 @@ func main() {
 		log.Fatal(1, err.Error(), log.Pairs{})
 	}
 
-	// if TLS is configured, set up that server listener instance
+	if config.ProxyServer.TLSListenPort < 1 && config.ProxyServer.ListenPort < 1 {
+		log.Fatal(1, "no http or https listeners configured", log.Pairs{})
+	}
+
+	wg := sync.WaitGroup{}
+
+	// if TLS port is configured and at least one origin is mapped to a good tls config,
+	// then set up the tls server listener instance
 	if config.ProxyServer.TLSListenPort > 0 && len(config.TLS) > 0 {
+		wg.Add(1)
 		go func() {
-			tl, err := config.TLSListener()
+			tl, err := config.Config.TLSListener()
 			if err == nil {
 				err = http.Serve(tl, handlers.CompressHandler(routing.Router))
 			}
 			log.Error("exiting", log.Pairs{"err": err})
+			wg.Done()
 		}()
 	}
 
-	// Start the Server
-	l, err := proxy.NewListener(config.ProxyServer.ListenAddress, config.ProxyServer.ListenPort,
-		config.ProxyServer.ConnectionsLimit)
+	// if the plaintext HTTP port is configured, then set up the http listener instance
+	if config.ProxyServer.ListenPort > 0 {
+		wg.Add(1)
+		go func() {
+			l, err := proxy.NewListener(config.ProxyServer.ListenAddress, config.ProxyServer.ListenPort,
+				config.ProxyServer.ConnectionsLimit)
 
-	if err == nil {
-		err = http.Serve(l, handlers.CompressHandler(routing.Router))
+			if err == nil {
+				err = http.Serve(l, handlers.CompressHandler(routing.Router))
+			}
+			log.Error("exiting", log.Pairs{"err": err})
+			wg.Done()
+		}()
 	}
-	log.Error("exiting", log.Pairs{"err": err})
+
+	wg.Wait()
 }
