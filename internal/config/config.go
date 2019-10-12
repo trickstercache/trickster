@@ -43,6 +43,9 @@ var Logging *LoggingConfig
 // Metrics is the Metrics subsection of the Running Configuration
 var Metrics *MetricsConfig
 
+// TLS is the TLS subsection of the Running Configuration
+var TLS map[string]*TLSConfig
+
 // Flags is a collection of command line flags that Trickster loads.
 var Flags = TricksterFlags{}
 var defaultOriginURL string
@@ -63,11 +66,13 @@ type TricksterConfig struct {
 	Main        *MainConfig               `toml:"main"`
 	Origins     map[string]*OriginConfig  `toml:"origins"`
 	Caches      map[string]*CachingConfig `toml:"caches"`
+	TLS         map[string]*TLSConfig     `toml:"tls"`
 	ProxyServer *ProxyServerConfig        `toml:"proxy_server"`
 	Logging     *LoggingConfig            `toml:"logging"`
 	Metrics     *MetricsConfig            `toml:"metrics"`
 
 	activeCaches map[string]bool
+	activeTLS    map[string]bool
 }
 
 // MainConfig is a collection of general configuration values.
@@ -103,11 +108,13 @@ type OriginConfig struct {
 	MaxIdleConns                 int    `toml:"max_idle_conns"`
 	CacheName                    string `toml:"cache_name"`
 	IsDefault                    bool   `toml:"is_default"`
+	TLSConfigName                string `toml:"tls_name"`
 
 	Timeout                  time.Duration            `toml:"-"`
 	BackfillTolerance        time.Duration            `toml:"-"`
 	TimeseriesRetention      time.Duration            `toml:"-"`
 	TimeseriesEvictionMethod TimeseriesEvictionMethod `toml:"-"`
+	TLS                      *TLSConfig               `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -212,6 +219,10 @@ type ProxyServerConfig struct {
 	ListenAddress string `toml:"listen_address"`
 	// ListenPort is TCP Port for the main http listener for the application
 	ListenPort int `toml:"listen_port"`
+	// TLSListenAddress is IP address for the tls  http listener for the application
+	TLSListenAddress string `toml:"tls_listen_address"`
+	// TLSListenPort is the TCP Port for the tls http listener for the application
+	TLSListenPort int `toml:"tls_listen_port"`
 	// ConnectionsLimit indicates how many concurrent front end connections trickster will handle at any time
 	ConnectionsLimit int `toml:"connections_limit"`
 }
@@ -253,6 +264,7 @@ func NewConfig() *TricksterConfig {
 		Origins: map[string]*OriginConfig{
 			"default": DefaultOriginConfig(),
 		},
+		TLS: make(map[string]*TLSConfig),
 		ProxyServer: &ProxyServerConfig{
 			ListenPort: defaultProxyListenPort,
 		},
@@ -313,9 +325,35 @@ func (c *TricksterConfig) loadFile() error {
 	return err
 }
 
-func (c *TricksterConfig) setDefaults(metadata toml.MetaData) {
+func (c *TricksterConfig) setDefaults(metadata toml.MetaData) error {
+
 	c.setOriginDefaults(metadata)
 	c.setCachingDefaults(metadata)
+	c.processTLSConfigs(metadata)
+	err := c.validateConfigMappings()
+	if err != nil {
+		return err
+	}
+
+	err = c.verifyTLSConfigs()
+
+	return err
+}
+
+func (c *TricksterConfig) validateConfigMappings() error {
+
+	for k, oc := range c.Origins {
+		if _, ok := c.Caches[oc.CacheName]; !ok {
+			return fmt.Errorf("invalid cache name [%s] provided in origin config [%s]", oc.CacheName, k)
+		}
+		if oc.TLSConfigName != "" {
+			if _, ok := c.TLS[oc.TLSConfigName]; !ok {
+				return fmt.Errorf("invalid tls name [%s] provided in origin config [%s]", oc.TLSConfigName, k)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
@@ -327,6 +365,7 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 	}
 
 	c.activeCaches = make(map[string]bool)
+	c.activeTLS = make(map[string]bool)
 
 	for k, v := range c.Origins {
 
@@ -343,9 +382,10 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 			oc.IsDefault = true
 		}
 
-		if metadata.IsDefined("origins", k, "cache_name") {
-			oc.CacheName = v.CacheName
+		if metadata.IsDefined("origins", k, "tls_name") {
+			oc.TLSConfigName = v.TLSConfigName
 		}
+		c.activeTLS[oc.TLSConfigName] = true
 
 		if metadata.IsDefined("origins", k, "cache_name") {
 			oc.CacheName = v.CacheName

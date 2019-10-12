@@ -72,6 +72,17 @@ func main() {
 		log.Fatal(1, err.Error(), log.Pairs{})
 	}
 
+	// if TLS is configured, set up that server listener instance
+	if config.ProxyServer.TLSListenPort > 0 && len(config.TLS) > 0 {
+		go func() {
+			tl, err := config.TLSListener()
+			if err == nil {
+				err = http.Serve(tl, handlers.CompressHandler(routing.Router))
+			}
+			log.Error("exiting", log.Pairs{"err": err})
+		}()
+	}
+
 	// Start the Server
 	l, err := proxy.NewListener(config.ProxyServer.ListenAddress, config.ProxyServer.ListenPort,
 		config.ProxyServer.ConnectionsLimit)
