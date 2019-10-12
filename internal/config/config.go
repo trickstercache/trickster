@@ -323,16 +323,17 @@ func DefaultOriginConfig() *OriginConfig {
 func (c *TricksterConfig) loadFile() error {
 	md, err := toml.DecodeFile(Flags.ConfigPath, c)
 	if err != nil {
+		c.setDefaults(&toml.MetaData{})
 		return err
 	}
-	err = c.setDefaults(md)
+	err = c.setDefaults(&md)
 	return err
 }
 
-func (c *TricksterConfig) setDefaults(metadata toml.MetaData) error {
+func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
 
-	c.setOriginDefaults(metadata)
-	c.setCachingDefaults(metadata)
+	c.processOriginConfigs(metadata)
+	c.processCachingConfigs(metadata)
 	c.processTLSConfigs(metadata)
 	err := c.validateConfigMappings()
 	if err != nil {
@@ -359,7 +360,7 @@ func (c *TricksterConfig) validateConfigMappings() error {
 	return nil
 }
 
-func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
+func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 	// If the user has configured their own origins, and one of them is not "default"
 	// then Trickster will not use the auto-created default origin
@@ -389,6 +390,10 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 			oc.TLSConfigName = v.TLSConfigName
 		}
 		c.activeTLS[oc.TLSConfigName] = true
+
+		if metadata.IsDefined("origins", k, "require_tls") {
+			oc.RequireTLS = v.RequireTLS
+		}
 
 		if metadata.IsDefined("origins", k, "cache_name") {
 			oc.CacheName = v.CacheName
@@ -450,9 +455,9 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 	}
 }
 
-func (c *TricksterConfig) setCachingDefaults(metadata toml.MetaData) {
+func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
 
-	// setCachingDefaults assumes that setOriginDefaults was just ran
+	// setCachingDefaults assumes that processOriginConfigs was just ran
 
 	for k, v := range c.Caches {
 
