@@ -57,10 +57,8 @@ func (c *TricksterConfig) verifyTLSConfigs() error {
 	return nil
 }
 
-func (c *TricksterConfig) processTLSConfigs(metadata toml.MetaData) {
-	fmt.Println("processTLSConfigs")
+func (c *TricksterConfig) processTLSConfigs(metadata *toml.MetaData) {
 	for k, v := range c.TLS {
-		fmt.Println("****", k)
 		if _, ok := c.activeTLS[k]; !ok {
 			// a configured cache was not used by any origin. don't even instantiate it
 			delete(c.TLS, k)
