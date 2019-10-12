@@ -58,14 +58,15 @@ func (c *TricksterConfig) verifyTLSConfigs() error {
 }
 
 func (c *TricksterConfig) processTLSConfigs(metadata toml.MetaData) {
+	fmt.Println("processTLSConfigs")
 	for k, v := range c.TLS {
+		fmt.Println("****", k)
 		if _, ok := c.activeTLS[k]; !ok {
 			// a configured cache was not used by any origin. don't even instantiate it
 			delete(c.TLS, k)
 			continue
 		}
 
-		//cc := DefaultCachingConfig()
 		tc := DefaultTLSConfig()
 
 		if metadata.IsDefined("tls", k, "full_chain_cert_path") {
@@ -80,11 +81,11 @@ func (c *TricksterConfig) processTLSConfigs(metadata toml.MetaData) {
 }
 
 // TLSCertConfig returns the crypto/tls configuration object with a list of name-bound certs from the config
-func TLSCertConfig() (*tls.Config, error) {
+func (c *TricksterConfig) TLSCertConfig() (*tls.Config, error) {
 
 	var err error
 
-	l := len(TLS)
+	l := len(c.TLS)
 	if l == 0 {
 		return nil, nil
 	}
@@ -93,11 +94,12 @@ func TLSCertConfig() (*tls.Config, error) {
 	tlsConfig.Certificates = make([]tls.Certificate, l)
 
 	i := 0
-	for _, tc := range TLS {
+	for _, tc := range c.TLS {
 		tlsConfig.Certificates[i], err = tls.LoadX509KeyPair(tc.FullChainCertPath, tc.PrivateKeyPath)
 		if err != nil {
 			return nil, err
 		}
+		i++
 	}
 
 	tlsConfig.BuildNameToCertificate()
@@ -107,15 +109,15 @@ func TLSCertConfig() (*tls.Config, error) {
 }
 
 // TLSListener returns an TLS Listener based on the Trickster Config
-func TLSListener() (net.Listener, error) {
-	tlsConfig, err := TLSCertConfig()
+func (c *TricksterConfig) TLSListener() (net.Listener, error) {
+	tlsConfig, err := c.TLSCertConfig()
 	if err != nil {
 		return nil, err
 	}
 	return tls.Listen("tcp",
 		fmt.Sprintf("%s:%d",
-			ProxyServer.TLSListenAddress,
-			ProxyServer.TLSListenPort,
+			c.ProxyServer.TLSListenAddress,
+			c.ProxyServer.TLSListenPort,
 		),
 		tlsConfig,
 	)
