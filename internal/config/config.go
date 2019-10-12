@@ -109,6 +109,7 @@ type OriginConfig struct {
 	CacheName                    string `toml:"cache_name"`
 	IsDefault                    bool   `toml:"is_default"`
 	TLSConfigName                string `toml:"tls_name"`
+	RequireTLS                   bool   `toml:"require_tls"`
 
 	Timeout                  time.Duration            `toml:"-"`
 	BackfillTolerance        time.Duration            `toml:"-"`
