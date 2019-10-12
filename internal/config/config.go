@@ -321,7 +321,10 @@ func DefaultOriginConfig() *OriginConfig {
 // loadFile loads application configuration from a TOML-formatted file.
 func (c *TricksterConfig) loadFile() error {
 	md, err := toml.DecodeFile(Flags.ConfigPath, c)
-	c.setDefaults(md)
+	if err != nil {
+		return err
+	}
+	err = c.setDefaults(md)
 	return err
 }
 
@@ -341,7 +344,6 @@ func (c *TricksterConfig) setDefaults(metadata toml.MetaData) error {
 }
 
 func (c *TricksterConfig) validateConfigMappings() error {
-
 	for k, oc := range c.Origins {
 		if _, ok := c.Caches[oc.CacheName]; !ok {
 			return fmt.Errorf("invalid cache name [%s] provided in origin config [%s]", oc.CacheName, k)
@@ -350,9 +352,9 @@ func (c *TricksterConfig) validateConfigMappings() error {
 			if _, ok := c.TLS[oc.TLSConfigName]; !ok {
 				return fmt.Errorf("invalid tls name [%s] provided in origin config [%s]", oc.TLSConfigName, k)
 			}
+			oc.TLS = c.TLS[oc.TLSConfigName]
 		}
 	}
-
 	return nil
 }
 
