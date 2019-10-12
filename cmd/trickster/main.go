@@ -86,7 +86,7 @@ func main() {
 		go func() {
 			tl, err := config.Config.TLSListener()
 			if err == nil {
-				err = http.Serve(tl, handlers.CompressHandler(routing.Router))
+				err = http.Serve(tl, handlers.CompressHandler(routing.TLSRouter))
 			}
 			log.Error("exiting", log.Pairs{"err": err})
 			wg.Done()
