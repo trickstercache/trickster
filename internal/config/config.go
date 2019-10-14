@@ -111,8 +111,8 @@ type OriginConfig struct {
 	TimeseriesRetention      time.Duration            `toml:"-"`
 	TimeseriesEvictionMethod TimeseriesEvictionMethod `toml:"-"`
 	// ServeTLS indicates the Origin's Frontend TLS configurations are validated
-	// and the ProxyServer is OK to route to it over this origin on the TLS port
-	ServeTLS bool `toml:"serve_tls"`
+	// and the ProxyServer is OK to route to it on the TLS port
+	ServeTLS bool `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
