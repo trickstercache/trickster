@@ -2,7 +2,9 @@ package proxy
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"time"
@@ -16,18 +18,40 @@ import (
 
 // NewHTTPClient returns an HTTP client configured to the specifications of the
 // running Trickster config.
-func NewHTTPClient(oc *config.OriginConfig) *http.Client {
+func NewHTTPClient(oc *config.OriginConfig) (*http.Client, error) {
 
 	if oc == nil {
-		return nil
+		return nil, nil
 	}
 
 	var TLSConfig *tls.Config
 
 	if oc.TLS != nil {
 		TLSConfig = &tls.Config{InsecureSkipVerify: oc.TLS.SkipVerify}
-		// if oc.TLS.CertificateAuthorityPaths != nil && len(oc.TLS.CertificateAuthorityPaths) > 0 {
-		// }
+		if oc.TLS.CertificateAuthorityPaths != nil && len(oc.TLS.CertificateAuthorityPaths) > 0 {
+
+			// credit snippet to https://forfuncsake.github.io/post/2017/08/trust-extra-ca-cert-in-go-app/
+			// Get the SystemCertPool, continue with an empty pool on error
+			rootCAs, _ := x509.SystemCertPool()
+			if rootCAs == nil {
+				rootCAs = x509.NewCertPool()
+			}
+
+			for _, path := range oc.TLS.CertificateAuthorityPaths {
+				// Read in the cert file
+				certs, err := ioutil.ReadFile(path)
+				if err != nil {
+					return nil, err
+				}
+				// Append our cert to the system pool
+				if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
+					return nil, fmt.Errorf("unalbe to append to CA Certs from file %s", path)
+				}
+			}
+
+			// Trust the augmented cert pool in our client
+			TLSConfig.RootCAs = rootCAs
+		}
 	}
 
 	return &http.Client{
@@ -41,7 +65,7 @@ func NewHTTPClient(oc *config.OriginConfig) *http.Client {
 			MaxIdleConnsPerHost: oc.MaxIdleConns,
 			TLSClientConfig:     TLSConfig,
 		},
-	}
+	}, nil
 
 }
 
