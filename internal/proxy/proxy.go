@@ -45,7 +45,7 @@ func NewHTTPClient(oc *config.OriginConfig) (*http.Client, error) {
 				}
 				// Append our cert to the system pool
 				if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
-					return nil, fmt.Errorf("unalbe to append to CA Certs from file %s", path)
+					return nil, fmt.Errorf("unable to append to CA Certs from file %s", path)
 				}
 			}
 
