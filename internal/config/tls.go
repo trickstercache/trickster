@@ -48,7 +48,7 @@ func (c *TricksterConfig) verifyTLSConfigs() error {
 
 	for _, oc := range c.Origins {
 
-		if oc.TLS == nil || (oc.TLS.FullChainCertPath == "" || oc.TLS.PrivateKeyPath == "") && (oc.TLS.CertificateAuthorityPaths != nil || len(oc.TLS.CertificateAuthorityPaths) == 0) {
+		if oc.TLS == nil || (oc.TLS.FullChainCertPath == "" || oc.TLS.PrivateKeyPath == "") && (oc.TLS.CertificateAuthorityPaths == nil || len(oc.TLS.CertificateAuthorityPaths) == 0) {
 			continue
 		}
 
@@ -64,7 +64,7 @@ func (c *TricksterConfig) verifyTLSConfigs() error {
 		oc.ServeTLS = true
 
 		// Verify CA Paths
-		if oc.TLS.CertificateAuthorityPaths != nil || len(oc.TLS.CertificateAuthorityPaths) > 0 {
+		if oc.TLS.CertificateAuthorityPaths != nil && len(oc.TLS.CertificateAuthorityPaths) > 0 {
 			for _, path := range oc.TLS.CertificateAuthorityPaths {
 				_, err = ioutil.ReadFile(path)
 				if err != nil {
