@@ -46,21 +46,33 @@ func DefaultTLSConfig() *TLSConfig {
 
 func (c *TricksterConfig) verifyTLSConfigs() error {
 
-	for _, o := range c.Origins {
-		if o.TLS == nil || o.TLS.FullChainCertPath == "" || o.TLS.PrivateKeyPath == "" {
+	for _, oc := range c.Origins {
+
+		if oc.TLS == nil || (oc.TLS.FullChainCertPath == "" || oc.TLS.PrivateKeyPath == "") && (oc.TLS.CertificateAuthorityPaths != nil || len(oc.TLS.CertificateAuthorityPaths) == 0) {
 			continue
 		}
 
-		_, err := ioutil.ReadFile(o.TLS.FullChainCertPath)
+		_, err := ioutil.ReadFile(oc.TLS.FullChainCertPath)
 		if err != nil {
 			return err
 		}
-		_, err = ioutil.ReadFile(o.TLS.PrivateKeyPath)
+		_, err = ioutil.ReadFile(oc.TLS.PrivateKeyPath)
 		if err != nil {
 			return err
 		}
 		c.ProxyServer.ServeTLS = true
-		o.ServeTLS = true
+		oc.ServeTLS = true
+
+		// Verify CA Paths
+		if oc.TLS.CertificateAuthorityPaths != nil || len(oc.TLS.CertificateAuthorityPaths) > 0 {
+			for _, path := range oc.TLS.CertificateAuthorityPaths {
+				_, err = ioutil.ReadFile(path)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
 	}
 	return nil
 }
