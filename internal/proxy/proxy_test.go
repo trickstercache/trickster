@@ -61,6 +61,21 @@ func TestNewHTTPClient(t *testing.T) {
 		t.Errorf("exected error for unable to append to CA Certs from file %s", caFileInvalid2)
 	}
 
+	oc.TLS.CertificateAuthorityPaths = []string{}
+	oc.TLS.ClientCertPath = "../../testdata/test.01.cert.pem"
+	oc.TLS.ClientKeyPath = "../../testdata/test.01.key.pem"
+	_, err = NewHTTPClient(oc)
+	if err != nil {
+		t.Error(err)
+	}
+
+	oc.TLS.ClientCertPath = "../../testdata/test.05.cert.pem"
+	oc.TLS.ClientKeyPath = "../../testdata/test.05.key.pem"
+	oc.TLS.CertificateAuthorityPaths = []string{}
+	_, err = NewHTTPClient(oc)
+	if err == nil {
+		t.Errorf("failed to find any PEM data in key input for file %s", oc.TLS.ClientKeyPath)
+	}
 }
 
 func TestNewListenerTLS(t *testing.T) {

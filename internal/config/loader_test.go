@@ -168,6 +168,22 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected true got %t", o.TLS.SkipVerify)
 	}
 
+	if o.TLS.FullChainCertPath != "../../testdata/test.01.cert.pem" {
+		t.Errorf("expected ../../testdata/test.01.cert.pem got %s", o.TLS.FullChainCertPath)
+	}
+
+	if o.TLS.PrivateKeyPath != "../../testdata/test.01.key.pem" {
+		t.Errorf("expected ../../testdata/test.01.key.pem got %s", o.TLS.PrivateKeyPath)
+	}
+
+	if o.TLS.ClientCertPath != "test_client_cert" {
+		t.Errorf("expected test_client_cert got %s", o.TLS.ClientCertPath)
+	}
+
+	if o.TLS.ClientKeyPath != "test_client_key" {
+		t.Errorf("expected test_client_key got %s", o.TLS.ClientKeyPath)
+	}
+
 	// Test Caches
 
 	c, ok := Caches["test"]
