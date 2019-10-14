@@ -20,9 +20,9 @@ Each origin section of a Trickster config file can be augmented with the optiona
 ```toml
 [origins]
 
-    [orgins.example] # origin for example
+    [origins.example] # origin for example
 
-        [orgins.example.tls] # TLS settigs for origin named example
+        [origins.example.tls] # TLS settigs for origin named example
         # front-end configs
         full_chain_cert_path = '/path/to/my/cert.pem'
         private_key_path = '/path/to/my/key.pem'
@@ -37,7 +37,7 @@ Each origin section of a Trickster config file can be augmented with the optiona
 
 Each origin can handle encryption with exactly 1 certificate and key pair, as configured in the TLS section of the origin config (demonstrated above).
 
-If the path to any configured Certificate or Key file is unreachable or unparseable, Trickster will exit upon startup with an error providing reasonable context.
+If the path to any configured Certificate or Key file is unreachable or unparsable, Trickster will exit upon startup with an error providing reasonable context.
 
 You may use the same TLS certificate and key for multiple origins, depending upon how your Trickster configurations are laid out. Any certificates configured by Trickster must match the hostname header of the inbound http request (exactly, or by wildcard interpolation), or clients will likely reject the certificate for security issues.
 

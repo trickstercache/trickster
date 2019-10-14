@@ -23,7 +23,7 @@ func TestNewHTTPClient(t *testing.T) {
 	// test invalid origin config
 	c, err := NewHTTPClient(nil)
 	if c != nil {
-		t.Errorf("exected nil client, got %v", c)
+		t.Errorf("expected nil client, got %v", c)
 	}
 	if err != nil {
 		t.Error(err)
@@ -33,7 +33,7 @@ func TestNewHTTPClient(t *testing.T) {
 	const caFileInvalid1 = caFile + ".invalid"
 	const caFileInvalid2 = "../../testdata/test.06.cert.pem"
 
-	// test good originconfig, no CAs
+	// test good originconfig, no CA
 	oc := config.DefaultOriginConfig()
 	_, err = NewHTTPClient(oc)
 	if err != nil {
@@ -51,14 +51,14 @@ func TestNewHTTPClient(t *testing.T) {
 	oc.TLS.CertificateAuthorityPaths = []string{caFileInvalid1}
 	_, err = NewHTTPClient(oc)
 	if err == nil {
-		t.Errorf("exected error for no such file or directory on %s", caFileInvalid1)
+		t.Errorf("expected error for no such file or directory on %s", caFileInvalid1)
 	}
 
 	// test good originconfig, 1 bad CA (junk content)
 	oc.TLS.CertificateAuthorityPaths = []string{caFileInvalid2}
 	_, err = NewHTTPClient(oc)
 	if err == nil {
-		t.Errorf("exected error for unable to append to CA Certs from file %s", caFileInvalid2)
+		t.Errorf("expected error for unable to append to CA Certs from file %s", caFileInvalid2)
 	}
 
 	oc.TLS.CertificateAuthorityPaths = []string{}
