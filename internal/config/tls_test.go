@@ -72,7 +72,22 @@ func TestVerifyTLSConfigs(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected error for bad file %s", badFile)
 	}
+	tls04.PrivateKeyPath = originalFile
 
+	originalFile = "../../testdata/test.rootca.pem"
+	badFile = originalFile + ".nonexistent"
+	// test for more RootCA's to add
+	tls04.CertificateAuthorityPaths = []string{originalFile}
+	err = config.verifyTLSConfigs()
+	if err != nil {
+		t.Error(err)
+	}
+
+	tls04.CertificateAuthorityPaths = []string{badFile}
+	err = config.verifyTLSConfigs()
+	if err == nil {
+		t.Errorf("expected error for bad file %s", badFile)
+	}
 }
 
 func TestProcessTLSConfigs(t *testing.T) {
