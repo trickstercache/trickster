@@ -28,6 +28,16 @@ func NewHTTPClient(oc *config.OriginConfig) (*http.Client, error) {
 
 	if oc.TLS != nil {
 		TLSConfig = &tls.Config{InsecureSkipVerify: oc.TLS.SkipVerify}
+
+		if oc.TLS.ClientCertPath != "" && oc.TLS.ClientKeyPath != "" {
+			// load client cert
+			cert, err := tls.LoadX509KeyPair(oc.TLS.ClientCertPath, oc.TLS.ClientKeyPath)
+			if err != nil {
+				return nil, err
+			}
+			TLSConfig.Certificates = []tls.Certificate{cert}
+		}
+
 		if oc.TLS.CertificateAuthorityPaths != nil && len(oc.TLS.CertificateAuthorityPaths) > 0 {
 
 			// credit snippet to https://forfuncsake.github.io/post/2017/08/trust-extra-ca-cert-in-go-app/
