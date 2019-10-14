@@ -82,8 +82,16 @@ func NewHTTPClient(oc *config.OriginConfig) (*http.Client, error) {
 // which observes the connections to set a gauge with the current number of
 // connections (with operates with sampling through scrapes), and a set of
 // counter metrics for connections accepted, rejected and closed.
-func NewListener(listenAddress string, listenPort, connectionsLimit int) (net.Listener, error) {
-	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", listenAddress, listenPort))
+func NewListener(listenAddress string, listenPort, connectionsLimit int, tlsConfig *tls.Config) (net.Listener, error) {
+
+	var listener net.Listener
+	var err error
+
+	if tlsConfig != nil {
+		listener, err = tls.Listen("tcp", fmt.Sprintf("%s:%d", listenAddress, listenPort), tlsConfig)
+	} else {
+		listener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", listenAddress, listenPort))
+	}
 	if err != nil {
 		// so we can exit one level above, this usually means that the port is in use
 		return nil, err

@@ -84,9 +84,16 @@ func main() {
 	if config.ProxyServer.ServeTLS && config.ProxyServer.TLSListenPort > 0 {
 		wg.Add(1)
 		go func() {
-			tl, err := config.Config.TLSListener()
+			tlsConfig, err := config.Config.TLSCertConfig()
 			if err == nil {
-				err = http.Serve(tl, handlers.CompressHandler(routing.TLSRouter))
+				l, err := proxy.NewListener(
+					config.ProxyServer.TLSListenAddress,
+					config.ProxyServer.TLSListenPort,
+					config.ProxyServer.ConnectionsLimit,
+					tlsConfig)
+				if err == nil {
+					err = http.Serve(l, handlers.CompressHandler(routing.TLSRouter))
+				}
 			}
 			log.Error("exiting", log.Pairs{"err": err})
 			wg.Done()
@@ -98,7 +105,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			l, err := proxy.NewListener(config.ProxyServer.ListenAddress, config.ProxyServer.ListenPort,
-				config.ProxyServer.ConnectionsLimit)
+				config.ProxyServer.ConnectionsLimit, nil)
 
 			if err == nil {
 				err = http.Serve(l, handlers.CompressHandler(routing.Router))

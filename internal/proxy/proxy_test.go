@@ -14,6 +14,10 @@ import (
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
+func init() {
+	metrics.Init() // For some reason I need to call it specifically
+}
+
 func TestNewHTTPClient(t *testing.T) {
 
 	// test invalid origin config
@@ -59,8 +63,31 @@ func TestNewHTTPClient(t *testing.T) {
 
 }
 
+func TestNewListenerTLS(t *testing.T) {
+
+	c := config.NewConfig()
+	oc := c.Origins["default"]
+	c.ProxyServer.ServeTLS = true
+
+	tc := oc.TLS
+	oc.TLS.ServeTLS = true
+	tc.FullChainCertPath = "../../testdata/test.01.cert.pem"
+	tc.PrivateKeyPath = "../../testdata/test.01.key.pem"
+
+	tlsConfig, err := c.TLSCertConfig()
+	if err != nil {
+		t.Error(err)
+	}
+
+	l, err := NewListener("", 0, 0, tlsConfig)
+	defer l.Close()
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
 func TestListenerConnectionLimitWorks(t *testing.T) {
-	metrics.Init() // For some reason I need to call it specifically
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
@@ -108,7 +135,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 
 	for _, tc := range tt {
 		t.Run(tc.Name, func(t *testing.T) {
-			l, err := NewListener("", tc.ListenPort, tc.ConnectionsLimit)
+			l, err := NewListener("", tc.ListenPort, tc.ConnectionsLimit, nil)
 			defer l.Close()
 
 			go func() {

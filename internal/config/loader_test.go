@@ -66,6 +66,14 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected test, got %s", ProxyServer.ListenAddress)
 	}
 
+	if ProxyServer.TLSListenAddress != "test-tls" {
+		t.Errorf("expected test-tls, got %s", ProxyServer.TLSListenAddress)
+	}
+
+	if ProxyServer.TLSListenPort != 38821 {
+		t.Errorf("expected 38821, got %d", ProxyServer.TLSListenPort)
+	}
+
 	// Test Metrics Server
 	if Metrics.ListenPort != 57822 {
 		t.Errorf("expected 57821, got %d", Metrics.ListenPort)
@@ -150,6 +158,14 @@ func TestFullLoadConfiguration(t *testing.T) {
 
 	if o.KeepAliveTimeoutSecs != 7 {
 		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeoutSecs)
+	}
+
+	if o.TLS == nil {
+		t.Errorf("expected tls config for origin %s, got nil", "test")
+	}
+
+	if !o.TLS.SkipVerify {
+		t.Errorf("expected true got %t", o.TLS.SkipVerify)
 	}
 
 	// Test Caches
