@@ -25,7 +25,7 @@ func NewHTTPClient(oc *config.OriginConfig) *http.Client {
 	var TLSConfig *tls.Config
 
 	if oc.TLS != nil {
-		TLSConfig.InsecureSkipVerify = oc.TLS.SkipVerify
+		TLSConfig = &tls.Config{InsecureSkipVerify: oc.TLS.SkipVerify}
 		// if oc.TLS.CertificateAuthorityPaths != nil && len(oc.TLS.CertificateAuthorityPaths) > 0 {
 		// }
 	}
