@@ -334,7 +334,6 @@ func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
 
 	c.processOriginConfigs(metadata)
 	c.processCachingConfigs(metadata)
-	//c.processTLSConfigs(metadata)
 	err := c.validateConfigMappings()
 	if err != nil {
 		return err

@@ -40,6 +40,15 @@ func TestLoadConfiguration(t *testing.T) {
 
 }
 
+func TestLoadBadCacheName(t *testing.T) {
+	a := []string{"-config", "../../testdata/test.bad-cache-name.conf"}
+	// it should error with bad cache name
+	err := Load("trickster-test", "0", a)
+	if err == nil {
+		t.Errorf("expected error for invalid cache name: %s", "test_fail")
+	}
+}
+
 func TestFullLoadConfiguration(t *testing.T) {
 	a := []string{"-config", "../../testdata/test.full.conf"}
 	// it should not error if config path is not set
