@@ -110,9 +110,6 @@ type OriginConfig struct {
 	BackfillTolerance        time.Duration            `toml:"-"`
 	TimeseriesRetention      time.Duration            `toml:"-"`
 	TimeseriesEvictionMethod TimeseriesEvictionMethod `toml:"-"`
-	// ServeTLS indicates the Origin's Frontend TLS configurations are validated
-	// and the ProxyServer is OK to route to it on the TLS port
-	ServeTLS bool `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -436,6 +433,15 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "backfill_tolerance_secs") {
 			oc.BackfillToleranceSecs = v.BackfillToleranceSecs
+		}
+
+		if metadata.IsDefined("origins", k, "tls") {
+			oc.TLS = &TLSConfig{
+				SkipVerify:                v.TLS.SkipVerify,
+				CertificateAuthorityPaths: v.TLS.CertificateAuthorityPaths,
+				PrivateKeyPath:            v.TLS.PrivateKeyPath,
+				FullChainCertPath:         v.TLS.FullChainCertPath,
+			}
 		}
 
 		c.Origins[k] = oc
