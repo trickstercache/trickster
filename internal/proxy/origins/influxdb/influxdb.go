@@ -14,12 +14,11 @@
 package influxdb
 
 import (
-	"net"
 	"net/http"
-	"time"
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy"
 )
 
 const (
@@ -37,19 +36,9 @@ type Client struct {
 }
 
 // NewClient returns a new Client Instance
-func NewClient(name string, config *config.OriginConfig, cache cache.Cache) *Client {
-	c := &http.Client{
-		Timeout: config.Timeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-		Transport: &http.Transport{
-			Dial:                (&net.Dialer{KeepAlive: time.Duration(config.KeepAliveTimeoutSecs) * time.Second}).Dial,
-			MaxIdleConns:        config.MaxIdleConns,
-			MaxIdleConnsPerHost: config.MaxIdleConns,
-		},
-	}
-	return &Client{name: name, config: config, cache: cache, webClient: c}
+func NewClient(name string, oc *config.OriginConfig, cache cache.Cache) *Client {
+	c := proxy.NewHTTPClient(oc)
+	return &Client{name: name, config: oc, cache: cache, webClient: c}
 }
 
 // Configuration returns the upstream Configuration for this Client
