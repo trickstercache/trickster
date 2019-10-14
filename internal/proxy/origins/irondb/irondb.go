@@ -64,9 +64,9 @@ type Client struct {
 }
 
 // NewClient returns a new Client Instance
-func NewClient(name string, oc *config.OriginConfig, cache cache.Cache) *Client {
-	c := proxy.NewHTTPClient(oc)
-	return &Client{name: name, config: oc, cache: cache, webClient: c}
+func NewClient(name string, oc *config.OriginConfig, cache cache.Cache) (*Client, error) {
+	c, err := proxy.NewHTTPClient(oc)
+	return &Client{name: name, config: oc, cache: cache, webClient: c}, err
 }
 
 // Configuration returns the upstream Configuration for this Client.

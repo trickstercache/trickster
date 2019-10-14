@@ -26,7 +26,10 @@ func TestNewClient(t *testing.T) {
 	}
 
 	oc := &config.OriginConfig{Type: "TEST_CLIENT"}
-	c := NewClient("default", oc, cache)
+	c, err := NewClient("default", oc, cache)
+	if err != nil {
+		t.Error(err)
+	}
 	if c.Name() != "default" {
 		t.Errorf("expected %s got %s", "default", c.Name())
 	}
@@ -78,7 +81,10 @@ func TestName(t *testing.T) {
 
 func TestHTTPClient(t *testing.T) {
 	oc := &config.OriginConfig{Type: "TEST"}
-	client := NewClient("test", oc, nil)
+	client, err := NewClient("test", oc, nil)
+	if err != nil {
+		t.Error(err)
+	}
 	if client.HTTPClient() == nil {
 		t.Errorf("missing http client")
 	}
