@@ -1,14 +1,49 @@
 package proxy
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net"
+	"net/http"
+	"time"
 
 	"golang.org/x/net/netutil"
 
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
+
+// NewHTTPClient returns an HTTP client configured to the specifications of the
+// running Trickster config.
+func NewHTTPClient(oc *config.OriginConfig) *http.Client {
+
+	if oc == nil {
+		return nil
+	}
+
+	var TLSConfig *tls.Config
+
+	if oc.TLS != nil {
+		TLSConfig.InsecureSkipVerify = oc.TLS.SkipVerify
+		// if oc.TLS.CertificateAuthorityPaths != nil && len(oc.TLS.CertificateAuthorityPaths) > 0 {
+		// }
+	}
+
+	return &http.Client{
+		Timeout: oc.Timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+		Transport: &http.Transport{
+			Dial:                (&net.Dialer{KeepAlive: time.Duration(oc.KeepAliveTimeoutSecs) * time.Second}).Dial,
+			MaxIdleConns:        oc.MaxIdleConns,
+			MaxIdleConnsPerHost: oc.MaxIdleConns,
+			TLSClientConfig:     TLSConfig,
+		},
+	}
+
+}
 
 // NewListener create a new network listener which obeys to the configuration max
 // connection limit, and also monitors connections with prometheus metrics.
