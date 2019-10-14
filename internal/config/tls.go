@@ -15,9 +15,7 @@ package config
 
 import (
 	"crypto/tls"
-	"fmt"
 	"io/ioutil"
-	"net"
 )
 
 // TLSConfig is a collection of TLS-related client and server configurations
@@ -34,6 +32,10 @@ type TLSConfig struct {
 	// CertificateAuthorities provides a list of custom Certificate Authorities for the upstream origin
 	// which are considered in addition to any system CA's
 	CertificateAuthorityPaths []string `toml:"certificate_authority_paths"`
+
+	// ServeTLS is set to true once the Cert and Key files have been validated,
+	// indicating the consumer of this config can service requests over TLS
+	ServeTLS bool `toml:"-"`
 }
 
 // DefaultTLSConfig will return a *TLSConfig with the default settings
@@ -61,7 +63,7 @@ func (c *TricksterConfig) verifyTLSConfigs() error {
 			return err
 		}
 		c.ProxyServer.ServeTLS = true
-		oc.ServeTLS = true
+		oc.TLS.ServeTLS = true
 
 		// Verify CA Paths
 		if oc.TLS.CertificateAuthorityPaths != nil && len(oc.TLS.CertificateAuthorityPaths) > 0 {
@@ -85,7 +87,7 @@ func (c *TricksterConfig) TLSCertConfig() (*tls.Config, error) {
 	}
 	to := []*OriginConfig{}
 	for _, oc := range c.Origins {
-		if oc.ServeTLS {
+		if oc.TLS.ServeTLS {
 			to = append(to, oc)
 		}
 	}
@@ -111,19 +113,4 @@ func (c *TricksterConfig) TLSCertConfig() (*tls.Config, error) {
 
 	return tlsConfig, nil
 
-}
-
-// TLSListener returns an TLS Listener based on the Trickster Config
-func (c *TricksterConfig) TLSListener() (net.Listener, error) {
-	tlsConfig, err := c.TLSCertConfig()
-	if err != nil {
-		return nil, err
-	}
-	return tls.Listen("tcp",
-		fmt.Sprintf("%s:%d",
-			c.ProxyServer.TLSListenAddress,
-			c.ProxyServer.TLSListenPort,
-		),
-		tlsConfig,
-	)
 }

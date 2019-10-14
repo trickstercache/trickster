@@ -38,6 +38,7 @@ func tlsConfig(id string) *TLSConfig {
 	return &TLSConfig{
 		FullChainCertPath: "../../testdata/test." + id + ".cert.pem",
 		PrivateKeyPath:    "../../testdata/test." + id + ".key.pem",
+		ServeTLS:          true,
 	}
 }
 
@@ -125,7 +126,6 @@ func TestTLSCertConfig(t *testing.T) {
 
 	tls01 := tlsConfig("01")
 	config.ProxyServer.ServeTLS = true
-	config.Origins["default"].ServeTLS = true
 
 	// test good config
 	config.Origins["default"].TLS = tls01
@@ -148,30 +148,6 @@ func TestTLSCertConfig(t *testing.T) {
 	tls06 := tlsConfig("06")
 	config.Origins["default"].TLS = tls06
 	_, err = config.TLSCertConfig()
-	if err == nil {
-		t.Errorf("expected error: %s", expectedErr)
-	}
-
-}
-
-func TestTLSListener(t *testing.T) {
-
-	tls01 := tlsConfig("01")
-	config := NewConfig()
-	config.ProxyServer = &ProxyServerConfig{TLSListenAddress: "", TLSListenPort: 0}
-	config.ProxyServer.ServeTLS = true
-	config.Origins["default"].ServeTLS = true
-	config.Origins["default"].TLS = tls01
-
-	_, err := config.TLSListener()
-	if err != nil {
-		t.Error(err)
-	}
-
-	// test config with key file that has invalid key data
-	expectedErr := "tls: failed to find any PEM data in key input"
-	config.Origins["default"].TLS = tlsConfig("05")
-	_, err = config.TLSListener()
 	if err == nil {
 		t.Errorf("expected error: %s", expectedErr)
 	}
