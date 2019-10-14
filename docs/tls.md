@@ -29,8 +29,8 @@ Each origin section of a Trickster config file can be augmented with the optiona
         # back-end configs
         skip_verify = true
         certificate_authority_paths = [ '/path/to/ca1.pem', '/path/to/ca2.pem' ]
-        client_cert_path = `/path/to/client/cert.pem'
-        client_key_path = `/path/to/client/key.pem'
+        client_cert_path = '/path/to/client/cert.pem'
+        client_key_path = '/path/to/client/key.pem'
 ```
 
 ## Front-End
