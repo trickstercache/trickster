@@ -25,17 +25,19 @@ type TLSConfig struct {
 	FullChainCertPath string `toml:"full_chain_cert_path"`
 	// PrivateKeyPath specifies the path of the private key file for the tls endpoint
 	PrivateKeyPath string `toml:"private_key_path"`
-
+	// ServeTLS is set to true once the Cert and Key files have been validated,
+	// indicating the consumer of this config can service requests over TLS
+	ServeTLS bool `toml:"-"`
 	// SkipVerify indicates that the HTTPS Client in Trickster should bypass
 	// hostname verification for the origin's certificate when proxying requests
 	SkipVerify bool `toml:"skip_verify"`
 	// CertificateAuthorities provides a list of custom Certificate Authorities for the upstream origin
-	// which are considered in addition to any system CA's
+	// which are considered in addition to any system CA's by the Trickster HTTPS Client
 	CertificateAuthorityPaths []string `toml:"certificate_authority_paths"`
-
-	// ServeTLS is set to true once the Cert and Key files have been validated,
-	// indicating the consumer of this config can service requests over TLS
-	ServeTLS bool `toml:"-"`
+	// ClientCertPath provides the path to the Client Certificate when using Mutual Authorization
+	ClientCertPath string `toml:"client_cert_path"`
+	// ClientKeyPath provides the path to the Client Key when using Mutual Authorization
+	ClientKeyPath string `toml:"client_key_path"`
 }
 
 // DefaultTLSConfig will return a *TLSConfig with the default settings

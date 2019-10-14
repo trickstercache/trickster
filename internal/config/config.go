@@ -441,6 +441,8 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 				CertificateAuthorityPaths: v.TLS.CertificateAuthorityPaths,
 				PrivateKeyPath:            v.TLS.PrivateKeyPath,
 				FullChainCertPath:         v.TLS.FullChainCertPath,
+				ClientCertPath:            v.TLS.ClientCertPath,
+				ClientKeyPath:             v.TLS.ClientKeyPath,
 			}
 		}
 
