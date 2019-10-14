@@ -56,7 +56,6 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateIndex bool) error {
 
 	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
 
 	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 
@@ -68,6 +67,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 	if updateIndex {
 		c.Index.UpdateObject(o2)
 	}
+	locks.Release(lockPrefix + cacheKey)
 	return nil
 }
 
@@ -79,7 +79,6 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
 func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte, error) {
 
 	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
 
 	record, ok := c.client.Load(cacheKey)
 
@@ -93,11 +92,13 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 				c.Index.UpdateObjectAccessTime(cacheKey)
 			}
 			cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(o.Value)))
+			locks.Release(lockPrefix + cacheKey)
 			return o.Value, nil
 		}
 		// Cache Object has been expired but not reaped, go ahead and delete it
 		c.remove(cacheKey, false)
 	}
+	locks.Release(lockPrefix + cacheKey)
 	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 
 }
@@ -113,14 +114,11 @@ func (c *Cache) Remove(cacheKey string) {
 }
 
 func (c *Cache) remove(cacheKey string, noLock bool) {
-
 	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
-
 	c.client.Delete(cacheKey)
 	c.Index.RemoveObject(cacheKey, noLock)
 	cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
-
+	locks.Release(lockPrefix + cacheKey)
 }
 
 // BulkRemove removes a list of objects from the cache

@@ -76,17 +76,18 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 	dataFile := c.getFileName(cacheKey)
 
 	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
 
 	o := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	err := ioutil.WriteFile(dataFile, o.ToBytes(), os.FileMode(0777))
 	if err != nil {
+		locks.Release(lockPrefix + cacheKey)
 		return err
 	}
 	log.Debug("filesystem cache store", log.Pairs{"key": cacheKey, "dataFile": dataFile, "indexed": updateIndex})
 	if updateIndex {
 		c.Index.UpdateObject(o)
 	}
+	locks.Release(lockPrefix + cacheKey)
 	return nil
 
 }
@@ -101,16 +102,18 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	dataFile := c.getFileName(cacheKey)
 
 	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
 
 	data, err := ioutil.ReadFile(dataFile)
 	if err != nil {
 		log.Debug("filesystem cache miss", log.Pairs{"key": cacheKey, "dataFile": dataFile})
-		return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+		b, err2 := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+		locks.Release(lockPrefix + cacheKey)
+		return b, err2
 	}
 
 	o, err := index.ObjectFromBytes(data)
 	if err != nil {
+		locks.Release(lockPrefix + cacheKey)
 		return cache.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
 	}
 	o.Expiration = c.Index.GetExpiration(cacheKey)
@@ -121,11 +124,14 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 			c.Index.UpdateObjectAccessTime(cacheKey)
 		}
 		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
+		locks.Release(lockPrefix + cacheKey)
 		return o.Value, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
 	c.remove(cacheKey, false)
-	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	b, err := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	locks.Release(lockPrefix + cacheKey)
+	return b, err
 
 }
 
@@ -137,8 +143,8 @@ func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
 // Remove removes an object from the cache
 func (c *Cache) Remove(cacheKey string) {
 	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
 	c.remove(cacheKey, false)
+	locks.Release(lockPrefix + cacheKey)
 }
 
 func (c *Cache) remove(cacheKey string, noLock bool) {

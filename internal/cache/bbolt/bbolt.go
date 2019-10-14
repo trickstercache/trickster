@@ -86,22 +86,24 @@ func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateIndex bool) error {
 
 	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
-
 	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 
 	o := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	err := c.dbh.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
-		return b.Put([]byte(cacheKey), o.ToBytes())
+		err2 := b.Put([]byte(cacheKey), o.ToBytes())
+		locks.Release(lockPrefix + cacheKey)
+		return err2
 	})
 	if err != nil {
+		locks.Release(lockPrefix + cacheKey)
 		return err
 	}
 	log.Debug("bbolt cache store", log.Pairs{"key": cacheKey, "ttl": ttl, "indexed": updateIndex})
 	if updateIndex {
 		c.Index.UpdateObject(o)
 	}
+	locks.Release(lockPrefix + cacheKey)
 	return nil
 }
 
@@ -113,7 +115,6 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
 func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte, error) {
 
 	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
 
 	var data []byte
 	err := c.dbh.View(func(tx *bbolt.Tx) error {
@@ -122,16 +123,20 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		if data == nil {
 			log.Debug("bbolt cache miss", log.Pairs{"key": cacheKey})
 			_, cme := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+			locks.Release(lockPrefix + cacheKey)
 			return cme
 		}
+		locks.Release(lockPrefix + cacheKey)
 		return nil
 	})
 	if err != nil {
+		locks.Release(lockPrefix + cacheKey)
 		return nil, err
 	}
 
 	o, err := index.ObjectFromBytes(data)
 	if err != nil {
+		locks.Release(lockPrefix + cacheKey)
 		return cache.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
 	}
 	o.Expiration = c.Index.GetExpiration(cacheKey)
@@ -142,26 +147,29 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 			c.Index.UpdateObjectAccessTime(cacheKey)
 		}
 		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
+		locks.Release(lockPrefix + cacheKey)
 		return o.Value, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
 	c.remove(cacheKey, false)
-	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	b, err := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	locks.Release(lockPrefix + cacheKey)
 
+	return b, err
 }
 
 // SetTTL updates the TTL for the provided cache object
 func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
 	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
 	c.Index.UpdateObjectTTL(cacheKey, ttl)
+	locks.Release(lockPrefix + cacheKey)
 }
 
 // Remove removes an object in cache, if present
 func (c *Cache) Remove(cacheKey string) {
 	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
 	c.remove(cacheKey, false)
+	locks.Release(lockPrefix + cacheKey)
 }
 
 func (c *Cache) remove(cacheKey string, noLock bool) error {
