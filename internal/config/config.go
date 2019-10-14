@@ -43,9 +43,6 @@ var Logging *LoggingConfig
 // Metrics is the Metrics subsection of the Running Configuration
 var Metrics *MetricsConfig
 
-// TLS is the TLS subsection of the Running Configuration
-var TLS map[string]*TLSConfig
-
 // Flags is a collection of command line flags that Trickster loads.
 var Flags = TricksterFlags{}
 var defaultOriginURL string
@@ -66,13 +63,11 @@ type TricksterConfig struct {
 	Main        *MainConfig               `toml:"main"`
 	Origins     map[string]*OriginConfig  `toml:"origins"`
 	Caches      map[string]*CachingConfig `toml:"caches"`
-	TLS         map[string]*TLSConfig     `toml:"tls"`
 	ProxyServer *ProxyServerConfig        `toml:"proxy_server"`
 	Logging     *LoggingConfig            `toml:"logging"`
 	Metrics     *MetricsConfig            `toml:"metrics"`
 
 	activeCaches map[string]bool
-	activeTLS    map[string]bool
 }
 
 // MainConfig is a collection of general configuration values.
@@ -93,29 +88,31 @@ type MainConfig struct {
 // OriginConfig is a collection of configurations for prometheus origins proxied by Trickster
 // You can override these on a per-request basis with url-params
 type OriginConfig struct {
-	Type                         string `toml:"type"`
-	Scheme                       string `toml:"scheme"`
-	Host                         string `toml:"host"`
-	PathPrefix                   string `toml:"path_prefix"`
-	APIPath                      string `toml:"api_path"`
-	IgnoreNoCacheHeader          bool   `toml:"ignore_no_cache_header"`
-	TimeseriesRetentionFactor    int    `toml:"timeseries_retention_factor"`
-	TimeseriesEvictionMethodName string `toml:"timeseries_eviction_method"`
-	FastForwardDisable           bool   `toml:"fast_forward_disable"`
-	BackfillToleranceSecs        int64  `toml:"backfill_tolerance_secs"`
-	TimeoutSecs                  int64  `toml:"timeout_secs"`
-	KeepAliveTimeoutSecs         int64  `toml:"keep_alive_timeout_secs"`
-	MaxIdleConns                 int    `toml:"max_idle_conns"`
-	CacheName                    string `toml:"cache_name"`
-	IsDefault                    bool   `toml:"is_default"`
-	TLSConfigName                string `toml:"tls_name"`
-	RequireTLS                   bool   `toml:"require_tls"`
+	Type                         string     `toml:"type"`
+	Scheme                       string     `toml:"scheme"`
+	Host                         string     `toml:"host"`
+	PathPrefix                   string     `toml:"path_prefix"`
+	APIPath                      string     `toml:"api_path"`
+	IgnoreNoCacheHeader          bool       `toml:"ignore_no_cache_header"`
+	TimeseriesRetentionFactor    int        `toml:"timeseries_retention_factor"`
+	TimeseriesEvictionMethodName string     `toml:"timeseries_eviction_method"`
+	FastForwardDisable           bool       `toml:"fast_forward_disable"`
+	BackfillToleranceSecs        int64      `toml:"backfill_tolerance_secs"`
+	TimeoutSecs                  int64      `toml:"timeout_secs"`
+	KeepAliveTimeoutSecs         int64      `toml:"keep_alive_timeout_secs"`
+	MaxIdleConns                 int        `toml:"max_idle_conns"`
+	CacheName                    string     `toml:"cache_name"`
+	IsDefault                    bool       `toml:"is_default"`
+	TLS                          *TLSConfig `toml:"tls"`
+	RequireTLS                   bool       `toml:"require_tls"`
 
 	Timeout                  time.Duration            `toml:"-"`
 	BackfillTolerance        time.Duration            `toml:"-"`
 	TimeseriesRetention      time.Duration            `toml:"-"`
 	TimeseriesEvictionMethod TimeseriesEvictionMethod `toml:"-"`
-	TLS                      *TLSConfig               `toml:"-"`
+	// ServeTLS indicates the Origin's Frontend TLS configurations are validated
+	// and the ProxyServer is OK to route to it over this origin on the TLS port
+	ServeTLS bool `toml:"serve_tls"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -226,6 +223,10 @@ type ProxyServerConfig struct {
 	TLSListenPort int `toml:"tls_listen_port"`
 	// ConnectionsLimit indicates how many concurrent front end connections trickster will handle at any time
 	ConnectionsLimit int `toml:"connections_limit"`
+
+	// ServeTLS indicates whether to listen and serve on the TLS port, meaning
+	// at least one origin configuration has a valid certificate and key file configured.
+	ServeTLS bool `toml:"-"`
 }
 
 // LoggingConfig is a collection of Logging configurations
@@ -265,7 +266,6 @@ func NewConfig() *TricksterConfig {
 		Origins: map[string]*OriginConfig{
 			"default": DefaultOriginConfig(),
 		},
-		TLS: make(map[string]*TLSConfig),
 		ProxyServer: &ProxyServerConfig{
 			ListenPort: defaultProxyListenPort,
 		},
@@ -314,8 +314,8 @@ func DefaultOriginConfig() *OriginConfig {
 		CacheName:                    defaultOriginCacheName,
 		BackfillToleranceSecs:        defaultBackfillToleranceSecs,
 		Timeout:                      time.Second * defaultOriginTimeoutSecs,
-
-		BackfillTolerance: defaultBackfillToleranceSecs,
+		BackfillTolerance:            defaultBackfillToleranceSecs,
+		TLS:                          &TLSConfig{},
 	}
 }
 
@@ -334,7 +334,7 @@ func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
 
 	c.processOriginConfigs(metadata)
 	c.processCachingConfigs(metadata)
-	c.processTLSConfigs(metadata)
+	//c.processTLSConfigs(metadata)
 	err := c.validateConfigMappings()
 	if err != nil {
 		return err
@@ -350,12 +350,6 @@ func (c *TricksterConfig) validateConfigMappings() error {
 		if _, ok := c.Caches[oc.CacheName]; !ok {
 			return fmt.Errorf("invalid cache name [%s] provided in origin config [%s]", oc.CacheName, k)
 		}
-		if oc.TLSConfigName != "" {
-			if _, ok := c.TLS[oc.TLSConfigName]; !ok {
-				return fmt.Errorf("invalid tls name [%s] provided in origin config [%s]", oc.TLSConfigName, k)
-			}
-			oc.TLS = c.TLS[oc.TLSConfigName]
-		}
 	}
 	return nil
 }
@@ -369,7 +363,6 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 	}
 
 	c.activeCaches = make(map[string]bool)
-	c.activeTLS = make(map[string]bool)
 
 	for k, v := range c.Origins {
 
@@ -385,11 +378,6 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 		if len(c.Origins) == 1 && (!metadata.IsDefined("origins", k, "is_default")) {
 			oc.IsDefault = true
 		}
-
-		if metadata.IsDefined("origins", k, "tls_name") {
-			oc.TLSConfigName = v.TLSConfigName
-		}
-		c.activeTLS[oc.TLSConfigName] = true
 
 		if metadata.IsDefined("origins", k, "require_tls") {
 			oc.RequireTLS = v.RequireTLS

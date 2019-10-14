@@ -68,7 +68,6 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	Main = c.Main
 	Origins = c.Origins
 	Caches = c.Caches
-	TLS = c.TLS
 	ProxyServer = c.ProxyServer
 	Logging = c.Logging
 	Metrics = c.Metrics

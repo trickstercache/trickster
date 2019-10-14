@@ -34,19 +34,18 @@ func TestDefaultTLSConfig(t *testing.T) {
 
 }
 
-func tlsMap() map[string]*TLSConfig {
-	return map[string]*TLSConfig{
-		"test.01": &TLSConfig{FullChainCertPath: "../../testdata/test.01.cert.pem", PrivateKeyPath: "../../testdata/test.01.key.pem"},
-		"test.02": &TLSConfig{FullChainCertPath: "../../testdata/test.02.cert.pem", PrivateKeyPath: "../../testdata/test.02.key.pem"},
-		"test.03": &TLSConfig{FullChainCertPath: "../../testdata/test.03.cert.pem", PrivateKeyPath: "../../testdata/test.03.key.pem"},
-		"test.04": &TLSConfig{FullChainCertPath: "../../testdata/test.04.cert.pem", PrivateKeyPath: "../../testdata/test.04.key.pem"},
+func tlsConfig(id string) *TLSConfig {
+	return &TLSConfig{
+		FullChainCertPath: "../../testdata/test." + id + ".cert.pem",
+		PrivateKeyPath:    "../../testdata/test." + id + ".key.pem",
 	}
 }
 
 func TestVerifyTLSConfigs(t *testing.T) {
 
 	config := NewConfig()
-	config.TLS = tlsMap()
+	tls01 := tlsConfig("01")
+	config.Origins["default"].TLS = tls01
 
 	err := config.verifyTLSConfigs()
 	if err != nil {
@@ -54,19 +53,21 @@ func TestVerifyTLSConfigs(t *testing.T) {
 	}
 
 	// test for error when cert file can't be read
-	originalFile := config.TLS["test.04"].FullChainCertPath
+	tls04 := tlsConfig("04")
+	originalFile := tls04.FullChainCertPath
 	badFile := originalFile + ".nonexistent"
-	config.TLS["test.04"].FullChainCertPath = badFile
+	tls04.FullChainCertPath = badFile
+	config.Origins["default"].TLS = tls04
 	err = config.verifyTLSConfigs()
 	if err == nil {
 		t.Errorf("expected error for bad file %s", badFile)
 	}
-	config.TLS["test.04"].FullChainCertPath = originalFile
+	tls04.FullChainCertPath = originalFile
 
 	// test for error when key file can't be read
-	originalFile = config.TLS["test.04"].PrivateKeyPath
+	originalFile = tls04.PrivateKeyPath
 	badFile = originalFile + ".nonexistent"
-	config.TLS["test.04"].PrivateKeyPath = badFile
+	tls04.PrivateKeyPath = badFile
 	err = config.verifyTLSConfigs()
 	if err == nil {
 		t.Errorf("expected error for bad file %s", badFile)
@@ -77,7 +78,6 @@ func TestVerifyTLSConfigs(t *testing.T) {
 func TestProcessTLSConfigs(t *testing.T) {
 
 	a := []string{"-config", "../../testdata/test.full.conf"}
-	// it should not error if config path is not set
 	err := Load("trickster-test", "0", a)
 	if err != nil {
 		t.Error(err)
@@ -86,9 +86,10 @@ func TestProcessTLSConfigs(t *testing.T) {
 }
 
 func TestTLSCertConfig(t *testing.T) {
+
 	config := NewConfig()
 
-	// test empty config
+	// test empty config condition #1 (ServeTLS is false, early bail)
 	n, err := config.TLSCertConfig()
 	if n != nil {
 		t.Errorf("expected nil config, got %d certs", len(n.Certificates))
@@ -97,8 +98,22 @@ func TestTLSCertConfig(t *testing.T) {
 		t.Error(err)
 	}
 
+	// test empty config condition 2 (ServeTLS is true, but there are 0 origins configured)
+	config.ProxyServer.ServeTLS = true
+	n, err = config.TLSCertConfig()
+	if n != nil {
+		t.Errorf("expected nil config, got %d certs", len(n.Certificates))
+	}
+	if err != nil {
+		t.Error(err)
+	}
+
+	tls01 := tlsConfig("01")
+	config.ProxyServer.ServeTLS = true
+	config.Origins["default"].ServeTLS = true
+
 	// test good config
-	config.TLS = tlsMap()
+	config.Origins["default"].TLS = tls01
 	_, err = config.TLSCertConfig()
 	if err != nil {
 		t.Error(err)
@@ -106,16 +121,17 @@ func TestTLSCertConfig(t *testing.T) {
 
 	// test config with key file that has invalid key data
 	expectedErr := "tls: failed to find any PEM data in key input"
-	config.TLS["test.05"] = &TLSConfig{FullChainCertPath: "../../testdata/test.05.cert.pem", PrivateKeyPath: "../../testdata/test.05.key.pem"}
+	tls05 := tlsConfig("05")
+	config.Origins["default"].TLS = tls05
 	_, err = config.TLSCertConfig()
 	if err == nil {
 		t.Errorf("expected error: %s", expectedErr)
 	}
-	delete(config.TLS, "test.05")
 
 	// test config with cert file that has invalid key data
 	expectedErr = "tls: failed to find any PEM data in certificate input"
-	config.TLS["test.06"] = &TLSConfig{FullChainCertPath: "../../testdata/test.06.cert.pem", PrivateKeyPath: "../../testdata/test.06.key.pem"}
+	tls06 := tlsConfig("06")
+	config.Origins["default"].TLS = tls06
 	_, err = config.TLSCertConfig()
 	if err == nil {
 		t.Errorf("expected error: %s", expectedErr)
@@ -124,9 +140,14 @@ func TestTLSCertConfig(t *testing.T) {
 }
 
 func TestTLSListener(t *testing.T) {
+
+	tls01 := tlsConfig("01")
 	config := NewConfig()
-	config.TLS = tlsMap()
 	config.ProxyServer = &ProxyServerConfig{TLSListenAddress: "", TLSListenPort: 0}
+	config.ProxyServer.ServeTLS = true
+	config.Origins["default"].ServeTLS = true
+	config.Origins["default"].TLS = tls01
+
 	_, err := config.TLSListener()
 	if err != nil {
 		t.Error(err)
@@ -134,7 +155,7 @@ func TestTLSListener(t *testing.T) {
 
 	// test config with key file that has invalid key data
 	expectedErr := "tls: failed to find any PEM data in key input"
-	config.TLS["test.05"] = &TLSConfig{FullChainCertPath: "../../testdata/test.05.cert.pem", PrivateKeyPath: "../../testdata/test.05.key.pem"}
+	config.Origins["default"].TLS = tlsConfig("05")
 	_, err = config.TLSListener()
 	if err == nil {
 		t.Errorf("expected error: %s", expectedErr)

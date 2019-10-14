@@ -18,17 +18,22 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
-
-	"github.com/BurntSushi/toml"
 )
 
-// TLSConfig is a collection of TLS configurations
+// TLSConfig is a collection of TLS-related client and server configurations
 type TLSConfig struct {
 	// FullChainCertPath specifies the path of the file containing the
 	// concatenated server certification and the intermediate certification for the tls endpoint
 	FullChainCertPath string `toml:"full_chain_cert_path"`
 	// PrivateKeyPath specifies the path of the private key file for the tls endpoint
 	PrivateKeyPath string `toml:"private_key_path"`
+
+	// SkipVerify indicates that the HTTPS Client in Trickster should bypass
+	// hostname verification for the origin's certificate when proxying requests
+	SkipVerify bool `toml:"skip_verify"`
+	// CertificateAuthorities provides a list of custom Certificate Authorities for the upstream origin
+	// which are considered in addition to any system CA's
+	CertificateAuthorityPaths []string `toml:"certificate_authority_paths"`
 }
 
 // DefaultTLSConfig will return a *TLSConfig with the default settings
@@ -40,50 +45,40 @@ func DefaultTLSConfig() *TLSConfig {
 }
 
 func (c *TricksterConfig) verifyTLSConfigs() error {
-	for _, tc := range c.TLS {
-		if tc.FullChainCertPath != "" {
-			_, err := ioutil.ReadFile(tc.FullChainCertPath)
-			if err != nil {
-				return err
-			}
+
+	for _, o := range c.Origins {
+		if o.TLS == nil || o.TLS.FullChainCertPath == "" || o.TLS.PrivateKeyPath == "" {
+			continue
 		}
-		if tc.PrivateKeyPath != "" {
-			_, err := ioutil.ReadFile(tc.PrivateKeyPath)
-			if err != nil {
-				return err
-			}
+
+		_, err := ioutil.ReadFile(o.TLS.FullChainCertPath)
+		if err != nil {
+			return err
 		}
+		_, err = ioutil.ReadFile(o.TLS.PrivateKeyPath)
+		if err != nil {
+			return err
+		}
+		c.ProxyServer.ServeTLS = true
+		o.ServeTLS = true
 	}
 	return nil
 }
 
-func (c *TricksterConfig) processTLSConfigs(metadata *toml.MetaData) {
-	for k, v := range c.TLS {
-		if _, ok := c.activeTLS[k]; !ok {
-			// a configured cache was not used by any origin. don't even instantiate it
-			delete(c.TLS, k)
-			continue
-		}
-
-		tc := DefaultTLSConfig()
-
-		if metadata.IsDefined("tls", k, "full_chain_cert_path") {
-			tc.FullChainCertPath = v.FullChainCertPath
-		}
-
-		if metadata.IsDefined("tls", k, "private_key_path") {
-			tc.PrivateKeyPath = v.PrivateKeyPath
-		}
-		c.TLS[k] = tc
-	}
-}
-
-// TLSCertConfig returns the crypto/tls configuration object with a list of name-bound certs from the config
+// TLSCertConfig returns the crypto/tls configuration object with a list of name-bound certs derifed from the running config
 func (c *TricksterConfig) TLSCertConfig() (*tls.Config, error) {
-
 	var err error
+	if !c.ProxyServer.ServeTLS {
+		return nil, nil
+	}
+	to := []*OriginConfig{}
+	for _, oc := range c.Origins {
+		if oc.ServeTLS {
+			to = append(to, oc)
+		}
+	}
 
-	l := len(c.TLS)
+	l := len(to)
 	if l == 0 {
 		return nil, nil
 	}
@@ -92,8 +87,8 @@ func (c *TricksterConfig) TLSCertConfig() (*tls.Config, error) {
 	tlsConfig.Certificates = make([]tls.Certificate, l)
 
 	i := 0
-	for _, tc := range c.TLS {
-		tlsConfig.Certificates[i], err = tls.LoadX509KeyPair(tc.FullChainCertPath, tc.PrivateKeyPath)
+	for _, tc := range to {
+		tlsConfig.Certificates[i], err = tls.LoadX509KeyPair(tc.TLS.FullChainCertPath, tc.TLS.PrivateKeyPath)
 		if err != nil {
 			return nil, err
 		}

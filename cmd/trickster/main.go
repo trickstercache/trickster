@@ -81,7 +81,7 @@ func main() {
 
 	// if TLS port is configured and at least one origin is mapped to a good tls config,
 	// then set up the tls server listener instance
-	if config.ProxyServer.TLSListenPort > 0 && len(config.TLS) > 0 {
+	if config.ProxyServer.ServeTLS && config.ProxyServer.TLSListenPort > 0 {
 		wg.Add(1)
 		go func() {
 			tl, err := config.Config.TLSListener()
