@@ -27,7 +27,7 @@ func NewHTTPClient(oc *config.OriginConfig) (*http.Client, error) {
 	var TLSConfig *tls.Config
 
 	if oc.TLS != nil {
-		TLSConfig = &tls.Config{InsecureSkipVerify: oc.TLS.SkipVerify}
+		TLSConfig = &tls.Config{InsecureSkipVerify: oc.TLS.InsecureSkipVerify}
 
 		if oc.TLS.ClientCertPath != "" && oc.TLS.ClientKeyPath != "" {
 			// load client cert

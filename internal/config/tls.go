@@ -28,9 +28,9 @@ type TLSConfig struct {
 	// ServeTLS is set to true once the Cert and Key files have been validated,
 	// indicating the consumer of this config can service requests over TLS
 	ServeTLS bool `toml:"-"`
-	// SkipVerify indicates that the HTTPS Client in Trickster should bypass
+	// InsecureSkipVerify indicates that the HTTPS Client in Trickster should bypass
 	// hostname verification for the origin's certificate when proxying requests
-	SkipVerify bool `toml:"skip_verify"`
+	InsecureSkipVerify bool `toml:"insecure_skip_verify"`
 	// CertificateAuthorities provides a list of custom Certificate Authorities for the upstream origin
 	// which are considered in addition to any system CA's by the Trickster HTTPS Client
 	CertificateAuthorityPaths []string `toml:"certificate_authority_paths"`

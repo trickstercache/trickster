@@ -44,6 +44,6 @@ You may use the same TLS certificate and key for multiple origins, depending upo
 
 Each Trickster origin front-end configuration is paired with its own back-end http(s) client, which can be configured in the TLS section of the origin config, as demonstrated above.
 
-`skip_verify` will instruct the http client to ignore hostname verification issues with the upstream origin's certificate, and process the request anyway. This is analogous to `-k | --insecure` in curl.
+`insecure_skip_verify` will instruct the http client to ignore hostname verification issues with the upstream origin's certificate, and process the request anyway. This is analogous to `-k | --insecure` in curl.
 
 `certificate_authority_paths` will provide the http client with a list of certificate authorities (used in addition to any OS-provided root CA's) to use when determining the trust of an upstream origin's tls certificate. In all cases, the Root CA's installed to the operating system on which Trickster is running are used for trust by the client.

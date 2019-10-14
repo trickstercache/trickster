@@ -164,8 +164,8 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected tls config for origin %s, got nil", "test")
 	}
 
-	if !o.TLS.SkipVerify {
-		t.Errorf("expected true got %t", o.TLS.SkipVerify)
+	if !o.TLS.InsecureSkipVerify {
+		t.Errorf("expected true got %t", o.TLS.InsecureSkipVerify)
 	}
 
 	if o.TLS.FullChainCertPath != "../../testdata/test.01.cert.pem" {

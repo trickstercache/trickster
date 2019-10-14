@@ -437,7 +437,7 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "tls") {
 			oc.TLS = &TLSConfig{
-				SkipVerify:                v.TLS.SkipVerify,
+				InsecureSkipVerify:        v.TLS.InsecureSkipVerify,
 				CertificateAuthorityPaths: v.TLS.CertificateAuthorityPaths,
 				PrivateKeyPath:            v.TLS.PrivateKeyPath,
 				FullChainCertPath:         v.TLS.FullChainCertPath,
