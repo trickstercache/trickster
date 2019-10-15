@@ -192,6 +192,8 @@ profiler:
   enabled: false
   port: 6060
 
+prometheusScrape: false
+
 # Number of trickster replicas desired
 replicaCount: 1
 

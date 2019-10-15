@@ -3,8 +3,8 @@ kind: Service
 metadata:
   {{- if .Values.prometheusScrape }}
   annotations:
-    prometheus.io/scrape: {{ .Values.prometheusScrape }}
-    prometheus.io/port: {{ .Values.service.metricsPort }}
+    prometheus.io/scrape: {{ .Values.prometheusScrape | quote }}
+    prometheus.io/port: {{ .Values.service.metricsPort | quote }}
     prometheus.io/path: /metrics
   {{- end }}
   name: {{ template "trickster.fullname" . }}
