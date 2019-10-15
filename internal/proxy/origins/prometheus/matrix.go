@@ -165,10 +165,11 @@ func (me *MatrixEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 		}
 	}
 
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
+
 	for _, s := range me.Data.Result {
 		tmp := s.Values[:0]
-		wg := sync.WaitGroup{}
-		mtx := sync.Mutex{}
 		for _, r := range s.Values {
 			wg.Add(1)
 			go func(p model.SamplePair) {
@@ -186,19 +187,21 @@ func (me *MatrixEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 
 	tl := times.FromMap(removals)
 	sort.Sort(tl)
+
 	for _, t := range tl {
-		wg := sync.WaitGroup{}
 		for i, e := range el {
 			wg.Add(1)
 			go func(j int, f *timeseries.Extent) {
 				if f.StartsAt(t) {
+					mtx.Lock()
 					el[j].Start = f.Start.Add(me.StepDuration)
+					mtx.Unlock()
 				}
 				wg.Done()
 			}(i, &e)
 		}
-		wg.Wait()
 	}
+	wg.Wait()
 
 	me.ExtentList = timeseries.ExtentList(el).Compress(me.StepDuration)
 	me.Sort()
