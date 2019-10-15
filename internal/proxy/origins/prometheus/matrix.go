@@ -15,6 +15,7 @@ package prometheus
 
 import (
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/Comcast/trickster/internal/timeseries"
@@ -35,21 +36,41 @@ func (me *MatrixEnvelope) SetStep(step time.Duration) {
 // Merge merges the provided Timeseries list into the base Timeseries (in the order provided) and optionally sorts the merged Timeseries
 func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) {
 	meMetrics := make(map[string]*model.SampleStream)
+
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
 	for _, s := range me.Data.Result {
-		meMetrics[s.Metric.String()] = s
+		wg.Add(1)
+		go func(t *model.SampleStream) {
+			mtx.Lock()
+			meMetrics[t.Metric.String()] = t
+			mtx.Unlock()
+			wg.Done()
+		}(s)
 	}
+	wg.Wait()
+
 	for _, ts := range collection {
 		if ts != nil {
 			me2 := ts.(*MatrixEnvelope)
 			for _, s := range me2.Data.Result {
-				name := s.Metric.String()
-				if _, ok := meMetrics[name]; !ok {
-					meMetrics[name] = s
-					me.Data.Result = append(me.Data.Result, s)
-					continue
-				}
-				meMetrics[name].Values = append(meMetrics[name].Values, s.Values...)
+				wg.Add(1)
+				go func(t *model.SampleStream) {
+					mtx.Lock()
+					name := t.Metric.String()
+					if _, ok := meMetrics[name]; !ok {
+						meMetrics[name] = t
+						me.Data.Result = append(me.Data.Result, t)
+						mtx.Unlock()
+						wg.Done()
+						return
+					}
+					meMetrics[name].Values = append(meMetrics[name].Values, t.Values...)
+					mtx.Unlock()
+					wg.Done()
+				}(s)
 			}
+			wg.Wait()
 			me.ExtentList = append(me.ExtentList, me2.ExtentList...)
 		}
 	}
@@ -79,9 +100,18 @@ func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
 	copy(resMe.ExtentList, me.ExtentList)
 	copy(resMe.tslist, me.tslist)
 
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
 	for k, v := range me.timestamps {
-		resMe.timestamps[k] = v
+		wg.Add(1)
+		go func(t time.Time, b bool) {
+			mtx.Lock()
+			resMe.timestamps[t] = b
+			mtx.Unlock()
+			wg.Done()
+		}(k, v)
 	}
+	wg.Wait()
 
 	for _, ss := range me.Data.Result {
 		newSS := &model.SampleStream{Metric: ss.Metric}
@@ -135,26 +165,43 @@ func (me *MatrixEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 		}
 	}
 
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
+
 	for _, s := range me.Data.Result {
 		tmp := s.Values[:0]
 		for _, r := range s.Values {
-			t = r.Timestamp.Time()
-			if _, ok := removals[t]; !ok {
-				tmp = append(tmp, r)
-			}
+			wg.Add(1)
+			go func(p model.SamplePair) {
+				mtx.Lock()
+				if _, ok := removals[p.Timestamp.Time()]; !ok {
+					tmp = append(tmp, p)
+				}
+				mtx.Unlock()
+				wg.Done()
+			}(r)
 		}
+		wg.Wait()
 		s.Values = tmp
 	}
 
 	tl := times.FromMap(removals)
 	sort.Sort(tl)
+
 	for _, t := range tl {
 		for i, e := range el {
-			if e.StartsAt(t) {
-				el[i].Start = e.Start.Add(me.StepDuration)
-			}
+			wg.Add(1)
+			go func(j int, f *timeseries.Extent) {
+				if f.StartsAt(t) {
+					mtx.Lock()
+					el[j].Start = f.Start.Add(me.StepDuration)
+					mtx.Unlock()
+				}
+				wg.Done()
+			}(i, &e)
 		}
 	}
+	wg.Wait()
 
 	me.ExtentList = timeseries.ExtentList(el).Compress(me.StepDuration)
 	me.Sort()
@@ -249,14 +296,23 @@ func (me *MatrixEnvelope) Sort() {
 	}
 
 	tsm := map[time.Time]bool{}
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
 
 	for i, s := range me.Data.Result { // []SampleStream
 		m := make(map[time.Time]model.SamplePair)
 		for _, v := range s.Values { // []SamplePair
-			t := v.Timestamp.Time()
-			tsm[t] = true
-			m[t] = v
+			wg.Add(1)
+			go func(sp model.SamplePair) {
+				t := sp.Timestamp.Time()
+				mtx.Lock()
+				tsm[t] = true
+				m[t] = sp
+				mtx.Unlock()
+				wg.Done()
+			}(v)
 		}
+		wg.Wait()
 		keys := make(times.Times, 0, len(m))
 		for key := range m {
 			keys = append(keys, key)
@@ -278,16 +334,26 @@ func (me *MatrixEnvelope) Sort() {
 }
 
 func (me *MatrixEnvelope) updateTimestamps() {
+
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
+
 	if me.isCounted {
 		return
 	}
 	m := make(map[time.Time]bool)
 	for _, s := range me.Data.Result { // []SampleStream
 		for _, v := range s.Values { // []SamplePair
-			t := v.Timestamp.Time()
-			m[t] = true
+			wg.Add(1)
+			go func(t time.Time) {
+				mtx.Lock()
+				m[t] = true
+				mtx.Unlock()
+				wg.Done()
+			}(v.Timestamp.Time())
 		}
 	}
+	wg.Wait()
 	me.timestamps = m
 	me.tslist = times.FromMap(m)
 	me.isCounted = true
@@ -318,8 +384,17 @@ func (me *MatrixEnvelope) SeriesCount() int {
 // ValueCount returns the count of all values across all Series in the Timeseries object
 func (me *MatrixEnvelope) ValueCount() int {
 	c := 0
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
 	for i := range me.Data.Result {
-		c += len(me.Data.Result[i].Values)
+		wg.Add(1)
+		go func(j int) {
+			mtx.Lock()
+			c += j
+			mtx.Unlock()
+			wg.Done()
+		}(len(me.Data.Result[i].Values))
 	}
+	wg.Wait()
 	return c
 }
