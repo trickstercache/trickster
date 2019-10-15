@@ -293,11 +293,11 @@ func (me *MatrixEnvelope) Sort() {
 	}
 
 	tsm := map[time.Time]bool{}
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
 
 	for i, s := range me.Data.Result { // []SampleStream
 		m := make(map[time.Time]model.SamplePair)
-		wg := sync.WaitGroup{}
-		mtx := sync.Mutex{}
 		for _, v := range s.Values { // []SamplePair
 			wg.Add(1)
 			go func(sp model.SamplePair) {
