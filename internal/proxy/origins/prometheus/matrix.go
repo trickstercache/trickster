@@ -173,8 +173,7 @@ func (me *MatrixEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 			wg.Add(1)
 			go func(p model.SamplePair) {
 				mtx.Lock()
-				t = p.Timestamp.Time()
-				if _, ok := removals[t]; !ok {
+				if _, ok := removals[p.Timestamp.Time()]; !ok {
 					tmp = append(tmp, p)
 				}
 				mtx.Unlock()
