@@ -385,10 +385,13 @@ func (me *MatrixEnvelope) SeriesCount() int {
 func (me *MatrixEnvelope) ValueCount() int {
 	c := 0
 	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
 	for i := range me.Data.Result {
 		wg.Add(1)
 		go func(j int) {
+			mtx.Lock()
 			c += j
+			mtx.Unlock()
 			wg.Done()
 		}(len(me.Data.Result[i].Values))
 	}
