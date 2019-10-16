@@ -77,7 +77,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 
 func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 
-	err := c.store(cacheKey, data, 31536000, false)
+	err := c.store(cacheKey, data, 31536000*time.Second, false)
 	if err != nil {
 		log.Error("cache failed to write non-indexed object", log.Pairs{"cacheName": c.Name, "cacheType": "bbolt", "cacheKey": cacheKey, "objectSize": len(data)})
 	}

@@ -41,7 +41,7 @@ data:
             protocol = {{ .redis.protocol | quote }}
             password = {{ .redis.password | quote }}
 
-            {{- else if eq .redis.clientType "standard" }}
+            {{- if eq .redis.clientType "standard" }}
             endpoint = {{ .redis.endpoint | quote }}
 
             {{- else if or (eq .clientType "cluster") (eq .clientType "sentinel") }}
@@ -88,6 +88,7 @@ data:
             {{- end }}
             {{- if .redis.idleCheckFrequencyMs }}
             idle_check_frequency_ms = {{ .redis.idleCheckFrequencyMs }}
+            {{- end }}
             {{- end }}
             
             {{- else if eq .type "filesystem" }}

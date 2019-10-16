@@ -163,6 +163,10 @@ type OriginConfig struct {
 	FastForwardTTL time.Duration `toml:"-"`
 	// FastForwardPath is the PathConfig to use for upstream Fast Forward Requests
 	FastForwardPath *PathConfig `toml:"-"`
+	// TLS is the TLS Configuration for the Frontend and Backend
+	TLS *TLSConfig `toml:"tls"`
+	// RequireTLS, when true, indicates this Origin Config's paths must only be registered with the TLS Router
+	RequireTLS bool `toml:"require_tls"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -263,8 +267,16 @@ type ProxyServerConfig struct {
 	ListenAddress string `toml:"listen_address"`
 	// ListenPort is TCP Port for the main http listener for the application
 	ListenPort int `toml:"listen_port"`
+	// TLSListenAddress is IP address for the tls  http listener for the application
+	TLSListenAddress string `toml:"tls_listen_address"`
+	// TLSListenPort is the TCP Port for the tls http listener for the application
+	TLSListenPort int `toml:"tls_listen_port"`
 	// ConnectionsLimit indicates how many concurrent front end connections trickster will handle at any time
 	ConnectionsLimit int `toml:"connections_limit"`
+
+	// ServeTLS indicates whether to listen and serve on the TLS port, meaning
+	// at least one origin configuration has a valid certificate and key file configured.
+	ServeTLS bool `toml:"-"`
 }
 
 // LoggingConfig is a collection of Logging configurations
@@ -358,25 +370,48 @@ func NewOriginConfig() *OriginConfig {
 		FastForwardTTLSecs:           defaultFastForwardTTLSecs,
 		TimeseriesTTL:                defaultTimeseriesTTLSecs * time.Second,
 		FastForwardTTL:               defaultFastForwardTTLSecs * time.Second,
+		TLS:                          &TLSConfig{},
 	}
 }
 
 // loadFile loads application configuration from a TOML-formatted file.
 func (c *TricksterConfig) loadFile() error {
 	md, err := toml.DecodeFile(Flags.ConfigPath, c)
-	c.setDefaults(md)
+	if err != nil {
+		c.setDefaults(&toml.MetaData{})
+		return err
+	}
+	err = c.setDefaults(&md)
 	return err
 }
 
-func (c *TricksterConfig) setDefaults(metadata toml.MetaData) {
-	c.setOriginDefaults(metadata)
-	c.setCachingDefaults(metadata)
+func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
+
+	c.processOriginConfigs(metadata)
+	c.processCachingConfigs(metadata)
+	err := c.validateConfigMappings()
+	if err != nil {
+		return err
+	}
+
+	err = c.verifyTLSConfigs()
+
+	return err
 }
 
 var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers", "default_ttl_secs",
 	"request_headers", "response_headers", "response_code", "response_body", "no_metrics"}
 
-func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
+func (c *TricksterConfig) validateConfigMappings() error {
+	for k, oc := range c.Origins {
+		if _, ok := c.Caches[oc.CacheName]; !ok {
+			return fmt.Errorf("invalid cache name [%s] provided in origin config [%s]", oc.CacheName, k)
+		}
+	}
+	return nil
+}
+
+func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 	c.activeCaches = make(map[string]bool)
 
@@ -397,8 +432,8 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 			oc.IsDefault = true
 		}
 
-		if metadata.IsDefined("origins", k, "cache_name") {
-			oc.CacheName = v.CacheName
+		if metadata.IsDefined("origins", k, "require_tls") {
+			oc.RequireTLS = v.RequireTLS
 		}
 
 		c.activeCaches[oc.CacheName] = true
@@ -495,13 +530,24 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 			oc.HealthCheckQuery = v.HealthCheckQuery
 		}
 
+		if metadata.IsDefined("origins", k, "tls") {
+			oc.TLS = &TLSConfig{
+				InsecureSkipVerify:        v.TLS.InsecureSkipVerify,
+				CertificateAuthorityPaths: v.TLS.CertificateAuthorityPaths,
+				PrivateKeyPath:            v.TLS.PrivateKeyPath,
+				FullChainCertPath:         v.TLS.FullChainCertPath,
+				ClientCertPath:            v.TLS.ClientCertPath,
+				ClientKeyPath:             v.TLS.ClientKeyPath,
+			}
+		}
+
 		c.Origins[k] = oc
 	}
 }
 
-func (c *TricksterConfig) setCachingDefaults(metadata toml.MetaData) {
+func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
 
-	// setCachingDefaults assumes that setOriginDefaults was just ran
+	// setCachingDefaults assumes that processOriginConfigs was just ran
 
 	for k, v := range c.Caches {
 

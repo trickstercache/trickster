@@ -30,7 +30,9 @@ const cacheType = "bbolt"
 const cacheKey = "cacheKey"
 
 func newCacheConfig() config.CachingConfig {
-	return config.CachingConfig{CacheType: cacheType, BBolt: config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	const testDbPath = "/tmp/test.db"
+	os.Remove(testDbPath)
+	return config.CachingConfig{Type: cacheType, BBolt: config.BBoltCacheConfig{Filename: testDbPath, Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
 }
 
 func TestConfiguration(t *testing.T) {
@@ -124,7 +126,6 @@ func TestBboltCache_StoreNoIndex(t *testing.T) {
 
 	cacheConfig := newCacheConfig()
 	bc := Cache{Config: &cacheConfig}
-	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
 	if err != nil {
@@ -136,7 +137,7 @@ func TestBboltCache_StoreNoIndex(t *testing.T) {
 	bc.storeNoIndex(cacheKey, []byte("data"))
 
 	// it should retrieve a value
-	data, err := bc.Retrieve(cacheKey, false)
+	data, err := bc.retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}

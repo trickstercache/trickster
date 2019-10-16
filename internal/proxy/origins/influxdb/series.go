@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Comcast/trickster/internal/timeseries"
@@ -118,25 +119,46 @@ func (t tags) String() string {
 
 // Merge merges the provided Timeseries list into the base Timeseries (in the order provided) and optionally sorts the merged Timeseries
 func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) {
+
+	mtx := sync.Mutex{}
+	wg := sync.WaitGroup{}
+
 	series := make(map[seriesKey]*models.Row)
 	for i, r := range se.Results {
-		for j, s := range se.Results[i].Series {
-			series[seriesKey{StatementID: r.StatementID, Name: s.Name, Tags: tags(s.Tags).String(), Columns: strings.Join(s.Columns, ",")}] = &se.Results[i].Series[j]
+		for j := range se.Results[i].Series {
+			wg.Add(1)
+			go func(s *models.Row) {
+				mtx.Lock()
+				series[seriesKey{StatementID: r.StatementID, Name: s.Name, Tags: tags(s.Tags).String(), Columns: strings.Join(s.Columns, ",")}] = s
+				mtx.Unlock()
+				wg.Done()
+			}(&se.Results[i].Series[j])
 		}
 	}
+	wg.Wait()
+
 	for _, ts := range collection {
 		if ts != nil {
 			se2 := ts.(*SeriesEnvelope)
 			for _, r := range se2.Results {
-				for _, s := range r.Series {
-					sk := seriesKey{StatementID: r.StatementID, Name: s.Name, Tags: tags(s.Tags).String(), Columns: strings.Join(s.Columns, ",")}
-					if o, ok := series[sk]; !ok {
-						series[sk] = o
-						continue
-					}
-					series[sk].Values = append(series[sk].Values, s.Values...)
+				for i := range r.Series {
+					wg.Add(1)
+					go func(s *models.Row) {
+						mtx.Lock()
+						sk := seriesKey{StatementID: r.StatementID, Name: s.Name, Tags: tags(s.Tags).String(), Columns: strings.Join(s.Columns, ",")}
+						if o, ok := series[sk]; !ok {
+							series[sk] = o
+							mtx.Unlock()
+							wg.Done()
+							return
+						}
+						series[sk].Values = append(series[sk].Values, s.Values...)
+						mtx.Unlock()
+						wg.Done()
+					}(&r.Series[i])
 				}
 			}
+			wg.Wait()
 			se.ExtentList = append(se.ExtentList, se2.ExtentList...)
 		}
 	}
@@ -361,6 +383,9 @@ func (se *SeriesEnvelope) CropToRange(e timeseries.Extent) {
 // Sort sorts all Values in each Series chronologically by their timestamp
 func (se *SeriesEnvelope) Sort() {
 
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
+
 	if se.isSorted || len(se.Results) == 0 || len(se.Results[0].Series) == 0 {
 		return
 	}
@@ -371,9 +396,16 @@ func (se *SeriesEnvelope) Sort() {
 		for ri := range se.Results {
 			for si := range se.Results[ri].Series {
 				for _, v := range se.Results[ri].Series[si].Values {
-					m[int64(v[ti].(float64))] = v
-					tsm[time.Unix(int64(v[ti].(float64))/1000, 0)] = true
+					wg.Add(1)
+					go func(s []interface{}) {
+						mtx.Lock()
+						m[int64(s[ti].(float64))] = s
+						tsm[time.Unix(int64(s[ti].(float64))/1000, 0)] = true
+						mtx.Unlock()
+						wg.Done()
+					}(v)
 				}
+				wg.Wait()
 
 				keys := make([]int64, 0, len(m))
 				for key := range m {

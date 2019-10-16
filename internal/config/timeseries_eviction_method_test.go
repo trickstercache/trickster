@@ -21,6 +21,7 @@ func TestTEMString(t *testing.T) {
 
 	t1 := EvictionMethodLRU
 	t2 := EvictionMethodOldest
+	var t3 TimeseriesEvictionMethod = 3
 
 	var t3 TimeseriesEvictionMethod = 3
 

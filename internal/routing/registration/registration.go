@@ -103,23 +103,25 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 
 	switch strings.ToLower(o.OriginType) {
 	case "prometheus", "":
-		client = prometheus.NewClient(k, o, c)
+		log.Info("registering Prometheus route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
+		client, err = prometheus.NewClient(k, o, c)
 	case "influxdb":
-		client = influxdb.NewClient(k, o, c)
+		log.Info("registering Influxdb route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
+		client, err = influxdb.NewClient(k, o, c)
 	case "irondb":
-		client = irondb.NewClient(k, o, c)
+		log.Info("registering IRONdb route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
+		client, err = irondb.NewClient(k, o, c)
 	case "rpc", "reverseproxycache":
-		client = reverseproxycache.NewClient(k, o, c)
-	default:
-		log.Error("unknown origin type", log.Pairs{"originName": k, "originType": o.OriginType})
-		return fmt.Errorf("unknown origin type in origin config. originName: %s, originType: %s", k, o.OriginType)
+		client, err = reverseproxycache.NewClient(k, o, c)
+	}
+	if err != nil {
+		return err
 	}
 	if client != nil {
 		ProxyClients[k] = client
 		paths, orderedPaths := client.DefaultPathConfigs(o)
 		registerPathRoutes(client.Handlers(), o, c, paths, orderedPaths)
 	}
-
 	return nil
 }
 
