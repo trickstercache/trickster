@@ -31,9 +31,6 @@ OPATH
 ehthumbs.db
 Thumbs.db
 
-# The binary
-trickster
-
 # dep
 cacheKey.data
 cacheKey.expiration

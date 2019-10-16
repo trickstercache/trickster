@@ -40,6 +40,15 @@ func TestLoadConfiguration(t *testing.T) {
 
 }
 
+func TestLoadBadCacheName(t *testing.T) {
+	a := []string{"-config", "../../testdata/test.bad-cache-name.conf"}
+	// it should error with bad cache name
+	err := Load("trickster-test", "0", a)
+	if err == nil {
+		t.Errorf("expected error for invalid cache name: %s", "test_fail")
+	}
+}
+
 func TestFullLoadConfiguration(t *testing.T) {
 	a := []string{"-config", "../../testdata/test.full.conf"}
 	// it should not error if config path is not set
@@ -55,6 +64,14 @@ func TestFullLoadConfiguration(t *testing.T) {
 
 	if ProxyServer.ListenAddress != "test" {
 		t.Errorf("expected test, got %s", ProxyServer.ListenAddress)
+	}
+
+	if ProxyServer.TLSListenAddress != "test-tls" {
+		t.Errorf("expected test-tls, got %s", ProxyServer.TLSListenAddress)
+	}
+
+	if ProxyServer.TLSListenPort != 38821 {
+		t.Errorf("expected 38821, got %d", ProxyServer.TLSListenPort)
 	}
 
 	// Test Metrics Server
@@ -141,6 +158,30 @@ func TestFullLoadConfiguration(t *testing.T) {
 
 	if o.KeepAliveTimeoutSecs != 7 {
 		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeoutSecs)
+	}
+
+	if o.TLS == nil {
+		t.Errorf("expected tls config for origin %s, got nil", "test")
+	}
+
+	if !o.TLS.InsecureSkipVerify {
+		t.Errorf("expected true got %t", o.TLS.InsecureSkipVerify)
+	}
+
+	if o.TLS.FullChainCertPath != "../../testdata/test.01.cert.pem" {
+		t.Errorf("expected ../../testdata/test.01.cert.pem got %s", o.TLS.FullChainCertPath)
+	}
+
+	if o.TLS.PrivateKeyPath != "../../testdata/test.01.key.pem" {
+		t.Errorf("expected ../../testdata/test.01.key.pem got %s", o.TLS.PrivateKeyPath)
+	}
+
+	if o.TLS.ClientCertPath != "test_client_cert" {
+		t.Errorf("expected test_client_cert got %s", o.TLS.ClientCertPath)
+	}
+
+	if o.TLS.ClientKeyPath != "test_client_key" {
+		t.Errorf("expected test_client_key got %s", o.TLS.ClientKeyPath)
 	}
 
 	// Test Caches
