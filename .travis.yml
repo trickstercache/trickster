@@ -7,7 +7,7 @@ matrix:
     install:
     - pip install codespell
     script:
-    - codespell --skip="vendor,*.git,*.png,*.pdf,*.tiff,*.plist"
+    - codespell --skip="vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem"
 
   - language: go
     go:

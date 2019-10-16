@@ -88,21 +88,23 @@ type MainConfig struct {
 // OriginConfig is a collection of configurations for prometheus origins proxied by Trickster
 // You can override these on a per-request basis with url-params
 type OriginConfig struct {
-	Type                         string `toml:"type"`
-	Scheme                       string `toml:"scheme"`
-	Host                         string `toml:"host"`
-	PathPrefix                   string `toml:"path_prefix"`
-	APIPath                      string `toml:"api_path"`
-	IgnoreNoCacheHeader          bool   `toml:"ignore_no_cache_header"`
-	TimeseriesRetentionFactor    int    `toml:"timeseries_retention_factor"`
-	TimeseriesEvictionMethodName string `toml:"timeseries_eviction_method"`
-	FastForwardDisable           bool   `toml:"fast_forward_disable"`
-	BackfillToleranceSecs        int64  `toml:"backfill_tolerance_secs"`
-	TimeoutSecs                  int64  `toml:"timeout_secs"`
-	KeepAliveTimeoutSecs         int64  `toml:"keep_alive_timeout_secs"`
-	MaxIdleConns                 int    `toml:"max_idle_conns"`
-	CacheName                    string `toml:"cache_name"`
-	IsDefault                    bool   `toml:"is_default"`
+	Type                         string     `toml:"type"`
+	Scheme                       string     `toml:"scheme"`
+	Host                         string     `toml:"host"`
+	PathPrefix                   string     `toml:"path_prefix"`
+	APIPath                      string     `toml:"api_path"`
+	IgnoreNoCacheHeader          bool       `toml:"ignore_no_cache_header"`
+	TimeseriesRetentionFactor    int        `toml:"timeseries_retention_factor"`
+	TimeseriesEvictionMethodName string     `toml:"timeseries_eviction_method"`
+	FastForwardDisable           bool       `toml:"fast_forward_disable"`
+	BackfillToleranceSecs        int64      `toml:"backfill_tolerance_secs"`
+	TimeoutSecs                  int64      `toml:"timeout_secs"`
+	KeepAliveTimeoutSecs         int64      `toml:"keep_alive_timeout_secs"`
+	MaxIdleConns                 int        `toml:"max_idle_conns"`
+	CacheName                    string     `toml:"cache_name"`
+	IsDefault                    bool       `toml:"is_default"`
+	TLS                          *TLSConfig `toml:"tls"`
+	RequireTLS                   bool       `toml:"require_tls"`
 
 	Timeout                  time.Duration            `toml:"-"`
 	BackfillTolerance        time.Duration            `toml:"-"`
@@ -212,8 +214,16 @@ type ProxyServerConfig struct {
 	ListenAddress string `toml:"listen_address"`
 	// ListenPort is TCP Port for the main http listener for the application
 	ListenPort int `toml:"listen_port"`
+	// TLSListenAddress is IP address for the tls  http listener for the application
+	TLSListenAddress string `toml:"tls_listen_address"`
+	// TLSListenPort is the TCP Port for the tls http listener for the application
+	TLSListenPort int `toml:"tls_listen_port"`
 	// ConnectionsLimit indicates how many concurrent front end connections trickster will handle at any time
 	ConnectionsLimit int `toml:"connections_limit"`
+
+	// ServeTLS indicates whether to listen and serve on the TLS port, meaning
+	// at least one origin configuration has a valid certificate and key file configured.
+	ServeTLS bool `toml:"-"`
 }
 
 // LoggingConfig is a collection of Logging configurations
@@ -301,24 +311,46 @@ func DefaultOriginConfig() *OriginConfig {
 		CacheName:                    defaultOriginCacheName,
 		BackfillToleranceSecs:        defaultBackfillToleranceSecs,
 		Timeout:                      time.Second * defaultOriginTimeoutSecs,
-
-		BackfillTolerance: defaultBackfillToleranceSecs,
+		BackfillTolerance:            defaultBackfillToleranceSecs,
+		TLS:                          &TLSConfig{},
 	}
 }
 
 // loadFile loads application configuration from a TOML-formatted file.
 func (c *TricksterConfig) loadFile() error {
 	md, err := toml.DecodeFile(Flags.ConfigPath, c)
-	c.setDefaults(md)
+	if err != nil {
+		c.setDefaults(&toml.MetaData{})
+		return err
+	}
+	err = c.setDefaults(&md)
 	return err
 }
 
-func (c *TricksterConfig) setDefaults(metadata toml.MetaData) {
-	c.setOriginDefaults(metadata)
-	c.setCachingDefaults(metadata)
+func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
+
+	c.processOriginConfigs(metadata)
+	c.processCachingConfigs(metadata)
+	err := c.validateConfigMappings()
+	if err != nil {
+		return err
+	}
+
+	err = c.verifyTLSConfigs()
+
+	return err
 }
 
-func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
+func (c *TricksterConfig) validateConfigMappings() error {
+	for k, oc := range c.Origins {
+		if _, ok := c.Caches[oc.CacheName]; !ok {
+			return fmt.Errorf("invalid cache name [%s] provided in origin config [%s]", oc.CacheName, k)
+		}
+	}
+	return nil
+}
+
+func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 	// If the user has configured their own origins, and one of them is not "default"
 	// then Trickster will not use the auto-created default origin
@@ -343,8 +375,8 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 			oc.IsDefault = true
 		}
 
-		if metadata.IsDefined("origins", k, "cache_name") {
-			oc.CacheName = v.CacheName
+		if metadata.IsDefined("origins", k, "require_tls") {
+			oc.RequireTLS = v.RequireTLS
 		}
 
 		if metadata.IsDefined("origins", k, "cache_name") {
@@ -403,13 +435,24 @@ func (c *TricksterConfig) setOriginDefaults(metadata toml.MetaData) {
 			oc.BackfillToleranceSecs = v.BackfillToleranceSecs
 		}
 
+		if metadata.IsDefined("origins", k, "tls") {
+			oc.TLS = &TLSConfig{
+				InsecureSkipVerify:        v.TLS.InsecureSkipVerify,
+				CertificateAuthorityPaths: v.TLS.CertificateAuthorityPaths,
+				PrivateKeyPath:            v.TLS.PrivateKeyPath,
+				FullChainCertPath:         v.TLS.FullChainCertPath,
+				ClientCertPath:            v.TLS.ClientCertPath,
+				ClientKeyPath:             v.TLS.ClientKeyPath,
+			}
+		}
+
 		c.Origins[k] = oc
 	}
 }
 
-func (c *TricksterConfig) setCachingDefaults(metadata toml.MetaData) {
+func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
 
-	// setCachingDefaults assumes that setOriginDefaults was just ran
+	// setCachingDefaults assumes that processOriginConfigs was just ran
 
 	for k, v := range c.Caches {
 

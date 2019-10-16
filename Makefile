@@ -38,7 +38,7 @@ test-go-mod: go-mod-vendor
 
 .PHONY: build
 build:
-	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o trickster -a -v $(TRICKSTER_MAIN)/main.go 
+	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o ./OPATH/trickster -a -v $(TRICKSTER_MAIN)/main.go 
 
 rpm: build
 	mkdir -p ./OPATH/SOURCES

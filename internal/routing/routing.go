@@ -19,3 +19,6 @@ import (
 
 // Router is the HTTP Routing Object
 var Router = mux.NewRouter()
+
+// TLSRouter is the HTTPS Routing Object
+var TLSRouter = mux.NewRouter()

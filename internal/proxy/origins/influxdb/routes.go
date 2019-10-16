@@ -29,22 +29,47 @@ func (c Client) RegisterRoutes(originName string, o *config.OriginConfig) {
 		return middleware.Decorate(originName, otInfluxDb, path, f)
 	}
 
-	// Host Header-based routing
-	log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
-	routing.Router.HandleFunc("/"+health, decorate("health", c.HealthHandler)).Methods("GET").Host(originName)
-	routing.Router.HandleFunc("/"+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST").Host(originName)
-	routing.Router.PathPrefix("/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST").Host(originName)
+	// If this origin is configured for TLS, register its routes with the TLS Router Handler
+	if o.TLS != nil {
+		// Host Header-based routing
+		log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
+		routing.TLSRouter.HandleFunc("/"+health, decorate("health", c.HealthHandler)).Methods("GET").Host(originName)
+		routing.TLSRouter.HandleFunc("/"+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST").Host(originName)
+		routing.TLSRouter.PathPrefix("/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST").Host(originName)
 
-	// Path-based routing
-	routing.Router.HandleFunc("/"+originName+"/"+health, decorate("health", c.HealthHandler)).Methods("GET")
-	routing.Router.HandleFunc("/"+originName+"/"+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST")
-	routing.Router.PathPrefix("/"+originName+"/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST")
+		// Path-based routing
+		routing.TLSRouter.HandleFunc("/"+originName+"/"+health, decorate("health", c.HealthHandler)).Methods("GET")
+		routing.TLSRouter.HandleFunc("/"+originName+"/"+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST")
+		routing.TLSRouter.PathPrefix("/"+originName+"/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST")
 
-	// Default Origin Routing
-	if o.IsDefault {
-		log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.Type})
-		routing.Router.HandleFunc("/"+health, decorate("health", c.HealthHandler)).Methods("GET")
-		routing.Router.HandleFunc("/"+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST")
-		routing.Router.PathPrefix("/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST")
+		// Default Origin Routing
+		if o.IsDefault {
+			log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.Type})
+			routing.TLSRouter.HandleFunc("/"+health, decorate("health", c.HealthHandler)).Methods("GET")
+			routing.TLSRouter.HandleFunc("/"+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST")
+			routing.TLSRouter.PathPrefix("/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST")
+		}
+	}
+
+	// If this origin does not require TLS, register its routes with the HTTP Router Handler
+	if !o.RequireTLS {
+		// Host Header-based routing
+		log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
+		routing.Router.HandleFunc("/"+health, decorate("health", c.HealthHandler)).Methods("GET").Host(originName)
+		routing.Router.HandleFunc("/"+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST").Host(originName)
+		routing.Router.PathPrefix("/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST").Host(originName)
+
+		// Path-based routing
+		routing.Router.HandleFunc("/"+originName+"/"+health, decorate("health", c.HealthHandler)).Methods("GET")
+		routing.Router.HandleFunc("/"+originName+"/"+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST")
+		routing.Router.PathPrefix("/"+originName+"/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST")
+
+		// Default Origin Routing
+		if o.IsDefault {
+			log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.Type})
+			routing.Router.HandleFunc("/"+health, decorate("health", c.HealthHandler)).Methods("GET")
+			routing.Router.HandleFunc("/"+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST")
+			routing.Router.PathPrefix("/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST")
+		}
 	}
 }
