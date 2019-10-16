@@ -83,6 +83,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	Metrics = c.Metrics
 
 	for k, o := range c.Origins {
+
 		if o.OriginURL == "" {
 			return fmt.Errorf(`missing origin-url for origin "%s"`, k)
 		}

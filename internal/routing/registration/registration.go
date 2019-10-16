@@ -45,6 +45,10 @@ func RegisterProxyRoutes() error {
 	// This iteration will ensure default origins are handled properly
 	for k, o := range config.Origins {
 
+		if !config.IsValidOriginType(o.OriginType) {
+			return fmt.Errorf(`unknown origin type in origin config. originName: %s, originType: %s`, k, o.OriginType)
+		}
+
 		// Ensure only one default origin exists
 		if o.IsDefault {
 			if cdo != nil {

@@ -47,6 +47,9 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	o1.IsDefault = true
 	o2.IsDefault = true
 
+	o1.OriginType = "rpc"
+	o2.OriginType = "rpc"
+
 	config.Origins["2"] = o2
 
 	err = RegisterProxyRoutes()
@@ -144,14 +147,9 @@ func TestRegisterProxyRoutesMultipleDefaults(t *testing.T) {
 }
 
 func TestRegisterProxyRoutesBadCacheName(t *testing.T) {
-	expected := "Could not find Cache named [test2]"
+	expected := "invalid cache name [test2] provided in origin config [test]"
 	a := []string{"-config", "../../../testdata/test.bad_cache_name.conf"}
 	err := config.Load("trickster", "test", a)
-	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
-	}
-	registration.LoadCachesFromConfig()
-	err = RegisterProxyRoutes()
 	if err == nil {
 		t.Errorf("expected error `%s` got nothing", expected)
 	} else if err.Error() != expected {

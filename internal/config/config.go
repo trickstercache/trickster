@@ -133,6 +133,10 @@ type OriginConfig struct {
 	TimeseriesTTLSecs int `toml:"timeseries_ttl_secs"`
 	// TimeseriesTTLSecs is valid for time series db origins (prometheus, influxdb, etc) and specifies the cache TTL of fast forward data
 	FastForwardTTLSecs int `toml:"fastforward_ttl_secs"`
+	// TLS is the TLS Configuration for the Frontend and Backend
+	TLS *TLSConfig `toml:"tls"`
+	// RequireTLS, when true, indicates this Origin Config's paths must only be registered with the TLS Router
+	RequireTLS bool `toml:"require_tls"`
 
 	// Synthesized Configurations
 	// These configurations are parsed versions of those defined above, and are what Trickster uses internally
@@ -163,10 +167,6 @@ type OriginConfig struct {
 	FastForwardTTL time.Duration `toml:"-"`
 	// FastForwardPath is the PathConfig to use for upstream Fast Forward Requests
 	FastForwardPath *PathConfig `toml:"-"`
-	// TLS is the TLS Configuration for the Frontend and Backend
-	TLS *TLSConfig `toml:"tls"`
-	// RequireTLS, when true, indicates this Origin Config's paths must only be registered with the TLS Router
-	RequireTLS bool `toml:"require_tls"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -436,6 +436,9 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 			oc.RequireTLS = v.RequireTLS
 		}
 
+		if metadata.IsDefined("origins", k, "cache_name") {
+			oc.CacheName = v.CacheName
+		}
 		c.activeCaches[oc.CacheName] = true
 
 		if metadata.IsDefined("origins", k, "origin_url") {

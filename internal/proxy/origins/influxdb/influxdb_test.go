@@ -33,7 +33,7 @@ func TestNewClient(t *testing.T) {
 		t.Error(err)
 	}
 
-	oc := &config.OriginConfig{Type: "TEST_CLIENT"}
+	oc := &config.OriginConfig{OriginType: "TEST_CLIENT"}
 	c, err := NewClient("default", oc, cache)
 	if err != nil {
 		t.Error(err)

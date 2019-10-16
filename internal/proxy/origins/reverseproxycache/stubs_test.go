@@ -20,7 +20,10 @@ import (
 )
 
 func TestFastForwardURL(t *testing.T) {
-	c := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	if err != nil {
+		t.Error(err)
+	}
 	n1, n2 := c.FastForwardURL(nil)
 	if n1 != nil && n2 != nil {
 		t.Errorf("expected nil return for stub functions in %s", "ReverseProxyCache")
@@ -28,7 +31,10 @@ func TestFastForwardURL(t *testing.T) {
 }
 
 func TestUnmarshalInstantaneous(t *testing.T) {
-	c := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	if err != nil {
+		t.Error(err)
+	}
 	n1, n2 := c.UnmarshalInstantaneous(nil)
 	if n1 != nil && n2 != nil {
 		t.Errorf("expected nil return for stub functions in %s", "ReverseProxyCache")
@@ -36,7 +42,10 @@ func TestUnmarshalInstantaneous(t *testing.T) {
 }
 
 func TestMarshalTimeseries(t *testing.T) {
-	c := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	if err != nil {
+		t.Error(err)
+	}
 	n1, n2 := c.MarshalTimeseries(nil)
 	if n1 != nil && n2 != nil {
 		t.Errorf("expected nil return for stub functions in %s", "ReverseProxyCache")
@@ -44,7 +53,10 @@ func TestMarshalTimeseries(t *testing.T) {
 }
 
 func TestUnmarshalTimeseries(t *testing.T) {
-	c := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	if err != nil {
+		t.Error(err)
+	}
 	n1, n2 := c.UnmarshalTimeseries(nil)
 	if n1 != nil && n2 != nil {
 		t.Errorf("expected nil return for stub functions in %s", "ReverseProxyCache")
@@ -52,7 +64,10 @@ func TestUnmarshalTimeseries(t *testing.T) {
 }
 
 func TestParseTimeRangeQuery(t *testing.T) {
-	c := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	if err != nil {
+		t.Error(err)
+	}
 	n1, n2 := c.ParseTimeRangeQuery(nil)
 	if n1 != nil && n2 != nil {
 		t.Errorf("expected nil return for stub functions in %s", "ReverseProxyCache")
@@ -60,6 +75,9 @@ func TestParseTimeRangeQuery(t *testing.T) {
 }
 
 func TestSetExtent(t *testing.T) {
-	c := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	if err != nil {
+		t.Error(err)
+	}
 	c.SetExtent(nil, nil)
 }

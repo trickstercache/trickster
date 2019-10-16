@@ -13,26 +13,24 @@
 
 package config
 
-import (
-	"testing"
-)
+import "testing"
 
-func TestTEMString(t *testing.T) {
+func TestOriginTypeString(t *testing.T) {
 
-	t1 := EvictionMethodLRU
-	t2 := EvictionMethodOldest
-	var t3 TimeseriesEvictionMethod = 3
+	t1 := OriginTypeRPC
+	t2 := OriginTypePrometheus
+	var t3 OriginType = 13
 
-	if t1.String() != "lru" {
-		t.Errorf("expected %s got %s", "lru", t1.String())
+	if t1.String() != "rpc" {
+		t.Errorf("expected %s got %s", "rpc", t1.String())
 	}
 
-	if t2.String() != "oldest" {
-		t.Errorf("expected %s got %s", "oldest", t2.String())
+	if t2.String() != "prometheus" {
+		t.Errorf("expected %s got %s", "prometheus", t2.String())
 	}
 
-	if t3.String() != "3" {
-		t.Errorf("expected %s got %s", "3", t3.String())
+	if t3.String() != "13" {
+		t.Errorf("expected %s got %s", "13", t3.String())
 	}
 
 }
