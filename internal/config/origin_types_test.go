@@ -13,7 +13,10 @@
 
 package config
 
-import "testing"
+import (
+	"strconv"
+	"testing"
+)
 
 func TestOriginTypeString(t *testing.T) {
 
@@ -31,6 +34,31 @@ func TestOriginTypeString(t *testing.T) {
 
 	if t3.String() != "13" {
 		t.Errorf("expected %s got %s", "13", t3.String())
+	}
+
+}
+
+func TestIsValidOriginType(t *testing.T) {
+
+	tests := []struct {
+		ot       string
+		expected bool
+	}{
+		{"rpc", true},
+		{"prometheus", true},
+		{"", false},
+		{"invalid", false},
+		{"influxdb", true},
+		{"irondb", true},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			res := IsValidOriginType(test.ot)
+			if test.expected != res {
+				t.Errorf("expected %t got %t", test.expected, res)
+			}
+		})
 	}
 
 }

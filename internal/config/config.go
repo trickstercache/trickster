@@ -500,6 +500,7 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 				}
 				if metadata.IsDefined("origins", k, "paths", l, "response_body") {
 					p.ResponseBodyBytes = []byte(p.ResponseBody)
+					p.HasCustomResponseBody = true
 				}
 
 				if mt, ok := pathMatchTypeNames[strings.ToLower(p.MatchTypeName)]; ok {
