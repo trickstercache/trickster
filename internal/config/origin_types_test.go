@@ -41,7 +41,7 @@ func TestOriginTypeString(t *testing.T) {
 func TestIsValidOriginType(t *testing.T) {
 
 	tests := []struct {
-		ot       string
+		o        string
 		expected bool
 	}{
 		{"rpc", true},
@@ -54,7 +54,7 @@ func TestIsValidOriginType(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			res := IsValidOriginType(test.ot)
+			res := IsValidOriginType(test.o)
 			if test.expected != res {
 				t.Errorf("expected %t got %t", test.expected, res)
 			}
