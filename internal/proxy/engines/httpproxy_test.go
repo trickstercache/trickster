@@ -14,6 +14,7 @@
 package engines
 
 import (
+	"bytes"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -45,13 +46,17 @@ func TestProxyRequest(t *testing.T) {
 
 	oc := config.Origins["default"]
 	pc := &config.PathConfig{
-		Path:            "/",
-		RequestHeaders:  map[string]string{},
-		ResponseHeaders: map[string]string{},
+		Path:                  "/",
+		RequestHeaders:        map[string]string{},
+		ResponseHeaders:       map[string]string{},
+		ResponseBody:          "test",
+		ResponseBodyBytes:     []byte("test"),
+		HasCustomResponseBody: true,
 	}
 
+	br := bytes.NewBuffer([]byte("test"))
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL, nil)
+	r := httptest.NewRequest("GET", es.URL, br)
 	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, pc))
 
 	// get URL
