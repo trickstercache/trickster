@@ -155,7 +155,7 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 	}
 
 	// no Max-Age provided yet, look for expires
-	if cp.FreshnessLifetime == 0 {
+	if cp.FreshnessLifetime == 0 && !cp.MustRevalidate {
 		// if there is an Expires header, respect it
 		if hasExpires {
 			expiresHeader := strings.Join(exp, "")
@@ -192,13 +192,15 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 		lm, err := time.Parse(time.RFC1123, mnHeader)
 		if err != nil {
 			cp.CanRevalidate = false
+			cp.FreshnessLifetime = -1
 		} else {
 			cp.LastModified = lm
 		}
 	}
 
 	// else, if there is a Last-Modified header, set FreshnessLifetime to 20% of age
-	if cp.CanRevalidate && cp.FreshnessLifetime == 0 && !cp.LastModified.IsZero() && cp.LastModified.Before(cp.Date) {
+	if cp.CanRevalidate && cp.FreshnessLifetime == 0 && !cp.LastModified.IsZero() &&
+		cp.LastModified.Before(cp.Date) && !cp.MustRevalidate {
 		objectAge := int(cp.Date.Sub(cp.LastModified).Seconds())
 		if objectAge > 0 {
 			cp.FreshnessLifetime = objectAge / 5
@@ -254,6 +256,7 @@ func parseCacheControlDirectives(directives string, cp *model.CachingPolicy) {
 		}
 		if (d == headers.ValueMustRevalidate || d == headers.ValueProxyRevalidate) || (cp.FreshnessLifetime == 0 && foundFreshnessDirective) {
 			cp.MustRevalidate = true
+			cp.FreshnessLifetime = 0
 		}
 		if d == headers.ValueNoTransform {
 			cp.NoTransform = true

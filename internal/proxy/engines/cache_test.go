@@ -255,6 +255,38 @@ func TestGetResponseCachingPolicy(t *testing.T) {
 			},
 			expectedTTL: -1 * time.Second,
 		},
+		{ // 14 - Invalid Date Header Format
+			a: http.Header{
+				headers.NameDate:    []string{"1571338193"},
+				headers.NameExpires: []string{"-1"},
+			},
+			expectedTTL: -1 * time.Second,
+		},
+		{ // 15 - Invalid Date Header Format
+			a: http.Header{
+				headers.NameETag: []string{"etag-test"},
+			},
+			expectedTTL: 0,
+		},
+		{ // 16 - Invalid Last Modified Date Header Format
+			a: http.Header{
+				headers.NameLastModified: []string{"1571338193"},
+			},
+			expectedTTL: -1 * time.Second,
+		},
+		{ // 17 - Must Revalidate
+			a: http.Header{
+				headers.NameCacheControl: []string{headers.ValueMustRevalidate},
+				headers.NameLastModified: []string{"Sun, 16 Jun 2019 14:19:04 GMT"},
+			},
+			expectedTTL: 0,
+		},
+		{ // 18 - NoTransform
+			a: http.Header{
+				headers.NameCacheControl: []string{headers.ValueNoTransform},
+			},
+			expectedTTL: -1 * time.Second,
+		},
 	}
 
 	for i, test := range tests {
@@ -296,6 +328,36 @@ func TestGetRequestCacheability(t *testing.T) {
 		},
 		{ // 2 - No Cache Control Request Headers
 			a:           http.Header{},
+			isCacheable: true,
+		},
+		{ // 3 - Pragma: NoCache
+			a: http.Header{
+				headers.NamePragma: []string{headers.ValueNoCache},
+			},
+			isCacheable: false,
+		},
+		{ // 4 - IMS
+			a: http.Header{
+				headers.NameIfModifiedSince: []string{"Sun, 16 Jun 2019 14:19:04 GMT"},
+			},
+			isCacheable: true,
+		},
+		{ // 5 - IUS
+			a: http.Header{
+				headers.NameIfUnmodifiedSince: []string{"Sun, 16 Jun 2019 14:19:04 GMT"},
+			},
+			isCacheable: true,
+		},
+		{ // 6 - INM
+			a: http.Header{
+				headers.NameIfNoneMatch: []string{"test-string"},
+			},
+			isCacheable: true,
+		},
+		{ // 7 - IM
+			a: http.Header{
+				headers.NameIfMatch: []string{"test-string"},
+			},
 			isCacheable: true,
 		},
 	}
