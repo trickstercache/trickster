@@ -190,15 +190,9 @@ func (me *MatrixEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 
 	for _, t := range tl {
 		for i, e := range el {
-			wg.Add(1)
-			go func(j int, f *timeseries.Extent) {
-				if f.StartsAt(t) {
-					mtx.Lock()
-					el[j].Start = f.Start.Add(me.StepDuration)
-					mtx.Unlock()
-				}
-				wg.Done()
-			}(i, &e)
+			if e.StartsAt(t) {
+				el[i].Start = e.Start.Add(me.StepDuration)
+			}
 		}
 	}
 	wg.Wait()
