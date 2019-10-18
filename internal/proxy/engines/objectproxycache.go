@@ -14,6 +14,7 @@
 package engines
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -95,27 +96,30 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 	var resp *http.Response
 	var elapsed time.Duration
 
+	statusCode := d.StatusCode
+
 	if d.CachingPolicy != nil && d.CachingPolicy.IsFresh {
 		cacheStatus = tc.LookupStatusHit
 	} else {
 		body, resp, elapsed = Fetch(r)
 		cp := GetResponseCachingPolicy(resp.StatusCode, oc.NegativeCache, resp.Header)
-
 		// Cache is revalidated, update headers and resulting caching policy
 		if revalidatingCache && resp.StatusCode == http.StatusNotModified {
+			cacheStatus = tc.LookupStatusHit
 			for k, v := range resp.Header {
 				d.Headers[k] = v
 			}
 			d.CachingPolicy = cp
+			statusCode = 304
 			// TODO: update any cache metadata like TTL
 		} else {
 			d = model.DocumentFromHTTPResponse(resp, body, cp)
 		}
 	}
 
-	recordOPCResult(r, cacheStatus, d.StatusCode, r.URL.Path, elapsed.Seconds(), d.Headers)
+	recordOPCResult(r, cacheStatus, statusCode, r.URL.Path, elapsed.Seconds(), d.Headers)
 
-	log.Debug("http object cache lookup status", log.Pairs{"key": key, "cacheStatus": cacheStatus})
+	log.Info("http object cache lookup status", log.Pairs{"key": key, "cacheStatus": cacheStatus})
 
 	// the client provided a conditional request to us, determine if Trickster responds with 304 or 200
 	// based on client-provided validators vs our now-fresh cache
@@ -134,6 +138,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 		}
 		if hasIUS {
 			isClientFresh = isClientFresh && d.CachingPolicy.LastModified.After(cpReq.IfUnmodifiedSinceTime)
+			fmt.Println("ius", isClientFresh)
 		}
 		cpReq.IsFresh = isClientFresh
 	}

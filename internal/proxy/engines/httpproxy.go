@@ -148,7 +148,6 @@ func recordProxyResults(r *model.Request, httpStatus int, path string, elapsed f
 }
 
 func recordResults(r *model.Request, engine string, cacheStatus tc.LookupStatus, statusCode int, path, ffStatus string, elapsed float64, extents timeseries.ExtentList, header http.Header) {
-
 	oc := context.OriginConfig(r.ClientRequest.Context())
 
 	httpStatus := strconv.Itoa(statusCode)
