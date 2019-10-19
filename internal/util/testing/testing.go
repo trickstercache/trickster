@@ -58,7 +58,7 @@ func NewTestWebClient() *http.Client {
 // NewTestInstance will start a trickster
 func NewTestInstance(
 	configFile string,
-	f1 func(*config.OriginConfig) (map[string]*config.PathConfig, []string),
+	DefaultPathConfigs func(*config.OriginConfig) (map[string]*config.PathConfig, []string),
 	respCode int, respBody string, respHeaders map[string]string,
 	originType, urlPath, logLevel string,
 ) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *http.Client, error) {
@@ -95,9 +95,11 @@ func NewTestInstance(
 	r = r.WithContext(ct.WithConfigs(r.Context(), oc, cache, nil))
 
 	var paths map[string]*config.PathConfig
-	if f1 != nil {
-		paths, _ = f1(oc)
+	if DefaultPathConfigs != nil {
+		paths, _ = DefaultPathConfigs(oc)
 	}
+
+	oc.Paths = paths
 
 	var p *config.PathConfig
 	if len(paths) > 0 {
