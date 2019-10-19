@@ -76,6 +76,9 @@ func TestCache_Store(t *testing.T) {
 }
 
 func TestCache_Retrieve(t *testing.T) {
+
+	const expected1 = `value for key [cacheKey] not in cache`
+
 	cacheConfig := newCacheConfig(t)
 	mc := Cache{Config: &cacheConfig}
 
@@ -98,6 +101,23 @@ func TestCache_Retrieve(t *testing.T) {
 	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\"", "data", data)
 	}
+
+	// expire the object
+	mc.SetTTL(cacheKey, -1*time.Hour)
+
+	// this should now return error
+	data, err = mc.Retrieve(cacheKey, false)
+	if err == nil {
+		t.Errorf("exected error for %s", expected1)
+		mc.Close()
+	}
+	if err.Error() != expected1 {
+		t.Errorf("expected error '%s' got '%s'", expected1, err.Error())
+	}
+	if string(data) != "" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+
 }
 
 func TestCache_Close(t *testing.T) {

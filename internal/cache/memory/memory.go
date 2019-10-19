@@ -96,7 +96,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 			return o.Value, nil
 		}
 		// Cache Object has been expired but not reaped, go ahead and delete it
-		c.remove(cacheKey, false)
+		defer c.remove(cacheKey, false)
 	}
 	locks.Release(lockPrefix + cacheKey)
 	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
