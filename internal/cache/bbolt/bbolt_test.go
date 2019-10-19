@@ -15,6 +15,7 @@ package bbolt
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -57,18 +58,18 @@ func TestBboltCache_Connect(t *testing.T) {
 }
 
 func TestBboltCache_ConnectFailed(t *testing.T) {
-	const expected = `open /root/noaccess.bbolt: no such file or directory`
+	const expected = `open /root/noaccess.bbolt:`
 	cacheConfig := newCacheConfig()
 	cacheConfig.BBolt.Filename = "/root/noaccess.bbolt"
-	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 	bc := Cache{Config: &cacheConfig}
 	// it should connect
 	err := bc.Connect()
 	if err == nil {
 		t.Errorf("expected error for %s", expected)
 		bc.Close()
+		defer os.RemoveAll(cacheConfig.BBolt.Filename)
 	}
-	if err.Error() != expected {
+	if !strings.HasPrefix(err.Error(), expected) {
 		t.Errorf("expected error '%s' got '%s'", expected, err.Error())
 	}
 }

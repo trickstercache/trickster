@@ -15,7 +15,6 @@ package memory
 
 import (
 	"io/ioutil"
-	"os"
 	"testing"
 	"time"
 
@@ -200,7 +199,6 @@ func TestMemoryCache_SetTTL(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	mc := Cache{Config: &cacheConfig}
-	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := mc.Connect()
 	if err != nil {
