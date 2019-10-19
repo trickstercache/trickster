@@ -52,8 +52,6 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 		},
 	}
 
-	oc.Paths = paths
-
 	orderedPaths := []string{"/"}
 	return paths, orderedPaths
 }

@@ -507,7 +507,7 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 					p.MatchType = mt
 				} else {
 					p.MatchType = PathMatchTypeExact
-					p.MatchTypeName = "exact"
+					p.MatchTypeName = p.MatchType.String()
 				}
 				oc.Paths[p.Path] = p
 				j++

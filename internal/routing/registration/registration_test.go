@@ -70,10 +70,15 @@ func TestRegisterProxyRoutes(t *testing.T) {
 		t.Errorf("Expected error for invalid cache name%s", "")
 	}
 
+	o2.HealthCheckEndpoint = "foo"
 	o2.CacheName = "default"
 	err = RegisterProxyRoutes()
 	if err != nil {
 		t.Error(err)
+	}
+
+	if o2.HealthCheckEndpoint != "/foo" {
+		t.Errorf("expected '/' got %s", o2.HealthCheckEndpoint)
 	}
 
 	// teset the condition where no origins are IsDefault true,

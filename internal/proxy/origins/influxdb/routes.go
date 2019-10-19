@@ -40,9 +40,7 @@ func (c *Client) Handlers() map[string]http.Handler {
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
 func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config.PathConfig, []string) {
-
 	paths := map[string]*config.PathConfig{
-
 		"/" + mnQuery: &config.PathConfig{
 			Path:            "/" + mnQuery,
 			HandlerName:     mnQuery,
@@ -50,17 +48,12 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyParams:  []string{upDB, upQuery, "u", "p"},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
-
 		"/": &config.PathConfig{
 			Path:        "/",
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet, http.MethodPost},
 		},
 	}
-
-	oc.Paths = paths
 	orderedPaths := []string{"/" + mnQuery, "/"}
-
 	return paths, orderedPaths
-
 }

@@ -115,8 +115,6 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 		},
 	}
 
-	oc.Paths = paths
-
 	orderedPaths := []string{"/" + mnRaw, "/" + mnRollup, "/" + mnFetch, "/" + mnRead,
 		"/" + mnHistogram, "/" + mnFind, "/" + mnState, "/" + mnCAQL, "/"}
 

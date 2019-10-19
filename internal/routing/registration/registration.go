@@ -123,13 +123,17 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 	}
 	if client != nil {
 		ProxyClients[k] = client
-		paths, orderedPaths := client.DefaultPathConfigs(o)
-		registerPathRoutes(client.Handlers(), o, c, paths, orderedPaths)
+		defaultPaths, orderedPaths := client.DefaultPathConfigs(o)
+		registerPathRoutes(client.Handlers(), o, c, defaultPaths, orderedPaths)
 	}
 	return nil
 }
 
-func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig, c cache.Cache, paths map[string]*config.PathConfig, orderedPaths []string) {
+// registerPathRoutes will take the provided default paths map,
+// merge it with any path data in the provided originconfig, and then register
+// the path routes to the appropriate handler from the provided handlers map
+func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig, c cache.Cache,
+	paths map[string]*config.PathConfig, orderedPaths []string) {
 
 	decorate := func(p *config.PathConfig) http.Handler {
 		// Add Origin, Cache, and Path Configs to the HTTP Request's context
@@ -141,17 +145,17 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 	}
 
 	for k, p := range o.Paths {
-		p.Path = k
 		p.OriginConfig = o
 		if p2, ok := paths[k]; ok {
 			p2.Merge(p)
-			o.Paths[k] = p2
 			continue
 		}
 		p3 := config.NewPathConfig()
 		p3.Merge(p)
-		o.Paths[k] = p3
+		paths[k] = p3
 	}
+
+	o.Paths = paths
 
 	// Ensure the configured health check endpoint starts with "/""
 	if !strings.HasPrefix(o.HealthCheckEndpoint, "/") {
