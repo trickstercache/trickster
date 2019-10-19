@@ -30,13 +30,20 @@ func init() {
 
 const cacheKey = `cacheKey`
 
-func setupRedisCache(clientType string) (*Cache, func()) {
+func setupRedisCache(ct clientType) (*Cache, func()) {
 	s, err := miniredis.Run()
 	if err != nil {
 		panic(err)
 	}
 	config.Config = config.NewConfig()
-	rcfg := config.RedisCacheConfig{Endpoint: s.Addr(), ClientType: clientType}
+	rcfg := config.RedisCacheConfig{Endpoint: s.Addr(), ClientType: ct.String()}
+	if ct != clientTypeStandard {
+		rcfg.Endpoint = ""
+		rcfg.Endpoints = []string{s.Addr()}
+		if ct == clientTypeSentinel {
+			rcfg.SentinelMaster = s.Addr()
+		}
+	}
 	close := func() {
 		s.Close()
 	}
@@ -44,6 +51,130 @@ func setupRedisCache(clientType string) (*Cache, func()) {
 	config.Caches = map[string]*config.CachingConfig{"default": cacheConfig}
 
 	return &Cache{Config: cacheConfig}, close
+}
+
+func TestClientSelectionSentinel(t *testing.T) {
+	const expected1 = "ERR unknown command `sentinel`"
+	args := []string{"-config", "../../../testdata/test.redis-sentinel.conf",
+		"-origin-url", "http://0.0.0.0", "-origin-type", "rpc", "-log-level", "info"}
+	err := config.Load("trickster", "test", args)
+	if err != nil {
+		t.Error(err)
+	}
+	const cacheName = "test"
+	cfg, ok := config.Caches[cacheName]
+	if !ok {
+		t.Errorf("expected cache named %s", cacheName)
+	}
+	cache := Cache{Name: cacheName, Config: cfg}
+	if err != nil {
+		t.Error(err)
+	}
+	err = cache.Connect()
+	if err == nil {
+		t.Errorf("expected error for %s", expected1)
+	}
+}
+
+func TestSentinelOpts(t *testing.T) {
+
+	const expected1 = `Invalid 'endpoints' config`
+	const expected2 = `Invalid 'sentinel_master' config`
+
+	rc, close := setupRedisCache(clientTypeSentinel)
+	defer close()
+
+	// test empty endpoint
+	rc.Configuration().Redis.Endpoints = nil
+	err := rc.Connect()
+	if err == nil || err.Error() != expected1 {
+		t.Errorf("expected error for %s", expected1)
+	}
+
+	rc.Configuration().Redis.Endpoints = []string{"test"}
+	rc.Configuration().Redis.SentinelMaster = ""
+
+	// test empty SentinelMaster
+	err = rc.Connect()
+	if err == nil || err.Error() != expected2 {
+		t.Errorf("expected error for %s", expected2)
+	}
+}
+
+func TestClusterOpts(t *testing.T) {
+
+	const expected1 = `Invalid 'endpoints' config`
+
+	rc, close := setupRedisCache(clientTypeCluster)
+	defer close()
+
+	// test empty endpoint
+	rc.Configuration().Redis.Endpoints = nil
+	err := rc.Connect()
+	if err == nil || err.Error() != expected1 {
+		t.Errorf("expected error for %s", expected1)
+	}
+}
+
+func TestClientOpts(t *testing.T) {
+
+	const expected1 = `invalid endpoint: `
+
+	rc, close := setupRedisCache(clientTypeStandard)
+	defer close()
+
+	// test empty endpoint
+	rc.Configuration().Redis.Endpoint = ""
+	err := rc.Connect()
+	if err == nil || err.Error() != expected1 {
+		t.Errorf("expected error for %s", expected1)
+	}
+}
+
+func TestClientSelectionCluster(t *testing.T) {
+	expected1 := "invalid endpoint"
+	args := []string{"-config", "../../../testdata/test.redis-cluster.conf",
+		"-origin-url", "http://0.0.0.0", "-origin-type", "rpc", "-log-level", "info"}
+	err := config.Load("trickster", "test", args)
+	if err != nil {
+		t.Error(err)
+	}
+	const cacheName = "test"
+	cfg, ok := config.Caches[cacheName]
+	if !ok {
+		t.Errorf("expected cache named %s", cacheName)
+	}
+	cache := Cache{Name: cacheName, Config: cfg}
+	if err != nil {
+		t.Error(err)
+	}
+	err = cache.Connect()
+	if err == nil {
+		t.Errorf("expected error for %s", expected1)
+	}
+}
+
+func TestClientSelectionStandard(t *testing.T) {
+	expected1 := "invalid endpoint"
+	args := []string{"-config", "../../../testdata/test.redis-standard.conf",
+		"-origin-url", "http://0.0.0.0", "-origin-type", "rpc", "-log-level", "info"}
+	err := config.Load("trickster", "test", args)
+	if err != nil {
+		t.Error(err)
+	}
+	const cacheName = "test"
+	cfg, ok := config.Caches[cacheName]
+	if !ok {
+		t.Errorf("expected cache named %s", cacheName)
+	}
+	cache := Cache{Name: cacheName, Config: cfg}
+	if err != nil {
+		t.Error(err)
+	}
+	err = cache.Connect()
+	if err == nil {
+		t.Errorf("expected error for %s", expected1)
+	}
 }
 
 func TestDurationFromMS(t *testing.T) {
@@ -70,20 +201,53 @@ func TestDurationFromMS(t *testing.T) {
 
 }
 
-const ctStandard = "standard"
+func TestRedisCache_SetTTL(t *testing.T) {
+
+	const expected = "data"
+
+	cache, closer := setupRedisCache(clientTypeStandard)
+	defer closer()
+
+	err := cache.Connect()
+	if err != nil {
+		t.Error(err)
+	}
+	defer cache.Close()
+
+	// it should store a value
+	err = cache.Store(cacheKey, []byte(expected), time.Duration(1)*time.Second)
+	if err != nil {
+		t.Error(err)
+	}
+	cache.SetTTL(cacheKey, time.Duration(3600)*time.Second)
+
+	// since the TTL is updated to 1 hour, waiting more than the original TTL of 1s
+	// should not matter
+	time.Sleep(1010 * time.Millisecond)
+
+	val, err := cache.Retrieve(cacheKey, false)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(val) != expected {
+		t.Errorf("expected %s got %s", expected, string(val))
+	}
+
+}
 
 func TestConfiguration(t *testing.T) {
-	rc, close := setupRedisCache(ctStandard)
+	rc, close := setupRedisCache(clientTypeStandard)
 	defer close()
 
 	cfg := rc.Configuration()
-	if cfg.Redis.ClientType != ctStandard {
-		t.Fatalf("expected %s got %s", ctStandard, cfg.Redis.ClientType)
+	if cfg.Redis.ClientType != clientTypeStandard.String() {
+		t.Fatalf("expected %s got %s", clientTypeStandard.String(), cfg.Redis.ClientType)
 	}
 }
 
 func TestRedisCache_Connect(t *testing.T) {
-	rc, close := setupRedisCache(ctStandard)
+	rc, close := setupRedisCache(clientTypeStandard)
 	defer close()
 
 	// it should connect
@@ -94,7 +258,7 @@ func TestRedisCache_Connect(t *testing.T) {
 }
 
 func TestRedisCache_Store(t *testing.T) {
-	rc, close := setupRedisCache(ctStandard)
+	rc, close := setupRedisCache(clientTypeStandard)
 	defer close()
 
 	err := rc.Connect()
@@ -110,7 +274,7 @@ func TestRedisCache_Store(t *testing.T) {
 }
 
 func TestRedisCache_Retrieve(t *testing.T) {
-	rc, close := setupRedisCache(ctStandard)
+	rc, close := setupRedisCache(clientTypeStandard)
 	defer close()
 
 	err := rc.Connect()
@@ -133,7 +297,7 @@ func TestRedisCache_Retrieve(t *testing.T) {
 }
 
 func TestRedisCache_Close(t *testing.T) {
-	rc, close := setupRedisCache(ctStandard)
+	rc, close := setupRedisCache(clientTypeStandard)
 	defer close()
 
 	err := rc.Connect()
@@ -150,7 +314,7 @@ func TestRedisCache_Close(t *testing.T) {
 
 func TestCache_Remove(t *testing.T) {
 
-	rc, close := setupRedisCache(ctStandard)
+	rc, close := setupRedisCache(clientTypeStandard)
 	defer close()
 
 	err := rc.Connect()
@@ -186,7 +350,7 @@ func TestCache_Remove(t *testing.T) {
 
 func TestCache_BulkRemove(t *testing.T) {
 
-	rc, close := setupRedisCache(ctStandard)
+	rc, close := setupRedisCache(clientTypeStandard)
 	defer close()
 
 	err := rc.Connect()
@@ -216,24 +380,6 @@ func TestCache_BulkRemove(t *testing.T) {
 	_, err = rc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
-	}
-
-}
-
-func TestMapOpFuncs(t *testing.T) {
-
-	// test sentinel
-	rc, _ := setupRedisCache("sentinel")
-	rc.mapOpFuncs()
-	if rc.connectFunc == nil {
-		t.Errorf("invalid function mapping for sentinel")
-	}
-
-	// test cluster
-	rc, _ = setupRedisCache("cluster")
-	rc.mapOpFuncs()
-	if rc.connectFunc == nil {
-		t.Errorf("invalid function mapping for cluster")
 	}
 
 }

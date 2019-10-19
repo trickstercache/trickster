@@ -31,15 +31,13 @@ type Cache struct {
 	Name   string
 	Config *config.CachingConfig
 
-	client        *redis.Client
-	clusterClient *redis.ClusterClient
+	client redis.Cmdable
+	closer func() error
+}
 
-	connectFunc    func() error
-	closeFunc      func() error
-	retrieveFunc   func(string) (string, error)
-	storeFunc      func(string, []byte, time.Duration) error
-	removeFunc     func(string)
-	bulkRemoveFunc func([]string, bool)
+type genericRedisClient interface {
+	Ping() *redis.StatusCmd
+	Set(string, interface{}, time.Duration) *redis.StatusCmd
 }
 
 // Configuration returns the Configuration for the Cache object
@@ -47,49 +45,50 @@ func (c *Cache) Configuration() *config.CachingConfig {
 	return c.Config
 }
 
-func (c *Cache) mapOpFuncs() {
-	switch c.Config.Redis.ClientType {
-	case "sentinel":
-		c.connectFunc = c.sentinelConnect
-		c.closeFunc = c.sentinelClose
-		c.retrieveFunc = c.sentinelRetrieve
-		c.storeFunc = c.sentinelStore
-		c.removeFunc = c.sentinelRemove
-		c.bulkRemoveFunc = c.sentinelBulkRemove
-	case "cluster":
-		c.connectFunc = c.clusterConnect
-		c.closeFunc = c.clusterClose
-		c.retrieveFunc = c.clusterRetrieve
-		c.storeFunc = c.clusterStore
-		c.removeFunc = c.clusterRemove
-		c.bulkRemoveFunc = c.clusterBulkRemove
-	default:
-		c.connectFunc = c.clientConnect
-		c.closeFunc = c.clientClose
-		c.retrieveFunc = c.clientRetrieve
-		c.storeFunc = c.clientStore
-		c.removeFunc = c.clientRemove
-		c.bulkRemoveFunc = c.clientBulkRemove
-	}
-}
-
 // Connect connects to the configured Redis endpoint
 func (c *Cache) Connect() error {
-	c.mapOpFuncs()
-	return c.connectFunc()
+	log.Info("connecting to redis", log.Pairs{"protocol": c.Config.Redis.Protocol, "Endpoint": c.Config.Redis.Endpoint})
+
+	switch c.Config.Redis.ClientType {
+	case "sentinel":
+		opts, err := c.sentinelOpts()
+		if err != nil {
+			return err
+		}
+		client := redis.NewFailoverClient(opts)
+		c.closer = client.Close
+		c.client = client
+	case "cluster":
+		opts, err := c.clusterOpts()
+		if err != nil {
+			return err
+		}
+		client := redis.NewClusterClient(opts)
+		c.closer = client.Close
+		c.client = client
+	default:
+		opts, err := c.clientOpts()
+		if err != nil {
+			return err
+		}
+		client := redis.NewClient(opts)
+		c.closer = client.Close
+		c.client = client
+	}
+	return c.client.Ping().Err()
 }
 
 // Store places the the data into the Redis Cache using the provided Key and TTL
 func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 	log.Debug("redis cache store", log.Pairs{"key": cacheKey})
-	return c.storeFunc(cacheKey, data, ttl)
+	return c.client.Set(cacheKey, data, ttl).Err()
 }
 
 // Retrieve gets data from the Redis Cache using the provided Key
 // because Redis manages Object Expiration internally, allowExpired is not used.
 func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
-	res, err := c.retrieveFunc(cacheKey)
+	res, err := c.client.Get(cacheKey).Result()
 	if err != nil {
 		log.Debug("redis cache miss", log.Pairs{"key": cacheKey})
 		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
@@ -104,27 +103,26 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
 // Remove removes an object in cache, if present
 func (c *Cache) Remove(cacheKey string) {
 	log.Debug("redis cache remove", log.Pairs{"key": cacheKey})
-	c.removeFunc(cacheKey)
+	c.client.Del(cacheKey)
 	cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 }
 
 // SetTTL updates the TTL for the provided cache object
-// Not supported yet
 func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
-	//c.Index.UpdateObjectTTL(cacheKey, ttl)
+	c.client.Expire(cacheKey, ttl)
 }
 
 // BulkRemove removes a list of objects from the cache. noLock is not used for Redis
 func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
 	log.Debug("redis cache bulk remove", log.Pairs{})
-	c.bulkRemoveFunc(cacheKeys, noLock)
+	c.client.Del(cacheKeys...)
 	cache.ObserveCacheDel(c.Name, c.Config.CacheType, float64(len(cacheKeys)))
 }
 
 // Close disconnects from the Redis Cache
 func (c *Cache) Close() error {
 	log.Info("closing redis connection", log.Pairs{})
-	return c.closeFunc()
+	return c.closer()
 }
 
 func durationFromMS(input int) time.Duration {
