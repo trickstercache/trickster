@@ -39,6 +39,9 @@ func TestNewIndex(t *testing.T) {
 	cacheConfig := &config.CachingConfig{CacheType: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
 
+	// this gives a chance for the reaper to run through for test coverage
+	time.Sleep(1 * time.Second)
+
 	if idx.name != "test" {
 		t.Errorf("expected test got %s", idx.name)
 	}
