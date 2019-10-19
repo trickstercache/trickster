@@ -61,6 +61,20 @@ func TestBadgerCache_Connect(t *testing.T) {
 	bc.Close()
 }
 
+func TestBadgerCache_ConnectFailed(t *testing.T) {
+	cacheConfig := newCacheConfig(t)
+	cacheConfig.Badger.Directory = "/root/trickster-test-noaccess"
+	os.RemoveAll(cacheConfig.Badger.Directory)
+	bc := Cache{Config: &cacheConfig}
+
+	// it should connect
+	err := bc.Connect()
+	if err == nil {
+		t.Errorf("expected file access error for %s", cacheConfig.Badger.Directory)
+		bc.Close()
+	}
+}
+
 func TestBadgerCache_Store(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Badger.Directory)
@@ -138,6 +152,7 @@ func TestBadgerCache_BulkRemove(t *testing.T) {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
 
+	bc.BulkRemove([]string{""}, true)
 	bc.BulkRemove([]string{cacheKey}, true)
 
 	// it should be a cache miss
