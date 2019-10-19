@@ -30,7 +30,7 @@ func TestSetStep(t *testing.T) {
 	const step = time.Duration(300) * time.Minute
 	me.SetStep(step)
 	if me.StepDuration != step {
-		t.Errorf(`expected "%s". got "%s"`, step, me.StepDuration)
+		t.Errorf(`expected "%s". got "%s"`, testStep, me.StepDuration)
 	}
 }
 
@@ -39,7 +39,7 @@ func TestStep(t *testing.T) {
 	const step = time.Duration(300) * time.Minute
 	me.SetStep(step)
 	if me.Step() != step {
-		t.Errorf(`expected "%s". got "%s"`, step, me.Step())
+		t.Errorf(`expected "%s". got "%s"`, testStep, me.Step())
 	}
 }
 
@@ -522,7 +522,7 @@ func TestCropToRange(t *testing.T) {
 				ExtentList: timeseries.ExtentList{
 					timeseries.Extent{Start: time.Unix(1644004600, 0), End: time.Unix(1644004600, 0)},
 				},
-				StepDuration: time.Duration(10) * time.Second,
+				StepDuration: testStep,
 			},
 			after: &MatrixEnvelope{
 				Data: MatrixData{
@@ -539,7 +539,7 @@ func TestCropToRange(t *testing.T) {
 				ExtentList: timeseries.ExtentList{
 					timeseries.Extent{Start: time.Unix(1644004600, 0), End: time.Unix(1644004600, 0)},
 				},
-				StepDuration: time.Duration(10) * time.Second,
+				StepDuration: testStep,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(0, 0),
@@ -563,7 +563,7 @@ func TestCropToRange(t *testing.T) {
 				ExtentList: timeseries.ExtentList{
 					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
 				},
-				StepDuration: time.Duration(10) * time.Second,
+				StepDuration: testStep,
 			},
 			after: &MatrixEnvelope{
 				Data: MatrixData{
@@ -580,7 +580,7 @@ func TestCropToRange(t *testing.T) {
 				ExtentList: timeseries.ExtentList{
 					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
 				},
-				StepDuration: time.Duration(10) * time.Second,
+				StepDuration: testStep,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(0, 0),
@@ -604,7 +604,7 @@ func TestCropToRange(t *testing.T) {
 				ExtentList: timeseries.ExtentList{
 					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
 				},
-				StepDuration: time.Duration(10) * time.Second,
+				StepDuration: testStep,
 			},
 			after: &MatrixEnvelope{
 				Data: MatrixData{
@@ -612,7 +612,7 @@ func TestCropToRange(t *testing.T) {
 					Result:     model.Matrix{},
 				},
 				ExtentList:   timeseries.ExtentList{},
-				StepDuration: time.Duration(10) * time.Second,
+				StepDuration: testStep,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(0, 0),
@@ -636,7 +636,7 @@ func TestCropToRange(t *testing.T) {
 				ExtentList: timeseries.ExtentList{
 					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(100, 0)},
 				},
-				StepDuration: time.Duration(10) * time.Second,
+				StepDuration: testStep,
 			},
 			after: &MatrixEnvelope{
 				Data: MatrixData{
@@ -644,7 +644,7 @@ func TestCropToRange(t *testing.T) {
 					Result:     model.Matrix{},
 				},
 				ExtentList:   timeseries.ExtentList{},
-				StepDuration: time.Duration(10) * time.Second,
+				StepDuration: testStep,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(10000, 0),
@@ -994,7 +994,7 @@ func TestCropToRange(t *testing.T) {
 				End:   time.Unix(600, 0),
 			},
 		},
-		// Run 10: Case where after cropping, the back series is empty/removed
+		// Run 11: Case where after cropping, the back series is empty/removed
 		{
 			before: &MatrixEnvelope{
 				Data: MatrixData{
@@ -1069,6 +1069,73 @@ func TestCropToRange(t *testing.T) {
 				End:   time.Unix(600, 0),
 			},
 		},
+		// Run 12: Case where we short circuit since the dataset is already entirely inside the crop range
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "b"},
+							Values: []model.SamplePair{},
+						},
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "c"},
+							Values: []model.SamplePair{},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result:     model.Matrix{},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(100, 0),
+				End:   time.Unix(600, 0),
+			},
+		},
+		// Run 13: Case where we short circuit since the dataset is empty
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result:     model.Matrix{},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result:     model.Matrix{},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(300, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(300, 0),
+				End:   time.Unix(600, 0),
+			},
+		},
 	}
 
 	for i, test := range tests {
@@ -1081,7 +1148,13 @@ func TestCropToRange(t *testing.T) {
 	}
 }
 
+const testStep = time.Duration(10) * time.Second
+
 func TestCropToSize(t *testing.T) {
+
+	now := time.Now().Truncate(testStep)
+	nowEpochMs := model.Time(now.Unix() * 1000)
+
 	tests := []struct {
 		before, after *MatrixEnvelope
 		size          int
@@ -1105,7 +1178,7 @@ func TestCropToSize(t *testing.T) {
 				ExtentList: timeseries.ExtentList{
 					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004600, 0)},
 				},
-				StepDuration: time.Duration(10) * time.Second,
+				StepDuration: testStep,
 			},
 			after: &MatrixEnvelope{
 				Data: MatrixData{
@@ -1122,7 +1195,7 @@ func TestCropToSize(t *testing.T) {
 				ExtentList: timeseries.ExtentList{
 					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004600, 0)},
 				},
-				StepDuration: time.Duration(10) * time.Second,
+				StepDuration: testStep,
 				timestamps:   map[time.Time]bool{time.Unix(1444004600, 0): true},
 				tslist:       times.Times{time.Unix(1444004600, 0)},
 				isCounted:    true,
@@ -1153,7 +1226,7 @@ func TestCropToSize(t *testing.T) {
 				ExtentList: timeseries.ExtentList{
 					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004610, 0)},
 				},
-				StepDuration: time.Duration(10) * time.Second,
+				StepDuration: testStep,
 			},
 			after: &MatrixEnvelope{
 				Data: MatrixData{
@@ -1170,7 +1243,7 @@ func TestCropToSize(t *testing.T) {
 				ExtentList: timeseries.ExtentList{
 					timeseries.Extent{Start: time.Unix(1444004610, 0), End: time.Unix(1444004610, 0)},
 				},
-				StepDuration: time.Duration(10) * time.Second,
+				StepDuration: testStep,
 				timestamps:   map[time.Time]bool{time.Unix(1444004610, 0): true},
 				tslist:       times.Times{time.Unix(1444004610, 0)},
 				isCounted:    true,
@@ -1182,6 +1255,83 @@ func TestCropToSize(t *testing.T) {
 			},
 			size: 1,
 			bft:  time.Now(),
+		},
+
+		// case 2 - empty extent list
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{},
+						},
+					},
+				},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: testStep,
+			},
+			after: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result:     model.Matrix{},
+				},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: testStep,
+			},
+			extent: timeseries.Extent{},
+			size:   1,
+			bft:    time.Now(),
+		},
+
+		// case 3 - backfill tolerance
+		{
+			before: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								{Timestamp: 1444004610000, Value: 1.5},
+								{Timestamp: nowEpochMs, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004610, 0), End: now},
+				},
+				StepDuration: testStep,
+			},
+			after: &MatrixEnvelope{
+				Data: MatrixData{
+					ResultType: "matrix",
+					Result: model.Matrix{
+						&model.SampleStream{
+							Metric: model.Metric{"__name__": "a"},
+							Values: []model.SamplePair{
+								{Timestamp: 1444004610000, Value: 1.5},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004610, 0), End: now.Add(-5 * time.Minute)},
+				},
+				StepDuration: testStep,
+				timestamps:   map[time.Time]bool{time.Unix(1444004610, 0): true},
+				tslist:       times.Times{time.Unix(1444004610, 0)},
+				isCounted:    true,
+				isSorted:     false,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(0, 0),
+				End:   now,
+			},
+			size: 2,
+			bft:  now.Add(-5 * time.Minute),
 		},
 	}
 
@@ -1198,6 +1348,17 @@ func TestCropToSize(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpdateTimestamps(t *testing.T) {
+
+	// test edge condition here (core functionality is tested across this file)
+	me := MatrixEnvelope{isCounted: true}
+	me.updateTimestamps()
+	if me.timestamps != nil {
+		t.Errorf("expected nil map, got size %d", len(me.timestamps))
+	}
+
 }
 
 func TestCopy(t *testing.T) {

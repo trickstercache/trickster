@@ -362,3 +362,14 @@ func TestParseTimeRangeQueryWithOffset(t *testing.T) {
 	}
 
 }
+
+func TestSetCache(t *testing.T) {
+	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	if err != nil {
+		t.Error(err)
+	}
+	c.SetCache(nil)
+	if c.Cache() != nil {
+		t.Errorf("expected nil cache for client named %s", "test")
+	}
+}
