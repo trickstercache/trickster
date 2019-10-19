@@ -60,12 +60,13 @@ func TestHealthHandlerCustomPath(t *testing.T) {
 
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("../../../../testdata/test.custom_health.conf", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
-	client.config = tc.OriginConfig(r.Context())
-	client.webClient = hc
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
 	}
+
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
 
 	client.HealthHandler(w, r)
 	resp := w.Result()

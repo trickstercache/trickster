@@ -73,7 +73,12 @@ func NewTestInstance(
 		ts = NewTestServer(respCode, respBody, respHeaders)
 	}
 
-	err := config.Load("trickster", "test", []string{"-origin-url", ts.URL, "-origin-type", originType, "-log-level", logLevel})
+	args := []string{"-origin-url", ts.URL, "-origin-type", originType, "-log-level", logLevel}
+	if configFile != "" {
+		args = append(args, []string{"-config", configFile}...)
+	}
+
+	err := config.Load("trickster", "test", args)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
