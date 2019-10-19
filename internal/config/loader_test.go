@@ -15,6 +15,7 @@ package config
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -41,6 +42,52 @@ func TestLoadConfiguration(t *testing.T) {
 
 }
 
+func TestLoadConfigurationFileFailures(t *testing.T) {
+
+	tests := []struct {
+		filename string
+		expected string
+	}{
+		{ // Case 0
+			"../../testdata/test.missing-origin-url.conf",
+			`missing origin-url for origin "2"`,
+		},
+		{ // Case 1
+			"../../testdata/test.bad_origin_url.conf",
+			fmt.Sprintf(`parse %s: first path segment in URL cannot contain colon`, "sasdf_asd[as;://asdf923_-=a*"),
+		},
+		{ // Case 2
+			"../../testdata/test.missing_origin_type.conf",
+			`missing origin-type for origin "test"`,
+		},
+		{ // Case 3
+			"../../testdata/test.bad-cache-name.conf",
+			`invalid cache name [test_fail] provided in origin config [test]`,
+		},
+		{ // Case 4
+			"../../testdata/test.invalid-negative-cache-1.conf",
+			`invalid negative cache config: a is not a valid status code`,
+		},
+		{ // Case 5
+			"../../testdata/test.invalid-negative-cache-2.conf",
+			`invalid negative cache config: 1212 is not a valid status code`,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			err := Load("trickster-test", "0", []string{"-config", test.filename})
+			if err == nil {
+				t.Errorf("expected error `%s` got nothing", test.expected)
+			} else if err.Error() != test.expected {
+				t.Errorf("expected error `%s` got `%s`", test.expected, err.Error())
+			}
+
+		})
+	}
+
+}
+
 func TestLoadConfigurationMissingOriginURL(t *testing.T) {
 	expected := `no valid origins configured`
 	a := []string{"-origin-type", "testing"}
@@ -49,37 +96,6 @@ func TestLoadConfigurationMissingOriginURL(t *testing.T) {
 		t.Errorf("expected error `%s` got nothing", expected)
 	} else if err.Error() != expected {
 		t.Errorf("expected error `%s` got `%s`", expected, err.Error())
-	}
-}
-
-func TestLoadConfigurationBadOriginURL(t *testing.T) {
-	expected := fmt.Sprintf(`parse %s: first path segment in URL cannot contain colon`, "sasdf_asd[as;://asdf923_-=a*")
-	a := []string{"-config", "../../testdata/test.bad_origin_url.conf"}
-	err := Load("trickster-test", "0", a)
-	if err == nil {
-		t.Errorf("expected error `%s` got nothing", expected)
-	} else if err.Error() != expected {
-		t.Errorf("expected error `%s` got `%s`", expected, err.Error())
-	}
-}
-
-func TestLoadConfigurationMissingOriginType(t *testing.T) {
-	expected := `missing origin-type for origin "test"`
-	a := []string{"-config", "../../testdata/test.missing_origin_type.conf"}
-	err := Load("trickster-test", "0", a)
-	if err == nil {
-		t.Errorf("expected error `%s` got nothing", expected)
-	} else if err.Error() != expected {
-		t.Errorf("expected error `%s` got `%s`", expected, err.Error())
-	}
-}
-
-func TestLoadBadCacheName(t *testing.T) {
-	a := []string{"-config", "../../testdata/test.bad-cache-name.conf"}
-	// it should error with bad cache name
-	err := Load("trickster-test", "0", a)
-	if err == nil {
-		t.Errorf("expected error for invalid cache name: %s", "test_fail")
 	}
 }
 
