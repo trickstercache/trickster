@@ -151,6 +151,23 @@ func TestRegisterProxyRoutesMultipleDefaults(t *testing.T) {
 	}
 }
 
+func TestRegisterProxyRoutesInvalidCert(t *testing.T) {
+	expected := "tls: failed to find any PEM data in certificate input"
+	a := []string{"-config", "../../../testdata/test.bad_tls_cert.conf"}
+	err := config.Load("trickster", "test", a)
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+	registration.LoadCachesFromConfig()
+	err = RegisterProxyRoutes()
+	if err == nil {
+		t.Errorf("expected error: %s", expected)
+	}
+	if err != nil && err.Error() != expected {
+		t.Errorf("expected error: %s, got: %s", expected, err.Error())
+	}
+}
+
 func TestRegisterProxyRoutesBadCacheName(t *testing.T) {
 	expected := "invalid cache name [test2] provided in origin config [test]"
 	a := []string{"-config", "../../../testdata/test.bad_cache_name.conf"}
