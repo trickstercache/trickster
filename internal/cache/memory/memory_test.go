@@ -108,7 +108,7 @@ func TestCache_Retrieve(t *testing.T) {
 	// this should now return error
 	data, err = mc.Retrieve(cacheKey, false)
 	if err == nil {
-		t.Errorf("exected error for %s", expected1)
+		t.Errorf("expected error for %s", expected1)
 		mc.Close()
 	}
 	if err.Error() != expected1 {

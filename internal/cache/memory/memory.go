@@ -87,7 +87,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		o.Expiration = c.Index.GetExpiration(cacheKey)
 
 		if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
-			log.Debug("bbolt cache retrieve", log.Pairs{"cacheKey": cacheKey})
+			log.Debug("memory cache retrieve", log.Pairs{"cacheKey": cacheKey})
 			if atime {
 				c.Index.UpdateObjectAccessTime(cacheKey)
 			}

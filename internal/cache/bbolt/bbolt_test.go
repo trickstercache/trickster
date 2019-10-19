@@ -65,7 +65,7 @@ func TestBboltCache_ConnectFailed(t *testing.T) {
 	// it should connect
 	err := bc.Connect()
 	if err == nil {
-		t.Errorf("exected error for %s", expected)
+		t.Errorf("expected error for %s", expected)
 		bc.Close()
 	}
 	if err.Error() != expected {
@@ -82,7 +82,7 @@ func TestBboltCache_ConnectBadBucketName(t *testing.T) {
 	// it should connect
 	err := bc.Connect()
 	if err == nil {
-		t.Errorf("exected error for %s", expected)
+		t.Errorf("expected error for %s", expected)
 		bc.Close()
 	}
 	if err.Error() != expected {
@@ -186,7 +186,7 @@ func TestBboltCache_StoreNoIndex(t *testing.T) {
 
 	data, err = bc.retrieve("", false, false)
 	if err == nil {
-		t.Errorf("exected error for %s", expected)
+		t.Errorf("expected error for %s", expected)
 		bc.Close()
 	}
 	if err.Error() != expected {
@@ -306,7 +306,7 @@ func TestBboltCache_Retrieve(t *testing.T) {
 	// this should now return error
 	data, err = bc.Retrieve(cacheKey, false)
 	if err == nil {
-		t.Errorf("exected error for %s", expected1)
+		t.Errorf("expected error for %s", expected1)
 		bc.Close()
 	}
 	if err.Error() != expected1 {
@@ -322,7 +322,7 @@ func TestBboltCache_Retrieve(t *testing.T) {
 	// it should fail to retrieve a value
 	data, err = bc.Retrieve(cacheKey, false)
 	if err == nil {
-		t.Errorf("exected error for %s", expected2)
+		t.Errorf("expected error for %s", expected2)
 		bc.Close()
 	}
 	if err.Error() != expected2 {
