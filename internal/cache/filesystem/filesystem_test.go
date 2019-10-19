@@ -16,6 +16,7 @@ package filesystem
 import (
 	"io/ioutil"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -61,7 +62,26 @@ func TestFilesystemCache_Connect(t *testing.T) {
 	}
 }
 
+func TestFilesystemCache_ConnectFailed(t *testing.T) {
+	const expected = `[/root/noaccess.trickster.filesystem.cache] directory is not writeable by trickster: mkdir /root: read-only file system`
+	cacheConfig := newCacheConfig(t)
+	cacheConfig.Filesystem.CachePath = "/root/noaccess.trickster.filesystem.cache"
+	fc := Cache{Config: &cacheConfig}
+	// it should connect
+	err := fc.Connect()
+	if err == nil {
+		t.Errorf("expected error for %s", expected)
+		fc.Close()
+	}
+	if err.Error() != expected {
+		t.Errorf("expected error '%s' got '%s'", expected, err.Error())
+	}
+}
+
 func TestFilesystemCache_Store(t *testing.T) {
+
+	const expected1 = "invalid ttl: -1"
+	const expected2 = "open /root/noaccess.trickster.filesystem.cache/cacheKey.data:"
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
@@ -77,9 +97,31 @@ func TestFilesystemCache_Store(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+
+	// it should return an error
+	err = fc.Store(cacheKey, []byte("data"), time.Duration(-1)*time.Second)
+	if err == nil {
+		t.Errorf("expected error for %s", expected1)
+	}
+	if err.Error() != expected1 {
+		t.Errorf("expected error '%s' got '%s'", expected1, err.Error())
+	}
+
+	cacheConfig.Filesystem.CachePath = "/root/noaccess.trickster.filesystem.cache"
+	// it should return an error
+	err = fc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
+	if err == nil {
+		t.Errorf("expected error for %s", expected2)
+	}
+	if !strings.HasPrefix(err.Error(), expected2) {
+		t.Errorf("expected error '%s' got '%s'", expected2, err.Error())
+	}
+
 }
 
 func TestFilesystemCache_StoreNoIndex(t *testing.T) {
+
+	const expected = "value for key [] not in cache"
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
@@ -100,6 +142,21 @@ func TestFilesystemCache_StoreNoIndex(t *testing.T) {
 		t.Error(err)
 	}
 	if string(data) != "data" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+
+	// test for error when bad key name
+	fc.storeNoIndex("", []byte("data"))
+
+	data, err = fc.retrieve("", false, false)
+	if err == nil {
+		t.Errorf("expected error for %s", expected)
+		fc.Close()
+	}
+	if err.Error() != expected {
+		t.Errorf("expected error '%s' got '%s'", expected, err.Error())
+	}
+	if string(data) != "" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
 
@@ -155,6 +212,9 @@ func TestFilesystemCache_SetTTL(t *testing.T) {
 
 func TestFilesystemCache_Retrieve(t *testing.T) {
 
+	const expected1 = `value for key [cacheKey] not in cache`
+	const expected2 = `value for key [cacheKey] could not be deserialized from cache`
+
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
 	fc := Cache{Config: &cacheConfig}
@@ -175,6 +235,36 @@ func TestFilesystemCache_Retrieve(t *testing.T) {
 	}
 	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+
+	// expire the object
+	fc.SetTTL(cacheKey, -1*time.Hour)
+
+	// this should now return error
+	data, err = fc.Retrieve(cacheKey, false)
+	if err == nil {
+		t.Errorf("expected error for %s", expected1)
+		fc.Close()
+	}
+	if err.Error() != expected1 {
+		t.Errorf("expected error '%s' got '%s'", expected1, err.Error())
+	}
+	if string(data) != "" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+
+	// should fail
+	filename := fc.getFileName(cacheKey)
+	err = ioutil.WriteFile(filename, []byte("junk"), os.FileMode(0777))
+	if err != nil {
+		t.Error(err)
+	}
+	data, err = fc.Retrieve(cacheKey, false)
+	if err == nil {
+		t.Errorf("expected error for %s", expected2)
+	}
+	if err.Error() != expected2 {
+		t.Errorf("expected error '%s' got '%s'", expected2, err.Error())
 	}
 }
 

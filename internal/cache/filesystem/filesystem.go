@@ -71,6 +71,14 @@ func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 
 func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateIndex bool) error {
 
+	if ttl < 1 {
+		return fmt.Errorf("invalid ttl: %d", int64(ttl.Seconds()))
+	}
+
+	if cacheKey == "" {
+		return fmt.Errorf("cacheKey required")
+	}
+
 	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 
 	dataFile := c.getFileName(cacheKey)
@@ -181,7 +189,7 @@ func writeable(path string) bool {
 func makeDirectory(path string) error {
 	err := os.MkdirAll(path, 0755)
 	if err != nil || !writeable(path) {
-		return fmt.Errorf("[%s] directory is not writeable by the trickster: %v", path, err)
+		return fmt.Errorf("[%s] directory is not writeable by trickster: %v", path, err)
 	}
 
 	return nil
