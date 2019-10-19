@@ -39,10 +39,12 @@ const (
 	queryReturnsBadGateway  = "some_query_here{status_code=502,latency_ms=0,range_latency_ms=0}"
 )
 
+var testConfigFile string
+
 func setupTestHarnessDPC() (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *PromTestClient, error) {
 
 	client := &PromTestClient{}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "", nil, "promsim", "/api/v1/query_range", "debug")
+	ts, w, r, hc, err := tu.NewTestInstance(testConfigFile, client.DefaultPathConfigs, 200, "", nil, "promsim", "/api/v1/query_range", "debug")
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -199,6 +201,79 @@ func TestDeltaProxyCacheRequestAllItemsTooNew(t *testing.T) {
 func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 
 	ts, w, r, client, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	oc := tc.OriginConfig(r.Context())
+
+	oc.FastForwardDisable = true
+
+	step := time.Duration(300) * time.Second
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+
+	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	u := r.URL
+	u.Path = "/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// get cache hit coverage too by repeating:
+
+	oc.TimeseriesRetention = 10
+
+	extr = timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: now}
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	_, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestDeltaProxyCacheRequestRemoveStaleLRU(t *testing.T) {
+
+	testConfigFile = "../../../testdata/test.cache-lru.conf"
+	ts, w, r, client, err := setupTestHarnessDPC()
+	testConfigFile = ""
 	if err != nil {
 		t.Error(err)
 	}
