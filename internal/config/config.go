@@ -182,6 +182,11 @@ type CachingConfig struct {
 	Filesystem         FilesystemCacheConfig `toml:"filesystem"`
 	BBolt              BBoltCacheConfig      `toml:"bbolt"`
 	Badger             BadgerCacheConfig     `toml:"badger"`
+
+	//  Synthetic Values
+
+	// CacheTypeID represents the internal itoa constant for the provided CacheType string
+	CacheTypeID CacheType `toml:"-"`
 }
 
 // CacheIndexConfig defines the operation of the Cache Indexer
@@ -327,6 +332,7 @@ func NewCacheConfig() *CachingConfig {
 
 	return &CachingConfig{
 		CacheType:          defaultCacheType,
+		CacheTypeID:        defaultCacheTypeID,
 		Compression:        defaultCacheCompression,
 		MaxObjectSizeBytes: defaultMaxObjectSizeBytes,
 		Redis:              RedisCacheConfig{ClientType: defaultRedisClientType, Protocol: defaultRedisProtocol, Endpoint: defaultRedisEndpoint, Endpoints: []string{defaultRedisEndpoint}},
@@ -566,6 +572,9 @@ func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
 
 		if metadata.IsDefined("caches", k, "cache_type") {
 			cc.CacheType = strings.ToLower(v.CacheType)
+			if n, ok := CacheTypeNames[cc.CacheType]; ok {
+				cc.CacheTypeID = n
+			}
 		}
 
 		if metadata.IsDefined("caches", k, "compression") {
@@ -600,7 +609,7 @@ func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
 			cc.Index.MaxSizeBackoffObjects = v.Index.MaxSizeBackoffObjects
 		}
 
-		if cc.CacheType == "redis" {
+		if cc.CacheTypeID == CacheTypeRedis {
 
 			var hasEndpoint, hasEndpoints bool
 
@@ -772,6 +781,7 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 		cc := NewCacheConfig()
 		cc.Compression = v.Compression
 		cc.CacheType = v.CacheType
+		cc.CacheTypeID = v.CacheTypeID
 
 		cc.Index.FlushInterval = v.Index.FlushInterval
 		cc.Index.FlushIntervalSecs = v.Index.FlushIntervalSecs

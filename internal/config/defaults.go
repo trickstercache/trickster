@@ -27,6 +27,7 @@ const (
 	defaultMetricsListenAddress = ""
 
 	defaultCacheType        = "memory"
+	defaultCacheTypeID      = CacheTypeMemory
 	defaultCacheCompression = true
 
 	defaultTimeseriesTTLSecs  = 21600

@@ -26,12 +26,6 @@ func init() {
 	metrics.Init()
 }
 
-const Bbolt = `bbolt`
-const Memory = `memory`
-const Filesystem = `filesystem`
-const Badger = `badger`
-const Redis = `redis`
-
 func TestLoadCachesFromConfig(t *testing.T) {
 
 	err := config.Load("trickster", "test", []string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "test"})
@@ -39,16 +33,15 @@ func TestLoadCachesFromConfig(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cacheTypes := []string{Memory, Bbolt, Filesystem, Badger, Redis}
-	for _, key := range cacheTypes {
+	for key, v := range config.CacheTypeNames {
 		cfg := newCacheConfig(t, key)
 		config.Caches[key] = cfg
-		switch key {
-		case Bbolt:
+		switch v {
+		case config.CacheTypeBbolt:
 			defer os.RemoveAll(cfg.BBolt.Filename)
-		case Filesystem:
+		case config.CacheTypeFilesystem:
 			defer os.RemoveAll(cfg.Filesystem.CachePath)
-		case Badger:
+		case config.CacheTypeBadgerDB:
 			defer os.RemoveAll(cfg.Badger.Directory)
 		}
 	}
@@ -59,7 +52,7 @@ func TestLoadCachesFromConfig(t *testing.T) {
 		t.Error(err)
 	}
 
-	for _, key := range cacheTypes {
+	for key := range config.CacheTypeNames {
 		_, err = GetCache(key)
 		if err != nil {
 			t.Error(err)
@@ -79,15 +72,20 @@ func newCacheConfig(t *testing.T, cacheType string) *config.CachingConfig {
 	fd := "."
 	var err error
 
-	switch cacheType {
-	case Badger:
-		bd, err = ioutil.TempDir("/tmp", Badger)
+	ctid, ok := config.CacheTypeNames[cacheType]
+	if !ok {
+		ctid = config.CacheTypeMemory
+	}
+
+	switch ctid {
+	case config.CacheTypeBadgerDB:
+		bd, err = ioutil.TempDir("/tmp", cacheType)
 		if err != nil {
 			t.Error(err)
 		}
 
-	case Filesystem:
-		fd, err = ioutil.TempDir("/tmp", Filesystem)
+	case config.CacheTypeFilesystem:
+		fd, err = ioutil.TempDir("/tmp", cacheType)
 		if err != nil {
 			t.Error(err)
 		}
