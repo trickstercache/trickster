@@ -74,4 +74,11 @@ func TestNewTestInstance(t *testing.T) {
 		t.Errorf("Expected server pointer, got %v", "nil")
 	}
 
+	// cover config file provided
+
+	s, w, r, c, err = NewTestInstance("../../../testdata/test.full.conf", f, 200, "", nil, "promsim", "test", "debug")
+	if err == nil {
+		t.Errorf("Expected error, got %v", "nil")
+	}
+
 }
