@@ -54,9 +54,9 @@ func (c *Cache) Connect() error {
 	}
 
 	err = c.dbh.Update(func(tx *bbolt.Tx) error {
-		tx.CreateBucketIfNotExists([]byte(c.Config.BBolt.Bucket))
-		if err != nil {
-			return fmt.Errorf("create bucket: %s", err)
+		_, err2 := tx.CreateBucketIfNotExists([]byte(c.Config.BBolt.Bucket))
+		if err2 != nil {
+			return fmt.Errorf("create bucket: %s", err2)
 		}
 		return nil
 	})
@@ -76,7 +76,6 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 }
 
 func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
-
 	err := c.store(cacheKey, data, 31536000*time.Second, false)
 	if err != nil {
 		log.Error("cache failed to write non-indexed object", log.Pairs{"cacheName": c.Name, "cacheType": "bbolt", "cacheKey": cacheKey, "objectSize": len(data)})
@@ -89,12 +88,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 
 	o := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
-	err := c.dbh.Update(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
-		err2 := b.Put([]byte(cacheKey), o.ToBytes())
-		locks.Release(lockPrefix + cacheKey)
-		return err2
-	})
+	err := writeToBBolt(c.dbh, c.Config.BBolt.Bucket, cacheKey, o.ToBytes())
 	if err != nil {
 		locks.Release(lockPrefix + cacheKey)
 		return err
@@ -105,6 +99,16 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 	}
 	locks.Release(lockPrefix + cacheKey)
 	return nil
+}
+
+func writeToBBolt(dbh *bbolt.DB, bucketName, cacheKey string, data []byte) error {
+	err := dbh.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte(bucketName))
+		err2 := b.Put([]byte(cacheKey), data)
+		locks.Release(lockPrefix + cacheKey)
+		return err2
+	})
+	return err
 }
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)

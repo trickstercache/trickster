@@ -56,6 +56,40 @@ func TestBboltCache_Connect(t *testing.T) {
 	bc.Close()
 }
 
+func TestBboltCache_ConnectFailed(t *testing.T) {
+	const expected = `open /root/noaccess.bbolt: no such file or directory`
+	cacheConfig := newCacheConfig()
+	cacheConfig.BBolt.Filename = "/root/noaccess.bbolt"
+	defer os.RemoveAll(cacheConfig.BBolt.Filename)
+	bc := Cache{Config: &cacheConfig}
+	// it should connect
+	err := bc.Connect()
+	if err == nil {
+		t.Errorf("exected error for %s", expected)
+		bc.Close()
+	}
+	if err.Error() != expected {
+		t.Errorf("expected error '%s' got '%s'", expected, err.Error())
+	}
+}
+
+func TestBboltCache_ConnectBadBucketName(t *testing.T) {
+	const expected = `create bucket: bucket name required`
+	cacheConfig := newCacheConfig()
+	cacheConfig.BBolt.Bucket = ""
+	defer os.RemoveAll(cacheConfig.BBolt.Filename)
+	bc := Cache{Config: &cacheConfig}
+	// it should connect
+	err := bc.Connect()
+	if err == nil {
+		t.Errorf("exected error for %s", expected)
+		bc.Close()
+	}
+	if err.Error() != expected {
+		t.Errorf("expected error '%s' got '%s'", expected, err.Error())
+	}
+}
+
 func TestBboltCache_Store(t *testing.T) {
 
 	cacheConfig := newCacheConfig()
@@ -124,6 +158,8 @@ func TestBboltCache_SetTTL(t *testing.T) {
 
 func TestBboltCache_StoreNoIndex(t *testing.T) {
 
+	const expected = `value for key [] not in cache`
+
 	cacheConfig := newCacheConfig()
 	bc := Cache{Config: &cacheConfig}
 
@@ -145,6 +181,20 @@ func TestBboltCache_StoreNoIndex(t *testing.T) {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
 
+	// test for error when bad key name
+	bc.storeNoIndex("", []byte("data"))
+
+	data, err = bc.retrieve("", false, false)
+	if err == nil {
+		t.Errorf("exected error for %s", expected)
+		bc.Close()
+	}
+	if err.Error() != expected {
+		t.Errorf("expected error '%s' got '%s'", expected, err.Error())
+	}
+	if string(data) != "" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
 }
 
 func TestBboltCache_Remove(t *testing.T) {
@@ -223,6 +273,9 @@ func TestBboltCache_BulkRemove(t *testing.T) {
 
 func TestBboltCache_Retrieve(t *testing.T) {
 
+	const expected1 = `value for key [cacheKey] not in cache`
+	const expected2 = `value for key [cacheKey] could not be deserialized from cache`
+
 	cacheConfig := newCacheConfig()
 	bc := Cache{Config: &cacheConfig}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
@@ -244,6 +297,38 @@ func TestBboltCache_Retrieve(t *testing.T) {
 		t.Error(err)
 	}
 	if string(data) != "data" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+
+	// expire the object
+	bc.SetTTL(cacheKey, -1*time.Hour)
+
+	// this should now return error
+	data, err = bc.Retrieve(cacheKey, false)
+	if err == nil {
+		t.Errorf("exected error for %s", expected1)
+		bc.Close()
+	}
+	if err.Error() != expected1 {
+		t.Errorf("expected error '%s' got '%s'", expected1, err.Error())
+	}
+	if string(data) != "" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+
+	// create a corrupted cache entry and expect an error
+	writeToBBolt(bc.dbh, cacheConfig.BBolt.Bucket, cacheKey, []byte("asdasdfasf"))
+
+	// it should fail to retrieve a value
+	data, err = bc.Retrieve(cacheKey, false)
+	if err == nil {
+		t.Errorf("exected error for %s", expected2)
+		bc.Close()
+	}
+	if err.Error() != expected2 {
+		t.Errorf("expected error '%s' got '%s'", expected2, err.Error())
+	}
+	if string(data) != "" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
 }
