@@ -63,7 +63,7 @@ func TestFilesystemCache_Connect(t *testing.T) {
 }
 
 func TestFilesystemCache_ConnectFailed(t *testing.T) {
-	const expected = `[/root/noaccess.trickster.filesystem.cache] directory is not writeable by trickster: mkdir /root: read-only file system`
+	const expected = `[/root/noaccess.trickster.filesystem.cache] directory is not writeable by trickster:`
 	cacheConfig := newCacheConfig(t)
 	cacheConfig.Filesystem.CachePath = "/root/noaccess.trickster.filesystem.cache"
 	fc := Cache{Config: &cacheConfig}
@@ -73,7 +73,7 @@ func TestFilesystemCache_ConnectFailed(t *testing.T) {
 		t.Errorf("expected error for %s", expected)
 		fc.Close()
 	}
-	if err.Error() != expected {
+	if !strings.HasPrefix(err.Error(), expected) {
 		t.Errorf("expected error '%s' got '%s'", expected, err.Error())
 	}
 }
