@@ -122,7 +122,7 @@ func TestCaqlHandlerParseTimeRangeQuery(t *testing.T) {
 		t.Errorf("expected error for parameter missing")
 	}
 
-	// cant parse start param
+	// can't parse start param
 	r.URL.RawQuery = "q=1234&query=5678&start=abcd&end=3456&period=7890"
 	_, err = client.caqlHandlerParseTimeRangeQuery(tr)
 	if err == nil {
@@ -150,7 +150,7 @@ func TestCaqlHandlerParseTimeRangeQuery(t *testing.T) {
 		t.Errorf("expected error for parameter missing")
 	}
 
-	// unparseable period param
+	// unparsable period param
 	r.URL.RawQuery = "q=1234&query=5678&start=9012&end=3456&period=pqrs"
 	_, err = client.caqlHandlerParseTimeRangeQuery(tr)
 	if err == nil {
