@@ -14,7 +14,9 @@
 package config
 
 import (
+	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	ts "github.com/Comcast/trickster/internal/util/strings"
@@ -87,6 +89,9 @@ type PathConfig struct {
 	MatchType PathMatchType `toml:"-"`
 	// OriginConfig is the reference to the PathConfig's parent Origin Config
 	OriginConfig *OriginConfig `toml:"-"`
+	// KeyHasher points to an optional function that hashes the cacheKey with a custom algorthim
+	// NOTE: This is used by some origins like IronDB, but is not configurable by end users
+	KeyHasher func(path string, params url.Values, headers http.Header, body io.ReadCloser, extra string) string `toml:"-"`
 
 	custom []string `toml:"-"`
 }
@@ -104,6 +109,7 @@ func NewPathConfig() *PathConfig {
 		custom:          make([]string, 0),
 		RequestHeaders:  make(map[string]string),
 		ResponseHeaders: make(map[string]string),
+		KeyHasher:       nil,
 	}
 }
 
@@ -127,6 +133,7 @@ func (p *PathConfig) Copy() *PathConfig {
 		CacheKeyParams:        make([]string, len(p.CacheKeyParams)),
 		CacheKeyHeaders:       make([]string, len(p.CacheKeyHeaders)),
 		custom:                make([]string, len(p.custom)),
+		KeyHasher:             p.KeyHasher,
 	}
 	copy(c.Methods, p.Methods)
 	copy(c.CacheKeyParams, p.CacheKeyParams)

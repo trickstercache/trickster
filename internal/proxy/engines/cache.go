@@ -14,7 +14,9 @@
 package engines
 
 import (
+	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -85,25 +87,32 @@ func DeriveCacheKey(c model.Client, r *model.Request, apc *config.PathConfig, ex
 	}
 
 	params := r.URL.Query()
-	vals := make([]string, 0, len(pc.CacheKeyParams)+len(pc.CacheKeyHeaders))
+
+	if pc.KeyHasher != nil {
+		return pc.KeyHasher(r.URL.Path, params, r.Headers, r.ClientRequest.Body, extra)
+	}
+
+	vals := make([]string, 0, (len(pc.CacheKeyParams) + len(pc.CacheKeyHeaders)*2))
 
 	if len(pc.CacheKeyParams) == 1 && pc.CacheKeyParams[0] == "*" {
 		for p := range params {
-			vals = append(vals, []string{p, params.Get(p)}...)
+			vals = append(vals, fmt.Sprintf("%s.%s.", p, params.Get(p)))
 		}
 	} else {
 		for _, p := range pc.CacheKeyParams {
 			if v := params.Get(p); v != "" {
-				vals = append(vals, []string{p, v}...)
+				vals = append(vals, fmt.Sprintf("%s.%s.", p, v))
 			}
 		}
 	}
 
 	for _, p := range pc.CacheKeyHeaders {
 		if v := r.Headers.Get(p); v != "" {
-			vals = append(vals, []string{p, v}...)
+			vals = append(vals, fmt.Sprintf("%s.%s.", p, v))
 		}
 	}
+
+	sort.Strings(vals)
 
 	return md5.Checksum(r.URL.Path + strings.Join(vals, "") + extra)
 }

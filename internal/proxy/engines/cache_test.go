@@ -14,6 +14,7 @@
 package engines
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -32,13 +33,15 @@ import (
 
 func TestDeriveCacheKey(t *testing.T) {
 
+	rpath := &config.PathConfig{
+		Path:            "/",
+		CacheKeyParams:  []string{"query", "step", "time"},
+		CacheKeyHeaders: []string{},
+	}
+
 	cfg := &config.OriginConfig{
 		Paths: map[string]*config.PathConfig{
-			"root": &config.PathConfig{
-				Path:            "/",
-				CacheKeyParams:  []string{"query", "step", "time"},
-				CacheKeyHeaders: []string{},
-			},
+			"root": rpath,
 		},
 	}
 
@@ -53,8 +56,8 @@ func TestDeriveCacheKey(t *testing.T) {
 	r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
 	key := DeriveCacheKey(client, r, nil, "extra")
 
-	if key != "66488fee2be55a09bcc62c7cbd59ce02" {
-		t.Errorf("expected %s got %s", "66488fee2be55a09bcc62c7cbd59ce02", key)
+	if key != "a7030f428e0c76992a7b5b2bc03f7dea" {
+		t.Errorf("expected %s got %s", "a7030f428e0c76992a7b5b2bc03f7dea", key)
 	}
 
 	cfg.Paths["root"].CacheKeyParams = []string{"*"}
@@ -63,10 +66,22 @@ func TestDeriveCacheKey(t *testing.T) {
 	r = &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
 	key = DeriveCacheKey(client, r, nil, "extra")
 
-	if key != "b8a62dd557d635fb2a5fa5bb3f5c6d33" {
-		t.Errorf("expected %s got %s", "b8a62dd557d635fb2a5fa5bb3f5c6d33", key)
+	if key != "ff794110f521527fe4a9de1978da761b" {
+		t.Errorf("expected %s got %s", "ff794110f521527fe4a9de1978da761b", key)
 	}
 
+	// Test Custom KeyHasher Integration
+	rpath.KeyHasher = exampleKeyHasher
+
+	key = DeriveCacheKey(client, r, nil, "extra")
+	if key != "test-key" {
+		t.Errorf("expected %s got %s", "test-key", key)
+	}
+
+}
+
+func exampleKeyHasher(path string, params url.Values, headers http.Header, body io.ReadCloser, extra string) string {
+	return "test-key"
 }
 
 func TestDeriveCacheKeyAuthHeader(t *testing.T) {
@@ -93,8 +108,8 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 
 	key := DeriveCacheKey(client, r, nil, "extra")
 
-	if key != "ae933fa643c86a6427063f1dbb2a552e" {
-		t.Errorf("expected %s got %s", "ae933fa643c86a6427063f1dbb2a552e", key)
+	if key != "b52f0a187c16633d4c5663628fd275cb" {
+		t.Errorf("expected %s got %s", "b52f0a187c16633d4c5663628fd275cb", key)
 	}
 
 }
