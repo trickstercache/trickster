@@ -1205,7 +1205,7 @@ func TestCropToSize(t *testing.T) {
 				End:   time.Unix(1444004600, 0),
 			},
 			size: 1,
-			bft:  time.Now(),
+			bft:  now,
 		},
 
 		// case 1
@@ -1254,7 +1254,7 @@ func TestCropToSize(t *testing.T) {
 				End:   time.Unix(1444004610, 0),
 			},
 			size: 1,
-			bft:  time.Now(),
+			bft:  now,
 		},
 
 		// case 2 - empty extent list
@@ -1282,7 +1282,7 @@ func TestCropToSize(t *testing.T) {
 			},
 			extent: timeseries.Extent{},
 			size:   1,
-			bft:    time.Now(),
+			bft:    now,
 		},
 
 		// case 3 - backfill tolerance
