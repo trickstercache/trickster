@@ -71,7 +71,7 @@ func TestDeriveCacheKey(t *testing.T) {
 	}
 
 	// Test Custom KeyHasher Integration
-	rpath.KeyHasher = exampleKeyHasher
+	rpath.KeyHasher = []config.KeyHasherFunc{exampleKeyHasher}
 
 	key = DeriveCacheKey(client, r, nil, "extra")
 	if key != "test-key" {
