@@ -55,7 +55,7 @@ func TestRawHandlerParseTimeRangeQuery(t *testing.T) {
 	}
 	tr := model.NewRequest("RawHandler", r.Method, r.URL, r.Header, cfg.Timeout, r, hc)
 
-	// case where everythings good
+	// case where everything is good
 	r.URL.RawQuery = "start_ts=9012&end_ts=3456"
 	trq, err := client.rawHandlerParseTimeRangeQuery(tr)
 	if err != nil {
@@ -72,7 +72,7 @@ func TestRawHandlerParseTimeRangeQuery(t *testing.T) {
 		t.Errorf("expected error for parameter missing")
 	}
 
-	// cant parse start param
+	// can't parse start param
 	r.URL.RawQuery = "start_ts=abc&end_ts=3456"
 	_, err = client.rawHandlerParseTimeRangeQuery(tr)
 	if err == nil {

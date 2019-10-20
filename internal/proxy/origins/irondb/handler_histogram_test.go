@@ -113,7 +113,7 @@ func TestHistogramHandlerParseTimeRangeQuery(t *testing.T) {
 
 	tr := model.NewRequest("HistogramHandler", r.Method, r.URL, r.Header, cfg.Timeout, r, hc)
 
-	// case where everthing is good
+	// case where everything is good
 	_, err = client.histogramHandlerParseTimeRangeQuery(tr)
 	if err != nil {
 		t.Error(err)

@@ -58,7 +58,7 @@ func TestFetchHandlerDeriveCacheKey(t *testing.T) {
 	const expected = "a34bbb372c505e9eea0e0589e16c0914"
 	result := client.fetchHandlerDeriveCacheKey(path, r.URL.Query(), r.Header, r.Body, "extra")
 	if result != expected {
-		t.Errorf("exected %s got %s", expected, result)
+		t.Errorf("expected %s got %s", expected, result)
 	}
 
 }

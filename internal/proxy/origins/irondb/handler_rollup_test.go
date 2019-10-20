@@ -84,7 +84,7 @@ func TestRollupHandlerParseTimeRangeQuery(t *testing.T) {
 	}
 	tr := model.NewRequest("RollupHandler", r.Method, r.URL, r.Header, cfg.Timeout, r, hc)
 
-	// case where everythings good
+	// case where everything is good
 	r.URL.RawQuery = "start_ts=0&end_ts=900&rollup_span=300s&type=average"
 	trq, err := client.rollupHandlerParseTimeRangeQuery(tr)
 	if err != nil {
@@ -102,7 +102,7 @@ func TestRollupHandlerParseTimeRangeQuery(t *testing.T) {
 		t.Errorf("expected %s got %s", expected.Error(), err)
 	}
 
-	// cant parse start param
+	// can't parse start param
 	r.URL.RawQuery = "start_ts=abcd&end_ts=3456&rollup_span=7890"
 	_, err = client.rollupHandlerParseTimeRangeQuery(tr)
 	expectedS := `unable to parse timestamp abcd: strconv.ParseInt: parsing "abcd": invalid syntax`
@@ -134,7 +134,7 @@ func TestRollupHandlerParseTimeRangeQuery(t *testing.T) {
 		t.Errorf("expected %s got %s", expected.Error(), err)
 	}
 
-	// unparseable rollup_span param
+	// unparsable rollup_span param
 	r.URL.RawQuery = "start_ts=9012&end_ts=3456&rollup_span=pqrs"
 	_, err = client.rollupHandlerParseTimeRangeQuery(tr)
 	expectedS = `unable to parse duration pqrs: time: invalid duration pqrs`

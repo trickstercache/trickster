@@ -55,7 +55,7 @@ func TestTextHandlerDeriveCacheKey(t *testing.T) {
 	const expected = "a506d1700414b1d0ac15340bd619fdab"
 	result := client.textHandlerDeriveCacheKey(path, r.URL.Query(), r.Header, r.Body, "extra")
 	if result != expected {
-		t.Errorf("exected %s got %s", expected, result)
+		t.Errorf("expected %s got %s", expected, result)
 	}
 
 }
@@ -76,7 +76,7 @@ func TestTextHandlerParseTimeRangeQuery(t *testing.T) {
 
 	tr := model.NewRequest("RollupHandler", r.Method, r.URL, r.Header, cfg.Timeout, r, hc)
 
-	// case where everthing is good
+	// case where everything is good
 	_, err = client.textHandlerParseTimeRangeQuery(tr)
 	if err != nil {
 		t.Error(err)

@@ -329,6 +329,6 @@ func TestParseTimerangeQuery(t *testing.T) {
 
 	_, err := client.ParseTimeRangeQuery(tr)
 	if err == nil || err.Error() != expected {
-		t.Errorf("exected %s got %v", expected, err)
+		t.Errorf("expected %s got %v", expected, err)
 	}
 }

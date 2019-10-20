@@ -83,7 +83,7 @@ func TestCaqlHandlerParseTimeRangeQuery(t *testing.T) {
 	}
 	tr := model.NewRequest("CAQLHandler", r.Method, r.URL, r.Header, cfg.Timeout, r, hc)
 
-	// case where everythings good
+	// case where everything is good
 	r.URL.RawQuery = "q=1234&query=5678&start=9012&end=3456&period=7890"
 	trq, err := client.caqlHandlerParseTimeRangeQuery(tr)
 	if err != nil {
