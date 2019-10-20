@@ -27,9 +27,12 @@ func (c Client) BaseURL() *url.URL {
 // construct the full upstream URL.
 func (c Client) BuildUpstreamURL(r *http.Request) *url.URL {
 	u := c.BaseURL()
-	if strings.HasPrefix(r.URL.Path, "/"+c.config.PathPrefix+"/") {
-		u.Path += strings.Replace(r.URL.Path, "/"+c.config.PathPrefix+"/",
+	if strings.HasPrefix(r.URL.Path, "/"+c.name+"/") {
+		u.Path += strings.Replace(r.URL.Path, "/"+c.name+"/",
 			"/", 1)
+		if u.Path == "//" {
+			u.Path = "/"
+		}
 	} else {
 		u.Path += r.URL.Path
 	}
