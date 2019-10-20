@@ -87,15 +87,21 @@ func DeriveCacheKey(c model.Client, r *model.Request, apc *config.PathConfig, ex
 	params := r.URL.Query()
 	vals := make([]string, 0, len(pc.CacheKeyParams)+len(pc.CacheKeyHeaders))
 
-	for _, p := range pc.CacheKeyParams {
-		if v := params.Get(p); v != "" {
-			vals = append(vals, v)
+	if len(pc.CacheKeyParams) == 1 && pc.CacheKeyParams[0] == "*" {
+		for p := range params {
+			vals = append(vals, []string{p, params.Get(p)}...)
+		}
+	} else {
+		for _, p := range pc.CacheKeyParams {
+			if v := params.Get(p); v != "" {
+				vals = append(vals, []string{p, v}...)
+			}
 		}
 	}
 
 	for _, p := range pc.CacheKeyHeaders {
 		if v := r.Headers.Get(p); v != "" {
-			vals = append(vals, v)
+			vals = append(vals, []string{p, v}...)
 		}
 	}
 

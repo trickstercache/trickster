@@ -32,27 +32,39 @@ import (
 
 func TestDeriveCacheKey(t *testing.T) {
 
-	client := &PromTestClient{
-		config: &config.OriginConfig{
-			Paths: map[string]*config.PathConfig{
-				"root": &config.PathConfig{
-					Path:            "/",
-					CacheKeyParams:  []string{"query", "step", "time"},
-					CacheKeyHeaders: []string{},
-				},
+	cfg := &config.OriginConfig{
+		Paths: map[string]*config.PathConfig{
+			"root": &config.PathConfig{
+				Path:            "/",
+				CacheKeyParams:  []string{"query", "step", "time"},
+				CacheKeyHeaders: []string{},
 			},
 		},
 	}
 
+	client := &PromTestClient{
+		config: cfg,
+	}
+
 	tr := httptest.NewRequest("GET", "http://127.0.0.1", nil)
-	tr = tr.WithContext(ct.WithConfigs(tr.Context(), client.Configuration(), nil, client.Configuration().Paths["root"]))
+	tr = tr.WithContext(ct.WithConfigs(tr.Context(), cfg, nil, cfg.Paths["root"]))
 
 	u := &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
 	r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
 	key := DeriveCacheKey(client, r, nil, "extra")
 
-	if key != "6667a75e76dea9a5cd6c6ba73e5825b5" {
-		t.Errorf("expected %s got %s", "6667a75e76dea9a5cd6c6ba73e5825b5", key)
+	if key != "66488fee2be55a09bcc62c7cbd59ce02" {
+		t.Errorf("expected %s got %s", "66488fee2be55a09bcc62c7cbd59ce02", key)
+	}
+
+	cfg.Paths["root"].CacheKeyParams = []string{"*"}
+
+	u = &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
+	r = &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
+	key = DeriveCacheKey(client, r, nil, "extra")
+
+	if key != "b8a62dd557d635fb2a5fa5bb3f5c6d33" {
+		t.Errorf("expected %s got %s", "b8a62dd557d635fb2a5fa5bb3f5c6d33", key)
 	}
 
 }
@@ -81,8 +93,8 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 
 	key := DeriveCacheKey(client, r, nil, "extra")
 
-	if key != "546bff5ae2105657f16a38d2cf358fd3" {
-		t.Errorf("expected %s got %s", "546bff5ae2105657f16a38d2cf358fd3", key)
+	if key != "ae933fa643c86a6427063f1dbb2a552e" {
+		t.Errorf("expected %s got %s", "ae933fa643c86a6427063f1dbb2a552e", key)
 	}
 
 }
