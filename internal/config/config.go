@@ -836,6 +836,7 @@ func (c *TricksterConfig) String() string {
 		if v != nil {
 			for _, w := range v.Paths {
 				w.Handler = nil
+				w.KeyHasher = nil
 			}
 		}
 	}

@@ -25,6 +25,9 @@ import (
 // PathMatchType enumerates the types of Path Matches used when registering Paths with the Router
 type PathMatchType int
 
+// KeyHasherFunc is a custom function that returns a hashed key value string for cache objects
+type KeyHasherFunc func(path string, params url.Values, headers http.Header, body io.ReadCloser, extra string) string
+
 const (
 	// PathMatchTypeExact indicates the router will map the Path by exact match against incoming requests
 	PathMatchTypeExact = PathMatchType(iota)
@@ -91,7 +94,8 @@ type PathConfig struct {
 	OriginConfig *OriginConfig `toml:"-"`
 	// KeyHasher points to an optional function that hashes the cacheKey with a custom algorthim
 	// NOTE: This is used by some origins like IronDB, but is not configurable by end users
-	KeyHasher func(path string, params url.Values, headers http.Header, body io.ReadCloser, extra string) string `toml:"-"`
+	// due to a bug in the vendored toml package, this must be a slice to avoid panic
+	KeyHasher []KeyHasherFunc `toml:"-"`
 
 	custom []string `toml:"-"`
 }

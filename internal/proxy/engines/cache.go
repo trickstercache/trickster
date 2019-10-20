@@ -88,8 +88,8 @@ func DeriveCacheKey(c model.Client, r *model.Request, apc *config.PathConfig, ex
 
 	params := r.URL.Query()
 
-	if pc.KeyHasher != nil {
-		return pc.KeyHasher(r.URL.Path, params, r.Headers, r.ClientRequest.Body, extra)
+	if pc.KeyHasher != nil && len(pc.KeyHasher) == 1 {
+		return pc.KeyHasher[0](r.URL.Path, params, r.Headers, r.ClientRequest.Body, extra)
 	}
 
 	vals := make([]string, 0, (len(pc.CacheKeyParams) + len(pc.CacheKeyHeaders)*2))
