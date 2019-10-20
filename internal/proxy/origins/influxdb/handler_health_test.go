@@ -14,6 +14,7 @@
 package influxdb
 
 import (
+	"io/ioutil"
 	"testing"
 
 	tc "github.com/Comcast/trickster/internal/util/context"
@@ -37,6 +38,37 @@ func TestHealthHandler(t *testing.T) {
 	// it should return 204 No Content
 	if resp.StatusCode != 204 {
 		t.Errorf("expected 204 got %d.", resp.StatusCode)
+	}
+
+}
+
+func TestHealthHandlerCustomPath(t *testing.T) {
+
+	client := &Client{name: "test"}
+	ts, w, r, hc, err := tu.NewTestInstance("../../../../testdata/test.custom_health.conf", client.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/health", "debug")
+	defer ts.Close()
+	if err != nil {
+		t.Error(err)
+	}
+
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+
+	client.HealthHandler(w, r)
+	resp := w.Result()
+
+	// it should return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != "{}" {
+		t.Errorf("expected '{}' got %s.", bodyBytes)
 	}
 
 }
