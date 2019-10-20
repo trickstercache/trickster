@@ -1,6 +1,7 @@
 package irondb
 
 import (
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -98,18 +99,18 @@ func (c *Client) histogramHandlerParseTimeRangeQuery(
 
 // histogramHandlerDeriveCacheKey calculates a query-specific keyname based on
 // the user request.
-func (c Client) histogramHandlerDeriveCacheKey(r *model.Request,
-	extra string) string {
+func (c Client) histogramHandlerDeriveCacheKey(path string, params url.Values,
+	headers http.Header, body io.ReadCloser, extra string) string {
 	var sb strings.Builder
-	sb.WriteString(r.URL.Path)
+	sb.WriteString(path)
 	ps := []string{}
-	if strings.HasPrefix(r.URL.Path, "/irondb") {
-		ps = strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 7)
+	if strings.HasPrefix(path, "/irondb") {
+		ps = strings.SplitN(strings.TrimPrefix(path, "/"), "/", 7)
 		if len(ps) > 0 {
 			ps = ps[1:]
 		}
 	} else {
-		ps = strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 6)
+		ps = strings.SplitN(strings.TrimPrefix(path, "/"), "/", 6)
 	}
 
 	if len(ps) >= 6 || ps[0] == "histogram" {

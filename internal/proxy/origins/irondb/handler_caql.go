@@ -10,7 +10,6 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/internal/util/md5"
 )
 
 // CAQLHandler handles CAQL requests for timeseries data and processes them
@@ -27,6 +26,11 @@ func (c *Client) CAQLHandler(w http.ResponseWriter, r *http.Request) {
 // provided Extent.
 func (c Client) caqlHandlerSetExtent(r *model.Request,
 	extent *timeseries.Extent) {
+
+	if r == nil || extent == nil || (extent.Start.IsZero() && extent.End.IsZero()) {
+		return
+	}
+
 	trq := r.TimeRangeQuery
 	var err error
 	if trq == nil {
@@ -57,6 +61,7 @@ func (c *Client) caqlHandlerParseTimeRangeQuery(
 	qp := r.URL.Query()
 	var err error
 	p := ""
+
 	if p = qp.Get(upQuery); p == "" {
 		if p = qp.Get(upCAQLQuery); p == "" {
 			return nil, errors.MissingURLParam(upQuery + " or " + upCAQLQuery)
@@ -94,20 +99,6 @@ func (c *Client) caqlHandlerParseTimeRangeQuery(
 	}
 
 	return trq, nil
-}
-
-// caqlHandlerDeriveCacheKey calculates a query-specific keyname based on the
-// user request.
-func (c Client) caqlHandlerDeriveCacheKey(r *model.Request,
-	extra string) string {
-	var sb strings.Builder
-	sb.WriteString(r.URL.Path)
-	qp := r.URL.Query()
-	sb.WriteString(qp.Get(upQuery))
-	sb.WriteString(qp.Get(upCAQLQuery))
-	sb.WriteString(qp.Get(upCAQLPeriod))
-	sb.WriteString(extra)
-	return md5.Checksum(sb.String())
 }
 
 // caqlHandlerFastForwardURL returns the url to fetch the Fast Forward value

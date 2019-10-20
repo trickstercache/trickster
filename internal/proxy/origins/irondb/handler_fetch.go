@@ -3,8 +3,10 @@ package irondb
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -29,6 +31,11 @@ func (c *Client) FetchHandler(w http.ResponseWriter, r *http.Request) {
 // provided Extent.
 func (c Client) fetchHandlerSetExtent(r *model.Request,
 	extent *timeseries.Extent) {
+
+	if r == nil || extent == nil || (extent.Start.IsZero() && extent.End.IsZero()) {
+		return
+	}
+
 	trq := r.TimeRangeQuery
 	var err error
 	if trq == nil {
@@ -70,6 +77,7 @@ func (c Client) fetchHandlerSetExtent(r *model.Request,
 func (c *Client) fetchHandlerParseTimeRangeQuery(
 	r *model.Request) (*timeseries.TimeRangeQuery, error) {
 	trq := &timeseries.TimeRangeQuery{}
+
 	b, err := ioutil.ReadAll(r.ClientRequest.Body)
 	if err != nil {
 		return nil, errors.ParseRequestBody(err)
@@ -103,13 +111,13 @@ func (c *Client) fetchHandlerParseTimeRangeQuery(
 
 // fetchHandlerDeriveCacheKey calculates a query-specific keyname based on the
 // user request.
-func (c Client) fetchHandlerDeriveCacheKey(r *model.Request,
-	extra string) string {
+func (c Client) fetchHandlerDeriveCacheKey(path string, params url.Values,
+	headers http.Header, body io.ReadCloser, extra string) string {
 	var sb strings.Builder
-	sb.WriteString(r.URL.Path)
+	sb.WriteString(path)
 	newBody := &bytes.Buffer{}
-	if b, err := ioutil.ReadAll(r.ClientRequest.Body); err == nil {
-		r.ClientRequest.Body = ioutil.NopCloser(bytes.NewBuffer(b))
+	if b, err := ioutil.ReadAll(body); err == nil {
+		body = ioutil.NopCloser(bytes.NewBuffer(b))
 		fetchReq := map[string]interface{}{}
 		err := json.NewDecoder(bytes.NewBuffer(b)).Decode(&fetchReq)
 		if err == nil {

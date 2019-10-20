@@ -21,6 +21,7 @@ func (c *Client) registerHandlers() {
 	c.handlers[mnState] = http.HandlerFunc(c.StateHandler)
 	c.handlers[mnCAQL] = http.HandlerFunc(c.CAQLHandler)
 	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
+
 }
 
 // Handlers returns a map of the HTTP Handlers the client has registered
@@ -40,7 +41,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			Path:            "/" + mnRaw,
 			HandlerName:     mnRaw,
 			Methods:         []string{http.MethodGet},
-			CacheKeyParams:  []string{}, // TODO: Populate
+			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 		},
 
@@ -48,23 +49,25 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			Path:            "/" + mnRollup,
 			HandlerName:     mnRollup,
 			Methods:         []string{http.MethodGet},
-			CacheKeyParams:  []string{}, // TODO: Populate
+			CacheKeyParams:  []string{upSpan, upEngine, upType},
 			CacheKeyHeaders: []string{},
 		},
 
 		"/" + mnFetch: &config.PathConfig{
 			Path:            "/" + mnFetch,
 			HandlerName:     mnFetch,
-			Methods:         []string{http.MethodGet},
-			CacheKeyParams:  []string{}, // TODO: Populate
+			KeyHasher:       []config.KeyHasherFunc{c.fetchHandlerDeriveCacheKey},
+			Methods:         []string{http.MethodPost},
+			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 		},
 
 		"/" + mnRead: &config.PathConfig{
 			Path:            "/" + mnRead,
 			HandlerName:     mnRead,
+			KeyHasher:       []config.KeyHasherFunc{c.textHandlerDeriveCacheKey},
 			Methods:         []string{http.MethodGet},
-			CacheKeyParams:  []string{}, // TODO: Populate
+			CacheKeyParams:  []string{"*"},
 			CacheKeyHeaders: []string{},
 		},
 
@@ -72,7 +75,8 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			Path:            "/" + mnHistogram,
 			HandlerName:     mnHistogram,
 			Methods:         []string{http.MethodGet},
-			CacheKeyParams:  []string{}, // TODO: Populate
+			KeyHasher:       []config.KeyHasherFunc{c.histogramHandlerDeriveCacheKey},
+			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 		},
 
@@ -80,7 +84,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			Path:            "/" + mnFind,
 			HandlerName:     mnFind,
 			Methods:         []string{http.MethodGet},
-			CacheKeyParams:  []string{}, // TODO: Populate
+			CacheKeyParams:  []string{upQuery},
 			CacheKeyHeaders: []string{},
 		},
 
@@ -88,7 +92,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			Path:            "/" + mnState,
 			HandlerName:     mnState,
 			Methods:         []string{http.MethodGet},
-			CacheKeyParams:  []string{}, // TODO: Populate
+			CacheKeyParams:  []string{"*"},
 			CacheKeyHeaders: []string{},
 		},
 
@@ -96,7 +100,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			Path:            "/" + mnCAQL,
 			HandlerName:     mnCAQL,
 			Methods:         []string{http.MethodGet},
-			CacheKeyParams:  []string{}, // TODO: Populate
+			CacheKeyParams:  []string{upQuery, upCAQLQuery, upCAQLPeriod},
 			CacheKeyHeaders: []string{},
 		},
 
@@ -104,7 +108,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			Path:            "/" + mnCAQLPub,
 			HandlerName:     mnCAQL,
 			Methods:         []string{http.MethodGet},
-			CacheKeyParams:  []string{}, // TODO: Populate
+			CacheKeyParams:  []string{upQuery, upCAQLQuery, upCAQLPeriod},
 			CacheKeyHeaders: []string{},
 		},
 

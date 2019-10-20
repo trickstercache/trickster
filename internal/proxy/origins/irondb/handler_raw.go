@@ -2,13 +2,11 @@ package irondb
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/internal/util/md5"
 )
 
 // RawHandler handles requests for raw numeric timeseries data and processes
@@ -58,14 +56,4 @@ func (c *Client) rawHandlerParseTimeRangeQuery(
 	}
 
 	return trq, nil
-}
-
-// rawHandlerDeriveCacheKey calculates a query-specific keyname based on the
-// user request.
-func (c Client) rawHandlerDeriveCacheKey(r *model.Request,
-	extra string) string {
-	var sb strings.Builder
-	sb.WriteString(r.URL.Path)
-	sb.WriteString(extra)
-	return md5.Checksum(sb.String())
 }

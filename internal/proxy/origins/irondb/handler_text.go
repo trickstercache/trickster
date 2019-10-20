@@ -1,7 +1,9 @@
 package irondb
 
 import (
+	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -69,11 +71,11 @@ func (c *Client) textHandlerParseTimeRangeQuery(
 
 // textHandlerDeriveCacheKey calculates a query-specific keyname based on the
 // user request.
-func (c Client) textHandlerDeriveCacheKey(r *model.Request,
-	extra string) string {
+func (c Client) textHandlerDeriveCacheKey(path string, params url.Values,
+	headers http.Header, body io.ReadCloser, extra string) string {
 	var sb strings.Builder
-	sb.WriteString(r.URL.Path)
-	ps := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 5)
+	sb.WriteString(path)
+	ps := strings.SplitN(strings.TrimPrefix(path, "/"), "/", 5)
 	if len(ps) >= 5 || ps[0] == "read" {
 		sb.WriteString("/read/" + strings.Join(ps[3:], "/"))
 	}

@@ -2,8 +2,11 @@ package irondb
 
 import (
 	"io/ioutil"
+	"net/http"
 	"testing"
 
+	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/model"
 	tc "github.com/Comcast/trickster/internal/util/context"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
@@ -11,8 +14,9 @@ import (
 func TestRawHandler(t *testing.T) {
 
 	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "irondb", "/raw/00112233-4455-6677-8899-aabbccddeeff/metric"+
-		"?start_ts=0&end_ts=900", "debug")
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs,
+		200, "{}", nil, "irondb", "/raw/00112233-4455-6677-8899-aabbccddeeff/metric"+
+			"?start_ts=0&end_ts=900", "debug")
 	client.config = tc.OriginConfig(r.Context())
 	client.webClient = hc
 	defer ts.Close()
@@ -36,4 +40,57 @@ func TestRawHandler(t *testing.T) {
 	if string(bodyBytes) != "{}" {
 		t.Errorf("expected '{}' got %s.", bodyBytes)
 	}
+}
+
+func TestRawHandlerParseTimeRangeQuery(t *testing.T) {
+
+	// provide bad URL with no TimeRange query params
+	client := &Client{name: "test"}
+	hc := tu.NewTestWebClient()
+	cfg := config.NewOriginConfig()
+	cfg.Paths, _ = client.DefaultPathConfigs(cfg)
+	r, err := http.NewRequest(http.MethodGet, "http://0/raw/00112233-4455-6677-8899-aabbccddeeff/metric", nil)
+	if err != nil {
+		t.Error(err)
+	}
+	tr := model.NewRequest("RawHandler", r.Method, r.URL, r.Header, cfg.Timeout, r, hc)
+
+	// case where everythings good
+	r.URL.RawQuery = "start_ts=9012&end_ts=3456"
+	trq, err := client.rawHandlerParseTimeRangeQuery(tr)
+	if err != nil {
+		t.Error(err)
+	}
+	if trq == nil {
+		t.Errorf("expected value got nil for %s", r.URL.RawQuery)
+	}
+
+	// missing start param
+	r.URL.RawQuery = "end_ts=3456"
+	_, err = client.rawHandlerParseTimeRangeQuery(tr)
+	if err == nil {
+		t.Errorf("expected error for parameter missing")
+	}
+
+	// cant parse start param
+	r.URL.RawQuery = "start_ts=abc&end_ts=3456"
+	_, err = client.rawHandlerParseTimeRangeQuery(tr)
+	if err == nil {
+		t.Errorf("expected error for parameter missing")
+	}
+
+	// missing end param
+	r.URL.RawQuery = "start_ts=3456"
+	_, err = client.rawHandlerParseTimeRangeQuery(tr)
+	if err == nil {
+		t.Errorf("expected error for parameter missing")
+	}
+
+	// can't parse end param
+	r.URL.RawQuery = "start_ts=9012&end_ts=def"
+	_, err = client.rawHandlerParseTimeRangeQuery(tr)
+	if err == nil {
+		t.Errorf("expected error for parameter missing")
+	}
+
 }

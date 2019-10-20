@@ -3,14 +3,12 @@ package irondb
 import (
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/internal/util/md5"
 )
 
 // RollupHandler handles requests for numeric timeseries data with specified
@@ -27,6 +25,11 @@ func (c *Client) RollupHandler(w http.ResponseWriter, r *http.Request) {
 // provided Extent.
 func (c Client) rollupHandlerSetExtent(r *model.Request,
 	extent *timeseries.Extent) {
+
+	if r == nil || extent == nil || (extent.Start.IsZero() && extent.End.IsZero()) {
+		return
+	}
+
 	trq := r.TimeRangeQuery
 	var err error
 	if trq == nil {
@@ -82,20 +85,6 @@ func (c *Client) rollupHandlerParseTimeRangeQuery(
 	}
 
 	return trq, nil
-}
-
-// rollupHandlerDeriveCacheKey calculates a query-specific keyname based on the
-// user request.
-func (c Client) rollupHandlerDeriveCacheKey(r *model.Request,
-	extra string) string {
-	var sb strings.Builder
-	sb.WriteString(r.URL.Path)
-	qp := r.URL.Query()
-	sb.WriteString(qp.Get(upSpan))
-	sb.WriteString(qp.Get(upEngine))
-	sb.WriteString(qp.Get(upType))
-	sb.WriteString(extra)
-	return md5.Checksum(sb.String())
 }
 
 // rollupHandlerFastForwardURL returns the url to fetch the Fast Forward value

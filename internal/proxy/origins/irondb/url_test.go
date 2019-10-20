@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
@@ -270,6 +271,13 @@ func TestParseTimestamp(t *testing.T) {
 	if !res.Equal(exp) {
 		t.Errorf("Expected time: %v, got: %v", exp, res)
 	}
+
+	v = "1.a"
+	_, err = parseTimestamp(v)
+	if err == nil {
+		t.Fatalf("expected error: %s", "parse timestamp")
+	}
+
 }
 
 func TestBuildUpstreamURL(t *testing.T) {
@@ -310,4 +318,17 @@ func TestBuildUpstreamURL(t *testing.T) {
 		t.Errorf("\nexpected [%s]\ngot [%s]", "/", u2.Path)
 	}
 
+}
+
+func TestParseTimerangeQuery(t *testing.T) {
+
+	expected := errors.NotTimeRangeQuery().Error()
+
+	client := &Client{name: "test"}
+	tr := &model.Request{HandlerName: "test"}
+
+	_, err := client.ParseTimeRangeQuery(tr)
+	if err == nil || err.Error() != expected {
+		t.Errorf("exected %s got %v", expected, err)
+	}
 }
