@@ -14,7 +14,6 @@
 package engines
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
@@ -137,7 +136,6 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 		}
 		if hasIUS {
 			isClientFresh = isClientFresh && d.CachingPolicy.LastModified.After(cpReq.IfUnmodifiedSinceTime)
-			fmt.Println("ius", isClientFresh)
 		}
 		cpReq.IsFresh = isClientFresh
 	}

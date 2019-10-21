@@ -232,6 +232,44 @@ func TestObjectProxyCacheIMS(t *testing.T) {
 
 }
 
+func TestObjectProxyCacheIUS(t *testing.T) {
+
+	headers := map[string]string{"Cache-Control": "max-age=60"}
+	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	// get URL
+
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"If-Unmodified-Since": []string{"Sun, 16 Jun 2019 14:19:04 GMT"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+
+	ObjectProxyCacheRequest(req, w, client, false)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
 func TestObjectProxyCacheIM(t *testing.T) {
 
 	headers := map[string]string{"Cache-Control": "max-age=60", "ETag": "test"}

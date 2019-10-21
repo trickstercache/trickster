@@ -197,7 +197,6 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 
 	cp.CanRevalidate = true
 
-	// TODO: Flush out real etag support (e.g., lists for if-non-match, *, W/, etc.)
 	if hasETag {
 		cp.ETag = strings.Join(lch["etag"], "")
 	}
