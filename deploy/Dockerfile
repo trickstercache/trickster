@@ -1,4 +1,4 @@
-FROM golang:1.12.1 as builder
+FROM golang:1.13.3 as builder
 
 COPY . /go/src/github.com/Comcast/trickster
 WORKDIR /go/src/github.com/Comcast/trickster
@@ -16,6 +16,5 @@ RUN chmod +x /usr/local/bin/trickster
 
 RUN apk update && apk add ca-certificates && rm -rf /var/cache/apk/*
 
-EXPOSE 9090 8082
 USER nobody
 ENTRYPOINT ["trickster"]
