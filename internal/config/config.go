@@ -105,8 +105,6 @@ type OriginConfig struct {
 	MaxIdleConns int `toml:"max_idle_conns"`
 	// CacheName provides the name of the configured cache where the origin client will store it's cache data
 	CacheName string `toml:"cache_name"`
-	// IgnoreCachingHeaders will cause the origin client to ignore any upstream or downstream HTTP caching headers
-	IgnoreCachingHeaders bool `toml:"ignore_caching_headers"`
 	// HealthCheckEndpoint provides the route path Trickster will register for mapping the Health Endpoint
 	HealthCheckEndpoint string `toml:"health_check_endpoint"`
 	// HealthCheckUpstreamPath provides the URL path for the upstream health check
@@ -129,10 +127,15 @@ type OriginConfig struct {
 	Paths map[string]*PathConfig `toml:"paths"`
 	// NegativeCache is a map of HTTP Status Codes that are cached for the provided duration, usually used for failures (e.g., 404's for 10s)
 	NegativeCacheSecs map[string]int `toml:"negative_cache"`
-	// TimeseriesTTLSecs is valid for time series db origins (prometheus, influxdb, etc) and specifies the cache TTL of timeseries objects
+	// TimeseriesTTLSecs specifies the cache TTL of timeseries objects
 	TimeseriesTTLSecs int `toml:"timeseries_ttl_secs"`
-	// TimeseriesTTLSecs is valid for time series db origins (prometheus, influxdb, etc) and specifies the cache TTL of fast forward data
+	// TimeseriesTTLSecs specifies the cache TTL of fast forward data
 	FastForwardTTLSecs int `toml:"fastforward_ttl_secs"`
+	// MacTTLSecs specifies the maximum allowed TTL for any cache object
+	MaxTTLSecs int `toml:"max_ttl_secs"`
+	// RevalidationFactor specifies how many times to multiply the object freshness lifetime by to calculate an absolte cache TTL
+	RevalidationFactor int `toml:"revalidation_factor"`
+
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *TLSConfig `toml:"tls"`
 	// RequireTLS, when true, indicates this Origin Config's paths must only be registered with the TLS Router
@@ -167,6 +170,8 @@ type OriginConfig struct {
 	FastForwardTTL time.Duration `toml:"-"`
 	// FastForwardPath is the PathConfig to use for upstream Fast Forward Requests
 	FastForwardPath *PathConfig `toml:"-"`
+	// MaxTTL is the parsed value of MaxTTLSecs
+	MaxTTL time.Duration `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -360,7 +365,6 @@ func NewOriginConfig() *OriginConfig {
 		HealthCheckQuery:             defaultHealthCheckQuery,
 		HealthCheckUpstreamPath:      defaultHealthCheckPath,
 		HealthCheckVerb:              defaultHealthCheckVerb,
-		IgnoreCachingHeaders:         defaultOriginINCH,
 		KeepAliveTimeoutSecs:         defaultKeepAliveTimeoutSecs,
 		MaxIdleConns:                 defaultMaxIdleConns,
 		NegativeCache:                make(map[int]time.Duration),
@@ -376,6 +380,9 @@ func NewOriginConfig() *OriginConfig {
 		FastForwardTTLSecs:           defaultFastForwardTTLSecs,
 		TimeseriesTTL:                defaultTimeseriesTTLSecs * time.Second,
 		FastForwardTTL:               defaultFastForwardTTLSecs * time.Second,
+		MaxTTLSecs:                   defaultMaxTTLSecs,
+		MaxTTL:                       defaultMaxTTLSecs * time.Second,
+		RevalidationFactor:           defaultRevalidationFactor,
 		TLS:                          &TLSConfig{},
 	}
 }
@@ -463,10 +470,6 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 			oc.KeepAliveTimeoutSecs = v.KeepAliveTimeoutSecs
 		}
 
-		if metadata.IsDefined("origins", k, "ignore_caching_headers") {
-			oc.IgnoreCachingHeaders = v.IgnoreCachingHeaders
-		}
-
 		if metadata.IsDefined("origins", k, "timeseries_retention_factor") {
 			oc.TimeseriesRetentionFactor = v.TimeseriesRetentionFactor
 		}
@@ -480,6 +483,10 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "timeseries_ttl_secs") {
 			oc.TimeseriesTTLSecs = v.TimeseriesTTLSecs
+		}
+
+		if metadata.IsDefined("origins", k, "max_ttl_secs") {
+			oc.MaxTTLSecs = v.MaxTTLSecs
 		}
 
 		if metadata.IsDefined("origins", k, "fastforward_ttl_secs") {
@@ -767,6 +774,9 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 		o.TimeseriesEvictionMethod = v.TimeseriesEvictionMethod
 		o.FastForwardTTL = v.FastForwardTTL
 		o.FastForwardTTLSecs = v.FastForwardTTLSecs
+		o.MaxTTLSecs = v.MaxTTLSecs
+		o.MaxTTL = v.MaxTTL
+		o.RevalidationFactor = v.RevalidationFactor
 		o.TimeseriesTTL = v.TimeseriesTTL
 		o.TimeseriesTTLSecs = v.TimeseriesTTLSecs
 		o.Paths = make(map[string]*PathConfig)

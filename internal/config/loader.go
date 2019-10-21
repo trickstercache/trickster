@@ -120,6 +120,20 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
 		o.TimeseriesTTL = time.Duration(o.TimeseriesTTLSecs) * time.Second
 		o.FastForwardTTL = time.Duration(o.FastForwardTTLSecs) * time.Second
+		o.MaxTTL = time.Duration(o.MaxTTLSecs) * time.Second
+
+		// enforce MaxTTL
+		if o.TimeseriesTTLSecs > o.MaxTTLSecs {
+			o.TimeseriesTTLSecs = o.MaxTTLSecs
+			o.TimeseriesTTL = o.MaxTTL
+		}
+
+		// unlikely but why not spend a few nanoseconds to check it at startup
+		if o.FastForwardTTLSecs > o.MaxTTLSecs {
+			o.FastForwardTTLSecs = o.MaxTTLSecs
+			o.FastForwardTTL = o.MaxTTL
+		}
+
 		Origins[k] = o
 	}
 

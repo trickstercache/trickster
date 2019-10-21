@@ -1055,7 +1055,6 @@ func TestDeltaProxyCacheRequestWithRefresh(t *testing.T) {
 	oc := tc.OriginConfig(r.Context())
 
 	oc.FastForwardDisable = true
-	oc.IgnoreCachingHeaders = false
 
 	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
 
@@ -1108,7 +1107,6 @@ func TestDeltaProxyCacheRequestWithRefreshError(t *testing.T) {
 	oc := tc.OriginConfig(r.Context())
 
 	oc.FastForwardDisable = true
-	oc.IgnoreCachingHeaders = false
 
 	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
 
@@ -1401,7 +1399,6 @@ func TestDeltaProxyCacheRequestBadGateway(t *testing.T) {
 	oc := tc.OriginConfig(r.Context())
 
 	oc.FastForwardDisable = true
-	oc.IgnoreCachingHeaders = false
 
 	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
 

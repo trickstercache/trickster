@@ -111,7 +111,6 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 			}
 			d.CachingPolicy = cp
 			statusCode = 304
-			// TODO: update any cache metadata like TTL
 		} else {
 			d = model.DocumentFromHTTPResponse(resp, body, cp)
 		}
@@ -149,7 +148,14 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 	if d.CachingPolicy.NoCache || (!d.CachingPolicy.CanRevalidate && d.CachingPolicy.FreshnessLifetime <= 0) {
 		cache.Remove(key)
 	} else if !d.CachingPolicy.IsFresh {
-		WriteCache(cache, key, d, time.Duration(d.CachingPolicy.FreshnessLifetime)*time.Second)
+		var ttl time.Duration = time.Duration(d.CachingPolicy.FreshnessLifetime) * time.Second
+		if d.CachingPolicy.CanRevalidate {
+			ttl *= time.Duration(oc.RevalidationFactor)
+		}
+		if ttl > oc.MaxTTL {
+			ttl = oc.MaxTTL
+		}
+		WriteCache(cache, key, d, ttl)
 	} else {
 		body = d.Body
 		resp = &http.Response{

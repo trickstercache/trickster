@@ -61,6 +61,10 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 	}
 	defer ts.Close()
 
+	oc := tc.OriginConfig(r.Context())
+	oc.MaxTTLSecs = 15
+	oc.MaxTTL = time.Duration(oc.MaxTTLSecs) * time.Second
+
 	// get URL
 
 	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())

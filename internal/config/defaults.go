@@ -32,7 +32,8 @@ const (
 
 	defaultTimeseriesTTLSecs  = 21600
 	defaultFastForwardTTLSecs = 15
-	defaultObjectTTLSecs      = 30
+	defaultMaxTTLSecs         = 86400
+	defaultRevalidationFactor = 2
 
 	defaultCachePath = "/tmp/trickster"
 
