@@ -133,7 +133,7 @@ type OriginConfig struct {
 	FastForwardTTLSecs int `toml:"fastforward_ttl_secs"`
 	// MacTTLSecs specifies the maximum allowed TTL for any cache object
 	MaxTTLSecs int `toml:"max_ttl_secs"`
-	// RevalidationFactor specifies how many times to multiply the object freshness lifetime by to calculate an absolte cache TTL
+	// RevalidationFactor specifies how many times to multiply the object freshness lifetime by to calculate an absolute cache TTL
 	RevalidationFactor int `toml:"revalidation_factor"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend

@@ -170,10 +170,6 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected test_path_prefix, got %s", o.PathPrefix)
 	}
 
-	if !o.IgnoreCachingHeaders {
-		t.Errorf("expected ignore_caching_headers true, got %t", o.IgnoreCachingHeaders)
-	}
-
 	if o.TimeseriesRetentionFactor != 666 {
 		t.Errorf("expected 666, got %d", o.TimeseriesRetentionFactor)
 	}
@@ -442,10 +438,6 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 
 	if o.PathPrefix != "" {
 		t.Errorf("expected '%s', got '%s'", "", o.PathPrefix)
-	}
-
-	if o.IgnoreCachingHeaders != defaultOriginINCH {
-		t.Errorf("expected ignore_caching_headers %t, got %t", defaultOriginINCH, o.IgnoreCachingHeaders)
 	}
 
 	if o.TimeseriesRetentionFactor != defaultOriginTRF {
