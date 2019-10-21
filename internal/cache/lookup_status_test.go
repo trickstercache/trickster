@@ -11,25 +11,26 @@
 * limitations under the License.
  */
 
-package prometheus
+package cache
 
-import (
-	"net/url"
-	"testing"
+import "testing"
 
-	"github.com/Comcast/trickster/internal/proxy/model"
-	"github.com/Comcast/trickster/internal/timeseries"
-)
+func TestLookupStatusString(t *testing.T) {
 
-func TestDeriveCacheKey(t *testing.T) {
+	t1 := LookupStatusHit
+	t2 := LookupStatusKeyMiss
 
-	client := &Client{}
-	u := &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
-	r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}}
-	key := client.DeriveCacheKey(r, "extra")
+	var t3 LookupStatus = 9
 
-	if key != "6667a75e76dea9a5cd6c6ba73e5825b5" {
-		t.Errorf("expected %s got %s", "6667a75e76dea9a5cd6c6ba73e5825b5", key)
+	if t1.String() != "hit" {
+		t.Errorf("expected %s got %s", "hit", t1.String())
 	}
 
+	if t2.String() != "kmiss" {
+		t.Errorf("expected %s got %s", "kmiss", t2.String())
+	}
+
+	if t3.String() != "9" {
+		t.Errorf("expected %s got %s", "9", t3.String())
+	}
 }

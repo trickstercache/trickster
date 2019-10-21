@@ -128,14 +128,24 @@ func NewIndex(cacheName, cacheType string, indexData []byte, cfg config.CacheInd
 // UpdateObjectAccessTime updates the LastAccess for the object with the provided key
 func (idx *Index) UpdateObjectAccessTime(key string) {
 	indexLock.Lock()
-	defer indexLock.Unlock()
 	if _, ok := idx.Objects[key]; ok {
 		idx.Objects[key].LastAccess = time.Now()
 	}
+	indexLock.Unlock()
+
+}
+
+// UpdateObjectTTL updates the Expiration for the object with the provided key
+func (idx *Index) UpdateObjectTTL(key string, ttl time.Duration) {
+	indexLock.Lock()
+	if _, ok := idx.Objects[key]; ok {
+		idx.Objects[key].Expiration = time.Now().Add(ttl)
+	}
+	indexLock.Unlock()
 }
 
 // UpdateObject writes or updates the Index Metadata for the provided Object
-func (idx *Index) UpdateObject(obj Object) {
+func (idx *Index) UpdateObject(obj *Object) {
 
 	key := obj.Key
 	if key == "" {
@@ -143,7 +153,6 @@ func (idx *Index) UpdateObject(obj Object) {
 	}
 
 	indexLock.Lock()
-	defer indexLock.Unlock()
 
 	idx.lastWrite = time.Now()
 
@@ -161,7 +170,8 @@ func (idx *Index) UpdateObject(obj Object) {
 
 	cache.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
 
-	idx.Objects[key] = &obj
+	idx.Objects[key] = obj
+	indexLock.Unlock()
 }
 
 // RemoveObject removes an Object's Metadata from the Index
@@ -169,7 +179,6 @@ func (idx *Index) RemoveObject(key string, noLock bool) {
 
 	if !noLock {
 		indexLock.Lock()
-		defer indexLock.Unlock()
 		idx.lastWrite = time.Now()
 	}
 	if o, ok := idx.Objects[key]; ok {
@@ -181,7 +190,21 @@ func (idx *Index) RemoveObject(key string, noLock bool) {
 		delete(idx.Objects, key)
 		cache.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
 	}
+	if !noLock {
+		indexLock.Unlock()
+	}
 
+}
+
+// GetExpiration returns the cache index's expiration for the object of the given key
+func (idx *Index) GetExpiration(cacheKey string) time.Time {
+	indexLock.Lock()
+	if o, ok := idx.Objects[cacheKey]; ok {
+		indexLock.Unlock()
+		return o.Expiration
+	}
+	indexLock.Unlock()
+	return time.Time{}
 }
 
 // flusher periodically calls the cache's index flush func that writes the cache index to disk

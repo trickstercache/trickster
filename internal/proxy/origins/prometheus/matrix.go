@@ -141,12 +141,11 @@ func (me *MatrixEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 	}
 
 	tc := me.TimestampCount()
+	el := timeseries.ExtentListLRU(me.ExtentList).UpdateLastUsed(lur, me.StepDuration)
+	sort.Sort(el)
 	if len(me.Data.Result) == 0 || tc <= sz {
 		return
 	}
-
-	el := timeseries.ExtentListLRU(me.ExtentList).UpdateLastUsed(lur, me.StepDuration)
-	sort.Sort(el)
 
 	rc := tc - sz // # of required timestamps we must delete to meet the rentention policy
 	removals := make(map[time.Time]bool)
@@ -190,15 +189,9 @@ func (me *MatrixEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 
 	for _, t := range tl {
 		for i, e := range el {
-			wg.Add(1)
-			go func(j int, f *timeseries.Extent) {
-				if f.StartsAt(t) {
-					mtx.Lock()
-					el[j].Start = f.Start.Add(me.StepDuration)
-					mtx.Unlock()
-				}
-				wg.Done()
-			}(i, &e)
+			if e.StartsAt(t) {
+				el[i].Start = e.Start.Add(me.StepDuration)
+			}
 		}
 	}
 	wg.Wait()

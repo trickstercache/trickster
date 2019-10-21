@@ -15,10 +15,9 @@ package prometheus
 
 import (
 	"io/ioutil"
-	"net/http/httptest"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/config"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
@@ -29,18 +28,46 @@ func init() {
 
 func TestHealthHandler(t *testing.T) {
 
-	es := tu.NewTestServer(200, "{}")
-	defer es.Close()
-
-	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "prometheus"})
+	client := &Client{name: "test"}
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+	defer ts.Close()
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Error(err)
 	}
 
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://0/health", nil)
+	client.HealthHandler(w, r)
+	resp := w.Result()
 
-	client := &Client{name: "default", config: config.Origins["default"], webClient: tu.NewTestWebClient()}
+	// it should return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != "{}" {
+		t.Errorf("expected '{}' got %s.", bodyBytes)
+	}
+
+}
+
+func TestHealthHandlerCustomPath(t *testing.T) {
+
+	client := &Client{name: "test"}
+	ts, w, r, hc, err := tu.NewTestInstance("../../../../testdata/test.custom_health.conf", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
+	defer ts.Close()
+	if err != nil {
+		t.Error(err)
+	}
+
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+
 	client.HealthHandler(w, r)
 	resp := w.Result()
 

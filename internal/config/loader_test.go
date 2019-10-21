@@ -14,12 +14,14 @@
 package config
 
 import (
+	"fmt"
+	"strconv"
 	"testing"
 	"time"
 )
 
 func TestLoadConfiguration(t *testing.T) {
-	a := []string{}
+	a := []string{"-origin-type", "testing", "-origin-url", "http://prometheus:9090/test/path"}
 	// it should not error if config path is not set
 	err := Load("trickster-test", "0", a)
 	if err != nil {
@@ -30,8 +32,8 @@ func TestLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 1024, got %d", Origins["default"].TimeseriesRetention)
 	}
 
-	if Caches["default"].FastForwardTTL != time.Duration(15)*time.Second {
-		t.Errorf("expected 15, got %s", Caches["default"].FastForwardTTL)
+	if Origins["default"].FastForwardTTL != time.Duration(15)*time.Second {
+		t.Errorf("expected 15, got %s", Origins["default"].FastForwardTTL)
 	}
 
 	if Caches["default"].Index.ReapInterval != time.Duration(3)*time.Second {
@@ -40,12 +42,60 @@ func TestLoadConfiguration(t *testing.T) {
 
 }
 
-func TestLoadBadCacheName(t *testing.T) {
-	a := []string{"-config", "../../testdata/test.bad-cache-name.conf"}
-	// it should error with bad cache name
+func TestLoadConfigurationFileFailures(t *testing.T) {
+
+	tests := []struct {
+		filename string
+		expected string
+	}{
+		{ // Case 0
+			"../../testdata/test.missing-origin-url.conf",
+			`missing origin-url for origin "2"`,
+		},
+		{ // Case 1
+			"../../testdata/test.bad_origin_url.conf",
+			fmt.Sprintf(`parse %s: first path segment in URL cannot contain colon`, "sasdf_asd[as;://asdf923_-=a*"),
+		},
+		{ // Case 2
+			"../../testdata/test.missing_origin_type.conf",
+			`missing origin-type for origin "test"`,
+		},
+		{ // Case 3
+			"../../testdata/test.bad-cache-name.conf",
+			`invalid cache name [test_fail] provided in origin config [test]`,
+		},
+		{ // Case 4
+			"../../testdata/test.invalid-negative-cache-1.conf",
+			`invalid negative cache config: a is not a valid status code`,
+		},
+		{ // Case 5
+			"../../testdata/test.invalid-negative-cache-2.conf",
+			`invalid negative cache config: 1212 is not a valid status code`,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			err := Load("trickster-test", "0", []string{"-config", test.filename})
+			if err == nil {
+				t.Errorf("expected error `%s` got nothing", test.expected)
+			} else if err.Error() != test.expected {
+				t.Errorf("expected error `%s` got `%s`", test.expected, err.Error())
+			}
+
+		})
+	}
+
+}
+
+func TestLoadConfigurationMissingOriginURL(t *testing.T) {
+	expected := `no valid origins configured`
+	a := []string{"-origin-type", "testing"}
 	err := Load("trickster-test", "0", a)
 	if err == nil {
-		t.Errorf("expected error for invalid cache name: %s", "test_fail")
+		t.Errorf("expected error `%s` got nothing", expected)
+	} else if err.Error() != expected {
+		t.Errorf("expected error `%s` got `%s`", expected, err.Error())
 	}
 }
 
@@ -100,32 +150,24 @@ func TestFullLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if o.Type != "test_type" {
-		t.Errorf("expected test_type, got %s", o.Type)
+	if o.OriginType != "test_type" {
+		t.Errorf("expected test_type, got %s", o.OriginType)
 	}
 
 	if o.CacheName != "test" {
 		t.Errorf("expected test, got %s", o.CacheName)
 	}
 
-	if o.Scheme != "test_scheme" {
-		t.Errorf("expected test_scheme, got %s", o.Scheme)
+	if o.Scheme != "scheme" {
+		t.Errorf("expected scheme, got %s", o.Scheme)
 	}
 
 	if o.Host != "test_host" {
 		t.Errorf("expected test_host, got %s", o.Host)
 	}
 
-	if o.PathPrefix != "test_path_prefix" {
+	if o.PathPrefix != "/test_path_prefix" {
 		t.Errorf("expected test_path_prefix, got %s", o.PathPrefix)
-	}
-
-	if o.APIPath != "test_api_path" {
-		t.Errorf("expected test_api_path, got %s", o.APIPath)
-	}
-
-	if !o.IgnoreNoCacheHeader {
-		t.Errorf("expected ignore_no_cache_header true, got %t", o.IgnoreNoCacheHeader)
 	}
 
 	if o.TimeseriesRetentionFactor != 666 {
@@ -160,6 +202,14 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeoutSecs)
 	}
 
+	if o.TimeseriesTTLSecs != 8666 {
+		t.Errorf("expected 8666, got %d", o.TimeseriesTTLSecs)
+	}
+
+	if o.FastForwardTTLSecs != 17 {
+		t.Errorf("expected 17, got %d", o.FastForwardTTLSecs)
+	}
+
 	if o.TLS == nil {
 		t.Errorf("expected tls config for origin %s, got nil", "test")
 	}
@@ -192,24 +242,12 @@ func TestFullLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if c.Type != "redis" {
-		t.Errorf("expected redis, got %s", c.Type)
+	if c.CacheType != "redis" {
+		t.Errorf("expected redis, got %s", c.CacheType)
 	}
 
 	if !c.Compression {
 		t.Errorf("expected compression %t, got %t", defaultCacheCompression, c.Compression)
-	}
-
-	if c.TimeseriesTTLSecs != 8666 {
-		t.Errorf("expected 8666, got %d", c.TimeseriesTTLSecs)
-	}
-
-	if c.FastForwardTTLSecs != 17 {
-		t.Errorf("expected 17, got %d", c.FastForwardTTLSecs)
-	}
-
-	if c.ObjectTTLSecs != 39 {
-		t.Errorf("expected 39, got %d", c.ObjectTTLSecs)
 	}
 
 	if c.Index.ReapIntervalSecs != 4 {
@@ -382,32 +420,24 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if o.Type != defaultOriginServerType {
-		t.Errorf("expected %s, got %s", defaultOriginServerType, o.Type)
+	if o.OriginType != "test" {
+		t.Errorf("expected %s origin type, got %s", "test", o.OriginType)
 	}
 
 	if o.CacheName != defaultOriginCacheName {
 		t.Errorf("expected %s, got %s", defaultOriginCacheName, o.CacheName)
 	}
 
-	if o.Scheme != defaultOriginScheme {
-		t.Errorf("expected %s, got %s", defaultOriginScheme, o.Scheme)
+	if o.Scheme != "http" {
+		t.Errorf("expected %s, got %s", "http", o.Scheme)
 	}
 
-	if o.Host != defaultOriginHost {
-		t.Errorf("expected %s, got %s", defaultOriginHost, o.Host)
+	if o.Host != "1" {
+		t.Errorf("expected %s, got %s", "1", o.Host)
 	}
 
-	if o.PathPrefix != defaultOriginPathPrefix {
-		t.Errorf("expected '%s', got '%s'", defaultOriginPathPrefix, o.PathPrefix)
-	}
-
-	if o.APIPath != defaultOriginAPIPath {
-		t.Errorf("expected %s, got %s", defaultOriginAPIPath, o.APIPath)
-	}
-
-	if o.IgnoreNoCacheHeader != defaultOriginINCH {
-		t.Errorf("expected ignore_no_cache_header %t, got %t", defaultOriginINCH, o.IgnoreNoCacheHeader)
+	if o.PathPrefix != "" {
+		t.Errorf("expected '%s', got '%s'", "", o.PathPrefix)
 	}
 
 	if o.TimeseriesRetentionFactor != defaultOriginTRF {
@@ -426,30 +456,26 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %d, got %d", defaultOriginTimeoutSecs, o.TimeoutSecs)
 	}
 
+	if o.TimeseriesTTLSecs != defaultTimeseriesTTLSecs {
+		t.Errorf("expected %d, got %d", defaultTimeseriesTTLSecs, o.TimeseriesTTLSecs)
+	}
+
+	if o.FastForwardTTLSecs != defaultFastForwardTTLSecs {
+		t.Errorf("expected %d, got %d", defaultFastForwardTTLSecs, o.FastForwardTTLSecs)
+	}
+
 	c, ok := Caches["default"]
 	if !ok {
 		t.Errorf("unable to find cache config: %s", "default")
 		return
 	}
 
-	if c.Type != defaultCacheType {
-		t.Errorf("expected %s, got %s", defaultCacheType, c.Type)
+	if c.CacheType != defaultCacheType {
+		t.Errorf("expected %s, got %s", defaultCacheType, c.CacheType)
 	}
 
 	if !c.Compression {
 		t.Errorf("expected compression %t, got %t", defaultCacheCompression, c.Compression)
-	}
-
-	if c.TimeseriesTTLSecs != defaultTimeseriesTTLSecs {
-		t.Errorf("expected %d, got %d", defaultTimeseriesTTLSecs, c.TimeseriesTTLSecs)
-	}
-
-	if c.FastForwardTTLSecs != defaultFastForwardTTLSecs {
-		t.Errorf("expected %d, got %d", defaultFastForwardTTLSecs, c.FastForwardTTLSecs)
-	}
-
-	if c.ObjectTTLSecs != defaultObjectTTLSecs {
-		t.Errorf("expected %d, got %d", defaultObjectTTLSecs, c.ObjectTTLSecs)
 	}
 
 	if c.Index.ReapIntervalSecs != defaultCacheIndexReap {
@@ -600,7 +626,7 @@ func TestLoadConfigurationBadPath(t *testing.T) {
 
 func TestLoadConfigurationBadUrl(t *testing.T) {
 	const badURL = ":httap:]/]/example.com9091"
-	a := []string{"-origin", badURL}
+	a := []string{"-origin-url", badURL}
 	err := Load("trickster-test", "0", a)
 	if err == nil {
 		t.Errorf("expected error: parse %s: missing protocol scheme", badURL)

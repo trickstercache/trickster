@@ -52,7 +52,7 @@ func (c *Cache) Connect() error {
 
 // Store places the the data into the Badger Cache using the provided Key and TTL
 func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
-	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
+	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 	log.Debug("badger cache store", log.Pairs{"key": cacheKey, "ttl": ttl})
 	return c.dbh.Update(func(txn *badger.Txn) error {
 		return txn.SetEntry(&badger.Entry{Key: []byte(cacheKey), Value: data, ExpiresAt: uint64(time.Now().Add(ttl).Unix())})
@@ -60,7 +60,8 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 }
 
 // Retrieve gets data from the Badger Cache using the provided Key
-func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
+// because Badger manages Object Expiration internally, allowExpired is not used.
+func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
 	var data []byte
 	err := c.dbh.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(cacheKey))
@@ -74,10 +75,10 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
 
 	if err != nil {
 		log.Debug("badger cache miss", log.Pairs{"key": cacheKey})
-		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
+		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 	} else {
 		log.Debug("badger cache retrieve", log.Pairs{"key": cacheKey})
-		cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(data)))
+		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
 	}
 
 	return data, err
@@ -89,7 +90,7 @@ func (c *Cache) Remove(cacheKey string) {
 	c.dbh.Update(func(txn *badger.Txn) error {
 		return txn.Delete([]byte(cacheKey))
 	})
-	cache.ObserveCacheDel(c.Name, c.Config.Type, 0)
+	cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 }
 
 // BulkRemove removes a list of objects from the cache. noLock is not used for Badger
@@ -101,7 +102,7 @@ func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
 			if err := txn.Delete([]byte(key)); err != nil {
 				return err
 			}
-			cache.ObserveCacheDel(c.Name, c.Config.Type, 0)
+			cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 		}
 		return nil
 	})
@@ -110,4 +111,34 @@ func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
 // Close closes the Badger Cache
 func (c *Cache) Close() error {
 	return c.dbh.Close()
+}
+
+// SetTTL updates the TTL for the provided cache object
+func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
+	var data []byte
+	err := c.dbh.Update(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(cacheKey))
+		if err != nil {
+			return nil
+		}
+		data, err = item.ValueCopy(nil)
+		return txn.SetEntry(&badger.Entry{Key: []byte(cacheKey), Value: data, ExpiresAt: uint64(time.Now().Add(ttl).Unix())})
+	})
+	log.Debug("badger cache update-ttl", log.Pairs{"key": cacheKey, "ttl": ttl, "success": err == nil})
+	if err == nil {
+		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "update-ttl", "none", 0)
+	}
+}
+
+func (c *Cache) getExpires(cacheKey string) (int, error) {
+	var expires int
+	err := c.dbh.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(cacheKey))
+		if err != nil {
+			return err
+		}
+		expires = int(item.ExpiresAt())
+		return nil
+	})
+	return expires, err
 }

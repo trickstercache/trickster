@@ -71,18 +71,25 @@ const (
 
 // Client Implements Proxy Client Interface
 type Client struct {
-	name      string
-	user      string
-	pass      string
-	config    *config.OriginConfig
-	cache     cache.Cache
-	webClient *http.Client
+	name               string
+	user               string
+	pass               string
+	config             *config.OriginConfig
+	cache              cache.Cache
+	webClient          *http.Client
+	handlers           map[string]http.Handler
+	handlersRegistered bool
 }
 
 // NewClient returns a new Client Instance
 func NewClient(name string, oc *config.OriginConfig, cache cache.Cache) (*Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
 	return &Client{name: name, config: oc, cache: cache, webClient: c}, err
+}
+
+// SetCache sets the Cache object the client will use for caching origin content
+func (c *Client) SetCache(cc cache.Cache) {
+	c.cache = cc
 }
 
 // Configuration returns the upstream Configuration for this Client

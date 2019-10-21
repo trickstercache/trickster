@@ -26,11 +26,14 @@ const expectedInstantOutput = `{"status":"success","data":{"resultType":"vector"
 const testQueryUsageCurve = `myQuery{other_label=5,latency_ms=1,range_latency_ms=1,series_count=1,line_pattern="usage_curve",test}`
 const expectedRangeUsageCurveOutput = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"other_label":"5","latency_ms":"1","range_latency_ms":"1","series_count":"1","line_pattern":"usage_curve","test":"","series_id":"0"},"values":[[233438400,"100"],[233481600,"0"],[233524800,"100"]]}]}}`
 
+const testQueryUsageCurve2 = `myQuery{other_label=5,latency_ms=1,range_latency_ms=1,series_count=2,line_pattern="usage_curve",test}`
+const expectedRangeUsageCurve2Output = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"other_label":"5","latency_ms":"1","range_latency_ms":"1","series_count":"2","line_pattern":"usage_curve","test":"","series_id":"0"},"values":[[233438400,"100"],[233481600,"0"],[233524800,"100"]]},{"metric":{"other_label":"5","latency_ms":"1","range_latency_ms":"1","series_count":"2","line_pattern":"usage_curve","test":"","series_id":"1"},"values":[[233438400,"72"],[233481600,"0"],[233524800,"72"]]}]}}`
+
 const testQueryInvalidResponse = "myQuery{invalid_response_body=1}"
 const expectedInvalidResponse = "foo"
 
-const testFullQuery = `myQuery{other_label=a5,max_val=1,min_val=1,series_id=1,status_code=200,line_pattern="usage_curve",test}`
-const expectedFullRawstring = `"other_label":"a5","max_val":"1","min_val":"1","series_id":"1","status_code":"200","line_pattern":"usage_curve","test":""`
+const testFullQuery = `myQuery{other_label=a5,max_value=1,min_value=1,series_id=1,status_code=200,line_pattern="usage_curve",test}`
+const expectedFullRawstring = `"other_label":"a5","max_value":"1","min_value":"1","series_id":"1","status_code":"200","line_pattern":"usage_curve","test":""`
 
 func TestGetTimeSeriesDataRandomVals(t *testing.T) {
 	out, code, err := GetTimeSeriesData(testQuery, time.Unix(0, 0), time.Unix(3600, 0), time.Duration(1800)*time.Second)
@@ -62,6 +65,20 @@ func TestGetTimeSeriesDataUsageCurve(t *testing.T) {
 	if out != expectedRangeUsageCurveOutput {
 		t.Errorf("expected %s got %s", expectedRangeUsageCurveOutput, out)
 	}
+
+	out, code, err = GetTimeSeriesData(testQueryUsageCurve2, start, end, time.Duration(secondsPerDay/2)*time.Second)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if code != http.StatusOK {
+		t.Errorf("expected %d got %d", http.StatusOK, code)
+	}
+
+	if out != expectedRangeUsageCurve2Output {
+		t.Errorf("expected %s got %s", expectedRangeUsageCurve2Output, out)
+	}
+
 }
 
 func TestGetTimeSeriesDataInvalidResponseBody(t *testing.T) {

@@ -44,45 +44,68 @@ func (c *Cache) Connect() error {
 	log.Info("memorycache setup", log.Pairs{"name": c.Name, "maxSizeBytes": c.Config.Index.MaxSizeBytes, "maxSizeObjects": c.Config.Index.MaxSizeObjects})
 	lockPrefix = c.Name + ".memory."
 	c.client = sync.Map{}
-	c.Index = index.NewIndex(c.Name, c.Config.Type, nil, c.Config.Index, c.BulkRemove, nil)
+	c.Index = index.NewIndex(c.Name, c.Config.CacheType, nil, c.Config.Index, c.BulkRemove, nil)
 	return nil
 }
 
 // Store places an object in the cache using the specified key and ttl
 func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
+	return c.store(cacheKey, data, ttl, true)
+}
+
+func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateIndex bool) error {
 
 	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
 
-	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
+	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
+
+	o1 := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
+	o2 := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	log.Debug("memorycache cache store", log.Pairs{"cacheKey": cacheKey, "length": len(data), "ttl": ttl})
-	o := index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
-	c.client.Store(cacheKey, o)
-	go c.Index.UpdateObject(o)
+	c.client.Store(cacheKey, o1)
+
+	if updateIndex {
+		c.Index.UpdateObject(o2)
+	}
+	locks.Release(lockPrefix + cacheKey)
 	return nil
 }
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)
-func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
+func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
+	return c.retrieve(cacheKey, allowExpired, true)
+}
+
+func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte, error) {
 
 	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
 
 	record, ok := c.client.Load(cacheKey)
+
 	if ok {
-		r := record.(index.Object)
-		if r.Expiration.After(time.Now()) {
-			log.Debug("memorycache cache retrieve", log.Pairs{"cacheKey": cacheKey})
-			c.Index.UpdateObjectAccessTime(cacheKey)
-			cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(r.Value)))
-			return r.Value, nil
+		o := record.(*index.Object)
+		o.Expiration = c.Index.GetExpiration(cacheKey)
+
+		if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
+			log.Debug("memory cache retrieve", log.Pairs{"cacheKey": cacheKey})
+			if atime {
+				c.Index.UpdateObjectAccessTime(cacheKey)
+			}
+			cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(o.Value)))
+			locks.Release(lockPrefix + cacheKey)
+			return o.Value, nil
 		}
-
 		// Cache Object has been expired but not reaped, go ahead and delete it
-		go c.Remove(cacheKey)
+		go c.remove(cacheKey, false)
 	}
+	locks.Release(lockPrefix + cacheKey)
+	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 
-	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
+}
+
+// SetTTL updates the TTL for the provided cache object
+func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
+	c.Index.UpdateObjectTTL(cacheKey, ttl)
 }
 
 // Remove removes an object from the cache
@@ -91,14 +114,11 @@ func (c *Cache) Remove(cacheKey string) {
 }
 
 func (c *Cache) remove(cacheKey string, noLock bool) {
-
 	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
-
 	c.client.Delete(cacheKey)
 	c.Index.RemoveObject(cacheKey, noLock)
-	cache.ObserveCacheDel(c.Name, c.Config.Type, 0)
-
+	cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
+	locks.Release(lockPrefix + cacheKey)
 }
 
 // BulkRemove removes a list of objects from the cache

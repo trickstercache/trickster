@@ -1,3 +1,16 @@
+/**
+* Copyright 2018 Comcast Cable Communications Management, LLC
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+* http://www.apache.org/licenses/LICENSE-2.0
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+ */
+
 package irondb
 
 import (
@@ -81,10 +94,10 @@ func (se *DF4SeriesEnvelope) Merge(sort bool,
 		if ts != nil && ts.Step() == se.Step() {
 			if se2, ok := ts.(*DF4SeriesEnvelope); ok {
 				// Build new data series for each metric.
-				metrics := map[string]metricData{}
+				metrics := map[string]*metricData{}
 				for i, mv := range se.Meta {
 					if name, ok := mv["label"].(string); ok {
-						metrics[name] = metricData{
+						metrics[name] = &metricData{
 							name: name,
 							meta: mv,
 							data: map[int64]interface{}{},
@@ -102,7 +115,7 @@ func (se *DF4SeriesEnvelope) Merge(sort bool,
 					if name, ok := mv["label"].(string); ok {
 						md, ok := metrics[name]
 						if !ok {
-							metrics[name] = metricData{
+							metrics[name] = &metricData{
 								name: name,
 								meta: mv,
 								data: map[int64]interface{}{},

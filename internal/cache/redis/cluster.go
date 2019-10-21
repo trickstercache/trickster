@@ -15,51 +15,9 @@ package redis
 
 import (
 	"fmt"
-	"strings"
-	"time"
 
 	"github.com/go-redis/redis"
-
-	"github.com/Comcast/trickster/internal/util/log"
 )
-
-// Connect connects to the configured Redis endpoint
-func (c *Cache) clusterConnect() error {
-	log.Info("connecting to redis cluster", log.Pairs{"Endpoints": strings.Join(c.Config.Redis.Endpoints, ",")})
-	opts, err := c.clusterOpts()
-	if err != nil {
-		return err
-	}
-	c.clusterClient = redis.NewClusterClient(opts)
-	return c.client.Ping().Err()
-}
-
-// Store places the the data into the Redis Cluster using the provided Key and TTL
-func (c *Cache) clusterStore(cacheKey string, data []byte, ttl time.Duration) error {
-	return c.clusterClient.Set(cacheKey, data, ttl).Err()
-}
-
-// Retrieve gets data from the Redis Cluster using the provided Key
-func (c *Cache) clusterRetrieve(cacheKey string) (string, error) {
-	return c.clusterClient.Get(cacheKey).Result()
-}
-
-// Remove removes an object in cache, if present
-func (c *Cache) clusterRemove(cacheKey string) {
-	c.clusterClient.Del(cacheKey)
-}
-
-// BulkRemove removes a list of objects from the cache. noLock is ignored for Redis Clusteer
-func (c *Cache) clusterBulkRemove(cacheKeys []string, noLock bool) {
-	c.clusterClient.Del(cacheKeys...)
-}
-
-// Close disconnects from the Redis Cluster
-func (c *Cache) clusterClose() error {
-	log.Info("closing redis cluster connection", log.Pairs{})
-	c.clusterClient.Close()
-	return nil
-}
 
 func (c *Cache) clusterOpts() (*redis.ClusterOptions, error) {
 

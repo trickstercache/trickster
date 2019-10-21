@@ -1,16 +1,27 @@
+/**
+* Copyright 2018 Comcast Cable Communications Management, LLC
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+* http://www.apache.org/licenses/LICENSE-2.0
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+ */
+
 package irondb
 
 import (
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/internal/util/md5"
 )
 
 // RollupHandler handles requests for numeric timeseries data with specified
@@ -18,15 +29,20 @@ import (
 func (c *Client) RollupHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	engines.DeltaProxyCacheRequest(
-		model.NewRequest(c.name, otIRONdb, "RollupHandler",
+		model.NewRequest("RollupHandler",
 			r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, c.cache, c.cache.Configuration().TimeseriesTTL)
+		w, c)
 }
 
 // rollupHandlerSetExtent will change the upstream request query to use the
 // provided Extent.
 func (c Client) rollupHandlerSetExtent(r *model.Request,
 	extent *timeseries.Extent) {
+
+	if r == nil || extent == nil || (extent.Start.IsZero() && extent.End.IsZero()) {
+		return
+	}
+
 	trq := r.TimeRangeQuery
 	var err error
 	if trq == nil {
@@ -82,20 +98,6 @@ func (c *Client) rollupHandlerParseTimeRangeQuery(
 	}
 
 	return trq, nil
-}
-
-// rollupHandlerDeriveCacheKey calculates a query-specific keyname based on the
-// user request.
-func (c Client) rollupHandlerDeriveCacheKey(r *model.Request,
-	extra string) string {
-	var sb strings.Builder
-	sb.WriteString(r.URL.Path)
-	qp := r.URL.Query()
-	sb.WriteString(qp.Get(upSpan))
-	sb.WriteString(qp.Get(upEngine))
-	sb.WriteString(qp.Get(upType))
-	sb.WriteString(extra)
-	return md5.Checksum(sb.String())
 }
 
 // rollupHandlerFastForwardURL returns the url to fetch the Fast Forward value

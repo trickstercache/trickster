@@ -14,6 +14,7 @@
 package engines
 
 import (
+	"bytes"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +24,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
@@ -34,20 +36,32 @@ func init() {
 
 func TestProxyRequest(t *testing.T) {
 
-	es := tu.NewTestServer(http.StatusOK, "test")
+	es := tu.NewTestServer(http.StatusOK, "test", nil)
 	defer es.Close()
 
-	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "test", "-log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
+	oc := config.Origins["default"]
+	pc := &config.PathConfig{
+		Path:                  "/",
+		RequestHeaders:        map[string]string{},
+		ResponseHeaders:       map[string]string{},
+		ResponseBody:          "test",
+		ResponseBodyBytes:     []byte("test"),
+		HasCustomResponseBody: true,
+	}
+
+	br := bytes.NewBuffer([]byte("test"))
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL, nil)
+	r := httptest.NewRequest("GET", es.URL, br)
+	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, pc))
 
 	// get URL
 
-	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	ProxyRequest(req, w)
 	resp := w.Result()
 
@@ -78,15 +92,23 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	const badUpstream = "http://127.0.0.1:64389"
 
 	// assume nothing listens on badUpstream, so this should force the proxy to generate a 502 Bad Gateway
-	err := config.Load("trickster", "test", []string{"-origin", badUpstream, "-origin-type", "test", "-log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-origin-url", badUpstream, "-origin-type", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
+	oc := config.Origins["default"]
+	pc := &config.PathConfig{
+		Path:            "/",
+		RequestHeaders:  map[string]string{},
+		ResponseHeaders: map[string]string{},
+	}
+
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", badUpstream, nil)
+	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, pc))
 
-	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	ProxyRequest(req, w)
 	resp := w.Result()
 
@@ -110,19 +132,27 @@ func TestClockOffsetWarning(t *testing.T) {
 	}
 	s := httptest.NewServer(http.HandlerFunc(handler))
 
-	err := config.Load("trickster", "test", []string{"-origin", s.URL, "-origin-type", "test", "-log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-origin-url", s.URL, "-origin-type", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
+	oc := config.Origins["default"]
+	pc := &config.PathConfig{
+		Path:            "/",
+		RequestHeaders:  map[string]string{},
+		ResponseHeaders: map[string]string{},
+	}
+
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", s.URL, nil)
+	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, pc))
 
 	if log.HasWarnedOnce("clockoffset.default") {
 		t.Errorf("expected %t got %t", false, true)
 	}
 
-	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	req := model.NewRequest("TestProxyRequest", http.MethodGet, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	ProxyRequest(req, w)
 	resp := w.Result()
 

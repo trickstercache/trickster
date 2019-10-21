@@ -15,50 +15,9 @@ package redis
 
 import (
 	"fmt"
-	"strings"
-	"time"
 
-	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/go-redis/redis"
 )
-
-// Connect connects to the configured Redis endpoint
-func (c *Cache) sentinelConnect() error {
-	log.Info("connecting to redis", log.Pairs{"protocol": c.Config.Redis.Protocol, "Endpoints": strings.Join(c.Config.Redis.Endpoints, ",")})
-	opts, err := c.sentinelOpts()
-	if err != nil {
-		return err
-	}
-	c.client = redis.NewFailoverClient(opts)
-	return c.client.Ping().Err()
-}
-
-// Store places the the data into the Redis Cache using the provided Key and TTL
-func (c *Cache) sentinelStore(cacheKey string, data []byte, ttl time.Duration) error {
-	return c.client.Set(cacheKey, data, ttl).Err()
-}
-
-// Retrieve gets data from the Redis Cache using the provided Key
-func (c *Cache) sentinelRetrieve(cacheKey string) (string, error) {
-	return c.client.Get(cacheKey).Result()
-}
-
-// Remove removes an object in cache, if present
-func (c *Cache) sentinelRemove(cacheKey string) {
-	c.client.Del(cacheKey)
-}
-
-// BulkRemove removes a list of objects from the cache. noLock is not used for Redis
-func (c *Cache) sentinelBulkRemove(cacheKeys []string, noLock bool) {
-	c.client.Del(cacheKeys...)
-}
-
-// Close disconnects from the Redis Cache
-func (c *Cache) sentinelClose() error {
-	log.Info("closing redis connection", log.Pairs{})
-	c.client.Close()
-	return nil
-}
 
 func (c *Cache) sentinelOpts() (*redis.FailoverOptions, error) {
 

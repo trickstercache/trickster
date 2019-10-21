@@ -58,7 +58,7 @@ func NewCache(cacheName string, cfg *config.CachingConfig) cache.Cache {
 
 	var c cache.Cache
 
-	switch cfg.Type {
+	switch cfg.CacheType {
 	case ctFilesystem:
 		c = &filesystem.Cache{Name: cacheName, Config: cfg}
 	case ctRedis:

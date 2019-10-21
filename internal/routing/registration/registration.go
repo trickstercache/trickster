@@ -15,6 +15,7 @@ package registration
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/Comcast/trickster/internal/cache"
@@ -24,7 +25,11 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/origins/influxdb"
 	"github.com/Comcast/trickster/internal/proxy/origins/irondb"
 	"github.com/Comcast/trickster/internal/proxy/origins/prometheus"
+	"github.com/Comcast/trickster/internal/proxy/origins/reverseproxycache"
+	"github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/Comcast/trickster/internal/util/middleware"
+	ts "github.com/Comcast/trickster/internal/util/strings"
 )
 
 // ProxyClients maintains a list of proxy clients configured for use by Trickster
@@ -37,8 +42,12 @@ func RegisterProxyRoutes() error {
 	var ndo *config.OriginConfig // points to the origin config named "default"
 	var cdo *config.OriginConfig // points to the origin config with IsDefault set to true
 
-	// Iterate our origins from the config and register their path handlers into the mux.
+	// This iteration will ensure default origins are handled properly
 	for k, o := range config.Origins {
+
+		if !config.IsValidOriginType(o.OriginType) {
+			return fmt.Errorf(`unknown origin type in origin config. originName: %s, originType: %s`, k, o.OriginType)
+		}
 
 		// Ensure only one default origin exists
 		if o.IsDefault {
@@ -93,7 +102,10 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 	if err != nil {
 		return err
 	}
-	switch strings.ToLower(o.Type) {
+
+	log.Info("registering route paths", log.Pairs{"originName": k, "originType": o.OriginType, "upstreamHost": o.Host})
+
+	switch strings.ToLower(o.OriginType) {
 	case "prometheus", "":
 		log.Info("registering Prometheus route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 		client, err = prometheus.NewClient(k, o, c)
@@ -103,13 +115,120 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 	case "irondb":
 		log.Info("registering IRONdb route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 		client, err = irondb.NewClient(k, o, c)
+	case "rpc", "reverseproxycache":
+		client, err = reverseproxycache.NewClient(k, o, c)
 	}
 	if err != nil {
 		return err
 	}
 	if client != nil {
 		ProxyClients[k] = client
-		client.RegisterRoutes(k, o)
+		defaultPaths, orderedPaths := client.DefaultPathConfigs(o)
+		registerPathRoutes(client.Handlers(), o, c, defaultPaths, orderedPaths)
 	}
 	return nil
+}
+
+// registerPathRoutes will take the provided default paths map,
+// merge it with any path data in the provided originconfig, and then register
+// the path routes to the appropriate handler from the provided handlers map
+func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig, c cache.Cache,
+	paths map[string]*config.PathConfig, orderedPaths []string) {
+
+	decorate := func(p *config.PathConfig) http.Handler {
+		// Add Origin, Cache, and Path Configs to the HTTP Request's context
+		p.Handler = middleware.WithConfigContext(o, c, p, p.Handler)
+		if p.NoMetrics {
+			return p.Handler
+		}
+		return middleware.Decorate(o.Name, o.OriginType, p.Path, p.Handler)
+	}
+
+	for k, p := range o.Paths {
+		p.OriginConfig = o
+		if p2, ok := paths[k]; ok {
+			p2.Merge(p)
+			continue
+		}
+		p3 := config.NewPathConfig()
+		p3.Merge(p)
+		paths[k] = p3
+	}
+
+	o.Paths = paths
+
+	// Ensure the configured health check endpoint starts with "/""
+	if !strings.HasPrefix(o.HealthCheckEndpoint, "/") {
+		o.HealthCheckEndpoint = "/" + o.HealthCheckEndpoint
+	}
+	paths[o.HealthCheckEndpoint] = &config.PathConfig{
+		Path:        o.HealthCheckEndpoint,
+		HandlerName: "health",
+		Methods:     []string{http.MethodGet, http.MethodHead},
+	}
+	orderedPaths = append([]string{o.HealthCheckEndpoint}, orderedPaths...)
+
+	deletes := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if h, ok := handlers[p.HandlerName]; ok && h != nil {
+			p.Handler = h
+			if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
+				log.Info("found unexpected path in config", log.Pairs{"originName": o.Name, "path": p.Path})
+				orderedPaths = append(orderedPaths, p.Path)
+			}
+		} else {
+			deletes = append(deletes, p.Path)
+		}
+	}
+	for _, p := range deletes {
+		delete(paths, p)
+	}
+
+	for _, v := range orderedPaths {
+		p, ok := paths[v]
+		if !ok {
+			continue
+		}
+		log.Debug("registering origin handler path",
+			log.Pairs{"originName": o.Name, "path": v, "handlerName": p.HandlerName,
+				"originHost": o.Host, "handledPath": "/" + o.Name + p.Path, "matchType": p.MatchType})
+		if p.Handler != nil && len(p.Methods) > 0 {
+			switch p.MatchType {
+			case config.PathMatchTypePrefix:
+				// Case where we path match by prefix
+				// Host Header Routing
+				routing.Router.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...).Host(o.Name)
+				// Path Routing
+				routing.Router.PathPrefix("/" + o.Name + p.Path).Handler(decorate(p)).Methods(p.Methods...)
+			default:
+				// default to exact match
+				// Host Header Routing
+				routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...).Host(o.Name)
+				// Path Routing
+				routing.Router.Handle("/"+o.Name+p.Path, decorate(p)).Methods(p.Methods...)
+			}
+		}
+	}
+
+	if o.IsDefault {
+		log.Info("registering default origin handler paths", log.Pairs{"originName": o.Name})
+		for _, v := range orderedPaths {
+			p, ok := paths[v]
+			if !ok {
+				continue
+			}
+			if p.Handler != nil && len(p.Methods) > 0 {
+				log.Debug("registering default origin handler paths", log.Pairs{"originName": o.Name, "path": p.Path, "handlerName": p.HandlerName, "matchType": p.MatchType})
+				switch p.MatchType {
+				case config.PathMatchTypePrefix:
+					// Case where we path match by prefix
+					routing.Router.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...)
+				default:
+					// default to exact match
+					routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...)
+				}
+				routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...)
+			}
+		}
+	}
 }

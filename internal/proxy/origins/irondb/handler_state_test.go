@@ -1,31 +1,35 @@
+/**
+* Copyright 2018 Comcast Cable Communications Management, LLC
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+* http://www.apache.org/licenses/LICENSE-2.0
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+ */
+
 package irondb
 
 import (
 	"io/ioutil"
-	"net/http/httptest"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/config"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
 func TestStateHandler(t *testing.T) {
-	es := tu.NewTestServer(200, "test")
-	defer es.Close()
-	err := config.Load("trickster", "test",
-		[]string{"-origin", es.URL,
-			"-origin-type", "irondb"})
+
+	client := &Client{name: "test"}
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "irondb", "/", "debug")
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+	defer ts.Close()
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
-	}
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL, nil)
-
-	client := &Client{
-		name:      "default",
-		config:    config.Origins["default"],
-		webClient: tu.NewTestWebClient(),
+		t.Error(err)
 	}
 
 	client.StateHandler(w, r)
@@ -41,7 +45,7 @@ func TestStateHandler(t *testing.T) {
 		t.Error(err)
 	}
 
-	if string(bodyBytes) != "test" {
-		t.Errorf("expected 'test' got %s.", bodyBytes)
+	if string(bodyBytes) != "{}" {
+		t.Errorf("expected '{}' got %s.", bodyBytes)
 	}
 }

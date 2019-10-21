@@ -14,120 +14,168 @@
 package prometheus
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/routing"
-	"github.com/Comcast/trickster/internal/util/log"
-	"github.com/Comcast/trickster/internal/util/middleware"
+	"github.com/Comcast/trickster/internal/proxy/headers"
 )
 
-// RegisterRoutes registers the routes for the Client into the proxy's HTTP multiplexer
-func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
+func (c *Client) registerHandlers() {
+	c.handlersRegistered = true
+	c.handlers = make(map[string]http.Handler)
+	// This is the registry of handlers that Trickster supports for Prometheus,
+	// and are able to be referenced by name (map key) in Config Files
+	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
+	c.handlers[mnQueryRange] = http.HandlerFunc(c.QueryRangeHandler)
+	c.handlers[mnQuery] = http.HandlerFunc(c.QueryHandler)
+	c.handlers[mnSeries] = http.HandlerFunc(c.SeriesHandler)
+	c.handlers["proxycache"] = http.HandlerFunc(c.ObjectProxyCacheHandler)
+	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
+}
 
-	decorate := func(path string, f func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
-		return middleware.Decorate(originName, otPrometheus, path, f)
+// Handlers returns a map of the HTTP Handlers the client has registered
+func (c *Client) Handlers() map[string]http.Handler {
+	if !c.handlersRegistered {
+		c.registerHandlers()
+	}
+	return c.handlers
+}
+
+// DefaultPathConfigs returns the default PathConfigs for the given OriginType
+func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config.PathConfig, []string) {
+
+	var rhts map[string]string
+	if oc != nil {
+		rhts = map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, oc.TimeseriesTTLSecs)}
+	}
+	rhinst := map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 30)}
+
+	paths := map[string]*config.PathConfig{
+
+		APIPath + mnQueryRange: &config.PathConfig{
+			Path:            APIPath + mnQueryRange,
+			HandlerName:     mnQueryRange,
+			Methods:         []string{http.MethodGet, http.MethodPost},
+			CacheKeyParams:  []string{upQuery, upStep},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			ResponseHeaders: rhts,
+			OriginConfig:    oc,
+		},
+
+		APIPath + mnQuery: &config.PathConfig{
+			Path:            APIPath + mnQuery,
+			HandlerName:     mnQuery,
+			Methods:         []string{http.MethodGet, http.MethodPost},
+			CacheKeyParams:  []string{upQuery, upTime},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
+		},
+
+		APIPath + mnSeries: &config.PathConfig{
+			Path:            APIPath + mnSeries,
+			HandlerName:     mnSeries,
+			Methods:         []string{http.MethodGet, http.MethodPost},
+			CacheKeyParams:  []string{upMatch, upStart, upEnd},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
+		},
+
+		APIPath + mnLabels: &config.PathConfig{
+			Path:            APIPath + mnLabels,
+			HandlerName:     "proxycache",
+			Methods:         []string{http.MethodGet, http.MethodPost},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
+		},
+
+		APIPath + mnLabel: &config.PathConfig{
+			Path:            APIPath + mnLabel,
+			HandlerName:     "proxycache",
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			MatchTypeName:   "prefix",
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
+		},
+
+		APIPath + mnTargets: &config.PathConfig{
+			Path:            APIPath + mnTargets,
+			HandlerName:     "proxycache",
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
+		},
+
+		APIPath + mnRules: &config.PathConfig{
+			Path:            APIPath + mnRules,
+			HandlerName:     "proxycache",
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
+		},
+
+		APIPath + mnAlerts: &config.PathConfig{
+			Path:            APIPath + mnAlerts,
+			HandlerName:     "proxycache",
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
+		},
+
+		APIPath + mnAlertManagers: &config.PathConfig{
+			Path:            APIPath + mnAlertManagers,
+			HandlerName:     "proxycache",
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
+		},
+
+		APIPath + mnStatus: &config.PathConfig{
+			Path:            APIPath + mnStatus,
+			HandlerName:     "proxycache",
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{headers.NameAuthorization},
+			MatchTypeName:   "prefix",
+			ResponseHeaders: rhinst,
+			OriginConfig:    oc,
+		},
+
+		APIPath: &config.PathConfig{
+			Path:         APIPath,
+			HandlerName:  "proxy",
+			Methods:      []string{http.MethodGet, http.MethodPost},
+			OriginConfig: oc,
+		},
+
+		"/": &config.PathConfig{
+			Path:         "/",
+			HandlerName:  "proxy",
+			Methods:      []string{http.MethodGet, http.MethodPost},
+			OriginConfig: oc,
+		},
 	}
 
-	if o.TLS != nil {
-		// Host Header-based routing
-		log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
-		routing.TLSRouter.HandleFunc("/"+mnHealth, decorate("health", c.HealthHandler)).Methods("GET").Host(originName)
-		routing.TLSRouter.HandleFunc(APIPath+mnQueryRange, decorate("query_range", c.QueryRangeHandler)).Methods("GET", "POST").Host(originName)
-		routing.TLSRouter.HandleFunc(APIPath+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST").Host(originName)
-		routing.TLSRouter.HandleFunc(APIPath+mnSeries, decorate("series", c.SeriesHandler)).Methods("GET", "POST").Host(originName)
-		routing.TLSRouter.HandleFunc(APIPath+mnLabels, decorate("labels", c.ObjectProxyCacheHandler)).Methods("GET", "POST").Host(originName)
-		routing.TLSRouter.HandleFunc(APIPath+mnLabel, decorate("label", c.ObjectProxyCacheHandler)).Methods("GET").Host(originName)
-		routing.TLSRouter.HandleFunc(APIPath+mnTargets, decorate("targets", c.ObjectProxyCacheHandler)).Methods("GET").Host(originName)
-		routing.TLSRouter.HandleFunc(APIPath+mnRules, decorate("rules", c.ObjectProxyCacheHandler)).Methods("GET").Host(originName)
-		routing.TLSRouter.HandleFunc(APIPath+mnAlerts, decorate("alerts", c.ObjectProxyCacheHandler)).Methods("GET").Host(originName)
-		routing.TLSRouter.HandleFunc(APIPath+mnAlertManagers, decorate("alert_managersj", c.ObjectProxyCacheHandler)).Methods("GET").Host(originName)
-		routing.TLSRouter.HandleFunc(APIPath+mnStatus, decorate("status", c.ObjectProxyCacheHandler)).Methods("GET").Host(originName)
-		routing.TLSRouter.PathPrefix(APIPath).HandlerFunc(decorate("api", c.ProxyHandler)).Methods("GET", "POST").Host(originName)
-		routing.TLSRouter.PathPrefix("/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST").Host(originName)
+	oc.FastForwardPath = paths[APIPath+mnQuery]
 
-		// Path based routing
-		routing.TLSRouter.HandleFunc("/"+originName+"/"+mnHealth, decorate("health", c.HealthHandler)).Methods("GET")
-		routing.TLSRouter.HandleFunc("/"+originName+APIPath+mnQueryRange, decorate("query_range", c.QueryRangeHandler)).Methods("GET", "POST")
-		routing.TLSRouter.HandleFunc("/"+originName+APIPath+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST")
-		routing.TLSRouter.HandleFunc("/"+originName+APIPath+mnSeries, decorate("series", c.SeriesHandler)).Methods("GET", "POST")
-		routing.TLSRouter.HandleFunc("/"+originName+APIPath+mnLabels, decorate("labels", c.ObjectProxyCacheHandler)).Methods("GET", "POST")
-		routing.TLSRouter.HandleFunc("/"+originName+APIPath+mnLabel, decorate("label", c.ObjectProxyCacheHandler)).Methods("GET")
-		routing.TLSRouter.HandleFunc("/"+originName+APIPath+mnTargets, decorate("targets", c.ObjectProxyCacheHandler)).Methods("GET")
-		routing.TLSRouter.HandleFunc("/"+originName+APIPath+mnRules, decorate("rules", c.ObjectProxyCacheHandler)).Methods("GET")
-		routing.TLSRouter.HandleFunc("/"+originName+APIPath+mnAlerts, decorate("alerts", c.ObjectProxyCacheHandler)).Methods("GET")
-		routing.TLSRouter.HandleFunc("/"+originName+APIPath+mnAlertManagers, decorate("alert_managers", c.ObjectProxyCacheHandler)).Methods("GET")
-		routing.TLSRouter.HandleFunc("/"+originName+APIPath+mnStatus, decorate("status", c.ObjectProxyCacheHandler)).Methods("GET")
-		routing.TLSRouter.PathPrefix("/"+originName+APIPath).HandlerFunc(decorate("api", c.ProxyHandler)).Methods("GET", "POST")
-		routing.TLSRouter.PathPrefix("/"+originName+"/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST")
+	orderedPaths := []string{APIPath + mnQueryRange, APIPath + mnQuery,
+		APIPath + mnSeries, APIPath + mnLabels, APIPath + mnLabel, APIPath + mnTargets, APIPath + mnRules,
+		APIPath + mnAlerts, APIPath + mnAlertManagers, APIPath + mnStatus, APIPath, "/"}
 
-		// If default origin, set those routes too
-		if o.IsDefault {
-			log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
-			routing.TLSRouter.HandleFunc("/"+mnHealth, decorate("health", c.HealthHandler)).Methods("GET")
-			routing.TLSRouter.HandleFunc(APIPath+mnQueryRange, decorate("query_range", c.QueryRangeHandler)).Methods("GET", "POST")
-			routing.TLSRouter.HandleFunc(APIPath+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST")
-			routing.TLSRouter.HandleFunc(APIPath+mnSeries, decorate("series", c.SeriesHandler)).Methods("GET", "POST")
-			routing.TLSRouter.HandleFunc(APIPath+mnLabels, decorate("labels", c.ObjectProxyCacheHandler)).Methods("GET", "POST")
-			routing.TLSRouter.HandleFunc(APIPath+mnLabel, decorate("label", c.ObjectProxyCacheHandler)).Methods("GET")
-			routing.TLSRouter.HandleFunc(APIPath+mnTargets, decorate("targets", c.ObjectProxyCacheHandler)).Methods("GET")
-			routing.TLSRouter.HandleFunc(APIPath+mnRules, decorate("rules", c.ObjectProxyCacheHandler)).Methods("GET")
-			routing.TLSRouter.HandleFunc(APIPath+mnAlerts, decorate("alerts", c.ObjectProxyCacheHandler)).Methods("GET")
-			routing.TLSRouter.HandleFunc(APIPath+mnAlertManagers, decorate("alert_managers", c.ObjectProxyCacheHandler)).Methods("GET")
-			routing.TLSRouter.HandleFunc(APIPath+mnStatus, decorate("status", c.ObjectProxyCacheHandler)).Methods("GET")
-			routing.TLSRouter.PathPrefix(APIPath).HandlerFunc(decorate("api", c.ProxyHandler)).Methods("GET", "POST")
-			routing.TLSRouter.PathPrefix("/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST")
-		}
-	}
+	return paths, orderedPaths
 
-	if !o.RequireTLS {
-		// Host Header-based routing
-		log.Debug("Registering Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
-		routing.Router.HandleFunc("/"+mnHealth, decorate("health", c.HealthHandler)).Methods("GET").Host(originName)
-		routing.Router.HandleFunc(APIPath+mnQueryRange, decorate("query_range", c.QueryRangeHandler)).Methods("GET", "POST").Host(originName)
-		routing.Router.HandleFunc(APIPath+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST").Host(originName)
-		routing.Router.HandleFunc(APIPath+mnSeries, decorate("series", c.SeriesHandler)).Methods("GET", "POST").Host(originName)
-		routing.Router.HandleFunc(APIPath+mnLabels, decorate("labels", c.ObjectProxyCacheHandler)).Methods("GET", "POST").Host(originName)
-		routing.Router.HandleFunc(APIPath+mnLabel, decorate("label", c.ObjectProxyCacheHandler)).Methods("GET").Host(originName)
-		routing.Router.HandleFunc(APIPath+mnTargets, decorate("targets", c.ObjectProxyCacheHandler)).Methods("GET").Host(originName)
-		routing.Router.HandleFunc(APIPath+mnRules, decorate("rules", c.ObjectProxyCacheHandler)).Methods("GET").Host(originName)
-		routing.Router.HandleFunc(APIPath+mnAlerts, decorate("alerts", c.ObjectProxyCacheHandler)).Methods("GET").Host(originName)
-		routing.Router.HandleFunc(APIPath+mnAlertManagers, decorate("alert_managersj", c.ObjectProxyCacheHandler)).Methods("GET").Host(originName)
-		routing.Router.HandleFunc(APIPath+mnStatus, decorate("status", c.ObjectProxyCacheHandler)).Methods("GET").Host(originName)
-		routing.Router.PathPrefix(APIPath).HandlerFunc(decorate("api", c.ProxyHandler)).Methods("GET", "POST").Host(originName)
-		routing.Router.PathPrefix("/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST").Host(originName)
-
-		// Path based routing
-		routing.Router.HandleFunc("/"+originName+"/"+mnHealth, decorate("health", c.HealthHandler)).Methods("GET")
-		routing.Router.HandleFunc("/"+originName+APIPath+mnQueryRange, decorate("query_range", c.QueryRangeHandler)).Methods("GET", "POST")
-		routing.Router.HandleFunc("/"+originName+APIPath+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST")
-		routing.Router.HandleFunc("/"+originName+APIPath+mnSeries, decorate("series", c.SeriesHandler)).Methods("GET", "POST")
-		routing.Router.HandleFunc("/"+originName+APIPath+mnLabels, decorate("labels", c.ObjectProxyCacheHandler)).Methods("GET", "POST")
-		routing.Router.HandleFunc("/"+originName+APIPath+mnLabel, decorate("label", c.ObjectProxyCacheHandler)).Methods("GET")
-		routing.Router.HandleFunc("/"+originName+APIPath+mnTargets, decorate("targets", c.ObjectProxyCacheHandler)).Methods("GET")
-		routing.Router.HandleFunc("/"+originName+APIPath+mnRules, decorate("rules", c.ObjectProxyCacheHandler)).Methods("GET")
-		routing.Router.HandleFunc("/"+originName+APIPath+mnAlerts, decorate("alerts", c.ObjectProxyCacheHandler)).Methods("GET")
-		routing.Router.HandleFunc("/"+originName+APIPath+mnAlertManagers, decorate("alert_managers", c.ObjectProxyCacheHandler)).Methods("GET")
-		routing.Router.HandleFunc("/"+originName+APIPath+mnStatus, decorate("status", c.ObjectProxyCacheHandler)).Methods("GET")
-		routing.Router.PathPrefix("/"+originName+APIPath).HandlerFunc(decorate("api", c.ProxyHandler)).Methods("GET", "POST")
-		routing.Router.PathPrefix("/"+originName+"/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST")
-
-		// If default origin, set those routes too
-		if o.IsDefault {
-			log.Debug("Registering Default Origin Handlers", log.Pairs{"originType": o.Type, "originName": originName})
-			routing.Router.HandleFunc("/"+mnHealth, decorate("health", c.HealthHandler)).Methods("GET")
-			routing.Router.HandleFunc(APIPath+mnQueryRange, decorate("query_range", c.QueryRangeHandler)).Methods("GET", "POST")
-			routing.Router.HandleFunc(APIPath+mnQuery, decorate("query", c.QueryHandler)).Methods("GET", "POST")
-			routing.Router.HandleFunc(APIPath+mnSeries, decorate("series", c.SeriesHandler)).Methods("GET", "POST")
-			routing.Router.HandleFunc(APIPath+mnLabels, decorate("labels", c.ObjectProxyCacheHandler)).Methods("GET", "POST")
-			routing.Router.HandleFunc(APIPath+mnLabel, decorate("label", c.ObjectProxyCacheHandler)).Methods("GET")
-			routing.Router.HandleFunc(APIPath+mnTargets, decorate("targets", c.ObjectProxyCacheHandler)).Methods("GET")
-			routing.Router.HandleFunc(APIPath+mnRules, decorate("rules", c.ObjectProxyCacheHandler)).Methods("GET")
-			routing.Router.HandleFunc(APIPath+mnAlerts, decorate("alerts", c.ObjectProxyCacheHandler)).Methods("GET")
-			routing.Router.HandleFunc(APIPath+mnAlertManagers, decorate("alert_managers", c.ObjectProxyCacheHandler)).Methods("GET")
-			routing.Router.HandleFunc(APIPath+mnStatus, decorate("status", c.ObjectProxyCacheHandler)).Methods("GET")
-			routing.Router.PathPrefix(APIPath).HandlerFunc(decorate("api", c.ProxyHandler)).Methods("GET", "POST")
-			routing.Router.PathPrefix("/").HandlerFunc(decorate("proxy", c.ProxyHandler)).Methods("GET", "POST")
-		}
-	}
 }

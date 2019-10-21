@@ -29,6 +29,8 @@ func TestCopy(t *testing.T) {
 
 func TestString(t *testing.T) {
 	c1 := NewConfig()
+
+	c1.Origins["default"].Paths["test"] = &PathConfig{}
 	s := c1.String()
 	if strings.Index(s, `password = "*****"`) < 0 {
 		t.Errorf("missing password mask: %s", "*****")

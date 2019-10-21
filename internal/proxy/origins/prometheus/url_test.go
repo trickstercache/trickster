@@ -15,6 +15,7 @@ package prometheus
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ func TestSetExtent(t *testing.T) {
 
 	expected := "end=" + endSecs + "&q=up&start=" + startSecs
 
-	err := config.Load("trickster", "test", []string{"-origin", "none:9090", "-origin-type", "prometheus", "-log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "prometheus", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -56,7 +57,7 @@ func TestFastForwardURL(t *testing.T) {
 
 	expected := "q=up"
 
-	err := config.Load("trickster", "test", []string{"-origin", "none:9090", "-origin-type", "prometheus", "-log-level", "debug"})
+	err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "prometheus", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -75,5 +76,22 @@ func TestFastForwardURL(t *testing.T) {
 	if expected != u2.RawQuery {
 		t.Errorf("\nexpected [%s]\ngot [%s]", expected, u2.RawQuery)
 	}
+
+}
+
+func TestBuildUpstreamURL(t *testing.T) {
+
+	cfg := config.NewConfig()
+	oc := cfg.Origins["default"]
+	oc.Scheme = "http"
+	oc.Host = "0"
+	oc.PathPrefix = ""
+
+	client := &Client{name: "default", config: oc}
+	r, err := http.NewRequest(http.MethodGet, "http://0/default/query_range", nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client.BuildUpstreamURL(r)
 
 }

@@ -14,46 +14,62 @@
 package engines
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	cr "github.com/Comcast/trickster/internal/cache/registration"
-	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
+func setupTestHarnessOPC(file, body string, code int, headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *PromTestClient, error) {
+
+	client := &PromTestClient{}
+	ts, w, r, hc, err := tu.NewTestInstance(file, client.DefaultPathConfigs, code, body, headers, "prometheus", "/api/v1/query", "debug")
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	pc := tc.PathConfig(r.Context())
+	if pc == nil {
+		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/api/v1/query")
+	}
+
+	oc := tc.OriginConfig(r.Context())
+	cc := tc.CacheClient(r.Context())
+
+	client.cache = cc
+	client.webClient = hc
+	client.config = oc
+
+	pc.CacheKeyParams = []string{"rangeKey", "instantKey"}
+
+	return ts, w, r, client, nil
+}
+
 func TestObjectProxyCacheRequest(t *testing.T) {
 
-	es := tu.NewTestServer(http.StatusOK, "test")
-	defer es.Close()
-
-	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "prometheus", "-log-level", "debug"})
-	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
-	}
-
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
+	headers := map[string]string{"Cache-Control": "max-age=60"}
+	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
 	if err != nil {
 		t.Error(err)
-		return
 	}
+	defer ts.Close()
 
-	client := &PromTestClient{config: config.Origins["default"], cache: cache}
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL, nil)
+	oc := tc.OriginConfig(r.Context())
+	oc.MaxTTLSecs = 15
+	oc.MaxTTL = time.Duration(oc.MaxTTLSecs) * time.Second
 
 	// get URL
 
-	req := model.NewRequest("default", "test", "TestProxyRequest", "GET", r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 
-	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
-
+	ObjectProxyCacheRequest(req, w, client, false)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -79,7 +95,7 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 	// get cache hit coverage too by repeating:
 
 	w = httptest.NewRecorder()
-	ObjectProxyCacheRequest(req, w, client, cache, time.Duration(60)*time.Second, false, false) // client Client, cache cache.Cache, ttl int, refresh bool, noLock bool) {
+	ObjectProxyCacheRequest(req, w, client, false)
 	resp = w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -98,6 +114,430 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 	}
 
 	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "hit"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestObjectProxyCacheRequestClientNoCache(t *testing.T) {
+
+	headers := map[string]string{"Cache-Control": "max-age=60"}
+	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	// get URL
+
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"Cache-Control": []string{"no-cache"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+
+	ObjectProxyCacheRequest(req, w, client, false)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "proxy-only"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestObjectProxyCacheRequestOriginNoCache(t *testing.T) {
+
+	headers := map[string]string{"Cache-Control": "no-cache"}
+	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	// get URL
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+
+	ObjectProxyCacheRequest(req, w, client, false)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestObjectProxyCacheIMS(t *testing.T) {
+
+	headers := map[string]string{"Cache-Control": "max-age=60"}
+	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	// get URL
+
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"If-Modified-Since": []string{"Sun, 16 Jun 2019 14:19:04 GMT"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+
+	ObjectProxyCacheRequest(req, w, client, false)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotModified)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestObjectProxyCacheIUS(t *testing.T) {
+
+	headers := map[string]string{"Cache-Control": "max-age=60"}
+	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	// get URL
+
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"If-Unmodified-Since": []string{"Sun, 16 Jun 2019 14:19:04 GMT"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+
+	ObjectProxyCacheRequest(req, w, client, false)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestObjectProxyCacheIM(t *testing.T) {
+
+	headers := map[string]string{"Cache-Control": "max-age=60", "ETag": "test"}
+	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	// get URL
+
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"If-Match": []string{"test2"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+
+	ObjectProxyCacheRequest(req, w, client, false)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotModified)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestObjectProxyCacheINM(t *testing.T) {
+
+	headers := map[string]string{"Cache-Control": "max-age=60", "ETag": "test"}
+	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	// get URL
+
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"If-None-Match": []string{"test"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+
+	ObjectProxyCacheRequest(req, w, client, false)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotModified)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestObjectProxyCacheNoRevalidate(t *testing.T) {
+
+	headers := map[string]string{headers.NameCacheControl: headers.ValueMaxAge + "=1"}
+	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	p := tc.PathConfig(r.Context())
+	p.ResponseHeaders = headers
+
+	// get URL
+
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+
+	ObjectProxyCacheRequest(req, w, client, false)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	time.Sleep(1010 * time.Millisecond)
+	w = httptest.NewRecorder()
+	ObjectProxyCacheRequest(req, w, client, false)
+	resp = w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestObjectProxyCacheCanRevalidate(t *testing.T) {
+
+	headers := map[string]string{
+		headers.NameCacheControl: headers.ValueMaxAge + "=1",
+		headers.NameETag:         "test-etag",
+		headers.NameLastModified: "Sun, 16 Jun 2019 14:19:04 GMT",
+	}
+	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	p := tc.PathConfig(r.Context())
+	p.ResponseHeaders = headers
+
+	// get URL
+
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+
+	ObjectProxyCacheRequest(req, w, client, false)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	time.Sleep(1010 * time.Millisecond)
+	w = httptest.NewRecorder()
+	ObjectProxyCacheRequest(req, w, client, false)
+	resp = w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestObjectProxyCacheRevalidated(t *testing.T) {
+
+	hdr := map[string]string{
+		headers.NameCacheControl: headers.ValueMaxAge + "=1",
+		headers.NameLastModified: "Sun, 16 Jun 2019 14:19:04 GMT",
+	}
+	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, hdr)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	p := tc.PathConfig(r.Context())
+	p.ResponseHeaders = hdr
+
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+
+	ObjectProxyCacheRequest(req, w, client, false)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	time.Sleep(1010 * time.Millisecond)
+
+	s := tu.NewTestServer(304, "", nil)
+	r2 := httptest.NewRequest("GET", s.URL+"/api/v1/query", nil)
+	r2 = r2.WithContext(tc.WithConfigs(r2.Context(), tc.OriginConfig(r.Context()), tc.CacheClient(r.Context()), nil))
+
+	req = model.NewRequest("TestProxyRequest", r2.Method, r2.URL, http.Header{}, time.Duration(30)*time.Second, r2, tu.NewTestWebClient())
+
+	w = httptest.NewRecorder()
+	h := w.Header()
+	h.Set(headers.NameIfMatch, "test")
+
+	ObjectProxyCacheRequest(req, w, client, false)
+	resp = w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotModified)
 	if err != nil {
 		t.Error(err)
 	}

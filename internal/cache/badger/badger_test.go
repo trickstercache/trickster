@@ -35,7 +35,7 @@ func newCacheConfig(t *testing.T) config.CachingConfig {
 	if err != nil {
 		t.Fatalf("could not create temp directory (%s): %s", dir, err)
 	}
-	return config.CachingConfig{Type: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
+	return config.CachingConfig{CacheType: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
 }
 
 func TestConfiguration(t *testing.T) {
@@ -44,8 +44,8 @@ func TestConfiguration(t *testing.T) {
 	bc := Cache{Config: &cacheConfig}
 
 	cfg := bc.Configuration()
-	if cfg.Type != cacheType {
-		t.Fatalf("expected %s got %s", cacheType, cfg.Type)
+	if cfg.CacheType != cacheType {
+		t.Fatalf("expected %s got %s", cacheType, cfg.CacheType)
 	}
 }
 
@@ -59,6 +59,20 @@ func TestBadgerCache_Connect(t *testing.T) {
 		t.Error(err)
 	}
 	bc.Close()
+}
+
+func TestBadgerCache_ConnectFailed(t *testing.T) {
+	cacheConfig := newCacheConfig(t)
+	cacheConfig.Badger.Directory = "/root/trickster-test-noaccess"
+	os.RemoveAll(cacheConfig.Badger.Directory)
+	bc := Cache{Config: &cacheConfig}
+
+	// it should connect
+	err := bc.Connect()
+	if err == nil {
+		t.Errorf("expected file access error for %s", cacheConfig.Badger.Directory)
+		bc.Close()
+	}
 }
 
 func TestBadgerCache_Store(t *testing.T) {
@@ -95,7 +109,7 @@ func TestBadgerCache_Remove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := bc.Retrieve(cacheKey)
+	data, err := bc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -106,7 +120,7 @@ func TestBadgerCache_Remove(t *testing.T) {
 	bc.Remove(cacheKey)
 
 	// it should be a cache miss
-	_, err = bc.Retrieve(cacheKey)
+	_, err = bc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -130,7 +144,7 @@ func TestBadgerCache_BulkRemove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := bc.Retrieve(cacheKey)
+	data, err := bc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -138,10 +152,11 @@ func TestBadgerCache_BulkRemove(t *testing.T) {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
 
+	bc.BulkRemove([]string{""}, true)
 	bc.BulkRemove([]string{cacheKey}, true)
 
 	// it should be a cache miss
-	_, err = bc.Retrieve(cacheKey)
+	_, err = bc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -159,23 +174,61 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 	defer bc.Close()
 
 	// it should be a cache miss
-	_, err := bc.Retrieve(cacheKey)
+	_, err := bc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
 
-	err = bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
+	err = bc.Store(cacheKey, []byte("data"), time.Duration(5)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// it should retrieve a value
-	data, err := bc.Retrieve(cacheKey)
+	data, err := bc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
 	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+
+	exp1, err := bc.getExpires(cacheKey)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// the TTL is currently 1 second. update it to 1 hour then wait more than
+	// 1 second, to ensure it remained in cache with the correct value
+	bc.SetTTL(cacheKey, time.Duration(3600)*time.Second)
+
+	exp2, err := bc.getExpires(cacheKey)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// should be around 3595
+	diff := exp2 - exp1
+	const expected = 3590
+
+	if diff < 3590 {
+		t.Errorf("expected diff >= %d, got %d from: %d - %d", expected, diff, exp2, exp1)
+	}
+
+	// try a non-existent cacheKey
+	ck2 := cacheKey + "xxxx"
+	bc.SetTTL(ck2, time.Duration(3600)*time.Second)
+
+	// it should be a cache miss
+	_, err = bc.Retrieve(ck2, false)
+	if err == nil {
+		t.Errorf("expected key not found error for %s", ck2)
+	}
+
+	// it should also not have an expires
+	_, err = bc.getExpires(ck2)
+	if err == nil {
+		t.Errorf("expected key not found error for %s", ck2)
 	}
 }
 
@@ -186,7 +239,7 @@ func TestBadgerCache_Close(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	cacheConfig := config.CachingConfig{Type: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
+	cacheConfig := config.CachingConfig{CacheType: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
 	bc := Cache{Config: &cacheConfig}
 
 	if err := bc.Connect(); err != nil {

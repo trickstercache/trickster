@@ -45,8 +45,8 @@ var Metrics *MetricsConfig
 
 // Flags is a collection of command line flags that Trickster loads.
 var Flags = TricksterFlags{}
-var defaultOriginURL string
-var defaultOriginType string
+var providedOriginURL string
+var providedOriginType string
 
 // ApplicationName is the name of the Application
 var ApplicationName string
@@ -86,49 +86,112 @@ type MainConfig struct {
 }
 
 // OriginConfig is a collection of configurations for prometheus origins proxied by Trickster
-// You can override these on a per-request basis with url-params
 type OriginConfig struct {
-	Type                         string     `toml:"type"`
-	Scheme                       string     `toml:"scheme"`
-	Host                         string     `toml:"host"`
-	PathPrefix                   string     `toml:"path_prefix"`
-	APIPath                      string     `toml:"api_path"`
-	IgnoreNoCacheHeader          bool       `toml:"ignore_no_cache_header"`
-	TimeseriesRetentionFactor    int        `toml:"timeseries_retention_factor"`
-	TimeseriesEvictionMethodName string     `toml:"timeseries_eviction_method"`
-	FastForwardDisable           bool       `toml:"fast_forward_disable"`
-	BackfillToleranceSecs        int64      `toml:"backfill_tolerance_secs"`
-	TimeoutSecs                  int64      `toml:"timeout_secs"`
-	KeepAliveTimeoutSecs         int64      `toml:"keep_alive_timeout_secs"`
-	MaxIdleConns                 int        `toml:"max_idle_conns"`
-	CacheName                    string     `toml:"cache_name"`
-	IsDefault                    bool       `toml:"is_default"`
-	TLS                          *TLSConfig `toml:"tls"`
-	RequireTLS                   bool       `toml:"require_tls"`
 
-	Timeout                  time.Duration            `toml:"-"`
-	BackfillTolerance        time.Duration            `toml:"-"`
-	TimeseriesRetention      time.Duration            `toml:"-"`
+	// HTTP and Proxy Configurations
+	//
+	// IsDefault indicates if this is the default origin for any request not matching a configured route
+	IsDefault bool `toml:"is_default"`
+	// OriginType describes the type of origin (e.g., 'prometheus')
+	OriginType string `toml:"origin_type"`
+	// OriginURL provides the base upstream URL for all proxied requests to this origin.
+	// it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
+	OriginURL string `toml:"origin_url"`
+	// TimeoutSecs defines how long the HTTP request will wait for a response before timing out
+	TimeoutSecs int64 `toml:"timeout_secs"`
+	// KeepAliveTimeoutSecs defines how long an open keep-alive HTTP connection remains idle before closing
+	KeepAliveTimeoutSecs int64 `toml:"keep_alive_timeout_secs"`
+	// MaxIdleConns defines maximum number of open keep-alive connections to maintain
+	MaxIdleConns int `toml:"max_idle_conns"`
+	// CacheName provides the name of the configured cache where the origin client will store it's cache data
+	CacheName string `toml:"cache_name"`
+	// HealthCheckEndpoint provides the route path Trickster will register for mapping the Health Endpoint
+	HealthCheckEndpoint string `toml:"health_check_endpoint"`
+	// HealthCheckUpstreamPath provides the URL path for the upstream health check
+	HealthCheckUpstreamPath string `toml:"health_check_upstream_path"`
+	// HealthCheckVerb provides the HTTP verb to use when making an upstream health check
+	HealthCheckVerb string `toml:"health_check_verb"`
+	// HealthCheckQuery provides the HTTP query parameters to use when making an upstream health check
+	HealthCheckQuery string `toml:"health_check_query"`
+	// Object Proxy Cache and Delta Proxy Cache Configurations
+	// TimeseriesRetentionFactor limits the maximum the number of chronological timestamps worth of data to store in cache for each query
+	TimeseriesRetentionFactor int `toml:"timeseries_retention_factor"`
+	// TimeseriesEvictionMethodName specifies which methodology ("oldest", "lru") is used to identify timeseries to evict from a full cache object
+	TimeseriesEvictionMethodName string `toml:"timeseries_eviction_method"`
+	// FastForwardDisable indicates whether the FastForward feature should be disabled for this origin
+	FastForwardDisable bool `toml:"fast_forward_disable"`
+	// BackfillToleranceSecs prevents values with timestamps newer than the provided number of seconds from being cached
+	// this allows propagation of upstream backfill operations that modify recently-served data
+	BackfillToleranceSecs int64 `toml:"backfill_tolerance_secs"`
+	// PathList is a list of PathConfigs that control the behavior of the given paths when requested
+	Paths map[string]*PathConfig `toml:"paths"`
+	// NegativeCache is a map of HTTP Status Codes that are cached for the provided duration, usually used for failures (e.g., 404's for 10s)
+	NegativeCacheSecs map[string]int `toml:"negative_cache"`
+	// TimeseriesTTLSecs specifies the cache TTL of timeseries objects
+	TimeseriesTTLSecs int `toml:"timeseries_ttl_secs"`
+	// TimeseriesTTLSecs specifies the cache TTL of fast forward data
+	FastForwardTTLSecs int `toml:"fastforward_ttl_secs"`
+	// MacTTLSecs specifies the maximum allowed TTL for any cache object
+	MaxTTLSecs int `toml:"max_ttl_secs"`
+	// RevalidationFactor specifies how many times to multiply the object freshness lifetime by to calculate an absolute cache TTL
+	RevalidationFactor int `toml:"revalidation_factor"`
+
+	// TLS is the TLS Configuration for the Frontend and Backend
+	TLS *TLSConfig `toml:"tls"`
+	// RequireTLS, when true, indicates this Origin Config's paths must only be registered with the TLS Router
+	RequireTLS bool `toml:"require_tls"`
+
+	// Synthesized Configurations
+	// These configurations are parsed versions of those defined above, and are what Trickster uses internally
+	//
+	// Name is the Name of the origin, taken from the Key in the Origins map[string]*OriginConfig
+	Name string `toml:"-"`
+	// Timeout is the time.Duration representation of TimeoutSecs
+	Timeout time.Duration `toml:"-"`
+	// BackfillTolerance is the time.Duration representation of BackfillToleranceSecs
+	BackfillTolerance time.Duration `toml:"-"`
+	// ValueRetention is the time.Duration representation of ValueRetentionSecs
+	ValueRetention time.Duration `toml:"-"`
+	// Scheme is the layer 7 protocol indicator (e.g. 'http'), derived from OriginURL
+	Scheme string `toml:"-"`
+	// Host is the upstream hostname/IP[:port] the origin client will connect to when fetching uncached data, derived from OriginURL
+	Host string `toml:"-"`
+	// PathPrefix provides any prefix added to the front of the requested path when constructing the upstream request url, derived from OriginURL
+	PathPrefix string `toml:"-"`
+	// NegativeCache provides a map for the negative cache, with TTLs converted to time.Durations
+	NegativeCache map[int]time.Duration `toml:"-"`
+	// TimeseriesRetention when subtracted from time.Now() represents the oldest allowable timestamp in a timeseries when EvictionMethod is 'oldest'
+	TimeseriesRetention time.Duration `toml:"-"`
+	// TimeseriesEvictionMethod is the parsed value of TimeseriesEvictionMethodName
 	TimeseriesEvictionMethod TimeseriesEvictionMethod `toml:"-"`
+	// TimeseriesTTL is the parsed value of TimeseriesTTLSecs
+	TimeseriesTTL time.Duration `toml:"-"`
+	// FastForwardTTL is the parsed value of FastForwardTTL
+	FastForwardTTL time.Duration `toml:"-"`
+	// FastForwardPath is the PathConfig to use for upstream Fast Forward Requests
+	FastForwardPath *PathConfig `toml:"-"`
+	// MaxTTL is the parsed value of MaxTTLSecs
+	MaxTTL time.Duration `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
 type CachingConfig struct {
+	// Name is the Name of the cache, taken from the Key in the Caches map[string]*CacheConfig
+	Name string `toml:"-"`
 	// Type represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
-	Type               string                `toml:"type"`
+	CacheType          string                `toml:"cache_type"`
 	Compression        bool                  `toml:"compression"`
-	TimeseriesTTLSecs  int                   `toml:"timeseries_ttl_secs"`
-	ObjectTTLSecs      int                   `toml:"object_ttl_secs"`
-	FastForwardTTLSecs int                   `toml:"fastforward_ttl_secs"`
+	MaxObjectSizeBytes int                   `toml:"max_object_size_bytes"`
 	Index              CacheIndexConfig      `toml:"index"`
 	Redis              RedisCacheConfig      `toml:"redis"`
 	Filesystem         FilesystemCacheConfig `toml:"filesystem"`
 	BBolt              BBoltCacheConfig      `toml:"bbolt"`
 	Badger             BadgerCacheConfig     `toml:"badger"`
 
-	TimeseriesTTL  time.Duration `toml:"-"`
-	ObjectTTL      time.Duration `toml:"-"`
-	FastForwardTTL time.Duration `toml:"-"`
+	//  Synthetic Values
+
+	// CacheTypeID represents the internal itoa constant for the provided CacheType string
+	CacheTypeID CacheType `toml:"-"`
 }
 
 // CacheIndexConfig defines the operation of the Cache Indexer
@@ -246,7 +309,7 @@ type MetricsConfig struct {
 func NewConfig() *TricksterConfig {
 	return &TricksterConfig{
 		Caches: map[string]*CachingConfig{
-			"default": DefaultCachingConfig(),
+			"default": NewCacheConfig(),
 		},
 		Logging: &LoggingConfig{
 			LogFile:  defaultLogFile,
@@ -261,7 +324,7 @@ func NewConfig() *TricksterConfig {
 			ListenPort: defaultMetricsListenPort,
 		},
 		Origins: map[string]*OriginConfig{
-			"default": DefaultOriginConfig(),
+			"default": NewOriginConfig(),
 		},
 		ProxyServer: &ProxyServerConfig{
 			ListenPort: defaultProxyListenPort,
@@ -269,15 +332,14 @@ func NewConfig() *TricksterConfig {
 	}
 }
 
-// DefaultCachingConfig will return a pointer to an OriginConfig with the default configuration settings
-func DefaultCachingConfig() *CachingConfig {
+// NewCacheConfig will return a pointer to an OriginConfig with the default configuration settings
+func NewCacheConfig() *CachingConfig {
 
 	return &CachingConfig{
-		Type:               defaultCacheType,
+		CacheType:          defaultCacheType,
+		CacheTypeID:        defaultCacheTypeID,
 		Compression:        defaultCacheCompression,
-		TimeseriesTTLSecs:  defaultTimeseriesTTLSecs,
-		FastForwardTTLSecs: defaultFastForwardTTLSecs,
-		ObjectTTLSecs:      defaultObjectTTLSecs,
+		MaxObjectSizeBytes: defaultMaxObjectSizeBytes,
 		Redis:              RedisCacheConfig{ClientType: defaultRedisClientType, Protocol: defaultRedisProtocol, Endpoint: defaultRedisEndpoint, Endpoints: []string{defaultRedisEndpoint}},
 		Filesystem:         FilesystemCacheConfig{CachePath: defaultCachePath},
 		BBolt:              BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: defaultBBoltBucket},
@@ -293,25 +355,34 @@ func DefaultCachingConfig() *CachingConfig {
 	}
 }
 
-// DefaultOriginConfig will return a pointer to an OriginConfig with the default configuration settings
-func DefaultOriginConfig() *OriginConfig {
+// NewOriginConfig will return a pointer to an OriginConfig with the default configuration settings
+func NewOriginConfig() *OriginConfig {
 	return &OriginConfig{
-		Type:                         defaultOriginServerType,
-		Scheme:                       defaultOriginScheme,
-		Host:                         defaultOriginHost,
-		APIPath:                      defaultOriginAPIPath,
-		IgnoreNoCacheHeader:          defaultOriginINCH,
-		TimeseriesRetentionFactor:    defaultOriginTRF, // Cache a max of 1024 recent timestamps of data for each query
-		TimeseriesRetention:          defaultOriginTRF,
-		TimeseriesEvictionMethod:     defaultOriginTEM,
-		TimeseriesEvictionMethodName: defaultOriginTEMName,
-		TimeoutSecs:                  defaultOriginTimeoutSecs,
+		BackfillTolerance:            defaultBackfillToleranceSecs,
+		BackfillToleranceSecs:        defaultBackfillToleranceSecs,
+		CacheName:                    defaultOriginCacheName,
+		HealthCheckEndpoint:          defaultHealthEndpoint,
+		HealthCheckQuery:             defaultHealthCheckQuery,
+		HealthCheckUpstreamPath:      defaultHealthCheckPath,
+		HealthCheckVerb:              defaultHealthCheckVerb,
 		KeepAliveTimeoutSecs:         defaultKeepAliveTimeoutSecs,
 		MaxIdleConns:                 defaultMaxIdleConns,
-		CacheName:                    defaultOriginCacheName,
-		BackfillToleranceSecs:        defaultBackfillToleranceSecs,
+		NegativeCache:                make(map[int]time.Duration),
+		NegativeCacheSecs:            make(map[string]int),
+		Paths:                        make(map[string]*PathConfig),
 		Timeout:                      time.Second * defaultOriginTimeoutSecs,
-		BackfillTolerance:            defaultBackfillToleranceSecs,
+		TimeoutSecs:                  defaultOriginTimeoutSecs,
+		TimeseriesEvictionMethod:     defaultOriginTEM,
+		TimeseriesEvictionMethodName: defaultOriginTEMName,
+		TimeseriesRetention:          defaultOriginTRF,
+		TimeseriesRetentionFactor:    defaultOriginTRF,
+		TimeseriesTTLSecs:            defaultTimeseriesTTLSecs,
+		FastForwardTTLSecs:           defaultFastForwardTTLSecs,
+		TimeseriesTTL:                defaultTimeseriesTTLSecs * time.Second,
+		FastForwardTTL:               defaultFastForwardTTLSecs * time.Second,
+		MaxTTLSecs:                   defaultMaxTTLSecs,
+		MaxTTL:                       defaultMaxTTLSecs * time.Second,
+		RevalidationFactor:           defaultRevalidationFactor,
 		TLS:                          &TLSConfig{},
 	}
 }
@@ -341,6 +412,9 @@ func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
 	return err
 }
 
+var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers", "default_ttl_secs",
+	"request_headers", "response_headers", "response_code", "response_body", "no_metrics"}
+
 func (c *TricksterConfig) validateConfigMappings() error {
 	for k, oc := range c.Origins {
 		if _, ok := c.Caches[oc.CacheName]; !ok {
@@ -352,19 +426,15 @@ func (c *TricksterConfig) validateConfigMappings() error {
 
 func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
-	// If the user has configured their own origins, and one of them is not "default"
-	// then Trickster will not use the auto-created default origin
-	if (len(c.Origins) > 1) && (!metadata.IsDefined("origins", "default")) {
-		delete(c.Origins, "default")
-	}
-
 	c.activeCaches = make(map[string]bool)
 
 	for k, v := range c.Origins {
 
-		oc := DefaultOriginConfig()
-		if metadata.IsDefined("origins", k, "type") {
-			oc.Type = v.Type
+		oc := NewOriginConfig()
+		oc.Name = k
+
+		if metadata.IsDefined("origins", k, "origin_type") {
+			oc.OriginType = v.OriginType
 		}
 
 		if metadata.IsDefined("origins", k, "is_default") {
@@ -384,16 +454,8 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 		}
 		c.activeCaches[oc.CacheName] = true
 
-		if metadata.IsDefined("origins", k, "scheme") {
-			oc.Scheme = v.Scheme
-		}
-
-		if metadata.IsDefined("origins", k, "host") {
-			oc.Host = v.Host
-		}
-
-		if metadata.IsDefined("origins", k, "path_prefix") {
-			oc.PathPrefix = v.PathPrefix
+		if metadata.IsDefined("origins", k, "origin_url") {
+			oc.OriginURL = v.OriginURL
 		}
 
 		if metadata.IsDefined("origins", k, "timeout_secs") {
@@ -408,14 +470,6 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 			oc.KeepAliveTimeoutSecs = v.KeepAliveTimeoutSecs
 		}
 
-		if metadata.IsDefined("origins", k, "api_path") {
-			oc.APIPath = v.APIPath
-		}
-
-		if metadata.IsDefined("origins", k, "ignore_no_cache_header") {
-			oc.IgnoreNoCacheHeader = v.IgnoreNoCacheHeader
-		}
-
 		if metadata.IsDefined("origins", k, "timeseries_retention_factor") {
 			oc.TimeseriesRetentionFactor = v.TimeseriesRetentionFactor
 		}
@@ -427,12 +481,70 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 			}
 		}
 
+		if metadata.IsDefined("origins", k, "timeseries_ttl_secs") {
+			oc.TimeseriesTTLSecs = v.TimeseriesTTLSecs
+		}
+
+		if metadata.IsDefined("origins", k, "max_ttl_secs") {
+			oc.MaxTTLSecs = v.MaxTTLSecs
+		}
+
+		if metadata.IsDefined("origins", k, "fastforward_ttl_secs") {
+			oc.FastForwardTTLSecs = v.FastForwardTTLSecs
+		}
+
 		if metadata.IsDefined("origins", k, "fast_forward_disable") {
 			oc.FastForwardDisable = v.FastForwardDisable
 		}
 
 		if metadata.IsDefined("origins", k, "backfill_tolerance_secs") {
 			oc.BackfillToleranceSecs = v.BackfillToleranceSecs
+		}
+
+		if metadata.IsDefined("origins", k, "paths") {
+			var j = 0
+			for l, p := range v.Paths {
+				p.Order = j
+				p.custom = make([]string, 0, 0)
+				for _, pm := range pathMembers {
+					if metadata.IsDefined("origins", k, "paths", l, pm) {
+						p.custom = append(p.custom, pm)
+					}
+				}
+				if metadata.IsDefined("origins", k, "paths", l, "response_body") {
+					p.ResponseBodyBytes = []byte(p.ResponseBody)
+					p.HasCustomResponseBody = true
+				}
+
+				if mt, ok := pathMatchTypeNames[strings.ToLower(p.MatchTypeName)]; ok {
+					p.MatchType = mt
+				} else {
+					p.MatchType = PathMatchTypeExact
+					p.MatchTypeName = p.MatchType.String()
+				}
+				oc.Paths[p.Path] = p
+				j++
+			}
+		}
+
+		if metadata.IsDefined("origins", k, "negative_cache") {
+			oc.NegativeCacheSecs = v.NegativeCacheSecs
+		}
+
+		if metadata.IsDefined("origins", k, "health_check_endpoint") {
+			oc.HealthCheckEndpoint = v.HealthCheckEndpoint
+		}
+
+		if metadata.IsDefined("origins", k, "health_check_upstream_path") {
+			oc.HealthCheckUpstreamPath = v.HealthCheckUpstreamPath
+		}
+
+		if metadata.IsDefined("origins", k, "health_check_verb") {
+			oc.HealthCheckVerb = v.HealthCheckVerb
+		}
+
+		if metadata.IsDefined("origins", k, "health_check_query") {
+			oc.HealthCheckQuery = v.HealthCheckQuery
 		}
 
 		if metadata.IsDefined("origins", k, "tls") {
@@ -462,26 +574,22 @@ func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
 			continue
 		}
 
-		cc := DefaultCachingConfig()
+		cc := NewCacheConfig()
+		cc.Name = k
 
-		if metadata.IsDefined("caches", k, "type") {
-			cc.Type = strings.ToLower(v.Type)
+		if metadata.IsDefined("caches", k, "cache_type") {
+			cc.CacheType = strings.ToLower(v.CacheType)
+			if n, ok := CacheTypeNames[cc.CacheType]; ok {
+				cc.CacheTypeID = n
+			}
 		}
 
 		if metadata.IsDefined("caches", k, "compression") {
 			cc.Compression = v.Compression
 		}
 
-		if metadata.IsDefined("caches", k, "timeseries_ttl_secs") {
-			cc.TimeseriesTTLSecs = v.TimeseriesTTLSecs
-		}
-
-		if metadata.IsDefined("caches", k, "fastforward_ttl_secs") {
-			cc.FastForwardTTLSecs = v.FastForwardTTLSecs
-		}
-
-		if metadata.IsDefined("caches", k, "object_ttl_secs") {
-			cc.ObjectTTLSecs = v.ObjectTTLSecs
+		if metadata.IsDefined("caches", k, "max_object_size_bytes") {
+			cc.MaxObjectSizeBytes = v.MaxObjectSizeBytes
 		}
 
 		if metadata.IsDefined("caches", k, "index", "reap_interval_secs") {
@@ -508,7 +616,7 @@ func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
 			cc.Index.MaxSizeBackoffObjects = v.Index.MaxSizeBackoffObjects
 		}
 
-		if cc.Type == "redis" {
+		if cc.CacheTypeID == CacheTypeRedis {
 
 			var hasEndpoint, hasEndpoints bool
 
@@ -646,14 +754,12 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 	nc.ProxyServer.ListenPort = c.ProxyServer.ListenPort
 
 	for k, v := range c.Origins {
-		o := DefaultOriginConfig()
-		o.APIPath = v.APIPath
+		o := NewOriginConfig()
 		o.BackfillTolerance = v.BackfillTolerance
 		o.BackfillToleranceSecs = v.BackfillToleranceSecs
 		o.CacheName = v.CacheName
 		o.FastForwardDisable = v.FastForwardDisable
 		o.Host = v.Host
-		o.IgnoreNoCacheHeader = v.IgnoreNoCacheHeader
 		o.IsDefault = v.IsDefault
 		o.KeepAliveTimeoutSecs = v.KeepAliveTimeoutSecs
 		o.MaxIdleConns = v.MaxIdleConns
@@ -661,25 +767,31 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 		o.Scheme = v.Scheme
 		o.Timeout = v.Timeout
 		o.TimeoutSecs = v.TimeoutSecs
-		o.Type = v.Type
+		o.OriginType = v.OriginType
 		o.TimeseriesRetention = v.TimeseriesRetention
 		o.TimeseriesRetentionFactor = v.TimeseriesRetentionFactor
 		o.TimeseriesEvictionMethodName = v.TimeseriesEvictionMethodName
 		o.TimeseriesEvictionMethod = v.TimeseriesEvictionMethod
+		o.FastForwardTTL = v.FastForwardTTL
+		o.FastForwardTTLSecs = v.FastForwardTTLSecs
+		o.MaxTTLSecs = v.MaxTTLSecs
+		o.MaxTTL = v.MaxTTL
+		o.RevalidationFactor = v.RevalidationFactor
+		o.TimeseriesTTL = v.TimeseriesTTL
+		o.TimeseriesTTLSecs = v.TimeseriesTTLSecs
+		o.Paths = make(map[string]*PathConfig)
+		for l, p := range v.Paths {
+			o.Paths[l] = p.Copy()
+		}
 		nc.Origins[k] = o
 	}
 
 	for k, v := range c.Caches {
 
-		cc := DefaultCachingConfig()
+		cc := NewCacheConfig()
 		cc.Compression = v.Compression
-		cc.FastForwardTTL = v.FastForwardTTL
-		cc.FastForwardTTLSecs = v.FastForwardTTLSecs
-		cc.ObjectTTL = v.ObjectTTL
-		cc.ObjectTTLSecs = v.ObjectTTLSecs
-		cc.TimeseriesTTL = v.TimeseriesTTL
-		cc.TimeseriesTTLSecs = v.TimeseriesTTLSecs
-		cc.Type = v.Type
+		cc.CacheType = v.CacheType
+		cc.CacheTypeID = v.CacheTypeID
 
 		cc.Index.FlushInterval = v.Index.FlushInterval
 		cc.Index.FlushIntervalSecs = v.Index.FlushIntervalSecs
@@ -726,6 +838,20 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 
 func (c *TricksterConfig) String() string {
 	cp := c.copy()
+
+	// the toml library will panic if the Handler is assigned,
+	// even though this field is annotated as skip ("-") in the prototype
+	// so we'll iterate the paths and set to nil the Handler (in our local copy only)
+	for _, v := range cp.Origins {
+		if v != nil {
+			for _, w := range v.Paths {
+				w.Handler = nil
+				w.KeyHasher = nil
+			}
+		}
+	}
+
+	// strip Redis password
 	for k, v := range cp.Caches {
 		if v != nil {
 			cp.Caches[k].Redis.Password = "*****"

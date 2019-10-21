@@ -13,6 +13,8 @@
 
 package config
 
+import "net/http"
+
 const (
 	defaultLogFile  = ""
 	defaultLogLevel = "INFO"
@@ -25,11 +27,13 @@ const (
 	defaultMetricsListenAddress = ""
 
 	defaultCacheType        = "memory"
+	defaultCacheTypeID      = CacheTypeMemory
 	defaultCacheCompression = true
 
 	defaultTimeseriesTTLSecs  = 21600
 	defaultFastForwardTTLSecs = 15
-	defaultObjectTTLSecs      = 30
+	defaultMaxTTLSecs         = 86400
+	defaultRevalidationFactor = 2
 
 	defaultCachePath = "/tmp/trickster"
 
@@ -46,12 +50,8 @@ const (
 	defaultMaxSizeBackoffBytes   = 16777216
 	defaultMaxSizeObjects        = 0
 	defaultMaxSizeBackoffObjects = 100
+	defaultMaxObjectSizeBytes    = 524288
 
-	defaultOriginServerType      = "prometheus"
-	defaultOriginScheme          = "http"
-	defaultOriginHost            = "prometheus:9090"
-	defaultOriginPathPrefix      = ""
-	defaultOriginAPIPath         = "/api/v1/"
 	defaultOriginINCH            = true
 	defaultOriginTRF             = 1024
 	defaultOriginTEM             = EvictionMethodOldest
@@ -61,6 +61,12 @@ const (
 	defaultBackfillToleranceSecs = 0
 	defaultKeepAliveTimeoutSecs  = 300
 	defaultMaxIdleConns          = 20
+
+	defaultHealthEndpoint          = "/health"
+	defaultHealthCheckPath         = "/"
+	defaultHealthCheckQuery        = ""
+	defaultHealthCheckVerb         = http.MethodGet
+	defaultHealthCheckResponseCode = http.StatusOK
 
 	defaultConfigHandlerPath = "/trickster/config"
 	defaultPingHandlerPath   = "/trickster/ping"

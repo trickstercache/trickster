@@ -26,6 +26,8 @@ import (
 	"github.com/influxdata/influxdb/models"
 )
 
+const testStep = time.Duration(10) * time.Second
+
 func TestSetExtents(t *testing.T) {
 	se := &SeriesEnvelope{}
 	ex := timeseries.ExtentList{timeseries.Extent{Start: time.Time{}, End: time.Time{}}}
@@ -43,6 +45,17 @@ func TestExtents(t *testing.T) {
 	if len(e) != 1 {
 		t.Errorf(`expected 1. got %d`, len(se.ExtentList))
 	}
+}
+
+func TestUpdateTimestamps(t *testing.T) {
+
+	// test edge condition here (core functionality is tested across this file)
+	se := SeriesEnvelope{isCounted: true}
+	se.updateTimestamps()
+	if se.timestamps != nil {
+		t.Errorf("expected nil map, got size %d", len(se.timestamps))
+	}
+
 }
 
 func TestCopy(t *testing.T) {
@@ -167,7 +180,7 @@ func TestMerge(t *testing.T) {
 	tests := []struct {
 		a, b, merged *SeriesEnvelope
 	}{
-		// Series that adhere to rule
+		// case 0
 		{
 			a: &SeriesEnvelope{
 				Results: []Result{
@@ -238,7 +251,7 @@ func TestMerge(t *testing.T) {
 			},
 		},
 
-		// empty second series
+		// case 1 empty second series
 		{
 			a: &SeriesEnvelope{
 				Results: []Result{
@@ -303,6 +316,178 @@ func TestMerge(t *testing.T) {
 				isCounted:    true,
 			},
 		},
+
+		// case 2, different series in different envelopes, merge into 1
+		{
+			a: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			b: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "b",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			merged: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+							{
+								Name:    "b",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+				timestamps:   map[time.Time]bool{},
+				tslist:       times.Times{},
+				isSorted:     true,
+				isCounted:    true,
+			},
+		},
+		// case 3, more results[] elements in the incoming envelope - lazy merge them
+		{
+			a: &SeriesEnvelope{
+				Results: []Result{
+					{
+						StatementID: 0,
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			b: &SeriesEnvelope{
+				Results: []Result{
+					{
+						StatementID: 0,
+						Series: []models.Row{
+							{
+								Name:    "b",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+						},
+					},
+					{
+						StatementID: 1,
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+							{
+								Name:    "c",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			merged: &SeriesEnvelope{
+				Results: []Result{
+					{
+						StatementID: 0,
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+							{
+								Name:    "b",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+						},
+					},
+					{
+						StatementID: 1,
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+							{
+								Name:    "c",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+				timestamps:   map[time.Time]bool{},
+				tslist:       times.Times{},
+				isSorted:     true,
+				isCounted:    true,
+			},
+		},
 	}
 
 	for i, test := range tests {
@@ -316,6 +501,10 @@ func TestMerge(t *testing.T) {
 }
 
 func TestCropToSize(t *testing.T) {
+
+	now := time.Now().Truncate(testStep)
+	nowEpochMs := float64(now.Unix() * 1000)
+
 	tests := []struct {
 		before, after *SeriesEnvelope
 		size          int
@@ -372,12 +561,11 @@ func TestCropToSize(t *testing.T) {
 				End:   time.Unix(1444004600, 0),
 			},
 			size: 1,
-			bft:  time.Now(),
+			bft:  now,
 		},
 
 		// case 1
 		{
-
 			before: &SeriesEnvelope{
 				Results: []Result{
 					{
@@ -397,7 +585,7 @@ func TestCropToSize(t *testing.T) {
 				ExtentList: timeseries.ExtentList{
 					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004610, 0)},
 				},
-				StepDuration: time.Duration(10) * time.Second,
+				StepDuration: testStep,
 			},
 			after: &SeriesEnvelope{
 				Results: []Result{
@@ -417,7 +605,7 @@ func TestCropToSize(t *testing.T) {
 				ExtentList: timeseries.ExtentList{
 					timeseries.Extent{Start: time.Unix(1444004610, 0), End: time.Unix(1444004610, 0)},
 				},
-				StepDuration: time.Duration(10) * time.Second,
+				StepDuration: testStep,
 				timestamps:   map[time.Time]bool{time.Unix(1444004610, 0): true},
 				tslist:       times.Times{time.Unix(1444004610, 0)},
 				isCounted:    true,
@@ -428,7 +616,150 @@ func TestCropToSize(t *testing.T) {
 				End:   time.Unix(1444004610, 0),
 			},
 			size: 1,
-			bft:  time.Now(),
+			bft:  now,
+		},
+
+		// case 2 - empty extent list
+		{
+			before: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+						},
+					},
+				},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: testStep,
+			},
+			after: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{},
+					},
+				},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: testStep,
+			},
+			extent: timeseries.Extent{},
+			size:   1,
+			bft:    now,
+		},
+
+		// case 3 - backfill tolerance
+		{
+			before: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(1444004600000), 1.5},
+									{nowEpochMs, 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004600, 0), End: now},
+				},
+				StepDuration: testStep,
+			},
+			after: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(1444004600000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004600, 0), End: now.Add(-5 * time.Minute)},
+				},
+				StepDuration: testStep,
+				timestamps:   map[time.Time]bool{time.Unix(1444004600, 0): true},
+				tslist:       times.Times{time.Unix(1444004600, 0)},
+				isCounted:    true,
+				isSorted:     false,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(0, 0),
+				End:   now,
+			},
+			size: 1,
+			bft:  now.Add(-5 * time.Minute),
+		},
+
+		// Case 4 - missing "time" column (we accidentally call it timestamp here)
+		{
+			before: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"timestamp", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(1444004600000), 1.5},
+									{float64(1444004610000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004610, 0)},
+				},
+				StepDuration: testStep,
+			},
+			after: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"timestamp", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(1444004600000), 1.5},
+									{float64(1444004610000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004610, 0)},
+				},
+				StepDuration: testStep,
+				timestamps:   map[time.Time]bool{},
+				tslist:       times.Times{},
+				isCounted:    true,
+				isSorted:     false,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(0, 0),
+				End:   time.Unix(1444004610, 0),
+			},
+			size: 1,
+			bft:  now,
 		},
 	}
 
@@ -452,8 +783,7 @@ func TestCropToRange(t *testing.T) {
 		before, after *SeriesEnvelope
 		extent        timeseries.Extent
 	}{
-		// Case where the very first element in the matrix has a timestamp matching the extent's end
-		{ // Run 0
+		{ // Run 0 Case where the very first element in the matrix has a timestamp matching the extent's end
 			before: &SeriesEnvelope{
 				Results: []Result{
 					{
@@ -499,8 +829,8 @@ func TestCropToRange(t *testing.T) {
 				End:   time.Unix(1544004600, 0),
 			},
 		},
-		// Case where we trim nothing
-		{ // Run 1
+
+		{ // Run 1 Case where we trim nothing
 			before: &SeriesEnvelope{
 				Results: []Result{
 					{
@@ -547,8 +877,7 @@ func TestCropToRange(t *testing.T) {
 			},
 		},
 
-		// Case where we trim everything (all data is too old)
-		{ // Run 2
+		{ // Run 2 Case where we trim everything (all data is too old)
 			before: &SeriesEnvelope{
 				Results: []Result{
 					{
@@ -584,8 +913,7 @@ func TestCropToRange(t *testing.T) {
 			},
 		},
 
-		// Case where we trim everything (all data is too early)
-		{ // Run 3
+		{ // Run 3 Case where we trim everything (all data is too early)
 			before: &SeriesEnvelope{
 				Results: []Result{
 					{
@@ -621,8 +949,7 @@ func TestCropToRange(t *testing.T) {
 			},
 		},
 
-		// Case where we trim some off the beginning
-		{ // Run 4
+		{ // Run 4 Case where we trim some off the beginning
 			before: &SeriesEnvelope{
 				Results: []Result{
 					{
@@ -671,8 +998,7 @@ func TestCropToRange(t *testing.T) {
 			},
 		},
 
-		// Case where we trim some off the ends
-		{ // Run 5
+		{ // Run 5 Case where we trim some off the ends
 			before: &SeriesEnvelope{
 				Results: []Result{
 					{
@@ -721,8 +1047,7 @@ func TestCropToRange(t *testing.T) {
 			},
 		},
 
-		// Case where the last datapoint is on the Crop extent
-		{ // Run 6
+		{ // Run 6 Case where the last datapoint is on the Crop extent
 			before: &SeriesEnvelope{
 				Results: []Result{
 					{
@@ -772,8 +1097,7 @@ func TestCropToRange(t *testing.T) {
 			},
 		},
 
-		// Case where we aren't given any datapoints
-		{ // Run 7
+		{ // Run 7 Case where we aren't given any datapoints
 			before: &SeriesEnvelope{
 				Results: []Result{
 					{
@@ -805,8 +1129,7 @@ func TestCropToRange(t *testing.T) {
 			},
 		},
 
-		// Case where we have more series than points
-		{ // Run 8
+		{ // Run 8 Case where we have more series than points
 			before: &SeriesEnvelope{
 				Results: []Result{
 					{
@@ -849,103 +1172,374 @@ func TestCropToRange(t *testing.T) {
 				End:   time.Unix(300, 0),
 			},
 		},
+
+		// Run 9: Case where after cropping, an inner series is empty/removed
+		{
+			before: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(100000), 1.5},
+									{float64(200000), 1.5},
+									{float64(300000), 1.5},
+									{float64(400000), 1.5},
+									{float64(500000), 1.5},
+									{float64(600000), 1.5},
+								},
+							},
+							{
+								Name:    "b",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(100000), 1.5},
+									{float64(200000), 1.5},
+									{float64(300000), 1.5},
+								},
+							},
+							{
+								Name:    "c",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(100000), 1.5},
+									{float64(200000), 1.5},
+									{float64(300000), 1.5},
+									{float64(400000), 1.5},
+									{float64(500000), 1.5},
+									{float64(600000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(400000), 1.5},
+									{float64(500000), 1.5},
+									{float64(600000), 1.5},
+								},
+							},
+							{
+								Name:    "c",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(400000), 1.5},
+									{float64(500000), 1.5},
+									{float64(600000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(400, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(400, 0),
+				End:   time.Unix(600, 0),
+			},
+		},
+
+		// Run 10: Case where after cropping, the front series is empty/removed
+		{
+			before: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(100000), 1.5},
+									{float64(200000), 1.5},
+									{float64(300000), 1.5},
+								},
+							},
+							{
+								Name:    "b",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(100000), 1.5},
+									{float64(200000), 1.5},
+									{float64(300000), 1.5},
+									{float64(400000), 1.5},
+									{float64(500000), 1.5},
+									{float64(600000), 1.5},
+								},
+							},
+							{
+								Name:    "c",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(100000), 1.5},
+									{float64(200000), 1.5},
+									{float64(300000), 1.5},
+									{float64(400000), 1.5},
+									{float64(500000), 1.5},
+									{float64(600000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "b",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(400000), 1.5},
+									{float64(500000), 1.5},
+									{float64(600000), 1.5},
+								},
+							},
+							{
+								Name:    "c",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(400000), 1.5},
+									{float64(500000), 1.5},
+									{float64(600000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(400, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(400, 0),
+				End:   time.Unix(600, 0),
+			},
+		},
+
+		// Run 11: Case where after cropping, the back series is empty/removed
+		{
+			before: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(100000), 1.5},
+									{float64(200000), 1.5},
+									{float64(300000), 1.5},
+									{float64(400000), 1.5},
+									{float64(500000), 1.5},
+									{float64(600000), 1.5},
+								},
+							},
+							{
+								Name:    "b",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(100000), 1.5},
+									{float64(200000), 1.5},
+									{float64(300000), 1.5},
+									{float64(400000), 1.5},
+									{float64(500000), 1.5},
+									{float64(600000), 1.5},
+								},
+							},
+							{
+								Name:    "c",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(100000), 1.5},
+									{float64(200000), 1.5},
+									{float64(300000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(400000), 1.5},
+									{float64(500000), 1.5},
+									{float64(600000), 1.5},
+								},
+							},
+							{
+								Name:    "b",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(400000), 1.5},
+									{float64(500000), 1.5},
+									{float64(600000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(400, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(400, 0),
+				End:   time.Unix(600, 0),
+			},
+		},
+
+		// Run 12: Case where we short circuit since the dataset is already entirely inside the crop range
+		{
+			before: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+							{
+								Name:    "b",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+							{
+								Name:    "c",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &SeriesEnvelope{
+				Results: []Result{{Series: []models.Row{}}},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(100, 0),
+				End:   time.Unix(600, 0),
+			},
+		},
+
+		{ // Run 13 Case where we short circuit since the dataset is empty
+			before: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+							{
+								Name:    "b",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values:  [][]interface{}{},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(100, 0),
+				End:   time.Unix(600, 0),
+			},
+		},
 	}
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			test.before.CropToRange(test.extent)
 			if !reflect.DeepEqual(test.before, test.after) {
-				t.Errorf("mismatch got=%v expected=%v", test.before, test.after)
+				t.Errorf("mismatch\nexpected=%v\ngot     =%v", test.after, test.before)
 			}
 		})
 	}
 }
 
-// func TestSort(t *testing.T) {
-// 	tests := []struct {
-// 		before, after *SeriesEnvelope
-// 		extent        timeseries.Extent
-// 	}{
-// 		// Case where we trim nothing
-// 		{
-// 			before: &SeriesEnvelope{
-// 				Data: MatrixData{
-// 					ResultType: "matrix",
-// 					Result: models.Matrix{
-// 						&models.SampleStream{
-// 							Metric: models.Metric{"__name__": "a"},
-// 							Values: []models.SamplePair{
-// 								models.SamplePair{Timestamp: 1544004200000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004600000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004800000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004000000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004000000, Value: 1.5}, // sort should also dupe kill
-// 							},
-// 						},
-// 						&models.SampleStream{
-// 							Metric: models.Metric{"__name__": "b"},
-// 							Values: []models.SamplePair{
-// 								models.SamplePair{Timestamp: 1544004600000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004200000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004000000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004800000, Value: 1.5},
-// 							},
-// 						},
-// 						&models.SampleStream{
-// 							Metric: models.Metric{"__name__": "c"},
-// 							Values: []models.SamplePair{
-// 								models.SamplePair{Timestamp: 1544004800000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004200000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004000000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004600000, Value: 1.5},
-// 							},
-// 						},
-// 					},
-// 				},
-// 			},
-// 			after: &SeriesEnvelope{
-// 				Data: MatrixData{
-// 					ResultType: "matrix",
-// 					Result: models.Matrix{
-// 						&models.SampleStream{
-// 							Metric: models.Metric{"__name__": "a"},
-// 							Values: []models.SamplePair{
-// 								models.SamplePair{Timestamp: 1544004000000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004200000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004600000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004800000, Value: 1.5},
-// 							},
-// 						},
-// 						&models.SampleStream{
-// 							Metric: models.Metric{"__name__": "b"},
-// 							Values: []models.SamplePair{
-// 								models.SamplePair{Timestamp: 1544004000000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004200000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004600000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004800000, Value: 1.5},
-// 							},
-// 						},
-// 						&models.SampleStream{
-// 							Metric: models.Metric{"__name__": "c"},
-// 							Values: []models.SamplePair{
-// 								models.SamplePair{Timestamp: 1544004000000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004200000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004600000, Value: 1.5},
-// 								models.SamplePair{Timestamp: 1544004800000, Value: 1.5},
-// 							},
-// 						},
-// 					},
-// 				},
-// 			},
-// 		},
-// 	}
+func TestSort(t *testing.T) {
 
-// 	for i, test := range tests {
-// 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-// 			test.before.Sort()
-// 			if !reflect.DeepEqual(test.before, test.after) {
-// 				t.Fatalf("mismatch\nexpected=%v\nactual=%v", test.after, test.before)
-// 			}
-// 		})
-// 	}
-// }
+	se := SeriesEnvelope{isSorted: true, isCounted: false}
+	se.Sort()
+	if se.isCounted {
+		t.Errorf("got %t expected %t", se.isCounted, false)
+	}
+}

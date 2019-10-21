@@ -113,7 +113,9 @@ func (el ExtentList) Compress(step time.Duration) ExtentList {
 		if e.Start.IsZero() {
 			e.Start = exc[i].Start
 		}
-		if i+1 < l && (exc[i].End.Add(step).Equal(exc[i+1].Start) || exc[i].End.Equal(exc[i+1].Start)) && exc[i].LastUsed == exc[i+1].LastUsed {
+		if i+1 < l && ((exc[i].End.Add(step).Equal(exc[i+1].Start) ||
+			exc[i].End.Equal(exc[i+1].Start)) && exc[i].LastUsed.Equal(exc[i+1].LastUsed) ||
+			exc[i].End.Equal(exc[i+1].End) && exc[i].Start.Equal(exc[i+1].Start)) {
 			continue
 		}
 		e.End = exc[i].End

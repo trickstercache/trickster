@@ -32,6 +32,15 @@ const (
 	// ValueTextPlain represents the HTTP Header Value of "text/plain"
 	ValueTextPlain = "text/plain"
 
+	ValuePublic          = "public"
+	ValuePrivate         = "private"
+	ValueMaxAge          = "max-age"
+	ValueSharedMaxAge    = "s-maxage"
+	ValueMustRevalidate  = "must-revalidate"
+	ValueNoStore         = "no-store"
+	ValueProxyRevalidate = "proxy-revalidate"
+	ValueNoTransform     = "no-transform"
+
 	// Common HTTP Header Names
 
 	// NameCacheControl represents the HTTP Header Name of "Cache-Control"
@@ -56,8 +65,16 @@ const (
 	NameXForwardedFor = "X-Forwarded-For"
 	// NameAcceptEncoding represents the HTTP Header Name of "Accept-Encoding"
 	NameAcceptEncoding = "Accept-Encoding"
-	// NameDate represents the HTTP Header Name of "Date"
-	NameDate = "Date"
+
+	NameExpires           = "expires"
+	NameLastModified      = "last-modified"
+	NameDate              = "date"
+	NameETag              = "etag"
+	NamePragma            = "pragma"
+	NameIfModifiedSince   = "if-modified-since"
+	NameIfUnmodifiedSince = "if-unmodified-since"
+	NameIfNoneMatch       = "if-none-match"
+	NameIfMatch           = "if-match"
 )
 
 // CopyHeaders returns an exact copy of an http.Header collection
@@ -68,6 +85,29 @@ func CopyHeaders(h http.Header) http.Header {
 		copy(headers[k], v)
 	}
 	return headers
+}
+
+// UpdateHeaders updates the provided headers collection with the provided updates
+func UpdateHeaders(headers http.Header, updates map[string]string) {
+	if headers == nil || updates == nil || len(updates) == 0 {
+		return
+	}
+	for k, v := range updates {
+		if len(k) == 0 {
+			continue
+		}
+		if k[0:1] == "-" {
+			k = k[1:]
+			headers.Del(k)
+			continue
+		}
+		if k[0:1] == "+" {
+			k = k[1:]
+			headers.Add(k, v)
+			continue
+		}
+		headers.Set(k, v)
+	}
 }
 
 // AddProxyHeaders injects standard Trickster headers into proxied upstream HTTP requests

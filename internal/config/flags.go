@@ -23,7 +23,7 @@ const (
 	cfVersion     = "version"
 	cfLogLevel    = "log-level"
 	cfInstanceID  = "instance-id"
-	cfOrigin      = "origin"
+	cfOrigin      = "origin-url"
 	cfOriginType  = "origin-type"
 	cfProxyPort   = "proxy-port"
 	cfMetricsPort = "metrics-port"
@@ -70,10 +70,10 @@ func (c *TricksterConfig) parseFlags(applicationName string, arguments []string)
 
 func (c *TricksterConfig) loadFlags() {
 	if len(Flags.Origin) > 0 {
-		defaultOriginURL = Flags.Origin
+		providedOriginURL = Flags.Origin
 	}
 	if len(Flags.OriginType) > 0 {
-		defaultOriginType = Flags.OriginType
+		providedOriginType = Flags.OriginType
 	}
 	if Flags.ProxyListenPort > 0 {
 		c.ProxyServer.ListenPort = Flags.ProxyListenPort

@@ -19,24 +19,34 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Comcast/trickster/internal/config"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
 func TestNewRequest(t *testing.T) {
 	url := &url.URL{}
+
+	cfg := config.NewOriginConfig()
+	cfg.Name = "test"
+	cfg.OriginType = "testType"
+
 	headers := make(http.Header)
-	r := NewRequest("test", "testType", "testhandler", "testMethod", url, headers, time.Duration(1)*time.Second, nil, tu.NewTestWebClient())
-	if r.OriginType != "testType" {
-		t.Errorf("expected 'testType' got '%s'", r.OriginType)
+	r := NewRequest("testhandler", http.MethodGet, url, headers, time.Duration(1)*time.Second, nil, tu.NewTestWebClient())
+	if r.HandlerName != "testhandler" {
+		t.Errorf("expected 'testHandler' got '%s'", r.HandlerName)
 	}
+
 }
 
 func TestCopy(t *testing.T) {
+	cfg := config.NewOriginConfig()
+	cfg.Name = "test"
+	cfg.OriginType = "testType"
 	url := &url.URL{}
 	headers := make(http.Header)
-	r := NewRequest("test", "testType", "testhandler", "testMethod", url, headers, time.Duration(1)*time.Second, nil, tu.NewTestWebClient())
+	r := NewRequest("testhandler", http.MethodGet, url, headers, time.Duration(1)*time.Second, nil, tu.NewTestWebClient())
 	r2 := r.Copy()
-	if r2.OriginType != "testType" {
-		t.Errorf("expected 'testType' got '%s'", r2.OriginType)
+	if r2.HandlerName != "testhandler" {
+		t.Errorf("expected 'testHandler' got '%s'", r2.HandlerName)
 	}
 }
