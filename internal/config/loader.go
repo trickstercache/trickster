@@ -14,7 +14,9 @@
 package config
 
 import (
+	"fmt"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -22,10 +24,11 @@ import (
 // then overriding with any provided config file, then env vars, and finally flags
 func Load(applicationName string, applicationVersion string, arguments []string) error {
 
+	providedOriginURL = ""
+	providedOriginType = ""
+
 	ApplicationName = applicationName
 	ApplicationVersion = applicationVersion
-	defaultOriginURL = ""
-	defaultOriginType = ""
 	LoaderWarnings = make([]string, 0, 0)
 
 	c := NewConfig()
@@ -42,26 +45,33 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	c.loadFlags() // load parsed flags to override file and envs
 
 	// set the default origin url from the flags
-	if defaultOriginURL != "" {
-
-		url, err := url.Parse(defaultOriginURL)
-		if err != nil {
-			return err
+	if d, ok := c.Origins["default"]; ok {
+		if providedOriginURL != "" {
+			url, err := url.Parse(providedOriginURL)
+			if err != nil {
+				return err
+			}
+			if providedOriginType != "" {
+				d.OriginType = providedOriginType
+			}
+			d.OriginURL = providedOriginURL
+			d.Scheme = url.Scheme
+			d.Host = url.Host
+			d.PathPrefix = url.Path
+		}
+		// If the user has configured their own origins, and one of them is not "default"
+		// then Trickster will not use the auto-created default origin
+		if d.OriginURL == "" {
+			delete(c.Origins, "default")
 		}
 
-		d, ok := c.Origins["default"]
-		if !ok {
-			d = DefaultOriginConfig()
-			c.Origins["default"] = d
+		if providedOriginType != "" {
+			d.OriginType = providedOriginType
 		}
+	}
 
-		if defaultOriginType != "" {
-			d.Type = defaultOriginType
-		}
-
-		d.Scheme = url.Scheme
-		d.Host = url.Host
-		d.PathPrefix = url.Path
+	if len(c.Origins) == 0 {
+		return fmt.Errorf("no valid origins configured%s", "")
 	}
 
 	Config = c
@@ -72,22 +82,64 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	Logging = c.Logging
 	Metrics = c.Metrics
 
-	for k, o := range Origins {
+	for k, o := range c.Origins {
+
+		if o.OriginURL == "" {
+			return fmt.Errorf(`missing origin-url for origin "%s"`, k)
+		}
+
+		url, err := url.Parse(o.OriginURL)
+		if err != nil {
+			return err
+		}
+
+		if o.OriginType == "" {
+			return fmt.Errorf(`missing origin-type for origin "%s"`, k)
+		}
+
+		for c, s := range o.NegativeCacheSecs {
+
+			ci, err := strconv.Atoi(c)
+			if err != nil {
+				return fmt.Errorf(`invalid negative cache config: %s is not a valid status code`, c)
+			}
+
+			if ci >= 400 && ci < 600 {
+				o.NegativeCache[ci] = time.Duration(s) * time.Second
+			} else {
+				return fmt.Errorf(`invalid negative cache config: %s is not a valid status code`, c)
+			}
+		}
+
+		o.Name = k
+		o.Scheme = url.Scheme
+		o.Host = url.Host
+		o.PathPrefix = url.Path
 		o.Timeout = time.Duration(o.TimeoutSecs) * time.Second
 		o.BackfillTolerance = time.Duration(o.BackfillToleranceSecs) * time.Second
 		o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
+		o.TimeseriesTTL = time.Duration(o.TimeseriesTTLSecs) * time.Second
+		o.FastForwardTTL = time.Duration(o.FastForwardTTLSecs) * time.Second
+		o.MaxTTL = time.Duration(o.MaxTTLSecs) * time.Second
+
+		// enforce MaxTTL
+		if o.TimeseriesTTLSecs > o.MaxTTLSecs {
+			o.TimeseriesTTLSecs = o.MaxTTLSecs
+			o.TimeseriesTTL = o.MaxTTL
+		}
+
+		// unlikely but why not spend a few nanoseconds to check it at startup
+		if o.FastForwardTTLSecs > o.MaxTTLSecs {
+			o.FastForwardTTLSecs = o.MaxTTLSecs
+			o.FastForwardTTL = o.MaxTTL
+		}
+
 		Origins[k] = o
 	}
 
-	for k, c := range Caches {
-		c.TimeseriesTTL = time.Duration(c.TimeseriesTTLSecs) * time.Second
-		c.ObjectTTL = time.Duration(c.ObjectTTLSecs) * time.Second
-		c.FastForwardTTL = time.Duration(c.FastForwardTTLSecs) * time.Second
-
+	for _, c := range Caches {
 		c.Index.FlushInterval = time.Duration(c.Index.FlushIntervalSecs) * time.Second
 		c.Index.ReapInterval = time.Duration(c.Index.ReapIntervalSecs) * time.Second
-
-		Caches[k] = c
 	}
 
 	return nil

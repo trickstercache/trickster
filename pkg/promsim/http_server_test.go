@@ -228,6 +228,16 @@ func TestQueryHandlerInvalidParam(t *testing.T) {
 	}
 }
 
+func TestParseTime(t *testing.T) {
+
+	const time1 = "2006-01-02T15:04:05.999999999Z"
+	_, err := parseTime(time1)
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
 func TestParseDuration(t *testing.T) {
 
 	// Test inferred seconds
@@ -262,6 +272,18 @@ func TestParseDuration(t *testing.T) {
 
 	// Test empty
 	d, err = parseDuration("")
+	if err == nil {
+		t.Errorf("expected parseDuration error for input [%s] got [%d]", "", d)
+	}
+
+	// Test Invalid
+	d, err = parseDuration("1s1t")
+	if err == nil {
+		t.Errorf("expected parseDuration error for input [%s] got [%d]", "", d)
+	}
+
+	// Test Valid Units but No Value
+	d, err = parseDuration("s")
 	if err == nil {
 		t.Errorf("expected parseDuration error for input [%s] got [%d]", "", d)
 	}

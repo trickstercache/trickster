@@ -1,7 +1,22 @@
+/**
+* Copyright 2018 Comcast Cable Communications Management, LLC
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+* http://www.apache.org/licenses/LICENSE-2.0
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+ */
+
 package irondb
 
 import (
+	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -17,9 +32,9 @@ import (
 func (c *Client) TextHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	engines.DeltaProxyCacheRequest(
-		model.NewRequest(c.name, otIRONdb, "TextHandler",
+		model.NewRequest("TextHandler",
 			r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, c.cache, c.cache.Configuration().TimeseriesTTL)
+		w, c)
 }
 
 // textHandlerSetExtent will change the upstream request query to use the
@@ -69,11 +84,11 @@ func (c *Client) textHandlerParseTimeRangeQuery(
 
 // textHandlerDeriveCacheKey calculates a query-specific keyname based on the
 // user request.
-func (c Client) textHandlerDeriveCacheKey(r *model.Request,
-	extra string) string {
+func (c Client) textHandlerDeriveCacheKey(path string, params url.Values,
+	headers http.Header, body io.ReadCloser, extra string) string {
 	var sb strings.Builder
-	sb.WriteString(r.URL.Path)
-	ps := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 5)
+	sb.WriteString(path)
+	ps := strings.SplitN(strings.TrimPrefix(path, "/"), "/", 5)
 	if len(ps) >= 5 || ps[0] == "read" {
 		sb.WriteString("/read/" + strings.Join(ps[3:], "/"))
 	}

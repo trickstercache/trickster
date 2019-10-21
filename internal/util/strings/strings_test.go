@@ -30,3 +30,21 @@ func TestIndexOfString(t *testing.T) {
 	}
 
 }
+
+func TestCopyMap(t *testing.T) {
+
+	const expected = "pass"
+
+	m := map[string]string{"test": expected}
+	m2 := CopyMap(m)
+
+	v, ok := m2["test"]
+	if !ok {
+		t.Errorf("expected true got %t", ok)
+	}
+
+	if v != expected {
+		t.Errorf("expected %s got %s", expected, v)
+	}
+
+}

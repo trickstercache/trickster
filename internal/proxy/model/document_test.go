@@ -15,6 +15,7 @@ package model
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -25,7 +26,7 @@ func TestDocumentFromHTTPResponse(t *testing.T) {
 	resp := &http.Response{}
 	resp.Header = make(http.Header)
 	resp.StatusCode = 200
-	d := DocumentFromHTTPResponse(resp, []byte("1234"))
+	d := DocumentFromHTTPResponse(resp, []byte("1234"), nil)
 
 	if string(d.Body) != string(expected) {
 		t.Errorf("expected %s got %s", string(expected), string(d.Body))
@@ -33,6 +34,18 @@ func TestDocumentFromHTTPResponse(t *testing.T) {
 
 	if d.StatusCode != 200 {
 		t.Errorf("expected %d got %d", 200, d.StatusCode)
+	}
+
+}
+
+func TestCachingPolicyString(t *testing.T) {
+
+	cp := &CachingPolicy{NoTransform: true}
+	s := cp.String()
+
+	i := strings.Index(s, `"no_transform":true`)
+	if i < 1 {
+		t.Errorf("expected value > 1, got %d", i)
 	}
 
 }

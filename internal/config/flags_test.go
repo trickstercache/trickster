@@ -20,7 +20,7 @@ import (
 func TestLoadFlags(t *testing.T) {
 	c := NewConfig()
 	a := []string{
-		"-origin",
+		"-origin-url",
 		"http://prometheus.example.com:9090",
 		"-proxy-port",
 		"9091",
@@ -38,11 +38,11 @@ func TestLoadFlags(t *testing.T) {
 	c.parseFlags("trickster-test", a)
 	c.loadFlags()
 
-	if defaultOriginURL != a[1] {
-		t.Errorf("wanted \"%s\". got \"%s\".", a[1], defaultOriginURL)
+	if providedOriginURL != a[1] {
+		t.Errorf("wanted \"%s\". got \"%s\".", a[1], providedOriginURL)
 	}
-	if defaultOriginType != a[7] {
-		t.Errorf("wanted \"%s\". got \"%s\".", a[1], defaultOriginType)
+	if providedOriginType != a[7] {
+		t.Errorf("wanted \"%s\". got \"%s\".", a[1], providedOriginType)
 	}
 	if c.ProxyServer.ListenPort != 9091 {
 		t.Errorf("wanted \"%d\". got \"%d\".", 9091, c.ProxyServer.ListenPort)

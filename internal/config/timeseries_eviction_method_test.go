@@ -13,7 +13,9 @@
 
 package config
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestTEMString(t *testing.T) {
 

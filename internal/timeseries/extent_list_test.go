@@ -494,34 +494,6 @@ func TestCrop(t *testing.T) {
 
 }
 
-// func TestOutsideOf(t *testing.T) {
-
-// 	el := ExtentList{
-// 		Extent{Start: t100, End: t200},
-// 		Extent{Start: t600, End: t900},
-// 		Extent{Start: t1100, End: t1300},
-// 	}
-
-// 	tests := []struct {
-// 		seed      ExtentList
-// 		testRange Extent
-// 		expected  bool
-// 	}{
-// 		{el, Extent{Start: t0, End: t0}, true},
-// 		{el, Extent{Start: t100, End: t1400}, false},
-// 		{ExtentList{}, Extent{Start: t100, End: t1400}, true},
-// 	}
-
-// 	for i, test := range tests {
-// 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-// 			result := test.seed.OutsideOf(test.testRange)
-// 			if result != test.expected {
-// 				t.Errorf("expected=%t got=%t", test.expected, result)
-// 			}
-// 		})
-// 	}
-// }
-
 func TestExtentListLRUSort(t *testing.T) {
 	el := ExtentListLRU{
 		Extent{Start: t600, End: t900, LastUsed: t900},
@@ -601,6 +573,19 @@ func TestCompress(t *testing.T) {
 				Extent{Start: time.Unix(90, 0), End: time.Unix(210, 0)},
 				Extent{Start: time.Unix(270, 0), End: time.Unix(360, 0)},
 				Extent{Start: time.Unix(420, 0), End: time.Unix(480, 0)},
+			},
+		},
+
+		{
+			ExtentList{
+				Extent{Start: time.Unix(90, 0), End: time.Unix(120, 0)},
+				Extent{Start: time.Unix(90, 0), End: time.Unix(120, 0)},
+				Extent{Start: time.Unix(180, 0), End: time.Unix(180, 0)},
+				Extent{Start: time.Unix(180, 0), End: time.Unix(180, 0)},
+			},
+			ExtentList{
+				Extent{Start: time.Unix(90, 0), End: time.Unix(120, 0)},
+				Extent{Start: time.Unix(180, 0), End: time.Unix(180, 0)},
 			},
 		},
 	}

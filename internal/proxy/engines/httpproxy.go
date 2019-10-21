@@ -27,6 +27,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/Comcast/trickster/internal/util/context"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
@@ -41,11 +42,18 @@ func ProxyRequest(r *model.Request, w http.ResponseWriter) {
 // Fetch makes an HTTP request to the provided Origin URL
 func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 
-	if r != nil {
+	pc := context.PathConfig(r.ClientRequest.Context())
+	oc := context.OriginConfig(r.ClientRequest.Context())
+
+	if r != nil && r.Headers != nil {
 		headers.AddProxyHeaders(r.ClientRequest.RemoteAddr, r.Headers)
 	}
 
 	headers.RemoveClientHeaders(r.Headers)
+
+	if pc != nil {
+		headers.UpdateHeaders(r.Headers, pc.RequestHeaders)
+	}
 
 	start := time.Now()
 	req := &http.Request{Method: r.ClientRequest.Method}
@@ -67,6 +75,9 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 		if resp == nil {
 			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r.ClientRequest, Header: make(http.Header)}
 		}
+		if pc != nil {
+			headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
+		}
 		return []byte{}, resp, -1
 	}
 
@@ -75,10 +86,10 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 		d, err := http.ParseTime(date)
 		if err == nil {
 			if offset := time.Now().Sub(d); time.Duration(math.Abs(float64(offset))) > time.Minute {
-				log.WarnOnce("clockoffset."+r.OriginName,
+				log.WarnOnce("clockoffset."+oc.Name,
 					"clock offset between trickster host and origin is high and may cause data anomalies",
 					log.Pairs{
-						"originName":    r.OriginName,
+						"originName":    oc.Name,
 						"tricksterTime": strconv.FormatInt(d.Add(offset).Unix(), 10),
 						"originTime":    strconv.FormatInt(d.Unix(), 10),
 						"offset":        strconv.FormatInt(int64(offset.Seconds()), 10) + "s",
@@ -87,22 +98,34 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 		}
 	}
 
+	hasCustomResponseBody := false
 	resp.Header.Del(headers.NameContentLength)
 
-	body, err := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		log.Error("error reading body from http response", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
-		return []byte{}, resp, 0
+	if pc != nil {
+		headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
+		hasCustomResponseBody = pc.HasCustomResponseBody
 	}
 
-	latency := time.Since(start) // includes any time required to decompress the document for deserialization
+	var body []byte
+
+	if hasCustomResponseBody {
+		body = pc.ResponseBodyBytes
+	} else {
+		body, err = ioutil.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			log.Error("error reading body from http response", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
+			return []byte{}, resp, 0
+		}
+	}
+
+	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
 
 	if config.Logging.LogLevel == "debug" || config.Logging.LogLevel == "trace" {
-		go logUpstreamRequest(r.OriginName, r.OriginType, r.HandlerName, r.HTTPMethod, r.URL.String(), r.ClientRequest.UserAgent(), resp.StatusCode, len(body), latency.Seconds())
+		go logUpstreamRequest(oc.Name, oc.OriginType, r.HandlerName, r.ClientRequest.Method, r.URL.String(), r.ClientRequest.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
 	}
 
-	return body, resp, latency
+	return body, resp, elapsed
 }
 
 // Respond sends an HTTP Response down to the requesting client
@@ -125,15 +148,13 @@ func recordProxyResults(r *model.Request, httpStatus int, path string, elapsed f
 }
 
 func recordResults(r *model.Request, engine string, cacheStatus tc.LookupStatus, statusCode int, path, ffStatus string, elapsed float64, extents timeseries.ExtentList, header http.Header) {
+	oc := context.OriginConfig(r.ClientRequest.Context())
+
 	httpStatus := strconv.Itoa(statusCode)
 	status := cacheStatus.String()
-	metrics.ProxyRequestStatus.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, status, httpStatus, path).Inc()
+	metrics.ProxyRequestStatus.WithLabelValues(oc.Name, oc.OriginType, r.HTTPMethod, status, httpStatus, path).Inc()
 	if elapsed > 0 {
-		metrics.ProxyRequestDuration.WithLabelValues(r.OriginName, r.OriginType, r.HTTPMethod, status, httpStatus, path).Observe(elapsed)
+		metrics.ProxyRequestDuration.WithLabelValues(oc.Name, oc.OriginType, r.HTTPMethod, status, httpStatus, path).Observe(elapsed)
 	}
 	headers.SetResultsHeader(header, engine, status, ffStatus, extents)
-}
-
-func isRefresh(reqHeader http.Header) bool {
-	return strings.ToLower(reqHeader.Get(headers.NameCacheControl)) == headers.ValueNoCache
 }

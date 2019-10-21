@@ -18,12 +18,21 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"time"
+
+	cr "github.com/Comcast/trickster/internal/cache/registration"
+	"github.com/Comcast/trickster/internal/config"
+	th "github.com/Comcast/trickster/internal/proxy/headers"
+	ct "github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/Comcast/trickster/pkg/promsim"
 )
 
-// NewTestServer returns a new httptest.Server that responds with the provided code and body
-func NewTestServer(responseCode int, responseBody string) *httptest.Server {
+// NewTestServer returns a new httptest.Server that responds with the provided code, body and headers
+func NewTestServer(responseCode int, responseBody string, headers map[string]string) *httptest.Server {
 	handler := func(w http.ResponseWriter, r *http.Request) {
+		th.UpdateHeaders(w.Header(), headers)
 		w.WriteHeader(responseCode)
 		fmt.Fprint(w, responseBody)
 	}
@@ -44,4 +53,69 @@ func NewTestWebClient() *http.Client {
 			MaxIdleConnsPerHost: 20,
 		},
 	}
+}
+
+// NewTestInstance will start a trickster
+func NewTestInstance(
+	configFile string,
+	DefaultPathConfigs func(*config.OriginConfig) (map[string]*config.PathConfig, []string),
+	respCode int, respBody string, respHeaders map[string]string,
+	originType, urlPath, logLevel string,
+) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *http.Client, error) {
+
+	metrics.Init()
+
+	var ts *httptest.Server
+	if originType == "promsim" {
+		ts = promsim.NewTestServer()
+		originType = "prometheus"
+	} else {
+		ts = NewTestServer(respCode, respBody, respHeaders)
+	}
+
+	args := []string{"-origin-url", ts.URL, "-origin-type", originType, "-log-level", logLevel}
+	if configFile != "" {
+		args = append(args, []string{"-config", configFile}...)
+	}
+
+	err := config.Load("trickster", "test", args)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	if !strings.HasPrefix(urlPath, "/") {
+		urlPath = "/" + urlPath
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", ts.URL+urlPath, nil)
+
+	oc := config.Origins["default"]
+	r = r.WithContext(ct.WithConfigs(r.Context(), oc, cache, nil))
+
+	var paths map[string]*config.PathConfig
+	if DefaultPathConfigs != nil {
+		paths, _ = DefaultPathConfigs(oc)
+	}
+
+	oc.Paths = paths
+
+	var p *config.PathConfig
+	if len(paths) > 0 {
+		if p2, ok := paths[urlPath]; ok {
+			p = p2
+		}
+	}
+
+	r = r.WithContext(ct.WithConfigs(r.Context(), oc, cache, p))
+
+	c := NewTestWebClient()
+
+	return ts, w, r, c, nil
 }

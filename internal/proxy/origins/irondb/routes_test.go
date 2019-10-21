@@ -1,77 +1,59 @@
+/**
+* Copyright 2018 Comcast Cable Communications Management, LLC
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+* http://www.apache.org/licenses/LICENSE-2.0
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+ */
+
 package irondb
 
 import (
-	"net/http/httptest"
 	"testing"
 
-	"github.com/gorilla/mux"
-
-	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/routing"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
-func TestRegisterRoutesNoDefault(t *testing.T) {
-	routing.Router = mux.NewRouter()
-	es := tu.NewTestServer(200, "{}")
-	defer es.Close()
-	err := config.Load("trickster", "test",
-		[]string{"-origin", es.URL,
-			"-origin-type", "prometheus",
-			"-log-level", "debug"})
-	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
-	}
-
-	oc := config.Origins["default"]
-	oc.IsDefault = false
-	client := Client{config: oc}
-	client.RegisterRoutes("test_default", oc)
-
-	// This should be false.
-	r := httptest.NewRequest("GET", "http://0/health", nil)
-	rm := &mux.RouteMatch{}
-	if routing.Router.Match(r, rm) {
-		t.Errorf("unexpected route match")
-		return
-	}
-
-	// This should be true.
-	r = httptest.NewRequest("GET", "http://0/test_default/health", nil)
-	if !routing.Router.Match(r, rm) {
-		t.Errorf("could not match route")
-		return
+func TestRegisterHandlers(t *testing.T) {
+	c := &Client{}
+	c.registerHandlers()
+	if _, ok := c.handlers[mnCAQL]; !ok {
+		t.Errorf("expected to find handler named: %s", mnCAQL)
 	}
 }
 
-func TestRegisterRoutesDefault(t *testing.T) {
-	routing.Router = mux.NewRouter()
-	es := tu.NewTestServer(200, "{}")
-	defer es.Close()
-	err := config.Load("trickster", "test",
-		[]string{"-origin", es.URL,
-			"-origin-type", "irondb",
-			"-log-level", "debug"})
+func TestHandlers(t *testing.T) {
+	c := &Client{}
+	m := c.Handlers()
+	if _, ok := m[mnCAQL]; !ok {
+		t.Errorf("expected to find handler named: %s", mnCAQL)
+	}
+}
+
+func TestDefaultPathConfigs(t *testing.T) {
+
+	client := &Client{name: "test"}
+	ts, _, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "irondb", "/health", "debug")
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+	defer ts.Close()
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Error(err)
 	}
 
-	oc := config.Origins["default"]
-	client := Client{config: oc}
-	client.RegisterRoutes("default", oc)
-
-	// This should be false.
-	r := httptest.NewRequest("GET", "http://0/health", nil)
-	rm := &mux.RouteMatch{}
-	if !routing.Router.Match(r, rm) {
-		t.Errorf("could not match route")
-		return
+	if _, ok := client.config.Paths["/"]; !ok {
+		t.Errorf("expected to find path named: %s", "/")
 	}
 
-	// This should be true.
-	r = httptest.NewRequest("GET", "http://0/default/health", nil)
-	if !routing.Router.Match(r, rm) {
-		t.Errorf("could not match route")
-		return
+	const expectedLen = 10
+	if len(client.config.Paths) != expectedLen {
+		t.Errorf("expected ordered length to be: %d got %d", expectedLen, len(client.config.Paths))
 	}
+
 }

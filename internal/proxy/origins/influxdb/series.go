@@ -60,6 +60,9 @@ func (se *SeriesEnvelope) ValueCount() int {
 
 // TimestampCount returns the count unique timestampes in across all series in the Timeseries
 func (se *SeriesEnvelope) TimestampCount() int {
+	if se.timestamps == nil {
+		se.timestamps = make(map[time.Time]bool)
+	}
 	se.updateTimestamps()
 	return len(se.timestamps)
 }
@@ -73,6 +76,9 @@ func (se *SeriesEnvelope) updateTimestamps() {
 	for i := range se.Results {
 		for j, s := range se.Results[i].Series {
 			ti := str.IndexOfString(s.Columns, "time")
+			if ti < 0 {
+				continue
+			}
 			for k := range se.Results[i].Series[j].Values {
 				m[time.Unix(int64(se.Results[i].Series[j].Values[k][ti].(float64)/1000), 0)] = true
 			}
@@ -101,6 +107,7 @@ func (se *SeriesEnvelope) SetStep(step time.Duration) {
 }
 
 type seriesKey struct {
+	ResultID    int
 	StatementID int
 	Name        string
 	Tags        string
@@ -129,7 +136,7 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 			wg.Add(1)
 			go func(s *models.Row) {
 				mtx.Lock()
-				series[seriesKey{StatementID: r.StatementID, Name: s.Name, Tags: tags(s.Tags).String(), Columns: strings.Join(s.Columns, ",")}] = s
+				series[seriesKey{ResultID: i, StatementID: r.StatementID, Name: s.Name, Tags: tags(s.Tags).String(), Columns: strings.Join(s.Columns, ",")}] = s
 				mtx.Unlock()
 				wg.Done()
 			}(&se.Results[i].Series[j])
@@ -140,14 +147,23 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 	for _, ts := range collection {
 		if ts != nil {
 			se2 := ts.(*SeriesEnvelope)
-			for _, r := range se2.Results {
+			for g, r := range se2.Results {
+
+				if g >= len(se.Results) {
+					mtx.Lock()
+					se.Results = append(se.Results, se2.Results[g:]...)
+					mtx.Unlock()
+					break
+				}
+
 				for i := range r.Series {
 					wg.Add(1)
-					go func(s *models.Row) {
+					go func(s *models.Row, resultID int) {
 						mtx.Lock()
-						sk := seriesKey{StatementID: r.StatementID, Name: s.Name, Tags: tags(s.Tags).String(), Columns: strings.Join(s.Columns, ",")}
-						if o, ok := series[sk]; !ok {
-							series[sk] = o
+						sk := seriesKey{ResultID: g, StatementID: r.StatementID, Name: s.Name, Tags: tags(s.Tags).String(), Columns: strings.Join(s.Columns, ",")}
+						if _, ok := series[sk]; !ok {
+							series[sk] = s
+							se.Results[resultID].Series = append(se.Results[resultID].Series, *s)
 							mtx.Unlock()
 							wg.Done()
 							return
@@ -155,13 +171,16 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 						series[sk].Values = append(series[sk].Values, s.Values...)
 						mtx.Unlock()
 						wg.Done()
-					}(&r.Series[i])
+					}(&r.Series[i], g)
 				}
 			}
 			wg.Wait()
+			mtx.Lock()
 			se.ExtentList = append(se.ExtentList, se2.ExtentList...)
+			mtx.Unlock()
 		}
 	}
+
 	se.ExtentList = se.ExtentList.Compress(se.StepDuration)
 	se.isSorted = false
 	se.isCounted = false
@@ -259,9 +278,6 @@ func (se *SeriesEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 	}
 
 	ti := str.IndexOfString(se.Results[0].Series[0].Columns, "time")
-	if ti == -1 {
-		return
-	}
 
 	for i, r := range se.Results {
 		for j, s := range r.Series {
@@ -329,6 +345,11 @@ func (se *SeriesEnvelope) CropToRange(e timeseries.Extent) {
 
 	for i, r := range se.Results {
 
+		if len(r.Series) == 0 {
+			se.ExtentList = se.ExtentList.Crop(e)
+			continue
+		}
+
 		deletes := make(map[int]bool)
 
 		for j, s := range r.Series {
@@ -363,7 +384,7 @@ func (se *SeriesEnvelope) CropToRange(e timeseries.Extent) {
 					}
 					se.Results[i].Series[j].Values = s.Values[start:end]
 				} else {
-					deletes[i] = true
+					deletes[j] = true
 				}
 			}
 		}

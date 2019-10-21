@@ -22,3 +22,12 @@ func IndexOfString(arr []string, val string) int {
 	}
 	return -1
 }
+
+// CopyMap returns an exact copy of a map consisting string key and values
+func CopyMap(in map[string]string) map[string]string {
+	out := make(map[string]string)
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}

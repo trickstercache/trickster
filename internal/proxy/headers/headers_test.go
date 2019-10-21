@@ -14,7 +14,9 @@
 package headers
 
 import (
+	"fmt"
 	"net/http"
+	"reflect"
 	"testing"
 	"time"
 
@@ -77,7 +79,23 @@ func TestExtractHeader(t *testing.T) {
 
 }
 
-func TestRemoveClientHeader(t *testing.T) {
+func TestUpdateHeaders(t *testing.T) {
+	headers := http.Header{"Foo1": {"foo"}, "Foo2": {"x"}, "Foo3": {"foo"}}
+	expected := http.Header{"Foo1": {"bar"}, "Foo3": {"foo", "bar"}, "Foo4": {"bar"}, "Foo5": {"bar"}}
+
+	UpdateHeaders(headers, nil)
+	if len(headers) != 3 {
+		t.Errorf("expected %d got %d", len(headers), 3)
+	}
+
+	UpdateHeaders(headers, map[string]string{"": "ineffectual", "foo1": "bar", "-foo2": "", "+foo3": "bar", "foo4": "bar", "+foo5": "bar", "-foo6": ""})
+	if !reflect.DeepEqual(headers, expected) {
+		fmt.Printf("mismatch\nexpected: %v\n     got: %v\n", expected, headers)
+	}
+
+}
+
+func TestRemoveClientHeaders(t *testing.T) {
 
 	headers := http.Header{}
 	headers.Set(NameAcceptEncoding, "test")

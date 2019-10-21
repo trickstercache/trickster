@@ -78,7 +78,7 @@ func main() {
 	th.RegisterConfigHandler()
 	err = rr.RegisterProxyRoutes()
 	if err != nil {
-		log.Fatal(1, err.Error(), log.Pairs{})
+		log.Fatal(1, "route registration failed", log.Pairs{"detail": err.Error()})
 	}
 
 	if config.ProxyServer.TLSListenPort < 1 && config.ProxyServer.ListenPort < 1 {

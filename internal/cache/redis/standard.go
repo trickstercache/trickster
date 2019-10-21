@@ -14,51 +14,16 @@
 package redis
 
 import (
-	"time"
+	"fmt"
 
-	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/go-redis/redis"
 )
 
-// Connect connects to the configured Redis endpoint
-func (c *Cache) clientConnect() error {
-
-	log.Info("connecting to redis", log.Pairs{"protocol": c.Config.Redis.Protocol, "Endpoint": c.Config.Redis.Endpoint})
-	opts, err := c.clientOpts()
-	if err != nil {
-		return err
-	}
-	c.client = redis.NewClient(opts)
-	return c.client.Ping().Err()
-}
-
-// Store places the the data into the Redis Cache using the provided Key and TTL
-func (c *Cache) clientStore(cacheKey string, data []byte, ttl time.Duration) error {
-	return c.client.Set(cacheKey, data, ttl).Err()
-}
-
-// Retrieve gets data from the Redis Cache using the provided Key
-func (c *Cache) clientRetrieve(cacheKey string) (string, error) {
-	return c.client.Get(cacheKey).Result()
-}
-
-// Remove removes an object in cache, if present
-func (c *Cache) clientRemove(cacheKey string) {
-	c.client.Del(cacheKey)
-}
-
-// BulkRemove removes a list of objects from the cache. noLock is not used for Redis
-func (c *Cache) clientBulkRemove(cacheKeys []string, noLock bool) {
-	c.client.Del(cacheKeys...)
-}
-
-// Close disconnects from the Redis Cache
-func (c *Cache) clientClose() error {
-	c.client.Close()
-	return nil
-}
-
 func (c *Cache) clientOpts() (*redis.Options, error) {
+
+	if c.Config.Redis.Endpoint == "" {
+		return nil, fmt.Errorf("invalid endpoint: %s", c.Config.Redis.Endpoint)
+	}
 
 	o := &redis.Options{
 		Addr: c.Config.Redis.Endpoint,

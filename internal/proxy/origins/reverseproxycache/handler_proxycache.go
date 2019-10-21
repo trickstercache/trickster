@@ -11,26 +11,18 @@
 * limitations under the License.
  */
 
-package influxdb
+package reverseproxycache
 
 import (
-	"net/url"
-	"testing"
-	"time"
+	"net/http"
 
+	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/model"
-	"github.com/Comcast/trickster/internal/timeseries"
 )
 
-func TestDeriveCacheKey(t *testing.T) {
-
-	client := &Client{}
-	tu := &url.URL{Path: "/", RawQuery: "db=test&u=test&p=test&q=select * where <$TIME_TOKEN$> group by time(1m)"}
-	r := &model.Request{TemplateURL: tu, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: time.Duration(60) * time.Second}}
-	key := client.DeriveCacheKey(r, "extra")
-
-	if key != "147fe576515e5ac107195a3eb69c8cbe" {
-		t.Errorf("expected %s got %s", "147fe576515e5ac107195a3eb69c8cbe", key)
-	}
-
+func (c *Client) ProxyCacheHandler(w http.ResponseWriter, r *http.Request) {
+	u := c.BuildUpstreamURL(r)
+	engines.ObjectProxyCacheRequest(
+		model.NewRequest("ProxyCacheHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
+		w, c, false)
 }

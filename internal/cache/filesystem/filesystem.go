@@ -52,8 +52,8 @@ func (c *Cache) Connect() error {
 	lockPrefix = c.Name + ".file."
 
 	// Load Index here and pass bytes as param2
-	indexData, _ := c.retrieve(index.IndexKey, false)
-	c.Index = index.NewIndex(c.Name, c.Config.Type, indexData, c.Config.Index, c.BulkRemove, c.storeNoIndex)
+	indexData, _ := c.retrieve(index.IndexKey, false, false)
+	c.Index = index.NewIndex(c.Name, c.Config.CacheType, indexData, c.Config.Index, c.BulkRemove, c.storeNoIndex)
 	return nil
 }
 
@@ -71,73 +71,96 @@ func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 
 func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateIndex bool) error {
 
-	cache.ObserveCacheOperation(c.Name, c.Config.Type, "set", "none", float64(len(data)))
+	if ttl < 1 {
+		return fmt.Errorf("invalid ttl: %d", int64(ttl.Seconds()))
+	}
+
+	if cacheKey == "" {
+		return fmt.Errorf("cacheKey required")
+	}
+
+	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 
 	dataFile := c.getFileName(cacheKey)
 
 	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
 
-	o := index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
+	o := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	err := ioutil.WriteFile(dataFile, o.ToBytes(), os.FileMode(0777))
 	if err != nil {
+		locks.Release(lockPrefix + cacheKey)
 		return err
 	}
 	log.Debug("filesystem cache store", log.Pairs{"key": cacheKey, "dataFile": dataFile, "indexed": updateIndex})
 	if updateIndex {
-		go c.Index.UpdateObject(o)
+		c.Index.UpdateObject(o)
 	}
+	locks.Release(lockPrefix + cacheKey)
 	return nil
 
 }
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)
-func (c *Cache) Retrieve(cacheKey string) ([]byte, error) {
-	return c.retrieve(cacheKey, true)
+func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
+	return c.retrieve(cacheKey, allowExpired, true)
 }
 
-func (c *Cache) retrieve(cacheKey string, atime bool) ([]byte, error) {
+func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte, error) {
 
 	dataFile := c.getFileName(cacheKey)
 
 	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
 
 	data, err := ioutil.ReadFile(dataFile)
 	if err != nil {
 		log.Debug("filesystem cache miss", log.Pairs{"key": cacheKey, "dataFile": dataFile})
-		return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
+		b, err2 := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+		locks.Release(lockPrefix + cacheKey)
+		return b, err2
 	}
 
 	o, err := index.ObjectFromBytes(data)
 	if err != nil {
-		return cache.CacheError(cacheKey, c.Name, c.Config.Type, "value for key [%s] could not be deserialized from cache")
+		locks.Release(lockPrefix + cacheKey)
+		return cache.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
 	}
+	o.Expiration = c.Index.GetExpiration(cacheKey)
 
-	if o.Expiration.After(time.Now()) {
+	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
 		log.Debug("filesystem cache retrieve", log.Pairs{"key": cacheKey, "dataFile": dataFile})
 		if atime {
-			go c.Index.UpdateObjectAccessTime(cacheKey)
+			c.Index.UpdateObjectAccessTime(cacheKey)
 		}
-		cache.ObserveCacheOperation(c.Name, c.Config.Type, "get", "hit", float64(len(data)))
+		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
+		locks.Release(lockPrefix + cacheKey)
 		return o.Value, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
-	go c.Remove(cacheKey)
-	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.Type)
+	c.remove(cacheKey, false)
+	b, err := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	locks.Release(lockPrefix + cacheKey)
+	return b, err
 
+}
+
+// SetTTL updates the TTL for the provided cache object
+func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
+	c.Index.UpdateObjectTTL(cacheKey, ttl)
 }
 
 // Remove removes an object from the cache
 func (c *Cache) Remove(cacheKey string) {
-
 	locks.Acquire(lockPrefix + cacheKey)
-	defer locks.Release(lockPrefix + cacheKey)
+	c.remove(cacheKey, false)
+	locks.Release(lockPrefix + cacheKey)
+}
+
+func (c *Cache) remove(cacheKey string, noLock bool) {
 
 	if err := os.Remove(c.getFileName(cacheKey)); err == nil {
-		c.Index.RemoveObject(cacheKey, false)
+		c.Index.RemoveObject(cacheKey, noLock)
 	}
-	cache.ObserveCacheDel(c.Name, c.Config.Type, 0)
+	cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 }
 
 // BulkRemove removes a list of objects from the cache
@@ -166,7 +189,7 @@ func writeable(path string) bool {
 func makeDirectory(path string) error {
 	err := os.MkdirAll(path, 0755)
 	if err != nil || !writeable(path) {
-		return fmt.Errorf("[%s] directory is not writeable by the trickster: %v", path, err)
+		return fmt.Errorf("[%s] directory is not writeable by trickster: %v", path, err)
 	}
 
 	return nil

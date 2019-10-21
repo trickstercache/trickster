@@ -1,3 +1,16 @@
+/**
+* Copyright 2018 Comcast Cable Communications Management, LLC
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+* http://www.apache.org/licenses/LICENSE-2.0
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+ */
+
 // Package irondb provides proxy origin support for IRONdb databases.
 package irondb
 
@@ -55,12 +68,14 @@ const (
 // Client values provide access to IRONdb and implement the Trickster proxy
 // client interface.
 type Client struct {
-	name      string
-	user      string
-	pass      string
-	config    *config.OriginConfig
-	cache     cache.Cache
-	webClient *http.Client
+	name               string
+	user               string
+	pass               string
+	config             *config.OriginConfig
+	cache              cache.Cache
+	webClient          *http.Client
+	handlers           map[string]http.Handler
+	handlersRegistered bool
 }
 
 // NewClient returns a new Client Instance
@@ -87,4 +102,9 @@ func (c *Client) Cache() cache.Cache {
 // Name returns the name of the origin Configuration proxied by the Client.
 func (c *Client) Name() string {
 	return c.name
+}
+
+// SetCache sets the Cache object the client will use for caching origin content
+func (c *Client) SetCache(cc cache.Cache) {
+	c.cache = cc
 }

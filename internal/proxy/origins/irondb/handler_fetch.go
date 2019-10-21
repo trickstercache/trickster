@@ -1,10 +1,25 @@
+/**
+* Copyright 2018 Comcast Cable Communications Management, LLC
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+* http://www.apache.org/licenses/LICENSE-2.0
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+ */
+
 package irondb
 
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -20,15 +35,20 @@ import (
 func (c *Client) FetchHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 	engines.DeltaProxyCacheRequest(
-		model.NewRequest(c.name, otIRONdb, "FetchHandler",
+		model.NewRequest("FetchHandler",
 			r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, c.cache, c.cache.Configuration().TimeseriesTTL)
+		w, c)
 }
 
 // fetchHandlerSetExtent will change the upstream request query to use the
 // provided Extent.
 func (c Client) fetchHandlerSetExtent(r *model.Request,
 	extent *timeseries.Extent) {
+
+	if r == nil || extent == nil || (extent.Start.IsZero() && extent.End.IsZero()) {
+		return
+	}
+
 	trq := r.TimeRangeQuery
 	var err error
 	if trq == nil {
@@ -70,6 +90,7 @@ func (c Client) fetchHandlerSetExtent(r *model.Request,
 func (c *Client) fetchHandlerParseTimeRangeQuery(
 	r *model.Request) (*timeseries.TimeRangeQuery, error) {
 	trq := &timeseries.TimeRangeQuery{}
+
 	b, err := ioutil.ReadAll(r.ClientRequest.Body)
 	if err != nil {
 		return nil, errors.ParseRequestBody(err)
@@ -103,13 +124,13 @@ func (c *Client) fetchHandlerParseTimeRangeQuery(
 
 // fetchHandlerDeriveCacheKey calculates a query-specific keyname based on the
 // user request.
-func (c Client) fetchHandlerDeriveCacheKey(r *model.Request,
-	extra string) string {
+func (c Client) fetchHandlerDeriveCacheKey(path string, params url.Values,
+	headers http.Header, body io.ReadCloser, extra string) string {
 	var sb strings.Builder
-	sb.WriteString(r.URL.Path)
+	sb.WriteString(path)
 	newBody := &bytes.Buffer{}
-	if b, err := ioutil.ReadAll(r.ClientRequest.Body); err == nil {
-		r.ClientRequest.Body = ioutil.NopCloser(bytes.NewBuffer(b))
+	if b, err := ioutil.ReadAll(body); err == nil {
+		body = ioutil.NopCloser(bytes.NewBuffer(b))
 		fetchReq := map[string]interface{}{}
 		err := json.NewDecoder(bytes.NewBuffer(b)).Decode(&fetchReq)
 		if err == nil {

@@ -23,7 +23,8 @@ import (
 
 func TestConfigHandler(t *testing.T) {
 
-	config.Load("trickster-test", "test", nil)
+	config.Load("trickster-test", "test", []string{"-origin-url", "http://1.2.3.4", "-origin-type", "prometheus"})
+
 	RegisterConfigHandler()
 
 	w := httptest.NewRecorder()

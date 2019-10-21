@@ -11,29 +11,21 @@
 * limitations under the License.
  */
 
-package prometheus
+package reverseproxycache
 
 import (
-	"sort"
-	"strings"
+	"net/http"
 
+	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/model"
-	"github.com/Comcast/trickster/internal/util/md5"
 )
 
-// DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
-func (c *Client) DeriveCacheKey(r *model.Request, extra string) string {
-	params := r.URL.Query()
-
-	switch r.HandlerName {
-	case "SeriesHandler":
-		var matchString string
-		if p, ok := params[upMatch]; ok {
-			sort.Strings(p)
-			matchString = strings.Join(p, ",")
-		}
-		return md5.Checksum(r.URL.Path + params.Get(upStart) + params.Get(upEnd) + matchString + extra)
-	}
-
-	return md5.Checksum(r.URL.Path + params.Get(upQuery) + params.Get(upStep) + params.Get(upTime) + extra)
+// HealthHandler checks the health of the configured upstream Origin
+func (c Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
+	cfg := c.Configuration()
+	u := c.BaseURL()
+	u.Path += cfg.HealthCheckUpstreamPath
+	u.RawQuery = cfg.HealthCheckQuery
+	r.Method = cfg.HealthCheckVerb
+	engines.ProxyRequest(model.NewRequest("HealthHandler", http.MethodGet, u, r.Header, c.config.Timeout, r, c.webClient), w)
 }

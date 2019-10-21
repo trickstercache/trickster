@@ -1,177 +1,140 @@
+/**
+* Copyright 2018 Comcast Cable Communications Management, LLC
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+* http://www.apache.org/licenses/LICENSE-2.0
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+ */
+
 package irondb
 
 import (
+	"net/http"
+
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/routing"
-	"github.com/Comcast/trickster/internal/util/log"
 )
 
-// RegisterRoutes registers the routes for the Client into the proxy's HTTP
-// multiplexer.
-func (c *Client) RegisterRoutes(originName string, o *config.OriginConfig) {
-	prefix := "/"
-	if o.APIPath != "" {
-		prefix += o.APIPath + "/"
+func (c *Client) registerHandlers() {
+	c.handlersRegistered = true
+	c.handlers = make(map[string]http.Handler)
+	// This is the registry of handlers that Trickster supports for Prometheus,
+	// and are able to be referenced by name (map key) in Config Files
+	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
+	c.handlers[mnRaw] = http.HandlerFunc(c.RawHandler)
+	c.handlers[mnRollup] = http.HandlerFunc(c.RollupHandler)
+	c.handlers[mnFetch] = http.HandlerFunc(c.FetchHandler)
+	c.handlers[mnRead] = http.HandlerFunc(c.TextHandler)
+	c.handlers[mnHistogram] = http.HandlerFunc(c.HistogramHandler)
+	c.handlers[mnFind] = http.HandlerFunc(c.FindHandler)
+	c.handlers[mnState] = http.HandlerFunc(c.StateHandler)
+	c.handlers[mnCAQL] = http.HandlerFunc(c.CAQLHandler)
+	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
+
+}
+
+// Handlers returns a map of the HTTP Handlers the client has registered
+func (c *Client) Handlers() map[string]http.Handler {
+	if !c.handlersRegistered {
+		c.registerHandlers()
+	}
+	return c.handlers
+}
+
+// DefaultPathConfigs returns the default PathConfigs for the given OriginType
+func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config.PathConfig, []string) {
+
+	paths := map[string]*config.PathConfig{
+
+		"/" + mnRaw: &config.PathConfig{
+			Path:            "/" + mnRaw,
+			HandlerName:     mnRaw,
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{},
+		},
+
+		"/" + mnRollup: &config.PathConfig{
+			Path:            "/" + mnRollup,
+			HandlerName:     mnRollup,
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{upSpan, upEngine, upType},
+			CacheKeyHeaders: []string{},
+		},
+
+		"/" + mnFetch: &config.PathConfig{
+			Path:            "/" + mnFetch,
+			HandlerName:     mnFetch,
+			KeyHasher:       []config.KeyHasherFunc{c.fetchHandlerDeriveCacheKey},
+			Methods:         []string{http.MethodPost},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{},
+		},
+
+		"/" + mnRead: &config.PathConfig{
+			Path:            "/" + mnRead,
+			HandlerName:     mnRead,
+			KeyHasher:       []config.KeyHasherFunc{c.textHandlerDeriveCacheKey},
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{"*"},
+			CacheKeyHeaders: []string{},
+		},
+
+		"/" + mnHistogram: &config.PathConfig{
+			Path:            "/" + mnHistogram,
+			HandlerName:     mnHistogram,
+			Methods:         []string{http.MethodGet},
+			KeyHasher:       []config.KeyHasherFunc{c.histogramHandlerDeriveCacheKey},
+			CacheKeyParams:  []string{},
+			CacheKeyHeaders: []string{},
+		},
+
+		"/" + mnFind: &config.PathConfig{
+			Path:            "/" + mnFind,
+			HandlerName:     mnFind,
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{upQuery},
+			CacheKeyHeaders: []string{},
+		},
+
+		"/" + mnState: &config.PathConfig{
+			Path:            "/" + mnState,
+			HandlerName:     mnState,
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{"*"},
+			CacheKeyHeaders: []string{},
+		},
+
+		"/" + mnCAQL: &config.PathConfig{
+			Path:            "/" + mnCAQL,
+			HandlerName:     mnCAQL,
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{upQuery, upCAQLQuery, upCAQLPeriod},
+			CacheKeyHeaders: []string{},
+		},
+
+		"/" + mnCAQLPub: &config.PathConfig{
+			Path:            "/" + mnCAQLPub,
+			HandlerName:     mnCAQL,
+			Methods:         []string{http.MethodGet},
+			CacheKeyParams:  []string{upQuery, upCAQLQuery, upCAQLPeriod},
+			CacheKeyHeaders: []string{},
+		},
+
+		"/": &config.PathConfig{
+			Path:        "/",
+			HandlerName: "proxy",
+			Methods:     []string{http.MethodGet},
+		},
 	}
 
-	if o.TLS != nil {
-		// Setup host header based routing.
-		log.Debug("Registering Origin Handlers",
-			log.Pairs{"originType": o.Type, "originName": originName})
-		routing.TLSRouter.PathPrefix("/" + mnHealth).
-			HandlerFunc(c.HealthHandler).Methods("GET").Host(originName)
-		routing.TLSRouter.PathPrefix(prefix + mnRaw).
-			HandlerFunc(c.RawHandler).Methods("GET").Host(originName)
-		routing.TLSRouter.PathPrefix(prefix + mnRollup).
-			HandlerFunc(c.RollupHandler).Methods("GET").Host(originName)
-		routing.TLSRouter.PathPrefix(prefix + mnFetch).
-			HandlerFunc(c.FetchHandler).Methods("POST").Host(originName)
-		routing.TLSRouter.PathPrefix(prefix + mnRead).
-			HandlerFunc(c.TextHandler).Methods("GET").Host(originName)
-		routing.TLSRouter.PathPrefix(prefix + mnHistogram).
-			HandlerFunc(c.HistogramHandler).Methods("GET").Host(originName)
-		routing.TLSRouter.PathPrefix(prefix + mnFind).
-			HandlerFunc(c.FindHandler).Methods("GET").Host(originName)
-		routing.TLSRouter.PathPrefix(prefix + mnState).
-			HandlerFunc(c.StateHandler).Methods("GET").Host(originName)
-		routing.TLSRouter.PathPrefix(prefix + mnCAQL).
-			HandlerFunc(c.CAQLHandler).Methods("GET").Host(originName)
-		routing.TLSRouter.PathPrefix(prefix + mnCAQLPub).
-			HandlerFunc(c.CAQLHandler).Methods("GET").Host(originName)
-		routing.TLSRouter.PathPrefix("/").
-			HandlerFunc(c.ProxyHandler).Methods("GET").Host(originName)
+	orderedPaths := []string{"/" + mnRaw, "/" + mnRollup, "/" + mnFetch, "/" + mnRead,
+		"/" + mnHistogram, "/" + mnFind, "/" + mnState, "/" + mnCAQL, "/"}
 
-		// Setup path based routing.
-		routing.TLSRouter.PathPrefix("/" + originName + "/" + mnHealth).
-			HandlerFunc(c.HealthHandler).Methods("GET")
-		routing.TLSRouter.PathPrefix("/" + originName + prefix + mnRaw).
-			HandlerFunc(c.RawHandler).Methods("GET")
-		routing.TLSRouter.PathPrefix("/" + originName + prefix + mnRollup).
-			HandlerFunc(c.RollupHandler).Methods("GET")
-		routing.TLSRouter.PathPrefix("/" + originName + prefix + mnFetch).
-			HandlerFunc(c.FetchHandler).Methods("POST")
-		routing.TLSRouter.PathPrefix("/" + originName + prefix + mnRead).
-			HandlerFunc(c.TextHandler).Methods("GET")
-		routing.TLSRouter.PathPrefix("/" + originName + prefix + mnHistogram).
-			HandlerFunc(c.HistogramHandler).Methods("GET")
-		routing.TLSRouter.PathPrefix("/" + originName + prefix + mnFind).
-			HandlerFunc(c.FindHandler).Methods("GET")
-		routing.TLSRouter.PathPrefix("/" + originName + prefix + mnState).
-			HandlerFunc(c.StateHandler).Methods("GET")
-		routing.TLSRouter.PathPrefix("/" + originName + prefix + mnCAQL).
-			HandlerFunc(c.CAQLHandler).Methods("GET")
-		routing.TLSRouter.PathPrefix("/" + originName + prefix + mnCAQLPub).
-			HandlerFunc(c.CAQLHandler).Methods("GET")
-		routing.TLSRouter.PathPrefix("/" + originName + "/").
-			HandlerFunc(c.ProxyHandler).Methods("GET")
-
-		// If default origin, setup those routes too.
-		if o.IsDefault {
-			log.Debug("Registering Default Origin Handlers",
-				log.Pairs{"originType": o.Type})
-			routing.TLSRouter.PathPrefix("/" + mnHealth).
-				HandlerFunc(c.HealthHandler).Methods("GET")
-			routing.TLSRouter.PathPrefix(prefix + mnRaw).
-				HandlerFunc(c.RawHandler).Methods("GET")
-			routing.TLSRouter.PathPrefix(prefix + mnRollup).
-				HandlerFunc(c.RollupHandler).Methods("GET")
-			routing.TLSRouter.PathPrefix(prefix + mnFetch).
-				HandlerFunc(c.FetchHandler).Methods("POST")
-			routing.TLSRouter.PathPrefix(prefix + mnRead).
-				HandlerFunc(c.TextHandler).Methods("GET")
-			routing.TLSRouter.PathPrefix(prefix + mnHistogram).
-				HandlerFunc(c.HistogramHandler).Methods("GET")
-			routing.TLSRouter.PathPrefix(prefix + mnFind).
-				HandlerFunc(c.FindHandler).Methods("GET")
-			routing.TLSRouter.PathPrefix(prefix + mnState).
-				HandlerFunc(c.StateHandler).Methods("GET")
-			routing.TLSRouter.PathPrefix(prefix + mnCAQL).
-				HandlerFunc(c.CAQLHandler).Methods("GET")
-			routing.TLSRouter.PathPrefix(prefix + mnCAQLPub).
-				HandlerFunc(c.CAQLHandler).Methods("GET")
-			routing.TLSRouter.PathPrefix("/").
-				HandlerFunc(c.ProxyHandler).Methods("GET")
-		}
-	}
-
-	if !o.RequireTLS {
-		// Setup host header based routing.
-		log.Debug("Registering Origin Handlers",
-			log.Pairs{"originType": o.Type, "originName": originName})
-		routing.Router.PathPrefix("/" + mnHealth).
-			HandlerFunc(c.HealthHandler).Methods("GET").Host(originName)
-		routing.Router.PathPrefix(prefix + mnRaw).
-			HandlerFunc(c.RawHandler).Methods("GET").Host(originName)
-		routing.Router.PathPrefix(prefix + mnRollup).
-			HandlerFunc(c.RollupHandler).Methods("GET").Host(originName)
-		routing.Router.PathPrefix(prefix + mnFetch).
-			HandlerFunc(c.FetchHandler).Methods("POST").Host(originName)
-		routing.Router.PathPrefix(prefix + mnRead).
-			HandlerFunc(c.TextHandler).Methods("GET").Host(originName)
-		routing.Router.PathPrefix(prefix + mnHistogram).
-			HandlerFunc(c.HistogramHandler).Methods("GET").Host(originName)
-		routing.Router.PathPrefix(prefix + mnFind).
-			HandlerFunc(c.FindHandler).Methods("GET").Host(originName)
-		routing.Router.PathPrefix(prefix + mnState).
-			HandlerFunc(c.StateHandler).Methods("GET").Host(originName)
-		routing.Router.PathPrefix(prefix + mnCAQL).
-			HandlerFunc(c.CAQLHandler).Methods("GET").Host(originName)
-		routing.Router.PathPrefix(prefix + mnCAQLPub).
-			HandlerFunc(c.CAQLHandler).Methods("GET").Host(originName)
-		routing.Router.PathPrefix("/").
-			HandlerFunc(c.ProxyHandler).Methods("GET").Host(originName)
-
-		// Setup path based routing.
-		routing.Router.PathPrefix("/" + originName + "/" + mnHealth).
-			HandlerFunc(c.HealthHandler).Methods("GET")
-		routing.Router.PathPrefix("/" + originName + prefix + mnRaw).
-			HandlerFunc(c.RawHandler).Methods("GET")
-		routing.Router.PathPrefix("/" + originName + prefix + mnRollup).
-			HandlerFunc(c.RollupHandler).Methods("GET")
-		routing.Router.PathPrefix("/" + originName + prefix + mnFetch).
-			HandlerFunc(c.FetchHandler).Methods("POST")
-		routing.Router.PathPrefix("/" + originName + prefix + mnRead).
-			HandlerFunc(c.TextHandler).Methods("GET")
-		routing.Router.PathPrefix("/" + originName + prefix + mnHistogram).
-			HandlerFunc(c.HistogramHandler).Methods("GET")
-		routing.Router.PathPrefix("/" + originName + prefix + mnFind).
-			HandlerFunc(c.FindHandler).Methods("GET")
-		routing.Router.PathPrefix("/" + originName + prefix + mnState).
-			HandlerFunc(c.StateHandler).Methods("GET")
-		routing.Router.PathPrefix("/" + originName + prefix + mnCAQL).
-			HandlerFunc(c.CAQLHandler).Methods("GET")
-		routing.Router.PathPrefix("/" + originName + prefix + mnCAQLPub).
-			HandlerFunc(c.CAQLHandler).Methods("GET")
-		routing.Router.PathPrefix("/" + originName + "/").
-			HandlerFunc(c.ProxyHandler).Methods("GET")
-
-		// If default origin, setup those routes too.
-		if o.IsDefault {
-			log.Debug("Registering Default Origin Handlers",
-				log.Pairs{"originType": o.Type})
-			routing.Router.PathPrefix("/" + mnHealth).
-				HandlerFunc(c.HealthHandler).Methods("GET")
-			routing.Router.PathPrefix(prefix + mnRaw).
-				HandlerFunc(c.RawHandler).Methods("GET")
-			routing.Router.PathPrefix(prefix + mnRollup).
-				HandlerFunc(c.RollupHandler).Methods("GET")
-			routing.Router.PathPrefix(prefix + mnFetch).
-				HandlerFunc(c.FetchHandler).Methods("POST")
-			routing.Router.PathPrefix(prefix + mnRead).
-				HandlerFunc(c.TextHandler).Methods("GET")
-			routing.Router.PathPrefix(prefix + mnHistogram).
-				HandlerFunc(c.HistogramHandler).Methods("GET")
-			routing.Router.PathPrefix(prefix + mnFind).
-				HandlerFunc(c.FindHandler).Methods("GET")
-			routing.Router.PathPrefix(prefix + mnState).
-				HandlerFunc(c.StateHandler).Methods("GET")
-			routing.Router.PathPrefix(prefix + mnCAQL).
-				HandlerFunc(c.CAQLHandler).Methods("GET")
-			routing.Router.PathPrefix(prefix + mnCAQLPub).
-				HandlerFunc(c.CAQLHandler).Methods("GET")
-			routing.Router.PathPrefix("/").
-				HandlerFunc(c.ProxyHandler).Methods("GET")
-		}
-	}
+	return paths, orderedPaths
 
 }

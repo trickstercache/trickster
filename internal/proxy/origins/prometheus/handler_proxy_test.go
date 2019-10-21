@@ -15,27 +15,23 @@ package prometheus
 
 import (
 	"io/ioutil"
-	"net/http/httptest"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/config"
+	tc "github.com/Comcast/trickster/internal/util/context"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
 func TestProxyHandler(t *testing.T) {
 
-	es := tu.NewTestServer(200, "test")
-	defer es.Close()
-
-	err := config.Load("trickster", "test", []string{"-origin", es.URL, "-origin-type", "prometheus"})
+	client := &Client{name: "test"}
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "test", nil, "prometheus", "/health", "debug")
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+	defer ts.Close()
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Error(err)
 	}
 
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", es.URL, nil)
-
-	client := &Client{name: "default", config: config.Origins["default"], webClient: tu.NewTestWebClient()}
 	client.ProxyHandler(w, r)
 	resp := w.Result()
 
@@ -50,7 +46,7 @@ func TestProxyHandler(t *testing.T) {
 	}
 
 	if string(bodyBytes) != "test" {
-		t.Errorf("expected '{}' got %s.", bodyBytes)
+		t.Errorf("expected 'test' got %s.", bodyBytes)
 	}
 
 }

@@ -11,22 +11,27 @@
 * limitations under the License.
  */
 
-package influxdb
+package reverseproxycache
 
 import (
-	"strconv"
+	"testing"
 
-	"github.com/Comcast/trickster/internal/proxy/model"
-	"github.com/Comcast/trickster/internal/util/md5"
+	tc "github.com/Comcast/trickster/internal/util/context"
+	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
-// DeriveCacheKey calculates a query-specific keyname based on the query in the user request
-func (c Client) DeriveCacheKey(r *model.Request, extra string) string {
-	params := r.TemplateURL.Query()
-
-	if r.TimeRangeQuery != nil && r.TimeRangeQuery.Step > 0 {
-		extra += strconv.Itoa(int(r.TimeRangeQuery.Step))
+func TestProxyHandler(t *testing.T) {
+	client := &Client{name: "test"}
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "rpc", "/health", "debug")
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+	defer ts.Close()
+	if err != nil {
+		t.Error(err)
 	}
-
-	return md5.Checksum(r.TemplateURL.Path + params.Get(upDB) + params.Get(upQuery) + params.Get("u") + params.Get("p") + extra)
+	client.ProxyHandler(w, r)
+	resp := w.Result()
+	if resp.StatusCode != 200 {
+		t.Errorf("Expected status: 200 got %d.", resp.StatusCode)
+	}
 }

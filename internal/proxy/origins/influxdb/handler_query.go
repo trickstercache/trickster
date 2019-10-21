@@ -37,8 +37,8 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
 	u := c.BuildUpstreamURL(r)
 	engines.DeltaProxyCacheRequest(
-		model.NewRequest(c.name, otInfluxDb, "QueryHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, c.cache, c.cache.Configuration().TimeseriesTTL)
+		model.NewRequest("QueryHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
+		w, c)
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request

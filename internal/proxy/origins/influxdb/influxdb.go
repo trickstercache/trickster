@@ -21,18 +21,16 @@ import (
 	"github.com/Comcast/trickster/internal/proxy"
 )
 
-const (
-	otInfluxDb = "influxdb"
-)
-
 // Client Implements the Proxy Client Interface
 type Client struct {
-	name      string
-	user      string
-	pass      string
-	config    *config.OriginConfig
-	cache     cache.Cache
-	webClient *http.Client
+	name               string
+	user               string
+	pass               string
+	config             *config.OriginConfig
+	cache              cache.Cache
+	webClient          *http.Client
+	handlers           map[string]http.Handler
+	handlersRegistered bool
 }
 
 // NewClient returns a new Client Instance
@@ -59,4 +57,9 @@ func (c *Client) Cache() cache.Cache {
 // Name returns the name of the upstream Configuration proxied by the Client
 func (c *Client) Name() string {
 	return c.name
+}
+
+// SetCache sets the Cache object the client will use for caching origin content
+func (c *Client) SetCache(cc cache.Cache) {
+	c.cache = cc
 }
