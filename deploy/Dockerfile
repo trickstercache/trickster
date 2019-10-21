@@ -9,7 +9,7 @@ RUN GOOS=linux GOARCH=amd64 CGO_ENABLED=0 make build
 FROM alpine:3.9
 LABEL maintainer "The Trickster Authors <trickster-developers@googlegroups.com>"
 
-COPY --from=builder /go/src/github.com/Comcast/trickster/trickster /usr/local/bin/trickster
+COPY --from=builder /go/src/github.com/Comcast/trickster/OPATH/trickster /usr/local/bin/trickster
 COPY cmd/trickster/conf/example.conf /etc/trickster/trickster.conf
 RUN chown nobody /usr/local/bin/trickster
 RUN chmod +x /usr/local/bin/trickster
