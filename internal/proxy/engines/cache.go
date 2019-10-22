@@ -94,6 +94,9 @@ func DeriveCacheKey(c model.Client, r *model.Request, apc *config.PathConfig, ex
 
 	vals := make([]string, 0, (len(pc.CacheKeyParams) + len(pc.CacheKeyHeaders)*2))
 
+	// Append the http method to the map for creating the derived cache key
+	vals = append(vals, fmt.Sprintf("%s.%s.", "method", r.HTTPMethod))
+
 	if len(pc.CacheKeyParams) == 1 && pc.CacheKeyParams[0] == "*" {
 		for p := range params {
 			vals = append(vals, fmt.Sprintf("%s.%s.", p, params.Get(p)))
@@ -113,7 +116,6 @@ func DeriveCacheKey(c model.Client, r *model.Request, apc *config.PathConfig, ex
 	}
 
 	sort.Strings(vals)
-
 	return md5.Checksum(r.URL.Path + strings.Join(vals, "") + extra)
 }
 

@@ -1177,7 +1177,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 		t.Error(err)
 	}
 
-	key := oc.Host + ".546ecac4cc8b7ed423920fa7ebd5f230.sz"
+	key := oc.Host + ".693f4a5066c2880c93ac68cdddfac6ad.sz"
 
 	_, err = client.cache.Retrieve(key, false)
 	if err != nil {
