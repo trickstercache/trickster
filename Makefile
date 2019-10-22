@@ -101,9 +101,9 @@ style:
 test: test-go-mod
 	$(GO) test -v -coverprofile=.coverprofile ./...
 
-.PHONY: test-benchmark
-test-benchmark:
-	$(GO) test -v -coverprofile=.coverprofile ./... -bench=.
+.PHONY: bench
+bench:
+	$(GO) test -v -coverprofile=.coverprofile ./... -bench=. -benchmem -run=^$
 
 .PHONY: test-cover
 test-cover: test
