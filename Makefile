@@ -101,6 +101,10 @@ style:
 test: test-go-mod
 	$(GO) test -v -coverprofile=.coverprofile ./...
 
+.PHONY: test-benchmark
+test-benchmark:
+	$(GO) test -v -coverprofile=.coverprofile ./... -bench=.
+
 .PHONY: test-cover
 test-cover: test
 	$(GO) tool cover -html=.coverprofile

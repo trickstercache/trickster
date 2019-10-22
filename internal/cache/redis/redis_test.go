@@ -30,6 +30,21 @@ func init() {
 
 const cacheKey = `cacheKey`
 
+func storeBenchmark(b *testing.B) (*Cache, func()) {
+	rc, close := setupRedisCache(clientTypeStandard)
+	err := rc.Connect()
+	if err != nil {
+		b.Error(err)
+	}
+	for n:=0; n<b.N; n++ {
+		err := rc.Store(cacheKey+strconv.Itoa(n), []byte("data"+strconv.Itoa(n)), time.Duration(60)*time.Second)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+	return rc, close
+}
+
 func setupRedisCache(ct clientType) (*Cache, func()) {
 	s, err := miniredis.Run()
 	if err != nil {
@@ -236,6 +251,25 @@ func TestRedisCache_SetTTL(t *testing.T) {
 
 }
 
+func BenchmarkCache_SetTTL(b *testing.B) {
+	rc, close := storeBenchmark(b)
+	defer close()
+
+	for n:= 0;n < b.N; n++ {
+		expected := "data"+strconv.Itoa(n)
+		rc.SetTTL(cacheKey+strconv.Itoa(n), time.Duration(3600)*time.Second)
+		//time.Sleep(1010 * time.Millisecond)
+		val, err := rc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		if err != nil {
+			b.Error(err)
+		}
+
+		if string(val) != expected {
+			b.Errorf("expected %s got %s", expected, string(val))
+		}
+	}
+}
+
 func TestConfiguration(t *testing.T) {
 	rc, close := setupRedisCache(clientTypeStandard)
 	defer close()
@@ -273,6 +307,14 @@ func TestRedisCache_Store(t *testing.T) {
 	}
 }
 
+func BenchmarkCache_Store(b *testing.B) {
+	rc, close := storeBenchmark(b)
+	if rc == nil {
+		b.Error("Could not create the redis cache")
+	}
+	defer close()
+}
+
 func TestRedisCache_Retrieve(t *testing.T) {
 	rc, close := setupRedisCache(clientTypeStandard)
 	defer close()
@@ -293,6 +335,21 @@ func TestRedisCache_Retrieve(t *testing.T) {
 	}
 	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\"", "data", data)
+	}
+}
+
+func BenchmarkCache_Retrieve(b *testing.B) {
+	rc, close := storeBenchmark(b)
+	defer close()
+
+	for n:=0; n<b.N; n++ {
+		data, err := rc.Retrieve(cacheKey+ strconv.Itoa(n), false)
+		if err != nil {
+			b.Error(err)
+		}
+		if string(data) != "data"+ strconv.Itoa(n) {
+			b.Errorf("wanted \"%s\". got \"%s\".", "data"+strconv.Itoa(n), data)
+		}
 	}
 }
 
@@ -348,6 +405,29 @@ func TestCache_Remove(t *testing.T) {
 
 }
 
+func BenchmarkCache_Remove(b *testing.B) {
+	rc, close := storeBenchmark(b)
+	defer close()
+
+	for n:= 0;n < b.N; n++ {
+		var data []byte
+		data, err := rc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		if err != nil {
+			b.Error(err)
+		}
+		if string(data) != "data"+strconv.Itoa(n) {
+			b.Errorf("wanted \"%s\". got \"%s\"", "data"+strconv.Itoa(n), data)
+		}
+
+		rc.Remove(cacheKey+strconv.Itoa(n))
+
+		data, err = rc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		if err == nil {
+			b.Errorf("expected key not found error for %s", cacheKey+strconv.Itoa(n))
+		}
+	}
+}
+
 func TestCache_BulkRemove(t *testing.T) {
 
 	rc, close := setupRedisCache(clientTypeStandard)
@@ -382,4 +462,24 @@ func TestCache_BulkRemove(t *testing.T) {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
 
+}
+
+func BenchmarkCache_BulkRemove(b *testing.B) {
+	rc, close := storeBenchmark(b)
+	defer close()
+
+	var keyArray []string
+	for n:= 0;n < b.N; n++ {
+		keyArray = append(keyArray, cacheKey+strconv.Itoa(n))
+	}
+
+	rc.BulkRemove(keyArray, true)
+
+	// it should be a cache miss
+	for n:= 0;n < b.N; n++ {
+		_, err := rc.Retrieve(cacheKey + strconv.Itoa(n), false)
+		if err == nil {
+			b.Errorf("expected key not found error for %s", cacheKey)
+		}
+	}
 }
