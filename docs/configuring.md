@@ -6,6 +6,8 @@ There are 3 ways to configure Trickster, listed here in the order of evaluation.
 * Environment Variables
 * Command Line Arguments
 
+Note that while the Confifguration file provides a very robust number of knobs you can adjust, the ENV and CLI Args options support only basic use cases.
+
 ## Internal Defaults
 
 Internal Defaults are set for all configuration values, and are overridden by the configuration methods described below. All Internal Defaults are described in [cmd/trickster/conf/example.conf](../cmd/trickster/conf/example.conf) comments.

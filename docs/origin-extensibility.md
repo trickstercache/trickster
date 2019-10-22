@@ -8,7 +8,6 @@ Not every database server out there is a candidate for being fronted by Trickste
 
 As mentioned, the database must be able to be queried for and return time series data via HTTP. Some databases that are not specifically TSDB's actually do support querying for and returning data in a time series format, and Trickster will support those cases as detailed below, so long as they have an HTTP API.
 
-
 ### Skills Needed
 
 In addition to these requirements in the technology, there are also skills qualifications to consider.
@@ -23,7 +22,7 @@ While this might sound daunting, it is actually much easier than it appears on t
 
 Trickster provides 2 required interfaces for enabling a new Origin Type: The Proxy Client and the Time Series
 
-###  Proxy Client Interface
+### Proxy Client Interface
 
 The Proxy Client Interface ([code](https://github.com/Comcast/trickster/blob/next/internal/proxy/model/client.go)) is used by Trickster to manipulate HTTP requests and responses in order to accelerate the requests.
 
@@ -50,6 +49,7 @@ The Proxy Client Interface Methods you will need to implement are broken into se
 - `HealthHandler` this method is a standard HTTP Handler that can verify and report back the health of the upstream origin and the proxy's connection to it. You will certainly create at least one other handler in your Origin Type package, but this is the only one required for conformance to the Proxy Client interface.
 
 #### Caching
+
 - `DeriveCacheKey` inspects the client request and returns the corresponding cache key
 
 #### Time Series Handling
@@ -66,7 +66,7 @@ The Proxy Client Interface Methods you will need to implement are broken into se
 
 - `FastForwardURL` returns the URL to the origin to collect Fast Forward data points based on the provided HTTP Request
 
-###  Time Series Interface
+### Time Series Interface
 
 The Time Series Interface ([code](https://github.com/Comcast/trickster/blob/next/internal/timeseries/timeseries.go)) is used by Trickster to manipulate Time Series documents in order to maintain the cache and construct downstream client request bodies.
 
@@ -77,16 +77,19 @@ For your Time Series Implementation, you will need to know these things about th
 The Time Series Interface Methods you will need to implement are broken into several groups of functionality, as follows.
 
 #### Getters
+
 - `Extents` returns a list of the time ranges present in the cache
 - `Step` returns the Step (the duration between each timestamp in the series)
 - `SeriesCount` returns the number of series (e.g., graph lines) in the data set
 - `ValueCount` returns the total number of values across all series in the data set
 
 #### Setters
+
 - `SetExtents` sets the list of the time ranges present in the cache
 - `SetStep` sets the Step
 
 #### Data Set Manipulation
+
 - `Merge` merges a variadic list of time series into the base time series
 - `Sort` chronologically sorts the values in each series in the time series
 - `Copy` makes an new exact copy of the time series
@@ -107,7 +110,6 @@ In the example of ClickHouse, the process is much harder: since the query langua
 Once you have the Client Interface implementation down and can interact with the upstream HTTP API, you will turn your attention to managing the response payload data and what to do with it, and that happens in your Timeseries Interface implementation. And like the Client interface, it will come with its own unique challenges.
 
 The main consideration here is the format of the output and what challenges are presented by it. For example, does the payload include any required metadata (e.g., a count of total rows returned) that you will need to synthesize within your Timeseries after a `Merge`, etc. Going back to the ClickHouse example, since it is a columnar database that happens to have time aggregation functions, there are a million ways to formulate a query that yields time series results. That can have implications on the resulting dataset: which fields are the time and value fields, and what are the rest? Are all datapoints for all the series in a single large slice or have they been segregated into their own slices? Is the Timestamp in Epoch format, and if so, does it represent seconds or milliseconds? In order to support an upstream database, you may need to establish or adopt guidelines around these and other questions to ensure full compatibility. The ClickHouse plugin for Grafana requires that for each datapoint of the response, the first field is the timestamp and the second field is the numeric value - so we adopt and document the same guideline to conform to existing norms.
-
 
 ## Getting More Help
 

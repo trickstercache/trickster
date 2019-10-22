@@ -2,22 +2,26 @@
 
 Trickster currently supports the following Origin Types:
 
-<img src="./images/external/prom_logo_60.png" width=16 /> Prometheus
-
-<img src="./images/external/influx_logo_60.png" width=16 /> InfluxDB
-
-<img src="./images/external/irondb_logo_60.png" width=16 /> Circonus IRONdb
+### <img src="./images/logos/trickster-logo.svg" width=16 /> Generic HTTP Reverse Proxy Cache _(Currently Experimental)_
 
 
-### Prometheus
 
-Trickster fully supports the [Prometheus HTTP API (v1)](https://prometheus.io/docs/prometheus/latest/querying/api/). You can explicitly specify `prometheus` as the Origin Type when configuring Trickster, but that is the default when not provided since Trickster was originally developed as a Prometheus accelerator.
+Trickster operates as a fully-featured and highly-customizable reverse proxy cache, designed to accellerate and scale upstream endpoints like API services and other simple http servers.
 
-### InfluxDB
+---
 
-Trickster 1.0 Beta has experimental support for InfluxDB. Once Trickster 1.0 leaves beta and has a GA release, InfluxDB will be fully supported. Specify `influxdb` as the Origin Type when configuring Trickster.
+## Time Series Databases
 
-### Circonus IRONdb
+
+### <img src="./images/external/prom_logo_60.png" width=16 /> Prometheus
+
+Trickster fully supports the [Prometheus HTTP API (v1)](https://prometheus.io/docs/prometheus/latest/querying/api/). Specify `prometheus` as the Origin Type when configuring Trickster.
+
+### <img src="./images/external/influx_logo_60.png" width=16 /> InfluxDB _(Currently Experimental)_
+
+Trickster 1.0 has experimental support for InfluxDB. Specify `influxdb` as the Origin Type when configuring Trickster.
+
+### <img src="./images/external/irondb_logo_60.png" width=16 /> Circonus IRONdb _(Currently Experimental)_
 
 Experimental support has been included for the Circonus IRONdb time-series database. If Grafana is used for visualizations, the Circonus IRONdb data source plug-in for Grafana can be configured to use Trickster as its data source. All IRONdb data retrieval operations, including CAQL queries, are supported.
 
