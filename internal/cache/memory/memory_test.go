@@ -39,8 +39,7 @@ func storeBenchmark(b *testing.B) Cache {
 		b.Error(err)
 	}
 	defer mc.Close()
-
-	for n:= 0;n < b.N; n++ {
+	for n := 0; n < b.N; n++ {
 		err = mc.Store(cacheKey+strconv.Itoa(n), []byte("data"+strconv.Itoa(n)), time.Duration(60)*time.Second)
 		if err != nil {
 			b.Error(err)
@@ -86,8 +85,6 @@ func TestCache_Store(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
-
 	// it should store a value
 	err = mc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
 	if err != nil {
@@ -147,7 +144,7 @@ func TestCache_Retrieve(t *testing.T) {
 func BenchmarkCache_Retrieve(b *testing.B) {
 	mc := storeBenchmark(b)
 
-	for n:= 0;n < b.N; n++ {
+	for n := 0; n < b.N; n++ {
 		var data []byte
 		data, err := mc.Retrieve(cacheKey+strconv.Itoa(n), false)
 		if err != nil {
@@ -221,7 +218,7 @@ func TestCache_Remove(t *testing.T) {
 func BenchmarkCache_Remove(b *testing.B) {
 	mc := storeBenchmark(b)
 
-	for n:= 0;n < b.N; n++ {
+	for n := 0; n < b.N; n++ {
 		var data []byte
 		data, err := mc.Retrieve(cacheKey+strconv.Itoa(n), false)
 		if err != nil {
@@ -231,7 +228,7 @@ func BenchmarkCache_Remove(b *testing.B) {
 			b.Errorf("wanted \"%s\". got \"%s\"", "data"+strconv.Itoa(n), data)
 		}
 
-		mc.Remove(cacheKey+strconv.Itoa(n))
+		mc.Remove(cacheKey + strconv.Itoa(n))
 
 		// this should now return error
 		data, err = mc.Retrieve(cacheKey+strconv.Itoa(n), false)
@@ -287,7 +284,7 @@ func TestCache_BulkRemove(t *testing.T) {
 
 func BenchmarkCache_BulkRemove(b *testing.B) {
 	var keyArray []string
-	for n:= 0;n < b.N; n++ {
+	for n := 0; n < b.N; n++ {
 		keyArray = append(keyArray, cacheKey+strconv.Itoa(n))
 	}
 
@@ -296,8 +293,8 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 	mc.BulkRemove(keyArray, true)
 
 	// it should be a cache miss
-	for n:= 0;n < b.N; n++ {
-		_, err := mc.Retrieve(cacheKey + strconv.Itoa(n), false)
+	for n := 0; n < b.N; n++ {
+		_, err := mc.Retrieve(cacheKey+strconv.Itoa(n), false)
 		if err == nil {
 			b.Errorf("expected key not found error for %s", cacheKey)
 		}
@@ -354,8 +351,8 @@ func TestMemoryCache_SetTTL(t *testing.T) {
 func BenchmarkCache_SetTTL(b *testing.B) {
 	mc := storeBenchmark(b)
 
-	for n:= 0;n < b.N; n++ {
-		exp1 := mc.Index.GetExpiration(cacheKey+strconv.Itoa(n))
+	for n := 0; n < b.N; n++ {
+		exp1 := mc.Index.GetExpiration(cacheKey + strconv.Itoa(n))
 		if exp1.IsZero() {
 			b.Errorf("expected time %d, got zero", int(time.Now().Unix())+60)
 		}
@@ -364,7 +361,7 @@ func BenchmarkCache_SetTTL(b *testing.B) {
 
 		mc.SetTTL(cacheKey+strconv.Itoa(n), time.Duration(3600)*time.Second)
 
-		exp2 := mc.Index.GetExpiration(cacheKey+strconv.Itoa(n))
+		exp2 := mc.Index.GetExpiration(cacheKey + strconv.Itoa(n))
 		if exp2.IsZero() {
 			b.Errorf("expected time %d, got zero", int(time.Now().Unix())+3600)
 		}

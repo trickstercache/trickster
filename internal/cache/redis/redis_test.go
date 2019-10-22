@@ -36,7 +36,7 @@ func storeBenchmark(b *testing.B) (*Cache, func()) {
 	if err != nil {
 		b.Error(err)
 	}
-	for n:=0; n<b.N; n++ {
+	for n := 0; n < b.N; n++ {
 		err := rc.Store(cacheKey+strconv.Itoa(n), []byte("data"+strconv.Itoa(n)), time.Duration(60)*time.Second)
 		if err != nil {
 			b.Error(err)
@@ -255,8 +255,8 @@ func BenchmarkCache_SetTTL(b *testing.B) {
 	rc, close := storeBenchmark(b)
 	defer close()
 
-	for n:= 0;n < b.N; n++ {
-		expected := "data"+strconv.Itoa(n)
+	for n := 0; n < b.N; n++ {
+		expected := "data" + strconv.Itoa(n)
 		rc.SetTTL(cacheKey+strconv.Itoa(n), time.Duration(3600)*time.Second)
 		//time.Sleep(1010 * time.Millisecond)
 		val, err := rc.Retrieve(cacheKey+strconv.Itoa(n), false)
@@ -342,12 +342,12 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 	rc, close := storeBenchmark(b)
 	defer close()
 
-	for n:=0; n<b.N; n++ {
-		data, err := rc.Retrieve(cacheKey+ strconv.Itoa(n), false)
+	for n := 0; n < b.N; n++ {
+		data, err := rc.Retrieve(cacheKey+strconv.Itoa(n), false)
 		if err != nil {
 			b.Error(err)
 		}
-		if string(data) != "data"+ strconv.Itoa(n) {
+		if string(data) != "data"+strconv.Itoa(n) {
 			b.Errorf("wanted \"%s\". got \"%s\".", "data"+strconv.Itoa(n), data)
 		}
 	}
@@ -409,7 +409,7 @@ func BenchmarkCache_Remove(b *testing.B) {
 	rc, close := storeBenchmark(b)
 	defer close()
 
-	for n:= 0;n < b.N; n++ {
+	for n := 0; n < b.N; n++ {
 		var data []byte
 		data, err := rc.Retrieve(cacheKey+strconv.Itoa(n), false)
 		if err != nil {
@@ -419,7 +419,7 @@ func BenchmarkCache_Remove(b *testing.B) {
 			b.Errorf("wanted \"%s\". got \"%s\"", "data"+strconv.Itoa(n), data)
 		}
 
-		rc.Remove(cacheKey+strconv.Itoa(n))
+		rc.Remove(cacheKey + strconv.Itoa(n))
 
 		data, err = rc.Retrieve(cacheKey+strconv.Itoa(n), false)
 		if err == nil {
@@ -469,15 +469,15 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 	defer close()
 
 	var keyArray []string
-	for n:= 0;n < b.N; n++ {
+	for n := 0; n < b.N; n++ {
 		keyArray = append(keyArray, cacheKey+strconv.Itoa(n))
 	}
 
 	rc.BulkRemove(keyArray, true)
 
 	// it should be a cache miss
-	for n:= 0;n < b.N; n++ {
-		_, err := rc.Retrieve(cacheKey + strconv.Itoa(n), false)
+	for n := 0; n < b.N; n++ {
+		_, err := rc.Retrieve(cacheKey+strconv.Itoa(n), false)
 		if err == nil {
 			b.Errorf("expected key not found error for %s", cacheKey)
 		}
