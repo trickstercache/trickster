@@ -14,6 +14,7 @@
 package filesystem
 
 import (
+	"github.com/Comcast/trickster/internal/util/log"
 	"io/ioutil"
 	"os"
 	"strconv"
@@ -33,6 +34,7 @@ const cacheType = "filesystem"
 const cacheKey = "cacheKey"
 
 func storeBenchmark(b *testing.B) Cache {
+	log.Logger = log.ConsoleLogger("none")
 	dir, err := ioutil.TempDir("/tmp", cacheType)
 	cacheConfig := config.CachingConfig{CacheType: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: dir}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
 	fc := Cache{Config: &cacheConfig}

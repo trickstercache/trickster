@@ -14,6 +14,7 @@
 package bbolt
 
 import (
+	"github.com/Comcast/trickster/internal/util/log"
 	"os"
 	"strconv"
 	"strings"
@@ -38,6 +39,7 @@ func newCacheConfig() config.CachingConfig {
 }
 
 func storeBenchmark(b *testing.B) Cache {
+	log.Logger = log.ConsoleLogger("none")
 	testDbPath := "/tmp/test.db"
 	os.Remove(testDbPath)
 	cacheConfig := config.CachingConfig{CacheType: cacheType, BBolt: config.BBoltCacheConfig{Filename: testDbPath, Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}

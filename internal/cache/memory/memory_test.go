@@ -14,6 +14,7 @@
 package memory
 
 import (
+	"github.com/Comcast/trickster/internal/util/log"
 	"io/ioutil"
 	"strconv"
 	"testing"
@@ -31,6 +32,7 @@ const cacheType = "memory"
 const cacheKey = "cacheKey"
 
 func storeBenchmark(b *testing.B) Cache {
+	log.Logger = log.ConsoleLogger("none")
 	cacheConfig := config.CachingConfig{CacheType: cacheType, Index: config.CacheIndexConfig{ReapInterval: 0}}
 	mc := Cache{Config: &cacheConfig}
 

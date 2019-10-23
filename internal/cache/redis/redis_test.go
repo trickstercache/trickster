@@ -14,6 +14,7 @@
 package redis
 
 import (
+	"github.com/Comcast/trickster/internal/util/log"
 	"strconv"
 	"testing"
 	"time"
@@ -31,6 +32,7 @@ func init() {
 const cacheKey = `cacheKey`
 
 func storeBenchmark(b *testing.B) (*Cache, func()) {
+	log.Logger = log.ConsoleLogger("none")
 	rc, close := setupRedisCache(clientTypeStandard)
 	err := rc.Connect()
 	if err != nil {
