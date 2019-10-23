@@ -103,7 +103,7 @@ test: test-go-mod
 
 .PHONY: bench
 bench:
-	$(GO) test -v -coverprofile=.coverprofile ./... -bench=. -benchmem -run=^$
+	$(GO) test -v -coverprofile=.coverprofile ./... -bench=.
 
 .PHONY: test-cover
 test-cover: test
