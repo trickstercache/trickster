@@ -103,7 +103,7 @@ test: test-go-mod
 
 .PHONY: bench
 bench:
-	$(GO) test -v -coverprofile=.coverprofile ./... -bench=.
+	$(GO) test -v -coverprofile=.coverprofile ./... -run=nonthingplease -bench=. | grep -v ' app=trickster '
 
 .PHONY: test-cover
 test-cover: test
