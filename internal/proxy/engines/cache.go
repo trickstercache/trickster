@@ -15,6 +15,7 @@ package engines
 
 import (
 	"fmt"
+	"github.com/pkg/errors"
 	"net/http"
 	"sort"
 	"strconv"
@@ -33,7 +34,7 @@ import (
 )
 
 // QueryCache queries the cache for an HTTPDocument and returns it
-func QueryCache(c cache.Cache, key string) (*model.HTTPDocument, error) {
+func QueryCache(c cache.Cache, key string, byteRange string) (*model.HTTPDocument, error) {
 
 	inflate := c.Configuration().Compression
 	if inflate {
@@ -41,7 +42,7 @@ func QueryCache(c cache.Cache, key string) (*model.HTTPDocument, error) {
 	}
 
 	d := &model.HTTPDocument{}
-	bytes, err := c.Retrieve(key, true)
+	bytes, err := c.Retrieve(key, true, byteRange)
 	if err != nil {
 		return d, err
 	}
@@ -58,7 +59,7 @@ func QueryCache(c cache.Cache, key string) (*model.HTTPDocument, error) {
 }
 
 // WriteCache writes an HTTPDocument to the cache
-func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Duration) error {
+func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Duration, byteRange string) error {
 	// Delete Date Header, http.ReponseWriter will insert as Now() on cache retrieval
 	delete(d.Headers, "Date")
 	bytes, err := d.MarshalMsg(nil)
@@ -72,7 +73,58 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 		bytes = snappy.Encode(nil, bytes)
 	}
 
-	return c.Store(key, bytes, ttl)
+	if byteRange != "" {
+		// Content-Range
+		_, err = c.Retrieve(key, true, byteRange)
+		if err != nil {
+			// Doesn't exist in the cache
+			// Content-Range: bytes 0-1023/146515
+			length := d.Headers["Content-Range"][0]
+			index := 0
+			for k, v := range length {
+				if '/' == v {
+					index = k
+					break
+				}
+			}
+			// length, after this, will have 146515
+			length = length[index:]
+			totalSize, err := strconv.Atoi(length)
+			if err != nil {
+				log.Error("Couldn't convert string to int", log.Pairs{"length": length})
+			}
+			fullSize := make([]byte, totalSize)
+			err = c.Store(key, fullSize, ttl, byteRange)
+			if err != nil {
+				return err
+			}
+
+			// byteRange example : bytes=0-1023
+			byteIndices := strings.Split(byteRange[6:], "-")
+			if byteIndices == nil || len(byteIndices) != 2 {
+				log.Error("Couldn't convert byte range to valid indices", log.Pairs{"byteRange": byteRange})
+				return errors.New(fmt.Sprintf("Couldn't convert byte range to valid indices: %s", byteRange))
+			}
+			start, err := strconv.Atoi(byteIndices[0])
+			if err != nil {
+				log.Error("Couldn't get a range", log.Pairs{"start": start})
+				return errors.New(fmt.Sprintf("Couldn't get a range: %s", byteIndices[0]))
+			}
+			end, err := strconv.Atoi(byteIndices[1])
+			if err != nil {
+				log.Error("Couldn't get a range", log.Pairs{"end": end})
+				return errors.New(fmt.Sprintf("Couldn't get a range: %s", byteIndices[1]))
+			}
+			j := 0
+			for i := start; i < end; i++ {
+				fullSize[i] = bytes[j]
+				j++
+			}
+			return c.Store(key, fullSize, ttl, byteRange)
+		}
+	}
+
+	return c.Store(key, bytes, ttl, "")
 }
 
 // DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request

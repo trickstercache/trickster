@@ -72,7 +72,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 
 	var cacheStatus = tc.LookupStatusKeyMiss
 
-	d, err := QueryCache(cache, key)
+	d, err := QueryCache(cache, key, "")
 	if err == nil {
 		d.CachingPolicy.IsFresh = !d.CachingPolicy.LocalDate.Add(time.Duration(d.CachingPolicy.FreshnessLifetime) * time.Second).Before(time.Now())
 		if !d.CachingPolicy.IsFresh {
@@ -153,7 +153,8 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 		if ttl > oc.MaxTTL {
 			ttl = oc.MaxTTL
 		}
-		WriteCache(cache, key, d, ttl)
+		// ToDo: Srijeet change this to pass in the actual byteRange
+		WriteCache(cache, key, d, ttl, "")
 	} else {
 		body = d.Body
 		resp = &http.Response{

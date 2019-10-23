@@ -36,6 +36,7 @@ import (
 // while caching the results for subsequent requests of the same data
 func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client) {
 
+	byteRange := r.Headers.Get("Range")
 	oc := context.OriginConfig(r.ClientRequest.Context())
 	cache := context.CacheClient(r.ClientRequest.Context())
 	r.FastForwardDisable = oc.FastForwardDisable
@@ -104,7 +105,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 			return // fetchTimeseries logs the error
 		}
 	} else {
-		doc, err = QueryCache(cache, key)
+		doc, err = QueryCache(cache, key, byteRange)
 		if err != nil {
 			cts, doc, elapsed, err = fetchTimeseries(r, client)
 			if err != nil {
@@ -304,7 +305,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 					return
 				}
 				doc.Body = cdata
-				WriteCache(cache, key, doc, oc.TimeseriesTTL)
+				WriteCache(cache, key, doc, oc.TimeseriesTTL, byteRange)
 			}
 		}()
 	}

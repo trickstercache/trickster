@@ -166,7 +166,7 @@ func TestQueryCache(t *testing.T) {
 		t.Error(err)
 	}
 
-	d2, err := QueryCache(cache, "testKey")
+	d2, err := QueryCache(cache, "testKey", "")
 	if err != nil {
 		t.Error(err)
 	}
@@ -179,7 +179,7 @@ func TestQueryCache(t *testing.T) {
 		t.Errorf("expected %d got %d", 200, d2.StatusCode)
 	}
 
-	_, err = QueryCache(cache, "testKey2")
+	_, err = QueryCache(cache, "testKey2", "")
 	if err == nil {
 		t.Errorf("expected error")
 	}
