@@ -15,6 +15,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	_ "net/http/pprof" // Comment to disable. Available on :METRICS_PORT/debug/pprof
 	"os"
@@ -86,6 +87,7 @@ func main() {
 	}
 
 	wg := sync.WaitGroup{}
+	var l net.Listener
 
 	// if TLS port is configured and at least one origin is mapped to a good tls config,
 	// then set up the tls server listener instance
@@ -94,7 +96,7 @@ func main() {
 		go func() {
 			tlsConfig, err := config.Config.TLSCertConfig()
 			if err == nil {
-				l, err := proxy.NewListener(
+				l, err = proxy.NewListener(
 					config.ProxyServer.TLSListenAddress,
 					config.ProxyServer.TLSListenPort,
 					config.ProxyServer.ConnectionsLimit,
