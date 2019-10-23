@@ -36,8 +36,6 @@ func storeBenchmark(b *testing.B) (*Cache, func()) {
 	if err != nil {
 		b.Error(err)
 	}
-	b.ReportAllocs()
-	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		err := rc.Store(cacheKey+strconv.Itoa(n), []byte("data"+strconv.Itoa(n)), time.Duration(60)*time.Second)
 		if err != nil {
