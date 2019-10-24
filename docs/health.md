@@ -1,10 +1,12 @@
 # Health Checks
 
 ## Ping Endpoint
+
 Trickster provides a `/trickster/ping` endpoint that returns a response of `200 OK` and the word `pong` if Trickster is up and running.  The `/trickster/ping` endpoint does not check any proxy configurations or upstream origins. The path to the Ping endpoint is configurable, see the configuration documentation for more information.
 
 ## Health Check Endpoint
-Trickster offers a `/health` endpoint for monitoring the health of the Trickster service with respect to its upstream connection to an origin. The behavior of a `/health` request will vary based on the Origin Type. For example, with Prometheus, Trickster makes a request to `/query?query=up`, while for InfluxDB the request is to `/ping`.
+
+Trickster offers `/health` endpoints for monitoring the health of each origin independently. The behavior of a `/health` request will vary based on the Origin Type. For example, with Prometheus, Trickster makes a request to `/api/v1/query?query=up`, while for InfluxDB the request is to `/ping`.
 
 An HTTP response of `200 OK` or `204 No Content` indicates that the end-to-end health check to the origin was successful.
 
