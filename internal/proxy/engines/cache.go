@@ -15,7 +15,6 @@ package engines
 
 import (
 	"fmt"
-	"github.com/pkg/errors"
 	"net/http"
 	"sort"
 	"strconv"
@@ -33,25 +32,6 @@ import (
 	"github.com/Comcast/trickster/internal/util/md5"
 )
 
-func GetBoundariesFromByteRange(byteRange string) (int, int, error) {
-	// byteRange example : bytes=0-1023
-	byteIndices := strings.Split(byteRange[6:], "-")
-	if byteIndices == nil || len(byteIndices) != 2 {
-		log.Error("Couldn't convert byte range to valid indices", log.Pairs{"byteRange": byteRange})
-		return -1, -1, errors.New(fmt.Sprintf("Couldn't convert byte range to valid indices: %s", byteRange))
-	}
-	start, err := strconv.Atoi(byteIndices[0])
-	if err != nil {
-		log.Error("Couldn't get a range", log.Pairs{"start": start})
-		return -1, -1, errors.New(fmt.Sprintf("Couldn't get a range: %s", byteIndices[0]))
-	}
-	end, err := strconv.Atoi(byteIndices[1])
-	if err != nil {
-		log.Error("Couldn't get a range", log.Pairs{"end": end})
-		return -1, -1, errors.New(fmt.Sprintf("Couldn't get a range: %s", byteIndices[1]))
-	}
-	return start, end, nil
-}
 // QueryCache queries the cache for an HTTPDocument and returns it
 func QueryCache(c cache.Cache, key string, byteRange model.Ranges) (*model.HTTPDocument, error) {
 
@@ -73,41 +53,10 @@ func QueryCache(c cache.Cache, key string, byteRange model.Ranges) (*model.HTTPD
 		}
 	}
 	d.UnmarshalMsg(bytes)
-
-	ranges := d.Ranges
-	sort.SliceStable(ranges, func(i, j int) bool {
-		return ranges[i].Start < ranges[j].Start
-	})
-
-	updatedquery := make([]model.Range, (len([]model.Range(byteRange))))
-   	for k, val := range byteRange {
-	   start := val.Start
-	   end := val.End
-
-	   if (ranges[0].Start > end) ||
-		   (ranges[len(ranges)-1].End < start) {
-		   //New retrieve from upstream
-		   ranges = append(ranges, model.Range{Start: start, End: end})
-		   d.Ranges = ranges
-		   d.UpdatedQueryRange[k].Start = start
-		   d.UpdatedQueryRange[k].End = end
-	   } else {
-		   for _, v := range ranges {
-			   if start > v.Start && end < v.End {
-				   // Just return the intermediate bytes from the cache, since we have everything in the cache
-			   } else if start > v.Start && end > v.End {
-				   start = v.End
-			   } else if start < v.Start && end < v.Start {
-				   // Just return the same start and end, since we have a full cache miss
-			   } else if start < v.Start && end < v.End {
-				   end = v.Start
-			   }
-		   }
-	   }
-	   updatedquery[k].Start = start
-	   updatedquery[k].End = end
-    }
-   	return d, nil
+	if byteRange != nil {
+		d.UpdatedQueryRange = d.Ranges.CalculateDelta(d, byteRange)
+	}
+	return d, nil
 }
 
 // WriteCache writes an HTTPDocument to the cache
@@ -157,7 +106,7 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 		}
 		// Case when the key was found in the cache: store only the required part
 		for _, v3 := range doc.UpdatedQueryRange {
-			doc.Ranges[len(doc.Ranges) - 1] = model.Range{Start:v3.Start, End:v3.End}
+			doc.Ranges[len(doc.Ranges)-1] = model.Range{Start: v3.Start, End: v3.End}
 		}
 	}
 

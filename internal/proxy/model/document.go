@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"github.com/Comcast/trickster/internal/util/log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -26,8 +27,8 @@ import (
 
 // Range represents the start and end for a byte range object
 type Range struct {
-	Start int	`msg:"start"`
-	End   int	`msg:"end"`
+	Start int `msg:"start"`
+	End   int `msg:"end"`
 }
 
 type Ranges []Range
@@ -40,24 +41,59 @@ type HTTPDocument struct {
 	Body          []byte              `msg:"body"`
 	CachingPolicy *CachingPolicy      `msg:"caching_policy"`
 	// UpdatedQueryRange is used to send the query to upstream in case of cache miss
-	UpdatedQueryRange Ranges			  `msg:"updated_query_range"`
+	UpdatedQueryRange Ranges `msg:"updated_query_range"`
 	// Ranges is the ranges of the doc that are in the cache currently
-	Ranges        Ranges             `msg:"ranges"`
+	Ranges Ranges `msg:"ranges"`
 }
 
 // CalculateDelta calculates the delta in the byte ranges and returns the range
 // that we need to query upstream
-func (r Range) CalculateDelta(d *HTTPDocument) {
+func (r Ranges) CalculateDelta(d *HTTPDocument, byteRange Ranges) Ranges {
+	sort.SliceStable(r, func(i, j int) bool {
+		return r[i].Start < r[j].Start
+	})
 
+	updatedquery := make([]Range, (len([]Range(byteRange))))
+	for k, val := range byteRange {
+		start := val.Start
+		end := val.End
 
+		if (r[0].Start > end) ||
+			(r[len(r)-1].End < start) {
+			//New retrieve from upstream
+			r = append(r, Range{Start: start, End: end})
+			d.Ranges = r
+			d.UpdatedQueryRange[k].Start = start
+			d.UpdatedQueryRange[k].End = end
+		} else {
+			for _, v := range r {
+				if start > v.Start && end < v.End {
+					// Just return the intermediate bytes from the cache, since we have everything in the cache
+				} else if start > v.Start && end > v.End {
+					start = v.End
+				} else if start < v.Start && end < v.Start {
+					// Just return the same start and end, since we have a full cache miss
+				} else if start < v.Start && end < v.End {
+					end = v.Start
+				}
+			}
+		}
+		updatedquery[k].Start = start
+		updatedquery[k].End = end
+	}
+	return updatedquery
 }
 
 // GetByteRanges gets the individual byte ranges from a single/ multi range request
 func GetByteRanges(byteRange string) Ranges {
+	if byteRange == "" {
+		log.Error("Got an empty byte range", log.Pairs{"byteRange": ""})
+		return nil
+	}
 	// example: curl http://www.example.com -i -H "Range: bytes=0-50, 100-150"
 	r := strings.Split(byteRange, ",")
 	ranges := make(Ranges, len(r))
-	for k,v := range r {
+	for k, v := range r {
 		v = strings.TrimSpace(v)
 		r2 := strings.Split(v, "-")
 		if r2 == nil || len(r2) != 2 {
@@ -79,6 +115,7 @@ func GetByteRanges(byteRange string) Ranges {
 	}
 	return ranges
 }
+
 // CachingPolicy ...
 type CachingPolicy struct {
 	IsFresh               bool      `msg:"is_fresh"`

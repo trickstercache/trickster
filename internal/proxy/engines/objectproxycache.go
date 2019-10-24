@@ -34,6 +34,8 @@ func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mod
 
 // FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
 func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config.PathConfig, noLock bool) ([]byte, *http.Response, bool) {
+	byteRange := r.Headers.Get("Range")
+	ranges := model.GetByteRanges(byteRange)
 
 	oc := context.OriginConfig(r.ClientRequest.Context())
 	cache := context.CacheClient(r.ClientRequest.Context())
@@ -72,8 +74,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 
 	var cacheStatus = tc.LookupStatusKeyMiss
 
-	//ToDo: Change this
-	d, err := QueryCache(cache, key, nil)
+	d, err := QueryCache(cache, key, ranges)
 	if err == nil {
 		d.CachingPolicy.IsFresh = !d.CachingPolicy.LocalDate.Add(time.Duration(d.CachingPolicy.FreshnessLifetime) * time.Second).Before(time.Now())
 		if !d.CachingPolicy.IsFresh {
@@ -154,8 +155,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 		if ttl > oc.MaxTTL {
 			ttl = oc.MaxTTL
 		}
-		// ToDo: Srijeet change this to pass in the actual byteRange
-		WriteCache(cache, key, d, ttl, nil)
+		WriteCache(cache, key, d, ttl, ranges)
 	} else {
 		body = d.Body
 		resp = &http.Response{
