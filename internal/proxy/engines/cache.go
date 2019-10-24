@@ -53,7 +53,7 @@ func GetBoundariesFromByteRange(byteRange string) (int, int, error) {
 	return start, end, nil
 }
 // QueryCache queries the cache for an HTTPDocument and returns it
-func QueryCache(c cache.Cache, key string, byteRange string) (*model.HTTPDocument, error) {
+func QueryCache(c cache.Cache, key string, byteRange model.Ranges) (*model.HTTPDocument, error) {
 
 	inflate := c.Configuration().Compression
 	if inflate {
@@ -79,39 +79,39 @@ func QueryCache(c cache.Cache, key string, byteRange string) (*model.HTTPDocumen
 		return ranges[i].Start < ranges[j].Start
 	})
 
-	start, end, err := GetBoundariesFromByteRange(byteRange)
-	if err != nil {
-		return nil, err
-	}
+	updatedquery := make([]model.Range, (len([]model.Range(byteRange))))
+   	for k, val := range byteRange {
+	   start := val.Start
+	   end := val.End
 
-	if (ranges[0].Start > end) ||
-		(ranges[len(ranges)-1].End < start) {
-		//New retrieve from upstream
-		ranges = append(ranges, model.Range{Start: start, End: end})
-		d.Ranges = ranges
-		d.UpdatedQueryRange.Start = start
-		d.UpdatedQueryRange.End = end
-		return d, errors.New("Range not found in cache, send upstream")
-	}
-
-	for _,v := range ranges {
-		if start > v.Start && end < v.End {
-			// Just return the intermediate bytes from the cache, since we have everything in the cache
-		} else if start > v.Start && end > v.End {
-			start = v.End
-		} else if start < v.Start && end < v.Start {
-			// Just return the same start and end, since we have a full cache miss
-		} else if start < v.Start && end < v.End {
-			end = v.Start
-		}
-	}
-	d.UpdatedQueryRange.Start = start
-	d.UpdatedQueryRange.End = end
-	return d, nil
+	   if (ranges[0].Start > end) ||
+		   (ranges[len(ranges)-1].End < start) {
+		   //New retrieve from upstream
+		   ranges = append(ranges, model.Range{Start: start, End: end})
+		   d.Ranges = ranges
+		   d.UpdatedQueryRange[k].Start = start
+		   d.UpdatedQueryRange[k].End = end
+	   } else {
+		   for _, v := range ranges {
+			   if start > v.Start && end < v.End {
+				   // Just return the intermediate bytes from the cache, since we have everything in the cache
+			   } else if start > v.Start && end > v.End {
+				   start = v.End
+			   } else if start < v.Start && end < v.Start {
+				   // Just return the same start and end, since we have a full cache miss
+			   } else if start < v.Start && end < v.End {
+				   end = v.Start
+			   }
+		   }
+	   }
+	   updatedquery[k].Start = start
+	   updatedquery[k].End = end
+    }
+   	return d, nil
 }
 
 // WriteCache writes an HTTPDocument to the cache
-func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Duration, byteRange string) error {
+func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Duration, byteRange model.Ranges) error {
 	// Delete Date Header, http.ReponseWriter will insert as Now() on cache retrieval
 	delete(d.Headers, "Date")
 	bytes, err := d.MarshalMsg(nil)
@@ -125,12 +125,13 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 		bytes = snappy.Encode(nil, bytes)
 	}
 
-	if byteRange != "" {
+	if byteRange != nil {
 		// Content-Range
 		doc, err := QueryCache(c, key, byteRange)
 		if err != nil {
 			// First time, Doesn't exist in the cache
 			// Example -> Content-Range: bytes 0-1023/146515
+			// length = 0-1023/146515
 			length := d.Headers["Content-Range"][0]
 			index := 0
 			for k, v := range length {
@@ -143,20 +144,21 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 			length = length[index:]
 			totalSize, err := strconv.Atoi(length)
 			if err != nil {
-				log.Error("Couldn't convert string to int", log.Pairs{"length": length})
+				log.Error("Couldn't convert to a valid length", log.Pairs{"length": length})
 			}
 			fullSize := make([]byte, totalSize)
 
-			start, end, err := GetBoundariesFromByteRange(byteRange)
-			if err != nil {
-				return err
+			for _, v2 := range byteRange {
+				start := v2.Start
+				end := v2.End
+				copy(fullSize[start:end], bytes[start:end])
 			}
-			copy(fullSize[start:end], bytes[:])
 			return c.Store(key, fullSize, ttl)
 		}
 		// Case when the key was found in the cache: store only the required part
-		doc.Ranges[len(doc.Ranges) - 1] = model.Range{Start:doc.UpdatedQueryRange.Start, End:doc.UpdatedQueryRange.End}
-		return c.Store(key, bytes, ttl)
+		for _, v3 := range doc.UpdatedQueryRange {
+			doc.Ranges[len(doc.Ranges) - 1] = model.Range{Start:v3.Start, End:v3.End}
+		}
 	}
 
 	return c.Store(key, bytes, ttl)

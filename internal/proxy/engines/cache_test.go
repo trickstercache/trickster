@@ -161,12 +161,12 @@ func TestQueryCache(t *testing.T) {
 	resp.StatusCode = 200
 	d := model.DocumentFromHTTPResponse(resp, []byte(expected), nil)
 
-	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second)
+	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, nil)
 	if err != nil {
 		t.Error(err)
 	}
 
-	d2, err := QueryCache(cache, "testKey", "")
+	d2, err := QueryCache(cache, "testKey", nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -179,7 +179,7 @@ func TestQueryCache(t *testing.T) {
 		t.Errorf("expected %d got %d", 200, d2.StatusCode)
 	}
 
-	_, err = QueryCache(cache, "testKey2", "")
+	_, err = QueryCache(cache, "testKey2", nil)
 	if err == nil {
 		t.Errorf("expected error")
 	}

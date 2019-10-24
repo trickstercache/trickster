@@ -15,7 +15,10 @@ package model
 
 import (
 	"fmt"
+	"github.com/Comcast/trickster/internal/util/log"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -36,7 +39,9 @@ type HTTPDocument struct {
 	Headers       map[string][]string `msg:"headers"`
 	Body          []byte              `msg:"body"`
 	CachingPolicy *CachingPolicy      `msg:"caching_policy"`
-	UpdatedQueryRange Range			  `msg:"updated_query_range"`
+	// UpdatedQueryRange is used to send the query to upstream in case of cache miss
+	UpdatedQueryRange Ranges			  `msg:"updated_query_range"`
+	// Ranges is the ranges of the doc that are in the cache currently
 	Ranges        Ranges             `msg:"ranges"`
 }
 
@@ -47,6 +52,33 @@ func (r Range) CalculateDelta(d *HTTPDocument) {
 
 }
 
+// GetByteRanges gets the individual byte ranges from a single/ multi range request
+func GetByteRanges(byteRange string) Ranges {
+	// example: curl http://www.example.com -i -H "Range: bytes=0-50, 100-150"
+	r := strings.Split(byteRange, ",")
+	ranges := make(Ranges, len(r))
+	for k,v := range r {
+		v = strings.TrimSpace(v)
+		r2 := strings.Split(v, "-")
+		if r2 == nil || len(r2) != 2 {
+			log.Error("Couldn't convert byte range to valid indices", log.Pairs{"byteRange": byteRange})
+			return nil
+		}
+		start, err := strconv.Atoi(r2[0])
+		if err != nil {
+			log.Error("Couldn't get a range", log.Pairs{"start": start})
+			return nil
+		}
+		end, err := strconv.Atoi(r2[1])
+		if err != nil {
+			log.Error("Couldn't get a range", log.Pairs{"end": end})
+			return nil
+		}
+		ranges[k].Start = start
+		ranges[k].End = end
+	}
+	return ranges
+}
 // CachingPolicy ...
 type CachingPolicy struct {
 	IsFresh               bool      `msg:"is_fresh"`

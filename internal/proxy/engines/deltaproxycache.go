@@ -38,6 +38,8 @@ import (
 func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client) {
 
 	byteRange := r.Headers.Get("Range")
+	ranges := model.GetByteRanges(byteRange)
+
 	oc := context.OriginConfig(r.ClientRequest.Context())
 	cache := context.CacheClient(r.ClientRequest.Context())
 	r.FastForwardDisable = oc.FastForwardDisable
@@ -106,15 +108,19 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 			return // fetchTimeseries logs the error
 		}
 	} else {
-		doc, err = QueryCache(cache, key, byteRange)
+		ranges := model.GetByteRanges(byteRange)
+		doc, err = QueryCache(cache, key, ranges)
 		// Partial or full Cache miss
 		if err != nil {
-			s := doc.UpdatedQueryRange.Start
-			e := doc.UpdatedQueryRange.End
-			// ToDo: Change this to support multiple ranges
-			header := make([]string, 1)
-			header = append(header, "bytes=" + strconv.Itoa(s) + "-" + strconv.Itoa(e))
-			r.Headers["Range"] = header
+			header := "bytes="
+			for _,v := range doc.UpdatedQueryRange {
+				s := v.Start
+				e := v.End
+				header = header + strconv.Itoa(s) + "-" + strconv.Itoa(e) + ", "
+			}
+			// To get rid of the trailing ", "
+			header = header[:len(header)-2]
+			r.Headers.Add("Range", header)
 			cts, doc, elapsed, err = fetchTimeseries(r, client)
 			if err != nil {
 				recordDPCResult(r, tc.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
@@ -314,7 +320,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 					return
 				}
 				doc.Body = cdata
-				WriteCache(cache, key, doc, oc.TimeseriesTTL, byteRange)
+				WriteCache(cache, key, doc, oc.TimeseriesTTL, ranges)
 			}
 		}()
 	}
