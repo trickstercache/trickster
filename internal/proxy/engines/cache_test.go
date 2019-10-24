@@ -108,8 +108,8 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 
 	key := DeriveCacheKey(client, r, nil, "extra")
 
-	if key != "1006bd15c3e011f5e5cab433745e0c98" {
-		t.Errorf("expected %s got %s", "1006bd15c3e011f5e5cab433745e0c98", key)
+	if key != "e2fc09c04a3281ff7d858f546068ec9e" {
+		t.Errorf("expected %s got %s", "e2fc09c04a3281ff7d858f546068ec9e", key)
 	}
 
 }
