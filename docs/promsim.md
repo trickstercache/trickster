@@ -15,31 +15,31 @@ PromSim only uses builtin golang packages and should thus work out-of-the-box wi
 package mypackage
 
 import (
-	"io/ioutil"
-	"net/http"
-	"testing"
+    "io/ioutil"
+    "net/http"
+    "testing"
 
-	"github.com/Comcast/trickster/pkg/promsim"
+    "github.com/Comcast/trickster/pkg/promsim"
 )
 
 func TestPromSim(t *testing.T) {
 
-	ts := promsim.NewTestServer()
-	client := &http.Client{}
-	const expected = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"random_label":"57","series_count":"1","series_id":"0"},"values":[[2,"93"]]}]}}`
-	resp, err := client.Get(ts.URL + `/api/v1/query_range?query=my_test_query{random_label="57",series_count="1"}&start=2&end=2&step=15`)
-	if err != nil {
-		t.Error(err)
-	}
+    ts := promsim.NewTestServer()
+    client := &http.Client{}
+    const expected = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"random_label":"57","series_count":"1","series_id":"0"},"values":[[2,"93"]]}]}}`
+    resp, err := client.Get(ts.URL + `/api/v1/query_range?query=my_test_query{random_label="57",series_count="1"}&start=2&end=2&step=15`)
+    if err != nil {
+        t.Error(err)
+    }
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
+    body, err := ioutil.ReadAll(resp.Body)
+    if err != nil {
+        t.Error(err)
+    }
 
-	if string(body) != expected {
-		t.Errorf("expected [%s] got [%s]", expected, string(body))
-	}
+    if string(body) != expected {
+        t.Errorf("expected [%s] got [%s]", expected, string(body))
+    }
 }
 ```
 
@@ -77,7 +77,7 @@ Example adding 300ms of upfront latency: `query=my_test_query{latency_ms="300"}&
 
 The `range_latency_ms` label produces a per-unique-value latency effect. The result is that the response from PromSim will be delayed by a certain amount, depending upon on the number of series, size of desired timerange and step value. This is useful in simulating very broad label scopes that slow down query response times in the real world.
 
-Example adding 5ms of range latency: `query=my_test_query{range_latency_ms="5",series_count="2"}&start=0&end=1800&step=15`. In this example, 1.2s of total latency is introduced (120 datapoints _ 2 series _ 5ms) into the HTTP response.
+Example adding 5ms of range latency: `query=my_test_query{range_latency_ms="5",series_count="2"}&start=0&end=1800&step=15`. In this example, 1.2s of total latency is introduced (120 datapoints x 2 series x 5ms) into the HTTP response.
 
 ### Min and Max Values
 
