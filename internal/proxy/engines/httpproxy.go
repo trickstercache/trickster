@@ -148,13 +148,17 @@ func recordProxyResults(r *model.Request, httpStatus int, path string, elapsed f
 }
 
 func recordResults(r *model.Request, engine string, cacheStatus tc.LookupStatus, statusCode int, path, ffStatus string, elapsed float64, extents timeseries.ExtentList, header http.Header) {
-	oc := context.OriginConfig(r.ClientRequest.Context())
 
-	httpStatus := strconv.Itoa(statusCode)
+	oc := context.OriginConfig(r.ClientRequest.Context())
+	pc := context.PathConfig(r.ClientRequest.Context())
 	status := cacheStatus.String()
-	metrics.ProxyRequestStatus.WithLabelValues(oc.Name, oc.OriginType, r.HTTPMethod, status, httpStatus, path).Inc()
-	if elapsed > 0 {
-		metrics.ProxyRequestDuration.WithLabelValues(oc.Name, oc.OriginType, r.HTTPMethod, status, httpStatus, path).Observe(elapsed)
+
+	if pc != nil && !pc.NoMetrics {
+		httpStatus := strconv.Itoa(statusCode)
+		metrics.ProxyRequestStatus.WithLabelValues(oc.Name, oc.OriginType, r.HTTPMethod, status, httpStatus, path).Inc()
+		if elapsed > 0 {
+			metrics.ProxyRequestDuration.WithLabelValues(oc.Name, oc.OriginType, r.HTTPMethod, status, httpStatus, path).Observe(elapsed)
+		}
 	}
 	headers.SetResultsHeader(header, engine, status, ffStatus, extents)
 }
