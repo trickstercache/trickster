@@ -15,23 +15,43 @@ package influxdb
 
 import (
 	"net/http"
+	"net/url"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
-// HealthHandler checks the health of the configured upstream Origin
-func (c Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
+var healthURL *url.URL
+var healthMethod string
 
-	u := c.BaseURL()
+// HealthHandler checks the health of the Configured Upstream Origin
+func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 
-	cfg := c.Configuration()
-	if cfg.HealthCheckUpstreamPath == "/" {
-		u.Path += "/" + health
-		r.Method = cfg.HealthCheckVerb
-	} else {
-		u.Path += cfg.HealthCheckUpstreamPath
-		u.RawQuery = cfg.HealthCheckQuery
+	if healthURL == nil {
+		url := c.BaseURL()
+		cfg := c.Configuration()
+
+		if cfg.HealthCheckUpstreamPath == "-" {
+			url.Path += "/ping"
+		} else {
+			url.Path += cfg.HealthCheckUpstreamPath
+		}
+
+		if cfg.HealthCheckVerb == "-" {
+			healthMethod = http.MethodGet
+		} else {
+			healthMethod = cfg.HealthCheckVerb
+		}
+
+		if cfg.HealthCheckQuery == "-" {
+			url.RawQuery = ""
+		} else {
+			url.RawQuery = cfg.HealthCheckQuery
+		}
+		healthURL = url
 	}
-	engines.ProxyRequest(model.NewRequest("HealthHandler", http.MethodGet, u, r.Header, c.config.Timeout, r, c.webClient), w)
+
+	engines.ProxyRequest(
+		model.NewRequest("HealthHandler",
+			healthMethod, healthURL, nil, c.config.Timeout, r, c.webClient), w)
 }

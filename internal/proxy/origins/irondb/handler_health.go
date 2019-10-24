@@ -15,15 +15,43 @@ package irondb
 
 import (
 	"net/http"
+	"net/url"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
-// HealthHandler checks the health of the configured upstream Origin.
-func (c Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BaseURL()
-	u.Path += "/" + mnState
-	engines.ProxyRequest(model.NewRequest("HealthHandler",
-		http.MethodGet, u, r.Header, c.config.Timeout, r, c.webClient), w)
+var healthURL *url.URL
+var healthMethod string
+
+// HealthHandler checks the health of the Configured Upstream Origin
+func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
+	if healthURL == nil {
+		url := c.BaseURL()
+		cfg := c.Configuration()
+
+		if cfg.HealthCheckUpstreamPath == "-" {
+			url.Path = "/" + mnState
+		} else {
+			url.Path = cfg.HealthCheckUpstreamPath
+		}
+
+		if cfg.HealthCheckVerb == "-" {
+			healthMethod = http.MethodGet
+		} else {
+			healthMethod = cfg.HealthCheckVerb
+		}
+
+		if cfg.HealthCheckQuery == "-" {
+			url.RawQuery = ""
+		} else {
+			url.RawQuery = cfg.HealthCheckQuery
+		}
+		healthURL = url
+	}
+
+	engines.ProxyRequest(
+		model.NewRequest("HealthHandler",
+			healthMethod, healthURL, nil, c.config.Timeout, r, c.webClient), w)
+
 }

@@ -157,16 +157,11 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 
 	o.Paths = paths
 
-	// Ensure the configured health check endpoint starts with "/""
-	if !strings.HasPrefix(o.HealthCheckEndpoint, "/") {
-		o.HealthCheckEndpoint = "/" + o.HealthCheckEndpoint
+	if h, ok := handlers["health"]; ok &&
+		o.HealthCheckUpstreamPath != "" && o.HealthCheckVerb != "" {
+		hp := "/trickster/" + o.Name + "/health"
+		routing.Router.PathPrefix(hp).Handler(middleware.WithConfigContext(o, nil, nil, h)).Methods(http.MethodGet, http.MethodHead, http.MethodPost)
 	}
-	paths[o.HealthCheckEndpoint] = &config.PathConfig{
-		Path:        o.HealthCheckEndpoint,
-		HandlerName: "health",
-		Methods:     []string{http.MethodGet, http.MethodHead},
-	}
-	orderedPaths = append([]string{o.HealthCheckEndpoint}, orderedPaths...)
 
 	deletes := make([]string, 0, len(paths))
 	for _, p := range paths {
