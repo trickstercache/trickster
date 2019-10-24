@@ -108,6 +108,12 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 		for _, v3 := range doc.UpdatedQueryRange {
 			doc.Ranges[len(doc.Ranges)-1] = model.Range{Start: v3.Start, End: v3.End}
 		}
+		doc.UpdatedQueryRange = nil
+		bytes, err = d.MarshalMsg(nil)
+		if err != nil {
+			return err
+		}
+		return c.Store(key, bytes, ttl)
 	}
 
 	return c.Store(key, bytes, ttl)
