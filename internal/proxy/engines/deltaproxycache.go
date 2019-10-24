@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"sync"
 	"time"
 
@@ -106,7 +107,14 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		}
 	} else {
 		doc, err = QueryCache(cache, key, byteRange)
+		// Partial or full Cache miss
 		if err != nil {
+			s := doc.UpdatedQueryRange.Start
+			e := doc.UpdatedQueryRange.End
+			// ToDo: Change this to support multiple ranges
+			header := make([]string, 1)
+			header = append(header, "bytes=" + strconv.Itoa(s) + "-" + strconv.Itoa(e))
+			r.Headers["Range"] = header
 			cts, doc, elapsed, err = fetchTimeseries(r, client)
 			if err != nil {
 				recordDPCResult(r, tc.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
@@ -114,6 +122,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 				return // fetchTimeseries logs the error
 			}
 		} else {
+			// Cache hit
 			// Load the Cached Timeseries
 			cts, err = client.UnmarshalTimeseries(doc.Body)
 			if err != nil {

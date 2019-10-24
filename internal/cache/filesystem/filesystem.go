@@ -15,10 +15,8 @@ package filesystem
 
 import (
 	"fmt"
-	"github.com/pkg/errors"
 	"io/ioutil"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -60,18 +58,18 @@ func (c *Cache) Connect() error {
 }
 
 // Store places an object in the cache using the specified key and ttl
-func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration, byteRange string) error {
-	return c.store(cacheKey, data, ttl, true, byteRange)
+func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
+	return c.store(cacheKey, data, ttl, true)
 }
 
-func (c *Cache) storeNoIndex(cacheKey string, data []byte, byteRange string) {
-	err := c.store(cacheKey, data, 31536000*time.Second, false, byteRange)
+func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
+	err := c.store(cacheKey, data, 31536000*time.Second, false)
 	if err != nil {
 		log.Error("cache failed to write non-indexed object", log.Pairs{"cacheName": c.Name, "cacheType": "filesystem", "cacheKey": cacheKey, "objectSize": len(data)})
 	}
 }
 
-func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateIndex bool, byteRange string) error {
+func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateIndex bool) error {
 
 	if ttl < 1 {
 		return fmt.Errorf("invalid ttl: %d", int64(ttl.Seconds()))
@@ -103,11 +101,11 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 }
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)
-func (c *Cache) Retrieve(cacheKey string, allowExpired bool, byteRange string) ([]byte, error) {
-	return c.retrieve(cacheKey, allowExpired, true, byteRange)
+func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
+	return c.retrieve(cacheKey, allowExpired, true)
 }
 
-func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool, byteRange string) ([]byte, error) {
+func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte, error) {
 
 	dataFile := c.getFileName(cacheKey)
 
@@ -127,27 +125,6 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool, byteRan
 		return cache.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
 	}
 	o.Expiration = c.Index.GetExpiration(cacheKey)
-
-	if byteRange != "" {
-		byteIndices := strings.Split(byteRange[6:], "-")
-		if byteIndices == nil || len(byteIndices) != 2 {
-			log.Error("Couldn't convert byte range to valid indices", log.Pairs{"byteRange": byteRange})
-			return nil, errors.New(fmt.Sprintf("Couldn't convert byte range to valid indices: %s", byteRange))
-		}
-		start, err := strconv.Atoi(byteIndices[0])
-		if err != nil {
-			log.Error("Couldn't get a range", log.Pairs{"start": start})
-			return nil, errors.New(fmt.Sprintf("Couldn't get a range: %s", byteIndices[0]))
-		}
-		end, err := strconv.Atoi(byteIndices[1])
-		if err != nil {
-			log.Error("Couldn't get a range", log.Pairs{"end": end})
-			return nil, errors.New(fmt.Sprintf("Couldn't get a range: %s", byteIndices[1]))
-		}
-		o.Size = (int64)(end-start)
-		o.Value = o.Value[start:end]
-	}
-
 	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
 		log.Debug("filesystem cache retrieve", log.Pairs{"key": cacheKey, "dataFile": dataFile})
 		if atime {

@@ -25,8 +25,8 @@ import (
 // When making new cache types, Retrieve() must return an error on cache miss
 type Cache interface {
 	Connect() error
-	Store(cacheKey string, data []byte, ttl time.Duration, byteRange string) error
-	Retrieve(cacheKey string, allowExpired bool, byteRange string) ([]byte, error)
+	Store(cacheKey string, data []byte, ttl time.Duration) error
+	Retrieve(cacheKey string, allowExpired bool) ([]byte, error)
 	SetTTL(cacheKey string, ttl time.Duration)
 	Remove(cacheKey string)
 	BulkRemove(cacheKeys []string, noLock bool)

@@ -33,6 +33,25 @@ import (
 	"github.com/Comcast/trickster/internal/util/md5"
 )
 
+func GetBoundariesFromByteRange(byteRange string) (int, int, error) {
+	// byteRange example : bytes=0-1023
+	byteIndices := strings.Split(byteRange[6:], "-")
+	if byteIndices == nil || len(byteIndices) != 2 {
+		log.Error("Couldn't convert byte range to valid indices", log.Pairs{"byteRange": byteRange})
+		return -1, -1, errors.New(fmt.Sprintf("Couldn't convert byte range to valid indices: %s", byteRange))
+	}
+	start, err := strconv.Atoi(byteIndices[0])
+	if err != nil {
+		log.Error("Couldn't get a range", log.Pairs{"start": start})
+		return -1, -1, errors.New(fmt.Sprintf("Couldn't get a range: %s", byteIndices[0]))
+	}
+	end, err := strconv.Atoi(byteIndices[1])
+	if err != nil {
+		log.Error("Couldn't get a range", log.Pairs{"end": end})
+		return -1, -1, errors.New(fmt.Sprintf("Couldn't get a range: %s", byteIndices[1]))
+	}
+	return start, end, nil
+}
 // QueryCache queries the cache for an HTTPDocument and returns it
 func QueryCache(c cache.Cache, key string, byteRange string) (*model.HTTPDocument, error) {
 
@@ -42,11 +61,10 @@ func QueryCache(c cache.Cache, key string, byteRange string) (*model.HTTPDocumen
 	}
 
 	d := &model.HTTPDocument{}
-	bytes, err := c.Retrieve(key, true, byteRange)
+	bytes, err := c.Retrieve(key, true)
 	if err != nil {
 		return d, err
 	}
-
 	if inflate {
 		log.Debug("decompressing cached data", log.Pairs{"cacheKey": key})
 		b, err := snappy.Decode(nil, bytes)
@@ -55,6 +73,40 @@ func QueryCache(c cache.Cache, key string, byteRange string) (*model.HTTPDocumen
 		}
 	}
 	d.UnmarshalMsg(bytes)
+
+	ranges := d.Ranges
+	sort.SliceStable(ranges, func(i, j int) bool {
+		return ranges[i].Start < ranges[j].Start
+	})
+
+	start, end, err := GetBoundariesFromByteRange(byteRange)
+	if err != nil {
+		return nil, err
+	}
+
+	if (ranges[0].Start > end) ||
+		(ranges[len(ranges)-1].End < start) {
+		//New retrieve from upstream
+		ranges = append(ranges, model.Range{Start: start, End: end})
+		d.Ranges = ranges
+		d.UpdatedQueryRange.Start = start
+		d.UpdatedQueryRange.End = end
+		return d, errors.New("Range not found in cache, send upstream")
+	}
+
+	for _,v := range ranges {
+		if start > v.Start && end < v.End {
+			// Just return the intermediate bytes from the cache, since we have everything in the cache
+		} else if start > v.Start && end > v.End {
+			start = v.End
+		} else if start < v.Start && end < v.Start {
+			// Just return the same start and end, since we have a full cache miss
+		} else if start < v.Start && end < v.End {
+			end = v.Start
+		}
+	}
+	d.UpdatedQueryRange.Start = start
+	d.UpdatedQueryRange.End = end
 	return d, nil
 }
 
@@ -75,10 +127,10 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 
 	if byteRange != "" {
 		// Content-Range
-		_, err = c.Retrieve(key, true, byteRange)
+		doc, err := QueryCache(c, key, byteRange)
 		if err != nil {
-			// Doesn't exist in the cache
-			// Content-Range: bytes 0-1023/146515
+			// First time, Doesn't exist in the cache
+			// Example -> Content-Range: bytes 0-1023/146515
 			length := d.Headers["Content-Range"][0]
 			index := 0
 			for k, v := range length {
@@ -94,37 +146,20 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 				log.Error("Couldn't convert string to int", log.Pairs{"length": length})
 			}
 			fullSize := make([]byte, totalSize)
-			err = c.Store(key, fullSize, ttl, byteRange)
+
+			start, end, err := GetBoundariesFromByteRange(byteRange)
 			if err != nil {
 				return err
 			}
-
-			// byteRange example : bytes=0-1023
-			byteIndices := strings.Split(byteRange[6:], "-")
-			if byteIndices == nil || len(byteIndices) != 2 {
-				log.Error("Couldn't convert byte range to valid indices", log.Pairs{"byteRange": byteRange})
-				return errors.New(fmt.Sprintf("Couldn't convert byte range to valid indices: %s", byteRange))
-			}
-			start, err := strconv.Atoi(byteIndices[0])
-			if err != nil {
-				log.Error("Couldn't get a range", log.Pairs{"start": start})
-				return errors.New(fmt.Sprintf("Couldn't get a range: %s", byteIndices[0]))
-			}
-			end, err := strconv.Atoi(byteIndices[1])
-			if err != nil {
-				log.Error("Couldn't get a range", log.Pairs{"end": end})
-				return errors.New(fmt.Sprintf("Couldn't get a range: %s", byteIndices[1]))
-			}
-			j := 0
-			for i := start; i < end; i++ {
-				fullSize[i] = bytes[j]
-				j++
-			}
-			return c.Store(key, fullSize, ttl, byteRange)
+			copy(fullSize[start:end], bytes[:])
+			return c.Store(key, fullSize, ttl)
 		}
+		// Case when the key was found in the cache: store only the required part
+		doc.Ranges[len(doc.Ranges) - 1] = model.Range{Start:doc.UpdatedQueryRange.Start, End:doc.UpdatedQueryRange.End}
+		return c.Store(key, bytes, ttl)
 	}
 
-	return c.Store(key, bytes, ttl, "")
+	return c.Store(key, bytes, ttl)
 }
 
 // DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request

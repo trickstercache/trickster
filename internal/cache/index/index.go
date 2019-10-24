@@ -47,7 +47,7 @@ type Index struct {
 	bulkRemoveFunc func([]string, bool)               `msg:"-"`
 	reapInterval   time.Duration                      `msg:"-"`
 	flushInterval  time.Duration                      `msg:"-"`
-	flushFunc      func(cacheKey string, data []byte, byteRange string) `msg:"-"`
+	flushFunc      func(cacheKey string, data []byte) `msg:"-"`
 	lastWrite      time.Time                          `msg:"-"`
 }
 
@@ -88,7 +88,7 @@ func ObjectFromBytes(data []byte) (*Object, error) {
 }
 
 // NewIndex returns a new Index based on the provided inputs
-func NewIndex(cacheName, cacheType string, indexData []byte, cfg config.CacheIndexConfig, bulkRemoveFunc func([]string, bool), flushFunc func(cacheKey string, data []byte, byteRange string)) *Index {
+func NewIndex(cacheName, cacheType string, indexData []byte, cfg config.CacheIndexConfig, bulkRemoveFunc func([]string, bool), flushFunc func(cacheKey string, data []byte)) *Index {
 	i := &Index{}
 
 	if len(indexData) > 0 {
@@ -228,8 +228,7 @@ func (idx *Index) flushOnce() {
 		log.Warn("unable to serialize index for flushing", log.Pairs{"cacheName": idx.name, "detail": err.Error()})
 		return
 	}
-	// ToDo: Srijeet change this to pas sin the actual byteRange
-	idx.flushFunc(IndexKey, bytes, "")
+	idx.flushFunc(IndexKey, bytes)
 }
 
 // reaper continually iterates through the cache to find expired elements and removes them

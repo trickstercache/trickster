@@ -51,7 +51,7 @@ func (c *Cache) Connect() error {
 }
 
 // Store places the the data into the Badger Cache using the provided Key and TTL
-func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration, byteRange string) error {
+func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 	log.Debug("badger cache store", log.Pairs{"key": cacheKey, "ttl": ttl})
 	return c.dbh.Update(func(txn *badger.Txn) error {
@@ -61,7 +61,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration, byteRange
 
 // Retrieve gets data from the Badger Cache using the provided Key
 // because Badger manages Object Expiration internally, allowExpired is not used.
-func (c *Cache) Retrieve(cacheKey string, allowExpired bool, byteRange string) ([]byte, error) {
+func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
 	var data []byte
 	err := c.dbh.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(cacheKey))
@@ -78,7 +78,6 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool, byteRange string) (
 		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 	} else {
 		log.Debug("badger cache retrieve", log.Pairs{"key": cacheKey})
-		// Todo: Srijeet figure out how to do range requests here
 		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
 	}
 

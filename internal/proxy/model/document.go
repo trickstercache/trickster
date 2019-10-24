@@ -21,6 +21,14 @@ import (
 
 //go:generate msgp
 
+// Range represents the start and end for a byte range object
+type Range struct {
+	Start int	`msg:"start"`
+	End   int	`msg:"end"`
+}
+
+type Ranges []Range
+
 // HTTPDocument represents a full HTTP Response/Cache Document with unbuffered body
 type HTTPDocument struct {
 	StatusCode    int                 `msg:"status_code"`
@@ -28,6 +36,15 @@ type HTTPDocument struct {
 	Headers       map[string][]string `msg:"headers"`
 	Body          []byte              `msg:"body"`
 	CachingPolicy *CachingPolicy      `msg:"caching_policy"`
+	UpdatedQueryRange Range			  `msg:"updated_query_range"`
+	Ranges        Ranges             `msg:"ranges"`
+}
+
+// CalculateDelta calculates the delta in the byte ranges and returns the range
+// that we need to query upstream
+func (r Range) CalculateDelta(d *HTTPDocument) {
+
+
 }
 
 // CachingPolicy ...
