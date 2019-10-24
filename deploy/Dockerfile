@@ -6,7 +6,7 @@ WORKDIR /go/src/github.com/Comcast/trickster
 RUN GOOS=linux GOARCH=amd64 CGO_ENABLED=0 make build
 
 
-FROM alpine:3.9
+FROM alpine:3.10
 LABEL maintainer "The Trickster Authors <trickster-developers@googlegroups.com>"
 
 COPY --from=builder /go/src/github.com/Comcast/trickster/OPATH/trickster /usr/local/bin/trickster
