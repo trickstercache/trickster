@@ -101,6 +101,10 @@ style:
 test: test-go-mod
 	$(GO) test -v -coverprofile=.coverprofile ./...
 
+.PHONY: bench
+bench:
+	$(GO) test -v -coverprofile=.coverprofile ./... -run=nonthingplease -bench=. | grep -v ' app=trickster '
+
 .PHONY: test-cover
 test-cover: test
 	$(GO) tool cover -html=.coverprofile

@@ -95,6 +95,8 @@ func ConsoleLogger(logLevel string) *TricksterLogger {
 		logger = level.NewFilter(logger, level.AllowError())
 	case "trace":
 		logger = level.NewFilter(logger, level.AllowDebug())
+	case "none":
+		logger = level.NewFilter(logger, level.AllowNone())
 	default:
 		logger = level.NewFilter(logger, level.AllowInfo())
 	}
