@@ -30,6 +30,18 @@ We'd love your help testing Trickster 1.0, as well as contributing any improveme
 
 ## Breaking Changes from 0.1.x
 
+### Prometheus Proxy as the Default Is Removed
+
+Since Trickster 1.0 supports multiple Origin Types (instead of just Prometheus), the Prometheus-specific default operating configuration has been removed from the application code. The `example.conf` will, for now, continue to function as the example promtheus configuration.
+
+This means you can't simply run `trickster` and have a functioning proxy to `prometheus:9090` as you could in 0.1.x. Instead, Trickster will fail out with an error that you have not defined any Origins.
+
+This also means that with Trickster 1.0, you _must_ provide an `origin_type` for each Origin, so Trickster knows how to proxy requests to it.
+
+ So in 1.0, you can run `trickster -origin_type prometheus -origin_url=http://prometheus:9090` or `trickster -config /path/to/example.conf` to achieve the same result as running `trickster` with no arguments in 0.1.x.
+
+See the section below on migrating a 0.1.x configuration for more information.
+
 ### Ping URL Path (and Config URL Path)
 
 In Trickster 1.0, we are moving non-proxied / administrative endpoints behind a /trickster root path. The previous `/ping` path for checking if Trickster is up is now at `/trickster/ping`. A new path to expose the running configuration is at `/trickster/config`
@@ -39,6 +51,10 @@ In Trickster 1.0, we are moving non-proxied / administrative endpoints behind a 
 In a multi-origin setup, Trickster 1.0 no longer supports the ability to select an Origin using Query Parameters. Trickster 1.0 continues to support Origin Selection via URL Path or Host Header as in 0.1.x.
 
 ### Configuration Settings
+
+#### api_path
+
+The `api_path` configuration parameter in 0.1.x that defaulted to `/api/v1/` has been removed. Trickster 1.0's customizable Path Configurations capability allows for unlimited paths to be defined and managed; this subsumes the funtionality of the `api_path`.
 
 #### timeseries_retention_factor
 
@@ -59,9 +75,13 @@ Trickster 1.0 is incompatible with a 0.1.x config file. However, it can be made 
 - Search/Replace `[cache` with `[caches.default` (no trailing square bracket).
 - Unless you are using Redis, copy/paste the `[caches.default.index]` section from the [example.conf](../cmd/trickster/conf/example.conf) into your new config file under `[caches.default]`, as in the example.
 - Add a line with `[caches]` (unindented) immediately above the line with `[caches.default]`
-- Under each of your `[origins.<name>]` configurations, add the following line
+- Under each of your `[origins.<name>]` configurations, add the following lines
 
-    `cache_name = 'default'`
+```toml
+    cache_name = 'default'
+    origin_type = 'prometheus'
+```
+
 - Search and replace `boltdb` with `bbolt`
 - Examine each `max_value_age_secs` setting in your config and convert to a `timeseries_retention_factor` setting as per the above section. The recommended value for `timeseries_retention_factor` is `1024`.
 

@@ -4,22 +4,19 @@ Trickster currently supports the following Origin Types:
 
 ### <img src="./images/logos/trickster-logo.svg" width=16 /> Generic HTTP Reverse Proxy Cache _(Currently Experimental)_
 
-
-
-Trickster operates as a fully-featured and highly-customizable reverse proxy cache, designed to accellerate and scale upstream endpoints like API services and other simple http servers.
+Trickster operates as a fully-featured and highly-customizable reverse proxy cache, designed to accellerate and scale upstream endpoints like API services and other simple http services. Specify `'reverseproxycache'` or just `'rpc'` as the Origin Type when configuring Trickster.
 
 ---
 
 ## Time Series Databases
 
-
 ### <img src="./images/external/prom_logo_60.png" width=16 /> Prometheus
 
-Trickster fully supports the [Prometheus HTTP API (v1)](https://prometheus.io/docs/prometheus/latest/querying/api/). Specify `prometheus` as the Origin Type when configuring Trickster.
+Trickster fully supports the [Prometheus HTTP API (v1)](https://prometheus.io/docs/prometheus/latest/querying/api/). Specify `'prometheus'` as the Origin Type when configuring Trickster.
 
 ### <img src="./images/external/influx_logo_60.png" width=16 /> InfluxDB _(Currently Experimental)_
 
-Trickster 1.0 has experimental support for InfluxDB. Specify `influxdb` as the Origin Type when configuring Trickster.
+Trickster 1.0 has experimental support for InfluxDB. Specify `'influxdb'` as the Origin Type when configuring Trickster.
 
 ### <img src="./images/external/irondb_logo_60.png" width=16 /> Circonus IRONdb _(Currently Experimental)_
 
