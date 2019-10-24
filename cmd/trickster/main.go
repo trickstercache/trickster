@@ -36,6 +36,8 @@ import (
 var (
 	applicationGitCommitID string
 	applicationBuildTime   string
+	applicationGoVersion   string
+	applicationGoArch      string
 )
 
 const (
@@ -48,12 +50,13 @@ func main() {
 	var err error
 	err = config.Load(applicationName, applicationVersion, os.Args[1:])
 	if err != nil {
+		printVersion()
 		fmt.Println("Could not load configuration:", err.Error())
 		os.Exit(1)
 	}
 
 	if config.Flags.PrintVersion {
-		fmt.Println(applicationName, applicationVersion, applicationBuildTime, applicationGitCommitID)
+		printVersion()
 		os.Exit(0)
 	}
 
@@ -63,6 +66,8 @@ func main() {
 		log.Pairs{
 			"name":      applicationName,
 			"version":   applicationVersion,
+			"goVersion": applicationGoVersion,
+			"goArch":    applicationGoArch,
 			"commitID":  applicationGitCommitID,
 			"buildTime": applicationBuildTime,
 			"logLevel":  config.Logging.LogLevel,
@@ -126,4 +131,8 @@ func main() {
 	}
 
 	wg.Wait()
+}
+
+func printVersion() {
+	fmt.Println(applicationName, applicationVersion, applicationBuildTime, applicationGitCommitID, applicationGoVersion, applicationGoArch)
 }
