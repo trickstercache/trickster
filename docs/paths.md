@@ -1,9 +1,9 @@
 # Customizing Route Behavior
 
-Trickster supports, via configuation, customizing the upstream request and downstream response behavior on a per-Path, per-Origin basis, by providing a `paths` configuration section for each origin configuration. Here are the basic capabilities for customizing Path behavior:
+Trickster supports, via configuration, customizing the upstream request and downstream response behavior on a per-Path, per-Origin basis, by providing a `paths` configuration section for each origin configuration. Here are the basic capabilities for customizing Path behavior:
 
 - Modify client request headers prior to contacting the origin while proxying
-- Modify origin response headers prior to proccessing the response object in Trickster and delivering to the client
+- Modify origin response headers prior to processing the response object in Trickster and delivering to the client
 - Modify the response code and body
 - Select the HTTP Handler for the path (`proxy`, `proxycache` or a published origin-type-specific handler)
 - Select which HTTP Headers, URL Parameters and other client request characteristics will be used to derive the Cache Key under which Trickster stores the object.
@@ -71,17 +71,17 @@ By default, Trickster will use the HTTP Method, URL Path and any Authorization h
             path = '/' # each path must be unique for the origin
             methods = [ 'GET', 'POST' ] # HTTP methods applicable to this config
             match_type = 'prefix' # matches any path under '/'
-            handler = 'proxy' # dont' use the Trickster cache by default
+            handler = 'proxy' # proxy only, no caching (this is the default)
             
                 # When a user requests a path matching this route, Trickster will
                 # inject these headers into the request before contacting the Origin
                 [origins.default.paths.root.request_headers]
-                'Cache-Control' = 'No-Cache' # Due to hyphens, quote the key name
+                'Cache-Control' = 'No-Transform' # Due to hyphens, quote the key name
 
                 # inject these headers into the response from the Origin
                 # before replying to the client
                 [origins.default.paths.root.response_headers]
-                'Expires' = 'No-Cache'
+                'Expires' = '-1'
 
             [origins.default.paths.images]
             path = '/images/'

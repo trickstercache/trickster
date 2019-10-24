@@ -54,7 +54,7 @@ In a multi-origin setup, Trickster 1.0 no longer supports the ability to select 
 
 #### api_path
 
-The `api_path` configuration parameter in 0.1.x that defaulted to `/api/v1/` has been removed. Trickster 1.0's customizable Path Configurations capability allows for unlimited paths to be defined and managed; this subsumes the funtionality of the `api_path`.
+The `api_path` configuration parameter in 0.1.x that defaulted to `/api/v1/` has been removed. Trickster 1.0's customizable Path Configurations capability allows for unlimited paths to be defined and managed; this subsumes the functionality of the `api_path`.
 
 #### timeseries_retention_factor
 
