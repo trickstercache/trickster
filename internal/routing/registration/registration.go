@@ -159,7 +159,7 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 
 	if h, ok := handlers["health"]; ok &&
 		o.HealthCheckUpstreamPath != "" && o.HealthCheckVerb != "" {
-		hp := "/trickster/" + o.Name + "/health"
+		hp := "/trickster/health/" + o.Name
 		routing.Router.PathPrefix(hp).Handler(middleware.WithConfigContext(o, nil, nil, h)).Methods(http.MethodGet, http.MethodHead, http.MethodPost)
 	}
 
