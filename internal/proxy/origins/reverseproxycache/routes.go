@@ -47,7 +47,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 		"/": &config.PathConfig{
 			Path:         "/",
 			HandlerName:  "proxy",
-			Methods:      []string{http.MethodGet, http.MethodPost},
+			Methods:      []string{"*"},
 			OriginConfig: oc,
 		},
 	}
