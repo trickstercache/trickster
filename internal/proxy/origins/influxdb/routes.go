@@ -17,7 +17,6 @@ import (
 	"net/http"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy/headers"
 )
 
 func (c *Client) registerHandlers() {
@@ -46,7 +45,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			HandlerName:     mnQuery,
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{upDB, upQuery, "u", "p"},
-			CacheKeyHeaders: []string{headers.NameAuthorization},
+			CacheKeyHeaders: []string{},
 		},
 		"/": &config.PathConfig{
 			Path:        "/",
