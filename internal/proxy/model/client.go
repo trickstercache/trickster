@@ -38,8 +38,6 @@ type Client interface {
 	FastForwardURL(*Request) (*url.URL, error)
 	// SetExtent will update an upstream request's timerange parameters based on the provided timeseries.Extent
 	SetExtent(*Request, *timeseries.Extent)
-	// HealthHandler is an HTTP Handler that checks the health of the upstream origin
-	HealthHandler(http.ResponseWriter, *http.Request)
 	// UnmarshalTimeseries will return a Timeseries from the provided byte slice
 	UnmarshalTimeseries([]byte) (timeseries.Timeseries, error)
 	// MarshalTimeseries will return a byte slice from  the provided Timeseries

@@ -22,7 +22,7 @@ import (
 func (c *Client) registerHandlers() {
 	c.handlersRegistered = true
 	c.handlers = make(map[string]http.Handler)
-	// This is the registry of handlers that Trickster supports for Prometheus,
+	// This is the registry of handlers that Trickster supports for IRONdb,
 	// and are able to be referenced by name (map key) in Config Files
 	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
 	c.handlers[mnRaw] = http.HandlerFunc(c.RawHandler)
@@ -34,7 +34,6 @@ func (c *Client) registerHandlers() {
 	c.handlers[mnState] = http.HandlerFunc(c.StateHandler)
 	c.handlers[mnCAQL] = http.HandlerFunc(c.CAQLHandler)
 	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
-
 }
 
 // Handlers returns a map of the HTTP Handlers the client has registered
@@ -50,85 +49,95 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 
 	paths := map[string]*config.PathConfig{
 
-		"/" + mnRaw: &config.PathConfig{
-			Path:            "/" + mnRaw,
+		"/" + mnRaw + "/": &config.PathConfig{
+			Path:            "/" + mnRaw + "/",
 			HandlerName:     mnRaw,
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
+			MatchType:       config.PathMatchTypePrefix,
 		},
 
-		"/" + mnRollup: &config.PathConfig{
-			Path:            "/" + mnRollup,
+		"/" + mnRollup + "/": &config.PathConfig{
+			Path:            "/" + mnRollup + "/",
 			HandlerName:     mnRollup,
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{upSpan, upEngine, upType},
 			CacheKeyHeaders: []string{},
+			MatchType:       config.PathMatchTypePrefix,
 		},
 
-		"/" + mnFetch: &config.PathConfig{
-			Path:            "/" + mnFetch,
+		"/" + mnFetch + "/": &config.PathConfig{
+			Path:            "/" + mnFetch + "/",
 			HandlerName:     mnFetch,
 			KeyHasher:       []config.KeyHasherFunc{c.fetchHandlerDeriveCacheKey},
 			Methods:         []string{http.MethodPost},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
+			MatchType:       config.PathMatchTypePrefix,
 		},
 
-		"/" + mnRead: &config.PathConfig{
-			Path:            "/" + mnRead,
+		"/" + mnRead + "/": &config.PathConfig{
+			Path:            "/" + mnRead + "/",
 			HandlerName:     mnRead,
 			KeyHasher:       []config.KeyHasherFunc{c.textHandlerDeriveCacheKey},
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{"*"},
 			CacheKeyHeaders: []string{},
+			MatchType:       config.PathMatchTypePrefix,
 		},
 
-		"/" + mnHistogram: &config.PathConfig{
-			Path:            "/" + mnHistogram,
+		"/" + mnHistogram + "/": &config.PathConfig{
+			Path:            "/" + mnHistogram + "/",
 			HandlerName:     mnHistogram,
 			Methods:         []string{http.MethodGet},
 			KeyHasher:       []config.KeyHasherFunc{c.histogramHandlerDeriveCacheKey},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
+			MatchType:       config.PathMatchTypePrefix,
 		},
 
-		"/" + mnFind: &config.PathConfig{
-			Path:            "/" + mnFind,
+		"/" + mnFind + "/": &config.PathConfig{
+			Path:            "/" + mnFind + "/",
 			HandlerName:     mnFind,
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{upQuery},
 			CacheKeyHeaders: []string{},
+			MatchType:       config.PathMatchTypePrefix,
 		},
 
-		"/" + mnState: &config.PathConfig{
-			Path:            "/" + mnState,
+		"/" + mnState + "/": &config.PathConfig{
+			Path:            "/" + mnState + "/",
 			HandlerName:     mnState,
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{"*"},
 			CacheKeyHeaders: []string{},
+			MatchType:       config.PathMatchTypePrefix,
 		},
 
-		"/" + mnCAQL: &config.PathConfig{
-			Path:            "/" + mnCAQL,
+		"/" + mnCAQL + "/": &config.PathConfig{
+			Path:            "/" + mnCAQL + "/",
 			HandlerName:     mnCAQL,
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{upQuery, upCAQLQuery, upCAQLPeriod},
 			CacheKeyHeaders: []string{},
+			MatchType:       config.PathMatchTypePrefix,
 		},
 
-		"/" + mnCAQLPub: &config.PathConfig{
-			Path:            "/" + mnCAQLPub,
+		"/" + mnCAQLPub + "/": &config.PathConfig{
+			Path:            "/" + mnCAQLPub + "/",
 			HandlerName:     mnCAQL,
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{upQuery, upCAQLQuery, upCAQLPeriod},
 			CacheKeyHeaders: []string{},
+			MatchType:       config.PathMatchTypePrefix,
 		},
 
 		"/": &config.PathConfig{
 			Path:        "/",
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet},
+			MatchType:   config.PathMatchTypePrefix,
 		},
 	}
 

@@ -202,12 +202,14 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeoutSecs)
 	}
 
-	if o.TimeseriesTTLSecs != 8666 {
-		t.Errorf("expected 8666, got %d", o.TimeseriesTTLSecs)
+	// MaxTTLSecs is 300, thus should override TimeseriesTTLSecs = 8666
+	if o.TimeseriesTTLSecs != 300 {
+		t.Errorf("expected 300, got %d", o.TimeseriesTTLSecs)
 	}
 
-	if o.FastForwardTTLSecs != 17 {
-		t.Errorf("expected 17, got %d", o.FastForwardTTLSecs)
+	// MaxTTLSecs is 300, thus should override FastForwardTTLSecs = 382
+	if o.FastForwardTTLSecs != 300 {
+		t.Errorf("expected 300, got %d", o.FastForwardTTLSecs)
 	}
 
 	if o.TLS == nil {
