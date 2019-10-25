@@ -13,8 +13,6 @@
 
 package config
 
-import "net/http"
-
 const (
 	defaultLogFile  = ""
 	defaultLogLevel = "INFO"
@@ -62,11 +60,9 @@ const (
 	defaultKeepAliveTimeoutSecs  = 300
 	defaultMaxIdleConns          = 20
 
-	defaultHealthEndpoint          = "/health"
-	defaultHealthCheckPath         = "/"
-	defaultHealthCheckQuery        = ""
-	defaultHealthCheckVerb         = http.MethodGet
-	defaultHealthCheckResponseCode = http.StatusOK
+	defaultHealthCheckPath  = "-"
+	defaultHealthCheckQuery = "-"
+	defaultHealthCheckVerb  = "-"
 
 	defaultConfigHandlerPath = "/trickster/config"
 	defaultPingHandlerPath   = "/trickster/ping"

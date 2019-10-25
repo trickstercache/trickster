@@ -39,6 +39,7 @@ const (
 	mnLabel         = "label"
 	mnSeries        = "series"
 	mnTargets       = "targets"
+	mnTargetsMeta   = "targets/metadata"
 	mnRules         = "rules"
 	mnAlerts        = "alerts"
 	mnAlertManagers = "alertmanagers"

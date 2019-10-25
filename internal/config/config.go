@@ -105,8 +105,6 @@ type OriginConfig struct {
 	MaxIdleConns int `toml:"max_idle_conns"`
 	// CacheName provides the name of the configured cache where the origin client will store it's cache data
 	CacheName string `toml:"cache_name"`
-	// HealthCheckEndpoint provides the route path Trickster will register for mapping the Health Endpoint
-	HealthCheckEndpoint string `toml:"health_check_endpoint"`
 	// HealthCheckUpstreamPath provides the URL path for the upstream health check
 	HealthCheckUpstreamPath string `toml:"health_check_upstream_path"`
 	// HealthCheckVerb provides the HTTP verb to use when making an upstream health check
@@ -361,7 +359,6 @@ func NewOriginConfig() *OriginConfig {
 		BackfillTolerance:            defaultBackfillToleranceSecs,
 		BackfillToleranceSecs:        defaultBackfillToleranceSecs,
 		CacheName:                    defaultOriginCacheName,
-		HealthCheckEndpoint:          defaultHealthEndpoint,
 		HealthCheckQuery:             defaultHealthCheckQuery,
 		HealthCheckUpstreamPath:      defaultHealthCheckPath,
 		HealthCheckVerb:              defaultHealthCheckVerb,
@@ -529,10 +526,6 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "negative_cache") {
 			oc.NegativeCacheSecs = v.NegativeCacheSecs
-		}
-
-		if metadata.IsDefined("origins", k, "health_check_endpoint") {
-			oc.HealthCheckEndpoint = v.HealthCheckEndpoint
 		}
 
 		if metadata.IsDefined("origins", k, "health_check_upstream_path") {

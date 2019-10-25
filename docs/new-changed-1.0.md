@@ -43,9 +43,15 @@ This also means that with Trickster 1.0, you _must_ provide an `origin_type` for
 
 See the section below on migrating a 0.1.x configuration for more information.
 
-### Ping URL Path (and Config URL Path)
+### Ping, Config, and Upstream Health CHeck URL Endpoints
 
-In Trickster 1.0, we are moving non-proxied / administrative endpoints behind a /trickster root path. The previous `/ping` path for checking if Trickster is up is now at `/trickster/ping`. A new path to expose the running configuration is at `/trickster/config`
+In Trickster 1.0, non-proxied / administrative endpoints have been moved behind a `/trickster` root path, as follows:
+
+- The previous `/ping` path, for checking if Trickster is up, is now at `/trickster/ping`.
+
+- Origin-specific health check endpoints, previously routed via `/<origin_name>/health`, are now routed via `/trickster/health/<origin_name>`.
+
+- A new endpoint to expose the current running configuration is available `/trickster/config`.
 
 ### Origin Selection using Query Parameters
 
