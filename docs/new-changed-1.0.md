@@ -9,6 +9,7 @@
 - Customizable HTTP Path Behaviors
 - Built-in TLS Support
 - The Time Series Delta Proxy is overhauled to be more efficient and performant.
+- Support for [negative caching](./negative-caching.md)
 - We now support Redis Cluster and Redis Sentinel (see [example.conf](../cmd/trickster/conf/example.conf))
 - We've added a Prometheus data simulator for more robust unit testing.  Any other project that queries Prometheus may use it too as a standalone binary or as a package import for tests. See the [docs](./promsim.md) for more info.
 - For Gophers: we've refactored the project into packages with a much more cohesive structure, so it's much easier for you to contribute.

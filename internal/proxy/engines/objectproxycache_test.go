@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	tc "github.com/Comcast/trickster/internal/util/context"
@@ -538,6 +539,105 @@ func TestObjectProxyCacheRevalidated(t *testing.T) {
 	resp = w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotModified)
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
+
+	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusNotFound, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	pc := config.NewPathConfig()
+	cfg := client.Configuration()
+	cfg.Paths = map[string]*config.PathConfig{
+		"/": pc,
+	}
+	r = r.WithContext(tc.WithConfigs(r.Context(), cfg, client.Cache(), pc))
+
+	// request the url, it should respond with a 404 cache miss
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, nil, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+
+	ObjectProxyCacheRequest(req, w, client, false)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotFound)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// request again, should still cache miss, but this time, put 404's into the Negative Cache for 30s
+	cfg.NegativeCache[404] = time.Second * 30
+
+	req = model.NewRequest("TestProxyRequest", r.Method, r.URL, nil, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+
+	w = httptest.NewRecorder()
+	ObjectProxyCacheRequest(req, w, client, false)
+	resp = w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotFound)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// request again, this time it should be a cache hit.
+	req = model.NewRequest("TestProxyRequest", r.Method, r.URL, nil, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+
+	w = httptest.NewRecorder()
+	ObjectProxyCacheRequest(req, w, client, false)
+	resp = w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotFound)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "hit"})
 	if err != nil {
 		t.Error(err)
 	}
