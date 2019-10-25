@@ -35,6 +35,9 @@ import (
 // ProxyClients maintains a list of proxy clients configured for use by Trickster
 var ProxyClients = make(map[string]model.Client)
 
+var allHTTPMethods = []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodDelete,
+	http.MethodConnect, http.MethodOptions, http.MethodTrace, http.MethodPatch}
+
 // RegisterProxyRoutes iterates the Trickster Configuration and registers the routes for the configured origins
 func RegisterProxyRoutes() error {
 
@@ -193,6 +196,11 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 			log.Pairs{"originName": o.Name, "path": v, "handlerName": p.HandlerName,
 				"originHost": o.Host, "handledPath": "/" + o.Name + p.Path, "matchType": p.MatchType})
 		if p.Handler != nil && len(p.Methods) > 0 {
+
+			if p.Methods[0] == "*" {
+				p.Methods = allHTTPMethods
+			}
+
 			switch p.MatchType {
 			case config.PathMatchTypePrefix:
 				// Case where we path match by prefix

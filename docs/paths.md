@@ -5,6 +5,7 @@ Trickster supports, via configuration, customizing the upstream request and down
 - Modify client request headers prior to contacting the origin while proxying
 - Modify origin response headers prior to processing the response object in Trickster and delivering to the client
 - Modify the response code and body
+- Limit the scope of a path by HTTP Method
 - Select the HTTP Handler for the path (`proxy`, `proxycache` or a published origin-type-specific handler)
 - Select which HTTP Headers, URL Parameters and other client request characteristics will be used to derive the Cache Key under which Trickster stores the object.
 - Disable Metrics Reporting for the path
@@ -16,6 +17,10 @@ Paths are matchable as `exact` or `prefix`
 The default match is `exact`, meaning the client's requested URL Path must be an exact match to the configured path in order to match and be handled by a given Path Config. For example a request to `/foo/bar` will not match an `exact` Path Config for `/foo`.
 
 A `prefix` match will match any client-requested path to the Path Config with the longest prefix match. A `prefix` match Path Config to `/foo` will match `/foo/bar` as well as `/foobar` and `/food`. A basic string match is used to evaluate the incoming URL path, so it is recommended to consider finishing paths with a trailing `/`, like `/foo/` in Path Configurations, if needed to avoid any unintentional matches.
+
+### Method Matching Scope
+
+The `methods` section of a Path Config takes a string array of HTTP Methods that are routed through this Path Config. You can provide `[ '*' ]` to route all methods for this path.
 
 ## Suggested Use Cases
 
@@ -69,7 +74,7 @@ By default, Trickster will use the HTTP Method, URL Path and any Authorization h
             # name is otherwise unimportant
             [origins.default.paths.root]
             path = '/' # each path must be unique for the origin
-            methods = [ 'GET', 'POST' ] # HTTP methods applicable to this config
+            methods = [ '*' ] # All HTTP methods applicable to this config
             match_type = 'prefix' # matches any path under '/'
             handler = 'proxy' # proxy only, no caching (this is the default)
             
