@@ -23,10 +23,10 @@ import (
 func (c *Client) registerHandlers() {
 	c.handlersRegistered = true
 	c.handlers = make(map[string]http.Handler)
-	// This is the registry of handlers that Trickster supports for Prometheus,
+	// This is the registry of handlers that Trickster supports for InfluxDB,
 	// and are able to be referenced by name (map key) in Config Files
 	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
-	c.handlers[mnQuery] = http.HandlerFunc(c.QueryHandler)
+	c.handlers["query"] = http.HandlerFunc(c.QueryHandler)
 	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
 }
 
@@ -52,6 +52,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			Path:        "/",
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet, http.MethodPost},
+			MatchType:   config.PathMatchTypePrefix,
 		},
 	}
 	orderedPaths := []string{"/" + mnQuery, "/"}
