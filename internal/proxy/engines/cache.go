@@ -53,8 +53,17 @@ func QueryCache(c cache.Cache, key string, byteRange model.Ranges) (*model.HTTPD
 		}
 	}
 	d.UnmarshalMsg(bytes)
+	fmt.Println("Ranges in existing object", d.Ranges)
 	if byteRange != nil {
 		d.UpdatedQueryRange = d.Ranges.CalculateDelta(d, byteRange)
+		// Cache hit
+		if d.UpdatedQueryRange == nil {
+			body := d.Body
+			d.Body = make([]byte, len(d.Body))
+			for _,v := range byteRange {
+				copy(d.Body[v.Start:v.End], body[v.Start:v.End])
+			}
+		}
 	}
 	return d, nil
 }
@@ -63,6 +72,19 @@ func QueryCache(c cache.Cache, key string, byteRange model.Ranges) (*model.HTTPD
 func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Duration, byteRange model.Ranges) error {
 	// Delete Date Header, http.ReponseWriter will insert as Now() on cache retrieval
 	delete(d.Headers, "Date")
+	if byteRange == nil {
+		ranges := make(model.Ranges, 1)
+		if d.Headers["Content-Length"] != nil {
+			end, err := strconv.Atoi(d.Headers["Content-Length"][0])
+			if err != nil {
+				log.Error("Couldn't convert the content length to a number", log.Pairs{"content length": end})
+				return err
+			}
+			fullByteRange := model.Range{Start:0, End:end}
+			ranges[0] = fullByteRange
+			d.Ranges = ranges
+		}
+	}
 	bytes, err := d.MarshalMsg(nil)
 	if err != nil {
 		return err
@@ -90,7 +112,7 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 				}
 			}
 			// length, after this, will have 146515
-			length = length[index:]
+			length = length[index+1:]
 			totalSize, err := strconv.Atoi(length)
 			if err != nil {
 				log.Error("Couldn't convert to a valid length", log.Pairs{"length": length})
@@ -100,9 +122,14 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 			for _, v2 := range byteRange {
 				start := v2.Start
 				end := v2.End
-				copy(fullSize[start:end], bytes[start:end])
+				copy(fullSize[start:end], d.Body[start:end])
 			}
-			return c.Store(key, fullSize, ttl)
+			d.Body = fullSize
+			bytes, err = d.MarshalMsg(nil)
+			if err != nil {
+				return err
+			}
+			return c.Store(key, bytes, ttl)
 		}
 		// Case when the key was found in the cache: store only the required part
 		for _, v3 := range doc.UpdatedQueryRange {
@@ -115,7 +142,6 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 		}
 		return c.Store(key, bytes, ttl)
 	}
-
 	return c.Store(key, bytes, ttl)
 }
 

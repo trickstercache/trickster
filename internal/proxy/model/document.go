@@ -49,6 +49,7 @@ type HTTPDocument struct {
 // CalculateDelta calculates the delta in the byte ranges and returns the range
 // that we need to query upstream
 func (r Ranges) CalculateDelta(d *HTTPDocument, byteRange Ranges) Ranges {
+	hit := false
 	sort.SliceStable(r, func(i, j int) bool {
 		return r[i].Start < r[j].Start
 	})
@@ -63,20 +64,31 @@ func (r Ranges) CalculateDelta(d *HTTPDocument, byteRange Ranges) Ranges {
 			//New retrieve from upstream
 			r = append(r, Range{Start: start, End: end})
 			d.Ranges = r
+			if d.UpdatedQueryRange == nil {
+				d.UpdatedQueryRange = make(Ranges, len([]Range(byteRange)))
+			}
 			d.UpdatedQueryRange[k].Start = start
 			d.UpdatedQueryRange[k].End = end
+			hit = false
 		} else {
 			for _, v := range r {
 				if start > v.Start && end < v.End {
 					// Just return the intermediate bytes from the cache, since we have everything in the cache
+					hit = true
 				} else if start > v.Start && end > v.End {
 					start = v.End
+					hit = false
 				} else if start < v.Start && end < v.Start {
 					// Just return the same start and end, since we have a full cache miss
+					hit = false
 				} else if start < v.Start && end < v.End {
 					end = v.Start
+					hit = false
 				}
 			}
+		}
+		if hit {
+			return nil
 		}
 		updatedquery[k].Start = start
 		updatedquery[k].End = end
@@ -90,6 +102,14 @@ func GetByteRanges(byteRange string) Ranges {
 		log.Error("Got an empty byte range", log.Pairs{"byteRange": ""})
 		return nil
 	}
+	// byteRange currently has something like this bytes=0-50, 100-150
+	// we do some processing to get rid of the text part
+	numeric := strings.Split(byteRange, "=")
+	if numeric == nil || len(numeric) < 2 {
+		log.Error("Couldn't parse the byteranges for a valid range", log.Pairs{"byteRange string": byteRange})
+		return nil
+	}
+	byteRange = numeric[1]
 	// example: curl http://www.example.com -i -H "Range: bytes=0-50, 100-150"
 	r := strings.Split(byteRange, ",")
 	ranges := make(Ranges, len(r))
