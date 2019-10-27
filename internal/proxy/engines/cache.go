@@ -53,14 +53,13 @@ func QueryCache(c cache.Cache, key string, byteRange model.Ranges) (*model.HTTPD
 		}
 	}
 	d.UnmarshalMsg(bytes)
-	fmt.Println("Ranges in existing object", d.Ranges)
 	if byteRange != nil {
 		d.UpdatedQueryRange = d.Ranges.CalculateDelta(d, byteRange)
 		// Cache hit
 		if d.UpdatedQueryRange == nil {
 			body := d.Body
 			d.Body = make([]byte, len(d.Body))
-			for _,v := range byteRange {
+			for _, v := range byteRange {
 				copy(d.Body[v.Start:v.End], body[v.Start:v.End])
 			}
 		}
@@ -80,7 +79,7 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 				log.Error("Couldn't convert the content length to a number", log.Pairs{"content length": end})
 				return err
 			}
-			fullByteRange := model.Range{Start:0, End:end}
+			fullByteRange := model.Range{Start: 0, End: end}
 			ranges[0] = fullByteRange
 			d.Ranges = ranges
 		}
@@ -119,12 +118,21 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 			}
 			fullSize := make([]byte, totalSize)
 
-			for _, v2 := range byteRange {
-				start := v2.Start
-				end := v2.End
-				copy(fullSize[start:end], d.Body[start:end])
+			// Multipart request
+			if d.Headers["Content-Type"] != nil {
+				if strings.Contains(d.Headers["Content-Type"][0], "multipart/byteranges; boundary=") {
+					for _, v2 := range byteRange {
+						start := v2.Start
+						end := v2.End
+						copy(fullSize[start:end], d.Body[start:end])
+					}
+				} else {
+					copy(fullSize[byteRange[0].Start:byteRange[0].End], d.Body)
+				}
 			}
+
 			d.Body = fullSize
+			d.Ranges = byteRange
 			bytes, err = d.MarshalMsg(nil)
 			if err != nil {
 				return err
