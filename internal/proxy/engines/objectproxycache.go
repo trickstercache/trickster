@@ -15,6 +15,7 @@ package engines
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	tc "github.com/Comcast/trickster/internal/cache"
@@ -91,6 +92,16 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 				revalidatingCache = true
 			}
 		}
+	} else {
+		header := "bytes="
+		for _, v := range d.UpdatedQueryRange {
+			s := v.Start
+			e := v.End
+			header = header + strconv.Itoa(s) + "-" + strconv.Itoa(e) + ", "
+		}
+		// To get rid of the trailing ", "
+		header = header[:len(header)-2]
+		r.Headers.Add("Range", header)
 	}
 
 	var body []byte
