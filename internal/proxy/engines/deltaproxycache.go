@@ -309,14 +309,10 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		}()
 	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		// Respond to the user. Using the response headers from a Delta Response, so as to not map conflict with cacheData on WriteCache
-		logDeltaRoutine(dpStatus)
-		recordDPCResult(r, cacheStatus, doc.StatusCode, r.URL.Path, ffStatus, elapsed.Seconds(), missRanges, rh)
-		Respond(w, doc.StatusCode, rh, rdata)
-	}()
+	// Respond to the user. Using the response headers from a Delta Response, so as to not map conflict with cacheData on WriteCache
+	logDeltaRoutine(dpStatus)
+	recordDPCResult(r, cacheStatus, doc.StatusCode, r.URL.Path, ffStatus, elapsed.Seconds(), missRanges, rh)
+	Respond(w, doc.StatusCode, rh, rdata)
 
 	wg.Wait()
 }
