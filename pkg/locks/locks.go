@@ -29,14 +29,10 @@ func Acquire(lockName string) *sync.Mutex {
 	mapLock.Lock()
 	if l, ok = locks[lockName]; !ok {
 		l = &sync.Mutex{}
+		locks[lockName] = l
 	}
 	mapLock.Unlock()
-
 	l.Lock()
-
-	mapLock.Lock()
-	locks[lockName] = l
-	mapLock.Unlock()
 
 	return l
 }
@@ -44,9 +40,9 @@ func Acquire(lockName string) *sync.Mutex {
 // Release unlocks and releases a named lock
 func Release(lockName string) {
 	mapLock.Lock()
-	defer mapLock.Unlock()
 	if l, ok := locks[lockName]; ok {
 		delete(locks, lockName)
 		l.Unlock()
 	}
+	mapLock.Unlock()
 }
