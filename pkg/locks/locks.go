@@ -17,32 +17,57 @@ import (
 	"sync"
 )
 
-var locks = make(map[string]*sync.Mutex)
+var locks = make(map[string]*namedLock)
 var mapLock = sync.Mutex{}
+
+type namedLock struct {
+	name      string
+	mtx       *sync.Mutex
+	queueSize int
+}
+
+func newNamedLock(name string) *namedLock {
+	return &namedLock{
+		name: name,
+		mtx:  &sync.Mutex{},
+	}
+}
 
 // Acquire returns a named lock, and blocks until it is acquired
 func Acquire(lockName string) *sync.Mutex {
 
-	var l *sync.Mutex
+	var nl *namedLock
 	var ok bool
 
-	mapLock.Lock()
-	if l, ok = locks[lockName]; !ok {
-		l = &sync.Mutex{}
-		locks[lockName] = l
+	if lockName == "" {
+		return nil
 	}
-	mapLock.Unlock()
-	l.Lock()
 
-	return l
+	mapLock.Lock()
+	if nl, ok = locks[lockName]; !ok {
+		nl = newNamedLock(lockName)
+		locks[lockName] = nl
+	}
+	nl.queueSize++
+	mapLock.Unlock()
+	nl.mtx.Lock()
+	return nl.mtx
 }
 
 // Release unlocks and releases a named lock
 func Release(lockName string) {
+
+	if lockName == "" {
+		return
+	}
+
 	mapLock.Lock()
-	if l, ok := locks[lockName]; ok {
-		delete(locks, lockName)
-		l.Unlock()
+	if nl, ok := locks[lockName]; ok {
+		nl.queueSize--
+		if nl.queueSize == 0 {
+			delete(locks, lockName)
+		}
+		nl.mtx.Unlock()
 	}
 	mapLock.Unlock()
 }
