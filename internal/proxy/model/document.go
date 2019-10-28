@@ -84,7 +84,6 @@ func (r Ranges) CalculateDelta(d *HTTPDocument, byteRange Ranges) Ranges {
 					// Just return the same start and end, since we have a full cache miss
 					hit = false
 					updatedquery = append(updatedquery, Range{Start: start, End: end})
-					fmt.Println("HERE!!!! ", updatedquery)
 				} else if start < v.Start && end < v.End {
 					end = v.Start
 					hit = false

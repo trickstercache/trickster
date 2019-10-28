@@ -175,6 +175,14 @@ func TestGetByteRanges_InvalidRange(t *testing.T) {
 	if r != nil {
 		t.Errorf("expected empty byte range")
 	}
+	r = GetByteRanges("bytes=20-30-40-50")
+	if r != nil {
+		t.Errorf("expected empty byte range")
+	}
+	r = GetByteRanges("bytes=20-blah")
+	if r != nil {
+		t.Errorf("expected empty byte range")
+	}
 }
 
 func TestGetByteRanges_SingleByteRange(t *testing.T) {
