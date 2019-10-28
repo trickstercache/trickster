@@ -38,6 +38,25 @@ func TestRanges_CalculateDelta_FullCacheMiss(t *testing.T) {
 	}
 }
 
+func TestRanges_CalculateDelta_FullCacheMiss2(t *testing.T) {
+	byteRange := Range{Start: 5, End: 10}
+	ranges := make(Ranges, 1)
+	ranges[0] = byteRange
+	resp := &http.Response{}
+	resp.Header = make(http.Header)
+	resp.Header.Add("Content-Length", "62")
+	resp.StatusCode = 200
+	d := DocumentFromHTTPResponse(resp, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
+	byteRange = Range{Start: 1, End: 4}
+	ranges2 := make(Ranges, 1)
+	ranges2[0] = byteRange
+	res := ranges.CalculateDelta(d, ranges2)
+	if res[0].Start != 1 ||
+		res[0].End != 4 {
+		t.Errorf("expected start %d end %d, got start %d end %d", 1, 4, res[0].Start, res[0].End)
+	}
+}
+
 func TestRanges_CalculateDelta_PartialCacheMiss(t *testing.T) {
 	byteRange := Range{Start: 5, End: 10}
 	ranges := make(Ranges, 1)
