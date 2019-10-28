@@ -54,8 +54,10 @@ func (r Ranges) CalculateDelta(d *HTTPDocument, byteRange Ranges) Ranges {
 		return r[i].Start < r[j].Start
 	})
 
-	updatedquery := make([]Range, (len([]Range(byteRange))))
-	for k, val := range byteRange {
+	//updatedquery := make([]Range, (len([]Range(byteRange))))
+	updatedquery := make([]Range, 0)
+
+	for _, val := range byteRange {
 		start := val.Start
 		end := val.End
 
@@ -65,33 +67,43 @@ func (r Ranges) CalculateDelta(d *HTTPDocument, byteRange Ranges) Ranges {
 			r = append(r, Range{Start: start, End: end})
 			d.Ranges = r
 			if d.UpdatedQueryRange == nil {
-				d.UpdatedQueryRange = make(Ranges, len([]Range(byteRange)))
+				d.UpdatedQueryRange = make(Ranges, 0)
 			}
-			d.UpdatedQueryRange[k].Start = start
-			d.UpdatedQueryRange[k].End = end
+			updatedquery = append(updatedquery, Range{Start: start, End: end})
 			hit = false
 		} else {
-			for _, v := range r {
+			for k, v := range r {
 				if start > v.Start && end < v.End {
 					// Just return the intermediate bytes from the cache, since we have everything in the cache
 					hit = true
 				} else if start > v.Start && end > v.End {
 					start = v.End
 					hit = false
+					updatedquery = append(updatedquery, Range{Start: start, End: end})
 				} else if start < v.Start && end < v.Start {
 					// Just return the same start and end, since we have a full cache miss
 					hit = false
+					updatedquery = append(updatedquery, Range{Start: start, End: end})
+					fmt.Println("HERE!!!! ", updatedquery)
 				} else if start < v.Start && end < v.End {
 					end = v.Start
 					hit = false
+					updatedquery = append(updatedquery, Range{Start: start, End: end})
+				} else {
+					hit = false
+					if k != 0 {
+						updatedquery[k].End = v.Start - 1
+						updatedquery = append(updatedquery, Range{Start: v.End + 1, End: end})
+					} else {
+						updatedquery = append(updatedquery, Range{Start: start, End: v.Start - 1})
+						updatedquery = append(updatedquery, Range{Start: v.End + 1, End: end})
+					}
 				}
 			}
 		}
 		if hit {
 			return nil
 		}
-		updatedquery[k].Start = start
-		updatedquery[k].End = end
 	}
 	return updatedquery
 }
