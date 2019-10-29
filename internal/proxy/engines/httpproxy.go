@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tc "github.com/Comcast/trickster/internal/cache"
@@ -34,17 +35,60 @@ import (
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
+// Used for Progressive Collapsed Forwarding
+var reqs sync.Map
+
 const HTTPBlockSize = 32 * 1024
 
 // ProxyRequest proxies an inbound request to its corresponding upstream origin with no caching features
 func ProxyRequest(r *model.Request, w http.ResponseWriter) {
-	//_, resp, elapsed := FetchAndRespond(r, w)
-	start := time.Now()
-	reader, resp := PrepareFetchReader(r)
-	writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
-	io.Copy(writer, reader)
-	elapsed := time.Since(start)
+	pc := context.PathConfig(r.ClientRequest.Context())
 
+	start := time.Now()
+	reader, resp, cl := PrepareFetchReader(r)
+
+	if pc.ProgressiveCollapsedForwarding {
+		var pfc ProxyForwardCollapser
+
+		result, ok := reqs.Load(r.URL.String())
+		if !ok {
+			l := int(cl/HTTPBlockSize) + 1
+
+			pfc = NewPFC(10*time.Second, l)
+			go func(pfc ProxyForwardCollapser, l int, key string) {
+				var err error
+				buf := make([]byte, HTTPBlockSize)
+
+				for {
+					_, err = reader.Read(buf)
+					if err != nil {
+						if err == io.EOF {
+							pfc.Close()
+							break
+						}
+					}
+					pfc.Write(buf)
+				}
+
+				pfc.WaitServerComplete()
+				reqs.Delete(key)
+			}(pfc, l, r.URL.String())
+
+			reqs.Store(r.URL.String(), pfc)
+		} else {
+			pfc, _ = result.(ProxyForwardCollapser)
+		}
+
+		pfc.AddClient(w)
+		// Need to actyally wait only for original client to complete
+		pfc.WaitAllComplete()
+	} else {
+
+		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+		io.Copy(writer, reader)
+	}
+
+	elapsed := time.Since(start)
 	recordProxyResults(r, resp.StatusCode, r.URL.Path, elapsed.Seconds(), resp.Header)
 }
 
@@ -58,7 +102,7 @@ func PrepareResponseWriter(w http.ResponseWriter, code int, header http.Header) 
 	return w
 }
 
-func PrepareFetchReader(r *model.Request) (io.ReadCloser, *http.Response) {
+func PrepareFetchReader(r *model.Request) (io.ReadCloser, *http.Response, int) {
 	pc := context.PathConfig(r.ClientRequest.Context())
 	oc := context.OriginConfig(r.ClientRequest.Context())
 
@@ -80,7 +124,7 @@ func PrepareFetchReader(r *model.Request) (io.ReadCloser, *http.Response) {
 		req, err = http.NewRequest(r.ClientRequest.Method, r.URL.String(),
 			bytes.NewBuffer(b))
 		if err != nil {
-			return nil, nil
+			return nil, nil, 0
 		}
 	}
 
@@ -96,9 +140,10 @@ func PrepareFetchReader(r *model.Request) (io.ReadCloser, *http.Response) {
 		if pc != nil {
 			headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
 		}
-		return nil, resp
+		return nil, resp, 0
 	}
 
+	originalLen, _ := strconv.Atoi(resp.Header.Get("Content-Length"))
 	rc = resp.Body
 
 	// warn if the clock between trickster and the origin is off by more than 1 minute
@@ -130,7 +175,7 @@ func PrepareFetchReader(r *model.Request) (io.ReadCloser, *http.Response) {
 		rc = ioutil.NopCloser(bytes.NewBuffer(pc.ResponseBodyBytes))
 	}
 
-	return rc, resp
+	return rc, resp, originalLen
 }
 
 // Fetch makes an HTTP request to the provided Origin URL

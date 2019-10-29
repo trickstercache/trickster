@@ -14,9 +14,9 @@
 package engines
 
 import (
+	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -182,85 +182,99 @@ func recordOPCResult(r *model.Request, cacheStatus tc.LookupStatus, httpStatus i
 
 // WIP
 
+// Need maxfilesize option - if 2-gb file then just proxy it
+// Want proxy or proxy with RFC
+// The OBC with RFC
+
+/*
+
+TODO:
+Add config options
+Clean up the implementation on the httpproxy
+Implement this on the object proxy cache
+Write unit tests
+Write documentation
+
+
+
+
+*/
+
 type indexReader func(index uint64, b []byte) (int, error)
 
-type pFCClient struct {
-	resp      http.ResponseWriter
-	readIndex uint64
-}
-
-func newPFCClient(newClient http.ResponseWriter) *pFCClient {
-	return &pFCClient{
-		resp:      newClient,
-		readIndex: 0,
-	}
-}
-
-func (pfcc *pFCClient) readAndRespondFromPFC(ir indexReader) {
-	//var n int
+func readAndRespondFromPFC(ir indexReader, w io.Writer) {
+	var readIndex uint64
 	var err error
 	buf := make([]byte, HTTPBlockSize)
 
 	for {
-		_, err = ir(pfcc.readIndex, buf)
+		_, err = ir(readIndex, buf)
 		if err != nil {
 			if err == io.EOF {
-				return
+				fmt.Println("readResp EOF")
 			}
-			return
+			break
 		}
-		pfcc.resp.Write(buf)
+		w.Write(buf)
+		readIndex++
 	}
-	return
 }
 
 type ProxyForwardCollapser interface {
-	AddClient(resp http.ResponseWriter) error
+	AddClient(io.Writer)
 	Write([]byte) (int, error)
+	Close()
 	Read(uint64, []byte) (int, error)
 	WaitServerComplete()
 	WaitAllComplete()
 }
 
 type proxyForwardCollapser struct {
-	clientWaitgroup sync.WaitGroup
-	serverDone      sync.Cond
-	url             url.URL
-	readIndex       uint64
+	rIndex          uint64
+	dataLength      uint64
+	dataIndex       uint64
 	data            [][]byte
 	dataStore       []byte
-	serverWaitCond  *sync.Cond
 	readCond        *sync.Cond
+	serverReadDone  int32
+	clientWaitgroup *sync.WaitGroup
+	serverWaitCond  *sync.Cond
 }
 
-func NewPFC(originalClient http.ResponseWriter, clientTimeout time.Duration, blockCount int) ProxyForwardCollapser {
+func NewPFC(clientTimeout time.Duration, blockCount int) ProxyForwardCollapser {
 	dataStore := make([]byte, blockCount*HTTPBlockSize)
-	refs := make([][]byte, blockCount)
-	for i := 0; i < blockCount; i++ {
-		refs[i] = dataStore[i : (i+1)*HTTPBlockSize]
-	}
+	refs := make([][]byte, blockCount*2)
 
-	m := sync.Mutex{}
-	sync.NewCond(&m)
+	var wg sync.WaitGroup
+	sd := sync.NewCond(&sync.Mutex{})
+	rc := sync.NewCond(&sync.Mutex{})
+
 	// Create goroutine for client
 	// This goroutine should try to read everything that is available from the PFC byte store
-	return &proxyForwardCollapser{
-		data:      refs,
-		dataStore: dataStore,
+	pfc := &proxyForwardCollapser{
+		rIndex:          0,
+		dataLength:      uint64(blockCount),
+		data:            refs,
+		dataStore:       dataStore,
+		readCond:        rc,
+		serverReadDone:  0,
+		clientWaitgroup: &wg,
+		serverWaitCond:  sd,
 	}
+
+	return pfc
 }
 
-func (pfc *proxyForwardCollapser) AddClient(resp http.ResponseWriter) error {
-	client := newPFCClient(resp)
-	go client.readAndRespondFromPFC(pfc.Read)
+func (pfc *proxyForwardCollapser) AddClient(w io.Writer) {
 	pfc.clientWaitgroup.Add(1)
-	return nil
+	readAndRespondFromPFC(pfc.Read, w)
+	pfc.clientWaitgroup.Done()
 }
 
 // WaitServerComplete blocks until the object has been retreived from the origin server
 // Need to get payload before can send to actual cache
 func (pfc *proxyForwardCollapser) WaitServerComplete() {
-	pfc.serverDone.Wait()
+	pfc.serverWaitCond.Wait()
 	return
 }
 
@@ -272,22 +286,39 @@ func (pfc *proxyForwardCollapser) WaitAllComplete() {
 }
 
 func (pfc *proxyForwardCollapser) Write(b []byte) (int, error) {
-	copy(pfc.data[atomic.LoadUint64(&pfc.readIndex)+1], b)
-	atomic.AddUint64(&pfc.readIndex, 1)
+	n := atomic.LoadUint64(&pfc.rIndex)
+	pfc.data[n] = pfc.dataStore[pfc.dataIndex : pfc.dataIndex+uint64(len(b))]
+	copy(pfc.data[n], b)
+	atomic.AddUint64(&pfc.rIndex, 1)
 	pfc.readCond.Broadcast()
-	return HTTPBlockSize, nil
+	return len(b), nil
+}
+
+// Close signals all things waiting on the server response body to complete.
+// This should be triggered by the client io.EOF
+func (pfc *proxyForwardCollapser) Close() {
+	atomic.AddInt32(&pfc.serverReadDone, 1)
+	pfc.serverWaitCond.Signal()
+	pfc.readCond.Broadcast()
+	return
 }
 
 // Read will return the given index data requested by the read is behind the PFC readindex, else blocks and waits for the data
 func (pfc *proxyForwardCollapser) Read(index uint64, b []byte) (int, error) {
-	// Read as per normal is index < writeIndex
-	i := atomic.LoadUint64(&pfc.readIndex)
-	if index == i+1 {
+	i := atomic.LoadUint64(&pfc.rIndex)
+	if index >= i {
+		// need to check completion and return io.EOF
+		if atomic.LoadInt32(&pfc.serverReadDone) != 0 {
+			return 0, io.EOF
+		}
 		pfc.readCond.L.Lock()
 		pfc.readCond.Wait()
 		pfc.readCond.L.Unlock()
 	}
-	// need return 0, io.EOF
 	copy(b, pfc.data[index])
-	return HTTPBlockSize, nil
+	return len(pfc.data[index]), nil
 }
+
+// RundownCollapsedForwarding
+// ConcurrentCollapsedForwarding
+// ProgressiveCollapsedForwarding
