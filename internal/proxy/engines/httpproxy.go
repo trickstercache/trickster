@@ -83,7 +83,6 @@ func ProxyRequest(r *model.Request, w http.ResponseWriter) {
 		// Need to actyally wait only for original client to complete
 		pfc.WaitAllComplete()
 	} else {
-
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 		io.Copy(writer, reader)
 	}
