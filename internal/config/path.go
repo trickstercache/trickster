@@ -96,8 +96,6 @@ type PathConfig struct {
 	// NOTE: This is used by some origins like IronDB, but is not configurable by end users
 	// due to a bug in the vendored toml package, this must be a slice to avoid panic
 	KeyHasher []KeyHasherFunc `toml:"-"`
-
-	custom []string `toml:"-"`
 }
 
 // NewPathConfig returns a newly-instantiated *PathConfig
@@ -110,7 +108,6 @@ func NewPathConfig() *PathConfig {
 		HandlerName:     "proxy",
 		CacheKeyParams:  make([]string, 0),
 		CacheKeyHeaders: make([]string, 0),
-		custom:          make([]string, 0),
 		RequestHeaders:  make(map[string]string),
 		ResponseHeaders: make(map[string]string),
 		KeyHasher:       nil,
@@ -136,52 +133,11 @@ func (p *PathConfig) Copy() *PathConfig {
 		Methods:               make([]string, len(p.Methods)),
 		CacheKeyParams:        make([]string, len(p.CacheKeyParams)),
 		CacheKeyHeaders:       make([]string, len(p.CacheKeyHeaders)),
-		custom:                make([]string, len(p.custom)),
 		KeyHasher:             p.KeyHasher,
 	}
 	copy(c.Methods, p.Methods)
 	copy(c.CacheKeyParams, p.CacheKeyParams)
 	copy(c.CacheKeyHeaders, p.CacheKeyHeaders)
-	copy(c.custom, p.custom)
 	return c
 
-}
-
-// Merge merges the non-default values of the provided PathConfig into the subject PathConfig
-func (p *PathConfig) Merge(p2 *PathConfig) {
-
-	if p2.OriginConfig != nil {
-		p.OriginConfig = p2.OriginConfig
-	}
-
-	for _, c := range p2.custom {
-		switch c {
-		case "path":
-			p.Path = p2.Path
-		case "match_type":
-			p.MatchType = p2.MatchType
-			p.MatchTypeName = p2.MatchTypeName
-		case "handler":
-			p.HandlerName = p2.HandlerName
-			p.Handler = p2.Handler
-		case "methods":
-			p.Methods = p2.Methods
-		case "cache_key_params":
-			p.CacheKeyParams = p2.CacheKeyParams
-		case "cache_key_headers":
-			p.CacheKeyHeaders = p2.CacheKeyHeaders
-		case "request_headers":
-			p.RequestHeaders = p2.RequestHeaders
-		case "response_headers":
-			p.ResponseHeaders = p2.ResponseHeaders
-		case "response_code":
-			p.ResponseCode = p2.ResponseCode
-		case "response_body":
-			p.ResponseBody = p2.ResponseBody
-			p.HasCustomResponseBody = true
-			p.ResponseBodyBytes = p2.ResponseBodyBytes
-		case "no_metrics":
-			p.NoMetrics = p2.NoMetrics
-		}
-	}
 }

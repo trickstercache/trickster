@@ -14,7 +14,6 @@
 package config
 
 import (
-	"net/http"
 	"testing"
 )
 
@@ -64,83 +63,6 @@ func TestPathCopy(t *testing.T) {
 
 	if pc2.HandlerName != "proxy" {
 		t.Errorf("expected value %s, got %s", "proxy", pc2.HandlerName)
-	}
-
-}
-
-func TestPathMerge(t *testing.T) {
-
-	pc := NewPathConfig()
-	pc2 := pc.Copy()
-
-	pc2.OriginConfig = NewOriginConfig()
-
-	pc2.custom = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers",
-		"request_headers", "response_headers", "response_code", "response_body", "no_metrics"}
-
-	expectedPath := "testPath"
-	expectedHandlerName := "testHandler"
-
-	pc2.Path = expectedPath
-	pc2.MatchType = PathMatchTypePrefix
-	pc2.HandlerName = expectedHandlerName
-	pc2.Methods = []string{http.MethodPost}
-	pc2.CacheKeyParams = []string{"params"}
-	pc2.CacheKeyHeaders = []string{"headers"}
-	pc2.RequestHeaders = map[string]string{"header1": "1"}
-	pc2.ResponseHeaders = map[string]string{"header2": "2"}
-	pc2.ResponseCode = 404
-	pc2.ResponseBody = "trickster"
-	pc2.NoMetrics = true
-
-	pc.Merge(pc2)
-
-	if pc.Path != expectedPath {
-		t.Errorf("expected %s got %s", expectedPath, pc.Path)
-	}
-
-	if pc.MatchType != PathMatchTypePrefix {
-		t.Errorf("expected %s got %s", PathMatchTypePrefix, pc.MatchType)
-	}
-
-	if pc.HandlerName != expectedHandlerName {
-		t.Errorf("expected %s got %s", expectedHandlerName, pc.HandlerName)
-	}
-
-	if len(pc.CacheKeyParams) != 1 {
-		t.Errorf("expected %d got %d", 1, len(pc.CacheKeyParams))
-	}
-
-	if len(pc.CacheKeyHeaders) != 1 {
-		t.Errorf("expected %d got %d", 1, len(pc.CacheKeyHeaders))
-	}
-
-	if len(pc.RequestHeaders) != 1 {
-		t.Errorf("expected %d got %d", 1, len(pc.RequestHeaders))
-	}
-
-	if len(pc.ResponseHeaders) != 1 {
-		t.Errorf("expected %d got %d", 1, len(pc.ResponseHeaders))
-	}
-
-	if pc.ResponseCode != 404 {
-		t.Errorf("expected %d got %d", 404, pc.ResponseCode)
-	}
-
-	if pc.ResponseCode != 404 {
-		t.Errorf("expected %d got %d", 404, pc.ResponseCode)
-	}
-
-	if pc.ResponseBody != "trickster" {
-		t.Errorf("expected %s got %s", "trickster", pc.ResponseBody)
-	}
-
-	if !pc.NoMetrics {
-		t.Errorf("expected %t got %t", true, pc.NoMetrics)
-	}
-
-	if pc.OriginConfig == nil {
-		t.Errorf("expected non-nil value you for %s", "OriginConfig")
 	}
 
 }

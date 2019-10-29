@@ -147,19 +147,6 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 		return middleware.Decorate(o.Name, o.OriginType, p.Path, p.Handler)
 	}
 
-	for k, p := range o.Paths {
-		p.OriginConfig = o
-		if p2, ok := paths[k]; ok {
-			p2.Merge(p)
-			continue
-		}
-		p3 := config.NewPathConfig()
-		p3.Merge(p)
-		paths[k] = p3
-	}
-
-	o.Paths = paths
-
 	if h, ok := handlers["health"]; ok &&
 		o.HealthCheckUpstreamPath != "" && o.HealthCheckVerb != "" {
 		hp := "/trickster/health/" + o.Name

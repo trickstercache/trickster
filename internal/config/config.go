@@ -409,9 +409,6 @@ func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
 	return err
 }
 
-var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers", "default_ttl_secs",
-	"request_headers", "response_headers", "response_code", "response_body", "no_metrics"}
-
 func (c *TricksterConfig) validateConfigMappings() error {
 	for k, oc := range c.Origins {
 		if _, ok := c.Caches[oc.CacheName]; !ok {
@@ -501,25 +498,65 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 		if metadata.IsDefined("origins", k, "paths") {
 			var j = 0
 			for l, p := range v.Paths {
-				p.Order = j
-				p.custom = make([]string, 0, 0)
-				for _, pm := range pathMembers {
-					if metadata.IsDefined("origins", k, "paths", l, pm) {
-						p.custom = append(p.custom, pm)
-					}
-				}
-				if metadata.IsDefined("origins", k, "paths", l, "response_body") {
-					p.ResponseBodyBytes = []byte(p.ResponseBody)
-					p.HasCustomResponseBody = true
+
+				// path field is required
+				if !metadata.IsDefined("origins", k, "paths", l, "path") {
+					LoaderWarnings = append(LoaderWarnings, fmt.Sprintf("skipped path %s in origin %s; missing 'path' field in config.", l, k))
+					continue
 				}
 
-				if mt, ok := pathMatchTypeNames[strings.ToLower(p.MatchTypeName)]; ok {
-					p.MatchType = mt
-				} else {
-					p.MatchType = PathMatchTypeExact
-					p.MatchTypeName = p.MatchType.String()
+				pc := NewPathConfig()
+				pc.Order = j
+				pc.OriginConfig = oc
+
+				pc.Path = p.Path
+
+				if metadata.IsDefined("origins", k, "paths", l, "match_type") {
+					pc.MatchTypeName = p.MatchTypeName
+					if mt, ok := pathMatchTypeNames[strings.ToLower(p.MatchTypeName)]; ok {
+						pc.MatchType = mt
+					}
 				}
-				oc.Paths[p.Path] = p
+
+				if metadata.IsDefined("origins", k, "paths", l, "handler") {
+					pc.HandlerName = p.HandlerName
+				}
+
+				if metadata.IsDefined("origins", k, "paths", l, "methods") {
+					pc.Methods = p.Methods
+				}
+
+				if metadata.IsDefined("origins", k, "paths", l, "cache_key_params") {
+					pc.CacheKeyParams = p.CacheKeyParams
+				}
+
+				if metadata.IsDefined("origins", k, "paths", l, "cache_key_headers") {
+					pc.CacheKeyHeaders = p.CacheKeyHeaders
+				}
+
+				if metadata.IsDefined("origins", k, "paths", l, "request_headers") {
+					pc.RequestHeaders = p.RequestHeaders
+				}
+
+				if metadata.IsDefined("origins", k, "paths", l, "response_headers") {
+					pc.ResponseHeaders = p.ResponseHeaders
+				}
+
+				if metadata.IsDefined("origins", k, "paths", l, "response_code") {
+					pc.ResponseCode = p.ResponseCode
+				}
+
+				if metadata.IsDefined("origins", k, "paths", l, "response_body") {
+					pc.ResponseBody = p.ResponseBody
+					pc.ResponseBodyBytes = []byte(p.ResponseBody)
+					pc.HasCustomResponseBody = true
+				}
+
+				if metadata.IsDefined("origins", k, "paths", l, "no_metrics") {
+					pc.NoMetrics = p.NoMetrics
+				}
+
+				oc.Paths[p.Path] = pc
 				j++
 			}
 		}
