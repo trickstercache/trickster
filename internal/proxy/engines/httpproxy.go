@@ -15,7 +15,6 @@ package engines
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"math"
@@ -43,36 +42,24 @@ const HTTPBlockSize = 32 * 1024
 // ProxyRequest proxies an inbound request to its corresponding upstream origin with no caching features
 func ProxyRequest(r *model.Request, w http.ResponseWriter) {
 	pc := context.PathConfig(r.ClientRequest.Context())
+	//oc := context.OriginConfig(r.ClientRequest.Context())
 
 	start := time.Now()
 	reader, resp, cl := PrepareFetchReader(r)
 
-	if pc.ProgressiveCollapsedForwarding {
+	// TODO need to check max size
+	if pc.ProgressiveCollapsedForwarding && cl != 0 {
 		var pfc ProxyForwardCollapser
 
 		result, ok := reqs.Load(r.URL.String())
 		if !ok {
-			l := int(cl/HTTPBlockSize) + 1
-
-			pfc = NewPFC(10*time.Second, l)
-			go func(pfc ProxyForwardCollapser, l int, key string) {
-				var err error
-				buf := make([]byte, HTTPBlockSize)
-
-				for {
-					_, err = reader.Read(buf)
-					if err != nil {
-						if err == io.EOF {
-							pfc.Close()
-							break
-						}
-					}
-					pfc.Write(buf)
-				}
-
-				pfc.WaitServerComplete()
+			pfc = NewPFC(10*time.Second, cl)
+			go func(pfc ProxyForwardCollapser, key string) {
+				io.Copy(pfc, reader)
+				// TODO read error?
+				pfc.Close()
 				reqs.Delete(key)
-			}(pfc, l, r.URL.String())
+			}(pfc, r.URL.String())
 
 			reqs.Store(r.URL.String(), pfc)
 		} else {
@@ -91,6 +78,8 @@ func ProxyRequest(r *model.Request, w http.ResponseWriter) {
 	recordProxyResults(r, resp.StatusCode, r.URL.Path, elapsed.Seconds(), resp.Header)
 }
 
+// PrepareResponseWriter prepares a reponse and returns an io.Writer for the data to be written to.
+// Used in Respond.
 func PrepareResponseWriter(w http.ResponseWriter, code int, header http.Header) io.Writer {
 	h := w.Header()
 	for k, v := range header {
@@ -101,6 +90,9 @@ func PrepareResponseWriter(w http.ResponseWriter, code int, header http.Header) 
 	return w
 }
 
+// PrepareFetchReader prepares and prepares an http responce and returns io.ReadCloser to
+// provide the response data, the response object and the content length.
+// Used in Fetch.
 func PrepareFetchReader(r *model.Request) (io.ReadCloser, *http.Response, int) {
 	pc := context.PathConfig(r.ClientRequest.Context())
 	oc := context.OriginConfig(r.ClientRequest.Context())
@@ -179,90 +171,19 @@ func PrepareFetchReader(r *model.Request) (io.ReadCloser, *http.Response, int) {
 
 // Fetch makes an HTTP request to the provided Origin URL
 func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
-
-	pc := context.PathConfig(r.ClientRequest.Context())
 	oc := context.OriginConfig(r.ClientRequest.Context())
 
-	if r != nil && r.Headers != nil {
-		headers.AddProxyHeaders(r.ClientRequest.RemoteAddr, r.Headers)
-	}
-
-	fmt.Println("Client Request Headers:", r.ClientRequest.Header, r.ClientRequest.TransferEncoding)
-
-	headers.RemoveClientHeaders(r.Headers)
-
-	if pc != nil {
-		headers.UpdateHeaders(r.Headers, pc.RequestHeaders)
-	}
-	fmt.Println("Trickster Request Headers:", r.Headers)
-
 	start := time.Now()
-	req := &http.Request{Method: r.ClientRequest.Method}
-	b, err := ioutil.ReadAll(r.ClientRequest.Body)
-	if err == nil && len(b) > 0 {
-		req, err = http.NewRequest(r.ClientRequest.Method, r.URL.String(),
-			bytes.NewBuffer(b))
-		if err != nil {
-			return []byte{}, nil, -1
-		}
-	}
+	reader, resp, _ := PrepareFetchReader(r)
 
-	req.Header = r.Headers
-	req.URL = r.URL
-	resp, err := r.HTTPClient.Do(req)
+	body, err := ioutil.ReadAll(reader)
+	resp.Body.Close()
 	if err != nil {
-		log.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
-		// if there is an err and the response is nil, the server could not be reached; make a 502 for the downstream response
-		if resp == nil {
-			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r.ClientRequest, Header: make(http.Header)}
-		}
-		if pc != nil {
-			headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
-		}
-		return []byte{}, resp, -1
-	}
-
-	// warn if the clock between trickster and the origin is off by more than 1 minute
-	if date := resp.Header.Get(headers.NameDate); date != "" {
-		d, err := http.ParseTime(date)
-		if err == nil {
-			if offset := time.Now().Sub(d); time.Duration(math.Abs(float64(offset))) > time.Minute {
-				log.WarnOnce("clockoffset."+oc.Name,
-					"clock offset between trickster host and origin is high and may cause data anomalies",
-					log.Pairs{
-						"originName":    oc.Name,
-						"tricksterTime": strconv.FormatInt(d.Add(offset).Unix(), 10),
-						"originTime":    strconv.FormatInt(d.Unix(), 10),
-						"offset":        strconv.FormatInt(int64(offset.Seconds()), 10) + "s",
-					})
-			}
-		}
-	}
-
-	fmt.Println("Response Headers:", resp.Header, resp.TransferEncoding)
-
-	hasCustomResponseBody := false
-	resp.Header.Del(headers.NameContentLength)
-
-	if pc != nil {
-		headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
-		hasCustomResponseBody = pc.HasCustomResponseBody
-	}
-
-	var body []byte
-	if hasCustomResponseBody {
-		body = pc.ResponseBodyBytes
-	} else {
-		body, err = ioutil.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			log.Error("error reading body from http response", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
-			return []byte{}, resp, 0
-		}
+		log.Error("error reading body from http response", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
+		return []byte{}, resp, 0
 	}
 
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
-	fmt.Println(elapsed)
 
 	if config.Logging.LogLevel == "debug" || config.Logging.LogLevel == "trace" {
 		go logUpstreamRequest(oc.Name, oc.OriginType, r.HandlerName, r.ClientRequest.Method, r.URL.String(), r.ClientRequest.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
@@ -273,126 +194,8 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 
 // Respond sends an HTTP Response down to the requesting client
 func Respond(w http.ResponseWriter, code int, header http.Header, body []byte) {
-	h := w.Header()
-	for k, v := range header {
-		h.Set(k, strings.Join(v, ","))
-	}
-	headers.AddResponseHeaders(h)
-	w.WriteHeader(code)
+	PrepareResponseWriter(w, code, header)
 	w.Write(body)
-}
-
-func FetchAndRespond(r *model.Request, w http.ResponseWriter) ([]byte, *http.Response, time.Duration) {
-	pc := context.PathConfig(r.ClientRequest.Context())
-	oc := context.OriginConfig(r.ClientRequest.Context())
-
-	if r != nil && r.Headers != nil {
-		headers.AddProxyHeaders(r.ClientRequest.RemoteAddr, r.Headers)
-	}
-
-	headers.RemoveClientHeaders(r.Headers)
-
-	if pc != nil {
-		headers.UpdateHeaders(r.Headers, pc.RequestHeaders)
-	}
-
-	start := time.Now()
-	req := &http.Request{Method: r.ClientRequest.Method}
-	b, err := ioutil.ReadAll(r.ClientRequest.Body)
-	if err == nil && len(b) > 0 {
-		req, err = http.NewRequest(r.ClientRequest.Method, r.URL.String(),
-			bytes.NewBuffer(b))
-		if err != nil {
-			return []byte{}, nil, -1
-		}
-	}
-
-	req.Header = r.Headers
-	req.URL = r.URL
-	resp, err := r.HTTPClient.Do(req)
-	if err != nil {
-		log.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
-		// if there is an err and the response is nil, the server could not be reached; make a 502 for the downstream response
-		if resp == nil {
-			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r.ClientRequest, Header: make(http.Header)}
-		}
-		if pc != nil {
-			headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
-		}
-		return []byte{}, resp, -1
-	}
-
-	// warn if the clock between trickster and the origin is off by more than 1 minute
-	if date := resp.Header.Get(headers.NameDate); date != "" {
-		d, err := http.ParseTime(date)
-		if err == nil {
-			if offset := time.Now().Sub(d); time.Duration(math.Abs(float64(offset))) > time.Minute {
-				log.WarnOnce("clockoffset."+oc.Name,
-					"clock offset between trickster host and origin is high and may cause data anomalies",
-					log.Pairs{
-						"originName":    oc.Name,
-						"tricksterTime": strconv.FormatInt(d.Add(offset).Unix(), 10),
-						"originTime":    strconv.FormatInt(d.Unix(), 10),
-						"offset":        strconv.FormatInt(int64(offset.Seconds()), 10) + "s",
-					})
-			}
-		}
-	}
-
-	hasCustomResponseBody := false
-	resp.Header.Del(headers.NameContentLength)
-
-	if pc != nil {
-		headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
-		hasCustomResponseBody = pc.HasCustomResponseBody
-	}
-
-	// Response to client
-	h := w.Header()
-	for k, v := range resp.Header {
-		h.Set(k, strings.Join(v, ","))
-	}
-	//h.Set("Transfer-Encoding", "chunked")
-	headers.AddResponseHeaders(h)
-	w.WriteHeader(resp.StatusCode)
-
-	bodybuf := make([]byte, 32*1024)
-	var body *bytes.Buffer
-
-	if hasCustomResponseBody {
-		body = bytes.NewBuffer(pc.ResponseBodyBytes)
-	} else {
-		body = bytes.NewBuffer(make([]byte, 0, 32*1024))
-		var err error
-		var nRead, nWrite, n int
-		for {
-			n, err = resp.Body.Read(bodybuf)
-			if err != nil {
-				if err != io.EOF {
-					// log thing
-				}
-				break
-			}
-			nRead += n
-			n, err = body.Write(bodybuf)
-			if err != nil {
-				fmt.Println("write", err)
-			}
-			nWrite += n
-			_, err = w.Write(bodybuf)
-			if err != nil {
-				fmt.Println("write response", err)
-				break
-			}
-		}
-	}
-
-	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
-	if config.Logging.LogLevel == "debug" || config.Logging.LogLevel == "trace" {
-		go logUpstreamRequest(oc.Name, oc.OriginType, r.HandlerName, r.ClientRequest.Method, r.URL.String(), r.ClientRequest.UserAgent(), resp.StatusCode, body.Len(), elapsed.Seconds())
-	}
-
-	return body.Bytes(), resp, elapsed
 }
 
 func recordProxyResults(r *model.Request, httpStatus int, path string, elapsed float64, header http.Header) {

@@ -14,7 +14,6 @@
 package engines
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -30,16 +29,29 @@ import (
 	"github.com/Comcast/trickster/pkg/locks"
 )
 
+/*
+Get caching policy
+if can cache and is in cache then respond
+if can cache and is not in cache then Proxy/PFC and write result into cache
+*/
+
 // ObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache
 func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, noLock bool) {
+	// This needs to split into
+	// GetCachePolicy
+	// GetCachedObject
+	// WriteCache
 	body, resp, _ := FetchViaObjectProxyCache(r, client, nil, noLock)
+
 	Respond(w, resp.StatusCode, resp.Header, body)
+
 }
 
 // FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
 func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config.PathConfig, noLock bool) ([]byte, *http.Response, bool) {
 
 	oc := context.OriginConfig(r.ClientRequest.Context())
+	pc := context.PathConfig(r.ClientRequest.Context())
 	cache := context.CacheClient(r.ClientRequest.Context())
 
 	key := oc.Host + "." + DeriveCacheKey(client, r, apc, "")
@@ -52,6 +64,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 	cpReq := GetRequestCachingPolicy(r.Headers)
 	if cpReq.NoCache {
 		// if the client provided Cache-Control: no-cache or Pragma: no-cache header, the request is proxy only.
+		// HERE
 		body, resp, elapsed := Fetch(r)
 		cache.Remove(key)
 		recordOPCResult(r, tc.LookupStatusProxyOnly, resp.StatusCode, r.URL.Path, elapsed.Seconds(), resp.Header)
@@ -104,7 +117,12 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 	if d.CachingPolicy != nil && d.CachingPolicy.IsFresh {
 		cacheStatus = tc.LookupStatusHit
 	} else {
-		body, resp, elapsed = Fetch(r)
+		// HERE
+		if pc.ProgressiveCollapsedForwarding {
+			body, resp, elapsed = Fetch(r)
+		} else {
+			body, resp, elapsed = Fetch(r)
+		}
 		cp := GetResponseCachingPolicy(resp.StatusCode, oc.NegativeCache, resp.Header)
 		// Cache is revalidated, update headers and resulting caching policy
 		if revalidatingCache && resp.StatusCode == http.StatusNotModified {
@@ -180,23 +198,14 @@ func recordOPCResult(r *model.Request, cacheStatus tc.LookupStatus, httpStatus i
 	recordResults(r, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, header)
 }
 
-// WIP
-
-// Need maxfilesize option - if 2-gb file then just proxy it
-// Want proxy or proxy with RFC
-// The OBC with RFC
-
-/*
+/* WIP
 
 TODO:
-Add config options
-Clean up the implementation on the httpproxy
+Add maxfilesize option
+Move maxfilesize to a per origin basis
 Implement this on the object proxy cache
 Write unit tests
 Write documentation
-
-
-
 
 */
 
@@ -205,21 +214,24 @@ type indexReader func(index uint64, b []byte) (int, error)
 func readAndRespondFromPFC(ir indexReader, w io.Writer) {
 	var readIndex uint64
 	var err error
+	n := 0
 	buf := make([]byte, HTTPBlockSize)
 
 	for {
-		_, err = ir(readIndex, buf)
+		n, err = ir(readIndex, buf)
+		if n > 0 {
+			w.Write(buf[:n])
+			readIndex++
+		}
 		if err != nil {
-			if err == io.EOF {
-				fmt.Println("readResp EOF")
-			}
 			break
 		}
-		w.Write(buf)
-		readIndex++
 	}
 }
 
+// ProxyForwardCollapser accepts data written through the io.Writer interface, caches it and
+// makes all the data written available to n readers. The readers can request data at index i,
+// to which the PFC may block or return the data immediately.
 type ProxyForwardCollapser interface {
 	AddClient(io.Writer)
 	Write([]byte) (int, error)
@@ -231,7 +243,6 @@ type ProxyForwardCollapser interface {
 
 type proxyForwardCollapser struct {
 	rIndex          uint64
-	dataLength      uint64
 	dataIndex       uint64
 	data            [][]byte
 	dataStore       []byte
@@ -241,19 +252,21 @@ type proxyForwardCollapser struct {
 	serverWaitCond  *sync.Cond
 }
 
-func NewPFC(clientTimeout time.Duration, blockCount int) ProxyForwardCollapser {
-	dataStore := make([]byte, blockCount*HTTPBlockSize)
-	refs := make([][]byte, blockCount*2)
+// NewPFC returns a new instance of a ProxyForwardCollapser
+func NewPFC(clientTimeout time.Duration, contentLength int) ProxyForwardCollapser {
+	// This contiguous block of memory is just an underlying byte store, references by the slices defined in refs
+	// Thread safety is provided through a read index, an atomic, which the writer must exceed and readers may not exceed
+	// This effectively limits the readers and writer to seperate areas in memory.
+	dataStore := make([]byte, contentLength)
+	refs := make([][]byte, (contentLength/HTTPBlockSize)*2)
 
 	var wg sync.WaitGroup
 	sd := sync.NewCond(&sync.Mutex{})
 	rc := sync.NewCond(&sync.Mutex{})
 
-	// Create goroutine for client
-	// This goroutine should try to read everything that is available from the PFC byte store
 	pfc := &proxyForwardCollapser{
 		rIndex:          0,
-		dataLength:      uint64(blockCount),
+		dataIndex:       0,
 		data:            refs,
 		dataStore:       dataStore,
 		readCond:        rc,
@@ -265,6 +278,8 @@ func NewPFC(clientTimeout time.Duration, blockCount int) ProxyForwardCollapser {
 	return pfc
 }
 
+// AddClient adds an io.Writer client to the Proxy Forward Collapser
+// This client will read all the cached data and read from the live edge if caught up.
 func (pfc *proxyForwardCollapser) AddClient(w io.Writer) {
 	pfc.clientWaitgroup.Add(1)
 	readAndRespondFromPFC(pfc.Read, w)
@@ -285,6 +300,8 @@ func (pfc *proxyForwardCollapser) WaitAllComplete() {
 	return
 }
 
+// Write writes the data in b to the Proxy Forward Collapsers data store,
+// adds a reference to that data, and increments the read index.
 func (pfc *proxyForwardCollapser) Write(b []byte) (int, error) {
 	n := atomic.LoadUint64(&pfc.rIndex)
 	pfc.data[n] = pfc.dataStore[pfc.dataIndex : pfc.dataIndex+uint64(len(b))]
@@ -318,7 +335,3 @@ func (pfc *proxyForwardCollapser) Read(index uint64, b []byte) (int, error) {
 	copy(b, pfc.data[index])
 	return len(pfc.data[index]), nil
 }
-
-// RundownCollapsedForwarding
-// ConcurrentCollapsedForwarding
-// ProgressiveCollapsedForwarding
