@@ -100,7 +100,6 @@ func main() {
 		wg.Add(1)
 		go func() {
 			tlsConfig, err := config.Config.TLSCertConfig()
-			var l net.Listener
 			if err == nil {
 				l, err = proxy.NewListener(
 					config.ProxyServer.TLSListenAddress,
