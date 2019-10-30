@@ -141,7 +141,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 	}
 
 	d.CachingPolicy.NoTransform = d.CachingPolicy.NoTransform || cpReq.NoTransform
-	d.CachingPolicy.NoCache = d.CachingPolicy.NoCache || cpReq.NoCache || len(body) >= cache.Configuration().MaxObjectSizeBytes
+	d.CachingPolicy.NoCache = d.CachingPolicy.NoCache || cpReq.NoCache || len(body) >= oc.MaxObjectSizeBytes
 
 	if d.CachingPolicy.NoCache || (!d.CachingPolicy.CanRevalidate && d.CachingPolicy.FreshnessLifetime <= 0) {
 		cache.Remove(key)
