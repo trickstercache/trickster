@@ -184,7 +184,7 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 		delete(paths, p)
 	}
 
-	// this sorts the strings alphabetically, longest to shortest
+	// this sorts the strings alphabetically, shortest to longest
 	sort.Strings(orderedPaths)
 	// so lets reverse the list,to ensure routes registered from longest to shortest match
 	for i := len(orderedPaths)/2 - 1; i >= 0; i-- {
