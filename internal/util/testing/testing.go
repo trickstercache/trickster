@@ -110,6 +110,8 @@ func NewTestInstance(
 	if len(paths) > 0 {
 		if p2, ok := paths[urlPath]; ok {
 			p = p2
+		} else {
+			p = paths["/"]
 		}
 	}
 

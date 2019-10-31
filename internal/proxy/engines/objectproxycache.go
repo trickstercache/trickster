@@ -198,9 +198,11 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 	if pfcExists || cpReq.NoCache {
 		// if the client provided Cache-Control: no-cache or Pragma: no-cache header, the request is proxy only.
 		start := time.Now()
+		// This will use the header from the original response
 		ProxyRequest(r, w)
 		pfc := pfcResult.(ProxyForwardCollapser)
 		recordOPCResult(r, tc.LookupStatusProxyOnly, pfc.GetResp().StatusCode, r.URL.Path, time.Since(start).Seconds(), pfc.GetResp().Header)
+
 		locks.Acquire(key)
 		cache.Remove(key)
 		locks.Release(key)
@@ -396,9 +398,6 @@ func recordOPCResult(r *model.Request, cacheStatus tc.LookupStatus, httpStatus i
 /* WIP
 
 TODO:
-Add maxfilesize option
-Move maxfilesize to a per origin basis
-Implement this on the object proxy cache
 Write unit tests
 Write documentation
 

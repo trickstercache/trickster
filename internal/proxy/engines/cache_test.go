@@ -45,10 +45,6 @@ func TestDeriveCacheKey(t *testing.T) {
 		},
 	}
 
-	client := &PromTestClient{
-		config: cfg,
-	}
-
 	tr := httptest.NewRequest("GET", "http://127.0.0.1", nil)
 	tr = tr.WithContext(ct.WithConfigs(tr.Context(), cfg, nil, cfg.Paths["root"]))
 
