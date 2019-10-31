@@ -16,6 +16,7 @@ package registration
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/Comcast/trickster/internal/cache"
@@ -163,6 +164,7 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 	if h, ok := handlers["health"]; ok &&
 		o.HealthCheckUpstreamPath != "" && o.HealthCheckVerb != "" {
 		hp := "/trickster/health/" + o.Name
+		log.Debug("registering health handler path", log.Pairs{"path": hp, "originName": o.Name})
 		routing.Router.PathPrefix(hp).Handler(middleware.WithConfigContext(o, nil, nil, h)).Methods(http.MethodGet, http.MethodHead, http.MethodPost)
 	}
 
@@ -180,6 +182,14 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 	}
 	for _, p := range deletes {
 		delete(paths, p)
+	}
+
+	// this sorts the strings alphabetically, shortest to longest
+	sort.Strings(orderedPaths)
+	// so lets reverse the list,to ensure routes registered from longest to shortest match
+	for i := len(orderedPaths)/2 - 1; i >= 0; i-- {
+		opp := len(orderedPaths) - 1 - i
+		orderedPaths[i], orderedPaths[opp] = orderedPaths[opp], orderedPaths[i]
 	}
 
 	for _, v := range orderedPaths {
