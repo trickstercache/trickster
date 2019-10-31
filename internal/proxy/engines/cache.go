@@ -76,7 +76,7 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 }
 
 // DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
-func DeriveCacheKey(c model.Client, r *model.Request, apc *config.PathConfig, extra string) string {
+func DeriveCacheKey(r *model.Request, apc *config.PathConfig, extra string) string {
 
 	pc := context.PathConfig(r.ClientRequest.Context())
 	if apc != nil {

@@ -14,6 +14,7 @@
 package engines
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"sync"
@@ -37,13 +38,9 @@ if can cache and is not in cache then Proxy/PFC and write result into cache
 
 // ObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache
 func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, noLock bool) {
-	// This needs to split into
-	// GetCachePolicy
-	// GetCachedObject
-	// WriteCache
-	body, resp, _ := FetchViaObjectProxyCache(r, client, nil, noLock)
-
-	Respond(w, resp.StatusCode, resp.Header, body)
+	FetchAndRespondViaObjectProxyCache(r, w, client, noLock)
+	//FetchViaObjectProxyCache(r, client, nil, noLock)
+	//Respond(w, resp.StatusCode, resp.Header, body)
 
 }
 
@@ -51,10 +48,9 @@ func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mod
 func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config.PathConfig, noLock bool) ([]byte, *http.Response, bool) {
 
 	oc := context.OriginConfig(r.ClientRequest.Context())
-	pc := context.PathConfig(r.ClientRequest.Context())
 	cache := context.CacheClient(r.ClientRequest.Context())
 
-	key := oc.Host + "." + DeriveCacheKey(client, r, apc, "")
+	key := oc.Host + "." + DeriveCacheKey(r, apc, "")
 
 	if !noLock {
 		locks.Acquire(key)
@@ -64,7 +60,6 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 	cpReq := GetRequestCachingPolicy(r.Headers)
 	if cpReq.NoCache {
 		// if the client provided Cache-Control: no-cache or Pragma: no-cache header, the request is proxy only.
-		// HERE
 		body, resp, elapsed := Fetch(r)
 		cache.Remove(key)
 		recordOPCResult(r, tc.LookupStatusProxyOnly, resp.StatusCode, r.URL.Path, elapsed.Seconds(), resp.Header)
@@ -117,12 +112,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 	if d.CachingPolicy != nil && d.CachingPolicy.IsFresh {
 		cacheStatus = tc.LookupStatusHit
 	} else {
-		// HERE
-		if pc.ProgressiveCollapsedForwarding {
-			body, resp, elapsed = Fetch(r)
-		} else {
-			body, resp, elapsed = Fetch(r)
-		}
+		body, resp, elapsed = Fetch(r)
 		cp := GetResponseCachingPolicy(resp.StatusCode, oc.NegativeCache, resp.Header)
 		// Cache is revalidated, update headers and resulting caching policy
 		if revalidatingCache && resp.StatusCode == http.StatusNotModified {
@@ -194,6 +184,211 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 
 }
 
+// FetchAndRespondViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
+func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter, client model.Client, noLock bool) {
+
+	oc := context.OriginConfig(r.ClientRequest.Context())
+	pc := context.PathConfig(r.ClientRequest.Context())
+	cache := context.CacheClient(r.ClientRequest.Context())
+
+	key := oc.Host + "." + DeriveCacheKey(r, pc, "")
+
+	cpReq := GetRequestCachingPolicy(r.Headers)
+	pfcResult, pfcExists := Reqs.Load(key)
+	if pfcExists || cpReq.NoCache {
+		// if the client provided Cache-Control: no-cache or Pragma: no-cache header, the request is proxy only.
+		start := time.Now()
+		ProxyRequest(r, w)
+		pfc := pfcResult.(ProxyForwardCollapser)
+		recordOPCResult(r, tc.LookupStatusProxyOnly, pfc.GetResp().StatusCode, r.URL.Path, time.Since(start).Seconds(), pfc.GetResp().Header)
+		locks.Acquire(key)
+		cache.Remove(key)
+		locks.Release(key)
+		return
+	}
+
+	if !noLock {
+		locks.Acquire(key)
+		defer locks.Release(key)
+	}
+
+	hasINMV := cpReq.IfNoneMatchValue != ""
+	hasIMS := !cpReq.IfModifiedSinceTime.IsZero()
+	hasIMV := cpReq.IfMatchValue != ""
+	hasIUS := !cpReq.IfUnmodifiedSinceTime.IsZero()
+	clientConditional := hasINMV || hasIMS || hasIMV || hasIUS
+
+	// don't proxy these up, their scope is only between Trickster and client
+	if clientConditional {
+		delete(r.Headers, headers.NameIfMatch)
+		delete(r.Headers, headers.NameIfUnmodifiedSince)
+		delete(r.Headers, headers.NameIfNoneMatch)
+		delete(r.Headers, headers.NameIfModifiedSince)
+	}
+
+	revalidatingCache := false
+
+	var cacheStatus = tc.LookupStatusKeyMiss
+
+	d, err := QueryCache(cache, key)
+	if err == nil {
+		d.CachingPolicy.IsFresh = !d.CachingPolicy.LocalDate.Add(time.Duration(d.CachingPolicy.FreshnessLifetime) * time.Second).Before(time.Now())
+		if !d.CachingPolicy.IsFresh {
+			if !d.CachingPolicy.CanRevalidate {
+				// The cache entry has expired and lacks any data for validating freshness
+				cache.Remove(key)
+			} else {
+				if d.CachingPolicy.ETag != "" {
+					r.Headers.Set(headers.NameIfNoneMatch, d.CachingPolicy.ETag)
+				}
+				if !d.CachingPolicy.LastModified.IsZero() {
+					r.Headers.Set(headers.NameIfModifiedSince, d.CachingPolicy.LastModified.Format(time.RFC1123))
+				}
+				revalidatingCache = true
+			}
+		}
+	}
+
+	var resp *http.Response
+	var reader io.Reader
+	cl := 0
+
+	statusCode := d.StatusCode
+
+	if d.CachingPolicy != nil && d.CachingPolicy.IsFresh {
+		cacheStatus = tc.LookupStatusHit
+		cl = len(d.Body)
+	} else {
+		reader, resp, cl = PrepareFetchReader(r)
+
+		cp := GetResponseCachingPolicy(resp.StatusCode, oc.NegativeCache, resp.Header)
+		// Cache is revalidated, update headers and resulting caching policy
+		if revalidatingCache && resp.StatusCode == http.StatusNotModified {
+			cacheStatus = tc.LookupStatusHit
+			for k, v := range resp.Header {
+				d.Headers[k] = v
+			}
+			d.CachingPolicy = cp
+			statusCode = 304
+		} else {
+			// TODO set body
+			d = model.DocumentFromHTTPResponse(resp, nil, cp)
+		}
+	}
+
+	log.Info("http object cache lookup status", log.Pairs{"key": key, "cacheStatus": cacheStatus})
+
+	// the client provided a conditional request to us, determine if Trickster responds with 304 or 200
+	// based on client-provided validators vs our now-fresh cache
+	if clientConditional {
+		isClientFresh := true
+		if hasINMV {
+			// need to do real matching of etag lists - package
+			isClientFresh = isClientFresh && d.CachingPolicy.ETag == cpReq.IfNoneMatchValue
+		}
+		if hasIMV {
+			// need to do real matching of etag lists -> package
+			isClientFresh = isClientFresh && d.CachingPolicy.ETag != cpReq.IfMatchValue
+		}
+		if hasIMS {
+			isClientFresh = isClientFresh && !d.CachingPolicy.LastModified.After(cpReq.IfModifiedSinceTime)
+		}
+		if hasIUS {
+			isClientFresh = isClientFresh && d.CachingPolicy.LastModified.After(cpReq.IfUnmodifiedSinceTime)
+		}
+		cpReq.IsFresh = isClientFresh
+	}
+
+	d.CachingPolicy.NoTransform = d.CachingPolicy.NoTransform || cpReq.NoTransform
+	d.CachingPolicy.NoCache = d.CachingPolicy.NoCache || cpReq.NoCache || cl >= oc.MaxObjectSizeBytes
+
+	writeCache := false
+	// Where the magic should happen
+	if d.CachingPolicy.NoCache || (!d.CachingPolicy.CanRevalidate && d.CachingPolicy.FreshnessLifetime <= 0) {
+		cache.Remove(key)
+
+		// is fresh, and we can cache, can revalidate and the freshness is greater than 0
+	} else if d.CachingPolicy.IsFresh {
+		reader = bytes.NewReader(d.Body)
+		resp = &http.Response{
+			Header:     d.Headers,
+			StatusCode: d.StatusCode,
+			Status:     d.Status,
+		}
+
+		// is NOT fresh, and we can cache, can revalidate and the freshness is greater than 0
+	} else {
+		writeCache = true
+	}
+
+	if clientConditional && cpReq.IsFresh {
+		resp.StatusCode = http.StatusNotModified
+		reader = nil
+	}
+
+	// Write body here
+	var elapsed time.Duration
+	var body []byte
+
+	if cacheStatus == tc.LookupStatusKeyMiss {
+		start := time.Now()
+		if !pc.ProgressiveCollapsedForwarding {
+			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+			buffer := bytes.NewBuffer(make([]byte, 0, cl))
+			mw := io.MultiWriter(writer, buffer)
+			io.Copy(mw, reader)
+			body = buffer.Bytes()
+		} else {
+			var n int64
+			if !pfcExists {
+				cl := 0
+				reader, resp, cl = PrepareFetchReader(r)
+				writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+				// Check if we know the content length and if it is less than our max object size.
+				if cl != 0 && cl < oc.MaxObjectSizeBytes {
+					pfc := NewPFC(10*time.Second, resp, cl)
+					go pfc.AddClient(writer)
+					Reqs.Store(key, pfc)
+					// Blocks until server completes
+					n, _ = io.Copy(pfc, reader)
+					pfc.Close()
+					Reqs.Delete(key)
+					// Only record body from original server request
+					body = pfc.GetBody(uint64(n))
+				}
+			} else {
+				pfc, _ := pfcResult.(ProxyForwardCollapser)
+				resp = pfc.GetResp()
+				writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+				pfc.AddClient(writer)
+				return
+			}
+		}
+		elapsed = time.Since(start)
+	} else {
+		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+		io.Copy(writer, reader)
+	}
+
+	recordOPCResult(r, cacheStatus, statusCode, r.URL.Path, elapsed.Seconds(), d.Headers)
+
+	if writeCache {
+		if body != nil {
+			d.Body = body
+		}
+
+		var ttl time.Duration = time.Duration(d.CachingPolicy.FreshnessLifetime) * time.Second
+		if d.CachingPolicy.CanRevalidate {
+			ttl *= time.Duration(oc.RevalidationFactor)
+		}
+		if ttl > oc.MaxTTL {
+			ttl = oc.MaxTTL
+		}
+		WriteCache(cache, key, d, ttl)
+	}
+	return
+}
+
 func recordOPCResult(r *model.Request, cacheStatus tc.LookupStatus, httpStatus int, path string, elapsed float64, header http.Header) {
 	recordResults(r, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, header)
 }
@@ -239,9 +434,12 @@ type ProxyForwardCollapser interface {
 	Read(uint64, []byte) (int, error)
 	WaitServerComplete()
 	WaitAllComplete()
+	GetBody(n uint64) []byte
+	GetResp() *http.Response
 }
 
 type proxyForwardCollapser struct {
+	resp            *http.Response
 	rIndex          uint64
 	dataIndex       uint64
 	data            [][]byte
@@ -253,7 +451,7 @@ type proxyForwardCollapser struct {
 }
 
 // NewPFC returns a new instance of a ProxyForwardCollapser
-func NewPFC(clientTimeout time.Duration, contentLength int) ProxyForwardCollapser {
+func NewPFC(clientTimeout time.Duration, resp *http.Response, contentLength int) ProxyForwardCollapser {
 	// This contiguous block of memory is just an underlying byte store, references by the slices defined in refs
 	// Thread safety is provided through a read index, an atomic, which the writer must exceed and readers may not exceed
 	// This effectively limits the readers and writer to seperate areas in memory.
@@ -265,6 +463,7 @@ func NewPFC(clientTimeout time.Duration, contentLength int) ProxyForwardCollapse
 	rc := sync.NewCond(&sync.Mutex{})
 
 	pfc := &proxyForwardCollapser{
+		resp:            resp,
 		rIndex:          0,
 		dataIndex:       0,
 		data:            refs,
@@ -298,6 +497,17 @@ func (pfc *proxyForwardCollapser) WaitServerComplete() {
 func (pfc *proxyForwardCollapser) WaitAllComplete() {
 	pfc.clientWaitgroup.Wait()
 	return
+}
+
+func (pfc *proxyForwardCollapser) GetBody(n uint64) []byte {
+	if n > uint64(len(pfc.dataStore)) {
+		return nil
+	}
+	return pfc.dataStore[:n]
+}
+
+func (pfc *proxyForwardCollapser) GetResp() *http.Response {
+	return pfc.resp
 }
 
 // Write writes the data in b to the Proxy Forward Collapsers data store,

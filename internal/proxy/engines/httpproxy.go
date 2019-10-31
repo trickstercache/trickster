@@ -35,45 +35,46 @@ import (
 )
 
 // Used for Progressive Collapsed Forwarding
-var reqs sync.Map
+var Reqs sync.Map
 
 const HTTPBlockSize = 32 * 1024
 
 // ProxyRequest proxies an inbound request to its corresponding upstream origin with no caching features
 func ProxyRequest(r *model.Request, w http.ResponseWriter) {
 	pc := context.PathConfig(r.ClientRequest.Context())
-	//oc := context.OriginConfig(r.ClientRequest.Context())
+	oc := context.OriginConfig(r.ClientRequest.Context())
 
 	start := time.Now()
-	reader, resp, cl := PrepareFetchReader(r)
-
-	// TODO need to check max size
-	if pc.ProgressiveCollapsedForwarding && cl != 0 {
-		var pfc ProxyForwardCollapser
-
-		result, ok := reqs.Load(r.URL.String())
-		if !ok {
-			pfc = NewPFC(10*time.Second, cl)
-			go func(pfc ProxyForwardCollapser, key string) {
-				io.Copy(pfc, reader)
-				// TODO read error?
-				pfc.Close()
-				reqs.Delete(key)
-			}(pfc, r.URL.String())
-
-			reqs.Store(r.URL.String(), pfc)
-		} else {
-			pfc, _ = result.(ProxyForwardCollapser)
-		}
-
-		pfc.AddClient(w)
-		// Need to actyally wait only for original client to complete
-		pfc.WaitAllComplete()
-	} else {
+	var resp *http.Response
+	var reader io.Reader
+	if !pc.ProgressiveCollapsedForwarding {
+		reader, resp, _ = PrepareFetchReader(r)
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 		io.Copy(writer, reader)
+	} else {
+		key := oc.Host + "." + DeriveCacheKey(r, pc, "")
+		result, ok := Reqs.Load(key)
+		if !ok {
+			cl := 0
+			reader, resp, cl = PrepareFetchReader(r)
+			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+			// Check if we know the content length and if it is less than our max object size.
+			if cl != 0 && cl < oc.MaxObjectSizeBytes {
+				pfc := NewPFC(10*time.Second, resp, cl)
+				go pfc.AddClient(writer)
+				Reqs.Store(key, pfc)
+				// Blocks until server completes
+				io.Copy(pfc, reader)
+				pfc.Close()
+				Reqs.Delete(key)
+			}
+		} else {
+			pfc, _ := result.(ProxyForwardCollapser)
+			resp = pfc.GetResp()
+			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+			pfc.AddClient(writer)
+		}
 	}
-
 	elapsed := time.Since(start)
 	recordProxyResults(r, resp.StatusCode, r.URL.Path, elapsed.Seconds(), resp.Header)
 }
