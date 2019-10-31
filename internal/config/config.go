@@ -133,6 +133,8 @@ type OriginConfig struct {
 	MaxTTLSecs int `toml:"max_ttl_secs"`
 	// RevalidationFactor specifies how many times to multiply the object freshness lifetime by to calculate an absolute cache TTL
 	RevalidationFactor int `toml:"revalidation_factor"`
+	// MaxObjectSizeBytes specifies the max objectsize to be accepted for any given cache object
+	MaxObjectSizeBytes int `toml:"max_object_size_bytes"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *TLSConfig `toml:"tls"`
@@ -177,14 +179,13 @@ type CachingConfig struct {
 	// Name is the Name of the cache, taken from the Key in the Caches map[string]*CacheConfig
 	Name string `toml:"-"`
 	// Type represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
-	CacheType          string                `toml:"cache_type"`
-	Compression        bool                  `toml:"compression"`
-	MaxObjectSizeBytes int                   `toml:"max_object_size_bytes"`
-	Index              CacheIndexConfig      `toml:"index"`
-	Redis              RedisCacheConfig      `toml:"redis"`
-	Filesystem         FilesystemCacheConfig `toml:"filesystem"`
-	BBolt              BBoltCacheConfig      `toml:"bbolt"`
-	Badger             BadgerCacheConfig     `toml:"badger"`
+	CacheType   string                `toml:"cache_type"`
+	Compression bool                  `toml:"compression"`
+	Index       CacheIndexConfig      `toml:"index"`
+	Redis       RedisCacheConfig      `toml:"redis"`
+	Filesystem  FilesystemCacheConfig `toml:"filesystem"`
+	BBolt       BBoltCacheConfig      `toml:"bbolt"`
+	Badger      BadgerCacheConfig     `toml:"badger"`
 
 	//  Synthetic Values
 
@@ -334,14 +335,13 @@ func NewConfig() *TricksterConfig {
 func NewCacheConfig() *CachingConfig {
 
 	return &CachingConfig{
-		CacheType:          defaultCacheType,
-		CacheTypeID:        defaultCacheTypeID,
-		Compression:        defaultCacheCompression,
-		MaxObjectSizeBytes: defaultMaxObjectSizeBytes,
-		Redis:              RedisCacheConfig{ClientType: defaultRedisClientType, Protocol: defaultRedisProtocol, Endpoint: defaultRedisEndpoint, Endpoints: []string{defaultRedisEndpoint}},
-		Filesystem:         FilesystemCacheConfig{CachePath: defaultCachePath},
-		BBolt:              BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: defaultBBoltBucket},
-		Badger:             BadgerCacheConfig{Directory: defaultCachePath, ValueDirectory: defaultCachePath},
+		CacheType:   defaultCacheType,
+		CacheTypeID: defaultCacheTypeID,
+		Compression: defaultCacheCompression,
+		Redis:       RedisCacheConfig{ClientType: defaultRedisClientType, Protocol: defaultRedisProtocol, Endpoint: defaultRedisEndpoint, Endpoints: []string{defaultRedisEndpoint}},
+		Filesystem:  FilesystemCacheConfig{CachePath: defaultCachePath},
+		BBolt:       BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: defaultBBoltBucket},
+		Badger:      BadgerCacheConfig{Directory: defaultCachePath, ValueDirectory: defaultCachePath},
 		Index: CacheIndexConfig{
 			ReapIntervalSecs:      defaultCacheIndexReap,
 			FlushIntervalSecs:     defaultCacheIndexFlush,
@@ -380,6 +380,7 @@ func NewOriginConfig() *OriginConfig {
 		MaxTTLSecs:                   defaultMaxTTLSecs,
 		MaxTTL:                       defaultMaxTTLSecs * time.Second,
 		RevalidationFactor:           defaultRevalidationFactor,
+		MaxObjectSizeBytes:           defaultMaxObjectSizeBytes,
 		TLS:                          &TLSConfig{},
 	}
 }
@@ -540,6 +541,10 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 			oc.HealthCheckQuery = v.HealthCheckQuery
 		}
 
+		if metadata.IsDefined("origins", k, "max_object_size_bytes") {
+			oc.MaxObjectSizeBytes = v.MaxObjectSizeBytes
+		}
+
 		if metadata.IsDefined("origins", k, "tls") {
 			oc.TLS = &TLSConfig{
 				InsecureSkipVerify:        v.TLS.InsecureSkipVerify,
@@ -579,10 +584,6 @@ func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
 
 		if metadata.IsDefined("caches", k, "compression") {
 			cc.Compression = v.Compression
-		}
-
-		if metadata.IsDefined("caches", k, "max_object_size_bytes") {
-			cc.MaxObjectSizeBytes = v.MaxObjectSizeBytes
 		}
 
 		if metadata.IsDefined("caches", k, "index", "reap_interval_secs") {
