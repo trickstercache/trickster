@@ -61,12 +61,14 @@ func ProxyRequest(r *model.Request, w http.ResponseWriter) {
 			// Check if we know the content length and if it is less than our max object size.
 			if cl != 0 && cl < oc.MaxObjectSizeBytes {
 				pfc := NewPFC(10*time.Second, resp, cl)
-				go pfc.AddClient(writer)
 				Reqs.Store(key, pfc)
 				// Blocks until server completes
-				io.Copy(pfc, reader)
-				pfc.Close()
-				Reqs.Delete(key)
+				go func() {
+					io.Copy(pfc, reader)
+					pfc.Close()
+					Reqs.Delete(key)
+				}()
+				pfc.AddClient(writer)
 			}
 		} else {
 			pfc, _ := result.(ProxyForwardCollapser)

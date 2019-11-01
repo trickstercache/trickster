@@ -349,12 +349,14 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 				// Check if we know the content length and if it is less than our max object size.
 				if cl != 0 && cl < oc.MaxObjectSizeBytes {
 					pfc := NewPFC(10*time.Second, resp, cl)
-					go pfc.AddClient(writer)
 					Reqs.Store(key, pfc)
-					// Blocks until server completes
-					n, _ = io.Copy(pfc, reader)
-					pfc.Close()
-					Reqs.Delete(key)
+
+					go func() {
+						n, _ = io.Copy(pfc, reader)
+						pfc.Close()
+						Reqs.Delete(key)
+					}()
+					pfc.AddClient(writer)
 					// Only record body from original server request
 					body = pfc.GetBody(uint64(n))
 				}
