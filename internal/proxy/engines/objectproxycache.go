@@ -17,8 +17,6 @@ import (
 	"bytes"
 	"io"
 	"net/http"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	tc "github.com/Comcast/trickster/internal/cache"
@@ -30,17 +28,9 @@ import (
 	"github.com/Comcast/trickster/pkg/locks"
 )
 
-/*
-Get caching policy
-if can cache and is in cache then respond
-if can cache and is not in cache then Proxy/PFC and write result into cache
-*/
-
 // ObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache
 func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, noLock bool) {
 	FetchAndRespondViaObjectProxyCache(r, w, client, noLock)
-	//FetchViaObjectProxyCache(r, client, nil, noLock)
-	//Respond(w, resp.StatusCode, resp.Header, body)
 
 }
 
@@ -340,7 +330,6 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 			io.Copy(mw, reader)
 			body = buffer.Bytes()
 		} else {
-			var n int64
 			if !pfcExists {
 				cl := 0
 				reader, resp, cl = PrepareFetchReader(r)
@@ -352,13 +341,13 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 					Reqs.Store(key, pfc)
 
 					go func() {
-						n, _ = io.Copy(pfc, reader)
+						io.Copy(pfc, reader)
 						pfc.Close()
 						Reqs.Delete(key)
 					}()
 					pfc.AddClient(writer)
 					// Only record body from original server request
-					body = pfc.GetBody(uint64(n))
+					body, _ = pfc.GetBody()
 				}
 			} else {
 				pfc, _ := pfcResult.(ProxyForwardCollapser)
@@ -395,154 +384,4 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 
 func recordOPCResult(r *model.Request, cacheStatus tc.LookupStatus, httpStatus int, path string, elapsed float64, header http.Header) {
 	recordResults(r, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, header)
-}
-
-/* WIP
-
-TODO:
-Write unit tests
-Write documentation
-
-*/
-
-type indexReader func(index uint64, b []byte) (int, error)
-
-func readAndRespondFromPFC(ir indexReader, w io.Writer) {
-	var readIndex uint64
-	var err error
-	n := 0
-	buf := make([]byte, HTTPBlockSize)
-
-	for {
-		n, err = ir(readIndex, buf)
-		if n > 0 {
-			w.Write(buf[:n])
-			readIndex++
-		}
-		if err != nil {
-			break
-		}
-	}
-}
-
-// ProxyForwardCollapser accepts data written through the io.Writer interface, caches it and
-// makes all the data written available to n readers. The readers can request data at index i,
-// to which the PFC may block or return the data immediately.
-type ProxyForwardCollapser interface {
-	AddClient(io.Writer)
-	Write([]byte) (int, error)
-	Close()
-	Read(uint64, []byte) (int, error)
-	WaitServerComplete()
-	WaitAllComplete()
-	GetBody(n uint64) []byte
-	GetResp() *http.Response
-}
-
-type proxyForwardCollapser struct {
-	resp            *http.Response
-	rIndex          uint64
-	dataIndex       uint64
-	data            [][]byte
-	dataStore       []byte
-	readCond        *sync.Cond
-	serverReadDone  int32
-	clientWaitgroup *sync.WaitGroup
-	serverWaitCond  *sync.Cond
-}
-
-// NewPFC returns a new instance of a ProxyForwardCollapser
-func NewPFC(clientTimeout time.Duration, resp *http.Response, contentLength int) ProxyForwardCollapser {
-	// This contiguous block of memory is just an underlying byte store, references by the slices defined in refs
-	// Thread safety is provided through a read index, an atomic, which the writer must exceed and readers may not exceed
-	// This effectively limits the readers and writer to seperate areas in memory.
-	dataStore := make([]byte, contentLength)
-	refs := make([][]byte, (contentLength/HTTPBlockSize)*2)
-
-	var wg sync.WaitGroup
-	sd := sync.NewCond(&sync.Mutex{})
-	rc := sync.NewCond(&sync.Mutex{})
-
-	pfc := &proxyForwardCollapser{
-		resp:            resp,
-		rIndex:          0,
-		dataIndex:       0,
-		data:            refs,
-		dataStore:       dataStore,
-		readCond:        rc,
-		serverReadDone:  0,
-		clientWaitgroup: &wg,
-		serverWaitCond:  sd,
-	}
-
-	return pfc
-}
-
-// AddClient adds an io.Writer client to the Proxy Forward Collapser
-// This client will read all the cached data and read from the live edge if caught up.
-func (pfc *proxyForwardCollapser) AddClient(w io.Writer) {
-	pfc.clientWaitgroup.Add(1)
-	readAndRespondFromPFC(pfc.Read, w)
-	pfc.clientWaitgroup.Done()
-}
-
-// WaitServerComplete blocks until the object has been retreived from the origin server
-// Need to get payload before can send to actual cache
-func (pfc *proxyForwardCollapser) WaitServerComplete() {
-	pfc.serverWaitCond.Wait()
-	return
-}
-
-// WaitAllComplete will wait till all clients have completed or timedout
-// Need to no abandon goroutines
-func (pfc *proxyForwardCollapser) WaitAllComplete() {
-	pfc.clientWaitgroup.Wait()
-	return
-}
-
-func (pfc *proxyForwardCollapser) GetBody(n uint64) []byte {
-	if n > uint64(len(pfc.dataStore)) {
-		return nil
-	}
-	return pfc.dataStore[:n]
-}
-
-func (pfc *proxyForwardCollapser) GetResp() *http.Response {
-	return pfc.resp
-}
-
-// Write writes the data in b to the Proxy Forward Collapsers data store,
-// adds a reference to that data, and increments the read index.
-func (pfc *proxyForwardCollapser) Write(b []byte) (int, error) {
-	n := atomic.LoadUint64(&pfc.rIndex)
-	pfc.data[n] = pfc.dataStore[pfc.dataIndex : pfc.dataIndex+uint64(len(b))]
-	copy(pfc.data[n], b)
-	atomic.AddUint64(&pfc.rIndex, 1)
-	pfc.readCond.Broadcast()
-	return len(b), nil
-}
-
-// Close signals all things waiting on the server response body to complete.
-// This should be triggered by the client io.EOF
-func (pfc *proxyForwardCollapser) Close() {
-	atomic.AddInt32(&pfc.serverReadDone, 1)
-	pfc.serverWaitCond.Signal()
-	pfc.readCond.Broadcast()
-	return
-}
-
-// Read will return the given index data requested by the read is behind the PFC readindex, else blocks and waits for the data
-func (pfc *proxyForwardCollapser) Read(index uint64, b []byte) (int, error) {
-	i := atomic.LoadUint64(&pfc.rIndex)
-	if index >= i {
-		// need to check completion and return io.EOF
-		if atomic.LoadInt32(&pfc.serverReadDone) != 0 {
-			return 0, io.EOF
-		}
-		pfc.readCond.L.Lock()
-		pfc.readCond.Wait()
-		pfc.readCond.L.Unlock()
-	}
-	copy(b, pfc.data[index])
-	return len(pfc.data[index]), nil
 }
