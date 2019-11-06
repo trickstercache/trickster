@@ -199,19 +199,13 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 		// if the client provided Cache-Control: no-cache or Pragma: no-cache header, the request is proxy only.
 		start := time.Now()
 		// This will use the header from the original response
-		ProxyRequest(r, w)
-		pfc := pfcResult.(ProxyForwardCollapser)
-		recordOPCResult(r, tc.LookupStatusProxyOnly, pfc.GetResp().StatusCode, r.URL.Path, time.Since(start).Seconds(), pfc.GetResp().Header)
+		resp := ProxyRequest(r, w)
+		recordOPCResult(r, tc.LookupStatusProxyOnly, resp.StatusCode, r.URL.Path, time.Since(start).Seconds(), resp.Header)
 
 		locks.Acquire(key)
 		cache.Remove(key)
 		locks.Release(key)
 		return
-	}
-
-	if !noLock {
-		locks.Acquire(key)
-		defer locks.Release(key)
 	}
 
 	hasINMV := cpReq.IfNoneMatchValue != ""
@@ -231,6 +225,11 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 	revalidatingCache := false
 
 	var cacheStatus = tc.LookupStatusKeyMiss
+
+	if !noLock {
+		locks.Acquire(key)
+		defer locks.Release(key)
+	}
 
 	d, err := QueryCache(cache, key)
 	if err == nil {
@@ -262,7 +261,6 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 		cl = len(d.Body)
 	} else {
 		reader, resp, cl = PrepareFetchReader(r)
-
 		cp := GetResponseCachingPolicy(resp.StatusCode, oc.NegativeCache, resp.Header)
 		// Cache is revalidated, update headers and resulting caching policy
 		if revalidatingCache && resp.StatusCode == http.StatusNotModified {
@@ -323,18 +321,19 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 		writeCache = true
 	}
 
-	if clientConditional && cpReq.IsFresh {
-		resp.StatusCode = http.StatusNotModified
-		reader = nil
-	}
-
 	// Write body here
 	var elapsed time.Duration
 	var body []byte
 
+	if clientConditional && cpReq.IsFresh {
+		resp.StatusCode = http.StatusNotModified
+		reader = bytes.NewBuffer([]byte{})
+	}
+
+	headers.SetResultsHeader(resp.Header, "ObjectProxyCache", cacheStatus.String(), "", nil)
 	if cacheStatus == tc.LookupStatusKeyMiss {
 		start := time.Now()
-		if !pc.ProgressiveCollapsedForwarding {
+		if pc != nil && !pc.ProgressiveCollapsedForwarding {
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 			buffer := bytes.NewBuffer(make([]byte, 0, cl))
 			mw := io.MultiWriter(writer, buffer)
@@ -345,6 +344,7 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 			if !pfcExists {
 				cl := 0
 				reader, resp, cl = PrepareFetchReader(r)
+				headers.SetResultsHeader(resp.Header, "ObjectProxyCache", cacheStatus.String(), "", nil)
 				writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 				// Check if we know the content length and if it is less than our max object size.
 				if cl != 0 && cl < oc.MaxObjectSizeBytes {

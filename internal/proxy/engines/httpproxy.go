@@ -40,23 +40,29 @@ var Reqs sync.Map
 const HTTPBlockSize = 32 * 1024
 
 // ProxyRequest proxies an inbound request to its corresponding upstream origin with no caching features
-func ProxyRequest(r *model.Request, w http.ResponseWriter) {
+func ProxyRequest(r *model.Request, w http.ResponseWriter) *http.Response {
 	pc := context.PathConfig(r.ClientRequest.Context())
 	oc := context.OriginConfig(r.ClientRequest.Context())
 
 	start := time.Now()
+	var elapsed time.Duration
+	var cacheStatusCode tc.LookupStatus
 	var resp *http.Response
 	var reader io.Reader
-	if !pc.ProgressiveCollapsedForwarding {
+	if pc != nil && !pc.ProgressiveCollapsedForwarding {
 		reader, resp, _ = PrepareFetchReader(r)
+		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
-		io.Copy(writer, reader)
+		if writer != nil && reader != nil {
+			io.Copy(writer, reader)
+		}
 	} else {
 		key := oc.Host + "." + DeriveCacheKey(r, pc, "")
 		result, ok := Reqs.Load(key)
 		if !ok {
 			cl := 0
 			reader, resp, cl = PrepareFetchReader(r)
+			cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 			// Check if we know the content length and if it is less than our max object size.
 			if cl != 0 && cl < oc.MaxObjectSizeBytes {
@@ -77,8 +83,9 @@ func ProxyRequest(r *model.Request, w http.ResponseWriter) {
 			pfc.AddClient(writer)
 		}
 	}
-	elapsed := time.Since(start)
-	recordProxyResults(r, resp.StatusCode, r.URL.Path, elapsed.Seconds(), resp.Header)
+	elapsed = time.Since(start)
+	recordResults(r, "HTTPProxy", cacheStatusCode, resp.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, resp.Header)
+	return resp
 }
 
 // PrepareResponseWriter prepares a reponse and returns an io.Writer for the data to be written to.
@@ -201,12 +208,13 @@ func Respond(w http.ResponseWriter, code int, header http.Header, body []byte) {
 	w.Write(body)
 }
 
-func recordProxyResults(r *model.Request, httpStatus int, path string, elapsed float64, header http.Header) {
+func setStatusHeader(httpStatus int, header http.Header) tc.LookupStatus {
 	status := tc.LookupStatusProxyOnly
 	if httpStatus >= http.StatusBadRequest {
 		status = tc.LookupStatusProxyError
 	}
-	recordResults(r, "HTTPProxy", status, httpStatus, path, "", elapsed, nil, header)
+	headers.SetResultsHeader(header, "HTTPProxy", status.String(), "", nil)
+	return status
 }
 
 func recordResults(r *model.Request, engine string, cacheStatus tc.LookupStatus, statusCode int, path, ffStatus string, elapsed float64, extents timeseries.ExtentList, header http.Header) {

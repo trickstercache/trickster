@@ -104,8 +104,9 @@ func TestProxyRequestBadGateway(t *testing.T) {
 		ResponseHeaders: map[string]string{},
 	}
 
+	br := bytes.NewBuffer([]byte("test"))
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", badUpstream, nil)
+	r := httptest.NewRequest("GET", badUpstream, br)
 	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, pc))
 
 	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())

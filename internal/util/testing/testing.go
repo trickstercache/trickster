@@ -99,6 +99,20 @@ func NewTestInstance(
 	oc := config.Origins["default"]
 	r = r.WithContext(ct.WithConfigs(r.Context(), oc, cache, nil))
 
+	p := NewTestPathConfig(oc, DefaultPathConfigs, urlPath)
+
+	r = r.WithContext(ct.WithConfigs(r.Context(), oc, cache, p))
+
+	c := NewTestWebClient()
+
+	return ts, w, r, c, nil
+}
+
+func NewTestPathConfig(
+	oc *config.OriginConfig,
+	DefaultPathConfigs func(*config.OriginConfig) (map[string]*config.PathConfig, []string),
+	urlPath string,
+) *config.PathConfig {
 	var paths map[string]*config.PathConfig
 	if DefaultPathConfigs != nil {
 		paths, _ = DefaultPathConfigs(oc)
@@ -115,9 +129,5 @@ func NewTestInstance(
 		}
 	}
 
-	r = r.WithContext(ct.WithConfigs(r.Context(), oc, cache, p))
-
-	c := NewTestWebClient()
-
-	return ts, w, r, c, nil
+	return p
 }

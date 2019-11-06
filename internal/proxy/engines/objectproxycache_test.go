@@ -527,7 +527,8 @@ func TestObjectProxyCacheRevalidated(t *testing.T) {
 
 	s := tu.NewTestServer(304, "", nil)
 	r2 := httptest.NewRequest("GET", s.URL+"/api/v1/query", nil)
-	r2 = r2.WithContext(tc.WithConfigs(r2.Context(), tc.OriginConfig(r.Context()), tc.CacheClient(r.Context()), nil))
+	p = tu.NewTestPathConfig(tc.OriginConfig(r.Context()), client.DefaultPathConfigs, "/api/v1/query")
+	r2 = r2.WithContext(tc.WithConfigs(r2.Context(), tc.OriginConfig(r.Context()), tc.CacheClient(r.Context()), p))
 
 	req = model.NewRequest("TestProxyRequest", r2.Method, r2.URL, http.Header{}, time.Duration(30)*time.Second, r2, tu.NewTestWebClient())
 
