@@ -53,7 +53,7 @@ func setupTestHarnessOPC(file, body string, code int, headers map[string]string)
 	return ts, w, r, client, nil
 }
 
-func setupTestHarnessOPCWithPFC(file, body string, code int, headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *PromTestClient, error) {
+func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *PromTestClient, error) {
 
 	client := &PromTestClient{}
 	ts, w, r, hc, err := tu.NewTestInstance(file, client.DefaultPathConfigs, code, body, headers, "prometheus", "/api/v1/query", "debug")
@@ -150,7 +150,7 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 func TestObjectProxyCacheRequestWithPCF(t *testing.T) {
 
 	headers := map[string]string{"Cache-Control": "max-age=60"}
-	ts, w, r, client, err := setupTestHarnessOPCWithPFC("", "test", http.StatusOK, headers)
+	ts, w, r, client, err := setupTestHarnessOPCWithPCF("", "test", http.StatusOK, headers)
 	if err != nil {
 		t.Error(err)
 	}

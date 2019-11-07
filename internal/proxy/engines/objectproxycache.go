@@ -189,8 +189,8 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 	key := oc.Host + "." + DeriveCacheKey(r, pc, "")
 
 	cpReq := GetRequestCachingPolicy(r.Headers)
-	pfcResult, pfcExists := Reqs.Load(key)
-	if pfcExists || cpReq.NoCache {
+	pcfResult, pcfExists := Reqs.Load(key)
+	if pcfExists || cpReq.NoCache {
 		// if the client provided Cache-Control: no-cache or Pragma: no-cache header, the request is proxy only.
 		start := time.Now()
 		// This will use the header from the original response
@@ -335,30 +335,30 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 			io.Copy(mw, reader)
 			body = buffer.Bytes()
 		} else {
-			if !pfcExists {
+			if !pcfExists {
 				cl := 0
 				reader, resp, cl = PrepareFetchReader(r)
 				headers.SetResultsHeader(resp.Header, "ObjectProxyCache", cacheStatus.String(), "", nil)
 				writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 				// Check if we know the content length and if it is less than our max object size.
 				if cl != 0 && cl < oc.MaxObjectSizeBytes {
-					pfc := NewPFC(10*time.Second, resp, cl)
-					Reqs.Store(key, pfc)
+					pcf := NewPCF(resp, cl)
+					Reqs.Store(key, pcf)
 
 					go func() {
-						io.Copy(pfc, reader)
-						pfc.Close()
+						io.Copy(pcf, reader)
+						pcf.Close()
 						Reqs.Delete(key)
 					}()
-					pfc.AddClient(writer)
+					pcf.AddClient(writer)
 					// Only record body from original server request
-					body, _ = pfc.GetBody()
+					body, _ = pcf.GetBody()
 				}
 			} else {
-				pfc, _ := pfcResult.(ProxyForwardCollapser)
-				resp = pfc.GetResp()
+				pcf, _ := pcfResult.(ProgressiveCollapseForwarder)
+				resp = pcf.GetResp()
 				writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
-				pfc.AddClient(writer)
+				pcf.AddClient(writer)
 				return
 			}
 		}

@@ -20,18 +20,17 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 var testString = "Hey, I'm an http response body string."
 
-func TestPFCReadWriteSingle(t *testing.T) {
+func TestPCFReadWriteSingle(t *testing.T) {
 	w := bytes.NewBuffer(make([]byte, 0, len(testString)))
 	r := strings.NewReader(testString)
 	l := len(testString)
 	resp := &http.Response{}
 
-	pfc := NewPFC(10*time.Second, resp, l)
+	pfc := NewPCF(resp, l)
 	var n int64
 	go func() {
 		n, _ = io.Copy(pfc, r)
@@ -40,15 +39,15 @@ func TestPFCReadWriteSingle(t *testing.T) {
 	pfc.AddClient(w)
 
 	if n != int64(l) {
-		t.Errorf("PFC could not copy full length of reader")
+		t.Errorf("PCF could not copy full length of reader")
 	}
 
 	if w.String() != testString {
-		t.Errorf("PFC result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), w.String(), len(w.String()))
+		t.Errorf("PCF result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), w.String(), len(w.String()))
 	}
 }
 
-func TestPFCReadWriteMultiple(t *testing.T) {
+func TestPCFReadWriteMultiple(t *testing.T) {
 	w := bytes.NewBuffer(make([]byte, 0, len(testString)))
 	w1 := bytes.NewBuffer(make([]byte, 0, len(testString)))
 
@@ -56,7 +55,7 @@ func TestPFCReadWriteMultiple(t *testing.T) {
 	l := len(testString)
 	resp := &http.Response{}
 
-	pfc := NewPFC(10*time.Second, resp, l)
+	pfc := NewPCF(resp, l)
 	var n int64
 	go func() {
 		n, _ = io.Copy(pfc, r)
@@ -66,30 +65,30 @@ func TestPFCReadWriteMultiple(t *testing.T) {
 	pfc.AddClient(w1)
 
 	if n != int64(l) {
-		t.Errorf("PFC could not copy full length of reader")
+		t.Errorf("PCF could not copy full length of reader")
 	}
 
 	if w.String() != testString {
-		t.Errorf("PFC result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), w.String(), len(w.String()))
+		t.Errorf("PCF result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), w.String(), len(w.String()))
 	}
 
 	if w1.String() != testString {
-		t.Errorf("PFC second client result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), w1.String(), len(w1.String()))
+		t.Errorf("PCF second client result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), w1.String(), len(w1.String()))
 	}
 }
 
-func TestPFCReadWriteGetBody(t *testing.T) {
+func TestPCFReadWriteGetBody(t *testing.T) {
 	w := bytes.NewBuffer(make([]byte, 0, len(testString)))
 	r := strings.NewReader(testString)
 	l := len(testString)
 	resp := &http.Response{}
 
-	pfc := NewPFC(10*time.Second, resp, l)
+	pfc := NewPCF(resp, l)
 	var n int64
 
 	_, err := pfc.GetBody()
 	if err == nil {
-		t.Errorf("PFC expected an error on an unwritten body")
+		t.Errorf("PCF expected an error on an unwritten body")
 	}
 
 	go func() {
@@ -99,11 +98,11 @@ func TestPFCReadWriteGetBody(t *testing.T) {
 	pfc.AddClient(w)
 
 	if n != int64(l) {
-		t.Errorf("PFC could not copy full length of reader")
+		t.Errorf("PCF could not copy full length of reader")
 	}
 
 	if w.String() != testString {
-		t.Errorf("PFC result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), w.String(), len(w.String()))
+		t.Errorf("PCF result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), w.String(), len(w.String()))
 	}
 
 	body, err := pfc.GetBody()
@@ -112,17 +111,17 @@ func TestPFCReadWriteGetBody(t *testing.T) {
 	}
 
 	if string(body) != testString {
-		t.Errorf("PFC result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), string(body), len(body))
+		t.Errorf("PCF result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), string(body), len(body))
 	}
 }
 
-func TestPFCReadWriteClose(t *testing.T) {
+func TestPCFReadWriteClose(t *testing.T) {
 	w := bytes.NewBuffer(make([]byte, 0, len(testString)))
 	r := strings.NewReader(testString)
 	l := len(testString)
 	resp := &http.Response{}
 
-	pfc := NewPFC(10*time.Second, resp, l)
+	pfc := NewPCF(resp, l)
 	buf := make([]byte, 2)
 	n, _ := r.Read(buf)
 	pfc.Write(buf)
@@ -130,21 +129,21 @@ func TestPFCReadWriteClose(t *testing.T) {
 	err := pfc.AddClient(w)
 
 	if err != io.EOF {
-		t.Errorf("PFC Close call did not return io.EOF")
+		t.Errorf("PCF Close call did not return io.EOF")
 
 	}
 
 	if n != 2 {
-		t.Errorf("PFC Close read length incorrect, expected 2, got %d", n)
+		t.Errorf("PCF Close read length incorrect, expected 2, got %d", n)
 	}
 }
 
-func TestPFCIndexReadTooLarge(t *testing.T) {
+func TestPCFIndexReadTooLarge(t *testing.T) {
 	r := strings.NewReader(testString)
 	l := len(testString)
 	resp := &http.Response{}
 
-	pfc := NewPFC(10*time.Second, resp, l)
+	pfc := NewPCF(resp, l)
 	buf := make([]byte, 2)
 	r.Read(buf)
 	pfc.Write(buf)
@@ -153,17 +152,17 @@ func TestPFCIndexReadTooLarge(t *testing.T) {
 	_, err := pfc.IndexRead(12412, buf)
 
 	if err != ErrReadIndexTooLarge {
-		t.Errorf("PFC did not return ErrReadIndexTooLarge, got %e", err)
+		t.Errorf("PCF did not return ErrReadIndexTooLarge, got %e", err)
 	}
 }
 
-func TestPFCReadLarge(t *testing.T) {
+func TestPCFReadLarge(t *testing.T) {
 	r := bytes.NewBuffer(make([]byte, 64000))
 	w := bytes.NewBuffer(make([]byte, 64000))
 	l := r.Len()
 	resp := &http.Response{}
 
-	pfc := NewPFC(10*time.Second, resp, l)
+	pfc := NewPCF(resp, l)
 	var n int64
 	go func() {
 		n, _ = io.Copy(pfc, r)
@@ -172,20 +171,20 @@ func TestPFCReadLarge(t *testing.T) {
 	pfc.AddClient(w)
 
 	if n != int64(l) {
-		t.Errorf("PFC could not copy full length of reader")
+		t.Errorf("PCF could not copy full length of reader")
 	}
 
 	if bytes.Equal(r.Bytes(), w.Bytes()) {
-		t.Errorf("PFC result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), w.String(), len(w.String()))
+		t.Errorf("PCF result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), w.String(), len(w.String()))
 	}
 }
 
-func TestPFCResp(t *testing.T) {
+func TestPCFResp(t *testing.T) {
 	resp := &http.Response{}
 
-	pfc := NewPFC(10*time.Second, resp, 10)
+	pfc := NewPCF(resp, 10)
 
 	if !reflect.DeepEqual(resp, pfc.GetResp()) {
-		t.Errorf("PFC GetResp failed to reproduce the original http response.")
+		t.Errorf("PCF GetResp failed to reproduce the original http response.")
 	}
 }

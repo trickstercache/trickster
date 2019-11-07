@@ -19,7 +19,6 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
 var ErrReadIndexTooLarge = errors.New("Read index too large")
@@ -29,10 +28,10 @@ var ErrReadIndexTooLarge = errors.New("Read index too large")
 // IndexReader implements a reader to read data at a specific index into slice b
 type IndexReader func(index uint64, b []byte) (int, error)
 
-// ProxyForwardCollapser accepts data written through the io.Writer interface, caches it and
+// ProgressiveCollapseForwarder accepts data written through the io.Writer interface, caches it and
 // makes all the data written available to n readers. The readers can request data at index i,
-// to which the PFC may block or return the data immediately.
-type ProxyForwardCollapser interface {
+// to which the PCF may block or return the data immediately.
+type ProgressiveCollapseForwarder interface {
 	AddClient(io.Writer) error
 	Write([]byte) (int, error)
 	Close()
@@ -43,7 +42,7 @@ type ProxyForwardCollapser interface {
 	GetResp() *http.Response
 }
 
-type proxyForwardCollapser struct {
+type progressiveCollapseForwarder struct {
 	resp            *http.Response
 	rIndex          uint64
 	dataIndex       uint64
@@ -57,8 +56,8 @@ type proxyForwardCollapser struct {
 	serverWaitCond  *sync.Cond
 }
 
-// NewPFC returns a new instance of a ProxyForwardCollapser
-func NewPFC(clientTimeout time.Duration, resp *http.Response, contentLength int) ProxyForwardCollapser {
+// NewPCF returns a new instance of a ProgressiveCollapseForwarder
+func NewPCF(resp *http.Response, contentLength int) ProgressiveCollapseForwarder {
 	// This contiguous block of memory is just an underlying byte store, references by the slices defined in refs
 	// Thread safety is provided through a read index, an atomic, which the writer must exceed and readers may not exceed
 	// This effectively limits the readers and writer to separate areas in memory.
@@ -69,7 +68,7 @@ func NewPFC(clientTimeout time.Duration, resp *http.Response, contentLength int)
 	sd := sync.NewCond(&sync.Mutex{})
 	rc := sync.NewCond(&sync.Mutex{})
 
-	pfc := &proxyForwardCollapser{
+	pfc := &progressiveCollapseForwarder{
 		resp:            resp,
 		rIndex:          0,
 		dataIndex:       0,
@@ -86,9 +85,9 @@ func NewPFC(clientTimeout time.Duration, resp *http.Response, contentLength int)
 	return pfc
 }
 
-// AddClient adds an io.Writer client to the Proxy Forward Collapser
+// AddClient adds an io.Writer client to the ProgressiveCollapseForwarder
 // This client will read all the cached data and read from the live edge if caught up.
-func (pfc *proxyForwardCollapser) AddClient(w io.Writer) error {
+func (pfc *progressiveCollapseForwarder) AddClient(w io.Writer) error {
 	pfc.clientWaitgroup.Add(1)
 	var readIndex uint64
 	var err error
@@ -129,33 +128,34 @@ func (pfc *proxyForwardCollapser) AddClient(w io.Writer) error {
 
 // WaitServerComplete blocks until the object has been retrieved from the origin server
 // Need to get payload before can send to actual cache
-func (pfc *proxyForwardCollapser) WaitServerComplete() {
+func (pfc *progressiveCollapseForwarder) WaitServerComplete() {
 	pfc.serverWaitCond.Wait()
 	return
 }
 
 // WaitAllComplete will wait till all clients have completed or timedout
 // Need to no abandon goroutines
-func (pfc *proxyForwardCollapser) WaitAllComplete() {
+func (pfc *progressiveCollapseForwarder) WaitAllComplete() {
 	pfc.clientWaitgroup.Wait()
 	return
 }
 
-// GetBody returns the underlying body of the data written into a PFC
-func (pfc *proxyForwardCollapser) GetBody() ([]byte, error) {
+// GetBody returns the underlying body of the data written into a PCF
+func (pfc *progressiveCollapseForwarder) GetBody() ([]byte, error) {
 	if atomic.LoadInt32(&pfc.serverReadDone) == 0 {
 		return nil, errors.New("Server request not completed")
 	}
 	return pfc.dataStore[0:pfc.dataIndex], nil
 }
 
-func (pfc *proxyForwardCollapser) GetResp() *http.Response {
+// GetResp returns the response from the original request
+func (pfc *progressiveCollapseForwarder) GetResp() *http.Response {
 	return pfc.resp
 }
 
-// Write writes the data in b to the Proxy Forward Collapsers data store,
+// Write writes the data in b to the ProgressiveCollapseForwarders data store,
 // adds a reference to that data, and increments the read index.
-func (pfc *proxyForwardCollapser) Write(b []byte) (int, error) {
+func (pfc *progressiveCollapseForwarder) Write(b []byte) (int, error) {
 	n := atomic.LoadUint64(&pfc.rIndex)
 	l := uint64(len(b))
 	if pfc.dataIndex+l > pfc.dataStoreLen {
@@ -173,15 +173,15 @@ func (pfc *proxyForwardCollapser) Write(b []byte) (int, error) {
 
 // Close signals all things waiting on the server response body to complete.
 // This should be triggered by the client io.EOF
-func (pfc *proxyForwardCollapser) Close() {
+func (pfc *progressiveCollapseForwarder) Close() {
 	atomic.AddInt32(&pfc.serverReadDone, 1)
 	pfc.serverWaitCond.Signal()
 	pfc.readCond.Broadcast()
 	return
 }
 
-// Read will return the given index data requested by the read is behind the PFC readindex, else blocks and waits for the data
-func (pfc *proxyForwardCollapser) IndexRead(index uint64, b []byte) (int, error) {
+// Read will return the given index data requested by the read is behind the PCF readindex, else blocks and waits for the data
+func (pfc *progressiveCollapseForwarder) IndexRead(index uint64, b []byte) (int, error) {
 	i := atomic.LoadUint64(&pfc.rIndex)
 	if index >= i {
 		// need to check completion and return io.EOF

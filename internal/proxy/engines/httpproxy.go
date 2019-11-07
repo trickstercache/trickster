@@ -66,21 +66,21 @@ func ProxyRequest(r *model.Request, w http.ResponseWriter) *http.Response {
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 			// Check if we know the content length and if it is less than our max object size.
 			if cl != 0 && cl < oc.MaxObjectSizeBytes {
-				pfc := NewPFC(10*time.Second, resp, cl)
-				Reqs.Store(key, pfc)
+				pcf := NewPCF(resp, cl)
+				Reqs.Store(key, pcf)
 				// Blocks until server completes
 				go func() {
-					io.Copy(pfc, reader)
-					pfc.Close()
+					io.Copy(pcf, reader)
+					pcf.Close()
 					Reqs.Delete(key)
 				}()
-				pfc.AddClient(writer)
+				pcf.AddClient(writer)
 			}
 		} else {
-			pfc, _ := result.(ProxyForwardCollapser)
-			resp = pfc.GetResp()
+			pcf, _ := result.(ProgressiveCollapseForwarder)
+			resp = pcf.GetResp()
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
-			pfc.AddClient(writer)
+			pcf.AddClient(writer)
 		}
 	}
 	elapsed = time.Since(start)
