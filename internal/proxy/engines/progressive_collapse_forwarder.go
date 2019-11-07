@@ -159,9 +159,9 @@ func (pfc *progressiveCollapseForwarder) Write(b []byte) (int, error) {
 	n := atomic.LoadUint64(&pfc.rIndex)
 	l := uint64(len(b))
 	if pfc.dataIndex+l > pfc.dataStoreLen {
-		// Should reallocate and copy?
+		return 0, io.ErrShortWrite
 	} else if n > pfc.dataLen {
-		// Should reallocate and copy?
+		return 0, io.ErrShortWrite
 	}
 	pfc.data[n] = pfc.dataStore[pfc.dataIndex : pfc.dataIndex+l]
 	copy(pfc.data[n], b)
