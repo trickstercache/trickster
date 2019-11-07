@@ -84,7 +84,6 @@ func TestProxyRequest(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestProxyRequestBadGateway(t *testing.T) {
@@ -166,4 +165,110 @@ func TestClockOffsetWarning(t *testing.T) {
 		t.Error(err)
 	}
 
+}
+
+func TestProxyRequestWithPCF(t *testing.T) {
+
+	es := tu.NewTestServer(http.StatusOK, "test", nil)
+	defer es.Close()
+
+	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "test", "-log-level", "debug"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	oc := config.Origins["default"]
+	pc := &config.PathConfig{
+		Path:                           "/",
+		RequestHeaders:                 map[string]string{},
+		ResponseHeaders:                map[string]string{},
+		ResponseBody:                   "test",
+		ResponseBodyBytes:              []byte("test"),
+		HasCustomResponseBody:          true,
+		ProgressiveCollapsedForwarding: true,
+	}
+
+	br := bytes.NewBuffer([]byte("test"))
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", es.URL, br)
+	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, pc))
+
+	// get URL
+
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	ProxyRequest(req, w)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"engine": "HTTPProxy"})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
+
+	es := tu.NewTestServer(http.StatusOK, "test", nil)
+	defer es.Close()
+
+	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "test", "-log-level", "debug"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	oc := config.Origins["default"]
+	pc := &config.PathConfig{
+		Path:                           "/",
+		RequestHeaders:                 map[string]string{},
+		ResponseHeaders:                map[string]string{},
+		ResponseBody:                   "test",
+		ResponseBodyBytes:              []byte("test"),
+		HasCustomResponseBody:          true,
+		ProgressiveCollapsedForwarding: true,
+	}
+
+	br := bytes.NewBuffer([]byte("test"))
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", es.URL, br)
+	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, pc))
+
+	// get URL
+
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	ProxyRequest(req, w)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), "test")
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"engine": "HTTPProxy"})
+	if err != nil {
+		t.Error(err)
+	}
 }

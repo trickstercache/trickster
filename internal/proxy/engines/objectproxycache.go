@@ -31,7 +31,12 @@ import (
 // ObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache
 func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, noLock bool) {
 	FetchAndRespondViaObjectProxyCache(r, w, client, noLock)
+}
 
+// StreamObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache with io streaming
+func SequentialObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, noLock bool) {
+	body, resp, _ := FetchViaObjectProxyCache(r, client, nil, noLock)
+	Respond(w, resp.StatusCode, resp.Header, body)
 }
 
 // FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
