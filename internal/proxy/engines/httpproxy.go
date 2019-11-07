@@ -88,7 +88,7 @@ func ProxyRequest(r *model.Request, w http.ResponseWriter) *http.Response {
 	return resp
 }
 
-// PrepareResponseWriter prepares a reponse and returns an io.Writer for the data to be written to.
+// PrepareResponseWriter prepares a response and returns an io.Writer for the data to be written to.
 // Used in Respond.
 func PrepareResponseWriter(w http.ResponseWriter, code int, header http.Header) io.Writer {
 	h := w.Header()
@@ -100,7 +100,7 @@ func PrepareResponseWriter(w http.ResponseWriter, code int, header http.Header) 
 	return w
 }
 
-// PrepareFetchReader prepares and prepares an http responce and returns io.ReadCloser to
+// PrepareFetchReader prepares an http response and returns io.ReadCloser to
 // provide the response data, the response object and the content length.
 // Used in Fetch.
 func PrepareFetchReader(r *model.Request) (io.ReadCloser, *http.Response, int) {

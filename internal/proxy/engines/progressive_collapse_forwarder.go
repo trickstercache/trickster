@@ -61,7 +61,7 @@ type proxyForwardCollapser struct {
 func NewPFC(clientTimeout time.Duration, resp *http.Response, contentLength int) ProxyForwardCollapser {
 	// This contiguous block of memory is just an underlying byte store, references by the slices defined in refs
 	// Thread safety is provided through a read index, an atomic, which the writer must exceed and readers may not exceed
-	// This effectively limits the readers and writer to seperate areas in memory.
+	// This effectively limits the readers and writer to separate areas in memory.
 	dataStore := make([]byte, contentLength)
 	refs := make([][]byte, ((contentLength/HTTPBlockSize)*2)+1)
 
@@ -127,7 +127,7 @@ func (pfc *proxyForwardCollapser) AddClient(w io.Writer) error {
 	return io.EOF
 }
 
-// WaitServerComplete blocks until the object has been retreived from the origin server
+// WaitServerComplete blocks until the object has been retrieved from the origin server
 // Need to get payload before can send to actual cache
 func (pfc *proxyForwardCollapser) WaitServerComplete() {
 	pfc.serverWaitCond.Wait()
