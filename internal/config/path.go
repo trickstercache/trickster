@@ -76,6 +76,10 @@ type PathConfig struct {
 	ResponseBody string `toml:"response_body"`
 	// NoMetrics, when set to true, disables metrics decoration for the path
 	NoMetrics bool `toml:"no_metrics"`
+	// ProgressiveCollapsedForwarding is a boolean indicating to turn on Progressive Collapsed Forwarding
+	// This allows simultaneous requests the same URL to be collapsed at Trickster and return the
+	// fanout the same response from the original request
+	ProgressiveCollapsedForwarding bool `toml:"progressive_collapsed_forwarding"`
 
 	// Synthesized PathConfig Values
 	//
@@ -103,41 +107,43 @@ type PathConfig struct {
 // NewPathConfig returns a newly-instantiated *PathConfig
 func NewPathConfig() *PathConfig {
 	return &PathConfig{
-		Path:            "/",
-		Methods:         []string{http.MethodGet, http.MethodPost},
-		MatchTypeName:   "exact",
-		MatchType:       PathMatchTypeExact,
-		HandlerName:     "proxy",
-		CacheKeyParams:  make([]string, 0),
-		CacheKeyHeaders: make([]string, 0),
-		custom:          make([]string, 0),
-		RequestHeaders:  make(map[string]string),
-		ResponseHeaders: make(map[string]string),
-		KeyHasher:       nil,
+		Path:                           "/",
+		Methods:                        []string{http.MethodGet, http.MethodPost},
+		MatchTypeName:                  "exact",
+		MatchType:                      PathMatchTypeExact,
+		HandlerName:                    "proxy",
+		CacheKeyParams:                 make([]string, 0),
+		CacheKeyHeaders:                make([]string, 0),
+		custom:                         make([]string, 0),
+		RequestHeaders:                 make(map[string]string),
+		ResponseHeaders:                make(map[string]string),
+		KeyHasher:                      nil,
+		ProgressiveCollapsedForwarding: false,
 	}
 }
 
 // Copy returns an exact copy of the subject PathConfig
 func (p *PathConfig) Copy() *PathConfig {
 	c := &PathConfig{
-		Path:                  p.Path,
-		OriginConfig:          p.OriginConfig,
-		MatchTypeName:         p.MatchTypeName,
-		MatchType:             p.MatchType,
-		HandlerName:           p.HandlerName,
-		Handler:               p.Handler,
-		RequestHeaders:        ts.CopyMap(p.RequestHeaders),
-		ResponseHeaders:       ts.CopyMap(p.ResponseHeaders),
-		ResponseBody:          p.ResponseBody,
-		ResponseBodyBytes:     p.ResponseBodyBytes,
-		NoMetrics:             p.NoMetrics,
-		Order:                 p.Order,
-		HasCustomResponseBody: p.HasCustomResponseBody,
-		Methods:               make([]string, len(p.Methods)),
-		CacheKeyParams:        make([]string, len(p.CacheKeyParams)),
-		CacheKeyHeaders:       make([]string, len(p.CacheKeyHeaders)),
-		custom:                make([]string, len(p.custom)),
-		KeyHasher:             p.KeyHasher,
+		Path:                           p.Path,
+		OriginConfig:                   p.OriginConfig,
+		MatchTypeName:                  p.MatchTypeName,
+		MatchType:                      p.MatchType,
+		HandlerName:                    p.HandlerName,
+		Handler:                        p.Handler,
+		RequestHeaders:                 ts.CopyMap(p.RequestHeaders),
+		ResponseHeaders:                ts.CopyMap(p.ResponseHeaders),
+		ResponseBody:                   p.ResponseBody,
+		ResponseBodyBytes:              p.ResponseBodyBytes,
+		ProgressiveCollapsedForwarding: p.ProgressiveCollapsedForwarding,
+		NoMetrics:                      p.NoMetrics,
+		Order:                          p.Order,
+		HasCustomResponseBody:          p.HasCustomResponseBody,
+		Methods:                        make([]string, len(p.Methods)),
+		CacheKeyParams:                 make([]string, len(p.CacheKeyParams)),
+		CacheKeyHeaders:                make([]string, len(p.CacheKeyHeaders)),
+		custom:                         make([]string, len(p.custom)),
+		KeyHasher:                      p.KeyHasher,
 	}
 	copy(c.Methods, p.Methods)
 	copy(c.CacheKeyParams, p.CacheKeyParams)
@@ -182,6 +188,8 @@ func (p *PathConfig) Merge(p2 *PathConfig) {
 			p.ResponseBodyBytes = p2.ResponseBodyBytes
 		case "no_metrics":
 			p.NoMetrics = p2.NoMetrics
+		case "progressive_collapsed_forwarding":
+			p.ProgressiveCollapsedForwarding = p2.ProgressiveCollapsedForwarding
 		}
 	}
 }

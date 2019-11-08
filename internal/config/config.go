@@ -411,7 +411,7 @@ func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
 }
 
 var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers", "default_ttl_secs",
-	"request_headers", "response_headers", "response_code", "response_body", "no_metrics"}
+	"request_headers", "response_headers", "response_code", "response_body", "no_metrics", "progressive_collapsed_forwarding"}
 
 func (c *TricksterConfig) validateConfigMappings() error {
 	for k, oc := range c.Origins {
@@ -516,6 +516,7 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 				if mt, ok := pathMatchTypeNames[strings.ToLower(p.MatchTypeName)]; ok {
 					p.MatchType = mt
+					p.MatchTypeName = p.MatchType.String()
 				} else {
 					p.MatchType = PathMatchTypeExact
 					p.MatchTypeName = p.MatchType.String()

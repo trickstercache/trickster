@@ -45,16 +45,12 @@ func TestDeriveCacheKey(t *testing.T) {
 		},
 	}
 
-	client := &PromTestClient{
-		config: cfg,
-	}
-
 	tr := httptest.NewRequest("GET", "http://127.0.0.1", nil)
 	tr = tr.WithContext(ct.WithConfigs(tr.Context(), cfg, nil, cfg.Paths["root"]))
 
 	u := &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
 	r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
-	key := DeriveCacheKey(client, r, nil, "extra")
+	key := DeriveCacheKey(r, nil, "extra")
 
 	if key != "b82c27cea3f89ae33174565990e32ccb" {
 		t.Errorf("expected %s got %s", "b82c27cea3f89ae33174565990e32ccb", key)
@@ -64,7 +60,7 @@ func TestDeriveCacheKey(t *testing.T) {
 
 	u = &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
 	r = &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
-	key = DeriveCacheKey(client, r, nil, "extra")
+	key = DeriveCacheKey(r, nil, "extra")
 
 	if key != "d22b4d54f7dce72faebd02a1c2cd4549" {
 		t.Errorf("expected %s got %s", "d22b4d54f7dce72faebd02a1c2cd4549", key)
@@ -73,7 +69,7 @@ func TestDeriveCacheKey(t *testing.T) {
 	// Test Custom KeyHasher Integration
 	rpath.KeyHasher = []config.KeyHasherFunc{exampleKeyHasher}
 
-	key = DeriveCacheKey(client, r, nil, "extra")
+	key = DeriveCacheKey(r, nil, "extra")
 	if key != "test-key" {
 		t.Errorf("expected %s got %s", "test-key", key)
 	}
@@ -106,7 +102,7 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 	r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
 	r.Headers = tr.Header
 
-	key := DeriveCacheKey(client, r, nil, "extra")
+	key := DeriveCacheKey(r, nil, "extra")
 
 	if key != "e2fc09c04a3281ff7d858f546068ec9e" {
 		t.Errorf("expected %s got %s", "e2fc09c04a3281ff7d858f546068ec9e", key)
@@ -133,7 +129,7 @@ func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
 
 	u := &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
 	r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
-	key := DeriveCacheKey(client, r, nil, "extra")
+	key := DeriveCacheKey(r, nil, "extra")
 
 	if key != "f53b04ce5c434a7357804ae15a64ee6c" {
 		t.Errorf("expected %s got %s", "f53b04ce5c434a7357804ae15a64ee6c", key)

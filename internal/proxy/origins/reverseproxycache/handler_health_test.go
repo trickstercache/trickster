@@ -34,6 +34,7 @@ func TestHealthHandler(t *testing.T) {
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "rpc", "/health", "debug")
 	client.config = tc.OriginConfig(r.Context())
 	client.webClient = hc
+
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
