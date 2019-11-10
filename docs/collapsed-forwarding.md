@@ -1,26 +1,36 @@
-# Progressive Collapsed Forwarding
+# Collapsed Forwarding
 
-## What is Progressive Collapsed Forwarding
+Collapsed Forwarding is feature common among Reverse Proxy Cache solutions like Squid, Varnish and Apache Traffic Server. It works by ensuring only a single request to the upsteam origin is performed for any object on a cache miss or revalidation attempt, no matter how many users are requesting the object at the same time.
 
-Progressive Collapsed Forwarding (PCF) collapses similar requests to a given origin and collapses them into one request.
+Trickster has suppport for two types of Collapsed Forwarding: Basic (default) and Progressive
 
-Example:
+## Basic Collapsed Forwarding
 
-- Request 1 comes from client A to an origin.
-- While the response to the above request is being streamed through Trickster the exact same reqeuest, request 2 comes from client B, comes at the same time.
-- If PCF is enabled Trickster will io stream request 2 to client B off of the same data from the original request.
-- The data being served out of Trickster with PCF will then be as fast as the connection between client B and Trickster, allowing client B to catch up to the live point of the request.
-- If Trickster is set to act as an object proxy cache any subsequent requests will be served out of cache as per normal after the origin request has completed.
+Basic Collapsed Forwarding is the default functionality for Trickster, and works by waitlisting all requests for a cacheable object while a cache miss is being serviced for the object, and then serving the waitlisted requests once the cache has been populated.
 
-This is useful for reducing the load on an origin server.
+The feature is further detailed in the following diagram:
 
-## How is Progressive Collapsed Forwarding different than other Forward Collapsing
+<img src="./images/basic-collapsed-forwarding.png" width="800">
 
-Essentially PCF is Forward Collapsing like other proxies provide but the request is not done sequentially; all of the data can be streamed back to each client at the same time and you do not have to wait for the original request to complete before the proxy begins responding. This removes the latency issues commonly found in Forward Collapsing solutions in other proxies.
+## Progressive Collapsed Forwarding
+
+Progressive Collapsed Forwarding (PCF) is an improvement upon the basic version, in that it eliminates the waitlist and serves all simultaneous requests concurrently while the object is still downloading from the server, similar to Apache Traffic Server's "read-while-write" feature. This may be useful in low-latency applications such as DASH or HLS video delivery, since PCF minimizes Time to First Byte latency for extremely popular objects.
+
+The feature is further detailed in the following diagram:
+
+<img src="./images/progressive-collapsed-forwarding-cache.png" width="800">
+
+### PCF for Proxy-Only Requests
+
+Trickster provides a unique feature that implements PCF in Proxy-Only configurations, to bring the benefits of Collapsed Forwarding to HTTP Paths that are not configured to be routed through the Reverse Proxy Cache. (See [Paths](./paths.md) documentation for more info on routing).
+
+The feature is further detailed in the following diagram:
+
+<img src="./images/progressive-collapsed-forwarding-proxy.png" width="800">
 
 ## How to enable Progressive Collapsed Forwarding
 
-When configuring path configs as described in `paths.md` you simply need to add `progressive_collapsed_forwarding = true` in any path config using the `proxy` or `proxycache` handlers.
+When configuring path configs as described in [Paths Documentation](./paths.md) you simply need to add `progressive_collapsed_forwarding = true` in any path config using the `proxy` or `proxycache` handlers.
 
 Example:
 
@@ -39,7 +49,7 @@ Example:
                 progressive_collapsed_forwarding = true
 ```
 
-This is also shown in `cmd/trickster/conf/example.conf`.
+See the [example.conf](../cmd/trickster/conf/example.conf) for more configuration examples.
 
 ## How to test Progressive Collapsed Forwarding
 
