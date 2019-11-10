@@ -24,8 +24,10 @@ func TestCopy(t *testing.T) {
 	c1 := NewConfig()
 
 	oc := c1.Origins["default"]
-	oc.NegativeCacheSecs = map[string]int{"404": 10}
-	oc.NegativeCache = map[int]time.Duration{200: time.Duration(1) * time.Second}
+	c1.NegativeCacheConfigs["default"]["404"] = 10
+
+	oc.NegativeCacheName = "default"
+	oc.NegativeCache = map[int]time.Duration{404: time.Duration(10) * time.Second}
 	oc.FastForwardPath = NewPathConfig()
 	oc.TLS = &TLSConfig{CertificateAuthorityPaths: []string{"foo"}}
 

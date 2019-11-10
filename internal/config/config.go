@@ -43,6 +43,9 @@ var Logging *LoggingConfig
 // Metrics is the Metrics subsection of the Running Configuration
 var Metrics *MetricsConfig
 
+// NegativeCacheConfigs is the NegativeCacheConfig subsection of the Running Configuration
+var NegativeCacheConfigs map[string]NegativeCacheConfig
+
 // Flags is a collection of command line flags that Trickster loads.
 var Flags = TricksterFlags{}
 var providedOriginURL string
@@ -72,6 +75,8 @@ type TricksterConfig struct {
 	Logging *LoggingConfig `toml:"logging"`
 	// Metrics provides configurations for collecting Metrics about the application
 	Metrics *MetricsConfig `toml:"metrics"`
+	// NegativeCacheConfigs is a map of NegativeCacheConfigs
+	NegativeCacheConfigs map[string]NegativeCacheConfig `toml:"negative_caches"`
 
 	activeCaches map[string]bool
 }
@@ -124,8 +129,8 @@ type OriginConfig struct {
 	BackfillToleranceSecs int64 `toml:"backfill_tolerance_secs"`
 	// PathList is a list of PathConfigs that control the behavior of the given paths when requested
 	Paths map[string]*PathConfig `toml:"paths"`
-	// NegativeCache is a map of HTTP Status Codes that are cached for the provided duration, usually used for failures (e.g., 404's for 10s)
-	NegativeCacheSecs map[string]int `toml:"negative_cache"`
+	// NegativeCacheName provides the name of the Negative Cache Config to be used by this Origin
+	NegativeCacheName string `toml:"negative_cache_name"`
 	// TimeseriesTTLSecs specifies the cache TTL of timeseries objects
 	TimeseriesTTLSecs int `toml:"timeseries_ttl_secs"`
 	// TimeseriesTTLSecs specifies the cache TTL of fast forward data
@@ -322,6 +327,18 @@ type MetricsConfig struct {
 	ListenPort int `toml:"listen_port"`
 }
 
+// NegativeCacheConfig is a collection of response codes and their TTLs
+type NegativeCacheConfig map[string]int
+
+// Copy returns an exact copy of a NegativeCacheConfig
+func (nc NegativeCacheConfig) Copy() NegativeCacheConfig {
+	nc2 := make(NegativeCacheConfig)
+	for k, v := range nc {
+		nc2[k] = v
+	}
+	return nc2
+}
+
 // NewConfig returns a Config initialized with default values.
 func NewConfig() *TricksterConfig {
 	return &TricksterConfig{
@@ -345,7 +362,15 @@ func NewConfig() *TricksterConfig {
 		Frontend: &FrontendConfig{
 			ListenPort: defaultProxyListenPort,
 		},
+		NegativeCacheConfigs: map[string]NegativeCacheConfig{
+			"default": NewNegativeCacheConfig(),
+		},
 	}
+}
+
+// NewNegativeCacheConfig returns an empty NegativeCacheConfig
+func NewNegativeCacheConfig() NegativeCacheConfig {
+	return NegativeCacheConfig{}
 }
 
 // NewCacheConfig will return a pointer to an OriginConfig with the default configuration settings
@@ -382,7 +407,7 @@ func NewOriginConfig() *OriginConfig {
 		KeepAliveTimeoutSecs:         defaultKeepAliveTimeoutSecs,
 		MaxIdleConns:                 defaultMaxIdleConns,
 		NegativeCache:                make(map[int]time.Duration),
-		NegativeCacheSecs:            make(map[string]int),
+		NegativeCacheName:            defaultOriginNegativeCacheName,
 		Paths:                        make(map[string]*PathConfig),
 		Timeout:                      time.Second * defaultOriginTimeoutSecs,
 		TimeoutSecs:                  defaultOriginTimeoutSecs,
@@ -543,8 +568,8 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 			}
 		}
 
-		if metadata.IsDefined("origins", k, "negative_cache") {
-			oc.NegativeCacheSecs = v.NegativeCacheSecs
+		if metadata.IsDefined("origins", k, "negative_cache_name") {
+			oc.NegativeCacheName = v.NegativeCacheName
 		}
 
 		if metadata.IsDefined("origins", k, "health_check_upstream_path") {
@@ -775,6 +800,10 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 		nc.Caches[k] = v.Copy()
 	}
 
+	for k, v := range c.NegativeCacheConfigs {
+		nc.NegativeCacheConfigs[k] = v.Copy()
+	}
+
 	return nc
 }
 
@@ -847,14 +876,7 @@ func (oc *OriginConfig) Copy() *OriginConfig {
 		o.Paths[l] = p.Copy()
 	}
 
-	if oc.NegativeCacheSecs != nil {
-		m := make(map[string]int)
-		for c, t := range oc.NegativeCacheSecs {
-			m[c] = t
-		}
-		o.NegativeCacheSecs = m
-	}
-
+	o.NegativeCacheName = oc.NegativeCacheName
 	if oc.NegativeCache != nil {
 		m := make(map[int]time.Duration)
 		for c, t := range oc.NegativeCache {

@@ -81,6 +81,19 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	Frontend = c.Frontend
 	Logging = c.Logging
 	Metrics = c.Metrics
+	NegativeCacheConfigs = c.NegativeCacheConfigs
+
+	for k, n := range NegativeCacheConfigs {
+		for c := range n {
+			ci, err := strconv.Atoi(c)
+			if err != nil {
+				return fmt.Errorf(`invalid negative cache config in %s: %s is not a valid status code`, k, c)
+			}
+			if ci < 400 || ci >= 600 {
+				return fmt.Errorf(`invalid negative cache config in %s: %s is not a valid status code`, k, c)
+			}
+		}
+	}
 
 	for k, o := range c.Origins {
 
@@ -97,20 +110,6 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 			return fmt.Errorf(`missing origin-type for origin "%s"`, k)
 		}
 
-		for c, s := range o.NegativeCacheSecs {
-
-			ci, err := strconv.Atoi(c)
-			if err != nil {
-				return fmt.Errorf(`invalid negative cache config: %s is not a valid status code`, c)
-			}
-
-			if ci >= 400 && ci < 600 {
-				o.NegativeCache[ci] = time.Duration(s) * time.Second
-			} else {
-				return fmt.Errorf(`invalid negative cache config: %s is not a valid status code`, c)
-			}
-		}
-
 		o.Name = k
 		o.Scheme = url.Scheme
 		o.Host = url.Host
@@ -121,6 +120,18 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		o.TimeseriesTTL = time.Duration(o.TimeseriesTTLSecs) * time.Second
 		o.FastForwardTTL = time.Duration(o.FastForwardTTLSecs) * time.Second
 		o.MaxTTL = time.Duration(o.MaxTTLSecs) * time.Second
+
+		nc, ok := NegativeCacheConfigs[o.NegativeCacheName]
+		if !ok {
+			return fmt.Errorf(`invalid negative cache name: %s`, o.NegativeCacheName)
+		}
+
+		nc2 := map[int]time.Duration{}
+		for c, s := range nc {
+			ci, _ := strconv.Atoi(c)
+			nc2[ci] = time.Duration(s) * time.Second
+		}
+		o.NegativeCache = nc2
 
 		// enforce MaxTTL
 		if o.TimeseriesTTLSecs > o.MaxTTLSecs {
