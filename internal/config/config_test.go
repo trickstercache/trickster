@@ -17,10 +17,18 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCopy(t *testing.T) {
 	c1 := NewConfig()
+
+	oc := c1.Origins["default"]
+	oc.NegativeCacheSecs = map[string]int{"404": 10}
+	oc.NegativeCache = map[int]time.Duration{200: time.Duration(1) * time.Second}
+	oc.FastForwardPath = NewPathConfig()
+	oc.TLS = &TLSConfig{CertificateAuthorityPaths: []string{"foo"}}
+
 	c2 := c1.copy()
 	if !reflect.DeepEqual(c1, c2) {
 		t.Errorf("copy mistmatch")

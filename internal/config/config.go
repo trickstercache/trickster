@@ -768,83 +768,11 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 	nc.Frontend.ServeTLS = c.Frontend.ServeTLS
 
 	for k, v := range c.Origins {
-		o := NewOriginConfig()
-		o.BackfillTolerance = v.BackfillTolerance
-		o.BackfillToleranceSecs = v.BackfillToleranceSecs
-		o.CacheName = v.CacheName
-		o.FastForwardDisable = v.FastForwardDisable
-		o.Host = v.Host
-		o.IsDefault = v.IsDefault
-		o.KeepAliveTimeoutSecs = v.KeepAliveTimeoutSecs
-		o.MaxIdleConns = v.MaxIdleConns
-		o.PathPrefix = v.PathPrefix
-		o.Scheme = v.Scheme
-		o.Timeout = v.Timeout
-		o.TimeoutSecs = v.TimeoutSecs
-		o.OriginType = v.OriginType
-		o.TimeseriesRetention = v.TimeseriesRetention
-		o.TimeseriesRetentionFactor = v.TimeseriesRetentionFactor
-		o.TimeseriesEvictionMethodName = v.TimeseriesEvictionMethodName
-		o.TimeseriesEvictionMethod = v.TimeseriesEvictionMethod
-		o.FastForwardTTL = v.FastForwardTTL
-		o.FastForwardTTLSecs = v.FastForwardTTLSecs
-		o.MaxTTLSecs = v.MaxTTLSecs
-		o.MaxTTL = v.MaxTTL
-		o.RevalidationFactor = v.RevalidationFactor
-		o.TimeseriesTTL = v.TimeseriesTTL
-		o.TimeseriesTTLSecs = v.TimeseriesTTLSecs
-		o.Paths = make(map[string]*PathConfig)
-		for l, p := range v.Paths {
-			o.Paths[l] = p.Copy()
-		}
-		nc.Origins[k] = o
+		nc.Origins[k] = v.Copy()
 	}
 
 	for k, v := range c.Caches {
-
-		cc := NewCacheConfig()
-		cc.Compression = v.Compression
-		cc.CacheType = v.CacheType
-		cc.CacheTypeID = v.CacheTypeID
-
-		cc.Index.FlushInterval = v.Index.FlushInterval
-		cc.Index.FlushIntervalSecs = v.Index.FlushIntervalSecs
-		cc.Index.MaxSizeBackoffBytes = v.Index.MaxSizeBackoffBytes
-		cc.Index.MaxSizeBackoffObjects = v.Index.MaxSizeBackoffObjects
-		cc.Index.MaxSizeBytes = v.Index.MaxSizeBytes
-		cc.Index.MaxSizeObjects = v.Index.MaxSizeObjects
-		cc.Index.ReapInterval = v.Index.ReapInterval
-		cc.Index.ReapIntervalSecs = v.Index.ReapIntervalSecs
-
-		cc.Badger.Directory = v.Badger.Directory
-		cc.Badger.ValueDirectory = v.Badger.ValueDirectory
-
-		cc.Filesystem.CachePath = v.Filesystem.CachePath
-
-		cc.BBolt.Bucket = v.BBolt.Bucket
-		cc.BBolt.Filename = v.BBolt.Filename
-
-		cc.Redis.ClientType = v.Redis.ClientType
-		cc.Redis.DB = v.Redis.DB
-		cc.Redis.DialTimeoutMS = v.Redis.DialTimeoutMS
-		cc.Redis.Endpoint = v.Redis.Endpoint
-		cc.Redis.Endpoints = v.Redis.Endpoints
-		cc.Redis.IdleCheckFrequencyMS = v.Redis.IdleCheckFrequencyMS
-		cc.Redis.IdleTimeoutMS = v.Redis.IdleTimeoutMS
-		cc.Redis.MaxConnAgeMS = v.Redis.MaxConnAgeMS
-		cc.Redis.MaxRetries = v.Redis.MaxRetries
-		cc.Redis.MaxRetryBackoffMS = v.Redis.MaxRetryBackoffMS
-		cc.Redis.MinIdleConns = v.Redis.MinIdleConns
-		cc.Redis.MinRetryBackoffMS = v.Redis.MinRetryBackoffMS
-		cc.Redis.Password = v.Redis.Password
-		cc.Redis.PoolSize = v.Redis.PoolSize
-		cc.Redis.PoolTimeoutMS = v.Redis.PoolTimeoutMS
-		cc.Redis.Protocol = v.Redis.Protocol
-		cc.Redis.ReadTimeoutMS = v.Redis.ReadTimeoutMS
-		cc.Redis.SentinelMaster = v.Redis.SentinelMaster
-		cc.Redis.WriteTimeoutMS = v.Redis.WriteTimeoutMS
-
-		nc.Caches[k] = cc
+		nc.Caches[k] = v.Copy()
 	}
 
 	return nc
@@ -876,4 +804,124 @@ func (c *TricksterConfig) String() string {
 	e := toml.NewEncoder(&buf)
 	e.Encode(cp)
 	return buf.String()
+}
+
+// Copy returns an exact copy of an *OriginConfig
+func (oc *OriginConfig) Copy() *OriginConfig {
+
+	o := &OriginConfig{}
+	o.BackfillTolerance = oc.BackfillTolerance
+	o.BackfillToleranceSecs = oc.BackfillToleranceSecs
+	o.CacheName = oc.CacheName
+	o.FastForwardDisable = oc.FastForwardDisable
+	o.FastForwardTTL = oc.FastForwardTTL
+	o.FastForwardTTLSecs = oc.FastForwardTTLSecs
+	o.HealthCheckUpstreamPath = oc.HealthCheckUpstreamPath
+	o.HealthCheckVerb = oc.HealthCheckVerb
+	o.HealthCheckQuery = oc.HealthCheckQuery
+	o.Host = oc.Host
+	o.Name = oc.Name
+	o.IsDefault = oc.IsDefault
+	o.KeepAliveTimeoutSecs = oc.KeepAliveTimeoutSecs
+	o.MaxIdleConns = oc.MaxIdleConns
+	o.MaxTTLSecs = oc.MaxTTLSecs
+	o.MaxTTL = oc.MaxTTL
+	o.MaxObjectSizeBytes = oc.MaxObjectSizeBytes
+	o.OriginType = oc.OriginType
+	o.OriginURL = oc.OriginURL
+	o.PathPrefix = oc.PathPrefix
+	o.RevalidationFactor = oc.RevalidationFactor
+	o.Scheme = oc.Scheme
+	o.Timeout = oc.Timeout
+	o.TimeoutSecs = oc.TimeoutSecs
+	o.TimeseriesRetention = oc.TimeseriesRetention
+	o.TimeseriesRetentionFactor = oc.TimeseriesRetentionFactor
+	o.TimeseriesEvictionMethodName = oc.TimeseriesEvictionMethodName
+	o.TimeseriesEvictionMethod = oc.TimeseriesEvictionMethod
+	o.TimeseriesTTL = oc.TimeseriesTTL
+	o.TimeseriesTTLSecs = oc.TimeseriesTTLSecs
+	o.ValueRetention = oc.ValueRetention
+
+	o.Paths = make(map[string]*PathConfig)
+	for l, p := range oc.Paths {
+		o.Paths[l] = p.Copy()
+	}
+
+	if oc.NegativeCacheSecs != nil {
+		m := make(map[string]int)
+		for c, t := range oc.NegativeCacheSecs {
+			m[c] = t
+		}
+		o.NegativeCacheSecs = m
+	}
+
+	if oc.NegativeCache != nil {
+		m := make(map[int]time.Duration)
+		for c, t := range oc.NegativeCache {
+			m[c] = t
+		}
+		o.NegativeCache = m
+	}
+
+	if oc.TLS != nil {
+		o.TLS = oc.TLS.Copy()
+	}
+	o.RequireTLS = oc.RequireTLS
+
+	if oc.FastForwardPath != nil {
+		o.FastForwardPath = oc.FastForwardPath.Copy()
+	}
+
+	return o
+
+}
+
+// Copy returns an exact copy of a *CachingConfig
+func (cc *CachingConfig) Copy() *CachingConfig {
+
+	c := NewCacheConfig()
+	c.Name = cc.Name
+	c.CacheType = cc.CacheType
+	c.CacheTypeID = cc.CacheTypeID
+	c.Compression = cc.Compression
+
+	c.Index.FlushInterval = cc.Index.FlushInterval
+	c.Index.FlushIntervalSecs = cc.Index.FlushIntervalSecs
+	c.Index.MaxSizeBackoffBytes = cc.Index.MaxSizeBackoffBytes
+	c.Index.MaxSizeBackoffObjects = cc.Index.MaxSizeBackoffObjects
+	c.Index.MaxSizeBytes = cc.Index.MaxSizeBytes
+	c.Index.MaxSizeObjects = cc.Index.MaxSizeObjects
+	c.Index.ReapInterval = cc.Index.ReapInterval
+	c.Index.ReapIntervalSecs = cc.Index.ReapIntervalSecs
+
+	c.Badger.Directory = cc.Badger.Directory
+	c.Badger.ValueDirectory = cc.Badger.ValueDirectory
+
+	c.Filesystem.CachePath = cc.Filesystem.CachePath
+
+	c.BBolt.Bucket = cc.BBolt.Bucket
+	c.BBolt.Filename = cc.BBolt.Filename
+
+	c.Redis.ClientType = cc.Redis.ClientType
+	c.Redis.DB = cc.Redis.DB
+	c.Redis.DialTimeoutMS = cc.Redis.DialTimeoutMS
+	c.Redis.Endpoint = cc.Redis.Endpoint
+	c.Redis.Endpoints = cc.Redis.Endpoints
+	c.Redis.IdleCheckFrequencyMS = cc.Redis.IdleCheckFrequencyMS
+	c.Redis.IdleTimeoutMS = cc.Redis.IdleTimeoutMS
+	c.Redis.MaxConnAgeMS = cc.Redis.MaxConnAgeMS
+	c.Redis.MaxRetries = cc.Redis.MaxRetries
+	c.Redis.MaxRetryBackoffMS = cc.Redis.MaxRetryBackoffMS
+	c.Redis.MinIdleConns = cc.Redis.MinIdleConns
+	c.Redis.MinRetryBackoffMS = cc.Redis.MinRetryBackoffMS
+	c.Redis.Password = cc.Redis.Password
+	c.Redis.PoolSize = cc.Redis.PoolSize
+	c.Redis.PoolTimeoutMS = cc.Redis.PoolTimeoutMS
+	c.Redis.Protocol = cc.Redis.Protocol
+	c.Redis.ReadTimeoutMS = cc.Redis.ReadTimeoutMS
+	c.Redis.SentinelMaster = cc.Redis.SentinelMaster
+	c.Redis.WriteTimeoutMS = cc.Redis.WriteTimeoutMS
+
+	return c
+
 }
