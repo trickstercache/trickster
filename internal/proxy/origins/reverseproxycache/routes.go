@@ -45,12 +45,11 @@ func (c *Client) Handlers() map[string]http.Handler {
 func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config.PathConfig, []string) {
 	paths := map[string]*config.PathConfig{
 		"/": &config.PathConfig{
-			Path:                           "/",
-			HandlerName:                    "proxy",
-			Methods:                        []string{"*"},
-			OriginConfig:                   oc,
-			MatchType:                      config.PathMatchTypePrefix,
-			ProgressiveCollapsedForwarding: false,
+			Path:         "/",
+			HandlerName:  "proxy",
+			Methods:      []string{"*"},
+			OriginConfig: oc,
+			MatchType:    config.PathMatchTypePrefix,
 		},
 	}
 

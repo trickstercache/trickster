@@ -95,7 +95,7 @@ func TestNewListenerTLS(t *testing.T) {
 
 	c := config.NewConfig()
 	oc := c.Origins["default"]
-	c.ProxyServer.ServeTLS = true
+	c.Frontend.ServeTLS = true
 
 	tc := oc.TLS
 	oc.TLS.ServeTLS = true

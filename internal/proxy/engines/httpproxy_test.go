@@ -179,13 +179,14 @@ func TestProxyRequestWithPCF(t *testing.T) {
 
 	oc := config.Origins["default"]
 	pc := &config.PathConfig{
-		Path:                           "/",
-		RequestHeaders:                 map[string]string{},
-		ResponseHeaders:                map[string]string{},
-		ResponseBody:                   "test",
-		ResponseBodyBytes:              []byte("test"),
-		HasCustomResponseBody:          true,
-		ProgressiveCollapsedForwarding: true,
+		Path:                    "/",
+		RequestHeaders:          map[string]string{},
+		ResponseHeaders:         map[string]string{},
+		ResponseBody:            "test",
+		ResponseBodyBytes:       []byte("test"),
+		HasCustomResponseBody:   true,
+		CollapsedForwardingName: "progressive",
+		CollapsedForwardingType: config.CFTypeProgressive,
 	}
 
 	br := bytes.NewBuffer([]byte("test"))
@@ -232,13 +233,14 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 
 	oc := config.Origins["default"]
 	pc := &config.PathConfig{
-		Path:                           "/",
-		RequestHeaders:                 map[string]string{},
-		ResponseHeaders:                map[string]string{},
-		ResponseBody:                   "test",
-		ResponseBodyBytes:              []byte("test"),
-		HasCustomResponseBody:          true,
-		ProgressiveCollapsedForwarding: true,
+		Path:                    "/",
+		RequestHeaders:          map[string]string{},
+		ResponseHeaders:         map[string]string{},
+		ResponseBody:            "test",
+		ResponseBodyBytes:       []byte("test"),
+		HasCustomResponseBody:   true,
+		CollapsedForwardingName: "progressive",
+		CollapsedForwardingType: config.CFTypeProgressive,
 	}
 
 	br := bytes.NewBuffer([]byte("test"))

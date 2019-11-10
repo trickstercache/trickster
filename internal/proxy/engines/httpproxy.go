@@ -34,9 +34,10 @@ import (
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
-// Used for Progressive Collapsed Forwarding
+// Reqs is for Progressive Collapsed Forwarding
 var Reqs sync.Map
 
+// HTTPBlockSize represents 32K of bytes
 const HTTPBlockSize = 32 * 1024
 
 // ProxyRequest proxies an inbound request to its corresponding upstream origin with no caching features
@@ -49,7 +50,7 @@ func ProxyRequest(r *model.Request, w http.ResponseWriter) *http.Response {
 	var cacheStatusCode tc.LookupStatus
 	var resp *http.Response
 	var reader io.Reader
-	if pc != nil && !pc.ProgressiveCollapsedForwarding {
+	if pc != nil && pc.CollapsedForwardingType != config.CFTypeProgressive {
 		reader, resp, _ = PrepareFetchReader(r)
 		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)

@@ -328,7 +328,7 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 	headers.SetResultsHeader(resp.Header, "ObjectProxyCache", cacheStatus.String(), "", nil)
 	if cacheStatus == tc.LookupStatusKeyMiss {
 		start := time.Now()
-		if pc != nil && !pc.ProgressiveCollapsedForwarding {
+		if pc != nil && pc.CollapsedForwardingType != config.CFTypeProgressive {
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 			buffer := bytes.NewBuffer(make([]byte, 0, cl))
 			mw := io.MultiWriter(writer, buffer)
