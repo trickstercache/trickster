@@ -108,20 +108,20 @@ func TestFullLoadConfiguration(t *testing.T) {
 	}
 
 	// Test Proxy Server
-	if ProxyServer.ListenPort != 57821 {
-		t.Errorf("expected 57821, got %d", ProxyServer.ListenPort)
+	if Frontend.ListenPort != 57821 {
+		t.Errorf("expected 57821, got %d", Frontend.ListenPort)
 	}
 
-	if ProxyServer.ListenAddress != "test" {
-		t.Errorf("expected test, got %s", ProxyServer.ListenAddress)
+	if Frontend.ListenAddress != "test" {
+		t.Errorf("expected test, got %s", Frontend.ListenAddress)
 	}
 
-	if ProxyServer.TLSListenAddress != "test-tls" {
-		t.Errorf("expected test-tls, got %s", ProxyServer.TLSListenAddress)
+	if Frontend.TLSListenAddress != "test-tls" {
+		t.Errorf("expected test-tls, got %s", Frontend.TLSListenAddress)
 	}
 
-	if ProxyServer.TLSListenPort != 38821 {
-		t.Errorf("expected 38821, got %d", ProxyServer.TLSListenPort)
+	if Frontend.TLSListenPort != 38821 {
+		t.Errorf("expected 38821, got %d", Frontend.TLSListenPort)
 	}
 
 	// Test Metrics Server
@@ -388,12 +388,12 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 	}
 
 	// Test Proxy Server
-	if ProxyServer.ListenPort != defaultProxyListenPort {
-		t.Errorf("expected %d, got %d", defaultProxyListenPort, ProxyServer.ListenPort)
+	if Frontend.ListenPort != defaultProxyListenPort {
+		t.Errorf("expected %d, got %d", defaultProxyListenPort, Frontend.ListenPort)
 	}
 
-	if ProxyServer.ListenAddress != defaultProxyListenAddress {
-		t.Errorf("expected '%s', got '%s'", defaultProxyListenAddress, ProxyServer.ListenAddress)
+	if Frontend.ListenAddress != defaultProxyListenAddress {
+		t.Errorf("expected '%s', got '%s'", defaultProxyListenAddress, Frontend.ListenAddress)
 	}
 
 	// Test Metrics Server

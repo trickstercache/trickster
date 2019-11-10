@@ -38,8 +38,8 @@ func TestLoadEnvVars(t *testing.T) {
 		t.Errorf("expected %s got %s", "testing", d.OriginType)
 	}
 
-	if ProxyServer.ListenPort != 4001 {
-		t.Errorf("expected %d got %d", 4001, ProxyServer.ListenPort)
+	if Frontend.ListenPort != 4001 {
+		t.Errorf("expected %d got %d", 4001, Frontend.ListenPort)
 	}
 
 	if Metrics.ListenPort != 4002 {

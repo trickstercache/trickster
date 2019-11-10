@@ -34,8 +34,8 @@ var Origins map[string]*OriginConfig
 // Caches is the Cache Map subsection of the Running Configuration
 var Caches map[string]*CachingConfig
 
-// ProxyServer is the Proxy Server subsection of the Running Configuration
-var ProxyServer *ProxyServerConfig
+// Frontend is the Proxy Server subsection of the Running Configuration
+var Frontend *FrontendConfig
 
 // Logging is the Logging subsection of the Running Configuration
 var Logging *LoggingConfig
@@ -60,12 +60,18 @@ var LoaderWarnings = make([]string, 0, 0)
 
 // TricksterConfig is the main configuration object
 type TricksterConfig struct {
-	Main        *MainConfig               `toml:"main"`
-	Origins     map[string]*OriginConfig  `toml:"origins"`
-	Caches      map[string]*CachingConfig `toml:"caches"`
-	ProxyServer *ProxyServerConfig        `toml:"proxy_server"`
-	Logging     *LoggingConfig            `toml:"logging"`
-	Metrics     *MetricsConfig            `toml:"metrics"`
+	// Main is the primary MainConfig section
+	Main *MainConfig `toml:"main"`
+	// Origins is a map of OriginConfigs
+	Origins map[string]*OriginConfig `toml:"origins"`
+	// Caches is a map of CacheConfigs
+	Caches map[string]*CachingConfig `toml:"caches"`
+	// ProxyServer is provides configurations about the Proxy Front End
+	Frontend *FrontendConfig `toml:"frontend"`
+	// Logging provides configurations that affect logging behavior
+	Logging *LoggingConfig `toml:"logging"`
+	// Metrics provides configurations for collecting Metrics about the application
+	Metrics *MetricsConfig `toml:"metrics"`
 
 	activeCaches map[string]bool
 }
@@ -74,11 +80,6 @@ type TricksterConfig struct {
 type MainConfig struct {
 	// InstanceID represents a unique ID for the current instance, when multiple instances on the same host
 	InstanceID int `toml:"instance_id"`
-	// Environment indicates the operating environment of the running instance (e.g., "dev", "stage", "prod")
-	Environment string
-	// Hostname is populated with the self-resolved Hostname where the instance is running
-	Hostname string
-
 	// ConfigHandlerPath provides the path to register the Config Handler for outputting the running configuration
 	ConfigHandlerPath string `toml:"config_handler_path"`
 	// PingHandlerPath provides the path to register the Ping Handler for checking that Trickster is running
@@ -129,7 +130,7 @@ type OriginConfig struct {
 	TimeseriesTTLSecs int `toml:"timeseries_ttl_secs"`
 	// TimeseriesTTLSecs specifies the cache TTL of fast forward data
 	FastForwardTTLSecs int `toml:"fastforward_ttl_secs"`
-	// MacTTLSecs specifies the maximum allowed TTL for any cache object
+	// MaxTTLSecs specifies the maximum allowed TTL for any cache object
 	MaxTTLSecs int `toml:"max_ttl_secs"`
 	// RevalidationFactor specifies how many times to multiply the object freshness lifetime by to calculate an absolute cache TTL
 	RevalidationFactor int `toml:"revalidation_factor"`
@@ -179,27 +180,44 @@ type CachingConfig struct {
 	// Name is the Name of the cache, taken from the Key in the Caches map[string]*CacheConfig
 	Name string `toml:"-"`
 	// Type represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
-	CacheType   string                `toml:"cache_type"`
-	Compression bool                  `toml:"compression"`
-	Index       CacheIndexConfig      `toml:"index"`
-	Redis       RedisCacheConfig      `toml:"redis"`
-	Filesystem  FilesystemCacheConfig `toml:"filesystem"`
-	BBolt       BBoltCacheConfig      `toml:"bbolt"`
-	Badger      BadgerCacheConfig     `toml:"badger"`
+	CacheType string `toml:"cache_type"`
+	// Compression determines whether objects should be compressed when writing to the cache
+	Compression bool `toml:"compression"`
+	// Index provides options for the Cache Index
+	Index CacheIndexConfig `toml:"index"`
+	// Redis provides options for Redis caching
+	Redis RedisCacheConfig `toml:"redis"`
+	// Filesystem provides options for Filesystem caching
+	Filesystem FilesystemCacheConfig `toml:"filesystem"`
+	// BBolt provides options for BBolt caching
+	BBolt BBoltCacheConfig `toml:"bbolt"`
+	// Badger provides options for BadgerDB caching
+	Badger BadgerCacheConfig `toml:"badger"`
 
 	//  Synthetic Values
 
-	// CacheTypeID represents the internal itoa constant for the provided CacheType string
+	// CacheTypeID represents the internal constant for the provided CacheType string
+	// and is automatically populated at startup
 	CacheTypeID CacheType `toml:"-"`
 }
 
 // CacheIndexConfig defines the operation of the Cache Indexer
 type CacheIndexConfig struct {
-	ReapIntervalSecs      int   `toml:"reap_interval_secs"`
-	FlushIntervalSecs     int   `toml:"flush_interval_secs"`
-	MaxSizeBytes          int64 `toml:"max_size_bytes"`
-	MaxSizeBackoffBytes   int64 `toml:"max_size_backoff_bytes"`
-	MaxSizeObjects        int64 `toml:"max_size_objects"`
+	// ReapIntervalSecs defines how long the Cache Index reaper sleeps between reap cycles
+	ReapIntervalSecs int `toml:"reap_interval_secs"`
+	// FlushIntervalSecs sets how often the Cache Index saves its metadata to the cache from application memory
+	FlushIntervalSecs int `toml:"flush_interval_secs"`
+	// MaxSizeBytes indicates how large the cache can grow in bytes before the Index evicts
+	// least-recently-accessed items.
+	MaxSizeBytes int64 `toml:"max_size_bytes"`
+	// MaxSizeBackoffBytes indicates how far below max_size_bytes the cache size must be
+	// to complete a byte-size-based eviction exercise.
+	MaxSizeBackoffBytes int64 `toml:"max_size_backoff_bytes"`
+	// MaxSizeObjects  indicates how large the cache can grow in objects before the Index
+	// evicts least-recently-accessed items.
+	MaxSizeObjects int64 `toml:"max_size_objects"`
+	// MaxSizeBackoffObjects indicates how far under max_size_objects the cache size must
+	// be to complete object-size-based eviction exercise.
 	MaxSizeBackoffObjects int64 `toml:"max_size_backoff_objects"`
 
 	ReapInterval  time.Duration `toml:"-"`
@@ -212,9 +230,9 @@ type RedisCacheConfig struct {
 	ClientType string `toml:"client_type"`
 	// Protocol represents the connection method (e.g., "tcp", "unix", etc.)
 	Protocol string `toml:"protocol"`
-	// Endpoint represents FQDN:port or IPAddress:Port of the Redis/Sentinel Endpoint
+	// Endpoint represents FQDN:port or IPAddress:Port of the Redis Endpoint
 	Endpoint string `toml:"endpoint"`
-	// Endpoints represents FQDN:port or IPAddress:Port collection of a Redis Cluster
+	// Endpoints represents FQDN:port or IPAddress:Port collection of a Redis Cluster or Sentinel Nodes
 	Endpoints []string `toml:"endpoints"`
 	// Password can be set when using password protected redis instance.
 	Password string `toml:"password"`
@@ -222,9 +240,9 @@ type RedisCacheConfig struct {
 	SentinelMaster string `toml:"sentinel_master"`
 	// DB is the Database to be selected after connecting to the server.
 	DB int `toml:"db"`
-	// Maximum number of retries before giving up on the command
+	// MaxRetries is the maximum number of retries before giving up on the command
 	MaxRetries int `toml:"max_retries"`
-	// Minimum backoff between each retry.
+	// MinRetryBackoffMS is the minimum backoff between each retry.
 	MinRetryBackoffMS int `toml:"min_retry_backoff_ms"`
 	// MaxRetryBackoffMS is the Maximum backoff between each retry.
 	MaxRetryBackoffMS int `toml:"max_retry_backoff_ms"`
@@ -270,8 +288,8 @@ type FilesystemCacheConfig struct {
 	CachePath string `toml:"cache_path"`
 }
 
-// ProxyServerConfig is a collection of configurations for the main http listener for the application
-type ProxyServerConfig struct {
+// FrontendConfig is a collection of configurations for the main http frontend for the application
+type FrontendConfig struct {
 	// ListenAddress is IP address for the main http listener for the application
 	ListenAddress string `toml:"listen_address"`
 	// ListenPort is TCP Port for the main http listener for the application
@@ -315,7 +333,6 @@ func NewConfig() *TricksterConfig {
 			LogLevel: defaultLogLevel,
 		},
 		Main: &MainConfig{
-			Hostname:          defaultHostname,
 			ConfigHandlerPath: defaultConfigHandlerPath,
 			PingHandlerPath:   defaultPingHandlerPath,
 		},
@@ -325,7 +342,7 @@ func NewConfig() *TricksterConfig {
 		Origins: map[string]*OriginConfig{
 			"default": NewOriginConfig(),
 		},
-		ProxyServer: &ProxyServerConfig{
+		Frontend: &FrontendConfig{
 			ListenPort: defaultProxyListenPort,
 		},
 	}
@@ -734,8 +751,6 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 	nc := NewConfig()
 
 	nc.Main.ConfigHandlerPath = c.Main.ConfigHandlerPath
-	nc.Main.Environment = c.Main.Environment
-	nc.Main.Hostname = c.Main.Hostname
 	nc.Main.InstanceID = c.Main.InstanceID
 	nc.Main.PingHandlerPath = c.Main.PingHandlerPath
 
@@ -745,8 +760,12 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 	nc.Metrics.ListenAddress = c.Metrics.ListenAddress
 	nc.Metrics.ListenPort = c.Metrics.ListenPort
 
-	nc.ProxyServer.ListenAddress = c.ProxyServer.ListenAddress
-	nc.ProxyServer.ListenPort = c.ProxyServer.ListenPort
+	nc.Frontend.ListenAddress = c.Frontend.ListenAddress
+	nc.Frontend.ListenPort = c.Frontend.ListenPort
+	nc.Frontend.TLSListenAddress = c.Frontend.TLSListenAddress
+	nc.Frontend.TLSListenPort = c.Frontend.TLSListenPort
+	nc.Frontend.ConnectionsLimit = c.Frontend.ConnectionsLimit
+	nc.Frontend.ServeTLS = c.Frontend.ServeTLS
 
 	for k, v := range c.Origins {
 		o := NewOriginConfig()

@@ -76,7 +76,7 @@ func (c *TricksterConfig) loadFlags() {
 		providedOriginType = Flags.OriginType
 	}
 	if Flags.ProxyListenPort > 0 {
-		c.ProxyServer.ListenPort = Flags.ProxyListenPort
+		c.Frontend.ListenPort = Flags.ProxyListenPort
 	}
 	if Flags.MetricsListenPort > 0 {
 		c.Metrics.ListenPort = Flags.MetricsListenPort

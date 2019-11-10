@@ -40,7 +40,7 @@ func (c *TricksterConfig) loadEnvVars() {
 	// Proxy Port
 	if x := os.Getenv(evProxyPort); x != "" {
 		if y, err := strconv.ParseInt(x, 10, 64); err == nil {
-			c.ProxyServer.ListenPort = int(y)
+			c.Frontend.ListenPort = int(y)
 		}
 	}
 
