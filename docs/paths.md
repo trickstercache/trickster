@@ -1,4 +1,4 @@
-# Customizing Route Behavior
+# Customizing HTTP Path Behavior
 
 Trickster supports, via configuration, customizing the upstream request and downstream response behavior on a per-Path, per-Origin basis, by providing a `paths` configuration section for each origin configuration. Here are the basic capabilities for customizing Path behavior:
 
