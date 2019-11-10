@@ -1,8 +1,8 @@
 # Collapsed Forwarding
 
-Collapsed Forwarding is feature common among Reverse Proxy Cache solutions like Squid, Varnish and Apache Traffic Server. It works by ensuring only a single request to the upsteam origin is performed for any object on a cache miss or revalidation attempt, no matter how many users are requesting the object at the same time.
+Collapsed Forwarding is feature common among Reverse Proxy Cache solutions like Squid, Varnish and Apache Traffic Server. It works by ensuring only a single request to the upstream origin is performed for any object on a cache miss or revalidation attempt, no matter how many users are requesting the object at the same time.
 
-Trickster has suppport for two types of Collapsed Forwarding: Basic (default) and Progressive
+Trickster has support for two types of Collapsed Forwarding: Basic (default) and Progressive
 
 ## Basic Collapsed Forwarding
 
