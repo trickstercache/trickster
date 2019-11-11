@@ -1,25 +1,17 @@
 # Default values for trickster.
 
 # Put ints in quotes to ensure they aren't converted to scientific notations.
-# See https://github.com/kubernetes/helm/issues/1707
+# See https://github.com/kubernetes/helm/issues/1707s
+
 caches:
   - name: default
-    # type defines what kind of cache Trickster uses
+    # cacheType defines what kind of cache Trickster uses
     # options are 'bbolt', 'badger', 'filesystem', 'memory', and 'redis'
-    type: memory
+    cacheType: memory
 
     # compression determines whether the cache should be compressed. default is true
     # changing the compression setting will leave orphans in your cache for the duration of timeseries_ttl_secs
     compression: true
-
-    # timeSeriesTTLSecs defines the relative expiration of cached timeseries. default is 6 hours (21600 seconds)
-    timeSeriesTTLSecs: "21600"
-
-    # fastforwardTTLSecs defines the relative expiration of cached fast forward data. default is 15s
-    fastforwardTTLSecs: "15"
-
-    # objectTTLSecs defines the relative expiration of generically cached (non-timeseries) objects. default is 30s
-    objectTTLSecs: "30"
 
     ### Configuration options for the Cache Index
     # The Cache Index handles key management and retention for bbolt, filesystem and memory
@@ -49,26 +41,36 @@ caches:
       # clientType indicates which kind of Redis client to use. Options are: 'standard', 'cluster' and 'sentinel'
       clientType: standard
 
-      # Supported by Redis (standard)
-      # These configurations are ignored by Redis Sentinel and Redis Cluster
-      # protocol defines the protocol for connecting to redis ('unix' or 'tcp') 'tcp' is default
-      protocol: tcp
+      ### Supported by Redis (standard)
+      ### These configurations are ignored by Redis Sentinel and Redis Cluster
+      ###
 
-      # endpoint defines the fqdn+port or path to a unix socket file for connecting to redis
+      ## endpoint defines the fqdn+port or path to a unix socket file for connecting to redis
       endpoint: redis:6379
 
-      # Supported by Redis Cluster and Redis Sentinel
-      # These conigurations are ignored by Redis (standard)
-      # endpoints is used for Redis Cluster and Redis Sentinel to define a list of endpoints
+      ### Supported by Redis Cluster and Redis Sentinel
+      ### These conigurations are ignored by Redis (standard)
+      ###
+
+      ## endpoints is used for Redis Cluster and Redis Sentinel to define a list of endpoints
       #endpoints: ['redis:6379']
 
-      # password provides the redis password
-      password: ''
+      ### Supported by Redis Sentinel
+      ### These conigurations are ignored by Redis (standard) and Redis Cluster
+      ###
 
-      # Supported by Redis Sentinel
-      # These conigurations are ignored by Redis (standard) and Redis Cluster
-      # sentinelMaster should be set when using Redis Sentinel to indicate the Master Node
-      #sentinelMaster: ''
+      ### sentinelMaster should be set when using Redis Sentinel to indicate the Master Node
+      #sentinelMaster: ""
+
+      ### Supported by all Redis Client Types
+      ### See the go-redis documentation at https://github.com/go-redis/redis/blob/master/options.go
+      ### for more information on tuning these settings
+
+      # protocol defines the protocol for connecting to redis ('unix' or 'tcp') 'tcp' is default
+      #protocol: tcp
+
+      # password provides the redis password
+      #password: ''
 
       # db is the Database to be selected after connecting to the server.
       #db: "0"
@@ -130,25 +132,44 @@ caches:
       # valueDirectory defines the directory location under which the Badger value log will be maintained
       valueDirectory: /tmp/trickster
 
+# negativeCaches:
+#   - name: default
+#   # The 'default' negative cache config, mapped by all origins by default,
+#   # is empty unless you populate it. Update it by adding entries here in the format of:
+#   # code: "ttl_secs"
+
+##  Here's a pre-populated negative cache config ready to be uncommented and used in an origin config
+##  The 'general' negative cache config will cache common failure response codes for 3 seconds
+#   - name: general
+#     400: "3"
+#     404: "3"
+#     500: "3"
+#     502: "3"
+
 # Configuration options for mapping Origin(s)
 origins:
   # example origin named default. default is always created with these settings unless a different origin is defined here.
+
   - name: default
+
     # isDefault describes whether this origin is the default origin considered when routing http requests
     # it is false, by default; but if you only have a single origin configured, isDefault will be true unless explicitly set to false
     isDefault: true
 
-    # type identifies the origin type. Valid options are 'prometheus', 'influxdb', 'irondb'
-    type: prometheus
+    # originType identifies the origin type. Valid options are 'prometheus', 'influxdb', 'irondb', 'reverseproxycache' (or just 'rpc')
+    # origin_type is a required configuration value
+    originType: prometheus
 
-    # scheme identifies the scheme
-    scheme: http
+    # cacheName identifies the name of the cache (configured above) to use with this origin. default is 'default'
+    cacheName: default
 
-    # host identifies the upstream origin by fqdn/IP and port
-    host: 'prometheus:9090'
+    # negativeCacheName identifies the name of the negative cache (configured above) to be used with this origin. default is 'default'
+    negativeCacheName: 'default'
 
-    # pathPrefix provides any path that is prefixed onto the front of the client's requested path
-    pathPrefix: ''
+    # originURL provides the base upstream URL for all proxied requests to this origin
+   	# it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
+    # origin_url is a required configuration value
+    originURL: 'http://prometheus:9090'
 
     # timeoutSecs defines how many seconds Trickster will wait before aborting and upstream http request.
     timeoutSecs: "180"
@@ -161,14 +182,15 @@ origins:
     # additional requests will be queued.
     maxIdleConns: "20"
 
-    # apiPath defines the path of the Upstream Origin's API (usually '/api/v1')
-    apiPath: /api/v1
-
-    # ignoreNoCacheHeader disables a client's ability to send a no-cache to refresh a cached query.
-    ignoreNoCacheHeader: false
+    # backfillToleranceSecs prevents new datapoints that fall within the tolerance window (relative to time.Now) from being cached
+    # Think of it as "never cache the newest N seconds of real-time data, because it may be preliminary and subject to updates"
+    backfillToleranceSecs: "0"
 
     # timeseriesRetentionFactor defines the maximum number of recent timestamps to cache for a given query.
     timeseriesRetentionFactor: "1024"
+
+    # timeseriesTTLSecs defines the relative expiration of cached timeseries. default is 6 hours (21600 seconds)
+    timeseriesTTLSecs: "21600"
 
     # timeseriesEvictionMethod selects the metholodogy used to determine which timestamps are removed once
     # the timeseriesEvictionMethod limit is reached. options are 'oldest' and 'lru'.
@@ -177,17 +199,76 @@ origins:
     # fastForwardDisable, when set to true, will turn off the 'fast forward' feature for any requests proxied to this origin
     fastForwardDisable: false
 
-    # backfillToleranceSecs prevents new datapoints that fall within the tolerance window (relative to time.Now) from being cached
-    # Think of it as "never cache the newest N seconds of real-time data, because it may be preliminary and subject to updates"
-    backfillToleranceSecs: "0"
+    ## fastforwardTTLSecs defines the relative expiration of cached fast forward data. default is 15s
+    fastforwardTTLSecs: "15"
 
-    # For multi-origin support, origins are named, and the name is the second word of the configuration section name.
-    # In this example, an origin is named "foo".
-    # Clients can indicate this origin in their path (http://trickster.example.com:9090/foo/api/v1/query_range?.....)
-    # there are other ways for clients to indicate which origin to use in a multi-origin setup. See the documentation for more information
+    ## maxTTLSecs defines the maximum allowed TTL for any object cached for this origin. default is 86400
+    maxTTTLSecs: "86400"
+
+    ## revalidatitonFactor is the multiplier for object lifetime expiration to determine cache object TTL; default is 2
+    ## for example, if a revalidatable object has Cache-Control: max-age=300, we will cache for 10 minutes (300s * 2)
+    ## so there is an opportunity to revalidate
+    revalidatitonFactor: "2"
+
+    ## maxObjectByteSize defines the largest byte size an object may be before it is uncacheable due to size. default is 524288 (512k)
+    maxObjectByteSize: "524288"
+
+    ## this section configures the frontend and backend TLS operation for the origin
+    # tls:
+
+      ## TLS Frontend Configs
+      ## You can configure which certificate and key to use when this endpoint serves downstream clients over TLS
+      ## Trickster will fail out at startup if the provided files do not exist, are unreadable, or in an invalid format
+      ## These settings by default are '' (empty string), which disables this origin from being routed over the TLS port
+      # fullChainCertPath: /path/to/your/cert.pem
+      # privateKeyPath: /path/to/your/key.pem
+
+      ## TLS Backend Configs
+      ## These settings configure how Trickster will behave as a client when communicating with
+      ## this origin over TLS
+      
+      ## if insecureSkipVerify is true, Trickster will trust the origins certificate without any verification
+      ## default is false
+      # insecureSkipVerify: false
+      
+      ## certificateAuthorityPaths provides a list of additional certificate authorities to be used to trust an upstream origin
+      ## in addition to Operating System CA's.  default is an empty list, which insructs the Trickster to use only the OS List
+      # certificateAuthorityPaths: [ '../../testdata/test.rootca.pem' ]
+      
+      ## clientCertPath provides the path to a client certificate for Trickster to use when authenticating with an upstream server
+      # clientCertPath: /path/to/my/client/cert.pem
+      
+      ## clientKeyPath provides the path to a client key for Trickster to use when authenticating with an upstream server
+      # clientKeyPath: /path/to/my/client/key.pem
+
+    ## For multi-origin support, origins are named, and the name is the second word of the configuration section name.
+    ## In this example, an origin is named "foo".
+    ## Clients can indicate this origin in their path (http://trickster.example.com:9090/foo/api/v1/query_range?.....)
+    ## there are other ways for clients to indicate which origin to use in a multi-origin setup. See the documentation for more information
+
+    ## use quotes around FQDNs for host-based routing (see /docs/multi-origin.md).
+  #- name: foo
+    # isDefault: false
+    # originType: sinfluxdb
+    # originURL: http://influx-origin:8086
+    # cacheName: bbolt_example
+    # negativeCacheName: general
+    # timeseriesRetentionFactor: "1024"
+    # timeseriesEvictionMethod: oldest
+    # timeoutSecs: "180"
+    # backfillToleranceSecs: "180"
+
+## Configuration Options for Metrics Instrumentation
+# metrics:
+  ## listen_port defines the port that Trickster's metrics server listens on at /metrics
+  # listenPort: "8082"
+  ## listenAddress defines the ip that Trickster's metrics server listens on at /metrics
+  ## empty by default, listening on all interfaces
+  # listenAddress: ""
 
 logLevel: info
 # logFile: /some/path/to/trickster.log
+
 profiler:
   enabled: false
   port: 6060
