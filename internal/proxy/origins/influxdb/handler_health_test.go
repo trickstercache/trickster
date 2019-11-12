@@ -15,6 +15,7 @@ package influxdb
 
 import (
 	"io/ioutil"
+	"net/http/httptest"
 	"testing"
 
 	tc "github.com/Comcast/trickster/internal/util/context"
@@ -40,6 +41,15 @@ func TestHealthHandler(t *testing.T) {
 	// it should return 204 No Content
 	if resp.StatusCode != 204 {
 		t.Errorf("expected 204 got %d.", resp.StatusCode)
+	}
+
+	healthMethod = "-"
+
+	w = httptest.NewRecorder()
+	client.HealthHandler(w, r)
+	resp = w.Result()
+	if resp.StatusCode != 400 {
+		t.Errorf("Expected status: 400 got %d.", resp.StatusCode)
 	}
 
 }

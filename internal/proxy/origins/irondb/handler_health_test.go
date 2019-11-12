@@ -15,6 +15,7 @@ package irondb
 
 import (
 	"io/ioutil"
+	"net/http/httptest"
 	"testing"
 
 	tc "github.com/Comcast/trickster/internal/util/context"
@@ -38,6 +39,15 @@ func TestHealthHandler(t *testing.T) {
 	resp := w.Result()
 	if resp.StatusCode != 200 {
 		t.Errorf("Expected status: 200 got %d.", resp.StatusCode)
+	}
+
+	healthMethod = "-"
+
+	w = httptest.NewRecorder()
+	client.HealthHandler(w, r)
+	resp = w.Result()
+	if resp.StatusCode != 400 {
+		t.Errorf("Expected status: 400 got %d.", resp.StatusCode)
 	}
 }
 

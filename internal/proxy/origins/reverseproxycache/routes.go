@@ -42,18 +42,27 @@ func (c *Client) Handlers() map[string]http.Handler {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config.PathConfig, []string) {
+func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.PathConfig {
 	paths := map[string]*config.PathConfig{
-		"/": &config.PathConfig{
+		"/-GET-POST-HEAD": &config.PathConfig{
 			Path:                           "/",
-			HandlerName:                    "proxy",
-			Methods:                        []string{"*"},
+			HandlerName:                    "proxycache",
+			Methods:                        []string{http.MethodGet, http.MethodPost, http.MethodHead},
 			OriginConfig:                   oc,
 			MatchType:                      config.PathMatchTypePrefix,
+			MatchTypeName:                  "prefix",
+			ProgressiveCollapsedForwarding: false,
+		},
+		"/-CONNECT-DELETE-OPTIONS-PATCH-PUT-TRACE": &config.PathConfig{
+			Path:        "/",
+			HandlerName: "proxy",
+			Methods: []string{http.MethodConnect, http.MethodDelete, http.MethodOptions, http.MethodPatch,
+				http.MethodPut, http.MethodTrace},
+			OriginConfig:                   oc,
+			MatchType:                      config.PathMatchTypePrefix,
+			MatchTypeName:                  "prefix",
 			ProgressiveCollapsedForwarding: false,
 		},
 	}
-
-	orderedPaths := []string{"/"}
-	return paths, orderedPaths
+	return paths
 }
