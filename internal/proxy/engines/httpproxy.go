@@ -49,7 +49,7 @@ func ProxyRequest(r *model.Request, w http.ResponseWriter) *http.Response {
 	var cacheStatusCode tc.LookupStatus
 	var resp *http.Response
 	var reader io.Reader
-	if pc != nil && !pc.ProgressiveCollapsedForwarding {
+	if pc == nil || !pc.ProgressiveCollapsedForwarding {
 		reader, resp, _ = PrepareFetchReader(r)
 		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
