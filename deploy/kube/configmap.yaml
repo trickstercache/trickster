@@ -332,7 +332,7 @@ data:
             # [origins.default.paths]
                 # [origins.default.paths.example1]
                 # path = '/api/v1/admin/'
-                # methods = [ '*' ]                                 # HTTP methods to routed with this path config. '*' for all methods.
+                # methods = [ '*' ]                                 # HTTP methods to be routed with this path config. '*' for all methods.
                 # match_type = 'prefix'                             # match $path* (using 'exact' will match just $path)
                 # handler = 'localresponse'                         # don't actually proxy this request, respond immediately
                 # response_code = 401
