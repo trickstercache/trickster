@@ -10,12 +10,14 @@ data:
     #
     # Trickster 1.0 Example Configuration File - Exhaustive
     #
-    # This describes and provides examples for all
+    # This file contains descriptions and examples for all
     # Trickster configuration options. More documentation is
     # available at https://github.com/Comcast/trickster/docs/
     #
     # Optional configs are commented out, required configs are uncommented
     # and set to common values that let you try it out with Prometheus
+    #
+    # Copyright 2018 Comcast Cable Communications Management, LLC
     #
 
     # [main]
@@ -313,8 +315,8 @@ data:
         ## Each origin type implements their own defaults for health_check_upstream_url, health_check_verb and health_check_query,
         ## which can be overridden per origin. See /docs/health.md for more information
         
-        ## health_check_upstream_url is the URL Trickster will request against this origin to check health when a client
-        ## requests http://<trickster-endpoint>/trickster/<origin_name>/health 
+        ## health_check_upstream_url is the URL Trickster will request against this origin to
+        ## when a health check request is received by Trickster via http://<trickster-endpoint>/trickster/<origin_name>/health 
         ## this is the default value for prometheus:
         # health_check_upstream_url = '/api/v1/query'
 
