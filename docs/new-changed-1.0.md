@@ -19,9 +19,11 @@
   - Circonus IRONdb
   - Generic HTTP Reverse Proxy Cache
 
+And so much more!
+
 ## Status
 
-We are currently in the beta phase of Trickster 1.0. We expect to release the 1.0 Release Candidate build by November 1, 2019, and have the 1.0 GA release before November 15, 2019.
+We are currently in the beta phase of Trickster 1.0. We expect to release the 1.0 Release Candidate build by November 20, 2019, and have the 1.0 GA release by December 1, 2019.
 
 ## How to Try Trickster 1.0
 
@@ -59,6 +61,10 @@ In a multi-origin setup, Trickster 1.0 no longer supports the ability to select 
 
 ### Configuration Settings
 
+#### ignore_caching_headers / ignore_no_cache_header
+
+The `ignore_caching_headers` and `ignore_no_cache_header` configuration parameters that evolved in 0.1.x and early 1.0 betas has been removed. Trickster 1.0's customizable Path Configurations capability allows for unlimited paths to be defined and managed, including header manipulation; this subsumes the functionality of these configurations.
+
 #### api_path
 
 The `api_path` configuration parameter in 0.1.x that defaulted to `/api/v1/` has been removed. Trickster 1.0's customizable Path Configurations capability allows for unlimited paths to be defined and managed; this subsumes the functionality of the `api_path`.
@@ -75,7 +81,7 @@ Enter `timeseries_retention_factor`. It improves upon `max_value_age_secs` by co
 
 ### Config File
 
-Trickster 1.0 is incompatible with a 0.1.x config file. However, it can be made compatible with a few quick migration steps:
+Trickster 1.0 is incompatible with a 0.1.x config file. However, it can be made compatible with a few quick migration steps (your mileage may vary):
 
 - Make a backup of your config file.
 - Tab-indent the entire `[cache]` configuration block.
