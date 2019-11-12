@@ -90,7 +90,7 @@ By default, Trickster will use the HTTP Method, URL Path and any Authorization h
 
             [origins.default.paths.images]
             path = '/images/'
-            methods = [ 'GET' ]
+            methods = [ 'GET', 'HEAD' ]
             handler = 'proxycache' # Trickster will cache the images directory
             match_type = 'prefix'
             
@@ -111,7 +111,7 @@ By default, Trickster will use the HTTP Method, URL Path and any Authorization h
             # redirect this sunsetted feature to a discontinued message
             [origins.default.paths.redirect]
             path = '/blog'
-            methods = [ 'GET' ]
+            methods = [ '*' ]
             handler = 'localresponse'
             match_type = 'prefix'
             response_code = 302
@@ -122,10 +122,19 @@ By default, Trickster will use the HTTP Method, URL Path and any Authorization h
             # cache this API endpoint, keying on the query parameter
             [origins.default.paths.api]
             path = '/api/'
-            methods = [ 'GET', 'POST' ]
+            methods = [ 'GET', 'HEAD' ]
             handler = 'proxycache'
             match_type = 'prefix'
             cache_key_params = [ 'query' ]
+
+            # same API endpoint, different HTTP methods to route against
+            [origins.default.paths.api-deny]
+            path = '/api/'
+            methods = [ 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'CONNECT' ]
+            handler = 'localresponse'
+            match_type = 'prefix'
+            response_code = 401
+            response_body = 'this is a read-only api endpoint'
 ```
 
 ## Modifying Behavior of Time Series Origin Types
