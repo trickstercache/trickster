@@ -157,7 +157,7 @@ origins:
 #         cacheKeyHeaders: [ 'X-Example-Header' ]        # and these request headers, when present in the incoming request
 #         requestHeaders:
 #           Authorization: 'custom  auth header'         # attach these request headers when proxying. the '+' in the header name
-#           +Accept-Encoding: gzip                       # means append the value if the header exists, rather tha replace
+#           +Accept-Encoding: gzip                       # means append the value if the header exists, rather than replace
 #           -Cookie: ''                                  # while the '-' will remove the header
 
 #     # For multi-origin support, provide a unique name.
