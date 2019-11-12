@@ -144,7 +144,7 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 	}
 
 	// Do not cache content that includes set-cookie header
-	// Trickster can use PathConfig rules to strip set-cookie if cachablility if needed
+	// Trickster can use PathConfig rules to strip set-cookie if cachablility is needed
 	if _, ok := lch["set-cookie"]; ok {
 		cp.NoCache = true
 		cp.FreshnessLifetime = -1
