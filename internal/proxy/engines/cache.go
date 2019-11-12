@@ -132,6 +132,7 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 	if d, ok := negativeCache[code]; ok {
 		cp.FreshnessLifetime = int(d.Seconds())
 		cp.Expires = cp.LocalDate.Add(d)
+		cp.IsNegativeCache = true
 		return cp
 	}
 
