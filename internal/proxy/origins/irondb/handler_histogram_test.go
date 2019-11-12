@@ -122,7 +122,7 @@ func TestHistogramHandlerParseTimeRangeQuery(t *testing.T) {
 	client := &Client{name: "test"}
 	hc := tu.NewTestWebClient()
 	cfg := config.NewOriginConfig()
-	cfg.Paths, _ = client.DefaultPathConfigs(cfg)
+	cfg.Paths = client.DefaultPathConfigs(cfg)
 
 	tr := model.NewRequest("HistogramHandler", r.Method, r.URL, r.Header, cfg.Timeout, r, hc)
 
@@ -171,7 +171,7 @@ func TestHistogramHandlerSetExtent(t *testing.T) {
 	client := &Client{name: "test"}
 	hc := tu.NewTestWebClient()
 	cfg := config.NewOriginConfig()
-	cfg.Paths, _ = client.DefaultPathConfigs(cfg)
+	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0/", nil)
 	if err != nil {
 		t.Error(err)
@@ -202,7 +202,7 @@ func TestHistogramHandlerFastForwardURLError(t *testing.T) {
 	client := &Client{name: "test"}
 	hc := tu.NewTestWebClient()
 	cfg := config.NewOriginConfig()
-	cfg.Paths, _ = client.DefaultPathConfigs(cfg)
+	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet,
 		"http://0/", nil)
 	if err != nil {
