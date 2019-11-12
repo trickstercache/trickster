@@ -143,6 +143,14 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 		lch[strings.ToLower(k)] = v
 	}
 
+	// Do not cache content that includes set-cookie header
+	// Trickster can use PathConfig rules to strip set-cookie if cachablility if needed
+	if _, ok := lch["set-cookie"]; ok {
+		cp.NoCache = true
+		cp.FreshnessLifetime = -1
+		return cp
+	}
+
 	// Cache-Control has first precedence
 	if v, ok := lch["cache-control"]; ok {
 		parseCacheControlDirectives(strings.Join(v, ","), cp)
