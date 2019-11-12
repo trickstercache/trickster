@@ -14,7 +14,6 @@
 package reverseproxycache
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
 
@@ -35,7 +34,6 @@ func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 		originName = cfg.Name
 		healthURL.Path += cfg.HealthCheckUpstreamPath
 		healthURL.RawQuery = cfg.HealthCheckQuery
-		fmt.Println(cfg.HealthCheckVerb)
 		healthMethod = cfg.HealthCheckVerb
 	}
 
