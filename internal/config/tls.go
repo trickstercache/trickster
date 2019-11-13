@@ -48,6 +48,26 @@ func DefaultTLSConfig() *TLSConfig {
 	}
 }
 
+// Copy returns an exact copy of the subject *TLSConfig
+func (tc *TLSConfig) Copy() *TLSConfig {
+
+	var caps []string
+	if tc.CertificateAuthorityPaths != nil {
+		caps = make([]string, len(tc.CertificateAuthorityPaths))
+		copy(caps, tc.CertificateAuthorityPaths)
+	}
+
+	return &TLSConfig{
+		FullChainCertPath:         tc.FullChainCertPath,
+		PrivateKeyPath:            tc.PrivateKeyPath,
+		ServeTLS:                  tc.ServeTLS,
+		InsecureSkipVerify:        tc.InsecureSkipVerify,
+		CertificateAuthorityPaths: caps,
+		ClientCertPath:            tc.ClientCertPath,
+		ClientKeyPath:             tc.ClientKeyPath,
+	}
+}
+
 func (c *TricksterConfig) verifyTLSConfigs() error {
 
 	for _, oc := range c.Origins {
@@ -64,7 +84,7 @@ func (c *TricksterConfig) verifyTLSConfigs() error {
 		if err != nil {
 			return err
 		}
-		c.ProxyServer.ServeTLS = true
+		c.Frontend.ServeTLS = true
 		oc.TLS.ServeTLS = true
 
 		// Verify CA Paths
@@ -84,7 +104,7 @@ func (c *TricksterConfig) verifyTLSConfigs() error {
 // TLSCertConfig returns the crypto/tls configuration object with a list of name-bound certs derifed from the running config
 func (c *TricksterConfig) TLSCertConfig() (*tls.Config, error) {
 	var err error
-	if !c.ProxyServer.ServeTLS {
+	if !c.Frontend.ServeTLS {
 		return nil, nil
 	}
 	to := []*OriginConfig{}

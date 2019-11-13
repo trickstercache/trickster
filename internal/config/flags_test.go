@@ -44,8 +44,8 @@ func TestLoadFlags(t *testing.T) {
 	if providedOriginType != a[7] {
 		t.Errorf("wanted \"%s\". got \"%s\".", a[1], providedOriginType)
 	}
-	if c.ProxyServer.ListenPort != 9091 {
-		t.Errorf("wanted \"%d\". got \"%d\".", 9091, c.ProxyServer.ListenPort)
+	if c.Frontend.ListenPort != 9091 {
+		t.Errorf("wanted \"%d\". got \"%d\".", 9091, c.Frontend.ListenPort)
 	}
 	if c.Metrics.ListenPort != 9092 {
 		t.Errorf("wanted \"%d\". got \"%d\".", 9092, c.Metrics.ListenPort)

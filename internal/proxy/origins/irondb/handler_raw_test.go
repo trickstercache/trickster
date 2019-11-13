@@ -61,7 +61,7 @@ func TestRawHandlerParseTimeRangeQuery(t *testing.T) {
 	client := &Client{name: "test"}
 	hc := tu.NewTestWebClient()
 	cfg := config.NewOriginConfig()
-	cfg.Paths, _ = client.DefaultPathConfigs(cfg)
+	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0/raw/00112233-4455-6677-8899-aabbccddeeff/metric", nil)
 	if err != nil {
 		t.Error(err)
