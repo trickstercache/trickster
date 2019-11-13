@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/Comcast/trickster/internal/proxy/methods"
 	ts "github.com/Comcast/trickster/internal/util/strings"
 )
 
@@ -106,7 +107,7 @@ type PathConfig struct {
 func NewPathConfig() *PathConfig {
 	return &PathConfig{
 		Path:                           "/",
-		Methods:                        []string{http.MethodGet, http.MethodPost, http.MethodHead},
+		Methods:                        methods.CacheableHTTPMethods(),
 		MatchTypeName:                  "exact",
 		MatchType:                      PathMatchTypeExact,
 		HandlerName:                    "proxy",

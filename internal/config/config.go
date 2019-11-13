@@ -16,6 +16,7 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -503,7 +504,7 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 			var j = 0
 			for l, p := range v.Paths {
 				if len(p.Methods) == 0 {
-					p.Methods = []string{"GET", "POST", "HEAD"}
+					p.Methods = []string{http.MethodGet, http.MethodHead}
 				}
 				p.custom = make([]string, 0, 0)
 				for _, pm := range pathMembers {

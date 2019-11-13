@@ -22,6 +22,7 @@ import (
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/methods"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/proxy/origins/influxdb"
 	"github.com/Comcast/trickster/internal/proxy/origins/irondb"
@@ -34,12 +35,6 @@ import (
 
 // ProxyClients maintains a list of proxy clients configured for use by Trickster
 var ProxyClients = make(map[string]model.Client)
-
-var allHTTPMethods = []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodDelete,
-	http.MethodConnect, http.MethodOptions, http.MethodTrace, http.MethodPatch}
-var cacheableHTTPMethods = []string{http.MethodGet, http.MethodHead, http.MethodPost}
-var uncacheableHTTPMethods = []string{http.MethodPut, http.MethodDelete, http.MethodConnect, http.MethodOptions,
-	http.MethodTrace, http.MethodPatch}
 
 // RegisterProxyRoutes iterates the Trickster Configuration and registers the routes for the configured origins
 func RegisterProxyRoutes() error {
@@ -153,7 +148,7 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 	pathsWithVerbs := make(map[string]*config.PathConfig)
 	for _, p := range paths {
 		if len(p.Methods) == 0 {
-			p.Methods = cacheableHTTPMethods
+			p.Methods = methods.CacheableHTTPMethods()
 		}
 		pathsWithVerbs[p.Path+"-"+strings.Join(p.Methods, "-")] = p
 	}
@@ -173,7 +168,7 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 		o.HealthCheckUpstreamPath != "" && o.HealthCheckVerb != "" {
 		hp := "/trickster/health/" + o.Name
 		log.Debug("registering health handler path", log.Pairs{"path": hp, "originName": o.Name, "upstreamPath": o.HealthCheckUpstreamPath, "upstreamVerb": o.HealthCheckVerb})
-		routing.Router.PathPrefix(hp).Handler(middleware.WithConfigContext(o, nil, nil, h)).Methods(http.MethodGet, http.MethodHead, http.MethodPost)
+		routing.Router.PathPrefix(hp).Handler(middleware.WithConfigContext(o, nil, nil, h)).Methods(methods.CacheableHTTPMethods()...)
 	}
 
 	plist := make([]string, 0, len(pathsWithVerbs))
@@ -208,7 +203,7 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 		if p.Handler != nil && len(p.Methods) > 0 {
 
 			if p.Methods[0] == "*" {
-				p.Methods = allHTTPMethods
+				p.Methods = methods.AllHTTPMethods()
 			}
 
 			switch p.MatchType {

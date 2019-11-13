@@ -15,9 +15,11 @@ package reverseproxycache
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/handlers"
+	"github.com/Comcast/trickster/internal/proxy/methods"
 )
 
 const root = "/"
@@ -43,21 +45,24 @@ func (c *Client) Handlers() map[string]http.Handler {
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
 func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.PathConfig {
+
+	cm := methods.CacheableHTTPMethods()
+	um := methods.UncacheableHTTPMethods()
+
 	paths := map[string]*config.PathConfig{
-		"/-GET-POST-HEAD": &config.PathConfig{
+		"/-" + strings.Join(cm, "-"): &config.PathConfig{
 			Path:                           "/",
 			HandlerName:                    "proxycache",
-			Methods:                        []string{http.MethodGet, http.MethodPost, http.MethodHead},
+			Methods:                        cm,
 			OriginConfig:                   oc,
 			MatchType:                      config.PathMatchTypePrefix,
 			MatchTypeName:                  "prefix",
 			ProgressiveCollapsedForwarding: false,
 		},
-		"/-CONNECT-DELETE-OPTIONS-PATCH-PUT-TRACE": &config.PathConfig{
-			Path:        "/",
-			HandlerName: "proxy",
-			Methods: []string{http.MethodConnect, http.MethodDelete, http.MethodOptions, http.MethodPatch,
-				http.MethodPut, http.MethodTrace},
+		"/-" + strings.Join(um, "-"): &config.PathConfig{
+			Path:                           "/",
+			HandlerName:                    "proxy",
+			Methods:                        um,
 			OriginConfig:                   oc,
 			MatchType:                      config.PathMatchTypePrefix,
 			MatchTypeName:                  "prefix",
