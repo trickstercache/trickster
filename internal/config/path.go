@@ -107,7 +107,7 @@ type PathConfig struct {
 func NewPathConfig() *PathConfig {
 	return &PathConfig{
 		Path:                    "/",
-		Methods:                 []string{http.MethodGet, http.MethodPost},
+		Methods:                 methods.CacheableHTTPMethods(),
 		MatchTypeName:           "exact",
 		MatchType:               PathMatchTypeExact,
 		CollapsedForwardingName: "basic",

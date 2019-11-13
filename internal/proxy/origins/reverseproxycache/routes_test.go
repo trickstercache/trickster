@@ -50,7 +50,7 @@ func TestDefaultPathConfigs(t *testing.T) {
 
 	dpc := client.DefaultPathConfigs(client.config)
 
-	if _, ok := dpc["/-GET-POST-HEAD"]; !ok {
+	if _, ok := dpc["/-GET-HEAD"]; !ok {
 		t.Errorf("expected to find path named: %s", "/")
 	}
 
