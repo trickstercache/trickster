@@ -105,7 +105,11 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 	statusCode := d.StatusCode
 
 	if d.CachingPolicy != nil && d.CachingPolicy.IsFresh {
-		cacheStatus = tc.LookupStatusHit
+		if d.CachingPolicy.IsNegativeCache {
+			cacheStatus = tc.LookupStatusNegativeCacheHit
+		} else {
+			cacheStatus = tc.LookupStatusHit
+		}
 	} else {
 		body, resp, elapsed = Fetch(r)
 		cp := GetResponseCachingPolicy(resp.StatusCode, oc.NegativeCache, resp.Header)
@@ -252,7 +256,11 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 	statusCode := d.StatusCode
 
 	if d.CachingPolicy != nil && d.CachingPolicy.IsFresh {
-		cacheStatus = tc.LookupStatusHit
+		if d.CachingPolicy.IsNegativeCache {
+			cacheStatus = tc.LookupStatusNegativeCacheHit
+		} else {
+			cacheStatus = tc.LookupStatusHit
+		}
 		cl = len(d.Body)
 	} else {
 		reader, resp, cl = PrepareFetchReader(r)
