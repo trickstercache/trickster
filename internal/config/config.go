@@ -16,6 +16,7 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -502,7 +503,9 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 		if metadata.IsDefined("origins", k, "paths") {
 			var j = 0
 			for l, p := range v.Paths {
-				p.Order = j
+				if len(p.Methods) == 0 {
+					p.Methods = []string{http.MethodGet, http.MethodHead}
+				}
 				p.custom = make([]string, 0, 0)
 				for _, pm := range pathMembers {
 					if metadata.IsDefined("origins", k, "paths", l, pm) {
@@ -521,7 +524,7 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 					p.MatchType = PathMatchTypeExact
 					p.MatchTypeName = p.MatchType.String()
 				}
-				oc.Paths[p.Path] = p
+				oc.Paths[p.Path+"-"+strings.Join(p.Methods, "-")] = p
 				j++
 			}
 		}
@@ -732,6 +735,8 @@ func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
 func (c *TricksterConfig) copy() *TricksterConfig {
 
 	nc := NewConfig()
+	delete(nc.Caches, "default")
+	delete(nc.Origins, "default")
 
 	nc.Main.ConfigHandlerPath = c.Main.ConfigHandlerPath
 	nc.Main.Environment = c.Main.Environment
@@ -759,6 +764,10 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 		o.KeepAliveTimeoutSecs = v.KeepAliveTimeoutSecs
 		o.MaxIdleConns = v.MaxIdleConns
 		o.PathPrefix = v.PathPrefix
+		o.OriginURL = v.OriginURL
+		o.HealthCheckUpstreamPath = v.HealthCheckUpstreamPath
+		o.HealthCheckVerb = v.HealthCheckVerb
+		o.HealthCheckQuery = v.HealthCheckQuery
 		o.Scheme = v.Scheme
 		o.Timeout = v.Timeout
 		o.TimeoutSecs = v.TimeoutSecs

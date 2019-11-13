@@ -85,7 +85,7 @@ func TestTextHandlerParseTimeRangeQuery(t *testing.T) {
 	client := &Client{name: "test"}
 	hc := tu.NewTestWebClient()
 	cfg := config.NewOriginConfig()
-	cfg.Paths, _ = client.DefaultPathConfigs(cfg)
+	cfg.Paths = client.DefaultPathConfigs(cfg)
 
 	tr := model.NewRequest("RollupHandler", r.Method, r.URL, r.Header, cfg.Timeout, r, hc)
 
@@ -126,7 +126,7 @@ func TestTextHandlerSetExtent(t *testing.T) {
 	client := &Client{name: "test"}
 	hc := tu.NewTestWebClient()
 	cfg := config.NewOriginConfig()
-	cfg.Paths, _ = client.DefaultPathConfigs(cfg)
+	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0/test", nil)
 	if err != nil {
 		t.Error(err)

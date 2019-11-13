@@ -37,8 +37,23 @@ func (c *Client) Handlers() map[string]http.Handler {
 	return c.handlers
 }
 
+func populateHeathCheckRequestValues(oc *config.OriginConfig) {
+	if oc.HealthCheckUpstreamPath == "-" {
+		oc.HealthCheckUpstreamPath = "/ping"
+	}
+	if oc.HealthCheckVerb == "-" {
+		oc.HealthCheckVerb = http.MethodGet
+	}
+	if oc.HealthCheckQuery == "-" {
+		oc.HealthCheckQuery = ""
+	}
+}
+
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config.PathConfig, []string) {
+func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.PathConfig {
+
+	populateHeathCheckRequestValues(oc)
+
 	paths := map[string]*config.PathConfig{
 		"/" + mnQuery: &config.PathConfig{
 			Path:            "/" + mnQuery,
@@ -46,14 +61,16 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{upDB, upQuery, "u", "p"},
 			CacheKeyHeaders: []string{},
+			MatchTypeName:   "exact",
+			MatchType:       config.PathMatchTypeExact,
 		},
 		"/": &config.PathConfig{
-			Path:        "/",
-			HandlerName: "proxy",
-			Methods:     []string{http.MethodGet, http.MethodPost},
-			MatchType:   config.PathMatchTypePrefix,
+			Path:          "/",
+			HandlerName:   "proxy",
+			Methods:       []string{http.MethodGet, http.MethodPost},
+			MatchType:     config.PathMatchTypePrefix,
+			MatchTypeName: "prefix",
 		},
 	}
-	orderedPaths := []string{"/" + mnQuery, "/"}
-	return paths, orderedPaths
+	return paths
 }
