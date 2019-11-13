@@ -30,13 +30,13 @@ func TestPCFReadWriteSingle(t *testing.T) {
 	l := len(testString)
 	resp := &http.Response{}
 
-	pfc := NewPCF(resp, l)
+	pcf := NewPCF(resp, l)
 	var n int64
 	go func() {
-		n, _ = io.Copy(pfc, r)
-		pfc.Close()
+		n, _ = io.Copy(pcf, r)
+		pcf.Close()
 	}()
-	pfc.AddClient(w)
+	pcf.AddClient(w)
 
 	if n != int64(l) {
 		t.Errorf("PCF could not copy full length of reader")
@@ -55,14 +55,14 @@ func TestPCFReadWriteMultiple(t *testing.T) {
 	l := len(testString)
 	resp := &http.Response{}
 
-	pfc := NewPCF(resp, l)
+	pcf := NewPCF(resp, l)
 	var n int64
 	go func() {
-		n, _ = io.Copy(pfc, r)
-		pfc.Close()
+		n, _ = io.Copy(pcf, r)
+		pcf.Close()
 	}()
-	pfc.AddClient(w)
-	pfc.AddClient(w1)
+	pcf.AddClient(w)
+	pcf.AddClient(w1)
 
 	if n != int64(l) {
 		t.Errorf("PCF could not copy full length of reader")
@@ -83,19 +83,19 @@ func TestPCFReadWriteGetBody(t *testing.T) {
 	l := len(testString)
 	resp := &http.Response{}
 
-	pfc := NewPCF(resp, l)
+	pcf := NewPCF(resp, l)
 	var n int64
 
-	_, err := pfc.GetBody()
+	_, err := pcf.GetBody()
 	if err == nil {
 		t.Errorf("PCF expected an error on an unwritten body")
 	}
 
 	go func() {
-		n, _ = io.Copy(pfc, r)
-		pfc.Close()
+		n, _ = io.Copy(pcf, r)
+		pcf.Close()
 	}()
-	pfc.AddClient(w)
+	pcf.AddClient(w)
 
 	if n != int64(l) {
 		t.Errorf("PCF could not copy full length of reader")
@@ -105,7 +105,7 @@ func TestPCFReadWriteGetBody(t *testing.T) {
 		t.Errorf("PCF result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), w.String(), len(w.String()))
 	}
 
-	body, err := pfc.GetBody()
+	body, err := pcf.GetBody()
 	if err != nil {
 		t.Error(err)
 	}
@@ -121,12 +121,12 @@ func TestPCFReadWriteClose(t *testing.T) {
 	l := len(testString)
 	resp := &http.Response{}
 
-	pfc := NewPCF(resp, l)
+	pcf := NewPCF(resp, l)
 	buf := make([]byte, 2)
 	n, _ := r.Read(buf)
-	pfc.Write(buf)
-	pfc.Close()
-	err := pfc.AddClient(w)
+	pcf.Write(buf)
+	pcf.Close()
+	err := pcf.AddClient(w)
 
 	if err != io.EOF {
 		t.Errorf("PCF Close call did not return io.EOF")
@@ -143,13 +143,13 @@ func TestPCFIndexReadTooLarge(t *testing.T) {
 	l := len(testString)
 	resp := &http.Response{}
 
-	pfc := NewPCF(resp, l)
+	pcf := NewPCF(resp, l)
 	buf := make([]byte, 2)
 	r.Read(buf)
-	pfc.Write(buf)
-	pfc.Close()
+	pcf.Write(buf)
+	pcf.Close()
 
-	_, err := pfc.IndexRead(12412, buf)
+	_, err := pcf.IndexRead(12412, buf)
 
 	if err != ErrReadIndexTooLarge {
 		t.Errorf("PCF did not return ErrReadIndexTooLarge, got %e", err)
@@ -162,13 +162,13 @@ func TestPCFReadLarge(t *testing.T) {
 	l := r.Len()
 	resp := &http.Response{}
 
-	pfc := NewPCF(resp, l)
+	pcf := NewPCF(resp, l)
 	var n int64
 	go func() {
-		n, _ = io.Copy(pfc, r)
-		pfc.Close()
+		n, _ = io.Copy(pcf, r)
+		pcf.Close()
 	}()
-	pfc.AddClient(w)
+	pcf.AddClient(w)
 
 	if n != int64(l) {
 		t.Errorf("PCF could not copy full length of reader")
@@ -182,9 +182,82 @@ func TestPCFReadLarge(t *testing.T) {
 func TestPCFResp(t *testing.T) {
 	resp := &http.Response{}
 
-	pfc := NewPCF(resp, 10)
+	pcf := NewPCF(resp, 10)
 
-	if !reflect.DeepEqual(resp, pfc.GetResp()) {
+	if !reflect.DeepEqual(resp, pcf.GetResp()) {
 		t.Errorf("PCF GetResp failed to reproduce the original http response.")
+	}
+}
+
+func BenchmarkPCFWrite(b *testing.B) {
+	// 100MB object, simulated actual usecase sizes.
+	b.N = 3200
+
+	testBytes := make([]byte, 32*1024)
+	l := b.N * 32 * 1024
+	resp := &http.Response{}
+
+	pcf := NewPCF(resp, l)
+	b.SetBytes(32 * 1024)
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		pcf.Write(testBytes)
+	}
+}
+
+func BenchmarkPCFRead(b *testing.B) {
+	b.N = 3200
+
+	testBytes := make([]byte, 32*1024)
+	readBuf := make([]byte, 32*1024)
+
+	l := b.N * 32 * 1024
+	resp := &http.Response{}
+
+	var readIndex uint64
+	var err error
+
+	pcf := NewPCF(resp, l)
+	b.SetBytes(32 * 1024)
+	for i := 0; i < b.N; i++ {
+		pcf.Write(testBytes)
+	}
+
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		_, err = pcf.IndexRead(readIndex, readBuf)
+		readIndex++
+		if err != nil {
+			break
+		}
+	}
+}
+
+func BenchmarkPCFWriteRead(b *testing.B) {
+	b.N = 3200
+
+	testBytes := make([]byte, 32*1024)
+	readBuf := make([]byte, 32*1024)
+
+	l := b.N * 32 * 1024
+	resp := &http.Response{}
+
+	var readIndex uint64
+	var err error
+
+	pcf := NewPCF(resp, l)
+	b.SetBytes(32 * 1024)
+
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		pcf.Write(testBytes)
+		_, err = pcf.IndexRead(readIndex, readBuf)
+		readIndex++
+		if err != nil {
+			break
+		}
 	}
 }
