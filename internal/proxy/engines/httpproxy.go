@@ -120,13 +120,10 @@ func PrepareFetchReader(r *model.Request) (io.ReadCloser, *http.Response, int) {
 	}
 
 	req := &http.Request{Method: r.ClientRequest.Method}
-	b, err := ioutil.ReadAll(r.ClientRequest.Body)
-	if err == nil && len(b) > 0 {
-		req, err = http.NewRequest(r.ClientRequest.Method, r.URL.String(),
-			bytes.NewBuffer(b))
-		if err != nil {
-			return nil, nil, 0
-		}
+	var err error
+	req, err = http.NewRequest(r.ClientRequest.Method, r.URL.String(), r.ClientRequest.Body)
+	if err != nil {
+		return nil, nil, 0
 	}
 
 	req.Header = r.Headers
