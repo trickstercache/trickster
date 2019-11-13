@@ -14,7 +14,9 @@
 package engines
 
 import (
+	"bytes"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -31,12 +33,26 @@ import (
 	ct "github.com/Comcast/trickster/internal/util/context"
 )
 
+const multipartBoundary = "------------------------81bab0cc09ffbf9b"
+
+const multipartBody = `--------------------------81bab0cc09ffbf9b
+Content-Disposition: form-data; name="field1"
+
+value1
+--------------------------81bab0cc09ffbf9b
+Content-Disposition: form-data; name="field2"
+
+value2
+--------------------------81bab0cc09ffbf9b--
+`
+
 func TestDeriveCacheKey(t *testing.T) {
 
 	rpath := &config.PathConfig{
-		Path:            "/",
-		CacheKeyParams:  []string{"query", "step", "time"},
-		CacheKeyHeaders: []string{},
+		Path:               "/",
+		CacheKeyParams:     []string{"query", "step", "time"},
+		CacheKeyHeaders:    []string{},
+		CacheKeyFormFields: []string{"field1"},
 	}
 
 	cfg := &config.OriginConfig{
@@ -61,9 +77,26 @@ func TestDeriveCacheKey(t *testing.T) {
 	u = &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
 	r = &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
 	key = DeriveCacheKey(r, nil, "extra")
-
 	if key != "d22b4d54f7dce72faebd02a1c2cd4549" {
 		t.Errorf("expected %s got %s", "d22b4d54f7dce72faebd02a1c2cd4549", key)
+	}
+
+	const expected = "3ee2473c4ea66b70680bd62616104c0a"
+
+	tr.Method = "POST"
+	tr.Header.Set(headers.NameContentType, headers.ValueXFormUrlEncoded)
+	tr.Body = ioutil.NopCloser(bytes.NewReader([]byte("field1=value1")))
+	key = DeriveCacheKey(r, nil, "extra")
+	if key != expected {
+		t.Errorf("expected %s got %s", expected, key)
+	}
+
+	tr.Method = "PUT"
+	tr.Header.Set(headers.NameContentType, headers.ValueMultipartFormData)
+	tr.Body = ioutil.NopCloser(bytes.NewReader([]byte(multipartBody)))
+	key = DeriveCacheKey(r, nil, "extra")
+	if key != expected {
+		t.Errorf("expected %s got %s", expected, key)
 	}
 
 	// Test Custom KeyHasher Integration
@@ -307,6 +340,12 @@ func TestGetResponseCachingPolicy(t *testing.T) {
 		{ // 18 - NoTransform
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValueNoTransform},
+			},
+			expectedTTL: -1 * time.Second,
+		},
+		{ // 19 - Set-Cookie
+			a: http.Header{
+				headers.NameSetCookie: []string{"some-fake-value-for-testing"},
 			},
 			expectedTTL: -1 * time.Second,
 		},
