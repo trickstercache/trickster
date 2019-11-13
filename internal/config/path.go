@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/Comcast/trickster/internal/proxy/methods"
 	ts "github.com/Comcast/trickster/internal/util/strings"
 )
 
@@ -83,8 +84,6 @@ type PathConfig struct {
 	//
 	// Handler is the HTTP Handler represented by the Path's HandlerName
 	Handler http.Handler `toml:"-"`
-	// Order is this Path's order index in the list of configured Paths
-	Order int `toml:"-"`
 	// HasCustomResponseBody is a boolean indicating if the response body is custom
 	// this flag allows an empty string response to be configured as a return value
 	HasCustomResponseBody bool `toml:"-"`
@@ -139,7 +138,6 @@ func (p *PathConfig) Copy() *PathConfig {
 		CollapsedForwardingName: p.CollapsedForwardingName,
 		CollapsedForwardingType: p.CollapsedForwardingType,
 		NoMetrics:               p.NoMetrics,
-		Order:                   p.Order,
 		HasCustomResponseBody:   p.HasCustomResponseBody,
 		Methods:                 make([]string, len(p.Methods)),
 		CacheKeyParams:          make([]string, len(p.CacheKeyParams)),

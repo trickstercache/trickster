@@ -734,7 +734,7 @@ func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "hit"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "nchit"})
 	if err != nil {
 		t.Error(err)
 	}
@@ -1326,7 +1326,7 @@ func TestSequentialObjectProxyCacheRequestNegativeCache(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "hit"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "nchit"})
 	if err != nil {
 		t.Error(err)
 	}

@@ -44,8 +44,22 @@ func (c *Client) Handlers() map[string]http.Handler {
 	return c.handlers
 }
 
+func populateHeathCheckRequestValues(oc *config.OriginConfig) {
+	if oc.HealthCheckUpstreamPath == "-" {
+		oc.HealthCheckUpstreamPath = "/" + mnState
+	}
+	if oc.HealthCheckVerb == "-" {
+		oc.HealthCheckVerb = http.MethodGet
+	}
+	if oc.HealthCheckQuery == "-" {
+		oc.HealthCheckQuery = ""
+	}
+}
+
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config.PathConfig, []string) {
+func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.PathConfig {
+
+	populateHeathCheckRequestValues(oc)
 
 	paths := map[string]*config.PathConfig{
 
@@ -56,6 +70,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			MatchType:       config.PathMatchTypePrefix,
+			MatchTypeName:   "prefix",
 		},
 
 		"/" + mnRollup + "/": &config.PathConfig{
@@ -65,6 +80,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyParams:  []string{upSpan, upEngine, upType},
 			CacheKeyHeaders: []string{},
 			MatchType:       config.PathMatchTypePrefix,
+			MatchTypeName:   "prefix",
 		},
 
 		"/" + mnFetch + "/": &config.PathConfig{
@@ -75,6 +91,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			MatchType:       config.PathMatchTypePrefix,
+			MatchTypeName:   "prefix",
 		},
 
 		"/" + mnRead + "/": &config.PathConfig{
@@ -85,6 +102,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyParams:  []string{"*"},
 			CacheKeyHeaders: []string{},
 			MatchType:       config.PathMatchTypePrefix,
+			MatchTypeName:   "prefix",
 		},
 
 		"/" + mnHistogram + "/": &config.PathConfig{
@@ -95,6 +113,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			MatchType:       config.PathMatchTypePrefix,
+			MatchTypeName:   "prefix",
 		},
 
 		"/" + mnFind + "/": &config.PathConfig{
@@ -104,6 +123,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyParams:  []string{upQuery},
 			CacheKeyHeaders: []string{},
 			MatchType:       config.PathMatchTypePrefix,
+			MatchTypeName:   "prefix",
 		},
 
 		"/" + mnState + "/": &config.PathConfig{
@@ -113,6 +133,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyParams:  []string{"*"},
 			CacheKeyHeaders: []string{},
 			MatchType:       config.PathMatchTypePrefix,
+			MatchTypeName:   "prefix",
 		},
 
 		"/" + mnCAQL + "/": &config.PathConfig{
@@ -122,6 +143,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyParams:  []string{upQuery, upCAQLQuery, upCAQLPeriod},
 			CacheKeyHeaders: []string{},
 			MatchType:       config.PathMatchTypePrefix,
+			MatchTypeName:   "prefix",
 		},
 
 		"/" + mnCAQLPub + "/": &config.PathConfig{
@@ -131,19 +153,18 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyParams:  []string{upQuery, upCAQLQuery, upCAQLPeriod},
 			CacheKeyHeaders: []string{},
 			MatchType:       config.PathMatchTypePrefix,
+			MatchTypeName:   "prefix",
 		},
 
 		"/": &config.PathConfig{
-			Path:        "/",
-			HandlerName: "proxy",
-			Methods:     []string{http.MethodGet},
-			MatchType:   config.PathMatchTypePrefix,
+			Path:          "/",
+			HandlerName:   "proxy",
+			Methods:       []string{http.MethodGet},
+			MatchType:     config.PathMatchTypePrefix,
+			MatchTypeName: "prefix",
 		},
 	}
 
-	orderedPaths := []string{"/" + mnRaw, "/" + mnRollup, "/" + mnFetch, "/" + mnRead,
-		"/" + mnHistogram, "/" + mnFind, "/" + mnState, "/" + mnCAQL, "/"}
-
-	return paths, orderedPaths
+	return paths
 
 }

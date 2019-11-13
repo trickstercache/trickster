@@ -23,32 +23,24 @@ import (
 
 var healthURL *url.URL
 var healthMethod string
+var originName string
 
 // HealthHandler checks the health of the Configured Upstream Origin
 func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 
 	if healthURL == nil {
-		url := c.BaseURL()
+		healthURL = c.BaseURL()
 		cfg := c.Configuration()
+		originName = cfg.Name
+		healthURL.Path += cfg.HealthCheckUpstreamPath
+		healthURL.RawQuery = cfg.HealthCheckQuery
+		healthMethod = cfg.HealthCheckVerb
+	}
 
-		if cfg.HealthCheckUpstreamPath == "-" {
-			url.Path += APIPath + mnQuery
-		} else {
-			url.Path += cfg.HealthCheckUpstreamPath
-		}
-
-		if cfg.HealthCheckVerb == "-" {
-			healthMethod = http.MethodGet
-		} else {
-			healthMethod = cfg.HealthCheckVerb
-		}
-
-		if cfg.HealthCheckQuery == "-" {
-			url.RawQuery = "query=up"
-		} else {
-			url.RawQuery = cfg.HealthCheckQuery
-		}
-		healthURL = url
+	if healthMethod == "-" {
+		w.WriteHeader(400)
+		w.Write([]byte("Health Check URL not Configured for origin: " + originName))
+		return
 	}
 
 	engines.ProxyRequest(

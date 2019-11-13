@@ -33,7 +33,7 @@ func ObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mod
 	FetchAndRespondViaObjectProxyCache(r, w, client, noLock)
 }
 
-// StreamObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache with io streaming
+// SequentialObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache with io streaming
 func SequentialObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client, noLock bool) {
 	body, resp, _ := FetchViaObjectProxyCache(r, client, nil, noLock)
 	Respond(w, resp.StatusCode, resp.Header, body)
@@ -105,7 +105,11 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 	statusCode := d.StatusCode
 
 	if d.CachingPolicy != nil && d.CachingPolicy.IsFresh {
-		cacheStatus = tc.LookupStatusHit
+		if d.CachingPolicy.IsNegativeCache {
+			cacheStatus = tc.LookupStatusNegativeCacheHit
+		} else {
+			cacheStatus = tc.LookupStatusHit
+		}
 	} else {
 		body, resp, elapsed = Fetch(r)
 		cp := GetResponseCachingPolicy(resp.StatusCode, oc.NegativeCache, resp.Header)
@@ -124,7 +128,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 
 	recordOPCResult(r, cacheStatus, statusCode, r.URL.Path, elapsed.Seconds(), d.Headers)
 
-	log.Info("http object cache lookup status", log.Pairs{"key": key, "cacheStatus": cacheStatus})
+	log.Debug("http object cache lookup status", log.Pairs{"key": key, "cacheStatus": cacheStatus})
 
 	// the client provided a conditional request to us, determine if Trickster responds with 304 or 200
 	// based on client-provided validators vs our now-fresh cache
@@ -252,7 +256,11 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 	statusCode := d.StatusCode
 
 	if d.CachingPolicy != nil && d.CachingPolicy.IsFresh {
-		cacheStatus = tc.LookupStatusHit
+		if d.CachingPolicy.IsNegativeCache {
+			cacheStatus = tc.LookupStatusNegativeCacheHit
+		} else {
+			cacheStatus = tc.LookupStatusHit
+		}
 		cl = len(d.Body)
 	} else {
 		reader, resp, cl = PrepareFetchReader(r)
@@ -271,7 +279,7 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 		}
 	}
 
-	log.Info("http object cache lookup status", log.Pairs{"key": key, "cacheStatus": cacheStatus})
+	log.Debug("http object cache lookup status", log.Pairs{"key": key, "cacheStatus": cacheStatus})
 
 	// the client provided a conditional request to us, determine if Trickster responds with 304 or 200
 	// based on client-provided validators vs our now-fresh cache
