@@ -65,7 +65,9 @@ func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]
 	if pc == nil {
 		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/api/v1/query")
 	}
-	pc.ProgressiveCollapsedForwarding = true
+
+	pc.CollapsedForwardingName = "progressive"
+	pc.CollapsedForwardingType = config.CFTypeProgressive
 
 	oc := tc.OriginConfig(r.Context())
 	cc := tc.CacheClient(r.Context())

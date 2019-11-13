@@ -35,14 +35,17 @@ var Origins map[string]*OriginConfig
 // Caches is the Cache Map subsection of the Running Configuration
 var Caches map[string]*CachingConfig
 
-// ProxyServer is the Proxy Server subsection of the Running Configuration
-var ProxyServer *ProxyServerConfig
+// Frontend is the Proxy Server subsection of the Running Configuration
+var Frontend *FrontendConfig
 
 // Logging is the Logging subsection of the Running Configuration
 var Logging *LoggingConfig
 
 // Metrics is the Metrics subsection of the Running Configuration
 var Metrics *MetricsConfig
+
+// NegativeCacheConfigs is the NegativeCacheConfig subsection of the Running Configuration
+var NegativeCacheConfigs map[string]NegativeCacheConfig
 
 // Flags is a collection of command line flags that Trickster loads.
 var Flags = TricksterFlags{}
@@ -61,12 +64,20 @@ var LoaderWarnings = make([]string, 0, 0)
 
 // TricksterConfig is the main configuration object
 type TricksterConfig struct {
-	Main        *MainConfig               `toml:"main"`
-	Origins     map[string]*OriginConfig  `toml:"origins"`
-	Caches      map[string]*CachingConfig `toml:"caches"`
-	ProxyServer *ProxyServerConfig        `toml:"proxy_server"`
-	Logging     *LoggingConfig            `toml:"logging"`
-	Metrics     *MetricsConfig            `toml:"metrics"`
+	// Main is the primary MainConfig section
+	Main *MainConfig `toml:"main"`
+	// Origins is a map of OriginConfigs
+	Origins map[string]*OriginConfig `toml:"origins"`
+	// Caches is a map of CacheConfigs
+	Caches map[string]*CachingConfig `toml:"caches"`
+	// ProxyServer is provides configurations about the Proxy Front End
+	Frontend *FrontendConfig `toml:"frontend"`
+	// Logging provides configurations that affect logging behavior
+	Logging *LoggingConfig `toml:"logging"`
+	// Metrics provides configurations for collecting Metrics about the application
+	Metrics *MetricsConfig `toml:"metrics"`
+	// NegativeCacheConfigs is a map of NegativeCacheConfigs
+	NegativeCacheConfigs map[string]NegativeCacheConfig `toml:"negative_caches"`
 
 	activeCaches map[string]bool
 }
@@ -75,11 +86,6 @@ type TricksterConfig struct {
 type MainConfig struct {
 	// InstanceID represents a unique ID for the current instance, when multiple instances on the same host
 	InstanceID int `toml:"instance_id"`
-	// Environment indicates the operating environment of the running instance (e.g., "dev", "stage", "prod")
-	Environment string
-	// Hostname is populated with the self-resolved Hostname where the instance is running
-	Hostname string
-
 	// ConfigHandlerPath provides the path to register the Config Handler for outputting the running configuration
 	ConfigHandlerPath string `toml:"config_handler_path"`
 	// PingHandlerPath provides the path to register the Ping Handler for checking that Trickster is running
@@ -124,13 +130,13 @@ type OriginConfig struct {
 	BackfillToleranceSecs int64 `toml:"backfill_tolerance_secs"`
 	// PathList is a list of PathConfigs that control the behavior of the given paths when requested
 	Paths map[string]*PathConfig `toml:"paths"`
-	// NegativeCache is a map of HTTP Status Codes that are cached for the provided duration, usually used for failures (e.g., 404's for 10s)
-	NegativeCacheSecs map[string]int `toml:"negative_cache"`
+	// NegativeCacheName provides the name of the Negative Cache Config to be used by this Origin
+	NegativeCacheName string `toml:"negative_cache_name"`
 	// TimeseriesTTLSecs specifies the cache TTL of timeseries objects
 	TimeseriesTTLSecs int `toml:"timeseries_ttl_secs"`
 	// TimeseriesTTLSecs specifies the cache TTL of fast forward data
 	FastForwardTTLSecs int `toml:"fastforward_ttl_secs"`
-	// MacTTLSecs specifies the maximum allowed TTL for any cache object
+	// MaxTTLSecs specifies the maximum allowed TTL for any cache object
 	MaxTTLSecs int `toml:"max_ttl_secs"`
 	// RevalidationFactor specifies how many times to multiply the object freshness lifetime by to calculate an absolute cache TTL
 	RevalidationFactor int `toml:"revalidation_factor"`
@@ -180,27 +186,44 @@ type CachingConfig struct {
 	// Name is the Name of the cache, taken from the Key in the Caches map[string]*CacheConfig
 	Name string `toml:"-"`
 	// Type represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
-	CacheType   string                `toml:"cache_type"`
-	Compression bool                  `toml:"compression"`
-	Index       CacheIndexConfig      `toml:"index"`
-	Redis       RedisCacheConfig      `toml:"redis"`
-	Filesystem  FilesystemCacheConfig `toml:"filesystem"`
-	BBolt       BBoltCacheConfig      `toml:"bbolt"`
-	Badger      BadgerCacheConfig     `toml:"badger"`
+	CacheType string `toml:"cache_type"`
+	// Compression determines whether objects should be compressed when writing to the cache
+	Compression bool `toml:"compression"`
+	// Index provides options for the Cache Index
+	Index CacheIndexConfig `toml:"index"`
+	// Redis provides options for Redis caching
+	Redis RedisCacheConfig `toml:"redis"`
+	// Filesystem provides options for Filesystem caching
+	Filesystem FilesystemCacheConfig `toml:"filesystem"`
+	// BBolt provides options for BBolt caching
+	BBolt BBoltCacheConfig `toml:"bbolt"`
+	// Badger provides options for BadgerDB caching
+	Badger BadgerCacheConfig `toml:"badger"`
 
 	//  Synthetic Values
 
-	// CacheTypeID represents the internal itoa constant for the provided CacheType string
+	// CacheTypeID represents the internal constant for the provided CacheType string
+	// and is automatically populated at startup
 	CacheTypeID CacheType `toml:"-"`
 }
 
 // CacheIndexConfig defines the operation of the Cache Indexer
 type CacheIndexConfig struct {
-	ReapIntervalSecs      int   `toml:"reap_interval_secs"`
-	FlushIntervalSecs     int   `toml:"flush_interval_secs"`
-	MaxSizeBytes          int64 `toml:"max_size_bytes"`
-	MaxSizeBackoffBytes   int64 `toml:"max_size_backoff_bytes"`
-	MaxSizeObjects        int64 `toml:"max_size_objects"`
+	// ReapIntervalSecs defines how long the Cache Index reaper sleeps between reap cycles
+	ReapIntervalSecs int `toml:"reap_interval_secs"`
+	// FlushIntervalSecs sets how often the Cache Index saves its metadata to the cache from application memory
+	FlushIntervalSecs int `toml:"flush_interval_secs"`
+	// MaxSizeBytes indicates how large the cache can grow in bytes before the Index evicts
+	// least-recently-accessed items.
+	MaxSizeBytes int64 `toml:"max_size_bytes"`
+	// MaxSizeBackoffBytes indicates how far below max_size_bytes the cache size must be
+	// to complete a byte-size-based eviction exercise.
+	MaxSizeBackoffBytes int64 `toml:"max_size_backoff_bytes"`
+	// MaxSizeObjects  indicates how large the cache can grow in objects before the Index
+	// evicts least-recently-accessed items.
+	MaxSizeObjects int64 `toml:"max_size_objects"`
+	// MaxSizeBackoffObjects indicates how far under max_size_objects the cache size must
+	// be to complete object-size-based eviction exercise.
 	MaxSizeBackoffObjects int64 `toml:"max_size_backoff_objects"`
 
 	ReapInterval  time.Duration `toml:"-"`
@@ -213,9 +236,9 @@ type RedisCacheConfig struct {
 	ClientType string `toml:"client_type"`
 	// Protocol represents the connection method (e.g., "tcp", "unix", etc.)
 	Protocol string `toml:"protocol"`
-	// Endpoint represents FQDN:port or IPAddress:Port of the Redis/Sentinel Endpoint
+	// Endpoint represents FQDN:port or IPAddress:Port of the Redis Endpoint
 	Endpoint string `toml:"endpoint"`
-	// Endpoints represents FQDN:port or IPAddress:Port collection of a Redis Cluster
+	// Endpoints represents FQDN:port or IPAddress:Port collection of a Redis Cluster or Sentinel Nodes
 	Endpoints []string `toml:"endpoints"`
 	// Password can be set when using password protected redis instance.
 	Password string `toml:"password"`
@@ -223,9 +246,9 @@ type RedisCacheConfig struct {
 	SentinelMaster string `toml:"sentinel_master"`
 	// DB is the Database to be selected after connecting to the server.
 	DB int `toml:"db"`
-	// Maximum number of retries before giving up on the command
+	// MaxRetries is the maximum number of retries before giving up on the command
 	MaxRetries int `toml:"max_retries"`
-	// Minimum backoff between each retry.
+	// MinRetryBackoffMS is the minimum backoff between each retry.
 	MinRetryBackoffMS int `toml:"min_retry_backoff_ms"`
 	// MaxRetryBackoffMS is the Maximum backoff between each retry.
 	MaxRetryBackoffMS int `toml:"max_retry_backoff_ms"`
@@ -271,8 +294,8 @@ type FilesystemCacheConfig struct {
 	CachePath string `toml:"cache_path"`
 }
 
-// ProxyServerConfig is a collection of configurations for the main http listener for the application
-type ProxyServerConfig struct {
+// FrontendConfig is a collection of configurations for the main http frontend for the application
+type FrontendConfig struct {
 	// ListenAddress is IP address for the main http listener for the application
 	ListenAddress string `toml:"listen_address"`
 	// ListenPort is TCP Port for the main http listener for the application
@@ -305,6 +328,18 @@ type MetricsConfig struct {
 	ListenPort int `toml:"listen_port"`
 }
 
+// NegativeCacheConfig is a collection of response codes and their TTLs
+type NegativeCacheConfig map[string]int
+
+// Copy returns an exact copy of a NegativeCacheConfig
+func (nc NegativeCacheConfig) Copy() NegativeCacheConfig {
+	nc2 := make(NegativeCacheConfig)
+	for k, v := range nc {
+		nc2[k] = v
+	}
+	return nc2
+}
+
 // NewConfig returns a Config initialized with default values.
 func NewConfig() *TricksterConfig {
 	return &TricksterConfig{
@@ -316,7 +351,6 @@ func NewConfig() *TricksterConfig {
 			LogLevel: defaultLogLevel,
 		},
 		Main: &MainConfig{
-			Hostname:          defaultHostname,
 			ConfigHandlerPath: defaultConfigHandlerPath,
 			PingHandlerPath:   defaultPingHandlerPath,
 		},
@@ -326,10 +360,18 @@ func NewConfig() *TricksterConfig {
 		Origins: map[string]*OriginConfig{
 			"default": NewOriginConfig(),
 		},
-		ProxyServer: &ProxyServerConfig{
+		Frontend: &FrontendConfig{
 			ListenPort: defaultProxyListenPort,
 		},
+		NegativeCacheConfigs: map[string]NegativeCacheConfig{
+			"default": NewNegativeCacheConfig(),
+		},
 	}
+}
+
+// NewNegativeCacheConfig returns an empty NegativeCacheConfig
+func NewNegativeCacheConfig() NegativeCacheConfig {
+	return NegativeCacheConfig{}
 }
 
 // NewCacheConfig will return a pointer to an OriginConfig with the default configuration settings
@@ -366,7 +408,7 @@ func NewOriginConfig() *OriginConfig {
 		KeepAliveTimeoutSecs:         defaultKeepAliveTimeoutSecs,
 		MaxIdleConns:                 defaultMaxIdleConns,
 		NegativeCache:                make(map[int]time.Duration),
-		NegativeCacheSecs:            make(map[string]int),
+		NegativeCacheName:            defaultOriginNegativeCacheName,
 		Paths:                        make(map[string]*PathConfig),
 		Timeout:                      time.Second * defaultOriginTimeoutSecs,
 		TimeoutSecs:                  defaultOriginTimeoutSecs,
@@ -529,8 +571,8 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 			}
 		}
 
-		if metadata.IsDefined("origins", k, "negative_cache") {
-			oc.NegativeCacheSecs = v.NegativeCacheSecs
+		if metadata.IsDefined("origins", k, "negative_cache_name") {
+			oc.NegativeCacheName = v.NegativeCacheName
 		}
 
 		if metadata.IsDefined("origins", k, "health_check_upstream_path") {
@@ -739,8 +781,6 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 	delete(nc.Origins, "default")
 
 	nc.Main.ConfigHandlerPath = c.Main.ConfigHandlerPath
-	nc.Main.Environment = c.Main.Environment
-	nc.Main.Hostname = c.Main.Hostname
 	nc.Main.InstanceID = c.Main.InstanceID
 	nc.Main.PingHandlerPath = c.Main.PingHandlerPath
 
@@ -750,91 +790,23 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 	nc.Metrics.ListenAddress = c.Metrics.ListenAddress
 	nc.Metrics.ListenPort = c.Metrics.ListenPort
 
-	nc.ProxyServer.ListenAddress = c.ProxyServer.ListenAddress
-	nc.ProxyServer.ListenPort = c.ProxyServer.ListenPort
+	nc.Frontend.ListenAddress = c.Frontend.ListenAddress
+	nc.Frontend.ListenPort = c.Frontend.ListenPort
+	nc.Frontend.TLSListenAddress = c.Frontend.TLSListenAddress
+	nc.Frontend.TLSListenPort = c.Frontend.TLSListenPort
+	nc.Frontend.ConnectionsLimit = c.Frontend.ConnectionsLimit
+	nc.Frontend.ServeTLS = c.Frontend.ServeTLS
 
 	for k, v := range c.Origins {
-		o := NewOriginConfig()
-		o.BackfillTolerance = v.BackfillTolerance
-		o.BackfillToleranceSecs = v.BackfillToleranceSecs
-		o.CacheName = v.CacheName
-		o.FastForwardDisable = v.FastForwardDisable
-		o.Host = v.Host
-		o.IsDefault = v.IsDefault
-		o.KeepAliveTimeoutSecs = v.KeepAliveTimeoutSecs
-		o.MaxIdleConns = v.MaxIdleConns
-		o.PathPrefix = v.PathPrefix
-		o.OriginURL = v.OriginURL
-		o.HealthCheckUpstreamPath = v.HealthCheckUpstreamPath
-		o.HealthCheckVerb = v.HealthCheckVerb
-		o.HealthCheckQuery = v.HealthCheckQuery
-		o.Scheme = v.Scheme
-		o.Timeout = v.Timeout
-		o.TimeoutSecs = v.TimeoutSecs
-		o.OriginType = v.OriginType
-		o.TimeseriesRetention = v.TimeseriesRetention
-		o.TimeseriesRetentionFactor = v.TimeseriesRetentionFactor
-		o.TimeseriesEvictionMethodName = v.TimeseriesEvictionMethodName
-		o.TimeseriesEvictionMethod = v.TimeseriesEvictionMethod
-		o.FastForwardTTL = v.FastForwardTTL
-		o.FastForwardTTLSecs = v.FastForwardTTLSecs
-		o.MaxTTLSecs = v.MaxTTLSecs
-		o.MaxTTL = v.MaxTTL
-		o.RevalidationFactor = v.RevalidationFactor
-		o.TimeseriesTTL = v.TimeseriesTTL
-		o.TimeseriesTTLSecs = v.TimeseriesTTLSecs
-		o.Paths = make(map[string]*PathConfig)
-		for l, p := range v.Paths {
-			o.Paths[l] = p.Copy()
-		}
-		nc.Origins[k] = o
+		nc.Origins[k] = v.Copy()
 	}
 
 	for k, v := range c.Caches {
+		nc.Caches[k] = v.Copy()
+	}
 
-		cc := NewCacheConfig()
-		cc.Compression = v.Compression
-		cc.CacheType = v.CacheType
-		cc.CacheTypeID = v.CacheTypeID
-
-		cc.Index.FlushInterval = v.Index.FlushInterval
-		cc.Index.FlushIntervalSecs = v.Index.FlushIntervalSecs
-		cc.Index.MaxSizeBackoffBytes = v.Index.MaxSizeBackoffBytes
-		cc.Index.MaxSizeBackoffObjects = v.Index.MaxSizeBackoffObjects
-		cc.Index.MaxSizeBytes = v.Index.MaxSizeBytes
-		cc.Index.MaxSizeObjects = v.Index.MaxSizeObjects
-		cc.Index.ReapInterval = v.Index.ReapInterval
-		cc.Index.ReapIntervalSecs = v.Index.ReapIntervalSecs
-
-		cc.Badger.Directory = v.Badger.Directory
-		cc.Badger.ValueDirectory = v.Badger.ValueDirectory
-
-		cc.Filesystem.CachePath = v.Filesystem.CachePath
-
-		cc.BBolt.Bucket = v.BBolt.Bucket
-		cc.BBolt.Filename = v.BBolt.Filename
-
-		cc.Redis.ClientType = v.Redis.ClientType
-		cc.Redis.DB = v.Redis.DB
-		cc.Redis.DialTimeoutMS = v.Redis.DialTimeoutMS
-		cc.Redis.Endpoint = v.Redis.Endpoint
-		cc.Redis.Endpoints = v.Redis.Endpoints
-		cc.Redis.IdleCheckFrequencyMS = v.Redis.IdleCheckFrequencyMS
-		cc.Redis.IdleTimeoutMS = v.Redis.IdleTimeoutMS
-		cc.Redis.MaxConnAgeMS = v.Redis.MaxConnAgeMS
-		cc.Redis.MaxRetries = v.Redis.MaxRetries
-		cc.Redis.MaxRetryBackoffMS = v.Redis.MaxRetryBackoffMS
-		cc.Redis.MinIdleConns = v.Redis.MinIdleConns
-		cc.Redis.MinRetryBackoffMS = v.Redis.MinRetryBackoffMS
-		cc.Redis.Password = v.Redis.Password
-		cc.Redis.PoolSize = v.Redis.PoolSize
-		cc.Redis.PoolTimeoutMS = v.Redis.PoolTimeoutMS
-		cc.Redis.Protocol = v.Redis.Protocol
-		cc.Redis.ReadTimeoutMS = v.Redis.ReadTimeoutMS
-		cc.Redis.SentinelMaster = v.Redis.SentinelMaster
-		cc.Redis.WriteTimeoutMS = v.Redis.WriteTimeoutMS
-
-		nc.Caches[k] = cc
+	for k, v := range c.NegativeCacheConfigs {
+		nc.NegativeCacheConfigs[k] = v.Copy()
 	}
 
 	return nc
@@ -866,4 +838,117 @@ func (c *TricksterConfig) String() string {
 	e := toml.NewEncoder(&buf)
 	e.Encode(cp)
 	return buf.String()
+}
+
+// Copy returns an exact copy of an *OriginConfig
+func (oc *OriginConfig) Copy() *OriginConfig {
+
+	o := &OriginConfig{}
+	o.BackfillTolerance = oc.BackfillTolerance
+	o.BackfillToleranceSecs = oc.BackfillToleranceSecs
+	o.CacheName = oc.CacheName
+	o.FastForwardDisable = oc.FastForwardDisable
+	o.FastForwardTTL = oc.FastForwardTTL
+	o.FastForwardTTLSecs = oc.FastForwardTTLSecs
+	o.HealthCheckUpstreamPath = oc.HealthCheckUpstreamPath
+	o.HealthCheckVerb = oc.HealthCheckVerb
+	o.HealthCheckQuery = oc.HealthCheckQuery
+	o.Host = oc.Host
+	o.Name = oc.Name
+	o.IsDefault = oc.IsDefault
+	o.KeepAliveTimeoutSecs = oc.KeepAliveTimeoutSecs
+	o.MaxIdleConns = oc.MaxIdleConns
+	o.MaxTTLSecs = oc.MaxTTLSecs
+	o.MaxTTL = oc.MaxTTL
+	o.MaxObjectSizeBytes = oc.MaxObjectSizeBytes
+	o.OriginType = oc.OriginType
+	o.OriginURL = oc.OriginURL
+	o.PathPrefix = oc.PathPrefix
+	o.RevalidationFactor = oc.RevalidationFactor
+	o.Scheme = oc.Scheme
+	o.Timeout = oc.Timeout
+	o.TimeoutSecs = oc.TimeoutSecs
+	o.TimeseriesRetention = oc.TimeseriesRetention
+	o.TimeseriesRetentionFactor = oc.TimeseriesRetentionFactor
+	o.TimeseriesEvictionMethodName = oc.TimeseriesEvictionMethodName
+	o.TimeseriesEvictionMethod = oc.TimeseriesEvictionMethod
+	o.TimeseriesTTL = oc.TimeseriesTTL
+	o.TimeseriesTTLSecs = oc.TimeseriesTTLSecs
+	o.ValueRetention = oc.ValueRetention
+
+	o.Paths = make(map[string]*PathConfig)
+	for l, p := range oc.Paths {
+		o.Paths[l] = p.Copy()
+	}
+
+	o.NegativeCacheName = oc.NegativeCacheName
+	if oc.NegativeCache != nil {
+		m := make(map[int]time.Duration)
+		for c, t := range oc.NegativeCache {
+			m[c] = t
+		}
+		o.NegativeCache = m
+	}
+
+	if oc.TLS != nil {
+		o.TLS = oc.TLS.Copy()
+	}
+	o.RequireTLS = oc.RequireTLS
+
+	if oc.FastForwardPath != nil {
+		o.FastForwardPath = oc.FastForwardPath.Copy()
+	}
+
+	return o
+
+}
+
+// Copy returns an exact copy of a *CachingConfig
+func (cc *CachingConfig) Copy() *CachingConfig {
+
+	c := NewCacheConfig()
+	c.Name = cc.Name
+	c.CacheType = cc.CacheType
+	c.CacheTypeID = cc.CacheTypeID
+	c.Compression = cc.Compression
+
+	c.Index.FlushInterval = cc.Index.FlushInterval
+	c.Index.FlushIntervalSecs = cc.Index.FlushIntervalSecs
+	c.Index.MaxSizeBackoffBytes = cc.Index.MaxSizeBackoffBytes
+	c.Index.MaxSizeBackoffObjects = cc.Index.MaxSizeBackoffObjects
+	c.Index.MaxSizeBytes = cc.Index.MaxSizeBytes
+	c.Index.MaxSizeObjects = cc.Index.MaxSizeObjects
+	c.Index.ReapInterval = cc.Index.ReapInterval
+	c.Index.ReapIntervalSecs = cc.Index.ReapIntervalSecs
+
+	c.Badger.Directory = cc.Badger.Directory
+	c.Badger.ValueDirectory = cc.Badger.ValueDirectory
+
+	c.Filesystem.CachePath = cc.Filesystem.CachePath
+
+	c.BBolt.Bucket = cc.BBolt.Bucket
+	c.BBolt.Filename = cc.BBolt.Filename
+
+	c.Redis.ClientType = cc.Redis.ClientType
+	c.Redis.DB = cc.Redis.DB
+	c.Redis.DialTimeoutMS = cc.Redis.DialTimeoutMS
+	c.Redis.Endpoint = cc.Redis.Endpoint
+	c.Redis.Endpoints = cc.Redis.Endpoints
+	c.Redis.IdleCheckFrequencyMS = cc.Redis.IdleCheckFrequencyMS
+	c.Redis.IdleTimeoutMS = cc.Redis.IdleTimeoutMS
+	c.Redis.MaxConnAgeMS = cc.Redis.MaxConnAgeMS
+	c.Redis.MaxRetries = cc.Redis.MaxRetries
+	c.Redis.MaxRetryBackoffMS = cc.Redis.MaxRetryBackoffMS
+	c.Redis.MinIdleConns = cc.Redis.MinIdleConns
+	c.Redis.MinRetryBackoffMS = cc.Redis.MinRetryBackoffMS
+	c.Redis.Password = cc.Redis.Password
+	c.Redis.PoolSize = cc.Redis.PoolSize
+	c.Redis.PoolTimeoutMS = cc.Redis.PoolTimeoutMS
+	c.Redis.Protocol = cc.Redis.Protocol
+	c.Redis.ReadTimeoutMS = cc.Redis.ReadTimeoutMS
+	c.Redis.SentinelMaster = cc.Redis.SentinelMaster
+	c.Redis.WriteTimeoutMS = cc.Redis.WriteTimeoutMS
+
+	return c
+
 }

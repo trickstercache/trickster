@@ -34,9 +34,10 @@ import (
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
-// Used for Progressive Collapsed Forwarding
+// Reqs is for Progressive Collapsed Forwarding
 var Reqs sync.Map
 
+// HTTPBlockSize represents 32K of bytes
 const HTTPBlockSize = 32 * 1024
 
 // ProxyRequest proxies an inbound request to its corresponding upstream origin with no caching features

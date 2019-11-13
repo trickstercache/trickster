@@ -57,7 +57,6 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			OriginConfig:                   oc,
 			MatchType:                      config.PathMatchTypePrefix,
 			MatchTypeName:                  "prefix",
-			ProgressiveCollapsedForwarding: false,
 		},
 		"/-" + strings.Join(um, "-"): &config.PathConfig{
 			Path:                           "/",
@@ -66,7 +65,6 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			OriginConfig:                   oc,
 			MatchType:                      config.PathMatchTypePrefix,
 			MatchTypeName:                  "prefix",
-			ProgressiveCollapsedForwarding: false,
 		},
 	}
 	return paths
