@@ -51,20 +51,20 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 
 	paths := map[string]*config.PathConfig{
 		"/-" + strings.Join(cm, "-"): &config.PathConfig{
-			Path:                           "/",
-			HandlerName:                    "proxycache",
-			Methods:                        cm,
-			OriginConfig:                   oc,
-			MatchType:                      config.PathMatchTypePrefix,
-			MatchTypeName:                  "prefix",
+			Path:          "/",
+			HandlerName:   "proxycache",
+			Methods:       cm,
+			OriginConfig:  oc,
+			MatchType:     config.PathMatchTypePrefix,
+			MatchTypeName: "prefix",
 		},
 		"/-" + strings.Join(um, "-"): &config.PathConfig{
-			Path:                           "/",
-			HandlerName:                    "proxy",
-			Methods:                        um,
-			OriginConfig:                   oc,
-			MatchType:                      config.PathMatchTypePrefix,
-			MatchTypeName:                  "prefix",
+			Path:          "/",
+			HandlerName:   "proxy",
+			Methods:       um,
+			OriginConfig:  oc,
+			MatchType:     config.PathMatchTypePrefix,
+			MatchTypeName: "prefix",
 		},
 	}
 	return paths
