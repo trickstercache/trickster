@@ -32,14 +32,16 @@ const (
 	// ValueTextPlain represents the HTTP Header Value of "text/plain"
 	ValueTextPlain = "text/plain"
 
-	ValuePublic          = "public"
-	ValuePrivate         = "private"
-	ValueMaxAge          = "max-age"
-	ValueSharedMaxAge    = "s-maxage"
-	ValueMustRevalidate  = "must-revalidate"
-	ValueNoStore         = "no-store"
-	ValueProxyRevalidate = "proxy-revalidate"
-	ValueNoTransform     = "no-transform"
+	ValuePublic            = "public"
+	ValuePrivate           = "private"
+	ValueMaxAge            = "max-age"
+	ValueSharedMaxAge      = "s-maxage"
+	ValueMustRevalidate    = "must-revalidate"
+	ValueNoStore           = "no-store"
+	ValueProxyRevalidate   = "proxy-revalidate"
+	ValueNoTransform       = "no-transform"
+	ValueXFormUrlEncoded   = "application/x-www-form-urlencoded"
+	ValueMultiPartFormData = "multipart/form-data; boundary="
 
 	// Common HTTP Header Names
 
