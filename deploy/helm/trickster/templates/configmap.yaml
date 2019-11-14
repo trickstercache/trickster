@@ -286,6 +286,9 @@ data:
             {{- if .cacheKeyParams }}
           cache_key_params = [ '{{- join "', '" .cacheKeyParams }}' ]
             {{- end }}
+            {{- if .cacheKeyFormFields }}
+          cache_key_form_fields = [ '{{- join "', '" .cacheKeyFormFields }}' ]
+            {{- end }}
             {{- if .cacheKeyHeaders }}
           cache_key_headers = [ '{{- join "', '" .cacheKeyHeaders }}' ]
             {{- end }}
