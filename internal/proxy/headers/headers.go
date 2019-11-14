@@ -41,7 +41,7 @@ const (
 	ValueProxyRevalidate   = "proxy-revalidate"
 	ValueNoTransform       = "no-transform"
 	ValueXFormUrlEncoded   = "application/x-www-form-urlencoded"
-	ValueMultipartFormData = "multipart/form-data; boundary="
+	ValueMultipartFormData = "multipart/form-data"
 
 	// Common HTTP Header Names
 

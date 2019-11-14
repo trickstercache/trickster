@@ -19,7 +19,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Comcast/trickster/internal/config"
@@ -77,12 +79,12 @@ func DeriveCacheKey(r *model.Request, apc *config.PathConfig, extra string) stri
 
 	if _, ok := methodsWithBody[r.ClientRequest.Method]; ok && len(pc.CacheKeyFormFields) > 0 {
 		ct := r.ClientRequest.Header.Get(headers.NameContentType)
-		if ct == headers.ValueXFormUrlEncoded || ct == headers.ValueMultipartFormData {
+		if ct == headers.ValueXFormUrlEncoded || strings.HasPrefix(ct, headers.ValueMultipartFormData) || ct == headers.ValueApplicationJSON {
 			b, _ := ioutil.ReadAll(r.ClientRequest.Body)
 			r.ClientRequest.Body = ioutil.NopCloser(bytes.NewReader(b))
 			if ct == headers.ValueXFormUrlEncoded {
 				r.ClientRequest.ParseForm()
-			} else if ct == headers.ValueMultipartFormData {
+			} else if strings.HasPrefix(ct, headers.ValueMultipartFormData) {
 				r.ClientRequest.ParseMultipartForm(1024 * 1024)
 			} else if ct == headers.ValueApplicationJSON {
 				var document map[string]interface{}
@@ -91,6 +93,9 @@ func DeriveCacheKey(r *model.Request, apc *config.PathConfig, extra string) stri
 					for _, f := range pc.CacheKeyFormFields {
 						v, err := deepSearch(document, f)
 						if err == nil {
+							if r.ClientRequest.Form == nil {
+								r.ClientRequest.Form = url.Values{}
+							}
 							r.ClientRequest.Form.Set(f, v)
 						}
 					}
@@ -98,11 +103,12 @@ func DeriveCacheKey(r *model.Request, apc *config.PathConfig, extra string) stri
 			}
 			r.ClientRequest.Body = ioutil.NopCloser(bytes.NewReader(b))
 		}
+
 		for _, f := range pc.CacheKeyFormFields {
-			fmt.Println("checking ", f)
-			if v := r.ClientRequest.FormValue(f); f != "" {
-				fmt.Printf("found [%s] value of [%s]", f, v)
-				vals = append(vals, fmt.Sprintf("%s.%s.", f, v))
+			if _, ok := r.ClientRequest.Form[f]; ok {
+				if v := r.ClientRequest.FormValue(f); v != "" {
+					vals = append(vals, fmt.Sprintf("%s.%s.", f, v))
+				}
 			}
 		}
 	}
@@ -112,8 +118,9 @@ func DeriveCacheKey(r *model.Request, apc *config.PathConfig, extra string) stri
 }
 
 func deepSearch(document map[string]interface{}, key string) (string, error) {
+
 	if key == "" {
-		return "", fmt.Errorf("1could not find key: %s", key)
+		return "", fmt.Errorf("invalid key name: %s", key)
 	}
 	parts := strings.Split(key, "/")
 	m := document
@@ -121,20 +128,28 @@ func deepSearch(document map[string]interface{}, key string) (string, error) {
 	for i, p := range parts {
 		v, ok := m[p]
 		if !ok {
-			return "", fmt.Errorf("2could not find key: %s", key)
+			return "", fmt.Errorf("could not find key: %s", key)
 		}
 		if l != i {
 			m, ok = v.(map[string]interface{})
 			if !ok {
-				return "", fmt.Errorf("3could not find key: %s", key)
+				return "", fmt.Errorf("could not find key: %s", key)
 			}
 			continue
 		}
-		val, ok := v.(string)
-		if !ok {
-			return "", fmt.Errorf("4could not find key: %s", key)
+
+		if s, ok := v.(string); ok {
+			return s, nil
 		}
-		return val, nil
+
+		if i, ok := v.(float64); ok {
+			return strconv.FormatFloat(i, 'f', 4, 64), nil
+		}
+
+		if b, ok := v.(bool); ok {
+			return fmt.Sprintf("%t", b), nil
+		}
+
 	}
-	return "", fmt.Errorf("5could not find key: %s", key)
+	return "", fmt.Errorf("could not find key: %s", key)
 }
