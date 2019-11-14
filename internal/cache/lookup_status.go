@@ -36,6 +36,8 @@ const (
 	LookupStatusProxyError
 	// LookupStatusProxyOnly indicates that the request was fully proxied to the origin without using the cache
 	LookupStatusProxyOnly
+	// LookupStatusNegativeCacheHit indicates that the request was served as a hit from the Negative Response Cache
+	LookupStatusNegativeCacheHit
 )
 
 var cacheLookupStatusNames = map[string]LookupStatus{
@@ -46,16 +48,18 @@ var cacheLookupStatusNames = map[string]LookupStatus{
 	"purge":       LookupStatusPurge,
 	"proxy-error": LookupStatusProxyError,
 	"proxy-only":  LookupStatusProxyOnly,
+	"nchit":       LookupStatusNegativeCacheHit,
 }
 
 var cacheLookupStatusValues = map[LookupStatus]string{
-	LookupStatusHit:        "hit",
-	LookupStatusPartialHit: "phit",
-	LookupStatusRangeMiss:  "rmiss",
-	LookupStatusKeyMiss:    "kmiss",
-	LookupStatusPurge:      "purge",
-	LookupStatusProxyError: "proxy-error",
-	LookupStatusProxyOnly:  "proxy-only",
+	LookupStatusHit:              "hit",
+	LookupStatusPartialHit:       "phit",
+	LookupStatusRangeMiss:        "rmiss",
+	LookupStatusKeyMiss:          "kmiss",
+	LookupStatusPurge:            "purge",
+	LookupStatusProxyError:       "proxy-error",
+	LookupStatusProxyOnly:        "proxy-only",
+	LookupStatusNegativeCacheHit: "nchit",
 }
 
 func (s LookupStatus) String() string {

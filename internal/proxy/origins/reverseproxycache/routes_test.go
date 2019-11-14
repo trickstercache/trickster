@@ -48,15 +48,15 @@ func TestDefaultPathConfigs(t *testing.T) {
 		t.Error(err)
 	}
 
-	dpc, ordered := client.DefaultPathConfigs(client.config)
+	dpc := client.DefaultPathConfigs(client.config)
 
-	if _, ok := dpc["/"]; !ok {
+	if _, ok := dpc["/-GET-HEAD"]; !ok {
 		t.Errorf("expected to find path named: %s", "/")
 	}
 
-	const expectedLen = 1
-	if len(ordered) != expectedLen {
-		t.Errorf("expected ordered length to be: %d got %d", expectedLen, len(ordered))
+	const expectedLen = 2
+	if len(dpc) != expectedLen {
+		t.Errorf("expected ordered length to be: %d got %d", expectedLen, len(dpc))
 	}
 
 }

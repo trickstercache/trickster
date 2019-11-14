@@ -15,11 +15,13 @@ package engines
 
 import (
 	"bytes"
+	"io"
 	"io/ioutil"
 	"math"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tc "github.com/Comcast/trickster/internal/cache"
@@ -32,18 +34,81 @@ import (
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
+// Reqs is for Progressive Collapsed Forwarding
+var Reqs sync.Map
+
+// HTTPBlockSize represents 32K of bytes
+const HTTPBlockSize = 32 * 1024
+
 // ProxyRequest proxies an inbound request to its corresponding upstream origin with no caching features
-func ProxyRequest(r *model.Request, w http.ResponseWriter) {
-	body, resp, elapsed := Fetch(r)
-	recordProxyResults(r, resp.StatusCode, r.URL.Path, elapsed.Seconds(), resp.Header)
-	Respond(w, resp.StatusCode, resp.Header, body)
-}
-
-// Fetch makes an HTTP request to the provided Origin URL
-func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
-
+func ProxyRequest(r *model.Request, w http.ResponseWriter) *http.Response {
 	pc := context.PathConfig(r.ClientRequest.Context())
 	oc := context.OriginConfig(r.ClientRequest.Context())
+
+	start := time.Now()
+	var elapsed time.Duration
+	var cacheStatusCode tc.LookupStatus
+	var resp *http.Response
+	var reader io.Reader
+	if pc == nil || pc.CollapsedForwardingType != config.CFTypeProgressive {
+		reader, resp, _ = PrepareFetchReader(r)
+		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
+		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+		if writer != nil && reader != nil {
+			io.Copy(writer, reader)
+		}
+	} else {
+		key := oc.Host + "." + DeriveCacheKey(r, pc, "")
+		result, ok := Reqs.Load(key)
+		if !ok {
+			cl := 0
+			reader, resp, cl = PrepareFetchReader(r)
+			cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
+			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+			// Check if we know the content length and if it is less than our max object size.
+			if cl != 0 && cl < oc.MaxObjectSizeBytes {
+				pcf := NewPCF(resp, cl)
+				Reqs.Store(key, pcf)
+				// Blocks until server completes
+				go func() {
+					io.Copy(pcf, reader)
+					pcf.Close()
+					Reqs.Delete(key)
+				}()
+				pcf.AddClient(writer)
+			}
+		} else {
+			pcf, _ := result.(ProgressiveCollapseForwarder)
+			resp = pcf.GetResp()
+			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+			pcf.AddClient(writer)
+		}
+	}
+	elapsed = time.Since(start)
+	recordResults(r, "HTTPProxy", cacheStatusCode, resp.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, resp.Header)
+	return resp
+}
+
+// PrepareResponseWriter prepares a response and returns an io.Writer for the data to be written to.
+// Used in Respond.
+func PrepareResponseWriter(w http.ResponseWriter, code int, header http.Header) io.Writer {
+	h := w.Header()
+	for k, v := range header {
+		h.Set(k, strings.Join(v, ","))
+	}
+	headers.AddResponseHeaders(h)
+	w.WriteHeader(code)
+	return w
+}
+
+// PrepareFetchReader prepares an http response and returns io.ReadCloser to
+// provide the response data, the response object and the content length.
+// Used in Fetch.
+func PrepareFetchReader(r *model.Request) (io.ReadCloser, *http.Response, int) {
+	pc := context.PathConfig(r.ClientRequest.Context())
+	oc := context.OriginConfig(r.ClientRequest.Context())
+
+	var rc io.ReadCloser
 
 	if r != nil && r.Headers != nil {
 		headers.AddProxyHeaders(r.ClientRequest.RemoteAddr, r.Headers)
@@ -55,14 +120,13 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 		headers.UpdateHeaders(r.Headers, pc.RequestHeaders)
 	}
 
-	start := time.Now()
 	req := &http.Request{Method: r.ClientRequest.Method}
 	b, err := ioutil.ReadAll(r.ClientRequest.Body)
 	if err == nil && len(b) > 0 {
 		req, err = http.NewRequest(r.ClientRequest.Method, r.URL.String(),
 			bytes.NewBuffer(b))
 		if err != nil {
-			return []byte{}, nil, -1
+			return nil, nil, 0
 		}
 	}
 
@@ -78,8 +142,11 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 		if pc != nil {
 			headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
 		}
-		return []byte{}, resp, -1
+		return nil, resp, 0
 	}
+
+	originalLen, _ := strconv.Atoi(resp.Header.Get("Content-Length"))
+	rc = resp.Body
 
 	// warn if the clock between trickster and the origin is off by more than 1 minute
 	if date := resp.Header.Get(headers.NameDate); date != "" {
@@ -106,17 +173,25 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 		hasCustomResponseBody = pc.HasCustomResponseBody
 	}
 
-	var body []byte
-
 	if hasCustomResponseBody {
-		body = pc.ResponseBodyBytes
-	} else {
-		body, err = ioutil.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			log.Error("error reading body from http response", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
-			return []byte{}, resp, 0
-		}
+		rc = ioutil.NopCloser(bytes.NewBuffer(pc.ResponseBodyBytes))
+	}
+
+	return rc, resp, originalLen
+}
+
+// Fetch makes an HTTP request to the provided Origin URL
+func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
+	oc := context.OriginConfig(r.ClientRequest.Context())
+
+	start := time.Now()
+	reader, resp, _ := PrepareFetchReader(r)
+
+	body, err := ioutil.ReadAll(reader)
+	resp.Body.Close()
+	if err != nil {
+		log.Error("error reading body from http response", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
+		return []byte{}, resp, 0
 	}
 
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
@@ -130,31 +205,31 @@ func Fetch(r *model.Request) ([]byte, *http.Response, time.Duration) {
 
 // Respond sends an HTTP Response down to the requesting client
 func Respond(w http.ResponseWriter, code int, header http.Header, body []byte) {
-	h := w.Header()
-	for k, v := range header {
-		h.Set(k, strings.Join(v, ","))
-	}
-	headers.AddResponseHeaders(h)
-	w.WriteHeader(code)
+	PrepareResponseWriter(w, code, header)
 	w.Write(body)
 }
 
-func recordProxyResults(r *model.Request, httpStatus int, path string, elapsed float64, header http.Header) {
+func setStatusHeader(httpStatus int, header http.Header) tc.LookupStatus {
 	status := tc.LookupStatusProxyOnly
 	if httpStatus >= http.StatusBadRequest {
 		status = tc.LookupStatusProxyError
 	}
-	recordResults(r, "HTTPProxy", status, httpStatus, path, "", elapsed, nil, header)
+	headers.SetResultsHeader(header, "HTTPProxy", status.String(), "", nil)
+	return status
 }
 
 func recordResults(r *model.Request, engine string, cacheStatus tc.LookupStatus, statusCode int, path, ffStatus string, elapsed float64, extents timeseries.ExtentList, header http.Header) {
-	oc := context.OriginConfig(r.ClientRequest.Context())
 
-	httpStatus := strconv.Itoa(statusCode)
+	oc := context.OriginConfig(r.ClientRequest.Context())
+	pc := context.PathConfig(r.ClientRequest.Context())
 	status := cacheStatus.String()
-	metrics.ProxyRequestStatus.WithLabelValues(oc.Name, oc.OriginType, r.HTTPMethod, status, httpStatus, path).Inc()
-	if elapsed > 0 {
-		metrics.ProxyRequestDuration.WithLabelValues(oc.Name, oc.OriginType, r.HTTPMethod, status, httpStatus, path).Observe(elapsed)
+
+	if pc != nil && !pc.NoMetrics {
+		httpStatus := strconv.Itoa(statusCode)
+		metrics.ProxyRequestStatus.WithLabelValues(oc.Name, oc.OriginType, r.HTTPMethod, status, httpStatus, path).Inc()
+		if elapsed > 0 {
+			metrics.ProxyRequestDuration.WithLabelValues(oc.Name, oc.OriginType, r.HTTPMethod, status, httpStatus, path).Observe(elapsed)
+		}
 	}
 	headers.SetResultsHeader(header, engine, status, ffStatus, extents)
 }

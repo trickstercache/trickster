@@ -76,7 +76,7 @@ func TestPathMerge(t *testing.T) {
 	pc2.OriginConfig = NewOriginConfig()
 
 	pc2.custom = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers",
-		"request_headers", "response_headers", "response_code", "response_body", "no_metrics"}
+		"request_headers", "response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding"}
 
 	expectedPath := "testPath"
 	expectedHandlerName := "testHandler"
@@ -92,6 +92,8 @@ func TestPathMerge(t *testing.T) {
 	pc2.ResponseCode = 404
 	pc2.ResponseBody = "trickster"
 	pc2.NoMetrics = true
+	pc2.CollapsedForwardingName = "progressive"
+	pc2.CollapsedForwardingType = CFTypeProgressive
 
 	pc.Merge(pc2)
 
@@ -141,6 +143,10 @@ func TestPathMerge(t *testing.T) {
 
 	if pc.OriginConfig == nil {
 		t.Errorf("expected non-nil value you for %s", "OriginConfig")
+	}
+
+	if pc.CollapsedForwardingName != "progressive" || pc.CollapsedForwardingType != CFTypeProgressive {
+		t.Errorf("expected %s got %s", "progressive", pc.CollapsedForwardingName)
 	}
 
 }

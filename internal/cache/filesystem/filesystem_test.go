@@ -14,8 +14,10 @@
 package filesystem
 
 import (
+	"github.com/Comcast/trickster/internal/util/log"
 	"io/ioutil"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +32,28 @@ func init() {
 
 const cacheType = "filesystem"
 const cacheKey = "cacheKey"
+
+func storeBenchmark(b *testing.B) Cache {
+	log.Logger = log.ConsoleLogger("none")
+	dir, err := ioutil.TempDir("/tmp", cacheType)
+	cacheConfig := config.CachingConfig{CacheType: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: dir}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	fc := Cache{Config: &cacheConfig}
+	defer os.RemoveAll(cacheConfig.BBolt.Filename)
+
+	err = fc.Connect()
+	if err != nil {
+		b.Error(err)
+	}
+
+	// it should store a value
+	for n := 0; n < b.N; n++ {
+		err = fc.Store(cacheKey+strconv.Itoa(n), []byte("data"+strconv.Itoa(n)), time.Duration(60)*time.Second)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+	return fc
+}
 
 func newCacheConfig(t *testing.T) config.CachingConfig {
 	dir, err := ioutil.TempDir("/tmp", cacheType)
@@ -119,6 +143,11 @@ func TestFilesystemCache_Store(t *testing.T) {
 
 }
 
+func BenchmarkCache_Store(b *testing.B) {
+	fc := storeBenchmark(b)
+	defer fc.Close()
+}
+
 func TestFilesystemCache_StoreNoIndex(t *testing.T) {
 
 	const expected = "value for key [] not in cache"
@@ -160,6 +189,40 @@ func TestFilesystemCache_StoreNoIndex(t *testing.T) {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
 
+}
+
+func BenchmarkCache_StoreNoIndex(b *testing.B) {
+	fc := storeBenchmark(b)
+	defer fc.Close()
+	for n := 0; n < b.N; n++ {
+		expected := `value for key [] not in cache`
+		// it should store a value
+		fc.storeNoIndex(cacheKey+strconv.Itoa(n), []byte("data"+strconv.Itoa(n)))
+
+		// it should retrieve a value
+		data, err := fc.retrieve(cacheKey+strconv.Itoa(n), false, false)
+		if err != nil {
+			b.Error(err)
+		}
+		if string(data) != "data"+strconv.Itoa(n) {
+			b.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+		}
+
+		// test for error when bad key name
+		fc.storeNoIndex("", []byte("data"+strconv.Itoa(n)))
+
+		data, err = fc.retrieve("", false, false)
+		if err == nil {
+			b.Errorf("expected error for %s", expected)
+			fc.Close()
+		}
+		if err.Error() != expected {
+			b.Errorf("expected error '%s' got '%s'", expected, err.Error())
+		}
+		if string(data) != "" {
+			b.Errorf("wanted \"%s\". got \"%s\".", "data"+strconv.Itoa(n), data)
+		}
+	}
 }
 
 func TestFilesystemCache_SetTTL(t *testing.T) {
@@ -208,6 +271,35 @@ func TestFilesystemCache_SetTTL(t *testing.T) {
 		t.Errorf("expected diff >= %d, got %d from: %d - %d", expected, diff, e2, e1)
 	}
 
+}
+
+func BenchmarkCache_SetTTL(b *testing.B) {
+	fc := storeBenchmark(b)
+	defer fc.Close()
+	for n := 0; n < b.N; n++ {
+		exp1 := fc.Index.GetExpiration(cacheKey + strconv.Itoa(n))
+		if exp1.IsZero() {
+			b.Errorf("expected time %d, got zero", int(time.Now().Unix())+60)
+		}
+
+		e1 := int(exp1.Unix())
+
+		fc.SetTTL(cacheKey+strconv.Itoa(n), time.Duration(3600)*time.Second)
+
+		exp2 := fc.Index.GetExpiration(cacheKey + strconv.Itoa(n))
+		if exp2.IsZero() {
+			b.Errorf("expected time %d, got zero", int(time.Now().Unix())+3600)
+		}
+		e2 := int(exp2.Unix())
+
+		// should be around 3595
+		diff := e2 - e1
+		const expected = 3500
+
+		if diff < expected {
+			b.Errorf("expected diff >= %d, got %d from: %d - %d", expected, diff, e2, e1)
+		}
+	}
 }
 
 func TestFilesystemCache_Retrieve(t *testing.T) {
@@ -268,6 +360,57 @@ func TestFilesystemCache_Retrieve(t *testing.T) {
 	}
 }
 
+func BenchmarkCache_Retrieve(b *testing.B) {
+	fc := storeBenchmark(b)
+	defer fc.Close()
+
+	for n := 0; n < b.N; n++ {
+		expected1 := `value for key [` + cacheKey + strconv.Itoa(n) + `] not in cache`
+		expected2 := `value for key [` + cacheKey + strconv.Itoa(n) + `] could not be deserialized from cache`
+
+		data, err := fc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		if err != nil {
+			b.Error(err)
+		}
+		if string(data) != "data"+strconv.Itoa(n) {
+			b.Errorf("wanted \"%s\". got \"%s\".", "data"+strconv.Itoa(n), data)
+		}
+
+		// expire the object
+		fc.SetTTL(cacheKey+strconv.Itoa(n), -1*time.Hour)
+
+		// this should now return error
+		data, err = fc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		if err == nil {
+			b.Errorf("expected error for %s", expected1)
+			fc.Close()
+		}
+		if err.Error() != expected1 {
+			b.Errorf("expected error '%s' got '%s'", expected1, err.Error())
+		}
+		if string(data) != "" {
+			b.Errorf("wanted \"%s\". got \"%s\".", "data"+strconv.Itoa(n), data)
+		}
+
+		filename := fc.getFileName(cacheKey + strconv.Itoa(n))
+		// create a corrupted cache entry and expect an error
+		ioutil.WriteFile(filename, []byte("junk"), os.FileMode(0777))
+
+		// it should fail to retrieve a value
+		data, err = fc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		if err == nil {
+			b.Errorf("expected error for %s", expected2)
+			fc.Close()
+		}
+		if err.Error() != expected2 {
+			b.Errorf("expected error '%s' got '%s'", expected2, err.Error())
+		}
+		if string(data) != "" {
+			b.Errorf("wanted \"%s\". got \"%s\".", "data"+strconv.Itoa(n), data)
+		}
+	}
+}
+
 func TestFilesystemCache_Remove(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
@@ -305,6 +448,39 @@ func TestFilesystemCache_Remove(t *testing.T) {
 
 }
 
+func BenchmarkCache_Remove(b *testing.B) {
+	fc := storeBenchmark(b)
+	defer fc.Close()
+
+	for n := 0; n < b.N; n++ {
+		var data []byte
+		data, err := fc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		if err != nil {
+			b.Error(err)
+		}
+		if string(data) != "data"+strconv.Itoa(n) {
+			b.Errorf("wanted \"%s\". got \"%s\"", "data"+strconv.Itoa(n), data)
+		}
+
+		fc.Remove(cacheKey + strconv.Itoa(n))
+
+		// this should now return error
+		data, err = fc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		expectederr := `value for key [` + cacheKey + strconv.Itoa(n) + `] not in cache`
+		if err == nil {
+			b.Errorf("expected error for %s", expectederr)
+			fc.Close()
+		}
+		if err.Error() != expectederr {
+			b.Errorf("expected error '%s' got '%s'", expectederr, err.Error())
+		}
+
+		if string(data) != "" {
+			b.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+		}
+	}
+}
+
 func TestFilesystemCache_BulkRemove(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
@@ -340,4 +516,24 @@ func TestFilesystemCache_BulkRemove(t *testing.T) {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
 
+}
+
+func BenchmarkCache_BulkRemove(b *testing.B) {
+	fc := storeBenchmark(b)
+	defer fc.Close()
+
+	var keyArray []string
+	for n := 0; n < b.N; n++ {
+		keyArray = append(keyArray, cacheKey+strconv.Itoa(n))
+	}
+
+	fc.BulkRemove(keyArray, true)
+
+	// it should be a cache miss
+	for n := 0; n < b.N; n++ {
+		_, err := fc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		if err == nil {
+			b.Errorf("expected key not found error for %s", cacheKey)
+		}
+	}
 }

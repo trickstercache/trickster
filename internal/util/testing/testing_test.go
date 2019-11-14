@@ -59,14 +59,11 @@ func TestNewTestInstance(t *testing.T) {
 
 	// cover promsim conditional and path generation
 
-	f := func(*config.OriginConfig) (map[string]*config.PathConfig, []string) {
-
-		m := map[string]*config.PathConfig{
+	f := func(*config.OriginConfig) map[string]*config.PathConfig {
+		return map[string]*config.PathConfig{
 			"path1": &config.PathConfig{},
 			"path2": &config.PathConfig{},
 		}
-
-		return m, []string{"path1", "path2"}
 	}
 
 	s, w, r, c, err = NewTestInstance("", f, 200, "", nil, "promsim", "test", "debug")

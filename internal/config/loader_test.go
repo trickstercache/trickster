@@ -66,11 +66,15 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 		},
 		{ // Case 4
 			"../../testdata/test.invalid-negative-cache-1.conf",
-			`invalid negative cache config: a is not a valid status code`,
+			`invalid negative cache config in default: a is not a valid status code`,
 		},
 		{ // Case 5
 			"../../testdata/test.invalid-negative-cache-2.conf",
-			`invalid negative cache config: 1212 is not a valid status code`,
+			`invalid negative cache config in default: 1212 is not a valid status code`,
+		},
+		{ // Case 6
+			"../../testdata/test.invalid-negative-cache-3.conf",
+			`invalid negative cache name: foo`,
 		},
 	}
 
@@ -108,20 +112,20 @@ func TestFullLoadConfiguration(t *testing.T) {
 	}
 
 	// Test Proxy Server
-	if ProxyServer.ListenPort != 57821 {
-		t.Errorf("expected 57821, got %d", ProxyServer.ListenPort)
+	if Frontend.ListenPort != 57821 {
+		t.Errorf("expected 57821, got %d", Frontend.ListenPort)
 	}
 
-	if ProxyServer.ListenAddress != "test" {
-		t.Errorf("expected test, got %s", ProxyServer.ListenAddress)
+	if Frontend.ListenAddress != "test" {
+		t.Errorf("expected test, got %s", Frontend.ListenAddress)
 	}
 
-	if ProxyServer.TLSListenAddress != "test-tls" {
-		t.Errorf("expected test-tls, got %s", ProxyServer.TLSListenAddress)
+	if Frontend.TLSListenAddress != "test-tls" {
+		t.Errorf("expected test-tls, got %s", Frontend.TLSListenAddress)
 	}
 
-	if ProxyServer.TLSListenPort != 38821 {
-		t.Errorf("expected 38821, got %d", ProxyServer.TLSListenPort)
+	if Frontend.TLSListenPort != 38821 {
+		t.Errorf("expected 38821, got %d", Frontend.TLSListenPort)
 	}
 
 	// Test Metrics Server
@@ -202,12 +206,14 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeoutSecs)
 	}
 
-	if o.TimeseriesTTLSecs != 8666 {
-		t.Errorf("expected 8666, got %d", o.TimeseriesTTLSecs)
+	// MaxTTLSecs is 300, thus should override TimeseriesTTLSecs = 8666
+	if o.TimeseriesTTLSecs != 300 {
+		t.Errorf("expected 300, got %d", o.TimeseriesTTLSecs)
 	}
 
-	if o.FastForwardTTLSecs != 17 {
-		t.Errorf("expected 17, got %d", o.FastForwardTTLSecs)
+	// MaxTTLSecs is 300, thus should override FastForwardTTLSecs = 382
+	if o.FastForwardTTLSecs != 300 {
+		t.Errorf("expected 300, got %d", o.FastForwardTTLSecs)
 	}
 
 	if o.TLS == nil {
@@ -386,12 +392,12 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 	}
 
 	// Test Proxy Server
-	if ProxyServer.ListenPort != defaultProxyListenPort {
-		t.Errorf("expected %d, got %d", defaultProxyListenPort, ProxyServer.ListenPort)
+	if Frontend.ListenPort != defaultProxyListenPort {
+		t.Errorf("expected %d, got %d", defaultProxyListenPort, Frontend.ListenPort)
 	}
 
-	if ProxyServer.ListenAddress != defaultProxyListenAddress {
-		t.Errorf("expected '%s', got '%s'", defaultProxyListenAddress, ProxyServer.ListenAddress)
+	if Frontend.ListenAddress != defaultProxyListenAddress {
+		t.Errorf("expected '%s', got '%s'", defaultProxyListenAddress, Frontend.ListenAddress)
 	}
 
 	// Test Metrics Server

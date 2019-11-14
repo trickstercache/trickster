@@ -15,6 +15,7 @@ package prometheus
 
 import (
 	"io/ioutil"
+	"net/http/httptest"
 	"testing"
 
 	tc "github.com/Comcast/trickster/internal/util/context"
@@ -27,6 +28,8 @@ func init() {
 }
 
 func TestHealthHandler(t *testing.T) {
+
+	healthURL = nil
 
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
@@ -54,9 +57,20 @@ func TestHealthHandler(t *testing.T) {
 		t.Errorf("expected '{}' got %s.", bodyBytes)
 	}
 
+	healthMethod = "-"
+
+	w = httptest.NewRecorder()
+	client.HealthHandler(w, r)
+	resp = w.Result()
+	if resp.StatusCode != 400 {
+		t.Errorf("Expected status: 400 got %d.", resp.StatusCode)
+	}
+
 }
 
 func TestHealthHandlerCustomPath(t *testing.T) {
+
+	healthURL = nil
 
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("../../../../testdata/test.custom_health.conf", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")

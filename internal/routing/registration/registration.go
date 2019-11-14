@@ -16,11 +16,13 @@ package registration
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/methods"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/proxy/origins/influxdb"
 	"github.com/Comcast/trickster/internal/proxy/origins/irondb"
@@ -29,7 +31,6 @@ import (
 	"github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/middleware"
-	ts "github.com/Comcast/trickster/internal/util/strings"
 )
 
 // ProxyClients maintains a list of proxy clients configured for use by Trickster
@@ -123,8 +124,8 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 	}
 	if client != nil {
 		ProxyClients[k] = client
-		defaultPaths, orderedPaths := client.DefaultPathConfigs(o)
-		registerPathRoutes(client.Handlers(), o, c, defaultPaths, orderedPaths)
+		defaultPaths := client.DefaultPathConfigs(o)
+		registerPathRoutes(client.Handlers(), o, c, defaultPaths)
 	}
 	return nil
 }
@@ -133,7 +134,7 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 // merge it with any path data in the provided originconfig, and then register
 // the path routes to the appropriate handler from the provided handlers map
 func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig, c cache.Cache,
-	paths map[string]*config.PathConfig, orderedPaths []string) {
+	paths map[string]*config.PathConfig) {
 
 	decorate := func(p *config.PathConfig) http.Handler {
 		// Add Origin, Cache, and Path Configs to the HTTP Request's context
@@ -144,48 +145,55 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 		return middleware.Decorate(o.Name, o.OriginType, p.Path, p.Handler)
 	}
 
+	pathsWithVerbs := make(map[string]*config.PathConfig)
+	for _, p := range paths {
+		if len(p.Methods) == 0 {
+			p.Methods = methods.CacheableHTTPMethods()
+		}
+		pathsWithVerbs[p.Path+"-"+strings.Join(p.Methods, "-")] = p
+	}
+
 	for k, p := range o.Paths {
 		p.OriginConfig = o
-		if p2, ok := paths[k]; ok {
+		if p2, ok := pathsWithVerbs[k]; ok {
 			p2.Merge(p)
 			continue
 		}
 		p3 := config.NewPathConfig()
 		p3.Merge(p)
-		paths[k] = p3
+		pathsWithVerbs[k] = p3
 	}
 
-	o.Paths = paths
-
-	// Ensure the configured health check endpoint starts with "/""
-	if !strings.HasPrefix(o.HealthCheckEndpoint, "/") {
-		o.HealthCheckEndpoint = "/" + o.HealthCheckEndpoint
+	if h, ok := handlers["health"]; ok &&
+		o.HealthCheckUpstreamPath != "" && o.HealthCheckVerb != "" {
+		hp := "/trickster/health/" + o.Name
+		log.Debug("registering health handler path", log.Pairs{"path": hp, "originName": o.Name, "upstreamPath": o.HealthCheckUpstreamPath, "upstreamVerb": o.HealthCheckVerb})
+		routing.Router.PathPrefix(hp).Handler(middleware.WithConfigContext(o, nil, nil, h)).Methods(methods.CacheableHTTPMethods()...)
 	}
-	paths[o.HealthCheckEndpoint] = &config.PathConfig{
-		Path:        o.HealthCheckEndpoint,
-		HandlerName: "health",
-		Methods:     []string{http.MethodGet, http.MethodHead},
-	}
-	orderedPaths = append([]string{o.HealthCheckEndpoint}, orderedPaths...)
 
-	deletes := make([]string, 0, len(paths))
-	for _, p := range paths {
+	plist := make([]string, 0, len(pathsWithVerbs))
+	deletes := make([]string, 0, len(pathsWithVerbs))
+	for k, p := range pathsWithVerbs {
 		if h, ok := handlers[p.HandlerName]; ok && h != nil {
 			p.Handler = h
-			if p.Path != "" && ts.IndexOfString(orderedPaths, p.Path) == -1 {
-				log.Info("found unexpected path in config", log.Pairs{"originName": o.Name, "path": p.Path})
-				orderedPaths = append(orderedPaths, p.Path)
-			}
+			plist = append(plist, k)
 		} else {
+			log.Info("invalid handler name for path", log.Pairs{"path": p.Path, "handlerName": p.HandlerName})
 			deletes = append(deletes, p.Path)
 		}
 	}
 	for _, p := range deletes {
-		delete(paths, p)
+		delete(pathsWithVerbs, p)
 	}
 
-	for _, v := range orderedPaths {
-		p, ok := paths[v]
+	sort.Sort(ByLen(plist))
+	for i := len(plist)/2 - 1; i >= 0; i-- {
+		opp := len(plist) - 1 - i
+		plist[i], plist[opp] = plist[opp], plist[i]
+	}
+
+	for _, v := range plist {
+		p, ok := pathsWithVerbs[v]
 		if !ok {
 			continue
 		}
@@ -193,6 +201,11 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 			log.Pairs{"originName": o.Name, "path": v, "handlerName": p.HandlerName,
 				"originHost": o.Host, "handledPath": "/" + o.Name + p.Path, "matchType": p.MatchType})
 		if p.Handler != nil && len(p.Methods) > 0 {
+
+			if p.Methods[0] == "*" {
+				p.Methods = methods.AllHTTPMethods()
+			}
+
 			switch p.MatchType {
 			case config.PathMatchTypePrefix:
 				// Case where we path match by prefix
@@ -212,8 +225,8 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 
 	if o.IsDefault {
 		log.Info("registering default origin handler paths", log.Pairs{"originName": o.Name})
-		for _, v := range orderedPaths {
-			p, ok := paths[v]
+		for _, v := range plist {
+			p, ok := pathsWithVerbs[v]
 			if !ok {
 				continue
 			}
@@ -231,4 +244,20 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 			}
 		}
 	}
+	o.Paths = pathsWithVerbs
+}
+
+// ByLen allows sorting of a string slice by string length
+type ByLen []string
+
+func (a ByLen) Len() int {
+	return len(a)
+}
+
+func (a ByLen) Less(i, j int) bool {
+	return len(a[i]) < len(a[j])
+}
+
+func (a ByLen) Swap(i, j int) {
+	a[i], a[j] = a[j], a[i]
 }

@@ -15,9 +15,11 @@ package reverseproxycache
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/handlers"
+	"github.com/Comcast/trickster/internal/proxy/methods"
 )
 
 const root = "/"
@@ -25,7 +27,7 @@ const root = "/"
 func (c *Client) registerHandlers() {
 	c.handlersRegistered = true
 	c.handlers = make(map[string]http.Handler)
-	// This is the registry of handlers that Trickster supports for Prometheus,
+	// This is the registry of handlers that Trickster supports for the Reverse Proxy Cache,
 	// and are able to be referenced by name (map key) in Config Files
 	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
 	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
@@ -42,16 +44,28 @@ func (c *Client) Handlers() map[string]http.Handler {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config.PathConfig, []string) {
+func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.PathConfig {
+
+	cm := methods.CacheableHTTPMethods()
+	um := methods.UncacheableHTTPMethods()
+
 	paths := map[string]*config.PathConfig{
-		"/": &config.PathConfig{
-			Path:         "/",
-			HandlerName:  "proxy",
-			Methods:      []string{http.MethodGet, http.MethodPost},
-			OriginConfig: oc,
+		"/-" + strings.Join(cm, "-"): &config.PathConfig{
+			Path:          "/",
+			HandlerName:   "proxycache",
+			Methods:       cm,
+			OriginConfig:  oc,
+			MatchType:     config.PathMatchTypePrefix,
+			MatchTypeName: "prefix",
+		},
+		"/-" + strings.Join(um, "-"): &config.PathConfig{
+			Path:          "/",
+			HandlerName:   "proxy",
+			Methods:       um,
+			OriginConfig:  oc,
+			MatchType:     config.PathMatchTypePrefix,
+			MatchTypeName: "prefix",
 		},
 	}
-
-	orderedPaths := []string{"/"}
-	return paths, orderedPaths
+	return paths
 }

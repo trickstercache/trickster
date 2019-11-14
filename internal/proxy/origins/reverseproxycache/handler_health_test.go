@@ -14,6 +14,8 @@
 package reverseproxycache
 
 import (
+	"io/ioutil"
+	"net/http/httptest"
 	"testing"
 
 	tc "github.com/Comcast/trickster/internal/util/context"
@@ -26,17 +28,66 @@ func init() {
 }
 
 func TestHealthHandler(t *testing.T) {
+
+	healthURL = nil
+
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "rpc", "/health", "debug")
 	client.config = tc.OriginConfig(r.Context())
 	client.webClient = hc
+
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
 	}
+
 	client.HealthHandler(w, r)
 	resp := w.Result()
+	if resp.StatusCode != 400 {
+		t.Errorf("Expected status: 400 got %d.", resp.StatusCode)
+	}
+
+	client.config.HealthCheckVerb = "GET"
+	client.config.HealthCheckUpstreamPath = "/"
+
+	client.HealthHandler(w, r)
+	w = httptest.NewRecorder()
+	resp = w.Result()
 	if resp.StatusCode != 200 {
 		t.Errorf("Expected status: 200 got %d.", resp.StatusCode)
 	}
+
+}
+
+func TestHealthHandlerCustomPath(t *testing.T) {
+
+	healthURL = nil
+
+	client := &Client{name: "test"}
+	ts, w, r, hc, err := tu.NewTestInstance("../../../../testdata/test.custom_health.conf", client.DefaultPathConfigs, 200, "{}", nil, "rpc", "/health", "debug")
+	defer ts.Close()
+	if err != nil {
+		t.Error(err)
+	}
+
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+
+	client.HealthHandler(w, r)
+	resp := w.Result()
+
+	// it should return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != "{}" {
+		t.Errorf("expected '{}' got %s.", bodyBytes)
+	}
+
 }

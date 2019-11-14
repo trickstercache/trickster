@@ -147,7 +147,7 @@ func GetByteRanges(byteRange string) Ranges {
 	return ranges
 }
 
-// CachingPolicy ...
+// CachingPolicy defines the attributes for determining the cachability of an HTTP object
 type CachingPolicy struct {
 	IsFresh               bool      `msg:"is_fresh"`
 	NoCache               bool      `msg:"nocache"`
@@ -164,14 +164,15 @@ type CachingPolicy struct {
 	IfMatchValue          string    `msg:"if_match_value"`
 	IfModifiedSinceTime   time.Time `msg:"if_modified_since_time"`
 	IfUnmodifiedSinceTime time.Time `msg:"if_unmodified_since_time"`
+	IsNegativeCache       bool      `msg:"is_negative_cache"`
 }
 
 func (c *CachingPolicy) String() string {
 	return fmt.Sprintf(`{ "is_fresh":%t, "no_cache":%t, "no_transform":%t, "freshness_lifetime":%d, "can_revalidate":%t, "must_revalidate":%t,`+
 		` "last_modified":%d, "expires":%d, "date":%d, "local_date":%d, "etag":"%s", "if_none_match":"%s", "if_match":"%s",`+
-		` "if_modified_since":%d, "if_unmodified_since":%d }`,
+		` "if_modified_since":%d, "if_unmodified_since":%d, "is_negative_cache":%t }`,
 		c.IsFresh, c.NoCache, c.NoTransform, c.FreshnessLifetime, c.CanRevalidate, c.MustRevalidate, c.LastModified.Unix(), c.Expires.Unix(), c.Date.Unix(), c.LocalDate.Unix(),
-		c.ETag, c.IfNoneMatchValue, c.IfMatchValue, c.IfModifiedSinceTime.Unix(), c.IfUnmodifiedSinceTime.Unix())
+		c.ETag, c.IfNoneMatchValue, c.IfMatchValue, c.IfModifiedSinceTime.Unix(), c.IfUnmodifiedSinceTime.Unix(), c.IsNegativeCache)
 }
 
 // DocumentFromHTTPResponse returns an HTTPDocument from the provided HTTP Response and Body

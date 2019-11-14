@@ -154,7 +154,7 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 }
 
 // DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
-func DeriveCacheKey(c model.Client, r *model.Request, apc *config.PathConfig, extra string) string {
+func DeriveCacheKey(r *model.Request, apc *config.PathConfig, extra string) string {
 
 	pc := context.PathConfig(r.ClientRequest.Context())
 	if apc != nil {
@@ -172,7 +172,11 @@ func DeriveCacheKey(c model.Client, r *model.Request, apc *config.PathConfig, ex
 
 	vals := make([]string, 0, (len(pc.CacheKeyParams) + len(pc.CacheKeyHeaders)*2))
 
-	// Append the http method to the map for creating the derived cache key
+	if v := r.Headers.Get(headers.NameAuthorization); v != "" {
+		vals = append(vals, fmt.Sprintf("%s.%s.", headers.NameAuthorization, v))
+	}
+
+	// Append the http method to the slice for creating the derived cache key
 	vals = append(vals, fmt.Sprintf("%s.%s.", "method", r.HTTPMethod))
 
 	if len(pc.CacheKeyParams) == 1 && pc.CacheKeyParams[0] == "*" {
@@ -206,6 +210,7 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 	if d, ok := negativeCache[code]; ok {
 		cp.FreshnessLifetime = int(d.Seconds())
 		cp.Expires = cp.LocalDate.Add(d)
+		cp.IsNegativeCache = true
 		return cp
 	}
 
@@ -214,6 +219,14 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 	lch := make(http.Header)
 	for k, v := range h {
 		lch[strings.ToLower(k)] = v
+	}
+
+	// Do not cache content that includes set-cookie header
+	// Trickster can use PathConfig rules to strip set-cookie if cachablility is needed
+	if _, ok := lch["set-cookie"]; ok {
+		cp.NoCache = true
+		cp.FreshnessLifetime = -1
+		return cp
 	}
 
 	// Cache-Control has first precedence

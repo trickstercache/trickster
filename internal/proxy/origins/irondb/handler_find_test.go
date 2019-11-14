@@ -33,7 +33,7 @@ func TestFindHandler(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, ok := client.config.Paths["/"+mnFind]
+	_, ok := client.config.Paths["/"+mnFind+"/"]
 	if !ok {
 		t.Errorf("could not find path config named %s", mnFind)
 	}

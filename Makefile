@@ -19,7 +19,8 @@ TRICKSTER      := $(FIRST_GOPATH)/bin/trickster
 PROGVER        := $(shell grep 'applicationVersion = ' $(TRICKSTER_MAIN)/main.go | awk '{print $$3}' | sed -e 's/\"//g')
 BUILD_TIME     := $(shell date -u +%FT%T%z)
 GIT_LATEST_COMMIT_ID     := $(shell git rev-parse HEAD)
-LDFLAGS=-ldflags "-s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicationGitCommitID=$(GIT_LATEST_COMMIT_ID)"
+GO_VER         := $(shell go version | awk '{print $$3}')
+LDFLAGS=-ldflags "-s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicationGitCommitID=$(GIT_LATEST_COMMIT_ID) -X main.applicationGoVersion=$(GO_VER) -X main.applicationGoArch=$(GOARCH)"
 GO111MODULE    ?= on
 export GO111MODULE
 
@@ -99,7 +100,13 @@ style:
 
 .PHONY: test
 test: test-go-mod
-	$(GO) test -v -coverprofile=.coverprofile ./...
+	$(GO) test -v -coverprofile=.coverprofile.tmp ./... | grep -v ' app=trickster '
+	cat .coverprofile.tmp | grep -v "_gen.go:" > .coverprofile
+	rm  .coverprofile.tmp
+
+.PHONY: bench
+bench:
+	$(GO) test -v -coverprofile=.coverprofile ./... -run=nonthingplease -bench=. | grep -v ' app=trickster '
 
 .PHONY: test-cover
 test-cover: test

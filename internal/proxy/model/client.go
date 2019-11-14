@@ -27,7 +27,7 @@ type Client interface {
 	// Handlers returns a map of the HTTP Handlers the client has registered
 	Handlers() map[string]http.Handler
 	// DefaultPathConfigs returns the default PathConfigs for the given OriginType
-	DefaultPathConfigs(*config.OriginConfig) (map[string]*config.PathConfig, []string)
+	DefaultPathConfigs(*config.OriginConfig) map[string]*config.PathConfig
 	// ParseTimeRangeQuery returns a timeseries.TimeRangeQuery based on the provided HTTP Request
 	ParseTimeRangeQuery(*Request) (*timeseries.TimeRangeQuery, error)
 	// Configuration returns the configuration for the Proxy Client
@@ -38,8 +38,6 @@ type Client interface {
 	FastForwardURL(*Request) (*url.URL, error)
 	// SetExtent will update an upstream request's timerange parameters based on the provided timeseries.Extent
 	SetExtent(*Request, *timeseries.Extent)
-	// HealthHandler is an HTTP Handler that checks the health of the upstream origin
-	HealthHandler(http.ResponseWriter, *http.Request)
 	// UnmarshalTimeseries will return a Timeseries from the provided byte slice
 	UnmarshalTimeseries([]byte) (timeseries.Timeseries, error)
 	// MarshalTimeseries will return a byte slice from  the provided Timeseries

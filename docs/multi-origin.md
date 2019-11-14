@@ -13,7 +13,7 @@ To utilize Multiple Origins, you must craft a Trickster configuration file to be
 
 Each origin that your Trickster instance supports must be explicitly enumerated in the configuration file. Trickster does not support open proxying.
 
-Each origin is identified by an Origin Name, provided in the configuration section header for the origin ([origins.NAME]). For path-based routing configurations, the Origin Name can be simple words. For DNS Aliasing, the Origin Name must match an FQDN that resolves to your Trickster instance.
+Each origin is identified by an Origin Name, provided in the configuration section header for the origin ([origins.NAME]). For path-based routing configurations, the Origin Name can be simple words. For DNS Aliasing, the Origin Name must match an FQDN that resolves to your Trickster instance. Also for DNS Aliasing, enclose the FQDN in quotes in the origin config section header (e.g., `[origins.'db.example.com']`).
 
 ### Default Origin
 
@@ -87,13 +87,13 @@ Example DNS-based Origin Configuration:
         is_default = true
 
     # "foo" origin
-    [origins.trickster-foo.example.com]
+    [origins.'trickster-foo.example.com']
         origin_url = 'http://prometheus-foo.example.com:9090'
         origin_type = 'prometheus'
         cache_name = 'default'
 
     # "bar" origin
-    [origins.trickster-bar.example.com]
+    [origins.'trickster-bar.example.com']
         origin_url = 'http://prometheus-bar.example.com:9090'
         origin_type = 'prometheus'
         cache_name = 'default'

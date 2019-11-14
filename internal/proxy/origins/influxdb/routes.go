@@ -17,16 +17,15 @@ import (
 	"net/http"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy/headers"
 )
 
 func (c *Client) registerHandlers() {
 	c.handlersRegistered = true
 	c.handlers = make(map[string]http.Handler)
-	// This is the registry of handlers that Trickster supports for Prometheus,
+	// This is the registry of handlers that Trickster supports for InfluxDB,
 	// and are able to be referenced by name (map key) in Config Files
 	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
-	c.handlers[mnQuery] = http.HandlerFunc(c.QueryHandler)
+	c.handlers["query"] = http.HandlerFunc(c.QueryHandler)
 	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
 }
 
@@ -38,22 +37,40 @@ func (c *Client) Handlers() map[string]http.Handler {
 	return c.handlers
 }
 
+func populateHeathCheckRequestValues(oc *config.OriginConfig) {
+	if oc.HealthCheckUpstreamPath == "-" {
+		oc.HealthCheckUpstreamPath = "/ping"
+	}
+	if oc.HealthCheckVerb == "-" {
+		oc.HealthCheckVerb = http.MethodGet
+	}
+	if oc.HealthCheckQuery == "-" {
+		oc.HealthCheckQuery = ""
+	}
+}
+
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config.PathConfig, []string) {
+func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.PathConfig {
+
+	populateHeathCheckRequestValues(oc)
+
 	paths := map[string]*config.PathConfig{
 		"/" + mnQuery: &config.PathConfig{
 			Path:            "/" + mnQuery,
 			HandlerName:     mnQuery,
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{upDB, upQuery, "u", "p"},
-			CacheKeyHeaders: []string{headers.NameAuthorization},
+			CacheKeyHeaders: []string{},
+			MatchTypeName:   "exact",
+			MatchType:       config.PathMatchTypeExact,
 		},
 		"/": &config.PathConfig{
-			Path:        "/",
-			HandlerName: "proxy",
-			Methods:     []string{http.MethodGet, http.MethodPost},
+			Path:          "/",
+			HandlerName:   "proxy",
+			Methods:       []string{http.MethodGet, http.MethodPost},
+			MatchType:     config.PathMatchTypePrefix,
+			MatchTypeName: "prefix",
 		},
 	}
-	orderedPaths := []string{"/" + mnQuery, "/"}
-	return paths, orderedPaths
+	return paths
 }

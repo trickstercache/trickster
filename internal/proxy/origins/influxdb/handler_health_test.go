@@ -15,6 +15,7 @@ package influxdb
 
 import (
 	"io/ioutil"
+	"net/http/httptest"
 	"testing"
 
 	tc "github.com/Comcast/trickster/internal/util/context"
@@ -22,6 +23,8 @@ import (
 )
 
 func TestHealthHandler(t *testing.T) {
+
+	healthURL = nil
 
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 204, "", nil, "influxdb", "/health", "debug")
@@ -40,9 +43,20 @@ func TestHealthHandler(t *testing.T) {
 		t.Errorf("expected 204 got %d.", resp.StatusCode)
 	}
 
+	healthMethod = "-"
+
+	w = httptest.NewRecorder()
+	client.HealthHandler(w, r)
+	resp = w.Result()
+	if resp.StatusCode != 400 {
+		t.Errorf("Expected status: 400 got %d.", resp.StatusCode)
+	}
+
 }
 
 func TestHealthHandlerCustomPath(t *testing.T) {
+
+	healthURL = nil
 
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("../../../../testdata/test.custom_health.conf", client.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/health", "debug")

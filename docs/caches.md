@@ -3,9 +3,9 @@
 There are several cache types supported by Trickster
 
 * In-Memory (default)
-* Filesystem 
+* Filesystem
 * bbolt
-* BadgerDB 
+* BadgerDB
 * Redis (basic, cluster, and sentinel)
 
 The sample configuration ([cmd/trickster/conf/example.conf](../cmd/trickster/conf/example.conf)) demonstrates how to select and configure a particular cache type, as well as how to configure generic cache configurations such as Retention Policy.
@@ -15,8 +15,6 @@ The sample configuration ([cmd/trickster/conf/example.conf](../cmd/trickster/con
 In-Memory Cache is the default type that Trickster will implement if none of the other cache types are configured. The In-Memory cache utilizes a Golang [sync.Map](https://godoc.org/sync#Map) object for caching, which ensures atomic reads/writes against the cache with no possibility of data collisions. This option is good for both development environments and most smaller dashboard deployments.
 
 When running Trickster in a Docker container, ensure your node hosting the container has enough memory available to accommodate the cache size of your footprint, or your container may be shut down by Docker with an Out of Memory error (#137). Similarly, when orchestrating with Kubernetes, set resource allocations accordingly.
-
-We are working on better profiling of Trickster's In-Memory Cache footprint and will provide some general sizing guidance on when it is best to select one of the other Cache Types in a future release.
 
 ## Filesystem
 
@@ -30,15 +28,17 @@ The BoltDB Cache is a popular key/value store, created by [Ben Johnson](https://
 
 ## BadgerDB
 
-[BadgerDB](https://github.com/dgraph-io/badger) works similarly to bbolt, in that it is a single-file key/value datastore. BadgerDB provides its own native object lifecycle management (TTL) and other additional features that distinguish it from bbolt. See the configuration for help using BadgerDB with Trickster.
+[BadgerDB](https://github.com/dgraph-io/badger) works similarly to bbolt, in that it is a filesystem-based key/value datastore. BadgerDB provides its own native object lifecycle management (TTL) and other additional features that distinguish it from bbolt. See the configuration for more info on using BadgerDB with Trickster.
 
 ## Redis
+
+Note: Trickster does not come with a Redis server. You must provide a pre-existing Redis endpoint for Trickster to use.
 
 Redis is a good option for larger dashboard setups that also have heavy user traffic, where you might see degraded performance with a Filesystem Cache. This allows Trickster to scale better than a Filesystem Cache, but you will need to provide your own Redis instance at which to point your Trickster instance. The default Redis endpoint is `redis:6379`, and should work for most docker and kube deployments with containers or services named `redis`. The sample configuration demonstrates how to customize the Redis endpoint. In addition to supporting TCP endpoints, Trickster supports Unix sockets for Trickster and Redis running on the same VM or bare-metal host.
 
 Ensure that your Redis instance is located close to your Trickster instance in order to minimize additional roundtrip latency.
 
-Redis Cluster is supported by Trickster. 
+In addition to basic Redis, Trickster also supports Redis Cluster and Redis Sentinel. Refer to the sample configuration for customizing the Redis client type.
 
 ## Purging the Cache
 
@@ -46,21 +46,25 @@ Cache purges should not be necessary, but in the event that you wish to do so, t
 
 A future release will provide a mechanism to fully purge the cache (regardless of the underlying cache type) without stopping a running Trickster instance.
 
-### In-Memory
+### Purging In-Memory Cache
 
 Since this cache type runs inside the virtual memory allocated to the Trickster process, bouncing the Trickster process or container will effectively purge the cache.
 
-### Filesystem
+### Purging Filesystem Cache
 
 To completely purge a Filesystem-based Cache, you will need to:
 
-* Docker/Kube: delete the Trickster container and run a new one
+* Docker/Kube: delete the Trickster container (or mounted volume) and run a new one
 * Metal/VM: Stop the Trickster process and manually run `rm -rf /tmp/trickster` (or your custom-configured directory).
 
-### Redis
+### Purging Redis Cache
 
 Connect to your Redis instance and issue a FLUSH command. Note that if your Redis instance supports more applications than Trickster, a FLUSH will clear the cache for all dependent applications.
 
-### bbolt
+### Purging bbolt Cache
 
 Stop the Trickster process and delete the configured bbolt file.
+
+### Purging BadgerDB Cache
+
+Stop the Trickster process and delete the configured BadgerDB path.

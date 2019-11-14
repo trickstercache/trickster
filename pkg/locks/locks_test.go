@@ -16,6 +16,7 @@ package locks
 import (
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestLocks(t *testing.T) {
@@ -35,11 +36,20 @@ func TestLocks(t *testing.T) {
 	if testVal != 1 {
 		t.Errorf("expected 1 got %d", testVal)
 	}
+	time.Sleep(time.Second * 1)
 	Release("test")
 	wg.Wait()
 
 	if testVal != 11 {
 		t.Errorf("expected 11 got %d", testVal)
 	}
+
+	// Cover Empty String Cases
+	mtx := Acquire("")
+	if mtx != nil {
+		t.Errorf("expected nil got %v", mtx)
+	}
+	// Shouldn't matter but covers the code
+	Release("")
 
 }

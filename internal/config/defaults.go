@@ -13,8 +13,6 @@
 
 package config
 
-import "net/http"
-
 const (
 	defaultLogFile  = ""
 	defaultLogLevel = "INFO"
@@ -52,21 +50,20 @@ const (
 	defaultMaxSizeBackoffObjects = 100
 	defaultMaxObjectSizeBytes    = 524288
 
-	defaultOriginINCH            = true
-	defaultOriginTRF             = 1024
-	defaultOriginTEM             = EvictionMethodOldest
-	defaultOriginTEMName         = "oldest"
-	defaultOriginTimeoutSecs     = 180
-	defaultOriginCacheName       = "default"
-	defaultBackfillToleranceSecs = 0
-	defaultKeepAliveTimeoutSecs  = 300
-	defaultMaxIdleConns          = 20
+	defaultOriginINCH              = true
+	defaultOriginTRF               = 1024
+	defaultOriginTEM               = EvictionMethodOldest
+	defaultOriginTEMName           = "oldest"
+	defaultOriginTimeoutSecs       = 180
+	defaultOriginCacheName         = "default"
+	defaultOriginNegativeCacheName = "default"
+	defaultBackfillToleranceSecs   = 0
+	defaultKeepAliveTimeoutSecs    = 300
+	defaultMaxIdleConns            = 20
 
-	defaultHealthEndpoint          = "/health"
-	defaultHealthCheckPath         = "/"
-	defaultHealthCheckQuery        = ""
-	defaultHealthCheckVerb         = http.MethodGet
-	defaultHealthCheckResponseCode = http.StatusOK
+	defaultHealthCheckPath  = "-"
+	defaultHealthCheckQuery = "-"
+	defaultHealthCheckVerb  = "-"
 
 	defaultConfigHandlerPath = "/trickster/config"
 	defaultPingHandlerPath   = "/trickster/ping"
