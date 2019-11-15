@@ -81,6 +81,59 @@ func TestInvalidContentLength2(t *testing.T) {
 	}
 }
 
+func TestInvalidContentRange(t *testing.T) {
+	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+	}
+	resp2 := &http.Response{}
+	resp2.Header = make(http.Header)
+	resp2.Header.Add("Content-Length", "62")
+	resp2.Header.Add("Content-Range", "blah")
+	resp2.StatusCode = 200
+	d := model.DocumentFromHTTPResponse(resp2, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
+
+	ranges := make(model.Ranges, 1)
+	ranges[0] = model.Range{Start: 5, End: 10}
+	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, ranges)
+	if err == nil {
+		t.Error(err)
+	}
+}
+
+func TestMultiPartByteRange(t *testing.T) {
+	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+	}
+	resp2 := &http.Response{}
+	resp2.Header = make(http.Header)
+	resp2.Header.Add("Content-Length", "62")
+	resp2.Header.Add("Content-Range", "bytes 0-10/62")
+	resp2.Header.Add("Content-Type", "multipart/byteranges; boundary=ddffee123")
+	resp2.StatusCode = 200
+	d := model.DocumentFromHTTPResponse(resp2, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
+
+	ranges := make(model.Ranges, 1)
+	ranges[0] = model.Range{Start: 5, End: 10}
+	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, ranges)
+	if err != nil {
+		t.Error("Expected multi part byte range request to pass, but failed with ", err.Error())
+	}
+}
+
 func TestCacheHitRangeRequest(t *testing.T) {
 	expected := "is a "
 	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
@@ -158,6 +211,50 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 	}
 	if d2.Ranges[0].Start != 1 || d2.Ranges[0].End != 20 {
 		t.Errorf("expected start %d end %d, got start %d end %d", 1, 20, d2.UpdatedQueryRange[0].Start, d2.UpdatedQueryRange[0].End)
+	}
+}
+
+func TestCacheHitRangeRequest3(t *testing.T) {
+	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+	}
+	resp2 := &http.Response{}
+	resp2.Header = make(http.Header)
+	resp2.Header.Add("Content-Length", "62")
+	resp2.StatusCode = 200
+	resp2.Header.Add("Content-Range", "bytes 1-20/62")
+	br := model.Range{Start: 1, End: 20}
+	r := make(model.Ranges, 1)
+	r[0] = br
+	d := model.DocumentFromHTTPResponse(resp2, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
+
+	err = WriteCache(cache, "testKey.sz", d, time.Duration(60)*time.Second, r)
+	if err != nil {
+		t.Error(err)
+	}
+
+	byteRange := model.Range{Start: 25, End: 30}
+	ranges := make(model.Ranges, 1)
+	ranges[0] = byteRange
+	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, ranges)
+	if err != nil {
+		t.Error(err)
+	}
+	qrange := make(model.Ranges, 1)
+	qrange[0] = model.Range{Start: 5, End: 10}
+	d2, err := QueryCache(cache, "testKey", qrange)
+	if err != nil {
+		t.Error(err)
+	}
+	if d2.UpdatedQueryRange != nil {
+		t.Error("Expected empty query range got non empty response ", d2.UpdatedQueryRange)
 	}
 }
 

@@ -102,6 +102,7 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 			totalSize, err := strconv.Atoi(length)
 			if err != nil {
 				log.Error("Couldn't convert to a valid length", log.Pairs{"length": length})
+				return err
 			}
 			fullSize := make([]byte, totalSize)
 
