@@ -35,6 +35,52 @@ func init() {
 		}))
 }
 
+func TestInvalidContentLength(t *testing.T) {
+	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+	}
+	resp2 := &http.Response{}
+	resp2.Header = make(http.Header)
+	resp2.Header.Add("Content-Length", "blah")
+	resp2.StatusCode = 200
+	d := model.DocumentFromHTTPResponse(resp2, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
+
+	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, nil)
+	if err == nil {
+		t.Error(err)
+	}
+}
+
+func TestInvalidContentLength2(t *testing.T) {
+	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+	}
+	resp2 := &http.Response{}
+	resp2.Header = make(http.Header)
+	resp2.Header.Add("Content-Length", "62foo")
+	resp2.StatusCode = 200
+	d := model.DocumentFromHTTPResponse(resp2, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
+
+	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, nil)
+	if err == nil {
+		t.Error(err)
+	}
+}
+
 func TestCacheHitRangeRequest(t *testing.T) {
 	expected := "is a "
 	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
@@ -73,6 +119,48 @@ func TestCacheHitRangeRequest(t *testing.T) {
 	}
 }
 
+func TestCacheHitRangeRequest2(t *testing.T) {
+	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+	}
+	resp2 := &http.Response{}
+	resp2.Header = make(http.Header)
+	resp2.Header.Add("Content-Length", "62")
+	resp2.StatusCode = 200
+	resp2.Header.Add("Content-Range", "bytes 1-20/62")
+	br := model.Range{Start: 1, End: 20}
+	r := make(model.Ranges, 1)
+	r[0] = br
+	d := model.DocumentFromHTTPResponse(resp2, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
+
+	err = WriteCache(cache, "testKey.sz", d, time.Duration(60)*time.Second, r)
+	if err != nil {
+		t.Error(err)
+	}
+
+	byteRange := model.Range{Start: 5, End: 10}
+	ranges := make(model.Ranges, 1)
+	ranges[0] = byteRange
+	d2, err := QueryCache(cache, "testKey", ranges)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if d2.UpdatedQueryRange != nil {
+		t.Errorf("updated query range was expected to be empty")
+	}
+	if d2.Ranges[0].Start != 1 || d2.Ranges[0].End != 20 {
+		t.Errorf("expected start %d end %d, got start %d end %d", 1, 20, d2.UpdatedQueryRange[0].Start, d2.UpdatedQueryRange[0].End)
+	}
+}
+
 func TestPartialCacheMissRangeRequest(t *testing.T) {
 	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
@@ -96,7 +184,7 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 	r[0] = b
 	d.Ranges = r
 
-	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, r)
+	err = WriteCache(cache, "testKey.sz", d, time.Duration(60)*time.Second, r)
 	if err != nil {
 		t.Error(err)
 	}
@@ -137,7 +225,7 @@ func TestFullCacheMissRangeRequest(t *testing.T) {
 	r[0] = b
 	d.Ranges = r
 
-	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, r)
+	err = WriteCache(cache, "testKey.sz", d, time.Duration(60)*time.Second, r)
 	if err != nil {
 		t.Error(err)
 	}
@@ -183,7 +271,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 
 	d := model.DocumentFromHTTPResponse(resp, bytes, nil)
 	r := model.GetByteRanges(request.Header.Get("Range"))
-	err = WriteCache(cache, "testKey2", d, time.Duration(60)*time.Second, r)
+	err = WriteCache(cache, "testKey2.sz", d, time.Duration(60)*time.Second, r)
 	byteRange := model.Range{Start: 15, End: 20}
 	ranges := make(model.Ranges, 1)
 	ranges[0] = byteRange

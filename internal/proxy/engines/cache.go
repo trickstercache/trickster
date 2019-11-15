@@ -82,12 +82,6 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 		return err
 	}
 
-	if c.Configuration().Compression {
-		key += ".sz"
-		log.Debug("compressing cached data", log.Pairs{"cacheKey": key})
-		bytes = snappy.Encode(nil, bytes)
-	}
-
 	if byteRange != nil {
 		// Content-Range
 		doc, err := QueryCache(c, key, byteRange)
@@ -141,7 +135,17 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 		if err != nil {
 			return err
 		}
+		if c.Configuration().Compression {
+			key += ".sz"
+			log.Debug("compressing cached data", log.Pairs{"cacheKey": key})
+			bytes = snappy.Encode(nil, bytes)
+		}
 		return c.Store(key, bytes, ttl)
+	}
+	if c.Configuration().Compression {
+		key += ".sz"
+		log.Debug("compressing cached data", log.Pairs{"cacheKey": key})
+		bytes = snappy.Encode(nil, bytes)
 	}
 	return c.Store(key, bytes, ttl)
 }

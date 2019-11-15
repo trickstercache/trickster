@@ -54,7 +54,6 @@ func (r Ranges) CalculateDelta(d *HTTPDocument, byteRange Ranges) Ranges {
 		return r[i].Start < r[j].Start
 	})
 
-	//updatedquery := make([]Range, (len([]Range(byteRange))))
 	updatedquery := make([]Range, 0)
 
 	for _, val := range byteRange {
@@ -72,12 +71,15 @@ func (r Ranges) CalculateDelta(d *HTTPDocument, byteRange Ranges) Ranges {
 			updatedquery = append(updatedquery, Range{Start: start, End: end})
 			hit = false
 		} else {
+			// v has what is available in our cache currently
 			for k, v := range r {
 				if start > v.Start && end < v.End {
 					// Just return the intermediate bytes from the cache, since we have everything in the cache
 					hit = true
 				} else if start > v.Start && end > v.End {
-					start = v.End
+					if start < v.End {
+						start = v.End
+					}
 					hit = false
 					updatedquery = append(updatedquery, Range{Start: start, End: end})
 				} else if start < v.Start && end < v.Start {
@@ -85,7 +87,9 @@ func (r Ranges) CalculateDelta(d *HTTPDocument, byteRange Ranges) Ranges {
 					hit = false
 					updatedquery = append(updatedquery, Range{Start: start, End: end})
 				} else if start < v.Start && end < v.End {
-					end = v.Start
+					if end > v.Start {
+						end = v.Start
+					}
 					hit = false
 					updatedquery = append(updatedquery, Range{Start: start, End: end})
 				} else {
