@@ -1250,7 +1250,7 @@ func TestSequentialObjectProxyCacheRequestNegativeCache(t *testing.T) {
 	r = r.WithContext(tc.WithConfigs(r.Context(), cfg, client.Cache(), pc))
 
 	// request the url, it should respond with a 404 cache miss
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, nil, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 
 	SequentialObjectProxyCacheRequest(req, w, client, false)
 	resp := w.Result()
@@ -1278,7 +1278,7 @@ func TestSequentialObjectProxyCacheRequestNegativeCache(t *testing.T) {
 	// request again, should still cache miss, but this time, put 404's into the Negative Cache for 30s
 	cfg.NegativeCache[404] = time.Second * 30
 
-	req = model.NewRequest("TestProxyRequest", r.Method, r.URL, nil, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	req = model.NewRequest("TestProxyRequest", r.Method, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 
 	w = httptest.NewRecorder()
 	SequentialObjectProxyCacheRequest(req, w, client, false)

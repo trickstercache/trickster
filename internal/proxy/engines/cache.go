@@ -53,7 +53,7 @@ func QueryCache(c cache.Cache, key string, byteRange model.Ranges) (*model.HTTPD
 		}
 	}
 	d.UnmarshalMsg(bytes)
-	if byteRange != nil {
+	if byteRange != nil && len(byteRange) > 0 {
 		d.UpdatedQueryRange = d.Ranges.CalculateDelta(d, byteRange)
 		// Cache hit
 		if d.UpdatedQueryRange == nil {

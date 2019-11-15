@@ -203,6 +203,9 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 	pc := context.PathConfig(r.ClientRequest.Context())
 	cache := context.CacheClient(r.ClientRequest.Context())
 
+	byteRange := r.Headers.Get("Range")
+	ranges := model.GetByteRanges(byteRange)
+
 	key := oc.Host + "." + DeriveCacheKey(r, pc, "")
 
 	cpReq := GetRequestCachingPolicy(r.Headers)
@@ -243,7 +246,7 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 		defer locks.Release(key)
 	}
 
-	d, err := QueryCache(cache, key)
+	d, err := QueryCache(cache, key, ranges)
 	if err == nil {
 		d.CachingPolicy.IsFresh = !d.CachingPolicy.LocalDate.Add(time.Duration(d.CachingPolicy.FreshnessLifetime) * time.Second).Before(time.Now())
 		if !d.CachingPolicy.IsFresh {
@@ -403,7 +406,7 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 		if ttl > oc.MaxTTL {
 			ttl = oc.MaxTTL
 		}
-		WriteCache(cache, key, d, ttl)
+		WriteCache(cache, key, d, ttl, ranges)
 	}
 	return
 }
