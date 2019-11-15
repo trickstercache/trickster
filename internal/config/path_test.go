@@ -75,7 +75,7 @@ func TestPathMerge(t *testing.T) {
 
 	pc2.OriginConfig = NewOriginConfig()
 
-	pc2.custom = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers",
+	pc2.custom = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers", "cache_key_form_fields",
 		"request_headers", "response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding"}
 
 	expectedPath := "testPath"
@@ -87,6 +87,7 @@ func TestPathMerge(t *testing.T) {
 	pc2.Methods = []string{http.MethodPost}
 	pc2.CacheKeyParams = []string{"params"}
 	pc2.CacheKeyHeaders = []string{"headers"}
+	pc2.CacheKeyFormFields = []string{"fields"}
 	pc2.RequestHeaders = map[string]string{"header1": "1"}
 	pc2.ResponseHeaders = map[string]string{"header2": "2"}
 	pc2.ResponseCode = 404
@@ -115,6 +116,10 @@ func TestPathMerge(t *testing.T) {
 
 	if len(pc.CacheKeyHeaders) != 1 {
 		t.Errorf("expected %d got %d", 1, len(pc.CacheKeyHeaders))
+	}
+
+	if len(pc.CacheKeyFormFields) != 1 {
+		t.Errorf("expected %d got %d", 1, len(pc.CacheKeyFormFields))
 	}
 
 	if len(pc.RequestHeaders) != 1 {

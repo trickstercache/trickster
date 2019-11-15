@@ -121,6 +121,10 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		o.FastForwardTTL = time.Duration(o.FastForwardTTLSecs) * time.Second
 		o.MaxTTL = time.Duration(o.MaxTTLSecs) * time.Second
 
+		if o.CacheKeyPrefix == "" {
+			o.CacheKeyPrefix = o.Host
+		}
+
 		nc, ok := NegativeCacheConfigs[o.NegativeCacheName]
 		if !ok {
 			return fmt.Errorf(`invalid negative cache name: %s`, o.NegativeCacheName)
