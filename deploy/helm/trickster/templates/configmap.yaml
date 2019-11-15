@@ -183,7 +183,7 @@ data:
       cache_name = {{ .cacheName | quote }}
         {{- end }}
         {{- if .negativeCacheName }}
-      negative_cache_name {{ .negativeCacheName | quote }}
+      negative_cache_name = {{ .negativeCacheName | quote }}
         {{- end }}
         {{- if .timeoutSecs }}
       timeout_secs = {{ .timeoutSecs }}
@@ -285,6 +285,9 @@ data:
             {{- end }}
             {{- if .cacheKeyParams }}
           cache_key_params = [ '{{- join "', '" .cacheKeyParams }}' ]
+            {{- end }}
+            {{- if .cacheKeyFormFields }}
+          cache_key_form_fields = [ '{{- join "', '" .cacheKeyFormFields }}' ]
             {{- end }}
             {{- if .cacheKeyHeaders }}
           cache_key_headers = [ '{{- join "', '" .cacheKeyHeaders }}' ]

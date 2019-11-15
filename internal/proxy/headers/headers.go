@@ -32,14 +32,16 @@ const (
 	// ValueTextPlain represents the HTTP Header Value of "text/plain"
 	ValueTextPlain = "text/plain"
 
-	ValuePublic          = "public"
-	ValuePrivate         = "private"
-	ValueMaxAge          = "max-age"
-	ValueSharedMaxAge    = "s-maxage"
-	ValueMustRevalidate  = "must-revalidate"
-	ValueNoStore         = "no-store"
-	ValueProxyRevalidate = "proxy-revalidate"
-	ValueNoTransform     = "no-transform"
+	ValuePublic            = "public"
+	ValuePrivate           = "private"
+	ValueMaxAge            = "max-age"
+	ValueSharedMaxAge      = "s-maxage"
+	ValueMustRevalidate    = "must-revalidate"
+	ValueNoStore           = "no-store"
+	ValueProxyRevalidate   = "proxy-revalidate"
+	ValueNoTransform       = "no-transform"
+	ValueXFormUrlEncoded   = "application/x-www-form-urlencoded"
+	ValueMultipartFormData = "multipart/form-data"
 
 	// Common HTTP Header Names
 
@@ -65,6 +67,8 @@ const (
 	NameXForwardedFor = "X-Forwarded-For"
 	// NameAcceptEncoding represents the HTTP Header Name of "Accept-Encoding"
 	NameAcceptEncoding = "Accept-Encoding"
+	// NameSetCookie represents the HTTP Header Name of "Set-Cookie"
+	NameSetCookie = "Set-Cookie"
 
 	NameExpires           = "expires"
 	NameLastModified      = "last-modified"
