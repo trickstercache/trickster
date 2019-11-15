@@ -183,7 +183,7 @@ data:
       cache_name = {{ .cacheName | quote }}
         {{- end }}
         {{- if .negativeCacheName }}
-      negative_cache_name {{ .negativeCacheName | quote }}
+      negative_cache_name = {{ .negativeCacheName | quote }}
         {{- end }}
         {{- if .timeoutSecs }}
       timeout_secs = {{ .timeoutSecs }}
