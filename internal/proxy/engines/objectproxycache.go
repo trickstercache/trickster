@@ -48,7 +48,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 	oc := context.OriginConfig(r.ClientRequest.Context())
 	cache := context.CacheClient(r.ClientRequest.Context())
 
-	key := oc.Host + "." + DeriveCacheKey(r, apc, "")
+	key := oc.CacheKeyPrefix + "." + DeriveCacheKey(r, apc, "")
 
 	if !noLock {
 		locks.Acquire(key)

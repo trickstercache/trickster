@@ -63,10 +63,12 @@ type PathConfig struct {
 	HandlerName string `toml:"handler"`
 	// Methods provides the list of permitted HTTP request methods for this Path
 	Methods []string `toml:"methods"`
-	// CacheKeyParams provides the list of http request query parameters to be included in the hash for each query's cache key
+	// CacheKeyParams provides the list of http request query parameters to be included in the hash for each request's cache key
 	CacheKeyParams []string `toml:"cache_key_params"`
-	// CacheKeyHeaders provides the list of http request headers to be included in the hash for each query's cache key
+	// CacheKeyHeaders provides the list of http request headers to be included in the hash for each request's cache key
 	CacheKeyHeaders []string `toml:"cache_key_headers"`
+	// CacheKeyFormFields provides the list of http request body fields to be included in the hash for each request's cache key
+	CacheKeyFormFields []string `toml:"cache_key_form_fields"`
 	// RequestHeaders is a map of headers that will be added to requests to the upstream Origin for this path
 	RequestHeaders map[string]string `toml:"request_headers"`
 	// ResponseHeaders is a map of http headers that will be added to responses to the downstream client
@@ -108,13 +110,14 @@ func NewPathConfig() *PathConfig {
 	return &PathConfig{
 		Path:                    "/",
 		Methods:                 methods.CacheableHTTPMethods(),
+		HandlerName:             "proxy",
 		MatchTypeName:           "exact",
 		MatchType:               PathMatchTypeExact,
 		CollapsedForwardingName: "basic",
 		CollapsedForwardingType: CFTypeBasic,
-		HandlerName:             "proxy",
 		CacheKeyParams:          make([]string, 0),
 		CacheKeyHeaders:         make([]string, 0),
+		CacheKeyFormFields:      make([]string, 0),
 		custom:                  make([]string, 0),
 		RequestHeaders:          make(map[string]string),
 		ResponseHeaders:         make(map[string]string),
@@ -142,12 +145,14 @@ func (p *PathConfig) Copy() *PathConfig {
 		Methods:                 make([]string, len(p.Methods)),
 		CacheKeyParams:          make([]string, len(p.CacheKeyParams)),
 		CacheKeyHeaders:         make([]string, len(p.CacheKeyHeaders)),
+		CacheKeyFormFields:      make([]string, len(p.CacheKeyFormFields)),
 		custom:                  make([]string, len(p.custom)),
 		KeyHasher:               p.KeyHasher,
 	}
 	copy(c.Methods, p.Methods)
 	copy(c.CacheKeyParams, p.CacheKeyParams)
 	copy(c.CacheKeyHeaders, p.CacheKeyHeaders)
+	copy(c.CacheKeyFormFields, p.CacheKeyFormFields)
 	copy(c.custom, p.custom)
 	return c
 
@@ -176,6 +181,8 @@ func (p *PathConfig) Merge(p2 *PathConfig) {
 			p.CacheKeyParams = p2.CacheKeyParams
 		case "cache_key_headers":
 			p.CacheKeyHeaders = p2.CacheKeyHeaders
+		case "cache_key_form_fields":
+			p.CacheKeyFormFields = p2.CacheKeyFormFields
 		case "request_headers":
 			p.RequestHeaders = p2.RequestHeaders
 		case "response_headers":
