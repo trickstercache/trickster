@@ -26,6 +26,7 @@ func TestRanges_CalculateDelta_FullCacheMiss(t *testing.T) {
 	resp := &http.Response{}
 	resp.Header = make(http.Header)
 	resp.Header.Add("Content-Length", "62")
+	resp.Header.Add("Content-Range", "bytes 5-10/62")
 	resp.StatusCode = 200
 	d := DocumentFromHTTPResponse(resp, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
 	byteRange = Range{Start: 15, End: 20}
@@ -45,6 +46,7 @@ func TestRanges_CalculateDelta_FullCacheMiss2(t *testing.T) {
 	resp := &http.Response{}
 	resp.Header = make(http.Header)
 	resp.Header.Add("Content-Length", "62")
+	resp.Header.Add("Content-Range", "bytes 5-10/62")
 	resp.StatusCode = 200
 	d := DocumentFromHTTPResponse(resp, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
 	byteRange = Range{Start: 1, End: 4}
@@ -64,6 +66,7 @@ func TestRanges_CalculateDelta_FullCacheMiss3(t *testing.T) {
 	resp := &http.Response{}
 	resp.Header = make(http.Header)
 	resp.Header.Add("Content-Length", "62")
+	resp.Header.Add("Content-Range", "bytes 5-10/62")
 	resp.StatusCode = 200
 	d := DocumentFromHTTPResponse(resp, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
 	// Query
@@ -144,6 +147,7 @@ func TestRanges_CalculateDelta_PartialCacheMiss(t *testing.T) {
 	resp := &http.Response{}
 	resp.Header = make(http.Header)
 	resp.Header.Add("Content-Length", "62")
+	resp.Header.Add("Content-Range", "bytes 5-10/62")
 	resp.StatusCode = 200
 	d := DocumentFromHTTPResponse(resp, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
 	byteRange = Range{Start: 8, End: 20}
@@ -163,6 +167,7 @@ func TestRanges_CalculateDelta_PartialCacheMiss2(t *testing.T) {
 	resp := &http.Response{}
 	resp.Header = make(http.Header)
 	resp.Header.Add("Content-Length", "62")
+	resp.Header.Add("Content-Range", "bytes 5-10/62")
 	resp.StatusCode = 200
 	d := DocumentFromHTTPResponse(resp, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
 	byteRange = Range{Start: 2, End: 8}
@@ -182,6 +187,7 @@ func TestRanges_CalculateDelta_PartialCacheMiss3(t *testing.T) {
 	resp := &http.Response{}
 	resp.Header = make(http.Header)
 	resp.Header.Add("Content-Length", "62")
+	resp.Header.Add("Content-Range", "bytes 5-10/62")
 	resp.StatusCode = 200
 	d := DocumentFromHTTPResponse(resp, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
 	byteRange = Range{Start: 2, End: 20}
@@ -208,6 +214,7 @@ func TestRanges_CalculateDelta_PartialCacheMiss4(t *testing.T) {
 	resp := &http.Response{}
 	resp.Header = make(http.Header)
 	resp.Header.Add("Content-Length", "62")
+	resp.Header.Add("Content-Range", "bytes 5-10/62")
 	resp.StatusCode = 200
 	d := DocumentFromHTTPResponse(resp, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
 	byteRange = Range{Start: 2, End: 25}

@@ -53,7 +53,13 @@ func (r Ranges) CalculateDelta(d *HTTPDocument, byteRange Ranges) Ranges {
 		log.Error("Got an empty content length!", log.Pairs{"Content-Length": d.Headers["Content-Length"]})
 		return nil
 	}
-	totalLength, err := strconv.Atoi(d.Headers["Content-Length"][0])
+	if d.Headers["Content-Range"] == nil {
+		log.Error("Got an empty content range!", log.Pairs{"Content-Range": d.Headers["Content-Range"]})
+		return nil
+	}
+	i := strings.LastIndex(d.Headers["Content-Range"][0], "/")
+	i = i + 1
+	totalLength, err := strconv.Atoi(d.Headers["Content-Range"][0][i:])
 	if err != nil {
 		log.Error("Couldn't convert content length to an int!", log.Pairs{"err": err})
 		return nil
