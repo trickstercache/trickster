@@ -103,6 +103,95 @@ func TestRanges_CalculateDelta(t *testing.T) {
 	}
 }
 
+func TestRanges_CalculateDelta_EmptyContentRange(t *testing.T) {
+	byteRange := Range{Start: 5, End: 10}
+	ranges := make(Ranges, 1)
+	ranges[0] = byteRange
+	resp := &http.Response{}
+	resp.Header = make(http.Header)
+	resp.StatusCode = 200
+	d := DocumentFromHTTPResponse(resp, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
+
+	// Queries
+	ranges2 := make(Ranges, 1)
+	ranges2[0] = Range{Start: 5, End: 10}
+	res := ranges.CalculateDelta(d, ranges2)
+	if res != nil {
+		t.Errorf("expected nil because of empty content range, but got a valid value")
+	}
+}
+
+func TestRanges_CalculateDelta_InvalidContentRange(t *testing.T) {
+	byteRange := Range{Start: 5, End: 10}
+	ranges := make(Ranges, 1)
+	ranges[0] = byteRange
+	resp := &http.Response{}
+	resp.Header = make(http.Header)
+	resp.Header.Add("Content-Length", "62")
+	resp.Header.Add("Content-Range", "bytes 5-10/")
+	resp.StatusCode = 200
+	d := DocumentFromHTTPResponse(resp, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
+
+	// Queries
+	ranges2 := make(Ranges, 1)
+	ranges2[0] = Range{Start: 5, End: 10}
+	res := ranges.CalculateDelta(d, ranges2)
+	if res != nil {
+		t.Errorf("expected nil because of empty content range, but got a valid value")
+	}
+}
+
+func TestRanges_CalculateDelta_InvalidContentRange2(t *testing.T) {
+	byteRange := Range{Start: 5, End: 10}
+	ranges := make(Ranges, 1)
+	ranges[0] = byteRange
+	resp := &http.Response{}
+	resp.Header = make(http.Header)
+	resp.Header.Add("Content-Length", "62")
+	resp.Header.Add("Content-Range", "bytes 5-10/blah")
+	resp.StatusCode = 200
+	d := DocumentFromHTTPResponse(resp, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
+
+	// Queries
+	ranges2 := make(Ranges, 1)
+	ranges2[0] = Range{Start: 5, End: 10}
+	res := ranges.CalculateDelta(d, ranges2)
+	if res != nil {
+		t.Errorf("expected nil because of empty content range, but got a valid value")
+	}
+}
+
+func TestRanges_CalculateDelta_OutOfBounds(t *testing.T) {
+	byteRange := Range{Start: 5, End: 10}
+	ranges := make(Ranges, 1)
+	ranges[0] = byteRange
+	resp := &http.Response{}
+	resp.Header = make(http.Header)
+	resp.Header.Add("Content-Length", "62")
+	resp.Header.Add("Content-Range", "bytes 5-10/62")
+	resp.StatusCode = 200
+	d := DocumentFromHTTPResponse(resp, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
+
+	// Queries
+	ranges2 := make(Ranges, 1)
+	ranges2[0] = Range{Start: -1, End: 10}
+	res := ranges.CalculateDelta(d, ranges2)
+	if res != nil {
+		t.Errorf("expected nil because of empty content range, but got a valid value")
+	}
+	ranges2[0] = Range{Start: 1, End: 100}
+	res = ranges.CalculateDelta(d, ranges2)
+	if res != nil {
+		t.Errorf("expected nil because of empty content range, but got a valid value")
+	}
+
+	ranges2[0] = Range{Start: -10, End: 65}
+	res = ranges.CalculateDelta(d, ranges2)
+	if res != nil {
+		t.Errorf("expected nil because of empty content range, but got a valid value")
+	}
+}
+
 func TestRanges_CalculateDelta_EmptyContentLength(t *testing.T) {
 	byteRange := Range{Start: 5, End: 10}
 	ranges := make(Ranges, 1)

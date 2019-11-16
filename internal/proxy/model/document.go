@@ -61,7 +61,7 @@ func (r Ranges) CalculateDelta(d *HTTPDocument, byteRange Ranges) Ranges {
 	i = i + 1
 	totalLength, err := strconv.Atoi(d.Headers["Content-Range"][0][i:])
 	if err != nil {
-		log.Error("Couldn't convert content length to an int!", log.Pairs{"err": err})
+		log.Error("Couldn't convert content range to an int!", log.Pairs{"err": err})
 		return nil
 	}
 	hit := false
@@ -74,7 +74,7 @@ func (r Ranges) CalculateDelta(d *HTTPDocument, byteRange Ranges) Ranges {
 	for _, val := range byteRange {
 		start := val.Start
 		end := val.End
-		if start <= 0 || end >= totalLength {
+		if start < 0 || end > totalLength {
 			log.Error("Start or End out of bounds!", log.Pairs{"start": start, "end": end})
 			return nil
 		}
