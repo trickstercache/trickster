@@ -49,6 +49,15 @@ type HTTPDocument struct {
 // CalculateDelta calculates the delta in the byte ranges and returns the range
 // that we need to query upstream
 func (r Ranges) CalculateDelta(d *HTTPDocument, byteRange Ranges) Ranges {
+	if d.Headers["Content-Length"] == nil {
+		log.Error("Got an empty content length!", log.Pairs{"Content-Length": d.Headers["Content-Length"]})
+		return nil
+	}
+	totalLength, err := strconv.Atoi(d.Headers["Content-Length"][0])
+	if err != nil {
+		log.Error("Couldn't convert content length to an int!", log.Pairs{"err": err})
+		return nil
+	}
 	hit := false
 	sort.SliceStable(r, func(i, j int) bool {
 		return r[i].Start < r[j].Start
@@ -59,7 +68,10 @@ func (r Ranges) CalculateDelta(d *HTTPDocument, byteRange Ranges) Ranges {
 	for _, val := range byteRange {
 		start := val.Start
 		end := val.End
-
+		if start <= 0 || end >= totalLength {
+			log.Error("Start or End out of bounds!", log.Pairs{"start": start, "end": end})
+			return nil
+		}
 		if (r[0].Start > end) ||
 			(r[len(r)-1].End < start) {
 			//New retrieve from upstream

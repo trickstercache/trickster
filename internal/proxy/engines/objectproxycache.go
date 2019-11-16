@@ -101,14 +101,16 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 		}
 	} else {
 		header := "bytes="
-		for _, v := range d.UpdatedQueryRange {
-			s := v.Start
-			e := v.End
-			header = header + strconv.Itoa(s) + "-" + strconv.Itoa(e) + ", "
+		if d.UpdatedQueryRange != nil {
+			for _, v := range d.UpdatedQueryRange {
+				s := v.Start
+				e := v.End
+				header = header + strconv.Itoa(s) + "-" + strconv.Itoa(e) + ", "
+			}
+			// To get rid of the trailing ", "
+			header = header[:len(header)-2]
+			r.Headers.Add("Range", header)
 		}
-		// To get rid of the trailing ", "
-		header = header[:len(header)-2]
-		r.Headers.Add("Range", header)
 	}
 
 	var body []byte

@@ -76,6 +76,67 @@ func TestRanges_CalculateDelta_FullCacheMiss3(t *testing.T) {
 	}
 }
 
+func TestRanges_CalculateDelta(t *testing.T) {
+	byteRange := Range{Start: 5, End: 10}
+	ranges := make(Ranges, 1)
+	ranges[0] = byteRange
+	resp := &http.Response{}
+	resp.Header = make(http.Header)
+	resp.Header.Add("Content-Length", "62")
+	resp.StatusCode = 200
+	d := DocumentFromHTTPResponse(resp, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
+
+	// Queries
+	ranges2 := make(Ranges, 1)
+	ranges2[0] = Range{Start: 0, End: 0}
+	res := ranges.CalculateDelta(d, ranges2)
+	if res != nil {
+		t.Errorf("expected nil because of out of bounds, got start %d end %d", res[0].Start, res[0].End)
+	}
+	ranges2[0] = Range{Start: 100, End: 100}
+	res = ranges.CalculateDelta(d, ranges2)
+	if res != nil {
+		t.Errorf("expected nil because of out of bounds, got start %d end %d", res[0].Start, res[0].End)
+	}
+}
+
+func TestRanges_CalculateDelta_EmptyContentLength(t *testing.T) {
+	byteRange := Range{Start: 5, End: 10}
+	ranges := make(Ranges, 1)
+	ranges[0] = byteRange
+	resp := &http.Response{}
+	resp.Header = make(http.Header)
+	resp.StatusCode = 200
+	d := DocumentFromHTTPResponse(resp, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
+
+	// Queries
+	ranges2 := make(Ranges, 1)
+	ranges2[0] = Range{Start: 5, End: 10}
+	res := ranges.CalculateDelta(d, ranges2)
+	if res != nil {
+		t.Errorf("expected nil because of out of bounds, got start %d end %d", res[0].Start, res[0].End)
+	}
+}
+
+func TestRanges_CalculateDelta_InvalidContentLength(t *testing.T) {
+	byteRange := Range{Start: 5, End: 10}
+	ranges := make(Ranges, 1)
+	ranges[0] = byteRange
+	resp := &http.Response{}
+	resp.Header = make(http.Header)
+	resp.Header.Add("Content-Length", "62thisiswrong")
+	resp.StatusCode = 200
+	d := DocumentFromHTTPResponse(resp, []byte("This is a test file, to see how the byte range requests work.\n"), nil)
+
+	// Queries
+	ranges2 := make(Ranges, 1)
+	ranges2[0] = Range{Start: 5, End: 10}
+	res := ranges.CalculateDelta(d, ranges2)
+	if res != nil {
+		t.Errorf("expected nil because of out of bounds, got start %d end %d", res[0].Start, res[0].End)
+	}
+}
+
 func TestRanges_CalculateDelta_PartialCacheMiss(t *testing.T) {
 	byteRange := Range{Start: 5, End: 10}
 	ranges := make(Ranges, 1)

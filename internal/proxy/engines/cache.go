@@ -14,6 +14,7 @@
 package engines
 
 import (
+	"github.com/pkg/errors"
 	"strconv"
 	"strings"
 	"time"
@@ -89,6 +90,9 @@ func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Durat
 			// First time, Doesn't exist in the cache
 			// Example -> Content-Range: bytes 0-1023/146515
 			// length = 0-1023/146515
+			if d.Headers["Content-Range"] == nil {
+				return errors.New("No Content-Range in the request")
+			}
 			length := d.Headers["Content-Range"][0]
 			index := 0
 			for k, v := range length {

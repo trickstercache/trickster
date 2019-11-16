@@ -15,6 +15,7 @@ package engines
 
 import (
 	"fmt"
+	"github.com/pkg/errors"
 	"log"
 	"net/http"
 	"strings"
@@ -337,6 +338,35 @@ func TestFullCacheMissRangeRequest(t *testing.T) {
 	if d2.UpdatedQueryRange[0].Start != 15 ||
 		d2.UpdatedQueryRange[0].End != 20 {
 		t.Errorf("expected start %d end %d, got start %d end %d", 10, 20, d2.UpdatedQueryRange[0].Start, d2.UpdatedQueryRange[0].End)
+	}
+}
+
+func TestEmptyContentRange(t *testing.T) {
+	expected := "No Content-Range in the request"
+	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	cr.LoadCachesFromConfig()
+	cache, err := cr.GetCache("default")
+	if err != nil {
+		t.Error(err)
+	}
+	resp2 := &http.Response{}
+	resp2.Header = make(http.Header)
+	resp2.Header.Add("Content-Length", "10")
+	resp2.StatusCode = 206
+	d := model.DocumentFromHTTPResponse(resp2, []byte("This is a "), nil)
+
+	b := model.Range{Start: 0, End: 10}
+	r := make(model.Ranges, 1)
+	r[0] = b
+	d.Ranges = r
+
+	err = WriteCache(cache, "testKey.sz", d, time.Duration(60)*time.Second, r)
+	if err == nil {
+		t.Error(errors.New(fmt.Sprintf("Expected %s but got no error", expected)))
 	}
 }
 
