@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/pkg/sort/times"
 )
 
 func TestSetExtents(t *testing.T) {
@@ -189,32 +188,43 @@ func TestMerge(t *testing.T) {
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10, 0), End: time.Unix(10, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			b: &ResultsEnvelope{
 				Data: map[string]*DataSet{
 					"1": &DataSet{
 						Points: []Point{
-							Point{Timestamp: time.Unix(1, 0), Value: 1.5},
 							Point{Timestamp: time.Unix(5, 0), Value: 1.5},
+							Point{Timestamp: time.Unix(15, 0), Value: 1.5},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(15, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			merged: &ResultsEnvelope{
 				Data: map[string]*DataSet{
 					"1": &DataSet{
 						Points: []Point{
-							Point{Timestamp: time.Unix(1, 0), Value: 1.5},
 							Point{Timestamp: time.Unix(5, 0), Value: 1.5},
 							Point{Timestamp: time.Unix(10, 0), Value: 1.5},
+							Point{Timestamp: time.Unix(15, 0), Value: 1.5},
 						},
 					},
 				},
 				StepDuration: time.Duration(5) * time.Second,
-				timestamps:   map[time.Time]bool{time.Unix(5, 0): true, time.Unix(10, 0): true, time.Unix(15, 0): true},
-				tslist:       times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
-				isSorted:     true,
-				isCounted:    true,
+				//timestamps:   map[time.Time]bool{time.Unix(5, 0): true, time.Unix(10, 0): true, time.Unix(15, 0): true},
+				//tslist:       times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
+				isSorted: true,
+				//isCounted: true,
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(15, 0)},
+				},
 			},
 		},
 
@@ -228,6 +238,10 @@ func TestMerge(t *testing.T) {
 						},
 					},
 				},
+				StepDuration: time.Duration(5) * time.Second,
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10, 0), End: time.Unix(10, 0)},
+				},
 			},
 			b: &ResultsEnvelope{
 				Data: map[string]*DataSet{
@@ -235,6 +249,7 @@ func TestMerge(t *testing.T) {
 						Points: []Point{},
 					},
 				},
+				StepDuration: time.Duration(5) * time.Second,
 			},
 			merged: &ResultsEnvelope{
 				Data: map[string]*DataSet{
@@ -244,7 +259,11 @@ func TestMerge(t *testing.T) {
 						},
 					},
 				},
-				isSorted: true,
+				isSorted:     true,
+				StepDuration: time.Duration(5) * time.Second,
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(10, 0), End: time.Unix(10, 0)},
+				},
 			},
 		},
 	}
@@ -259,7 +278,7 @@ func TestMerge(t *testing.T) {
 	}
 }
 
-func TestCrop(t *testing.T) {
+func TestCropToRange(t *testing.T) {
 	tests := []struct {
 		before, after *ResultsEnvelope
 		extent        timeseries.Extent
@@ -651,6 +670,7 @@ func TestSort(t *testing.T) {
 						},
 					},
 				},
+				isSorted: true,
 			},
 		},
 	}
