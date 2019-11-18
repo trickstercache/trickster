@@ -42,8 +42,11 @@ func SequentialObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, 
 
 // FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
 func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config.PathConfig, noLock bool) ([]byte, *http.Response, bool) {
-	byteRange := r.Headers.Get(headers.NameRange)
-	ranges := model.GetByteRanges(byteRange)
+
+	var ranges model.Ranges
+	if _, ok := r.Headers[headers.NameRange]; ok {
+		ranges = model.GetByteRanges(r.Headers.Get("Range"))
+	}
 
 	oc := context.OriginConfig(r.ClientRequest.Context())
 	cache := context.CacheClient(r.ClientRequest.Context())

@@ -36,8 +36,11 @@ import (
 // requests the gaps from the origin server and returns the reconstituted dataset to the downstream request
 // while caching the results for subsequent requests of the same data
 func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client) {
-	byteRange := r.Headers.Get("Range")
-	ranges := model.GetByteRanges(byteRange)
+
+	var ranges model.Ranges
+	if _, ok := r.Headers[headers.NameRange]; ok {
+		ranges = model.GetByteRanges(r.Headers.Get("Range"))
+	}
 
 	oc := context.OriginConfig(r.ClientRequest.Context())
 	cache := context.CacheClient(r.ClientRequest.Context())
@@ -107,7 +110,6 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 			return // fetchTimeseries logs the error
 		}
 	} else {
-		ranges := model.GetByteRanges(byteRange)
 		doc, err = QueryCache(cache, key, ranges)
 		// Partial or full Cache miss
 		if err != nil {
