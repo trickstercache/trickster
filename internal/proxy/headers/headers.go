@@ -69,6 +69,8 @@ const (
 	NameAcceptEncoding = "Accept-Encoding"
 	// NameSetCookie represents the HTTP Header Name of "Set-Cookie"
 	NameSetCookie = "Set-Cookie"
+	// NameRange represents the HTTP Header Name of "Range"
+	NameRange = "Range"
 
 	NameExpires           = "expires"
 	NameLastModified      = "last-modified"
