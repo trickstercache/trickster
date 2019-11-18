@@ -15,7 +15,6 @@ package engines
 
 import (
 	"fmt"
-	"github.com/pkg/errors"
 	"log"
 	"net/http"
 	"strings"
@@ -294,7 +293,9 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if d2.UpdatedQueryRange[0].Start != 10 ||
+	if len(d2.UpdatedQueryRange) < 1 {
+		t.Errorf("expected 1 got %d", len(d2.UpdatedQueryRange))
+	} else if d2.UpdatedQueryRange[0].Start != 10 ||
 		d2.UpdatedQueryRange[0].End != 20 {
 		t.Errorf("expected start %d end %d, got start %d end %d", 10, 20, d2.UpdatedQueryRange[0].Start, d2.UpdatedQueryRange[0].End)
 	}
@@ -366,7 +367,7 @@ func TestEmptyContentRange(t *testing.T) {
 
 	err = WriteCache(cache, "testKey.sz", d, time.Duration(60)*time.Second, r)
 	if err == nil {
-		t.Error(errors.New(fmt.Sprintf("Expected %s but got no error", expected)))
+		t.Errorf("Expected %s but got no error", expected)
 	}
 }
 
