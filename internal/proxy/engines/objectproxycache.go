@@ -42,7 +42,7 @@ func SequentialObjectProxyCacheRequest(r *model.Request, w http.ResponseWriter, 
 
 // FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
 func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config.PathConfig, noLock bool) ([]byte, *http.Response, bool) {
-	byteRange := r.Headers.Get("Range")
+	byteRange := r.Headers.Get(headers.NameRange)
 	ranges := model.GetByteRanges(byteRange)
 
 	oc := context.OriginConfig(r.ClientRequest.Context())
@@ -109,7 +109,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 			}
 			// To get rid of the trailing ", "
 			header = header[:len(header)-2]
-			r.Headers.Add("Range", header)
+			r.Headers.Add(headers.NameRange, header)
 		}
 	}
 
@@ -205,7 +205,7 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 	pc := context.PathConfig(r.ClientRequest.Context())
 	cache := context.CacheClient(r.ClientRequest.Context())
 
-	byteRange := r.Headers.Get("Range")
+	byteRange := r.Headers.Get(headers.NameRange)
 	ranges := model.GetByteRanges(byteRange)
 
 	key := oc.Host + "." + DeriveCacheKey(r, pc, "")
