@@ -38,7 +38,7 @@ func (c *Client) Handlers() map[string]http.Handler {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config.PathConfig, []string) {
+func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.PathConfig {
 	paths := map[string]*config.PathConfig{
 		"/": &config.PathConfig{
 			Path:        "/",
@@ -47,6 +47,5 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			MatchType:   config.PathMatchTypePrefix,
 		},
 	}
-	orderedPaths := []string{"/"}
-	return paths, orderedPaths
+	return paths
 }
