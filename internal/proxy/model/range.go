@@ -131,7 +131,6 @@ func (r Ranges) CalculateDelta(d *HTTPDocument, byteRange Ranges) Ranges {
 // GetByteRanges gets the individual byte ranges from a single/ multi range request
 func GetByteRanges(byteRange string) Ranges {
 	if byteRange == "" {
-		log.Error("Got an empty byte range", log.Pairs{"byteRange": ""})
 		return nil
 	}
 	// byteRange currently has something like this bytes=0-50, 100-150
