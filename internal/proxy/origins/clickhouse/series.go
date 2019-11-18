@@ -229,7 +229,6 @@ func (re *ResultsEnvelope) CropToRange(e timeseries.Extent) {
 		ts.Data[i] = ds
 
 	}
-	return
 }
 
 // Sort sorts all Values in each Series chronologically by their timestamp
