@@ -43,7 +43,7 @@ build:
 
 rpm: build
 	mkdir -p ./OPATH/SOURCES
-	cp -p trickster ./OPATH/SOURCES/
+	cp -p ./OPATH/trickster ./OPATH/SOURCES/
 	cp $(TRICKSTER_MAIN)/conf/trickster.service ./OPATH/SOURCES/
 	sed -e 's%^# log_file =.*$$%log_file = "/var/log/trickster/trickster.log"%' \
 		-e 's%prometheus:9090%localhost:9090%' \
