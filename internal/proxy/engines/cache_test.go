@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -26,13 +27,14 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
-func init() {
-	log.Printf("Running on :3000 ...")
-	go http.ListenAndServe("localhost:3000",
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.ServeContent(w, r, "", time.Now(),
-				strings.NewReader("This is a test file, to see how the byte range requests work.\n"))
-		}))
+func newRangeRequestTestServer() *httptest.Server {
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeContent(w, r, "", time.Now(),
+			strings.NewReader("This is a test file, to see how the byte range requests work.\n"))
+	})
+	s := httptest.NewServer(handler)
+	return s
 }
 
 func TestInvalidContentLength(t *testing.T) {
@@ -372,8 +374,11 @@ func TestEmptyContentRange(t *testing.T) {
 }
 
 func TestRangeRequestFromClient(t *testing.T) {
+
+	s := newRangeRequestTestServer()
+	defer s.Close()
 	client := &http.Client{}
-	request, err := http.NewRequest("GET", "http://localhost:3000", nil)
+	request, err := http.NewRequest("GET", s.URL, nil)
 
 	if err != nil {
 		log.Fatalln(err)
