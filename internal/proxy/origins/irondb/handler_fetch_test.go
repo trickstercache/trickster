@@ -82,7 +82,7 @@ func TestFetchHandlerSetExtent(t *testing.T) {
 	client := &Client{name: "test"}
 	hc := tu.NewTestWebClient()
 	cfg := config.NewOriginConfig()
-	cfg.Paths, _ = client.DefaultPathConfigs(cfg)
+	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0/", nil)
 	if err != nil {
 		t.Error(err)

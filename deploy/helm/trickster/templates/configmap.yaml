@@ -10,129 +10,340 @@ metadata:
 data:
   trickster.conf: |-
     [main]
-    [proxy_server]
-    listen_port = {{ .Values.service.port }}
-    {{- if .Values.listenAddress }}
-    listen_address = {{ .Values.listenAddress | quote }}
+    {{- if .Values.configHandlerPath }}
+    config_handler_path = {{ .Values.configHandlerPath | quote }}
+    {{- end }}
+    {{- if .Values.pingHandlerPath }}
+    ping_handler_path = {{ .Values.pingHandlerPath | quote }}
     {{- end }}
 
-      {{- range .Values.caches }}
-        {{ printf "[caches.%s]" .name }}
-        type = {{ .type | quote }}
-        compression = {{ .compression }}
-        timeseries_ttl_secs = {{ .timeSeriesTTLSecs }}
-        fastforward_ttl_secs = {{ .fastforwardTTLSecs }}
-        object_ttl_secs = {{ .objectTTLSecs }}
-
-            {{- if or (ne .type "redis") (ne .type "redis_cluster") }}
-            {{ printf "[caches.%s.index]" .name }}
-            reap_interval_secs = {{ .index.reapIntervalSecs }}
-            flush_interval_secs = {{ .index.flushIntervalSecs }}
-            max_size_bytes = {{ .index.maxSizeBytes }}
-            max_size_backoff_bytes = {{ .index.maxSizeBackoffBytes }}
-            max_size_objects = {{ .index.maxSizeObjects }}
-            max_size_backoff_objects = {{ .index.maxSizeBackoffObjects }}
-            {{- end }}
-
-
-            {{- if eq .type "redis" }}
-            {{ printf "[caches.%s.redis]" .name }}
-            client_type = {{ .redis.clientType | quote }}
-            protocol = {{ .redis.protocol | quote }}
-            password = {{ .redis.password | quote }}
-
-            {{- if eq .redis.clientType "standard" }}
-            endpoint = {{ .redis.endpoint | quote }}
-
-            {{- else if or (eq .clientType "cluster") (eq .clientType "sentinel") }}
-            endpoints = {{ .redis.endpoints }}
-            {{- if eq .clientType "sentinel" }} 
-            sentinel_master = {{ .redis.sentinelMaster | quote }}
-            {{- end }}
-
-            {{- if .redis.db }}
-            db = {{ .redis.db }}
-            {{- end }}
-            {{- if .redis.maxRetries }}
-            max_retries = {{ .redis.maxRetries }}
-            {{- end }}
-            {{- if .redis.minRetryBackoffMs }}
-            min_retry_backoff_ms = {{ .redis.minRetryBackoffMs }}
-            {{- end }}
-            {{- if .redis.maxRetyBackoffMs }}
-            max_retry_backoff_ms = {{ .redis.maxRetyBackoffMs }}
-            {{- end }}
-            {{- if .redis.dialTimeoutMs }}
-            dial_timeout_ms = {{ .redis.dialTimeoutMs }}
-            {{- end }}
-            {{- if .redis.readTimeoutMs }}
-            read_timeout_ms = {{ .redis.readTimeoutMs }}
-            {{- end }}
-            {{- if .redis.writeTimeoutMs }}
-            write_timeout_ms = {{ .redis.writeTimeoutMs }}
-            {{- end }}
-            {{- if .redis.poolSize }}
-            pool_size = {{ .redis.poolSize }}
-            {{- end }}
-            {{- if .redis.minIdleConns }}
-            min_idle_conns = {{ .redis.minIdleConns }}
-            {{- end }}
-            {{- if .redis.maxConnAgeMs }}
-            max_conn_age_ms = {{ .redis.maxConnAgeMs }}
-            {{- end }}
-            {{- if .redis.poolTimeoutMs }}
-            pool_timeout_ms = {{ .redis.poolTimeoutMs }}
-            {{- end }}
-            {{- if .redis.idleTimeoutMs }}
-            idle_timeout_ms = {{ .redis.idleTimeoutMs }}
-            {{- end }}
-            {{- if .redis.idleCheckFrequencyMs }}
-            idle_check_frequency_ms = {{ .redis.idleCheckFrequencyMs }}
-            {{- end }}
-            {{- end }}
-            
-            {{- else if eq .type "filesystem" }}
-            {{ printf "[caches.%s.filesystem]" .name }}
-            cache_path = {{ .filesystem.path | quote }}
-
-            {{- else if eq .type "bbolt" }}
-            {{ printf "[caches.%s.bbolt]" .name }}
-            filename = {{ .bbolt.file | quote }}
-            bucket = {{ .bbolt.bucket | quote }}
-
-            {{- else if eq .type "badger" }}
-            {{ printf "[caches.%s.badger]" .name }}
-            directory = {{ .badger.directory | quote }}
-            value_directory = {{ .badger.valueDirectory | quote }}
-           {{- end }}
+    [frontend]
+    listen_port = {{ .Values.service.port }}
+    {{- if .Values.frontend }}
+      {{- if .Values.frontend.listenAddress }}
+    listen_address = {{ .Values.frontend.listenAddress | quote }}
       {{- end }}
+      {{- if .Values.frontend.tlsListenPort }}
+    tls_listen_port = {{ .Values.frontend.tlsListenPort }}
+      {{- end }}
+      {{- if .Values.frontend.tlsListenAddress }}
+    tls_listen_address = {{ .Values.frontend.tlsListenAddress | quote }}
+      {{- end }}
+      {{- if .Values.frontend.connectionsLimit }}
+    connections_limit = {{ .Values.frontend.connectionsLimit }}
+      {{- end }}
+    {{- end }}
+    {{- if .Values.caches }}
+    {{- if gt (len .Values.caches) 0 }}
+
+    [caches]
+      {{- range .Values.caches }}
+
+      {{ printf "[caches.%s]" .name }}
+        {{- if .cacheType }}
+      cache_type = {{ .cacheType | quote }}
+        {{- end }}
+        {{- if .compression }}
+      compression = {{ .compression }}
+        {{- end }}
+        {{- if and (ne .cacheType "redis") (ne .cacheType "badger") }}
+        {{- if .index }}
+        {{ printf "[caches.%s.index]" .name }}
+        {{- if .index.reapIntervalSecs }}
+        reap_interval_secs = {{ .index.reapIntervalSecs }}
+        {{- end }}
+        {{- if .index.flushIntervalSecs }}
+        flush_interval_secs = {{ .index.flushIntervalSecs }}
+        {{- end }}
+        {{- if .index.maxSizeBytes }}
+        max_size_bytes = {{ .index.maxSizeBytes }}
+        {{- end }}
+        {{- if .index.maxSizeBackoffBytes }}
+        max_size_backoff_bytes = {{ .index.maxSizeBackoffBytes }}
+        {{- end }}
+        {{- if .index.maxSizeObjects }}
+        max_size_objects = {{ .index.maxSizeObjects }}
+        {{- end }}
+        {{- if .index.maxSizeBackoffObjects }}
+        max_size_backoff_objects = {{ .index.maxSizeBackoffObjects }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- if and (eq .cacheType "redis") ( .redis ) }}
+
+        {{ printf "[caches.%s.redis]" .name }}
+          {{- if .redis.clientType }}
+        client_type = {{ .redis.clientType | quote }}
+          {{- end }}
+          {{- if .redis.protocol }}
+        protocol = {{ .redis.protocol | quote }}
+          {{- end }}
+          {{- if .redis.password }}
+        password = {{ .redis.password | quote }}
+          {{- end }}
+          {{- if or (eq .redis.clientType "cluster") (eq .redis.clientType "sentinel") }}
+            {{- if .redis.endpoints }}
+        endpoints = [ '{{- join "', '" .redis.endpoints }}' ]
+            {{- end }}
+            {{- if eq .redis.clientType "sentinel" }}
+              {{- if .redis.sentinelMaster }}
+        sentinel_master = {{ .redis.sentinelMaster | quote }}
+              {{- end }}
+            {{- end }}
+          {{- else }}
+            {{- if .redis.endpoint }}
+        endpoint = {{ .redis.endpoint | quote }}
+            {{- end }}
+          {{- end }}
+          {{- if .redis.db }}
+        db = {{ .redis.db }}
+          {{- end }}
+          {{- if .redis.maxRetries }}
+        max_retries = {{ .redis.maxRetries }}
+          {{- end }}
+          {{- if .redis.minRetryBackoffMs }}
+        min_retry_backoff_ms = {{ .redis.minRetryBackoffMs }}
+          {{- end }}
+          {{- if .redis.maxRetyBackoffMs }}
+        max_retry_backoff_ms = {{ .redis.maxRetyBackoffMs }}
+          {{- end }}
+          {{- if .redis.dialTimeoutMs }}
+        dial_timeout_ms = {{ .redis.dialTimeoutMs }}
+          {{- end }}
+          {{- if .redis.readTimeoutMs }}
+        read_timeout_ms = {{ .redis.readTimeoutMs }}
+          {{- end }}
+          {{- if .redis.writeTimeoutMs }}
+        write_timeout_ms = {{ .redis.writeTimeoutMs }}
+          {{- end }}
+          {{- if .redis.poolSize }}
+        pool_size = {{ .redis.poolSize }}
+          {{- end }}
+          {{- if .redis.minIdleConns }}
+        min_idle_conns = {{ .redis.minIdleConns }}
+          {{- end }}
+          {{- if .redis.maxConnAgeMs }}
+        max_conn_age_ms = {{ .redis.maxConnAgeMs }}
+          {{- end }}
+          {{- if .redis.poolTimeoutMs }}
+        pool_timeout_ms = {{ .redis.poolTimeoutMs }}
+          {{- end }}
+          {{- if .redis.idleTimeoutMs }}
+        idle_timeout_ms = {{ .redis.idleTimeoutMs }}
+          {{- end }}
+          {{- if .redis.idleCheckFrequencyMs }}
+        idle_check_frequency_ms = {{ .redis.idleCheckFrequencyMs }}
+          {{- end }}
+          {{- else if and (eq .cacheType "filesystem") ( .filesystem ) }}
+
+        {{ printf "[caches.%s.filesystem]" .name }}
+          {{- if .filesystem.path }}
+        cache_path = {{ .filesystem.path | quote }}
+          {{- end }}
+        {{- else if and (eq .cacheType "bbolt") ( .bbolt ) }}
+
+        {{ printf "[caches.%s.bbolt]" .name }}
+          {{- if .bbolt.file }}
+        filename = {{ .bbolt.file | quote }}
+          {{- end }}
+          {{- if .bbolt.bucket }}
+        bucket = {{ .bbolt.bucket | quote }}
+          {{- end }}
+        {{- else if and (eq .cacheType "badger") ( .badger ) }}
+
+        {{ printf "[caches.%s.badger]" .name }}
+          {{- if .badger.directory }}
+        directory = {{ .badger.directory | quote }}
+          {{- end }}
+          {{- if .badger.valueDirectory }}
+        value_directory = {{ .badger.valueDirectory | quote }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
+    {{- if .Values.origins }}
+    {{- if gt (len .Values.origins) 0 }}
 
     [origins]
-    {{- range .Values.origins }}
-        {{ printf "[origins.%s]" .name }}
-        is_default = {{ .isDefault }}
-        type = {{ .type | quote }}
-        cache_name = {{ .name | quote }}
-        scheme = {{ .scheme | quote }}
-        host = {{ .host | quote }}
-        path_prefix = {{ .pathPrefix | quote }}
-        timeout_secs = {{ .timeoutSecs }}
-        keep_alive_timeout_secs = {{ .keepAliveTimeoutSecs }}
-        max_idle_conns = {{ .maxIdleConns }}
-        api_path = {{ .apiPath | quote }}
-        ignore_no_cache_header = {{ .ignoreNoCacheHeader }}
-        timeseries_retention_factor = {{ .timeseriesRetentionFactor }}
-        timeseries_eviction_method = {{ .timeseriesEvictionMethod | quote}}
-        fast_forward_disable = {{ .fastForwardDisable }}
-        backfill_tolerance_secs = {{ .backfillToleranceSecs }}
+      {{- range .Values.origins }}
+      {{- $origin := .name }}
+
+      {{ printf "[origins.%s]" .name }}
+        {{- if .originType }}
+      origin_type = {{ .originType | quote }}
+        {{- end }}
+        {{- if .originURL }}
+      origin_url = {{ .originURL | quote }}
+        {{- end }}
+        {{- if .isDefault }}
+      is_default = {{ .isDefault }}
+        {{- end }}
+        {{- if .cacheName }}
+      cache_name = {{ .cacheName | quote }}
+        {{- end }}
+        {{- if .negativeCacheName }}
+      negative_cache_name = {{ .negativeCacheName | quote }}
+        {{- end }}
+        {{- if .timeoutSecs }}
+      timeout_secs = {{ .timeoutSecs }}
+        {{- end }}
+        {{- if .keepAliveTimeoutSecs }}
+      keep_alive_timeout_secs = {{ .keepAliveTimeoutSecs }}
+        {{- end }}
+        {{- if .maxIdleConns }}
+      max_idle_conns = {{ .maxIdleConns }}
+        {{- end }}
+        {{- if .backfillToleranceSecs }}
+      backfill_tolerance_secs = {{ .backfillToleranceSecs }}
+        {{- end }}
+        {{- if .timeseriesRetentionFactor }}
+      timeseries_retention_factor = {{ .timeseriesRetentionFactor }}
+        {{- end }}
+        {{- if .timeseriesTTLSecs }}
+      timeseries_ttl_secs = {{ .timeseriesTTLSecs }}
+        {{- end }}
+        {{- if .timeseriesEvictionMethod }}
+      timeseries_eviction_method = {{ .timeseriesEvictionMethod | quote}}
+        {{- end }}
+        {{- if .fastForwardDisable }}
+      fast_forward_disable = {{ .fastForwardDisable }}
+        {{- end }}
+        {{- if .fastforwardTTLSecs }}
+      fastforward_ttl_secs = {{ .fastforwardTTLSecs }}
+        {{- end }}
+        {{- if .maxTTLSecs }}
+      max_ttl_secs = {{ .maxTTLSecs }}
+        {{- end }}
+        {{- if .revalidationFactor }}
+      revalidation_factor = {{ .revalidationFactor }}
+        {{- end }}
+        {{- if .maxObjectByteSize }}
+      max_object_byte_size = {{ .maxObjectByteSize }}
+        {{- end }}
+        {{- if .hcUpstreamURL }}
+      health_check_upstream_url = {{ .hcUpstreamURL | quote }}
+        {{- end }}
+        {{- if .hcVerb }}
+      health_check_verb = {{ .hcVerb | quote }}
+        {{- end }}
+        {{- if .hcQuery }}
+      health_check_query = {{ .hcQuery | quote }}
+        {{- end }}
+        {{- if .tls }}
+
+        {{ printf "[origins.%s.tls]" .name }}
+          {{- if .tls.fullChainCertPath }}
+        full_chain_cert_path = {{ .tls.fullChainCertPath | quote }}
+          {{- end }}
+          {{- if .tls.privateKeyPath }}
+        private_key_path = {{ .tls.privateKeyPath | quote }}
+          {{- end }}
+          {{- if .tls.insecureSkipVerify }}
+        insecure_skip_verify = {{ .tls.insecureSkipVerify }}
+          {{- end }}
+          {{- if .tls.certificateAuthorityPaths }}
+        certificate_authority_paths = [ '{{- join "', '" .tls.certificateAuthorityPaths }}' ]
+          {{- end }}
+          {{- if .tls.clientCertPath }}
+        client_cert_path = {{ .tls.clientCertPath | quote }}
+          {{- end }}
+          {{- if .tls.clientKeyPath }}
+        client_key_path = {{ .tls.clientKeyPath | quote }}
+          {{- end }}
+        {{- end }}
+        {{- if (.paths) }}
+        {{- if (gt (len .paths) 0) }}
+
+        [paths]
+          {{- range .paths }}
+
+          {{ printf "[origins.%s.paths.%s]" $origin .name }}
+            {{- if .path }}
+          path = {{ .path | quote }}
+            {{- end }}
+            {{- if .methods }}
+          methods = [ '{{- join "', '" .methods }}' ]
+            {{- end }}
+            {{- if .matchType }}
+          match_type = {{ .matchType | quote }}
+            {{- end }}
+            {{- if .handler }}
+          handler = {{ .handler | quote  }}
+            {{- end }}
+            {{- if .responseCode }}
+          response_code = {{ .responseCode }}
+            {{- end }}
+            {{- if .responseBody }}
+          response_body = {{ .responseBody | quote }}
+            {{- end }}
+            {{- if .noMetrics }}
+          no_metrics = {{ .noMetrics }}
+            {{- end }}
+            {{- if .collapsedForwarding }}
+          collapsed_forwarding = {{ .collapsedForwarding | quote }}
+            {{- end }}
+            {{- if .cacheKeyParams }}
+          cache_key_params = [ '{{- join "', '" .cacheKeyParams }}' ]
+            {{- end }}
+            {{- if .cacheKeyFormFields }}
+          cache_key_form_fields = [ '{{- join "', '" .cacheKeyFormFields }}' ]
+            {{- end }}
+            {{- if .cacheKeyHeaders }}
+          cache_key_headers = [ '{{- join "', '" .cacheKeyHeaders }}' ]
+            {{- end }}
+            {{- if .responseHeaders }}
+
+            {{ printf "[origins.%s.paths.%s.response_headers]" $origin .name }}
+              {{- range $key, $val := .responseHeaders }}
+            {{ printf "'%s' = '%s'" $key $val }}
+              {{- end }}
+            {{- end }}
+            {{- if .requestHeaders }}
+
+            {{ printf "[origins.%s.paths.%s.request_headers]" $origin .name }}
+              {{- range $key, $val := .requestHeaders }}
+            {{ printf "'%s' = '%s'" $key $val }}
+              {{- end }}
+            {{- end }}
+          {{- end }}
+        {{- end }}
+        {{- end }}
+      {{- end }}
     {{- end }}
+    {{- end }}
+    {{- if (.Values.negativeCaches) }}
+    {{- if gt (len .Values.negativeCaches) 0 }}
+
+    [negative_caches]
+      {{- range .Values.negativeCaches }}
+      
+      {{ printf "[negative_caches.%s]" .name }}
+        {{- range $key, $val := . }}
+        {{- if not (eq $key "name") }}
+      {{ printf "%s = %s" $key $val }}
+        {{- end }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
+    {{- if .Values.service.metricsPort }}
 
     [metrics]
-        listen_port = {{ .Values.service.metricsPort }}
-        
+    listen_port = {{ .Values.service.metricsPort }}
+      {{- if .Values.metrics }}
+      {{- if .Values.metrics.listenAddress }}
+    listen_address = {{ .Values.metrics.listenAddress }}
+      {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- if .Values.logging }}
+
     [logging]
-        log_level = {{ .Values.logLevel | quote }}
-        {{- if .Values.logFile }}
-        log_file = {{ .Values.logFile | quote }}
-        {{- end }}
-        
+      {{- if .Values.logging.logLevel }}
+    log_level = {{ .Values.logging.logLevel | quote }}
+      {{- end }}
+      {{- if .Values.logging.logFile }}
+    log_file = {{ .Values.logging.logFile | quote }}
+      {{- end }}
+    {{- end }}

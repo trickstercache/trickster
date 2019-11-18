@@ -58,7 +58,7 @@ func NewTestWebClient() *http.Client {
 // NewTestInstance will start a trickster
 func NewTestInstance(
 	configFile string,
-	DefaultPathConfigs func(*config.OriginConfig) (map[string]*config.PathConfig, []string),
+	DefaultPathConfigs func(*config.OriginConfig) map[string]*config.PathConfig,
 	respCode int, respBody string, respHeaders map[string]string,
 	originType, urlPath, logLevel string,
 ) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *http.Client, error) {
@@ -99,9 +99,23 @@ func NewTestInstance(
 	oc := config.Origins["default"]
 	r = r.WithContext(ct.WithConfigs(r.Context(), oc, cache, nil))
 
+	p := NewTestPathConfig(oc, DefaultPathConfigs, urlPath)
+
+	r = r.WithContext(ct.WithConfigs(r.Context(), oc, cache, p))
+
+	c := NewTestWebClient()
+
+	return ts, w, r, c, nil
+}
+
+func NewTestPathConfig(
+	oc *config.OriginConfig,
+	DefaultPathConfigs func(*config.OriginConfig) map[string]*config.PathConfig,
+	urlPath string,
+) *config.PathConfig {
 	var paths map[string]*config.PathConfig
 	if DefaultPathConfigs != nil {
-		paths, _ = DefaultPathConfigs(oc)
+		paths = DefaultPathConfigs(oc)
 	}
 
 	oc.Paths = paths
@@ -110,12 +124,10 @@ func NewTestInstance(
 	if len(paths) > 0 {
 		if p2, ok := paths[urlPath]; ok {
 			p = p2
+		} else {
+			p = paths["/"]
 		}
 	}
 
-	r = r.WithContext(ct.WithConfigs(r.Context(), oc, cache, p))
-
-	c := NewTestWebClient()
-
-	return ts, w, r, c, nil
+	return p
 }

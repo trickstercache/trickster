@@ -42,8 +42,22 @@ func (c *Client) Handlers() map[string]http.Handler {
 	return c.handlers
 }
 
+func populateHeathCheckRequestValues(oc *config.OriginConfig) {
+	if oc.HealthCheckUpstreamPath == "-" {
+		oc.HealthCheckUpstreamPath = APIPath + mnQuery
+	}
+	if oc.HealthCheckVerb == "-" {
+		oc.HealthCheckVerb = http.MethodGet
+	}
+	if oc.HealthCheckQuery == "-" {
+		oc.HealthCheckQuery = "query=up"
+	}
+}
+
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config.PathConfig, []string) {
+func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.PathConfig {
+
+	populateHeathCheckRequestValues(oc)
 
 	var rhts map[string]string
 	if oc != nil {
@@ -61,6 +75,8 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhts,
 			OriginConfig:    oc,
+			MatchTypeName:   "exact",
+			MatchType:       config.PathMatchTypeExact,
 		},
 
 		APIPath + mnQuery: &config.PathConfig{
@@ -71,6 +87,8 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
 			OriginConfig:    oc,
+			MatchTypeName:   "exact",
+			MatchType:       config.PathMatchTypeExact,
 		},
 
 		APIPath + mnSeries: &config.PathConfig{
@@ -81,6 +99,8 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
 			OriginConfig:    oc,
+			MatchTypeName:   "exact",
+			MatchType:       config.PathMatchTypeExact,
 		},
 
 		APIPath + mnLabels: &config.PathConfig{
@@ -91,6 +111,8 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
 			OriginConfig:    oc,
+			MatchTypeName:   "exact",
+			MatchType:       config.PathMatchTypeExact,
 		},
 
 		APIPath + mnLabel + "/": &config.PathConfig{
@@ -100,6 +122,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			MatchTypeName:   "prefix",
+			MatchType:       config.PathMatchTypePrefix,
 			ResponseHeaders: rhinst,
 			OriginConfig:    oc,
 		},
@@ -112,6 +135,8 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
 			OriginConfig:    oc,
+			MatchTypeName:   "exact",
+			MatchType:       config.PathMatchTypeExact,
 		},
 
 		APIPath + mnTargetsMeta: &config.PathConfig{
@@ -122,6 +147,8 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
 			OriginConfig:    oc,
+			MatchTypeName:   "exact",
+			MatchType:       config.PathMatchTypeExact,
 		},
 
 		APIPath + mnRules: &config.PathConfig{
@@ -132,6 +159,8 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
 			OriginConfig:    oc,
+			MatchTypeName:   "exact",
+			MatchType:       config.PathMatchTypeExact,
 		},
 
 		APIPath + mnAlerts: &config.PathConfig{
@@ -142,6 +171,8 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
 			OriginConfig:    oc,
+			MatchTypeName:   "exact",
+			MatchType:       config.PathMatchTypeExact,
 		},
 
 		APIPath + mnAlertManagers: &config.PathConfig{
@@ -152,6 +183,8 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
 			OriginConfig:    oc,
+			MatchTypeName:   "exact",
+			MatchType:       config.PathMatchTypeExact,
 		},
 
 		APIPath + mnStatus: &config.PathConfig{
@@ -161,33 +194,32 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) (map[string]*config
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			MatchTypeName:   "prefix",
+			MatchType:       config.PathMatchTypePrefix,
 			ResponseHeaders: rhinst,
 			OriginConfig:    oc,
 		},
 
 		APIPath: &config.PathConfig{
-			Path:         APIPath,
-			HandlerName:  "proxy",
-			Methods:      []string{http.MethodGet, http.MethodPost},
-			OriginConfig: oc,
-			MatchType:    config.PathMatchTypePrefix,
+			Path:          APIPath,
+			HandlerName:   "proxy",
+			Methods:       []string{http.MethodGet, http.MethodPost},
+			OriginConfig:  oc,
+			MatchType:     config.PathMatchTypePrefix,
+			MatchTypeName: "prefix",
 		},
 
 		"/": &config.PathConfig{
-			Path:         "/",
-			HandlerName:  "proxy",
-			Methods:      []string{http.MethodGet, http.MethodPost},
-			OriginConfig: oc,
-			MatchType:    config.PathMatchTypePrefix,
+			Path:          "/",
+			HandlerName:   "proxy",
+			Methods:       []string{http.MethodGet, http.MethodPost},
+			OriginConfig:  oc,
+			MatchType:     config.PathMatchTypePrefix,
+			MatchTypeName: "prefix",
 		},
 	}
 
 	oc.FastForwardPath = paths[APIPath+mnQuery]
 
-	orderedPaths := []string{APIPath + mnQueryRange, APIPath + mnQuery,
-		APIPath + mnSeries, APIPath + mnLabels, APIPath + mnLabel, APIPath + mnTargets, APIPath + mnTargetsMeta,
-		APIPath + mnRules, APIPath + mnAlerts, APIPath + mnAlertManagers, APIPath + mnStatus, APIPath, "/"}
-
-	return paths, orderedPaths
+	return paths
 
 }

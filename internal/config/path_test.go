@@ -75,8 +75,8 @@ func TestPathMerge(t *testing.T) {
 
 	pc2.OriginConfig = NewOriginConfig()
 
-	pc2.custom = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers",
-		"request_headers", "response_headers", "response_code", "response_body", "no_metrics"}
+	pc2.custom = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers", "cache_key_form_fields",
+		"request_headers", "response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding"}
 
 	expectedPath := "testPath"
 	expectedHandlerName := "testHandler"
@@ -87,11 +87,14 @@ func TestPathMerge(t *testing.T) {
 	pc2.Methods = []string{http.MethodPost}
 	pc2.CacheKeyParams = []string{"params"}
 	pc2.CacheKeyHeaders = []string{"headers"}
+	pc2.CacheKeyFormFields = []string{"fields"}
 	pc2.RequestHeaders = map[string]string{"header1": "1"}
 	pc2.ResponseHeaders = map[string]string{"header2": "2"}
 	pc2.ResponseCode = 404
 	pc2.ResponseBody = "trickster"
 	pc2.NoMetrics = true
+	pc2.CollapsedForwardingName = "progressive"
+	pc2.CollapsedForwardingType = CFTypeProgressive
 
 	pc.Merge(pc2)
 
@@ -113,6 +116,10 @@ func TestPathMerge(t *testing.T) {
 
 	if len(pc.CacheKeyHeaders) != 1 {
 		t.Errorf("expected %d got %d", 1, len(pc.CacheKeyHeaders))
+	}
+
+	if len(pc.CacheKeyFormFields) != 1 {
+		t.Errorf("expected %d got %d", 1, len(pc.CacheKeyFormFields))
 	}
 
 	if len(pc.RequestHeaders) != 1 {
@@ -141,6 +148,10 @@ func TestPathMerge(t *testing.T) {
 
 	if pc.OriginConfig == nil {
 		t.Errorf("expected non-nil value you for %s", "OriginConfig")
+	}
+
+	if pc.CollapsedForwardingName != "progressive" || pc.CollapsedForwardingType != CFTypeProgressive {
+		t.Errorf("expected %s got %s", "progressive", pc.CollapsedForwardingName)
 	}
 
 }

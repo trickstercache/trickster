@@ -115,7 +115,7 @@ func TestTLSCertConfig(t *testing.T) {
 	}
 
 	// test empty config condition 2 (ServeTLS is true, but there are 0 origins configured)
-	config.ProxyServer.ServeTLS = true
+	config.Frontend.ServeTLS = true
 	n, err = config.TLSCertConfig()
 	if n != nil {
 		t.Errorf("expected nil config, got %d certs", len(n.Certificates))
@@ -125,7 +125,7 @@ func TestTLSCertConfig(t *testing.T) {
 	}
 
 	tls01 := tlsConfig("01")
-	config.ProxyServer.ServeTLS = true
+	config.Frontend.ServeTLS = true
 
 	// test good config
 	config.Origins["default"].TLS = tls01

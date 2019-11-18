@@ -64,7 +64,7 @@ func TestRollupHandlerSetExtent(t *testing.T) {
 	client := &Client{name: "test"}
 	hc := tu.NewTestWebClient()
 	cfg := config.NewOriginConfig()
-	cfg.Paths, _ = client.DefaultPathConfigs(cfg)
+	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0//rollup/00112233-4455-6677-8899-aabbccddeeff/metric", nil)
 	if err != nil {
 		t.Error(err)
@@ -90,7 +90,7 @@ func TestRollupHandlerParseTimeRangeQuery(t *testing.T) {
 	client := &Client{name: "test"}
 	hc := tu.NewTestWebClient()
 	cfg := config.NewOriginConfig()
-	cfg.Paths, _ = client.DefaultPathConfigs(cfg)
+	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0/rollup/00112233-4455-6677-8899-aabbccddeeff/metric", nil)
 	if err != nil {
 		t.Error(err)

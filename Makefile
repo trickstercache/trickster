@@ -43,7 +43,7 @@ build:
 
 rpm: build
 	mkdir -p ./OPATH/SOURCES
-	cp -p trickster ./OPATH/SOURCES/
+	cp -p ./OPATH/trickster ./OPATH/SOURCES/
 	cp $(TRICKSTER_MAIN)/conf/trickster.service ./OPATH/SOURCES/
 	sed -e 's%^# log_file =.*$$%log_file = "/var/log/trickster/trickster.log"%' \
 		-e 's%prometheus:9090%localhost:9090%' \
@@ -100,7 +100,9 @@ style:
 
 .PHONY: test
 test: test-go-mod
-	$(GO) test -v -coverprofile=.coverprofile ./... | grep -v ' app=trickster '
+	$(GO) test -v -coverprofile=.coverprofile.tmp ./... | grep -v ' app=trickster '
+	cat .coverprofile.tmp | grep -v "_gen.go:" > .coverprofile
+	rm  .coverprofile.tmp
 
 .PHONY: bench
 bench:

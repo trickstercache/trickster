@@ -87,7 +87,7 @@ func main() {
 		log.Fatal(1, "route registration failed", log.Pairs{"detail": err.Error()})
 	}
 
-	if config.ProxyServer.TLSListenPort < 1 && config.ProxyServer.ListenPort < 1 {
+	if config.Frontend.TLSListenPort < 1 && config.Frontend.ListenPort < 1 {
 		log.Fatal(1, "no http or https listeners configured", log.Pairs{})
 	}
 
@@ -96,15 +96,15 @@ func main() {
 
 	// if TLS port is configured and at least one origin is mapped to a good tls config,
 	// then set up the tls server listener instance
-	if config.ProxyServer.ServeTLS && config.ProxyServer.TLSListenPort > 0 {
+	if config.Frontend.ServeTLS && config.Frontend.TLSListenPort > 0 {
 		wg.Add(1)
 		go func() {
 			tlsConfig, err := config.Config.TLSCertConfig()
 			if err == nil {
 				l, err = proxy.NewListener(
-					config.ProxyServer.TLSListenAddress,
-					config.ProxyServer.TLSListenPort,
-					config.ProxyServer.ConnectionsLimit,
+					config.Frontend.TLSListenAddress,
+					config.Frontend.TLSListenPort,
+					config.Frontend.ConnectionsLimit,
 					tlsConfig)
 				if err == nil {
 					err = http.Serve(l, handlers.CompressHandler(routing.TLSRouter))
@@ -116,11 +116,11 @@ func main() {
 	}
 
 	// if the plaintext HTTP port is configured, then set up the http listener instance
-	if config.ProxyServer.ListenPort > 0 {
+	if config.Frontend.ListenPort > 0 {
 		wg.Add(1)
 		go func() {
-			l, err := proxy.NewListener(config.ProxyServer.ListenAddress, config.ProxyServer.ListenPort,
-				config.ProxyServer.ConnectionsLimit, nil)
+			l, err := proxy.NewListener(config.Frontend.ListenAddress, config.Frontend.ListenPort,
+				config.Frontend.ConnectionsLimit, nil)
 
 			if err == nil {
 				err = http.Serve(l, handlers.CompressHandler(routing.Router))

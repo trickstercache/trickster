@@ -63,7 +63,7 @@ func TestCaqlHandlerSetExtent(t *testing.T) {
 	client := &Client{name: "test"}
 	hc := tu.NewTestWebClient()
 	cfg := config.NewOriginConfig()
-	cfg.Paths, _ = client.DefaultPathConfigs(cfg)
+	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0/extension/lua/caql_v1", nil)
 	if err != nil {
 		t.Error(err)
@@ -89,7 +89,7 @@ func TestCaqlHandlerParseTimeRangeQuery(t *testing.T) {
 	client := &Client{name: "test"}
 	hc := tu.NewTestWebClient()
 	cfg := config.NewOriginConfig()
-	cfg.Paths, _ = client.DefaultPathConfigs(cfg)
+	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0/extension/lua/caql_v1", nil)
 	if err != nil {
 		t.Error(err)

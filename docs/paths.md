@@ -1,4 +1,4 @@
-# Customizing Route Behavior
+# Customizing HTTP Path Behavior
 
 Trickster supports, via configuration, customizing the upstream request and downstream response behavior on a per-Path, per-Origin basis, by providing a `paths` configuration section for each origin configuration. Here are the basic capabilities for customizing Path behavior:
 
@@ -58,7 +58,32 @@ Response Header injections occur as the object is received from the origin and b
 
 ### Cache Key Components
 
-By default, Trickster will use the HTTP Method, URL Path and any Authorization header to derive its Cache Key. In a Path Config, you may specify any additional HTTP headers and URL Parameters to be used for cache key derivation.
+By default, Trickster will use the HTTP Method, URL Path and any Authorization header to derive its Cache Key. In a Path Config, you may specify any additional HTTP headers and URL Parameters to be used for cache key derivation, as well as information in the Request Body.
+
+#### Using Request Body Fields in Cache Key Hashing
+
+Trickster supports the parsing of the HTTP Request body for the purpose of deriving the Cache Key for a cacheable object. Note that body parsing requires reading the entire request body into memory and parsing it before operating on the object. This will result in slightly higher resource utilization and latency, depending upon the size of the client request body.
+
+ Body parsing is supported when the request's HTTP method is `POST`, `PUT` or `PATCH`, and the request `Content-Type` is either `application/x-www-form-urlencoded`, `multipart/form-data`, or `application/json`.
+
+In a Path Config, provide the `cache_key_form_fields` setting with a list of form field names to include when hashing the cache key.
+
+Trickster supports parsing of the Request body as a JSON document, including documents that are multiple levels deep, using a basic pathing convention of forward slashes, to indicate the path to a field that should be included in the cache key. Take the following JSON document:
+
+```json
+{
+	"requestType": "query",
+	"query": {
+		"table": "movies",
+		"fields": "eidr,title",
+		"filter": "year=1979"
+	}
+}
+```
+
+To include the `requestType`, `table`, `fields`, and `filter` fields from this document when hashing the cache key, you can provide the following setting in a Path Configuration:
+
+`cache_key_form_fields = [ 'requestType', 'query/table', 'query/fields', 'query/filter' ]`
 
 ## Example Reverse Proxy Cache Config with Path Customizations
 
@@ -90,7 +115,7 @@ By default, Trickster will use the HTTP Method, URL Path and any Authorization h
 
             [origins.default.paths.images]
             path = '/images/'
-            methods = [ 'GET' ]
+            methods = [ 'GET', 'HEAD' ]
             handler = 'proxycache' # Trickster will cache the images directory
             match_type = 'prefix'
             
@@ -111,7 +136,7 @@ By default, Trickster will use the HTTP Method, URL Path and any Authorization h
             # redirect this sunsetted feature to a discontinued message
             [origins.default.paths.redirect]
             path = '/blog'
-            methods = [ 'GET' ]
+            methods = [ '*' ]
             handler = 'localresponse'
             match_type = 'prefix'
             response_code = 302
@@ -122,10 +147,28 @@ By default, Trickster will use the HTTP Method, URL Path and any Authorization h
             # cache this API endpoint, keying on the query parameter
             [origins.default.paths.api]
             path = '/api/'
-            methods = [ 'GET', 'POST' ]
+            methods = [ 'GET', 'HEAD' ]
             handler = 'proxycache'
             match_type = 'prefix'
             cache_key_params = [ 'query' ]
+
+            # same API endpoint, different HTTP methods to route against
+            [origins.default.paths.api-deny]
+            path = '/api/'
+            methods = [ 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'CONNECT' ]
+            handler = 'localresponse'
+            match_type = 'prefix'
+            response_code = 401
+            response_body = 'this is a read-only api endpoint'
+
+            # cache the query endpoint, permitting GET or POST
+            [origins.default.paths.api-query]
+            path = '/api/query/'
+            methods = [ 'GET', 'HEAD', 'POST' ]
+            handler = 'proxycache'
+            match_type = 'prefix'
+            cache_key_params = [ 'query' ]       # for GET / HEAD
+            cache_key_form_fields = [ 'query' ]  # for POST
 ```
 
 ## Modifying Behavior of Time Series Origin Types
@@ -162,7 +205,7 @@ Examples of customizing Path Configs for Origin Types with Pre-Definitions:
             methods = [ 'GET' ]
             match_type = 'prefix'
             handler = 'proxycache'
-            cache_key_params = [ 'beans', ']
+            cache_key_params = [ 'beans' ]
             
             # block /api/v1/admin/ from being reachable via Trickster
             [origins.default.paths.admin]
