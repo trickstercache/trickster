@@ -113,15 +113,19 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		doc, err = QueryCache(cache, key, ranges)
 		// Partial or full Cache miss
 		if err != nil {
-			header := "bytes="
-			for _, v := range doc.UpdatedQueryRange {
-				s := v.Start
-				e := v.End
-				header = header + strconv.Itoa(s) + "-" + strconv.Itoa(e) + ", "
+
+			if doc.UpdatedQueryRange != nil && len(doc.UpdatedQueryRange) > 0 {
+				header := "bytes="
+				for _, v := range doc.UpdatedQueryRange {
+					s := v.Start
+					e := v.End
+					header = header + strconv.Itoa(s) + "-" + strconv.Itoa(e) + ", "
+				}
+				// To get rid of the trailing ", "
+				header = header[:len(header)-2]
+				r.Headers.Add("Range", header)
 			}
-			// To get rid of the trailing ", "
-			header = header[:len(header)-2]
-			r.Headers.Add("Range", header)
+
 			cts, doc, elapsed, err = fetchTimeseries(r, client)
 			if err != nil {
 				recordDPCResult(r, tc.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)

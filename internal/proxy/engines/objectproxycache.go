@@ -103,8 +103,8 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 			}
 		}
 	} else {
-		header := "bytes="
-		if d.UpdatedQueryRange != nil {
+		if d.UpdatedQueryRange != nil && len(d.UpdatedQueryRange) > 0 {
+			header := "bytes="
 			for _, v := range d.UpdatedQueryRange {
 				s := v.Start
 				e := v.End
@@ -208,8 +208,10 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 	pc := context.PathConfig(r.ClientRequest.Context())
 	cache := context.CacheClient(r.ClientRequest.Context())
 
-	byteRange := r.Headers.Get(headers.NameRange)
-	ranges := model.GetByteRanges(byteRange)
+	var ranges model.Ranges
+	if _, ok := r.Headers[headers.NameRange]; ok {
+		ranges = model.GetByteRanges(r.Headers.Get("Range"))
+	}
 
 	key := oc.Host + "." + DeriveCacheKey(r, pc, "")
 
