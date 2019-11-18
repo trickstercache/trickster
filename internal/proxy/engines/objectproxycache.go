@@ -45,7 +45,7 @@ func FetchViaObjectProxyCache(r *model.Request, client model.Client, apc *config
 
 	var ranges model.Ranges
 	if _, ok := r.Headers[headers.NameRange]; ok {
-		ranges = model.GetByteRanges(r.Headers.Get("Range"))
+		ranges = model.GetByteRanges(r.Headers.Get(headers.NameRange))
 	}
 
 	oc := context.OriginConfig(r.ClientRequest.Context())
@@ -210,7 +210,7 @@ func FetchAndRespondViaObjectProxyCache(r *model.Request, w http.ResponseWriter,
 
 	var ranges model.Ranges
 	if _, ok := r.Headers[headers.NameRange]; ok {
-		ranges = model.GetByteRanges(r.Headers.Get("Range"))
+		ranges = model.GetByteRanges(r.Headers.Get(headers.NameRange))
 	}
 
 	key := oc.Host + "." + DeriveCacheKey(r, pc, "")

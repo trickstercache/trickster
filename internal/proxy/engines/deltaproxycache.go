@@ -39,7 +39,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 
 	var ranges model.Ranges
 	if _, ok := r.Headers[headers.NameRange]; ok {
-		ranges = model.GetByteRanges(r.Headers.Get("Range"))
+		ranges = model.GetByteRanges(r.Headers.Get(headers.NameRange))
 	}
 
 	oc := context.OriginConfig(r.ClientRequest.Context())
@@ -123,7 +123,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 				}
 				// To get rid of the trailing ", "
 				header = header[:len(header)-2]
-				r.Headers.Add("Range", header)
+				r.Headers.Add(headers.NameRange, header)
 			}
 
 			cts, doc, elapsed, err = fetchTimeseries(r, client)
