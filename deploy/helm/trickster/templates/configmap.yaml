@@ -41,7 +41,7 @@ data:
 
       {{ printf "[caches.%s]" .name }}
         {{- if .cacheType }}
-      cache_type = {{ .cacheType | quote }}
+      type = {{ .cacheType | quote }}
         {{- end }}
         {{- if .compression }}
       compression = {{ .compression }}
@@ -171,10 +171,10 @@ data:
 
       {{ printf "[origins.%s]" .name }}
         {{- if .originType }}
-      origin_type = {{ .originType | quote }}
+      type = {{ .originType | quote }}
         {{- end }}
         {{- if .originURL }}
-      origin_url = {{ .originURL | quote }}
+      host = {{ .originURL | quote }}
         {{- end }}
         {{- if .isDefault }}
       is_default = {{ .isDefault }}
