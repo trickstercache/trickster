@@ -166,69 +166,78 @@ func (re *ResultsEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent
 // CropToRange reduces the Timeseries down to timestamps contained within the provided Extents (inclusive).
 // CropToRange assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
 func (re *ResultsEnvelope) CropToRange(e timeseries.Extent) {
-
 	re.isCounted = false
-
-	if len(re.Data) == 0 || re.ValueCount() == 0 {
+	x := len(re.ExtentList)
+	// The Series has no extents, so no need to do anything
+	if x < 1 {
+		re.Data = make(map[string]*DataSet)
+		re.ExtentList = timeseries.ExtentList{}
 		return
 	}
 
-	ts := &ResultsEnvelope{
-		Meta: make([]FieldDefinition, len(re.Meta)),
-		Data: make(map[string]*DataSet),
+	// if the extent of the series is entirely outside the extent of the crop range, return empty set and bail
+	if re.ExtentList.OutsideOf(e) {
+		re.Data = make(map[string]*DataSet)
+		re.ExtentList = timeseries.ExtentList{}
+		return
 	}
 
-	copy(ts.Meta, re.Meta)
-
-	for i, d := range re.Data {
-
-		ds := &DataSet{
-			Metric: make(map[string]interface{}),
+	// if the series extent is entirely inside the extent of the crop range, simply adjust down its ExtentList
+	if re.ExtentList.InsideOf(e) {
+		if re.ValueCount() == 0 {
+			re.Data = make(map[string]*DataSet)
 		}
+		re.ExtentList = re.ExtentList.Crop(e)
+		return
+	}
 
-		for k, v := range d.Metric {
-			ds.Metric[k] = v
-		}
+	if len(re.Data) == 0 {
+		re.ExtentList = re.ExtentList.Crop(e)
+		return
+	}
 
+	deletes := make(map[string]bool)
+
+	for i, s := range re.Data {
 		start := -1
 		end := -1
-		for j, p := range d.Points {
-
-			if p.Timestamp == e.End {
-				if j == 0 {
-					start = 0
+		for j, val := range s.Points {
+			t := val.Timestamp
+			if t.Equal(e.End) {
+				// for cases where the first element is the only qualifying element,
+				// start must be incremented or an empty response is returned
+				if j == 0 || t.Equal(e.Start) || start == -1 {
+					start = j
 				}
 				end = j + 1
 				break
 			}
-
-			if p.Timestamp.After(e.End) {
+			if t.After(e.End) {
 				end = j
 				break
 			}
-
-			if p.Timestamp.Before(e.Start) {
+			if t.Before(e.Start) {
 				continue
 			}
-
-			if start == -1 && (p.Timestamp == e.Start || (e.End.After(p.Timestamp) && p.Timestamp.After(e.Start))) {
+			if start == -1 && (t.Equal(e.Start) || (e.End.After(t) && t.After(e.Start))) {
 				start = j
 			}
-
 		}
-		if start != -1 {
+		if start != -1 && len(s.Points) > 0 {
 			if end == -1 {
-				end = len(d.Points)
+				end = len(s.Points)
 			}
-			ds.Points = make([]Point, len(d.Points[start:end]))
-			copy(ds.Points, d.Points[start:end])
+			re.Data[i].Points = s.Points[start:end]
 		} else {
-			ds.Points = []Point{}
+			deletes[i] = true
 		}
-
-		ts.Data[i] = ds
-
 	}
+
+	for i := range deletes {
+		delete(re.Data, i)
+	}
+
+	re.ExtentList = re.ExtentList.Crop(e)
 }
 
 // Sort sorts all Values in each Series chronologically by their timestamp

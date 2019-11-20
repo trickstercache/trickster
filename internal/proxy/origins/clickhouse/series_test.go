@@ -278,12 +278,14 @@ func TestMerge(t *testing.T) {
 	}
 }
 
+const testStep = time.Duration(10) * time.Second
+
 func TestCropToRange(t *testing.T) {
 	tests := []struct {
 		before, after *ResultsEnvelope
 		extent        timeseries.Extent
 	}{
-		// Case where the very first element in the matrix has a timestamp matching the extent's end
+		// Run 0: Case where the very first element in the matrix has a timestamp matching the extent's end
 		{
 			before: &ResultsEnvelope{
 				Meta: []FieldDefinition{
@@ -291,15 +293,16 @@ func TestCropToRange(t *testing.T) {
 				},
 				Data: map[string]*DataSet{
 					"1": &DataSet{
-						Metric: map[string]interface{}{
-							"label1": 20,
-							"label2": "red",
-						},
+						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
+							{Timestamp: time.Unix(1644004600, 0), Value: 1.5},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1644004600, 0), End: time.Unix(1644004600, 0)},
+				},
+				StepDuration: testStep,
 			},
 			after: &ResultsEnvelope{
 				Meta: []FieldDefinition{
@@ -307,54 +310,16 @@ func TestCropToRange(t *testing.T) {
 				},
 				Data: map[string]*DataSet{
 					"1": &DataSet{
-						Metric: map[string]interface{}{
-							"label1": 20,
-							"label2": "red",
-						},
+						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
+							{Timestamp: time.Unix(1644004600, 0), Value: 1.5},
 						},
 					},
 				},
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(0, 0),
-				End:   time.Unix(1544004600, 0),
-			},
-		},
-		// Case where the very first element in the matrix has a timestamp matching the extent's end
-		{
-			before: &ResultsEnvelope{
-				Meta: []FieldDefinition{
-					FieldDefinition{Name: "testMeta", Type: "testType"},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1644004600, 0), End: time.Unix(1644004600, 0)},
 				},
-				Data: map[string]*DataSet{
-					"1": &DataSet{
-						Metric: map[string]interface{}{
-							"label1": 20,
-							"label2": "red",
-						},
-						Points: []Point{
-							Point{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
-						},
-					},
-				},
-			},
-			after: &ResultsEnvelope{
-				Meta: []FieldDefinition{
-					FieldDefinition{Name: "testMeta", Type: "testType"},
-				},
-				Data: map[string]*DataSet{
-					"1": &DataSet{
-						Metric: map[string]interface{}{
-							"label1": 20,
-							"label2": "red",
-						},
-						Points: []Point{
-							Point{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
-						},
-					},
-				},
+				StepDuration: testStep,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(0, 0),
@@ -362,7 +327,7 @@ func TestCropToRange(t *testing.T) {
 			},
 		},
 
-		// Case where we trim nothing
+		// Run 1: Case where we trim nothing
 		{
 			before: &ResultsEnvelope{
 				Meta: []FieldDefinition{
@@ -370,15 +335,16 @@ func TestCropToRange(t *testing.T) {
 				},
 				Data: map[string]*DataSet{
 					"1": &DataSet{
-						Metric: map[string]interface{}{
-							"label1": 20,
-							"label2": "red",
-						},
+						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
+							{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
+				},
+				StepDuration: testStep,
 			},
 			after: &ResultsEnvelope{
 				Meta: []FieldDefinition{
@@ -386,15 +352,16 @@ func TestCropToRange(t *testing.T) {
 				},
 				Data: map[string]*DataSet{
 					"1": &DataSet{
-						Metric: map[string]interface{}{
-							"label1": 20,
-							"label2": "red",
-						},
+						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
+							{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
+				},
+				StepDuration: testStep,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(0, 0),
@@ -402,7 +369,7 @@ func TestCropToRange(t *testing.T) {
 			},
 		},
 
-		// Case where we trim everything (all data is too early)
+		// Run 2: Case where we trim everything (all data is too late)
 		{
 			before: &ResultsEnvelope{
 				Meta: []FieldDefinition{
@@ -410,113 +377,24 @@ func TestCropToRange(t *testing.T) {
 				},
 				Data: map[string]*DataSet{
 					"1": &DataSet{
-						Metric: map[string]interface{}{
-							"label1": 20,
-							"label2": "red",
-						},
+						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(1000, 0), Value: 1.5},
+							{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
+				},
+				StepDuration: testStep,
 			},
 			after: &ResultsEnvelope{
 				Meta: []FieldDefinition{
 					FieldDefinition{Name: "testMeta", Type: "testType"},
 				},
-				Data: map[string]*DataSet{
-					"1": &DataSet{
-						Metric: map[string]interface{}{
-							"label1": 20,
-							"label2": "red",
-						},
-						Points: []Point{},
-					},
-				},
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(10000, 0),
-				End:   time.Unix(20000, 0),
-			},
-		},
-
-		// Case where we trim some off the beginning
-		{
-			before: &ResultsEnvelope{
-				Meta: []FieldDefinition{
-					FieldDefinition{Name: "testMeta", Type: "testType"},
-				},
-				Data: map[string]*DataSet{
-					"1": &DataSet{
-						Metric: map[string]interface{}{
-							"label1": 20,
-							"label2": "red",
-						},
-						Points: []Point{
-							Point{Timestamp: time.Unix(99, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(199, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(299, 0), Value: 1.5},
-						},
-					},
-				},
-			},
-			after: &ResultsEnvelope{
-				Meta: []FieldDefinition{
-					FieldDefinition{Name: "testMeta", Type: "testType"},
-				},
-				Data: map[string]*DataSet{
-					"1": &DataSet{
-						Metric: map[string]interface{}{
-							"label1": 20,
-							"label2": "red",
-						},
-						Points: []Point{
-							Point{Timestamp: time.Unix(299, 0), Value: 1.5},
-						},
-					},
-				},
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(200, 0),
-				End:   time.Unix(300, 0),
-			},
-		},
-
-		// Case where we trim some off the ends
-		{
-			before: &ResultsEnvelope{
-				Meta: []FieldDefinition{
-					FieldDefinition{Name: "testMeta", Type: "testType"},
-				},
-				Data: map[string]*DataSet{
-					"1": &DataSet{
-						Metric: map[string]interface{}{
-							"label1": 20,
-							"label2": "red",
-						},
-						Points: []Point{
-							Point{Timestamp: time.Unix(99, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(199, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(299, 0), Value: 1.5},
-						},
-					},
-				},
-			},
-			after: &ResultsEnvelope{
-				Meta: []FieldDefinition{
-					FieldDefinition{Name: "testMeta", Type: "testType"},
-				},
-				Data: map[string]*DataSet{
-					"1": &DataSet{
-						Metric: map[string]interface{}{
-							"label1": 20,
-							"label2": "red",
-						},
-						Points: []Point{
-							Point{Timestamp: time.Unix(199, 0), Value: 1.5},
-						},
-					},
-				},
+				Data:         map[string]*DataSet{},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: testStep,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(100, 0),
@@ -524,7 +402,7 @@ func TestCropToRange(t *testing.T) {
 			},
 		},
 
-		// Case where the last datapoint is on the Crop extent
+		// Run 3: Case where we trim everything (all data is too early)
 		{
 			before: &ResultsEnvelope{
 				Meta: []FieldDefinition{
@@ -532,42 +410,32 @@ func TestCropToRange(t *testing.T) {
 				},
 				Data: map[string]*DataSet{
 					"1": &DataSet{
-						Metric: map[string]interface{}{
-							"label1": 20,
-							"label2": "red",
-						},
+						Metric: map[string]interface{}{"__name__": "c"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(99, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(199, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(299, 0), Value: 1.5},
+							{Timestamp: time.Unix(100, 0), Value: 1.5},
 						},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(100, 0)},
+				},
+				StepDuration: testStep,
 			},
 			after: &ResultsEnvelope{
 				Meta: []FieldDefinition{
 					FieldDefinition{Name: "testMeta", Type: "testType"},
 				},
-				Data: map[string]*DataSet{
-					"1": &DataSet{
-						Metric: map[string]interface{}{
-							"label1": 20,
-							"label2": "red",
-						},
-						Points: []Point{
-							Point{Timestamp: time.Unix(199, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(299, 0), Value: 1.5},
-						},
-					},
-				},
+				Data:         map[string]*DataSet{},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: testStep,
 			},
 			extent: timeseries.Extent{
-				Start: time.Unix(100, 0),
-				End:   time.Unix(299, 0),
+				Start: time.Unix(1000, 0),
+				End:   time.Unix(2000, 0),
 			},
 		},
 
-		// Case where we aren't given any datapoints
+		// Run 4: Case where we trim some off the beginning
 		{
 			before: &ResultsEnvelope{
 				Meta: []FieldDefinition{
@@ -575,13 +443,18 @@ func TestCropToRange(t *testing.T) {
 				},
 				Data: map[string]*DataSet{
 					"1": &DataSet{
-						Metric: map[string]interface{}{
-							"label1": 20,
-							"label2": "red",
+						Metric: map[string]interface{}{"__name__": "d"},
+						Points: []Point{
+							{Timestamp: time.Unix(100, 0), Value: 1.5},
+							{Timestamp: time.Unix(200, 0), Value: 1.5},
+							{Timestamp: time.Unix(300, 0), Value: 1.5},
 						},
-						Points: []Point{},
 					},
 				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
 			},
 			after: &ResultsEnvelope{
 				Meta: []FieldDefinition{
@@ -589,17 +462,471 @@ func TestCropToRange(t *testing.T) {
 				},
 				Data: map[string]*DataSet{
 					"1": &DataSet{
-						Metric: map[string]interface{}{
-							"label1": 20,
-							"label2": "red",
+						Metric: map[string]interface{}{"__name__": "d"},
+						Points: []Point{
+							{Timestamp: time.Unix(300, 0), Value: 1.5},
 						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(300, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(300, 0),
+				End:   time.Unix(400, 0),
+			},
+		},
+
+		// Run 5: Case where we trim some off the ends
+		{
+			before: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data: map[string]*DataSet{
+					"1": &DataSet{
+						Metric: map[string]interface{}{"__name__": "e"},
+						Points: []Point{
+							{Timestamp: time.Unix(100, 0), Value: 1.5},
+							{Timestamp: time.Unix(200, 0), Value: 1.5},
+							{Timestamp: time.Unix(300, 0), Value: 1.5},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data: map[string]*DataSet{
+					"1": &DataSet{
+						Metric: map[string]interface{}{"__name__": "e"},
+						Points: []Point{
+							{Timestamp: time.Unix(200, 0), Value: 1.5},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(200, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(200, 0),
+				End:   time.Unix(200, 0),
+			},
+		},
+
+		// Run 6: Case where the last datapoint is on the Crop extent
+		{
+			before: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data: map[string]*DataSet{
+					"1": &DataSet{
+						Metric: map[string]interface{}{"__name__": "f"},
+						Points: []Point{
+							{Timestamp: time.Unix(100, 0), Value: 1.5},
+							{Timestamp: time.Unix(200, 0), Value: 1.5},
+							{Timestamp: time.Unix(300, 0), Value: 1.5},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data: map[string]*DataSet{
+					"1": &DataSet{
+						Metric: map[string]interface{}{"__name__": "f"},
+						Points: []Point{
+							{Timestamp: time.Unix(200, 0), Value: 1.5},
+							{Timestamp: time.Unix(300, 0), Value: 1.5},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(200, 0),
+				End:   time.Unix(300, 0),
+			},
+		},
+
+		// Run 7: Case where we aren't given any datapoints
+		{
+			before: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data: map[string]*DataSet{
+					"1": &DataSet{
+						Metric: map[string]interface{}{"__name__": "g"},
 						Points: []Point{},
 					},
 				},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data:         map[string]*DataSet{},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(200, 0),
+				End:   time.Unix(300, 0),
+			},
+		},
+
+		// Run 8: Case where we have more series than points
+		{
+			before: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data: map[string]*DataSet{
+					"1": &DataSet{
+						Metric: map[string]interface{}{"__name__": "h"},
+						Points: []Point{{Timestamp: time.Unix(100, 0), Value: 1.5}},
+					},
+					"2": &DataSet{
+						Metric: map[string]interface{}{"__name__": "h"},
+						Points: []Point{{Timestamp: time.Unix(100, 0), Value: 1.5}},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(100, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data:         map[string]*DataSet{},
+				ExtentList:   timeseries.ExtentList{},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(200, 0),
+				End:   time.Unix(300, 0),
+			},
+		},
+
+		// Run 9: Case where after cropping, an inner series is empty/removed
+		{
+			before: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data: map[string]*DataSet{
+					"1": &DataSet{
+						Metric: map[string]interface{}{"__name__": "a"},
+						Points: []Point{
+							{Timestamp: time.Unix(100, 0), Value: 1.5},
+							{Timestamp: time.Unix(200, 0), Value: 1.5},
+							{Timestamp: time.Unix(300, 0), Value: 1.5},
+							{Timestamp: time.Unix(400, 0), Value: 1.5},
+							{Timestamp: time.Unix(500, 0), Value: 1.5},
+							{Timestamp: time.Unix(600, 0), Value: 1.5},
+						},
+					},
+					"2": &DataSet{
+						Metric: map[string]interface{}{"__name__": "b"},
+						Points: []Point{
+							{Timestamp: time.Unix(100, 0), Value: 1.5},
+							{Timestamp: time.Unix(200, 0), Value: 1.5},
+							{Timestamp: time.Unix(300, 0), Value: 1.5},
+						},
+					},
+					"3": &DataSet{
+						Metric: map[string]interface{}{"__name__": "c"},
+						Points: []Point{
+							{Timestamp: time.Unix(100, 0), Value: 1.5},
+							{Timestamp: time.Unix(200, 0), Value: 1.5},
+							{Timestamp: time.Unix(300, 0), Value: 1.5},
+							{Timestamp: time.Unix(400, 0), Value: 1.5},
+							{Timestamp: time.Unix(500, 0), Value: 1.5},
+							{Timestamp: time.Unix(600, 0), Value: 1.5},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data: map[string]*DataSet{
+					"1": &DataSet{
+						Metric: map[string]interface{}{"__name__": "a"},
+						Points: []Point{
+							{Timestamp: time.Unix(400, 0), Value: 1.5},
+							{Timestamp: time.Unix(500, 0), Value: 1.5},
+							{Timestamp: time.Unix(600, 0), Value: 1.5},
+						},
+					},
+					"3": &DataSet{
+						Metric: map[string]interface{}{"__name__": "c"},
+						Points: []Point{
+							{Timestamp: time.Unix(400, 0), Value: 1.5},
+							{Timestamp: time.Unix(500, 0), Value: 1.5},
+							{Timestamp: time.Unix(600, 0), Value: 1.5},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(400, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(400, 0),
+				End:   time.Unix(600, 0),
+			},
+		},
+
+		// Run 10: Case where after cropping, the front series is empty/removed
+		{
+			before: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data: map[string]*DataSet{
+					"1": &DataSet{
+						Metric: map[string]interface{}{"__name__": "a"},
+						Points: []Point{
+							{Timestamp: time.Unix(100, 0), Value: 1.5},
+							{Timestamp: time.Unix(200, 0), Value: 1.5},
+							{Timestamp: time.Unix(300, 0), Value: 1.5},
+						},
+					},
+
+					"2": &DataSet{
+						Metric: map[string]interface{}{"__name__": "b"},
+						Points: []Point{
+							{Timestamp: time.Unix(100, 0), Value: 1.5},
+							{Timestamp: time.Unix(200, 0), Value: 1.5},
+							{Timestamp: time.Unix(300, 0), Value: 1.5},
+							{Timestamp: time.Unix(400, 0), Value: 1.5},
+							{Timestamp: time.Unix(500, 0), Value: 1.5},
+							{Timestamp: time.Unix(600, 0), Value: 1.5},
+						},
+					},
+					"3": &DataSet{
+						Metric: map[string]interface{}{"__name__": "c"},
+						Points: []Point{
+							{Timestamp: time.Unix(100, 0), Value: 1.5},
+							{Timestamp: time.Unix(200, 0), Value: 1.5},
+							{Timestamp: time.Unix(300, 0), Value: 1.5},
+							{Timestamp: time.Unix(400, 0), Value: 1.5},
+							{Timestamp: time.Unix(500, 0), Value: 1.5},
+							{Timestamp: time.Unix(600, 0), Value: 1.5},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data: map[string]*DataSet{
+					"2": &DataSet{
+						Metric: map[string]interface{}{"__name__": "b"},
+						Points: []Point{
+							{Timestamp: time.Unix(400, 0), Value: 1.5},
+							{Timestamp: time.Unix(500, 0), Value: 1.5},
+							{Timestamp: time.Unix(600, 0), Value: 1.5},
+						},
+					},
+					"3": &DataSet{
+						Metric: map[string]interface{}{"__name__": "c"},
+						Points: []Point{
+							{Timestamp: time.Unix(400, 0), Value: 1.5},
+							{Timestamp: time.Unix(500, 0), Value: 1.5},
+							{Timestamp: time.Unix(600, 0), Value: 1.5},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(400, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(400, 0),
+				End:   time.Unix(600, 0),
+			},
+		},
+
+		// Run 11: Case where after cropping, the back series is empty/removed
+		{
+			before: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data: map[string]*DataSet{
+					"1": &DataSet{
+						Metric: map[string]interface{}{"__name__": "a"},
+						Points: []Point{
+							{Timestamp: time.Unix(100, 0), Value: 1.5},
+							{Timestamp: time.Unix(200, 0), Value: 1.5},
+							{Timestamp: time.Unix(300, 0), Value: 1.5},
+							{Timestamp: time.Unix(400, 0), Value: 1.5},
+							{Timestamp: time.Unix(500, 0), Value: 1.5},
+							{Timestamp: time.Unix(600, 0), Value: 1.5},
+						},
+					},
+					"2": &DataSet{
+						Metric: map[string]interface{}{"__name__": "b"},
+						Points: []Point{
+							{Timestamp: time.Unix(100, 0), Value: 1.5},
+							{Timestamp: time.Unix(200, 0), Value: 1.5},
+							{Timestamp: time.Unix(300, 0), Value: 1.5},
+							{Timestamp: time.Unix(400, 0), Value: 1.5},
+							{Timestamp: time.Unix(500, 0), Value: 1.5},
+							{Timestamp: time.Unix(600, 0), Value: 1.5},
+						},
+					},
+					"3": &DataSet{
+						Metric: map[string]interface{}{"__name__": "c"},
+						Points: []Point{
+							{Timestamp: time.Unix(100, 0), Value: 1.5},
+							{Timestamp: time.Unix(200, 0), Value: 1.5},
+							{Timestamp: time.Unix(300, 0), Value: 1.5},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data: map[string]*DataSet{
+					"1": &DataSet{
+						Metric: map[string]interface{}{"__name__": "a"},
+						Points: []Point{
+							{Timestamp: time.Unix(400, 0), Value: 1.5},
+							{Timestamp: time.Unix(500, 0), Value: 1.5},
+							{Timestamp: time.Unix(600, 0), Value: 1.5},
+						},
+					},
+
+					"2": &DataSet{
+						Metric: map[string]interface{}{"__name__": "b"},
+						Points: []Point{
+							{Timestamp: time.Unix(400, 0), Value: 1.5},
+							{Timestamp: time.Unix(500, 0), Value: 1.5},
+							{Timestamp: time.Unix(600, 0), Value: 1.5},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(400, 0), End: time.Unix(600, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(400, 0),
+				End:   time.Unix(600, 0),
+			},
+		},
+
+		// Run 12: Case where we short circuit since the dataset is already entirely inside the crop range
+		{
+			before: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data: map[string]*DataSet{
+					"1": &DataSet{
+						Metric: map[string]interface{}{"__name__": "a"},
+						Points: []Point{},
+					},
+					"2": &DataSet{
+						Metric: map[string]interface{}{"__name__": "b"},
+						Points: []Point{},
+					},
+					"3": &DataSet{
+						Metric: map[string]interface{}{"__name__": "c"},
+						Points: []Point{},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data: map[string]*DataSet{},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
 			},
 			extent: timeseries.Extent{
 				Start: time.Unix(100, 0),
-				End:   time.Unix(299, 0),
+				End:   time.Unix(600, 0),
+			},
+		},
+		// Run 13: Case where we short circuit since the dataset is empty
+		{
+			before: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data: map[string]*DataSet{},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			after: &ResultsEnvelope{
+				Meta: []FieldDefinition{
+					FieldDefinition{Name: "testMeta", Type: "testType"},
+				},
+				Data: map[string]*DataSet{},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(300, 0), End: time.Unix(300, 0)},
+				},
+				StepDuration: time.Duration(100) * time.Second,
+			},
+			extent: timeseries.Extent{
+				Start: time.Unix(300, 0),
+				End:   time.Unix(600, 0),
 			},
 		},
 	}
@@ -608,7 +935,7 @@ func TestCropToRange(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			test.before.CropToRange(test.extent)
 			if !reflect.DeepEqual(test.before, test.after) {
-				t.Errorf("mismatch\nexpected=%v\nactual=%v", test.after, test.before)
+				t.Errorf("mismatch\nexpected=%v\n  actual=%v", test.after, test.before)
 			}
 		})
 	}
@@ -679,7 +1006,7 @@ func TestSort(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			test.before.Sort()
 			if !reflect.DeepEqual(test.before, test.after) {
-				t.Errorf("mismatch\nexpected=%v\nactual=%v", test.after, test.before)
+				t.Errorf("mismatch\nexpected=%v\n  actual=%v", test.after, test.before)
 			}
 		})
 	}
