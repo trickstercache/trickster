@@ -19,6 +19,11 @@ import (
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy"
+	"github.com/Comcast/trickster/internal/proxy/errors"
+	"github.com/Comcast/trickster/internal/proxy/model"
+	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
+	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/Comcast/trickster/internal/util/regexp/matching"
 )
 
 // Client Implements the Proxy Client Interface
@@ -62,4 +67,44 @@ func (c *Client) Name() string {
 // SetCache sets the Cache object the client will use for caching origin content
 func (c *Client) SetCache(cc cache.Cache) {
 	c.cache = cc
+}
+
+// ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
+func (c *Client) ParseTimeRangeQuery(r *model.Request) (*timeseries.TimeRangeQuery, error) {
+
+	var ok bool
+
+	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
+	qi := r.TemplateURL.Query()
+	if p, ok := qi[upQuery]; ok {
+		trq.Statement = p[0]
+	} else {
+		return nil, errors.MissingURLParam(upQuery)
+	}
+
+	// if the Step wasn't found in the query (e.g., "group by time(1m)"), just proxy it instead
+	found := matching.GetNamedMatches(reTimeFieldAndStep, trq.Statement, []string{"step", "timeField"})
+	step, ok := found["step"]
+	if !ok {
+		return nil, errors.StepParse()
+	}
+
+	timeField, ok := found["timeField"]
+	if !ok {
+		return nil, errors.StepParse()
+	}
+	trq.TimestampFieldName = timeField
+
+	stepDuration, err := tt.ParseDuration(step + "s")
+	if err != nil {
+		return nil, errors.StepParse()
+	}
+	trq.Step = stepDuration
+
+	trq.Statement, trq.Extent, _, err = getQueryParts(trq.Statement, timeField)
+
+	// Swap in the Tokenzed Query in the Url Params
+	qi.Set(upQuery, trq.Statement)
+	r.TemplateURL.RawQuery = qi.Encode()
+	return trq, nil
 }

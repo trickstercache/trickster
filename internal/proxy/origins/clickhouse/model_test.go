@@ -209,3 +209,10 @@ func TestUnmarshalJSON(t *testing.T) {
 	}
 
 }
+
+func TestMSToTime(t *testing.T) {
+	_, err := msToTime("bad")
+	if err == nil {
+		t.Errorf("expected error for invalid syntax")
+	}
+}

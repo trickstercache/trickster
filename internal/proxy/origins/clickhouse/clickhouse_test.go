@@ -14,10 +14,13 @@
 package clickhouse
 
 import (
+	"net/http"
+	"net/url"
 	"testing"
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
@@ -95,4 +98,52 @@ func TestName(t *testing.T) {
 		t.Errorf("expected %s got %s", "TEST", c)
 	}
 
+}
+
+func TestHTTPClient(t *testing.T) {
+	oc := &config.OriginConfig{OriginType: "TEST"}
+
+	client, err := NewClient("test", oc, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if client.HTTPClient() == nil {
+		t.Errorf("missing http client")
+	}
+}
+
+func TestSetCache(t *testing.T) {
+	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	if err != nil {
+		t.Error(err)
+	}
+	c.SetCache(nil)
+	if c.Cache() != nil {
+		t.Errorf("expected nil cache for client named %s", "test")
+	}
+}
+
+func TestParseTimeRangeQuery(t *testing.T) {
+	req := &http.Request{URL: &url.URL{
+		Scheme:   "https",
+		Host:     "blah.com",
+		Path:     "/",
+		RawQuery: testRawQuery(),
+	}}
+	client := &Client{}
+	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	if err != nil {
+		t.Error(err)
+	} else {
+
+		if res.Step.Seconds() != 60 {
+			t.Errorf("expeced 60 got %f", res.Step.Seconds())
+		}
+
+		if res.Extent.End.Sub(res.Extent.Start).Hours() != 6 {
+			t.Errorf("expeced 6 got %f", res.Extent.End.Sub(res.Extent.Start).Hours())
+		}
+
+	}
 }

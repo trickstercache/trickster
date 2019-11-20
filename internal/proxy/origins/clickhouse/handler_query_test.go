@@ -14,37 +14,83 @@
 package clickhouse
 
 import (
+	"io/ioutil"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/proxy/model"
+	tc "github.com/Comcast/trickster/internal/util/context"
+	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
-func TestParseTimeRangeQuery(t *testing.T) {
-	req := &http.Request{URL: &url.URL{
-		Scheme: "https",
-		Host:   "blah.com",
-		Path:   "/",
-		RawQuery: url.Values(map[string][]string{"query": []string{
-			`SELECT (intDiv(toUInt32(time_column), 60) * 60) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
-				`FROM testdb.test_table WHERE time_column BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
-				`AND date_column >= toDate(1516665600) AND toDate(1516687200) ` +
-				`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`}}).Encode(),
-	}}
-	client := &Client{}
-	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+func testRawQuery() string {
+	return url.Values(map[string][]string{"query": []string{
+		`SELECT (intDiv(toUInt32(time_column), 60) * 60) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
+			`FROM testdb.test_table WHERE time_column BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
+			`AND date_column >= toDate(1516665600) AND toDate(1516687200) ` +
+			`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`}}).Encode()
+}
+
+func testNonSelectQuery() string {
+	return url.Values(map[string][]string{"query": []string{
+		`UPDATE (intDiv(toUInt32(time_column), 60) * 60) * 1000 AS t`}}).Encode()
+	// not a real query, just something to trigger a non-select proxy-only request
+}
+
+func TestQueryHandler(t *testing.T) {
+
+	client := &Client{name: "test"}
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "clickhouse", "/?"+testRawQuery(), "debug")
+	client.config = tc.OriginConfig(r.Context())
+	client.webClient = hc
+	defer ts.Close()
 	if err != nil {
 		t.Error(err)
-	} else {
-
-		if res.Step.Seconds() != 60 {
-			t.Errorf("expeced 60 got %f", res.Step.Seconds())
-		}
-
-		if res.Extent.End.Sub(res.Extent.Start).Hours() != 6 {
-			t.Errorf("expeced 6 got %f", res.Extent.End.Sub(res.Extent.Start).Hours())
-		}
-
 	}
+
+	_, ok := client.config.Paths["/"]
+	if !ok {
+		t.Errorf("could not find path config named %s", "/")
+	}
+
+	client.QueryHandler(w, r)
+
+	resp := w.Result()
+
+	// it should return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != "{}" {
+		t.Errorf("expected '{}' got %s.", bodyBytes)
+	}
+
+	r, err = http.NewRequest(http.MethodGet, ts.URL+"/?"+testNonSelectQuery(), nil)
+	w = httptest.NewRecorder()
+
+	client.QueryHandler(w, r)
+
+	resp = w.Result()
+
+	// it should return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != "{}" {
+		t.Errorf("expected '{}' got %s.", bodyBytes)
+	}
+
 }

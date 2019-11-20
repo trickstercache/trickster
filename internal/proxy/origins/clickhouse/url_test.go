@@ -15,10 +15,12 @@ package clickhouse
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"testing"
 	"time"
 
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
@@ -40,4 +42,21 @@ func TestSetExtent(t *testing.T) {
 	if expected != r.URL.RawQuery {
 		t.Errorf("\nexpected [%s]\ngot      [%s]", expected, r.URL.RawQuery)
 	}
+}
+
+func TestBuildUpstreamURL(t *testing.T) {
+
+	cfg := config.NewConfig()
+	oc := cfg.Origins["default"]
+	oc.Scheme = "http"
+	oc.Host = "0"
+	oc.PathPrefix = ""
+
+	client := &Client{name: "default", config: oc}
+	r, err := http.NewRequest(http.MethodGet, "http://0/default/?query=SELECT+1+FORMAT+JSON", nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client.BuildUpstreamURL(r)
+
 }

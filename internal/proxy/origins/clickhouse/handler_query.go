@@ -18,11 +18,7 @@ import (
 	"strings"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/model"
-	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
-	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/internal/util/regexp/matching"
 )
 
 // QueryHandler handles timeseries requests for ClickHouse and processes them through the delta proxy cache
@@ -40,44 +36,4 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 		model.NewRequest("QueryHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
 		w, c)
 
-}
-
-// ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
-func (c *Client) ParseTimeRangeQuery(r *model.Request) (*timeseries.TimeRangeQuery, error) {
-
-	var ok bool
-
-	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
-	qi := r.TemplateURL.Query()
-	if p, ok := qi[upQuery]; ok {
-		trq.Statement = p[0]
-	} else {
-		return nil, errors.MissingURLParam(upQuery)
-	}
-
-	// if the Step wasn't found in the query (e.g., "group by time(1m)"), just proxy it instead
-	found := matching.GetNamedMatches(reTimeFieldAndStep, trq.Statement, []string{"step", "timeField"})
-	step, ok := found["step"]
-	if !ok {
-		return nil, errors.StepParse()
-	}
-
-	timeField, ok := found["timeField"]
-	if !ok {
-		return nil, errors.StepParse()
-	}
-	trq.TimestampFieldName = timeField
-
-	stepDuration, err := tt.ParseDuration(step + "s")
-	if err != nil {
-		return nil, errors.StepParse()
-	}
-	trq.Step = stepDuration
-
-	trq.Statement, trq.Extent, _, err = getQueryParts(trq.Statement, timeField)
-
-	// Swap in the Tokenzed Query in the Url Params
-	qi.Set(upQuery, trq.Statement)
-	r.TemplateURL.RawQuery = qi.Encode()
-	return trq, nil
 }

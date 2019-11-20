@@ -207,7 +207,7 @@ func (re ResultsEnvelope) MarshalJSON() ([]byte, error) {
 
 	bytes, err := json.Marshal(rsp)
 	if err != nil {
-		fmt.Println(err.Error())
+		return nil, err
 	}
 
 	return bytes, nil
