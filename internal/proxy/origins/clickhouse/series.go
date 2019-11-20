@@ -15,82 +15,12 @@ package clickhouse
 
 import (
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/pkg/sort/times"
 )
-
-// SetExtents overwrites a Timeseries's known extents with the provided extent list
-func (re *ResultsEnvelope) SetExtents(extents timeseries.ExtentList) {
-	el := make(timeseries.ExtentList, len(extents))
-	copy(el, extents)
-	re.ExtentList = el
-	re.isCounted = false
-}
-
-// Extremes returns the absolute start and end times of a Timeseries, without respect to uncached gaps
-func (re *ResultsEnvelope) Extremes() timeseries.ExtentList {
-
-	// Bail if the results are empty
-	if len(re.Data) == 0 {
-		return nil
-	}
-
-	maxSize := 0
-	for i := range re.Data {
-		maxSize += len(re.Data[i].Points)
-	}
-
-	times := make([]time.Time, 0, maxSize)
-
-	for i := range re.Data {
-		for _, v := range re.Data[i].Points {
-			// check the index of the time column again just in case it changed in the next series
-			times = append(times, v.Timestamp)
-		}
-	}
-
-	if len(times) == 0 {
-		return nil
-	}
-
-	max := times[0]
-	min := times[0]
-	for i := range times {
-		if times[i].After(max) {
-			max = times[i]
-		}
-		if times[i].Before(min) {
-			min = times[i]
-		}
-	}
-	re.ExtentList = timeseries.ExtentList{timeseries.Extent{Start: min, End: max}}
-	return re.ExtentList
-}
-
-// Extents returns the Timeseries's ExentList
-func (re *ResultsEnvelope) Extents() timeseries.ExtentList {
-	if len(re.ExtentList) == 0 {
-		return re.Extremes()
-	}
-	return re.ExtentList
-}
-
-// ValueCount returns the count of all values across all series in the Timeseries
-func (re *ResultsEnvelope) ValueCount() int {
-	c := 0
-	for i := range re.Data {
-		c += len(re.Data[i].Points)
-	}
-	return c
-}
-
-// SeriesCount returns the count of all Results in the Timeseries
-// it is called SeriesCount due to Interface conformity and the disparity in nomenclature between various TSDBs.
-func (re *ResultsEnvelope) SeriesCount() int {
-	return len(re.Data)
-}
 
 // Step returns the step for the Timeseries
 func (re *ResultsEnvelope) Step() time.Duration {
@@ -105,62 +35,154 @@ func (re *ResultsEnvelope) SetStep(step time.Duration) {
 // Merge merges the provided Timeseries list into the base Timeseries (in the order provided) and optionally sorts the merged Timeseries
 func (re *ResultsEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) {
 
-	if len(collection) == 0 {
-		return
-	}
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
 
 	for _, ts := range collection {
-		if ts == nil {
-			continue
-		}
-
-		re2 := ts.(*ResultsEnvelope)
-		for k, ds := range re2.Data {
-			if _, ok := re.Data[k]; !ok {
-				re.Data[k] = ds
-				continue
+		if ts != nil {
+			re2 := ts.(*ResultsEnvelope)
+			for k, s := range re2.Data {
+				wg.Add(1)
+				go func(l string, d *DataSet) {
+					mtx.Lock()
+					if _, ok := re.Data[l]; !ok {
+						re.Data[l] = d
+						mtx.Unlock()
+						wg.Done()
+						return
+					}
+					re.Data[l].Points = append(re.Data[l].Points, d.Points...)
+					mtx.Unlock()
+					wg.Done()
+				}(k, s)
 			}
-			re.Data[k].Points = append(re.Data[k].Points, ds.Points...)
+			wg.Wait()
+			re.ExtentList = append(re.ExtentList, re2.ExtentList...)
 		}
-		re.ExtentList = append(re.ExtentList, re2.ExtentList...)
-
 	}
-
 	re.ExtentList = re.ExtentList.Compress(re.StepDuration)
 	re.isSorted = false
 	re.isCounted = false
 	if sort {
 		re.Sort()
 	}
-
 }
 
 // Copy returns a perfect copy of the base Timeseries
 func (re *ResultsEnvelope) Copy() timeseries.Timeseries {
-	resultSe := &ResultsEnvelope{
-		Meta: make([]FieldDefinition, len(re.Meta)),
-		Data: make(map[string]*DataSet),
+	re2 := &ResultsEnvelope{
+		isCounted:    re.isCounted,
+		isSorted:     re.isSorted,
+		tslist:       make(times.Times, len(re.tslist)),
+		timestamps:   make(map[time.Time]bool),
+		Data:         make(map[string]*DataSet),
+		StepDuration: re.StepDuration,
+		ExtentList:   make(timeseries.ExtentList, len(re.ExtentList)),
 	}
+	copy(re2.ExtentList, re.ExtentList)
+	copy(re2.tslist, re.tslist)
 
-	copy(resultSe.Meta, re.Meta)
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
+	for k, v := range re.timestamps {
+		wg.Add(1)
+		go func(t time.Time, b bool) {
+			mtx.Lock()
+			re2.timestamps[t] = b
+			mtx.Unlock()
+			wg.Done()
+		}(k, v)
+	}
+	wg.Wait()
 
-	for k := range re.Data {
-		resultSe.Data[k] = &DataSet{Metric: make(map[string]interface{}), Points: make([]Point, len(re.Data[k].Points))}
-		for l, v := range re.Data[k].Metric {
-			resultSe.Data[k].Metric[l] = v
+	for k, ds := range re.Data {
+		ds2 := &DataSet{Metric: make(map[string]interface{})}
+		for l, v := range ds.Metric {
+			ds2.Metric[l] = v
 		}
-		copy(resultSe.Data[k].Points, re.Data[k].Points)
+		ds2.Points = ds.Points[:]
+		re2.Data[k] = ds2
 	}
-	return resultSe
+	return re2
 }
 
 // CropToSize reduces the number of elements in the Timeseries to the provided count, by evicting elements
-// using a least-recently-used methodology. The time parameter limits the upper extent to the provided time,
-// in order to support backfill tolerance
+// using a least-recently-used methodology. Any timestamps newer than the provided time are removed before
+// sizing, in order to support backfill tolerance. The provided extent will be marked as used during crop.
 func (re *ResultsEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent) {
 	re.isCounted = false
 	re.isSorted = false
+	x := len(re.ExtentList)
+	// The Series has no extents, so no need to do anything
+	if x < 1 {
+		re.Data = make(map[string]*DataSet)
+		re.ExtentList = timeseries.ExtentList{}
+		return
+	}
 
+	// Crop to the Backfill Tolerance Value if needed
+	if re.ExtentList[x-1].End.After(t) {
+		re.CropToRange(timeseries.Extent{Start: re.ExtentList[0].Start, End: t})
+	}
+
+	tc := re.TimestampCount()
+	el := timeseries.ExtentListLRU(re.ExtentList).UpdateLastUsed(lur, re.StepDuration)
+	sort.Sort(el)
+	if len(re.Data) == 0 || tc <= sz {
+		return
+	}
+
+	rc := tc - sz // # of required timestamps we must delete to meet the rentention policy
+	removals := make(map[time.Time]bool)
+	done := false
+	var ok bool
+
+	for _, x := range el {
+		for ts := x.Start; !x.End.Before(ts) && !done; ts = ts.Add(re.StepDuration) {
+			if _, ok = re.timestamps[ts]; ok {
+				removals[ts] = true
+				done = len(removals) >= rc
+			}
+		}
+		if done {
+			break
+		}
+	}
+
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
+
+	for _, s := range re.Data {
+		tmp := s.Points[:0]
+		for _, r := range s.Points {
+			wg.Add(1)
+			go func(p Point) {
+				mtx.Lock()
+				if _, ok := removals[p.Timestamp]; !ok {
+					tmp = append(tmp, p)
+				}
+				mtx.Unlock()
+				wg.Done()
+			}(r)
+		}
+		wg.Wait()
+		s.Points = tmp
+	}
+
+	tl := times.FromMap(removals)
+	sort.Sort(tl)
+
+	for _, t := range tl {
+		for i, e := range el {
+			if e.StartsAt(t) {
+				el[i].Start = e.Start.Add(re.StepDuration)
+			}
+		}
+	}
+	wg.Wait()
+
+	re.ExtentList = timeseries.ExtentList(el).Compress(re.StepDuration)
+	re.Sort()
 }
 
 // CropToRange reduces the Timeseries down to timestamps contained within the provided Extents (inclusive).
@@ -243,40 +265,109 @@ func (re *ResultsEnvelope) CropToRange(e timeseries.Extent) {
 // Sort sorts all Values in each Series chronologically by their timestamp
 func (re *ResultsEnvelope) Sort() {
 
-	if re.isSorted || len(re.Data) == 0 || re.ValueCount() == 0 {
+	if re.isSorted || len(re.Data) == 0 {
 		return
 	}
 
-	for k := range re.Data {
-		sort.Sort(Points(re.Data[k].Points))
+	tsm := map[time.Time]bool{}
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
+
+	for i, s := range re.Data {
+		m := make(map[time.Time]Point)
+		keys := make(times.Times, 0, len(s.Points))
+		for _, v := range s.Points {
+			wg.Add(1)
+			go func(sp Point) {
+				mtx.Lock()
+				if _, ok := m[sp.Timestamp]; !ok {
+					keys = append(keys, sp.Timestamp)
+					m[sp.Timestamp] = sp
+				}
+				tsm[sp.Timestamp] = true
+				mtx.Unlock()
+				wg.Done()
+			}(v)
+		}
+		wg.Wait()
+		sort.Sort(keys)
+		sm := make(Points, 0, len(keys))
+		for _, key := range keys {
+			sm = append(sm, m[key])
+		}
+		re.Data[i].Points = sm
 	}
 
+	sort.Sort(re.ExtentList)
+
+	re.timestamps = tsm
+	re.tslist = times.FromMap(tsm)
+	re.isCounted = true
 	re.isSorted = true
-
-}
-
-// TimestampCount returns the count unique timestampes in across all series in the Timeseries
-func (re *ResultsEnvelope) TimestampCount() int {
-	if re.timestamps == nil {
-		re.timestamps = make(map[time.Time]bool)
-	}
-	re.updateTimestamps()
-	return len(re.timestamps)
 }
 
 func (re *ResultsEnvelope) updateTimestamps() {
+
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
+
 	if re.isCounted {
 		return
 	}
 	m := make(map[time.Time]bool)
-
-	for _, d := range re.Data {
-		for _, p := range d.Points {
-			m[p.Timestamp] = true
+	for _, s := range re.Data {
+		for _, v := range s.Points {
+			wg.Add(1)
+			go func(t time.Time) {
+				mtx.Lock()
+				m[t] = true
+				mtx.Unlock()
+				wg.Done()
+			}(v.Timestamp)
 		}
 	}
-
+	wg.Wait()
 	re.timestamps = m
 	re.tslist = times.FromMap(m)
 	re.isCounted = true
+}
+
+// SetExtents overwrites a Timeseries's known extents with the provided extent list
+func (re *ResultsEnvelope) SetExtents(extents timeseries.ExtentList) {
+	re.isCounted = false
+	re.ExtentList = extents
+}
+
+// Extents returns the Timeseries's ExentList
+func (re *ResultsEnvelope) Extents() timeseries.ExtentList {
+	return re.ExtentList
+}
+
+// TimestampCount returns the number of unique timestamps across the timeseries
+func (re *ResultsEnvelope) TimestampCount() int {
+	re.updateTimestamps()
+	return len(re.timestamps)
+}
+
+// SeriesCount returns the number of individual Series in the Timeseries object
+func (re *ResultsEnvelope) SeriesCount() int {
+	return len(re.Data)
+}
+
+// ValueCount returns the count of all values across all Series in the Timeseries object
+func (re *ResultsEnvelope) ValueCount() int {
+	c := 0
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
+	for i := range re.Data {
+		wg.Add(1)
+		go func(j int) {
+			mtx.Lock()
+			c += j
+			mtx.Unlock()
+			wg.Done()
+		}(len(re.Data[i].Points))
+	}
+	wg.Wait()
+	return c
 }
