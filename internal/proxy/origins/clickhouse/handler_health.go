@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/model"
 )
@@ -27,35 +28,41 @@ const (
 
 var healthURL *url.URL
 var healthMethod string
+var originName string
 
 // HealthHandler checks the health of the Configured Upstream Origin
 func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 
 	if healthURL == nil {
-		u := c.BaseURL()
 		cfg := c.Configuration()
+		populateHeathCheckRequestValues(cfg)
+		healthURL = c.BaseURL()
+		originName = cfg.Name
+		healthURL.Path += cfg.HealthCheckUpstreamPath
+		healthURL.RawQuery = cfg.HealthCheckQuery
+		healthMethod = cfg.HealthCheckVerb
+	}
 
-		if cfg.HealthCheckUpstreamPath != "-" {
-			u.Path += cfg.HealthCheckUpstreamPath
-		}
-
-		if cfg.HealthCheckVerb == "-" {
-			healthMethod = http.MethodGet
-		} else {
-			healthMethod = cfg.HealthCheckVerb
-		}
-
-		if cfg.HealthCheckQuery == "-" {
-			q := url.Values{}
-			q.Add("query", healthQuery)
-			u.RawQuery = q.Encode()
-		} else {
-			u.RawQuery = cfg.HealthCheckQuery
-		}
-		healthURL = u
+	if healthMethod == "-" {
+		w.WriteHeader(400)
+		w.Write([]byte("Health Check URL not Configured for origin: " + originName))
+		return
 	}
 
 	engines.ProxyRequest(
 		model.NewRequest("HealthHandler",
 			healthMethod, healthURL, nil, c.config.Timeout, r, c.webClient), w)
+}
+
+func populateHeathCheckRequestValues(oc *config.OriginConfig) {
+	if oc.HealthCheckUpstreamPath == "-" {
+		oc.HealthCheckUpstreamPath = "/"
+	}
+	if oc.HealthCheckVerb == "-" {
+		oc.HealthCheckVerb = http.MethodGet
+	}
+	if oc.HealthCheckQuery == "-" {
+		q := url.Values{"query": {healthQuery}}
+		oc.HealthCheckQuery = q.Encode()
+	}
 }
