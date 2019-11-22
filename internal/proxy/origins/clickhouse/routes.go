@@ -41,10 +41,11 @@ func (c *Client) Handlers() map[string]http.Handler {
 func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.PathConfig {
 	paths := map[string]*config.PathConfig{
 		"/": &config.PathConfig{
-			Path:        "/",
-			HandlerName: "query",
-			Methods:     []string{http.MethodGet, http.MethodPost},
-			MatchType:   config.PathMatchTypePrefix,
+			Path:           "/",
+			HandlerName:    "query",
+			Methods:        []string{http.MethodGet, http.MethodPost},
+			MatchType:      config.PathMatchTypePrefix,
+			CacheKeyParams: []string{"query", "database"},
 		},
 	}
 	return paths

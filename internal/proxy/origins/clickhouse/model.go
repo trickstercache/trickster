@@ -67,15 +67,17 @@ type Point struct {
 // Times ...
 type Times []time.Time
 
-// Response ...
+// Response is the JSON responose document structure for ClickHouse query results
 type Response struct {
-	Meta    []FieldDefinition `json:"meta"`
-	RawData []ResponseValue   `json:"data"`
-	Rows    int               `json:"rows"`
-	Order   []string          `json:"-"`
+	Meta         []FieldDefinition     `json:"meta"`
+	RawData      []ResponseValue       `json:"data"`
+	Rows         int                   `json:"rows"`
+	Order        []string              `json:"-"`
+	StepDuration time.Duration         `json:"step,omitempty"`
+	ExtentList   timeseries.ExtentList `json:"extents,omitempty"`
 }
 
-// ResultsEnvelope ...
+// ResultsEnvelope is the ClickHouse document structure optimized for time series manipulation
 type ResultsEnvelope struct {
 	Meta         []FieldDefinition            `json:"meta"`
 	Data         map[string]*DataSet          `json:"data"`
@@ -162,7 +164,13 @@ func (re ResultsEnvelope) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	rsp := &Response{Meta: re.Meta, RawData: make([]ResponseValue, 0, fl), Rows: re.ValueCount()}
+	rsp := &Response{
+		Meta:         re.Meta,
+		RawData:      make([]ResponseValue, 0, fl),
+		Rows:         re.ValueCount(),
+		StepDuration: re.StepDuration,
+		ExtentList:   re.ExtentList,
+	}
 
 	rsp.Order = make([]string, 0, len(re.Meta))
 	for _, k := range re.Meta {
@@ -228,8 +236,12 @@ func (rsp *Response) MarshalJSON() ([]byte, error) {
 		d = append(d, string(rd.ToJSON(rsp.Order)))
 	}
 	buf.WriteString(strings.Join(d, ",") + "]")
-
 	buf.WriteString(fmt.Sprintf(`,"rows": %d`, rsp.Rows))
+
+	if rsp.ExtentList != nil && len(rsp.ExtentList) > 0 {
+		el, _ := json.Marshal(rsp.ExtentList)
+		buf.WriteString(fmt.Sprintf(`,"extents": %s`, string(el)))
+	}
 
 	buf.WriteString("}")
 
@@ -272,6 +284,8 @@ func (re *ResultsEnvelope) UnmarshalJSON(b []byte) error {
 	}
 
 	re.Meta = response.Meta
+	re.ExtentList = response.ExtentList
+	re.StepDuration = response.StepDuration
 
 	// Assume the first item in the meta array is the time field, and the second is the value field
 	TimestampFieldName := response.Meta[0].Name
