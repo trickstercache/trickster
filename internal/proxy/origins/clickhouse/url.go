@@ -56,9 +56,17 @@ func (c *Client) BuildUpstreamURL(r *http.Request) *url.URL {
 // SetExtent will change the upstream request query to use the provided Extent
 func (c *Client) SetExtent(r *model.Request, extent *timeseries.Extent) {
 
+	if extent == nil || r == nil || r.TimeRangeQuery == nil {
+		return
+	}
+
 	p := r.URL.Query()
 	t := r.TemplateURL.Query()
 	q := t.Get(upQuery)
+
+	if p == nil {
+		return
+	}
 
 	if q != "" {
 		p.Set(upQuery, interpolateTimeQuery(q, r.TimeRangeQuery.TimestampFieldName, extent))

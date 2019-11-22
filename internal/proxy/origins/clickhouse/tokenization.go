@@ -33,8 +33,6 @@ const (
 	tkTimestamp2 = "<$TIMESTAMP2$>"
 )
 
-//var reType, reTime1, reTime2, reStep, reTime1Parse, reTime2Parse *regexp.Regexp
-
 var reTimeFieldAndStep, reTimeClauseAlt *regexp.Regexp
 
 func init() {

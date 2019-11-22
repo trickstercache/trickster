@@ -75,10 +75,13 @@ func (re *ResultsEnvelope) Copy() timeseries.Timeseries {
 		isSorted:     re.isSorted,
 		tslist:       make(times.Times, len(re.tslist)),
 		timestamps:   make(map[time.Time]bool),
+		Meta:         make([]FieldDefinition, len(re.Meta)),
 		Data:         make(map[string]*DataSet),
 		StepDuration: re.StepDuration,
 		ExtentList:   make(timeseries.ExtentList, len(re.ExtentList)),
+		Serializers:  make(map[string]func(interface{})),
 	}
+	copy(re2.Meta, re.Meta)
 	copy(re2.ExtentList, re.ExtentList)
 	copy(re2.tslist, re.tslist)
 
@@ -93,16 +96,30 @@ func (re *ResultsEnvelope) Copy() timeseries.Timeseries {
 			wg.Done()
 		}(k, v)
 	}
+
+	wg.Add(1)
+	go func() {
+		for k, ds := range re.Data {
+			ds2 := &DataSet{Metric: make(map[string]interface{})}
+			for l, v := range ds.Metric {
+				ds2.Metric[l] = v
+			}
+			ds2.Points = ds.Points[:]
+			re2.Data[k] = ds2
+		}
+		wg.Done()
+	}()
+
+	wg.Add(1)
+	go func() {
+		for k, s := range re.Serializers {
+			re2.Serializers[k] = s
+		}
+		wg.Done()
+	}()
+
 	wg.Wait()
 
-	for k, ds := range re.Data {
-		ds2 := &DataSet{Metric: make(map[string]interface{})}
-		for l, v := range ds.Metric {
-			ds2.Metric[l] = v
-		}
-		ds2.Points = ds.Points[:]
-		re2.Data[k] = ds2
-	}
 	return re2
 }
 
