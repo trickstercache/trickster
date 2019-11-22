@@ -45,7 +45,9 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			HandlerName:    "query",
 			Methods:        []string{http.MethodGet, http.MethodPost},
 			MatchType:      config.PathMatchTypePrefix,
+			MatchTypeName:  "prefix",
 			CacheKeyParams: []string{"query", "database"},
+			OriginConfig:   oc,
 		},
 	}
 	return paths
