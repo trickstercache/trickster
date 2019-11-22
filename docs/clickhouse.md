@@ -11,8 +11,8 @@ If you find query or response structures that are not yet supported, or providin
 Trickster currently supports ClickHouse JSON results, and the following query patterns (case-insensitive):
 
 **JSON Results with columns as follows: unix_ts, value, label1, label2...**
-```sql
 
+```sql
 ## Queries with WHERE clause in the format of:
 ## WHERE ts BETWEEN x AND y AND field1='filter'... GROUP by ts, labels ORDER BY ts, labels
 
