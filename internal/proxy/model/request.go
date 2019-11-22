@@ -54,13 +54,16 @@ func NewRequest(handlerName, method string, url *url.URL, headers http.Header, t
 // Copy returns a true copy of the request
 func (r *Request) Copy() *Request {
 	return &Request{
-		HandlerName:   r.HandlerName,
-		HTTPMethod:    r.HTTPMethod,
-		URL:           CopyURL(r.URL),
-		TemplateURL:   CopyURL(r.TemplateURL),
-		Headers:       headers.CopyHeaders(r.Headers),
-		ClientRequest: r.ClientRequest,
-		HTTPClient:    r.HTTPClient,
+		HandlerName:        r.HandlerName,
+		HTTPMethod:         r.HTTPMethod,
+		URL:                CopyURL(r.URL),
+		TemplateURL:        CopyURL(r.TemplateURL),
+		Headers:            headers.CopyHeaders(r.Headers),
+		ClientRequest:      r.ClientRequest,
+		HTTPClient:         r.HTTPClient,
+		TimeRangeQuery:     r.TimeRangeQuery.Copy(),
+		FastForwardDisable: r.FastForwardDisable,
+		Timeout:            r.Timeout,
 	}
 }
 
