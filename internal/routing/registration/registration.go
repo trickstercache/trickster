@@ -109,16 +109,12 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 
 	switch strings.ToLower(o.OriginType) {
 	case "prometheus", "":
-		log.Info("registering Prometheus route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 		client, err = prometheus.NewClient(k, o, c)
 	case "influxdb":
-		log.Info("registering Influxdb route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 		client, err = influxdb.NewClient(k, o, c)
 	case "irondb":
-		log.Info("registering IRONdb route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 		client, err = irondb.NewClient(k, o, c)
 	case "clickhouse":
-		log.Info("registering clickhouse route paths", log.Pairs{"originName": k, "upstreamHost": o.Host})
 		client, err = clickhouse.NewClient(k, o, c)
 	case "rpc", "reverseproxycache":
 		client, err = reverseproxycache.NewClient(k, o, c)
