@@ -30,27 +30,27 @@ The `methods` section of a Path Config takes a string array of HTTP Methods that
 - Affix an Authorization header to requests proxied out by Trickster.
 - Control which paths are cached by Trickster, and which ones are simply proxied.
 
-## Header Behavior
+## Header and Query Parameter Behavior
 
 ### Basics
 
-You can specify request and response headers be Set, Appended or Removed.
+You can specify request query parameters, as well as request and response headers, to be Set, Appended or Removed.
 
 #### Setting
 
-To Set a header means to insert if non-existent, or fully replace if pre-existing. To set a header, provide the header name and value you wish to set in the Path Config `request_headers` or `response_headers` sections, in the format of `'Header-Name' = 'Header Value'`.
+To Set a header or parameter means to insert if non-existent, or fully replace if pre-existing. To set a header, provide the header name and value you wish to set in the Path Config `request_params`, `request_headers` or `response_headers` sections, in the format of `'Header-or-Parameter-Name' = 'Value'`.
 
-As an example, if the client request provides a `Cache-Control: no-store` header, a Path Config with a header 'set' directive for `'Cache-Control' = 'no-transform'` will replace the `no-store` entirely with a `no-transform`; client requests that have no `Cache-Control` header that are routed through this Path will have the Trickster-configured header injected outright.
+As an example, if the client request provides a `Cache-Control: no-store` header, a Path Config with a header 'set' directive for `'Cache-Control' = 'no-transform'` will replace the `no-store` entirely with a `no-transform`; client requests that have no `Cache-Control` header that are routed through this Path will have the Trickster-configured header injected outright. The same logic applies to query parameters.
 
 #### Appending
 
-Appending a header means inserting the header if it doesn't exist, or appending the configured value(s) into a pre-existing header with the given name. To indicate an append behavior (as opposed to set), prefix the header name with a '+' in the Path Config.
+Appending a means inserting the header or parameter if it doesn't exist, or appending the configured value(s) into a pre-existing header with the given name. To indicate an append behavior (as opposed to set), prefix the header or parameter name with a '+' in the Path Config.
 
-Example: if the client request provides a `Cache-Control: no-store` header and the Path Config includes the request header `'+Cache-Control' = 'no-transform'`, the effective header when forwarding the request to the origin will be `Cache-Control: no-store; no-transform`.
+Example: if the client request provides a `token=SomeHash` parameter and the Path Config includes the parameter `'+token' = 'ProxyHash'`, the effective parameter when forwarding the request to the origin will be `token=SomeHash&token=ProxyHash`.
 
 #### Removing
 
-Removing a header will strip it from the HTTP Response when present. To do so, prefix the header name with '-'. As an example: `-Cache-control: none`. When removing headers, a value is required to conform to TOML specifications, however, this value is innefectual. Note that there is currently no ability to remove a specific header value from a specific header - only the entire removal header. Consider setting the header value outright as described above, to strip any unwanted values.
+Removing a header or parameter means to strip it from the HTTP Request or Response when present. To do so, prefix the header/parameter name with '-', for example, `-Cache-control: none`. When removing headers, a value is required to be provided in order to conform to TOML specification; this value, however, is innefectual. Note that there is currently no ability to remove a specific header value from a specific header - only the entire removal header. Consider setting the header value outright as described above, to strip any unwanted values.
 
 #### Response Header Timing
 
@@ -102,7 +102,11 @@ To include the `requestType`, `table`, `fields`, and `filter` fields from this d
             methods = [ '*' ] # All HTTP methods applicable to this config
             match_type = 'prefix' # matches any path under '/'
             handler = 'proxy' # proxy only, no caching (this is the default)
-            
+
+                # modify the query parameters en route to the origin
+                [origins.default.paths.root.request_params]
+                'authToken' = 'secret string'
+
                 # When a user requests a path matching this route, Trickster will
                 # inject these headers into the request before contacting the Origin
                 [origins.default.paths.root.request_headers]
@@ -118,7 +122,7 @@ To include the `requestType`, `table`, `fields`, and `filter` fields from this d
             methods = [ 'GET', 'HEAD' ]
             handler = 'proxycache' # Trickster will cache the images directory
             match_type = 'prefix'
-            
+
                 [origins.default.paths.images.response_headers]
                 'Cache-Control' = 'max-age=2592000' # cache for 30 days
 
