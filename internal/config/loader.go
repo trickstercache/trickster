@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -106,6 +107,10 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 
 		if o.OriginType == "" {
 			return fmt.Errorf(`missing origin-type for origin "%s"`, k)
+		}
+
+		if strings.HasSuffix(url.Path, "/") {
+			url.Path = url.Path[0 : len(url.Path)-1]
 		}
 
 		o.Name = k
