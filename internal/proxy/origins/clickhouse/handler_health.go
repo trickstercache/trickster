@@ -71,7 +71,7 @@ func (c *Client) populateHeathCheckRequestValues() {
 	healthMethod = oc.HealthCheckVerb
 
 	if oc.HealthCheckHeaders != nil {
-		healthHeaders := http.Header{}
+		healthHeaders = http.Header{}
 		headers.UpdateHeaders(healthHeaders, oc.HealthCheckHeaders)
 	}
 }
