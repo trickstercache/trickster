@@ -120,6 +120,8 @@ type OriginConfig struct {
 	HealthCheckVerb string `toml:"health_check_verb"`
 	// HealthCheckQuery provides the HTTP query parameters to use when making an upstream health check
 	HealthCheckQuery string `toml:"health_check_query"`
+	// HealthCheckHeaders provides the HTTP Headers to apply when making an upstream health check
+	HealthCheckHeaders map[string]string `toml:"health_check_headers"`
 	// Object Proxy Cache and Delta Proxy Cache Configurations
 	// TimeseriesRetentionFactor limits the maximum the number of chronological timestamps worth of data to store in cache for each query
 	TimeseriesRetentionFactor int `toml:"timeseries_retention_factor"`
@@ -408,6 +410,7 @@ func NewOriginConfig() *OriginConfig {
 		HealthCheckQuery:             defaultHealthCheckQuery,
 		HealthCheckUpstreamPath:      defaultHealthCheckPath,
 		HealthCheckVerb:              defaultHealthCheckVerb,
+		HealthCheckHeaders:           make(map[string]string),
 		KeepAliveTimeoutSecs:         defaultKeepAliveTimeoutSecs,
 		MaxIdleConns:                 defaultMaxIdleConns,
 		NegativeCache:                make(map[int]time.Duration),
@@ -592,6 +595,10 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "health_check_query") {
 			oc.HealthCheckQuery = v.HealthCheckQuery
+		}
+
+		if metadata.IsDefined("origins", k, "health_check_headers") {
+			oc.HealthCheckHeaders = v.HealthCheckHeaders
 		}
 
 		if metadata.IsDefined("origins", k, "max_object_size_bytes") {
@@ -883,6 +890,11 @@ func (oc *OriginConfig) Copy() *OriginConfig {
 	o.TimeseriesTTL = oc.TimeseriesTTL
 	o.TimeseriesTTLSecs = oc.TimeseriesTTLSecs
 	o.ValueRetention = oc.ValueRetention
+
+	o.HealthCheckHeaders = make(map[string]string)
+	for k, v := range oc.HealthCheckHeaders {
+		o.HealthCheckHeaders[k] = v
+	}
 
 	o.Paths = make(map[string]*PathConfig)
 	for l, p := range oc.Paths {

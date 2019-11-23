@@ -30,6 +30,7 @@ func TestCopy(t *testing.T) {
 	oc.NegativeCache = map[int]time.Duration{404: time.Duration(10) * time.Second}
 	oc.FastForwardPath = NewPathConfig()
 	oc.TLS = &TLSConfig{CertificateAuthorityPaths: []string{"foo"}}
+	oc.HealthCheckHeaders = map[string]string{"Authorization": "Basic SomeHash"}
 
 	c2 := c1.copy()
 	if !reflect.DeepEqual(c1, c2) {
