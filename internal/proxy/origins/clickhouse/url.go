@@ -28,7 +28,7 @@ const (
 	upQuery  = "query"
 )
 
-// BaseURL returns a URL in the form of schme://host/path based on the proxy configuration
+// BaseURL returns a URL in the form of scheme://host/path based on the proxy configuration
 func (c *Client) BaseURL() *url.URL {
 	u := &url.URL{}
 	u.Scheme = c.config.Scheme

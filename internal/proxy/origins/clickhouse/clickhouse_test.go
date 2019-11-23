@@ -138,11 +138,11 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	} else {
 
 		if res.Step.Seconds() != 60 {
-			t.Errorf("expeced 60 got %f", res.Step.Seconds())
+			t.Errorf("expected 60 got %f", res.Step.Seconds())
 		}
 
 		if res.Extent.End.Sub(res.Extent.Start).Hours() != 6 {
-			t.Errorf("expeced 6 got %f", res.Extent.End.Sub(res.Extent.Start).Hours())
+			t.Errorf("expected 6 got %f", res.Extent.End.Sub(res.Extent.Start).Hours())
 		}
 
 	}
