@@ -1158,8 +1158,10 @@ func TestCopy(t *testing.T) {
 		// Run 0
 		{
 			before: &ResultsEnvelope{
-				tslist:     times.Times{time.Unix(1644001200, 0)},
-				timestamps: map[time.Time]bool{time.Unix(1644001200, 0): true},
+				Meta:        []FieldDefinition{{Name: "1", Type: "string"}},
+				Serializers: map[string]func(interface{}){"test": nil},
+				tslist:      times.Times{time.Unix(1644001200, 0)},
+				timestamps:  map[time.Time]bool{time.Unix(1644001200, 0): true},
 				Data: map[string]*DataSet{
 					"a": &DataSet{
 						Metric: map[string]interface{}{"__name__": "a"},
