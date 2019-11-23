@@ -44,9 +44,21 @@ func TestParts(t *testing.T) {
 	if val != expectedValue {
 		t.Errorf("expected %f got %f", expectedValue, val)
 	}
+
+	rv2 := ResponseValue{
+		"t":   "1557766080000",
+		"cnt": "27",
+	}
+
+	metric, _, _, _ = rv2.Parts("t", "cnt")
+	if metric != "{}" {
+		t.Errorf("expected '{}' got %s", metric)
+	}
+
 }
 
 var testJSON1 = []byte(`{"meta":[{"name":"t","type":"UInt64"},{"name":"cnt","type":"UInt64"},{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],"data":[{"t":"1557766080000","cnt":"12648509","meta1":200,"meta2":"rogers-linear-wlfdle-wlfdle-pil"},{"t":"1557766080000","cnt":"10260032","meta1":200,"meta2":"rogers-linear-mtnk-mtnk-pil"},{"t":"1557766080000","cnt":"1","meta1":206,"meta2":"rogers-linear-mtnk-mtnk-pil"}],"rows":3}`)
+var testJSON2 = []byte(`{"meta":[{"name":"t"}],"data":[{"t":"1557766080000","cnt":"12648509","meta1":200,"meta2":"rogers-linear-wlfdle-wlfdle-pil"},{"t":"1557766080000","cnt":"10260032","meta1":200,"meta2":"rogers-linear-mtnk-mtnk-pil"},{"t":"1557766080000","cnt":"1","meta1":206,"meta2":"rogers-linear-mtnk-mtnk-pil"}],"rows":3}`) // should generate error
 
 var testRE1 = &ResultsEnvelope{
 	Meta: []FieldDefinition{
@@ -151,6 +163,18 @@ func TestUnmarshalTimeseries(t *testing.T) {
 		return
 	}
 
+	ts, err = client.UnmarshalTimeseries(nil)
+	if err == nil {
+		t.Errorf("expected error: %s", `unexpected end of JSON input`)
+		return
+	}
+
+	ts, err = client.UnmarshalTimeseries(testJSON2)
+	if err == nil {
+		t.Errorf("expected error: %s", `Must have at least two fields; only have 1`)
+		return
+	}
+
 }
 
 func TestMarshalTimeseries(t *testing.T) {
@@ -205,6 +229,18 @@ func TestUnmarshalJSON(t *testing.T) {
 
 	if v.Points[0].Value != 1 {
 		t.Errorf(`expected 1 got %f`, v.Points[0].Value)
+		return
+	}
+
+	err = re.UnmarshalJSON(nil)
+	if err == nil {
+		t.Errorf("expected error: %s", `unexpected end of JSON input`)
+		return
+	}
+
+	err = re.UnmarshalJSON(testJSON2)
+	if err == nil {
+		t.Errorf("expected error: %s", `Must have at least two fields; only have 1`)
 		return
 	}
 

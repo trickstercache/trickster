@@ -144,6 +144,24 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		if res.Extent.End.Sub(res.Extent.Start).Hours() != 6 {
 			t.Errorf("expected 6 got %f", res.Extent.End.Sub(res.Extent.Start).Hours())
 		}
-
 	}
+
+	req.URL.RawQuery = ""
+	res, err = client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	if err == nil {
+		t.Errorf("expected error for: %s", "missing URL parameter: [query]")
+	}
+
+	req.URL.RawQuery = "query=select+MISSING+STEP"
+	res, err = client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	if err == nil {
+		t.Errorf("expected error for: %s", "unable to parse timeseries step from downstream request")
+	}
+
+	req.URL.RawQuery = ""
+	res, err = client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	if err == nil {
+		t.Errorf("expected error for: %s", "missing URL parameter: [query]")
+	}
+
 }
