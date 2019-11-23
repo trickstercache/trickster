@@ -73,50 +73,66 @@ func (re *ResultsEnvelope) Copy() timeseries.Timeseries {
 	re2 := &ResultsEnvelope{
 		isCounted:    re.isCounted,
 		isSorted:     re.isSorted,
-		tslist:       make(times.Times, len(re.tslist)),
-		timestamps:   make(map[time.Time]bool),
-		Meta:         make([]FieldDefinition, len(re.Meta)),
-		Data:         make(map[string]*DataSet),
 		StepDuration: re.StepDuration,
-		ExtentList:   make(timeseries.ExtentList, len(re.ExtentList)),
-		Serializers:  make(map[string]func(interface{})),
 	}
-	copy(re2.Meta, re.Meta)
-	copy(re2.ExtentList, re.ExtentList)
-	copy(re2.tslist, re.tslist)
 
 	wg := sync.WaitGroup{}
 	mtx := sync.Mutex{}
-	for k, v := range re.timestamps {
-		wg.Add(1)
-		go func(t time.Time, b bool) {
-			mtx.Lock()
-			re2.timestamps[t] = b
-			mtx.Unlock()
-			wg.Done()
-		}(k, v)
+
+	if re.ExtentList != nil {
+		re2.ExtentList = make(timeseries.ExtentList, len(re.ExtentList))
+		copy(re2.ExtentList, re.ExtentList)
 	}
 
-	wg.Add(1)
-	go func() {
-		for k, ds := range re.Data {
-			ds2 := &DataSet{Metric: make(map[string]interface{})}
-			for l, v := range ds.Metric {
-				ds2.Metric[l] = v
-			}
-			ds2.Points = ds.Points[:]
-			re2.Data[k] = ds2
-		}
-		wg.Done()
-	}()
+	if re.tslist != nil {
+		re2.tslist = make(times.Times, len(re.tslist))
+		copy(re2.tslist, re.tslist)
+	}
 
-	wg.Add(1)
-	go func() {
-		for k, s := range re.Serializers {
-			re2.Serializers[k] = s
+	if re.Meta != nil {
+		re2.Meta = make([]FieldDefinition, len(re.Meta))
+		copy(re2.Meta, re.Meta)
+	}
+
+	if re.Serializers != nil {
+		re2.Serializers = make(map[string]func(interface{}))
+		wg.Add(1)
+		go func() {
+			for k, s := range re.Serializers {
+				re2.Serializers[k] = s
+			}
+			wg.Done()
+		}()
+	}
+
+	if re.timestamps != nil {
+		re2.timestamps = make(map[time.Time]bool)
+		for k, v := range re.timestamps {
+			wg.Add(1)
+			go func(t time.Time, b bool) {
+				mtx.Lock()
+				re2.timestamps[t] = b
+				mtx.Unlock()
+				wg.Done()
+			}(k, v)
 		}
-		wg.Done()
-	}()
+	}
+
+	if re.Data != nil {
+		re2.Data = make(map[string]*DataSet)
+		wg.Add(1)
+		go func() {
+			for k, ds := range re.Data {
+				ds2 := &DataSet{Metric: make(map[string]interface{})}
+				for l, v := range ds.Metric {
+					ds2.Metric[l] = v
+				}
+				ds2.Points = ds.Points[:]
+				re2.Data[k] = ds2
+			}
+			wg.Done()
+		}()
+	}
 
 	wg.Wait()
 
