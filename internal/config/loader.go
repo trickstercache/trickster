@@ -27,8 +27,6 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	providedOriginURL = ""
 	providedOriginType = ""
 
-	ApplicationName = applicationName
-	ApplicationVersion = applicationVersion
 	LoaderWarnings = make([]string, 0, 0)
 
 	c := NewConfig()

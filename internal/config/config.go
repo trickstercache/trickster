@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/Comcast/trickster/internal/proxy/headers"
 )
 
 // Config is the Running Configuration for Trickster
@@ -51,12 +52,6 @@ var NegativeCacheConfigs map[string]NegativeCacheConfig
 var Flags = TricksterFlags{}
 var providedOriginURL string
 var providedOriginType string
-
-// ApplicationName is the name of the Application
-var ApplicationName string
-
-// ApplicationVersion holds the version of the Application
-var ApplicationVersion string
 
 // LoaderWarnings holds warnings generated during config load (before the logger is initialized),
 // so they can be logged at the end of the loading process
@@ -832,18 +827,29 @@ func (c *TricksterConfig) String() string {
 	// the toml library will panic if the Handler is assigned,
 	// even though this field is annotated as skip ("-") in the prototype
 	// so we'll iterate the paths and set to nil the Handler (in our local copy only)
-	for _, v := range cp.Origins {
-		if v != nil {
-			for _, w := range v.Paths {
-				w.Handler = nil
-				w.KeyHasher = nil
+	if cp.Origins != nil {
+		for _, v := range cp.Origins {
+			if v != nil {
+				for _, w := range v.Paths {
+					w.Handler = nil
+					w.KeyHasher = nil
+				}
+			}
+			// also strip out potentially sensitive headers
+			hideAuthorizationCredentials(v.HealthCheckHeaders)
+
+			if v.Paths != nil {
+				for _, p := range v.Paths {
+					hideAuthorizationCredentials(p.RequestHeaders)
+					hideAuthorizationCredentials(p.ResponseHeaders)
+				}
 			}
 		}
 	}
 
 	// strip Redis password
 	for k, v := range cp.Caches {
-		if v != nil {
+		if v != nil && cp.Caches[k].Redis.Password != "" {
 			cp.Caches[k].Redis.Password = "*****"
 		}
 	}
@@ -852,6 +858,19 @@ func (c *TricksterConfig) String() string {
 	e := toml.NewEncoder(&buf)
 	e.Encode(cp)
 	return buf.String()
+}
+
+var sensitiveCredentials = map[string]bool{headers.NameAuthorization: true}
+
+func hideAuthorizationCredentials(headers map[string]string) {
+	if headers != nil {
+		// strip Authorization Headers
+		for k := range headers {
+			if _, ok := sensitiveCredentials[k]; ok {
+				headers[k] = "*****"
+			}
+		}
+	}
 }
 
 // Copy returns an exact copy of an *OriginConfig

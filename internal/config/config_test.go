@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Comcast/trickster/internal/proxy/headers"
 )
 
 func TestCopy(t *testing.T) {
@@ -30,7 +32,7 @@ func TestCopy(t *testing.T) {
 	oc.NegativeCache = map[int]time.Duration{404: time.Duration(10) * time.Second}
 	oc.FastForwardPath = NewPathConfig()
 	oc.TLS = &TLSConfig{CertificateAuthorityPaths: []string{"foo"}}
-	oc.HealthCheckHeaders = map[string]string{"Authorization": "Basic SomeHash"}
+	oc.HealthCheckHeaders = map[string]string{headers.NameAuthorization: "Basic SomeHash"}
 
 	c2 := c1.copy()
 	if !reflect.DeepEqual(c1, c2) {
@@ -42,8 +44,19 @@ func TestString(t *testing.T) {
 	c1 := NewConfig()
 
 	c1.Origins["default"].Paths["test"] = &PathConfig{}
+
+	c1.Caches["default"].Redis.Password = "plaintext-password"
+
 	s := c1.String()
 	if strings.Index(s, `password = "*****"`) < 0 {
 		t.Errorf("missing password mask: %s", "*****")
+	}
+}
+
+func TestHideAuthorizationCredentials(t *testing.T) {
+	hdrs := map[string]string{headers.NameAuthorization: "Basic SomeHash"}
+	hideAuthorizationCredentials(hdrs)
+	if hdrs[headers.NameAuthorization] != "*****" {
+		t.Errorf("expected '*****' got '%s'", hdrs[headers.NameAuthorization])
 	}
 }
