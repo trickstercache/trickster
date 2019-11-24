@@ -71,9 +71,6 @@ func (c *Client) SetCache(cc cache.Cache) {
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
 func (c *Client) ParseTimeRangeQuery(r *model.Request) (*timeseries.TimeRangeQuery, error) {
-
-	var ok bool
-
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	qi := r.TemplateURL.Query()
 	if p, ok := qi[upQuery]; ok {
@@ -82,26 +79,27 @@ func (c *Client) ParseTimeRangeQuery(r *model.Request) (*timeseries.TimeRangeQue
 		return nil, errors.MissingURLParam(upQuery)
 	}
 
-	// if the Step wasn't found in the query (e.g., "group by time(1m)"), just proxy it instead
-	found := matching.GetNamedMatches(reTimeFieldAndStep, trq.Statement, []string{"step", "timeField"})
-	step, ok := found["step"]
-	if !ok {
-		return nil, errors.StepParse()
+	mp := []string{"step", "timeField"}
+	found := matching.GetNamedMatches(reTimeFieldAndStep, trq.Statement, mp)
+
+	for _, f := range mp {
+		v, ok := found[f]
+		if !ok || v == "" {
+			return nil, errors.NotTimeRangeQuery()
+		}
+		switch f {
+		case "timeField":
+			trq.TimestampFieldName = v
+		case "step":
+			trq.Step, _ = tt.ParseDuration(v + "s")
+		}
 	}
 
-	timeField, ok := found["timeField"]
-	if !ok {
-		return nil, errors.StepParse()
-	}
-	trq.TimestampFieldName = timeField
-
-	stepDuration, err := tt.ParseDuration(step + "s")
+	var err error
+	trq.Statement, trq.Extent, _, err = getQueryParts(trq.Statement, trq.TimestampFieldName)
 	if err != nil {
-		return nil, errors.StepParse()
+		return nil, err
 	}
-	trq.Step = stepDuration
-
-	trq.Statement, trq.Extent, _, err = getQueryParts(trq.Statement, timeField)
 
 	// Swap in the Tokenzed Query in the Url Params
 	qi.Set(upQuery, trq.Statement)

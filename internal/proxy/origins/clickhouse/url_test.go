@@ -38,10 +38,15 @@ func TestSetExtent(t *testing.T) {
 	r := &model.Request{URL: u, TemplateURL: tu, TimeRangeQuery: &timeseries.TimeRangeQuery{TimestampFieldName: "myTimeField"}}
 	e := &timeseries.Extent{Start: start, End: end}
 	client.SetExtent(r, e)
-
 	if expected != r.URL.RawQuery {
 		t.Errorf("\nexpected [%s]\ngot      [%s]", expected, r.URL.RawQuery)
 	}
+
+	client.SetExtent(r, nil)
+	if expected != r.URL.RawQuery {
+		t.Errorf("\nexpected [%s]\ngot      [%s]", expected, r.URL.RawQuery)
+	}
+
 }
 
 func TestBuildUpstreamURL(t *testing.T) {

@@ -233,8 +233,6 @@ func (re ResultsEnvelope) MarshalJSON() ([]byte, error) {
 // MarshalJSON ...
 func (rsp *Response) MarshalJSON() ([]byte, error) {
 
-	//var marshalers = map[string]func(interface{}){}
-
 	buf := &bytes.Buffer{}
 	buf.WriteString(`{"meta":`)
 	meta, _ := json.Marshal(rsp.Meta)

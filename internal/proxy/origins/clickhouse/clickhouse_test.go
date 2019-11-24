@@ -152,16 +152,24 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		t.Errorf("expected error for: %s", "missing URL parameter: [query]")
 	}
 
-	req.URL.RawQuery = "query=select+MISSING+STEP"
+	req.URL.RawQuery = url.Values(map[string][]string{"query": []string{
+		`SELECT (intDiv(toUInt32(abc), 6z0) * 6z0) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
+			`FROM testdb.test_table WHERE abc BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
+			`AND date_column >= toDate(1516665600) AND toDate(1516687200) ` +
+			`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`}}).Encode()
 	res, err = client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
-		t.Errorf("expected error for: %s", "unable to parse timeseries step from downstream request")
+		t.Errorf("expected error for: %s", "not a time range query")
 	}
 
-	req.URL.RawQuery = ""
+	req.URL.RawQuery = url.Values(map[string][]string{"query": []string{
+		`SELECT (intDiv(toUInt32(0^^^), 60) * 60) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
+			`FROM testdb.test_table WHERE 0^^^ BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
+			`AND date_column >= toDate(1516665600) AND toDate(1516687200) ` +
+			`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`}}).Encode()
 	res, err = client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 	if err == nil {
-		t.Errorf("expected error for: %s", "missing URL parameter: [query]")
+		t.Errorf("expected error for: %s", "not a time range query")
 	}
 
 }

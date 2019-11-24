@@ -15,6 +15,7 @@ package clickhouse
 
 import (
 	"fmt"
+	"github.com/Comcast/trickster/internal/timeseries"
 	"reflect"
 	"sort"
 	"testing"
@@ -56,6 +57,39 @@ func TestParts(t *testing.T) {
 	metric, _, _, _ = rv2.Parts("t", "cnt")
 	if metric != "{}" {
 		t.Errorf("expected '{}' got %s", metric)
+	}
+
+	rv3 := ResponseValue{
+		"t":     "A557766080000",
+		"cnt":   "27",
+		"meta1": 200,
+	}
+
+	metric, _, _, _ = rv3.Parts("t", "cnt")
+	if metric != "{}" {
+		t.Errorf("expected '{}' got %s", metric)
+	}
+
+	rv4 := ResponseValue{
+		"t":     "1557766080000",
+		"cnt":   "2a7",
+		"meta1": 200,
+	}
+
+	metric, _, _, _ = rv4.Parts("t", "cnt")
+	if metric != "{}" {
+		t.Errorf("expected '{}' got %s", metric)
+	}
+
+	rv5 := ResponseValue{
+		"t":     "1557766080000",
+		"cnt":   27.5,
+		"meta1": 200,
+	}
+
+	metric, _, _, _ = rv5.Parts("t", "cnt")
+	if metric != "{meta1=200}" {
+		t.Errorf("expected '{meta1=200}' got %s", metric)
 	}
 
 }
@@ -125,7 +159,7 @@ var testRE1 = &ResultsEnvelope{
 	},
 }
 
-func TestMarshalJSON(t *testing.T) {
+func TestREMarshalJSON(t *testing.T) {
 
 	expectedLen := len(testJSON1)
 
@@ -133,17 +167,39 @@ func TestMarshalJSON(t *testing.T) {
 	err := re.UnmarshalJSON(testJSON1)
 	if err != nil {
 		t.Error(err)
-		return
 	}
 
 	bytes, err := re.MarshalJSON()
 	if err != nil {
 		t.Error(err)
-		return
 	}
 
 	if len(bytes) != expectedLen {
 		t.Errorf("expected %d got %d", expectedLen, len(bytes))
+		fmt.Println(string(bytes))
+	}
+
+	re.Meta = re.Meta[:0]
+	bytes, err = re.MarshalJSON()
+	if err == nil {
+		t.Errorf("expected error: %s", `Must have at least two fields; only have 0`)
+	}
+
+}
+
+func TestRSPMarshalJSON(t *testing.T) {
+
+	expected := `{"meta":null,"data":[],"rows": 0,"extents": [{"start":"1969-12-31T17:00:00-07:00","end":"1969-12-31T17:00:05-07:00"}]}`
+	rsp := &Response{ExtentList: timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(5, 0)}}}
+
+	bytes, err := rsp.MarshalJSON()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if string(bytes) != expected {
+		t.Errorf("expected [%s]\n     got [%s]", expected, string(bytes))
 		fmt.Println(string(bytes))
 	}
 }

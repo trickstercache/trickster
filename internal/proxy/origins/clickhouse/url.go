@@ -64,10 +64,6 @@ func (c *Client) SetExtent(r *model.Request, extent *timeseries.Extent) {
 	t := r.TemplateURL.Query()
 	q := t.Get(upQuery)
 
-	if p == nil {
-		return
-	}
-
 	if q != "" {
 		p.Set(upQuery, interpolateTimeQuery(q, r.TimeRangeQuery.TimestampFieldName, extent))
 	}
