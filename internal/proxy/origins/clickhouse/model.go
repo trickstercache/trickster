@@ -64,9 +64,6 @@ type Point struct {
 	Value     float64
 }
 
-// Times ...
-type Times []time.Time
-
 // Response is the JSON responose document structure for ClickHouse query results
 type Response struct {
 	Meta         []FieldDefinition     `json:"meta"`
@@ -84,6 +81,7 @@ type ResultsEnvelope struct {
 	StepDuration time.Duration                `json:"step,omitempty"`
 	ExtentList   timeseries.ExtentList        `json:"extents,omitempty"`
 	Serializers  map[string]func(interface{}) `json:"-"`
+	SeriesOrder  []string                     `json:"series_order,omitempty"`
 
 	timestamps map[time.Time]bool // tracks unique timestamps in the matrix data
 	tslist     times.Times
@@ -178,39 +176,50 @@ func (re ResultsEnvelope) MarshalJSON() ([]byte, error) {
 	}
 
 	// Assume the first item in the meta array is the time, and the second is the value
-	TimestampFieldName := rsp.Order[0]
-	ValueFieldName := rsp.Order[1]
+	timestampFieldName := rsp.Order[0]
+	valueFieldName := rsp.Order[1]
 
-	times := make(map[time.Time][]ResponseValue)
-	tl := make([]time.Time, 0, mpl)
+	tm := make(map[time.Time][]ResponseValue)
+	tl := make(times.Times, 0, mpl)
 
 	l := len(re.Data)
 
-	for _, v := range re.Data {
-		for _, p := range v.Points {
+	prepareMarshalledPoints := func(ds *DataSet) {
 
-			t, ok := times[p.Timestamp]
+		var ok bool
+		var t []ResponseValue
+
+		for _, p := range ds.Points {
+
+			t, ok = tm[p.Timestamp]
 			if !ok {
 				tl = append(tl, p.Timestamp)
 				t = make([]ResponseValue, 0, l)
 			}
 
 			r := ResponseValue{
-				TimestampFieldName: strconv.FormatInt(p.Timestamp.UnixNano()/int64(time.Millisecond), 10),
-				ValueFieldName:     strconv.FormatFloat(p.Value, 'f', -1, 64),
+				timestampFieldName: strconv.FormatInt(p.Timestamp.UnixNano()/int64(time.Millisecond), 10),
+				valueFieldName:     strconv.FormatFloat(p.Value, 'f', -1, 64),
 			}
-			for k2, v2 := range v.Metric {
+			for k2, v2 := range ds.Metric {
 				r[k2] = v2
 			}
 
-			times[p.Timestamp] = append(t, r)
+			t = append(t, r)
+			tm[p.Timestamp] = t
 		}
 	}
 
-	sort.Sort(Times(tl))
+	for _, key := range re.SeriesOrder {
+		if ds, ok := re.Data[key]; ok {
+			prepareMarshalledPoints(ds)
+		}
+	}
+
+	sort.Sort(tl)
 
 	for _, t := range tl {
-		rsp.RawData = append(rsp.RawData, times[t]...)
+		rsp.RawData = append(rsp.RawData, tm[t]...)
 	}
 
 	bytes, err := json.Marshal(rsp)
@@ -286,15 +295,22 @@ func (re *ResultsEnvelope) UnmarshalJSON(b []byte) error {
 	re.Meta = response.Meta
 	re.ExtentList = response.ExtentList
 	re.StepDuration = response.StepDuration
+	re.SeriesOrder = make([]string, 0)
 
 	// Assume the first item in the meta array is the time field, and the second is the value field
-	TimestampFieldName := response.Meta[0].Name
-	ValueFieldName := response.Meta[1].Name
+	timestampFieldName := response.Meta[0].Name
+	valueFieldName := response.Meta[1].Name
+
+	registeredMetrics := make(map[string]bool)
 
 	re.Data = make(map[string]*DataSet)
 	l := len(response.RawData)
 	for _, v := range response.RawData {
-		metric, ts, val, meta := v.Parts(TimestampFieldName, ValueFieldName)
+		metric, ts, val, meta := v.Parts(timestampFieldName, valueFieldName)
+		if _, ok := registeredMetrics[metric]; !ok {
+			registeredMetrics[metric] = true
+			re.SeriesOrder = append(re.SeriesOrder, metric)
+		}
 		if !ts.IsZero() {
 			a, ok := re.Data[metric]
 			if !ok {
@@ -308,22 +324,7 @@ func (re *ResultsEnvelope) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Len returns the length of an array of Prometheus model.Times
-func (t Times) Len() int {
-	return len(t)
-}
-
-// Less returns true if i comes before j
-func (t Times) Less(i, j int) bool {
-	return t[i].Before(t[j])
-}
-
-// Swap modifies an array by of Prometheus model.Times swapping the values in indexes i and j
-func (t Times) Swap(i, j int) {
-	t[i], t[j] = t[j], t[i]
-}
-
-// Len returns the length of an array of Prometheus model.Times
+// Len returns the length of a slice of time series data points
 func (p Points) Len() int {
 	return len(p)
 }
@@ -333,7 +334,7 @@ func (p Points) Less(i, j int) bool {
 	return p[i].Timestamp.Before(p[j].Timestamp)
 }
 
-// Swap modifies an array by of Prometheus model.Times swapping the values in indexes i and j
+// Swap modifies a slice of time series data points by swapping the values in indexes i and j
 func (p Points) Swap(i, j int) {
 	p[i], p[j] = p[j], p[i]
 }

@@ -14,6 +14,9 @@
 package clickhouse
 
 import (
+	"fmt"
+	"reflect"
+	"sort"
 	"testing"
 	"time"
 )
@@ -24,13 +27,13 @@ func TestParts(t *testing.T) {
 		"t":     "1557766080000",
 		"cnt":   "27",
 		"meta1": 200,
-		"meta2": "rogers-linear-mtnk-mtnk-pil",
+		"meta2": "value3",
 	}
 
 	metric, ts, val, _ := rv1.Parts("t", "cnt")
 
 	expectedTs := time.Unix(1557766080, 0)
-	expectedMetric := "{meta1=200;meta2=rogers-linear-mtnk-mtnk-pil}"
+	expectedMetric := "{meta1=200;meta2=value3}"
 	var expectedValue float64 = 27
 
 	if ts != expectedTs {
@@ -57,8 +60,8 @@ func TestParts(t *testing.T) {
 
 }
 
-var testJSON1 = []byte(`{"meta":[{"name":"t","type":"UInt64"},{"name":"cnt","type":"UInt64"},{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],"data":[{"t":"1557766080000","cnt":"12648509","meta1":200,"meta2":"rogers-linear-wlfdle-wlfdle-pil"},{"t":"1557766080000","cnt":"10260032","meta1":200,"meta2":"rogers-linear-mtnk-mtnk-pil"},{"t":"1557766080000","cnt":"1","meta1":206,"meta2":"rogers-linear-mtnk-mtnk-pil"}],"rows":3}`)
-var testJSON2 = []byte(`{"meta":[{"name":"t"}],"data":[{"t":"1557766080000","cnt":"12648509","meta1":200,"meta2":"rogers-linear-wlfdle-wlfdle-pil"},{"t":"1557766080000","cnt":"10260032","meta1":200,"meta2":"rogers-linear-mtnk-mtnk-pil"},{"t":"1557766080000","cnt":"1","meta1":206,"meta2":"rogers-linear-mtnk-mtnk-pil"}],"rows":3}`) // should generate error
+var testJSON1 = []byte(`{"meta":[{"name":"t","type":"UInt64"},{"name":"cnt","type":"UInt64"},{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],"data":[{"t":"1557766080000","cnt":"12648509","meta1":200,"meta2":"value2"},{"t":"1557766080000","cnt":"10260032","meta1":200,"meta2":"value3"},{"t":"1557766080000","cnt":"1","meta1":206,"meta2":"value3"}],"rows":3}`)
+var testJSON2 = []byte(`{"meta":[{"name":"t"}],"data":[{"t":"1557766080000","cnt":"12648509","meta1":200,"meta2":"value2"},{"t":"1557766080000","cnt":"10260032","meta1":200,"meta2":"value3"},{"t":"1557766080000","cnt":"1","meta1":206,"meta2":"value3"}],"rows":3}`) // should generate error
 
 var testRE1 = &ResultsEnvelope{
 	Meta: []FieldDefinition{
@@ -80,11 +83,13 @@ var testRE1 = &ResultsEnvelope{
 		},
 	},
 
+	SeriesOrder: []string{"1", "2", "3"},
+
 	Data: map[string]*DataSet{
 		"1": &DataSet{
 			Metric: map[string]interface{}{
 				"meta1": 200,
-				"meta2": "rogers-linear-wlfdle-wlfdle-pil",
+				"meta2": "value2",
 			},
 			Points: []Point{
 				Point{
@@ -96,7 +101,7 @@ var testRE1 = &ResultsEnvelope{
 		"2": &DataSet{
 			Metric: map[string]interface{}{
 				"meta1": 200,
-				"meta2": "rogers-linear-mtnk-mtnk-pil",
+				"meta2": "value3",
 			},
 			Points: []Point{
 				Point{
@@ -108,7 +113,7 @@ var testRE1 = &ResultsEnvelope{
 		"3": &DataSet{
 			Metric: map[string]interface{}{
 				"meta1": 206,
-				"meta2": "rogers-linear-mtnk-mtnk-pil",
+				"meta2": "value3",
 			},
 			Points: []Point{
 				Point{
@@ -139,6 +144,7 @@ func TestMarshalJSON(t *testing.T) {
 
 	if len(bytes) != expectedLen {
 		t.Errorf("expected %d got %d", expectedLen, len(bytes))
+		fmt.Println(string(bytes))
 	}
 }
 
@@ -185,8 +191,9 @@ func TestMarshalTimeseries(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	if len(string(bytes)) != expectedLen {
-		t.Errorf("expected [%d] got [%d]", expectedLen, len(string(bytes)))
+	if !reflect.DeepEqual(testJSON1, bytes) {
+		t.Errorf("expected %d got %d", expectedLen, len(bytes))
+		fmt.Println(string(bytes))
 	}
 }
 
@@ -215,7 +222,7 @@ func TestUnmarshalJSON(t *testing.T) {
 		return
 	}
 
-	key := "{meta1=206;meta2=rogers-linear-mtnk-mtnk-pil}"
+	key := "{meta1=206;meta2=value3}"
 	v, ok := re.Data[key]
 	if !ok {
 		t.Errorf(`expected to find key %s`, key)
@@ -251,4 +258,15 @@ func TestMSToTime(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected error for invalid syntax")
 	}
+}
+
+func TestSortPoints(t *testing.T) {
+
+	p := Points{{Timestamp: time.Unix(1, 0), Value: 12}, {Timestamp: time.Unix(0, 0), Value: 13}, {Timestamp: time.Unix(2, 0), Value: 22}}
+	sort.Sort(p)
+
+	if p[0].Timestamp.Unix() != 0 {
+		t.Errorf("expected %d got %d", 0, p[0].Timestamp.Unix())
+	}
+
 }

@@ -16,6 +16,7 @@ package clickhouse
 import (
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -1174,6 +1175,7 @@ func TestCopy(t *testing.T) {
 					timeseries.Extent{Start: time.Unix(1644001200, 0), End: time.Unix(1644001200, 0)},
 				},
 				StepDuration: time.Duration(3600) * time.Second,
+				SeriesOrder:  []string{"a"},
 			},
 		},
 
@@ -1202,6 +1204,7 @@ func TestCopy(t *testing.T) {
 					timeseries.Extent{Start: time.Unix(1644001200, 0), End: time.Unix(1644004800, 0)},
 				},
 				StepDuration: time.Duration(3600) * time.Second,
+				SeriesOrder:  []string{"a", "b"},
 			},
 		},
 	}
@@ -1434,4 +1437,39 @@ func TestTimestampCount(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMergeSeriesOrder(t *testing.T) {
+
+	re := ResultsEnvelope{}
+	so1 := []string{"a", "e"}
+	re.mergeSeriesOrder(so1)
+	if !reflect.DeepEqual(re.SeriesOrder, so1) {
+		t.Errorf("expected [%s] got [%s]", strings.Join(so1, ","), strings.Join(re.SeriesOrder, ","))
+	}
+	re.Data = map[string]*DataSet{"a": nil, "e": nil}
+
+	so2 := []string{"d", "e"}
+	ex2 := []string{"a", "d", "e"}
+	re.mergeSeriesOrder(so2)
+	if !reflect.DeepEqual(re.SeriesOrder, ex2) {
+		t.Errorf("expected [%s] got [%s]", strings.Join(ex2, ","), strings.Join(re.SeriesOrder, ","))
+	}
+	re.Data = map[string]*DataSet{"a": nil, "d": nil, "e": nil}
+
+	so3 := []string{"b", "c", "e"}
+	ex3 := []string{"a", "d", "b", "c", "e"}
+	re.mergeSeriesOrder(so3)
+	if !reflect.DeepEqual(re.SeriesOrder, ex3) {
+		t.Errorf("expected [%s] got [%s]", strings.Join(ex3, ","), strings.Join(re.SeriesOrder, ","))
+	}
+	re.Data = map[string]*DataSet{"a": nil, "d": nil, "b": nil, "c": nil, "e": nil}
+
+	so4 := []string{"f"}
+	ex4 := []string{"a", "d", "b", "c", "e", "f"}
+	re.mergeSeriesOrder(so4)
+	if !reflect.DeepEqual(re.SeriesOrder, ex4) {
+		t.Errorf("expected [%s] got [%s]", strings.Join(ex4, ","), strings.Join(re.SeriesOrder, ","))
+	}
+
 }

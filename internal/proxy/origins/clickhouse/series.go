@@ -57,15 +57,61 @@ func (re *ResultsEnvelope) Merge(sort bool, collection ...timeseries.Timeseries)
 				}(k, s)
 			}
 			wg.Wait()
+			re.mergeSeriesOrder(re2.SeriesOrder)
 			re.ExtentList = append(re.ExtentList, re2.ExtentList...)
 		}
 	}
+
 	re.ExtentList = re.ExtentList.Compress(re.StepDuration)
 	re.isSorted = false
 	re.isCounted = false
 	if sort {
 		re.Sort()
 	}
+}
+
+func (re *ResultsEnvelope) mergeSeriesOrder(so2 []string) {
+
+	if so2 == nil || len(so2) == 0 {
+		return
+	}
+
+	if re.SeriesOrder == nil || len(re.SeriesOrder) == 0 {
+		re.SeriesOrder = so2
+		return
+	}
+
+	so1 := make([]string, len(re.SeriesOrder), len(re.SeriesOrder)+len(so2))
+	copy(so1, re.SeriesOrder)
+	adds := make([]string, 0, len(so2))
+	added := make(map[string]bool)
+
+	for _, n := range so2 {
+		if _, ok := re.Data[n]; !ok {
+			if _, ok2 := added[n]; !ok2 {
+				adds = append(adds, n)
+				added[n] = true
+			}
+			continue
+		}
+
+		if len(adds) > 0 {
+			for i, v := range so1 {
+				if v == n {
+					adds = append(adds, so1[i:]...)
+					so1 = append(so1[0:i], adds...)
+				}
+			}
+			adds = adds[:0]
+		}
+	}
+
+	if len(adds) > 0 {
+		so1 = append(so1, adds...)
+	}
+
+	re.SeriesOrder = so1
+
 }
 
 // Copy returns a perfect copy of the base Timeseries
@@ -78,6 +124,11 @@ func (re *ResultsEnvelope) Copy() timeseries.Timeseries {
 
 	wg := sync.WaitGroup{}
 	mtx := sync.Mutex{}
+
+	if re.SeriesOrder != nil {
+		re2.SeriesOrder = make([]string, len(re.SeriesOrder))
+		copy(re2.SeriesOrder, re.SeriesOrder)
+	}
 
 	if re.ExtentList != nil {
 		re2.ExtentList = make(timeseries.ExtentList, len(re.ExtentList))
@@ -337,6 +388,10 @@ func (re *ResultsEnvelope) Sort() {
 	re.tslist = times.FromMap(tsm)
 	re.isCounted = true
 	re.isSorted = true
+}
+
+func (re *ResultsEnvelope) updateSeriesOrder() {
+
 }
 
 func (re *ResultsEnvelope) updateTimestamps() {
