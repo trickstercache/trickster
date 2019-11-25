@@ -53,14 +53,23 @@ func NewRequest(handlerName, method string, url *url.URL, headers http.Header, t
 
 // Copy returns a true copy of the request
 func (r *Request) Copy() *Request {
+
+	var t *timeseries.TimeRangeQuery
+	if r.TimeRangeQuery != nil {
+		t = r.TimeRangeQuery.Copy()
+	}
+
 	return &Request{
-		HandlerName:   r.HandlerName,
-		HTTPMethod:    r.HTTPMethod,
-		URL:           CopyURL(r.URL),
-		TemplateURL:   CopyURL(r.TemplateURL),
-		Headers:       headers.CopyHeaders(r.Headers),
-		ClientRequest: r.ClientRequest,
-		HTTPClient:    r.HTTPClient,
+		HandlerName:        r.HandlerName,
+		HTTPMethod:         r.HTTPMethod,
+		URL:                CopyURL(r.URL),
+		TemplateURL:        CopyURL(r.TemplateURL),
+		Headers:            headers.CopyHeaders(r.Headers),
+		ClientRequest:      r.ClientRequest,
+		HTTPClient:         r.HTTPClient,
+		TimeRangeQuery:     t,
+		FastForwardDisable: r.FastForwardDisable,
+		Timeout:            r.Timeout,
 	}
 }
 

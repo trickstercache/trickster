@@ -110,7 +110,10 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int, tlsConf
 	var listener net.Listener
 	var err error
 
+	listenerType := "http"
+
 	if tlsConfig != nil {
+		listenerType = "https"
 		listener, err = tls.Listen("tcp", fmt.Sprintf("%s:%d", listenAddress, listenPort), tlsConfig)
 	} else {
 		listener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", listenAddress, listenPort))
@@ -120,8 +123,9 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int, tlsConf
 		return nil, err
 	}
 
-	log.Debug("starting http proxy listener", log.Pairs{
+	log.Debug("starting proxy listener", log.Pairs{
 		"connectionsLimit": connectionsLimit,
+		"scheme":           listenerType,
 		"address":          listenAddress,
 		"port":             listenPort,
 	})
