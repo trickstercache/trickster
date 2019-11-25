@@ -14,12 +14,17 @@
 package timeseries
 
 import (
+	"reflect"
 	"strconv"
 	"testing"
 	"time"
 )
 
 func TestCalculateDeltas(t *testing.T) {
+
+	// test when start is after end
+	trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(20, 0), End: time.Unix(10, 0)}, Step: time.Duration(10) * time.Second}
+	trq.CalculateDeltas(ExtentList{Extent{}})
 
 	tests := []struct {
 		have                 []Extent
@@ -110,11 +115,32 @@ func TestNormalizeExtent(t *testing.T) {
 			trq.NormalizeExtent()
 
 			if trq.Extent.Start.Unix() != test.rangeStart {
-				t.Fatalf("Mismatch in rangeStart: expected=%d actual=%d", test.rangeStart, trq.Extent.Start.Unix())
+				t.Errorf("Mismatch in rangeStart: expected=%d actual=%d", test.rangeStart, trq.Extent.Start.Unix())
 			}
 			if trq.Extent.End.Unix() != test.rangeEnd {
-				t.Fatalf("Mismatch in rangeStart: expected=%d actual=%d", test.rangeEnd, trq.Extent.End.Unix())
+				t.Errorf("Mismatch in rangeStart: expected=%d actual=%d", test.rangeEnd, trq.Extent.End.Unix())
 			}
 		})
 	}
+}
+
+func TestCopy(t *testing.T) {
+	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{Start: time.Unix(5, 0), End: time.Unix(10, 0)}, Step: time.Duration(5) * time.Second}
+	c := trq.Copy()
+	if !reflect.DeepEqual(trq, c) {
+		t.Errorf("expected %s got %s", trq.String(), c.String())
+	}
+}
+
+func TestStringTRQ(t *testing.T) {
+
+	const expected = `{ "statement": "1234", "step": "5s", "extent": "5-10" }`
+
+	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{Start: time.Unix(5, 0), End: time.Unix(10, 0)}, Step: time.Duration(5) * time.Second}
+	s := trq.String()
+
+	if s != expected {
+		t.Errorf("%s", s)
+	}
+
 }

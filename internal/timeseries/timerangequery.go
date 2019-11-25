@@ -14,6 +14,8 @@
 package timeseries
 
 import (
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -94,4 +96,9 @@ func (trq *TimeRangeQuery) CalculateDeltas(have ExtentList) ExtentList {
 		}
 	}
 	return ins
+}
+
+func (trq *TimeRangeQuery) String() string {
+	return fmt.Sprintf(`{ "statement": "%s", "step": "%s", "extent": "%s" }`,
+		strings.Replace(trq.Statement, `"`, `\"`, -1), trq.Step.String(), trq.Extent.String())
 }
