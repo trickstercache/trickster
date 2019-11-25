@@ -90,6 +90,9 @@ origins:
 #     # maxObjectByteSize defines the largest byte size an object may be before it is uncacheable due to size. default is 524288 (512k)
 #     maxObjectByteSize: "524288"
 
+#     # Each origin type implements their own defaults for hcUpstreamURL, hcVerb and hcQuery,
+#     # which can be overridden per origin with the following configs. See https://github.com/Comcast/trickster/docs/health.md
+
 #     # hcUpstreamURL is the URL Trickster will request against this origin to
 #     # when a health check request is received by Trickster via http://<trickster-endpoint>/trickster/<origin_name>/health 
 #     # this is the default value for prometheus:
@@ -102,6 +105,10 @@ origins:
 #     # hcQuery is the query string Trickster will append to the URL the when peforming an upstream health check for this origin
 #     # This value is the default for prometheus (again, see /docs/health.md)
 #     hcQuery: query=up
+
+#     # hcHeaders provides a list of HTTP Headers to add to Health Check HTTP Requests to this origin
+#     hcHeaders:
+#       Authorization: "Basic SomeHash"
 
 #     # this section configures the frontend and backend TLS operation for the origin
 #     tls:
@@ -130,9 +137,6 @@ origins:
 #       # clientKeyPath provides the path to a client key for Trickster to use when authenticating with an upstream server
 #       clientKeyPath: /path/to/my/client/key.pem
 
-#       # Each origin type implements their own defaults for health_check_upstream_url, health_check_verb and health_check_query,
-#       # which can be overridden per origin with the following configs. See https://github.com/Comcast/trickster/docs/health.md
-
 #     # This section customizes the behavior of Trickster for specific paths. See https://github.com/Comcast/trickster/docs/paths.md
 #     paths:
 #       - name: example1
@@ -160,6 +164,8 @@ origins:
 #           Authorization: 'custom  auth header'         # attach these request headers when proxying. the '+' in the header name
 #           +Accept-Encoding: gzip                       # means append the value if the header exists, rather than replace
 #           -Cookie: ''                                  # while the '-' will remove the header
+#         requestParams:
+#           +authToken: 'SomeTokenHere'                  # manipulate request query parameters in the same way
 
 #     # For multi-origin support, provide a unique name.
 #     # Clients can indicate the desired origin in their path (http://trickster.example.com:9090/foo/api/v1/query_range?.....)
