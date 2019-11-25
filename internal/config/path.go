@@ -71,6 +71,8 @@ type PathConfig struct {
 	CacheKeyFormFields []string `toml:"cache_key_form_fields"`
 	// RequestHeaders is a map of headers that will be added to requests to the upstream Origin for this path
 	RequestHeaders map[string]string `toml:"request_headers"`
+	// RequestParams is a map of headers that will be added to requests to the upstream Origin for this path
+	RequestParams map[string]string `toml:"request_params"`
 	// ResponseHeaders is a map of http headers that will be added to responses to the downstream client
 	ResponseHeaders map[string]string `toml:"response_headers"`
 	// ResponseCode sets a custom response code to be sent to downstream clients for this path.
@@ -120,6 +122,7 @@ func NewPathConfig() *PathConfig {
 		CacheKeyFormFields:      make([]string, 0),
 		custom:                  make([]string, 0),
 		RequestHeaders:          make(map[string]string),
+		RequestParams:           make(map[string]string),
 		ResponseHeaders:         make(map[string]string),
 		KeyHasher:               nil,
 	}
@@ -135,6 +138,7 @@ func (p *PathConfig) Copy() *PathConfig {
 		HandlerName:             p.HandlerName,
 		Handler:                 p.Handler,
 		RequestHeaders:          ts.CopyMap(p.RequestHeaders),
+		RequestParams:           ts.CopyMap(p.RequestParams),
 		ResponseHeaders:         ts.CopyMap(p.ResponseHeaders),
 		ResponseBody:            p.ResponseBody,
 		ResponseBodyBytes:       p.ResponseBodyBytes,
@@ -185,6 +189,8 @@ func (p *PathConfig) Merge(p2 *PathConfig) {
 			p.CacheKeyFormFields = p2.CacheKeyFormFields
 		case "request_headers":
 			p.RequestHeaders = p2.RequestHeaders
+		case "request_params":
+			p.RequestParams = p2.RequestParams
 		case "response_headers":
 			p.ResponseHeaders = p2.ResponseHeaders
 		case "response_code":

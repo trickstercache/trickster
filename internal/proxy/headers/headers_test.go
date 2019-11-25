@@ -20,15 +20,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/runtime"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
 func TestAddProxyHeaders(t *testing.T) {
 
 	headers := http.Header{}
-	config.ApplicationName = "trickster-test"
-	config.ApplicationVersion = "tests"
+	runtime.ApplicationName = "trickster-test"
+	runtime.ApplicationVersion = "tests"
 
 	AddProxyHeaders("0.0.0.0", headers)
 
@@ -50,8 +50,8 @@ func TestExtractHeader(t *testing.T) {
 	const appVer = "tests"
 	const appString = appName + " " + appVer
 
-	config.ApplicationName = appName
-	config.ApplicationVersion = appVer
+	runtime.ApplicationName = appName
+	runtime.ApplicationVersion = appVer
 
 	const testIP = "0.0.0.0"
 
@@ -120,8 +120,8 @@ func TestCopyHeaders(t *testing.T) {
 func TestAddResponseHeaders(t *testing.T) {
 
 	headers := http.Header{}
-	config.ApplicationName = "trickster-test"
-	config.ApplicationVersion = "tests"
+	runtime.ApplicationName = "trickster-test"
+	runtime.ApplicationVersion = "tests"
 
 	AddResponseHeaders(headers)
 

@@ -46,6 +46,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		ProxyRequest(r, w)
 		return
 	}
+	r.TimeRangeQuery = trq
 
 	trq.NormalizeExtent()
 
@@ -73,7 +74,6 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		}
 	}
 
-	r.TimeRangeQuery = trq
 	client.SetExtent(r, &trq.Extent)
 
 	key := oc.CacheKeyPrefix + "." + DeriveCacheKey(r, nil, "")
@@ -148,7 +148,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	}
 
 	// Find the ranges that we want, but which are not currently cached
-	var missRanges []timeseries.Extent
+	var missRanges timeseries.ExtentList
 	if cacheStatus == tc.LookupStatusPartialHit {
 		missRanges = trq.CalculateDeltas(cts.Extents())
 	}
@@ -218,7 +218,6 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	var hasFastForwardData bool
 	var ffts timeseries.Timeseries
 	// Only fast forward if configured and the user request is for the absolute latest datapoint
-
 	if (!r.FastForwardDisable) && (trq.Extent.End.Equal(normalizedNow.Extent.End)) && ffURL.Scheme != "" {
 		wg.Add(1)
 		go func() {

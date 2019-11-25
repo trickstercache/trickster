@@ -100,8 +100,8 @@ style:
 
 .PHONY: test
 test: test-go-mod
-	$(GO) test -v -coverprofile=.coverprofile.tmp ./... | grep -v ' app=trickster '
-	cat .coverprofile.tmp | grep -v "_gen.go:" > .coverprofile
+	$(GO) test -v -coverprofile=.coverprofile.tmp ./... | grep -v ' app=trickster ' && \
+	cat .coverprofile.tmp | grep -v "_gen.go:" > .coverprofile && \
 	rm  .coverprofile.tmp
 
 .PHONY: bench
