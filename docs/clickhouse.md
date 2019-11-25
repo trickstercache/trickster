@@ -10,7 +10,7 @@ Because ClickHouse does not provide a golang-based query parser, Trickster uses 
 
 If you find query or response structures that are not yet supported, or providing inconsistent or unexpected results, we'd love for you to report those. We also always welcome any contributions around this functionality. The regular expression patterns we currently use will likely grow in complexity as support for more query patterns is added. Thus, we may need to find a more robust query parsing solution, and welcome any assistance with that as well.
 
-Trickster currently supports the following query patterns (case-insensitive) in the JSON response format:
+Trickster currently supports the following query patterns (case-insensitive) in the JSON response format, which align with the output of the ClickHouse Data Source Plugin for Grafana:
 
 ```sql
 SELECT (intDiv(toUInt32(time_col), 60) * 60) * 1000 AS t, countMerge(val_col) AS cnt, field1, field2
