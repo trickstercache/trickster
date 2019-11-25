@@ -91,6 +91,15 @@ func TestNewHTTPClient(t *testing.T) {
 	}
 }
 
+func TestNewListenerErr(t *testing.T) {
+	config.NewConfig()
+	l, err := NewListener("-", 0, 0, nil)
+	if err == nil {
+		l.Close()
+		t.Errorf("expected error: %s", `listen tcp: lookup -: no such host`)
+	}
+}
+
 func TestNewListenerTLS(t *testing.T) {
 
 	c := config.NewConfig()
