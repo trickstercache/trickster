@@ -294,11 +294,17 @@ func (me *MatrixEnvelope) Sort() {
 
 	for i, s := range me.Data.Result { // []SampleStream
 		m := make(map[time.Time]model.SamplePair)
+		keys := make(times.Times, 0, len(m))
+
 		for _, v := range s.Values { // []SamplePair
 			wg.Add(1)
 			go func(sp model.SamplePair) {
 				t := sp.Timestamp.Time()
 				mtx.Lock()
+				if _, ok := m[t]; !ok {
+					keys = append(keys, t)
+					m[t] = sp
+				}
 				tsm[t] = true
 				m[t] = sp
 				mtx.Unlock()
@@ -306,10 +312,6 @@ func (me *MatrixEnvelope) Sort() {
 			}(v)
 		}
 		wg.Wait()
-		keys := make(times.Times, 0, len(m))
-		for key := range m {
-			keys = append(keys, key)
-		}
 		sort.Sort(keys)
 		sm := make([]model.SamplePair, 0, len(keys))
 		for _, key := range keys {
