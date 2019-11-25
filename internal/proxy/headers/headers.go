@@ -170,4 +170,3 @@ func ExtractHeader(headers http.Header, header string) (string, bool) {
 func RemoveClientHeaders(headers http.Header) {
 	headers.Del(NameAcceptEncoding)
 }
-

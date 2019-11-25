@@ -51,13 +51,13 @@ const timeClauseRe = `(?i)(?P<conjunction>where|and)\s+#TIME_FIELD#\s+(?P<timeEx
 func getQueryParts(query string, timeField string) (string, timeseries.Extent, bool, error) {
 
 	tcKey := timeField + "-tc"
-	tre, ok := compiledRe[tcKey]
+	trex, ok := compiledRe[tcKey]
 	if !ok {
-		tre = regexp.MustCompile(strings.Replace(timeClauseRe, "#TIME_FIELD#", timeField, -1))
-		compiledRe[tcKey] = tre
+		trex = regexp.MustCompile(strings.Replace(timeClauseRe, "#TIME_FIELD#", timeField, -1))
+		compiledRe[tcKey] = trex
 	}
 
-	m := matching.GetNamedMatches(tre, query, nil)
+	m := matching.GetNamedMatches(trex, query, nil)
 	if len(m) == 0 {
 		return "", timeseries.Extent{}, false, fmt.Errorf("unable to parse time from query: %s", query)
 	}
