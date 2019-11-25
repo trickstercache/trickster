@@ -27,6 +27,20 @@ type TimeRangeQuery struct {
 	Step time.Duration
 	// IsOffset is true if the query uses a relative offset modifier
 	IsOffset bool
+	// TimestampFieldName indicates the database field name for the timestamp field
+	TimestampFieldName string
+}
+
+// Copy returns an exact copy of a TimeRangeQuery
+func (trq *TimeRangeQuery) Copy() *TimeRangeQuery {
+	t2 := &TimeRangeQuery{
+		Statement:          trq.Statement,
+		Step:               trq.Step,
+		Extent:             Extent{Start: trq.Extent.Start, End: trq.Extent.End},
+		IsOffset:           trq.IsOffset,
+		TimestampFieldName: trq.TimestampFieldName,
+	}
+	return t2
 }
 
 // NormalizeExtent adjusts the Start and End of a TimeRangeQuery's Extent to align against normalized boundaries.

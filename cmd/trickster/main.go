@@ -27,6 +27,7 @@ import (
 	th "github.com/Comcast/trickster/internal/proxy/handlers"
 	"github.com/Comcast/trickster/internal/routing"
 	rr "github.com/Comcast/trickster/internal/routing/registration"
+	"github.com/Comcast/trickster/internal/runtime"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 
@@ -48,7 +49,11 @@ const (
 func main() {
 
 	var err error
-	err = config.Load(applicationName, applicationVersion, os.Args[1:])
+
+	runtime.ApplicationName = applicationName
+	runtime.ApplicationVersion = applicationVersion
+
+	err = config.Load(runtime.ApplicationName, runtime.ApplicationVersion, os.Args[1:])
 	if err != nil {
 		printVersion()
 		fmt.Println("Could not load configuration:", err.Error())
@@ -64,8 +69,8 @@ func main() {
 	defer log.Logger.Close()
 	log.Info("application start up",
 		log.Pairs{
-			"name":      applicationName,
-			"version":   applicationVersion,
+			"name":      runtime.ApplicationVersion,
+			"version":   runtime.ApplicationVersion,
 			"goVersion": applicationGoVersion,
 			"goArch":    applicationGoArch,
 			"commitID":  applicationGitCommitID,
@@ -134,5 +139,5 @@ func main() {
 }
 
 func printVersion() {
-	fmt.Println(applicationName, applicationVersion, applicationBuildTime, applicationGitCommitID, applicationGoVersion, applicationGoArch)
+	fmt.Println(runtime.ApplicationVersion, runtime.ApplicationVersion, applicationBuildTime, applicationGitCommitID, applicationGoVersion, applicationGoArch)
 }

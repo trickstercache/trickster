@@ -110,6 +110,25 @@ func TestRegisterProxyRoutesInflux(t *testing.T) {
 
 }
 
+func TestRegisterProxyRoutesClickHouse(t *testing.T) {
+
+	err := config.Load("trickster", "test", []string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "clickhouse"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	registration.LoadCachesFromConfig()
+	err = RegisterProxyRoutes()
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(ProxyClients) == 0 {
+		t.Errorf("expected %d got %d", 1, 0)
+	}
+
+}
+
 func TestRegisterProxyRoutesIRONdb(t *testing.T) {
 
 	err := config.Load("trickster", "test", []string{"-origin-url", "http://example.com", "-origin-type", "irondb", "-log-level", "debug"})

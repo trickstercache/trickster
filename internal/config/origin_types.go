@@ -27,6 +27,8 @@ const (
 	OriginTypeInfluxDB
 	// OriginTypeIronDB represents the IRONdb origin type
 	OriginTypeIronDB
+	// OriginTypeClickHouse represents the ClickHouse origin type
+	OriginTypeClickHouse
 )
 
 var originTypeNames = map[string]OriginType{
@@ -35,6 +37,7 @@ var originTypeNames = map[string]OriginType{
 	"prometheus":        OriginTypePrometheus,
 	"influxdb":          OriginTypeInfluxDB,
 	"irondb":            OriginTypeIronDB,
+	"clickhouse":        OriginTypeClickHouse,
 }
 
 var originTypeValues = map[OriginType]string{
@@ -42,6 +45,7 @@ var originTypeValues = map[OriginType]string{
 	OriginTypePrometheus: "prometheus",
 	OriginTypeInfluxDB:   "influxdb",
 	OriginTypeIronDB:     "irondb",
+	OriginTypeClickHouse: "clickhouse",
 }
 
 func (t OriginType) String() string {

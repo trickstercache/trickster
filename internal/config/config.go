@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/Comcast/trickster/internal/proxy/headers"
 )
 
 // Config is the Running Configuration for Trickster
@@ -51,12 +52,6 @@ var NegativeCacheConfigs map[string]NegativeCacheConfig
 var Flags = TricksterFlags{}
 var providedOriginURL string
 var providedOriginType string
-
-// ApplicationName is the name of the Application
-var ApplicationName string
-
-// ApplicationVersion holds the version of the Application
-var ApplicationVersion string
 
 // LoaderWarnings holds warnings generated during config load (before the logger is initialized),
 // so they can be logged at the end of the loading process
@@ -120,6 +115,8 @@ type OriginConfig struct {
 	HealthCheckVerb string `toml:"health_check_verb"`
 	// HealthCheckQuery provides the HTTP query parameters to use when making an upstream health check
 	HealthCheckQuery string `toml:"health_check_query"`
+	// HealthCheckHeaders provides the HTTP Headers to apply when making an upstream health check
+	HealthCheckHeaders map[string]string `toml:"health_check_headers"`
 	// Object Proxy Cache and Delta Proxy Cache Configurations
 	// TimeseriesRetentionFactor limits the maximum the number of chronological timestamps worth of data to store in cache for each query
 	TimeseriesRetentionFactor int `toml:"timeseries_retention_factor"`
@@ -408,6 +405,7 @@ func NewOriginConfig() *OriginConfig {
 		HealthCheckQuery:             defaultHealthCheckQuery,
 		HealthCheckUpstreamPath:      defaultHealthCheckPath,
 		HealthCheckVerb:              defaultHealthCheckVerb,
+		HealthCheckHeaders:           make(map[string]string),
 		KeepAliveTimeoutSecs:         defaultKeepAliveTimeoutSecs,
 		MaxIdleConns:                 defaultMaxIdleConns,
 		NegativeCache:                make(map[int]time.Duration),
@@ -457,7 +455,7 @@ func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
 }
 
 var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers", "default_ttl_secs",
-	"request_headers", "response_headers", "response_code", "response_body", "no_metrics", "progressive_collapsed_forwarding"}
+	"request_headers", "response_headers", "response_headers", "response_code", "response_body", "no_metrics", "progressive_collapsed_forwarding"}
 
 func (c *TricksterConfig) validateConfigMappings() error {
 	for k, oc := range c.Origins {
@@ -592,6 +590,10 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "health_check_query") {
 			oc.HealthCheckQuery = v.HealthCheckQuery
+		}
+
+		if metadata.IsDefined("origins", k, "health_check_headers") {
+			oc.HealthCheckHeaders = v.HealthCheckHeaders
 		}
 
 		if metadata.IsDefined("origins", k, "max_object_size_bytes") {
@@ -825,18 +827,29 @@ func (c *TricksterConfig) String() string {
 	// the toml library will panic if the Handler is assigned,
 	// even though this field is annotated as skip ("-") in the prototype
 	// so we'll iterate the paths and set to nil the Handler (in our local copy only)
-	for _, v := range cp.Origins {
-		if v != nil {
-			for _, w := range v.Paths {
-				w.Handler = nil
-				w.KeyHasher = nil
+	if cp.Origins != nil {
+		for _, v := range cp.Origins {
+			if v != nil {
+				for _, w := range v.Paths {
+					w.Handler = nil
+					w.KeyHasher = nil
+				}
+			}
+			// also strip out potentially sensitive headers
+			hideAuthorizationCredentials(v.HealthCheckHeaders)
+
+			if v.Paths != nil {
+				for _, p := range v.Paths {
+					hideAuthorizationCredentials(p.RequestHeaders)
+					hideAuthorizationCredentials(p.ResponseHeaders)
+				}
 			}
 		}
 	}
 
 	// strip Redis password
 	for k, v := range cp.Caches {
-		if v != nil {
+		if v != nil && cp.Caches[k].Redis.Password != "" {
 			cp.Caches[k].Redis.Password = "*****"
 		}
 	}
@@ -845,6 +858,19 @@ func (c *TricksterConfig) String() string {
 	e := toml.NewEncoder(&buf)
 	e.Encode(cp)
 	return buf.String()
+}
+
+var sensitiveCredentials = map[string]bool{headers.NameAuthorization: true}
+
+func hideAuthorizationCredentials(headers map[string]string) {
+	if headers != nil {
+		// strip Authorization Headers
+		for k := range headers {
+			if _, ok := sensitiveCredentials[k]; ok {
+				headers[k] = "*****"
+			}
+		}
+	}
 }
 
 // Copy returns an exact copy of an *OriginConfig
@@ -883,6 +909,11 @@ func (oc *OriginConfig) Copy() *OriginConfig {
 	o.TimeseriesTTL = oc.TimeseriesTTL
 	o.TimeseriesTTLSecs = oc.TimeseriesTTLSecs
 	o.ValueRetention = oc.ValueRetention
+
+	o.HealthCheckHeaders = make(map[string]string)
+	for k, v := range oc.HealthCheckHeaders {
+		o.HealthCheckHeaders[k] = v
+	}
 
 	o.Paths = make(map[string]*PathConfig)
 	for l, p := range oc.Paths {

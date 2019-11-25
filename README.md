@@ -34,6 +34,8 @@ Trickster works with virtually any Dashboard application that makes queries to a
 
 <img src="./docs/images/external/prom_logo_60.png" width=16 /> Prometheus
 
+<img src="./docs/images/external/clickhouse_logo.png" width=16 /> ClickHouse
+
 <img src="./docs/images/external/influx_logo_60.png" width=16 /> InfluxDB
 
 <img src="./docs/images/external/irondb_logo_60.png" width=16 /> Circonus IRONdb
