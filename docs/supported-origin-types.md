@@ -18,6 +18,8 @@ Trickster fully supports the [Prometheus HTTP API (v1)](https://prometheus.io/do
 
 Trickster 1.0 has experimental support for InfluxDB. Specify `'influxdb'` as the Origin Type when configuring Trickster.
 
+See the [InfluxDB Support Document](./influxdb.md) for more information.
+
 ### <img src="./images/external/clickhouse_logo.png" width=16 /> ClickHouse _(Currently Experimental)_
 
 Trickster 1.0 has experimental support for ClickHouse. Specify `'clickhouse'` as the Origin Type when configuring Trickster.
