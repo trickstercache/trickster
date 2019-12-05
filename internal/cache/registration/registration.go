@@ -16,8 +16,6 @@
 package registration
 
 import (
-	"fmt"
-
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/badger"
 	"github.com/Comcast/trickster/internal/cache/bbolt"
@@ -36,22 +34,34 @@ const (
 )
 
 // Caches maintains a list of active caches
-var Caches = make(map[string]cache.Cache)
+// var Caches = make(map[string]cache.Cache)
 
 // GetCache returns the Cache named cacheName if it exists
-func GetCache(cacheName string) (cache.Cache, error) {
-	if c, ok := Caches[cacheName]; ok {
-		return c, nil
+// func GetCache(cacheName string) (cache.Cache, error) {
+// 	if c, ok := Caches[cacheName]; ok {
+// 		return c, nil
+// 	}
+// 	return nil, fmt.Errorf("Could not find Cache named [%s]", cacheName)
+// }
+
+// LoadCachesFromConfig iterates the Caching Config and Connects/Maps each Cache
+func LoadCachesFromConfig(conf *config.TricksterConfig) map[string]cache.Cache {
+	caches := make(map[string]cache.Cache)
+	for k, v := range conf.Caches {
+		c := NewCache(k, v)
+		caches[k] = c
 	}
-	return nil, fmt.Errorf("Could not find Cache named [%s]", cacheName)
+	return caches
 }
 
-// LoadCachesFromConfig iterates the Caching Confi and Connects/Maps each Cache
-func LoadCachesFromConfig() {
-	for k, v := range config.Caches {
-		c := NewCache(k, v)
-		Caches[k] = c
+// CloseCaches iterates the set of caches and closes each
+func CloseCaches(caches map[string]cache.Cache) error {
+	for _, c := range caches {
+		if err := c.Close(); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // NewCache returns a Cache object based on the provided config.CachingConfig

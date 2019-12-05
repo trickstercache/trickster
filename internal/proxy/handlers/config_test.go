@@ -23,9 +23,11 @@ import (
 
 func TestConfigHandler(t *testing.T) {
 
-	config.Load("trickster-test", "test", []string{"-origin-url", "http://1.2.3.4", "-origin-type", "prometheus"})
-
-	RegisterConfigHandler()
+	conf, _, err := config.Load("trickster-test", "test", []string{"-origin-url", "http://1.2.3.4", "-origin-type", "prometheus"})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+	configHandler := ConfigHandleFunc(conf)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/trickster/config", nil)

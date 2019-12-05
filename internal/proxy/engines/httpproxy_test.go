@@ -31,7 +31,7 @@ import (
 )
 
 func init() {
-	metrics.Init()
+	metrics.Init(&config.TricksterConfig{})
 }
 
 func TestDoProxy(t *testing.T) {
@@ -39,12 +39,12 @@ func TestDoProxy(t *testing.T) {
 	es := tu.NewTestServer(http.StatusOK, "test", nil)
 	defer es.Close()
 
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "test", "-log-level", "debug"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "test", "-log-level", "debug"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	pc := &config.PathConfig{
 		Path:                  "/",
 		RequestHeaders:        map[string]string{},
@@ -90,12 +90,12 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	const badUpstream = "http://127.0.0.1:64389"
 
 	// assume nothing listens on badUpstream, so this should force the proxy to generate a 502 Bad Gateway
-	err := config.Load("trickster", "test", []string{"-origin-url", badUpstream, "-origin-type", "test", "-log-level", "debug"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", badUpstream, "-origin-type", "test", "-log-level", "debug"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	pc := &config.PathConfig{
 		Path:            "/",
 		RequestHeaders:  map[string]string{},
@@ -132,12 +132,12 @@ func TestClockOffsetWarning(t *testing.T) {
 	}
 	s := httptest.NewServer(http.HandlerFunc(handler))
 
-	err := config.Load("trickster", "test", []string{"-origin-url", s.URL, "-origin-type", "test", "-log-level", "debug"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", s.URL, "-origin-type", "test", "-log-level", "debug"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	pc := &config.PathConfig{
 		Path:            "/",
 		RequestHeaders:  map[string]string{},
@@ -173,12 +173,12 @@ func TestDoProxyWithPCF(t *testing.T) {
 	es := tu.NewTestServer(http.StatusOK, "test", nil)
 	defer es.Close()
 
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "test", "-log-level", "debug"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "test", "-log-level", "debug"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	pc := &config.PathConfig{
 		Path:                    "/",
 		RequestHeaders:          map[string]string{},
@@ -228,12 +228,12 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 	es := tu.NewTestServer(http.StatusOK, "test", nil)
 	defer es.Close()
 
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "test", "-log-level", "debug"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "test", "-log-level", "debug"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	pc := &config.PathConfig{
 		Path:                    "/",
 		RequestHeaders:          map[string]string{},

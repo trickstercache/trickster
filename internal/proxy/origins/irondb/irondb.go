@@ -70,13 +70,12 @@ type Client struct {
 	webClient          *http.Client
 	handlers           map[string]http.Handler
 	handlersRegistered bool
-
-	healthURL     *url.URL
-	healthHeaders http.Header
-	healthMethod  string
-
-	trqParsers    map[string]trqParser
-	extentSetters map[string]extentSetter
+	healthURL          *url.URL
+	healthHeaders      http.Header
+	healthMethod       string
+	trqParsers         map[string]trqParser
+	extentSetters      map[string]extentSetter
+	logUpstreamRequest bool
 }
 
 // NewClient returns a new Client Instance
@@ -133,4 +132,9 @@ func (c *Client) Name() string {
 // SetCache sets the Cache object the client will use for caching origin content
 func (c *Client) SetCache(cc cache.Cache) {
 	c.cache = cc
+}
+
+// SetUpstreamLogging enables or disables the logging of upstream requests
+func (c *Client) SetUpstreamLogging(logUpstreamRequest bool) {
+	c.logUpstreamRequest = logUpstreamRequest
 }

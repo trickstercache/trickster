@@ -28,22 +28,22 @@ func TestLoadEnvVars(t *testing.T) {
 	os.Setenv(evLogLevel, "info")
 
 	a := []string{}
-	err := Load("trickster-test", "0", a)
+	conf, _, err := Load("trickster-test", "0", a)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
-	d := Origins["default"]
+	d := conf.Origins["default"]
 	if d.OriginType != "testing" {
 		t.Errorf("expected %s got %s", "testing", d.OriginType)
 	}
 
-	if Frontend.ListenPort != 4001 {
-		t.Errorf("expected %d got %d", 4001, Frontend.ListenPort)
+	if conf.Frontend.ListenPort != 4001 {
+		t.Errorf("expected %d got %d", 4001, conf.Frontend.ListenPort)
 	}
 
-	if Metrics.ListenPort != 4002 {
-		t.Errorf("expected %d got %d", 4002, Metrics.ListenPort)
+	if conf.Metrics.ListenPort != 4002 {
+		t.Errorf("expected %d got %d", 4002, conf.Metrics.ListenPort)
 	}
 
 	if d.Scheme != "http" {
@@ -58,8 +58,8 @@ func TestLoadEnvVars(t *testing.T) {
 		t.Errorf("expected %s got %s", "/some/path", d.PathPrefix)
 	}
 
-	if strings.ToUpper(Logging.LogLevel) != "INFO" {
-		t.Errorf("expected %s got %s", "INFO", Logging.LogLevel)
+	if strings.ToUpper(conf.Logging.LogLevel) != "INFO" {
+		t.Errorf("expected %s got %s", "INFO", conf.Logging.LogLevel)
 	}
 
 	os.Unsetenv(evOriginURL)

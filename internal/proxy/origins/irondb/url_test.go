@@ -34,12 +34,12 @@ func TestSetExtent(t *testing.T) {
 	stFl := time.Unix(start.Unix()-(start.Unix()%300), 0)
 	etFl := time.Unix(end.Unix()-(end.Unix()%300), 0)
 	e := &timeseries.Extent{Start: start, End: end}
-	err := config.Load("trickster", "test",
+	conf, _, err := config.Load("trickster", "test",
 		[]string{"-origin-url", "none:9090",
 			"-origin-type", "irondb",
 			"-log-level", "debug"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
 	oc := config.Origins["default"]
@@ -192,12 +192,12 @@ func TestFastForwardURL(t *testing.T) {
 	now := time.Now().Unix()
 	start := now - (now % 300)
 	end := start + 300
-	err := config.Load("trickster", "test",
+	conf, _, err := config.Load("trickster", "test",
 		[]string{"-origin-url", "none:9090",
 			"-origin-type", "irondb",
 			"-log-level", "debug"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
 	oc := config.Origins["default"]
@@ -333,12 +333,12 @@ func TestBuildUpstreamURL(t *testing.T) {
 
 	expected := "q=up&start=1&end=1&step=1"
 
-	err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "rpc", "-log-level", "debug"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "rpc", "-log-level", "debug"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	client := Client{config: oc, name: "default"}
 
 	u := &url.URL{Path: "/default/query_range", RawQuery: expected}

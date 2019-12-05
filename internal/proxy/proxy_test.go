@@ -23,12 +23,12 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/gorilla/mux"
 )
 
 func init() {
-	metrics.Init() // For some reason I need to call it specifically
+	metrics.Init(&config.TricksterConfig{})
 }
 
 func TestNewHTTPClient(t *testing.T) {
@@ -133,9 +133,9 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 	es := httptest.NewServer(http.HandlerFunc(handler))
 	defer es.Close()
 
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus"})
+	_, _, err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
 	tt := []struct {
@@ -176,7 +176,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 			defer l.Close()
 
 			go func() {
-				http.Serve(l, routing.Router)
+				http.Serve(l, mux.NewRouter())
 			}()
 
 			if err != nil {

@@ -25,14 +25,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/proxy/request"
-
+	"github.com/Comcast/trickster/internal/cache/registration"
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
 	tc "github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
+	"github.com/Comcast/trickster/internal/proxy/request"
 )
 
 const testRangeBody = "This is a test file, to see how the byte range requests work.\n"
@@ -359,15 +359,16 @@ func TestQueryCache(t *testing.T) {
 
 	expected := "1234"
 
-	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
-	if err != nil {
-		t.Error(err)
+	caches := registration.LoadCachesFromConfig(conf)
+	defer registration.CloseCaches(caches)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Errorf("Could not find default configuration")
 	}
 
 	resp := &http.Response{}

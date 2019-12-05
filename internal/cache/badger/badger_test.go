@@ -25,7 +25,7 @@ import (
 )
 
 func init() {
-	metrics.Init()
+	metrics.Init(&config.TricksterConfig{})
 }
 
 const cacheType = "badger"
