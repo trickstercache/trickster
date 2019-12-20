@@ -92,7 +92,7 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 
 }
 
-// TODO: this fails.. the default config has a url set, unsure why whis would error
+// TODO: this fails.. the default config has a url set, unsure why this would error
 // func TestLoadConfigurationMissingOriginURL(t *testing.T) {
 // 	expected := `no valid origins configured`
 // 	a := []string{"-origin-type", "testing"}
