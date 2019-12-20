@@ -37,8 +37,8 @@ release: build release-artifacts docker docker-release
 
 .PHONY: release-artifacts
 release-artifacts:
-	GOOS=darwin GOARCH=amd64 go build -o ./OPATH/trickster-$(PROGVER).darwin-amd64 && gzip -f ./OPATH/trickster-$(PROGVER).darwin-amd64
-	GOOS=linux  GOARCH=amd64 go build -o ./OPATH/trickster-$(PROGVER).linux-amd64  && gzip -f ./OPATH/trickster-$(PROGVER).linux-amd64
+	GOOS=darwin GOARCH=amd64 go build -o ./OPATH/trickster-$(PROGVER).darwin-amd64 && tar cvfz ./OPATH/trickster-$(PROGVER).darwin-amd64.tar.gz ./OPATH/trickster-$(PROGVER).darwin-amd64
+	GOOS=linux  GOARCH=amd64 go build -o ./OPATH/trickster-$(PROGVER).linux-amd64  && tar cvfz ./OPATH/trickster-$(PROGVER).linux-amd64.tar.gz ./OPATH/trickster-$(PROGVER).linux-amd64
 
 .PHONY: helm-local
 helm-local:
