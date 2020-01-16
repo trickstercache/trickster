@@ -99,7 +99,7 @@ style:
 
 .PHONY: test
 test:
-	@go test -v -coverprofile=.coverprofile.tmp ./... 
+	@go test -v -coverprofile=.coverprofile ./... 
 
 .PHONY: bench
 bench:
