@@ -125,7 +125,6 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		return cache.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
 	}
 	o.Expiration = c.Index.GetExpiration(cacheKey)
-
 	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
 		log.Debug("filesystem cache retrieve", log.Pairs{"key": cacheKey, "dataFile": dataFile})
 		if atime {

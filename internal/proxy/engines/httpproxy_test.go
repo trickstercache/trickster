@@ -18,6 +18,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -272,5 +273,14 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 	err = testResultHeaderPartMatch(resp.Header, map[string]string{"engine": "HTTPProxy"})
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+func TestPrepareFetchReaderErr(t *testing.T) {
+	r := model.NewRequest("test", "GET", &url.URL{}, nil, 0, httptest.NewRequest("GET", "http://example.com/", nil), nil)
+	r.ClientRequest.Method = "\t"
+	_, _, i := PrepareFetchReader(r)
+	if i != 0 {
+		t.Errorf("expected 0 got %d", i)
 	}
 }

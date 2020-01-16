@@ -26,88 +26,105 @@ func (z *CachingPolicy) DecodeMsg(dc *msgp.Reader) (err error) {
 	var zb0001 uint32
 	zb0001, err = dc.ReadMapHeader()
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0001 > 0 {
 		zb0001--
 		field, err = dc.ReadMapKeyPtr()
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		switch msgp.UnsafeString(field) {
 		case "is_fresh":
 			z.IsFresh, err = dc.ReadBool()
 			if err != nil {
+				err = msgp.WrapError(err, "IsFresh")
 				return
 			}
 		case "nocache":
 			z.NoCache, err = dc.ReadBool()
 			if err != nil {
+				err = msgp.WrapError(err, "NoCache")
 				return
 			}
 		case "notransform":
 			z.NoTransform, err = dc.ReadBool()
 			if err != nil {
+				err = msgp.WrapError(err, "NoTransform")
 				return
 			}
 		case "freshness_lifetime":
 			z.FreshnessLifetime, err = dc.ReadInt()
 			if err != nil {
+				err = msgp.WrapError(err, "FreshnessLifetime")
 				return
 			}
 		case "can_revalidate":
 			z.CanRevalidate, err = dc.ReadBool()
 			if err != nil {
+				err = msgp.WrapError(err, "CanRevalidate")
 				return
 			}
 		case "must_revalidate":
 			z.MustRevalidate, err = dc.ReadBool()
 			if err != nil {
+				err = msgp.WrapError(err, "MustRevalidate")
 				return
 			}
 		case "last_modified":
 			z.LastModified, err = dc.ReadTime()
 			if err != nil {
+				err = msgp.WrapError(err, "LastModified")
 				return
 			}
 		case "expires":
 			z.Expires, err = dc.ReadTime()
 			if err != nil {
+				err = msgp.WrapError(err, "Expires")
 				return
 			}
 		case "date":
 			z.Date, err = dc.ReadTime()
 			if err != nil {
+				err = msgp.WrapError(err, "Date")
 				return
 			}
 		case "local_date":
 			z.LocalDate, err = dc.ReadTime()
 			if err != nil {
+				err = msgp.WrapError(err, "LocalDate")
 				return
 			}
 		case "etag":
 			z.ETag, err = dc.ReadString()
 			if err != nil {
+				err = msgp.WrapError(err, "ETag")
 				return
 			}
 		case "if_none_match_value":
 			z.IfNoneMatchValue, err = dc.ReadString()
 			if err != nil {
+				err = msgp.WrapError(err, "IfNoneMatchValue")
 				return
 			}
 		case "if_match_value":
 			z.IfMatchValue, err = dc.ReadString()
 			if err != nil {
+				err = msgp.WrapError(err, "IfMatchValue")
 				return
 			}
 		case "if_modified_since_time":
 			z.IfModifiedSinceTime, err = dc.ReadTime()
 			if err != nil {
+				err = msgp.WrapError(err, "IfModifiedSinceTime")
 				return
 			}
 		case "if_unmodified_since_time":
 			z.IfUnmodifiedSinceTime, err = dc.ReadTime()
 			if err != nil {
+				err = msgp.WrapError(err, "IfUnmodifiedSinceTime")
 				return
 			}
 		case "is_negative_cache":
@@ -118,6 +135,7 @@ func (z *CachingPolicy) DecodeMsg(dc *msgp.Reader) (err error) {
 		default:
 			err = dc.Skip()
 			if err != nil {
+				err = msgp.WrapError(err)
 				return
 			}
 		}
@@ -135,6 +153,7 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteBool(z.IsFresh)
 	if err != nil {
+		err = msgp.WrapError(err, "IsFresh")
 		return
 	}
 	// write "nocache"
@@ -144,6 +163,7 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteBool(z.NoCache)
 	if err != nil {
+		err = msgp.WrapError(err, "NoCache")
 		return
 	}
 	// write "notransform"
@@ -153,6 +173,7 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteBool(z.NoTransform)
 	if err != nil {
+		err = msgp.WrapError(err, "NoTransform")
 		return
 	}
 	// write "freshness_lifetime"
@@ -162,6 +183,7 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteInt(z.FreshnessLifetime)
 	if err != nil {
+		err = msgp.WrapError(err, "FreshnessLifetime")
 		return
 	}
 	// write "can_revalidate"
@@ -171,6 +193,7 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteBool(z.CanRevalidate)
 	if err != nil {
+		err = msgp.WrapError(err, "CanRevalidate")
 		return
 	}
 	// write "must_revalidate"
@@ -180,6 +203,7 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteBool(z.MustRevalidate)
 	if err != nil {
+		err = msgp.WrapError(err, "MustRevalidate")
 		return
 	}
 	// write "last_modified"
@@ -189,6 +213,7 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteTime(z.LastModified)
 	if err != nil {
+		err = msgp.WrapError(err, "LastModified")
 		return
 	}
 	// write "expires"
@@ -198,6 +223,7 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteTime(z.Expires)
 	if err != nil {
+		err = msgp.WrapError(err, "Expires")
 		return
 	}
 	// write "date"
@@ -207,6 +233,7 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteTime(z.Date)
 	if err != nil {
+		err = msgp.WrapError(err, "Date")
 		return
 	}
 	// write "local_date"
@@ -216,6 +243,7 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteTime(z.LocalDate)
 	if err != nil {
+		err = msgp.WrapError(err, "LocalDate")
 		return
 	}
 	// write "etag"
@@ -225,6 +253,7 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteString(z.ETag)
 	if err != nil {
+		err = msgp.WrapError(err, "ETag")
 		return
 	}
 	// write "if_none_match_value"
@@ -234,6 +263,7 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteString(z.IfNoneMatchValue)
 	if err != nil {
+		err = msgp.WrapError(err, "IfNoneMatchValue")
 		return
 	}
 	// write "if_match_value"
@@ -243,6 +273,7 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteString(z.IfMatchValue)
 	if err != nil {
+		err = msgp.WrapError(err, "IfMatchValue")
 		return
 	}
 	// write "if_modified_since_time"
@@ -252,6 +283,7 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteTime(z.IfModifiedSinceTime)
 	if err != nil {
+		err = msgp.WrapError(err, "IfModifiedSinceTime")
 		return
 	}
 	// write "if_unmodified_since_time"
@@ -261,6 +293,7 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteTime(z.IfUnmodifiedSinceTime)
 	if err != nil {
+		err = msgp.WrapError(err, "IfUnmodifiedSinceTime")
 		return
 	}
 	// write "is_negative_cache"
@@ -337,88 +370,105 @@ func (z *CachingPolicy) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	var zb0001 uint32
 	zb0001, bts, err = msgp.ReadMapHeaderBytes(bts)
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0001 > 0 {
 		zb0001--
 		field, bts, err = msgp.ReadMapKeyZC(bts)
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		switch msgp.UnsafeString(field) {
 		case "is_fresh":
 			z.IsFresh, bts, err = msgp.ReadBoolBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "IsFresh")
 				return
 			}
 		case "nocache":
 			z.NoCache, bts, err = msgp.ReadBoolBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "NoCache")
 				return
 			}
 		case "notransform":
 			z.NoTransform, bts, err = msgp.ReadBoolBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "NoTransform")
 				return
 			}
 		case "freshness_lifetime":
 			z.FreshnessLifetime, bts, err = msgp.ReadIntBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "FreshnessLifetime")
 				return
 			}
 		case "can_revalidate":
 			z.CanRevalidate, bts, err = msgp.ReadBoolBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "CanRevalidate")
 				return
 			}
 		case "must_revalidate":
 			z.MustRevalidate, bts, err = msgp.ReadBoolBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "MustRevalidate")
 				return
 			}
 		case "last_modified":
 			z.LastModified, bts, err = msgp.ReadTimeBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "LastModified")
 				return
 			}
 		case "expires":
 			z.Expires, bts, err = msgp.ReadTimeBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "Expires")
 				return
 			}
 		case "date":
 			z.Date, bts, err = msgp.ReadTimeBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "Date")
 				return
 			}
 		case "local_date":
 			z.LocalDate, bts, err = msgp.ReadTimeBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "LocalDate")
 				return
 			}
 		case "etag":
 			z.ETag, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "ETag")
 				return
 			}
 		case "if_none_match_value":
 			z.IfNoneMatchValue, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "IfNoneMatchValue")
 				return
 			}
 		case "if_match_value":
 			z.IfMatchValue, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "IfMatchValue")
 				return
 			}
 		case "if_modified_since_time":
 			z.IfModifiedSinceTime, bts, err = msgp.ReadTimeBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "IfModifiedSinceTime")
 				return
 			}
 		case "if_unmodified_since_time":
 			z.IfUnmodifiedSinceTime, bts, err = msgp.ReadTimeBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "IfUnmodifiedSinceTime")
 				return
 			}
 		case "is_negative_cache":
@@ -429,6 +479,7 @@ func (z *CachingPolicy) UnmarshalMsg(bts []byte) (o []byte, err error) {
 		default:
 			bts, err = msgp.Skip(bts)
 			if err != nil {
+				err = msgp.WrapError(err)
 				return
 			}
 		}
@@ -450,29 +501,34 @@ func (z *HTTPDocument) DecodeMsg(dc *msgp.Reader) (err error) {
 	var zb0001 uint32
 	zb0001, err = dc.ReadMapHeader()
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0001 > 0 {
 		zb0001--
 		field, err = dc.ReadMapKeyPtr()
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		switch msgp.UnsafeString(field) {
 		case "status_code":
 			z.StatusCode, err = dc.ReadInt()
 			if err != nil {
+				err = msgp.WrapError(err, "StatusCode")
 				return
 			}
 		case "status":
 			z.Status, err = dc.ReadString()
 			if err != nil {
+				err = msgp.WrapError(err, "Status")
 				return
 			}
 		case "headers":
 			var zb0002 uint32
 			zb0002, err = dc.ReadMapHeader()
 			if err != nil {
+				err = msgp.WrapError(err, "Headers")
 				return
 			}
 			if z.Headers == nil {
@@ -488,11 +544,13 @@ func (z *HTTPDocument) DecodeMsg(dc *msgp.Reader) (err error) {
 				var za0002 []string
 				za0001, err = dc.ReadString()
 				if err != nil {
+					err = msgp.WrapError(err, "Headers")
 					return
 				}
 				var zb0003 uint32
 				zb0003, err = dc.ReadArrayHeader()
 				if err != nil {
+					err = msgp.WrapError(err, "Headers", za0001)
 					return
 				}
 				if cap(za0002) >= int(zb0003) {
@@ -503,6 +561,7 @@ func (z *HTTPDocument) DecodeMsg(dc *msgp.Reader) (err error) {
 				for za0003 := range za0002 {
 					za0002[za0003], err = dc.ReadString()
 					if err != nil {
+						err = msgp.WrapError(err, "Headers", za0001, za0003)
 						return
 					}
 				}
@@ -511,12 +570,14 @@ func (z *HTTPDocument) DecodeMsg(dc *msgp.Reader) (err error) {
 		case "body":
 			z.Body, err = dc.ReadBytes(z.Body)
 			if err != nil {
+				err = msgp.WrapError(err, "Body")
 				return
 			}
 		case "caching_policy":
 			if dc.IsNil() {
 				err = dc.ReadNil()
 				if err != nil {
+					err = msgp.WrapError(err, "CachingPolicy")
 					return
 				}
 				z.CachingPolicy = nil
@@ -526,12 +587,110 @@ func (z *HTTPDocument) DecodeMsg(dc *msgp.Reader) (err error) {
 				}
 				err = z.CachingPolicy.DecodeMsg(dc)
 				if err != nil {
+					err = msgp.WrapError(err, "CachingPolicy")
 					return
+				}
+			}
+		case "updated_query_range":
+			var zb0004 uint32
+			zb0004, err = dc.ReadArrayHeader()
+			if err != nil {
+				err = msgp.WrapError(err, "UpdatedQueryRange")
+				return
+			}
+			if cap(z.UpdatedQueryRange) >= int(zb0004) {
+				z.UpdatedQueryRange = (z.UpdatedQueryRange)[:zb0004]
+			} else {
+				z.UpdatedQueryRange = make(Ranges, zb0004)
+			}
+			for za0004 := range z.UpdatedQueryRange {
+				var zb0005 uint32
+				zb0005, err = dc.ReadMapHeader()
+				if err != nil {
+					err = msgp.WrapError(err, "UpdatedQueryRange", za0004)
+					return
+				}
+				for zb0005 > 0 {
+					zb0005--
+					field, err = dc.ReadMapKeyPtr()
+					if err != nil {
+						err = msgp.WrapError(err, "UpdatedQueryRange", za0004)
+						return
+					}
+					switch msgp.UnsafeString(field) {
+					case "start":
+						z.UpdatedQueryRange[za0004].Start, err = dc.ReadInt()
+						if err != nil {
+							err = msgp.WrapError(err, "UpdatedQueryRange", za0004, "Start")
+							return
+						}
+					case "end":
+						z.UpdatedQueryRange[za0004].End, err = dc.ReadInt()
+						if err != nil {
+							err = msgp.WrapError(err, "UpdatedQueryRange", za0004, "End")
+							return
+						}
+					default:
+						err = dc.Skip()
+						if err != nil {
+							err = msgp.WrapError(err, "UpdatedQueryRange", za0004)
+							return
+						}
+					}
+				}
+			}
+		case "ranges":
+			var zb0006 uint32
+			zb0006, err = dc.ReadArrayHeader()
+			if err != nil {
+				err = msgp.WrapError(err, "Ranges")
+				return
+			}
+			if cap(z.Ranges) >= int(zb0006) {
+				z.Ranges = (z.Ranges)[:zb0006]
+			} else {
+				z.Ranges = make(Ranges, zb0006)
+			}
+			for za0005 := range z.Ranges {
+				var zb0007 uint32
+				zb0007, err = dc.ReadMapHeader()
+				if err != nil {
+					err = msgp.WrapError(err, "Ranges", za0005)
+					return
+				}
+				for zb0007 > 0 {
+					zb0007--
+					field, err = dc.ReadMapKeyPtr()
+					if err != nil {
+						err = msgp.WrapError(err, "Ranges", za0005)
+						return
+					}
+					switch msgp.UnsafeString(field) {
+					case "start":
+						z.Ranges[za0005].Start, err = dc.ReadInt()
+						if err != nil {
+							err = msgp.WrapError(err, "Ranges", za0005, "Start")
+							return
+						}
+					case "end":
+						z.Ranges[za0005].End, err = dc.ReadInt()
+						if err != nil {
+							err = msgp.WrapError(err, "Ranges", za0005, "End")
+							return
+						}
+					default:
+						err = dc.Skip()
+						if err != nil {
+							err = msgp.WrapError(err, "Ranges", za0005)
+							return
+						}
+					}
 				}
 			}
 		default:
 			err = dc.Skip()
 			if err != nil {
+				err = msgp.WrapError(err)
 				return
 			}
 		}
@@ -541,14 +700,15 @@ func (z *HTTPDocument) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *HTTPDocument) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 5
+	// map header, size 7
 	// write "status_code"
-	err = en.Append(0x85, 0xab, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x5f, 0x63, 0x6f, 0x64, 0x65)
+	err = en.Append(0x87, 0xab, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x5f, 0x63, 0x6f, 0x64, 0x65)
 	if err != nil {
 		return
 	}
 	err = en.WriteInt(z.StatusCode)
 	if err != nil {
+		err = msgp.WrapError(err, "StatusCode")
 		return
 	}
 	// write "status"
@@ -558,6 +718,7 @@ func (z *HTTPDocument) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteString(z.Status)
 	if err != nil {
+		err = msgp.WrapError(err, "Status")
 		return
 	}
 	// write "headers"
@@ -567,20 +728,24 @@ func (z *HTTPDocument) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteMapHeader(uint32(len(z.Headers)))
 	if err != nil {
+		err = msgp.WrapError(err, "Headers")
 		return
 	}
 	for za0001, za0002 := range z.Headers {
 		err = en.WriteString(za0001)
 		if err != nil {
+			err = msgp.WrapError(err, "Headers")
 			return
 		}
 		err = en.WriteArrayHeader(uint32(len(za0002)))
 		if err != nil {
+			err = msgp.WrapError(err, "Headers", za0001)
 			return
 		}
 		for za0003 := range za0002 {
 			err = en.WriteString(za0002[za0003])
 			if err != nil {
+				err = msgp.WrapError(err, "Headers", za0001, za0003)
 				return
 			}
 		}
@@ -592,6 +757,7 @@ func (z *HTTPDocument) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteBytes(z.Body)
 	if err != nil {
+		err = msgp.WrapError(err, "Body")
 		return
 	}
 	// write "caching_policy"
@@ -607,6 +773,73 @@ func (z *HTTPDocument) EncodeMsg(en *msgp.Writer) (err error) {
 	} else {
 		err = z.CachingPolicy.EncodeMsg(en)
 		if err != nil {
+			err = msgp.WrapError(err, "CachingPolicy")
+			return
+		}
+	}
+	// write "updated_query_range"
+	err = en.Append(0xb3, 0x75, 0x70, 0x64, 0x61, 0x74, 0x65, 0x64, 0x5f, 0x71, 0x75, 0x65, 0x72, 0x79, 0x5f, 0x72, 0x61, 0x6e, 0x67, 0x65)
+	if err != nil {
+		return
+	}
+	err = en.WriteArrayHeader(uint32(len(z.UpdatedQueryRange)))
+	if err != nil {
+		err = msgp.WrapError(err, "UpdatedQueryRange")
+		return
+	}
+	for za0004 := range z.UpdatedQueryRange {
+		// map header, size 2
+		// write "start"
+		err = en.Append(0x82, 0xa5, 0x73, 0x74, 0x61, 0x72, 0x74)
+		if err != nil {
+			return
+		}
+		err = en.WriteInt(z.UpdatedQueryRange[za0004].Start)
+		if err != nil {
+			err = msgp.WrapError(err, "UpdatedQueryRange", za0004, "Start")
+			return
+		}
+		// write "end"
+		err = en.Append(0xa3, 0x65, 0x6e, 0x64)
+		if err != nil {
+			return
+		}
+		err = en.WriteInt(z.UpdatedQueryRange[za0004].End)
+		if err != nil {
+			err = msgp.WrapError(err, "UpdatedQueryRange", za0004, "End")
+			return
+		}
+	}
+	// write "ranges"
+	err = en.Append(0xa6, 0x72, 0x61, 0x6e, 0x67, 0x65, 0x73)
+	if err != nil {
+		return
+	}
+	err = en.WriteArrayHeader(uint32(len(z.Ranges)))
+	if err != nil {
+		err = msgp.WrapError(err, "Ranges")
+		return
+	}
+	for za0005 := range z.Ranges {
+		// map header, size 2
+		// write "start"
+		err = en.Append(0x82, 0xa5, 0x73, 0x74, 0x61, 0x72, 0x74)
+		if err != nil {
+			return
+		}
+		err = en.WriteInt(z.Ranges[za0005].Start)
+		if err != nil {
+			err = msgp.WrapError(err, "Ranges", za0005, "Start")
+			return
+		}
+		// write "end"
+		err = en.Append(0xa3, 0x65, 0x6e, 0x64)
+		if err != nil {
+			return
+		}
+		err = en.WriteInt(z.Ranges[za0005].End)
+		if err != nil {
+			err = msgp.WrapError(err, "Ranges", za0005, "End")
 			return
 		}
 	}
@@ -616,9 +849,9 @@ func (z *HTTPDocument) EncodeMsg(en *msgp.Writer) (err error) {
 // MarshalMsg implements msgp.Marshaler
 func (z *HTTPDocument) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 5
+	// map header, size 7
 	// string "status_code"
-	o = append(o, 0x85, 0xab, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x5f, 0x63, 0x6f, 0x64, 0x65)
+	o = append(o, 0x87, 0xab, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x5f, 0x63, 0x6f, 0x64, 0x65)
 	o = msgp.AppendInt(o, z.StatusCode)
 	// string "status"
 	o = append(o, 0xa6, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73)
@@ -643,8 +876,33 @@ func (z *HTTPDocument) MarshalMsg(b []byte) (o []byte, err error) {
 	} else {
 		o, err = z.CachingPolicy.MarshalMsg(o)
 		if err != nil {
+			err = msgp.WrapError(err, "CachingPolicy")
 			return
 		}
+	}
+	// string "updated_query_range"
+	o = append(o, 0xb3, 0x75, 0x70, 0x64, 0x61, 0x74, 0x65, 0x64, 0x5f, 0x71, 0x75, 0x65, 0x72, 0x79, 0x5f, 0x72, 0x61, 0x6e, 0x67, 0x65)
+	o = msgp.AppendArrayHeader(o, uint32(len(z.UpdatedQueryRange)))
+	for za0004 := range z.UpdatedQueryRange {
+		// map header, size 2
+		// string "start"
+		o = append(o, 0x82, 0xa5, 0x73, 0x74, 0x61, 0x72, 0x74)
+		o = msgp.AppendInt(o, z.UpdatedQueryRange[za0004].Start)
+		// string "end"
+		o = append(o, 0xa3, 0x65, 0x6e, 0x64)
+		o = msgp.AppendInt(o, z.UpdatedQueryRange[za0004].End)
+	}
+	// string "ranges"
+	o = append(o, 0xa6, 0x72, 0x61, 0x6e, 0x67, 0x65, 0x73)
+	o = msgp.AppendArrayHeader(o, uint32(len(z.Ranges)))
+	for za0005 := range z.Ranges {
+		// map header, size 2
+		// string "start"
+		o = append(o, 0x82, 0xa5, 0x73, 0x74, 0x61, 0x72, 0x74)
+		o = msgp.AppendInt(o, z.Ranges[za0005].Start)
+		// string "end"
+		o = append(o, 0xa3, 0x65, 0x6e, 0x64)
+		o = msgp.AppendInt(o, z.Ranges[za0005].End)
 	}
 	return
 }
@@ -656,29 +914,34 @@ func (z *HTTPDocument) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	var zb0001 uint32
 	zb0001, bts, err = msgp.ReadMapHeaderBytes(bts)
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0001 > 0 {
 		zb0001--
 		field, bts, err = msgp.ReadMapKeyZC(bts)
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		switch msgp.UnsafeString(field) {
 		case "status_code":
 			z.StatusCode, bts, err = msgp.ReadIntBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "StatusCode")
 				return
 			}
 		case "status":
 			z.Status, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "Status")
 				return
 			}
 		case "headers":
 			var zb0002 uint32
 			zb0002, bts, err = msgp.ReadMapHeaderBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "Headers")
 				return
 			}
 			if z.Headers == nil {
@@ -694,11 +957,13 @@ func (z *HTTPDocument) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				zb0002--
 				za0001, bts, err = msgp.ReadStringBytes(bts)
 				if err != nil {
+					err = msgp.WrapError(err, "Headers")
 					return
 				}
 				var zb0003 uint32
 				zb0003, bts, err = msgp.ReadArrayHeaderBytes(bts)
 				if err != nil {
+					err = msgp.WrapError(err, "Headers", za0001)
 					return
 				}
 				if cap(za0002) >= int(zb0003) {
@@ -709,6 +974,7 @@ func (z *HTTPDocument) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				for za0003 := range za0002 {
 					za0002[za0003], bts, err = msgp.ReadStringBytes(bts)
 					if err != nil {
+						err = msgp.WrapError(err, "Headers", za0001, za0003)
 						return
 					}
 				}
@@ -717,6 +983,7 @@ func (z *HTTPDocument) UnmarshalMsg(bts []byte) (o []byte, err error) {
 		case "body":
 			z.Body, bts, err = msgp.ReadBytesBytes(bts, z.Body)
 			if err != nil {
+				err = msgp.WrapError(err, "Body")
 				return
 			}
 		case "caching_policy":
@@ -732,12 +999,110 @@ func (z *HTTPDocument) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				}
 				bts, err = z.CachingPolicy.UnmarshalMsg(bts)
 				if err != nil {
+					err = msgp.WrapError(err, "CachingPolicy")
 					return
+				}
+			}
+		case "updated_query_range":
+			var zb0004 uint32
+			zb0004, bts, err = msgp.ReadArrayHeaderBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "UpdatedQueryRange")
+				return
+			}
+			if cap(z.UpdatedQueryRange) >= int(zb0004) {
+				z.UpdatedQueryRange = (z.UpdatedQueryRange)[:zb0004]
+			} else {
+				z.UpdatedQueryRange = make(Ranges, zb0004)
+			}
+			for za0004 := range z.UpdatedQueryRange {
+				var zb0005 uint32
+				zb0005, bts, err = msgp.ReadMapHeaderBytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "UpdatedQueryRange", za0004)
+					return
+				}
+				for zb0005 > 0 {
+					zb0005--
+					field, bts, err = msgp.ReadMapKeyZC(bts)
+					if err != nil {
+						err = msgp.WrapError(err, "UpdatedQueryRange", za0004)
+						return
+					}
+					switch msgp.UnsafeString(field) {
+					case "start":
+						z.UpdatedQueryRange[za0004].Start, bts, err = msgp.ReadIntBytes(bts)
+						if err != nil {
+							err = msgp.WrapError(err, "UpdatedQueryRange", za0004, "Start")
+							return
+						}
+					case "end":
+						z.UpdatedQueryRange[za0004].End, bts, err = msgp.ReadIntBytes(bts)
+						if err != nil {
+							err = msgp.WrapError(err, "UpdatedQueryRange", za0004, "End")
+							return
+						}
+					default:
+						bts, err = msgp.Skip(bts)
+						if err != nil {
+							err = msgp.WrapError(err, "UpdatedQueryRange", za0004)
+							return
+						}
+					}
+				}
+			}
+		case "ranges":
+			var zb0006 uint32
+			zb0006, bts, err = msgp.ReadArrayHeaderBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "Ranges")
+				return
+			}
+			if cap(z.Ranges) >= int(zb0006) {
+				z.Ranges = (z.Ranges)[:zb0006]
+			} else {
+				z.Ranges = make(Ranges, zb0006)
+			}
+			for za0005 := range z.Ranges {
+				var zb0007 uint32
+				zb0007, bts, err = msgp.ReadMapHeaderBytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "Ranges", za0005)
+					return
+				}
+				for zb0007 > 0 {
+					zb0007--
+					field, bts, err = msgp.ReadMapKeyZC(bts)
+					if err != nil {
+						err = msgp.WrapError(err, "Ranges", za0005)
+						return
+					}
+					switch msgp.UnsafeString(field) {
+					case "start":
+						z.Ranges[za0005].Start, bts, err = msgp.ReadIntBytes(bts)
+						if err != nil {
+							err = msgp.WrapError(err, "Ranges", za0005, "Start")
+							return
+						}
+					case "end":
+						z.Ranges[za0005].End, bts, err = msgp.ReadIntBytes(bts)
+						if err != nil {
+							err = msgp.WrapError(err, "Ranges", za0005, "End")
+							return
+						}
+					default:
+						bts, err = msgp.Skip(bts)
+						if err != nil {
+							err = msgp.WrapError(err, "Ranges", za0005)
+							return
+						}
+					}
 				}
 			}
 		default:
 			bts, err = msgp.Skip(bts)
 			if err != nil {
+				err = msgp.WrapError(err)
 				return
 			}
 		}
@@ -764,5 +1129,298 @@ func (z *HTTPDocument) Msgsize() (s int) {
 	} else {
 		s += z.CachingPolicy.Msgsize()
 	}
+	s += 20 + msgp.ArrayHeaderSize + (len(z.UpdatedQueryRange) * (11 + msgp.IntSize + msgp.IntSize)) + 7 + msgp.ArrayHeaderSize + (len(z.Ranges) * (11 + msgp.IntSize + msgp.IntSize))
+	return
+}
+
+// DecodeMsg implements msgp.Decodable
+func (z *Range) DecodeMsg(dc *msgp.Reader) (err error) {
+	var field []byte
+	_ = field
+	var zb0001 uint32
+	zb0001, err = dc.ReadMapHeader()
+	if err != nil {
+		err = msgp.WrapError(err)
+		return
+	}
+	for zb0001 > 0 {
+		zb0001--
+		field, err = dc.ReadMapKeyPtr()
+		if err != nil {
+			err = msgp.WrapError(err)
+			return
+		}
+		switch msgp.UnsafeString(field) {
+		case "start":
+			z.Start, err = dc.ReadInt()
+			if err != nil {
+				err = msgp.WrapError(err, "Start")
+				return
+			}
+		case "end":
+			z.End, err = dc.ReadInt()
+			if err != nil {
+				err = msgp.WrapError(err, "End")
+				return
+			}
+		default:
+			err = dc.Skip()
+			if err != nil {
+				err = msgp.WrapError(err)
+				return
+			}
+		}
+	}
+	return
+}
+
+// EncodeMsg implements msgp.Encodable
+func (z Range) EncodeMsg(en *msgp.Writer) (err error) {
+	// map header, size 2
+	// write "start"
+	err = en.Append(0x82, 0xa5, 0x73, 0x74, 0x61, 0x72, 0x74)
+	if err != nil {
+		return
+	}
+	err = en.WriteInt(z.Start)
+	if err != nil {
+		err = msgp.WrapError(err, "Start")
+		return
+	}
+	// write "end"
+	err = en.Append(0xa3, 0x65, 0x6e, 0x64)
+	if err != nil {
+		return
+	}
+	err = en.WriteInt(z.End)
+	if err != nil {
+		err = msgp.WrapError(err, "End")
+		return
+	}
+	return
+}
+
+// MarshalMsg implements msgp.Marshaler
+func (z Range) MarshalMsg(b []byte) (o []byte, err error) {
+	o = msgp.Require(b, z.Msgsize())
+	// map header, size 2
+	// string "start"
+	o = append(o, 0x82, 0xa5, 0x73, 0x74, 0x61, 0x72, 0x74)
+	o = msgp.AppendInt(o, z.Start)
+	// string "end"
+	o = append(o, 0xa3, 0x65, 0x6e, 0x64)
+	o = msgp.AppendInt(o, z.End)
+	return
+}
+
+// UnmarshalMsg implements msgp.Unmarshaler
+func (z *Range) UnmarshalMsg(bts []byte) (o []byte, err error) {
+	var field []byte
+	_ = field
+	var zb0001 uint32
+	zb0001, bts, err = msgp.ReadMapHeaderBytes(bts)
+	if err != nil {
+		err = msgp.WrapError(err)
+		return
+	}
+	for zb0001 > 0 {
+		zb0001--
+		field, bts, err = msgp.ReadMapKeyZC(bts)
+		if err != nil {
+			err = msgp.WrapError(err)
+			return
+		}
+		switch msgp.UnsafeString(field) {
+		case "start":
+			z.Start, bts, err = msgp.ReadIntBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "Start")
+				return
+			}
+		case "end":
+			z.End, bts, err = msgp.ReadIntBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "End")
+				return
+			}
+		default:
+			bts, err = msgp.Skip(bts)
+			if err != nil {
+				err = msgp.WrapError(err)
+				return
+			}
+		}
+	}
+	o = bts
+	return
+}
+
+// Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
+func (z Range) Msgsize() (s int) {
+	s = 1 + 6 + msgp.IntSize + 4 + msgp.IntSize
+	return
+}
+
+// DecodeMsg implements msgp.Decodable
+func (z *Ranges) DecodeMsg(dc *msgp.Reader) (err error) {
+	var zb0002 uint32
+	zb0002, err = dc.ReadArrayHeader()
+	if err != nil {
+		err = msgp.WrapError(err)
+		return
+	}
+	if cap((*z)) >= int(zb0002) {
+		(*z) = (*z)[:zb0002]
+	} else {
+		(*z) = make(Ranges, zb0002)
+	}
+	for zb0001 := range *z {
+		var field []byte
+		_ = field
+		var zb0003 uint32
+		zb0003, err = dc.ReadMapHeader()
+		if err != nil {
+			err = msgp.WrapError(err, zb0001)
+			return
+		}
+		for zb0003 > 0 {
+			zb0003--
+			field, err = dc.ReadMapKeyPtr()
+			if err != nil {
+				err = msgp.WrapError(err, zb0001)
+				return
+			}
+			switch msgp.UnsafeString(field) {
+			case "start":
+				(*z)[zb0001].Start, err = dc.ReadInt()
+				if err != nil {
+					err = msgp.WrapError(err, zb0001, "Start")
+					return
+				}
+			case "end":
+				(*z)[zb0001].End, err = dc.ReadInt()
+				if err != nil {
+					err = msgp.WrapError(err, zb0001, "End")
+					return
+				}
+			default:
+				err = dc.Skip()
+				if err != nil {
+					err = msgp.WrapError(err, zb0001)
+					return
+				}
+			}
+		}
+	}
+	return
+}
+
+// EncodeMsg implements msgp.Encodable
+func (z Ranges) EncodeMsg(en *msgp.Writer) (err error) {
+	err = en.WriteArrayHeader(uint32(len(z)))
+	if err != nil {
+		err = msgp.WrapError(err)
+		return
+	}
+	for zb0004 := range z {
+		// map header, size 2
+		// write "start"
+		err = en.Append(0x82, 0xa5, 0x73, 0x74, 0x61, 0x72, 0x74)
+		if err != nil {
+			return
+		}
+		err = en.WriteInt(z[zb0004].Start)
+		if err != nil {
+			err = msgp.WrapError(err, zb0004, "Start")
+			return
+		}
+		// write "end"
+		err = en.Append(0xa3, 0x65, 0x6e, 0x64)
+		if err != nil {
+			return
+		}
+		err = en.WriteInt(z[zb0004].End)
+		if err != nil {
+			err = msgp.WrapError(err, zb0004, "End")
+			return
+		}
+	}
+	return
+}
+
+// MarshalMsg implements msgp.Marshaler
+func (z Ranges) MarshalMsg(b []byte) (o []byte, err error) {
+	o = msgp.Require(b, z.Msgsize())
+	o = msgp.AppendArrayHeader(o, uint32(len(z)))
+	for zb0004 := range z {
+		// map header, size 2
+		// string "start"
+		o = append(o, 0x82, 0xa5, 0x73, 0x74, 0x61, 0x72, 0x74)
+		o = msgp.AppendInt(o, z[zb0004].Start)
+		// string "end"
+		o = append(o, 0xa3, 0x65, 0x6e, 0x64)
+		o = msgp.AppendInt(o, z[zb0004].End)
+	}
+	return
+}
+
+// UnmarshalMsg implements msgp.Unmarshaler
+func (z *Ranges) UnmarshalMsg(bts []byte) (o []byte, err error) {
+	var zb0002 uint32
+	zb0002, bts, err = msgp.ReadArrayHeaderBytes(bts)
+	if err != nil {
+		err = msgp.WrapError(err)
+		return
+	}
+	if cap((*z)) >= int(zb0002) {
+		(*z) = (*z)[:zb0002]
+	} else {
+		(*z) = make(Ranges, zb0002)
+	}
+	for zb0001 := range *z {
+		var field []byte
+		_ = field
+		var zb0003 uint32
+		zb0003, bts, err = msgp.ReadMapHeaderBytes(bts)
+		if err != nil {
+			err = msgp.WrapError(err, zb0001)
+			return
+		}
+		for zb0003 > 0 {
+			zb0003--
+			field, bts, err = msgp.ReadMapKeyZC(bts)
+			if err != nil {
+				err = msgp.WrapError(err, zb0001)
+				return
+			}
+			switch msgp.UnsafeString(field) {
+			case "start":
+				(*z)[zb0001].Start, bts, err = msgp.ReadIntBytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, zb0001, "Start")
+					return
+				}
+			case "end":
+				(*z)[zb0001].End, bts, err = msgp.ReadIntBytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, zb0001, "End")
+					return
+				}
+			default:
+				bts, err = msgp.Skip(bts)
+				if err != nil {
+					err = msgp.WrapError(err, zb0001)
+					return
+				}
+			}
+		}
+	}
+	o = bts
+	return
+}
+
+// Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
+func (z Ranges) Msgsize() (s int) {
+	s = msgp.ArrayHeaderSize + (len(z) * (11 + msgp.IntSize + msgp.IntSize))
 	return
 }
