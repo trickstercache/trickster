@@ -16,7 +16,6 @@ package errors
 import (
 	"fmt"
 	"testing"
-	"time"
 )
 
 func TestMissingURLParam(t *testing.T) {
@@ -31,34 +30,10 @@ func TestTimeArrayEmpty(t *testing.T) {
 	}
 }
 
-func TestStepParse(t *testing.T) {
-	if StepParse().Error() != "unable to parse timeseries step from downstream request" {
-		t.Errorf("ErrorStepParse failed")
-	}
-}
-
-func TestNotSelectStatement(t *testing.T) {
-	if NotSelectStatement().Error() != "not a select statement" {
-		t.Errorf("ErrorNotSelectStatement failed")
-	}
-}
-
 func TestParseDurationError(t *testing.T) {
 	_, err := ParseDuration("test")
 	if err.Error() != "unable to parse duration: test" {
 		t.Errorf("ErrorParseDuration failed")
-	}
-}
-
-// ParseDurationError returns a Duration Parsing Error
-func ParseDurationError(input string) (time.Duration, error) {
-	return time.Duration(0), fmt.Errorf("unable to parse duration: %s", input)
-}
-
-func TestNotTimeRangeQuery(t *testing.T) {
-	err := NotTimeRangeQuery()
-	if err.Error() != "not a time range query" {
-		t.Errorf("ErrorParseDuration failed, got: %v", err.Error())
 	}
 }
 
