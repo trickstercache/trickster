@@ -25,23 +25,35 @@ import (
 const (
 	// Common HTTP Header Values
 
-	// ValueNoCache represents the HTTP Header Value of "no-cache"
-	ValueNoCache = "no-cache"
 	// ValueApplicationJSON represents the HTTP Header Value of "application/json"
 	ValueApplicationJSON = "application/json"
+	// ValueMaxAge represents the HTTP Header Value of "max-age"
+	ValueMaxAge = "max-age"
+	// ValueMultipartFormData represents the HTTP Header Value of "multipart/form-data"
+	ValueMultipartFormData = "multipart/form-data"
+	// ValueMustRevalidate represents the HTTP Header Value of "must-revalidate"
+	ValueMustRevalidate = "must-revalidate"
+	// ValueNoCache represents the HTTP Header Value of "no-cache"
+	ValueNoCache = "no-cache"
+	// ValueNoStore represents the HTTP Header Value of "no-store"
+	ValueNoStore = "no-store"
+	// ValueNoTransform represents the HTTP Header Value of "no-transform"
+	ValueNoTransform = "no-transform"
+	// ValuePrivate represents the HTTP Header Value of "private"
+	ValuePrivate = "private"
+	// ValueProxyRevalidate represents the HTTP Header Value of "proxy-revalidate"
+	ValueProxyRevalidate = "proxy-revalidate"
+	// ValuePublic represents the HTTP Header Value of "public"
+	ValuePublic = "public"
+	// ValueSharedMaxAge represents the HTTP Header Value of "s-maxage"
+	ValueSharedMaxAge = "s-maxage"
 	// ValueTextPlain represents the HTTP Header Value of "text/plain"
 	ValueTextPlain = "text/plain"
+	// ValueXFormURLEncoded represents the HTTP Header Value of "application/x-www-form-urlencoded"
+	ValueXFormURLEncoded = "application/x-www-form-urlencoded"
 
-	ValuePublic            = "public"
-	ValuePrivate           = "private"
-	ValueMaxAge            = "max-age"
-	ValueSharedMaxAge      = "s-maxage"
-	ValueMustRevalidate    = "must-revalidate"
-	ValueNoStore           = "no-store"
-	ValueProxyRevalidate   = "proxy-revalidate"
-	ValueNoTransform       = "no-transform"
-	ValueXFormUrlEncoded   = "application/x-www-form-urlencoded"
-	ValueMultipartFormData = "multipart/form-data"
+	// ValueMultipartByteRanges represents the HTTP Header prefix for a Multipart Byte Range response
+	ValueMultipartByteRanges = "multipart/byteranges; boundary="
 
 	// Common HTTP Header Names
 
@@ -57,12 +69,12 @@ const (
 	NameContentLength = "Content-Length"
 	// NameAuthorization represents the HTTP Header Name of "Authorization"
 	NameAuthorization = "Authorization"
-	// NameXAccelerator represents the HTTP Header Name of "X-Accelerator"
-	NameXAccelerator = "X-Accelerator"
+	// NameContentRange represents the HTTP Header Name of "Content-Range"
+	NameContentRange = "Content-Range"
 	// NameTricksterResult represents the HTTP Header Name of "X-Trickster-Result"
 	NameTricksterResult = "X-Trickster-Result"
-	// NameXForwardedBy represents the HTTP Header Name of "X-Forwarded-By"
-	NameXForwardedBy = "X-Forwarded-By"
+	// NameVia represents the HTTP Header Name of "Via"
+	NameVia = "Via"
 	// NameXForwardedFor represents the HTTP Header Name of "X-Forwarded-For"
 	NameXForwardedFor = "X-Forwarded-For"
 	// NameAcceptEncoding represents the HTTP Header Name of "Accept-Encoding"
@@ -71,26 +83,41 @@ const (
 	NameSetCookie = "Set-Cookie"
 	// NameRange represents the HTTP Header Name of "Range"
 	NameRange = "Range"
-
-	NameExpires           = "expires"
-	NameLastModified      = "last-modified"
-	NameDate              = "date"
-	NameETag              = "etag"
-	NamePragma            = "pragma"
-	NameIfModifiedSince   = "if-modified-since"
-	NameIfUnmodifiedSince = "if-unmodified-since"
-	NameIfNoneMatch       = "if-none-match"
-	NameIfMatch           = "if-match"
+	// NameTransferEncoding represents the HTTP Header Name of "Transfer-Encoding"
+	NameTransferEncoding = "Transfer-Encoding"
+	// NameIfModifiedSince represents the HTTP Header Name of "If-Modified-Since"
+	NameIfModifiedSince = "If-Modified-Since"
+	// NameIfUnmodifiedSince represents the HTTP Header Name of "If-Unodified-Since"
+	NameIfUnmodifiedSince = "If-Unmodified-Since"
+	// NameIfNoneMatch represents the HTTP Header Name of "If-None-Match"
+	NameIfNoneMatch = "If-None-Match"
+	// NameIfMatch represents the HTTP Header Name of "If-Match"
+	NameIfMatch = "If-Match"
+	// NameDate represents the HTTP Header Name of "date"
+	NameDate = "Date"
+	// NamePragma represents the HTTP Header Name of "pragma"
+	NamePragma = "Pragma"
+	// NameLastModified represents the HTTP Header Name of "last-modified"
+	NameLastModified = "Last-Modified"
+	// NameExpires represents the HTTP Header Name of "expires"
+	NameExpires = "Expires"
+	// NameETag represents the HTTP Header Name of "etag"
+	NameETag = "Etag"
 )
 
-// CopyHeaders returns an exact copy of an http.Header collection
-func CopyHeaders(h http.Header) http.Header {
-	headers := make(http.Header)
-	for k, v := range h {
-		headers[k] = make([]string, len(v))
-		copy(headers[k], v)
+// Merge merges the source http.Header map into destination map.
+// If a key exists in both maps, the source value wins.
+// If the destination map is nil, the source map will not be merged
+func Merge(dst, src http.Header) {
+	if src == nil || len(src) == 0 || dst == nil {
+		return
 	}
-	return headers
+	for k, sv := range src {
+		if len(sv) == 0 {
+			continue
+		}
+		dst[k] = []string{sv[0]}
+	}
 }
 
 // UpdateHeaders updates the provided headers collection with the provided updates
@@ -119,8 +146,8 @@ func UpdateHeaders(headers http.Header, updates map[string]string) {
 // AddProxyHeaders injects standard Trickster headers into proxied upstream HTTP requests
 func AddProxyHeaders(remoteAddr string, headers http.Header) {
 	if remoteAddr != "" {
-		headers.Add(NameXForwardedFor, remoteAddr)
-		headers.Add(NameXForwardedBy, runtime.ApplicationName+" "+runtime.ApplicationVersion)
+		headers.Set(NameXForwardedFor, remoteAddr)
+		headers.Set(NameVia, runtime.ApplicationName+" "+runtime.ApplicationVersion)
 	}
 }
 
@@ -128,7 +155,7 @@ func AddProxyHeaders(remoteAddr string, headers http.Header) {
 func AddResponseHeaders(headers http.Header) {
 	// We're read only and a harmless API, so allow all CORS
 	headers.Set(NameAllowOrigin, "*")
-	headers.Set(NameXAccelerator, runtime.ApplicationName+" "+runtime.ApplicationVersion)
+	headers.Set(NameVia, runtime.ApplicationName+" "+runtime.ApplicationVersion)
 }
 
 // SetResultsHeader adds a response header summarizing Trickster's handling of the HTTP request
@@ -171,4 +198,19 @@ func ExtractHeader(headers http.Header, header string) (string, bool) {
 // RemoveClientHeaders strips certain headers from the HTTP request to facililate acceleration
 func RemoveClientHeaders(headers http.Header) {
 	headers.Del(NameAcceptEncoding)
+}
+
+// String returns the string representation of the headers as if
+// they were transmitted over the wire (Header1: value1\nHeader2: value2\n\n)
+func String(h http.Header) string {
+	if h == nil || len(h) == 0 {
+		return "\n\n"
+	}
+	sb := strings.Builder{}
+	for k, v := range h {
+		sb.WriteString(fmt.Sprintf("%s: %s\n", k, v))
+	}
+	// add the header section end new line
+	sb.WriteString("\n")
+	return sb.String()
 }

@@ -36,8 +36,8 @@ func TestAddProxyHeaders(t *testing.T) {
 		t.Errorf("missing header %s", NameXForwardedFor)
 	}
 
-	if _, ok := headers[NameXForwardedBy]; !ok {
-		t.Errorf("missing header %s", NameXForwardedBy)
+	if _, ok := headers[NameVia]; !ok {
+		t.Errorf("missing header %s", NameVia)
 	}
 
 }
@@ -65,8 +65,8 @@ func TestExtractHeader(t *testing.T) {
 		}
 	}
 
-	if h, ok := ExtractHeader(headers, NameXForwardedBy); !ok {
-		t.Errorf("missing header %s", NameXForwardedBy)
+	if h, ok := ExtractHeader(headers, NameVia); !ok {
+		t.Errorf("missing header %s", NameVia)
 	} else {
 		if h != appString {
 			t.Errorf(`expected "%s". got "%s"`, appString, h)
@@ -108,13 +108,29 @@ func TestRemoveClientHeaders(t *testing.T) {
 
 }
 
-func TestCopyHeaders(t *testing.T) {
-	headers := make(http.Header)
-	headers.Set("test", "pass")
-	h2 := CopyHeaders(headers)
+func TestMerge(t *testing.T) {
+	h1 := make(http.Header)
+	h1.Set("test", "pass")
+	h2 := make(http.Header)
+	h2.Set("test2", "pass")
+
+	Merge(h2, h1)
 	if h2.Get("test") != "pass" {
 		t.Errorf("expected 'pass' got '%s'", h2.Get("test"))
 	}
+
+	Merge(h2, nil)
+	if h2.Get("test") != "pass" {
+		t.Errorf("expected 'pass' got '%s'", h2.Get("test"))
+	}
+
+	h2["test2"] = make([]string, 0)
+
+	Merge(h1, h2)
+	if h1.Get("test") != "pass" {
+		t.Errorf("expected 'pass' got '%s'", h1.Get("test"))
+	}
+
 }
 
 func TestAddResponseHeaders(t *testing.T) {
@@ -129,8 +145,8 @@ func TestAddResponseHeaders(t *testing.T) {
 		t.Errorf("missing header %s", NameAllowOrigin)
 	}
 
-	if _, ok := headers[NameXAccelerator]; !ok {
-		t.Errorf("missing header %s", NameXAccelerator)
+	if _, ok := headers[NameVia]; !ok {
+		t.Errorf("missing header %s", NameVia)
 	}
 
 }
