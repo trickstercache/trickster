@@ -61,19 +61,22 @@ func TestNewTestInstance(t *testing.T) {
 
 	f := func(*config.OriginConfig) map[string]*config.PathConfig {
 		return map[string]*config.PathConfig{
-			"path1": &config.PathConfig{},
-			"path2": &config.PathConfig{},
+			"path1": {},
+			"path2": {},
 		}
 	}
 
-	s, w, r, c, err = NewTestInstance("", f, 200, "", nil, "promsim", "test", "debug")
+	s, _, _, _, err = NewTestInstance("", f, 200, "", nil, "promsim", "test", "debug")
 	if s == nil {
 		t.Errorf("Expected server pointer, got %v", "nil")
+	}
+	if err != nil {
+		t.Error(err)
 	}
 
 	// cover config file provided
 
-	s, w, r, c, err = NewTestInstance("../../../testdata/test.full.conf", f, 200, "", nil, "promsim", "test", "debug")
+	_, _, _, _, err = NewTestInstance("../../../testdata/test.full.conf", f, 200, "", nil, "promsim", "test", "debug")
 	if err == nil {
 		t.Errorf("Expected error, got %v", "nil")
 	}

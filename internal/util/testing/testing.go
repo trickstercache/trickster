@@ -23,10 +23,12 @@ import (
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	tc "github.com/Comcast/trickster/internal/proxy/context"
 	th "github.com/Comcast/trickster/internal/proxy/headers"
-	ct "github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	"github.com/Comcast/trickster/pkg/promsim"
+	"github.com/Comcast/trickster/pkg/rangesim"
 )
 
 // NewTestServer returns a new httptest.Server that responds with the provided code, body and headers
@@ -65,11 +67,17 @@ func NewTestInstance(
 
 	metrics.Init()
 
+	isBasicTestServer := false
+
 	var ts *httptest.Server
 	if originType == "promsim" {
 		ts = promsim.NewTestServer()
 		originType = "prometheus"
+	} else if originType == "rangesim" {
+		ts = rangesim.NewTestServer()
+		originType = "rpc"
 	} else {
+		isBasicTestServer = true
 		ts = NewTestServer(respCode, respBody, respHeaders)
 	}
 
@@ -97,17 +105,21 @@ func NewTestInstance(
 	r := httptest.NewRequest("GET", ts.URL+urlPath, nil)
 
 	oc := config.Origins["default"]
-	r = r.WithContext(ct.WithConfigs(r.Context(), oc, cache, nil))
-
 	p := NewTestPathConfig(oc, DefaultPathConfigs, urlPath)
 
-	r = r.WithContext(ct.WithConfigs(r.Context(), oc, cache, p))
+	if !isBasicTestServer && respHeaders != nil {
+		p.ResponseHeaders = respHeaders
+	}
+
+	rsc := request.NewResources(oc, p, cache.Configuration(), cache, nil)
+	r = r.WithContext(tc.WithResources(r.Context(), rsc))
 
 	c := NewTestWebClient()
 
 	return ts, w, r, c, nil
 }
 
+// NewTestPathConfig returns a path config based on the provided parameters
 func NewTestPathConfig(
 	oc *config.OriginConfig,
 	DefaultPathConfigs func(*config.OriginConfig) map[string]*config.PathConfig,
