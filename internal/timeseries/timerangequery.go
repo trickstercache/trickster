@@ -15,8 +15,11 @@ package timeseries
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
+
+	"github.com/Comcast/trickster/internal/proxy/urls"
 )
 
 // TimeRangeQuery represents a timeseries database query parsed from an inbound HTTP request
@@ -31,18 +34,28 @@ type TimeRangeQuery struct {
 	IsOffset bool
 	// TimestampFieldName indicates the database field name for the timestamp field
 	TimestampFieldName string
+	// FastForwardDisable indicates whether the Time Range Query result should include fast forward data
+	FastForwardDisable bool
+	// TemplateURL is used by some Origin Types for templatization of url parameters containing timestamps
+	TemplateURL *url.URL
 }
 
-// Copy returns an exact copy of a TimeRangeQuery
-func (trq *TimeRangeQuery) Copy() *TimeRangeQuery {
-	t2 := &TimeRangeQuery{
+// Clone returns an exact copy of a TimeRangeQuery
+func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
+	t := &TimeRangeQuery{
 		Statement:          trq.Statement,
 		Step:               trq.Step,
 		Extent:             Extent{Start: trq.Extent.Start, End: trq.Extent.End},
 		IsOffset:           trq.IsOffset,
 		TimestampFieldName: trq.TimestampFieldName,
+		FastForwardDisable: trq.FastForwardDisable,
 	}
-	return t2
+
+	if trq.TemplateURL != nil {
+		t.TemplateURL = urls.CloneURL(trq.TemplateURL)
+	}
+
+	return t
 }
 
 // NormalizeExtent adjusts the Start and End of a TimeRangeQuery's Extent to align against normalized boundaries.
