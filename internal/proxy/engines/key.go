@@ -24,45 +24,50 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
-	"github.com/Comcast/trickster/internal/proxy/model"
-	"github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/util/md5"
 )
 
 var methodsWithBody = map[string]bool{http.MethodPut: true, http.MethodPost: true, http.MethodPatch: true}
 
 // DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
-func DeriveCacheKey(r *model.Request, apc *config.PathConfig, extra string) string {
+func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) string {
 
-	pc := context.PathConfig(r.ClientRequest.Context())
-	if apc != nil {
-		pc = apc
-	}
+	rsc := request.GetResources(pr.Request)
+	pc := rsc.PathConfig
+
 	if pc == nil {
-		return md5.Checksum(r.URL.Path + extra)
+		return md5.Checksum(pr.URL.Path + extra)
 	}
 
 	var params url.Values
-	if r.TemplateURL != nil {
-		params = r.TemplateURL.Query()
-	} else {
+	r := pr.Request
+
+	if pr.upstreamRequest != nil {
+		r = pr.upstreamRequest
+	}
+
+	if templateURL != nil {
+		params = templateURL.Query()
+	} else if r.URL != nil {
 		params = r.URL.Query()
+	} else {
+		params = pr.URL.Query()
 	}
 
 	if pc.KeyHasher != nil && len(pc.KeyHasher) == 1 {
-		return pc.KeyHasher[0](r.URL.Path, params, r.Headers, r.ClientRequest.Body, extra)
+		return pc.KeyHasher[0](pr.URL.Path, params, pr.Header, pr.Body, extra)
 	}
 
 	vals := make([]string, 0, (len(pc.CacheKeyParams) + len(pc.CacheKeyHeaders) + len(pc.CacheKeyFormFields)*2))
 
-	if v := r.Headers.Get(headers.NameAuthorization); v != "" {
+	if v := pr.Header.Get(headers.NameAuthorization); v != "" {
 		vals = append(vals, fmt.Sprintf("%s.%s.", headers.NameAuthorization, v))
 	}
 
 	// Append the http method to the slice for creating the derived cache key
-	vals = append(vals, fmt.Sprintf("%s.%s.", "method", r.HTTPMethod))
+	vals = append(vals, fmt.Sprintf("%s.%s.", "method", pr.Method))
 
 	if len(pc.CacheKeyParams) == 1 && pc.CacheKeyParams[0] == "*" {
 		for p := range params {
@@ -77,20 +82,20 @@ func DeriveCacheKey(r *model.Request, apc *config.PathConfig, extra string) stri
 	}
 
 	for _, p := range pc.CacheKeyHeaders {
-		if v := r.Headers.Get(p); v != "" {
+		if v := pr.Header.Get(p); v != "" {
 			vals = append(vals, fmt.Sprintf("%s.%s.", p, v))
 		}
 	}
 
-	if _, ok := methodsWithBody[r.ClientRequest.Method]; ok && len(pc.CacheKeyFormFields) > 0 {
-		ct := r.ClientRequest.Header.Get(headers.NameContentType)
-		if ct == headers.ValueXFormUrlEncoded || strings.HasPrefix(ct, headers.ValueMultipartFormData) || ct == headers.ValueApplicationJSON {
-			b, _ := ioutil.ReadAll(r.ClientRequest.Body)
-			r.ClientRequest.Body = ioutil.NopCloser(bytes.NewReader(b))
-			if ct == headers.ValueXFormUrlEncoded {
-				r.ClientRequest.ParseForm()
+	if _, ok := methodsWithBody[pr.Method]; ok && pc.CacheKeyFormFields != nil && len(pc.CacheKeyFormFields) > 0 {
+		ct := pr.Header.Get(headers.NameContentType)
+		if ct == headers.ValueXFormURLEncoded || strings.HasPrefix(ct, headers.ValueMultipartFormData) || ct == headers.ValueApplicationJSON {
+			b, _ := ioutil.ReadAll(pr.Body)
+			pr.Body = ioutil.NopCloser(bytes.NewReader(b))
+			if ct == headers.ValueXFormURLEncoded {
+				pr.ParseForm()
 			} else if strings.HasPrefix(ct, headers.ValueMultipartFormData) {
-				r.ClientRequest.ParseMultipartForm(1024 * 1024)
+				pr.ParseMultipartForm(1024 * 1024)
 			} else if ct == headers.ValueApplicationJSON {
 				var document map[string]interface{}
 				err := json.Unmarshal(b, &document)
@@ -98,20 +103,20 @@ func DeriveCacheKey(r *model.Request, apc *config.PathConfig, extra string) stri
 					for _, f := range pc.CacheKeyFormFields {
 						v, err := deepSearch(document, f)
 						if err == nil {
-							if r.ClientRequest.Form == nil {
-								r.ClientRequest.Form = url.Values{}
+							if pr.Form == nil {
+								pr.Form = url.Values{}
 							}
-							r.ClientRequest.Form.Set(f, v)
+							pr.Form.Set(f, v)
 						}
 					}
 				}
 			}
-			r.ClientRequest.Body = ioutil.NopCloser(bytes.NewReader(b))
+			pr.Body = ioutil.NopCloser(bytes.NewReader(b))
 		}
 
 		for _, f := range pc.CacheKeyFormFields {
-			if _, ok := r.ClientRequest.Form[f]; ok {
-				if v := r.ClientRequest.FormValue(f); v != "" {
+			if _, ok := pr.Form[f]; ok {
+				if v := pr.FormValue(f); v != "" {
 					vals = append(vals, fmt.Sprintf("%s.%s.", f, v))
 				}
 			}
@@ -119,7 +124,7 @@ func DeriveCacheKey(r *model.Request, apc *config.PathConfig, extra string) stri
 	}
 
 	sort.Strings(vals)
-	return md5.Checksum(r.URL.Path + strings.Join(vals, "") + extra)
+	return md5.Checksum(pr.URL.Path + "." + strings.Join(vals, "") + extra)
 }
 
 func deepSearch(document map[string]interface{}, key string) (string, error) {

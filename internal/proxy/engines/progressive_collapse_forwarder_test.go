@@ -30,7 +30,7 @@ func TestPCFReadWriteSingle(t *testing.T) {
 	l := len(testString)
 	resp := &http.Response{}
 
-	pcf := NewPCF(resp, l)
+	pcf := NewPCF(resp, int64(l))
 	var n int64
 	go func() {
 		n, _ = io.Copy(pcf, r)
@@ -55,7 +55,7 @@ func TestPCFReadWriteMultiple(t *testing.T) {
 	l := len(testString)
 	resp := &http.Response{}
 
-	pcf := NewPCF(resp, l)
+	pcf := NewPCF(resp, int64(l))
 	var n int64
 	go func() {
 		n, _ = io.Copy(pcf, r)
@@ -83,7 +83,7 @@ func TestPCFReadWriteGetBody(t *testing.T) {
 	l := len(testString)
 	resp := &http.Response{}
 
-	pcf := NewPCF(resp, l)
+	pcf := NewPCF(resp, int64(l))
 	var n int64
 
 	_, err := pcf.GetBody()
@@ -121,7 +121,7 @@ func TestPCFReadWriteClose(t *testing.T) {
 	l := len(testString)
 	resp := &http.Response{}
 
-	pcf := NewPCF(resp, l)
+	pcf := NewPCF(resp, int64(l))
 	buf := make([]byte, 2)
 	n, _ := r.Read(buf)
 	pcf.Write(buf)
@@ -143,7 +143,7 @@ func TestPCFIndexReadTooLarge(t *testing.T) {
 	l := len(testString)
 	resp := &http.Response{}
 
-	pcf := NewPCF(resp, l)
+	pcf := NewPCF(resp, int64(l))
 	buf := make([]byte, 2)
 	r.Read(buf)
 	pcf.Write(buf)
@@ -162,7 +162,7 @@ func TestPCFReadLarge(t *testing.T) {
 	l := r.Len()
 	resp := &http.Response{}
 
-	pcf := NewPCF(resp, l)
+	pcf := NewPCF(resp, int64(l))
 	var n int64
 	go func() {
 		n, _ = io.Copy(pcf, r)
@@ -197,7 +197,7 @@ func BenchmarkPCFWrite(b *testing.B) {
 	l := b.N * 32 * 1024
 	resp := &http.Response{}
 
-	pcf := NewPCF(resp, l)
+	pcf := NewPCF(resp, int64(l))
 	b.SetBytes(32 * 1024)
 
 	b.ResetTimer()
@@ -218,7 +218,7 @@ func BenchmarkPCFRead(b *testing.B) {
 	var readIndex uint64
 	var err error
 
-	pcf := NewPCF(resp, l)
+	pcf := NewPCF(resp, int64(l))
 	b.SetBytes(32 * 1024)
 	for i := 0; i < b.N; i++ {
 		pcf.Write(testBytes)
@@ -247,7 +247,7 @@ func BenchmarkPCFWriteRead(b *testing.B) {
 	var readIndex uint64
 	var err error
 
-	pcf := NewPCF(resp, l)
+	pcf := NewPCF(resp, int64(l))
 	b.SetBytes(32 * 1024)
 
 	b.ResetTimer()

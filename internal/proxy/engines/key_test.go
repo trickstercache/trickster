@@ -15,6 +15,7 @@ package engines
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -24,10 +25,9 @@ import (
 	"testing"
 
 	"github.com/Comcast/trickster/internal/config"
+	ct "github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/headers"
-	"github.com/Comcast/trickster/internal/proxy/model"
-	"github.com/Comcast/trickster/internal/timeseries"
-	ct "github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/proxy/request"
 )
 
 const testMultipartBoundary = `; boundary=------------------------d0509edbe55938c0`
@@ -73,32 +73,32 @@ func TestDeepSearch(t *testing.T) {
 		t.Errorf("expected %s got %s", "movies", val)
 	}
 
-	val, err = deepSearch(document, "")
+	_, err = deepSearch(document, "")
 	if err == nil {
 		t.Errorf("expected error: %s", "could not find key")
 	}
 
-	val, err = deepSearch(document, "missingKey")
+	_, err = deepSearch(document, "missingKey")
 	if err == nil {
 		t.Errorf("expected error: %s", "could not find key")
 	}
 
-	val, err = deepSearch(document, "query/filter/nottamap")
+	_, err = deepSearch(document, "query/filter/nottamap")
 	if err == nil {
 		t.Errorf("expected error: %s", "could not find key")
 	}
 
-	val, err = deepSearch(document, "query/options/batchSize")
+	_, err = deepSearch(document, "query/options/batchSize")
 	if err != nil {
 		t.Error(err)
 	}
 
-	val, err = deepSearch(document, "query/options/booleanHere")
+	_, err = deepSearch(document, "query/options/booleanHere")
 	if err != nil {
 		t.Error(err)
 	}
 
-	val, err = deepSearch(document, "query/options/someArray")
+	_, err = deepSearch(document, "query/options/someArray")
 	if err == nil {
 		t.Errorf("expected error: %s", "could not find key")
 	}
@@ -119,61 +119,59 @@ func TestDeriveCacheKey(t *testing.T) {
 		},
 	}
 
-	tr := httptest.NewRequest("GET", "http://127.0.0.1", nil)
-	tr = tr.WithContext(ct.WithConfigs(tr.Context(), cfg, nil, cfg.Paths["root"]))
+	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
+	tr = tr.WithContext(ct.WithResources(context.Background(), request.NewResources(cfg, cfg.Paths["root"], nil, nil, nil)))
 
-	u := &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
-	r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
-	key := DeriveCacheKey(r, nil, "extra")
+	pr := newProxyRequest(tr, nil)
+	key := pr.DeriveCacheKey(nil, "extra")
 
-	if key != "b82c27cea3f89ae33174565990e32ccb" {
-		t.Errorf("expected %s got %s", "b82c27cea3f89ae33174565990e32ccb", key)
+	if key != "52dc11456c84506d3444e53ee4c99777" {
+		t.Errorf("expected %s got %s", "52dc11456c84506d3444e53ee4c99777", key)
 	}
 
 	cfg.Paths["root"].CacheKeyParams = []string{"*"}
 
-	u = &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
-	r = &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
-	key = DeriveCacheKey(r, nil, "extra")
-	if key != "d22b4d54f7dce72faebd02a1c2cd4549" {
-		t.Errorf("expected %s got %s", "d22b4d54f7dce72faebd02a1c2cd4549", key)
+	pr = newProxyRequest(tr, nil)
+	key = pr.DeriveCacheKey(pr.URL, "extra")
+	if key != "407aba34f02c87f6898a6d80b01f38a4" {
+		t.Errorf("expected %s got %s", "407aba34f02c87f6898a6d80b01f38a4", key)
 	}
 
-	const expected = "3ee2473c4ea66b70680bd62616104c0a"
+	const expected = "cb84ad010abb4d0f864470540a46f137"
 
-	tr = httptest.NewRequest(http.MethodPost, "http://127.0.0.1", bytes.NewReader([]byte("field1=value1")))
-	tr.Header.Set(headers.NameContentType, headers.ValueXFormUrlEncoded)
-	tr = tr.WithContext(ct.WithConfigs(tr.Context(), cfg, nil, cfg.Paths["root"]))
-	r.ClientRequest = tr
-	key = DeriveCacheKey(r, nil, "extra")
+	tr = httptest.NewRequest(http.MethodPost, "http://127.0.0.1/", bytes.NewReader([]byte("field1=value1")))
+	tr = tr.WithContext(ct.WithResources(context.Background(), request.NewResources(cfg, cfg.Paths["root"], nil, nil, nil)))
+	tr.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
+	pr = newProxyRequest(tr, nil)
+	key = pr.DeriveCacheKey(nil, "extra")
 	if key != expected {
 		t.Errorf("expected %s got %s", expected, key)
 	}
 
-	tr = httptest.NewRequest(http.MethodPut, "http://127.0.0.1", bytes.NewReader([]byte(testMultipartBody)))
+	tr = httptest.NewRequest(http.MethodPut, "http://127.0.0.1/", bytes.NewReader([]byte(testMultipartBody)))
+	tr = tr.WithContext(ct.WithResources(context.Background(), request.NewResources(cfg, cfg.Paths["root"], nil, nil, nil)))
 	tr.Header.Set(headers.NameContentType, headers.ValueMultipartFormData+testMultipartBoundary)
 	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testMultipartBody)))
-	tr = tr.WithContext(ct.WithConfigs(tr.Context(), cfg, nil, cfg.Paths["root"]))
-	r.ClientRequest = tr
-	key = DeriveCacheKey(r, nil, "extra")
-	if key != expected {
-		t.Errorf("expected %s got %s", expected, key)
+	pr = newProxyRequest(tr, nil)
+	key = pr.DeriveCacheKey(nil, "extra")
+	if key != "4766201eee9ef1916f57309deae22f90" {
+		t.Errorf("expected %s got %s", "4766201eee9ef1916f57309deae22f90", key)
 	}
 
-	tr = httptest.NewRequest(http.MethodPost, "http://127.0.0.1", bytes.NewReader([]byte(testJSONDocument)))
+	tr = httptest.NewRequest(http.MethodPost, "http://127.0.0.1/", bytes.NewReader([]byte(testJSONDocument)))
+	tr = tr.WithContext(ct.WithResources(context.Background(), request.NewResources(cfg, cfg.Paths["root"], nil, nil, nil)))
 	tr.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
 	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testJSONDocument)))
-	tr = tr.WithContext(ct.WithConfigs(tr.Context(), cfg, nil, cfg.Paths["root"]))
-	r.ClientRequest = tr
-	key = DeriveCacheKey(r, nil, "extra")
+	pr = newProxyRequest(tr, nil)
+	pr.upstreamRequest.URL = nil
+	key = pr.DeriveCacheKey(nil, "extra")
 	if key != expected {
 		t.Errorf("expected %s got %s", expected, key)
 	}
 
 	// Test Custom KeyHasher Integration
 	rpath.KeyHasher = []config.KeyHasherFunc{exampleKeyHasher}
-
-	key = DeriveCacheKey(r, nil, "extra")
+	key = pr.DeriveCacheKey(nil, "extra")
 	if key != "test-key" {
 		t.Errorf("expected %s got %s", "test-key", key)
 	}
@@ -186,40 +184,44 @@ func exampleKeyHasher(path string, params url.Values, headers http.Header, body 
 
 func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 
-	client := &PromTestClient{
+	client := &TestClient{
 		config: &config.OriginConfig{
 			Paths: map[string]*config.PathConfig{
-				"root": &config.PathConfig{
+				"root": {
 					Path:            "/",
 					CacheKeyParams:  []string{"query", "step", "time"},
-					CacheKeyHeaders: []string{headers.NameAuthorization},
+					CacheKeyHeaders: []string{"X-Test-Header"},
 				},
 			},
 		},
 	}
 
-	tr := httptest.NewRequest("GET", "http://127.0.0.1", nil)
-	tr = tr.WithContext(ct.WithConfigs(tr.Context(), client.Configuration(), nil, client.Configuration().Paths["root"]))
+	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
+	tr = tr.WithContext(ct.WithResources(context.Background(),
+		request.NewResources(client.Configuration(), client.Configuration().Paths["root"], nil, nil, nil)))
+
 	tr.Header.Add("Authorization", "test")
+	tr.Header.Add("X-Test-Header", "test2")
 
-	u := &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
-	r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
-	r.Headers = tr.Header
+	pr := newProxyRequest(tr, nil)
 
-	key := DeriveCacheKey(r, nil, "extra")
+	//r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
+	//r.Headers = tr.Header
 
-	if key != "e2fc09c04a3281ff7d858f546068ec9e" {
-		t.Errorf("expected %s got %s", "e2fc09c04a3281ff7d858f546068ec9e", key)
+	key := pr.DeriveCacheKey(nil, "extra")
+
+	if key != "60257fa6b18d6072b90a294269a8e6e1" {
+		t.Errorf("expected %s got %s", "60257fa6b18d6072b90a294269a8e6e1", key)
 	}
 
 }
 
 func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
 
-	client := &PromTestClient{
+	client := &TestClient{
 		config: &config.OriginConfig{
 			Paths: map[string]*config.PathConfig{
-				"root": &config.PathConfig{
+				"root": {
 					Path:            "/",
 					CacheKeyParams:  []string{"query", "step", "time"},
 					CacheKeyHeaders: []string{},
@@ -228,12 +230,12 @@ func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
 		},
 	}
 
-	tr := httptest.NewRequest("GET", "http://127.0.0.1", nil)
-	tr = tr.WithContext(ct.WithConfigs(tr.Context(), client.Configuration(), nil, nil))
+	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
+	tr = tr.WithContext(ct.WithResources(context.Background(),
+		request.NewResources(client.Configuration(), nil, nil, nil, nil)))
 
-	u := &url.URL{Path: "/", RawQuery: "query=12345&start=0&end=0&step=300&time=0"}
-	r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
-	key := DeriveCacheKey(r, nil, "extra")
+	pr := newProxyRequest(tr, nil)
+	key := pr.DeriveCacheKey(nil, "extra")
 
 	if key != "f53b04ce5c434a7357804ae15a64ee6c" {
 		t.Errorf("expected %s got %s", "f53b04ce5c434a7357804ae15a64ee6c", key)

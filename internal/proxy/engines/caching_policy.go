@@ -14,20 +14,128 @@
 package engines
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/proxy/headers"
-	"github.com/Comcast/trickster/internal/proxy/model"
 )
+
+//go:generate msgp
+
+// CachingPolicy defines the attributes for determining the cachability of an HTTP object
+type CachingPolicy struct {
+	IsFresh           bool      `msg:"is_fresh"`
+	NoCache           bool      `msg:"nocache"`
+	NoTransform       bool      `msg:"notransform"`
+	FreshnessLifetime int       `msg:"freshness_lifetime"`
+	CanRevalidate     bool      `msg:"can_revalidate"`
+	MustRevalidate    bool      `msg:"must_revalidate"`
+	LastModified      time.Time `msg:"last_modified"`
+	Expires           time.Time `msg:"expires"`
+	Date              time.Time `msg:"date"`
+	LocalDate         time.Time `msg:"local_date"`
+	ETag              string    `msg:"etag"`
+
+	IsNegativeCache bool `msg:"is_negative_cache"`
+
+	IfNoneMatchValue      string    `msg:"-"`
+	IfModifiedSinceTime   time.Time `msg:"-"`
+	IfUnmodifiedSinceTime time.Time `msg:"-"`
+
+	IsClientConditional  bool `msg:"-"`
+	IsClientFresh        bool `msg:"-"`
+	HasIfModifiedSince   bool `msg:"-"`
+	HasIfUnmodifiedSince bool `msg:"-"`
+	HasIfNoneMatch       bool `msg:"-"`
+
+	IfNoneMatchResult bool `msg:"-"`
+}
+
+// Clone returns an exact copy of the Caching Policy
+func (cp *CachingPolicy) Clone() *CachingPolicy {
+	return &CachingPolicy{
+		IsFresh:               cp.IsFresh,
+		NoCache:               cp.NoCache,
+		NoTransform:           cp.NoTransform,
+		FreshnessLifetime:     cp.FreshnessLifetime,
+		CanRevalidate:         cp.CanRevalidate,
+		MustRevalidate:        cp.MustRevalidate,
+		LastModified:          cp.LastModified,
+		Expires:               cp.Expires,
+		Date:                  cp.Date,
+		LocalDate:             cp.LocalDate,
+		ETag:                  cp.ETag,
+		IsNegativeCache:       cp.IsNegativeCache,
+		IfNoneMatchValue:      cp.IfNoneMatchValue,
+		IfModifiedSinceTime:   cp.IfModifiedSinceTime,
+		IfUnmodifiedSinceTime: cp.IfUnmodifiedSinceTime,
+		IsClientConditional:   cp.IsClientConditional,
+		IsClientFresh:         cp.IsClientFresh,
+		HasIfModifiedSince:    cp.HasIfModifiedSince,
+		HasIfUnmodifiedSince:  cp.HasIfUnmodifiedSince,
+		HasIfNoneMatch:        cp.HasIfNoneMatch,
+		IfNoneMatchResult:     cp.IfNoneMatchResult,
+	}
+}
+
+// Merge merges the source CachingPolicy into the subject CachingPolicy
+func (cp *CachingPolicy) Merge(src *CachingPolicy) {
+
+	if src == nil {
+		return
+	}
+
+	cp.NoCache = cp.NoCache || src.NoCache
+	cp.NoTransform = cp.NoTransform || src.NoTransform
+
+	cp.IsClientConditional = cp.IsClientConditional || src.IsClientConditional
+	cp.IsClientFresh = cp.IsClientFresh || src.IsClientFresh
+	cp.IsNegativeCache = cp.IsNegativeCache || src.IsNegativeCache
+
+	cp.IsFresh = src.IsFresh
+	cp.FreshnessLifetime = src.FreshnessLifetime
+	cp.CanRevalidate = src.CanRevalidate
+	cp.MustRevalidate = src.MustRevalidate
+	cp.LastModified = src.LastModified
+	cp.Expires = src.Expires
+	cp.Date = src.Date
+	cp.LocalDate = src.LocalDate
+	cp.ETag = src.ETag
+
+	// request policies (e.g., IfModifiedSince) are intentionally omitted,
+	// assuming a response policy is always merged into a request policy
+
+}
+
+// TTL returns a TTL based on the subject caching policy and the provided multiplier and max values
+func (cp *CachingPolicy) TTL(multiplier float64, max time.Duration) time.Duration {
+	var ttl time.Duration = time.Duration(cp.FreshnessLifetime) * time.Second
+	if cp.CanRevalidate {
+		ttl *= time.Duration(multiplier)
+	}
+	if ttl > max {
+		ttl = max
+	}
+	return ttl
+}
+
+func (cp *CachingPolicy) String() string {
+	return fmt.Sprintf(`{ "is_fresh":%t, "no_cache":%t, "no_transform":%t, "freshness_lifetime":%d, "can_revalidate":%t, "must_revalidate":%t,`+
+		` "last_modified":%d, "expires":%d, "date":%d, "local_date":%d, "etag":"%s", "if_none_match":"%s"`+
+		` "if_modified_since":%d, "if_unmodified_since":%d, "is_negative_cache":%t }`,
+		cp.IsFresh, cp.NoCache, cp.NoTransform, cp.FreshnessLifetime, cp.CanRevalidate, cp.MustRevalidate, cp.LastModified.Unix(), cp.Expires.Unix(), cp.Date.Unix(), cp.LocalDate.Unix(),
+		cp.ETag, cp.IfNoneMatchValue, cp.IfModifiedSinceTime.Unix(), cp.IfUnmodifiedSinceTime.Unix(), cp.IsNegativeCache)
+}
 
 // GetResponseCachingPolicy examines HTTP response headers for caching headers
 // a returns a CachingPolicy reference
-func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h http.Header) *model.CachingPolicy {
+func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h http.Header) *CachingPolicy {
 
-	cp := &model.CachingPolicy{LocalDate: time.Now()}
+	cp := &CachingPolicy{LocalDate: time.Now()}
 
 	if d, ok := negativeCache[code]; ok {
 		cp.FreshnessLifetime = int(d.Seconds())
@@ -36,24 +144,17 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 		return cp
 	}
 
-	// make a lowercase copy of the headers
-	// to allow for quick map lookups on both http/1.x and http/2
-	lch := make(http.Header)
-	for k, v := range h {
-		lch[strings.ToLower(k)] = v
-	}
-
 	// Do not cache content that includes set-cookie header
 	// Trickster can use PathConfig rules to strip set-cookie if cachablility is needed
-	if _, ok := lch["set-cookie"]; ok {
+	if v := h.Get(headers.NameSetCookie); v != "" {
 		cp.NoCache = true
 		cp.FreshnessLifetime = -1
 		return cp
 	}
 
 	// Cache-Control has first precedence
-	if v, ok := lch["cache-control"]; ok {
-		parseCacheControlDirectives(strings.Join(v, ","), cp)
+	if v := h.Get(headers.NameCacheControl); v != "" {
+		cp.parseCacheControlDirectives(v)
 	}
 
 	if cp.NoCache {
@@ -61,9 +162,12 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 		return cp
 	}
 
-	_, hasLastModified := lch["last-modified"]
-	exp, hasExpires := lch["expires"]
-	_, hasETag := lch["etag"]
+	lastModifiedHeader := h.Get(headers.NameLastModified)
+	hasLastModified := lastModifiedHeader != ""
+	expiresHeader := h.Get(headers.NameExpires)
+	hasExpires := expiresHeader != ""
+	eTagHeader := h.Get(headers.NameETag)
+	hasETag := eTagHeader != ""
 
 	if !hasLastModified && !hasExpires && !hasETag && cp.FreshnessLifetime == 0 {
 		cp.NoCache = true
@@ -72,8 +176,8 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 	}
 
 	// Get the date header or, if it is not found or parsed, set it
-	if v, ok := lch["date"]; ok {
-		if date, err := time.Parse(time.RFC1123, strings.Join(v, "")); err != nil {
+	if v := h.Get(headers.NameDate); v != "" {
+		if date, err := time.Parse(time.RFC1123, v); err != nil {
 			cp.Date = cp.LocalDate
 			h.Set(headers.NameDate, cp.Date.Format(time.RFC1123))
 		} else {
@@ -88,7 +192,6 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 	if cp.FreshnessLifetime == 0 && !cp.MustRevalidate {
 		// if there is an Expires header, respect it
 		if hasExpires {
-			expiresHeader := strings.Join(exp, "")
 			expires, err := time.Parse(time.RFC1123, expiresHeader)
 			if err == nil {
 				cp.Expires = expires
@@ -113,12 +216,11 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 	cp.CanRevalidate = true
 
 	if hasETag {
-		cp.ETag = strings.Join(lch["etag"], "")
+		cp.ETag = eTagHeader
 	}
 
-	if v, ok := lch["last-modified"]; ok {
-		mnHeader := strings.Join(v, "")
-		lm, err := time.Parse(time.RFC1123, mnHeader)
+	if hasLastModified {
+		lm, err := time.Parse(time.RFC1123, lastModifiedHeader)
 		if err != nil {
 			cp.CanRevalidate = false
 			cp.FreshnessLifetime = -1
@@ -149,7 +251,7 @@ var supportedCCD = map[string]bool{
 	headers.ValueProxyRevalidate: false,
 }
 
-func parseCacheControlDirectives(directives string, cp *model.CachingPolicy) {
+func (cp *CachingPolicy) parseCacheControlDirectives(directives string) {
 	dl := strings.Split(strings.Replace(strings.ToLower(directives), " ", "", -1), ",")
 	var noCache bool
 	var hasSharedMaxAge bool
@@ -195,52 +297,108 @@ func parseCacheControlDirectives(directives string, cp *model.CachingPolicy) {
 }
 
 func hasPragmaNoCache(h http.Header) bool {
-	if v, ok := h[headers.NamePragma]; ok {
-		return strings.ToLower(strings.Join(v, ",")) == headers.ValueNoCache
+	if v := h.Get(headers.NamePragma); v != "" {
+		return v == headers.ValueNoCache
 	}
 	return false
 }
 
 // GetRequestCachingPolicy examines HTTP request headers for caching headers
 // and true if the corresponding response is OK to cache
-func GetRequestCachingPolicy(h http.Header) *model.CachingPolicy {
-	cp := &model.CachingPolicy{LocalDate: time.Now()}
-	// make a lowercase copy of the headers
-	// to allow for quick map lookups on both http/1.x and http/2
-	lch := make(http.Header)
-	for k, v := range h {
-		lch[strings.ToLower(k)] = v
-	}
-	if hasPragmaNoCache(lch) {
+func GetRequestCachingPolicy(h http.Header) *CachingPolicy {
+	cp := &CachingPolicy{LocalDate: time.Now()}
+
+	if hasPragmaNoCache(h) {
 		cp.NoCache = true
 		return cp
 	}
-	if v, ok := lch["cache-control"]; ok {
-		parseCacheControlDirectives(strings.Join(v, ","), cp)
+
+	// Cache-Control has first precedence
+	if v := h.Get(headers.NameCacheControl); v != "" {
+		cp.parseCacheControlDirectives(v)
 		if cp.NoCache {
 			return cp
 		}
 	}
 
-	if v, ok := lch["if-modified-since"]; ok {
-		if date, err := time.Parse(time.RFC1123, strings.Join(v, "")); err == nil {
+	if v := h.Get(headers.NameIfModifiedSince); v != "" {
+		if date, err := time.Parse(time.RFC1123, v); err == nil {
 			cp.IfModifiedSinceTime = date
 		}
 	}
 
-	if v, ok := lch["if-unmodified-since"]; ok {
-		if date, err := time.Parse(time.RFC1123, strings.Join(v, "")); err == nil {
+	if v := h.Get(headers.NameIfUnmodifiedSince); v != "" {
+		if date, err := time.Parse(time.RFC1123, v); err == nil {
 			cp.IfUnmodifiedSinceTime = date
 		}
 	}
 
-	if v, ok := lch["if-none-match"]; ok {
-		cp.IfNoneMatchValue = strings.Join(v, "")
-	}
-
-	if v, ok := lch["if-match"]; ok {
-		cp.IfMatchValue = strings.Join(v, "")
+	if v := h.Get(headers.NameIfNoneMatch); v != "" {
+		cp.IfNoneMatchValue = v
 	}
 
 	return cp
+}
+
+// ResolveClientConditionals ensures any client conditionals are handled before
+// responding to the client request
+func (cp *CachingPolicy) ResolveClientConditionals(ls status.LookupStatus) {
+
+	cp.IsClientFresh = false
+	if !cp.IsClientConditional {
+		return
+	}
+
+	isClientFresh := true
+	if cp.HasIfNoneMatch {
+		cp.IfNoneMatchResult = CheckIfNoneMatch(cp.ETag, cp.IfNoneMatchValue, ls)
+		isClientFresh = isClientFresh && !cp.IfNoneMatchResult
+	}
+	if cp.HasIfModifiedSince {
+		isClientFresh = isClientFresh && !cp.LastModified.After(cp.IfModifiedSinceTime)
+	}
+	if cp.HasIfUnmodifiedSince {
+		isClientFresh = isClientFresh && cp.LastModified.After(cp.IfUnmodifiedSinceTime)
+	}
+	cp.IsClientFresh = isClientFresh
+}
+
+// ParseClientConditionals inspects the client http request to determine if it includes any conditions
+func (cp *CachingPolicy) ParseClientConditionals() {
+	cp.HasIfNoneMatch = cp.IfNoneMatchValue != ""
+	cp.HasIfModifiedSince = !cp.IfModifiedSinceTime.IsZero()
+	cp.HasIfUnmodifiedSince = !cp.IfUnmodifiedSinceTime.IsZero()
+	cp.IsClientConditional = cp.HasIfNoneMatch || cp.HasIfModifiedSince || cp.HasIfUnmodifiedSince
+}
+
+// CheckIfNoneMatch determines if the provided match value satisfies an "If-None-Match"
+// condition against the cached object. As Trickster is a cache, matching is always weak.
+func CheckIfNoneMatch(etag string, headerValue string, ls status.LookupStatus) bool {
+
+	if etag == "" || headerValue == "" {
+		return etag == headerValue
+	}
+
+	if headerValue == "*" {
+		if ls == status.LookupStatusHit || ls == status.LookupStatusRevalidated {
+			return false
+		}
+		return true
+	}
+
+	parts := strings.Split(headerValue, ",")
+	for _, p := range parts {
+		p = strings.Trim(p, " ")
+		if len(p) > 3 && p[1:2] == "/" {
+			p = p[2:]
+		}
+		if len(p) > 1 && strings.HasPrefix(p, `"`) && strings.HasSuffix(p, `"`) {
+			p = p[1 : len(p)-1]
+		}
+		if p == etag {
+			return false
+		}
+	}
+
+	return true
 }
