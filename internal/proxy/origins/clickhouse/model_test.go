@@ -200,11 +200,11 @@ func TestRSPMarshalJSON(t *testing.T) {
 	rsp1 := &Response{}
 	json.Unmarshal(bytes, rsp1)
 
-	if rsp.ExtentList[0].Start != rsp1.ExtentList[0].Start {
+	if rsp.ExtentList[0].Start.Unix() != rsp1.ExtentList[0].Start.Unix() {
 		t.Errorf("expected %d got %d", rsp.ExtentList[0].Start.Unix(), rsp.ExtentList[0].Start.Unix())
 	}
 
-	if rsp.ExtentList[0].End != rsp1.ExtentList[0].End {
+	if rsp.ExtentList[0].End.Unix() != rsp1.ExtentList[0].End.Unix() {
 		t.Errorf("expected %d got %d", rsp.ExtentList[0].End.Unix(), rsp.ExtentList[0].End.Unix())
 	}
 
