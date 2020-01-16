@@ -19,6 +19,7 @@ import (
 	"github.com/go-redis/redis"
 
 	"github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 )
@@ -33,11 +34,6 @@ type Cache struct {
 
 	client redis.Cmdable
 	closer func() error
-}
-
-type genericRedisClient interface {
-	Ping() *redis.StatusCmd
-	Set(string, interface{}, time.Duration) *redis.StatusCmd
 }
 
 // Configuration returns the Configuration for the Cache object
@@ -87,17 +83,25 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 
 // Retrieve gets data from the Redis Cache using the provided Key
 // because Redis manages Object Expiration internally, allowExpired is not used.
-func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
+func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error) {
 	res, err := c.client.Get(cacheKey).Result()
-	if err != nil {
+
+	if err == nil {
+		data := []byte(res)
+		log.Debug("redis cache retrieve", log.Pairs{"key": cacheKey})
+		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
+		return data, status.LookupStatusHit, nil
+	}
+
+	if err == redis.Nil {
 		log.Debug("redis cache miss", log.Pairs{"key": cacheKey})
 		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
-		return []byte{}, err
+		return nil, status.LookupStatusKeyMiss, err
 	}
-	data := []byte(res)
-	log.Debug("redis cache retrieve", log.Pairs{"key": cacheKey})
-	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
-	return data, nil
+
+	log.Debug("redis cache retrieve failed", log.Pairs{"key": cacheKey, "reason": err.Error()})
+	cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	return nil, status.LookupStatusError, err
 }
 
 // Remove removes an object in cache, if present

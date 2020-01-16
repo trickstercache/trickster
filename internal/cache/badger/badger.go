@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/dgraph-io/badger"
@@ -61,7 +62,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 
 // Retrieve gets data from the Badger Cache using the provided Key
 // because Badger manages Object Expiration internally, allowExpired is not used.
-func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
+func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error) {
 	var data []byte
 	err := c.dbh.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(cacheKey))
@@ -73,15 +74,21 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
 
 	})
 
-	if err != nil {
-		log.Debug("badger cache miss", log.Pairs{"key": cacheKey})
-		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
-	} else {
+	if err == nil {
 		log.Debug("badger cache retrieve", log.Pairs{"key": cacheKey})
 		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
+		return data, status.LookupStatusHit, nil
 	}
 
-	return data, err
+	if err == badger.ErrKeyNotFound {
+		log.Debug("badger cache miss", log.Pairs{"key": cacheKey})
+		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+		return nil, status.LookupStatusKeyMiss, err
+	}
+
+	log.Debug("badger cache retrieve failed", log.Pairs{"key": cacheKey, "reason": err.Error()})
+	cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	return data, status.LookupStatusError, err
 }
 
 // Remove removes an object in cache, if present
@@ -121,7 +128,7 @@ func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
 		if err != nil {
 			return nil
 		}
-		data, err = item.ValueCopy(nil)
+		data, _ = item.ValueCopy(nil)
 		return txn.SetEntry(&badger.Entry{Key: []byte(cacheKey), Value: data, ExpiresAt: uint64(time.Now().Add(ttl).Unix())})
 	})
 	log.Debug("badger cache update-ttl", log.Pairs{"key": cacheKey, "ttl": ttl, "success": err == nil})

@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
@@ -109,9 +110,12 @@ func TestBadgerCache_Remove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := bc.Retrieve(cacheKey, false)
+	data, ls, err := bc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
+	}
+	if ls != status.LookupStatusHit {
+		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
 	}
 	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
@@ -120,11 +124,13 @@ func TestBadgerCache_Remove(t *testing.T) {
 	bc.Remove(cacheKey)
 
 	// it should be a cache miss
-	_, err = bc.Retrieve(cacheKey, false)
+	_, ls, err = bc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
-
+	if ls != status.LookupStatusKeyMiss {
+		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
+	}
 }
 
 func TestBadgerCache_BulkRemove(t *testing.T) {
@@ -144,21 +150,28 @@ func TestBadgerCache_BulkRemove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := bc.Retrieve(cacheKey, false)
+	data, ls, err := bc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
 	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
+	if ls != status.LookupStatusHit {
+		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
+	}
 
 	bc.BulkRemove([]string{""}, true)
 	bc.BulkRemove([]string{cacheKey}, true)
 
 	// it should be a cache miss
-	_, err = bc.Retrieve(cacheKey, false)
+	_, ls, err = bc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
+	}
+
+	if ls != status.LookupStatusKeyMiss {
+		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
 	}
 
 }
@@ -174,9 +187,12 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 	defer bc.Close()
 
 	// it should be a cache miss
-	_, err := bc.Retrieve(cacheKey, false)
+	_, ls, err := bc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
+	}
+	if ls != status.LookupStatusKeyMiss {
+		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
 	}
 
 	err = bc.Store(cacheKey, []byte("data"), time.Duration(5)*time.Second)
@@ -185,9 +201,12 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := bc.Retrieve(cacheKey, false)
+	data, ls, err := bc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
+	}
+	if ls != status.LookupStatusHit {
+		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
 	}
 	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
@@ -220,9 +239,12 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 	bc.SetTTL(ck2, time.Duration(3600)*time.Second)
 
 	// it should be a cache miss
-	_, err = bc.Retrieve(ck2, false)
+	_, ls, err = bc.Retrieve(ck2, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", ck2)
+	}
+	if ls != status.LookupStatusKeyMiss {
+		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
 	}
 
 	// it should also not have an expires

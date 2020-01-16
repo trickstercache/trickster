@@ -92,12 +92,11 @@ func newCacheConfig(t *testing.T, cacheType string) *config.CachingConfig {
 	}
 
 	return &config.CachingConfig{
-		CacheType:   cacheType,
-		Compression: true,
-		Redis:       config.RedisCacheConfig{Protocol: "tcp", Endpoint: "redis:6379", Endpoints: []string{"redis:6379"}},
-		Filesystem:  config.FilesystemCacheConfig{CachePath: fd},
-		BBolt:       config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"},
-		Badger:      config.BadgerCacheConfig{Directory: bd, ValueDirectory: bd},
+		CacheType:  cacheType,
+		Redis:      config.RedisCacheConfig{Protocol: "tcp", Endpoint: "redis:6379", Endpoints: []string{"redis:6379"}},
+		Filesystem: config.FilesystemCacheConfig{CachePath: fd},
+		BBolt:      config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"},
+		Badger:     config.BadgerCacheConfig{Directory: bd, ValueDirectory: bd},
 		Index: config.CacheIndexConfig{
 			ReapIntervalSecs:      3,
 			FlushIntervalSecs:     5,

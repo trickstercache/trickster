@@ -19,6 +19,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/index"
+	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/pkg/locks"
@@ -48,35 +49,73 @@ func (c *Cache) Connect() error {
 	return nil
 }
 
-// Store places an object in the cache using the specified key and ttl
-func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
-	return c.store(cacheKey, data, ttl, true)
+// StoreReference stores an object directly to the memory cache without requiring serialization
+func (c *Cache) StoreReference(cacheKey string, data cache.ReferenceObject, ttl time.Duration) error {
+	return c.store(cacheKey, nil, data, ttl, true)
 }
 
-func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateIndex bool) error {
+// Store places an object in the cache using the specified key and ttl
+func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
+	return c.store(cacheKey, data, nil, ttl, true)
+}
+
+func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceObject, ttl time.Duration, updateIndex bool) error {
 
 	locks.Acquire(lockPrefix + cacheKey)
 
-	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
-
-	o1 := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
-	o2 := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
-	log.Debug("memorycache cache store", log.Pairs{"cacheKey": cacheKey, "length": len(data), "ttl": ttl})
-	c.client.Store(cacheKey, o1)
-
-	if updateIndex {
-		c.Index.UpdateObject(o2)
+	var o1, o2 *index.Object
+	var l int
+	isDirect := byteData == nil && refData != nil
+	if byteData != nil {
+		l = len(byteData)
+		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(l))
+		o1 = &index.Object{Key: cacheKey, Value: byteData, Expiration: time.Now().Add(ttl)}
+		o2 = &index.Object{Key: cacheKey, Value: byteData, Expiration: time.Now().Add(ttl)}
+	} else if refData != nil {
+		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "setDirect", "none", 0)
+		o1 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: time.Now().Add(ttl)}
+		o2 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: time.Now().Add(ttl)}
 	}
+
+	go log.Debug("memorycache cache store", log.Pairs{"cacheKey": cacheKey, "length": l, "ttl": ttl, "is_direct": isDirect})
+
+	if o1 != nil && o2 != nil {
+		c.client.Store(cacheKey, o1)
+		if updateIndex {
+			c.Index.UpdateObject(o2)
+		}
+	}
+
 	locks.Release(lockPrefix + cacheKey)
 	return nil
 }
 
-// Retrieve looks for an object in cache and returns it (or an error if not found)
-func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
-	return c.retrieve(cacheKey, allowExpired, true)
+// RetrieveReference looks for an object in cache and returns it (or an error if not found)
+func (c *Cache) RetrieveReference(cacheKey string, allowExpired bool) (interface{}, status.LookupStatus, error) {
+	o, s, err := c.retrieve(cacheKey, allowExpired, true)
+	if err != nil {
+		return nil, s, err
+	}
+	if o != nil {
+		return o.ReferenceValue, s, nil
+	}
+	return nil, s, nil
 }
 
-func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte, error) {
+// Retrieve looks for an object in cache and returns it (or an error if not found)
+func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error) {
+	o, s, err := c.retrieve(cacheKey, allowExpired, true)
+	if err != nil {
+		return nil, s, err
+	}
+	var bytes []byte
+	if o != nil {
+		bytes = o.Value
+	}
+	return bytes, s, nil
+}
+
+func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index.Object, status.LookupStatus, error) {
 
 	locks.Acquire(lockPrefix + cacheKey)
 
@@ -93,13 +132,14 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 			}
 			cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(o.Value)))
 			locks.Release(lockPrefix + cacheKey)
-			return o.Value, nil
+			return o, status.LookupStatusHit, nil
 		}
 		// Cache Object has been expired but not reaped, go ahead and delete it
 		go c.remove(cacheKey, false)
 	}
 	locks.Release(lockPrefix + cacheKey)
-	return cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	_, err := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	return nil, status.LookupStatusKeyMiss, err
 
 }
 

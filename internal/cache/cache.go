@@ -14,24 +14,50 @@
 package cache
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
+
+// ErrKNF represents the error "key not found in cache"
+var ErrKNF = errors.New("key not found in cache")
 
 // Cache is the interface for the supported caching fabrics
 // When making new cache types, Retrieve() must return an error on cache miss
 type Cache interface {
 	Connect() error
 	Store(cacheKey string, data []byte, ttl time.Duration) error
-	Retrieve(cacheKey string, allowExpired bool) ([]byte, error)
+	Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error)
 	SetTTL(cacheKey string, ttl time.Duration)
 	Remove(cacheKey string)
 	BulkRemove(cacheKeys []string, noLock bool)
 	Close() error
 	Configuration() *config.CachingConfig
+}
+
+// MemoryCache is the interface for an in-memory cache
+// This offers an additional method for storing references to bypass serialization
+type MemoryCache interface {
+	Connect() error
+	Store(cacheKey string, data []byte, ttl time.Duration) error
+	Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error)
+	SetTTL(cacheKey string, ttl time.Duration)
+	Remove(cacheKey string)
+	BulkRemove(cacheKeys []string, noLock bool)
+	Close() error
+	Configuration() *config.CachingConfig
+	StoreReference(cacheKey string, data ReferenceObject, ttl time.Duration) error
+	RetrieveReference(cacheKey string, allowExpired bool) (interface{}, status.LookupStatus, error)
+}
+
+// ReferenceObject defines an interface for a cache object posessing the ability to report
+// the approximate comprehensive byte size of its members, to assist with cache size management
+type ReferenceObject interface {
+	Size() int
 }
 
 // ObserveCacheMiss returns a standard Cache Miss response
