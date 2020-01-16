@@ -289,7 +289,7 @@ func TestParseDuration(t *testing.T) {
 	}
 
 	// Test Negative
-	d, err = parseDuration("-1")
+	_, err = parseDuration("-1")
 	if err != nil {
 		t.Error(err)
 	}
