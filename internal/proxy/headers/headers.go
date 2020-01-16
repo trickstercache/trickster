@@ -208,7 +208,9 @@ func String(h http.Header) string {
 	}
 	sb := strings.Builder{}
 	for k, v := range h {
-		sb.WriteString(fmt.Sprintf("%s: %s\n", k, v))
+		if len(v) > 0 {
+			sb.WriteString(fmt.Sprintf("%s: %s\n", k, v[0]))
+		}
 	}
 	// add the header section end new line
 	sb.WriteString("\n")

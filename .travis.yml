@@ -17,4 +17,5 @@ matrix:
     - go get github.com/mattn/goveralls
     script:
     - make style test build
+    - sed -i -e '/^.*_gen\.go:.*$/d' .coverprofile
     - $GOPATH/bin/goveralls  -coverprofile=.coverprofile -service=travis-ci

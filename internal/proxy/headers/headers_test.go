@@ -167,3 +167,21 @@ func TestSetResultsHeaderEmtpy(t *testing.T) {
 		t.Errorf("Expected header length of %d", 0)
 	}
 }
+
+func TestString(t *testing.T) {
+
+	expected := "test: test\n\n"
+	h := http.Header{"test": {"test"}}
+	x := String(h)
+	if x != expected {
+		t.Errorf("expected %s got %s", expected, x)
+	}
+
+	expected = "\n\n"
+	h = http.Header{}
+	x = String(h)
+	if x != expected {
+		t.Errorf("expected %s got %s", expected, x)
+	}
+
+}
