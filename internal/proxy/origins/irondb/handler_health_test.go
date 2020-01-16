@@ -26,8 +26,8 @@ func TestHealthHandler(t *testing.T) {
 
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "irondb", "/health", "debug")
+
 	rsc := request.GetResources(r)
-	rsc.OriginClient = client
 	client.config = rsc.OriginConfig
 	client.webClient = hc
 	client.config.HTTPClient = hc
@@ -35,37 +35,6 @@ func TestHealthHandler(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
-	client.HealthHandler(w, r)
-	resp := w.Result()
-	if resp.StatusCode != 200 {
-		t.Errorf("Expected status: 200 got %d.", resp.StatusCode)
-	}
-
-	client.healthMethod = "-"
-
-	w = httptest.NewRecorder()
-	client.HealthHandler(w, r)
-	resp = w.Result()
-	if resp.StatusCode != 400 {
-		t.Errorf("Expected status: 400 got %d.", resp.StatusCode)
-	}
-}
-
-func TestHealthHandlerCustomPath(t *testing.T) {
-
-	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("../../../../testdata/test.custom_health.conf", client.DefaultPathConfigs, 200, "{}", nil, "irondb", "/health", "debug")
-	defer ts.Close()
-	if err != nil {
-		t.Error(err)
-	}
-
-	rsc := request.GetResources(r)
-	rsc.OriginClient = client
-	client.config = rsc.OriginConfig
-	client.webClient = hc
-	client.config.HTTPClient = hc
 
 	client.HealthHandler(w, r)
 	resp := w.Result()
@@ -82,6 +51,53 @@ func TestHealthHandlerCustomPath(t *testing.T) {
 
 	if string(bodyBytes) != "{}" {
 		t.Errorf("expected '{}' got %s.", bodyBytes)
+	}
+
+	client.healthMethod = "-"
+
+	w = httptest.NewRecorder()
+	client.HealthHandler(w, r)
+	resp = w.Result()
+	if resp.StatusCode != 400 {
+		t.Errorf("Expected status: 400 got %d.", resp.StatusCode)
+	}
+
+}
+
+func TestHealthHandlerCustomPath(t *testing.T) {
+
+	client := &Client{name: "test"}
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "", nil, "irondb", "/health", "debug")
+	defer ts.Close()
+	if err != nil {
+		t.Error(err)
+	}
+
+	rsc := request.GetResources(r)
+	client.config = rsc.OriginConfig
+
+	client.config.HealthCheckUpstreamPath = "-"
+	client.config.HealthCheckVerb = "-"
+	client.config.HealthCheckQuery = "-"
+
+	client.webClient = hc
+	client.config.HTTPClient = hc
+
+	client.HealthHandler(w, r)
+	resp := w.Result()
+
+	// it should return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != "" {
+		t.Errorf("expected '' got %s.", bodyBytes)
 	}
 
 }

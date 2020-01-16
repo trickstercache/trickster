@@ -31,8 +31,8 @@ func TestHealthHandler(t *testing.T) {
 
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
+
 	rsc := request.GetResources(r)
-	rsc.OriginClient = client
 	client.config = rsc.OriginConfig
 	client.webClient = hc
 	client.config.HTTPClient = hc
@@ -72,15 +72,19 @@ func TestHealthHandler(t *testing.T) {
 func TestHealthHandlerCustomPath(t *testing.T) {
 
 	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("../../../../testdata/test.custom_health.conf", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "", nil, "prometheus", "/health", "debug")
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
 	}
 
 	rsc := request.GetResources(r)
-	rsc.OriginClient = client
 	client.config = rsc.OriginConfig
+
+	client.config.HealthCheckUpstreamPath = "-"
+	client.config.HealthCheckVerb = "-"
+	client.config.HealthCheckQuery = "-"
+
 	client.webClient = hc
 	client.config.HTTPClient = hc
 
@@ -97,8 +101,8 @@ func TestHealthHandlerCustomPath(t *testing.T) {
 		t.Error(err)
 	}
 
-	if string(bodyBytes) != "{}" {
-		t.Errorf("expected '{}' got %s.", bodyBytes)
+	if string(bodyBytes) != "" {
+		t.Errorf("expected '' got %s.", bodyBytes)
 	}
 
 }
