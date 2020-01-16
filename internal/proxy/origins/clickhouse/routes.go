@@ -40,7 +40,7 @@ func (c *Client) Handlers() map[string]http.Handler {
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
 func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.PathConfig {
 	paths := map[string]*config.PathConfig{
-		"/": &config.PathConfig{
+		"/": {
 			Path:           "/",
 			HandlerName:    "query",
 			Methods:        []string{http.MethodGet, http.MethodPost},

@@ -85,7 +85,7 @@ func tokenizeQuery(query string, timeParts map[string]string) string {
 	}
 
 	if ts1, ok := timeParts["ts1"]; ok {
-		if strings.Index(query, "("+ts1+")") > -1 {
+		if strings.Contains(query, "("+ts1+")") {
 			m := matching.GetNamedMatches(reTimeClauseAlt, query, nil)
 			if len(m) > 0 {
 				if modifier, ok := m["modifier"]; ok {

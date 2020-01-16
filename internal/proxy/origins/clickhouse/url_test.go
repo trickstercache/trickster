@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -33,16 +32,18 @@ func TestSetExtent(t *testing.T) {
 		fmt.Sprintf("%d", start.Unix()) + "%29+AND+toDateTime%28" + fmt.Sprintf("%d", end.Unix()) + "%29+end"
 
 	client := &Client{}
-	u := &url.URL{}
 	tu := &url.URL{RawQuery: "query=select (intdiv(touint32(myTimeField), 60) * 60) * where myTimeField BETWEEN toDateTime(<$TIMESTAMP1$>) AND toDateTime(<$TIMESTAMP2$>) end"}
-	r := &model.Request{URL: u, TemplateURL: tu, TimeRangeQuery: &timeseries.TimeRangeQuery{TimestampFieldName: "myTimeField"}}
 	e := &timeseries.Extent{Start: start, End: end}
-	client.SetExtent(r, e)
+
+	r, _ := http.NewRequest(http.MethodGet, tu.String(), nil)
+	trq := &timeseries.TimeRangeQuery{TimestampFieldName: "myTimeField", TemplateURL: tu}
+
+	client.SetExtent(r, trq, e)
 	if expected != r.URL.RawQuery {
 		t.Errorf("\nexpected [%s]\ngot      [%s]", expected, r.URL.RawQuery)
 	}
 
-	client.SetExtent(r, nil)
+	client.SetExtent(r, trq, nil)
 	if expected != r.URL.RawQuery {
 		t.Errorf("\nexpected [%s]\ngot      [%s]", expected, r.URL.RawQuery)
 	}

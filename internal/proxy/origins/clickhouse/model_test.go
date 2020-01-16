@@ -14,12 +14,12 @@
 package clickhouse
 
 import (
-	"fmt"
-	"github.com/Comcast/trickster/internal/timeseries"
 	"reflect"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/Comcast/trickster/internal/timeseries"
 )
 
 func TestParts(t *testing.T) {
@@ -99,19 +99,19 @@ var testJSON2 = []byte(`{"meta":[{"name":"t"}],"data":[{"t":"1557766080000","cnt
 
 var testRE1 = &ResultsEnvelope{
 	Meta: []FieldDefinition{
-		FieldDefinition{
+		{
 			Name: "t",
 			Type: "UInt64",
 		},
-		FieldDefinition{
+		{
 			Name: "cnt",
 			Type: "UInt64",
 		},
-		FieldDefinition{
+		{
 			Name: "meta1",
 			Type: "UInt16",
 		},
-		FieldDefinition{
+		{
 			Name: "meta2",
 			Type: "String",
 		},
@@ -120,37 +120,37 @@ var testRE1 = &ResultsEnvelope{
 	SeriesOrder: []string{"1", "2", "3"},
 
 	Data: map[string]*DataSet{
-		"1": &DataSet{
+		"1": {
 			Metric: map[string]interface{}{
 				"meta1": 200,
 				"meta2": "value2",
 			},
 			Points: []Point{
-				Point{
+				{
 					Timestamp: time.Unix(1557766080, 0),
 					Value:     12648509,
 				},
 			},
 		},
-		"2": &DataSet{
+		"2": {
 			Metric: map[string]interface{}{
 				"meta1": 200,
 				"meta2": "value3",
 			},
 			Points: []Point{
-				Point{
+				{
 					Timestamp: time.Unix(1557766080, 0),
 					Value:     10260032,
 				},
 			},
 		},
-		"3": &DataSet{
+		"3": {
 			Metric: map[string]interface{}{
 				"meta1": 206,
 				"meta2": "value3",
 			},
 			Points: []Point{
-				Point{
+				{
 					Timestamp: time.Unix(1557766080, 0),
 					Value:     1,
 				},
@@ -176,11 +176,10 @@ func TestREMarshalJSON(t *testing.T) {
 
 	if len(bytes) != expectedLen {
 		t.Errorf("expected %d got %d", expectedLen, len(bytes))
-		fmt.Println(string(bytes))
 	}
 
 	re.Meta = re.Meta[:0]
-	bytes, err = re.MarshalJSON()
+	_, err = re.MarshalJSON()
 	if err == nil {
 		t.Errorf("expected error: %s", `Must have at least two fields; only have 0`)
 	}
@@ -200,7 +199,6 @@ func TestRSPMarshalJSON(t *testing.T) {
 
 	if string(bytes) != expected {
 		t.Errorf("expected [%s]\n     got [%s]", expected, string(bytes))
-		fmt.Println(string(bytes))
 	}
 }
 
@@ -225,13 +223,13 @@ func TestUnmarshalTimeseries(t *testing.T) {
 		return
 	}
 
-	ts, err = client.UnmarshalTimeseries(nil)
+	_, err = client.UnmarshalTimeseries(nil)
 	if err == nil {
 		t.Errorf("expected error: %s", `unexpected end of JSON input`)
 		return
 	}
 
-	ts, err = client.UnmarshalTimeseries(testJSON2)
+	_, err = client.UnmarshalTimeseries(testJSON2)
 	if err == nil {
 		t.Errorf("expected error: %s", `Must have at least two fields; only have 1`)
 		return
@@ -249,7 +247,6 @@ func TestMarshalTimeseries(t *testing.T) {
 	}
 	if !reflect.DeepEqual(testJSON1, bytes) {
 		t.Errorf("expected %d got %d", expectedLen, len(bytes))
-		fmt.Println(string(bytes))
 	}
 }
 

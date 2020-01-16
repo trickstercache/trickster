@@ -18,14 +18,12 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
 // Common URL Parameter Names
 const (
-	mnHealth = "health"
-	upQuery  = "query"
+	upQuery = "query"
 )
 
 // BaseURL returns a URL in the form of scheme://host/path based on the proxy configuration
@@ -54,18 +52,18 @@ func (c *Client) BuildUpstreamURL(r *http.Request) *url.URL {
 }
 
 // SetExtent will change the upstream request query to use the provided Extent
-func (c *Client) SetExtent(r *model.Request, extent *timeseries.Extent) {
+func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
 
-	if extent == nil || r == nil || r.TimeRangeQuery == nil {
+	if extent == nil || r == nil || trq == nil {
 		return
 	}
 
 	p := r.URL.Query()
-	t := r.TemplateURL.Query()
+	t := trq.TemplateURL.Query()
 	q := t.Get(upQuery)
 
 	if q != "" {
-		p.Set(upQuery, interpolateTimeQuery(q, r.TimeRangeQuery.TimestampFieldName, extent))
+		p.Set(upQuery, interpolateTimeQuery(q, trq.TimestampFieldName, extent))
 	}
 
 	r.URL.RawQuery = p.Encode()

@@ -50,7 +50,7 @@ func TestMerge(t *testing.T) {
 		{
 			a: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(10, 0), Value: 1.5},
@@ -64,7 +64,7 @@ func TestMerge(t *testing.T) {
 			},
 			b: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(5, 0), Value: 1.5},
@@ -84,7 +84,7 @@ func TestMerge(t *testing.T) {
 				tslist:     times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
 				timestamps: map[time.Time]bool{time.Unix(5, 0): true, time.Unix(10, 0): true, time.Unix(15, 0): true},
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(5, 0), Value: 1.5},
@@ -103,7 +103,7 @@ func TestMerge(t *testing.T) {
 		{
 			a: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
 							{Timestamp: time.Unix(10000, 0), Value: 1.5},
@@ -117,7 +117,7 @@ func TestMerge(t *testing.T) {
 			},
 			b: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{},
 					},
@@ -131,7 +131,7 @@ func TestMerge(t *testing.T) {
 				tslist:     times.Times{time.Unix(10000, 0)},
 				timestamps: map[time.Time]bool{time.Unix(10000, 0): true},
 				Data: map[string]*DataSet{
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
 							{Timestamp: time.Unix(10000, 0), Value: 1.5},
@@ -148,7 +148,7 @@ func TestMerge(t *testing.T) {
 		{
 			a: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
 							{Timestamp: time.Unix(10000, 0), Value: 1.5},
@@ -162,7 +162,7 @@ func TestMerge(t *testing.T) {
 			},
 			b: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"c": &DataSet{
+					"c": {
 						Metric: map[string]interface{}{"__name__": "c"},
 						Points: []Point{
 							{Timestamp: time.Unix(15000, 0), Value: 1.5},
@@ -180,13 +180,13 @@ func TestMerge(t *testing.T) {
 				tslist:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0)},
 				timestamps: map[time.Time]bool{time.Unix(10000, 0): true, time.Unix(15000, 0): true},
 				Data: map[string]*DataSet{
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
 							{Timestamp: time.Unix(10000, 0), Value: 1.5},
 						},
 					},
-					"c": &DataSet{
+					"c": {
 						Metric: map[string]interface{}{"__name__": "c"},
 						Points: []Point{
 							{Timestamp: time.Unix(15000, 0), Value: 1.5},
@@ -203,16 +203,16 @@ func TestMerge(t *testing.T) {
 		{
 			a: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(10000, 0), Value: 1.5},
+							{Timestamp: time.Unix(10000, 0), Value: 1.5},
 						},
 					},
-					"c": &DataSet{
+					"c": {
 						Metric: map[string]interface{}{"__name__": "c"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(10000, 0), Value: 1.5},
+							{Timestamp: time.Unix(10000, 0), Value: 1.5},
 						},
 					},
 				},
@@ -223,10 +223,10 @@ func TestMerge(t *testing.T) {
 			},
 			b: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"c": &DataSet{
+					"c": {
 						Metric: map[string]interface{}{"__name__": "c"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(15000, 0), Value: 1.5},
+							{Timestamp: time.Unix(15000, 0), Value: 1.5},
 						},
 					},
 				},
@@ -241,17 +241,17 @@ func TestMerge(t *testing.T) {
 				tslist:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0)},
 				timestamps: map[time.Time]bool{time.Unix(10000, 0): true, time.Unix(15000, 0): true},
 				Data: map[string]*DataSet{
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(10000, 0), Value: 1.5},
+							{Timestamp: time.Unix(10000, 0), Value: 1.5},
 						},
 					},
-					"c": &DataSet{
+					"c": {
 						Metric: map[string]interface{}{"__name__": "c"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(15000, 0), Value: 1.5},
+							{Timestamp: time.Unix(10000, 0), Value: 1.5},
+							{Timestamp: time.Unix(15000, 0), Value: 1.5},
 						},
 					},
 				},
@@ -265,18 +265,18 @@ func TestMerge(t *testing.T) {
 		{
 			a: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(15000, 0), Value: 1.5},
+							{Timestamp: time.Unix(10000, 0), Value: 1.5},
+							{Timestamp: time.Unix(15000, 0), Value: 1.5},
 						},
 					},
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(15000, 0), Value: 1.5},
+							{Timestamp: time.Unix(10000, 0), Value: 1.5},
+							{Timestamp: time.Unix(15000, 0), Value: 1.5},
 						},
 					},
 				},
@@ -287,18 +287,18 @@ func TestMerge(t *testing.T) {
 			},
 			b: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(30000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(35000, 0), Value: 1.5},
+							{Timestamp: time.Unix(30000, 0), Value: 1.5},
+							{Timestamp: time.Unix(35000, 0), Value: 1.5},
 						},
 					},
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(30000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(35000, 0), Value: 1.5},
+							{Timestamp: time.Unix(30000, 0), Value: 1.5},
+							{Timestamp: time.Unix(35000, 0), Value: 1.5},
 						},
 					},
 				},
@@ -313,22 +313,22 @@ func TestMerge(t *testing.T) {
 				tslist:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0), time.Unix(30000, 0), time.Unix(35000, 0)},
 				timestamps: map[time.Time]bool{time.Unix(10000, 0): true, time.Unix(15000, 0): true, time.Unix(30000, 0): true, time.Unix(35000, 0): true},
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(15000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(30000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(35000, 0), Value: 1.5},
+							{Timestamp: time.Unix(10000, 0), Value: 1.5},
+							{Timestamp: time.Unix(15000, 0), Value: 1.5},
+							{Timestamp: time.Unix(30000, 0), Value: 1.5},
+							{Timestamp: time.Unix(35000, 0), Value: 1.5},
 						},
 					},
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(15000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(30000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(35000, 0), Value: 1.5},
+							{Timestamp: time.Unix(10000, 0), Value: 1.5},
+							{Timestamp: time.Unix(15000, 0), Value: 1.5},
+							{Timestamp: time.Unix(30000, 0), Value: 1.5},
+							{Timestamp: time.Unix(35000, 0), Value: 1.5},
 						},
 					},
 				},
@@ -345,18 +345,18 @@ func TestMerge(t *testing.T) {
 		{
 			a: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(15000, 0), Value: 1.5},
+							{Timestamp: time.Unix(10000, 0), Value: 1.5},
+							{Timestamp: time.Unix(15000, 0), Value: 1.5},
 						},
 					},
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(15000, 0), Value: 1.5},
+							{Timestamp: time.Unix(10000, 0), Value: 1.5},
+							{Timestamp: time.Unix(15000, 0), Value: 1.5},
 						},
 					},
 				},
@@ -367,18 +367,18 @@ func TestMerge(t *testing.T) {
 			},
 			b: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(15000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(20000, 0), Value: 1.5},
+							{Timestamp: time.Unix(15000, 0), Value: 1.5},
+							{Timestamp: time.Unix(20000, 0), Value: 1.5},
 						},
 					},
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(15000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(20000, 0), Value: 1.5},
+							{Timestamp: time.Unix(15000, 0), Value: 1.5},
+							{Timestamp: time.Unix(20000, 0), Value: 1.5},
 						},
 					},
 				},
@@ -393,20 +393,20 @@ func TestMerge(t *testing.T) {
 				tslist:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0), time.Unix(20000, 0)},
 				timestamps: map[time.Time]bool{time.Unix(10000, 0): true, time.Unix(15000, 0): true, time.Unix(20000, 0): true},
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(15000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(20000, 0), Value: 1.5},
+							{Timestamp: time.Unix(10000, 0), Value: 1.5},
+							{Timestamp: time.Unix(15000, 0), Value: 1.5},
+							{Timestamp: time.Unix(20000, 0), Value: 1.5},
 						},
 					},
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
-							Point{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(15000, 0), Value: 1.5},
-							Point{Timestamp: time.Unix(20000, 0), Value: 1.5},
+							{Timestamp: time.Unix(10000, 0), Value: 1.5},
+							{Timestamp: time.Unix(15000, 0), Value: 1.5},
+							{Timestamp: time.Unix(20000, 0), Value: 1.5},
 						},
 					},
 				},
@@ -436,7 +436,7 @@ func TestCropToRange(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(1644004600, 0), Value: 1.5},
@@ -450,7 +450,7 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(1644004600, 0), Value: 1.5},
@@ -471,7 +471,7 @@ func TestCropToRange(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
@@ -485,7 +485,7 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
@@ -506,7 +506,7 @@ func TestCropToRange(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
 							{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
@@ -532,7 +532,7 @@ func TestCropToRange(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"c": &DataSet{
+					"c": {
 						Metric: map[string]interface{}{"__name__": "c"},
 						Points: []Point{
 							{Timestamp: time.Unix(100, 0), Value: 1.5},
@@ -558,7 +558,7 @@ func TestCropToRange(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"d": &DataSet{
+					"d": {
 						Metric: map[string]interface{}{"__name__": "d"},
 						Points: []Point{
 							{Timestamp: time.Unix(100, 0), Value: 1.5},
@@ -574,7 +574,7 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"d": &DataSet{
+					"d": {
 						Metric: map[string]interface{}{"__name__": "d"},
 						Points: []Point{
 							{Timestamp: time.Unix(300, 0), Value: 1.5},
@@ -595,7 +595,7 @@ func TestCropToRange(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"e": &DataSet{
+					"e": {
 						Metric: map[string]interface{}{"__name__": "e"},
 						Points: []Point{
 							{Timestamp: time.Unix(100, 0), Value: 1.5},
@@ -611,7 +611,7 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"e": &DataSet{
+					"e": {
 						Metric: map[string]interface{}{"__name__": "e"},
 						Points: []Point{
 							{Timestamp: time.Unix(200, 0), Value: 1.5},
@@ -632,7 +632,7 @@ func TestCropToRange(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"f": &DataSet{
+					"f": {
 						Metric: map[string]interface{}{"__name__": "f"},
 						Points: []Point{
 							{Timestamp: time.Unix(100, 0), Value: 1.5},
@@ -648,7 +648,7 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"f": &DataSet{
+					"f": {
 						Metric: map[string]interface{}{"__name__": "f"},
 						Points: []Point{
 							{Timestamp: time.Unix(200, 0), Value: 1.5},
@@ -670,7 +670,7 @@ func TestCropToRange(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"g": &DataSet{
+					"g": {
 						Metric: map[string]interface{}{"__name__": "g"},
 						Points: []Point{},
 					},
@@ -693,7 +693,7 @@ func TestCropToRange(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(100, 0), Value: 1.5},
@@ -704,7 +704,7 @@ func TestCropToRange(t *testing.T) {
 							{Timestamp: time.Unix(600, 0), Value: 1.5},
 						},
 					},
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
 							{Timestamp: time.Unix(100, 0), Value: 1.5},
@@ -712,7 +712,7 @@ func TestCropToRange(t *testing.T) {
 							{Timestamp: time.Unix(300, 0), Value: 1.5},
 						},
 					},
-					"c": &DataSet{
+					"c": {
 						Metric: map[string]interface{}{"__name__": "c"},
 						Points: []Point{
 							{Timestamp: time.Unix(100, 0), Value: 1.5},
@@ -731,7 +731,7 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(400, 0), Value: 1.5},
@@ -739,7 +739,7 @@ func TestCropToRange(t *testing.T) {
 							{Timestamp: time.Unix(600, 0), Value: 1.5},
 						},
 					},
-					"c": &DataSet{
+					"c": {
 						Metric: map[string]interface{}{"__name__": "c"},
 						Points: []Point{
 							{Timestamp: time.Unix(400, 0), Value: 1.5},
@@ -762,7 +762,7 @@ func TestCropToRange(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(100, 0), Value: 1.5},
@@ -770,7 +770,7 @@ func TestCropToRange(t *testing.T) {
 							{Timestamp: time.Unix(300, 0), Value: 1.5},
 						},
 					},
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
 							{Timestamp: time.Unix(100, 0), Value: 1.5},
@@ -781,7 +781,7 @@ func TestCropToRange(t *testing.T) {
 							{Timestamp: time.Unix(600, 0), Value: 1.5},
 						},
 					},
-					"c": &DataSet{
+					"c": {
 						Metric: map[string]interface{}{"__name__": "c"},
 						Points: []Point{
 							{Timestamp: time.Unix(100, 0), Value: 1.5},
@@ -800,7 +800,7 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
 							{Timestamp: time.Unix(400, 0), Value: 1.5},
@@ -808,7 +808,7 @@ func TestCropToRange(t *testing.T) {
 							{Timestamp: time.Unix(600, 0), Value: 1.5},
 						},
 					},
-					"c": &DataSet{
+					"c": {
 						Metric: map[string]interface{}{"__name__": "c"},
 						Points: []Point{
 							{Timestamp: time.Unix(400, 0), Value: 1.5},
@@ -831,7 +831,7 @@ func TestCropToRange(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(100, 0), Value: 1.5},
@@ -842,7 +842,7 @@ func TestCropToRange(t *testing.T) {
 							{Timestamp: time.Unix(600, 0), Value: 1.5},
 						},
 					},
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
 							{Timestamp: time.Unix(100, 0), Value: 1.5},
@@ -853,7 +853,7 @@ func TestCropToRange(t *testing.T) {
 							{Timestamp: time.Unix(600, 0), Value: 1.5},
 						},
 					},
-					"c": &DataSet{
+					"c": {
 						Metric: map[string]interface{}{"__name__": "c"},
 						Points: []Point{
 							{Timestamp: time.Unix(100, 0), Value: 1.5},
@@ -869,7 +869,7 @@ func TestCropToRange(t *testing.T) {
 			},
 			after: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(400, 0), Value: 1.5},
@@ -877,7 +877,7 @@ func TestCropToRange(t *testing.T) {
 							{Timestamp: time.Unix(600, 0), Value: 1.5},
 						},
 					},
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
 							{Timestamp: time.Unix(400, 0), Value: 1.5},
@@ -900,15 +900,15 @@ func TestCropToRange(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{},
 					},
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{},
 					},
-					"c": &DataSet{
+					"c": {
 						Metric: map[string]interface{}{"__name__": "c"},
 						Points: []Point{},
 					},
@@ -979,7 +979,7 @@ func TestCropToSize(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(1444004600, 0), Value: 1.5},
@@ -993,7 +993,7 @@ func TestCropToSize(t *testing.T) {
 			},
 			after: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(1444004600, 0), Value: 1.5},
@@ -1020,7 +1020,7 @@ func TestCropToSize(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(1444004600, 0), Value: 1.5},
@@ -1035,7 +1035,7 @@ func TestCropToSize(t *testing.T) {
 			},
 			after: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(1444004610, 0), Value: 1.5},
@@ -1063,7 +1063,7 @@ func TestCropToSize(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{},
 					},
@@ -1085,7 +1085,7 @@ func TestCropToSize(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(1444004610, 0), Value: 1.5},
@@ -1100,7 +1100,7 @@ func TestCropToSize(t *testing.T) {
 			},
 			after: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(1444004610, 0), Value: 1.5},
@@ -1151,7 +1151,7 @@ func TestUpdateTimestamps(t *testing.T) {
 
 }
 
-func TestCopy(t *testing.T) {
+func TestClone(t *testing.T) {
 
 	tests := []struct {
 		before *ResultsEnvelope
@@ -1164,7 +1164,7 @@ func TestCopy(t *testing.T) {
 				tslist:      times.Times{time.Unix(1644001200, 0)},
 				timestamps:  map[time.Time]bool{time.Unix(1644001200, 0): true},
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(1644001200, 0), Value: 1.5},
@@ -1185,14 +1185,14 @@ func TestCopy(t *testing.T) {
 				tslist:     times.Times{time.Unix(1644001200, 0), time.Unix(1644004800, 0)},
 				timestamps: map[time.Time]bool{time.Unix(1644001200, 0): true, time.Unix(1644004800, 0): true},
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(1644001200, 0), Value: 1.5},
 						},
 					},
 
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
 							{Timestamp: time.Unix(1644001200, 0), Value: 1.5},
@@ -1211,7 +1211,7 @@ func TestCopy(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			after := test.before.Copy()
+			after := test.before.Clone()
 			if !reflect.DeepEqual(test.before, after) {
 				t.Errorf("mismatch\nexpected %v\nactual   %v", test.before, after)
 			}
@@ -1229,7 +1229,7 @@ func TestSort(t *testing.T) {
 		{
 			before: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(1544004200, 0), Value: 1.5},
@@ -1239,7 +1239,7 @@ func TestSort(t *testing.T) {
 							{Timestamp: time.Unix(1544004000, 0), Value: 1.5}, // sort should also dupe kill
 						},
 					},
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
 							{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
@@ -1248,7 +1248,7 @@ func TestSort(t *testing.T) {
 							{Timestamp: time.Unix(1544004800, 0), Value: 1.5},
 						},
 					},
-					"c": &DataSet{
+					"c": {
 						Metric: map[string]interface{}{"__name__": "c"},
 						Points: []Point{
 							{Timestamp: time.Unix(1544004800, 0), Value: 1.5},
@@ -1266,7 +1266,7 @@ func TestSort(t *testing.T) {
 				timestamps: map[time.Time]bool{time.Unix(1544004000, 0): true, time.Unix(1544004200, 0): true,
 					time.Unix(1544004600, 0): true, time.Unix(1544004800, 0): true},
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
 						Points: []Point{
 							{Timestamp: time.Unix(1544004000, 0), Value: 1.5},
@@ -1275,7 +1275,7 @@ func TestSort(t *testing.T) {
 							{Timestamp: time.Unix(1544004800, 0), Value: 1.5},
 						},
 					},
-					"b": &DataSet{
+					"b": {
 						Metric: map[string]interface{}{"__name__": "b"},
 						Points: []Point{
 							{Timestamp: time.Unix(1544004000, 0), Value: 1.5},
@@ -1284,7 +1284,7 @@ func TestSort(t *testing.T) {
 							{Timestamp: time.Unix(1544004800, 0), Value: 1.5},
 						},
 					},
-					"c": &DataSet{
+					"c": {
 						Metric: map[string]interface{}{"__name__": "c"},
 						Points: []Point{
 							{Timestamp: time.Unix(1544004000, 0), Value: 1.5},
@@ -1336,7 +1336,7 @@ func TestExtents(t *testing.T) {
 func TestSeriesCount(t *testing.T) {
 	re := &ResultsEnvelope{
 		Data: map[string]*DataSet{
-			"d": &DataSet{
+			"d": {
 				Metric: map[string]interface{}{"__name__": "d"},
 				Points: []Point{
 					{Timestamp: time.Unix(99, 0), Value: 1.5},
@@ -1354,7 +1354,7 @@ func TestSeriesCount(t *testing.T) {
 func TestValueCount(t *testing.T) {
 	re := &ResultsEnvelope{
 		Data: map[string]*DataSet{
-			"d": &DataSet{
+			"d": {
 				Metric: map[string]interface{}{"__name__": "d"},
 				Points: []Point{
 					{Timestamp: time.Unix(99, 0), Value: 1.5},
@@ -1378,7 +1378,7 @@ func TestTimestampCount(t *testing.T) {
 		{
 			ts: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"d": &DataSet{
+					"d": {
 						Metric: map[string]interface{}{"__name__": "d"},
 						Points: []Point{
 							{Timestamp: time.Unix(99, 0), Value: 1.5},
@@ -1394,7 +1394,7 @@ func TestTimestampCount(t *testing.T) {
 		{
 			ts: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"d": &DataSet{
+					"d": {
 						Metric: map[string]interface{}{"__name__": "d"},
 						Points: []Point{
 							{Timestamp: time.Unix(99, 0), Value: 1.5},
@@ -1409,14 +1409,14 @@ func TestTimestampCount(t *testing.T) {
 		{
 			ts: &ResultsEnvelope{
 				Data: map[string]*DataSet{
-					"a": &DataSet{
+					"a": {
 						Metric: map[string]interface{}{"__name__": "d"},
 						Points: []Point{
 							{Timestamp: time.Unix(99, 0), Value: 1.5},
 							{Timestamp: time.Unix(199, 0), Value: 1.5},
 						},
 					},
-					"e": &DataSet{
+					"e": {
 						Metric: map[string]interface{}{"__name__": "e"},
 						Points: []Point{
 							{Timestamp: time.Unix(99, 0), Value: 1.5},
@@ -1472,4 +1472,34 @@ func TestMergeSeriesOrder(t *testing.T) {
 		t.Errorf("expected [%s] got [%s]", strings.Join(ex4, ","), strings.Join(re.SeriesOrder, ","))
 	}
 
+}
+
+func TestSize(t *testing.T) {
+	r := &ResultsEnvelope{
+		isCounted:  true,
+		isSorted:   true,
+		tslist:     times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
+		timestamps: map[time.Time]bool{time.Unix(5, 0): true, time.Unix(10, 0): true, time.Unix(15, 0): true},
+		Data: map[string]*DataSet{
+			"a": {
+				Metric: map[string]interface{}{"__name__": "a"},
+				Points: []Point{
+					{Timestamp: time.Unix(5, 0), Value: 1.5},
+					{Timestamp: time.Unix(10, 0), Value: 1.5},
+					{Timestamp: time.Unix(15, 0), Value: 1.5},
+				},
+			},
+		},
+		Meta:        []FieldDefinition{FieldDefinition{Name: "test", Type: "Test"}},
+		SeriesOrder: []string{"test"},
+		ExtentList: timeseries.ExtentList{
+			timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(15, 0)},
+		},
+		StepDuration: time.Duration(5) * time.Second,
+	}
+	i := r.Size()
+	const expected = 146
+	if i != expected {
+		t.Errorf("expected %d got %d", expected, i)
+	}
 }

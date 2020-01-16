@@ -18,7 +18,6 @@ import (
 	"strings"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
 // QueryHandler handles timeseries requests for ClickHouse and processes them through the delta proxy cache
@@ -32,9 +31,6 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u := c.BuildUpstreamURL(r)
-	engines.DeltaProxyCacheRequest(
-		model.NewRequest("QueryHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c)
-
+	r.URL = c.BuildUpstreamURL(r)
+	engines.DeltaProxyCacheRequest(w, r)
 }

@@ -20,12 +20,30 @@ import (
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/proxy/origins"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
 func init() {
 	metrics.Init()
+}
+
+func TestClickhouseClientInterfacing(t *testing.T) {
+
+	// this test ensures the client will properly conform to the
+	// Client and TimeseriesClient interfaces
+
+	c := &Client{name: "test"}
+	var oc origins.Client = c
+	var tc origins.TimeseriesClient = c
+
+	if oc.Name() != "test" {
+		t.Errorf("expected %s got %s", "test", oc.Name())
+	}
+
+	if tc.Name() != "test" {
+		t.Errorf("expected %s got %s", "test", tc.Name())
+	}
 }
 
 func TestNewClient(t *testing.T) {
@@ -132,7 +150,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		RawQuery: testRawQuery(),
 	}}
 	client := &Client{}
-	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	res, err := client.ParseTimeRangeQuery(req)
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -147,27 +165,27 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	}
 
 	req.URL.RawQuery = ""
-	res, err = client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	_, err = client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf("expected error for: %s", "missing URL parameter: [query]")
 	}
 
-	req.URL.RawQuery = url.Values(map[string][]string{"query": []string{
+	req.URL.RawQuery = url.Values(map[string][]string{"query": {
 		`SELECT (intDiv(toUInt32(abc), 6z0) * 6z0) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
 			`FROM testdb.test_table WHERE abc BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
 			`AND date_column >= toDate(1516665600) AND toDate(1516687200) ` +
 			`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`}}).Encode()
-	res, err = client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	_, err = client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf("expected error for: %s", "not a time range query")
 	}
 
-	req.URL.RawQuery = url.Values(map[string][]string{"query": []string{
+	req.URL.RawQuery = url.Values(map[string][]string{"query": {
 		`SELECT (intDiv(toUInt32(0^^^), 60) * 60) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
 			`FROM testdb.test_table WHERE 0^^^ BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
 			`AND date_column >= toDate(1516665600) AND toDate(1516687200) ` +
 			`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`}}).Encode()
-	res, err = client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	_, err = client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf("expected error for: %s", "not a time range query")
 	}
