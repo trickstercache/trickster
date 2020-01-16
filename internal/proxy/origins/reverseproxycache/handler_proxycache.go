@@ -17,12 +17,10 @@ import (
 	"net/http"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
+// ProxyCacheHandler routes an HTTP Request through the Object Proxy Cache
 func (c *Client) ProxyCacheHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BuildUpstreamURL(r)
-	engines.ObjectProxyCacheRequest(
-		model.NewRequest("ProxyCacheHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, false)
+	r.URL = c.BuildUpstreamURL(r)
+	engines.ObjectProxyCacheRequest(w, r)
 }
