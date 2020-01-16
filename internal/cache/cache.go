@@ -54,7 +54,7 @@ type MemoryCache interface {
 	RetrieveReference(cacheKey string, allowExpired bool) (interface{}, status.LookupStatus, error)
 }
 
-// ReferenceObject defines an interface for a cache object posessing the ability to report
+// ReferenceObject defines an interface for a cache object possessing the ability to report
 // the approximate comprehensive byte size of its members, to assist with cache size management
 type ReferenceObject interface {
 	Size() int
