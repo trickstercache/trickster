@@ -23,7 +23,7 @@ import (
 	"github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/methods"
-	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/proxy/origins"
 	"github.com/Comcast/trickster/internal/proxy/origins/clickhouse"
 	"github.com/Comcast/trickster/internal/proxy/origins/influxdb"
 	"github.com/Comcast/trickster/internal/proxy/origins/irondb"
@@ -35,7 +35,7 @@ import (
 )
 
 // ProxyClients maintains a list of proxy clients configured for use by Trickster
-var ProxyClients = make(map[string]model.Client)
+var ProxyClients = make(map[string]origins.Client)
 
 // RegisterProxyRoutes iterates the Trickster Configuration and registers the routes for the configured origins
 func RegisterProxyRoutes() error {
@@ -96,7 +96,7 @@ func RegisterProxyRoutes() error {
 
 func registerOriginRoutes(k string, o *config.OriginConfig) error {
 
-	var client model.Client
+	var client origins.Client
 	var c cache.Cache
 	var err error
 
@@ -123,9 +123,10 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 		return err
 	}
 	if client != nil {
+		o.HTTPClient = client.HTTPClient()
 		ProxyClients[k] = client
 		defaultPaths := client.DefaultPathConfigs(o)
-		registerPathRoutes(client.Handlers(), o, c, defaultPaths)
+		registerPathRoutes(client.Handlers(), client, o, c, defaultPaths)
 	}
 	return nil
 }
@@ -133,12 +134,12 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 // registerPathRoutes will take the provided default paths map,
 // merge it with any path data in the provided originconfig, and then register
 // the path routes to the appropriate handler from the provided handlers map
-func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig, c cache.Cache,
+func registerPathRoutes(handlers map[string]http.Handler, client origins.Client, o *config.OriginConfig, c cache.Cache,
 	paths map[string]*config.PathConfig) {
 
 	decorate := func(p *config.PathConfig) http.Handler {
 		// Add Origin, Cache, and Path Configs to the HTTP Request's context
-		p.Handler = middleware.WithConfigContext(o, c, p, p.Handler)
+		p.Handler = middleware.WithResourcesContext(client, o, c, p, p.Handler)
 		if p.NoMetrics {
 			return p.Handler
 		}
@@ -168,7 +169,7 @@ func registerPathRoutes(handlers map[string]http.Handler, o *config.OriginConfig
 		o.HealthCheckUpstreamPath != "" && o.HealthCheckVerb != "" {
 		hp := "/trickster/health/" + o.Name
 		log.Debug("registering health handler path", log.Pairs{"path": hp, "originName": o.Name, "upstreamPath": o.HealthCheckUpstreamPath, "upstreamVerb": o.HealthCheckVerb})
-		routing.Router.PathPrefix(hp).Handler(middleware.WithConfigContext(o, nil, nil, h)).Methods(methods.CacheableHTTPMethods()...)
+		routing.Router.PathPrefix(hp).Handler(middleware.WithResourcesContext(client, o, nil, nil, h)).Methods(methods.CacheableHTTPMethods()...)
 	}
 
 	plist := make([]string, 0, len(pathsWithVerbs))
