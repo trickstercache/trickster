@@ -14,6 +14,7 @@
 package clickhouse
 
 import (
+	"encoding/json"
 	"reflect"
 	"sort"
 	"testing"
@@ -188,7 +189,6 @@ func TestREMarshalJSON(t *testing.T) {
 
 func TestRSPMarshalJSON(t *testing.T) {
 
-	expected := `{"meta":null,"data":[],"rows": 0,"extents": [{"start":"1969-12-31T17:00:00-07:00","end":"1969-12-31T17:00:05-07:00"}]}`
 	rsp := &Response{ExtentList: timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(5, 0)}}}
 
 	bytes, err := rsp.MarshalJSON()
@@ -197,9 +197,17 @@ func TestRSPMarshalJSON(t *testing.T) {
 		return
 	}
 
-	if string(bytes) != expected {
-		t.Errorf("expected [%s]\n     got [%s]", expected, string(bytes))
+	rsp1 := &Response{}
+	json.Unmarshal(bytes, rsp1)
+
+	if rsp.ExtentList[0].Start != rsp1.ExtentList[0].Start {
+		t.Errorf("expected %d got %d", rsp.ExtentList[0].Start.Unix(), rsp.ExtentList[0].Start.Unix())
 	}
+
+	if rsp.ExtentList[0].End != rsp1.ExtentList[0].End {
+		t.Errorf("expected %d got %d", rsp.ExtentList[0].End.Unix(), rsp.ExtentList[0].End.Unix())
+	}
+
 }
 
 func TestUnmarshalTimeseries(t *testing.T) {
