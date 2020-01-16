@@ -10,7 +10,7 @@ Each new configuration value must be defined in the `config` package under an ex
 
 Make sure the TOML annotation uses a `lowercase_no_spaces` naming convention, while the configuration member name itself should be `CamelCase`. Follow the existing configs for guidance.
 
-Once you have defined the configuration member, if it is part of a `CacheConfig`, `OriginConfig` or `PathConfig`, it must also be added to the configuration parser for the specific type of configruation. These methods iterate through known TOML annoations to survey which configs have been set. This allows Trickster to know if a value is set because it is the initialized default value or because the operator has explicitly set it.
+Once you have defined the configuration member, if it is part of a `CacheConfig`, `OriginConfig` or `PathConfig`, it must also be added to the configuration parser for the specific type of configuration. These methods iterate through known TOML annoations to survey which configs have been set. This allows Trickster to know if a value is set because it is the initialized default value or because the operator has explicitly set it.
 
 ## Feature Code
 
