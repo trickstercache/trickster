@@ -43,9 +43,6 @@ data:
         {{- if .cacheType }}
       cache_type = {{ .cacheType | quote }}
         {{- end }}
-        {{- if .compression }}
-      compression = {{ .compression }}
-        {{- end }}
         {{- if and (ne .cacheType "redis") (ne .cacheType "badger") }}
         {{- if .index }}
         {{ printf "[caches.%s.index]" .name }}
@@ -182,8 +179,20 @@ data:
         {{- if .cacheName }}
       cache_name = {{ .cacheName | quote }}
         {{- end }}
+        {{- if .cacheKeyPrefix }}
+      cache_key_prefix = {{ .cacheKeyPrefix | quote }}
+        {{- end }}
         {{- if .negativeCacheName }}
       negative_cache_name = {{ .negativeCacheName | quote }}
+        {{- end }}
+        {{- if .dearticulateUpstreamRanges }}
+      dearticulate_upstream_ranges = {{ .dearticulateUpstreamRanges }}
+        {{- end }}
+        {{- if .multipartRangesDisabled }}
+      multipart_ranges_disabled = {{ .multipartRangesDisabled }}
+        {{- end }}
+        {{- if .compressableTypes }}
+      compressable_types = [ '{{- join "', '" .compressableTypes }}' ]
         {{- end }}
         {{- if .timeoutSecs }}
       timeout_secs = {{ .timeoutSecs }}
