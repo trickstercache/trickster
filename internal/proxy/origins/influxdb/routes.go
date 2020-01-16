@@ -55,7 +55,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 	populateHeathCheckRequestValues(oc)
 
 	paths := map[string]*config.PathConfig{
-		"/" + mnQuery: &config.PathConfig{
+		"/" + mnQuery: {
 			Path:            "/" + mnQuery,
 			HandlerName:     mnQuery,
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -64,7 +64,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchTypeName:   "exact",
 			MatchType:       config.PathMatchTypeExact,
 		},
-		"/": &config.PathConfig{
+		"/": {
 			Path:          "/",
 			HandlerName:   "proxy",
 			Methods:       []string{http.MethodGet, http.MethodPost},

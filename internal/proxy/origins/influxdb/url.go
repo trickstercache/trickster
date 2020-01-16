@@ -18,21 +18,18 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
 // Upstream Endpoints
 const (
 	mnQuery = "query"
-	health  = "ping"
 )
 
 // Common URL Parameter Names
 const (
 	upQuery = "q"
 	upDB    = "db"
-	upEpoch = "epoch"
 )
 
 // BaseURL returns a URL in the form of scheme://host/path based on the proxy configuration
@@ -61,10 +58,10 @@ func (c Client) BuildUpstreamURL(r *http.Request) *url.URL {
 }
 
 // SetExtent will change the upstream request query to use the provided Extent
-func (c Client) SetExtent(r *model.Request, extent *timeseries.Extent) {
+func (c Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
 
 	p := r.URL.Query()
-	t := r.TemplateURL.Query()
+	t := trq.TemplateURL.Query()
 
 	q := t.Get(upQuery)
 	if q != "" {

@@ -58,7 +58,7 @@ func TestUpdateTimestamps(t *testing.T) {
 
 }
 
-func TestCopy(t *testing.T) {
+func TestClone(t *testing.T) {
 	se := &SeriesEnvelope{
 		Results: []Result{
 			{
@@ -88,7 +88,7 @@ func TestCopy(t *testing.T) {
 		},
 	}
 
-	sec := se.Copy().(*SeriesEnvelope)
+	sec := se.Clone().(*SeriesEnvelope)
 
 	if len(sec.Results) != 1 {
 		t.Errorf(`expected 1. got %d`, len(sec.Results))
@@ -1542,4 +1542,39 @@ func TestSort(t *testing.T) {
 	if se.isCounted {
 		t.Errorf("got %t expected %t", se.isCounted, false)
 	}
+}
+
+func TestSize(t *testing.T) {
+	s := &SeriesEnvelope{
+		Results: []Result{
+			{
+				Series: []models.Row{
+					{
+						Name:    "a",
+						Columns: []string{"time", "units"},
+						Tags:    map[string]string{"tagName1": "tagValue1"},
+						Values:  [][]interface{}{},
+					},
+					{
+						Name:    "b",
+						Columns: []string{"time", "units"},
+						Tags:    map[string]string{"tagName1": "tagValue1"},
+						Values:  [][]interface{}{},
+					},
+				},
+			},
+		},
+		ExtentList: timeseries.ExtentList{
+			timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
+		},
+		StepDuration: time.Duration(100) * time.Second,
+	}
+
+	i := s.Size()
+	expected := 94
+
+	if i != expected {
+		t.Errorf("expected %d got %d", expected, i)
+	}
+
 }

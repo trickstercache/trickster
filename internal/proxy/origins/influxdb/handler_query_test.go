@@ -20,8 +20,7 @@ import (
 	"testing"
 
 	"github.com/Comcast/trickster/internal/proxy/errors"
-	"github.com/Comcast/trickster/internal/proxy/model"
-	tc "github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 
@@ -40,7 +39,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		RawQuery: url.Values(map[string][]string{"q": {`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY time(15s), "cluster" fill(null)`}, "epoch": {"ms"}}).Encode(),
 	}}
 	client := &Client{}
-	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	res, err := client.ParseTimeRangeQuery(req)
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -53,8 +52,11 @@ func TestQueryHandlerWithSelect(t *testing.T) {
 
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/query?q=select%20test", "debug")
-	client.config = tc.OriginConfig(r.Context())
+	rsc := request.GetResources(r)
+	rsc.OriginClient = client
+	client.config = rsc.OriginConfig
 	client.webClient = hc
+	client.config.HTTPClient = hc
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
@@ -83,8 +85,10 @@ func TestQueryHandlerNotSelect(t *testing.T) {
 
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/query", "debug")
-	client.config = tc.OriginConfig(r.Context())
+	rsc := request.GetResources(r)
+	client.config = rsc.OriginConfig
 	client.webClient = hc
+	client.config.HTTPClient = hc
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
@@ -121,7 +125,7 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 		}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	_, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`Expected "%s", got NO ERROR`, expected)
 		return
@@ -133,7 +137,7 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 
 func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 
-	expected := errors.StepParse().Error()
+	expected := errors.ErrStepParse
 
 	req := &http.Request{URL: &url.URL{
 		Scheme: "https",
@@ -145,13 +149,13 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 		}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	_, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`Expected "%s", got NO ERROR`, expected)
 		return
 	}
-	if err.Error() != expected {
-		t.Errorf(`Expected "%s", got "%s"`, expected, err.Error())
+	if err != expected {
+		t.Errorf(`Expected "%s", got "%s"`, expected.Error(), err.Error())
 	}
 }
 
@@ -165,7 +169,6 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 // 	client := &Client{}
 // 	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 // 	if err != nil {
-// 		fmt.Println(err.Error())
 // 	} else {
 // 		assert.Equal(t, int(res.Step), 15)
 // 		assert.Equal(t, int(res.Extent.End.Sub(res.Extent.Start).Hours()), 3)
@@ -182,7 +185,6 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 // 	client := &Client{}
 // 	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 // 	if err != nil {
-// 		fmt.Println(err.Error())
 // 	} else {
 // 		assert.Equal(t, int(res.Step), 15)
 // 		assert.Equal(t, res.Extent.End.UTC().Second()-res.Extent.Start.UTC().Second(), 1)
@@ -199,7 +201,6 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 // 	client := &Client{}
 // 	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
 // 	if err != nil {
-// 		fmt.Println(err.Error())
 // 	} else {
 // 		assert.Equal(t, int(res.Step), 15)
 // 		assert.Equal(t, res.Extent.Start.UTC().IsZero(), true)

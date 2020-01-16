@@ -18,18 +18,18 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	tc "github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/proxy/request"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
 func TestHealthHandler(t *testing.T) {
 
-	healthURL = nil
-
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 204, "", nil, "influxdb", "/health", "debug")
-	client.config = tc.OriginConfig(r.Context())
+	rsc := request.GetResources(r)
+	client.config = rsc.OriginConfig
 	client.webClient = hc
+	client.config.HTTPClient = hc
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
@@ -43,7 +43,7 @@ func TestHealthHandler(t *testing.T) {
 		t.Errorf("expected 204 got %d.", resp.StatusCode)
 	}
 
-	healthMethod = "-"
+	client.healthMethod = "-"
 
 	w = httptest.NewRecorder()
 	client.HealthHandler(w, r)
@@ -56,8 +56,6 @@ func TestHealthHandler(t *testing.T) {
 
 func TestHealthHandlerCustomPath(t *testing.T) {
 
-	healthURL = nil
-
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("../../../../testdata/test.custom_health.conf", client.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/health", "debug")
 	defer ts.Close()
@@ -65,8 +63,10 @@ func TestHealthHandlerCustomPath(t *testing.T) {
 		t.Error(err)
 	}
 
-	client.config = tc.OriginConfig(r.Context())
+	rsc := request.GetResources(r)
+	client.config = rsc.OriginConfig
 	client.webClient = hc
+	client.config.HTTPClient = hc
 
 	client.HealthHandler(w, r)
 	resp := w.Result()

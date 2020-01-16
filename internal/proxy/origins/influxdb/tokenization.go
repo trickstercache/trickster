@@ -32,7 +32,7 @@ const (
 	tkTime = "<$TIME_TOKEN$>"
 )
 
-var reType, reTime1, reTime2, reStep, reTime1Parse, reTime2Parse *regexp.Regexp
+var reTime1, reTime2, reStep *regexp.Regexp
 
 func init() {
 

@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -39,11 +38,12 @@ func TestSetExtent(t *testing.T) {
 	oc := config.Origins["default"]
 	client := Client{config: oc}
 
-	u := &url.URL{}
 	tu := &url.URL{RawQuery: "q=select * where <$TIME_TOKEN$> group by time(1m)"}
-	r := &model.Request{URL: u, TemplateURL: tu}
+
+	r, _ := http.NewRequest(http.MethodGet, tu.String(), nil)
+	trq := &timeseries.TimeRangeQuery{TemplateURL: tu}
 	e := &timeseries.Extent{Start: start, End: end}
-	client.SetExtent(r, e)
+	client.SetExtent(r, trq, e)
 
 	if expected != r.URL.RawQuery {
 		t.Errorf("\nexpected [%s]\ngot    [%s]", expected, r.URL.RawQuery)

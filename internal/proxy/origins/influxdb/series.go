@@ -27,14 +27,6 @@ import (
 	"github.com/influxdata/influxdb/models"
 )
 
-const (
-	// MinimumTick is the minimum supported time resolution. This has to be
-	// at least time.Second in order for the code below to work.
-	minimumTick = time.Millisecond
-	// milliSecondValue is the no of milliseconds in one second (1000).
-	milliSecondValue = int64(time.Second / minimumTick)
-)
-
 // SetExtents overwrites a Timeseries's known extents with the provided extent list
 func (se *SeriesEnvelope) SetExtents(extents timeseries.ExtentList) {
 	se.ExtentList = make(timeseries.ExtentList, len(extents))
@@ -189,8 +181,8 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 	}
 }
 
-// Copy returns a perfect copy of the base Timeseries
-func (se *SeriesEnvelope) Copy() timeseries.Timeseries {
+// Clone returns a perfect copy of the base Timeseries
+func (se *SeriesEnvelope) Clone() timeseries.Timeseries {
 	resultSe := &SeriesEnvelope{
 		Err:          se.Err,
 		Results:      make([]Result, len(se.Results)),
@@ -448,4 +440,32 @@ func (se *SeriesEnvelope) Sort() {
 	se.tslist = times.FromMap(tsm)
 	se.isCounted = true
 	se.isSorted = true
+}
+
+// Size returns the approximate memory utilization in bytes of the timeseries
+func (se *SeriesEnvelope) Size() int {
+	c := 8 + len(se.Err)
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
+	for i := range se.Results {
+		for j := range se.Results[i].Series {
+
+			wg.Add(1)
+			go func(r models.Row) {
+				mtx.Lock()
+				c += len(r.Name)
+				for k, v := range r.Tags {
+					c += len(k) + len(v)
+				}
+				for _, v := range r.Columns {
+					c += len(v)
+				}
+				c += 16 // approximate size of timestamp + value
+				mtx.Unlock()
+				wg.Done()
+			}(se.Results[i].Series[j])
+		}
+	}
+	wg.Wait()
+	return c
 }

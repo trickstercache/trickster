@@ -19,8 +19,8 @@ import (
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/errors"
-	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/proxy/timeconv"
+	"github.com/Comcast/trickster/internal/proxy/urls"
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/regexp/matching"
 )
@@ -35,17 +35,17 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u := c.BuildUpstreamURL(r)
-	engines.DeltaProxyCacheRequest(
-		model.NewRequest("QueryHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c)
+	r.URL = c.BuildUpstreamURL(r)
+	engines.DeltaProxyCacheRequest(w, r)
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
-func (c *Client) ParseTimeRangeQuery(r *model.Request) (*timeseries.TimeRangeQuery, error) {
+func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
-	qi := r.TemplateURL.Query()
+	trq.TemplateURL = urls.CloneURL(r.URL)
+
+	qi := trq.TemplateURL.Query()
 	if p, ok := qi[upQuery]; ok {
 		trq.Statement = p[0]
 	} else {
@@ -55,12 +55,12 @@ func (c *Client) ParseTimeRangeQuery(r *model.Request) (*timeseries.TimeRangeQue
 	// if the Step wasn't found in the query (e.g., "group by time(1m)"), just proxy it instead
 	step, found := matching.GetNamedMatch("step", reStep, trq.Statement)
 	if !found {
-		return nil, errors.StepParse()
+		return nil, errors.ErrStepParse
 	}
 
 	stepDuration, err := timeconv.ParseDuration(step)
 	if err != nil {
-		return nil, errors.StepParse()
+		return nil, errors.ErrStepParse
 	}
 	trq.Step = stepDuration
 
@@ -68,7 +68,7 @@ func (c *Client) ParseTimeRangeQuery(r *model.Request) (*timeseries.TimeRangeQue
 
 	// Swap in the Tokenzed Query in the Url Params
 	qi.Set(upQuery, trq.Statement)
-	r.TemplateURL.RawQuery = qi.Encode()
+	trq.TemplateURL.RawQuery = qi.Encode()
 	return trq, nil
 
 }
