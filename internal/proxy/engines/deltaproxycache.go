@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"sync"
 	"time"
 
@@ -36,6 +37,11 @@ import (
 // while caching the results for subsequent requests of the same data
 func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client model.Client) {
 
+	var ranges model.Ranges
+	if _, ok := r.Headers[headers.NameRange]; ok {
+		ranges = model.GetByteRanges(r.Headers.Get(headers.NameRange))
+	}
+
 	oc := context.OriginConfig(r.ClientRequest.Context())
 	cache := context.CacheClient(r.ClientRequest.Context())
 	r.FastForwardDisable = oc.FastForwardDisable
@@ -46,6 +52,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		ProxyRequest(r, w)
 		return
 	}
+	r.TimeRangeQuery = trq
 
 	trq.NormalizeExtent()
 
@@ -73,7 +80,6 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 		}
 	}
 
-	r.TimeRangeQuery = trq
 	client.SetExtent(r, &trq.Extent)
 
 	key := oc.CacheKeyPrefix + "." + DeriveCacheKey(r, nil, "")
@@ -104,8 +110,22 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 			return // fetchTimeseries logs the error
 		}
 	} else {
-		doc, err = QueryCache(cache, key)
+		doc, err = QueryCache(cache, key, ranges)
+		// Partial or full Cache miss
 		if err != nil {
+
+			if doc.UpdatedQueryRange != nil && len(doc.UpdatedQueryRange) > 0 {
+				header := "bytes="
+				for _, v := range doc.UpdatedQueryRange {
+					s := v.Start
+					e := v.End
+					header = header + strconv.Itoa(s) + "-" + strconv.Itoa(e) + ", "
+				}
+				// To get rid of the trailing ", "
+				header = header[:len(header)-2]
+				r.Headers.Add(headers.NameRange, header)
+			}
+
 			cts, doc, elapsed, err = fetchTimeseries(r, client)
 			if err != nil {
 				recordDPCResult(r, tc.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
@@ -113,6 +133,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 				return // fetchTimeseries logs the error
 			}
 		} else {
+			// Cache hit
 			// Load the Cached Timeseries
 			cts, err = client.UnmarshalTimeseries(doc.Body)
 			if err != nil {
@@ -148,7 +169,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	}
 
 	// Find the ranges that we want, but which are not currently cached
-	var missRanges []timeseries.Extent
+	var missRanges timeseries.ExtentList
 	if cacheStatus == tc.LookupStatusPartialHit {
 		missRanges = trq.CalculateDeltas(cts.Extents())
 	}
@@ -218,7 +239,6 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 	var hasFastForwardData bool
 	var ffts timeseries.Timeseries
 	// Only fast forward if configured and the user request is for the absolute latest datapoint
-
 	if (!r.FastForwardDisable) && (trq.Extent.End.Equal(normalizedNow.Extent.End)) && ffURL.Scheme != "" {
 		wg.Add(1)
 		go func() {
@@ -304,7 +324,7 @@ func DeltaProxyCacheRequest(r *model.Request, w http.ResponseWriter, client mode
 					return
 				}
 				doc.Body = cdata
-				WriteCache(cache, key, doc, oc.TimeseriesTTL)
+				WriteCache(cache, key, doc, oc.TimeseriesTTL, ranges)
 			}
 		}()
 	}

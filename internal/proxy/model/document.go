@@ -21,15 +21,6 @@ import (
 
 //go:generate msgp
 
-// HTTPDocument represents a full HTTP Response/Cache Document with unbuffered body
-type HTTPDocument struct {
-	StatusCode    int                 `msg:"status_code"`
-	Status        string              `msg:"status"`
-	Headers       map[string][]string `msg:"headers"`
-	Body          []byte              `msg:"body"`
-	CachingPolicy *CachingPolicy      `msg:"caching_policy"`
-}
-
 // CachingPolicy defines the attributes for determining the cachability of an HTTP object
 type CachingPolicy struct {
 	IsFresh               bool      `msg:"is_fresh"`

@@ -18,6 +18,14 @@ Trickster fully supports the [Prometheus HTTP API (v1)](https://prometheus.io/do
 
 Trickster 1.0 has experimental support for InfluxDB. Specify `'influxdb'` as the Origin Type when configuring Trickster.
 
+See the [InfluxDB Support Document](./influxdb.md) for more information.
+
+### <img src="./images/external/clickhouse_logo.png" width=16 /> ClickHouse _(Currently Experimental)_
+
+Trickster 1.0 has experimental support for ClickHouse. Specify `'clickhouse'` as the Origin Type when configuring Trickster.
+
+See the [ClickHouse Support Document](./clickhouse.md) for more information.
+
 ### <img src="./images/external/irondb_logo_60.png" width=16 /> Circonus IRONdb _(Currently Experimental)_
 
 Experimental support has been included for the Circonus IRONdb time-series database. If Grafana is used for visualizations, the Circonus IRONdb data source plug-in for Grafana can be configured to use Trickster as its data source. All IRONdb data retrieval operations, including CAQL queries, are supported.

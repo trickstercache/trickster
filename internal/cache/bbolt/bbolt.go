@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"time"
 
-	bbolt "github.com/coreos/bbolt"
+	"github.com/coreos/bbolt"
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/index"

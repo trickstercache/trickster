@@ -108,10 +108,17 @@ func (el ExtentList) Compress(step time.Duration) ExtentList {
 	compressed := make(ExtentList, 0, l)
 	sort.Sort(exc)
 	e := Extent{}
+	extr := Extent{}
 	for i := range exc {
 		e.LastUsed = exc[i].LastUsed
-		if e.Start.IsZero() {
+		if e.Start.IsZero() && !exc[i].Start.IsZero() {
 			e.Start = exc[i].Start
+			if extr.Start.IsZero() {
+				extr.Start = e.Start
+			}
+		}
+		if exc[i].End.Before(extr.End) {
+			continue
 		}
 		if i+1 < l && ((exc[i].End.Add(step).Equal(exc[i+1].Start) ||
 			exc[i].End.Equal(exc[i+1].Start)) && exc[i].LastUsed.Equal(exc[i+1].LastUsed) ||
@@ -119,6 +126,9 @@ func (el ExtentList) Compress(step time.Duration) ExtentList {
 			continue
 		}
 		e.End = exc[i].End
+		if e.End.After(extr.End) {
+			extr.End = e.End
+		}
 		compressed = append(compressed, e)
 		e = Extent{}
 	}

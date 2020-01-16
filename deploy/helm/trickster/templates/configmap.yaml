@@ -230,6 +230,13 @@ data:
         {{- if .hcQuery }}
       health_check_query = {{ .hcQuery | quote }}
         {{- end }}
+        {{- if .hcHeaders }}
+
+        {{ printf "[origins.%s.paths.%s.health_check_headers]" $origin .name }}
+          {{- range $key, $val := .hcHeaders }}
+        {{ printf "'%s' = '%s'" $key $val }}
+          {{- end }}
+        {{- end }}
         {{- if .tls }}
 
         {{ printf "[origins.%s.tls]" .name }}
@@ -303,6 +310,13 @@ data:
 
             {{ printf "[origins.%s.paths.%s.request_headers]" $origin .name }}
               {{- range $key, $val := .requestHeaders }}
+            {{ printf "'%s' = '%s'" $key $val }}
+              {{- end }}
+            {{- end }}
+            {{- if .requestParams }}
+
+            {{ printf "[origins.%s.paths.%s.request_params]" $origin .name }}
+              {{- range $key, $val := .requestParams }}
             {{ printf "'%s' = '%s'" $key $val }}
               {{- end }}
             {{- end }}

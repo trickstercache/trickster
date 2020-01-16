@@ -44,7 +44,12 @@ func DeriveCacheKey(r *model.Request, apc *config.PathConfig, extra string) stri
 		return md5.Checksum(r.URL.Path + extra)
 	}
 
-	params := r.URL.Query()
+	var params url.Values
+	if r.TemplateURL != nil {
+		params = r.TemplateURL.Query()
+	} else {
+		params = r.URL.Query()
+	}
 
 	if pc.KeyHasher != nil && len(pc.KeyHasher) == 1 {
 		return pc.KeyHasher[0](r.URL.Path, params, r.Headers, r.ClientRequest.Body, extra)

@@ -1,4 +1,4 @@
-# <img src="./docs/images/logos/trickster-horizontal-sm.png" width=420 />
+# <img src="./docs/images/logos/trickster-logo.svg" width=90 />&nbsp;&nbsp;&nbsp;&nbsp;<img src="./docs/images/logos/trickster-text.svg" width=420 />
 
 [![Build Status](https://travis-ci.org/Comcast/trickster.svg?branch=master)](https://travis-ci.org/Comcast/trickster/)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Comcast/trickster)](https://goreportcard.com/report/github.com/Comcast/trickster)
@@ -33,6 +33,8 @@ Trickster dramatically improves dashboard chart rendering times for end users, w
 Trickster works with virtually any Dashboard application that makes queries to any of these TSDB's:
 
 <img src="./docs/images/external/prom_logo_60.png" width=16 /> Prometheus
+
+<img src="./docs/images/external/clickhouse_logo.png" width=16 /> ClickHouse
 
 <img src="./docs/images/external/influx_logo_60.png" width=16 /> InfluxDB
 

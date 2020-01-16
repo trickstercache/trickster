@@ -18,7 +18,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/runtime"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -69,6 +69,8 @@ const (
 	NameAcceptEncoding = "Accept-Encoding"
 	// NameSetCookie represents the HTTP Header Name of "Set-Cookie"
 	NameSetCookie = "Set-Cookie"
+	// NameRange represents the HTTP Header Name of "Range"
+	NameRange = "Range"
 
 	NameExpires           = "expires"
 	NameLastModified      = "last-modified"
@@ -118,7 +120,7 @@ func UpdateHeaders(headers http.Header, updates map[string]string) {
 func AddProxyHeaders(remoteAddr string, headers http.Header) {
 	if remoteAddr != "" {
 		headers.Add(NameXForwardedFor, remoteAddr)
-		headers.Add(NameXForwardedBy, config.ApplicationName+" "+config.ApplicationVersion)
+		headers.Add(NameXForwardedBy, runtime.ApplicationName+" "+runtime.ApplicationVersion)
 	}
 }
 
@@ -126,7 +128,7 @@ func AddProxyHeaders(remoteAddr string, headers http.Header) {
 func AddResponseHeaders(headers http.Header) {
 	// We're read only and a harmless API, so allow all CORS
 	headers.Set(NameAllowOrigin, "*")
-	headers.Set(NameXAccelerator, config.ApplicationName+" "+config.ApplicationVersion)
+	headers.Set(NameXAccelerator, runtime.ApplicationName+" "+runtime.ApplicationVersion)
 }
 
 // SetResultsHeader adds a response header summarizing Trickster's handling of the HTTP request

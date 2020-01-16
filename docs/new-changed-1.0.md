@@ -16,6 +16,7 @@
 - Also: The Cache Provider and Origin Proxy are exposed as Interfaces for easy extensibility.
 - Experimental Support For:
   - InfluxDB
+  - [ClickHouse](./clickhouse.md)
   - Circonus IRONdb
   - Generic HTTP Reverse Proxy Cache
 

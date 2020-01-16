@@ -28,6 +28,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/proxy/params"
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/context"
 	"github.com/Comcast/trickster/internal/util/log"
@@ -118,6 +119,7 @@ func PrepareFetchReader(r *model.Request) (io.ReadCloser, *http.Response, int) {
 
 	if pc != nil {
 		headers.UpdateHeaders(r.Headers, pc.RequestHeaders)
+		params.UpdateParams(r.URL.Query(), pc.RequestParams)
 	}
 
 	req := &http.Request{Method: r.ClientRequest.Method}
