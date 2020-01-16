@@ -53,10 +53,10 @@ func TestNewPathConfig(t *testing.T) {
 
 }
 
-func TestPathCopy(t *testing.T) {
+func TestPathClone(t *testing.T) {
 
 	pc := NewPathConfig()
-	pc2 := pc.Copy()
+	pc2 := pc.Clone()
 
 	if pc2 == nil {
 		t.Errorf("expected non-nil value you for %s", "PathConfig")
@@ -71,7 +71,7 @@ func TestPathCopy(t *testing.T) {
 func TestPathMerge(t *testing.T) {
 
 	pc := NewPathConfig()
-	pc2 := pc.Copy()
+	pc2 := pc.Clone()
 
 	pc2.OriginConfig = NewOriginConfig()
 

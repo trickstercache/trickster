@@ -128,8 +128,8 @@ func NewPathConfig() *PathConfig {
 	}
 }
 
-// Copy returns an exact copy of the subject PathConfig
-func (p *PathConfig) Copy() *PathConfig {
+// Clone returns an exact copy of the subject PathConfig
+func (p *PathConfig) Clone() *PathConfig {
 	c := &PathConfig{
 		Path:                    p.Path,
 		OriginConfig:            p.OriginConfig,
@@ -137,9 +137,9 @@ func (p *PathConfig) Copy() *PathConfig {
 		MatchType:               p.MatchType,
 		HandlerName:             p.HandlerName,
 		Handler:                 p.Handler,
-		RequestHeaders:          ts.CopyMap(p.RequestHeaders),
-		RequestParams:           ts.CopyMap(p.RequestParams),
-		ResponseHeaders:         ts.CopyMap(p.ResponseHeaders),
+		RequestHeaders:          ts.CloneMap(p.RequestHeaders),
+		RequestParams:           ts.CloneMap(p.RequestParams),
+		ResponseHeaders:         ts.CloneMap(p.ResponseHeaders),
 		ResponseBody:            p.ResponseBody,
 		ResponseBodyBytes:       p.ResponseBodyBytes,
 		CollapsedForwardingName: p.CollapsedForwardingName,

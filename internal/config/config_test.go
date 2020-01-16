@@ -28,6 +28,8 @@ func TestCopy(t *testing.T) {
 	oc := c1.Origins["default"]
 	c1.NegativeCacheConfigs["default"]["404"] = 10
 
+	oc.CompressableTypeList = []string{"text/plain"}
+	oc.CompressableTypes = map[string]bool{"text/plain": true}
 	oc.NegativeCacheName = "default"
 	oc.NegativeCache = map[int]time.Duration{404: time.Duration(10) * time.Second}
 	oc.FastForwardPath = NewPathConfig()
@@ -48,7 +50,7 @@ func TestString(t *testing.T) {
 	c1.Caches["default"].Redis.Password = "plaintext-password"
 
 	s := c1.String()
-	if strings.Index(s, `password = "*****"`) < 0 {
+	if !strings.Contains(s, `password = "*****"`) {
 		t.Errorf("missing password mask: %s", "*****")
 	}
 }

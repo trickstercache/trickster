@@ -252,10 +252,6 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected redis, got %s", c.CacheType)
 	}
 
-	if !c.Compression {
-		t.Errorf("expected compression %t, got %t", defaultCacheCompression, c.Compression)
-	}
-
 	if c.Index.ReapIntervalSecs != 4 {
 		t.Errorf("expected 4, got %d", c.Index.ReapIntervalSecs)
 	}
@@ -478,10 +474,6 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 
 	if c.CacheType != defaultCacheType {
 		t.Errorf("expected %s, got %s", defaultCacheType, c.CacheType)
-	}
-
-	if !c.Compression {
-		t.Errorf("expected compression %t, got %t", defaultCacheCompression, c.Compression)
 	}
 
 	if c.Index.ReapIntervalSecs != defaultCacheIndexReap {
