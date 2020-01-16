@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -25,7 +26,6 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/proxy/errors"
-	tm "github.com/Comcast/trickster/internal/proxy/model"
 	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
@@ -44,42 +44,30 @@ const (
 	mnAlerts        = "alerts"
 	mnAlertManagers = "alertmanagers"
 	mnStatus        = "status"
-	mnHealth        = "health"
-)
-
-// Origin Types
-const (
-	otPrometheus = "prometheus"
-)
-
-// Prometheus Response Values
-const (
-	rvSuccess = "success"
-	rvMatrix  = "matrix"
-	rvVector  = "vector"
 )
 
 // Common URL Parameter Names
 const (
-	upQuery   = "query"
-	upStart   = "start"
-	upEnd     = "end"
-	upStep    = "step"
-	upTimeout = "timeout"
-	upTime    = "time"
-	upMatch   = "match[]"
+	upQuery = "query"
+	upStart = "start"
+	upEnd   = "end"
+	upStep  = "step"
+	upTime  = "time"
+	upMatch = "match[]"
 )
 
 // Client Implements Proxy Client Interface
 type Client struct {
 	name               string
-	user               string
-	pass               string
 	config             *config.OriginConfig
 	cache              cache.Cache
 	webClient          *http.Client
 	handlers           map[string]http.Handler
 	handlersRegistered bool
+
+	healthURL     *url.URL
+	healthHeaders http.Header
+	healthMethod  string
 }
 
 // NewClient returns a new Client Instance
@@ -139,7 +127,7 @@ func parseDuration(input string) (time.Duration, error) {
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
-func (c *Client) ParseTimeRangeQuery(r *tm.Request) (*timeseries.TimeRangeQuery, error) {
+func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	qp := r.URL.Query()
@@ -179,9 +167,9 @@ func (c *Client) ParseTimeRangeQuery(r *tm.Request) (*timeseries.TimeRangeQuery,
 		return nil, errors.MissingURLParam(upStep)
 	}
 
-	if strings.Index(trq.Statement, " offset ") > -1 {
+	if strings.Contains(trq.Statement, " offset ") {
 		trq.IsOffset = true
-		r.FastForwardDisable = true
+		trq.FastForwardDisable = true
 	}
 
 	return trq, nil

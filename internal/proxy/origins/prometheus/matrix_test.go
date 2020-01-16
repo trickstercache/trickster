@@ -25,6 +25,8 @@ import (
 	"github.com/prometheus/common/model"
 )
 
+const rvSuccess = "success"
+
 func TestSetStep(t *testing.T) {
 	me := MatrixEnvelope{}
 	const step = time.Duration(300) * time.Minute
@@ -246,13 +248,13 @@ func TestMerge(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "b"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+								{Timestamp: 10000000, Value: 1.5},
 							},
 						},
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "c"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+								{Timestamp: 10000000, Value: 1.5},
 							},
 						},
 					},
@@ -270,7 +272,7 @@ func TestMerge(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "c"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+								{Timestamp: 15000000, Value: 1.5},
 							},
 						},
 					},
@@ -292,14 +294,14 @@ func TestMerge(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "b"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 10000000, Value: 1.5},
+								{Timestamp: 10000000, Value: 1.5},
 							},
 						},
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "c"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 10000000, Value: 1.5},
-								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+								{Timestamp: 10000000, Value: 1.5},
+								{Timestamp: 15000000, Value: 1.5},
 							},
 						},
 					},
@@ -320,15 +322,15 @@ func TestMerge(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "a"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 10000000, Value: 1.5},
-								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+								{Timestamp: 10000000, Value: 1.5},
+								{Timestamp: 15000000, Value: 1.5},
 							},
 						},
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "b"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 10000000, Value: 1.5},
-								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+								{Timestamp: 10000000, Value: 1.5},
+								{Timestamp: 15000000, Value: 1.5},
 							},
 						},
 					},
@@ -346,15 +348,15 @@ func TestMerge(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "a"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 30000000, Value: 1.5},
-								model.SamplePair{Timestamp: 35000000, Value: 1.5},
+								{Timestamp: 30000000, Value: 1.5},
+								{Timestamp: 35000000, Value: 1.5},
 							},
 						},
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "b"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 30000000, Value: 1.5},
-								model.SamplePair{Timestamp: 35000000, Value: 1.5},
+								{Timestamp: 30000000, Value: 1.5},
+								{Timestamp: 35000000, Value: 1.5},
 							},
 						},
 					},
@@ -376,19 +378,19 @@ func TestMerge(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "a"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 10000000, Value: 1.5},
-								model.SamplePair{Timestamp: 15000000, Value: 1.5},
-								model.SamplePair{Timestamp: 30000000, Value: 1.5},
-								model.SamplePair{Timestamp: 35000000, Value: 1.5},
+								{Timestamp: 10000000, Value: 1.5},
+								{Timestamp: 15000000, Value: 1.5},
+								{Timestamp: 30000000, Value: 1.5},
+								{Timestamp: 35000000, Value: 1.5},
 							},
 						},
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "b"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 10000000, Value: 1.5},
-								model.SamplePair{Timestamp: 15000000, Value: 1.5},
-								model.SamplePair{Timestamp: 30000000, Value: 1.5},
-								model.SamplePair{Timestamp: 35000000, Value: 1.5},
+								{Timestamp: 10000000, Value: 1.5},
+								{Timestamp: 15000000, Value: 1.5},
+								{Timestamp: 30000000, Value: 1.5},
+								{Timestamp: 35000000, Value: 1.5},
 							},
 						},
 					},
@@ -412,15 +414,15 @@ func TestMerge(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "a"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 10000000, Value: 1.5},
-								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+								{Timestamp: 10000000, Value: 1.5},
+								{Timestamp: 15000000, Value: 1.5},
 							},
 						},
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "b"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 10000000, Value: 1.5},
-								model.SamplePair{Timestamp: 15000000, Value: 1.5},
+								{Timestamp: 10000000, Value: 1.5},
+								{Timestamp: 15000000, Value: 1.5},
 							},
 						},
 					},
@@ -438,15 +440,15 @@ func TestMerge(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "a"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 15000000, Value: 1.5},
-								model.SamplePair{Timestamp: 20000000, Value: 1.5},
+								{Timestamp: 15000000, Value: 1.5},
+								{Timestamp: 20000000, Value: 1.5},
 							},
 						},
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "b"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 15000000, Value: 1.5},
-								model.SamplePair{Timestamp: 20000000, Value: 1.5},
+								{Timestamp: 15000000, Value: 1.5},
+								{Timestamp: 20000000, Value: 1.5},
 							},
 						},
 					},
@@ -468,17 +470,17 @@ func TestMerge(t *testing.T) {
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "a"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 10000000, Value: 1.5},
-								model.SamplePair{Timestamp: 15000000, Value: 1.5},
-								model.SamplePair{Timestamp: 20000000, Value: 1.5},
+								{Timestamp: 10000000, Value: 1.5},
+								{Timestamp: 15000000, Value: 1.5},
+								{Timestamp: 20000000, Value: 1.5},
 							},
 						},
 						&model.SampleStream{
 							Metric: model.Metric{"__name__": "b"},
 							Values: []model.SamplePair{
-								model.SamplePair{Timestamp: 10000000, Value: 1.5},
-								model.SamplePair{Timestamp: 15000000, Value: 1.5},
-								model.SamplePair{Timestamp: 20000000, Value: 1.5},
+								{Timestamp: 10000000, Value: 1.5},
+								{Timestamp: 15000000, Value: 1.5},
+								{Timestamp: 20000000, Value: 1.5},
 							},
 						},
 					},
@@ -1361,7 +1363,7 @@ func TestUpdateTimestamps(t *testing.T) {
 
 }
 
-func TestCopy(t *testing.T) {
+func TestClone(t *testing.T) {
 
 	tests := []struct {
 		before *MatrixEnvelope
@@ -1423,7 +1425,7 @@ func TestCopy(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			after := test.before.Copy()
+			after := test.before.Clone()
 			if !reflect.DeepEqual(test.before, after) {
 				t.Errorf("mismatch\nexpected %v\ngot      %v", test.before, after)
 			}
@@ -1669,5 +1671,32 @@ func TestTimestampCount(t *testing.T) {
 				t.Errorf("expected %d got %d.", test.expected, tc)
 			}
 		})
+	}
+}
+
+func TestSize(t *testing.T) {
+	m := &MatrixEnvelope{
+		Status: rvSuccess,
+		Data: MatrixData{
+			ResultType: "matrix",
+			Result: model.Matrix{
+				&model.SampleStream{
+					Metric: model.Metric{"__name__": "a"},
+					Values: []model.SamplePair{
+						{Timestamp: 10000, Value: 1.5},
+					},
+				},
+			},
+		},
+		ExtentList: timeseries.ExtentList{
+			timeseries.Extent{Start: time.Unix(10, 0), End: time.Unix(10, 0)},
+		},
+		StepDuration: time.Duration(5) * time.Second,
+	}
+	i := m.Size()
+	expected := 17
+
+	if i != expected {
+		t.Errorf("expected %d got %d", expected, i)
 	}
 }
