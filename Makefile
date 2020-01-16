@@ -24,7 +24,6 @@ LDFLAGS=-ldflags "-s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicat
 GO111MODULE    ?= on
 export GO111MODULE
 
-
 .PHONY: go-mod-vendor
 go-mod-vendor:
 	$(GO) mod vendor
@@ -99,10 +98,8 @@ style:
 	! gofmt -d $$(find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
 .PHONY: test
-test: test-go-mod
-	$(GO) test -v -coverprofile=.coverprofile.tmp ./... | grep -v ' app=trickster ' && \
-	cat .coverprofile.tmp | grep -v "_gen.go:" > .coverprofile && \
-	rm  .coverprofile.tmp
+test:
+	@go test -v -coverprofile=.coverprofile.tmp ./... 
 
 .PHONY: bench
 bench:
