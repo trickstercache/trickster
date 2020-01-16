@@ -1490,7 +1490,7 @@ func TestSize(t *testing.T) {
 				},
 			},
 		},
-		Meta:        []FieldDefinition{FieldDefinition{Name: "test", Type: "Test"}},
+		Meta:        []FieldDefinition{{Name: "test", Type: "Test"}},
 		SeriesOrder: []string{"test"},
 		ExtentList: timeseries.ExtentList{
 			timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(15, 0)},
