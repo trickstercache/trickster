@@ -2,7 +2,7 @@
 
 ## What's Improved
 
-1.0 is a major improvement in over 0.1.x, with thousands of lines of code for new features, bug fixes, and optimizations. Here's the quick rundown of what has been improved:
+1.0 is a major improvement in over 0.1.x, with thousands of lines of code for new features, bug fixes, and optimizations. Here's the quick rundown of what's new and improved:
 
 - Cache management is improved, with enhancements like a configurable max cache size and better metrics.
 - Configuration now allows per-origin cache provider selection.
@@ -15,12 +15,12 @@
 - For Gophers: we've refactored the project into packages with a much more cohesive structure, so it's much easier for you to contribute.
 - Also: The Cache Provider and Origin Proxy are exposed as Interfaces for easy extensibility.
 - Experimental Support For:
-  - InfluxDB
+  - [InfluxDB](./influxdb.md)
   - [ClickHouse](./clickhouse.md)
   - Circonus IRONdb
   - Generic HTTP Reverse Proxy Cache
 
-And so much more!
+And so much more! See the main [README](../readme.md) for more info.
 
 ## Status
 
