@@ -189,7 +189,7 @@ func TestDF4SeriesEnvelopeMerge(t *testing.T) {
 	// }
 }
 
-func TestDF4SeriesEnvelopeCopy(t *testing.T) {
+func TestDF4SeriesEnvelopeClone(t *testing.T) {
 	client := &Client{}
 	ts1, err := client.UnmarshalTimeseries([]byte(testDF4Response))
 	if err != nil {
@@ -198,7 +198,7 @@ func TestDF4SeriesEnvelopeCopy(t *testing.T) {
 	}
 
 	se := ts1.(*DF4SeriesEnvelope)
-	se2 := se.Copy()
+	se2 := se.Clone()
 
 	s1, err := client.MarshalTimeseries(se)
 	if err != nil {
@@ -381,4 +381,16 @@ func TestUnmarshalDF4Timeseries(t *testing.T) {
 		t.Errorf(`Expected time period: 300. got %d`, se.Head.Period)
 		return
 	}
+}
+
+func TestSize(t *testing.T) {
+
+	client := &Client{}
+	s, _ := client.UnmarshalTimeseries([]byte(testDF4Response))
+	expected := 75
+
+	if s.Size() != expected {
+		t.Errorf("expected %d got %d", expected, s.Size())
+	}
+
 }

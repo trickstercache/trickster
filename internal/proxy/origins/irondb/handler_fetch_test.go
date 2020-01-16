@@ -21,9 +21,8 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/timeseries"
-	tc "github.com/Comcast/trickster/internal/util/context"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
@@ -32,8 +31,11 @@ func TestFetchHandler(t *testing.T) {
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "irondb", "/rollup/00112233-4455-6677-8899-aabbccddeeff/metric"+
 		"?start_ts=0&end_ts=900&rollup_span=300s&type=average", "debug")
-	client.config = tc.OriginConfig(r.Context())
+	rsc := request.GetResources(r)
+	rsc.OriginClient = client
+	client.config = rsc.OriginConfig
 	client.webClient = hc
+	client.config.HTTPClient = hc
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
@@ -79,15 +81,16 @@ func TestFetchHandlerDeriveCacheKey(t *testing.T) {
 func TestFetchHandlerSetExtent(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
-	client := &Client{name: "test"}
 	hc := tu.NewTestWebClient()
 	cfg := config.NewOriginConfig()
+	client := &Client{name: "test", config: cfg, webClient: hc}
 	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0/", nil)
 	if err != nil {
 		t.Error(err)
 	}
-	tr := model.NewRequest("FetchHandler", r.Method, r.URL, r.Header, cfg.Timeout, r, hc)
+
+	r = request.SetResources(r, request.NewResources(cfg, nil, nil, nil, client))
 
 	now := time.Now()
 	then := now.Add(-5 * time.Hour)
@@ -96,48 +99,49 @@ func TestFetchHandlerSetExtent(t *testing.T) {
 
 	// should short circuit from internal checks
 	// all though this func does not return a value to test, these exercise all coverage areas
-	client.fetchHandlerSetExtent(nil, nil)
-	client.fetchHandlerSetExtent(tr, &timeseries.Extent{Start: then, End: now})
-	client.fetchHandlerSetExtent(tr, &timeseries.Extent{Start: now, End: now})
+	client.fetchHandlerSetExtent(nil, nil, nil)
+	client.fetchHandlerSetExtent(r, nil, &timeseries.Extent{Start: then, End: now})
+	client.fetchHandlerSetExtent(r, nil, &timeseries.Extent{Start: now, End: now})
 	r.Body = ioutil.NopCloser(bytes.NewReader([]byte(`{a}`)))
-	client.fetchHandlerSetExtent(tr, &timeseries.Extent{Start: then, End: now})
+	client.fetchHandlerSetExtent(r, nil, &timeseries.Extent{Start: then, End: now})
 
 }
 
 func TestFetchHandlerParseTimeRangeQuery(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
-	client := &Client{name: "test"}
 	hc := tu.NewTestWebClient()
+	cfg := config.NewOriginConfig()
+	client := &Client{name: "test", config: cfg, webClient: hc}
+
 	r, err := http.NewRequest(http.MethodGet, "http://0/", nil)
 	if err != nil {
 		t.Error(err)
 	}
-	tr := model.NewRequest("FetchHandler", r.Method, r.URL, r.Header, time.Second*300, r, hc)
 
 	r.Body = ioutil.NopCloser(bytes.NewReader([]byte(`{"start": 300, "period": 300, "count": 5}`)))
-	_, err = client.fetchHandlerParseTimeRangeQuery(tr)
+	_, err = client.fetchHandlerParseTimeRangeQuery(r)
 	if err != nil {
 		t.Error(err)
 	}
 
 	r.Body = ioutil.NopCloser(bytes.NewReader([]byte(`{"period": 300, "count": 5}`)))
 	expected := "missing request parameter: start"
-	_, err = client.fetchHandlerParseTimeRangeQuery(tr)
+	_, err = client.fetchHandlerParseTimeRangeQuery(r)
 	if err.Error() != expected {
 		t.Errorf("expected %s got %s", expected, err.Error())
 	}
 
 	r.Body = ioutil.NopCloser(bytes.NewReader([]byte(`{"start": 300, "count": 5}`)))
 	expected = "missing request parameter: period"
-	_, err = client.fetchHandlerParseTimeRangeQuery(tr)
+	_, err = client.fetchHandlerParseTimeRangeQuery(r)
 	if err.Error() != expected {
 		t.Errorf("expected %s got %s", expected, err.Error())
 	}
 
 	r.Body = ioutil.NopCloser(bytes.NewReader([]byte(`{"start": 300, "period": 300}`)))
 	expected = "missing request parameter: count"
-	_, err = client.fetchHandlerParseTimeRangeQuery(tr)
+	_, err = client.fetchHandlerParseTimeRangeQuery(r)
 	if err.Error() != expected {
 		t.Errorf("expected %s got %s", expected, err.Error())
 	}

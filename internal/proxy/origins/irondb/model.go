@@ -223,8 +223,8 @@ func (se *SeriesEnvelope) Merge(sort bool,
 	}
 }
 
-// Copy returns a perfect copy of the base Timeseries.
-func (se *SeriesEnvelope) Copy() timeseries.Timeseries {
+// Clone returns a perfect copy of the base Timeseries.
+func (se *SeriesEnvelope) Clone() timeseries.Timeseries {
 	b := &SeriesEnvelope{
 		Data:         make([]DataPoint, len(se.Data)),
 		StepDuration: se.StepDuration,
@@ -352,4 +352,13 @@ func (c *Client) UnmarshalTimeseries(data []byte) (timeseries.Timeseries,
 func (c Client) UnmarshalInstantaneous(
 	data []byte) (timeseries.Timeseries, error) {
 	return c.UnmarshalTimeseries(data)
+}
+
+// Size returns the approximate memory utilization in bytes of the timeseries
+func (se *SeriesEnvelope) Size() int {
+
+	// TODO this implementation is a rough approximation to ensure we conform to the
+	// interface specification, it requires refinement in order to be in the ballpark
+	c := len(se.Data) * 24
+	return c
 }

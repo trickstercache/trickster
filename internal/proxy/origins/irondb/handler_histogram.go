@@ -23,7 +23,8 @@ import (
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/errors"
-	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/proxy/request"
+	"github.com/Comcast/trickster/internal/proxy/urls"
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/md5"
 )
@@ -31,18 +32,15 @@ import (
 // HistogramHandler handles requests for historgam timeseries data and processes
 // them through the delta proxy cache.
 func (c *Client) HistogramHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BuildUpstreamURL(r)
-	engines.DeltaProxyCacheRequest(
-		model.NewRequest("HistogramHandler",
-			r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c)
+	r.URL = c.BuildUpstreamURL(r)
+	engines.DeltaProxyCacheRequest(w, r)
 }
 
 // histogramHandlerSetExtent will change the upstream request query to use the
 // provided Extent.
-func (c Client) histogramHandlerSetExtent(r *model.Request,
+func (c Client) histogramHandlerSetExtent(r *http.Request,
+	trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent) {
-	trq := r.TimeRangeQuery
 	var err error
 	if trq == nil {
 		if trq, err = c.ParseTimeRangeQuery(r); err != nil {
@@ -76,9 +74,9 @@ func (c Client) histogramHandlerSetExtent(r *model.Request,
 // histogramHandlerParseTimeRangeQuery parses the key parts of a TimeRangeQuery
 // from the inbound HTTP Request.
 func (c *Client) histogramHandlerParseTimeRangeQuery(
-	r *model.Request) (*timeseries.TimeRangeQuery, error) {
+	r *http.Request) (*timeseries.TimeRangeQuery, error) {
 	trq := &timeseries.TimeRangeQuery{}
-	ps := []string{}
+	var ps []string
 	if strings.HasPrefix(r.URL.Path, "/irondb") {
 		ps = strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 7)
 		if len(ps) > 0 {
@@ -89,7 +87,7 @@ func (c *Client) histogramHandlerParseTimeRangeQuery(
 	}
 
 	if len(ps) < 6 || ps[0] != "histogram" {
-		return nil, errors.NotTimeRangeQuery()
+		return nil, errors.ErrNotTimeRangeQuery
 	}
 
 	trq.Statement = "/histogram/" + strings.Join(ps[4:], "/")
@@ -116,7 +114,7 @@ func (c Client) histogramHandlerDeriveCacheKey(path string, params url.Values,
 	headers http.Header, body io.ReadCloser, extra string) string {
 	var sb strings.Builder
 	sb.WriteString(path)
-	ps := []string{}
+	var ps []string
 	if strings.HasPrefix(path, "/irondb") {
 		ps = strings.SplitN(strings.TrimPrefix(path, "/"), "/", 7)
 		if len(ps) > 0 {
@@ -137,10 +135,13 @@ func (c Client) histogramHandlerDeriveCacheKey(path string, params url.Values,
 // histogramHandlerFastForwardURL returns the url to fetch the Fast Forward value
 // based on a timerange URL.
 func (c *Client) histogramHandlerFastForwardURL(
-	r *model.Request) (*url.URL, error) {
+	r *http.Request) (*url.URL, error) {
+
+	rsc := request.GetResources(r)
+
 	var err error
-	u := model.CopyURL(r.URL)
-	trq := r.TimeRangeQuery
+	u := urls.CloneURL(r.URL)
+	trq := rsc.TimeRangeQuery
 	if trq == nil {
 		trq, err = c.ParseTimeRangeQuery(r)
 		if err != nil {

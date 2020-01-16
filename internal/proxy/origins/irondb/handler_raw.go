@@ -18,23 +18,20 @@ import (
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/errors"
-	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
 // RawHandler handles requests for raw numeric timeseries data and processes
 // them through the delta proxy cache.
 func (c *Client) RawHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BuildUpstreamURL(r)
-	engines.DeltaProxyCacheRequest(
-		model.NewRequest("RawHandler",
-			r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c)
+	r.URL = c.BuildUpstreamURL(r)
+	engines.DeltaProxyCacheRequest(w, r)
 }
 
 // rawHandlerSetExtent will change the upstream request query to use the
 // provided Extent.
-func (c Client) rawHandlerSetExtent(r *model.Request,
+func (c Client) rawHandlerSetExtent(r *http.Request,
+	trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent) {
 	q := r.URL.Query()
 	q.Set(upStart, formatTimestamp(extent.Start, true))
@@ -45,7 +42,7 @@ func (c Client) rawHandlerSetExtent(r *model.Request,
 // rawHandlerParseTimeRangeQuery parses the key parts of a TimeRangeQuery
 // from the inbound HTTP Request.
 func (c *Client) rawHandlerParseTimeRangeQuery(
-	r *model.Request) (*timeseries.TimeRangeQuery, error) {
+	r *http.Request) (*timeseries.TimeRangeQuery, error) {
 	trq := &timeseries.TimeRangeQuery{}
 	trq.Statement = r.URL.Path
 

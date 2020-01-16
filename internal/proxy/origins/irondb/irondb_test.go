@@ -18,12 +18,31 @@ import (
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/origins"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
 func init() {
 	// Initialize Trickster instrumentation metrics.
 	metrics.Init()
+}
+
+func TestIRONdbClientInterfacing(t *testing.T) {
+
+	// this test ensures the client will properly conform to the
+	// Client and TimeseriesClient interfaces
+
+	c := &Client{name: "test"}
+	var oc origins.Client = c
+	var tc origins.TimeseriesClient = c
+
+	if oc.Name() != "test" {
+		t.Errorf("expected %s got %s", "test", oc.Name())
+	}
+
+	if tc.Name() != "test" {
+		t.Errorf("expected %s got %s", "test", tc.Name())
+	}
 }
 
 func TestNewClient(t *testing.T) {
