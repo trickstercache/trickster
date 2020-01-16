@@ -18,12 +18,15 @@ import (
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/proxy/context"
+	"github.com/Comcast/trickster/internal/proxy/origins"
+	"github.com/Comcast/trickster/internal/proxy/request"
 )
 
-// WithConfigContext ...
-func WithConfigContext(oc *config.OriginConfig, c cache.Cache, p *config.PathConfig, next http.Handler) http.Handler {
+// WithResourcesContext ...
+func WithResourcesContext(client origins.Client, oc *config.OriginConfig, c cache.Cache, p *config.PathConfig, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r.WithContext(context.WithConfigs(r.Context(), oc, c, p)))
+		resources := request.NewResources(oc, p, c.Configuration(), c, client)
+		next.ServeHTTP(w, r.WithContext(context.WithResources(r.Context(), resources)))
 	})
 }
