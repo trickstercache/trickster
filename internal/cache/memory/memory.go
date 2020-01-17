@@ -108,11 +108,10 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 	if err != nil {
 		return nil, s, err
 	}
-	var bytes []byte
 	if o != nil {
-		bytes = o.Value
+		return o.Value, s, nil
 	}
-	return bytes, s, nil
+	return nil, s, nil
 }
 
 func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index.Object, status.LookupStatus, error) {
