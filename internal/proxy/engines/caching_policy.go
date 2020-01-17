@@ -82,6 +82,21 @@ func (cp *CachingPolicy) Clone() *CachingPolicy {
 	}
 }
 
+// ResetClientConditionals sets the request-specific conditional values of the subject
+// caching policy to false, so as to faciliate reuse of the policy with subsequent requests
+// for the same cache object
+func (cp *CachingPolicy) ResetClientConditionals() {
+	cp.IfNoneMatchValue = ""
+	cp.IfModifiedSinceTime = time.Time{}
+	cp.IfUnmodifiedSinceTime = time.Time{}
+	cp.IsClientConditional = false
+	cp.IsClientFresh = false
+	cp.HasIfModifiedSince = false
+	cp.HasIfUnmodifiedSince = false
+	cp.HasIfNoneMatch = false
+	cp.IfNoneMatchResult = false
+}
+
 // Merge merges the source CachingPolicy into the subject CachingPolicy
 func (cp *CachingPolicy) Merge(src *CachingPolicy) {
 

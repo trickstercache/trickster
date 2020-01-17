@@ -162,6 +162,10 @@ func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl time.Duration, c
 			d.isFulfillment = false
 			d.isLoaded = false
 			d.RangeParts = nil
+
+			if d.CachingPolicy != nil {
+				d.CachingPolicy.ResetClientConditionals()
+			}
 		}
 
 		return mc.StoreReference(key, d, ttl)
