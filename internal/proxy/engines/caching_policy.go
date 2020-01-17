@@ -83,7 +83,7 @@ func (cp *CachingPolicy) Clone() *CachingPolicy {
 }
 
 // ResetClientConditionals sets the request-specific conditional values of the subject
-// caching policy to false, so as to faciliate reuse of the policy with subsequent requests
+// caching policy to false, so as to facilitate reuse of the policy with subsequent requests
 // for the same cache object
 func (cp *CachingPolicy) ResetClientConditionals() {
 	cp.IfNoneMatchValue = ""
