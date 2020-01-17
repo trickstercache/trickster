@@ -4,4 +4,8 @@ description: Trickster is a reverse proxy cache for the Prometheus HTTP API that
 name: trickster
 version: 1.3.0
 home: https://github.com/comcast/trickster
-icon: ""
+icon: https://github.com/Comcast/trickster/blob/master/docs/images/logos/trickster-horizontal-sm.png?raw=true
+sources:
+  - https://github.com/comcast/trickster
+engine: gotpl
+tillerVersion: ">=2.8.0"

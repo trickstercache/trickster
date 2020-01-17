@@ -364,7 +364,8 @@ prometheusScrape: false
 # Number of trickster replicas desired
 replicaCount: 1
 
-# image for trickster deplyoment
+## trickster container image
+##
 image:
   repository: tricksterio/trickster
   tag: 1.0-beta
@@ -382,20 +383,81 @@ service:
 # Ingress resource for trickster service
 # Ref: https://kubernetes.io/docs/concepts/services-networking/ingress/
 ingress:
+  ## If true, trickster Ingress will be created
+  ##
   enabled: false
+
+  ## trickster Ingress annotations
+  ##
   annotations: {}
-    # kubernetes.io/ingress.class: nginx
-    # kubernetes.io/tls-acme: "true"
-  path: /
-  hosts:
-    - chart-example.local
+  #   kubernetes.io/ingress.class: nginx
+  #   kubernetes.io/tls-acme: 'true'
+
+  ## trickster Ingress additional labels
+  ##
+  extraLabels: {}
+
+  ## trickster Ingress hostnames with optional path
+  ## Must be provided if Ingress is enabled
+  ##
+  hosts: []
+  #   - trickster.domain.com
+  #   - domain.com/trickster
+
+  ## trickster Ingress TLS configuration
+  ## Secrets must be manually created in the namespace
+  ##
   tls: []
   # - secretName: chart-example-tls
   #   hosts:
   #     - chart-example.local
 
-# Resource limits & requests
-# Ref: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/
+persistentVolume:
+  ## If true, trickster will create/use a Persistent Volume Claim
+  ## If false, use emptyDir
+  ##
+  enabled: false
+
+  ## trickster data Persistent Volume access modes
+  ## Must match those of existing PV or dynamic provisioner
+  ## Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
+  ##
+  accessModes:
+    - ReadWriteOnce
+
+  ## trickster data Persistent Volume Claim annotations
+  ##
+  annotations: {}
+
+  ## trickster data Persistent Volume existing claim name
+  ## Requires trickster.persistentVolume.enabled: true
+  ## If defined, PVC must be created manually before volume will be bound
+  existingClaim: ""
+
+  ## trickster data Persistent Volume size
+  ##
+  size: 15Gi
+
+  ## trickster data Persistent Volume Storage Class
+  ## If defined, storageClassName: <storageClass>
+  ## If set to "-", storageClassName: "", which disables dynamic provisioning
+  ## If undefined (the default) or set to null, no storageClassName spec is
+  ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
+  ##   GKE, AWS & OpenStack)
+  ##
+  # storageClass: "-"
+
+## Annotations to be added to trickster pods
+##
+podAnnotations: {}
+
+## Use a StatefulSet if replicaCount needs to be greater than 1 (see below)
+##
+replicaCount: 1
+
+## trickster resource requests and limits
+## Ref: http://kubernetes.io/docs/user-guide/compute-resources/
+##
 resources: {}
   #limits:
   #cpu: 100m
@@ -404,14 +466,24 @@ resources: {}
   #cpu: 100m
   #memory: 128Mi
 
-# Node labels for pod assignment
-# Ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
-nodeSelector: {}
+## Security context to be added to trickster pods
+##
+securityContext: {}
 
-# Tolerations for pod assignment
-# Ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
-tolerations: []
+service:
+  annotations: {}
+  labels: {}
+  clusterIP: ""
 
-# Affinity for pod assignment
-# Ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
-affinity: {}
+  ## List of IP addresses at which the trickster service is available
+  ## Ref: https://kubernetes.io/docs/user-guide/services/#external-ips
+  ##
+  externalIPs: []
+
+  loadBalancerIP: ""
+  loadBalancerSourceRanges: []
+  metricsPort: 8080
+  servicePort: 9090
+  # nodePort: 30000
+  # metricsNodePort: 30001
+  type: ClusterIP

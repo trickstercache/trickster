@@ -1,12 +1,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ template "trickster.fullname" . }}
   labels:
-    app: {{ template "trickster.name" . }}
-    chart: {{ template "trickster.chart" . }}
-    release: {{ .Release.Name }}
-    heritage: {{ .Release.Service }}
+    {{- include "trickster.labels" . | nindent 4 }}
+  name: {{ template "trickster.fullname" . }}
 data:
   trickster.conf: |-
     [main]

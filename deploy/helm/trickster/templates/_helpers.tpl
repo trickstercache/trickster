@@ -30,3 +30,26 @@ Create chart name and version as used by the chart label.
 {{- define "trickster.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
+
+{{/*
+Create unified labels for trickster
+*/}}
+{{- define "trickster.common.matchLabels" -}}
+app: {{ template "trickster.name" . }}
+release: {{ .Release.Name }}
+{{- end -}}
+
+{{- define "trickster.common.metaLabels" -}}
+chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+heritage: {{ .Release.Service }}
+{{- end -}}
+
+{{- define "trickster.labels" -}}
+{{ include "trickster.matchLabels" . }}
+{{ include "trickster.common.metaLabels" . }}
+{{- end -}}
+
+{{- define "trickster.matchLabels" -}}
+component: {{ template "trickster.name" . }}
+{{ include "trickster.common.matchLabels" . }}
+{{- end -}}
