@@ -59,7 +59,7 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 // FastForwardURL returns the url to fetch the Fast Forward value based on a timerange url
 func (c *Client) FastForwardURL(r *http.Request) (*url.URL, error) {
 
-	u := urls.CloneURL(r.URL)
+	u := urls.Clone(r.URL)
 
 	if strings.HasSuffix(u.Path, "/query_range") {
 		u.Path = u.Path[0 : len(u.Path)-6]

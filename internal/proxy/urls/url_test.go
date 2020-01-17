@@ -18,16 +18,16 @@ import (
 	"testing"
 )
 
-func TestCloneURL(t *testing.T) {
+func TestClone(t *testing.T) {
 
 	u1, _ := url.Parse("http://user:pass@127.0.0.1:8080/path?param1=param2")
-	u2 := CloneURL(u1)
+	u2 := Clone(u1)
 	if u2.Hostname() != "127.0.0.1" {
 		t.Errorf("expected %s got %s", "127.0.0.1", u2.Hostname())
 	}
 
 	u1, _ = url.Parse("http://user@127.0.0.1:8080/path?param1=param2")
-	u2 = CloneURL(u1)
+	u2 = Clone(u1)
 	if u2.Hostname() != "127.0.0.1" {
 		t.Errorf("expected %s got %s", "127.0.0.1", u2.Hostname())
 	}

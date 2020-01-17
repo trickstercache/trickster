@@ -15,8 +15,8 @@ package urls
 
 import "net/url"
 
-// CloneURL returns a deep copy of a *url.URL
-func CloneURL(u *url.URL) *url.URL {
+// Clone returns a deep copy of a *url.URL
+func Clone(u *url.URL) *url.URL {
 	u2 := &url.URL{
 		Scheme:   u.Scheme,
 		Host:     u.Host,

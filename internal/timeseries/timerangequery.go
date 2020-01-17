@@ -52,7 +52,7 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 	}
 
 	if trq.TemplateURL != nil {
-		t.TemplateURL = urls.CloneURL(trq.TemplateURL)
+		t.TemplateURL = urls.Clone(trq.TemplateURL)
 	}
 
 	return t

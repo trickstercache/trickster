@@ -140,7 +140,7 @@ func (c *Client) histogramHandlerFastForwardURL(
 	rsc := request.GetResources(r)
 
 	var err error
-	u := urls.CloneURL(r.URL)
+	u := urls.Clone(r.URL)
 	trq := rsc.TimeRangeQuery
 	if trq == nil {
 		trq, err = c.ParseTimeRangeQuery(r)

@@ -107,7 +107,7 @@ func (c *Client) rollupHandlerFastForwardURL(
 	trq := rsc.TimeRangeQuery
 
 	var err error
-	u := urls.CloneURL(r.URL)
+	u := urls.Clone(r.URL)
 	q := u.Query()
 	if trq == nil {
 		trq, err = c.ParseTimeRangeQuery(r)

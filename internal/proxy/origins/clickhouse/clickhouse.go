@@ -76,7 +76,7 @@ func (c *Client) SetCache(cc cache.Cache) {
 func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
-	trq.TemplateURL = urls.CloneURL(r.URL)
+	trq.TemplateURL = urls.Clone(r.URL)
 	qi := trq.TemplateURL.Query()
 	if p, ok := qi[upQuery]; ok {
 		trq.Statement = p[0]
