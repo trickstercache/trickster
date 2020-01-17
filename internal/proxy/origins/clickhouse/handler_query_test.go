@@ -20,12 +20,12 @@ import (
 	"net/url"
 	"testing"
 
-	tc "github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/proxy/request"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
 func testRawQuery() string {
-	return url.Values(map[string][]string{"query": []string{
+	return url.Values(map[string][]string{"query": {
 		`SELECT (intDiv(toUInt32(time_column), 60) * 60) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
 			`FROM testdb.test_table WHERE time_column BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
 			`AND date_column >= toDate(1516665600) AND toDate(1516687200) ` +
@@ -33,7 +33,7 @@ func testRawQuery() string {
 }
 
 func testNonSelectQuery() string {
-	return url.Values(map[string][]string{"query": []string{
+	return url.Values(map[string][]string{"query": {
 		`UPDATE (intDiv(toUInt32(time_column), 60) * 60) * 1000 AS t`}}).Encode()
 	// not a real query, just something to trigger a non-select proxy-only request
 }
@@ -42,8 +42,12 @@ func TestQueryHandler(t *testing.T) {
 
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "clickhouse", "/?"+testRawQuery(), "debug")
-	client.config = tc.OriginConfig(r.Context())
+	ctx := r.Context()
+	rsc := request.GetResources(r)
+	rsc.OriginClient = client
+	client.config = rsc.OriginConfig
 	client.webClient = hc
+	client.config.HTTPClient = hc
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
@@ -72,8 +76,10 @@ func TestQueryHandler(t *testing.T) {
 		t.Errorf("expected '{}' got %s.", bodyBytes)
 	}
 
-	r, err = http.NewRequest(http.MethodGet, ts.URL+"/?"+testNonSelectQuery(), nil)
+	r, _ = http.NewRequest(http.MethodGet, ts.URL+"/?"+testNonSelectQuery(), nil)
 	w = httptest.NewRecorder()
+
+	r = r.WithContext(ctx)
 
 	client.QueryHandler(w, r)
 

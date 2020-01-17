@@ -21,30 +21,28 @@ import (
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/errors"
-	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/proxy/request"
+	"github.com/Comcast/trickster/internal/proxy/urls"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
 // CAQLHandler handles CAQL requests for timeseries data and processes them
 // through the delta proxy cache.
 func (c *Client) CAQLHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BuildUpstreamURL(r)
-	engines.DeltaProxyCacheRequest(
-		model.NewRequest("CAQLHandler",
-			r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c)
+	r.URL = c.BuildUpstreamURL(r)
+	engines.DeltaProxyCacheRequest(w, r)
 }
 
 // caqlHandlerSetExtent will change the upstream request query to use the
 // provided Extent.
-func (c Client) caqlHandlerSetExtent(r *model.Request,
+func (c Client) caqlHandlerSetExtent(r *http.Request,
+	trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent) {
 
 	if r == nil || extent == nil || (extent.Start.IsZero() && extent.End.IsZero()) {
 		return
 	}
 
-	trq := r.TimeRangeQuery
 	var err error
 	if trq == nil {
 		if trq, err = c.ParseTimeRangeQuery(r); err != nil {
@@ -67,7 +65,7 @@ func (c Client) caqlHandlerSetExtent(r *model.Request,
 // caqlHandlerParseTimeRangeQuery parses the key parts of a TimeRangeQuery
 // from the inbound HTTP Request.
 func (c *Client) caqlHandlerParseTimeRangeQuery(
-	r *model.Request) (*timeseries.TimeRangeQuery, error) {
+	r *http.Request) (*timeseries.TimeRangeQuery, error) {
 	trq := &timeseries.TimeRangeQuery{}
 	trq.Statement = r.URL.Path
 
@@ -117,11 +115,15 @@ func (c *Client) caqlHandlerParseTimeRangeQuery(
 // caqlHandlerFastForwardURL returns the url to fetch the Fast Forward value
 // based on a timerange URL.
 func (c *Client) caqlHandlerFastForwardURL(
-	r *model.Request) (*url.URL, error) {
+	r *http.Request) (*url.URL, error) {
+
+	rsc := request.GetResources(r)
+	trq := rsc.TimeRangeQuery
+
 	var err error
-	u := model.CopyURL(r.URL)
+	u := urls.Clone(r.URL)
 	q := u.Query()
-	trq := r.TimeRangeQuery
+
 	if trq == nil {
 		trq, err = c.ParseTimeRangeQuery(r)
 		if err != nil {

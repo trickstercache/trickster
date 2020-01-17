@@ -18,7 +18,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	tc "github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
@@ -29,12 +29,13 @@ func init() {
 
 func TestHealthHandler(t *testing.T) {
 
-	healthURL = nil
-
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
-	client.config = tc.OriginConfig(r.Context())
+
+	rsc := request.GetResources(r)
+	client.config = rsc.OriginConfig
 	client.webClient = hc
+	client.config.HTTPClient = hc
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
@@ -57,7 +58,7 @@ func TestHealthHandler(t *testing.T) {
 		t.Errorf("expected '{}' got %s.", bodyBytes)
 	}
 
-	healthMethod = "-"
+	client.healthMethod = "-"
 
 	w = httptest.NewRecorder()
 	client.HealthHandler(w, r)
@@ -70,17 +71,22 @@ func TestHealthHandler(t *testing.T) {
 
 func TestHealthHandlerCustomPath(t *testing.T) {
 
-	healthURL = nil
-
 	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("../../../../testdata/test.custom_health.conf", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "", nil, "prometheus", "/health", "debug")
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
 	}
 
-	client.config = tc.OriginConfig(r.Context())
+	rsc := request.GetResources(r)
+	client.config = rsc.OriginConfig
+
+	client.config.HealthCheckUpstreamPath = "-"
+	client.config.HealthCheckVerb = "-"
+	client.config.HealthCheckQuery = "-"
+
 	client.webClient = hc
+	client.config.HTTPClient = hc
 
 	client.HealthHandler(w, r)
 	resp := w.Result()
@@ -95,8 +101,8 @@ func TestHealthHandlerCustomPath(t *testing.T) {
 		t.Error(err)
 	}
 
-	if string(bodyBytes) != "{}" {
-		t.Errorf("expected '{}' got %s.", bodyBytes)
+	if string(bodyBytes) != "" {
+		t.Errorf("expected '' got %s.", bodyBytes)
 	}
 
 }

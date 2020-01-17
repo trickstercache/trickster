@@ -19,14 +19,13 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
 // QueryHandler handles calls to /query (for instantaneous values)
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BuildUpstreamURL(r)
 
-	params := r.URL.Query()
+	u := c.BuildUpstreamURL(r)
+	params := u.Query()
 
 	// Round time param down to the nearest 15 seconds if it exists
 	if p := params.Get(upTime); p != "" {
@@ -35,7 +34,8 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	engines.ObjectProxyCacheRequest(
-		model.NewRequest("QueryHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, false)
+	r.URL = u
+	r.URL.RawQuery = params.Encode()
+
+	engines.ObjectProxyCacheRequest(w, r)
 }

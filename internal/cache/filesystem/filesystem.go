@@ -24,6 +24,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/index"
+	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/pkg/locks"
@@ -52,7 +53,7 @@ func (c *Cache) Connect() error {
 	lockPrefix = c.Name + ".file."
 
 	// Load Index here and pass bytes as param2
-	indexData, _ := c.retrieve(index.IndexKey, false, false)
+	indexData, _, _ := c.retrieve(index.IndexKey, false, false)
 	c.Index = index.NewIndex(c.Name, c.Config.CacheType, indexData, c.Config.Index, c.BulkRemove, c.storeNoIndex)
 	return nil
 }
@@ -101,11 +102,11 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 }
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)
-func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, error) {
+func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error) {
 	return c.retrieve(cacheKey, allowExpired, true)
 }
 
-func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte, error) {
+func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte, status.LookupStatus, error) {
 
 	dataFile := c.getFileName(cacheKey)
 
@@ -116,13 +117,14 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		log.Debug("filesystem cache miss", log.Pairs{"key": cacheKey, "dataFile": dataFile})
 		b, err2 := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 		locks.Release(lockPrefix + cacheKey)
-		return b, err2
+		return b, status.LookupStatusKeyMiss, err2
 	}
 
 	o, err := index.ObjectFromBytes(data)
 	if err != nil {
 		locks.Release(lockPrefix + cacheKey)
-		return cache.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
+		_, err2 := cache.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
+		return nil, status.LookupStatusError, err2
 	}
 	o.Expiration = c.Index.GetExpiration(cacheKey)
 	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
@@ -132,13 +134,13 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		}
 		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
 		locks.Release(lockPrefix + cacheKey)
-		return o.Value, nil
+		return o.Value, status.LookupStatusHit, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
 	c.remove(cacheKey, false)
 	b, err := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 	locks.Release(lockPrefix + cacheKey)
-	return b, err
+	return b, status.LookupStatusKeyMiss, err
 
 }
 

@@ -31,8 +31,8 @@ type Timeseries interface {
 	Merge(bool, ...Timeseries)
 	// Sort should uniqueify and sort all series by Timestamp
 	Sort()
-	// Copy should returns an exact duplicate source the Timeseries
-	Copy() Timeseries
+	// Clone should returns an exact duplicate source the Timeseries
+	Clone() Timeseries
 	// CropToRange should reduce time range of the Timeseries to the provided Extent
 	CropToRange(Extent)
 	// CropToSize should reduce time range of the Timeseries to the provided element size using
@@ -43,4 +43,6 @@ type Timeseries interface {
 	SeriesCount() int
 	// ValueCount returns the count of all values across all Series in the Timeseries object
 	ValueCount() int
+	// Size returns the approximate memory byte size of the timeseries object
+	Size() int
 }

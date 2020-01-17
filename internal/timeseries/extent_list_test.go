@@ -22,7 +22,6 @@ import (
 	"time"
 )
 
-var t0 = time.Unix(0, 0)
 var t98 = time.Unix(98, 0)
 var t99 = time.Unix(99, 0)
 var t100 = time.Unix(100, 0)
@@ -253,7 +252,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 0
 			Extent{Start: t98, End: t1300},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t100, End: t200},
 				Extent{Start: t600, End: t900},
@@ -263,7 +262,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 1
 			Extent{Start: t100, End: t1300},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t100, End: t200},
 				Extent{Start: t600, End: t900},
@@ -273,7 +272,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 2
 			Extent{Start: t101, End: t1300},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t101, End: t200},
 				Extent{Start: t600, End: t900},
@@ -283,7 +282,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 3
 			Extent{Start: t200, End: t1300},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t200, End: t200},
 				Extent{Start: t600, End: t900},
@@ -293,7 +292,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 4
 			Extent{Start: t201, End: t1300},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t600, End: t900},
 				Extent{Start: t1100, End: t1300},
@@ -302,7 +301,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 5
 			Extent{Start: t99, End: t1200},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t100, End: t200},
 				Extent{Start: t600, End: t900},
@@ -312,7 +311,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 6
 			Extent{Start: t100, End: t1200},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t100, End: t200},
 				Extent{Start: t600, End: t900},
@@ -322,7 +321,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 7
 			Extent{Start: t101, End: t1200},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t101, End: t200},
 				Extent{Start: t600, End: t900},
@@ -332,7 +331,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 8
 			Extent{Start: t200, End: t1200},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t200, End: t200},
 				Extent{Start: t600, End: t900},
@@ -342,7 +341,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 9
 			Extent{Start: t201, End: t1200},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t600, End: t900},
 				Extent{Start: t1100, End: t1200},
@@ -351,19 +350,19 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 10
 			Extent{Start: t98, End: t98},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{},
 		},
 
 		{ // Run 11
 			Extent{Start: t98, End: t99},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{},
 		},
 
 		{ // Run 12
 			Extent{Start: t98, End: t100},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t100, End: t100},
 			},
@@ -371,7 +370,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 13
 			Extent{Start: t98, End: t101},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t100, End: t101},
 			},
@@ -379,7 +378,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 14
 			Extent{Start: t98, End: t200},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t100, End: t200},
 			},
@@ -387,7 +386,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 15
 			Extent{Start: t100, End: t200},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t100, End: t200},
 			},
@@ -395,7 +394,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 16
 			Extent{Start: t100, End: t101},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t100, End: t101},
 			},
@@ -403,7 +402,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 17
 			Extent{Start: t1000, End: t1300},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t1100, End: t1300},
 			},
@@ -411,7 +410,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 18
 			Extent{Start: t1100, End: t1300},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t1100, End: t1300},
 			},
@@ -419,7 +418,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 19
 			Extent{Start: t1200, End: t1300},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t1200, End: t1300},
 			},
@@ -427,7 +426,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 20
 			Extent{Start: t1300, End: t1300},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t1300, End: t1300},
 			},
@@ -435,7 +434,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 21
 			Extent{Start: t1300, End: t1400},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t1300, End: t1300},
 			},
@@ -443,7 +442,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 22
 			Extent{Start: t1200, End: t1400},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t1200, End: t1300},
 			},
@@ -451,7 +450,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 23
 			Extent{Start: t1000, End: t1400},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t1100, End: t1300},
 			},
@@ -459,7 +458,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 24
 			Extent{Start: t900, End: t1400},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t900, End: t900},
 				Extent{Start: t1100, End: t1300},
@@ -468,7 +467,7 @@ func TestCrop(t *testing.T) {
 
 		{ // Run 25
 			Extent{Start: t98, End: t1400},
-			el.Copy(),
+			el.Clone(),
 			ExtentList{
 				Extent{Start: t100, End: t200},
 				Extent{Start: t600, End: t900},
@@ -485,7 +484,7 @@ func TestCrop(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			result := test.seed.Copy().Crop(test.cropRange)
+			result := test.seed.Clone().Crop(test.cropRange)
 			if !reflect.DeepEqual(test.expected, result) {
 				t.Errorf("mismatch in Crop: expected=%s got=%s", test.expected, result)
 			}
@@ -519,7 +518,7 @@ func TestExtentListLRUCopy(t *testing.T) {
 		Extent{Start: t1100, End: t1300, LastUsed: t1100},
 	}
 
-	el2 := el.Copy()
+	el2 := el.Clone()
 
 	if !reflect.DeepEqual(el, el2) {
 		t.Errorf("mismatch in sort: expected=%s got=%s", el2, el)

@@ -15,13 +15,14 @@ package clickhouse
 
 import (
 	"net/http"
+	"net/url"
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/proxy/errors"
-	"github.com/Comcast/trickster/internal/proxy/model"
 	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
+	"github.com/Comcast/trickster/internal/proxy/urls"
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/regexp/matching"
 )
@@ -29,13 +30,15 @@ import (
 // Client Implements the Proxy Client Interface
 type Client struct {
 	name               string
-	user               string
-	pass               string
 	config             *config.OriginConfig
 	cache              cache.Cache
 	webClient          *http.Client
 	handlers           map[string]http.Handler
 	handlersRegistered bool
+
+	healthURL     *url.URL
+	healthMethod  string
+	healthHeaders http.Header
 }
 
 // NewClient returns a new Client Instance
@@ -70,9 +73,11 @@ func (c *Client) SetCache(cc cache.Cache) {
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
-func (c *Client) ParseTimeRangeQuery(r *model.Request) (*timeseries.TimeRangeQuery, error) {
+func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
+
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
-	qi := r.TemplateURL.Query()
+	trq.TemplateURL = urls.Clone(r.URL)
+	qi := trq.TemplateURL.Query()
 	if p, ok := qi[upQuery]; ok {
 		trq.Statement = p[0]
 	} else {
@@ -85,7 +90,7 @@ func (c *Client) ParseTimeRangeQuery(r *model.Request) (*timeseries.TimeRangeQue
 	for _, f := range mp {
 		v, ok := found[f]
 		if !ok || v == "" {
-			return nil, errors.NotTimeRangeQuery()
+			return nil, errors.ErrNotTimeRangeQuery
 		}
 		switch f {
 		case "timeField":
@@ -103,6 +108,6 @@ func (c *Client) ParseTimeRangeQuery(r *model.Request) (*timeseries.TimeRangeQue
 
 	// Swap in the Tokenzed Query in the Url Params
 	qi.Set(upQuery, trq.Statement)
-	r.TemplateURL.RawQuery = qi.Encode()
+	trq.TemplateURL.RawQuery = qi.Encode()
 	return trq, nil
 }

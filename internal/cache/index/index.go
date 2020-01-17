@@ -72,6 +72,9 @@ type Object struct {
 	// Value is the value of the Object stored in the Cache
 	// It is used by Caches but not by the Index
 	Value []byte `msg:"value,omitempty"`
+	// DirectValue is an interface value for storing objects by reference to a memory cache
+	// Since we'd never recover a memory cache index from memory on startup, no need to msgpk
+	ReferenceValue cache.ReferenceObject `msg:"-"`
 }
 
 // ToBytes returns a serialized byte slice representing the Object
@@ -156,7 +159,11 @@ func (idx *Index) UpdateObject(obj *Object) {
 
 	idx.lastWrite = time.Now()
 
-	obj.Size = int64(len(obj.Value))
+	if obj.ReferenceValue != nil {
+		obj.Size = int64(obj.ReferenceValue.Size())
+	} else {
+		obj.Size = int64(len(obj.Value))
+	}
 	obj.Value = nil
 	obj.LastAccess = time.Now()
 	obj.LastWrite = obj.LastAccess
@@ -248,7 +255,7 @@ func (idx *Index) reap() {
 	indexLock.Lock()
 	defer indexLock.Unlock()
 
-	removals := make([]string, 0, 0)
+	removals := make([]string, 0)
 	remainders := make(objectsAtime, 0, idx.ObjectCount)
 
 	var cacheChanged bool
@@ -291,7 +298,7 @@ func (idx *Index) reap() {
 			},
 		)
 
-		removals = make([]string, 0, 0)
+		removals = make([]string, 0)
 
 		sort.Sort(remainders)
 

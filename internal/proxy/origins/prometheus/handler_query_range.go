@@ -17,13 +17,10 @@ import (
 	"net/http"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
 // QueryRangeHandler handles timeseries requests for Prometheus and processes them through the delta proxy cache
 func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BuildUpstreamURL(r)
-	engines.DeltaProxyCacheRequest(
-		model.NewRequest("QueryRangeHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c)
+	r.URL = c.BuildUpstreamURL(r)
+	engines.DeltaProxyCacheRequest(w, r)
 }

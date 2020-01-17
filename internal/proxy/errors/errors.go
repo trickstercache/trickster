@@ -14,9 +14,22 @@
 package errors
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
+
+// ErrStepParse indicates an error parsing the step interval of a time series request
+var ErrStepParse = errors.New("unable to parse timeseries step from downstream request")
+
+// ErrNotSelectStatement indicates an error that the time series request is not a read-only select query
+var ErrNotSelectStatement = errors.New("not a select statement")
+
+// ErrNotTimeRangeQuery indicates an error that the time series request does not contain a query
+var ErrNotTimeRangeQuery = errors.New("not a time range query")
+
+// ErrNoRanges indicates an error that the range request does not contain any usable ranges
+var ErrNoRanges = errors.New("no usable ranges")
 
 // MissingURLParam returns a Formatted Error
 func MissingURLParam(param string) error {
@@ -26,22 +39,6 @@ func MissingURLParam(param string) error {
 // TimeArrayEmpty returns a Formatted Error
 func TimeArrayEmpty(param string) error {
 	return fmt.Errorf("time array is nil or empty: [%s]", param)
-}
-
-// StepParse returns a timeseries Parsing Error
-func StepParse() error {
-	return fmt.Errorf("unable to parse timeseries step from downstream request")
-}
-
-// NotSelectStatement returns a timeseries Parsing Error
-func NotSelectStatement() error {
-	return fmt.Errorf("not a select statement")
-}
-
-// NotTimeRangeQuery returns an error indicating the request is does not contain
-// a time range query.
-func NotTimeRangeQuery() error {
-	return fmt.Errorf("not a time range query")
 }
 
 // InvalidPath returns an error indicating the request path is not valid.

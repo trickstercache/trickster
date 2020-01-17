@@ -63,9 +63,9 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 
 	paths := map[string]*config.PathConfig{
 
-		"/" + mnRaw + "/": &config.PathConfig{
+		"/" + mnRaw + "/": {
 			Path:            "/" + mnRaw + "/",
-			HandlerName:     mnRaw,
+			HandlerName:     "RawHandler",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
@@ -73,9 +73,9 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchTypeName:   "prefix",
 		},
 
-		"/" + mnRollup + "/": &config.PathConfig{
+		"/" + mnRollup + "/": {
 			Path:            "/" + mnRollup + "/",
-			HandlerName:     mnRollup,
+			HandlerName:     "RollupHandler",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{upSpan, upEngine, upType},
 			CacheKeyHeaders: []string{},
@@ -83,9 +83,9 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchTypeName:   "prefix",
 		},
 
-		"/" + mnFetch + "/": &config.PathConfig{
-			Path:            "/" + mnFetch + "/",
-			HandlerName:     mnFetch,
+		"/" + mnFetch: {
+			Path:            "/" + mnFetch,
+			HandlerName:     "FetchHandler",
 			KeyHasher:       []config.KeyHasherFunc{c.fetchHandlerDeriveCacheKey},
 			Methods:         []string{http.MethodPost},
 			CacheKeyParams:  []string{},
@@ -94,9 +94,9 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchTypeName:   "prefix",
 		},
 
-		"/" + mnRead + "/": &config.PathConfig{
+		"/" + mnRead + "/": {
 			Path:            "/" + mnRead + "/",
-			HandlerName:     mnRead,
+			HandlerName:     "TextHandler",
 			KeyHasher:       []config.KeyHasherFunc{c.textHandlerDeriveCacheKey},
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{"*"},
@@ -105,9 +105,9 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchTypeName:   "prefix",
 		},
 
-		"/" + mnHistogram + "/": &config.PathConfig{
+		"/" + mnHistogram + "/": {
 			Path:            "/" + mnHistogram + "/",
-			HandlerName:     mnHistogram,
+			HandlerName:     "HistogramHandler",
 			Methods:         []string{http.MethodGet},
 			KeyHasher:       []config.KeyHasherFunc{c.histogramHandlerDeriveCacheKey},
 			CacheKeyParams:  []string{},
@@ -116,9 +116,9 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchTypeName:   "prefix",
 		},
 
-		"/" + mnFind + "/": &config.PathConfig{
+		"/" + mnFind + "/": {
 			Path:            "/" + mnFind + "/",
-			HandlerName:     mnFind,
+			HandlerName:     "FindHandler",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{upQuery},
 			CacheKeyHeaders: []string{},
@@ -126,9 +126,9 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchTypeName:   "prefix",
 		},
 
-		"/" + mnState + "/": &config.PathConfig{
+		"/" + mnState + "/": {
 			Path:            "/" + mnState + "/",
-			HandlerName:     mnState,
+			HandlerName:     "StateHandler",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{"*"},
 			CacheKeyHeaders: []string{},
@@ -136,9 +136,9 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchTypeName:   "prefix",
 		},
 
-		"/" + mnCAQL + "/": &config.PathConfig{
-			Path:            "/" + mnCAQL + "/",
-			HandlerName:     mnCAQL,
+		"/" + mnCAQL: {
+			Path:            "/" + mnCAQL,
+			HandlerName:     "CAQLHandler",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{upQuery, upCAQLQuery, upCAQLPeriod},
 			CacheKeyHeaders: []string{},
@@ -146,9 +146,9 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchTypeName:   "prefix",
 		},
 
-		"/" + mnCAQLPub + "/": &config.PathConfig{
+		"/" + mnCAQLPub + "/": {
 			Path:            "/" + mnCAQLPub + "/",
-			HandlerName:     mnCAQL,
+			HandlerName:     "CAQLPubHandler",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{upQuery, upCAQLQuery, upCAQLPeriod},
 			CacheKeyHeaders: []string{},
@@ -156,9 +156,9 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchTypeName:   "prefix",
 		},
 
-		"/": &config.PathConfig{
+		"/": {
 			Path:          "/",
-			HandlerName:   "proxy",
+			HandlerName:   "ProxyHandler",
 			Methods:       []string{http.MethodGet},
 			MatchType:     config.PathMatchTypePrefix,
 			MatchTypeName: "prefix",

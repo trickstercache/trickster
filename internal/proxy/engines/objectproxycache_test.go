@@ -14,36 +14,55 @@
 package engines
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"github.com/pkg/errors"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
+	tc "github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/headers"
-	"github.com/Comcast/trickster/internal/proxy/model"
-	tc "github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/proxy/request"
 	tu "github.com/Comcast/trickster/internal/util/testing"
+	"github.com/Comcast/trickster/pkg/rangesim"
 )
 
-func setupTestHarnessOPC(file, body string, code int, headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *PromTestClient, error) {
+func setupTestHarnessOPC(file, body string, code int, headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
+	return setupTestHarnessOPCByType(file, "test", "/opc", body, code, headers)
+}
 
-	client := &PromTestClient{}
-	ts, w, r, hc, err := tu.NewTestInstance(file, client.DefaultPathConfigs, code, body, headers, "prometheus", "/api/v1/query", "debug")
+func setupTestHarnessOPCRange(hdr map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
+	s, rr, r, rsc, err := setupTestHarnessOPCByType("", "rangesim", "/opc", "", 0, hdr)
+	return s, rr, r, rsc, err
+}
+
+func setupTestHarnessOPCByType(
+	file, serverType, path, body string, code int, headers map[string]string,
+) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
+
+	client := &TestClient{}
+	ts, w, r, hc, err := tu.NewTestInstance(file, client.DefaultPathConfigs, code, body, headers, serverType, path, "debug")
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
+	r.RequestURI = ""
+	rsc := request.GetResources(r)
+	rsc.OriginClient = client
+	pc := rsc.PathConfig
 
-	pc := tc.PathConfig(r.Context())
 	if pc == nil {
-		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/api/v1/query")
+		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/")
 	}
 
-	oc := tc.OriginConfig(r.Context())
-	cc := tc.CacheClient(r.Context())
+	oc := rsc.OriginConfig
+	cc := rsc.CacheClient
+	oc.HTTPClient = hc
 
 	client.cache = cc
 	client.webClient = hc
@@ -51,18 +70,21 @@ func setupTestHarnessOPC(file, body string, code int, headers map[string]string)
 
 	pc.CacheKeyParams = []string{"rangeKey", "instantKey"}
 
-	return ts, w, r, client, nil
+	return ts, w, r, rsc, nil
 }
 
-func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *PromTestClient, error) {
+func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
 
-	client := &PromTestClient{}
+	client := &TestClient{}
 	ts, w, r, hc, err := tu.NewTestInstance(file, client.DefaultPathConfigs, code, body, headers, "prometheus", "/api/v1/query", "debug")
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	pc := tc.PathConfig(r.Context())
+	rsc := request.GetResources(r)
+	rsc.OriginClient = client
+	pc := rsc.PathConfig
+
 	if pc == nil {
 		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/api/v1/query")
 	}
@@ -70,444 +92,661 @@ func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]
 	pc.CollapsedForwardingName = "progressive"
 	pc.CollapsedForwardingType = config.CFTypeProgressive
 
-	oc := tc.OriginConfig(r.Context())
-	cc := tc.CacheClient(r.Context())
+	oc := rsc.OriginConfig
+	cc := rsc.CacheClient
 
+	oc.HTTPClient = hc
 	client.cache = cc
 	client.webClient = hc
 	client.config = oc
 
 	pc.CacheKeyParams = []string{"rangeKey", "instantKey"}
 
-	return ts, w, r, client, nil
+	return ts, w, r, rsc, nil
 }
 
 func TestObjectProxyCacheRequest(t *testing.T) {
 
-	headers := map[string]string{"Cache-Control": "max-age=60"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	hdrs := map[string]string{"Cache-Control": "max-age=60"}
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusPartialContent, hdrs)
 	if err != nil {
 		t.Error(err)
 	}
 	defer ts.Close()
 
-	oc := tc.OriginConfig(r.Context())
+	r.Header.Add(headers.NameRange, "bytes=0-3")
+
+	oc := rsc.OriginConfig
 	oc.MaxTTLSecs = 15
 	oc.MaxTTL = time.Duration(oc.MaxTTLSecs) * time.Second
 
-	// get URL
-
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
+	_, e := testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "kmiss"})
+	for _, err = range e {
 		t.Error(err)
 	}
 
 	// get cache hit coverage too by repeating:
-
-	w = httptest.NewRecorder()
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp = w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
+	_, e = testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "hit"})
+	for _, err = range e {
 		t.Error(err)
 	}
 
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
+	// Remove Cache Hit from the Response Handler Map to test unknown handler error condition
+	delete(cacheResponseHandlers, status.LookupStatusHit)
+
+	_, e = testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "proxy-only"})
+	for _, err = range e {
 		t.Error(err)
 	}
 
-	err = testStringMatch(string(bodyBytes), "test")
+	// add cache hit back
+	cacheResponseHandlers[status.LookupStatusHit] = handleCacheKeyHit
+
+}
+
+func TestObjectProxyCachePartialHit(t *testing.T) {
+	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
 	if err != nil {
 		t.Error(err)
 	}
+	defer ts.Close()
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "hit"})
+	// Cache miss on range
+	r.Header.Set(headers.NameRange, "bytes=0-10")
+	expectedBody, err := getExpectedRangeBody(r, "")
 	if err != nil {
 		t.Error(err)
 	}
+	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
 
+	// Partial Hit on an overlapping range
+	r.Header.Set(headers.NameRange, "bytes=5-15")
+
+	expectedBody, err = getExpectedRangeBody(r, "")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	// Range Miss on an separate range
+	r.Header.Set(headers.NameRange, "bytes=60-70")
+
+	expectedBody, err = getExpectedRangeBody(r, "")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "rmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	// Partial Hit on an multiple ranges
+	r.Header.Set(headers.NameRange, "bytes=10-20,50-55,60-65,69-75")
+	expectedBody, err = getExpectedRangeBody(r, "d5a5acd7eb4d3f622c62947a9904b89b")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	// Fulfill the cache with the remaining parts
+	r.Header.Del(headers.NameRange)
+	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{"status": "phit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	// Test Articulated Upstream
+	rsc.OriginConfig.DearticulateUpstreamRanges = true
+	r.Header.Set(headers.NameRange, "bytes=10-20,50-55,60-65,69-75")
+	r.URL.Path = "/new/test/path"
+	expectedBody, err = getExpectedRangeBody(r, "d5a5acd7eb4d3f622c62947a9904b89b")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+}
+
+func TestFullArticuation(t *testing.T) {
+
+	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	// Test Articulated Upstream
+	rsc.OriginConfig.DearticulateUpstreamRanges = true
+	rsc.OriginConfig.RevalidationFactor = 2
+	r.Header.Set(headers.NameRange, "bytes=10-20,50-55,60-65,69-75")
+	r.URL.Path = "/new/test/path"
+	r.URL.RawQuery = "max-age=1"
+	expectedBody, err := getExpectedRangeBody(r, "d5a5acd7eb4d3f622c62947a9904b89b")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.URL.RawQuery = "max-age=1&status=200"
+	r.URL.Path = "/new/test/path/2"
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.URL.RawQuery = "max-age=1&ims=200"
+	r.URL.Path = "/new/test/path/3"
+	r.Header.Set(headers.NameRange, "bytes=10-20")
+	expectedBody, err = getExpectedRangeBody(r, "d5a5acd7eb4d3f622c62947a9904b89b")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	time.Sleep(time.Millisecond * 1050)
+
+	r.Header.Set(headers.NameRange, "bytes=10-20, 25-30, 45-60")
+	expectedBody, err = getExpectedRangeBody(r, "a262725e1b8ae4967d369cff746e3924")
+	if err != nil {
+		t.Error(err)
+	}
+	r.URL.RawQuery = "max-age=1&ims=206"
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	time.Sleep(time.Millisecond * 1050)
+
+	r.Header.Set(headers.NameRange, "bytes=9-20, 25-31, 42-65, 70-80")
+	expectedBody, err = getExpectedRangeBody(r, "34b73ea5c4c1ab5b9e34c9888119c58f")
+	if err != nil {
+		t.Error(err)
+	}
+	r.URL.RawQuery = "max-age=1&ims=206"
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	time.Sleep(time.Millisecond * 1050)
+
+	r.Header.Set(headers.NameRange, "bytes=9-20, 90-95, 100-105")
+	expectedBody, err = getExpectedRangeBody(r, "01760208a2d6589fc9620627d561640d")
+	if err != nil {
+		t.Error(err)
+	}
+	r.URL.RawQuery = "max-age=1&ims=206"
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.Header.Set(headers.NameRange, "bytes=9-20, 90-95, 100-105")
+	expectedBody, err = getExpectedRangeBody(r, "01760208a2d6589fc9620627d561640d")
+	if err != nil {
+		t.Error(err)
+	}
+	r.URL.Path = "/new/test/path/20"
+	r.URL.RawQuery = "max-age=1"
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	time.Sleep(time.Millisecond * 1050)
+
+	r.Header.Set(headers.NameRange, "bytes=9-20, 25-32, 41-65")
+	expectedBody, err = getExpectedRangeBody(r, "722af19813169c99d8bda37a2f244f39")
+	if err != nil {
+		t.Error(err)
+	}
+	r.URL.RawQuery = "max-age=1&ims=206&non-ims=206"
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	time.Sleep(time.Millisecond * 1050)
+
+	r.Header.Del(headers.NameRange)
+	r.URL.RawQuery = "max-age=1"
+	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{"status": "phit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.Header.Set(headers.NameRange, "bytes=9-20, 21-22")
+	r.URL.Path = "/new/test/path/21"
+	expectedBody, err = getExpectedRangeBody(r, "368b9fbcef800068a48e70fa6e040289")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.Header.Set(headers.NameRange, "bytes=0-1221")
+	r.URL.Path = "/new/test/path/22"
+	r.URL.RawQuery = ""
+	expectedBody, err = getExpectedRangeBody(r, "722af19813169c99d8bda37a2f244f39")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.Header.Set(headers.NameRange, "bytes=0-1220,1221-1221")
+	expectedBody, err = getExpectedRangeBody(r, "0a6d16343fbe859a10cf1ac673e23dc9")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.Header.Del(headers.NameRange)
+	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{"status": "hit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+}
+
+func TestObjectProxyCachePartialHitNotFresh(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessOPCRange(nil)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	pr := newProxyRequest(r, w)
+	oc := rsc.OriginConfig
+	cc := rsc.CacheClient
+	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
+	pr.key = oc.Host + "." + pr.DeriveCacheKey(nil, "")
+	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, _ = QueryCache(cc, pr.key, pr.wantedRanges)
+	handleCacheKeyMiss(pr)
+
+	pr.cachingPolicy.CanRevalidate = false
+	pr.cachingPolicy.IsFresh = false
+	pr.cachingPolicy.FreshnessLifetime = 0
+
+	pr.store()
+
+	handleCachePartialHit(pr)
+
+	if pr.isPartialResponse {
+		t.Errorf("Expected full response, got %t", pr.isPartialResponse)
+	}
+
+	if pr.cacheStatus != status.LookupStatusKeyMiss {
+		t.Errorf("Expected %s, got %s", status.LookupStatusKeyMiss, pr.cacheStatus)
+	}
+}
+
+func TestObjectProxyCachePartialHitFullResponse(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessOPCRange(nil)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	pr := newProxyRequest(r, w)
+	oc := rsc.OriginConfig
+	cc := rsc.CacheClient
+	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
+	pr.key = oc.Host + "." + pr.DeriveCacheKey(nil, "")
+	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, _ = QueryCache(cc, pr.key, pr.wantedRanges)
+	handleCacheKeyMiss(pr)
+	handleCachePartialHit(pr)
+
+	if pr.isPartialResponse {
+		t.Errorf("Expected full response, got %t", pr.isPartialResponse)
+	}
+}
+
+func TestObjectProxyCacheRangeMiss(t *testing.T) {
+
+	ts, _, r, _, err := setupTestHarnessOPCRange(nil)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	r.Header.Set(headers.NameRange, "bytes=0-10")
+	expectedBody, err := getExpectedRangeBody(r, "")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.Header.Set(headers.NameRange, "bytes=15-20")
+	expectedBody, err = getExpectedRangeBody(r, "")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "rmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+}
+
+func TestObjectProxyCacheRevalidation(t *testing.T) {
+
+	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	rsc.OriginConfig.RevalidationFactor = 2
+
+	r.Header.Set(headers.NameRange, "bytes=0-10")
+	if rsc.PathConfig == nil {
+		t.Error(errors.New("nil path config"))
+	}
+
+	if rsc.PathConfig.ResponseHeaders == nil {
+		rsc.PathConfig.ResponseHeaders = make(map[string]string)
+	}
+	rsc.PathConfig.ResponseHeaders[headers.NameCacheControl] = "max-age=1"
+
+	expectedBody, err := getExpectedRangeBody(r, "")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	time.Sleep(time.Millisecond * 1010)
+
+	r.Header.Set(headers.NameRange, "bytes=0-10")
+	expectedBody, err = getExpectedRangeBody(r, "")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "rhit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	time.Sleep(time.Millisecond * 1010)
+	r.Header.Set(headers.NameRange, "bytes=0-15")
+	expectedBody, err = getExpectedRangeBody(r, "")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	// purge the cache
+	r.Header.Del(headers.NameRange)
+	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
+
+	expectedBody, err = getExpectedRangeBody(r, "")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusOK, expectedBody, map[string]string{"status": "proxy-only"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.URL.Path = "/opc/test/10"
+
+	r.Header.Del(headers.NameCacheControl)
+
+	// now store it with an earlier last modified header
+	r.Header.Del(headers.NameCacheControl)
+	rsc.PathConfig.ResponseHeaders[headers.NameLastModified] = time.Unix(1577836799, 0).Format(time.RFC1123)
+	rsc.PathConfig.ResponseHeaders["-"+headers.NameCacheControl] = ""
+	rsc.PathConfig.ResponseHeaders[headers.NameExpires] = time.Now().Add(-1 * time.Minute).Format(time.RFC1123)
+
+	expectedBody, err = getExpectedRangeBody(r, "")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusOK, expectedBody, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	// delete(rsc.PathConfig.ResponseHeaders, headers.NameLastModified)
+	// delete(rsc.PathConfig.ResponseHeaders, headers.NameExpires)
+
+	// expectedBody, err = getExpectedRangeBody(r, "")
+	// _, e = testFetchOPC(r, http.StatusOK, expectedBody, map[string]string{"status": "kmiss"})
+	// if e != nil {
+	// 	for _, err = range e {
+	// 		t.Error(err)
+	// 	}
+	// }
 }
 
 func TestObjectProxyCacheRequestWithPCF(t *testing.T) {
 
 	headers := map[string]string{"Cache-Control": "max-age=60"}
-	ts, w, r, client, err := setupTestHarnessOPCWithPCF("", "test", http.StatusOK, headers)
+	ts, _, r, rsc, err := setupTestHarnessOPCWithPCF("", "test", http.StatusOK, headers)
 	if err != nil {
 		t.Error(err)
 	}
 	defer ts.Close()
 
-	oc := tc.OriginConfig(r.Context())
+	oc := rsc.OriginConfig
 	oc.MaxTTLSecs = 15
 	oc.MaxTTL = time.Duration(oc.MaxTTLSecs) * time.Second
 
-	// get URL
+	r.Header.Set("testHeaderName", "testHeaderValue")
 
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	for _, err = range e {
 		t.Error(err)
 	}
 
 	// get cache hit coverage too by repeating:
-
-	w = httptest.NewRecorder()
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp = w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
+	_, e = testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "hit"})
+	for _, err = range e {
 		t.Error(err)
 	}
+}
 
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
+func TestObjectProxyCacheTrueHitNoDocumentErr(t *testing.T) {
+
+	const expected = "nil cacheDocument"
+
+	pr := &proxyRequest{}
+	err := handleTrueCacheHit(pr)
+	if err.Error() != expected {
+		t.Errorf("expected %s got %s", expected, err.Error())
 	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "hit"})
-	if err != nil {
-		t.Error(err)
-	}
-
 }
 
 func TestObjectProxyCacheRequestClientNoCache(t *testing.T) {
 
-	headers := map[string]string{"Cache-Control": "max-age=60"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
 	if err != nil {
 		t.Error(err)
 	}
 	defer ts.Close()
 
-	// get URL
+	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
 
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"Cache-Control": []string{"no-cache"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "proxy-only"})
+	for _, err = range e {
+		t.Error(err)
+	}
+}
 
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
+func TestFetchViaObjectProxyCacheRequestClientNoCache(t *testing.T) {
 
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
 	if err != nil {
 		t.Error(err)
 	}
+	defer ts.Close()
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
+	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
+
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "proxy-only"})
+	for _, err = range e {
 		t.Error(err)
 	}
 
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
+	_, _, b := FetchViaObjectProxyCache(r)
+	if b {
+		t.Errorf("expected %t got %t", false, b)
 	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "proxy-only"})
-	if err != nil {
-		t.Error(err)
-	}
-
 }
 
 func TestObjectProxyCacheRequestOriginNoCache(t *testing.T) {
 
 	headers := map[string]string{"Cache-Control": "no-cache"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
 	if err != nil {
 		t.Error(err)
 	}
 	defer ts.Close()
 
-	// get URL
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	for _, err = range e {
 		t.Error(err)
 	}
 }
 
 func TestObjectProxyCacheIMS(t *testing.T) {
 
-	headers := map[string]string{"Cache-Control": "max-age=60"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	hdrs := map[string]string{"Cache-Control": "max-age=1"}
+	ts, _, r, rsc, err := setupTestHarnessOPCRange(hdrs)
 	if err != nil {
 		t.Error(err)
 	}
 	defer ts.Close()
 
-	// get URL
+	rsc.OriginConfig.RevalidationFactor = 2
 
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"If-Modified-Since": []string{"Sun, 16 Jun 2019 14:19:04 GMT"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotModified)
-	if err != nil {
+	_, e := testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{"status": "kmiss"})
+	for _, err = range e {
 		t.Error(err)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
+	r.Header.Set(headers.NameIfModifiedSince, "Wed, 01 Jan 2020 00:00:00 UTC")
+
+	_, e = testFetchOPC(r, http.StatusNotModified, "", map[string]string{"status": "hit"})
+	for _, err = range e {
 		t.Error(err)
 	}
 
-	err = testStringMatch(string(bodyBytes), "")
-	if err != nil {
+	time.Sleep(time.Millisecond * 1050)
+
+	r.URL.RawQuery = "status=200"
+
+	_, e = testFetchOPC(r, http.StatusNotModified, "", map[string]string{"status": "kmiss"})
+	for _, err = range e {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
+	//t.Errorf("%s", "foo")
 
 }
 
 func TestObjectProxyCacheIUS(t *testing.T) {
 
+	// TODO: how does this test IUS???
+
 	headers := map[string]string{"Cache-Control": "max-age=60"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
 	if err != nil {
 		t.Error(err)
 	}
 	defer ts.Close()
 
-	// get URL
-
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"If-Unmodified-Since": []string{"Sun, 16 Jun 2019 14:19:04 GMT"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	for _, err = range e {
 		t.Error(err)
 	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
-
-}
-
-func TestObjectProxyCacheIM(t *testing.T) {
-
-	headers := map[string]string{"Cache-Control": "max-age=60", "ETag": "test"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	// get URL
-
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"If-Match": []string{"test2"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotModified)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
-
 }
 
 func TestObjectProxyCacheINM(t *testing.T) {
 
-	headers := map[string]string{"Cache-Control": "max-age=60", "ETag": "test"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	rh := map[string]string{headers.NameCacheControl: "max-age=60", headers.NameETag: "test"}
+	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, rh)
 	if err != nil {
 		t.Error(err)
 	}
 	defer ts.Close()
 
-	// get URL
-
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"If-None-Match": []string{"test"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotModified)
-	if err != nil {
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	for _, err = range e {
 		t.Error(err)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
+	r.Header.Set(headers.NameIfNoneMatch, `"test"`)
+	_, e = testFetchOPC(r, http.StatusNotModified, "", map[string]string{"status": "hit"})
+	for _, err = range e {
 		t.Error(err)
 	}
 
-	err = testStringMatch(string(bodyBytes), "")
-	if err != nil {
+	r.Header.Set(headers.NameIfNoneMatch, `W/"test2"`)
+	_, e = testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "hit"})
+	for _, err = range e {
 		t.Error(err)
 	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
-
 }
 
 func TestObjectProxyCacheNoRevalidate(t *testing.T) {
 
 	headers := map[string]string{headers.NameCacheControl: headers.ValueMaxAge + "=1"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
 	if err != nil {
 		t.Error(err)
 	}
 	defer ts.Close()
 
-	p := tc.PathConfig(r.Context())
+	p := rsc.PathConfig
 	p.ResponseHeaders = headers
 
-	// get URL
-
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	for _, err = range e {
 		t.Error(err)
 	}
 
 	time.Sleep(1010 * time.Millisecond)
-	w = httptest.NewRecorder()
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp = w.Result()
 
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
+	_, e = testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	for _, err = range e {
 		t.Error(err)
 	}
-
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
-
 }
 
 func TestObjectProxyCacheCanRevalidate(t *testing.T) {
@@ -515,851 +754,449 @@ func TestObjectProxyCacheCanRevalidate(t *testing.T) {
 	headers := map[string]string{
 		headers.NameCacheControl: headers.ValueMaxAge + "=1",
 		headers.NameETag:         "test-etag",
-		headers.NameLastModified: "Sun, 16 Jun 2019 14:19:04 GMT",
 	}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
 	if err != nil {
 		t.Error(err)
 	}
 	defer ts.Close()
 
-	p := tc.PathConfig(r.Context())
+	p := rsc.PathConfig
 	p.ResponseHeaders = headers
+	rsc.OriginConfig.RevalidationFactor = 2
 
-	// get URL
-
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
+	_, e := testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{"status": "kmiss"})
+	for _, err = range e {
 		t.Error(err)
 	}
 
 	time.Sleep(1010 * time.Millisecond)
-	w = httptest.NewRecorder()
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp = w.Result()
 
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
+	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{"status": "rhit"})
+	for _, err = range e {
 		t.Error(err)
 	}
-
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
-
 }
 
 func TestObjectProxyCacheRevalidated(t *testing.T) {
 
+	const dt = "Sun, 16 Jun 2019 14:19:04 GMT"
+
 	hdr := map[string]string{
-		headers.NameCacheControl: headers.ValueMaxAge + "=1",
-		headers.NameLastModified: "Sun, 16 Jun 2019 14:19:04 GMT",
+		headers.NameCacheControl: headers.ValueMaxAge + "=2",
+		headers.NameLastModified: dt,
 	}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, hdr)
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, hdr)
 	if err != nil {
 		t.Error(err)
 	}
 	defer ts.Close()
 
-	p := tc.PathConfig(r.Context())
-	p.ResponseHeaders = hdr
+	rsc.PathConfig.ResponseHeaders = hdr
 
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	for _, err = range e {
 		t.Error(err)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
+	r.Header.Set(headers.NameIfModifiedSince, dt)
+	_, e = testFetchOPC(r, http.StatusNotModified, "", map[string]string{"status": "hit"})
+	for _, err = range e {
 		t.Error(err)
 	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
-
-	time.Sleep(1010 * time.Millisecond)
-
-	s := tu.NewTestServer(304, "", nil)
-	r2 := httptest.NewRequest("GET", s.URL+"/api/v1/query", nil)
-	p = tu.NewTestPathConfig(tc.OriginConfig(r.Context()), client.DefaultPathConfigs, "/api/v1/query")
-	r2 = r2.WithContext(tc.WithConfigs(r2.Context(), tc.OriginConfig(r.Context()), tc.CacheClient(r.Context()), p))
-
-	req = model.NewRequest("TestProxyRequest", r2.Method, r2.URL, http.Header{}, time.Duration(30)*time.Second, r2, tu.NewTestWebClient())
-
-	w = httptest.NewRecorder()
-	h := w.Header()
-	h.Set(headers.NameIfMatch, "test")
-
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp = w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotModified)
-	if err != nil {
-		t.Error(err)
-	}
-
 }
 
 func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
 
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusNotFound, nil)
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusNotFound, nil)
 	if err != nil {
 		t.Error(err)
 	}
 	defer ts.Close()
 
 	pc := config.NewPathConfig()
-	cfg := client.Configuration()
+	cfg := rsc.OriginConfig
 	cfg.Paths = map[string]*config.PathConfig{
 		"/": pc,
 	}
-	r = r.WithContext(tc.WithConfigs(r.Context(), cfg, client.Cache(), pc))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig, rsc.CacheClient, rsc.OriginClient)))
 
-	// request the url, it should respond with a 404 cache miss
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, nil, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotFound)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
+	_, e := testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "kmiss"})
+	for _, err = range e {
 		t.Error(err)
 	}
 
 	// request again, should still cache miss, but this time, put 404's into the Negative Cache for 30s
 	cfg.NegativeCache[404] = time.Second * 30
 
-	req = model.NewRequest("TestProxyRequest", r.Method, r.URL, nil, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	w = httptest.NewRecorder()
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp = w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotFound)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
+	_, e = testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "kmiss"})
+	for _, err = range e {
 		t.Error(err)
 	}
 
 	// request again, this time it should be a cache hit.
-	req = model.NewRequest("TestProxyRequest", r.Method, r.URL, nil, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	w = httptest.NewRecorder()
-	ObjectProxyCacheRequest(req, w, client, false)
-	resp = w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotFound)
-	if err != nil {
+	_, e = testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "nchit"})
+	for _, err = range e {
 		t.Error(err)
 	}
-
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "nchit"})
-	if err != nil {
-		t.Error(err)
-	}
-
 }
 
-func TestSequentialObjectProxyCacheRequestWithRange(t *testing.T) {
+func TestHandleCacheRevalidation(t *testing.T) {
 
-	headers := map[string]string{"Cache-Control": "max-age=60"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusNotFound, nil)
 	if err != nil {
 		t.Error(err)
 	}
 	defer ts.Close()
 
-	oc := tc.OriginConfig(r.Context())
-	oc.MaxTTLSecs = 15
-	oc.MaxTTL = time.Duration(oc.MaxTTLSecs) * time.Second
+	pr := newProxyRequest(r, nil)
+	pr.cacheStatus = status.LookupStatusRangeMiss
+	pr.cachingPolicy = &CachingPolicy{}
 
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL,
-		http.Header{"testHeaderName": []string{"testHeaderValue"}, "Range": []string{"bytes=0-3"}},
-		time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-	doc := model.DocumentFromHTTPResponse(resp, bodyBytes, nil)
-	if doc.UpdatedQueryRange != nil {
-		t.Error(errors.New("Expected an empty updated query range"))
-	}
-}
-
-func TestSequentialObjectProxyCacheRequest(t *testing.T) {
-
-	headers := map[string]string{"Cache-Control": "max-age=60"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	oc := tc.OriginConfig(r.Context())
-	oc.MaxTTLSecs = 15
-	oc.MaxTTL = time.Duration(oc.MaxTTLSecs) * time.Second
-
-	// get URL
-
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
-
-	// get cache hit coverage too by repeating:
-
-	w = httptest.NewRecorder()
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp = w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "hit"})
-	if err != nil {
-		t.Error(err)
-	}
-
-}
-
-func TestSequentialObjectProxyCacheRequestClientNoCache(t *testing.T) {
-
-	headers := map[string]string{"Cache-Control": "max-age=60"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	// get URL
-
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"Cache-Control": []string{"no-cache"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "proxy-only"})
-	if err != nil {
-		t.Error(err)
-	}
-
-}
-
-func TestSequentialObjectProxyCacheRequestOriginNoCache(t *testing.T) {
-
-	headers := map[string]string{"Cache-Control": "no-cache"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	// get URL
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	err = handleCacheRevalidation(pr)
 	if err != nil {
 		t.Error(err)
 	}
 }
 
-func TestSequentialObjectProxyCacheIMS(t *testing.T) {
+func getExpectedRangeBody(r *http.Request, boundary string) (string, error) {
 
-	headers := map[string]string{"Cache-Control": "max-age=60"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	client := &http.Client{}
+	resp, err := client.Do(r)
+	if err != nil {
+		return "", err
+	}
+	b, _ := ioutil.ReadAll(resp.Body)
+	expectedBody := string(b)
+
+	if boundary != "" {
+		expectedBody = strings.Replace(expectedBody, "TestRangeServerBoundary", boundary, -1)
+	}
+
+	return expectedBody, nil
+}
+
+func TestRangesExhaustive(t *testing.T) {
+
+	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
 	if err != nil {
 		t.Error(err)
 	}
 	defer ts.Close()
 
-	// get URL
+	rsc.OriginConfig.RevalidationFactor = 2
+	rsc.OriginConfig.DearticulateUpstreamRanges = true
 
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"If-Modified-Since": []string{"Sun, 16 Jun 2019 14:19:04 GMT"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	r.URL.Path = "/opc/test/1"
+	r.Header.Set(headers.NameRange, "bytes=0-6,25-32")
+	req := r.Clone(context.Background())
+	expectedBodyA, err := getExpectedRangeBody(req, "563a7014513fc6f0cbb4e8632dd107fc")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBodyA, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
 
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
+	r.Header.Set(headers.NameRange, "bytes=0-10,20-28")
+	req = r.Clone(context.Background())
+	expectedBody, err := getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	for _, err = range e {
+		t.Error(err)
+	}
 
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotModified)
+	r.Header.Set(headers.NameRange, "bytes=0-6")
+	req = r.Clone(context.Background())
+	expectedBody, err = getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
 	if err != nil {
 		t.Error(err)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.Header.Set(headers.NameRange, "bytes=5-7")
+	req = r.Clone(context.Background())
+	expectedBody, err = getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.Header.Set(headers.NameRange, "bytes=29-29")
+	req = r.Clone(context.Background())
+	expectedBody, err = getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.Header.Set(headers.NameRange, "bytes=9-22,28-60")
+	req = r.Clone(context.Background())
+	expectedBody, err = getExpectedRangeBody(req, "1fd80b6b357b4608027dd500ad3f3c21")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.Header.Del(headers.NameRange)
+	req = r.Clone(context.Background())
+	expectedBody, err = getExpectedRangeBody(req, "1fd80b6b357b4608027dd500ad3f3c21")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusOK, expectedBody, map[string]string{"status": "phit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.Header.Set(headers.NameRange, "bytes=0-10,20-28")
+	req = r.Clone(context.Background())
+	expectedBody, err = getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.Header.Set(headers.NameRange, "bytes=0-6")
+	req = r.Clone(context.Background())
+	expectedBody, err = getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = testStringMatch(string(bodyBytes), "")
-	if err != nil {
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
+	for _, err = range e {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	// Test Range Revalidiations
+
+	rsc.PathConfig.ResponseHeaders = map[string]string{headers.NameCacheControl: "max-age=1"}
+
+	r.URL.Path = "/opc/test/2"
+	r.Header.Set(headers.NameRange, "bytes=0-6")
+	req = r.Clone(context.Background())
+	expectedBody1, err := getExpectedRangeBody(req, "")
 	if err != nil {
 		t.Error(err)
 	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody1, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.URL.Path = "/opc/test/3"
+	r.Header.Set(headers.NameRange, "bytes=0-6, 8-10")
+	req = r.Clone(context.Background())
+	expectedBody2, err := getExpectedRangeBody(req, "1b4e59d25d723e317359c5e542d80f5c")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody2, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.URL.Path = "/opc/test/4"
+	r.Header.Set(headers.NameRange, "bytes=0-6, 8-10")
+	req = r.Clone(context.Background())
+	expectedBody3, err := getExpectedRangeBody(req, "1b4e59d25d723e317359c5e542d80f5c")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody3, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.URL.Path = "/opc/test/5"
+	r.Header.Set(headers.NameRange, "bytes=6-20")
+	req = r.Clone(context.Background())
+	expectedBody4, err := getExpectedRangeBody(req, "")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody4, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.URL.Path = "/opc/test/6"
+	r.Header.Set(headers.NameRange, "bytes=6-20")
+	req = r.Clone(context.Background())
+	expectedBody5, err := getExpectedRangeBody(req, "")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody5, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.URL.Path = "/opc/test/7"
+	r.Header.Set(headers.NameRange, "bytes=6-20")
+	req = r.Clone(context.Background())
+	expectedBody6, err := getExpectedRangeBody(req, "")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody6, map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	// Now sleep to let them expire but not purge
+	time.Sleep(1050 * time.Millisecond)
+
+	// Now make more requests that require a revalidation first.
+
+	r.URL.Path = "/opc/test/2"
+	r.Header.Set(headers.NameRange, "bytes=0-6")
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody1, map[string]string{"status": "rhit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.URL.Path = "/opc/test/3"
+	r.Header.Set(headers.NameRange, "bytes=0-6, 8-10")
+	expectedBody2 = strings.Replace(expectedBody2, "TestRangeServerBoundary", "1b4e59d25d723e317359c5e542d80f5c", -1)
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody2, map[string]string{"status": "rhit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.URL.Path = "/opc/test/4"
+	r.Header.Set(headers.NameRange, "bytes=5-9")
+	req = r.Clone(context.Background())
+	expectedBody3, err = getExpectedRangeBody(req, "1b4e59d25d723e317359c5e542d80f5c")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody3, map[string]string{"status": "phit"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.URL.Path = "/opc/test/5"
+	r.Header.Set(headers.NameRange, "bytes=0-5")
+	req = r.Clone(context.Background())
+	expectedBody4, err = getExpectedRangeBody(req, "")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody4, map[string]string{"status": "rmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.URL.Path = "/opc/test/6"
+	r.Header.Set(headers.NameRange, "bytes=0-5,21-30")
+	req = r.Clone(context.Background())
+	expectedBody5, err = getExpectedRangeBody(req, "d51d39834c9650e17cc486c4a52cf572")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody5, map[string]string{"status": "rmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	r.URL.Path = "/opc/test/7"
+	r.Header.Set(headers.NameRange, "bytes=22-30,32-40")
+	req = r.Clone(context.Background())
+	expectedBody6, err = getExpectedRangeBody(req, "bab29463882afe6d6033e88dc74d2bdd")
+	if err != nil {
+		t.Error(err)
+	}
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody6, map[string]string{"status": "rmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	//rsc.OriginConfig.DearticulateUpstreamRanges = b
+
+	/*
+		√	   curl -v --output - -H "Range: bytes=0-6,25-32" http://127.0.0.1:9091/rpc1/testing && \
+		√	   curl -v --output - -H "Range: " http://127.0.0.1:9091/rpc1/testing
+		√	   curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing && \
+		√	   curl -v --output - -H "Range: bytes=5-7" http://127.0.0.1:9091/rpc1/testing && \
+		√	   curl -v --output - -H "Range: bytes=29-29" http://127.0.0.1:9091/rpc1/testing && \
+		√	   curl -v --output - -H "Range: bytes=9-22,28-60" http://127.0.0.1:9091/rpc1/testing && \
+			   curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing && \
+			   curl -v --output - -H "Range: bytes=0-6,10-20" http://127.0.0.1:9091/rpc1/testing && \
+			   curl -v --output - http://127.0.0.1:9091/rpc1/testing && \
+			   curl -v --output - -H "Range: bytes=0-6, 10-19" http://127.0.0.1:9091/rpc1/testing && \
+			   curl -v --output - -H "Range: bytes=0-6,10-20" http://127.0.0.1:9091/rpc1/testing && \
+			   curl -v --output - http://127.0.0.1:9091/rpc1/testing
+			   curl -v --output - -H "Range: bytes=0-6,7-1220" http://127.0.0.1:9091/rpc1/testing2 && \
+			   curl -v --output - http://127.0.0.1:9091/rpc1/testing2 && \
+			   curl -v --output - http://127.0.0.1:9091/rpc1/testing2
+			   curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing3 && \
+			   curl -v --output - -H "Range: bytes=5-20" http://127.0.0.1:9091/rpc1/testing3
+			   curl -v --output - -H "Range: bytes=5-20" http://127.0.0.1:9091/rpc1/testing4 && \
+			   curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing4
+
+			   curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing && \
+			    sleep 6 && curl -v --output - -H "Range: bytes=7-7" http://127.0.0.1:9091/rpc1/testing && \
+			    curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing
+
+	*/
 
 }
 
-func TestSequentialObjectProxyCacheIUS(t *testing.T) {
+func testFetchOPC(r *http.Request, sc int, body string, match map[string]string) (*httptest.ResponseRecorder, []error) {
 
-	headers := map[string]string{"Cache-Control": "max-age=60"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
+	e := make([]error, 0)
 
-	// get URL
+	w := httptest.NewRecorder()
 
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"If-Unmodified-Since": []string{"Sun, 16 Jun 2019 14:19:04 GMT"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	SequentialObjectProxyCacheRequest(req, w, client, false)
+	ObjectProxyCacheRequest(w, r)
 	resp := w.Result()
 
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	err := testStatusCodeMatch(resp.StatusCode, sc)
 	if err != nil {
-		t.Error(err)
+		e = append(e, err)
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		t.Error(err)
+		e = append(e, err)
 	}
 
-	err = testStringMatch(string(bodyBytes), "test")
+	err = testStringMatch(string(bodyBytes), body)
 	if err != nil {
-		t.Error(err)
+		e = append(e, err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	err = testResultHeaderPartMatch(resp.Header, match)
 	if err != nil {
-		t.Error(err)
+		e = append(e, err)
 	}
 
-}
-
-func TestSequentialObjectProxyCacheIM(t *testing.T) {
-
-	headers := map[string]string{"Cache-Control": "max-age=60", "ETag": "test"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	// get URL
-
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"If-Match": []string{"test2"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotModified)
-	if err != nil {
-		t.Error(err)
+	if len(e) == 0 {
+		e = nil
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
-
-}
-
-func TestSequentialObjectProxyCacheINM(t *testing.T) {
-
-	headers := map[string]string{"Cache-Control": "max-age=60", "ETag": "test"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	// get URL
-
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"If-None-Match": []string{"test"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotModified)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
-
-}
-
-func TestSequentialObjectProxyCacheNoRevalidate(t *testing.T) {
-
-	headers := map[string]string{headers.NameCacheControl: headers.ValueMaxAge + "=1"}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	p := tc.PathConfig(r.Context())
-	p.ResponseHeaders = headers
-
-	// get URL
-
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
-
-	time.Sleep(1010 * time.Millisecond)
-	w = httptest.NewRecorder()
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp = w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
-
-}
-
-func TestSequentialObjectProxyCacheCanRevalidate(t *testing.T) {
-
-	headers := map[string]string{
-		headers.NameCacheControl: headers.ValueMaxAge + "=1",
-		headers.NameETag:         "test-etag",
-		headers.NameLastModified: "Sun, 16 Jun 2019 14:19:04 GMT",
-	}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	p := tc.PathConfig(r.Context())
-	p.ResponseHeaders = headers
-
-	// get URL
-
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
-
-	time.Sleep(1010 * time.Millisecond)
-	w = httptest.NewRecorder()
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp = w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
-
-}
-
-func TestSequentialObjectProxyCacheRevalidated(t *testing.T) {
-
-	hdr := map[string]string{
-		headers.NameCacheControl: headers.ValueMaxAge + "=1",
-		headers.NameLastModified: "Sun, 16 Jun 2019 14:19:04 GMT",
-	}
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusOK, hdr)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	p := tc.PathConfig(r.Context())
-	p.ResponseHeaders = hdr
-
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
-
-	time.Sleep(1010 * time.Millisecond)
-
-	s := tu.NewTestServer(304, "", nil)
-	r2 := httptest.NewRequest("GET", s.URL+"/api/v1/query", nil)
-	p = tu.NewTestPathConfig(tc.OriginConfig(r.Context()), client.DefaultPathConfigs, "/api/v1/query")
-	r2 = r2.WithContext(tc.WithConfigs(r2.Context(), tc.OriginConfig(r.Context()), tc.CacheClient(r.Context()), p))
-
-	req = model.NewRequest("TestProxyRequest", r2.Method, r2.URL, http.Header{}, time.Duration(30)*time.Second, r2, tu.NewTestWebClient())
-
-	w = httptest.NewRecorder()
-	h := w.Header()
-	h.Set(headers.NameIfMatch, "test")
-
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp = w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotModified)
-	if err != nil {
-		t.Error(err)
-	}
-
-}
-
-func TestSequentialObjectProxyCacheRequestNegativeCache(t *testing.T) {
-
-	ts, w, r, client, err := setupTestHarnessOPC("", "test", http.StatusNotFound, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	pc := config.NewPathConfig()
-	cfg := client.Configuration()
-	cfg.Paths = map[string]*config.PathConfig{
-		"/": pc,
-	}
-	r = r.WithContext(tc.WithConfigs(r.Context(), cfg, client.Cache(), pc))
-
-	// request the url, it should respond with a 404 cache miss
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp := w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotFound)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
-
-	// request again, should still cache miss, but this time, put 404's into the Negative Cache for 30s
-	cfg.NegativeCache[404] = time.Second * 30
-
-	req = model.NewRequest("TestProxyRequest", r.Method, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	w = httptest.NewRecorder()
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp = w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotFound)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
-	if err != nil {
-		t.Error(err)
-	}
-
-	// request again, this time it should be a cache hit.
-	req = model.NewRequest("TestProxyRequest", r.Method, r.URL, nil, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-
-	w = httptest.NewRecorder()
-	SequentialObjectProxyCacheRequest(req, w, client, false)
-	resp = w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusNotFound)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "test")
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "nchit"})
-	if err != nil {
-		t.Error(err)
-	}
+	return w, e
 
 }

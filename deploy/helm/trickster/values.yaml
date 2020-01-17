@@ -45,8 +45,25 @@ origins:
 #     # cacheName identifies the name of the cache (configured above) to use with this origin. default is 'default'
 #     cacheName: default
 
+#     # cacheKeyPrefix defines the prefix this origin appends to cache keys. When using a shared cache like Redis, this can
+#     # help partition multiple trickster instances that may have the same same hostname or ip address (the default prefix)
+#     # cacheKeyPrefix: 'example'
+
 #     # negativeCacheName identifies the name of the negative cache (configured above) to be used with this origin. default is 'default'
 #     negativeCacheName: 'default'
+
+#     # dearticulateUpstreamRanges, when true, instructs Trickster to make multiple parallel requests to the origin for each
+#     # range needed to fulfill the client request, rather than making a multipart range request. default is false
+#     # dearticulateUpstreamRanges: false
+
+#     # multipartRangesDisabled, when true, instructs Trickster to return the full object when the client provides
+#     # a multipart range request. The default is false.
+#     # multipartRangesDisabled = false
+
+#     # compressableTypes defines the Content Types that will be compressed when stored in the Trickster cache
+#     # reasonable defaults are set, so use this with care. To disable compression, set compressableTypes = []
+#     # Default list is provided here:
+#     # compressableTypes = [ 'text/javascript', 'text/css', 'text/plain', 'text/xml', 'text/json', 'application/json', 'application/javascript', 'application/xml' ]
 
 #     # timeoutSecs defines how many seconds Trickster will wait before aborting and upstream http request.
 #     timeoutSecs: "180"
@@ -186,10 +203,6 @@ origins:
 #     # cacheType defines what kind of cache Trickster uses
 #     # options are 'bbolt', 'badger', 'filesystem', 'memory', and 'redis'
 #     cacheType: memory
-
-#     # compression determines whether the cache should be compressed. default is true
-#     # changing the compression setting will leave orphans in your cache for the duration of timeseries_ttl_secs
-#     compression: true
 
 #     ## Configuration options for the Cache Index
 #     # The Cache Index handles key management and retention for bbolt, filesystem and memory

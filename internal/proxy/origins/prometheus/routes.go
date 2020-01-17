@@ -67,7 +67,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 
 	paths := map[string]*config.PathConfig{
 
-		APIPath + mnQueryRange: &config.PathConfig{
+		APIPath + mnQueryRange: {
 			Path:            APIPath + mnQueryRange,
 			HandlerName:     mnQueryRange,
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -79,7 +79,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchType:       config.PathMatchTypeExact,
 		},
 
-		APIPath + mnQuery: &config.PathConfig{
+		APIPath + mnQuery: {
 			Path:            APIPath + mnQuery,
 			HandlerName:     mnQuery,
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -91,7 +91,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchType:       config.PathMatchTypeExact,
 		},
 
-		APIPath + mnSeries: &config.PathConfig{
+		APIPath + mnSeries: {
 			Path:            APIPath + mnSeries,
 			HandlerName:     mnSeries,
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -103,7 +103,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchType:       config.PathMatchTypeExact,
 		},
 
-		APIPath + mnLabels: &config.PathConfig{
+		APIPath + mnLabels: {
 			Path:            APIPath + mnLabels,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -115,7 +115,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchType:       config.PathMatchTypeExact,
 		},
 
-		APIPath + mnLabel + "/": &config.PathConfig{
+		APIPath + mnLabel + "/": {
 			Path:            APIPath + mnLabel + "/",
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -127,7 +127,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			OriginConfig:    oc,
 		},
 
-		APIPath + mnTargets: &config.PathConfig{
+		APIPath + mnTargets: {
 			Path:            APIPath + mnTargets,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -139,7 +139,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchType:       config.PathMatchTypeExact,
 		},
 
-		APIPath + mnTargetsMeta: &config.PathConfig{
+		APIPath + mnTargetsMeta: {
 			Path:            APIPath + mnTargetsMeta,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -151,7 +151,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchType:       config.PathMatchTypeExact,
 		},
 
-		APIPath + mnRules: &config.PathConfig{
+		APIPath + mnRules: {
 			Path:            APIPath + mnRules,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -163,7 +163,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchType:       config.PathMatchTypeExact,
 		},
 
-		APIPath + mnAlerts: &config.PathConfig{
+		APIPath + mnAlerts: {
 			Path:            APIPath + mnAlerts,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -175,7 +175,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchType:       config.PathMatchTypeExact,
 		},
 
-		APIPath + mnAlertManagers: &config.PathConfig{
+		APIPath + mnAlertManagers: {
 			Path:            APIPath + mnAlertManagers,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -187,7 +187,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchType:       config.PathMatchTypeExact,
 		},
 
-		APIPath + mnStatus: &config.PathConfig{
+		APIPath + mnStatus: {
 			Path:            APIPath + mnStatus,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -199,7 +199,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			OriginConfig:    oc,
 		},
 
-		APIPath: &config.PathConfig{
+		APIPath: {
 			Path:          APIPath,
 			HandlerName:   "proxy",
 			Methods:       []string{http.MethodGet, http.MethodPost},
@@ -208,7 +208,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchTypeName: "prefix",
 		},
 
-		"/": &config.PathConfig{
+		"/": {
 			Path:          "/",
 			HandlerName:   "proxy",
 			Methods:       []string{http.MethodGet, http.MethodPost},
@@ -218,7 +218,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 		},
 	}
 
-	oc.FastForwardPath = paths[APIPath+mnQuery]
+	oc.FastForwardPath = paths[APIPath+mnQuery].Clone()
 
 	return paths
 

@@ -17,12 +17,13 @@ import (
 	"net/http"
 
 	"github.com/Comcast/trickster/internal/proxy/headers"
-	"github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/proxy/request"
 )
 
 // HandleLocalResponse responds to an HTTP Request based on the local configuration without making any upstream requests
 func HandleLocalResponse(w http.ResponseWriter, r *http.Request) {
-	p := context.PathConfig(r.Context())
+	rsc := request.GetResources(r)
+	p := rsc.PathConfig
 	if p == nil {
 		return
 	}

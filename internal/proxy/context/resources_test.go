@@ -11,26 +11,29 @@
 * limitations under the License.
  */
 
-package cache
+package context
 
 import "testing"
 
-func TestLookupStatusString(t *testing.T) {
+import "context"
 
-	t1 := LookupStatusHit
-	t2 := LookupStatusKeyMiss
+type testStruct struct {
+	testField1 bool
+}
 
-	var t3 LookupStatus = 9
+func TestResources(t *testing.T) {
 
-	if t1.String() != "hit" {
-		t.Errorf("expected %s got %s", "hit", t1.String())
+	ctx := context.Background()
+
+	// cover nil short circuit case
+	ctx = WithResources(ctx, nil)
+
+	r1 := &testStruct{testField1: true}
+	ctx = WithResources(ctx, r1)
+	r2 := Resources(ctx)
+
+	if !r2.(*testStruct).testField1 {
+		t.Errorf("expected %t got %t", true, r2.(testStruct).testField1)
 	}
 
-	if t2.String() != "kmiss" {
-		t.Errorf("expected %s got %s", "kmiss", t2.String())
-	}
-
-	if t3.String() != "9" {
-		t.Errorf("expected %s got %s", "9", t3.String())
-	}
 }

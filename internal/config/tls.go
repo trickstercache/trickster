@@ -48,8 +48,8 @@ func DefaultTLSConfig() *TLSConfig {
 	}
 }
 
-// Copy returns an exact copy of the subject *TLSConfig
-func (tc *TLSConfig) Copy() *TLSConfig {
+// Clone returns an exact copy of the subject *TLSConfig
+func (tc *TLSConfig) Clone() *TLSConfig {
 
 	var caps []string
 	if tc.CertificateAuthorityPaths != nil {

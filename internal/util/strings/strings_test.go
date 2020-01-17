@@ -31,12 +31,12 @@ func TestIndexOfString(t *testing.T) {
 
 }
 
-func TestCopyMap(t *testing.T) {
+func TestCloneMap(t *testing.T) {
 
 	const expected = "pass"
 
 	m := map[string]string{"test": expected}
-	m2 := CopyMap(m)
+	m2 := CloneMap(m)
 
 	v, ok := m2["test"]
 	if !ok {

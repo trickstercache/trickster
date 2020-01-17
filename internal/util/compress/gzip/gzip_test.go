@@ -32,7 +32,7 @@ func TestInflate(t *testing.T) {
 		t.Errorf(`got "%s" expected "%s"`, string(u), expected)
 	}
 
-	u, err = Inflate(nil)
+	_, err = Inflate(nil)
 	if err == nil {
 		t.Errorf("expected error: EOF")
 	}

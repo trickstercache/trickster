@@ -25,7 +25,6 @@ import (
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/errors"
-	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/md5"
 )
@@ -33,23 +32,20 @@ import (
 // FetchHandler handles requests for numeric timeseries data with specified
 // spans and processes them through the delta proxy cache.
 func (c *Client) FetchHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BuildUpstreamURL(r)
-	engines.DeltaProxyCacheRequest(
-		model.NewRequest("FetchHandler",
-			r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c)
+	r.URL = c.BuildUpstreamURL(r)
+	engines.DeltaProxyCacheRequest(w, r)
 }
 
 // fetchHandlerSetExtent will change the upstream request query to use the
 // provided Extent.
-func (c Client) fetchHandlerSetExtent(r *model.Request,
+func (c Client) fetchHandlerSetExtent(r *http.Request,
+	trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent) {
 
 	if r == nil || extent == nil || (extent.Start.IsZero() && extent.End.IsZero()) {
 		return
 	}
 
-	trq := r.TimeRangeQuery
 	var err error
 	if trq == nil {
 		if trq, err = c.ParseTimeRangeQuery(r); err != nil {
@@ -57,7 +53,7 @@ func (c Client) fetchHandlerSetExtent(r *model.Request,
 		}
 	}
 
-	b, err := ioutil.ReadAll(r.ClientRequest.Body)
+	b, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -82,27 +78,27 @@ func (c Client) fetchHandlerSetExtent(r *model.Request,
 		return
 	}
 
-	r.ClientRequest.Body = ioutil.NopCloser(newBody)
+	r.Body = ioutil.NopCloser(newBody)
 }
 
 // fetchHandlerParseTimeRangeQuery parses the key parts of a TimeRangeQuery
 // from the inbound HTTP Request.
 func (c *Client) fetchHandlerParseTimeRangeQuery(
-	r *model.Request) (*timeseries.TimeRangeQuery, error) {
+	r *http.Request) (*timeseries.TimeRangeQuery, error) {
 	trq := &timeseries.TimeRangeQuery{}
 
-	b, err := ioutil.ReadAll(r.ClientRequest.Body)
+	b, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		return nil, errors.ParseRequestBody(err)
 	}
 
-	r.ClientRequest.Body = ioutil.NopCloser(bytes.NewBuffer(b))
+	r.Body = ioutil.NopCloser(bytes.NewBuffer(b))
 	fetchReq := map[string]interface{}{}
 	if err = json.NewDecoder(bytes.NewBuffer(b)).Decode(&fetchReq); err != nil {
 		return nil, errors.ParseRequestBody(err)
 	}
 
-	i := float64(0)
+	var i float64
 	var ok bool
 	if i, ok = fetchReq[rbStart].(float64); !ok {
 		return nil, errors.MissingRequestParam(rbStart)

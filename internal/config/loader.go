@@ -28,7 +28,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	providedOriginURL = ""
 	providedOriginType = ""
 
-	LoaderWarnings = make([]string, 0, 0)
+	LoaderWarnings = make([]string, 0)
 
 	c := NewConfig()
 	c.parseFlags(applicationName, arguments) // Parse here to get config file path and version flags
@@ -123,6 +123,13 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		o.TimeseriesTTL = time.Duration(o.TimeseriesTTLSecs) * time.Second
 		o.FastForwardTTL = time.Duration(o.FastForwardTTLSecs) * time.Second
 		o.MaxTTL = time.Duration(o.MaxTTLSecs) * time.Second
+
+		if o.CompressableTypeList != nil {
+			o.CompressableTypes = make(map[string]bool)
+			for _, v := range o.CompressableTypeList {
+				o.CompressableTypes[v] = true
+			}
+		}
 
 		if o.CacheKeyPrefix == "" {
 			o.CacheKeyPrefix = o.Host

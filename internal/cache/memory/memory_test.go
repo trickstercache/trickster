@@ -14,11 +14,13 @@
 package memory
 
 import (
-	"github.com/Comcast/trickster/internal/util/log"
 	"io/ioutil"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/Comcast/trickster/internal/cache/status"
+	"github.com/Comcast/trickster/internal/util/log"
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
@@ -30,6 +32,13 @@ func init() {
 
 const cacheType = "memory"
 const cacheKey = "cacheKey"
+
+type testReferenceObject struct {
+}
+
+func (r *testReferenceObject) Size() int {
+	return 1
+}
 
 func storeBenchmark(b *testing.B) Cache {
 	log.Logger = log.ConsoleLogger("none")
@@ -79,6 +88,45 @@ func TestCache_Connect(t *testing.T) {
 	}
 }
 
+func TestCache_StoreReferenceDirect(t *testing.T) {
+
+	cacheConfig := newCacheConfig(t)
+	mc := Cache{Config: &cacheConfig}
+
+	err := mc.Connect()
+	if err != nil {
+		t.Error(err)
+	}
+	// it should store a value
+	err = mc.store("test", nil, &testReferenceObject{}, 1*time.Second, true)
+
+	r, _, _ := mc.RetrieveReference("test", true)
+	if r == nil {
+		t.Errorf("expected %s got nil", r)
+	}
+
+	_, _, err = mc.RetrieveReference("test2", true)
+	if err == nil {
+		t.Errorf("expected nil got %s", err.Error())
+	}
+
+}
+
+func TestCache_StoreReference(t *testing.T) {
+	cacheConfig := newCacheConfig(t)
+	mc := Cache{Config: &cacheConfig}
+
+	err := mc.Connect()
+	if err != nil {
+		t.Error(err)
+	}
+	// it should store a value
+	err = mc.StoreReference(cacheKey, nil, time.Duration(60)*time.Second)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
 func TestCache_Store(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	mc := Cache{Config: &cacheConfig}
@@ -117,19 +165,23 @@ func TestCache_Retrieve(t *testing.T) {
 
 	// it should retrieve a value
 	var data []byte
-	data, err = mc.Retrieve(cacheKey, false)
+	var ls status.LookupStatus
+	data, ls, err = mc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
 	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\"", "data", data)
 	}
+	if ls != status.LookupStatusHit {
+		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
+	}
 
 	// expire the object
 	mc.SetTTL(cacheKey, -1*time.Hour)
 
 	// this should now return error
-	data, err = mc.Retrieve(cacheKey, false)
+	data, ls, err = mc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected error for %s", expected1)
 		mc.Close()
@@ -140,7 +192,9 @@ func TestCache_Retrieve(t *testing.T) {
 	if string(data) != "" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
-
+	if ls != status.LookupStatusKeyMiss {
+		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
+	}
 }
 
 func BenchmarkCache_Retrieve(b *testing.B) {
@@ -148,19 +202,22 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		var data []byte
-		data, err := mc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		data, ls, err := mc.Retrieve(cacheKey+strconv.Itoa(n), false)
 		if err != nil {
 			b.Error(err)
 		}
 		if string(data) != "data"+strconv.Itoa(n) {
 			b.Errorf("wanted \"%s\". got \"%s\"", "data"+strconv.Itoa(n), data)
 		}
+		if ls != status.LookupStatusHit {
+			b.Errorf("expected %s got %s", status.LookupStatusHit, ls)
+		}
 
 		// expire the object
 		mc.SetTTL(cacheKey+strconv.Itoa(n), -1*time.Hour)
 
 		// this should now return error
-		data, err = mc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		data, ls, err = mc.Retrieve(cacheKey+strconv.Itoa(n), false)
 		expectederr := `value for key [` + cacheKey + strconv.Itoa(n) + `] not in cache`
 		if err == nil {
 			b.Errorf("expected error for %s", expectederr)
@@ -172,6 +229,9 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 
 		if string(data) != "" {
 			b.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+		}
+		if ls != status.LookupStatusKeyMiss {
+			b.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
 		}
 	}
 }
@@ -199,22 +259,27 @@ func TestCache_Remove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := mc.Retrieve(cacheKey, false)
+	data, ls, err := mc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
 	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
+	if ls != status.LookupStatusHit {
+		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
+	}
 
 	mc.Remove(cacheKey)
 
 	// it should be a cache miss
-	_, err = mc.Retrieve(cacheKey, false)
+	_, ls, err = mc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
-
+	if ls != status.LookupStatusKeyMiss {
+		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
+	}
 }
 
 func BenchmarkCache_Remove(b *testing.B) {
@@ -222,18 +287,21 @@ func BenchmarkCache_Remove(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		var data []byte
-		data, err := mc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		data, ls, err := mc.Retrieve(cacheKey+strconv.Itoa(n), false)
 		if err != nil {
 			b.Error(err)
 		}
 		if string(data) != "data"+strconv.Itoa(n) {
 			b.Errorf("wanted \"%s\". got \"%s\"", "data"+strconv.Itoa(n), data)
 		}
+		if ls != status.LookupStatusHit {
+			b.Errorf("expected %s got %s", status.LookupStatusHit, ls)
+		}
 
 		mc.Remove(cacheKey + strconv.Itoa(n))
 
 		// this should now return error
-		data, err = mc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		data, ls, err = mc.Retrieve(cacheKey+strconv.Itoa(n), false)
 		expectederr := `value for key [` + cacheKey + strconv.Itoa(n) + `] not in cache`
 		if err == nil {
 			b.Errorf("expected error for %s", expectederr)
@@ -241,6 +309,9 @@ func BenchmarkCache_Remove(b *testing.B) {
 		}
 		if err.Error() != expectederr {
 			b.Errorf("expected error '%s' got '%s'", expectederr, err.Error())
+		}
+		if ls != status.LookupStatusKeyMiss {
+			b.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
 		}
 
 		if string(data) != "" {
@@ -266,20 +337,26 @@ func TestCache_BulkRemove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, err := mc.Retrieve(cacheKey, false)
+	data, ls, err := mc.Retrieve(cacheKey, false)
 	if err != nil {
 		t.Error(err)
 	}
 	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
+	if ls != status.LookupStatusHit {
+		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
+	}
 
 	mc.BulkRemove([]string{cacheKey}, true)
 
 	// it should be a cache miss
-	_, err = mc.Retrieve(cacheKey, false)
+	_, ls, err = mc.Retrieve(cacheKey, false)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
+	}
+	if ls != status.LookupStatusKeyMiss {
+		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
 	}
 
 }
@@ -296,9 +373,12 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 
 	// it should be a cache miss
 	for n := 0; n < b.N; n++ {
-		_, err := mc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		_, ls, err := mc.Retrieve(cacheKey+strconv.Itoa(n), false)
 		if err == nil {
 			b.Errorf("expected key not found error for %s", cacheKey)
+		}
+		if ls != status.LookupStatusKeyMiss {
+			b.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
 		}
 	}
 }

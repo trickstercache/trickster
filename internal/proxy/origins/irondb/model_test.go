@@ -215,7 +215,7 @@ func TestSeriesEnvelopeSort(t *testing.T) {
 	}
 }
 
-func TestSeriesEnvelopeCopy(t *testing.T) {
+func TestSeriesEnvelopeClone(t *testing.T) {
 	client := &Client{}
 	ts1, err := client.UnmarshalTimeseries([]byte(testResponse))
 	if err != nil {
@@ -224,7 +224,7 @@ func TestSeriesEnvelopeCopy(t *testing.T) {
 	}
 
 	se := ts1.(*SeriesEnvelope)
-	se2 := se.Copy()
+	se2 := se.Clone()
 
 	s1, err := client.MarshalTimeseries(se)
 	if err != nil {
@@ -469,4 +469,20 @@ func TestUnmarshalInstantaneous(t *testing.T) {
 			se.Data[1].Time.Nanosecond()/1000000)
 		return
 	}
+}
+
+func TestTSSize(t *testing.T) {
+
+	bytes := []byte(`[[99000,1.5],[99000.500,1.5]]`)
+	client := &Client{}
+
+	s, _ := client.UnmarshalTimeseries(bytes)
+
+	expected := 48
+	size := s.Size()
+
+	if size != expected {
+		t.Errorf("got %d expected %d", size, expected)
+	}
+
 }

@@ -17,7 +17,7 @@ import (
 	"io/ioutil"
 	"testing"
 
-	tc "github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/proxy/request"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
@@ -25,8 +25,11 @@ func TestStateHandler(t *testing.T) {
 
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "irondb", "/", "debug")
-	client.config = tc.OriginConfig(r.Context())
+	rsc := request.GetResources(r)
+	rsc.OriginClient = client
+	client.config = rsc.OriginConfig
 	client.webClient = hc
+	client.config.HTTPClient = hc
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)

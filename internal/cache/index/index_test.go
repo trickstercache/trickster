@@ -35,6 +35,13 @@ func testBulkRemoveFunc(cacheKeys []string, noLock bool) {
 }
 func fakeFlusherFunc(string, []byte) {}
 
+type testReferenceObject struct {
+}
+
+func (r *testReferenceObject) Size() int {
+	return 1
+}
+
 func TestNewIndex(t *testing.T) {
 	cacheConfig := &config.CachingConfig{CacheType: "test", Index: config.CacheIndexConfig{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
@@ -190,6 +197,13 @@ func TestUpdateObject(t *testing.T) {
 
 	if idx.Objects["test"].LastAccess.IsZero() {
 		t.Errorf("test object last access time is wrong")
+	}
+
+	obj = Object{Key: "test2", ReferenceValue: &testReferenceObject{}}
+
+	idx.UpdateObject(&obj)
+	if _, ok := idx.Objects["test2"]; !ok {
+		t.Errorf("test object missing from index")
 	}
 
 }

@@ -87,7 +87,6 @@ type ResultsEnvelope struct {
 	tslist     times.Times
 	isSorted   bool // tracks if the matrix data is currently sorted
 	isCounted  bool // tracks if timestamps slice is up-to-date
-
 }
 
 // MarshalTimeseries converts a Timeseries into a JSON blob

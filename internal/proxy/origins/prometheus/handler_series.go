@@ -19,14 +19,13 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
 // SeriesHandler proxies requests for path /series to the origin by way of the object proxy cache
 func (c *Client) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BuildUpstreamURL(r)
 
-	params := r.URL.Query()
+	params := u.Query()
 
 	// Round Start and End times down to top of most recent minute for cacheability
 	if p := params.Get(upStart); p != "" {
@@ -41,9 +40,8 @@ func (c *Client) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	r.URL = u
 	r.URL.RawQuery = params.Encode()
 
-	engines.ObjectProxyCacheRequest(
-		model.NewRequest("SeriesHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, false)
+	engines.ObjectProxyCacheRequest(w, r)
 }

@@ -22,16 +22,16 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/headers"
-	tm "github.com/Comcast/trickster/internal/proxy/model"
 	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
+	"github.com/Comcast/trickster/internal/proxy/urls"
 	"github.com/Comcast/trickster/internal/timeseries"
-	tu "github.com/Comcast/trickster/internal/util/testing"
 	"github.com/Comcast/trickster/pkg/sort/times"
 
 	"github.com/prometheus/common/model"
@@ -50,37 +50,21 @@ const (
 	mnAlerts        = "alerts"
 	mnAlertManagers = "alertmanagers"
 	mnStatus        = "status"
-	mnHealth        = "health"
-)
-
-// Origin Types
-const (
-	otPrometheus = "prometheus"
-)
-
-// Prometheus Response Values
-const (
-	rvSuccess = "success"
-	rvMatrix  = "matrix"
-	rvVector  = "vector"
 )
 
 // Common URL Parameter Names
 const (
-	upQuery   = "query"
-	upStart   = "start"
-	upEnd     = "end"
-	upStep    = "step"
-	upTimeout = "timeout"
-	upTime    = "time"
-	upMatch   = "match[]"
+	upQuery = "query"
+	upStart = "start"
+	upEnd   = "end"
+	upStep  = "step"
+	upTime  = "time"
+	upMatch = "match[]"
 )
 
 // Client Implements Proxy Client Interface
-type PromTestClient struct {
+type TestClient struct {
 	name      string
-	user      string
-	pass      string
 	config    *config.OriginConfig
 	cache     cache.Cache
 	webClient *http.Client
@@ -93,12 +77,7 @@ type PromTestClient struct {
 	handlersRegistered bool
 }
 
-func newPromTestClient(name string, config *config.OriginConfig, cache cache.Cache) *PromTestClient {
-
-	return &PromTestClient{name: name, config: config, cache: cache, webClient: tu.NewTestWebClient()}
-}
-
-func (c *PromTestClient) registerHandlers() {
+func (c *TestClient) registerHandlers() {
 	c.handlersRegistered = true
 	c.handlers = make(map[string]http.Handler)
 	// This is the registry of handlers that Trickster supports for Prometheus,
@@ -112,7 +91,7 @@ func (c *PromTestClient) registerHandlers() {
 }
 
 // Handlers returns a map of the HTTP Handlers the client has registered
-func (c *PromTestClient) Handlers() map[string]http.Handler {
+func (c *TestClient) Handlers() map[string]http.Handler {
 	if !c.handlersRegistered {
 		c.registerHandlers()
 	}
@@ -120,11 +99,11 @@ func (c *PromTestClient) Handlers() map[string]http.Handler {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *PromTestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.PathConfig {
+func (c *TestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.PathConfig {
 
 	paths := map[string]*config.PathConfig{
 
-		APIPath + mnQueryRange: &config.PathConfig{
+		APIPath + mnQueryRange: {
 			Path:            APIPath + mnQueryRange,
 			HandlerName:     mnQueryRange,
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -133,7 +112,7 @@ func (c *PromTestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]
 			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 86400)},
 		},
 
-		APIPath + mnQuery: &config.PathConfig{
+		APIPath + mnQuery: {
 			Path:            APIPath + mnQuery,
 			HandlerName:     mnQuery,
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -142,7 +121,7 @@ func (c *PromTestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]
 			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 30)},
 		},
 
-		APIPath + mnSeries: &config.PathConfig{
+		APIPath + mnSeries: {
 			Path:            APIPath + mnSeries,
 			HandlerName:     mnSeries,
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -150,7 +129,7 @@ func (c *PromTestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
 
-		APIPath + mnLabels: &config.PathConfig{
+		APIPath + mnLabels: {
 			Path:            APIPath + mnLabels,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet, http.MethodPost},
@@ -158,7 +137,7 @@ func (c *PromTestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
 
-		APIPath + mnLabel: &config.PathConfig{
+		APIPath + mnLabel: {
 			Path:            APIPath + mnLabel,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -166,7 +145,7 @@ func (c *PromTestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
 
-		APIPath + mnTargets: &config.PathConfig{
+		APIPath + mnTargets: {
 			Path:            APIPath + mnTargets,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -174,7 +153,7 @@ func (c *PromTestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
 
-		APIPath + mnRules: &config.PathConfig{
+		APIPath + mnRules: {
 			Path:            APIPath + mnRules,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -182,7 +161,7 @@ func (c *PromTestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
 
-		APIPath + mnAlerts: &config.PathConfig{
+		APIPath + mnAlerts: {
 			Path:            APIPath + mnAlerts,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -190,7 +169,7 @@ func (c *PromTestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
 
-		APIPath + mnAlertManagers: &config.PathConfig{
+		APIPath + mnAlertManagers: {
 			Path:            APIPath + mnAlertManagers,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -198,7 +177,7 @@ func (c *PromTestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
 
-		APIPath + mnStatus: &config.PathConfig{
+		APIPath + mnStatus: {
 			Path:            APIPath + mnStatus,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -206,13 +185,19 @@ func (c *PromTestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
 
-		APIPath: &config.PathConfig{
+		APIPath: {
 			Path:        APIPath,
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet, http.MethodPost},
 		},
 
-		"/": &config.PathConfig{
+		"/opc": {
+			Path:        "/opc",
+			HandlerName: "proxycache",
+			Methods:     []string{http.MethodGet},
+		},
+
+		"/": {
 			Path:        "/",
 			HandlerName: "proxy",
 			Methods:     []string{http.MethodGet, http.MethodPost},
@@ -227,27 +212,27 @@ func (c *PromTestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]
 }
 
 // Configuration returns the upstream Configuration for this Client
-func (c *PromTestClient) Configuration() *config.OriginConfig {
+func (c *TestClient) Configuration() *config.OriginConfig {
 	return c.config
 }
 
 // SetCache sets the cache object the client will use for caching origin data
-func (c *PromTestClient) SetCache(cc cache.Cache) {
+func (c *TestClient) SetCache(cc cache.Cache) {
 	c.cache = cc
 }
 
 // HTTPClient returns the HTTP Client for this origin
-func (c *PromTestClient) HTTPClient() *http.Client {
+func (c *TestClient) HTTPClient() *http.Client {
 	return c.webClient
 }
 
 // Name returns the name of the upstream Configuration proxied by the Client
-func (c *PromTestClient) Name() string {
+func (c *TestClient) Name() string {
 	return c.name
 }
 
 // Cache returns and handle to the Cache instance used by the Client
-func (c *PromTestClient) Cache() cache.Cache {
+func (c *TestClient) Cache() cache.Cache {
 	return c.cache
 }
 
@@ -277,7 +262,7 @@ func parseDuration(input string) (time.Duration, error) {
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
-func (c *PromTestClient) ParseTimeRangeQuery(r *tm.Request) (*timeseries.TimeRangeQuery, error) {
+func (c *TestClient) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	qp := r.URL.Query()
@@ -317,16 +302,16 @@ func (c *PromTestClient) ParseTimeRangeQuery(r *tm.Request) (*timeseries.TimeRan
 		return nil, errors.MissingURLParam(upStep)
 	}
 
-	if strings.Index(trq.Statement, " offset ") > -1 {
+	if strings.Contains(trq.Statement, " offset ") {
 		trq.IsOffset = true
-		r.FastForwardDisable = true
+		trq.FastForwardDisable = true
 	}
 
 	return trq, nil
 }
 
 // BaseURL returns a URL in the form of scheme://host/path based on the proxy configuration
-func (c *PromTestClient) BaseURL() *url.URL {
+func (c *TestClient) BaseURL() *url.URL {
 	u := &url.URL{}
 	u.Scheme = c.config.Scheme
 	u.Host = c.config.Host
@@ -335,7 +320,7 @@ func (c *PromTestClient) BaseURL() *url.URL {
 }
 
 // BuildUpstreamURL will merge the downstream request with the BaseURL to construct the full upstream URL
-func (c *PromTestClient) BuildUpstreamURL(r *http.Request) *url.URL {
+func (c *TestClient) BuildUpstreamURL(r *http.Request) *url.URL {
 	u := c.BaseURL()
 
 	if strings.HasPrefix(r.URL.Path, "/"+c.name+"/") {
@@ -351,7 +336,7 @@ func (c *PromTestClient) BuildUpstreamURL(r *http.Request) *url.URL {
 }
 
 // SetExtent will change the upstream request query to use the provided Extent
-func (c *PromTestClient) SetExtent(r *tm.Request, extent *timeseries.Extent) {
+func (c *TestClient) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
 	params := r.URL.Query()
 	params.Set(upStart, strconv.FormatInt(extent.Start.Unix(), 10))
 	params.Set(upEnd, strconv.FormatInt(extent.End.Unix(), 10))
@@ -359,16 +344,16 @@ func (c *PromTestClient) SetExtent(r *tm.Request, extent *timeseries.Extent) {
 }
 
 // FastForwardURL returns the url to fetch the Fast Forward value based on a timerange url
-func (c *PromTestClient) FastForwardURL(r *tm.Request) (*url.URL, error) {
+func (c *TestClient) FastForwardURL(r *http.Request) (*url.URL, error) {
 
-	u := tm.CopyURL(r.URL)
+	u := urls.Clone(r.URL)
 
 	if strings.HasSuffix(u.Path, "/query_range") {
 		u.Path = u.Path[0 : len(u.Path)-6]
 	}
 
 	// let the test client have a way to throw an error
-	if strings.Index(u.RawQuery, "throw_ffurl_error=1") != -1 {
+	if strings.Contains(u.RawQuery, "throw_ffurl_error=1") {
 		return nil, fmt.Errorf("This is an intentional test error: %s", ":)")
 	}
 
@@ -419,7 +404,7 @@ type MatrixData struct {
 }
 
 // MarshalTimeseries converts a Timeseries into a JSON blob
-func (c *PromTestClient) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, error) {
+func (c *TestClient) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, error) {
 	// Marshal the Envelope back to a json object for Cache Storage
 	if c.RangeCacheKey == "failkey" {
 		return nil, fmt.Errorf("generic failure for testing purposes (key: %s)", c.RangeCacheKey)
@@ -428,14 +413,14 @@ func (c *PromTestClient) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, er
 }
 
 // UnmarshalTimeseries converts a JSON blob into a Timeseries
-func (c *PromTestClient) UnmarshalTimeseries(data []byte) (timeseries.Timeseries, error) {
+func (c *TestClient) UnmarshalTimeseries(data []byte) (timeseries.Timeseries, error) {
 	me := &MatrixEnvelope{}
 	err := json.Unmarshal(data, &me)
 	return me, err
 }
 
 // UnmarshalInstantaneous converts a JSON blob into an Instantaneous Data Point
-func (c *PromTestClient) UnmarshalInstantaneous(data []byte) (timeseries.Timeseries, error) {
+func (c *TestClient) UnmarshalInstantaneous(data []byte) (timeseries.Timeseries, error) {
 	ve := &VectorEnvelope{}
 	err := json.Unmarshal(data, &ve)
 	if err != nil {
@@ -461,9 +446,6 @@ func (ve *VectorEnvelope) ToMatrix() *MatrixEnvelope {
 	me.ExtentList = timeseries.ExtentList{timeseries.Extent{Start: ts, End: ts}}
 	return me
 }
-
-// Times represents an array of Prometheus Times
-type Times []model.Time
 
 // Step returns the step for the Timeseries
 func (me *MatrixEnvelope) Step() time.Duration {
@@ -504,8 +486,8 @@ func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 	}
 }
 
-// Copy returns a perfect copy of the base Timeseries
-func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
+// Clone returns a perfect copy of the base Timeseries
+func (me *MatrixEnvelope) Clone() timeseries.Timeseries {
 	resMe := &MatrixEnvelope{
 		isCounted:  me.isCounted,
 		isSorted:   me.isSorted,
@@ -767,54 +749,32 @@ func (me *MatrixEnvelope) ValueCount() int {
 	return c
 }
 
-// methods required for sorting Prometheus model.Times
-
-// Len returns the length of an array of Prometheus model.Times
-func (t Times) Len() int {
-	return len(t)
-}
-
-// Less returns true if i comes before j
-func (t Times) Less(i, j int) bool {
-	return t[i].Before(t[j])
-}
-
-// Swap modifies an array of Prometheus model.Times by swapping the values in indexes i and j
-func (t Times) Swap(i, j int) {
-	t[i], t[j] = t[j], t[i]
-}
-
-var handlers = map[string]func(w http.ResponseWriter, r *http.Request){}
-
-func (c *PromTestClient) HealthHandler(w http.ResponseWriter, r *http.Request) {
+func (c *TestClient) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BaseURL()
 	u.Path += APIPath + mnLabels
-	ProxyRequest(tm.NewRequest("HealthHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient), w)
+	DoProxy(w, r)
 }
 
-func (c *PromTestClient) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BuildUpstreamURL(r)
-	DeltaProxyCacheRequest(
-		tm.NewRequest("QueryRangeHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c)
+func (c *TestClient) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
+
+	//rsc := request.NewResources(c.config, c.path
+
+	r.URL = c.BuildUpstreamURL(r)
+	DeltaProxyCacheRequest(w, r)
 }
 
-func (c *PromTestClient) QueryHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BuildUpstreamURL(r)
-	ObjectProxyCacheRequest(
-		tm.NewRequest("QueryHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, false)
+func (c *TestClient) QueryHandler(w http.ResponseWriter, r *http.Request) {
+	r.URL = c.BuildUpstreamURL(r)
+	ObjectProxyCacheRequest(w, r)
 }
 
-func (c *PromTestClient) SeriesHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BuildUpstreamURL(r)
-	ObjectProxyCacheRequest(
-		tm.NewRequest("SeriesHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient),
-		w, c, false)
+func (c *TestClient) SeriesHandler(w http.ResponseWriter, r *http.Request) {
+	r.URL = c.BuildUpstreamURL(r)
+	ObjectProxyCacheRequest(w, r)
 }
 
-func (c *PromTestClient) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	ProxyRequest(tm.NewRequest("APIProxyHandler", r.Method, c.BuildUpstreamURL(r), r.Header, c.config.Timeout, r, c.webClient), w)
+func (c *TestClient) ProxyHandler(w http.ResponseWriter, r *http.Request) {
+	DoProxy(w, r)
 }
 
 func testResultHeaderPartMatch(header http.Header, kvp map[string]string) error {
@@ -828,7 +788,7 @@ func testResultHeaderPartMatch(header http.Header, kvp map[string]string) error 
 	if h, ok := header["X-Trickster-Result"]; ok {
 		res := strings.Join(h, "; ")
 		for k, v := range kvp {
-			if strings.Index(res, fmt.Sprintf("; %s=%s", k, v)) == -1 && strings.Index(res, fmt.Sprintf("%s=%s", k, v)) != 0 {
+			if !strings.Contains(res, fmt.Sprintf("; %s=%s", k, v)) && strings.Index(res, fmt.Sprintf("%s=%s", k, v)) != 0 {
 				return fmt.Errorf("invalid status, expected %s=%s in %s", k, v, h)
 			}
 		}
@@ -851,4 +811,23 @@ func testStringMatch(have, expected string) error {
 		return fmt.Errorf("expected string `%s` got `%s`", expected, have)
 	}
 	return nil
+}
+
+// Size returns the approximate memory utilization in bytes of the timeseries
+func (me *MatrixEnvelope) Size() int {
+
+	c := 0
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
+	for i := range me.Data.Result {
+		wg.Add(1)
+		go func(s *model.SampleStream) {
+			mtx.Lock()
+			c += (len(s.Values) * 16) + len(s.Metric.String())
+			mtx.Unlock()
+			wg.Done()
+		}(me.Data.Result[i])
+	}
+	wg.Wait()
+	return c
 }

@@ -18,14 +18,13 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
+	tc "github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/headers"
-	"github.com/Comcast/trickster/internal/proxy/model"
-	tc "github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
@@ -35,7 +34,7 @@ func init() {
 	metrics.Init()
 }
 
-func TestProxyRequest(t *testing.T) {
+func TestDoProxy(t *testing.T) {
 
 	es := tu.NewTestServer(http.StatusOK, "test", nil)
 	defer es.Close()
@@ -55,15 +54,14 @@ func TestProxyRequest(t *testing.T) {
 		HasCustomResponseBody: true,
 	}
 
+	oc.HTTPClient = http.DefaultClient
 	br := bytes.NewBuffer([]byte("test"))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
-	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, pc))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil)))
 
-	// get URL
-
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-	ProxyRequest(req, w)
+	//req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	DoProxy(w, r)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -104,13 +102,14 @@ func TestProxyRequestBadGateway(t *testing.T) {
 		ResponseHeaders: map[string]string{},
 	}
 
+	oc.HTTPClient = http.DefaultClient
 	br := bytes.NewBuffer([]byte("test"))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", badUpstream, br)
-	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, pc))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil)))
 
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-	ProxyRequest(req, w)
+	//req := model.NewRequest("TestProxyRequest", r.Method, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	DoProxy(w, r)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadGateway)
@@ -145,16 +144,17 @@ func TestClockOffsetWarning(t *testing.T) {
 		ResponseHeaders: map[string]string{},
 	}
 
+	oc.HTTPClient = http.DefaultClient
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", s.URL, nil)
-	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, pc))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil)))
 
 	if log.HasWarnedOnce("clockoffset.default") {
 		t.Errorf("expected %t got %t", false, true)
 	}
 
-	req := model.NewRequest("TestProxyRequest", http.MethodGet, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-	ProxyRequest(req, w)
+	//req := model.NewRequest("TestProxyRequest", http.MethodGet, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	DoProxy(w, r)
 	resp := w.Result()
 
 	if !log.HasWarnedOnce("clockoffset.default") {
@@ -168,7 +168,7 @@ func TestClockOffsetWarning(t *testing.T) {
 
 }
 
-func TestProxyRequestWithPCF(t *testing.T) {
+func TestDoProxyWithPCF(t *testing.T) {
 
 	es := tu.NewTestServer(http.StatusOK, "test", nil)
 	defer es.Close()
@@ -190,15 +190,16 @@ func TestProxyRequestWithPCF(t *testing.T) {
 		CollapsedForwardingType: config.CFTypeProgressive,
 	}
 
+	oc.HTTPClient = http.DefaultClient
 	br := bytes.NewBuffer([]byte("test"))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
-	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, pc))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil)))
 
 	// get URL
 
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-	ProxyRequest(req, w)
+	//req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	DoProxy(w, r)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -244,15 +245,16 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 		CollapsedForwardingType: config.CFTypeProgressive,
 	}
 
+	oc.HTTPClient = http.DefaultClient
 	br := bytes.NewBuffer([]byte("test"))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
-	r = r.WithContext(tc.WithConfigs(r.Context(), oc, nil, pc))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil)))
 
 	// get URL
 
-	req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-	ProxyRequest(req, w)
+	//req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
+	DoProxy(w, r)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -277,8 +279,18 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 }
 
 func TestPrepareFetchReaderErr(t *testing.T) {
-	r := model.NewRequest("test", "GET", &url.URL{}, nil, 0, httptest.NewRequest("GET", "http://example.com/", nil), nil)
-	r.ClientRequest.Method = "\t"
+
+	err := config.Load("trickster", "test", []string{"-origin-url", "http://example.com/", "-origin-type", "test", "-log-level", "debug"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	oc := config.Origins["default"]
+	oc.HTTPClient = http.DefaultClient
+
+	r := httptest.NewRequest("GET", "http://example.com/", nil)
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, nil, nil, nil, nil)))
+	r.Method = "\t"
 	_, _, i := PrepareFetchReader(r)
 	if i != 0 {
 		t.Errorf("expected 0 got %d", i)

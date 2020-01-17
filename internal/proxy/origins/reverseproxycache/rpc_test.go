@@ -14,10 +14,26 @@
 package reverseproxycache
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/origins"
 )
+
+func TestReverseProxyCacheClientInterfacing(t *testing.T) {
+
+	// this test ensures the client will properly conform to the
+	// Client interface
+
+	c := &Client{name: "test"}
+	var oc origins.Client = c
+
+	if oc.Name() != "test" {
+		t.Errorf("expected %s got %s", "test", oc.Name())
+	}
+
+}
 
 func TestNewNewClient(t *testing.T) {
 	c, err := NewClient("test", config.NewOriginConfig(), nil)
@@ -67,5 +83,15 @@ func TestSetCache(t *testing.T) {
 	c.SetCache(nil)
 	if c.Cache() != nil {
 		t.Errorf("expected nil cache for client named %s", "test")
+	}
+}
+
+func TestConfiguration(t *testing.T) {
+	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	if err != nil {
+		t.Error(err)
+	}
+	if c.Configuration() == nil {
+		t.Error(errors.New("expected non-nil config"))
 	}
 }

@@ -82,8 +82,8 @@ func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 	}
 }
 
-// Copy returns a perfect copy of the base Timeseries
-func (me *MatrixEnvelope) Copy() timeseries.Timeseries {
+// Clone returns a perfect copy of the base Timeseries
+func (me *MatrixEnvelope) Clone() timeseries.Timeseries {
 	resMe := &MatrixEnvelope{
 		isCounted:  me.isCounted,
 		isSorted:   me.isSorted,
@@ -389,6 +389,25 @@ func (me *MatrixEnvelope) ValueCount() int {
 			mtx.Unlock()
 			wg.Done()
 		}(len(me.Data.Result[i].Values))
+	}
+	wg.Wait()
+	return c
+}
+
+// Size returns the approximate memory utilization in bytes of the timeseries
+func (me *MatrixEnvelope) Size() int {
+
+	c := 0
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
+	for i := range me.Data.Result {
+		wg.Add(1)
+		go func(s *model.SampleStream) {
+			mtx.Lock()
+			c += (len(s.Values) * 16) + len(s.Metric.String())
+			mtx.Unlock()
+			wg.Done()
+		}(me.Data.Result[i])
 	}
 	wg.Wait()
 	return c

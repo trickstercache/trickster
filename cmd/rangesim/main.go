@@ -11,13 +11,28 @@
 * limitations under the License.
  */
 
-package context
+package main
 
-type contextKey int
+import (
+	"fmt"
+	"net/http"
+	"os"
 
-const (
-	originConfigKey contextKey = iota
-	cacheConfigKey
-	pathConfigKey
-	cacheClientKey
+	"github.com/Comcast/trickster/pkg/rangesim"
 )
+
+func main() {
+
+	port := "8090"
+	if len(os.Args) > 1 && os.Args[1] != "" {
+		port = os.Args[1]
+	}
+
+	fmt.Println("Starting up RangeSim on port", port)
+
+	err := http.ListenAndServe(fmt.Sprintf(":%s", port), rangesim.MuxWithRoutes())
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(0)
+	}
+}

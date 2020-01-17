@@ -15,6 +15,7 @@ package reverseproxycache
 
 import (
 	"net/http"
+	"net/url"
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
@@ -24,13 +25,15 @@ import (
 // Client Implements the Proxy Client Interface
 type Client struct {
 	name               string
-	user               string
-	pass               string
 	config             *config.OriginConfig
 	cache              cache.Cache
 	webClient          *http.Client
 	handlers           map[string]http.Handler
 	handlersRegistered bool
+
+	healthURL     *url.URL
+	healthMethod  string
+	healthHeaders http.Header
 }
 
 // NewClient returns a new Client Instance

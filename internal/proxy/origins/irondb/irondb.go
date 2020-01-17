@@ -16,20 +16,16 @@ package irondb
 
 import (
 	"net/http"
+	"net/url"
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy"
-)
-
-// Origin types.
-const (
-	otIRONdb = "irondb"
+	"github.com/Comcast/trickster/internal/timeseries"
 )
 
 // IRONdb API path segments.
 const (
-	mnHealth    = "health"
 	mnRaw       = "raw"
 	mnRollup    = "rollup"
 	mnFetch     = "fetch"
@@ -39,7 +35,6 @@ const (
 	mnCAQL      = "extension/lua/caql_v1"
 	mnCAQLPub   = "extension/lua/public/caql_v1"
 	mnState     = "state"
-	mnJSON      = "json"
 )
 
 // Common IRONdb URL query parameter names.
@@ -50,8 +45,6 @@ const (
 	upSpan       = "rollup_span"
 	upEngine     = "get_engine"
 	upType       = "type"
-	upActStart   = "activity_start_seconds"
-	upActEnd     = "activity_end_seconds"
 	upCAQLQuery  = "q"
 	upCAQLStart  = "start"
 	upCAQLEnd    = "end"
@@ -65,23 +58,56 @@ const (
 	rbPeriod = "period"
 )
 
+type trqParser func(*http.Request) (*timeseries.TimeRangeQuery, error)
+type extentSetter func(*http.Request, *timeseries.TimeRangeQuery, *timeseries.Extent)
+
 // Client values provide access to IRONdb and implement the Trickster proxy
 // client interface.
 type Client struct {
 	name               string
-	user               string
-	pass               string
 	config             *config.OriginConfig
 	cache              cache.Cache
 	webClient          *http.Client
 	handlers           map[string]http.Handler
 	handlersRegistered bool
+
+	healthURL     *url.URL
+	healthHeaders http.Header
+	healthMethod  string
+
+	trqParsers    map[string]trqParser
+	extentSetters map[string]extentSetter
 }
 
 // NewClient returns a new Client Instance
 func NewClient(name string, oc *config.OriginConfig, cache cache.Cache) (*Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
-	return &Client{name: name, config: oc, cache: cache, webClient: c}, err
+	client := &Client{name: name, config: oc, cache: cache, webClient: c}
+	client.makeTrqParsers()
+	client.makeExtentSetters()
+	return client, err
+}
+
+func (c *Client) makeTrqParsers() {
+	c.trqParsers = map[string]trqParser{
+		"RawHandler":       c.rawHandlerParseTimeRangeQuery,
+		"RollupHandler":    c.rollupHandlerParseTimeRangeQuery,
+		"FetchHandler":     c.fetchHandlerParseTimeRangeQuery,
+		"TextHandler":      c.textHandlerParseTimeRangeQuery,
+		"HistogramHandler": c.histogramHandlerParseTimeRangeQuery,
+		"CAQLHandler":      c.caqlHandlerParseTimeRangeQuery,
+	}
+}
+
+func (c *Client) makeExtentSetters() {
+	c.extentSetters = map[string]extentSetter{
+		"RawHandler":       c.rawHandlerSetExtent,
+		"RollupHandler":    c.rollupHandlerSetExtent,
+		"FetchHandler":     c.fetchHandlerSetExtent,
+		"TextHandler":      c.textHandlerSetExtent,
+		"HistogramHandler": c.histogramHandlerSetExtent,
+		"CAQLHandler":      c.caqlHandlerSetExtent,
+	}
 }
 
 // Configuration returns the upstream Configuration for this Client.

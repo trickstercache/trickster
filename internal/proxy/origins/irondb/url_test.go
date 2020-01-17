@@ -24,7 +24,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/errors"
-	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -43,7 +43,13 @@ func TestSetExtent(t *testing.T) {
 	}
 
 	oc := config.Origins["default"]
-	client := Client{config: oc}
+	client := &Client{config: oc}
+
+	client.makeTrqParsers()
+	client.makeExtentSetters()
+
+	pcs := client.DefaultPathConfigs(oc)
+	rsc := request.NewResources(oc, nil, nil, nil, client)
 
 	cases := []struct {
 		handler  string
@@ -52,8 +58,9 @@ func TestSetExtent(t *testing.T) {
 		expPath  string
 		expQuery string
 		expBody  string
+		p        *config.PathConfig
 	}{
-		{
+		{ // case 0
 			handler: "CAQLHandler",
 			u: &url.URL{
 				Path: "/extension/lua/caql_v1",
@@ -66,8 +73,9 @@ func TestSetExtent(t *testing.T) {
 				"&period=300&query=metric%3Aaverage%28%22" +
 				"00112233-4455-6677-8899-aabbccddeeff%22%2C%22metric%22%29" +
 				"&start=" + formatTimestamp(stFl, false),
+			p: pcs["/extension/lua/caql_v1"],
 		},
-		{
+		{ // case 1
 			handler: "HistogramHandler",
 			u: &url.URL{
 				Path: "/histogram/0/900/300/" +
@@ -78,8 +86,9 @@ func TestSetExtent(t *testing.T) {
 				"/" + formatTimestamp(etFl, false) + "/300" +
 				"/00112233-4455-6677-8899-aabbccddeeff/metric",
 			expQuery: "",
+			p:        pcs["/histogram/"],
 		},
-		{
+		{ // case 2
 			handler: "RawHandler",
 			u: &url.URL{
 				Path:     "/raw/e312a0cb-dbe9-445d-8346-13b0ae6a3382/requests",
@@ -88,8 +97,9 @@ func TestSetExtent(t *testing.T) {
 			expPath: "/raw/e312a0cb-dbe9-445d-8346-13b0ae6a3382/requests",
 			expQuery: "end_ts=" + formatTimestamp(end, true) +
 				"&start_ts=" + formatTimestamp(start, true),
+			p: pcs["/raw/"],
 		},
-		{
+		{ // case 3
 			handler: "RollupHandler",
 			u: &url.URL{
 				Path: "/rollup/e312a0cb-dbe9-445d-8346-13b0ae6a3382/requests",
@@ -100,8 +110,9 @@ func TestSetExtent(t *testing.T) {
 			expQuery: "end_ts=" + formatTimestamp(etFl, true) +
 				"&rollup_span=300s" + "&start_ts=" +
 				formatTimestamp(stFl, true) + "&type=count",
+			p: pcs["/rollup/"],
 		},
-		{
+		{ // case 4
 			handler: "FetchHandler",
 			u: &url.URL{
 				Path: "/fetch",
@@ -127,8 +138,9 @@ func TestSetExtent(t *testing.T) {
 				strconv.FormatInt(stFl.Unix(), 10) + `,"streams":[{"kind":` +
 				`"numeric","name":"test","transform":"average","uuid":` +
 				`"00112233-4455-6677-8899-aabbccddeeff"}]}`,
+			p: pcs["/fetch"],
 		},
-		{
+		{ // case 5
 			handler: "TextHandler",
 			u: &url.URL{
 				Path: "/read/0/900/00112233-4455-6677-8899-aabbccddeeff" +
@@ -139,40 +151,40 @@ func TestSetExtent(t *testing.T) {
 				"/" + formatTimestamp(end, false) +
 				"/00112233-4455-6677-8899-aabbccddeeff/metric",
 			expQuery: "",
+			p:        pcs["/read/"],
 		},
 	}
 
-	for _, c := range cases {
-		r := &model.Request{
-			HandlerName: c.handler,
-			URL:         c.u,
-			TemplateURL: c.u,
-			ClientRequest: &http.Request{
-				Body: ioutil.NopCloser(bytes.NewBufferString(c.body)),
-			},
-		}
+	for i, c := range cases {
 
-		client.SetExtent(r, e)
-		if r.URL.Path != c.expPath {
-			t.Errorf("Expected path: %s, got: %s", c.expPath, r.URL.Path)
-		}
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 
-		if r.URL.RawQuery != c.expQuery {
-			t.Errorf("Expected query: %s, got: %s", c.expQuery, r.URL.RawQuery)
-		}
+			r, _ := http.NewRequest(http.MethodGet, c.u.String(), ioutil.NopCloser(bytes.NewBufferString(c.body)))
+			rsc.PathConfig = c.p
+			r = request.SetResources(r, rsc)
 
-		if c.expBody != "" {
-			b, err := ioutil.ReadAll(r.ClientRequest.Body)
-			if err != nil {
-				t.Errorf("Unable to read request body: %v", err)
-				return
+			client.SetExtent(r, nil, e)
+			if r.URL.Path != c.expPath {
+				t.Errorf("Expected path: %s, got: %s", c.expPath, r.URL.Path)
 			}
 
-			if string(b) != (c.expBody + "\n") {
-				t.Errorf("Expected request body: %v, got: %v", c.expBody,
-					string(b))
+			if r.URL.RawQuery != c.expQuery {
+				t.Errorf("Expected query: %s, got: %s", c.expQuery, r.URL.RawQuery)
 			}
-		}
+
+			if c.expBody != "" {
+				b, err := ioutil.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("Unable to read request body: %v", err)
+					return
+				}
+
+				if string(b) != (c.expBody + "\n") {
+					t.Errorf("Expected request body: %v, got: %v", c.expBody,
+						string(b))
+				}
+			}
+		})
 	}
 }
 
@@ -189,13 +201,22 @@ func TestFastForwardURL(t *testing.T) {
 	}
 
 	oc := config.Origins["default"]
-	client := Client{config: oc}
+	client := &Client{config: oc}
+
+	client.makeTrqParsers()
+	client.makeExtentSetters()
+
+	pcs := client.DefaultPathConfigs(oc)
+
+	rsc := request.NewResources(oc, nil, nil, nil, client)
+
 	cases := []struct {
 		handler string
 		u       *url.URL
 		exp     string
+		p       *config.PathConfig
 	}{
-		{
+		{ // case 0
 			handler: "CAQLHandler",
 			u: &url.URL{
 				Path: "/extension/lua/caql_v1",
@@ -208,8 +229,9 @@ func TestFastForwardURL(t *testing.T) {
 				"&period=300&query=metric%3Aaverage%28%22" +
 				"00112233-4455-6677-8899-aabbccddeeff%22%2C%22metric%22%29" +
 				"&start=" + formatTimestamp(time.Unix(start, 0), false),
+			p: pcs["/extension/lua/caql_v1"],
 		},
-		{
+		{ // case 1
 			handler: "HistogramHandler",
 			u: &url.URL{
 				Path: "/histogram/0/900/300/" +
@@ -220,8 +242,9 @@ func TestFastForwardURL(t *testing.T) {
 				"/" + formatTimestamp(time.Unix(end, 0), false) +
 				"/300" +
 				"/00112233-4455-6677-8899-aabbccddeeff/metric",
+			p: pcs["/histogram/"],
 		},
-		{
+		{ // case 2
 			handler: "RollupHandler",
 			u: &url.URL{
 				Path: "/rollup/e312a0cb-dbe9-445d-8346-13b0ae6a3382/requests",
@@ -233,27 +256,40 @@ func TestFastForwardURL(t *testing.T) {
 				"&rollup_span=300s" +
 				"&start_ts=" + formatTimestamp(time.Unix(start, 0), true) +
 				"&type=count",
+			p: pcs["/rollup/"],
 		},
-		{
+		{ // case 3
 			handler: "ProxyHandler",
 			u: &url.URL{
 				Path:     "/test",
 				RawQuery: "",
 			},
 			exp: "/test",
+			p:   pcs["/"],
 		},
 	}
 
-	for _, c := range cases {
-		r := &model.Request{HandlerName: c.handler, URL: c.u}
-		u, err := client.FastForwardURL(r)
-		if err != nil {
-			t.Error(err)
-		}
+	for i, c := range cases {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 
-		if u.String() != c.exp {
-			t.Errorf("Expected URL: %v, got: %v", c.exp, u.String())
-		}
+			r, _ := http.NewRequest(http.MethodGet, c.u.String(), nil)
+			rsc.PathConfig = c.p
+			r = request.SetResources(r, rsc)
+			u, err := client.FastForwardURL(r)
+			if c.handler != "ProxyHandler" && err != nil {
+				t.Error(err)
+			}
+
+			if c.handler == "ProxyHandler" && err.Error() != "unknown handler name: ProxyHandler" {
+				t.Errorf("expected error: %s", "unknown handler name")
+			}
+
+			if u != nil {
+				if u.String() != c.exp {
+					t.Errorf("Expected URL: %v, got: %v", c.exp, u.String())
+				}
+			}
+		})
 	}
 }
 
@@ -334,14 +370,14 @@ func TestBuildUpstreamURL(t *testing.T) {
 }
 
 func TestParseTimerangeQuery(t *testing.T) {
-
-	expected := errors.NotTimeRangeQuery().Error()
-
+	expected := errors.ErrNotTimeRangeQuery
 	client := &Client{name: "test"}
-	tr := &model.Request{HandlerName: "test"}
+	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 
-	_, err := client.ParseTimeRangeQuery(tr)
-	if err == nil || err.Error() != expected {
-		t.Errorf("expected %s got %v", expected, err)
+	r = request.SetResources(r, request.NewResources(client.config, &config.PathConfig{}, nil, nil, client))
+
+	_, err := client.ParseTimeRangeQuery(r)
+	if err == nil || err != expected {
+		t.Errorf("expected %s got %v", expected.Error(), err.Error())
 	}
 }

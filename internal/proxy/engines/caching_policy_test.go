@@ -19,8 +19,32 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 )
+
+func TestCachingPolicyClone(t *testing.T) {
+	cp := &CachingPolicy{
+		IsClientFresh: true,
+	}
+	v := cp.Clone().IsClientFresh
+	if !v {
+		t.Errorf("expected %t got %t", true, v)
+	}
+}
+
+func TestMerge(t *testing.T) {
+
+	cp := &CachingPolicy{
+		IsClientFresh: true,
+	}
+
+	cp.Merge(nil)
+	if !cp.IsClientFresh {
+		t.Errorf("expected %t got %t", true, cp.IsClientFresh)
+	}
+
+}
 
 func TestGetResponseCachingPolicy(t *testing.T) {
 
@@ -170,6 +194,22 @@ func TestGetResponseCachingPolicy(t *testing.T) {
 	}
 }
 
+func TestResolveClientConditionalsIUS(t *testing.T) {
+
+	cp := &CachingPolicy{
+		IsClientConditional:   true,
+		HasIfUnmodifiedSince:  true,
+		LastModified:          time.Unix(5, 0),
+		IfUnmodifiedSinceTime: time.Unix(4, 0),
+	}
+	cp.ResolveClientConditionals(status.LookupStatusHit)
+
+	if !cp.IsClientFresh {
+		t.Errorf("expected %t got %t", true, cp.IsClientFresh)
+	}
+
+}
+
 func TestGetResponseCachingPolicyNegativeCache(t *testing.T) {
 	p := GetResponseCachingPolicy(400, map[int]time.Duration{400: 300 * time.Second}, nil)
 	if p.FreshnessLifetime != 300 {
@@ -239,6 +279,35 @@ func TestGetRequestCacheability(t *testing.T) {
 				t.Errorf("mismatch isCacheable expected %v got %v", test.isCacheable, ic)
 			}
 		})
+	}
+
+}
+
+func TestCheckIfNoneMatch(t *testing.T) {
+
+	res := CheckIfNoneMatch("", "", status.LookupStatusHit)
+	if !res {
+		t.Errorf("expected %t got %t", true, res)
+	}
+
+	res = CheckIfNoneMatch("test", "*", status.LookupStatusHit)
+	if res {
+		t.Errorf("expected %t got %t", false, res)
+	}
+
+	res = CheckIfNoneMatch("test", "*", status.LookupStatusKeyMiss)
+	if !res {
+		t.Errorf("expected %t got %t", true, res)
+	}
+
+	res = CheckIfNoneMatch("test", "test", status.LookupStatusHit)
+	if res {
+		t.Errorf("expected %t got %t", false, res)
+	}
+
+	res = CheckIfNoneMatch("test", "w/test", status.LookupStatusHit)
+	if res {
+		t.Errorf("expected %t got %t", false, res)
 	}
 
 }

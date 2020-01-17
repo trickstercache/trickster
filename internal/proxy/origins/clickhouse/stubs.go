@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -27,7 +26,7 @@ import (
 // Series (timeseries.Timeseries Interface) stub funcs
 
 // FastForwardURL is not used for ClickHouse and is here to conform to the Proxy Client interface
-func (c *Client) FastForwardURL(r *model.Request) (*url.URL, error) {
+func (c *Client) FastForwardURL(r *http.Request) (*url.URL, error) {
 	return nil, nil
 }
 

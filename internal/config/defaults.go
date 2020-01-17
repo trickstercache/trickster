@@ -16,7 +16,6 @@ package config
 const (
 	defaultLogFile  = ""
 	defaultLogLevel = "INFO"
-	defaultHostname = "localhost.unknown"
 
 	defaultProxyListenPort    = 9090
 	defaultProxyListenAddress = ""
@@ -24,9 +23,8 @@ const (
 	defaultMetricsListenPort    = 8082
 	defaultMetricsListenAddress = ""
 
-	defaultCacheType        = "memory"
-	defaultCacheTypeID      = CacheTypeMemory
-	defaultCacheCompression = true
+	defaultCacheType   = "memory"
+	defaultCacheTypeID = CacheTypeMemory
 
 	defaultTimeseriesTTLSecs  = 21600
 	defaultFastForwardTTLSecs = 15
@@ -50,7 +48,6 @@ const (
 	defaultMaxSizeBackoffObjects = 100
 	defaultMaxObjectSizeBytes    = 524288
 
-	defaultOriginINCH              = true
 	defaultOriginTRF               = 1024
 	defaultOriginTEM               = EvictionMethodOldest
 	defaultOriginTEMName           = "oldest"
@@ -68,3 +65,17 @@ const (
 	defaultConfigHandlerPath = "/trickster/config"
 	defaultPingHandlerPath   = "/trickster/ping"
 )
+
+func defaultCompressableTypes() []string {
+	return []string{
+		"text/html",
+		"text/javascript",
+		"text/css",
+		"text/plain",
+		"text/xml",
+		"text/json",
+		"application/json",
+		"application/javascript",
+		"application/xml",
+	}
+}

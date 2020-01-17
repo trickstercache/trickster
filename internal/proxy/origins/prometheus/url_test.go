@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy/model"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -44,9 +43,9 @@ func TestSetExtent(t *testing.T) {
 	client := Client{config: oc}
 
 	u := &url.URL{RawQuery: "q=up"}
-	r := &model.Request{URL: u}
+	r, _ := http.NewRequest(http.MethodGet, u.String(), nil)
 	e := &timeseries.Extent{Start: start, End: end}
-	client.SetExtent(r, e)
+	client.SetExtent(r, nil, e)
 
 	if expected != r.URL.RawQuery {
 		t.Errorf("\nexpected [%s]\ngot [%s]", expected, r.URL.RawQuery)
@@ -66,7 +65,7 @@ func TestFastForwardURL(t *testing.T) {
 	client := Client{config: oc}
 
 	u := &url.URL{Path: "/query_range", RawQuery: "q=up&start=1&end=1&step=1"}
-	r := &model.Request{URL: u}
+	r, _ := http.NewRequest(http.MethodGet, u.String(), nil)
 
 	u2, err := client.FastForwardURL(r)
 	if err != nil {

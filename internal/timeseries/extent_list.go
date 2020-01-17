@@ -73,7 +73,7 @@ func (el ExtentList) Crop(e Extent) ExtentList {
 			} else if f.After(e.Start) && !f.After(e.End) {
 				startIndex = i
 			} else if f.After(e.Start) && f.After(e.End) {
-				return make(ExtentList, 0, 0)
+				return make(ExtentList, 0)
 			}
 		}
 		if endIndex == -1 {
@@ -94,13 +94,13 @@ func (el ExtentList) Crop(e Extent) ExtentList {
 			return el[startIndex:endIndex]
 		}
 	}
-	return make(ExtentList, 0, 0)
+	return make(ExtentList, 0)
 }
 
 // Compress sorts an ExtentList and merges time-adjacent Extents so that the total extent of
 // data is accurately represented in as few Extents as possible
 func (el ExtentList) Compress(step time.Duration) ExtentList {
-	exc := ExtentList(el).Copy()
+	exc := ExtentList(el).Clone()
 	if len(el) == 0 {
 		return exc
 	}
@@ -150,8 +150,8 @@ func (el ExtentList) Swap(i, j int) {
 	el[i], el[j] = el[j], el[i]
 }
 
-// Copy returns a true copy of the ExtentList
-func (el ExtentList) Copy() ExtentList {
+// Clone returns a true copy of the ExtentList
+func (el ExtentList) Clone() ExtentList {
 	c := make(ExtentList, len(el))
 	for i := range el {
 		c[i].Start = el[i].Start
@@ -179,8 +179,8 @@ func (el ExtentListLRU) Swap(i, j int) {
 	el[i], el[j] = el[j], el[i]
 }
 
-// Copy returns a true copy of the ExtentListLRU
-func (el ExtentListLRU) Copy() ExtentListLRU {
+// Clone returns a true copy of the ExtentListLRU
+func (el ExtentListLRU) Clone() ExtentListLRU {
 	c := make(ExtentListLRU, len(el))
 	for i := range el {
 		c[i].Start = el[i].Start

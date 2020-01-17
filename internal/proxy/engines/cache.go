@@ -14,143 +14,199 @@
 package engines
 
 import (
-	"github.com/pkg/errors"
-	"strconv"
+	"mime"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/golang/snappy"
 
 	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/cache/status"
+	"github.com/Comcast/trickster/internal/proxy/headers"
+	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
 	"github.com/Comcast/trickster/internal/util/log"
 )
 
 // QueryCache queries the cache for an HTTPDocument and returns it
-func QueryCache(c cache.Cache, key string, byteRange model.Ranges) (*model.HTTPDocument, error) {
+func QueryCache(c cache.Cache, key string, ranges byterange.Ranges) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
 
-	inflate := c.Configuration().Compression
-	if inflate {
-		key += ".sz"
-	}
+	d := &HTTPDocument{}
+	var lookupStatus status.LookupStatus
+	var bytes []byte
+	var err error
 
-	d := &model.HTTPDocument{}
-	bytes, err := c.Retrieve(key, true)
-	if err != nil {
-		return d, err
-	}
-	if inflate {
-		log.Debug("decompressing cached data", log.Pairs{"cacheKey": key})
-		b, err := snappy.Decode(nil, bytes)
-		if err == nil {
-			bytes = b
+	if c.Configuration().CacheType == "memory" {
+		mc := c.(cache.MemoryCache)
+		var ifc interface{}
+		ifc, lookupStatus, err = mc.RetrieveReference(key, true)
+		// normalize any cache miss errors to cache.ErrKNF. We'll get all of them updated so we can remove this code
+		if err != nil && err != cache.ErrKNF && strings.HasSuffix(err.Error(), "not in cache") {
+			err = cache.ErrKNF
 		}
-	}
-	d.UnmarshalMsg(bytes)
-	if byteRange != nil && len(byteRange) > 0 {
-		d.UpdatedQueryRange = d.Ranges.CalculateDelta(d, byteRange)
-		// Cache hit
-		if d.UpdatedQueryRange == nil {
-			body := d.Body
-			d.Body = make([]byte, len(d.Body))
-			for _, v := range byteRange {
-				copy(d.Body[v.Start:v.End], body[v.Start:v.End])
+
+		if err != nil || (lookupStatus != status.LookupStatusHit) {
+			var nr byterange.Ranges
+			if lookupStatus == status.LookupStatusKeyMiss && ranges != nil && len(ranges) > 0 {
+				nr = ranges
+			}
+			return d, lookupStatus, nr, err
+		}
+
+		if ifc != nil {
+			d, _ = ifc.(*HTTPDocument)
+		} else {
+			return d, status.LookupStatusKeyMiss, ranges, err
+		}
+
+	} else {
+
+		bytes, lookupStatus, err = c.Retrieve(key, true)
+		// normalize any cache miss errors to cache.ErrKNF. We'll get all of them updated so we can remove this code
+		if err != nil && err != cache.ErrKNF && strings.HasSuffix(err.Error(), "not in cache") {
+			err = cache.ErrKNF
+		}
+
+		if err != nil || (lookupStatus != status.LookupStatusHit) {
+			var nr byterange.Ranges
+			if lookupStatus == status.LookupStatusKeyMiss && ranges != nil && len(ranges) > 0 {
+				nr = ranges
+
+			}
+			return d, lookupStatus, nr, err
+		}
+
+		var inflate bool
+		// check and remove compression bit
+		if len(bytes) > 0 {
+			if bytes[0] == 1 {
+				inflate = true
+			}
+			bytes = bytes[1:]
+		}
+
+		if inflate {
+			log.Debug("decompressing cached data", log.Pairs{"cacheKey": key})
+			b, err := snappy.Decode(nil, bytes)
+			if err == nil {
+				bytes = b
 			}
 		}
+		_, err = d.UnmarshalMsg(bytes)
+		if err != nil {
+			return d, status.LookupStatusKeyMiss, ranges, err
+		}
+
 	}
-	return d, nil
+
+	var delta byterange.Ranges
+
+	// Fulfillment is when we have a range stored, but a subsequent user wants the whole body, so
+	// we must inflate the requested range to be the entire object in order to get the correct delta.
+	d.isFulfillment = (d.Ranges != nil && len(d.Ranges) > 0) && (ranges == nil || len(ranges) == 0)
+
+	if d.isFulfillment {
+		ranges = byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength - 1}}
+	}
+
+	if ranges != nil && len(ranges) > 0 && d.Ranges != nil && len(d.Ranges) > 0 {
+		delta = ranges.CalculateDelta(d.Ranges, d.ContentLength)
+		if delta != nil && len(delta) > 0 {
+			if delta.Equal(ranges) {
+				lookupStatus = status.LookupStatusRangeMiss
+			} else {
+				lookupStatus = status.LookupStatusPartialHit
+			}
+		}
+
+	}
+	return d, lookupStatus, delta, nil
+}
+
+func stripConditionalHeaders(h http.Header) {
+	h.Del(headers.NameIfMatch)
+	h.Del(headers.NameIfUnmodifiedSince)
+	h.Del(headers.NameIfNoneMatch)
+	h.Del(headers.NameIfModifiedSince)
 }
 
 // WriteCache writes an HTTPDocument to the cache
-func WriteCache(c cache.Cache, key string, d *model.HTTPDocument, ttl time.Duration, byteRange model.Ranges) error {
-	// Delete Date Header, http.ReponseWriter will insert as Now() on cache retrieval
-	delete(d.Headers, "Date")
-	if byteRange == nil {
-		ranges := make(model.Ranges, 1)
-		if d.Headers["Content-Length"] != nil {
-			end, err := strconv.Atoi(d.Headers["Content-Length"][0])
-			if err != nil {
-				log.Error("Couldn't convert the content length to a number", log.Pairs{"content length": end})
-				return err
+func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl time.Duration, compressTypes map[string]bool) error {
+
+	h := http.Header(d.Headers)
+	h.Del(headers.NameDate)
+	h.Del(headers.NameTransferEncoding)
+	h.Del(headers.NameContentRange)
+	h.Del(headers.NameTricksterResult)
+
+	var bytes []byte
+
+	var compress bool
+
+	if ce := http.Header(d.Headers).Get(headers.NameContentEncoding); (ce == "" || ce == "identity") &&
+		(d.CachingPolicy == nil || !d.CachingPolicy.NoTransform) {
+		if mt, _, err := mime.ParseMediaType(d.ContentType); err == nil {
+			if _, ok := compressTypes[mt]; ok {
+				compress = true
 			}
-			fullByteRange := model.Range{Start: 0, End: end}
-			ranges[0] = fullByteRange
-			d.Ranges = ranges
 		}
 	}
-	bytes, err := d.MarshalMsg(nil)
-	if err != nil {
-		return err
+
+	// for memory cache, don't serialize the document, since we can retrieve it by reference.
+	if c.Configuration().CacheType == "memory" {
+		mc := c.(cache.MemoryCache)
+
+		if d != nil {
+			// during unmarshal, these would come back as false, so lets set them as such even for direct access
+			d.rangePartsLoaded = false
+			d.isFulfillment = false
+			d.isLoaded = false
+			d.RangeParts = nil
+
+			if d.CachingPolicy != nil {
+				d.CachingPolicy.ResetClientConditionals()
+			}
+		}
+
+		return mc.StoreReference(key, d, ttl)
 	}
 
-	if byteRange != nil {
-		// Content-Range
-		doc, err := QueryCache(c, key, byteRange)
-		if err != nil {
-			// First time, Doesn't exist in the cache
-			// Example -> Content-Range: bytes 0-1023/146515
-			// length = 0-1023/146515
-			if d.Headers["Content-Range"] == nil {
-				return errors.New("No Content-Range in the request")
-			}
-			length := d.Headers["Content-Range"][0]
-			index := 0
-			for k, v := range length {
-				if '/' == v {
-					index = k
-					break
-				}
-			}
-			// length, after this, will have 146515
-			length = length[index+1:]
-			totalSize, err := strconv.Atoi(length)
-			if err != nil {
-				log.Error("Couldn't convert to a valid length", log.Pairs{"length": length})
-				return err
-			}
-			fullSize := make([]byte, totalSize)
+	// for non-memory, we have to seralize the document to a byte slice to store
+	bytes, _ = d.MarshalMsg(nil)
 
-			// Multipart request
-			if d.Headers["Content-Type"] != nil {
-				if strings.Contains(d.Headers["Content-Type"][0], "multipart/byteranges; boundary=") {
-					for _, v2 := range byteRange {
-						start := v2.Start
-						end := v2.End
-						copy(fullSize[start:end], d.Body[start:end])
-					}
-				} else {
-					copy(fullSize[byteRange[0].Start:byteRange[0].End], d.Body)
-				}
-			}
-
-			d.Body = fullSize
-			d.Ranges = byteRange
-			bytes, err = d.MarshalMsg(nil)
-			if err != nil {
-				return err
-			}
-			return c.Store(key, bytes, ttl)
-		}
-		// Case when the key was found in the cache: store only the required part
-		for _, v3 := range doc.UpdatedQueryRange {
-			doc.Ranges[len(doc.Ranges)-1] = model.Range{Start: v3.Start, End: v3.End}
-		}
-		doc.UpdatedQueryRange = nil
-		bytes, err = d.MarshalMsg(nil)
-		if err != nil {
-			return err
-		}
-		if c.Configuration().Compression {
-			key += ".sz"
-			log.Debug("compressing cached data", log.Pairs{"cacheKey": key})
-			bytes = snappy.Encode(nil, bytes)
-		}
-		return c.Store(key, bytes, ttl)
-	}
-	if c.Configuration().Compression {
-		key += ".sz"
-		log.Debug("compressing cached data", log.Pairs{"cacheKey": key})
-		bytes = snappy.Encode(nil, bytes)
+	if compress {
+		log.Debug("compressing cache data", log.Pairs{"cacheKey": key})
+		bytes = append([]byte{1}, snappy.Encode(nil, bytes)...)
+	} else {
+		bytes = append([]byte{0}, bytes...)
 	}
 	return c.Store(key, bytes, ttl)
+
+}
+
+// DocumentFromHTTPResponse returns an HTTPDocument from the provided HTTP Response and Body
+func DocumentFromHTTPResponse(resp *http.Response, body []byte, cp *CachingPolicy) *HTTPDocument {
+	d := &HTTPDocument{}
+	d.StatusCode = resp.StatusCode
+	d.Status = resp.Status
+	d.CachingPolicy = cp
+	d.ContentLength = resp.ContentLength
+
+	if resp.Header != nil {
+		d.Headers = resp.Header.Clone()
+	}
+
+	ct := http.Header(d.Headers).Get(headers.NameContentType)
+	if !strings.HasPrefix(ct, headers.ValueMultipartByteRanges) {
+		d.ContentType = ct
+	}
+
+	if d.StatusCode == http.StatusPartialContent && body != nil && len(body) > 0 {
+		d.ParsePartialContentBody(resp, body)
+		d.FulfillContentBody()
+	} else {
+		d.SetBody(body)
+	}
+
+	return d
 }

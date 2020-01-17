@@ -17,11 +17,10 @@ import (
 	"net/http"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/model"
 )
 
+// ProxyHandler will proxy the inbound HTTP Request to the configured origin
 func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BuildUpstreamURL(r)
-	engines.ProxyRequest(
-		model.NewRequest("ProxyCacheHandler", r.Method, u, r.Header, c.config.Timeout, r, c.webClient), w)
+	r.URL = c.BuildUpstreamURL(r)
+	engines.DoProxy(w, r)
 }

@@ -43,7 +43,7 @@ var (
 
 const (
 	applicationName    = "trickster"
-	applicationVersion = "1.0.9"
+	applicationVersion = "1.0.0-beta10"
 )
 
 func main() {
@@ -69,7 +69,7 @@ func main() {
 	defer log.Logger.Close()
 	log.Info("application start up",
 		log.Pairs{
-			"name":      runtime.ApplicationVersion,
+			"name":      runtime.ApplicationName,
 			"version":   runtime.ApplicationVersion,
 			"goVersion": applicationGoVersion,
 			"goArch":    applicationGoArch,

@@ -27,7 +27,6 @@ import (
 
 // Cache Interface Types
 const (
-	ctMemory     = "memory"
 	ctFilesystem = "filesystem"
 	ctRedis      = "redis"
 	ctBBolt      = "bbolt"

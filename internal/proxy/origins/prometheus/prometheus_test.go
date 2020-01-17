@@ -24,8 +24,26 @@ import (
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/errors"
-	"github.com/Comcast/trickster/internal/proxy/model"
+	"github.com/Comcast/trickster/internal/proxy/origins"
 )
+
+func TestPrometheusClientInterfacing(t *testing.T) {
+
+	// this test ensures the client will properly conform to the
+	// Client and TimeseriesClient interfaces
+
+	c := &Client{name: "test"}
+	var oc origins.Client = c
+	var tc origins.TimeseriesClient = c
+
+	if oc.Name() != "test" {
+		t.Errorf("expected %s got %s", "test", oc.Name())
+	}
+
+	if tc.Name() != "test" {
+		t.Errorf("expected %s got %s", "test", tc.Name())
+	}
+}
 
 func TestNewClient(t *testing.T) {
 
@@ -155,7 +173,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		}).Encode(),
 	}}
 	client := &Client{}
-	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL})
+	res, err := client.ParseTimeRangeQuery(req)
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -182,7 +200,7 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 			"step":   {"15"}}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	_, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
@@ -206,7 +224,7 @@ func TestParseTimeRangeBadStartTime(t *testing.T) {
 			"step":  {"15"}}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	_, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
@@ -230,7 +248,7 @@ func TestParseTimeRangeBadEndTime(t *testing.T) {
 			"step":  {"15"}}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	_, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
@@ -255,7 +273,7 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 			"step":  {"x"}}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	_, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
@@ -279,7 +297,7 @@ func TestParseTimeRangeQueryNoStart(t *testing.T) {
 			"step":  {"x"}}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	_, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
@@ -303,7 +321,7 @@ func TestParseTimeRangeQueryNoEnd(t *testing.T) {
 			"step":  {"x"}}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	_, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
@@ -328,7 +346,7 @@ func TestParseTimeRangeQueryNoStep(t *testing.T) {
 		).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
+	_, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
@@ -351,7 +369,7 @@ func TestParseTimeRangeQueryWithOffset(t *testing.T) {
 		}).Encode(),
 	}}
 	client := &Client{}
-	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL})
+	res, err := client.ParseTimeRangeQuery(req)
 	if err != nil {
 		t.Error(err)
 		return

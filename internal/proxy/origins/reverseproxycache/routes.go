@@ -22,8 +22,6 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/methods"
 )
 
-const root = "/"
-
 func (c *Client) registerHandlers() {
 	c.handlersRegistered = true
 	c.handlers = make(map[string]http.Handler)
@@ -50,7 +48,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 	um := methods.UncacheableHTTPMethods()
 
 	paths := map[string]*config.PathConfig{
-		"/-" + strings.Join(cm, "-"): &config.PathConfig{
+		"/-" + strings.Join(cm, "-"): {
 			Path:          "/",
 			HandlerName:   "proxycache",
 			Methods:       cm,
@@ -58,7 +56,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 			MatchType:     config.PathMatchTypePrefix,
 			MatchTypeName: "prefix",
 		},
-		"/-" + strings.Join(um, "-"): &config.PathConfig{
+		"/-" + strings.Join(um, "-"): {
 			Path:          "/",
 			HandlerName:   "proxy",
 			Methods:       um,

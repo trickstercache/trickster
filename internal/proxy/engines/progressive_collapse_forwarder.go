@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 )
 
+// ErrReadIndexTooLarge is an error indicating the read index is too large
 var ErrReadIndexTooLarge = errors.New("Read index too large")
 
 // NEED TO DEAL WITH TIMEOUT
@@ -57,7 +58,7 @@ type progressiveCollapseForwarder struct {
 }
 
 // NewPCF returns a new instance of a ProgressiveCollapseForwarder
-func NewPCF(resp *http.Response, contentLength int) ProgressiveCollapseForwarder {
+func NewPCF(resp *http.Response, contentLength int64) ProgressiveCollapseForwarder {
 	// This contiguous block of memory is just an underlying byte store, references by the slices defined in refs
 	// Thread safety is provided through a read index, an atomic, which the writer must exceed and readers may not exceed
 	// This effectively limits the readers and writer to separate areas in memory.
@@ -130,14 +131,12 @@ func (pfc *progressiveCollapseForwarder) AddClient(w io.Writer) error {
 // Need to get payload before can send to actual cache
 func (pfc *progressiveCollapseForwarder) WaitServerComplete() {
 	pfc.serverWaitCond.Wait()
-	return
 }
 
 // WaitAllComplete will wait till all clients have completed or timedout
 // Need to no abandon goroutines
 func (pfc *progressiveCollapseForwarder) WaitAllComplete() {
 	pfc.clientWaitgroup.Wait()
-	return
 }
 
 // GetBody returns the underlying body of the data written into a PCF
@@ -175,7 +174,6 @@ func (pfc *progressiveCollapseForwarder) Close() {
 	atomic.AddInt32(&pfc.serverReadDone, 1)
 	pfc.serverWaitCond.Signal()
 	pfc.readCond.Broadcast()
-	return
 }
 
 // Read will return the given index data requested by the read is behind the PCF readindex, else blocks and waits for the data

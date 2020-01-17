@@ -72,11 +72,11 @@ func (re *ResultsEnvelope) Merge(sort bool, collection ...timeseries.Timeseries)
 
 func (re *ResultsEnvelope) mergeSeriesOrder(so2 []string) {
 
-	if so2 == nil || len(so2) == 0 {
+	if len(so2) == 0 {
 		return
 	}
 
-	if re.SeriesOrder == nil || len(re.SeriesOrder) == 0 {
+	if len(re.SeriesOrder) == 0 {
 		re.SeriesOrder = so2
 		return
 	}
@@ -114,8 +114,8 @@ func (re *ResultsEnvelope) mergeSeriesOrder(so2 []string) {
 
 }
 
-// Copy returns a perfect copy of the base Timeseries
-func (re *ResultsEnvelope) Copy() timeseries.Timeseries {
+// Clone returns a perfect copy of the base Timeseries
+func (re *ResultsEnvelope) Clone() timeseries.Timeseries {
 	re2 := &ResultsEnvelope{
 		isCounted:    re.isCounted,
 		isSorted:     re.isSorted,
@@ -390,10 +390,6 @@ func (re *ResultsEnvelope) Sort() {
 	re.isSorted = true
 }
 
-func (re *ResultsEnvelope) updateSeriesOrder() {
-
-}
-
 func (re *ResultsEnvelope) updateTimestamps() {
 
 	wg := sync.WaitGroup{}
@@ -458,4 +454,56 @@ func (re *ResultsEnvelope) ValueCount() int {
 	}
 	wg.Wait()
 	return c
+}
+
+// Size returns the approximate memory utilization in bytes of the timeseries
+func (re *ResultsEnvelope) Size() int {
+
+	var size int
+	wg := sync.WaitGroup{}
+
+	var a int
+	ma := sync.Mutex{}
+	for i := range re.Meta {
+		wg.Add(1)
+		go func(j int) {
+			ma.Lock()
+			a += len(re.Meta[j].Name) + len(re.Meta[j].Type)
+			ma.Unlock()
+			wg.Done()
+		}(i)
+	}
+
+	var b int
+	mb := sync.Mutex{}
+	for k, v := range re.Data {
+		b += len(k)
+		wg.Add(1)
+		go func(d *DataSet) {
+			mb.Lock()
+			b += len(d.Points) * 16
+			mb.Unlock()
+			wg.Done()
+		}(v)
+	}
+
+	var c int
+	mc := sync.Mutex{}
+	for _, s := range re.SeriesOrder {
+		wg.Add(1)
+		go func(t string) {
+			mc.Lock()
+			c += len(t)
+			mc.Unlock()
+			wg.Done()
+		}(s)
+	}
+
+	// ExtentList + StepDuration + Timestamps + Times + isCounted + isSorted
+	d := (len(re.ExtentList) * 24) + 8 + (len(re.timestamps) * 9) + (len(re.tslist) * 8) + 2
+
+	wg.Wait()
+	size = a + b + c + d
+	return size
+
 }

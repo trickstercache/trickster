@@ -16,9 +16,10 @@ package reverseproxycache
 import (
 	"io/ioutil"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
-	tc "github.com/Comcast/trickster/internal/util/context"
+	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
@@ -29,27 +30,28 @@ func init() {
 
 func TestHealthHandler(t *testing.T) {
 
-	healthURL = nil
-
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "rpc", "/health", "debug")
-	client.config = tc.OriginConfig(r.Context())
+	rsc := request.GetResources(r)
+	rsc.OriginClient = client
+	client.config = rsc.OriginConfig
 	client.webClient = hc
+	client.config.HTTPClient = hc
 
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
 	}
 
+	client.healthURL = &url.URL{}
+	client.healthMethod = "-"
 	client.HealthHandler(w, r)
 	resp := w.Result()
 	if resp.StatusCode != 400 {
 		t.Errorf("Expected status: 400 got %d.", resp.StatusCode)
 	}
 
-	client.config.HealthCheckVerb = "GET"
-	client.config.HealthCheckUpstreamPath = "/"
-
+	client.healthURL = nil
 	client.HealthHandler(w, r)
 	w = httptest.NewRecorder()
 	resp = w.Result()
@@ -60,9 +62,6 @@ func TestHealthHandler(t *testing.T) {
 }
 
 func TestHealthHandlerCustomPath(t *testing.T) {
-
-	healthURL = nil
-
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("../../../../testdata/test.custom_health.conf", client.DefaultPathConfigs, 200, "{}", nil, "rpc", "/health", "debug")
 	defer ts.Close()
@@ -70,8 +69,11 @@ func TestHealthHandlerCustomPath(t *testing.T) {
 		t.Error(err)
 	}
 
-	client.config = tc.OriginConfig(r.Context())
+	rsc := request.GetResources(r)
+	rsc.OriginClient = client
+	client.config = rsc.OriginConfig
 	client.webClient = hc
+	client.config.HTTPClient = hc
 
 	client.HealthHandler(w, r)
 	resp := w.Result()

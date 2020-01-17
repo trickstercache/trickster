@@ -14,6 +14,7 @@
 package timeseries
 
 import (
+	"net/url"
 	"reflect"
 	"strconv"
 	"testing"
@@ -124,9 +125,10 @@ func TestNormalizeExtent(t *testing.T) {
 	}
 }
 
-func TestCopy(t *testing.T) {
-	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{Start: time.Unix(5, 0), End: time.Unix(10, 0)}, Step: time.Duration(5) * time.Second}
-	c := trq.Copy()
+func TestClone(t *testing.T) {
+	u, _ := url.Parse("http://127.0.0.1/")
+	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{Start: time.Unix(5, 0), End: time.Unix(10, 0)}, Step: time.Duration(5) * time.Second, TemplateURL: u}
+	c := trq.Clone()
 	if !reflect.DeepEqual(trq, c) {
 		t.Errorf("expected %s got %s", trq.String(), c.String())
 	}

@@ -11,7 +11,7 @@
 * limitations under the License.
  */
 
-package cache
+package status
 
 import "strconv"
 
@@ -28,6 +28,9 @@ const (
 	LookupStatusRangeMiss
 	// LookupStatusKeyMiss indicates a full key miss (cache key does not exist) on lookup
 	LookupStatusKeyMiss
+	// LookupStatusRevalidated indicates the cached object execeeded the freshness lifetime but
+	// was revalidated against the upstream server and is treated as a cache hit
+	LookupStatusRevalidated
 	// LookupStatusPurge indicates the cache key, if it existed, was purged as directed
 	// in upstream response or down stream request http headers
 	LookupStatusPurge
@@ -38,28 +41,34 @@ const (
 	LookupStatusProxyOnly
 	// LookupStatusNegativeCacheHit indicates that the request was served as a hit from the Negative Response Cache
 	LookupStatusNegativeCacheHit
+	// LookupStatusError indicates that there was an error looking up the object in the cache
+	LookupStatusError
 )
 
 var cacheLookupStatusNames = map[string]LookupStatus{
 	"hit":         LookupStatusHit,
 	"phit":        LookupStatusPartialHit,
+	"rhit":        LookupStatusRevalidated,
 	"rmiss":       LookupStatusRangeMiss,
 	"kmiss":       LookupStatusKeyMiss,
 	"purge":       LookupStatusPurge,
 	"proxy-error": LookupStatusProxyError,
 	"proxy-only":  LookupStatusProxyOnly,
 	"nchit":       LookupStatusNegativeCacheHit,
+	"error":       LookupStatusError,
 }
 
 var cacheLookupStatusValues = map[LookupStatus]string{
 	LookupStatusHit:              "hit",
 	LookupStatusPartialHit:       "phit",
+	LookupStatusRevalidated:      "rhit",
 	LookupStatusRangeMiss:        "rmiss",
 	LookupStatusKeyMiss:          "kmiss",
 	LookupStatusPurge:            "purge",
 	LookupStatusProxyError:       "proxy-error",
 	LookupStatusProxyOnly:        "proxy-only",
 	LookupStatusNegativeCacheHit: "nchit",
+	LookupStatusError:            "error",
 }
 
 func (s LookupStatus) String() string {

@@ -14,6 +14,7 @@
 package irondb
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -21,8 +22,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Comcast/trickster/internal/proxy/errors"
-	"github.com/Comcast/trickster/internal/proxy/model"
+	terr "github.com/Comcast/trickster/internal/proxy/errors"
+	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -57,27 +58,28 @@ func (c Client) BuildUpstreamURL(r *http.Request) *url.URL {
 }
 
 // SetExtent will change the upstream request query to use the provided Extent.
-func (c Client) SetExtent(r *model.Request, extent *timeseries.Extent) {
-	switch r.HandlerName {
-	case "RawHandler":
-		c.rawHandlerSetExtent(r, extent)
-	case "RollupHandler":
-		c.rollupHandlerSetExtent(r, extent)
-	case "FetchHandler":
-		c.fetchHandlerSetExtent(r, extent)
-	case "TextHandler":
-		c.textHandlerSetExtent(r, extent)
-	case "HistogramHandler":
-		c.histogramHandlerSetExtent(r, extent)
-	case "CAQLHandler":
-		c.caqlHandlerSetExtent(r, extent)
+func (c Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
+
+	rsc := request.GetResources(r)
+	if rsc.PathConfig == nil {
+		return
+	}
+
+	if f, ok := c.extentSetters[rsc.PathConfig.HandlerName]; ok {
+		f(r, trq, extent)
 	}
 }
 
 // FastForwardURL returns the url to fetch the Fast Forward value based on a
 // timerange URL.
-func (c *Client) FastForwardURL(r *model.Request) (*url.URL, error) {
-	switch r.HandlerName {
+func (c *Client) FastForwardURL(r *http.Request) (*url.URL, error) {
+
+	rsc := request.GetResources(r)
+	if rsc.PathConfig == nil {
+		return nil, errors.New("missing path config")
+	}
+
+	switch rsc.PathConfig.HandlerName {
 	case "RollupHandler":
 		return c.rollupHandlerFastForwardURL(r)
 	case "HistogramHandler":
@@ -86,8 +88,7 @@ func (c *Client) FastForwardURL(r *model.Request) (*url.URL, error) {
 		return c.caqlHandlerFastForwardURL(r)
 	}
 
-	r.FastForwardDisable = true
-	return r.URL, nil
+	return nil, fmt.Errorf("unknown handler name: %s", rsc.PathConfig.HandlerName)
 }
 
 // formatTimestamp returns a string containing a timestamp in the format used
@@ -144,21 +145,22 @@ func parseDuration(s string) (time.Duration, error) {
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the
 // inbound HTTP Request.
 func (c *Client) ParseTimeRangeQuery(
-	r *model.Request) (*timeseries.TimeRangeQuery, error) {
-	switch r.HandlerName {
-	case "RawHandler":
-		return c.rawHandlerParseTimeRangeQuery(r)
-	case "RollupHandler":
-		return c.rollupHandlerParseTimeRangeQuery(r)
-	case "FetchHandler":
-		return c.fetchHandlerParseTimeRangeQuery(r)
-	case "TextHandler":
-		return c.textHandlerParseTimeRangeQuery(r)
-	case "HistogramHandler":
-		return c.histogramHandlerParseTimeRangeQuery(r)
-	case "CAQLHandler":
-		return c.caqlHandlerParseTimeRangeQuery(r)
+	r *http.Request) (*timeseries.TimeRangeQuery, error) {
+
+	rsc := request.GetResources(r)
+	if rsc.PathConfig == nil {
+		return nil, errors.New("missing path config")
 	}
 
-	return nil, errors.NotTimeRangeQuery()
+	var trq *timeseries.TimeRangeQuery
+	var err error
+
+	if f, ok := c.trqParsers[rsc.PathConfig.HandlerName]; ok {
+		trq, err = f(r)
+	} else {
+		trq = nil
+		err = terr.ErrNotTimeRangeQuery
+	}
+	rsc.TimeRangeQuery = trq
+	return trq, err
 }

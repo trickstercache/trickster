@@ -55,7 +55,7 @@ var providedOriginType string
 
 // LoaderWarnings holds warnings generated during config load (before the logger is initialized),
 // so they can be logged at the end of the loading process
-var LoaderWarnings = make([]string, 0, 0)
+var LoaderWarnings = make([]string, 0)
 
 // TricksterConfig is the main configuration object
 type TricksterConfig struct {
@@ -138,14 +138,24 @@ type OriginConfig struct {
 	// MaxTTLSecs specifies the maximum allowed TTL for any cache object
 	MaxTTLSecs int `toml:"max_ttl_secs"`
 	// RevalidationFactor specifies how many times to multiply the object freshness lifetime by to calculate an absolute cache TTL
-	RevalidationFactor int `toml:"revalidation_factor"`
+	RevalidationFactor float64 `toml:"revalidation_factor"`
 	// MaxObjectSizeBytes specifies the max objectsize to be accepted for any given cache object
 	MaxObjectSizeBytes int `toml:"max_object_size_bytes"`
+	// CompressableTypeList specifies the HTTP Object Content Types that will be compressed internally when stored in the Trickster cache
+	CompressableTypeList []string `toml:"compressable_types"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *TLSConfig `toml:"tls"`
 	// RequireTLS, when true, indicates this Origin Config's paths must only be registered with the TLS Router
 	RequireTLS bool `toml:"require_tls"`
+
+	// MultipartRangesDisabled, when true, indicates that if a downstream client requests multiple ranges in a single Range request,
+	// Trickster will instead request and return a 200 OK with the full object body
+	MultipartRangesDisabled bool `toml:"multipart_ranges_disabled"`
+	// DearticulateUpstreamRanges, when true, indicates that when Trickster requests multiple ranges from the origin,
+	// that they be requested as individual upstream requests instead of a single request that expects a multipart response
+	// this optimizes Trickster to request as few bytes as possible when fronting origins that only support single range requests
+	DearticulateUpstreamRanges bool `toml:"dearticulate_upstream_ranges"`
 
 	// Synthesized Configurations
 	// These configurations are parsed versions of those defined above, and are what Trickster uses internally
@@ -178,6 +188,10 @@ type OriginConfig struct {
 	FastForwardPath *PathConfig `toml:"-"`
 	// MaxTTL is the parsed value of MaxTTLSecs
 	MaxTTL time.Duration `toml:"-"`
+	// HTTPClient is the Client used by trickster to communicate with this origin
+	HTTPClient *http.Client `toml:"-"`
+	// CompressableTypes is the map version of CompressableTypeList for fast lookup
+	CompressableTypes map[string]bool `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -186,8 +200,6 @@ type CachingConfig struct {
 	Name string `toml:"-"`
 	// Type represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
 	CacheType string `toml:"cache_type"`
-	// Compression determines whether objects should be compressed when writing to the cache
-	Compression bool `toml:"compression"`
 	// Index provides options for the Cache Index
 	Index CacheIndexConfig `toml:"index"`
 	// Redis provides options for Redis caching
@@ -330,8 +342,8 @@ type MetricsConfig struct {
 // NegativeCacheConfig is a collection of response codes and their TTLs
 type NegativeCacheConfig map[string]int
 
-// Copy returns an exact copy of a NegativeCacheConfig
-func (nc NegativeCacheConfig) Copy() NegativeCacheConfig {
+// Clone returns an exact copy of a NegativeCacheConfig
+func (nc NegativeCacheConfig) Clone() NegativeCacheConfig {
 	nc2 := make(NegativeCacheConfig)
 	for k, v := range nc {
 		nc2[k] = v
@@ -379,7 +391,6 @@ func NewCacheConfig() *CachingConfig {
 	return &CachingConfig{
 		CacheType:   defaultCacheType,
 		CacheTypeID: defaultCacheTypeID,
-		Compression: defaultCacheCompression,
 		Redis:       RedisCacheConfig{ClientType: defaultRedisClientType, Protocol: defaultRedisProtocol, Endpoint: defaultRedisEndpoint, Endpoints: []string{defaultRedisEndpoint}},
 		Filesystem:  FilesystemCacheConfig{CachePath: defaultCachePath},
 		BBolt:       BBoltCacheConfig{Filename: defaultBBoltFile, Bucket: defaultBBoltBucket},
@@ -426,6 +437,7 @@ func NewOriginConfig() *OriginConfig {
 		RevalidationFactor:           defaultRevalidationFactor,
 		MaxObjectSizeBytes:           defaultMaxObjectSizeBytes,
 		TLS:                          &TLSConfig{},
+		CompressableTypeList:         defaultCompressableTypes(),
 	}
 }
 
@@ -504,6 +516,10 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 			oc.OriginURL = v.OriginURL
 		}
 
+		if metadata.IsDefined("origins", k, "compressable_types") {
+			oc.CompressableTypeList = v.CompressableTypeList
+		}
+
 		if metadata.IsDefined("origins", k, "timeout_secs") {
 			oc.TimeoutSecs = v.TimeoutSecs
 		}
@@ -553,7 +569,7 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 				if len(p.Methods) == 0 {
 					p.Methods = []string{http.MethodGet, http.MethodHead}
 				}
-				p.custom = make([]string, 0, 0)
+				p.custom = make([]string, 0)
 				for _, pm := range pathMembers {
 					if metadata.IsDefined("origins", k, "paths", l, pm) {
 						p.custom = append(p.custom, pm)
@@ -600,6 +616,18 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 			oc.MaxObjectSizeBytes = v.MaxObjectSizeBytes
 		}
 
+		if metadata.IsDefined("origins", k, "revalidation_factor") {
+			oc.RevalidationFactor = v.RevalidationFactor
+		}
+
+		if metadata.IsDefined("origins", k, "multipart_ranges_disabled") {
+			oc.MultipartRangesDisabled = v.MultipartRangesDisabled
+		}
+
+		if metadata.IsDefined("origins", k, "dearticulate_upstream_ranges") {
+			oc.DearticulateUpstreamRanges = v.DearticulateUpstreamRanges
+		}
+
 		if metadata.IsDefined("origins", k, "tls") {
 			oc.TLS = &TLSConfig{
 				InsecureSkipVerify:        v.TLS.InsecureSkipVerify,
@@ -635,10 +663,6 @@ func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
 			if n, ok := CacheTypeNames[cc.CacheType]; ok {
 				cc.CacheTypeID = n
 			}
-		}
-
-		if metadata.IsDefined("caches", k, "compression") {
-			cc.Compression = v.Compression
 		}
 
 		if metadata.IsDefined("caches", k, "index", "reap_interval_secs") {
@@ -807,15 +831,15 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 	nc.Frontend.ServeTLS = c.Frontend.ServeTLS
 
 	for k, v := range c.Origins {
-		nc.Origins[k] = v.Copy()
+		nc.Origins[k] = v.Clone()
 	}
 
 	for k, v := range c.Caches {
-		nc.Caches[k] = v.Copy()
+		nc.Caches[k] = v.Clone()
 	}
 
 	for k, v := range c.NegativeCacheConfigs {
-		nc.NegativeCacheConfigs[k] = v.Copy()
+		nc.NegativeCacheConfigs[k] = v.Clone()
 	}
 
 	return nc
@@ -863,20 +887,19 @@ func (c *TricksterConfig) String() string {
 var sensitiveCredentials = map[string]bool{headers.NameAuthorization: true}
 
 func hideAuthorizationCredentials(headers map[string]string) {
-	if headers != nil {
-		// strip Authorization Headers
-		for k := range headers {
-			if _, ok := sensitiveCredentials[k]; ok {
-				headers[k] = "*****"
-			}
+	// strip Authorization Headers
+	for k := range headers {
+		if _, ok := sensitiveCredentials[k]; ok {
+			headers[k] = "*****"
 		}
 	}
 }
 
-// Copy returns an exact copy of an *OriginConfig
-func (oc *OriginConfig) Copy() *OriginConfig {
+// Clone returns an exact copy of an *OriginConfig
+func (oc *OriginConfig) Clone() *OriginConfig {
 
 	o := &OriginConfig{}
+	o.DearticulateUpstreamRanges = oc.DearticulateUpstreamRanges
 	o.BackfillTolerance = oc.BackfillTolerance
 	o.BackfillToleranceSecs = oc.BackfillToleranceSecs
 	o.CacheName = oc.CacheName
@@ -895,6 +918,7 @@ func (oc *OriginConfig) Copy() *OriginConfig {
 	o.MaxTTLSecs = oc.MaxTTLSecs
 	o.MaxTTL = oc.MaxTTL
 	o.MaxObjectSizeBytes = oc.MaxObjectSizeBytes
+	o.MultipartRangesDisabled = oc.MultipartRangesDisabled
 	o.OriginType = oc.OriginType
 	o.OriginURL = oc.OriginURL
 	o.PathPrefix = oc.PathPrefix
@@ -910,6 +934,18 @@ func (oc *OriginConfig) Copy() *OriginConfig {
 	o.TimeseriesTTLSecs = oc.TimeseriesTTLSecs
 	o.ValueRetention = oc.ValueRetention
 
+	if oc.CompressableTypeList != nil {
+		o.CompressableTypeList = make([]string, len(oc.CompressableTypeList))
+		copy(o.CompressableTypeList, oc.CompressableTypeList)
+	}
+
+	if oc.CompressableTypes != nil {
+		o.CompressableTypes = make(map[string]bool)
+		for k := range oc.CompressableTypes {
+			o.CompressableTypes[k] = true
+		}
+	}
+
 	o.HealthCheckHeaders = make(map[string]string)
 	for k, v := range oc.HealthCheckHeaders {
 		o.HealthCheckHeaders[k] = v
@@ -917,7 +953,7 @@ func (oc *OriginConfig) Copy() *OriginConfig {
 
 	o.Paths = make(map[string]*PathConfig)
 	for l, p := range oc.Paths {
-		o.Paths[l] = p.Copy()
+		o.Paths[l] = p.Clone()
 	}
 
 	o.NegativeCacheName = oc.NegativeCacheName
@@ -930,26 +966,25 @@ func (oc *OriginConfig) Copy() *OriginConfig {
 	}
 
 	if oc.TLS != nil {
-		o.TLS = oc.TLS.Copy()
+		o.TLS = oc.TLS.Clone()
 	}
 	o.RequireTLS = oc.RequireTLS
 
 	if oc.FastForwardPath != nil {
-		o.FastForwardPath = oc.FastForwardPath.Copy()
+		o.FastForwardPath = oc.FastForwardPath.Clone()
 	}
 
 	return o
 
 }
 
-// Copy returns an exact copy of a *CachingConfig
-func (cc *CachingConfig) Copy() *CachingConfig {
+// Clone returns an exact copy of a *CachingConfig
+func (cc *CachingConfig) Clone() *CachingConfig {
 
 	c := NewCacheConfig()
 	c.Name = cc.Name
 	c.CacheType = cc.CacheType
 	c.CacheTypeID = cc.CacheTypeID
-	c.Compression = cc.Compression
 
 	c.Index.FlushInterval = cc.Index.FlushInterval
 	c.Index.FlushIntervalSecs = cc.Index.FlushIntervalSecs
