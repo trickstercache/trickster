@@ -3,8 +3,11 @@ kind: Service
 metadata:
 {{- if .Values.service.annotations }}
   annotations:
-{{ toYaml .Values.service.annotations | indent 4 }}
-{{- end }}
+    prometheus.io/scrape: {{ .Values.prometheusScrape | quote }}
+    prometheus.io/port: {{ .Values.service.metricsPort | quote }}
+    prometheus.io/path: /metrics
+  {{- end }}
+  name: {{ template "trickster.fullname" . }}
   labels:
     {{- include "trickster.labels" . | nindent 4 }}
 {{- if .Values.service.labels }}

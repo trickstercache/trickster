@@ -1,55 +1,387 @@
 # Default values for trickster.
 
-## trickster container name
-##
-name: trickster
+# See our documentation at https://github.com/Comcast/trickster/docs/
+
+# Put ints in quotes to ensure they aren't converted to scientific notations.
+# See https://github.com/kubernetes/helm/issues/1707s
+
+# frontend:
+
+#   # listenAddress defines the ip on which Trickster's Front-end HTTP Proxy server listens.
+#   # empty by default, listening on all interfaces
+#   listenAddress: ""
+
+#   # tlsListenAddress defines the ip on which Trickster's Front-end TLS Proxy server listens.
+#   # empty by default, listening on all interfaces
+#   tlsListenAddress: ""
+
+#   # tlsListenPort defines the port on which Trickster's Front-end TLS Proxy server listens.
+#   # The default is 0, which means TLS is not used, even if certificates are configured below.
+#   tlsListenPort: ""
+
+#   # connectionsLimit defines the maximum number of concurrent connections
+#   # Trickster's Proxy server may handle at any time. 0 (default) means unlimited.
+#   connectionsLimit: "0"
+
+
+# Configuration options for mapping Origin(s)
+origins:
+  # example origin named default. default is always created with these settings unless a different origin is defined here.
+  - name: default
+
+    # originType identifies the origin type. Valid options are 'prometheus', 'influxdb', 'irondb', 'reverseproxycache' (or just 'rpc')
+    # origin_type is a required configuration value
+    originType: prometheus
+
+    # originURL provides the base upstream URL for all proxied requests to this origin
+    # it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
+    # origin_url is a required configuration value
+    originURL: http://prometheus:9090
+
+#     # isDefault describes whether this origin is the default origin considered when routing http requests
+#     # it is false, by default; but if you only have a single origin configured, isDefault will be true unless explicitly set to false
+#     isDefault: true
+
+#     # cacheName identifies the name of the cache (configured above) to use with this origin. default is 'default'
+#     cacheName: default
+
+#     # cacheKeyPrefix defines the prefix this origin appends to cache keys. When using a shared cache like Redis, this can
+#     # help partition multiple trickster instances that may have the same same hostname or ip address (the default prefix)
+#     # cacheKeyPrefix: 'example'
+
+#     # negativeCacheName identifies the name of the negative cache (configured above) to be used with this origin. default is 'default'
+#     negativeCacheName: 'default'
+
+#     # dearticulateUpstreamRanges, when true, instructs Trickster to make multiple parallel requests to the origin for each
+#     # range needed to fulfill the client request, rather than making a multipart range request. default is false
+#     # dearticulateUpstreamRanges: false
+
+#     # multipartRangesDisabled, when true, instructs Trickster to return the full object when the client provides
+#     # a multipart range request. The default is false.
+#     # multipartRangesDisabled = false
+
+#     # compressableTypes defines the Content Types that will be compressed when stored in the Trickster cache
+#     # reasonable defaults are set, so use this with care. To disable compression, set compressableTypes = []
+#     # Default list is provided here:
+#     # compressableTypes = [ 'text/javascript', 'text/css', 'text/plain', 'text/xml', 'text/json', 'application/json', 'application/javascript', 'application/xml' ]
+
+#     # timeoutSecs defines how many seconds Trickster will wait before aborting and upstream http request.
+#     timeoutSecs: "180"
+
+#     # keepAliveTimeoutSecs defines how long Trickster will wait before closing a keep-alive connection due to inactivity
+#     # if the origin's keep-alive timeout is shorter than Trickster's, the connect will be closed sooner.
+#     keepAliveTimeoutSecs: "300"
+
+#     # maxIdleConns set the maximum concurrent keep-alive connections Trickster may have opened to this origin
+#     # additional requests will be queued.
+#     maxIdleConns: "20"
+
+#     # backfillToleranceSecs prevents new datapoints that fall within the tolerance window (relative to time.Now) from being cached
+#     # Think of it as "never cache the newest N seconds of real-time data, because it may be preliminary and subject to updates"
+#     backfillToleranceSecs: "0"
+
+#     # timeseriesRetentionFactor defines the maximum number of recent timestamps to cache for a given query.
+#     timeseriesRetentionFactor: "1024"
+
+#     # timeseriesTTLSecs defines the relative expiration of cached timeseries. default is 6 hours (21600 seconds)
+#     timeseriesTTLSecs: "21600"
+
+#     # timeseriesEvictionMethod selects the metholodogy used to determine which timestamps are removed once
+#     # the timeseriesEvictionMethod limit is reached. options are 'oldest' and 'lru'.
+#     timeseriesEvictionMethod: "oldest"
+
+#     # fastForwardDisable, when set to true, will turn off the 'fast forward' feature for any requests proxied to this origin
+#     fastForwardDisable: true
+
+#     # fastforwardTTLSecs defines the relative expiration of cached fast forward data. default is 15s
+#     fastforwardTTLSecs: "15"
+
+#     # maxTTLSecs defines the maximum allowed TTL for any object cached for this origin. default is 86400
+#     maxTTLSecs: "86400"
+
+#     # revalidationFactor is the multiplier for object lifetime expiration to determine cache object TTL; default is 2
+#     # for example, if a revalidatable object has Cache-Control: max-age=300, we will cache for 10 minutes (300s * 2)
+#     # so there is an opportunity to revalidate
+#     revalidationFactor: "2"
+
+#     # maxObjectByteSize defines the largest byte size an object may be before it is uncacheable due to size. default is 524288 (512k)
+#     maxObjectByteSize: "524288"
+
+#     # Each origin type implements their own defaults for hcUpstreamURL, hcVerb and hcQuery,
+#     # which can be overridden per origin with the following configs. See https://github.com/Comcast/trickster/docs/health.md
+
+#     # hcUpstreamURL is the URL Trickster will request against this origin to
+#     # when a health check request is received by Trickster via http://<trickster-endpoint>/trickster/<origin_name>/health 
+#     # this is the default value for prometheus:
+#     hcUpstreamURL: /api/v1/query
+
+#     # hcVerb is the HTTP Method Trickster will when peforming an upstream health check for this origin
+#     # default is 'GET' for all origin types unless overridden per-origin here.
+#     hcVerb: GET
+
+#     # hcQuery is the query string Trickster will append to the URL the when peforming an upstream health check for this origin
+#     # This value is the default for prometheus (again, see /docs/health.md)
+#     hcQuery: query=up
+
+#     # hcHeaders provides a list of HTTP Headers to add to Health Check HTTP Requests to this origin
+#     hcHeaders:
+#       Authorization: "Basic SomeHash"
+
+#     # this section configures the frontend and backend TLS operation for the origin
+#     tls:
+
+#       # TLS Frontend Configs
+#       # You can configure which certificate and key to use when this endpoint serves downstream clients over TLS
+#       # Trickster will fail out at startup if the provided files do not exist, are unreadable, or in an invalid format
+#       # These settings by default are '' (empty string), which disables this origin from being routed over the TLS port
+#       fullChainCertPath: /path/to/your/cert.pem
+#       privateKeyPath: /path/to/your/key.pem
+
+#       # TLS Backend Configs
+#       # These settings configure how Trickster will behave as a client when communicating with
+#       # this origin over TLS
+      
+#       # if insecureSkipVerify is true, Trickster will trust the origins certificate without any verification
+#       insecureSkipVerify: true
+      
+#       # certificateAuthorityPaths provides a list of additional certificate authorities to be used to trust an upstream origin
+#       # in addition to Operating System CA's.  default is an empty list, which insructs the Trickster to use only the OS List
+#       certificateAuthorityPaths: [ '../../testdata/test.rootca.pem' ]
+      
+#       # clientCertPath provides the path to a client certificate for Trickster to use when authenticating with an upstream server
+#       clientCertPath: /path/to/my/client/cert.pem
+      
+#       # clientKeyPath provides the path to a client key for Trickster to use when authenticating with an upstream server
+#       clientKeyPath: /path/to/my/client/key.pem
+
+#     # This section customizes the behavior of Trickster for specific paths. See https://github.com/Comcast/trickster/docs/paths.md
+#     paths:
+#       - name: example1
+#         path: /api/v1/admin/
+#         methods: [ '*' ]                # HTTP methods to be routed with this path config. '*' for all methods.
+#         matchType: prefix               # match $path* (using 'exact' will match just $path)
+#         handler: localresponse          # don't actually proxy this request, respond immediately
+#         responseCode: "401"
+#         responseBody: "No soup for you!"
+#         noMetrics: true                 # do not record metrics for requests to this path
+#         responseHeaders:
+#           Cache-Control: no-cache     # attach these headers to the response down to the client
+#           Content-Type: text/plain    # + and - prefixes work as described below
+
+#       - name: example2
+#         path: /example/
+#         methods: [ 'GET', 'POST' ]
+#         collapsedForwarding: progressive                  # see /docs/collapsed_forwarding.md
+#         matchType: prefix                                 # this path is routed using prefix matching
+#         handler: proxycache                               # this path is routed through the cache
+#         cacheKeyParams: [ 'ex_param1', 'ex_param2' ]      # the cache key will be hashed with these query parameters (GET)
+#         cacheKeyFormFields: [ 'ex_param1', 'ex_param2' ]  # or these form fields (POST)
+#         cacheKeyHeaders: [ 'X-Example-Header' ]           # and these request headers, when present in the incoming request
+#         requestHeaders:
+#           Authorization: 'custom  auth header'         # attach these request headers when proxying. the '+' in the header name
+#           +Accept-Encoding: gzip                       # means append the value if the header exists, rather than replace
+#           -Cookie: ''                                  # while the '-' will remove the header
+#         requestParams:
+#           +authToken: 'SomeTokenHere'                  # manipulate request query parameters in the same way
+
+#     # For multi-origin support, provide a unique name.
+#     # Clients can indicate the desired origin in their path (http://trickster.example.com:9090/foo/api/v1/query_range?.....)
+#     # You can also use host-header based routing. See the documentation at https://github.com/Comcast/trickster/docs/multi-origin.md) for more information
+#   - name: foo
+#     isDefault: false
+#     originType: influxdb
+#     originURL: http://influx-origin:8086
+#     cacheName: bbolt_example
+#     negativeCacheName: general
+#     timeseriesRetentionFactor: "1024"
+#     timeseriesEvictionMethod: oldest
+#     timeoutSecs: "180"
+#     backfillToleranceSecs: "180"
+
+# caches:
+#   - name: default
+#     # cacheType defines what kind of cache Trickster uses
+#     # options are 'bbolt', 'badger', 'filesystem', 'memory', and 'redis'
+#     cacheType: memory
+
+#     ## Configuration options for the Cache Index
+#     # The Cache Index handles key management and retention for bbolt, filesystem and memory
+#     # Redis and BadgerDB handle those functions natively and does not use the Trickster's Cache Index
+#     index:
+
+#       # reapIntervalSecs defines how long the Cache Index reaper sleeps between reap cycles. Default is 3 (3s)
+#       #reapIntervalSecs: "3"
+
+#       # flushIntervalSecs sets how often the Cache Index saves its metadata to the cache from application memory. Default is 5 (5s)
+#       flushIntervalSecs: "5"
+
+#       # maxSizeBytes indicates how large the cache can grow in bytes before the Index evicts least-recently-accessed items. default is 512MB
+#       maxSizeBytes: "536870912"
+      
+#       # maxSizeBackoffBytes indicates how far below max_size_bytes the cache size must be to complete a byte-size-based eviction exercise. default is 16MB
+#       maxSizeBackoffBytes: "16777216"
+
+#       # maxSizeObjects indicates how large the cache can grow in objects before the Index evicts least-recently-accessed items. default is 0 (infinite)
+#       maxSizeObjects: "0"
+
+#       # maxSizeBackoffObjects indicates how far under maxSizeObjects the cache size must be to complete object-size-based eviction exercise. default is 100
+#       maxSizeBackoffObjects: "100"
+
+#     ## Configuration options when using a Redis Cache
+#     redis:
+#       # clientType indicates which kind of Redis client to use. Options are: 'standard', 'cluster' and 'sentinel'
+#       clientType: standard
+
+#       ## Supported by Redis (standard)
+#       ## These configurations are ignored by Redis Sentinel and Redis Cluster
+#       ###
+
+#       # endpoint defines the fqdn+port or path to a unix socket file for connecting to redis
+#       endpoint: redis:6379
+
+#       ## Supported by Redis Cluster and Redis Sentinel
+#       ## These conigurations are ignored by Redis (standard)
+#       ###
+
+#       # endpoints is used for Redis Cluster and Redis Sentinel to define a list of endpoints
+#       endpoints: [ "redis:6379" ]
+
+#       ## Supported by Redis Sentinel
+#       ## These conigurations are ignored by Redis (standard) and Redis Cluster
+#       ###
+
+#       ## sentinelMaster should be set when using Redis Sentinel to indicate the Master Node
+#       sentinelMaster: ""
+
+#       ## Supported by all Redis Client Types
+#       ## See the go-redis documentation at https://github.com/go-redis/redis/blob/master/options.go
+#       ## for more information on tuning these settings
+
+#       # protocol defines the protocol for connecting to redis ('unix' or 'tcp') 'tcp' is default
+#       protocol: tcp
+
+#       # password provides the redis password
+#       password: ""
+
+#       # db is the Database to be selected after connecting to the server.
+#       db: "0"
+
+#       #maxRetries is the maximum number of retries before giving up on the command
+#       maxRetries: "0"
+
+#       #minRetryBackoffMs is the minimum backoff time between each retry
+#       minRetryBackoffMs: "8"
+
+#       #maxRetyBackoffMs is the maximum backoff time between each retry
+#       maxRetyBackoffMs: "512"
+
+#       #dialTimeoutMs is the timeout for establishing new connections
+#       dialTimeoutMs: "5000"
+
+#       #readTimeoutMs is the timeout for socket reads. If reached, commands will fail with a timeout instead of blocking.
+#       readTimeoutMs: "3000"
+
+#       #writeTimeoutMs is the timeout for socket writes. If reached, commands will fail with a timeout instead of blocking.
+#       writeTimeoutMs: "3000"
+
+#       #poolSize is the maximum number of socket connections.
+#       poolSize: "20"
+
+#       #minIdleConns is the minimum number of idle connections which is useful when establishing new connection is slow.
+#       minIdleConns: "0"
+
+#       #maxConnAgeMs is the connection age at which client retires (closes) the connection.
+#       maxConnAgeMs: "0"
+
+#       #poolTimeoutMs is the amount of time client waits for connection if all connections are busy before returning an error.
+#       poolTimeoutMs: "4000"
+
+#       #idleTimeoutMs is the amount of time after which client closes idle connections.
+#       idleTimeoutMs: "300000"
+
+#       #idleCheckFrequencyMs is the frequency of idle checks made by idle connections reaper.
+#       idleCheckFrequencyMs: "60000"
+
+#     ## Configuration options when using a Filesystem Cache
+#     filesystem:
+#       # path defines the directory location under which the Trickster cache will be maintained
+#       path: /tmp/trickster
+
+#     ## Configuration options when using a bbolt Cache
+#     bbolt:
+#       # file defines the file where the Trickster cache will be maintained
+#       file: trickster.db
+
+#       # bucket defines the name of the BotlDb bucket (similar to a namespace) under which our key value store lives
+#       bucket: trickster
+
+#     ## Configuration options when using a Badger cache
+#     badger:
+#       # directory defines the directory location under which the Badger data will be maintained
+#       directory: /tmp/trickster
+
+#       # valueDirectory defines the directory location under which the Badger value log will be maintained
+#       valueDirectory: /tmp/trickster
+
+# negativeCaches:
+#   - name: default
+#   #The 'default' negative cache config, mapped by all origins by default, is empty unless you populate it.
+#   #Update it by concommenting this section and adding entries here in the format of:
+#   #code: "ttl_secs"
+
+# #  Here's a pre-populated negative cache config ready to be uncommented and used in an origin config
+# #  The 'general' negative cache config will cache common failure response codes for 3 seconds
+#   - name: general
+#     400: "3"
+#     404: "3"
+#     500: "3"
+#     502: "3"
+
+# metrics:
+#   # listenAddress defines the ip that Trickster's metrics server listens on at /metrics
+#   # empty by default, listening on all interfaces
+#   listenAddress: ""
+
+# # These are the default values for logging
+# logging:
+#   logLevel: info
+#   logFile: /some/path/to/trickster.log
+
+# # configHandlerPath provides the HTTP path to view a read-only printout of the running configuration
+# # which can be reached at http://your-trickster-endpoint:port/$config_handler_path
+# configHandlerPath: /trickster/config
+
+# # pingHandlerPath provides the HTTP path you will use to perform an uptime health check against Trickster
+# # which can be reached at http://your-trickster-endpoint:port/$ping_handler_path
+# pingHandlerPath: /trickster/ping
+
+profiler:
+  enabled: false
+  port: 6060
+
+prometheusScrape: false
+
+# Number of trickster replicas desired
+replicaCount: 1
 
 ## trickster container image
 ##
 image:
   repository: tricksterio/trickster
-  tag: 0.1.7
+  tag: 1.0-beta
   pullPolicy: IfNotPresent
 
-imagePullSecrets:
-# - name: "image-pull-secret"
+# Service resource for trickster deplyoment
+# Ref: https://kubernetes.io/docs/concepts/services-networking/service/
+service:
+  type: ClusterIP
+  port: 9090
+  # nodePort: 0
+  metricsPort: 8080
+  # metricsNodePort: 0
 
-config:
-  # Default trickster originURL, references a source Prometheus instance
-  # Ref: https://github.com/Comcast/trickster/blob/master/docs/configuring.md
-  originURL: http://prometheus:9090
-  cache:
-    type: memory
-    redis:
-      protocol: tcp
-      endpoint: redis:6379
-    filesystem:
-      mountPath: /tmp/trickster
-    boltdb:
-      file: trickster.db
-      bucket: trickster
-  # Put ints in quotes to ensure they aren't converted to scientific notations.
-  # See https://github.com/kubernetes/helm/issues/1707
-  recordTTLSecs: "21600"
-  defaultStep: "300"
-  # 24h
-  maxValueAgeSecs: "86400"
-  fastForwardDisable: false
-  logLevel: info
-
-## trickster priorityClassName
-##
-priorityClassName: ""
-
-## Additional trickster container arguments
-##
-extraArgs: {}
-
-## Additional trickster container environment variable
-## For instance to add a http_proxy
-##
-extraEnv: {}
-
+# Ingress resource for trickster service
+# Ref: https://kubernetes.io/docs/concepts/services-networking/ingress/
 ingress:
   ## If true, trickster Ingress will be created
   ##
@@ -76,36 +408,9 @@ ingress:
   ## Secrets must be manually created in the namespace
   ##
   tls: []
-  #   - secretName: trickster-tls
-  #     hosts:
-  #       - trickster.domain.com
-
-## trickster Deployment Strategy type
-# strategy:
-#   type: Recreate
-
-## Node tolerations for trickster scheduling to nodes with taints
-## Ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/
-##
-tolerations: []
-  # - key: "key"
-  #   operator: "Equal|Exists"
-  #   value: "value"
-  #   effect: "NoSchedule|PreferNoSchedule|NoExecute(1.6 only)"
-
-## Node labels for trickster pod assignment
-## Ref: https://kubernetes.io/docs/user-guide/node-selection/
-##
-nodeSelector: {}
-
-## Pod affinity
-##
-affinity: {}
-
-## Use an alternate scheduler, e.g. "stork".
-## ref: https://kubernetes.io/docs/tasks/administer-cluster/configure-multiple-schedulers/
-##
-# schedulerName:
+  # - secretName: chart-example-tls
+  #   hosts:
+  #     - chart-example.local
 
 persistentVolume:
   ## If true, trickster will create/use a Persistent Volume Claim
@@ -154,12 +459,12 @@ replicaCount: 1
 ## Ref: http://kubernetes.io/docs/user-guide/compute-resources/
 ##
 resources: {}
-  # limits:
-  #   cpu: 10m
-  #   memory: 32Mi
-  # requests:
-  #   cpu: 10m
-  #   memory: 32Mi
+  #limits:
+  #cpu: 100m
+  #memory: 128Mi
+  #requests:
+  #cpu: 100m
+  #memory: 128Mi
 
 ## Security context to be added to trickster pods
 ##

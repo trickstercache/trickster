@@ -25,7 +25,10 @@ spec:
 {{ toYaml .Values.podAnnotations | indent 8 }}
     {{- end }}    
       labels:
-        {{- include "trickster.labels" . | nindent 8 }}
+        app: {{ template "trickster.name" . }}
+        release: {{ .Release.Name }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
 {{- if .Values.affinity }}
       affinity:
@@ -70,11 +73,11 @@ spec:
               protocol: TCP
           livenessProbe:
             httpGet:
-              path: /ping
+              path: /trickster/ping
               port: http
           readinessProbe:
             httpGet:
-              path: /health
+              path: /trickster/ping
               port: http
           resources:
 {{ toYaml .Values.resources | indent 12 }}

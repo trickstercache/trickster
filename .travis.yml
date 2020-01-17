@@ -1,17 +1,21 @@
+env:
+  GO111MODULE: "on"
+
 matrix:
   include:
   - language: python
     install:
     - pip install codespell
     script:
-    - codespell --skip=".git,*.png"
+    - codespell --skip="vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz"
 
   - language: go
     go:
-    - "1.11.x"
+    - "1.13.x"
     - master
     before_install:
     - go get github.com/mattn/goveralls
     script:
     - make style test build
-    - $GOPATH/bin/goveralls -service=travis-ci
+    - sed -i -e '/^.*_gen\.go:.*$/d' .coverprofile
+    - $GOPATH/bin/goveralls  -coverprofile=.coverprofile -service=travis-ci

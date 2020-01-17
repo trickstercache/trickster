@@ -1,15 +1,23 @@
 # Health Checks
 
-## Ping Endpoint
-Trickster provides a `/ping` endpoint that returns a response of `200 OK` and the word `pong` if Trickster is up and running.  The `/ping` endpoint does not check any proxy configurations or upstream origins.
+## Trickster Service Health - Ping Endpoint
 
-## Health Check Endpoint
-Trickster offers a `/health` endpoint for monitoring the health of the Trickster service and its upstream connection to the origin.  To test the upstream origin, Trickster will make a request to its labels endpoint (`/label/__name__/values`).
+Trickster provides a `/trickster/ping` endpoint that returns a response of `200 OK` and the word `pong` if Trickster is up and running.  The `/trickster/ping` endpoint does not check any proxy configurations or upstream origins. The path to the Ping endpoint is configurable, see the configuration documentation for more information.
 
-An HTTP response of `200 OK` indicates that the end-to-end request to the origin was successful.
+## Upstream Connection Health - Origin Health Endpoints
 
-In a multi-origin setup, requesting against `/health` will test the default origin. You can indicate a specific origin to test by crafting requests in the same way a normal multi-origin request is structured. For example, `/origin_moniker/health`. See [multi-origin.md](multi-origin.md) for more information.
+Trickster offers `health` endpoints for monitoring the health of the Trickster service with respect to its upstream connection to origin servers.
+
+Each configured origin's health check path is `/trickster/health/ORIGIN_NAME`. For example, if your origin is named `foo`, you can perform a health check of the upstream URL at `http://<trickster_address:port>/trickster/health/foo`.
+
+ The behavior of a `health` request will vary based on the Origin Type, as each Origin Type implements a custom default health check behavior. For example, with Prometheus, Trickster makes a request to `/query?query=up` and (hopefully) receives a `200 OK`, while for InfluxDB the request is to `/ping` which returns a `204 No Content`. You can customize the behavior in the Trickster configuration. See the [example.conf](../cmd/trickster/conf/example.conf)  for guidance.
+
+The Origin-Specific default health check configurations should return a 200-range status code to indicate that the end-to-end health check to the origin was successful. Note that this behavior is not guaranteed when operating under user-provided health check configurations.
 
 ## Other Ways to Monitor Health
 
 In addition to the out-of-the-box health checks to determine up-or-down status, you may want to setup alarms and thresholds based on the metrics instrumented by Trickster. See [metrics.md](metrics.md) for collecting performance metrics about Trickster.
+
+## Config Endpoint
+
+Trickster also provides a `/trickster/config` endpoint, that returns the toml output of the currently-running Trickster configuration. The TOML-formatted configuration will include all defaults populated, overlaid with any configuration file settings, command-line arguments and or applicable environment variables. The path to the Config endpoint is configurable, see the configuration documentation for more information.

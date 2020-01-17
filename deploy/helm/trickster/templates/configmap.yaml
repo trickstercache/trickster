@@ -7,105 +7,363 @@ metadata:
 data:
   trickster.conf: |-
     [main]
+    {{- if .Values.configHandlerPath }}
+    config_handler_path = {{ .Values.configHandlerPath | quote }}
+    {{- end }}
+    {{- if .Values.pingHandlerPath }}
+    ping_handler_path = {{ .Values.pingHandlerPath | quote }}
+    {{- end }}
 
-        # instance_id allows you to run multiple trickster processes on the same host and log to separate files
-        # Useful for baremetal, not so much for elastic deployments, so only uncomment if you really need it
-        #instance_id = 1
+    [frontend]
+    listen_port = {{ .Values.service.port }}
+    {{- if .Values.frontend }}
+      {{- if .Values.frontend.listenAddress }}
+    listen_address = {{ .Values.frontend.listenAddress | quote }}
+      {{- end }}
+      {{- if .Values.frontend.tlsListenPort }}
+    tls_listen_port = {{ .Values.frontend.tlsListenPort }}
+      {{- end }}
+      {{- if .Values.frontend.tlsListenAddress }}
+    tls_listen_address = {{ .Values.frontend.tlsListenAddress | quote }}
+      {{- end }}
+      {{- if .Values.frontend.connectionsLimit }}
+    connections_limit = {{ .Values.frontend.connectionsLimit }}
+      {{- end }}
+    {{- end }}
+    {{- if .Values.caches }}
+    {{- if gt (len .Values.caches) 0 }}
 
-    # Configuration options for the Proxy Server
-    [proxy_server]
+    [caches]
+      {{- range .Values.caches }}
 
-        # listen_port defines the port on which Trickster's Proxy server listens.
-        # since this is a proxy for Prometheus, we use 9090 by default, just like Prometheus does
-        listen_port = {{ .Values.service.servicePort }}
+      {{ printf "[caches.%s]" .name }}
+        {{- if .cacheType }}
+      cache_type = {{ .cacheType | quote }}
+        {{- end }}
+        {{- if and (ne .cacheType "redis") (ne .cacheType "badger") }}
+        {{- if .index }}
+        {{ printf "[caches.%s.index]" .name }}
+        {{- if .index.reapIntervalSecs }}
+        reap_interval_secs = {{ .index.reapIntervalSecs }}
+        {{- end }}
+        {{- if .index.flushIntervalSecs }}
+        flush_interval_secs = {{ .index.flushIntervalSecs }}
+        {{- end }}
+        {{- if .index.maxSizeBytes }}
+        max_size_bytes = {{ .index.maxSizeBytes }}
+        {{- end }}
+        {{- if .index.maxSizeBackoffBytes }}
+        max_size_backoff_bytes = {{ .index.maxSizeBackoffBytes }}
+        {{- end }}
+        {{- if .index.maxSizeObjects }}
+        max_size_objects = {{ .index.maxSizeObjects }}
+        {{- end }}
+        {{- if .index.maxSizeBackoffObjects }}
+        max_size_backoff_objects = {{ .index.maxSizeBackoffObjects }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- if and (eq .cacheType "redis") ( .redis ) }}
 
-    [cache]
-        # cache_type defines what kind of cache Trickster uses
-        # options are 'boltdb', 'filesystem', 'memory', and 'redis'.  'memory' is the default
-        cache_type = {{ .Values.config.cache.type | quote }}
-
-        # record_ttl_secs defines the relative expiration of cached queries. default is 6 hours (21600 seconds)
-        record_ttl_secs = {{ .Values.config.recordTTLSecs }}
-
-            {{- if eq .Values.config.cache.type "redis" }}
-            # Configuration options when using a Redis Cache
-            [cache.redis]
-
-            # protocol defines the protocol for connecting to redis ('unix' or 'tcp') 'tcp' is default
-            protocol = {{ .Values.config.cache.redis.protocol | quote }}
-
-            # endpoint defines the fqdn+port or path to a unix socket file for connecting to redis
-            # default is 'redis:6379'
-            endpoint = {{ .Values.config.cache.redis.endpoint | quote }}
-
-            {{- else if eq .Values.config.cache.type "filesystem" }}
-            # Configuration options when using a Filesystem Cache
-            [cache.filesystem]
-
-            # cache_path defines the directory location under which the Trickster cache will be maintained
-            # default is '/tmp/trickster'
-            cache_path = {{ .Values.config.cache.filesystem.mountPath | quote }}
-
-            {{- else if eq .Values.config.cache.type "boltdb" }}
-            # Configuration options when using a BoltDb Cache
-            [cache.boltdb]
-            # filename defines the file where the Trickster cache will be maintained
-            # default is 'trickster.db'
-            filename = {{ .Values.config.cache.boltdb.file | quote }}
-
-            # bucket defines the name of the BotlDb bucket (similar to a namespace) under which our key value store lives
-            # default is 'trickster'
-            bucket = {{ .Values.config.cache.boltdb.bucket | quote }}
+        {{ printf "[caches.%s.redis]" .name }}
+          {{- if .redis.clientType }}
+        client_type = {{ .redis.clientType | quote }}
+          {{- end }}
+          {{- if .redis.protocol }}
+        protocol = {{ .redis.protocol | quote }}
+          {{- end }}
+          {{- if .redis.password }}
+        password = {{ .redis.password | quote }}
+          {{- end }}
+          {{- if or (eq .redis.clientType "cluster") (eq .redis.clientType "sentinel") }}
+            {{- if .redis.endpoints }}
+        endpoints = [ '{{- join "', '" .redis.endpoints }}' ]
             {{- end }}
+            {{- if eq .redis.clientType "sentinel" }}
+              {{- if .redis.sentinelMaster }}
+        sentinel_master = {{ .redis.sentinelMaster | quote }}
+              {{- end }}
+            {{- end }}
+          {{- else }}
+            {{- if .redis.endpoint }}
+        endpoint = {{ .redis.endpoint | quote }}
+            {{- end }}
+          {{- end }}
+          {{- if .redis.db }}
+        db = {{ .redis.db }}
+          {{- end }}
+          {{- if .redis.maxRetries }}
+        max_retries = {{ .redis.maxRetries }}
+          {{- end }}
+          {{- if .redis.minRetryBackoffMs }}
+        min_retry_backoff_ms = {{ .redis.minRetryBackoffMs }}
+          {{- end }}
+          {{- if .redis.maxRetyBackoffMs }}
+        max_retry_backoff_ms = {{ .redis.maxRetyBackoffMs }}
+          {{- end }}
+          {{- if .redis.dialTimeoutMs }}
+        dial_timeout_ms = {{ .redis.dialTimeoutMs }}
+          {{- end }}
+          {{- if .redis.readTimeoutMs }}
+        read_timeout_ms = {{ .redis.readTimeoutMs }}
+          {{- end }}
+          {{- if .redis.writeTimeoutMs }}
+        write_timeout_ms = {{ .redis.writeTimeoutMs }}
+          {{- end }}
+          {{- if .redis.poolSize }}
+        pool_size = {{ .redis.poolSize }}
+          {{- end }}
+          {{- if .redis.minIdleConns }}
+        min_idle_conns = {{ .redis.minIdleConns }}
+          {{- end }}
+          {{- if .redis.maxConnAgeMs }}
+        max_conn_age_ms = {{ .redis.maxConnAgeMs }}
+          {{- end }}
+          {{- if .redis.poolTimeoutMs }}
+        pool_timeout_ms = {{ .redis.poolTimeoutMs }}
+          {{- end }}
+          {{- if .redis.idleTimeoutMs }}
+        idle_timeout_ms = {{ .redis.idleTimeoutMs }}
+          {{- end }}
+          {{- if .redis.idleCheckFrequencyMs }}
+        idle_check_frequency_ms = {{ .redis.idleCheckFrequencyMs }}
+          {{- end }}
+          {{- else if and (eq .cacheType "filesystem") ( .filesystem ) }}
 
-    # Configuration options for mapping Origin(s)
+        {{ printf "[caches.%s.filesystem]" .name }}
+          {{- if .filesystem.path }}
+        cache_path = {{ .filesystem.path | quote }}
+          {{- end }}
+        {{- else if and (eq .cacheType "bbolt") ( .bbolt ) }}
+
+        {{ printf "[caches.%s.bbolt]" .name }}
+          {{- if .bbolt.file }}
+        filename = {{ .bbolt.file | quote }}
+          {{- end }}
+          {{- if .bbolt.bucket }}
+        bucket = {{ .bbolt.bucket | quote }}
+          {{- end }}
+        {{- else if and (eq .cacheType "badger") ( .badger ) }}
+
+        {{ printf "[caches.%s.badger]" .name }}
+          {{- if .badger.directory }}
+        directory = {{ .badger.directory | quote }}
+          {{- end }}
+          {{- if .badger.valueDirectory }}
+        value_directory = {{ .badger.valueDirectory | quote }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
+    {{- if .Values.origins }}
+    {{- if gt (len .Values.origins) 0 }}
+
     [origins]
+      {{- range .Values.origins }}
+      {{- $origin := .name }}
 
-        # The default origin
-        [origins.default]
+      {{ printf "[origins.%s]" .name }}
+        {{- if .originType }}
+      origin_type = {{ .originType | quote }}
+        {{- end }}
+        {{- if .originURL }}
+      origin_url = {{ .originURL | quote }}
+        {{- end }}
+        {{- if .isDefault }}
+      is_default = {{ .isDefault }}
+        {{- end }}
+        {{- if .cacheName }}
+      cache_name = {{ .cacheName | quote }}
+        {{- end }}
+        {{- if .cacheKeyPrefix }}
+      cache_key_prefix = {{ .cacheKeyPrefix | quote }}
+        {{- end }}
+        {{- if .negativeCacheName }}
+      negative_cache_name = {{ .negativeCacheName | quote }}
+        {{- end }}
+        {{- if .dearticulateUpstreamRanges }}
+      dearticulate_upstream_ranges = {{ .dearticulateUpstreamRanges }}
+        {{- end }}
+        {{- if .multipartRangesDisabled }}
+      multipart_ranges_disabled = {{ .multipartRangesDisabled }}
+        {{- end }}
+        {{- if .compressableTypes }}
+      compressable_types = [ '{{- join "', '" .compressableTypes }}' ]
+        {{- end }}
+        {{- if .timeoutSecs }}
+      timeout_secs = {{ .timeoutSecs }}
+        {{- end }}
+        {{- if .keepAliveTimeoutSecs }}
+      keep_alive_timeout_secs = {{ .keepAliveTimeoutSecs }}
+        {{- end }}
+        {{- if .maxIdleConns }}
+      max_idle_conns = {{ .maxIdleConns }}
+        {{- end }}
+        {{- if .backfillToleranceSecs }}
+      backfill_tolerance_secs = {{ .backfillToleranceSecs }}
+        {{- end }}
+        {{- if .timeseriesRetentionFactor }}
+      timeseries_retention_factor = {{ .timeseriesRetentionFactor }}
+        {{- end }}
+        {{- if .timeseriesTTLSecs }}
+      timeseries_ttl_secs = {{ .timeseriesTTLSecs }}
+        {{- end }}
+        {{- if .timeseriesEvictionMethod }}
+      timeseries_eviction_method = {{ .timeseriesEvictionMethod | quote}}
+        {{- end }}
+        {{- if .fastForwardDisable }}
+      fast_forward_disable = {{ .fastForwardDisable }}
+        {{- end }}
+        {{- if .fastforwardTTLSecs }}
+      fastforward_ttl_secs = {{ .fastforwardTTLSecs }}
+        {{- end }}
+        {{- if .maxTTLSecs }}
+      max_ttl_secs = {{ .maxTTLSecs }}
+        {{- end }}
+        {{- if .revalidationFactor }}
+      revalidation_factor = {{ .revalidationFactor }}
+        {{- end }}
+        {{- if .maxObjectByteSize }}
+      max_object_byte_size = {{ .maxObjectByteSize }}
+        {{- end }}
+        {{- if .hcUpstreamURL }}
+      health_check_upstream_url = {{ .hcUpstreamURL | quote }}
+        {{- end }}
+        {{- if .hcVerb }}
+      health_check_verb = {{ .hcVerb | quote }}
+        {{- end }}
+        {{- if .hcQuery }}
+      health_check_query = {{ .hcQuery | quote }}
+        {{- end }}
+        {{- if .hcHeaders }}
 
-            # origin_url defines the URL of the origin. Default is http://prometheus:9090
-            origin_url = {{ .Values.config.originURL | quote }}
+        {{ printf "[origins.%s.paths.%s.health_check_headers]" $origin .name }}
+          {{- range $key, $val := .hcHeaders }}
+        {{ printf "'%s' = '%s'" $key $val }}
+          {{- end }}
+        {{- end }}
+        {{- if .tls }}
 
-            # api path defines the path of the Prometheus API (usually '/api/v1')
-            api_path = '/api/v1'
+        {{ printf "[origins.%s.tls]" .name }}
+          {{- if .tls.fullChainCertPath }}
+        full_chain_cert_path = {{ .tls.fullChainCertPath | quote }}
+          {{- end }}
+          {{- if .tls.privateKeyPath }}
+        private_key_path = {{ .tls.privateKeyPath | quote }}
+          {{- end }}
+          {{- if .tls.insecureSkipVerify }}
+        insecure_skip_verify = {{ .tls.insecureSkipVerify }}
+          {{- end }}
+          {{- if .tls.certificateAuthorityPaths }}
+        certificate_authority_paths = [ '{{- join "', '" .tls.certificateAuthorityPaths }}' ]
+          {{- end }}
+          {{- if .tls.clientCertPath }}
+        client_cert_path = {{ .tls.clientCertPath | quote }}
+          {{- end }}
+          {{- if .tls.clientKeyPath }}
+        client_key_path = {{ .tls.clientKeyPath | quote }}
+          {{- end }}
+        {{- end }}
+        {{- if (.paths) }}
+        {{- if (gt (len .paths) 0) }}
 
-            # default_step defines the step (in seconds) of a query_range request if one is
-            # not provided by the client. This helps to correct improperly formed client requests.
-            default_step = {{ .Values.config.defaultStep }}
+        [paths]
+          {{- range .paths }}
 
-            # ignore_no_cache_header disables a client's ability to send a no-cache to refresh a cached query. Default is false
-            #ignore_no_cache_header = false
+          {{ printf "[origins.%s.paths.%s]" $origin .name }}
+            {{- if .path }}
+          path = {{ .path | quote }}
+            {{- end }}
+            {{- if .methods }}
+          methods = [ '{{- join "', '" .methods }}' ]
+            {{- end }}
+            {{- if .matchType }}
+          match_type = {{ .matchType | quote }}
+            {{- end }}
+            {{- if .handler }}
+          handler = {{ .handler | quote  }}
+            {{- end }}
+            {{- if .responseCode }}
+          response_code = {{ .responseCode }}
+            {{- end }}
+            {{- if .responseBody }}
+          response_body = {{ .responseBody | quote }}
+            {{- end }}
+            {{- if .noMetrics }}
+          no_metrics = {{ .noMetrics }}
+            {{- end }}
+            {{- if .collapsedForwarding }}
+          collapsed_forwarding = {{ .collapsedForwarding | quote }}
+            {{- end }}
+            {{- if .cacheKeyParams }}
+          cache_key_params = [ '{{- join "', '" .cacheKeyParams }}' ]
+            {{- end }}
+            {{- if .cacheKeyFormFields }}
+          cache_key_form_fields = [ '{{- join "', '" .cacheKeyFormFields }}' ]
+            {{- end }}
+            {{- if .cacheKeyHeaders }}
+          cache_key_headers = [ '{{- join "', '" .cacheKeyHeaders }}' ]
+            {{- end }}
+            {{- if .responseHeaders }}
 
-            # max_value_age_secs defines the maximum age of specific datapoints in seconds. Default is 86400 (24 hours)
-            max_value_age_secs = {{ .Values.config.maxValueAgeSecs }}
+            {{ printf "[origins.%s.paths.%s.response_headers]" $origin .name }}
+              {{- range $key, $val := .responseHeaders }}
+            {{ printf "'%s' = '%s'" $key $val }}
+              {{- end }}
+            {{- end }}
+            {{- if .requestHeaders }}
 
-            # fast_forward_disable, when set to true, will turn off the 'fast forward' feature for any requests proxied to this origin
-            fast_forward_disable = {{ .Values.config.fastForwardDisable }}
+            {{ printf "[origins.%s.paths.%s.request_headers]" $origin .name }}
+              {{- range $key, $val := .requestHeaders }}
+            {{ printf "'%s' = '%s'" $key $val }}
+              {{- end }}
+            {{- end }}
+            {{- if .requestParams }}
 
-        # For multi-origin support, origins are named, and the name is the second word of the configuration section name.
-        # In this example, an origin is named "foo". Clients can indicate this origin in their path (http://trickster.example.com:9090/foo/query_range?.....)
-        # there are other ways for clients to indicate which origin to use in a multi-origin setup. See the documentation for more information
-        #[origins.foo]
-            #origin_url = 'http://prometheus-foo:9090'
-            #api_path = '/api/v1'
-            #default_step = 300
-            #ignore_no_cache_header = false
-            #max_value_age_secs = 86400
+            {{ printf "[origins.%s.paths.%s.request_params]" $origin .name }}
+              {{- range $key, $val := .requestParams }}
+            {{ printf "'%s' = '%s'" $key $val }}
+              {{- end }}
+            {{- end }}
+          {{- end }}
+        {{- end }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
+    {{- if (.Values.negativeCaches) }}
+    {{- if gt (len .Values.negativeCaches) 0 }}
 
-    # Configuration Options for Metrics Instrumentation
+    [negative_caches]
+      {{- range .Values.negativeCaches }}
+      
+      {{ printf "[negative_caches.%s]" .name }}
+        {{- range $key, $val := . }}
+        {{- if not (eq $key "name") }}
+      {{ printf "%s = %s" $key $val }}
+        {{- end }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
+    {{- if .Values.service.metricsPort }}
+
     [metrics]
+    listen_port = {{ .Values.service.metricsPort }}
+      {{- if .Values.metrics }}
+      {{- if .Values.metrics.listenAddress }}
+    listen_address = {{ .Values.metrics.listenAddress }}
+      {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- if .Values.logging }}
 
-        # listen_port defines the port that Trickster's metrics server listens on at /metrics
-        listen_port =  {{ .Values.service.metricsPort }}
-
-    # Configuration Options for Logging Instrumentation
     [logging]
-
-        # log_level defines the verbosity of the logger. Possible values are 'debug', 'info', 'warn', 'error'
-        # default is info
-        log_level = {{ .Values.config.logLevel | quote }}
-
-        # log_file defines the file location to store logs. These will be auto-rolled and maintained for you.
-        # not specifying a log_file (this is the default behavior) will print logs to STDOUT
-        #log_file = '/some/path/to/trickster.log'
+      {{- if .Values.logging.logLevel }}
+    log_level = {{ .Values.logging.logLevel | quote }}
+      {{- end }}
+      {{- if .Values.logging.logFile }}
+    log_file = {{ .Values.logging.logFile | quote }}
+      {{- end }}
+    {{- end }}
