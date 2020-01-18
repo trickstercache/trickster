@@ -1,4 +1,4 @@
-# github.com/AndreasBriese/bbloom v0.0.0-20190306092124-e2d15f34fcf9
+# github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96
 github.com/AndreasBriese/bbloom
 # github.com/BurntSushi/toml v0.3.1
 github.com/BurntSushi/toml
@@ -9,6 +9,8 @@ github.com/alicebob/miniredis
 github.com/alicebob/miniredis/server
 # github.com/beorn7/perks v1.0.1
 github.com/beorn7/perks/quantile
+# github.com/cespare/xxhash/v2 v2.1.1
+github.com/cespare/xxhash/v2
 # github.com/coreos/bbolt v1.3.3
 github.com/coreos/bbolt
 # github.com/dgraph-io/badger v1.6.0
@@ -18,16 +20,16 @@ github.com/dgraph-io/badger/pb
 github.com/dgraph-io/badger/skl
 github.com/dgraph-io/badger/table
 github.com/dgraph-io/badger/y
-# github.com/dgryski/go-farm v0.0.0-20190423205320-6a90982ecee2
+# github.com/dgryski/go-farm v0.0.0-20191112170834-c2139c5d712b
 github.com/dgryski/go-farm
 # github.com/dustin/go-humanize v1.0.0
 github.com/dustin/go-humanize
 # github.com/go-kit/kit v0.9.0
 github.com/go-kit/kit/log
 github.com/go-kit/kit/log/level
-# github.com/go-logfmt/logfmt v0.4.0
+# github.com/go-logfmt/logfmt v0.5.0
 github.com/go-logfmt/logfmt
-# github.com/go-redis/redis v6.15.5+incompatible
+# github.com/go-redis/redis v6.15.6+incompatible
 github.com/go-redis/redis
 github.com/go-redis/redis/internal
 github.com/go-redis/redis/internal/consistenthash
@@ -42,49 +44,48 @@ github.com/golang/protobuf/proto
 # github.com/golang/snappy v0.0.1
 github.com/golang/snappy
 # github.com/gomodule/redigo v2.0.0+incompatible
-github.com/gomodule/redigo/redis
 github.com/gomodule/redigo/internal
+github.com/gomodule/redigo/redis
 # github.com/gorilla/handlers v1.4.2
 github.com/gorilla/handlers
 # github.com/gorilla/mux v1.7.3
 github.com/gorilla/mux
-# github.com/influxdata/influxdb v1.7.8
+# github.com/influxdata/influxdb v1.7.9
 github.com/influxdata/influxdb/models
 github.com/influxdata/influxdb/pkg/escape
 github.com/influxdata/influxdb/pkg/testing/assert
-# github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515
-github.com/kr/logfmt
 # github.com/matttproud/golang_protobuf_extensions v1.0.1
 github.com/matttproud/golang_protobuf_extensions/pbutil
 # github.com/philhofer/fwd v1.0.0
 github.com/philhofer/fwd
-# github.com/pkg/errors v0.8.1
+# github.com/pkg/errors v0.9.1
 github.com/pkg/errors
-# github.com/prometheus/client_golang v1.1.0
+# github.com/prometheus/client_golang v1.3.0
 github.com/prometheus/client_golang/prometheus
-github.com/prometheus/client_golang/prometheus/promhttp
 github.com/prometheus/client_golang/prometheus/internal
-# github.com/prometheus/client_model v0.0.0-20190129233127-fd36f4220a90
+github.com/prometheus/client_golang/prometheus/promhttp
+# github.com/prometheus/client_model v0.1.0
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.6.0
-github.com/prometheus/common/model
+# github.com/prometheus/common v0.8.0
 github.com/prometheus/common/expfmt
 github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg
-# github.com/prometheus/procfs v0.0.3
+github.com/prometheus/common/model
+# github.com/prometheus/procfs v0.0.8
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
-# github.com/tinylib/msgp v1.1.0
+github.com/prometheus/procfs/internal/util
+# github.com/tinylib/msgp v1.1.1
 github.com/tinylib/msgp/msgp
 # github.com/yuin/gopher-lua v0.0.0-20190514113301-1cd887cd7036
 github.com/yuin/gopher-lua
-github.com/yuin/gopher-lua/parse
 github.com/yuin/gopher-lua/ast
+github.com/yuin/gopher-lua/parse
 github.com/yuin/gopher-lua/pm
-# golang.org/x/net v0.0.0-20190827160401-ba9fcec4b297
+# golang.org/x/net v0.0.0-20200114155413-6afb5195e5aa
+golang.org/x/net/internal/timeseries
 golang.org/x/net/netutil
 golang.org/x/net/trace
-golang.org/x/net/internal/timeseries
-# golang.org/x/sys v0.0.0-20190904154756-749cb33beabd
+# golang.org/x/sys v0.0.0-20200116001909-b77594299b42
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 # gopkg.in/natefinch/lumberjack.v2 v2.0.0
