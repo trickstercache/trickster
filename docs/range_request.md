@@ -6,7 +6,7 @@ Much like its Time Series Delta Proxy Cache, Trickster's Reverse Proxy Cache wil
 
 In addition to supporting basic single-range requests (`Range: bytes=0-5`) Trickster also supports Multipart Range Requests (`Range: bytes=0-5, 10-20`).
 
-In the event that an upstream does not support Multipart Range Requests, Trickster will enable that support. To do so, Trickster offers a unique feature called Upstream Range Dearticulation, that will separate any ranges needed from the origin into individual, parallel HTTP requests, which are reconstituted by Trickster. This feature can be enabled for any origin that only supports single-range requests, by setting the origin configuration value `dearticulate_upstream_ranges = true`, as in this example:
+In the event that an upstream origin does not support Multipart Range Requests, Trickster will enable that support. To do so, Trickster offers a unique feature called Upstream Range Dearticulation, that will separate any ranges needed from the origin into individual, parallel HTTP requests, which are reconstituted by Trickster. This feature can be enabled for any origin that only supports single-range requests, by setting the origin configuration value `dearticulate_upstream_ranges = true`, as in this example:
 
 ```toml
 [origins]
