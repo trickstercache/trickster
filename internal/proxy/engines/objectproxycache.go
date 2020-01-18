@@ -230,6 +230,7 @@ func handleAllWrites(pr *proxyRequest) error {
 			pr.cacheDocument = d
 			if pr.isPartialResponse {
 				d.ParsePartialContentBody(pr.upstreamResponse, pr.cacheBuffer.Bytes())
+
 			} else {
 				d.Body = pr.cacheBuffer.Bytes()
 			}
@@ -289,7 +290,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	}
 
 	var err error
-	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(cc, pr.key, pr.wantedRanges)
+	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(pr.Context(), cc, pr.key, pr.wantedRanges)
 	if err == nil || err == cache.ErrKNF {
 		if f, ok := cacheResponseHandlers[pr.cacheStatus]; ok {
 			f(pr)
@@ -330,6 +331,7 @@ func FetchViaObjectProxyCache(r *http.Request) ([]byte, *http.Response, bool) {
 	resp, cacheStatus := fetchViaObjectProxyCache(w, r)
 	if cacheStatus == status.LookupStatusProxyOnly {
 		resp = DoProxy(w, r)
+
 	}
 	return w.Bytes(), resp, cacheStatus == status.LookupStatusHit
 }

@@ -399,7 +399,7 @@ func (pr *proxyRequest) store() error {
 	}
 
 	d.CachingPolicy = pr.cachingPolicy
-	err := WriteCache(rsc.CacheClient, pr.key, d, pr.cachingPolicy.TTL(rf, oc.MaxTTL), oc.CompressableTypes)
+	err := WriteCache(pr.Context(), rsc.CacheClient, pr.key, d, pr.cachingPolicy.TTL(rf, oc.MaxTTL), oc.CompressableTypes)
 	if err != nil {
 		return err
 	}

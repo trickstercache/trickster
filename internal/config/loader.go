@@ -80,6 +80,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	Frontend = c.Frontend
 	Logging = c.Logging
 	Metrics = c.Metrics
+	Tracing = c.Tracing
 	NegativeCacheConfigs = c.NegativeCacheConfigs
 
 	for k, n := range NegativeCacheConfigs {

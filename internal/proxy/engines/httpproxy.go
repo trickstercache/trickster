@@ -15,6 +15,7 @@ package engines
 
 import (
 	"bytes"
+	gocontext "context"
 	"io"
 	"io/ioutil"
 	"math"
@@ -32,6 +33,8 @@ import (
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/Comcast/trickster/internal/util/tracing"
+	othttptrace "go.opentelemetry.io/otel/plugin/httptrace"
 )
 
 // Reqs is for Progressive Collapsed Forwarding
@@ -42,12 +45,17 @@ const HTTPBlockSize = 32 * 1024
 
 // DoProxy proxies an inbound request to its corresponding upstream origin with no caching features
 func DoProxy(w io.Writer, r *http.Request) *http.Response {
+	start := time.Now()
+	_, span := tracing.NewChildSpan(r.Context(), "ProxyRequest")
+	defer func() {
+
+		span.End()
+	}()
 
 	rsc := request.GetResources(r)
 	pc := rsc.PathConfig
 	oc := rsc.OriginConfig
 
-	start := time.Now()
 	var elapsed time.Duration
 	var cacheStatusCode status.LookupStatus
 	var resp *http.Response
@@ -109,6 +117,11 @@ func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer 
 // provide the response data, the response object and the content length.
 // Used in Fetch.
 func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) {
+	ctx, span := tracing.NewChildSpan(r.Context(), "PrepareFetchReader")
+	defer func() {
+
+		span.End()
+	}()
 
 	rsc := request.GetResources(r)
 	pc := rsc.PathConfig
@@ -128,7 +141,23 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	}
 
 	r.RequestURI = ""
-	resp, err := oc.HTTPClient.Do(r)
+
+	var resp *http.Response
+
+	tr := tracing.GlobalTracer(ctx)
+	err := tr.WithSpan(ctx, "Proxying Request",
+		func(ctx gocontext.Context) error {
+			var err error
+
+			// Processing traces for proxies
+			// https://www.w3.org/TR/trace-context-1/#alternative-processing
+			ctx, req := othttptrace.W3C(ctx, r)
+			othttptrace.Inject(ctx, req)
+			resp, err = oc.HTTPClient.Do(req)
+			return err
+
+		})
+
 	if err != nil {
 		log.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		// if there is an err and the response is nil, the server could not be reached; make a 502 for the downstream response

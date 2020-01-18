@@ -30,6 +30,7 @@ import (
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/Comcast/trickster/internal/util/tracing"
 	"github.com/Comcast/trickster/pkg/locks"
 )
 
@@ -39,6 +40,11 @@ import (
 // requests the gaps from the origin server and returns the reconstituted dataset to the downstream request
 // while caching the results for subsequent requests of the same data
 func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
+	ctx, span := tracing.NewChildSpan(r.Context(), "DeltaProxyCacheRequest")
+	defer func() {
+
+		span.End()
+	}()
 
 	rsc := request.GetResources(r)
 
@@ -104,6 +110,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 
 	coReq := GetRequestCachingPolicy(r.Header)
 	if coReq.NoCache {
+		span.AddEvent(
+			ctx,
+			"Not Caching",
+		)
 		cacheStatus = status.LookupStatusPurge
 		cache.Remove(key)
 		cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
@@ -114,16 +124,18 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			return // fetchTimeseries logs the error
 		}
 	} else {
-		doc, cacheStatus, _, err = QueryCache(cache, key, nil)
+		doc, cacheStatus, _, err = QueryCache(ctx, cache, key, nil)
 		if cacheStatus == status.LookupStatusKeyMiss {
 			cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 			if err != nil {
 				recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
+
 				Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 				locks.Release(key)
 				return // fetchTimeseries logs the error
 			}
 		} else {
+
 			// Load the Cached Timeseries
 			if doc == nil {
 				err = errors.New("empty document body")
@@ -166,6 +178,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				}
 				cacheStatus = status.LookupStatusPartialHit
 			}
+
 		}
 	}
 
@@ -238,6 +251,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 
 	var hasFastForwardData bool
 	var ffts timeseries.Timeseries
+
 	// Only fast forward if configured and the user request is for the absolute latest datapoint
 	if (!trq.FastForwardDisable) && (trq.Extent.End.Equal(normalizedNow.Extent.End)) && ffURL.Scheme != "" {
 		wg.Add(1)
@@ -333,7 +347,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 					}
 					doc.Body = cdata
 				}
-				WriteCache(cache, key, doc, oc.TimeseriesTTL, oc.CompressableTypes)
+				WriteCache(ctx, cache, key, doc, oc.TimeseriesTTL, oc.CompressableTypes)
 			}
 		}()
 	}

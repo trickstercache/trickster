@@ -381,13 +381,14 @@ func TestObjectProxyCachePartialHitNotFresh(t *testing.T) {
 		t.Error(err)
 	}
 	defer ts.Close()
+	ctx := context.Background()
 
 	pr := newProxyRequest(r, w)
 	oc := rsc.OriginConfig
 	cc := rsc.CacheClient
 	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
 	pr.key = oc.Host + "." + pr.DeriveCacheKey(nil, "")
-	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, _ = QueryCache(cc, pr.key, pr.wantedRanges)
+	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, _ = QueryCache(ctx, cc, pr.key, pr.wantedRanges)
 	handleCacheKeyMiss(pr)
 
 	pr.cachingPolicy.CanRevalidate = false
@@ -414,13 +415,14 @@ func TestObjectProxyCachePartialHitFullResponse(t *testing.T) {
 		t.Error(err)
 	}
 	defer ts.Close()
+	ctx := context.Background()
 
 	pr := newProxyRequest(r, w)
 	oc := rsc.OriginConfig
 	cc := rsc.CacheClient
 	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
 	pr.key = oc.Host + "." + pr.DeriveCacheKey(nil, "")
-	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, _ = QueryCache(cc, pr.key, pr.wantedRanges)
+	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, _ = QueryCache(ctx, cc, pr.key, pr.wantedRanges)
 	handleCacheKeyMiss(pr)
 	handleCachePartialHit(pr)
 

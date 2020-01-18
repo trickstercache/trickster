@@ -30,6 +30,7 @@ import (
 	"github.com/Comcast/trickster/internal/runtime"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/Comcast/trickster/internal/util/tracing"
 
 	"github.com/gorilla/handlers"
 )
@@ -84,6 +85,8 @@ func main() {
 	}
 
 	metrics.Init()
+	flush := tracing.Init(config.Tracing)
+	defer flush()
 	cr.LoadCachesFromConfig()
 	th.RegisterPingHandler()
 	th.RegisterConfigHandler()

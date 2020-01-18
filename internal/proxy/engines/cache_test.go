@@ -14,6 +14,7 @@
 package engines
 
 import (
+	"context"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -70,9 +71,11 @@ func TestMultiPartByteRange(t *testing.T) {
 	resp2.StatusCode = 200
 	d := DocumentFromHTTPResponse(resp2, []byte("This is a t"), nil)
 
+	ctx := context.Background()
+
 	ranges := make(byterange.Ranges, 1)
 	ranges[0] = byterange.Range{Start: 5, End: 10}
-	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
 		t.Error("Expected multi part byte range request to pass, but failed with ", err.Error())
 	}
@@ -95,14 +98,15 @@ func TestCacheHitRangeRequest(t *testing.T) {
 	resp2.Header.Add(headers.NameContentLength, strconv.Itoa(len(testRangeBody)))
 	resp2.StatusCode = 200
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody), nil)
+	ctx := context.Background()
 
-	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
 		t.Error(err)
 	}
 
 	ranges := byterange.Ranges{byterange.Range{Start: 5, End: 10}}
-	d2, _, deltas, err := QueryCache(cache, "testKey", ranges)
+	d2, _, deltas, err := QueryCache(ctx, cache, "testKey", ranges)
 	if err != nil {
 		t.Error(err)
 	}
@@ -137,14 +141,15 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
 	resp2.StatusCode = 206
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
+	ctx := context.Background()
 
-	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
 		t.Error(err)
 	}
 
 	ranges := byterange.Ranges{byterange.Range{Start: 5, End: 10}}
-	d2, _, deltas, err := QueryCache(cache, "testKey", ranges)
+	d2, _, deltas, err := QueryCache(ctx, cache, "testKey", ranges)
 	if err != nil {
 		t.Error(err)
 	}
@@ -179,14 +184,15 @@ func TestCacheHitRangeRequest3(t *testing.T) {
 	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
 	resp2.StatusCode = 206
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
+	ctx := context.Background()
 
-	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
 		t.Error(err)
 	}
 
 	qrange := byterange.Ranges{byterange.Range{Start: 5, End: 10}}
-	_, _, deltas, err := QueryCache(cache, "testKey", qrange)
+	_, _, deltas, err := QueryCache(ctx, cache, "testKey", qrange)
 	if err != nil {
 		t.Error(err)
 	}
@@ -218,13 +224,15 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 	resp2.StatusCode = 206
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
 
-	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	ctx := context.Background()
+
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
 		t.Error(err)
 	}
 
 	ranges := byterange.Ranges{byterange.Range{Start: 5, End: 20}}
-	_, _, deltas, err := QueryCache(cache, "testKey", ranges)
+	_, _, deltas, err := QueryCache(ctx, cache, "testKey", ranges)
 	if err != nil {
 		t.Error(err)
 	}
@@ -258,13 +266,15 @@ func TestFullCacheMissRangeRequest(t *testing.T) {
 	resp2.StatusCode = 206
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
 
-	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	ctx := context.Background()
+
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
 		t.Error(err)
 	}
 
 	ranges := byterange.Ranges{byterange.Range{Start: 15, End: 20}}
-	_, _, deltas, err := QueryCache(cache, "testKey", ranges)
+	_, _, deltas, err := QueryCache(ctx, cache, "testKey", ranges)
 	if err != nil {
 		t.Error(err)
 	}
@@ -307,12 +317,14 @@ func TestRangeRequestFromClient(t *testing.T) {
 		t.Error(e2)
 	}
 
+	ctx := context.Background()
+
 	d := DocumentFromHTTPResponse(resp, bytes, nil)
-	err = WriteCache(cache, "testKey2", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	err = WriteCache(ctx, cache, "testKey2", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
 		t.Error(err)
 	}
-	_, _, deltas, err := QueryCache(cache, "testKey2", want)
+	_, _, deltas, err := QueryCache(ctx, cache, "testKey2", want)
 	if err != nil {
 		t.Error(err)
 	}
@@ -321,7 +333,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 	}
 	want[0].Start = 20
 	want[0].End = 35
-	_, _, deltas, err = QueryCache(cache, "testKey2", want)
+	_, _, deltas, err = QueryCache(ctx, cache, "testKey2", want)
 	if err != nil {
 		t.Error(err)
 	}
@@ -355,12 +367,14 @@ func TestQueryCache(t *testing.T) {
 	d := DocumentFromHTTPResponse(resp, []byte(expected), nil)
 	d.ContentType = "text/plain"
 
-	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	ctx := context.Background()
+
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
 		t.Error(err)
 	}
 
-	d2, _, _, err := QueryCache(cache, "testKey", nil)
+	d2, _, _, err := QueryCache(ctx, cache, "testKey", nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -373,7 +387,7 @@ func TestQueryCache(t *testing.T) {
 		t.Errorf("expected %d got %d", 200, d2.StatusCode)
 	}
 
-	_, _, _, err = QueryCache(cache, "testKey2", nil)
+	_, _, _, err = QueryCache(ctx, cache, "testKey2", nil)
 	if err == nil {
 		t.Errorf("expected error")
 	}
@@ -382,17 +396,17 @@ func TestQueryCache(t *testing.T) {
 	cache.Remove("testKey")
 	cache.Configuration().CacheType = "test"
 
-	_, _, _, err = QueryCache(cache, "testKey", byterange.Ranges{{Start: 0, End: 1}})
+	_, _, _, err = QueryCache(ctx, cache, "testKey", byterange.Ranges{{Start: 0, End: 1}})
 	if err == nil {
 		t.Errorf("expected error")
 	}
 
-	err = WriteCache(cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
 		t.Error(err)
 	}
 
-	d2, _, _, err = QueryCache(cache, "testKey", nil)
+	d2, _, _, err = QueryCache(ctx, cache, "testKey", nil)
 	if err != nil {
 		t.Error(err)
 	}
