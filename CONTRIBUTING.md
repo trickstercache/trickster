@@ -43,9 +43,13 @@ For complete instructions on how to compile see: [Building From Source](https://
 For quickly compiling and testing your changes do:
 ```
 # For building.
-go build
+make
 ./trickster
+
+# For testing.
+make test
 ```
+
 
 ## Pull Request Checklist
 
@@ -55,4 +59,4 @@ go build
 
 * If your patch is not getting reviewed or you need a specific person to review it, you can @-reply a reviewer asking for a review in the pull request or a comment, or you can ask for a review on slack channel #trickster.
 
-* If you can help us with incorporating unit tests, we'd love it if you included tests relevant to the fixed bug or new feature.
+* All new code must include accompanying unit tests for as near to 100% coverage as possible. Our coverage rate for the project is approximately 98%, so all contributions should attain that level or higher. We may ask you to commit additional tests as required to ensure coverage is maintained before we merge the PR.
