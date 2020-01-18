@@ -45,7 +45,7 @@ See the [Supported Origin Types](./docs/supported-origin-types.md) document for 
 
 ## How Trickster Accelerates Time Series
 
-### 1. Delta Proxy
+### 1. Time Series Delta Proxy Cache
 
 Most dashboards request from a time series database the entire time range of data they wish to present, every time a user's dashboard loads, as well as on every auto-refresh. Trickster's Delta Proxy inspects the time range of a client query to determine what data points are already cached, and requests from the tsdb only the data points still needed to service the client request. This results in dramatically faster chart load times for everyone, since the tsdb is queried only for tiny incremental changes on each dashboard load, rather than several hundred data points of duplicative data.
 
