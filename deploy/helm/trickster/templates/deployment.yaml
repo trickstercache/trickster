@@ -1,52 +1,106 @@
-{{- if .Capabilities.APIVersions.Has "apps/v1beta2" }}
-apiVersion: apps/v1beta2
-{{- else }}
 apiVersion: extensions/v1beta1
-{{- end }}
 kind: Deployment
 metadata:
-  name: {{ template "trickster.fullname" . }}
+{{- if .Values.deploymentAnnotations }}
+  annotations:
+{{ toYaml .Values.deploymentAnnotations | indent 4 }}
+{{- end }}
   labels:
-    app: {{ template "trickster.name" . }}
-    chart: {{ template "trickster.chart" . }}
-    release: {{ .Release.Name }}
-    heritage: {{ .Release.Service }}
+    {{- include "trickster.labels" . | nindent 4 }}
+  name: {{ template "trickster.fullname" . }}
 spec:
-  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: {{ template "trickster.name" . }}
-      release: {{ .Release.Name }}
+      {{- include "trickster.matchLabels" . | nindent 6 }}
+  replicas: {{ .Values.replicaCount }}
+  {{- if .Values.strategy }}
+  strategy:
+{{ toYaml .Values.strategy | indent 4 }}
+  {{- end }}
   template:
     metadata:
+      annotations:
+        checksum/trickster-cfg: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    {{- if .Values.podAnnotations }}        
+{{ toYaml .Values.podAnnotations | indent 8 }}
+    {{- end }}    
       labels:
         app: {{ template "trickster.name" . }}
         release: {{ .Release.Name }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+{{- if .Values.affinity }}
+      affinity:
+{{ toYaml .Values.affinity | indent 8 }}
+{{- end }}
+{{- if .Values.schedulerName }}
+      schedulerName: "{{ .Values.schedulerName }}"
+{{- end }}
+{{- if .Values.priorityClassName }}
+      priorityClassName: "{{ .Values.priorityClassName }}"
+{{- end }}    
       containers:
-        - name: trickster
+        - name: {{ template "trickster.name" . }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+        {{- if .Values.extraEnv }}
+          env:
+            {{- range $key, $value := .Values.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value }}
+            {{- end }}
+        {{- end }}
+        {{- if .Values.extraArgs }}
+          args:
+          {{- range $key, $value := .Values.extraArgs }}
+            - --{{ $key }}={{ $value }}
+          {{- end }}
+        {{- end }}
           volumeMounts:
             - name: cfg-volume
               mountPath: /etc/trickster
+            {{- if eq .Values.config.cache.type "filesystem" }}
+            - name: cache-volume
+              mountPath: {{ .Values.config.cache.filesystem.mountPath }}
+            {{- end }}
           ports:
             - name: http
-              containerPort: {{ .Values.service.port }}
+              containerPort: {{ .Values.service.servicePort }}
               protocol: TCP
             - name: metrics
               containerPort: {{ .Values.service.metricsPort }}
               protocol: TCP
           livenessProbe:
             httpGet:
-              path: /ping
+              path: /trickster/ping
               port: http
           readinessProbe:
             httpGet:
-              path: /health
+              path: /trickster/ping
               port: http
           resources:
 {{ toYaml .Values.resources | indent 12 }}
+    {{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+      {{ toYaml .Values.imagePullSecrets | indent 2 }}
+    {{- end }}
+    {{- if .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 8 }}
+    {{- end }}
+    {{- if .Values.securityContext }}
+      securityContext:
+{{ toYaml .Values.securityContext | indent 8 }}
+    {{- end }}
+    {{- if .Values.tolerations }}
+      tolerations:
+{{ toYaml .Values.tolerations | indent 8 }}
+    {{- end }}
+    {{- if .Values.affinity }}
+      affinity:
+{{ toYaml .Values.affinity | indent 8 }}
+    {{- end }}
       volumes:
         - name: cfg-volume
           configMap:
@@ -54,15 +108,12 @@ spec:
             items:
               - key: trickster.conf
                 path: trickster.conf
-    {{- with .Values.nodeSelector }}
-      nodeSelector:
-{{ toYaml . | indent 8 }}
-    {{- end }}
-    {{- with .Values.affinity }}
-      affinity:
-{{ toYaml . | indent 8 }}
-    {{- end }}
-    {{- with .Values.tolerations }}
-      tolerations:
-{{ toYaml . | indent 8 }}
-    {{- end }}
+        {{- if eq .Values.config.cache.type "filesystem" }}
+        - name: cache-volume
+        {{- if .Values.persistentVolume.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ if .Values.persistentVolume.existingClaim }}{{ .Values.persistentVolume.existingClaim }}{{- else }}{{ template "trickster.fullname" . }}{{- end }}
+        {{- else }}
+          emptyDir: {}
+        {{- end -}}
+        {{- end -}}

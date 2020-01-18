@@ -1,39 +1,33 @@
 {{- if .Values.ingress.enabled -}}
-{{- $fullName := include "trickster.fullname" . -}}
-{{- $servicePort := .Values.service.port -}}
-{{- $ingressPath := .Values.ingress.path -}}
+{{- $releaseName := .Release.Name -}}
+{{- $serviceName := include "trickster.fullname" . }}
+{{- $servicePort := .Values.trickster.service.servicePort -}}
 apiVersion: extensions/v1beta1
 kind: Ingress
 metadata:
-  name: {{ $fullName }}
-  labels:
-    app: {{ template "trickster.name" . }}
-    chart: {{ template "trickster.chart" . }}
-    release: {{ .Release.Name }}
-    heritage: {{ .Release.Service }}
-{{- with .Values.ingress.annotations }}
+{{- if .Values.ingress.annotations }}
   annotations:
-{{ toYaml . | indent 4 }}
+{{ toYaml .Values.ingress.annotations | indent 4 }}
+{{- end }}
+  labels:
+    {{- include "trickster.labels" . | nindent 4 }}
+{{- range $key, $value := .Values.trickster.ingress.extraLabels }}
+    {{ $key }}: {{ $value }}
 {{- end }}
 spec:
-{{- if .Values.ingress.tls }}
-  tls:
-  {{- range .Values.ingress.tls }}
-    - hosts:
-      {{- range .hosts }}
-        - {{ . }}
-      {{- end }}
-      secretName: {{ .secretName }}
-  {{- end }}
-{{- end }}
   rules:
-  {{- range .Values.ingress.hosts }}
-    - host: {{ . }}
+  {{- range .Values.server.ingress.hosts }}
+    {{- $url := splitList "/" . }}
+    - host: {{ first $url }}
       http:
         paths:
-          - path: {{ $ingressPath }}
+          - path: /{{ rest $url | join "/" }}
             backend:
-              serviceName: {{ $fullName }}
-              servicePort: http
-  {{- end }}
+              serviceName: {{ $serviceName }}
+              servicePort: {{ $servicePort }}
+  {{- end -}}
+  {{- if .Values.ingress.tls }}
+  tls:
+{{ toYaml .Values.ingress.tls | indent 4 }}
+  {{- end -}}  
 {{- end }}

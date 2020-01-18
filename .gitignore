@@ -6,12 +6,19 @@
 
 # Test binary, build with `go test -c`
 *.test
+.coverprofile
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
 # Project-local glide cache, RE: https://github.com/Masterminds/glide/issues/736
 .glide/
+
+# IDE Files
+.vscode/
+
+# Test Coverage Profile Output
+.coverprofile
 
 # output path
 OPATH
@@ -24,11 +31,13 @@ OPATH
 .Trashes
 ehthumbs.db
 Thumbs.db
-vendor
-
-# The binary
-trickster
 
 # dep
 cacheKey.data
 cacheKey.expiration
+
+#Goland IDE
+.idea/
+
+#log testing
+out.log
