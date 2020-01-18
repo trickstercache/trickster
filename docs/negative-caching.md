@@ -4,11 +4,11 @@ Negative Caching means to cache undesired HTTP responses for a very short period
 
 Trickster supports negative caching of any status code >= 300 and < 600, on a per-Origin basis. In your Trickster configuration file, associate the desired Negative Cache Map to the desired Origin config. See the [example.conf](../cmd/trickster/conf/example.conf), or refer to the snippet below for more information.
 
-The Negative Cache Map must be an all-inclusive list of explicit status codes; there is currently no wildcard or status code range support for Negative Caching entries. By default, the Negative Cache Map is empty for all origin configs. The Negative Cache only applies to Cacheable Objects, and does not apply to Timeseries-Accelerated Requests via the Delta Proxy Cache engine, or to Proxy-Only configurations.
+The Negative Cache Map must be an all-inclusive list of explicit status codes; there is currently no wildcard or status code range support for Negative Caching entries. By default, the Negative Cache Map is empty for all origin configs. The Negative Cache only applies to Cacheable Objects, and does not apply to Proxy-Only configurations.
 
-For any response code handled by the Negative Cache, the response object's effective cache TTL is explicitly overridden to the value of that code's Negative Cache TTL, regardless of any response headers provided by the Origin concerning cacheability. All response headers are left in-tact and unmodified by Trickster's Negative Cache, such that Negative Caching is transparent to the client. The `X-Trickster-Result` header will indicate a response was served from the Negative Cache by providing a cache status of `nchit`.
+For any response code handled by the Negative Cache, the response object's effective cache TTL is explicitly overridden to the value of that code's Negative Cache TTL, regardless of any response headers provided by the Origin concerning cacheability. All response headers are left in-tact and unmodified by Trickster's Negative Cache, such that Negative Caching is transparent to the client. The `X-Trickster-Result` response header will indicate a response was served from the Negative Cache by providing a cache status of `nchit`.
 
-You can define multiple negative cache configurations, and reference them by name in the origin config. By Default, an origin will use the 'default' Negative Cache config, which, by default is empty but can be easily populated in the config file, as demonstrated below.
+You can define multiple negative cache configurations, and reference them by name in the origin config. By Default, an origin will use the 'default' Negative Cache config, which, by default is empty. The default can be easily populated in the config file, and additionl configs can easily be added, as demonstrated below.
 
 ## Example Negative Caching Config
 
