@@ -11,43 +11,44 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-func setRecorderTracer(sampleRate float64) (func(), error) {
-	exporter, err := NewRecorder()
+func setRecorderTracer(ef ErrorFunc, sampleRate float64) (func(), *recorderExporter, error) {
+	exporter, err := NewRecorder(ef)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	tp, err := sdktrace.NewProvider(sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.ProbabilitySampler(sampleRate)}),
 		sdktrace.WithSyncer(exporter))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	global.SetTraceProvider(tp)
-	return func() {}, nil
+	return func() {}, exporter, nil
 }
 
-// Exporter is an implementation of trace.Exporter that writes spans to stdout.
+// Exporter is an implementation of trace.Exporter that writes spans to a buffer, and saves the span data for later inspection.
 type recorderExporter struct {
+	io.Reader
 	outputWriter io.Writer
-	errorFunc    errorFunc
+	spans        []*export.SpanData
+	errorFunc    ErrorFunc
 }
 
-func NewRecorder() (*recorderExporter, error) {
-	ef := func(err error) {
+func NewRecorder(ef ErrorFunc) (*recorderExporter, error) {
+	buf := new(bytes.Buffer)
 
-	}
-	return &recorderExporter{&bytes.Buffer{}, ef}, nil
+	return &recorderExporter{buf, buf, nil, ef}, nil
 }
 
-// ExportSpan writes a SpanData in json format to stdout.
+// ExportSpan writes a SpanData in json format to buffer.
 func (e *recorderExporter) ExportSpan(ctx context.Context, data *export.SpanData) {
 	jsonSpan, err := json.Marshal(data)
 	if err != nil {
 		e.errorFunc(err)
-		return
 	}
+	e.spans = append(e.spans, data)
 	// ignore writer failures for now
-	_, _ = e.outputWriter.Write(append(jsonSpan, byte('\n')))
+	e.outputWriter.Write(append(jsonSpan, byte('\n')))
 }
 
-type errorFunc func(error)
+type ErrorFunc func(error)

@@ -16,6 +16,7 @@ package tracing
 import (
 	"context"
 
+	"github.com/Comcast/trickster/internal/util/log"
 	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/trace"
 )
@@ -34,18 +35,18 @@ const (
 type TracerImplementation int
 
 var (
-	tracerImplemetationStrings = []string{
+	tracerImplementationStrings = []string{
 		"noop",
 		"recorder",
 		"stdout",
 		"jaeger",
 	}
 	TracerImplementations = map[string]TracerImplementation{
-		tracerImplemetationStrings[NoopTracer]:     NoopTracer,
-		tracerImplemetationStrings[RecorderTracer]: RecorderTracer,
-		tracerImplemetationStrings[StdoutTracer]:   StdoutTracer,
+		tracerImplementationStrings[NoopTracer]:     NoopTracer,
+		tracerImplementationStrings[RecorderTracer]: RecorderTracer,
+		tracerImplementationStrings[StdoutTracer]:   StdoutTracer,
 		// TODO New Implementations go here
-		tracerImplemetationStrings[JaegerTracer]: JaegerTracer,
+		tracerImplementationStrings[JaegerTracer]: JaegerTracer,
 	}
 )
 
@@ -64,7 +65,7 @@ func (t TracerImplementation) String() string {
 	if t < NoopTracer || t > JaegerTracer {
 		return "unknown-tracer"
 	}
-	return tracerImplemetationStrings[t]
+	return tracerImplementationStrings[t]
 }
 
 func SetTracer(t TracerImplementation, collectorURL string, sampleRate float64) (func(), error) {
@@ -77,8 +78,24 @@ func SetTracer(t TracerImplementation, collectorURL string, sampleRate float64) 
 
 		return setJaegerTracer(collectorURL, sampleRate)
 	case RecorderTracer:
-
-		return setRecorderTracer(sampleRate)
+		// TODO make recorder available at runtime
+		flush, _, err := setRecorderTracer(
+			// Only called if there is an error so the log message won't be evaluated otherwise
+			func(err error) {
+				pairs := log.Pairs{
+					"Error":                err,
+					"TracerImplementation": tracerImplementationStrings[t],
+					"Collector":            collectorURL,
+					"SampleRate":           sampleRate,
+				}
+				log.Error(
+					"Trace Recorder Error",
+					pairs,
+				)
+			},
+			sampleRate,
+		)
+		return flush, err
 	default:
 
 		return setNoopTracer()

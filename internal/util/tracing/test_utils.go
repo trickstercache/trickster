@@ -1,13 +1,25 @@
 package tracing
 
 import (
+	"context"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"testing"
 
+	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/distributedcontext"
 	"go.opentelemetry.io/otel/api/key"
+	"go.opentelemetry.io/otel/api/trace"
+)
+
+var (
+	TestContextValues = []core.KeyValue{
+		key.String("username", "guy"),
+		key.Int("IntValue", 42),
+	}
 )
 
 func MockRoundTripper(f func(r *http.Request) (*http.Response, error)) http.RoundTripper {
@@ -22,6 +34,13 @@ func (rt *rt) RoundTrip(r *http.Request) (*http.Response, error) {
 	return rt.f(r)
 }
 
+var (
+	TestEvents = []core.KeyValue{
+		key.String("location", "testhandler"),
+		key.Int("Integer Value", 1),
+	}
+)
+
 func TestingHandler() http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r, span := PrepareRequest(r, r.Host)
@@ -30,10 +49,11 @@ func TestingHandler() http.HandlerFunc {
 		func() {
 			_, span := NewChildSpan(r.Context(), "test-span-name")
 			defer span.End()
-			span.AddEvent(r.Context(), "SubSpan", key.String("location", "testhandler"))
+			span.AddEvent(r.Context(), "SubSpan", TestEvents[0])
 		}()
-
-		span.AddEvent(r.Context(), "Span", key.Int("Integer Value", 1))
+		for i := 1; i < len(TestEvents); i++ {
+			span.AddEvent(r.Context(), "Span", TestEvents[i])
+		}
 		_, _ = io.WriteString(w, "test response")
 
 	})
@@ -63,4 +83,23 @@ func TestHTTPClient() *http.Client {
 	)
 	return &client
 
+}
+
+func SetupTestingTracer(t *testing.T, impl TracerImplementation, sampleRate float64, values []core.KeyValue) (flush func(), ctx context.Context, recorder *recorderExporter, tr trace.Tracer) {
+	flush, recorder, err := setRecorderTracer(
+		func(err error) {
+			t.Error(err)
+		},
+		sampleRate,
+	)
+	if err != nil {
+		t.Error(err)
+	}
+
+	ctx = distributedcontext.NewContext(context.Background(), values...)
+
+	return flush,
+		ctx,
+		recorder,
+		GlobalTracer(ctx)
 }

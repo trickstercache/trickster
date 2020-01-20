@@ -20,12 +20,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/stretchr/testify/assert"
-	"go.opentelemetry.io/otel/api/core"
-	"go.opentelemetry.io/otel/api/distributedcontext"
 	"go.opentelemetry.io/otel/api/global"
-	"go.opentelemetry.io/otel/api/key"
 	"go.opentelemetry.io/otel/exporter/trace/stdout"
 	"go.opentelemetry.io/otel/plugin/httptrace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -51,24 +47,11 @@ func init() {
 }
 
 func TestTrace(t *testing.T) {
-	cfg := &config.TracingConfig{
-		Implementation: "recorder",
-		SampleRate:     1.0,
-	}
-
-	flush := Init(cfg)
+	flush, ctx, _, tr := SetupTestingTracer(t, RecorderTracer, 1.0, TestContextValues)
 	defer flush()
-
-	values := []core.KeyValue{
-		key.String("username", "guy"),
-		key.Int("IntValue", 42),
-	}
-
-	ctx := distributedcontext.NewContext(context.Background(), values...)
 
 	var res *http.Response
 
-	tr := GlobalTracer(ctx)
 	err := tr.WithSpan(ctx, "Testing trace with span",
 		func(ctx context.Context) error {
 			var err error
@@ -89,13 +72,17 @@ func TestTrace(t *testing.T) {
 
 	ctxValues := res.Header.Get("Correlation-Context")
 	pairs := strings.Split(ctxValues, ",")
+	m := make(map[string]string)
+	for _, kv := range TestContextValues {
+		m[string(kv.Key)] = kv.Value.Emit()
 
-	for i, kv := range pairs {
+	}
+
+	for _, kv := range pairs {
 		kvs := strings.Split(kv, "=")
-		k := kvs[0]
+		wantV := m[kvs[0]]
 		v := kvs[1]
-		assert.Equal(t, string(values[i].Key), k, "distributed context key mismatch")
-		assert.Equal(t, values[i].Value.Emit(), v, "distributed context value mismatch")
+		assert.Equal(t, wantV, v, "distributed context value mismatch")
 
 	}
 
