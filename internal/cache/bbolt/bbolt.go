@@ -145,6 +145,13 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		_, err = cache.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
 		return nil, status.LookupStatusError, err
 	}
+
+	// if retrieve() is being called to load the index, the index will be nil, so just return the value
+	// so as to instantiate the index
+	if c.Index == nil {
+		return o.Value, status.LookupStatusHit, nil
+	}
+
 	o.Expiration = c.Index.GetExpiration(cacheKey)
 
 	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
