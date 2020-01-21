@@ -45,6 +45,12 @@ var (
 
 // Init initializes tracing and returns a function to flush the tracer. Flush should be called on server shutdown.
 func Init(cfg *config.TracingConfig) func() {
+	if cfg == nil {
+		log.Info(
+			"Nil Tracing Config, using noop tracer", nil,
+		)
+		return func() {}
+	}
 	log.Debug(
 		"Trace Init",
 		log.Pairs{

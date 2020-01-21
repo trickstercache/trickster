@@ -32,14 +32,14 @@ func setJaegerTracer(collectorURL string, sampleRate float64) (func(), error) {
 		}),
 	)
 	if err != nil {
-		return nil, err
+		return func() {}, err
 	}
 
 	tp, err := sdktrace.NewProvider(
 		sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.ProbabilitySampler(sampleRate)}),
 		sdktrace.WithSyncer(exporter))
 	if err != nil {
-		return nil, err
+		return func() {}, err
 	}
 	global.SetTraceProvider(tp)
 

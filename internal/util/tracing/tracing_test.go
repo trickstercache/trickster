@@ -15,25 +15,39 @@ package tracing
 
 import (
 	"context"
-	"log"
+	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel/api/global"
+	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/exporter/trace/stdout"
 	"go.opentelemetry.io/otel/plugin/httptrace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/grpc/codes"
 )
 
-func init() {
+func TestInitNil(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Panic on nil config%+v", r)
+		}
+	}()
+	f2 := Init(nil)
+	f2()
+}
+func TestMain(m *testing.M) {
 	// Create stdout exporter to be able to retrieve
 	// the collected spans.
 	exporter, err := stdout.NewExporter(stdout.Options{PrettyPrint: true})
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("Test Setup Failure", err)
+		os.Exit(-1)
 	}
 
 	// For the demonstration, use sdktrace.AlwaysSample sampler to sample all traces.
@@ -41,12 +55,96 @@ func init() {
 	tp, err := sdktrace.NewProvider(sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.AlwaysSample()}),
 		sdktrace.WithSyncer(exporter))
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("Test Setup Failure", err)
+		os.Exit(-1)
 	}
 	global.SetTraceProvider(tp)
+	os.Exit(m.Run())
 }
 
-func TestTrace(t *testing.T) {
+type panicTest struct {
+	ctx          context.Context
+	tracer       TracerImplementation
+	rate         float64
+	collectorURL string
+}
+
+func TestNoPanics(t *testing.T) {
+	tests := []panicTest{
+		{
+			nil,
+			JaegerTracer,
+			1.0,
+			"",
+		},
+		{
+			makeCTX(
+				func(ctx context.Context) context.Context {
+					ctx = context.WithValue(ctx, 345, 2345)
+					return ctx
+				},
+			),
+			7883,
+			1000000000.0,
+			"not a valid url",
+		},
+		{
+			makeCTX(
+				func(ctx context.Context) context.Context {
+					var c context.CancelFunc
+					ctx, c = context.WithTimeout(ctx, time.Duration(1*time.Millisecond))
+					_ = c
+					return ctx
+				},
+			),
+			StdoutTracer,
+			-1.0,
+			"",
+		},
+		{
+			context.Background(),
+			-1,
+			1.0,
+			"tcp://127.0.0.1",
+		},
+		{
+			nil,
+			-99,
+			-.1,
+			"",
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Panic %+v", r)
+		}
+	}()
+	noPanic(t, tests)
+}
+
+func noPanic(t *testing.T, tests []panicTest) {
+
+	for _, test := range tests {
+		flush, _ := SetTracer(test.tracer, test.collectorURL, test.rate)
+		ctx, span := NewChildSpan(test.ctx, "TestNoPanics")
+
+		tr := GlobalTracer(ctx)
+		spanCall(ctx, tr)
+		span.End()
+		flush()
+	}
+	cfg := &config.TracingConfig{
+		Implementation:    "unk",
+		CollectorEndpoint: "http://example.com",
+		SampleRate:        1.0,
+	}
+
+	f := Init(cfg)
+	f()
+
+}
+
+func TestRecorderTrace(t *testing.T) {
 	flush, ctx, _, tr := SetupTestingTracer(t, RecorderTracer, 1.0, TestContextValues)
 	defer flush()
 
@@ -90,5 +188,25 @@ func TestTrace(t *testing.T) {
 
 	assert.NoError(t, err, "Error adding span to test trace")
 	_ = res.Body.Close()
+
+}
+func spanCall(ctx context.Context, tr trace.Tracer) {
+	tr.WithSpan(ctx, "Testing trace with span",
+		func(ctx context.Context) error {
+			var err error
+			req, _ := http.NewRequest("GET", "https://example.com/test", nil)
+
+			ctx, req = httptrace.W3C(ctx, req)
+			httptrace.Inject(ctx, req)
+			_, err = TestHTTPClient().Do(req)
+			if err != nil {
+				return err
+			}
+
+			SpanFromContext(ctx).SetStatus(codes.OK)
+
+			return nil
+
+		})
 
 }

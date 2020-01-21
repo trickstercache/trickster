@@ -22,6 +22,10 @@ import (
 )
 
 func NewChildSpan(ctx context.Context, spanName string) (context.Context, trace.Span) {
+	if ctx == nil {
+
+		ctx = context.Background()
+	}
 
 	attrs, ok := ctx.Value(attrKey).([]core.KeyValue)
 	if !ok {
@@ -46,10 +50,7 @@ func NewChildSpan(ctx context.Context, spanName string) (context.Context, trace.
 		trace.WithAttributes(attrs...),
 		trace.ChildOf(spanCtx),
 	)
-	if span == nil {
-		// Just in case
-		span = trace.NoopSpan{}
-	}
+
 	return ctx, span
 
 }

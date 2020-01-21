@@ -23,18 +23,19 @@ import (
 // It serves as a fallback and was created referencing
 // https://github.com/open-telemetry/opentelemetry-go#quick-start
 func setStdOutTracer(sampleRate float64) (func(), error) {
+	f := func() {}
 	// Create stdout exporter to be able to retrieve
 	// the collected spans.
 	exporter, err := stdout.NewExporter(stdout.Options{PrettyPrint: true})
 	if err != nil {
-		return nil, err
+		return f, err
 	}
 
 	tp, err := sdktrace.NewProvider(sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.ProbabilitySampler(sampleRate)}),
 		sdktrace.WithSyncer(exporter))
 	if err != nil {
-		return nil, err
+		return f, err
 	}
 	global.SetTraceProvider(tp)
-	return func() {}, nil
+	return f, nil
 }

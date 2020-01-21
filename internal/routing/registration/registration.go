@@ -138,7 +138,7 @@ func registerPathRoutes(handlers map[string]http.Handler, client origins.Client,
 	paths map[string]*config.PathConfig) {
 
 	routing.Router.Use(
-		middleware.Trace(o.Name, o.OriginType, paths),
+		middleware.Trace(o.Name, o.OriginType),
 	)
 
 	decorate := func(p *config.PathConfig) http.Handler {

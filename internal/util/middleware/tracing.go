@@ -16,12 +16,11 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/tracing"
 	"github.com/gorilla/mux"
 )
 
-func Trace(originName, originType string, paths map[string]*config.PathConfig) mux.MiddlewareFunc {
+func Trace(originName, originType string) mux.MiddlewareFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 

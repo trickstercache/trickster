@@ -12,18 +12,19 @@ import (
 )
 
 func setRecorderTracer(ef ErrorFunc, sampleRate float64) (func(), *recorderExporter, error) {
+	f := func() {}
 	exporter, err := NewRecorder(ef)
 	if err != nil {
-		return nil, nil, err
+		return f, nil, err
 	}
 
 	tp, err := sdktrace.NewProvider(sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.ProbabilitySampler(sampleRate)}),
 		sdktrace.WithSyncer(exporter))
 	if err != nil {
-		return nil, nil, err
+		return f, nil, err
 	}
 	global.SetTraceProvider(tp)
-	return func() {}, exporter, nil
+	return f, exporter, nil
 }
 
 // Exporter is an implementation of trace.Exporter that writes spans to a buffer, and saves the span data for later inspection.
