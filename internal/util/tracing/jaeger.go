@@ -25,7 +25,7 @@ func setJaegerTracer(collectorURL string, sampleRate float64) (func(), error) {
 	exporter, err := jaeger.NewExporter(
 		jaeger.WithCollectorEndpoint(collectorURL),
 		jaeger.WithProcess(jaeger.Process{
-			ServiceName: ServiceName,
+			ServiceName: serviceName,
 			Tags: []core.KeyValue{
 				key.String("exporter", "jaeger"),
 			},

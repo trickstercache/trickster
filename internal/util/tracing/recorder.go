@@ -11,9 +11,9 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-func setRecorderTracer(ef ErrorFunc, sampleRate float64) (func(), *recorderExporter, error) {
+func setRecorderTracer(ef errorFunc, sampleRate float64) (func(), *recorderExporter, error) {
 	f := func() {}
-	exporter, err := NewRecorder(ef)
+	exporter, err := newRecorder(ef)
 	if err != nil {
 		return f, nil, err
 	}
@@ -27,15 +27,16 @@ func setRecorderTracer(ef ErrorFunc, sampleRate float64) (func(), *recorderExpor
 	return f, exporter, nil
 }
 
-// Exporter is an implementation of trace.Exporter that writes spans to a buffer, and saves the span data for later inspection.
+// recorderExporter is an implementation of trace.Exporter that writes spans to a buffer, and saves the span data for later inspection.
 type recorderExporter struct {
 	io.Reader
 	outputWriter io.Writer
 	spans        []*export.SpanData
-	errorFunc    ErrorFunc
+	errorFunc    errorFunc
 }
 
-func NewRecorder(ef ErrorFunc) (*recorderExporter, error) {
+// newRecorder returns a newly instantiated recorder
+func newRecorder(ef errorFunc) (*recorderExporter, error) {
 	buf := new(bytes.Buffer)
 
 	return &recorderExporter{buf, buf, nil, ef}, nil
@@ -52,4 +53,4 @@ func (e *recorderExporter) ExportSpan(ctx context.Context, data *export.SpanData
 	e.outputWriter.Write(append(jsonSpan, byte('\n')))
 }
 
-type ErrorFunc func(error)
+type errorFunc func(error)
