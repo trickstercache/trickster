@@ -103,6 +103,17 @@ func TestLoadConfigurationMissingOriginURL(t *testing.T) {
 	}
 }
 
+func TestLoadConfigurationInvalidTracingName(t *testing.T) {
+	expected := `invalid tracing config name: test`
+	a := []string{"-config", "../../testdata/test.unknown-tracing-type.conf"}
+	err := Load("trickster-test", "0", a)
+	if err == nil {
+		t.Errorf("expected error `%s` got nothing", expected)
+	} else if err.Error() != expected {
+		t.Errorf("expected error `%s` got `%s`", expected, err.Error())
+	}
+}
+
 func TestFullLoadConfiguration(t *testing.T) {
 	a := []string{"-config", "../../testdata/test.full.conf"}
 	// it should not error if config path is not set

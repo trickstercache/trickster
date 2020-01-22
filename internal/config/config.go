@@ -45,8 +45,8 @@ var Logging *LoggingConfig
 // Metrics is the Metrics subsection of the Running Configuration
 var Metrics *MetricsConfig
 
-// Tracing defines destricbuted trace options for the Running Configuration
-var Tracing *TracingConfig
+// TracingConfigs is the TracingConfigs subsection of the Running Configuration
+var TracingConfigs map[string]*TracingConfig
 
 // NegativeCacheConfigs is the NegativeCacheConfig subsection of the Running Configuration
 var NegativeCacheConfigs map[string]NegativeCacheConfig
@@ -74,8 +74,8 @@ type TricksterConfig struct {
 	Logging *LoggingConfig `toml:"logging"`
 	// Metrics provides configurations for collecting Metrics about the application
 	Metrics *MetricsConfig `toml:"metrics"`
-	// Tracing provides the distributed tracing configuration
-	Tracing *TracingConfig `toml:"tracing"`
+	// TracingConfigs provides the distributed tracing configuration
+	TracingConfigs map[string]*TracingConfig `toml:"tracing"`
 	// NegativeCacheConfigs is a map of NegativeCacheConfigs
 	NegativeCacheConfigs map[string]NegativeCacheConfig `toml:"negative_caches"`
 
@@ -148,6 +148,8 @@ type OriginConfig struct {
 	MaxObjectSizeBytes int `toml:"max_object_size_bytes"`
 	// CompressableTypeList specifies the HTTP Object Content Types that will be compressed internally when stored in the Trickster cache
 	CompressableTypeList []string `toml:"compressable_types"`
+	// TracingConfigName provides the name of the Tracing Config to be used by this Origin
+	TracingConfigName string `toml:"tracing_name"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *TLSConfig `toml:"tls"`
@@ -181,6 +183,8 @@ type OriginConfig struct {
 	PathPrefix string `toml:"-"`
 	// NegativeCache provides a map for the negative cache, with TTLs converted to time.Durations
 	NegativeCache map[int]time.Duration `toml:"-"`
+	// Tracing is the reference to the Tracing Config as indicated by TracingConfigName
+	Tracing *TracingConfig `toml:"-"`
 	// TimeseriesRetention when subtracted from time.Now() represents the oldest allowable timestamp in a timeseries when EvictionMethod is 'oldest'
 	TimeseriesRetention time.Duration `toml:"-"`
 	// TimeseriesEvictionMethod is the parsed value of TimeseriesEvictionMethodName
@@ -344,7 +348,7 @@ type MetricsConfig struct {
 	ListenPort int `toml:"listen_port"`
 }
 
-// Tracing provides the distributed tracing configuration
+// TracingConfig provides the distributed tracing configuration
 type TracingConfig struct {
 	// Implementation is the particular implementation to use TODO generate with Rob Pike's Stringer
 	Implementation string `toml:"tracer_implementation"`
@@ -383,10 +387,6 @@ func NewConfig() *TricksterConfig {
 		Metrics: &MetricsConfig{
 			ListenPort: defaultMetricsListenPort,
 		},
-		Tracing: &TracingConfig{
-			Implementation:    defaultTracerImplemetation,
-			CollectorEndpoint: "",
-		},
 		Origins: map[string]*OriginConfig{
 			"default": NewOriginConfig(),
 		},
@@ -396,6 +396,7 @@ func NewConfig() *TricksterConfig {
 		NegativeCacheConfigs: map[string]NegativeCacheConfig{
 			"default": NewNegativeCacheConfig(),
 		},
+		TracingConfigs: map[string]*TracingConfig{},
 	}
 }
 
@@ -457,6 +458,10 @@ func NewOriginConfig() *OriginConfig {
 		MaxObjectSizeBytes:           defaultMaxObjectSizeBytes,
 		TLS:                          &TLSConfig{},
 		CompressableTypeList:         defaultCompressableTypes(),
+		Tracing: &TracingConfig{
+			Implementation:    defaultTracerImplemetation,
+			CollectorEndpoint: "",
+		},
 	}
 }
 
@@ -613,6 +618,10 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "negative_cache_name") {
 			oc.NegativeCacheName = v.NegativeCacheName
+		}
+
+		if metadata.IsDefined("origins", k, "tracing_name") {
+			oc.TracingConfigName = v.TracingConfigName
 		}
 
 		if metadata.IsDefined("origins", k, "health_check_upstream_path") {
@@ -842,9 +851,6 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 	nc.Metrics.ListenAddress = c.Metrics.ListenAddress
 	nc.Metrics.ListenPort = c.Metrics.ListenPort
 
-	nc.Tracing.Implementation = c.Tracing.Implementation
-	nc.Tracing.CollectorEndpoint = c.Tracing.CollectorEndpoint
-
 	nc.Frontend.ListenAddress = c.Frontend.ListenAddress
 	nc.Frontend.ListenPort = c.Frontend.ListenPort
 	nc.Frontend.TLSListenAddress = c.Frontend.TLSListenAddress
@@ -955,6 +961,15 @@ func (oc *OriginConfig) Clone() *OriginConfig {
 	o.TimeseriesTTL = oc.TimeseriesTTL
 	o.TimeseriesTTLSecs = oc.TimeseriesTTLSecs
 	o.ValueRetention = oc.ValueRetention
+
+	o.TracingConfigName = oc.TracingConfigName
+
+	if oc.Tracing != nil {
+		o.Tracing = &TracingConfig{
+			Implementation:    oc.Tracing.Implementation,
+			CollectorEndpoint: oc.Tracing.CollectorEndpoint,
+		}
+	}
 
 	if oc.CompressableTypeList != nil {
 		o.CompressableTypeList = make([]string, len(oc.CompressableTypeList))

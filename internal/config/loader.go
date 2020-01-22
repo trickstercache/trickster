@@ -80,7 +80,6 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	Frontend = c.Frontend
 	Logging = c.Logging
 	Metrics = c.Metrics
-	Tracing = c.Tracing
 	NegativeCacheConfigs = c.NegativeCacheConfigs
 
 	for k, n := range NegativeCacheConfigs {
@@ -147,6 +146,16 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 			nc2[ci] = time.Duration(s) * time.Second
 		}
 		o.NegativeCache = nc2
+
+		fmt.Println("****", TracingConfigs)
+
+		if o.TracingConfigName != "" {
+			tc, ok := c.TracingConfigs[o.TracingConfigName]
+			if !ok {
+				return fmt.Errorf(`invalid tracing config name: %s`, o.TracingConfigName)
+			}
+			o.Tracing = tc
+		}
 
 		// enforce MaxTTL
 		if o.TimeseriesTTLSecs > o.MaxTTLSecs {
