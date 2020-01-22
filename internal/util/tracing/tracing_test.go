@@ -32,8 +32,6 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-type testTracingType int
-
 func TestInitNil(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -82,7 +80,7 @@ func TestNoPanics(t *testing.T) {
 		{
 			makeCTX(
 				func(ctx context.Context) context.Context {
-					ctx = context.WithValue(ctx, testTracingType(345), 2345)
+					ctx = context.WithValue(ctx, TracerImplementation(345), 2345)
 					return ctx
 				},
 			),
