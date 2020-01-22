@@ -24,24 +24,14 @@ import (
 	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/plugin/httptrace"
-	"go.opentelemetry.io/otel/propagation"
 )
 
 const (
-	RequestIDKey     = "trickster-internal-id"
-	ServiceName      = "trickster"
-	TracestateHeader = "tracestate"
-	TracerName       = "Comcast"
+	serviceName      = "trickster"
+	tracestateHeader = "tracestate"
 )
 
-var (
-	TraceHeaders = []string{
-		propagation.TraceparentHeader,
-		propagation.CorrelationContextHeader,
-		TracestateHeader,
-	}
-	initialize sync.Once
-)
+var initialize sync.Once
 
 // Init initializes tracing and returns a function to flush the tracer. Flush should be called on server shutdown.
 func Init(cfg *config.TracingConfig) func() {
