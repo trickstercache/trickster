@@ -14,7 +14,7 @@
 package tracing
 
 import (
-	"go.opentelemetry.io/otel/api/global"
+	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/exporter/trace/stdout"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -22,20 +22,17 @@ import (
 // SetStdOutTracer set a std out only tracer
 // It serves as a fallback and was created referencing
 // https://github.com/open-telemetry/opentelemetry-go#quick-start
-func setStdOutTracer(sampleRate float64) (func(), error) {
+func setStdOutTracer(sampleRate float64) (trace.Tracer, func(), error) {
 	f := func() {}
 	// Create stdout exporter to be able to retrieve
 	// the collected spans.
 	exporter, err := stdout.NewExporter(stdout.Options{PrettyPrint: true})
 	if err != nil {
-		return f, err
+		return nil, f, err
 	}
 
 	tp, err := sdktrace.NewProvider(sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.ProbabilitySampler(sampleRate)}),
 		sdktrace.WithSyncer(exporter))
-	if err != nil {
-		return f, err
-	}
-	global.SetTraceProvider(tp)
-	return f, nil
+
+	return tp.Tracer(""), f, err
 }

@@ -143,20 +143,21 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	r.RequestURI = ""
 
 	var resp *http.Response
+	var err error
 
-	tr := tracing.GlobalTracer(ctx)
-	err := tr.WithSpan(ctx, "Proxying Request",
-		func(ctx gocontext.Context) error {
-			var err error
-
-			// Processing traces for proxies
-			// https://www.w3.org/TR/trace-context-1/#alternative-processing
-			ctx, req := othttptrace.W3C(ctx, r)
-			othttptrace.Inject(ctx, req)
-			resp, err = oc.HTTPClient.Do(req)
-			return err
-
-		})
+	if oc.Tracer != nil {
+		oc.Tracer.WithSpan(ctx, "Proxying Request",
+			func(ctx gocontext.Context) error {
+				// Processing traces for proxies
+				// https://www.w3.org/TR/trace-context-1/#alternative-processing
+				ctx, r = othttptrace.W3C(ctx, r)
+				othttptrace.Inject(ctx, r)
+				resp, err = oc.HTTPClient.Do(r)
+				return err
+			})
+	} else {
+		resp, err = oc.HTTPClient.Do(r)
+	}
 
 	if err != nil {
 		log.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})

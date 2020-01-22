@@ -14,10 +14,7 @@
 package tracing
 
 import (
-	"context"
-
 	"github.com/Comcast/trickster/internal/util/log"
-	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/trace"
 )
 
@@ -54,15 +51,15 @@ var (
 	}
 )
 
-// GlobalTracer returns the tracer contained in provided context
-func GlobalTracer(ctx context.Context) trace.Tracer {
-	tracerName, ok := ctx.Value(tracerNameKey).(string)
-	if !ok {
-		return trace.NoopTracer{}
+// // GlobalTracer returns the tracer contained in provided context
+// func GlobalTracer(ctx context.Context) trace.Tracer {
+// 	tracerName, ok := ctx.Value(tracerNameKey).(string)
+// 	if !ok {
+// 		return trace.NoopTracer{}
 
-	}
-	return global.TraceProvider().Tracer(tracerName)
-}
+// 	}
+// 	return global.TraceProvider().Tracer(tracerName)
+// }
 
 func (t TracerImplementation) String() string {
 	if t < NoopTracer || t > JaegerTracer {
@@ -72,7 +69,7 @@ func (t TracerImplementation) String() string {
 }
 
 // SetTracer sets up the requested tracer implementation
-func SetTracer(t TracerImplementation, collectorURL string, sampleRate float64) (func(), error) {
+func SetTracer(t TracerImplementation, collectorURL string, sampleRate float64) (trace.Tracer, func(), error) {
 	switch t {
 	case StdoutTracer:
 		return setStdOutTracer(sampleRate)
@@ -80,7 +77,7 @@ func SetTracer(t TracerImplementation, collectorURL string, sampleRate float64) 
 		return setJaegerTracer(collectorURL, sampleRate)
 	case RecorderTracer:
 		// TODO make recorder available at runtime
-		flush, _, err := setRecorderTracer(
+		tracer, flush, _, err := setRecorderTracer(
 			// Only called if there is an error so the log message won't be evaluated otherwise
 			func(err error) {
 				pairs := log.Pairs{
@@ -96,7 +93,7 @@ func SetTracer(t TracerImplementation, collectorURL string, sampleRate float64) 
 			},
 			sampleRate,
 		)
-		return flush, err
+		return tracer, flush, err
 	default:
 		return setNoopTracer()
 	}

@@ -22,6 +22,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/Comcast/trickster/internal/proxy/headers"
+	"go.opentelemetry.io/otel/api/trace"
 )
 
 // Config is the Running Configuration for Trickster
@@ -183,8 +184,6 @@ type OriginConfig struct {
 	PathPrefix string `toml:"-"`
 	// NegativeCache provides a map for the negative cache, with TTLs converted to time.Durations
 	NegativeCache map[int]time.Duration `toml:"-"`
-	// Tracing is the reference to the Tracing Config as indicated by TracingConfigName
-	Tracing *TracingConfig `toml:"-"`
 	// TimeseriesRetention when subtracted from time.Now() represents the oldest allowable timestamp in a timeseries when EvictionMethod is 'oldest'
 	TimeseriesRetention time.Duration `toml:"-"`
 	// TimeseriesEvictionMethod is the parsed value of TimeseriesEvictionMethodName
@@ -201,6 +200,8 @@ type OriginConfig struct {
 	HTTPClient *http.Client `toml:"-"`
 	// CompressableTypes is the map version of CompressableTypeList for fast lookup
 	CompressableTypes map[string]bool `toml:"-"`
+	// Tracing is the reference to the Tracing Config as indicated by TracingConfigName
+	Tracer trace.Tracer `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -350,6 +351,8 @@ type MetricsConfig struct {
 
 // TracingConfig provides the distributed tracing configuration
 type TracingConfig struct {
+	// Name is the name of the Tracing Config
+	Name string `toml:"="`
 	// Implementation is the particular implementation to use TODO generate with Rob Pike's Stringer
 	Implementation string `toml:"tracer_implementation"`
 	// CollectorEndpoint is the URL of the trace collector it MUST be of Implementation implementation
@@ -458,10 +461,6 @@ func NewOriginConfig() *OriginConfig {
 		MaxObjectSizeBytes:           defaultMaxObjectSizeBytes,
 		TLS:                          &TLSConfig{},
 		CompressableTypeList:         defaultCompressableTypes(),
-		Tracing: &TracingConfig{
-			Implementation:    defaultTracerImplemetation,
-			CollectorEndpoint: "",
-		},
 	}
 }
 
@@ -478,6 +477,7 @@ func (c *TricksterConfig) loadFile() error {
 
 func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
 
+	c.processTracingConfigs(metadata)
 	c.processOriginConfigs(metadata)
 	c.processCachingConfigs(metadata)
 	err := c.validateConfigMappings()
@@ -500,6 +500,15 @@ func (c *TricksterConfig) validateConfigMappings() error {
 		}
 	}
 	return nil
+}
+
+func (c *TricksterConfig) processTracingConfigs(metadata *toml.MetaData) {
+	// if the user does not provide a sample rate in the config, assume they want 100% sampling
+	for k, v := range c.TracingConfigs {
+		if !metadata.IsDefined("tracing", k, "sample_rate") {
+			v.SampleRate = 1
+		}
+	}
 }
 
 func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
@@ -963,13 +972,7 @@ func (oc *OriginConfig) Clone() *OriginConfig {
 	o.ValueRetention = oc.ValueRetention
 
 	o.TracingConfigName = oc.TracingConfigName
-
-	if oc.Tracing != nil {
-		o.Tracing = &TracingConfig{
-			Implementation:    oc.Tracing.Implementation,
-			CollectorEndpoint: oc.Tracing.CollectorEndpoint,
-		}
-	}
+	o.Tracer = oc.Tracer
 
 	if oc.CompressableTypeList != nil {
 		o.CompressableTypeList = make([]string, len(oc.CompressableTypeList))

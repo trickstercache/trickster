@@ -13,6 +13,10 @@
 
 package tracing
 
-func setNoopTracer() (func(), error) {
-	return func() {}, nil
+import (
+	"go.opentelemetry.io/otel/api/trace"
+)
+
+func setNoopTracer() (trace.Tracer, func(), error) {
+	return nil, func() {}, nil
 }

@@ -15,13 +15,13 @@ package tracing
 
 import (
 	"go.opentelemetry.io/otel/api/core"
-	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/key"
+	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/exporter/trace/jaeger"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-func setJaegerTracer(collectorURL string, sampleRate float64) (func(), error) {
+func setJaegerTracer(collectorURL string, sampleRate float64) (trace.Tracer, func(), error) {
 	exporter, err := jaeger.NewExporter(
 		jaeger.WithCollectorEndpoint(collectorURL),
 		jaeger.WithProcess(jaeger.Process{
@@ -32,18 +32,17 @@ func setJaegerTracer(collectorURL string, sampleRate float64) (func(), error) {
 		}),
 	)
 	if err != nil {
-		return func() {}, err
+		return nil, func() {}, err
 	}
 
 	tp, err := sdktrace.NewProvider(
 		sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.ProbabilitySampler(sampleRate)}),
 		sdktrace.WithSyncer(exporter))
 	if err != nil {
-		return func() {}, err
+		return tp.Tracer(""), func() {}, err
 	}
-	global.SetTraceProvider(tp)
 
-	return func() {
+	return tp.Tracer(""), func() {
 		exporter.Flush()
 	}, nil
 }
