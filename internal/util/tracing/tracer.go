@@ -21,18 +21,20 @@ import (
 	"go.opentelemetry.io/otel/api/trace"
 )
 
+// TracerImplementation members
+type TracerImplementation int
+
 const (
-	// Trace implementation enum
+	// NoopTracer indicates a Tracer Implementation wherein all methods are no-ops.
+	// This should be used when tracing is not enabled or not sampled.
 	NoopTracer TracerImplementation = iota
+	// RecorderTracer represents the Recorder Tracer Implementation
 	RecorderTracer
+	// StdoutTracer represents the Standard Output Tracer Implementation
 	StdoutTracer
-
-	// TODO New Implementations go here
-
+	// JaegerTracer represents the Jaeger Tracing Tracer Implementation
 	JaegerTracer
 )
-
-type TracerImplementation int
 
 var (
 	tracerImplementationStrings = []string{
@@ -41,6 +43,8 @@ var (
 		"stdout",
 		"jaeger",
 	}
+
+	// TracerImplementations is map of TracerImplementations accessible by their string value
 	TracerImplementations = map[string]TracerImplementation{
 		tracerImplementationStrings[NoopTracer]:     NoopTracer,
 		tracerImplementationStrings[RecorderTracer]: RecorderTracer,
@@ -50,15 +54,14 @@ var (
 	}
 )
 
+// GlobalTracer returns the tracer contained in provided context
 func GlobalTracer(ctx context.Context) trace.Tracer {
 	tracerName, ok := ctx.Value(tracerNameKey).(string)
 	if !ok {
 		return trace.NoopTracer{}
 
 	}
-
 	return global.TraceProvider().Tracer(tracerName)
-
 }
 
 func (t TracerImplementation) String() string {
@@ -68,14 +71,12 @@ func (t TracerImplementation) String() string {
 	return tracerImplementationStrings[t]
 }
 
+// SetTracer sets up the requested tracer implementation
 func SetTracer(t TracerImplementation, collectorURL string, sampleRate float64) (func(), error) {
-
 	switch t {
 	case StdoutTracer:
-
 		return setStdOutTracer(sampleRate)
 	case JaegerTracer:
-
 		return setJaegerTracer(collectorURL, sampleRate)
 	case RecorderTracer:
 		// TODO make recorder available at runtime
@@ -97,8 +98,6 @@ func SetTracer(t TracerImplementation, collectorURL string, sampleRate float64) 
 		)
 		return flush, err
 	default:
-
 		return setNoopTracer()
 	}
-
 }
