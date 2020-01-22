@@ -483,7 +483,6 @@ func TestBboltCache_Retrieve(t *testing.T) {
 	}
 
 	// it should still retrieve a value with nil index
-
 	idx := bc.Index
 	bc.Index = nil
 

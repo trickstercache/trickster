@@ -345,7 +345,6 @@ func TestFilesystemCache_Retrieve(t *testing.T) {
 	}
 
 	// it should still retrieve a value with nil index
-
 	idx := fc.Index
 	fc.Index = nil
 
