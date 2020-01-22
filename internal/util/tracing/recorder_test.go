@@ -11,7 +11,7 @@ import (
 )
 
 func TestRecorder(t *testing.T) {
-	flush, ctx, recorder, tr := SetupTestingTracer(t, RecorderTracer, 1.0, TestContextValues)
+	flush, ctx, recorder, tr := setupTestingTracer(t, RecorderTracer, 1.0, testContextValues)
 
 	err := tr.WithSpan(ctx, "Testing trace with span",
 		func(ctx context.Context) error {
@@ -22,7 +22,7 @@ func TestRecorder(t *testing.T) {
 
 			ctx, req = httptrace.W3C(ctx, req)
 			httptrace.Inject(ctx, req)
-			_, err = TestHTTPClient().Do(req)
+			_, err = testHTTPClient().Do(req)
 			if err != nil {
 				return err
 			}
@@ -36,7 +36,7 @@ func TestRecorder(t *testing.T) {
 	assert.NoError(t, err, "failed to inject span")
 	flush()
 	m := make(map[string]string)
-	for _, kv := range TestEvents {
+	for _, kv := range testEvents {
 		m[string(kv.Key)] = kv.Value.Emit()
 
 	}

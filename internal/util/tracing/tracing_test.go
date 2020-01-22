@@ -32,6 +32,8 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
+type testTracingType int
+
 func TestInitNil(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -80,7 +82,7 @@ func TestNoPanics(t *testing.T) {
 		{
 			makeCTX(
 				func(ctx context.Context) context.Context {
-					ctx = context.WithValue(ctx, 345, 2345)
+					ctx = context.WithValue(ctx, testTracingType(345), 2345)
 					return ctx
 				},
 			),
@@ -145,7 +147,7 @@ func noPanic(t *testing.T, tests []panicTest) {
 }
 
 func TestRecorderTrace(t *testing.T) {
-	flush, ctx, _, tr := SetupTestingTracer(t, RecorderTracer, 1.0, TestContextValues)
+	flush, ctx, _, tr := setupTestingTracer(t, RecorderTracer, 1.0, testContextValues)
 	defer flush()
 
 	var res *http.Response
@@ -157,7 +159,7 @@ func TestRecorderTrace(t *testing.T) {
 
 			ctx, req = httptrace.W3C(ctx, req)
 			httptrace.Inject(ctx, req)
-			res, err = TestHTTPClient().Do(req)
+			res, err = testHTTPClient().Do(req)
 			if err != nil {
 				return err
 			}
@@ -171,7 +173,7 @@ func TestRecorderTrace(t *testing.T) {
 	ctxValues := res.Header.Get("Correlation-Context")
 	pairs := strings.Split(ctxValues, ",")
 	m := make(map[string]string)
-	for _, kv := range TestContextValues {
+	for _, kv := range testContextValues {
 		m[string(kv.Key)] = kv.Value.Emit()
 
 	}
@@ -198,7 +200,7 @@ func spanCall(ctx context.Context, tr trace.Tracer) {
 
 			ctx, req = httptrace.W3C(ctx, req)
 			httptrace.Inject(ctx, req)
-			_, err = TestHTTPClient().Do(req)
+			_, err = testHTTPClient().Do(req)
 			if err != nil {
 				return err
 			}

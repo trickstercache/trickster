@@ -34,7 +34,7 @@ func TestSpanFromContext(t *testing.T) {
 func TestContextWithSpan(t *testing.T) {
 	span := SpanFromContext(context.Background())
 	ctx := makeCTX(func(ctx context.Context) context.Context {
-		return context.WithValue(ctx, "key", "value")
+		return context.WithValue(ctx, testTracingType(1), "value")
 	})
 	newctx := ContextWithSpan(ctx, span)
 	newSpan := SpanFromContext(newctx)

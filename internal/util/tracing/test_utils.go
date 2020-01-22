@@ -15,14 +15,7 @@ import (
 	"go.opentelemetry.io/otel/api/trace"
 )
 
-var (
-	TestContextValues = []core.KeyValue{
-		key.String("username", "guy"),
-		key.Int("IntValue", 42),
-	}
-)
-
-func MockRoundTripper(f func(r *http.Request) (*http.Response, error)) http.RoundTripper {
+func mockRoundTripper(f func(r *http.Request) (*http.Response, error)) http.RoundTripper {
 	return &rt{f}
 }
 
@@ -35,13 +28,18 @@ func (rt *rt) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 var (
-	TestEvents = []core.KeyValue{
+	testContextValues = []core.KeyValue{
+		key.String("username", "guy"),
+		key.Int("IntValue", 42),
+	}
+
+	testEvents = []core.KeyValue{
 		key.String("location", "testhandler"),
 		key.Int("Integer Value", 1),
 	}
 )
 
-func TestingHandler() http.HandlerFunc {
+func testingHandler() http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r, span := PrepareRequest(r, r.Host)
 		defer span.End()
@@ -49,10 +47,10 @@ func TestingHandler() http.HandlerFunc {
 		func() {
 			_, span := NewChildSpan(r.Context(), "test-span-name")
 			defer span.End()
-			span.AddEvent(r.Context(), "SubSpan", TestEvents[0])
+			span.AddEvent(r.Context(), "SubSpan", testEvents[0])
 		}()
-		for i := 1; i < len(TestEvents); i++ {
-			span.AddEvent(r.Context(), "Span", TestEvents[i])
+		for i := 1; i < len(testEvents); i++ {
+			span.AddEvent(r.Context(), "Span", testEvents[i])
 		}
 		_, _ = io.WriteString(w, "test response")
 
@@ -60,11 +58,11 @@ func TestingHandler() http.HandlerFunc {
 
 }
 
-func TestHTTPClient() *http.Client {
+func testHTTPClient() *http.Client {
 	client := http.Client{}
 	w := httptest.NewRecorder()
 
-	client.Transport = MockRoundTripper(
+	client.Transport = mockRoundTripper(
 
 		func(req *http.Request) (*http.Response, error) {
 
@@ -76,7 +74,7 @@ func TestHTTPClient() *http.Client {
 				Body:       ioutil.NopCloser(strings.NewReader("")),
 				Request:    req,
 			}
-			TestingHandler().ServeHTTP(w, req)
+			testingHandler().ServeHTTP(w, req)
 			return resp, nil
 
 		},
@@ -85,7 +83,7 @@ func TestHTTPClient() *http.Client {
 
 }
 
-func SetupTestingTracer(t *testing.T, impl TracerImplementation, sampleRate float64, values []core.KeyValue) (flush func(), ctx context.Context, recorder *recorderExporter, tr trace.Tracer) {
+func setupTestingTracer(t *testing.T, impl TracerImplementation, sampleRate float64, values []core.KeyValue) (flush func(), ctx context.Context, recorder *recorderExporter, tr trace.Tracer) {
 	flush, recorder, err := setRecorderTracer(
 		func(err error) {
 			t.Error(err)
