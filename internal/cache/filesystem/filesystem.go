@@ -130,6 +130,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	// if retrieve() is being called to load the index, the index will be nil, so just return the value
 	// so as to instantiate the index
 	if c.Index == nil {
+		locks.Release(lockPrefix + cacheKey)
 		return o.Value, status.LookupStatusHit, nil
 	}
 

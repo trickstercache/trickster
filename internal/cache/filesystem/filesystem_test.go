@@ -344,6 +344,25 @@ func TestFilesystemCache_Retrieve(t *testing.T) {
 		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
 	}
 
+	// it should still retrieve a value with nil index
+
+	idx := fc.Index
+	fc.Index = nil
+
+	data, ls, err = fc.Retrieve(cacheKey, false)
+	if err != nil {
+		t.Error(err)
+	}
+	if string(data) != "data" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	}
+	if ls != status.LookupStatusHit {
+		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
+	}
+
+	// restore the index for further tests
+	fc.Index = idx
+
 	// expire the object
 	fc.SetTTL(cacheKey, -1*time.Hour)
 
