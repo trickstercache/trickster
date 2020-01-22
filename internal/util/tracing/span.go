@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/api/trace"
 )
 
+// NewChildSpan returns the context with a new Span situated as the child of the previous span
 func NewChildSpan(ctx context.Context, spanName string) (context.Context, trace.Span) {
 	if ctx == nil {
 

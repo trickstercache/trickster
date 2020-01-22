@@ -31,10 +31,12 @@ var (
 	spanCtxKey     = &ctxSpanType{}
 )
 
+// ContextWithSpan returns a context with the provided span attached
 func ContextWithSpan(ctx context.Context, span trace.Span) context.Context {
 	return context.WithValue(ctx, currentSpanKey, span)
 }
 
+// SpanFromContext returns the current span from the provided context
 func SpanFromContext(ctx context.Context) trace.Span {
 	if span, ok := ctx.Value(currentSpanKey).(trace.Span); ok {
 		return span
