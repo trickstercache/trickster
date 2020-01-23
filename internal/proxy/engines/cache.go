@@ -20,21 +20,26 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/snappy"
-
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/status"
+	tc "github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
+	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/tracing"
 
+	"github.com/golang/snappy"
 	kv "go.opentelemetry.io/otel/api/key"
 )
 
 // QueryCache queries the cache for an HTTPDocument and returns it
 func QueryCache(ctx context.Context, c cache.Cache, key string, ranges byterange.Ranges) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
-	ctx, span := tracing.NewChildSpan(ctx, "QueryCache")
+
+	rsc := tc.Resources(ctx).(*request.Resources)
+	oc := rsc.OriginConfig
+
+	ctx, span := tracing.NewChildSpan(ctx, oc.Tracer, "QueryCache")
 	defer func() {
 
 		span.End()
@@ -146,11 +151,12 @@ func stripConditionalHeaders(h http.Header) {
 
 // WriteCache writes an HTTPDocument to the cache
 func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument, ttl time.Duration, compressTypes map[string]bool) error {
-	ctx, span := tracing.NewChildSpan(ctx, "WriteCache")
-	defer func() {
 
-		span.End()
-	}()
+	rsc := tc.Resources(ctx).(*request.Resources)
+	oc := rsc.OriginConfig
+
+	ctx, span := tracing.NewChildSpan(ctx, oc.Tracer, "WriteCache")
+	defer span.End()
 
 	h := http.Header(d.Headers)
 	h.Del(headers.NameDate)

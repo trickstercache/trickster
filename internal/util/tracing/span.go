@@ -17,14 +17,12 @@ import (
 	"context"
 
 	"go.opentelemetry.io/otel/api/core"
-	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/trace"
 )
 
 // NewChildSpan returns the context with a new Span situated as the child of the previous span
-func NewChildSpan(ctx context.Context, spanName string) (context.Context, trace.Span) {
+func NewChildSpan(ctx context.Context, tr trace.Tracer, spanName string) (context.Context, trace.Span) {
 	if ctx == nil {
-
 		ctx = context.Background()
 	}
 
@@ -37,13 +35,6 @@ func NewChildSpan(ctx context.Context, spanName string) (context.Context, trace.
 		return ctx, trace.NoopSpan{}
 
 	}
-	tracerName, ok := ctx.Value(tracerNameKey).(string)
-	if !ok {
-		return ctx, trace.NoopSpan{}
-
-	}
-
-	tr := global.TraceProvider().Tracer(tracerName)
 
 	ctx, span := tr.Start(
 		ctx,

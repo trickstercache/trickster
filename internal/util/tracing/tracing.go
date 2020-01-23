@@ -17,8 +17,9 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/Comcast/trickster/internal/config"
+
 	"go.opentelemetry.io/otel/api/distributedcontext"
-	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/plugin/httptrace"
 )
@@ -29,7 +30,13 @@ const (
 )
 
 // PrepareRequest extracts trace information from the headers of the incoming request. It returns a pointer to the incoming request with the request context updated to include all span and tracing info. It also returns a span with the name "Request" that is meant to be a parent span for all child spans of this request.
-func PrepareRequest(r *http.Request, tracerName string) (*http.Request, trace.Span) {
+func PrepareRequest(r *http.Request, pc *config.PathConfig) (*http.Request, trace.Span) {
+
+	if pc == nil || pc.OriginConfig == nil || pc.OriginConfig.Tracer == nil {
+		return r, nil
+	}
+
+	tr := pc.OriginConfig.Tracer
 
 	attrs, entries, spanCtx := httptrace.Extract(r.Context(), r)
 
@@ -43,9 +50,6 @@ func PrepareRequest(r *http.Request, tracerName string) (*http.Request, trace.Sp
 	)
 	ctx = context.WithValue(ctx, spanCtxKey, spanCtx)
 	ctx = context.WithValue(ctx, attrKey, attrs)
-	ctx = context.WithValue(ctx, tracerNameKey, tracerName)
-
-	tr := global.TraceProvider().Tracer(tracerName)
 
 	ctx, span := tr.Start(
 		ctx,

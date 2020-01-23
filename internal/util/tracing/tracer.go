@@ -51,16 +51,6 @@ var (
 	}
 )
 
-// // GlobalTracer returns the tracer contained in provided context
-// func GlobalTracer(ctx context.Context) trace.Tracer {
-// 	tracerName, ok := ctx.Value(tracerNameKey).(string)
-// 	if !ok {
-// 		return trace.NoopTracer{}
-
-// 	}
-// 	return global.TraceProvider().Tracer(tracerName)
-// }
-
 func (t TracerImplementation) String() string {
 	if t < NoopTracer || t > JaegerTracer {
 		return "unknown-tracer"

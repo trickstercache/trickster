@@ -40,15 +40,15 @@ import (
 // requests the gaps from the origin server and returns the reconstituted dataset to the downstream request
 // while caching the results for subsequent requests of the same data
 func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
-	ctx, span := tracing.NewChildSpan(r.Context(), "DeltaProxyCacheRequest")
-	defer func() {
 
+	rsc := request.GetResources(r)
+	oc := rsc.OriginConfig
+
+	ctx, span := tracing.NewChildSpan(r.Context(), oc.Tracer, "DeltaProxyCacheRequest")
+	defer func() {
 		span.End()
 	}()
 
-	rsc := request.GetResources(r)
-
-	oc := rsc.OriginConfig
 	pc := rsc.PathConfig
 	cache := rsc.CacheClient
 	cc := rsc.CacheConfig

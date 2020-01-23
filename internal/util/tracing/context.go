@@ -21,13 +21,11 @@ import (
 
 type currentSpanKeyType struct{}
 type ctxAttrType struct{}
-type ctxTracerNameType struct{}
 type ctxSpanType struct{}
 
 var (
 	currentSpanKey = &currentSpanKeyType{}
 	attrKey        = &ctxAttrType{}
-	tracerNameKey  = &ctxTracerNameType{}
 	spanCtxKey     = &ctxSpanType{}
 )
 

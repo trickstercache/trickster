@@ -45,16 +45,17 @@ const HTTPBlockSize = 32 * 1024
 
 // DoProxy proxies an inbound request to its corresponding upstream origin with no caching features
 func DoProxy(w io.Writer, r *http.Request) *http.Response {
-	start := time.Now()
-	_, span := tracing.NewChildSpan(r.Context(), "ProxyRequest")
-	defer func() {
 
+	rsc := request.GetResources(r)
+	oc := rsc.OriginConfig
+
+	start := time.Now()
+	_, span := tracing.NewChildSpan(r.Context(), oc.Tracer, "ProxyRequest")
+	defer func() {
 		span.End()
 	}()
 
-	rsc := request.GetResources(r)
 	pc := rsc.PathConfig
-	oc := rsc.OriginConfig
 
 	var elapsed time.Duration
 	var cacheStatusCode status.LookupStatus
@@ -117,15 +118,17 @@ func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer 
 // provide the response data, the response object and the content length.
 // Used in Fetch.
 func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) {
-	ctx, span := tracing.NewChildSpan(r.Context(), "PrepareFetchReader")
+
+	rsc := request.GetResources(r)
+	oc := rsc.OriginConfig
+
+	ctx, span := tracing.NewChildSpan(r.Context(), oc.Tracer, "PrepareFetchReader")
 	defer func() {
 
 		span.End()
 	}()
 
-	rsc := request.GetResources(r)
 	pc := rsc.PathConfig
-	oc := rsc.OriginConfig
 
 	var rc io.ReadCloser
 
