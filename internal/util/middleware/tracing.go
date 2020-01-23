@@ -16,19 +16,17 @@ package middleware
 import (
 	"net/http"
 
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/tracing"
-	"github.com/gorilla/mux"
 )
 
-func Trace(originName, originType string) mux.MiddlewareFunc {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
-			r, span := tracing.PrepareRequest(r, r.Host) // TODO Host is not the best tracer name. Something Request level would be better, but paths are already in the trace
-
+// Trace attaches a Tracer to an HTTP request
+func Trace(pc *config.PathConfig, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r, span := tracing.PrepareRequest(r, pc)
+		if span != nil {
 			defer span.End()
-
-			next.ServeHTTP(w, r)
-		})
-	}
+		}
+		next.ServeHTTP(w, r)
+	})
 }

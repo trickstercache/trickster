@@ -137,17 +137,13 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 func registerPathRoutes(handlers map[string]http.Handler, client origins.Client, o *config.OriginConfig, c cache.Cache,
 	paths map[string]*config.PathConfig) {
 
-	routing.Router.Use(
-		middleware.Trace(o.Name, o.OriginType),
-	)
-
 	decorate := func(p *config.PathConfig) http.Handler {
 		// Add Origin, Cache, and Path Configs to the HTTP Request's context
 		p.Handler = middleware.WithResourcesContext(client, o, c, p, p.Handler)
 		if p.NoMetrics {
 			return p.Handler
 		}
-		return middleware.Decorate(o.Name, o.OriginType, p.Path, p.Handler)
+		return middleware.Trace(p, middleware.Decorate(o.Name, o.OriginType, p.Path, p.Handler))
 	}
 
 	pathsWithVerbs := make(map[string]*config.PathConfig)
