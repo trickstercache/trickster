@@ -48,13 +48,9 @@ func RegisterAll(cfg *config.TricksterConfig) (Flushers, error) {
 	for _, oc := range cfg.Origins {
 		if oc != nil {
 
-			if oc.TracingConfigName == "" {
+			tc := oc.TracingConfig
+			if tc == nil {
 				continue
-			}
-
-			tc, ok := cfg.TracingConfigs[oc.TracingConfigName]
-			if !ok {
-				return nil, fmt.Errorf("invalid tracing config name [%s] for origin [%s]", oc.TracingConfigName, oc.Name)
 			}
 
 			if tc.Implementation == "" {
@@ -65,22 +61,19 @@ func RegisterAll(cfg *config.TricksterConfig) (Flushers, error) {
 				return nil, fmt.Errorf("invalid tracing implementation [%s] for tracing config [%s]", tc.Implementation, oc.TracingConfigName)
 			}
 
-			if _, ok = activeTracers[oc.TracingConfigName]; !ok {
+			if _, ok := activeTracers[oc.TracingConfigName]; !ok {
 				tracer, flusher, err := Init(tc)
 				if err != nil {
 					return nil, err
 				}
-
 				flushers = append(flushers, flusher)
+				tc.Tracer = tracer
+				tc.Name = oc.TracingConfigName
 				activeTracers[oc.TracingConfigName] = tc
-				oc.Tracer = tracer
 			}
-
 		}
 	}
-
 	return flushers, nil
-
 }
 
 // Init initializes tracing and returns a function to flush the tracer. Flush should be called on server shutdown.
@@ -92,9 +85,9 @@ func Init(cfg *config.TracingConfig) (trace.Tracer, func(), error) {
 
 	if cfg == nil {
 		log.Info(
-			"Nil Tracing Config, using noop tracer", nil,
+			"nil tracing config, using noop tracer", nil,
 		)
-		return nil, func() {}, nil
+		return trace.NoopTracer{}, func() {}, nil
 	}
 	log.Debug(
 		"Trace Init",
@@ -104,14 +97,12 @@ func Init(cfg *config.TracingConfig) (trace.Tracer, func(), error) {
 			"Type":           tracing.TracerImplementations[cfg.Implementation],
 		},
 	)
-	f := func() {
-		tracer, fl, err = tracing.SetTracer(
-			tracing.TracerImplementations[cfg.Implementation],
-			cfg.CollectorEndpoint,
-			cfg.SampleRate,
-		)
-		flusher = fl
-	}
-	initialize.Do(f)
+
+	tracer, fl, _, err = tracing.SetTracer(
+		tracing.TracerImplementations[cfg.Implementation],
+		cfg.CollectorEndpoint,
+		cfg.SampleRate,
+	)
+	flusher = fl
 	return tracer, flusher, err
 }
