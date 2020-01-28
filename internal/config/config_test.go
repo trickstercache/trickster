@@ -14,6 +14,7 @@
 package config
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -39,6 +40,15 @@ func TestCopy(t *testing.T) {
 	c2 := c1.copy()
 	if !reflect.DeepEqual(c1, c2) {
 		t.Errorf("copy mistmatch")
+	}
+}
+
+func TestOriginConfigClone(t *testing.T) {
+	c := NewConfig()
+	oc1 := c.Origins["default"]
+	oc2 := oc1.Clone()
+	if oc2.TracingConfig == nil {
+		t.Error(errors.New("expected non-nil cloned config"))
 	}
 }
 

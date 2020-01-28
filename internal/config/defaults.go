@@ -23,7 +23,7 @@ const (
 	defaultMetricsListenPort    = 8082
 	defaultMetricsListenAddress = ""
 
-	defaultTracerImplemetation = "stdout"
+	defaultTracerImplemetation = "noop"
 
 	defaultCacheType        = "memory"
 	defaultCacheTypeID      = CacheTypeMemory
@@ -57,6 +57,7 @@ const (
 	defaultOriginTimeoutSecs       = 180
 	defaultOriginCacheName         = "default"
 	defaultOriginNegativeCacheName = "default"
+	defaultTracingConfigName       = "default"
 	defaultBackfillToleranceSecs   = 0
 	defaultKeepAliveTimeoutSecs    = 300
 	defaultMaxIdleConns            = 20

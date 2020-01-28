@@ -22,7 +22,6 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/Comcast/trickster/internal/proxy/headers"
-	"go.opentelemetry.io/otel/api/trace"
 )
 
 // Config is the Running Configuration for Trickster
@@ -200,8 +199,8 @@ type OriginConfig struct {
 	HTTPClient *http.Client `toml:"-"`
 	// CompressableTypes is the map version of CompressableTypeList for fast lookup
 	CompressableTypes map[string]bool `toml:"-"`
-	// Tracing is the reference to the Tracing Config as indicated by TracingConfigName
-	Tracer trace.Tracer `toml:"-"`
+	// TracingConfig is the reference to the Tracing Config as indicated by TracingConfigName
+	TracingConfig *TracingConfig `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -349,18 +348,6 @@ type MetricsConfig struct {
 	ListenPort int `toml:"listen_port"`
 }
 
-// TracingConfig provides the distributed tracing configuration
-type TracingConfig struct {
-	// Name is the name of the Tracing Config
-	Name string `toml:"="`
-	// Implementation is the particular implementation to use TODO generate with Rob Pike's Stringer
-	Implementation string `toml:"tracer_implementation"`
-	// CollectorEndpoint is the URL of the trace collector it MUST be of Implementation implementation
-	CollectorEndpoint string `toml:"tracing_collector"`
-	// SampleRate sets the probability that a span will be recorded. Values between 0 and 1 are accepted.
-	SampleRate float64 `toml:"sample_rate"`
-}
-
 // NegativeCacheConfig is a collection of response codes and their TTLs
 type NegativeCacheConfig map[string]int
 
@@ -399,7 +386,9 @@ func NewConfig() *TricksterConfig {
 		NegativeCacheConfigs: map[string]NegativeCacheConfig{
 			"default": NewNegativeCacheConfig(),
 		},
-		TracingConfigs: map[string]*TracingConfig{},
+		TracingConfigs: map[string]*TracingConfig{
+			"default": NewTracingConfig(),
+		},
 	}
 }
 
@@ -434,33 +423,35 @@ func NewOriginConfig() *OriginConfig {
 	return &OriginConfig{
 		BackfillTolerance:            defaultBackfillToleranceSecs,
 		BackfillToleranceSecs:        defaultBackfillToleranceSecs,
-		CacheName:                    defaultOriginCacheName,
 		CacheKeyPrefix:               "",
+		CacheName:                    defaultOriginCacheName,
+		CompressableTypeList:         defaultCompressableTypes(),
+		FastForwardTTL:               defaultFastForwardTTLSecs * time.Second,
+		FastForwardTTLSecs:           defaultFastForwardTTLSecs,
+		HealthCheckHeaders:           make(map[string]string),
 		HealthCheckQuery:             defaultHealthCheckQuery,
 		HealthCheckUpstreamPath:      defaultHealthCheckPath,
 		HealthCheckVerb:              defaultHealthCheckVerb,
-		HealthCheckHeaders:           make(map[string]string),
 		KeepAliveTimeoutSecs:         defaultKeepAliveTimeoutSecs,
 		MaxIdleConns:                 defaultMaxIdleConns,
+		MaxObjectSizeBytes:           defaultMaxObjectSizeBytes,
+		MaxTTL:                       defaultMaxTTLSecs * time.Second,
+		MaxTTLSecs:                   defaultMaxTTLSecs,
 		NegativeCache:                make(map[int]time.Duration),
 		NegativeCacheName:            defaultOriginNegativeCacheName,
 		Paths:                        make(map[string]*PathConfig),
+		RevalidationFactor:           defaultRevalidationFactor,
+		TLS:                          &TLSConfig{},
 		Timeout:                      time.Second * defaultOriginTimeoutSecs,
 		TimeoutSecs:                  defaultOriginTimeoutSecs,
 		TimeseriesEvictionMethod:     defaultOriginTEM,
 		TimeseriesEvictionMethodName: defaultOriginTEMName,
 		TimeseriesRetention:          defaultOriginTRF,
 		TimeseriesRetentionFactor:    defaultOriginTRF,
-		TimeseriesTTLSecs:            defaultTimeseriesTTLSecs,
-		FastForwardTTLSecs:           defaultFastForwardTTLSecs,
 		TimeseriesTTL:                defaultTimeseriesTTLSecs * time.Second,
-		FastForwardTTL:               defaultFastForwardTTLSecs * time.Second,
-		MaxTTLSecs:                   defaultMaxTTLSecs,
-		MaxTTL:                       defaultMaxTTLSecs * time.Second,
-		RevalidationFactor:           defaultRevalidationFactor,
-		MaxObjectSizeBytes:           defaultMaxObjectSizeBytes,
-		TLS:                          &TLSConfig{},
-		CompressableTypeList:         defaultCompressableTypes(),
+		TimeseriesTTLSecs:            defaultTimeseriesTTLSecs,
+		TracingConfigName:            defaultTracingConfigName,
+		TracingConfig:                NewTracingConfig(),
 	}
 }
 
@@ -879,6 +870,10 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 		nc.NegativeCacheConfigs[k] = v.Clone()
 	}
 
+	for k, v := range c.TracingConfigs {
+		nc.TracingConfigs[k] = v.Clone()
+	}
+
 	return nc
 }
 
@@ -972,7 +967,9 @@ func (oc *OriginConfig) Clone() *OriginConfig {
 	o.ValueRetention = oc.ValueRetention
 
 	o.TracingConfigName = oc.TracingConfigName
-	o.Tracer = oc.Tracer
+	if oc.TracingConfig != nil {
+		o.TracingConfig = oc.TracingConfig.Clone()
+	}
 
 	if oc.CompressableTypeList != nil {
 		o.CompressableTypeList = make([]string, len(oc.CompressableTypeList))
