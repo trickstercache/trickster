@@ -50,10 +50,8 @@ func DoProxy(w io.Writer, r *http.Request) *http.Response {
 	oc := rsc.OriginConfig
 
 	start := time.Now()
-	_, span := tracing.NewChildSpan(r.Context(), oc.Tracer, "ProxyRequest")
-	defer func() {
-		span.End()
-	}()
+	_, span := tracing.NewChildSpan(r.Context(), oc.TracingConfig.Tracer, "ProxyRequest")
+	defer span.End()
 
 	pc := rsc.PathConfig
 
@@ -122,11 +120,8 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	rsc := request.GetResources(r)
 	oc := rsc.OriginConfig
 
-	ctx, span := tracing.NewChildSpan(r.Context(), oc.Tracer, "PrepareFetchReader")
-	defer func() {
-
-		span.End()
-	}()
+	ctx, span := tracing.NewChildSpan(r.Context(), oc.TracingConfig.Tracer, "PrepareFetchReader")
+	defer span.End()
 
 	pc := rsc.PathConfig
 
@@ -148,8 +143,8 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	var resp *http.Response
 	var err error
 
-	if oc.Tracer != nil {
-		oc.Tracer.WithSpan(ctx, "Proxying Request",
+	if oc.TracingConfig.Tracer != nil {
+		oc.TracingConfig.Tracer.WithSpan(ctx, "Proxying Request",
 			func(ctx gocontext.Context) error {
 				// Processing traces for proxies
 				// https://www.w3.org/TR/trace-context-1/#alternative-processing

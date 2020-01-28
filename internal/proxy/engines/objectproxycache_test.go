@@ -382,6 +382,7 @@ func TestObjectProxyCachePartialHitNotFresh(t *testing.T) {
 	}
 	defer ts.Close()
 	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
 
 	pr := newProxyRequest(r, w)
 	oc := rsc.OriginConfig
@@ -416,6 +417,7 @@ func TestObjectProxyCachePartialHitFullResponse(t *testing.T) {
 	}
 	defer ts.Close()
 	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
 
 	pr := newProxyRequest(r, w)
 	oc := rsc.OriginConfig

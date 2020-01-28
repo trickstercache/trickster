@@ -39,12 +39,8 @@ func QueryCache(ctx context.Context, c cache.Cache, key string, ranges byterange
 	rsc := tc.Resources(ctx).(*request.Resources)
 	oc := rsc.OriginConfig
 
-	ctx, span := tracing.NewChildSpan(ctx, oc.Tracer, "QueryCache")
-	defer func() {
-
-		span.End()
-
-	}()
+	ctx, span := tracing.NewChildSpan(ctx, oc.TracingConfig.Tracer, "QueryCache")
+	defer span.End()
 
 	d := &HTTPDocument{}
 	var lookupStatus status.LookupStatus
@@ -155,7 +151,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 	rsc := tc.Resources(ctx).(*request.Resources)
 	oc := rsc.OriginConfig
 
-	ctx, span := tracing.NewChildSpan(ctx, oc.Tracer, "WriteCache")
+	ctx, span := tracing.NewChildSpan(ctx, oc.TracingConfig.Tracer, "WriteCache")
 	defer span.End()
 
 	h := http.Header(d.Headers)

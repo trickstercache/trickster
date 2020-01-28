@@ -24,8 +24,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Comcast/trickster/internal/proxy/request"
+
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	tc "github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
 )
@@ -51,8 +54,6 @@ func TestInvalidContentRange(t *testing.T) {
 
 func TestMultiPartByteRange(t *testing.T) {
 
-	// TODO Make this work functionally
-
 	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
@@ -72,6 +73,7 @@ func TestMultiPartByteRange(t *testing.T) {
 	d := DocumentFromHTTPResponse(resp2, []byte("This is a t"), nil)
 
 	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
 
 	ranges := make(byterange.Ranges, 1)
 	ranges[0] = byterange.Range{Start: 5, End: 10}
@@ -99,6 +101,7 @@ func TestCacheHitRangeRequest(t *testing.T) {
 	resp2.StatusCode = 200
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody), nil)
 	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
@@ -142,6 +145,7 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 	resp2.StatusCode = 206
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
 	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
@@ -185,6 +189,7 @@ func TestCacheHitRangeRequest3(t *testing.T) {
 	resp2.StatusCode = 206
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
 	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
@@ -225,6 +230,7 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
 
 	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
@@ -267,6 +273,7 @@ func TestFullCacheMissRangeRequest(t *testing.T) {
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
 
 	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
@@ -292,13 +299,13 @@ func TestRangeRequestFromClient(t *testing.T) {
 	s := newRangeRequestTestServer()
 	defer s.Close()
 	client := &http.Client{}
-	request, err := http.NewRequest(http.MethodGet, s.URL, nil)
+	req, err := http.NewRequest(http.MethodGet, s.URL, nil)
 
 	if err != nil {
 		log.Fatalln(err)
 	}
-	request.Header.Set(headers.NameRange, haves.String())
-	resp, err := client.Do(request)
+	req.Header.Set(headers.NameRange, haves.String())
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Error(err)
 	}
@@ -318,6 +325,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 	}
 
 	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
 
 	d := DocumentFromHTTPResponse(resp, bytes, nil)
 	err = WriteCache(ctx, cache, "testKey2", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
@@ -368,6 +376,7 @@ func TestQueryCache(t *testing.T) {
 	d.ContentType = "text/plain"
 
 	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {

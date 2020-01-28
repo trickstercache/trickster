@@ -44,10 +44,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	rsc := request.GetResources(r)
 	oc := rsc.OriginConfig
 
-	ctx, span := tracing.NewChildSpan(r.Context(), oc.Tracer, "DeltaProxyCacheRequest")
-	defer func() {
-		span.End()
-	}()
+	ctx, span := tracing.NewChildSpan(r.Context(), oc.TracingConfig.Tracer, "DeltaProxyCacheRequest")
+	defer span.End()
 
 	pc := rsc.PathConfig
 	cache := rsc.CacheClient
