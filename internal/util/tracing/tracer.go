@@ -59,7 +59,7 @@ func (t TracerImplementation) String() string {
 }
 
 // SetTracer sets up the requested tracer implementation
-func SetTracer(t TracerImplementation, collectorURL string, sampleRate float64) (trace.Tracer, func(), error) {
+func SetTracer(t TracerImplementation, collectorURL string, sampleRate float64) (trace.Tracer, func(), *recorderExporter, error) {
 	switch t {
 	case StdoutTracer:
 		return setStdOutTracer(sampleRate)
@@ -67,7 +67,7 @@ func SetTracer(t TracerImplementation, collectorURL string, sampleRate float64) 
 		return setJaegerTracer(collectorURL, sampleRate)
 	case RecorderTracer:
 		// TODO make recorder available at runtime
-		tracer, flush, _, err := setRecorderTracer(
+		tracer, flush, r, err := setRecorderTracer(
 			// Only called if there is an error so the log message won't be evaluated otherwise
 			func(err error) {
 				pairs := log.Pairs{
@@ -83,7 +83,7 @@ func SetTracer(t TracerImplementation, collectorURL string, sampleRate float64) 
 			},
 			sampleRate,
 		)
-		return tracer, flush, err
+		return tracer, flush, r, err
 	default:
 		return setNoopTracer()
 	}

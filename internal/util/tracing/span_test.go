@@ -14,9 +14,41 @@
 package tracing
 
 import (
+	"errors"
+	"testing"
+
 	"go.opentelemetry.io/otel/api/trace"
 )
 
-func setNoopTracer() (trace.Tracer, func(), *recorderExporter, error) {
-	return trace.NoopTracer{}, func() {}, nil, nil
+func TestNewChildSpan(t *testing.T) {
+
+	// test with nil tracer:
+	_, span := NewChildSpan(nil, nil, "test")
+
+	if _, ok := span.(trace.NoopSpan); !ok {
+		t.Error(errors.New("expected NoopSpan"))
+	}
+
+	// test with nil context but non-nil tracer
+
+	tr, flush, _, err := SetTracer(StdoutTracer, "", 1)
+	if tr == nil {
+		t.Error(errors.New("expected non-nil tracer"))
+	}
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	ctx, span := NewChildSpan(nil, tr, "test")
+	if ctx == nil {
+		t.Error(errors.New("expected non-nil context"))
+	}
+
+	if span == nil {
+		t.Error(errors.New("expected non-nil span"))
+	}
+
+	flush()
+
 }

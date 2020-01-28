@@ -11,6 +11,7 @@ import (
 
 	"go.opentelemetry.io/otel/api/core"
 	"go.opentelemetry.io/otel/api/distributedcontext"
+	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/key"
 	"go.opentelemetry.io/otel/api/trace"
 )
@@ -41,11 +42,14 @@ var (
 
 func testingHandler() http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r, span := PrepareRequest(r, r.Host)
+
+		tr := global.TraceProvider().Tracer("noop")
+
+		r, span := PrepareRequest(r, tr)
 		defer span.End()
 
 		func() {
-			_, span := NewChildSpan(r.Context(), "test-span-name")
+			_, span := NewChildSpan(r.Context(), tr, "test-span-name")
 			defer span.End()
 			span.AddEvent(r.Context(), "SubSpan", testEvents[0])
 		}()
@@ -84,7 +88,7 @@ func testHTTPClient() *http.Client {
 }
 
 func setupTestingTracer(t *testing.T, impl TracerImplementation, sampleRate float64, values []core.KeyValue) (flush func(), ctx context.Context, recorder *recorderExporter, tr trace.Tracer) {
-	flush, recorder, err := setRecorderTracer(
+	tr, flush, recorder, err := setRecorderTracer(
 		func(err error) {
 			t.Error(err)
 		},
@@ -99,5 +103,5 @@ func setupTestingTracer(t *testing.T, impl TracerImplementation, sampleRate floa
 	return flush,
 		ctx,
 		recorder,
-		GlobalTracer(ctx)
+		tr
 }

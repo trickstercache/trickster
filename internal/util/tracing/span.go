@@ -22,6 +22,11 @@ import (
 
 // NewChildSpan returns the context with a new Span situated as the child of the previous span
 func NewChildSpan(ctx context.Context, tr trace.Tracer, spanName string) (context.Context, trace.Span) {
+
+	if tr == nil {
+		return ctx, trace.NoopSpan{}
+	}
+
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -33,7 +38,6 @@ func NewChildSpan(ctx context.Context, tr trace.Tracer, spanName string) (contex
 	spanCtx, ok := ctx.Value(spanCtxKey).(core.SpanContext)
 	if !ok {
 		return ctx, trace.NoopSpan{}
-
 	}
 
 	ctx, span := tr.Start(

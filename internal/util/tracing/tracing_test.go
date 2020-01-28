@@ -22,9 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/stretchr/testify/assert"
-	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/exporter/trace/stdout"
 	"go.opentelemetry.io/otel/plugin/httptrace"
@@ -32,15 +30,6 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-func TestInitNil(t *testing.T) {
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("Panic on nil config%+v", r)
-		}
-	}()
-	f2 := Init(nil)
-	f2()
-}
 func TestMain(m *testing.M) {
 	// Create stdout exporter to be able to retrieve
 	// the collected spans.
@@ -52,13 +41,12 @@ func TestMain(m *testing.M) {
 
 	// For the demonstration, use sdktrace.AlwaysSample sampler to sample all traces.
 	// In a production application, use sdktrace.ProbabilitySampler with a desired probability.
-	tp, err := sdktrace.NewProvider(sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.AlwaysSample()}),
+	_, err = sdktrace.NewProvider(sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.AlwaysSample()}),
 		sdktrace.WithSyncer(exporter))
 	if err != nil {
 		fmt.Println("Test Setup Failure", err)
 		os.Exit(-1)
 	}
-	global.SetTraceProvider(tp)
 	os.Exit(m.Run())
 }
 
@@ -125,22 +113,16 @@ func TestNoPanics(t *testing.T) {
 func noPanic(t *testing.T, tests []panicTest) {
 
 	for _, test := range tests {
-		flush, _ := SetTracer(test.tracer, test.collectorURL, test.rate)
-		ctx, span := NewChildSpan(test.ctx, "TestNoPanics")
-
-		tr := GlobalTracer(ctx)
-		spanCall(ctx, tr)
-		span.End()
-		flush()
+		tr, flush, _, _ := SetTracer(test.tracer, test.collectorURL, test.rate)
+		if tr != nil {
+			ctx, span := NewChildSpan(test.ctx, tr, "TestNoPanics")
+			spanCall(ctx, tr)
+			if span != nil {
+				span.End()
+			}
+			flush()
+		}
 	}
-	cfg := &config.TracingConfig{
-		Implementation:    "unk",
-		CollectorEndpoint: "http://example.com",
-		SampleRate:        1.0,
-	}
-
-	f := Init(cfg)
-	f()
 
 }
 
@@ -195,16 +177,13 @@ func spanCall(ctx context.Context, tr trace.Tracer) {
 		func(ctx context.Context) error {
 			var err error
 			req, _ := http.NewRequest("GET", "https://example.com/test", nil)
-
 			ctx, req = httptrace.W3C(ctx, req)
 			httptrace.Inject(ctx, req)
 			_, err = testHTTPClient().Do(req)
 			if err != nil {
 				return err
 			}
-
 			SpanFromContext(ctx).SetStatus(codes.OK)
-
 			return nil
 
 		})

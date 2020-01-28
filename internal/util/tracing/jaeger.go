@@ -21,7 +21,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-func setJaegerTracer(collectorURL string, sampleRate float64) (trace.Tracer, func(), error) {
+func setJaegerTracer(collectorURL string, sampleRate float64) (trace.Tracer, func(), *recorderExporter, error) {
 	exporter, err := jaeger.NewExporter(
 		jaeger.WithCollectorEndpoint(collectorURL),
 		jaeger.WithProcess(jaeger.Process{
@@ -32,17 +32,17 @@ func setJaegerTracer(collectorURL string, sampleRate float64) (trace.Tracer, fun
 		}),
 	)
 	if err != nil {
-		return nil, func() {}, err
+		return nil, func() {}, nil, err
 	}
 
 	tp, err := sdktrace.NewProvider(
 		sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.ProbabilitySampler(sampleRate)}),
 		sdktrace.WithSyncer(exporter))
 	if err != nil {
-		return tp.Tracer(""), func() {}, err
+		return tp.Tracer(""), func() {}, nil, err
 	}
 
 	return tp.Tracer(""), func() {
 		exporter.Flush()
-	}, nil
+	}, nil, nil
 }
