@@ -13,10 +13,7 @@ import (
 
 func setRecorderTracer(ef errorFunc, sampleRate float64) (trace.Tracer, func(), *recorderExporter, error) {
 	f := func() {}
-	exporter, err := newRecorder(ef)
-	if err != nil {
-		return nil, f, nil, err
-	}
+	exporter, _ := newRecorder(ef)
 
 	tp, err := sdktrace.NewProvider(sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.ProbabilitySampler(sampleRate)}),
 		sdktrace.WithSyncer(exporter))
@@ -37,7 +34,6 @@ type recorderExporter struct {
 // newRecorder returns a newly instantiated recorder
 func newRecorder(ef errorFunc) (*recorderExporter, error) {
 	buf := new(bytes.Buffer)
-
 	return &recorderExporter{buf, buf, nil, ef}, nil
 }
 
