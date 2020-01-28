@@ -67,14 +67,14 @@ func TestRegisterAll(t *testing.T) {
 	cfg.Origins = nil
 	f, _ = RegisterAll(cfg)
 	if err == nil {
-		t.Error(errors.New("expected eror for invalid tracing implementation"))
+		t.Error(errors.New("expected error for invalid tracing implementation"))
 	}
 
 }
 
 func TestInit(t *testing.T) {
 	tr, _, _ := Init(nil)
-	if tr != nil {
-		t.Error("expected nil tracer")
+	if tr == nil {
+		t.Error("expected non-nil (noop) tracer")
 	}
 }
