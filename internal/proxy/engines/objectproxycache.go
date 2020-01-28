@@ -205,20 +205,15 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 }
 
 func handleCacheKeyMiss(pr *proxyRequest) error {
-
 	pr.prepareUpstreamRequests()
-
 	handleUpstreamTransactions(pr)
-
 	return handleAllWrites(pr)
 }
 
 func handleUpstreamTransactions(pr *proxyRequest) error {
-
 	pr.makeUpstreamRequests()
 	pr.reconstituteResponses()
 	pr.determineCacheability()
-
 	return nil
 }
 
@@ -230,7 +225,6 @@ func handleAllWrites(pr *proxyRequest) error {
 			pr.cacheDocument = d
 			if pr.isPartialResponse {
 				d.ParsePartialContentBody(pr.upstreamResponse, pr.cacheBuffer.Bytes())
-
 			} else {
 				d.Body = pr.cacheBuffer.Bytes()
 			}
@@ -241,7 +235,6 @@ func handleAllWrites(pr *proxyRequest) error {
 }
 
 func handleResponse(pr *proxyRequest) error {
-
 	pr.prepareResponse()
 	pr.writeResponseHeader()
 	pr.setBodyWriter() // what about partial hit? it does not set this
@@ -331,7 +324,6 @@ func FetchViaObjectProxyCache(r *http.Request) ([]byte, *http.Response, bool) {
 	resp, cacheStatus := fetchViaObjectProxyCache(w, r)
 	if cacheStatus == status.LookupStatusProxyOnly {
 		resp = DoProxy(w, r)
-
 	}
 	return w.Bytes(), resp, cacheStatus == status.LookupStatusHit
 }
