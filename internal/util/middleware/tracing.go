@@ -16,14 +16,14 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/tracing"
+	"go.opentelemetry.io/otel/api/trace"
 )
 
 // Trace attaches a Tracer to an HTTP request
-func Trace(pc *config.PathConfig, next http.Handler) http.Handler {
+func Trace(tr trace.Tracer, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r, span := tracing.PrepareRequest(r, pc)
+		r, span := tracing.PrepareRequest(r, tr)
 		if span != nil {
 			defer span.End()
 		}
