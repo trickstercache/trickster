@@ -226,6 +226,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		// This fetches the gaps from the origin and adds their datasets to the merge list
 		go func(e *timeseries.Extent, rq *proxyRequest) {
+			defer wg.Done()
 			rq.Request = rq.WithContext(tctx.WithResources(r.Context(), request.NewResources(oc, pc, cc, cache, client)))
 			client.SetExtent(rq.Request, trq, e)
 			body, resp, _ := rq.Fetch()
@@ -233,7 +234,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				nts, err := client.UnmarshalTimeseries(body)
 				if err != nil {
 					log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
-					wg.Done()
 					return
 				}
 				uncachedValueCount += nts.ValueCount()
@@ -243,7 +243,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				mts = append(mts, nts)
 				appendLock.Unlock()
 			}
-			wg.Done()
 		}(&missRanges[i], pr.Clone())
 	}
 
@@ -252,11 +251,16 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Only fast forward if configured and the user request is for the absolute latest datapoint
 	if (!trq.FastForwardDisable) && (trq.Extent.End.Equal(normalizedNow.Extent.End)) && ffURL.Scheme != "" {
+
 		wg.Add(1)
 		rs := request.NewResources(oc, oc.FastForwardPath, cc, cache, client)
 		rs.AlternateCacheTTL = oc.FastForwardTTL
 		req := r.Clone(tctx.WithResources(context.Background(), rs))
 		go func() {
+			defer wg.Done()
+			_, span := tracing.NewChildSpan(ctx, oc.TracingConfig.Tracer, "FastForward")
+			defer span.End()
+
 			// create a new context that uses the fast forward path config instead of the time series path config
 			req.URL = ffURL
 			body, resp, isHit := FetchViaObjectProxyCache(req)
@@ -265,7 +269,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					ffStatus = "err"
 					log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
-					wg.Done()
 					return
 				}
 				ffts.SetStep(trq.Step)
@@ -279,7 +282,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			} else {
 				ffStatus = "err"
 			}
-			wg.Done()
 		}()
 	}
 
