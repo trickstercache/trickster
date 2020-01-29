@@ -11,7 +11,63 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel/api/global"
+	"google.golang.org/grpc/codes"
 )
+
+func TestHTTPtoCode(t *testing.T) {
+	tests := []struct {
+		start int
+		end   int // exclusive
+		code  codes.Code
+	}{
+		{
+			100,
+			399,
+			codes.OK,
+		},
+		{
+			404,
+			405,
+			codes.NotFound,
+		},
+		{
+			400,
+			404,
+			codes.InvalidArgument,
+		},
+		{
+			405,
+			500,
+			codes.InvalidArgument,
+		},
+		{
+			503,
+			504,
+			codes.Unavailable,
+		},
+		{
+			500,
+			503,
+			codes.Internal,
+		},
+		{
+			504,
+			600,
+			codes.Internal,
+		},
+	}
+	for _, test := range tests {
+		for i := test.start; i < test.end; i++ {
+			code := HTTPToCode(i)
+
+			assert.Equalf(t,
+				test.code,
+				code,
+				"HTTP status code is %v and Code is %v. Code should be %v", i, code.String(), test.code.String(),
+			)
+		}
+	}
+}
 
 func TestTracingMiddleware(t *testing.T) {
 

@@ -28,6 +28,7 @@ import (
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/tracing"
 	"github.com/Comcast/trickster/pkg/locks"
+	"go.opentelemetry.io/otel/api/core"
 )
 
 func handleCacheKeyHit(pr *proxyRequest) error {
@@ -135,8 +136,16 @@ func handleCacheRevalidation(pr *proxyRequest) error {
 	rsc := request.GetResources(pr.Request)
 	oc := rsc.OriginConfig
 
-	_, span := tracing.NewChildSpan(pr.Request.Context(), oc.TracingConfig.Tracer, "CacheRevalidation")
-	defer span.End()
+	ctx, span := tracing.NewChildSpan(pr.Request.Context(), oc.TracingConfig.Tracer, "CacheRevalidation")
+	defer func() {
+		reval := revalidationStatusValues[pr.revalidation]
+		span.AddEvent(
+			ctx,
+			"Complete",
+			core.Key("Result").String(reval),
+		)
+		defer span.End()
+	}()
 
 	pr.revalidation = RevalStatusInProgress
 

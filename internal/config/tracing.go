@@ -12,7 +12,9 @@
  */
 package config
 
-import "go.opentelemetry.io/otel/api/trace"
+import (
+	"go.opentelemetry.io/otel/api/trace"
+)
 
 // TracingConfig provides the distributed tracing configuration
 type TracingConfig struct {

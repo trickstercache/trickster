@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/api/distributedcontext"
 	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/plugin/httptrace"
+	"google.golang.org/grpc/codes"
 )
 
 const (
@@ -51,4 +52,28 @@ func PrepareRequest(r *http.Request, tr trace.Tracer) (*http.Request, trace.Span
 	)
 
 	return r.WithContext(ctx), span
+}
+
+func HTTPToCode(status int) codes.Code {
+	switch {
+	case status < http.StatusBadRequest:
+
+		return codes.OK
+	case status == http.StatusNotFound:
+
+		return codes.NotFound
+
+	case status < http.StatusInternalServerError:
+		// All other 4xx
+		return codes.InvalidArgument
+
+	case status == http.StatusServiceUnavailable:
+		return codes.Unavailable
+
+	case status >= http.StatusInternalServerError:
+		// All other 5xx
+		return codes.Internal
+
+	}
+	return codes.OK
 }

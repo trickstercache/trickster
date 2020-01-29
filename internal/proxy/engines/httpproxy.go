@@ -15,7 +15,6 @@ package engines
 
 import (
 	"bytes"
-	gocontext "context"
 	"io"
 	"io/ioutil"
 	"math"
@@ -34,6 +33,7 @@ import (
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	"github.com/Comcast/trickster/internal/util/tracing"
+	"go.opentelemetry.io/otel/api/core"
 	othttptrace "go.opentelemetry.io/otel/plugin/httptrace"
 )
 
@@ -140,22 +140,13 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	r.RequestURI = ""
 
-	var resp *http.Response
-	var err error
+	// Processing traces for proxies
+	// https://www.w3.org/TR/trace-context-1/#alternative-processing
+	ctx, r = othttptrace.W3C(ctx, r)
+	othttptrace.Inject(ctx, r)
 
-	if oc.TracingConfig.Tracer != nil {
-		oc.TracingConfig.Tracer.WithSpan(ctx, "Proxying Request",
-			func(ctx gocontext.Context) error {
-				// Processing traces for proxies
-				// https://www.w3.org/TR/trace-context-1/#alternative-processing
-				ctx, r = othttptrace.W3C(ctx, r)
-				othttptrace.Inject(ctx, r)
-				resp, err = oc.HTTPClient.Do(r)
-				return err
-			})
-	} else {
-		resp, err = oc.HTTPClient.Do(r)
-	}
+	ctx, doSpan := tracing.NewChildSpan(r.Context(), oc.TracingConfig.Tracer, "ProxyRequest")
+	resp, err := oc.HTTPClient.Do(r)
 
 	if err != nil {
 		log.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
@@ -163,11 +154,22 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		if resp == nil {
 			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r, Header: make(http.Header)}
 		}
+
+		doSpan.AddEvent(
+			ctx,
+			"Failure",
+			core.Key("Error").String(err.Error()),
+			core.Key("HTTPStatus").Int(resp.StatusCode),
+		)
+		doSpan.SetStatus(tracing.HTTPToCode(resp.StatusCode))
+
 		if pc != nil {
 			headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
 		}
+		doSpan.End()
 		return nil, resp, 0
 	}
+	doSpan.End()
 
 	originalLen := int64(-1)
 	if v, ok := resp.Header[headers.NameContentLength]; ok {
