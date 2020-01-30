@@ -87,8 +87,8 @@ func testHTTPClient() *http.Client {
 
 }
 
-func setupTestingTracer(t *testing.T, impl TracerImplementation, sampleRate float64, values []core.KeyValue) (flush func(), ctx context.Context, recorder *recorderExporter, tr trace.Tracer) {
-	tr, flush, recorder, err := setRecorderTracer(
+func setupTestingTracer(t *testing.T, ex TraceExporter, sampleRate float64, values []core.KeyValue) (flush func(), ctx context.Context, recorder *recorderExporter, tr trace.Tracer) {
+	tr, flush, recorder, err := setRecorderExporter(
 		func(err error) {
 			t.Error(err)
 		},

@@ -75,5 +75,5 @@ func HTTPToCode(status int) codes.Code {
 		return codes.Internal
 
 	}
-	return codes.OK
+	return codes.Unknown
 }

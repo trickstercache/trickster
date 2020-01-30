@@ -100,6 +100,7 @@ func Init(cfg *config.TracingConfig) (trace.Tracer, func(), error) {
 
 	tracer, fl, _, err = tracing.SetTracer(
 		tracing.TracerImplementations[cfg.Implementation],
+		tracing.TraceExporters[cfg.Exporter],
 		cfg.CollectorEndpoint,
 		cfg.SampleRate,
 	)

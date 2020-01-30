@@ -1,0 +1,54 @@
+/**
+* Copyright 2018 Comcast Cable Communications Management, LLC
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+* http://www.apache.org/licenses/LICENSE-2.0
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+ */
+
+package tracing
+
+// TraceExporter members
+type TraceExporter int
+
+const (
+	// NoopExporter indicates a Exporter Implementation wherein all methods are no-ops.
+	// This should be used when tracing is not enabled or not sampled.
+	NoopExporter TraceExporter = iota
+	// RecorderExporter represents the Recorder Export Implementation
+	RecorderExporter
+	// StdoutExporter represents the Standard Output Exporter Implementation
+	StdoutExporter
+	// JaegerExporter represents the Jaeger Tracing Exporter Implementation
+	JaegerExporter
+)
+
+var (
+	traceExporterStrings = []string{
+		"noop",
+		"recorder",
+		"stdout",
+		"jaeger",
+	}
+
+	// TraceExporters is map of TraceExporters accessible by their string value
+	TraceExporters = map[string]TraceExporter{
+		traceExporterStrings[NoopExporter]:     NoopExporter,
+		traceExporterStrings[RecorderExporter]: RecorderExporter,
+		traceExporterStrings[StdoutExporter]:   StdoutExporter,
+		// TODO New Implementations go here
+		traceExporterStrings[JaegerExporter]: JaegerExporter,
+	}
+)
+
+func (t TraceExporter) String() string {
+	if t < NoopExporter || t > JaegerExporter {
+		return "unknown-exporter"
+	}
+	return traceExporterStrings[t]
+}

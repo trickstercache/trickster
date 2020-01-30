@@ -11,7 +11,7 @@ import (
 )
 
 func TestRecorder(t *testing.T) {
-	flush, ctx, recorder, tr := setupTestingTracer(t, RecorderTracer, 1.0, testContextValues)
+	flush, ctx, recorder, tr := setupTestingTracer(t, RecorderExporter, 1.0, testContextValues)
 
 	err := tr.WithSpan(ctx, "Testing trace with span",
 		func(ctx context.Context) error {

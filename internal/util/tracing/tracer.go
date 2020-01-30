@@ -10,7 +10,6 @@
 * See the License for the specific language governing permissions and
 * limitations under the License.
  */
-
 package tracing
 
 import (
@@ -18,63 +17,61 @@ import (
 	"go.opentelemetry.io/otel/api/trace"
 )
 
-// TracerImplementation members
 type TracerImplementation int
 
 const (
-	// NoopTracer indicates a Tracer Implementation wherein all methods are no-ops.
-	// This should be used when tracing is not enabled or not sampled.
-	NoopTracer TracerImplementation = iota
-	// RecorderTracer represents the Recorder Tracer Implementation
-	RecorderTracer
-	// StdoutTracer represents the Standard Output Tracer Implementation
-	StdoutTracer
-	// JaegerTracer represents the Jaeger Tracing Tracer Implementation
-	JaegerTracer
+	// OpenTelemetryTracer is a tracer that accepts the Open Telemetry standard tracing format.
+	OpenTelemetryTracer TracerImplementation = iota
+	// OpenTracingTracer accepts and uses traces in the OpenTracing format
+	OpenTracingTracer
 )
 
 var (
 	tracerImplementationStrings = []string{
 		"noop",
-		"recorder",
-		"stdout",
-		"jaeger",
+		"opentelemetry",
 	}
 
 	// TracerImplementations is map of TracerImplementations accessible by their string value
 	TracerImplementations = map[string]TracerImplementation{
-		tracerImplementationStrings[NoopTracer]:     NoopTracer,
-		tracerImplementationStrings[RecorderTracer]: RecorderTracer,
-		tracerImplementationStrings[StdoutTracer]:   StdoutTracer,
+		tracerImplementationStrings[OpenTelemetryTracer]: OpenTelemetryTracer,
 		// TODO New Implementations go here
-		tracerImplementationStrings[JaegerTracer]: JaegerTracer,
+		tracerImplementationStrings[OpenTracingTracer]: OpenTracingTracer,
 	}
 )
 
 func (t TracerImplementation) String() string {
-	if t < NoopTracer || t > JaegerTracer {
+	if t < OpenTelemetryTracer || t > OpenTracingTracer {
 		return "unknown-tracer"
 	}
 	return tracerImplementationStrings[t]
 }
 
 // SetTracer sets up the requested tracer implementation
-func SetTracer(t TracerImplementation, collectorURL string, sampleRate float64) (trace.Tracer, func(), *recorderExporter, error) {
-	switch t {
-	case StdoutTracer:
-		return setStdOutTracer(sampleRate)
-	case JaegerTracer:
-		return setJaegerTracer(collectorURL, sampleRate)
-	case RecorderTracer:
+func SetTracer(impl TracerImplementation, ex TraceExporter, collectorURL string, sampleRate float64) (trace.Tracer, func(), *recorderExporter, error) {
+	var (
+		tracer trace.Tracer
+		flush  func()
+		r      *recorderExporter
+		err    error
+	)
+
+	switch ex {
+	case StdoutExporter:
+		tracer, flush, r, err = setStdOutTracer(sampleRate)
+	case JaegerExporter:
+		tracer, flush, r, err = setJaegerExporter(collectorURL, sampleRate)
+	case RecorderExporter:
 		// TODO make recorder available at runtime
-		tracer, flush, r, err := setRecorderTracer(
+		tracer, flush, r, err = setRecorderExporter(
 			// Only called if there is an error so the log message won't be evaluated otherwise
 			func(err error) {
 				pairs := log.Pairs{
-					"Error":                err,
-					"TracerImplementation": tracerImplementationStrings[t],
-					"Collector":            collectorURL,
-					"SampleRate":           sampleRate,
+					"Error":         err,
+					"TraceExporter": ex,
+					"Tracer":        impl,
+					"Collector":     collectorURL,
+					"SampleRate":    sampleRate,
 				}
 				log.Error(
 					"Trace Recorder Error",
@@ -83,8 +80,16 @@ func SetTracer(t TracerImplementation, collectorURL string, sampleRate float64) 
 			},
 			sampleRate,
 		)
-		return tracer, flush, r, err
 	default:
-		return setNoopTracer()
+		tracer, flush, r, err = setNoopExporter()
 	}
+	switch impl {
+	case OpenTracingTracer:
+		fallthrough
+	case OpenTelemetryTracer:
+		fallthrough
+	default:
+		// do nothing
+	}
+	return tracer, flush, r, err
 }

@@ -3,7 +3,8 @@ package tracing
 import (
 	"bytes"
 	"context"
-	"errors"
+	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -71,23 +72,49 @@ func TestHTTPtoCode(t *testing.T) {
 
 func TestTracingMiddleware(t *testing.T) {
 
-	impls := make(map[string]TracerImplementation)
-	for k, v := range TracerImplementations {
-		impls[k] = v
+	exporters := make(map[string]TraceExporter)
+	for k, v := range TraceExporters {
+		exporters[k] = v
 	}
 
-	impls["unknown-tracer"] = -1
+	exporters["unknown-exporter"] = -1
 
-	for name, impl := range impls {
-		_, flush, r, err := SetTracer(impl, "http://example/com", 1.0)
-		assert.NoError(t, err, "failed to setup tracer")
-		assert.Equal(t, impl.String(), name)
-		newTR := global.TraceProvider().Tracer(name)
-		assert.NotNil(t, newTR, "Nil global tracer")
-		flush()
-		if r != nil && r.errorFunc != nil {
-			// cover the error func call
-			r.errorFunc(errors.New("dummy error"))
+	tracers := make(map[string]TracerImplementation)
+	for k, v := range TracerImplementations {
+		tracers[k] = v
+	}
+
+	tracers["unknown-tracer"] = -1
+
+	for name, ex := range exporters {
+		for tracerName, tracer := range tracers {
+			details := fmt.Sprintf("Tracer=%s(%d):Exporter=%s(%d)", tracer.String(), tracer, ex.String(), ex)
+			tr, flush, r, err := SetTracer(tracer, ex, "http://example/com", 1.0)
+			assert.NoError(t, err, "failed to setup tracer")
+			assert.Equal(t, ex.String(), name, details)
+			assert.Equal(t, tracer.String(), tracerName, details)
+			newTR := global.TraceProvider().Tracer(tracerName)
+			assert.NotNil(t, newTR, "Nil global tracer", details)
+			if ex == RecorderExporter {
+				assert.NotNil(t, r, "Nil recorder")
+				ctx, span := tr.Start(
+					context.Background(),
+					"Request",
+				)
+				span.AddEvent(ctx, "Test Span Event")
+				span.End()
+				if r == nil {
+					t.Log("nil recorder")
+				}
+				if r.buf == nil {
+					t.Log("nil recorder buffer")
+				}
+
+				b, err := ioutil.ReadAll(r)
+				assert.NoError(t, err, "Failed to read span recorder")
+				t.Logf("%s", b)
+			}
+			flush()
 		}
 	}
 

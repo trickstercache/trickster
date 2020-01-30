@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 
 	"go.opentelemetry.io/otel/api/trace"
 	export "go.opentelemetry.io/otel/sdk/export/trace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-func setRecorderTracer(ef errorFunc, sampleRate float64) (trace.Tracer, func(), *recorderExporter, error) {
+func setRecorderExporter(ef errorFunc, sampleRate float64) (trace.Tracer, func(), *recorderExporter, error) {
 	f := func() {}
 	exporter, _ := newRecorder(ef)
 
@@ -25,27 +24,31 @@ func setRecorderTracer(ef errorFunc, sampleRate float64) (trace.Tracer, func(), 
 
 // recorderExporter is an implementation of trace.Exporter that writes spans to a buffer, and saves the span data for later inspection.
 type recorderExporter struct {
-	io.Reader
-	outputWriter io.Writer
-	spans        []*export.SpanData
-	errorFunc    errorFunc
+	buf   *bytes.Buffer
+	spans []*export.SpanData
+}
+
+func (r *recorderExporter) Read(buf []byte) (int, error) {
+
+	return r.buf.Read(buf)
+}
+func (r *recorderExporter) Write(buf []byte) (int, error) {
+
+	return r.buf.Write(buf)
 }
 
 // newRecorder returns a newly instantiated recorder
 func newRecorder(ef errorFunc) (*recorderExporter, error) {
 	buf := new(bytes.Buffer)
-	return &recorderExporter{buf, buf, nil, ef}, nil
+	return &recorderExporter{buf, nil}, nil
 }
 
 // ExportSpan writes a SpanData in json format to buffer.
-func (e *recorderExporter) ExportSpan(ctx context.Context, data *export.SpanData) {
-	jsonSpan, err := json.Marshal(data)
-	if err != nil {
-		e.errorFunc(err)
-	}
-	e.spans = append(e.spans, data)
+func (r *recorderExporter) ExportSpan(ctx context.Context, data *export.SpanData) {
+	jsonSpan, _ := json.Marshal(data) // data is typed and nil doesn't error
+	r.spans = append(r.spans, data)
 	// ignore writer failures for now
-	e.outputWriter.Write(append(jsonSpan, byte('\n')))
+	r.Write(append(jsonSpan, byte('\n')))
 }
 
 type errorFunc func(error)

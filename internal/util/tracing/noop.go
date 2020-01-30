@@ -17,6 +17,6 @@ import (
 	"go.opentelemetry.io/otel/api/trace"
 )
 
-func setNoopTracer() (trace.Tracer, func(), *recorderExporter, error) {
+func setNoopExporter() (trace.Tracer, func(), *recorderExporter, error) {
 	return trace.NoopTracer{}, func() {}, nil, nil
 }

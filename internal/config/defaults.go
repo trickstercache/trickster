@@ -23,7 +23,8 @@ const (
 	defaultMetricsListenPort    = 8082
 	defaultMetricsListenAddress = ""
 
-	defaultTracerImplemetation = "noop"
+	defaultTracerImplemetation    = "noop"
+	defaultExporterImplementation = "noop"
 
 	defaultCacheType        = "memory"
 	defaultCacheTypeID      = CacheTypeMemory

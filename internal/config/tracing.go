@@ -20,8 +20,11 @@ import (
 type TracingConfig struct {
 	// Name is the name of the Tracing Config
 	Name string `toml:"-"`
-	// Implementation is the particular implementation to use TODO generate with Rob Pike's Stringer
+	// Implementation is the particular implementation to use. Ex OpenTelemetry.
+	// TODO generate with Rob Pike's Stringer
 	Implementation string `toml:"tracer_implementation"`
+	// Exporter is the format used to send to the collector
+	Exporter string `toml:"trace_exporter"`
 	// CollectorEndpoint is the URL of the trace collector it MUST be of Implementation implementation
 	CollectorEndpoint string `toml:"tracing_collector"`
 	// SampleRate sets the probability that a span will be recorded. Values between 0 and 1 are accepted.
@@ -36,6 +39,7 @@ func NewTracingConfig() *TracingConfig {
 	return &TracingConfig{
 		Name:           "default",
 		Implementation: defaultTracerImplemetation,
+		Exporter:       defaultExporterImplementation,
 		SampleRate:     1,
 	}
 }
@@ -45,6 +49,7 @@ func (tc *TracingConfig) Clone() *TracingConfig {
 	return &TracingConfig{
 		Name:              tc.Name,
 		Implementation:    tc.Implementation,
+		Exporter:          tc.Exporter,
 		SampleRate:        tc.SampleRate,
 		CollectorEndpoint: tc.CollectorEndpoint,
 		Tracer:            tc.Tracer,

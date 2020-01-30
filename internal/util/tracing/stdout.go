@@ -26,10 +26,7 @@ func setStdOutTracer(sampleRate float64) (trace.Tracer, func(), *recorderExporte
 	f := func() {}
 	// Create stdout exporter to be able to retrieve
 	// the collected spans.
-	exporter, err := stdout.NewExporter(stdout.Options{PrettyPrint: true})
-	if err != nil {
-		return nil, f, nil, err
-	}
+	exporter, _ := stdout.NewExporter(stdout.Options{PrettyPrint: true})
 
 	tp, err := sdktrace.NewProvider(sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.ProbabilitySampler(sampleRate)}),
 		sdktrace.WithSyncer(exporter))

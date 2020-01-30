@@ -53,6 +53,7 @@ func TestMain(m *testing.M) {
 type panicTest struct {
 	ctx          context.Context
 	tracer       TracerImplementation
+	exporter     TraceExporter
 	rate         float64
 	collectorURL string
 }
@@ -61,7 +62,8 @@ func TestNoPanics(t *testing.T) {
 	tests := []panicTest{
 		{
 			nil,
-			JaegerTracer,
+			OpenTelemetryTracer,
+			JaegerExporter,
 			1.0,
 			"",
 		},
@@ -72,6 +74,7 @@ func TestNoPanics(t *testing.T) {
 					return ctx
 				},
 			),
+			100,
 			7883,
 			1000000000.0,
 			"not a valid url",
@@ -85,18 +88,21 @@ func TestNoPanics(t *testing.T) {
 					return ctx
 				},
 			),
-			StdoutTracer,
+			OpenTelemetryTracer,
+			StdoutExporter,
 			-1.0,
 			"",
 		},
 		{
 			context.Background(),
+			-4,
 			-1,
 			1.0,
 			"tcp://127.0.0.1",
 		},
 		{
 			nil,
+			OpenTracingTracer,
 			-99,
 			-.1,
 			"",
@@ -113,7 +119,7 @@ func TestNoPanics(t *testing.T) {
 func noPanic(t *testing.T, tests []panicTest) {
 
 	for _, test := range tests {
-		tr, flush, _, _ := SetTracer(test.tracer, test.collectorURL, test.rate)
+		tr, flush, _, _ := SetTracer(test.tracer, test.exporter, test.collectorURL, test.rate)
 		if tr != nil {
 			ctx, span := NewChildSpan(test.ctx, tr, "TestNoPanics")
 			spanCall(ctx, tr)
@@ -127,7 +133,7 @@ func noPanic(t *testing.T, tests []panicTest) {
 }
 
 func TestRecorderTrace(t *testing.T) {
-	flush, ctx, _, tr := setupTestingTracer(t, RecorderTracer, 1.0, testContextValues)
+	flush, ctx, _, tr := setupTestingTracer(t, RecorderExporter, 1.0, testContextValues)
 	defer flush()
 
 	var res *http.Response

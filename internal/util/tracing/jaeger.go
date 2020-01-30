@@ -21,7 +21,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-func setJaegerTracer(collectorURL string, sampleRate float64) (trace.Tracer, func(), *recorderExporter, error) {
+func setJaegerExporter(collectorURL string, sampleRate float64) (trace.Tracer, func(), *recorderExporter, error) {
 	exporter, err := jaeger.NewExporter(
 		jaeger.WithCollectorEndpoint(collectorURL),
 		jaeger.WithProcess(jaeger.Process{
