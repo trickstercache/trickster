@@ -14,6 +14,7 @@
 package engines
 
 import (
+	"errors"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
+	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
@@ -406,3 +408,28 @@ func TestQueryCache(t *testing.T) {
 	}
 
 }
+
+// Mock Cache for testing error conditions
+type testCache struct {
+	configuration *config.CachingConfig
+}
+
+func (tc *testCache) Connect() error {
+	return nil
+}
+
+var errTest = errors.New("test error")
+
+func (tc *testCache) Store(cacheKey string, data []byte, ttl time.Duration) error {
+	return errTest
+}
+
+func (tc *testCache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error) {
+	return nil, status.LookupStatusError, errTest
+}
+
+func (tc *testCache) SetTTL(cacheKey string, ttl time.Duration)  {}
+func (tc *testCache) Remove(cacheKey string)                     {}
+func (tc *testCache) BulkRemove(cacheKeys []string, noLock bool) {}
+func (tc *testCache) Close() error                               { return errTest }
+func (tc *testCache) Configuration() *config.CachingConfig       { return tc.configuration }
