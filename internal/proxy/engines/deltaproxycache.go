@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	tc "github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
 	tctx "github.com/Comcast/trickster/internal/proxy/context"
@@ -123,7 +124,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		doc, cacheStatus, _, err = QueryCache(ctx, cache, key, nil)
-		if cacheStatus == status.LookupStatusKeyMiss {
+		if cacheStatus == status.LookupStatusKeyMiss && err == tc.ErrKNF {
 			cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 			if err != nil {
 				recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)

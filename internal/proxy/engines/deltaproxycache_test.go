@@ -363,7 +363,10 @@ func TestDeltaProxyCacheRequestMarshalFailure(t *testing.T) {
 	oc := rsc.OriginConfig
 
 	rsc.CacheConfig.CacheType = "test"
-	client.RangeCacheKey = "failkey"
+	oc.CacheKeyPrefix = "test"
+
+	cc := rsc.CacheClient
+	cc.Store("test.409d551e3653f5ad5aa9acbdac8d4ac3", []byte("x"), time.Second*1)
 
 	oc.FastForwardDisable = true
 
@@ -379,16 +382,6 @@ func TestDeltaProxyCacheRequestMarshalFailure(t *testing.T) {
 
 	client.QueryRangeHandler(w, r)
 	resp := w.Result()
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), "")
-	if err != nil {
-		t.Error(err)
-	}
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
 	if err != nil {

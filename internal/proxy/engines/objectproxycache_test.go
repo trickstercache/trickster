@@ -1204,3 +1204,21 @@ func testFetchOPC(r *http.Request, sc int, body string, match map[string]string)
 	return w, e
 
 }
+
+func TestFetchViaObjectProxyCacheRequestErroringCache(t *testing.T) {
+
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	tc := &testCache{configuration: rsc.CacheConfig}
+	rsc.CacheClient = tc
+	tc.configuration.CacheType = "test"
+
+	_, _, b := FetchViaObjectProxyCache(r)
+	if b {
+		t.Errorf("expected %t got %t", false, b)
+	}
+}

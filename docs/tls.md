@@ -4,10 +4,10 @@ Trickster supports TLS on both the frontend server and backend clients.
 
 ## Basics
 
-To enable the TLS server, you must specify the `tls_listen_port`, and optionally, the `tls_listen_address` in the `[proxy_server]` section of your config file. For example:
+To enable the TLS server, you must specify the `tls_listen_port`, and optionally, the `tls_listen_address` in the `[frontend]` section of your config file. For example:
 
 ```toml
-[proxy_server]
+[frontend]
 
 listen_port = 9090
 tls_listen_port = 8443

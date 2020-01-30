@@ -14,6 +14,8 @@ Each configured origin's health check path is `/trickster/health/ORIGIN_NAME`. F
 
 The Origin-Specific default health check configurations should return a 200-range status code to indicate that the end-to-end health check to the origin was successful. Note that this behavior is not guaranteed when operating under user-provided health check configurations.
 
+The HTTP Reverse Proxy Cache origin type does not have a built-in health check, since those parameters can vary from origin to origin; it must be configured by the operator.
+
 ## Other Ways to Monitor Health
 
 In addition to the out-of-the-box health checks to determine up-or-down status, you may want to setup alarms and thresholds based on the metrics instrumented by Trickster. See [metrics.md](metrics.md) for collecting performance metrics about Trickster.
