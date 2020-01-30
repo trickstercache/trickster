@@ -14,6 +14,7 @@
 package testing
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/Comcast/trickster/internal/config"
@@ -25,6 +26,14 @@ func TestNewTestServer(t *testing.T) {
 		t.Errorf("Expected server pointer, got %v", s)
 	}
 
+	resp, err := http.Get(s.URL)
+	if err != nil {
+		t.Error(err)
+	}
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d", resp.StatusCode)
+	}
+
 }
 
 func TestNewTestWebClient(t *testing.T) {
@@ -32,6 +41,12 @@ func TestNewTestWebClient(t *testing.T) {
 	if s == nil {
 		t.Errorf("Expected webclient pointer, got %v", s)
 	}
+
+	err := s.CheckRedirect(nil, nil)
+	if err != http.ErrUseLastResponse {
+		t.Error(err)
+	}
+
 }
 
 func TestNewTestInstance(t *testing.T) {
@@ -79,6 +94,11 @@ func TestNewTestInstance(t *testing.T) {
 	_, _, _, _, err = NewTestInstance("../../../testdata/test.full.conf", f, 200, "", nil, "promsim", "test", "debug")
 	if err == nil {
 		t.Errorf("Expected error, got %v", "nil")
+	}
+
+	_, _, _, _, err = NewTestInstance("", nil, 200, "", map[string]string{"test-header": "x"}, "rangesim", "test", "debug")
+	if err != nil {
+		t.Error(err)
 	}
 
 }
