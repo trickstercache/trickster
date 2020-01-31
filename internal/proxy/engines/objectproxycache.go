@@ -144,7 +144,7 @@ func handleCacheRevalidation(pr *proxyRequest) error {
 			"Complete",
 			core.Key("Result").String(reval),
 		)
-		defer span.End()
+		span.End()
 	}()
 
 	pr.revalidation = RevalStatusInProgress
