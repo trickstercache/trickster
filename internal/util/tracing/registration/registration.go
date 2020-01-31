@@ -79,10 +79,6 @@ func RegisterAll(cfg *config.TricksterConfig) (Flushers, error) {
 // Init initializes tracing and returns a function to flush the tracer. Flush should be called on server shutdown.
 func Init(cfg *config.TracingConfig) (trace.Tracer, func(), error) {
 
-	var tracer trace.Tracer
-	var fl, flusher func()
-	var err error
-
 	if cfg == nil {
 		log.Info(
 			"nil tracing config, using noop tracer", nil,
@@ -98,12 +94,11 @@ func Init(cfg *config.TracingConfig) (trace.Tracer, func(), error) {
 		},
 	)
 
-	tracer, fl, _, err = tracing.SetTracer(
+	tracer, flusher, _, err := tracing.SetTracer(
 		tracing.TracerImplementations[cfg.Implementation],
 		tracing.TraceExporters[cfg.Exporter],
 		cfg.CollectorEndpoint,
 		cfg.SampleRate,
 	)
-	flusher = fl
 	return tracer, flusher, err
 }
