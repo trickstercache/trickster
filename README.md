@@ -15,7 +15,7 @@ Trickster is an HTTP reverse proxy/cache for http applications and a dashboard q
 
 Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications like static file servers and web API's.
 
-### Trickster Feature Highlights
+### Proxy Feature Highlights
 
 * [Supports TLS](./docs/tls.md) frontend termination and backend origination
 * Offers several options for a [caching layer](./docs/caches.md), including in-memory, filesystem, Redis and bbolt
@@ -25,11 +25,11 @@ Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications lik
 * High-performance [Collapsed Forwarding](./docs/collapsed-forwarding.md)
 * Best-in-class [Byte Range Request caching and acceleration](./docs/range_request.md).
 
-## Dashboard Acceleration
+## Time Series Database Accelerator
 
-Trickster dramatically improves dashboard chart rendering times for end users, while eliminating redundant computations on the TSDBs it fronts. In short, Trickster makes read-heavy Dashboard/TSDB environments, as well as those with highly-cardinalized datasets, significantly more performant and scalable.
+Trickster dramatically improves dashboard chart rendering times for end users by eliminating redundant computations on the TSDBs it fronts. In short, Trickster makes read-heavy Dashboard/TSDB environments, as well as those with highly-cardinalized datasets, significantly more performant and scalable.
 
-## Compatibility
+### Compatibility
 
 Trickster works with virtually any Dashboard application that makes queries to any of these TSDB's:
 
@@ -43,21 +43,21 @@ Trickster works with virtually any Dashboard application that makes queries to a
 
 See the [Supported Origin Types](./docs/supported-origin-types.md) document for full details
 
-## How Trickster Accelerates Time Series
+### How Trickster Accelerates Time Series
 
-### 1. Time Series Delta Proxy Cache
+#### 1. Time Series Delta Proxy Cache
 
 Most dashboards request from a time series database the entire time range of data they wish to present, every time a user's dashboard loads, as well as on every auto-refresh. Trickster's Delta Proxy inspects the time range of a client query to determine what data points are already cached, and requests from the tsdb only the data points still needed to service the client request. This results in dramatically faster chart load times for everyone, since the tsdb is queried only for tiny incremental changes on each dashboard load, rather than several hundred data points of duplicative data.
 
 <img src="./docs/images/partial-cache-hit.png" width=1024 />
 
-### 2. Step Boundary Normalization
+#### 2. Step Boundary Normalization
 
 When Trickster requests data from a tsdb, it adjusts the clients's requested time range slightly to ensure that all data points returned are aligned to normalized step boundaries. For example, if the step is 300s, all data points will fall on the clock 0's and 5's. This ensures that the data is highly cacheable, is conveyed visually to users in a more familiar way, and that all dashboard users see identical data on their screens.
 
 <img src="./docs/images/step-boundary-normalization.png" width=640 />
 
-### 3. Fast Forward
+#### 3. Fast Forward
 
 Trickster's Fast Forward feature ensures that even with step boundary normalization, real-time graphs still always show the most recent data, regardless of how far away the next step boundary is. For example, if your chart step is 300s, and the time is currently 1:21p, you would normally be waiting another four minutes for a new data point at 1:25p. Trickster will break the step interval for the most recent data point and always include it in the response to clients requesting real-time data.
 
