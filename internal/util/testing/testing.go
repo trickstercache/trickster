@@ -132,7 +132,7 @@ func NewTestPathConfig(
 
 	oc.Paths = paths
 
-	var p *config.PathConfig
+	p := &config.PathConfig{}
 	if len(paths) > 0 {
 		if p2, ok := paths[urlPath]; ok {
 			p = p2

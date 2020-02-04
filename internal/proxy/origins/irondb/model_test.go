@@ -14,6 +14,7 @@
 package irondb
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -73,6 +74,22 @@ func TestDataPointMarshalJSON(t *testing.T) {
 	if mv["+85e-004"] != float64(1) {
 		t.Errorf("Expected histogram value: 1, got: %v", mv["+85e-004"])
 	}
+
+	ts = `[
+		1556290800,
+		23x,
+		{
+		  "+23e-004": 1,
+		  "+85e-004": 1
+		}
+	]`
+
+	dp = &DataPoint{}
+	err = dp.UnmarshalJSON([]byte(ts))
+	if err == nil {
+		t.Error(errors.New("expected error for invalid character"))
+	}
+
 }
 
 func TestSeriesEnvelopeSetStep(t *testing.T) {
@@ -483,6 +500,27 @@ func TestTSSize(t *testing.T) {
 
 	if size != expected {
 		t.Errorf("got %d expected %d", size, expected)
+	}
+
+}
+
+func TestMarshalJSONEnvelope(t *testing.T) {
+
+	se := SeriesEnvelope{StepDuration: time.Duration(1) * time.Hour}
+	_, err := se.MarshalJSON()
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestUnMarshalJSONEnvelope(t *testing.T) {
+
+	bytes := []byte(`"data"."extents"."step"`)
+	se := &SeriesEnvelope{}
+	err := se.UnmarshalJSON(bytes)
+	if err == nil {
+		t.Error(errors.New("expected error for invalid character"))
 	}
 
 }
