@@ -13,7 +13,7 @@
 
 package tracing
 
-// TraceExporter members
+// TraceExporter defines the implementation of Tracer Exporter to Use
 type TraceExporter int
 
 const (
@@ -29,26 +29,27 @@ const (
 )
 
 var (
-	traceExporterStrings = []string{
-		"noop",
-		"recorder",
-		"stdout",
-		"jaeger",
-	}
-
 	// TraceExporters is map of TraceExporters accessible by their string value
 	TraceExporters = map[string]TraceExporter{
-		traceExporterStrings[NoopExporter]:     NoopExporter,
-		traceExporterStrings[RecorderExporter]: RecorderExporter,
-		traceExporterStrings[StdoutExporter]:   StdoutExporter,
-		// TODO New Implementations go here
-		traceExporterStrings[JaegerExporter]: JaegerExporter,
+		"noop":     NoopExporter,
+		"recorder": RecorderExporter,
+		"stdout":   StdoutExporter,
+		"jaeger":   JaegerExporter,
 	}
+	// TraceExporterStrings is the reverse map of TraceExporters
+	TraceExporterStrings = map[TraceExporter]string{}
 )
 
-func (t TraceExporter) String() string {
-	if t < NoopExporter || t > JaegerExporter {
-		return "unknown-exporter"
+func init() {
+	// create inverse lookup map
+	for k, v := range TraceExporters {
+		TraceExporterStrings[v] = k
 	}
-	return traceExporterStrings[t]
+}
+
+func (t TraceExporter) String() string {
+	if v, ok := TraceExporterStrings[t]; ok {
+		return v
+	}
+	return "unknown-exporter"
 }
