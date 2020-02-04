@@ -23,7 +23,7 @@ const (
 	defaultMetricsListenPort    = 8082
 	defaultMetricsListenAddress = ""
 
-	defaultTracerImplemetation    = "noop"
+	defaultTracerImplemetation    = "opentelemetry"
 	defaultExporterImplementation = "noop"
 
 	defaultCacheType        = "memory"
