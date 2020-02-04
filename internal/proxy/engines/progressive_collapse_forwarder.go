@@ -118,6 +118,7 @@ func (pfc *progressiveCollapseForwarder) AddClient(w io.Writer) error {
 		}
 		if err != nil {
 			if err != io.EOF {
+				pfc.clientWaitgroup.Done()
 				return err
 			}
 			break
