@@ -54,26 +54,19 @@ func PrepareRequest(r *http.Request, tr trace.Tracer) (*http.Request, trace.Span
 	return r.WithContext(ctx), span
 }
 
+// HTTPToCode translates an HTTP status code into a GRPC code
 func HTTPToCode(status int) codes.Code {
 	switch {
 	case status < http.StatusBadRequest:
-
 		return codes.OK
 	case status == http.StatusNotFound:
-
 		return codes.NotFound
-
 	case status < http.StatusInternalServerError:
 		// All other 4xx
 		return codes.InvalidArgument
-
 	case status == http.StatusServiceUnavailable:
 		return codes.Unavailable
-
-	case status >= http.StatusInternalServerError:
-		// All other 5xx
+	default: // all remaining possiblitiies are values >= 500
 		return codes.Internal
-
 	}
-	return codes.Unknown
 }
