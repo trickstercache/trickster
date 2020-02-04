@@ -72,22 +72,11 @@ func TestHTTPtoCode(t *testing.T) {
 
 func TestTracingMiddleware(t *testing.T) {
 
-	exporters := make(map[string]TraceExporter)
-	for k, v := range TraceExporters {
-		exporters[k] = v
-	}
+	TraceExporters["unknown-exporter"] = -1
+	TracerImplementations["unknown-tracer"] = -1
 
-	exporters["unknown-exporter"] = -1
-
-	tracers := make(map[string]TracerImplementation)
-	for k, v := range TracerImplementations {
-		tracers[k] = v
-	}
-
-	tracers["unknown-tracer"] = -1
-
-	for name, ex := range exporters {
-		for tracerName, tracer := range tracers {
+	for name, ex := range TraceExporters {
+		for tracerName, tracer := range TracerImplementations {
 			details := fmt.Sprintf("Tracer=%s(%d):Exporter=%s(%d)", tracer.String(), tracer, ex.String(), ex)
 			tr, flush, r, err := SetTracer(tracer, ex, "http://example/com", 1.0)
 			assert.NoError(t, err, "failed to setup tracer")
@@ -117,7 +106,6 @@ func TestTracingMiddleware(t *testing.T) {
 			flush()
 		}
 	}
-
 }
 
 func MiddlewarePassthrough() context.Context {
