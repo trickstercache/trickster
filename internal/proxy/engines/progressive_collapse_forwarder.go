@@ -90,6 +90,7 @@ func NewPCF(resp *http.Response, contentLength int64) ProgressiveCollapseForward
 // This client will read all the cached data and read from the live edge if caught up.
 func (pfc *progressiveCollapseForwarder) AddClient(w io.Writer) error {
 	pfc.clientWaitgroup.Add(1)
+	defer pfc.clientWaitgroup.Done()
 	var readIndex uint64
 	var err error
 	remaining := 0
@@ -123,7 +124,6 @@ func (pfc *progressiveCollapseForwarder) AddClient(w io.Writer) error {
 			break
 		}
 	}
-	pfc.clientWaitgroup.Done()
 	return io.EOF
 }
 
