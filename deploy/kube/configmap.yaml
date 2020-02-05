@@ -204,7 +204,6 @@ data:
         #
         # [caches.bbolt_example]
         # cache_type = 'bbolt'
-        # compression = true
 
             # [caches.bbolt_example.bbolt]
             # filename = 'trickster.db'
@@ -243,10 +242,11 @@ data:
     [origins]
 
         # example origin named default. default is always created with these settings unless a different origin is defined here.
+        # access this origin via http[s]://trickster-fqdn/default/
         [origins.default]
 
-        # is_default describes whether this origin is the default origin considered when routing http requests
-        # it is false, by default; but if you only have a single origin configured, is_default will be true unless explicitly set to false
+        ## is_default describes whether this origin is the default origin considered when routing http requests
+        ## it is false, by default; but if you only have a single origin configured, is_default will be true unless explicitly set to false
         # is_default = true
 
         # origin_type identifies the origin type.
@@ -254,14 +254,19 @@ data:
         # origin_type is a required configuration value
         origin_type = 'prometheus'
 
-        # cache_name identifies the name of the cache (configured above) that you want to use with this origin proxy. default is 'default'
+        ## hosts indicates which FQDNs requested by the client should route to this Origin (in addition to path-based routing)
+        ## if you are using TLS, all FQDNs should be included in the certfiicate common names to avoid insecure warnings to clients
+        # default setting is empty list. List format is: hosts = [ '1.example.com', '2.example.com' ]
+        # hosts = []
+
+        ## cache_name identifies the name of the cache (configured above) that you want to use with this origin proxy. default is 'default'
         # cache_name = 'default'
 
         ## cache_key_prefix defines the prefix this origin appends to cache keys. When using a shared cache like Redis,
         ## this can help partition multiple trickster instances that may have the same same hostname or ip address (the default prefix)
         # cache_key_prefix = 'example'
 
-        # negative_cache_name identifies the name of the negative cache (configured above) to be used with this origin. default is 'default'
+        ## negative_cache_name identifies the name of the negative cache (configured above) to be used with this origin. default is 'default'
         # negative_cache_name = 'default'
 
         # origin_url provides the base upstream URL for all proxied requests to this origin.

@@ -97,6 +97,8 @@ type OriginConfig struct {
 
 	// HTTP and Proxy Configurations
 	//
+	// Hosts identifies the frontend hostnames this origin should handle (virtual hosting)
+	Hosts []string `toml:"hosts"`
 	// IsDefault indicates if this is the default origin for any request not matching a configured route
 	IsDefault bool `toml:"is_default"`
 	// OriginType describes the type of origin (e.g., 'prometheus')
@@ -513,6 +515,11 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "origin_type") {
 			oc.OriginType = v.OriginType
+		}
+
+		if metadata.IsDefined("origins", k, "hosts") && v != nil {
+			oc.Hosts = make([]string, len(v.Hosts))
+			copy(oc.Hosts, v.Hosts)
 		}
 
 		if metadata.IsDefined("origins", k, "is_default") {
@@ -969,6 +976,11 @@ func (oc *OriginConfig) Clone() *OriginConfig {
 	o.TracingConfigName = oc.TracingConfigName
 	if oc.TracingConfig != nil {
 		o.TracingConfig = oc.TracingConfig.Clone()
+	}
+
+	if oc.Hosts != nil {
+		o.Hosts = make([]string, len(oc.Hosts))
+		copy(o.Hosts, oc.Hosts)
 	}
 
 	if oc.CompressableTypeList != nil {
