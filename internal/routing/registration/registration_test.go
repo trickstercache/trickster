@@ -31,6 +31,10 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
+
+	oc := config.Origins["default"]
+	oc.Hosts = []string{"test", "test2"}
+
 	registration.LoadCachesFromConfig()
 	RegisterProxyRoutes()
 

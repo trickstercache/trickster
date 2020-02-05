@@ -1,4 +1,4 @@
-{{- if eq .Values.config.cache.type "filesystem" -}}
+{{- if .Values.persistentVolume.enabled -}}
 {{- if not .Values.persistentVolume.existingClaim -}}
 apiVersion: v1
 kind: PersistentVolumeClaim
