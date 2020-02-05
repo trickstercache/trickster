@@ -64,7 +64,7 @@ spec:
               {{- if eq .path "" }}
               mountPath: /tmp/trickster
               {{- else }}
-                mountPath: {{ .path }}
+              mountPath: {{ .path }}
               {{- end }}
           {{- end }}
           {{- end }}
