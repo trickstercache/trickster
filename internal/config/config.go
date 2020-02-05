@@ -976,9 +976,9 @@ func (oc *OriginConfig) Clone() *OriginConfig {
 	o.TracingConfigName = oc.TracingConfigName
 	if oc.TracingConfig != nil {
 		o.TracingConfig = oc.TracingConfig.Clone()
-  }
+	}
 
-  if oc.Hosts != nil {
+	if oc.Hosts != nil {
 		o.Hosts = make([]string, len(oc.Hosts))
 		copy(o.Hosts, oc.Hosts)
 	}
