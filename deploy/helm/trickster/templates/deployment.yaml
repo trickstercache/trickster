@@ -58,12 +58,16 @@ spec:
           {{- end }}
         {{- end }}
           volumeMounts:
-            - name: cfg-volume
-              mountPath: /etc/trickster
-            {{- if eq .Values.config.cache.type "filesystem" }}
-            - name: cache-volume
-              mountPath: {{ .Values.config.cache.filesystem.mountPath }}
-            {{- end }}
+          {{- range .Values.caches }}
+          {{- if eq .cacheType "filesystem" }}
+            - name: cfg-volume-{{ .name }}
+              {{- if eq .path "" }}
+              mountPath: /tmp/trickster
+              {{- else }}
+              mountPath: {{ .path }}
+              {{- end }}
+          {{- end }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.service.servicePort }}
@@ -108,12 +112,10 @@ spec:
             items:
               - key: trickster.conf
                 path: trickster.conf
-        {{- if eq .Values.config.cache.type "filesystem" }}
         - name: cache-volume
         {{- if .Values.persistentVolume.enabled }}
           persistentVolumeClaim:
             claimName: {{ if .Values.persistentVolume.existingClaim }}{{ .Values.persistentVolume.existingClaim }}{{- else }}{{ template "trickster.fullname" . }}{{- end }}
         {{- else }}
           emptyDir: {}
-        {{- end -}}
         {{- end -}}

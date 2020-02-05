@@ -204,7 +204,7 @@ func registerPathRoutes(handlers map[string]http.Handler, client origins.Client,
 		}
 		log.Debug("registering origin handler path",
 			log.Pairs{"originName": o.Name, "path": v, "handlerName": p.HandlerName,
-				"originHost": o.Host, "handledPath": "/" + o.Name + p.Path, "matchType": p.MatchType})
+				"originHost": o.Host, "handledPath": "/" + o.Name + p.Path, "matchType": p.MatchType, "frontendHosts": o.Hosts})
 		if p.Handler != nil && len(p.Methods) > 0 {
 
 			if p.Methods[0] == "*" {
@@ -215,13 +215,17 @@ func registerPathRoutes(handlers map[string]http.Handler, client origins.Client,
 			case config.PathMatchTypePrefix:
 				// Case where we path match by prefix
 				// Host Header Routing
-				routing.Router.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...).Host(o.Name)
+				for _, h := range o.Hosts {
+					routing.Router.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...).Host(h)
+				}
 				// Path Routing
 				routing.Router.PathPrefix("/" + o.Name + p.Path).Handler(decorate(p)).Methods(p.Methods...)
 			default:
 				// default to exact match
 				// Host Header Routing
-				routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...).Host(o.Name)
+				for _, h := range o.Hosts {
+					routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...).Host(h)
+				}
 				// Path Routing
 				routing.Router.Handle("/"+o.Name+p.Path, decorate(p)).Methods(p.Methods...)
 			}

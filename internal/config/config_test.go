@@ -72,3 +72,21 @@ func TestHideAuthorizationCredentials(t *testing.T) {
 		t.Errorf("expected '*****' got '%s'", hdrs[headers.NameAuthorization])
 	}
 }
+
+func TestCloneOriginConfig(t *testing.T) {
+
+	oc := NewOriginConfig()
+	oc.Hosts = []string{"test"}
+
+	oc2 := oc.Clone()
+
+	if len(oc2.Hosts) != 1 {
+		t.Errorf("expected %d got %d", 1, len(oc2.Hosts))
+		return
+	}
+
+	if oc2.Hosts[0] != "test" {
+		t.Errorf("expected %s got %s", "test", oc2.Hosts[0])
+	}
+
+}

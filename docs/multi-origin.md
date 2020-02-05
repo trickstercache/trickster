@@ -73,27 +73,31 @@ Example Client Request URLs:
 
 ### DNS Alias Configuration
 
-In this mode, multiple DNS records point to a single Trickster instance. The FQDN used by the client to reach Trickster represents the Origin Name. Therefore, the entire FQDN must be part of the configuration section header. In this mode, the URL Path is _not_ considered during Origin Selection.
+In this mode, multiple DNS records point to a single Trickster instance. The FQDN used by the client to reach Trickster is mapped to specific origin configurations using the `hosts` list. In this mode, the URL Path is _not_ considered during Origin Selection.
 
 Example DNS-based Origin Configuration:
-```
+
+```toml
 [origins]
 
     # origin1 origin
     [origins.origin1]
+        hosts = [ '1.example.com', '2.example.com' ] # users can route to this origin via these FQDNs, or via `/origin1`
         origin_url = 'http://prometheus.example.com:9090'
         origin_type = 'prometheus'
         cache_name = 'default'
         is_default = true
 
     # "foo" origin
-    [origins.'trickster-foo.example.com']
+    [origins.foo]
+        hosts = [ 'trickster-foo.example.com' ] # users can route to this origin via these FQDNs, or via `/foo`
         origin_url = 'http://prometheus-foo.example.com:9090'
         origin_type = 'prometheus'
         cache_name = 'default'
 
     # "bar" origin
-    [origins.'trickster-bar.example.com']
+    [origins.bar]
+        hosts = [ 'trickster-bar.example.com' ] # users can route to this origin via these FQDNs, or via `/bar`
         origin_url = 'http://prometheus-bar.example.com:9090'
         origin_type = 'prometheus'
         cache_name = 'default'
@@ -109,3 +113,5 @@ Example Client Request URLs:
 * To Request from Origin `origin1` as default: <http://trickster.example.com:9090/query?query=xxx> 
 
 * To Request from Origin `origin1` (Method 2, via FQDN): <http://origin1.example.com:9090/query?query=xxx>
+
+Note: It is currently possible to specify the same FQDN in multiple origin configurations. You should not do this (obviously). A future enhancement will cause Trickster to exit fatally upon detection at startup.
