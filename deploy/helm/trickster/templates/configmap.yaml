@@ -170,6 +170,9 @@ data:
         {{- if .originURL }}
       origin_url = {{ .originURL | quote }}
         {{- end }}
+        {{- if .hosts }}
+      hosts = [ '{{- join "', '" .hosts }}' ]
+        {{- end }}
         {{- if .isDefault }}
       is_default = {{ .isDefault }}
         {{- end }}

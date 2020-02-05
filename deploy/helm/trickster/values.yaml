@@ -42,6 +42,11 @@ origins:
 #     # it is false, by default; but if you only have a single origin configured, isDefault will be true unless explicitly set to false
 #     isDefault: true
 
+#     # hosts indicates which FQDNs requested by the client should route to this Origin (in addition to path-based routing)
+#     # if you are using TLS, all FQDNs should be included in the certfiicate common names to avoid insecure warnings to clients
+#     # default setting is empty list. List format is: hosts = [ '1.example.com', '2.example.com' ]
+#     hosts = []
+
 #     # cacheName identifies the name of the cache (configured above) to use with this origin. default is 'default'
 #     cacheName: default
 
