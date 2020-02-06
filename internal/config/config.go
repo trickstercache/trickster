@@ -45,6 +45,9 @@ var Logging *LoggingConfig
 // Metrics is the Metrics subsection of the Running Configuration
 var Metrics *MetricsConfig
 
+// TracingConfigs is the TracingConfigs subsection of the Running Configuration
+var TracingConfigs map[string]*TracingConfig
+
 // NegativeCacheConfigs is the NegativeCacheConfig subsection of the Running Configuration
 var NegativeCacheConfigs map[string]NegativeCacheConfig
 
@@ -71,6 +74,8 @@ type TricksterConfig struct {
 	Logging *LoggingConfig `toml:"logging"`
 	// Metrics provides configurations for collecting Metrics about the application
 	Metrics *MetricsConfig `toml:"metrics"`
+	// TracingConfigs provides the distributed tracing configuration
+	TracingConfigs map[string]*TracingConfig `toml:"tracing"`
 	// NegativeCacheConfigs is a map of NegativeCacheConfigs
 	NegativeCacheConfigs map[string]NegativeCacheConfig `toml:"negative_caches"`
 
@@ -145,6 +150,8 @@ type OriginConfig struct {
 	MaxObjectSizeBytes int `toml:"max_object_size_bytes"`
 	// CompressableTypeList specifies the HTTP Object Content Types that will be compressed internally when stored in the Trickster cache
 	CompressableTypeList []string `toml:"compressable_types"`
+	// TracingConfigName provides the name of the Tracing Config to be used by this Origin
+	TracingConfigName string `toml:"tracing_name"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *TLSConfig `toml:"tls"`
@@ -194,6 +201,8 @@ type OriginConfig struct {
 	HTTPClient *http.Client `toml:"-"`
 	// CompressableTypes is the map version of CompressableTypeList for fast lookup
 	CompressableTypes map[string]bool `toml:"-"`
+	// TracingConfig is the reference to the Tracing Config as indicated by TracingConfigName
+	TracingConfig *TracingConfig `toml:"-"`
 }
 
 // CachingConfig is a collection of defining the Trickster Caching Behavior
@@ -379,6 +388,9 @@ func NewConfig() *TricksterConfig {
 		NegativeCacheConfigs: map[string]NegativeCacheConfig{
 			"default": NewNegativeCacheConfig(),
 		},
+		TracingConfigs: map[string]*TracingConfig{
+			"default": NewTracingConfig(),
+		},
 	}
 }
 
@@ -413,33 +425,35 @@ func NewOriginConfig() *OriginConfig {
 	return &OriginConfig{
 		BackfillTolerance:            defaultBackfillToleranceSecs,
 		BackfillToleranceSecs:        defaultBackfillToleranceSecs,
-		CacheName:                    defaultOriginCacheName,
 		CacheKeyPrefix:               "",
+		CacheName:                    defaultOriginCacheName,
+		CompressableTypeList:         defaultCompressableTypes(),
+		FastForwardTTL:               defaultFastForwardTTLSecs * time.Second,
+		FastForwardTTLSecs:           defaultFastForwardTTLSecs,
+		HealthCheckHeaders:           make(map[string]string),
 		HealthCheckQuery:             defaultHealthCheckQuery,
 		HealthCheckUpstreamPath:      defaultHealthCheckPath,
 		HealthCheckVerb:              defaultHealthCheckVerb,
-		HealthCheckHeaders:           make(map[string]string),
 		KeepAliveTimeoutSecs:         defaultKeepAliveTimeoutSecs,
 		MaxIdleConns:                 defaultMaxIdleConns,
+		MaxObjectSizeBytes:           defaultMaxObjectSizeBytes,
+		MaxTTL:                       defaultMaxTTLSecs * time.Second,
+		MaxTTLSecs:                   defaultMaxTTLSecs,
 		NegativeCache:                make(map[int]time.Duration),
 		NegativeCacheName:            defaultOriginNegativeCacheName,
 		Paths:                        make(map[string]*PathConfig),
+		RevalidationFactor:           defaultRevalidationFactor,
+		TLS:                          &TLSConfig{},
 		Timeout:                      time.Second * defaultOriginTimeoutSecs,
 		TimeoutSecs:                  defaultOriginTimeoutSecs,
 		TimeseriesEvictionMethod:     defaultOriginTEM,
 		TimeseriesEvictionMethodName: defaultOriginTEMName,
 		TimeseriesRetention:          defaultOriginTRF,
 		TimeseriesRetentionFactor:    defaultOriginTRF,
-		TimeseriesTTLSecs:            defaultTimeseriesTTLSecs,
-		FastForwardTTLSecs:           defaultFastForwardTTLSecs,
 		TimeseriesTTL:                defaultTimeseriesTTLSecs * time.Second,
-		FastForwardTTL:               defaultFastForwardTTLSecs * time.Second,
-		MaxTTLSecs:                   defaultMaxTTLSecs,
-		MaxTTL:                       defaultMaxTTLSecs * time.Second,
-		RevalidationFactor:           defaultRevalidationFactor,
-		MaxObjectSizeBytes:           defaultMaxObjectSizeBytes,
-		TLS:                          &TLSConfig{},
-		CompressableTypeList:         defaultCompressableTypes(),
+		TimeseriesTTLSecs:            defaultTimeseriesTTLSecs,
+		TracingConfigName:            defaultTracingConfigName,
+		TracingConfig:                NewTracingConfig(),
 	}
 }
 
@@ -456,6 +470,7 @@ func (c *TricksterConfig) loadFile() error {
 
 func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
 
+	c.processTracingConfigs(metadata)
 	c.processOriginConfigs(metadata)
 	c.processCachingConfigs(metadata)
 	err := c.validateConfigMappings()
@@ -478,6 +493,15 @@ func (c *TricksterConfig) validateConfigMappings() error {
 		}
 	}
 	return nil
+}
+
+func (c *TricksterConfig) processTracingConfigs(metadata *toml.MetaData) {
+	// if the user does not provide a sample rate in the config, assume they want 100% sampling
+	for k, v := range c.TracingConfigs {
+		if !metadata.IsDefined("tracing", k, "sample_rate") {
+			v.SampleRate = 1
+		}
+	}
 }
 
 func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
@@ -601,6 +625,10 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "negative_cache_name") {
 			oc.NegativeCacheName = v.NegativeCacheName
+		}
+
+		if metadata.IsDefined("origins", k, "tracing_name") {
+			oc.TracingConfigName = v.TracingConfigName
 		}
 
 		if metadata.IsDefined("origins", k, "health_check_upstream_path") {
@@ -849,6 +877,10 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 		nc.NegativeCacheConfigs[k] = v.Clone()
 	}
 
+	for k, v := range c.TracingConfigs {
+		nc.TracingConfigs[k] = v.Clone()
+	}
+
 	return nc
 }
 
@@ -940,6 +972,16 @@ func (oc *OriginConfig) Clone() *OriginConfig {
 	o.TimeseriesTTL = oc.TimeseriesTTL
 	o.TimeseriesTTLSecs = oc.TimeseriesTTLSecs
 	o.ValueRetention = oc.ValueRetention
+
+	o.TracingConfigName = oc.TracingConfigName
+	if oc.TracingConfig != nil {
+		o.TracingConfig = oc.TracingConfig.Clone()
+	}
+
+	if oc.Hosts != nil {
+		o.Hosts = make([]string, len(oc.Hosts))
+		copy(o.Hosts, oc.Hosts)
+	}
 
 	if oc.Hosts != nil {
 		o.Hosts = make([]string, len(oc.Hosts))

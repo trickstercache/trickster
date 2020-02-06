@@ -30,6 +30,7 @@ import (
 	"github.com/Comcast/trickster/internal/runtime"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	tr "github.com/Comcast/trickster/internal/util/tracing/registration"
 
 	"github.com/gorilla/handlers"
 )
@@ -84,6 +85,19 @@ func main() {
 	}
 
 	metrics.Init()
+
+	// Register Tracing Configurations
+	tracerFlushers, err := tr.RegisterAll(config.Config)
+	if err != nil {
+		log.Fatal(1, "tracing registration failed", log.Pairs{"detail": err.Error()})
+	}
+
+	if len(tracerFlushers) > 0 {
+		for _, f := range tracerFlushers {
+			defer f()
+		}
+	}
+
 	cr.LoadCachesFromConfig()
 	th.RegisterPingHandler()
 	th.RegisterConfigHandler()

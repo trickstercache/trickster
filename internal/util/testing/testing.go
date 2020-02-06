@@ -27,6 +27,7 @@ import (
 	th "github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	tr "github.com/Comcast/trickster/internal/util/tracing/registration"
 	"github.com/Comcast/trickster/pkg/promsim"
 	"github.com/Comcast/trickster/pkg/rangesim"
 )
@@ -106,6 +107,10 @@ func NewTestInstance(
 
 	oc := config.Origins["default"]
 	p := NewTestPathConfig(oc, DefaultPathConfigs, urlPath)
+
+	tracer, _, _ := tr.Init(oc.TracingConfig)
+	// TODO worry about running closures for cleanup once the test is complete
+	oc.TracingConfig.Tracer = tracer
 
 	if !isBasicTestServer && respHeaders != nil {
 		p.ResponseHeaders = respHeaders

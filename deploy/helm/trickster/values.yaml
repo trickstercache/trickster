@@ -5,23 +5,23 @@
 # Put ints in quotes to ensure they aren't converted to scientific notations.
 # See https://github.com/kubernetes/helm/issues/1707s
 
-# frontend:
+frontend:
 
-#   # listenAddress defines the ip on which Trickster's Front-end HTTP Proxy server listens.
-#   # empty by default, listening on all interfaces
-#   listenAddress: ""
+  # listenAddress defines the ip on which Trickster's Front-end HTTP Proxy server listens.
+  # empty by default, listening on all interfaces
+  listenAddress: ""
 
-#   # tlsListenAddress defines the ip on which Trickster's Front-end TLS Proxy server listens.
-#   # empty by default, listening on all interfaces
-#   tlsListenAddress: ""
+  # tlsListenAddress defines the ip on which Trickster's Front-end TLS Proxy server listens.
+  # empty by default, listening on all interfaces
+  tlsListenAddress: ""
 
-#   # tlsListenPort defines the port on which Trickster's Front-end TLS Proxy server listens.
-#   # The default is 0, which means TLS is not used, even if certificates are configured below.
-#   tlsListenPort: ""
+  # tlsListenPort defines the port on which Trickster's Front-end TLS Proxy server listens.
+  # The default is 0, which means TLS is not used, even if certificates are configured below.
+  tlsListenPort: ""
 
-#   # connectionsLimit defines the maximum number of concurrent connections
-#   # Trickster's Proxy server may handle at any time. 0 (default) means unlimited.
-#   connectionsLimit: "0"
+  # connectionsLimit defines the maximum number of concurrent connections
+  # Trickster's Proxy server may handle at any time. 0 (default) means unlimited.
+  connectionsLimit: "0"
 
 
 # Configuration options for mapping Origin(s)
@@ -44,8 +44,8 @@ origins:
 
 #     # hosts indicates which FQDNs requested by the client should route to this Origin (in addition to path-based routing)
 #     # if you are using TLS, all FQDNs should be included in the certfiicate common names to avoid insecure warnings to clients
-#     # default setting is empty list. List format is: hosts = [ '1.example.com', '2.example.com' ]
-#     hosts = []
+#     # default setting is empty list. List format is: hosts: [ '1.example.com', '2.example.com' ]
+#     hosts: []
 
 #     # cacheName identifies the name of the cache (configured above) to use with this origin. default is 'default'
 #     cacheName: default
@@ -56,6 +56,9 @@ origins:
 
 #     # negativeCacheName identifies the name of the negative cache (configured above) to be used with this origin. default is 'default'
 #     negativeCacheName: 'default'
+
+#     # tracingName selects the distributed tracing configuration (crafted below) to be used with this origin. default is 'default'
+#     tracingName: 'default'
 
 #     # dearticulateUpstreamRanges, when true, instructs Trickster to make multiple parallel requests to the origin for each
 #     # range needed to fulfill the client request, rather than making a multipart range request. default is false
@@ -145,17 +148,17 @@ origins:
 #       # TLS Backend Configs
 #       # These settings configure how Trickster will behave as a client when communicating with
 #       # this origin over TLS
-      
+
 #       # if insecureSkipVerify is true, Trickster will trust the origins certificate without any verification
 #       insecureSkipVerify: true
-      
+
 #       # certificateAuthorityPaths provides a list of additional certificate authorities to be used to trust an upstream origin
 #       # in addition to Operating System CA's.  default is an empty list, which insructs the Trickster to use only the OS List
 #       certificateAuthorityPaths: [ '../../testdata/test.rootca.pem' ]
-      
+
 #       # clientCertPath provides the path to a client certificate for Trickster to use when authenticating with an upstream server
 #       clientCertPath: /path/to/my/client/cert.pem
-      
+
 #       # clientKeyPath provides the path to a client key for Trickster to use when authenticating with an upstream server
 #       clientKeyPath: /path/to/my/client/key.pem
 
@@ -222,7 +225,7 @@ origins:
 
 #       # maxSizeBytes indicates how large the cache can grow in bytes before the Index evicts least-recently-accessed items. default is 512MB
 #       maxSizeBytes: "536870912"
-      
+
 #       # maxSizeBackoffBytes indicates how far below max_size_bytes the cache size must be to complete a byte-size-based eviction exercise. default is 16MB
 #       maxSizeBackoffBytes: "16777216"
 
@@ -329,10 +332,12 @@ origins:
 #       valueDirectory: /tmp/trickster
 
 # negativeCaches:
+# #  The 'default' negative cache config, mapped by all origins by default, is empty unless you populate it.
+# #  Enable it by uncommenting this section, and adding entries in the format of
+# #   code: "ttl_secs"
+# #  Refer to the  "general" example below for a working example with reasonable TTLs.
+
 #   - name: default
-#   #The 'default' negative cache config, mapped by all origins by default, is empty unless you populate it.
-#   #Update it by concommenting this section and adding entries here in the format of:
-#   #code: "ttl_secs"
 
 # #  Here's a pre-populated negative cache config ready to be uncommented and used in an origin config
 # #  The 'general' negative cache config will cache common failure response codes for 3 seconds
@@ -341,6 +346,34 @@ origins:
 #     404: "3"
 #     500: "3"
 #     502: "3"
+
+# tracing:
+# #  The 'default' tracing config, mapped by all origins by default 
+#   - name: default
+
+# #  implementation specifies the Tracing API that you use in your platform.
+# #  options are: 'opentelemetry' (default) and 'opentracing'
+#     implementation: 'opentelemetry'
+
+# #  exporter specifies the tracing format sent to the collection system
+# #  options are: jaeger, recorder, stdout or noop.  noop is the default
+#     exporter: 'noop'
+
+# #  collector is the URL of the trace collector, which MUST accept the traceExporter format
+# #  by default, empty string, meaning no traces are sent to the collector
+#     collector: ''
+
+# #  sampleRate sets the probability that a span will be recorded.
+# #  An integer or floating point value of 0 to 1.0 (inclusive) is permitted.
+# #  default is 1 (meaning 100% of requests are recorded)
+#     sampleRate: 1
+
+# #  another example tracing config named 'example' using jaeger backend and a 50% sample rate
+#   - name: example
+#     implementation: 'opentelemetry'
+#     exporter: 'jaeger'
+#     collector: 'https://jaeger.example.com/'
+#     sampleRate: .5
 
 # metrics:
 #   # listenAddress defines the ip that Trickster's metrics server listens on at /metrics

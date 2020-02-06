@@ -26,7 +26,9 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/Comcast/trickster/internal/util/tracing"
 	"github.com/Comcast/trickster/pkg/locks"
+	"go.opentelemetry.io/otel/api/core"
 )
 
 func handleCacheKeyHit(pr *proxyRequest) error {
@@ -131,6 +133,20 @@ func handleCacheRangeMiss(pr *proxyRequest) error {
 
 func handleCacheRevalidation(pr *proxyRequest) error {
 
+	rsc := request.GetResources(pr.Request)
+	oc := rsc.OriginConfig
+
+	ctx, span := tracing.NewChildSpan(pr.Request.Context(), oc.TracingConfig.Tracer, "CacheRevalidation")
+	defer func() {
+		reval := revalidationStatusValues[pr.revalidation]
+		span.AddEvent(
+			ctx,
+			"Complete",
+			core.Key("Result").String(reval),
+		)
+		span.End()
+	}()
+
 	pr.revalidation = RevalStatusInProgress
 
 	// if it's a range miss, we don't need to remote revalidate.
@@ -145,11 +161,11 @@ func handleCacheRevalidation(pr *proxyRequest) error {
 	}
 
 	// all other cache statuses that got us to this point means
-	// we have to perform a remote revalidation; quee it up
+	// we have to perform a remote revalidation; queue it up
 	pr.prepareRevalidationRequest()
 
 	if pr.cacheStatus == status.LookupStatusPartialHit {
-		// this will handle all upstream calls including prepared reval
+		// this will handle all upstream calls including prepared re-evaluation
 		return handleCachePartialHit(pr)
 	}
 
@@ -205,20 +221,15 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 }
 
 func handleCacheKeyMiss(pr *proxyRequest) error {
-
 	pr.prepareUpstreamRequests()
-
 	handleUpstreamTransactions(pr)
-
 	return handleAllWrites(pr)
 }
 
 func handleUpstreamTransactions(pr *proxyRequest) error {
-
 	pr.makeUpstreamRequests()
 	pr.reconstituteResponses()
 	pr.determineCacheability()
-
 	return nil
 }
 
@@ -240,7 +251,6 @@ func handleAllWrites(pr *proxyRequest) error {
 }
 
 func handleResponse(pr *proxyRequest) error {
-
 	pr.prepareResponse()
 	pr.writeResponseHeader()
 	pr.setBodyWriter() // what about partial hit? it does not set this
@@ -289,7 +299,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	}
 
 	var err error
-	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(cc, pr.key, pr.wantedRanges)
+	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(pr.Context(), cc, pr.key, pr.wantedRanges)
 	if err == nil || err == cache.ErrKNF {
 		if f, ok := cacheResponseHandlers[pr.cacheStatus]; ok {
 			f(pr)

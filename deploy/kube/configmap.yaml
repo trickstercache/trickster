@@ -10,6 +10,8 @@ data:
     #
     # Trickster 1.0 Example Configuration File - Exhaustive
     #
+    # To use this, run: trickster -config /path/to/example.conf
+    #
     # This file contains descriptions and examples for all
     # Trickster configuration options. More documentation is
     # available at https://github.com/Comcast/trickster/docs/
@@ -256,7 +258,7 @@ data:
 
         ## hosts indicates which FQDNs requested by the client should route to this Origin (in addition to path-based routing)
         ## if you are using TLS, all FQDNs should be included in the certfiicate common names to avoid insecure warnings to clients
-        # default setting is empty list. List format is: hosts = [ '1.example.com', '2.example.com' ]
+        ## default setting is empty list. List format is: hosts = [ '1.example.com', '2.example.com' ]
         # hosts = []
 
         ## cache_name identifies the name of the cache (configured above) that you want to use with this origin proxy. default is 'default'
@@ -273,6 +275,9 @@ data:
         # it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
         # origin_url is a required configuration value
         origin_url = 'http://prometheus:9090'
+
+        ## tracing_name selects the distributed tracing configuration (crafted below) to be used with this origin. default is 'default'
+        # tracing_name = 'default'
 
         ## dearticulate_upstream_ranges, when true, instructs Trickster to make multiple parallel requests to the origin for each
         ## range needed to fulfill the client request, rather than making a multipart range request. default is false
@@ -428,6 +433,39 @@ data:
         # timeseries_eviction_method = 'oldest'
         # timeout_secs = 180
         # backfill_tolerance_secs = 180
+        # tracing_name = 'example'
+
+    ## Configuration Options for Tracing Instrumentation. see /docs/tracing.md for more information
+    # [tracing]
+
+        ## This is the default tracing config with it's default options, which you can change here.
+        ## you can also add additional tracing configs here. user-defined tracing configs are mapped
+        ## to origins by the 'tracing_name' value in origin configs, which, by default, use 'default'
+        # [tracing.default]
+
+        ## implementation specifies the Tracing API that you use in your platform.
+        ## options are: 'opentelemetry' (default) and 'opentracing'
+        # implementation: 'opentelemetry'
+
+        ## exporter specifies the tracing format sent to the collection system
+        ## options are: jaeger, recorder, stdout or noop.  noop is the default
+        # exporter = 'noop'
+
+        ## collector is the URL of the trace collector which MUST be in the exporter format
+        ## the default is empty string, meaning no traces are sent to the collector
+        # collector = ''
+
+        ## An integer or floating point value of 0 to 1.0 (inclusive) is permitted.
+        ## sampleRate sets the probability that a span will be recorded.
+        ## default is 1 (meaning 100% of requests are recorded)
+        # sample_rate = 1
+        
+        ## another example tracing config named 'example' using jaeger backend and a 50% sample rate
+        # [tracing.example]
+        # implementation = 'opentelemetry'
+        # exporter = 'jaeger'
+        # collector = 'https://jaeger.example.com/'
+        # sample_rate = .5
 
     ## Configuration Options for Metrics Instrumentation
     # [metrics]

@@ -14,22 +14,33 @@
 package engines
 
 import (
+	"context"
 	"mime"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/golang/snappy"
-
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/status"
+	tc "github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
+	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/util/log"
+	"github.com/Comcast/trickster/internal/util/tracing"
+
+	"github.com/golang/snappy"
+	kv "go.opentelemetry.io/otel/api/key"
 )
 
 // QueryCache queries the cache for an HTTPDocument and returns it
-func QueryCache(c cache.Cache, key string, ranges byterange.Ranges) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
+func QueryCache(ctx context.Context, c cache.Cache, key string, ranges byterange.Ranges) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
+
+	rsc := tc.Resources(ctx).(*request.Resources)
+	oc := rsc.OriginConfig
+
+	ctx, span := tracing.NewChildSpan(ctx, oc.TracingConfig.Tracer, "QueryCache")
+	defer span.End()
 
 	d := &HTTPDocument{}
 	var lookupStatus status.LookupStatus
@@ -106,6 +117,10 @@ func QueryCache(c cache.Cache, key string, ranges byterange.Ranges) (*HTTPDocume
 	d.isFulfillment = (d.Ranges != nil && len(d.Ranges) > 0) && (ranges == nil || len(ranges) == 0)
 
 	if d.isFulfillment {
+		span.AddEvent(
+			ctx,
+			"Cache Fulfillment",
+		)
 		ranges = byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength - 1}}
 	}
 
@@ -131,7 +146,13 @@ func stripConditionalHeaders(h http.Header) {
 }
 
 // WriteCache writes an HTTPDocument to the cache
-func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl time.Duration, compressTypes map[string]bool) error {
+func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument, ttl time.Duration, compressTypes map[string]bool) error {
+
+	rsc := tc.Resources(ctx).(*request.Resources)
+	oc := rsc.OriginConfig
+
+	ctx, span := tracing.NewChildSpan(ctx, oc.TracingConfig.Tracer, "WriteCache")
+	defer span.End()
 
 	h := http.Header(d.Headers)
 	h.Del(headers.NameDate)
@@ -150,6 +171,7 @@ func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl time.Duration, c
 				compress = true
 			}
 		}
+
 	}
 
 	// for memory cache, don't serialize the document, since we can retrieve it by reference.
@@ -180,7 +202,22 @@ func WriteCache(c cache.Cache, key string, d *HTTPDocument, ttl time.Duration, c
 	} else {
 		bytes = append([]byte{0}, bytes...)
 	}
-	return c.Store(key, bytes, ttl)
+
+	err := c.Store(key, bytes, ttl)
+	if err != nil {
+		span.AddEvent(
+			ctx,
+			"Cache Write Failure",
+			kv.String("Error", err.Error()),
+		)
+		return err
+	}
+	span.AddEvent(
+		ctx,
+		"Cache Write",
+		kv.Int("bytesWritten", len(bytes)),
+	)
+	return nil
 
 }
 

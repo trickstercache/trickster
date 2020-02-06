@@ -136,14 +136,18 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 // the path routes to the appropriate handler from the provided handlers map
 func registerPathRoutes(handlers map[string]http.Handler, client origins.Client, o *config.OriginConfig, c cache.Cache,
 	paths map[string]*config.PathConfig) {
-
 	decorate := func(p *config.PathConfig) http.Handler {
-		// Add Origin, Cache, and Path Configs to the HTTP Request's context
-		p.Handler = middleware.WithResourcesContext(client, o, c, p, p.Handler)
-		if p.NoMetrics {
-			return p.Handler
+		// add Origin, Cache, and Path Configs to the HTTP Request's context
+		h := middleware.WithResourcesContext(client, o, c, p, p.Handler)
+		// decorate frontend prometheus metrics
+		if !p.NoMetrics {
+			h = middleware.Decorate(o.Name, o.OriginType, p.Path, h)
 		}
-		return middleware.Decorate(o.Name, o.OriginType, p.Path, p.Handler)
+		// attach distributed tracer
+		if p.OriginConfig != nil && p.OriginConfig.TracingConfig != nil && p.OriginConfig.TracingConfig.Tracer != nil {
+			h = middleware.Trace(p.OriginConfig.TracingConfig.Tracer, h)
+		}
+		return h
 	}
 
 	pathsWithVerbs := make(map[string]*config.PathConfig)

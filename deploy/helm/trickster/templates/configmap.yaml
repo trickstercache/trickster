@@ -15,7 +15,7 @@ data:
     {{- end }}
 
     [frontend]
-    listen_port = {{ .Values.service.port }}
+    listen_port = {{ .Values.service.servicePort }}
     {{- if .Values.frontend }}
       {{- if .Values.frontend.listenAddress }}
     listen_address = {{ .Values.frontend.listenAddress | quote }}
@@ -178,6 +178,9 @@ data:
         {{- end }}
         {{- if .cacheName }}
       cache_name = {{ .cacheName | quote }}
+        {{- end }}
+        {{- if .tracingName }}
+      tracing_name = {{ .tracingName | quote }}
         {{- end }}
         {{- if .cacheKeyPrefix }}
       cache_key_prefix = {{ .cacheKeyPrefix | quote }}
@@ -350,6 +353,25 @@ data:
       {{- end }}
     {{- end }}
     {{- end }}
+
+    [tracing]
+      {{- range .Values.tracing }}
+      
+      {{ printf "[tracing.%s]" .name }}
+            {{- if .implementation }}
+          implementation = {{ .implementation | quote }}
+            {{- end }}
+            {{- if .exporter }}
+          exporter = {{ .exporter | quote }}
+            {{- end }}
+            {{- if .collector }}
+          collector = {{ .collector | quote }}
+            {{- end }}
+            {{- if .sampleRate }}
+          sample_rate = {{ .sampleRate }}
+            {{- end }}
+      {{- end }}
+
     {{- if .Values.service.metricsPort }}
 
     [metrics]

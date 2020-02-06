@@ -32,6 +32,9 @@ import (
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/Comcast/trickster/internal/util/tracing"
+	"go.opentelemetry.io/otel/api/core"
+	othttptrace "go.opentelemetry.io/otel/plugin/httptrace"
 )
 
 // Reqs is for Progressive Collapsed Forwarding
@@ -44,10 +47,14 @@ const HTTPBlockSize = 32 * 1024
 func DoProxy(w io.Writer, r *http.Request) *http.Response {
 
 	rsc := request.GetResources(r)
-	pc := rsc.PathConfig
 	oc := rsc.OriginConfig
 
 	start := time.Now()
+	_, span := tracing.NewChildSpan(r.Context(), oc.TracingConfig.Tracer, "ProxyRequest")
+	defer span.End()
+
+	pc := rsc.PathConfig
+
 	var elapsed time.Duration
 	var cacheStatusCode status.LookupStatus
 	var resp *http.Response
@@ -111,8 +118,12 @@ func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer 
 func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) {
 
 	rsc := request.GetResources(r)
-	pc := rsc.PathConfig
 	oc := rsc.OriginConfig
+
+	ctx, span := tracing.NewChildSpan(r.Context(), oc.TracingConfig.Tracer, "PrepareFetchReader")
+	defer span.End()
+
+	pc := rsc.PathConfig
 
 	var rc io.ReadCloser
 
@@ -128,18 +139,37 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	}
 
 	r.RequestURI = ""
+
+	// Processing traces for proxies
+	// https://www.w3.org/TR/trace-context-1/#alternative-processing
+	ctx, r = othttptrace.W3C(ctx, r)
+	othttptrace.Inject(ctx, r)
+
+	ctx, doSpan := tracing.NewChildSpan(r.Context(), oc.TracingConfig.Tracer, "ProxyRequest")
 	resp, err := oc.HTTPClient.Do(r)
+
 	if err != nil {
 		log.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		// if there is an err and the response is nil, the server could not be reached; make a 502 for the downstream response
 		if resp == nil {
 			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r, Header: make(http.Header)}
 		}
+
+		doSpan.AddEvent(
+			ctx,
+			"Failure",
+			core.Key("Error").String(err.Error()),
+			core.Key("HTTPStatus").Int(resp.StatusCode),
+		)
+		doSpan.SetStatus(tracing.HTTPToCode(resp.StatusCode))
+
 		if pc != nil {
 			headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
 		}
+		doSpan.End()
 		return nil, resp, 0
 	}
+	doSpan.End()
 
 	originalLen := int64(-1)
 	if v, ok := resp.Header[headers.NameContentLength]; ok {

@@ -147,6 +147,12 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		}
 		o.NegativeCache = nc2
 
+		tc, ok := c.TracingConfigs[o.TracingConfigName]
+		if !ok {
+			return fmt.Errorf(`invalid tracing config name: %s`, o.TracingConfigName)
+		}
+		o.TracingConfig = tc
+
 		// enforce MaxTTL
 		if o.TimeseriesTTLSecs > o.MaxTTLSecs {
 			o.TimeseriesTTLSecs = o.MaxTTLSecs

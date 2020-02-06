@@ -31,6 +31,7 @@ import (
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/Comcast/trickster/internal/util/tracing"
 	"github.com/Comcast/trickster/pkg/locks"
 )
 
@@ -42,8 +43,11 @@ import (
 func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 
 	rsc := request.GetResources(r)
-
 	oc := rsc.OriginConfig
+
+	ctx, span := tracing.NewChildSpan(r.Context(), oc.TracingConfig.Tracer, "DeltaProxyCacheRequest")
+	defer span.End()
+
 	pc := rsc.PathConfig
 	cache := rsc.CacheClient
 	cc := rsc.CacheConfig
@@ -105,6 +109,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 
 	coReq := GetRequestCachingPolicy(r.Header)
 	if coReq.NoCache {
+		span.AddEvent(
+			ctx,
+			"Not Caching",
+		)
 		cacheStatus = status.LookupStatusPurge
 		cache.Remove(key)
 		cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
@@ -115,16 +123,18 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			return // fetchTimeseries logs the error
 		}
 	} else {
-		doc, cacheStatus, _, err = QueryCache(cache, key, nil)
+		doc, cacheStatus, _, err = QueryCache(ctx, cache, key, nil)
 		if cacheStatus == status.LookupStatusKeyMiss && err == tc.ErrKNF {
 			cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 			if err != nil {
 				recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
+
 				Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 				locks.Release(key)
 				return // fetchTimeseries logs the error
 			}
 		} else {
+
 			// Load the Cached Timeseries
 			if doc == nil {
 				err = errors.New("empty document body")
@@ -167,6 +177,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				}
 				cacheStatus = status.LookupStatusPartialHit
 			}
+
 		}
 	}
 
@@ -216,6 +227,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		// This fetches the gaps from the origin and adds their datasets to the merge list
 		go func(e *timeseries.Extent, rq *proxyRequest) {
+			defer wg.Done()
 			rq.Request = rq.WithContext(tctx.WithResources(r.Context(), request.NewResources(oc, pc, cc, cache, client)))
 			client.SetExtent(rq.Request, trq, e)
 			body, resp, _ := rq.Fetch()
@@ -223,7 +235,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				nts, err := client.UnmarshalTimeseries(body)
 				if err != nil {
 					log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
-					wg.Done()
 					return
 				}
 				uncachedValueCount += nts.ValueCount()
@@ -233,19 +244,24 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				mts = append(mts, nts)
 				appendLock.Unlock()
 			}
-			wg.Done()
 		}(&missRanges[i], pr.Clone())
 	}
 
 	var hasFastForwardData bool
 	var ffts timeseries.Timeseries
+
 	// Only fast forward if configured and the user request is for the absolute latest datapoint
 	if (!trq.FastForwardDisable) && (trq.Extent.End.Equal(normalizedNow.Extent.End)) && ffURL.Scheme != "" {
+
 		wg.Add(1)
 		rs := request.NewResources(oc, oc.FastForwardPath, cc, cache, client)
 		rs.AlternateCacheTTL = oc.FastForwardTTL
 		req := r.Clone(tctx.WithResources(context.Background(), rs))
 		go func() {
+			defer wg.Done()
+			_, span := tracing.NewChildSpan(ctx, oc.TracingConfig.Tracer, "FastForward")
+			defer span.End()
+
 			// create a new context that uses the fast forward path config instead of the time series path config
 			req.URL = ffURL
 			body, resp, isHit := FetchViaObjectProxyCache(req)
@@ -254,7 +270,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					ffStatus = "err"
 					log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
-					wg.Done()
 					return
 				}
 				ffts.SetStep(trq.Step)
@@ -268,7 +283,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			} else {
 				ffStatus = "err"
 			}
-			wg.Done()
 		}()
 	}
 
@@ -334,7 +348,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 					}
 					doc.Body = cdata
 				}
-				WriteCache(cache, key, doc, oc.TimeseriesTTL, oc.CompressableTypes)
+				WriteCache(ctx, cache, key, doc, oc.TimeseriesTTL, oc.CompressableTypes)
 			}
 		}()
 	}
