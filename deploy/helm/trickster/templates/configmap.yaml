@@ -15,7 +15,7 @@ data:
     {{- end }}
 
     [frontend]
-    listen_port = {{ .Values.service.port }}
+    listen_port = {{ .Values.service.servicePort }}
     {{- if .Values.frontend }}
       {{- if .Values.frontend.listenAddress }}
     listen_address = {{ .Values.frontend.listenAddress | quote }}
@@ -353,7 +353,6 @@ data:
       {{- end }}
     {{- end }}
     {{- end }}
-    {{- if .Values.service.metricsPort }}
 
     [tracing]
       {{- range .Values.tracing }}
