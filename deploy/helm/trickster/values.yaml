@@ -57,6 +57,9 @@ origins:
 #     # negativeCacheName identifies the name of the negative cache (configured above) to be used with this origin. default is 'default'
 #     negativeCacheName: 'default'
 
+#     # tracingName selects the distributed tracing configuration (crafted below) to be used with this origin. default is 'default'
+#     tracingName: 'default'
+
 #     # dearticulateUpstreamRanges, when true, instructs Trickster to make multiple parallel requests to the origin for each
 #     # range needed to fulfill the client request, rather than making a multipart range request. default is false
 #     # dearticulateUpstreamRanges: false
@@ -329,10 +332,12 @@ origins:
 #       valueDirectory: /tmp/trickster
 
 # negativeCaches:
+# #  The 'default' negative cache config, mapped by all origins by default, is empty unless you populate it.
+# #  Enable it by uncommenting this section, and adding entries in the format of
+# #   code: "ttl_secs"
+# #  Refer to the  "general" example below for a working example with reasonable TTLs.
+
 #   - name: default
-#   #The 'default' negative cache config, mapped by all origins by default, is empty unless you populate it.
-#   #Update it by concommenting this section and adding entries here in the format of:
-#   #code: "ttl_secs"
 
 # #  Here's a pre-populated negative cache config ready to be uncommented and used in an origin config
 # #  The 'general' negative cache config will cache common failure response codes for 3 seconds
@@ -341,6 +346,34 @@ origins:
 #     404: "3"
 #     500: "3"
 #     502: "3"
+
+# tracing:
+# #  The 'default' tracing config, mapped by all origins by default 
+#   - name: default
+
+# #  implementation specifies the Tracing API that you use in your platform.
+# #  options are: 'opentelemetry' (default) and 'opentracing'
+#     implementation: 'opentelemetry'
+
+# #  exporter specifies the tracing format sent to the collection system
+# #  options are: jaeger, recorder, stdout or noop.  noop is the default
+#     exporter: 'noop'
+
+# #  collector is the URL of the trace collector, which MUST accept the traceExporter format
+# #  by default, empty string, meaning no traces are sent to the collector
+#     collector: ''
+
+# #  sampleRate sets the probability that a span will be recorded.
+# #  An integer or floating point value of 0 to 1.0 (inclusive) is permitted.
+# #  default is 1 (meaning 100% of requests are recorded)
+	#   sampleRate: 1
+
+# #  another example tracing config named 'example' using jaeger backend and a 50% sample rate
+#   - name: example
+#     implementation: 'opentelemetry'
+#     exporter: 'jaeger'
+#     collector: 'https://jaeger.example.com/'
+#     sampleRate: .5
 
 # metrics:
 #   # listenAddress defines the ip that Trickster's metrics server listens on at /metrics

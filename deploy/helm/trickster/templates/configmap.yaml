@@ -179,6 +179,9 @@ data:
         {{- if .cacheName }}
       cache_name = {{ .cacheName | quote }}
         {{- end }}
+        {{- if .tracingName }}
+      tracing_name = {{ .tracingName | quote }}
+        {{- end }}
         {{- if .cacheKeyPrefix }}
       cache_key_prefix = {{ .cacheKeyPrefix | quote }}
         {{- end }}
@@ -350,6 +353,26 @@ data:
       {{- end }}
     {{- end }}
     {{- end }}
+    {{- if .Values.service.metricsPort }}
+
+    [tracing]
+      {{- range .Values.tracing }}
+      
+      {{ printf "[tracing.%s]" .name }}
+            {{- if .implementation }}
+          implementation = {{ .implementation | quote }}
+            {{- end }}
+            {{- if .exporter }}
+          exporter = {{ .exporter | quote }}
+            {{- end }}
+            {{- if .collector }}
+          collector = {{ .collector | quote }}
+            {{- end }}
+            {{- if .sampleRate }}
+          sample_rate = {{ .sampleRate }}
+            {{- end }}
+      {{- end }}
+
     {{- if .Values.service.metricsPort }}
 
     [metrics]
