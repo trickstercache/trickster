@@ -15,11 +15,14 @@ package engines
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 var testString = "Hey, I'm an http response body string."
@@ -115,6 +118,93 @@ func TestPCFReadWriteGetBody(t *testing.T) {
 	}
 }
 
+func TestPCFWaits(t *testing.T) {
+	testStringLong := ""
+	for i := 0; i < 32000; i++ {
+		testStringLong += "DEADBEEF"
+	}
+	w := bytes.NewBuffer(make([]byte, 0, len(testStringLong)))
+	r := strings.NewReader(testStringLong)
+	l := len(testStringLong)
+	resp := &http.Response{}
+	allComplete := uint64(0)
+	serverComplete := uint64(0)
+
+	pcf := NewPCF(resp, int64(l))
+
+	go func() {
+		buf := make([]byte, HTTPBlockSize)
+		var n int
+		var err error
+		for {
+			n, err = r.Read(buf)
+			if err != nil && n != 0 {
+
+			}
+			time.Sleep(50 * time.Millisecond)
+			n, err = pcf.Write(buf)
+			if err != nil && n == 0 {
+				break
+			}
+		}
+		pcf.Close()
+	}()
+	go pcf.AddClient(w)
+
+	go func() {
+		pcf.WaitAllComplete()
+		atomic.StoreUint64(&allComplete, 1)
+	}()
+
+	go func() {
+		pcf.WaitServerComplete()
+		fmt.Println("HDFHFD")
+		atomic.StoreUint64(&serverComplete, 1)
+	}()
+
+	if a := atomic.LoadUint64(&serverComplete); a != 0 {
+		t.Errorf("WaitServerComplete returned too quickly, expected wait got finished")
+	}
+
+	if a := atomic.LoadUint64(&allComplete); a != 0 {
+		t.Errorf("WaitAllComplete returned too quickly, expected wait got finished")
+	}
+
+	// Wait for pcf to finish in goroutine
+	sleepDur := time.Duration(65 * (int(l/HTTPBlockSize) + 1))
+	time.Sleep(sleepDur * time.Millisecond)
+
+	if a := atomic.LoadUint64(&serverComplete); a != 1 {
+		t.Errorf("Expected WaitServerComplete to have finished with pcf finish")
+	}
+
+	if a := atomic.LoadUint64(&allComplete); a != 1 {
+		t.Errorf("Expected WaitAllComplete to have finished with pcf finish")
+	}
+
+	go func() {
+		pcf.WaitAllComplete()
+		atomic.StoreUint64(&allComplete, 2)
+	}()
+
+	go func() {
+		pcf.WaitServerComplete()
+		atomic.StoreUint64(&serverComplete, 2)
+	}()
+
+	// Give time for goroutines to  initialize and try to wait
+	time.Sleep(20 * time.Millisecond)
+
+	if a := atomic.LoadUint64(&serverComplete); a != 2 {
+		t.Errorf("Expected WaitServerComplete to not block after pcf completion")
+	}
+
+	if a := atomic.LoadUint64(&allComplete); a != 2 {
+		t.Errorf("Expected WaitAllComplete to not block after pcf completion")
+	}
+
+}
+
 func TestPCFReadWriteClose(t *testing.T) {
 	w := bytes.NewBuffer(make([]byte, 0, len(testString)))
 	r := strings.NewReader(testString)
@@ -190,15 +280,15 @@ func TestPCFResp(t *testing.T) {
 }
 
 func BenchmarkPCFWrite(b *testing.B) {
-	// 100MB object, simulated actual usecase sizes.
-	b.N = 3200
 
-	testBytes := make([]byte, 32*1024)
-	l := b.N * 32 * 1024
+	bufSize := 32
+
+	testBytes := make([]byte, bufSize*1024)
+	l := b.N * bufSize * 1024
 	resp := &http.Response{}
 
 	pcf := NewPCF(resp, int64(l))
-	b.SetBytes(32 * 1024)
+	b.SetBytes(int64(bufSize) * 1024)
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
@@ -207,19 +297,20 @@ func BenchmarkPCFWrite(b *testing.B) {
 }
 
 func BenchmarkPCFRead(b *testing.B) {
-	b.N = 3200
 
-	testBytes := make([]byte, 32*1024)
-	readBuf := make([]byte, 32*1024)
+	bufSize := 32
 
-	l := b.N * 32 * 1024
+	testBytes := make([]byte, bufSize*1024)
+	readBuf := make([]byte, bufSize*1024)
+
+	l := b.N * bufSize * 1024
 	resp := &http.Response{}
 
 	var readIndex uint64
 	var err error
 
 	pcf := NewPCF(resp, int64(l))
-	b.SetBytes(32 * 1024)
+	b.SetBytes(int64(bufSize) * 1024)
 	for i := 0; i < b.N; i++ {
 		pcf.Write(testBytes)
 	}
@@ -236,19 +327,20 @@ func BenchmarkPCFRead(b *testing.B) {
 }
 
 func BenchmarkPCFWriteRead(b *testing.B) {
-	b.N = 3200
 
-	testBytes := make([]byte, 32*1024)
-	readBuf := make([]byte, 32*1024)
+	bufSize := 32
 
-	l := b.N * 32 * 1024
+	testBytes := make([]byte, bufSize*1024)
+	readBuf := make([]byte, bufSize*1024)
+
+	l := b.N * bufSize * 1024
 	resp := &http.Response{}
 
 	var readIndex uint64
 	var err error
 
 	pcf := NewPCF(resp, int64(l))
-	b.SetBytes(32 * 1024)
+	b.SetBytes(int64(bufSize) * 1024)
 
 	b.ResetTimer()
 
