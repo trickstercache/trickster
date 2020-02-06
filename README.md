@@ -87,7 +87,7 @@ You can directly use the `go` tool to download and install the `trickster`
 binary into your `GOPATH`:
 
     $ go get github.com/Comcast/trickster
-    $ trickster -origin http://prometheus.example.com:9090
+    $ trickster -origin-url http://prometheus.example.com:9090 -origin-type prometheus
 
 You can also clone the repository yourself and build using `make`:
 
@@ -96,7 +96,7 @@ You can also clone the repository yourself and build using `make`:
     $ git clone https://github.com/Comcast/trickster.git
     $ cd trickster
     $ make build
-    $ ./trickster -origin http://prometheus.example.com:9090
+    $ trickster -origin-url http://prometheus.example.com:9090 -origin-type prometheus
 
 The Makefile provides several targets, including:
 
@@ -104,6 +104,8 @@ The Makefile provides several targets, including:
 * *docker*: build a docker container for the current `HEAD`
 * *clean*: delete previously-built binaries and object files
 * *test*: runs unit tests
+* *bench*: runs benchmark tests
+* *rpm*: builds a Trickster RPM
 
 ## More information
 
