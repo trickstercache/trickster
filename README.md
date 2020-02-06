@@ -24,6 +24,7 @@ Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications lik
 * [Negative Caching](./docs/negative-caching.md) to prevent domino effect outages
 * High-performance [Collapsed Forwarding](./docs/collapsed-forwarding.md)
 * Best-in-class [Byte Range Request caching and acceleration](./docs/range_request.md).
+* [Distributed Tracing](./docs/tracing.md) via OpenTelemetry
 
 ## Time Series Database Accelerator
 
