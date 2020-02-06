@@ -5,23 +5,23 @@
 # Put ints in quotes to ensure they aren't converted to scientific notations.
 # See https://github.com/kubernetes/helm/issues/1707s
 
-# frontend:
+frontend:
 
-#   # listenAddress defines the ip on which Trickster's Front-end HTTP Proxy server listens.
-#   # empty by default, listening on all interfaces
-#   listenAddress: ""
+  # listenAddress defines the ip on which Trickster's Front-end HTTP Proxy server listens.
+  # empty by default, listening on all interfaces
+  listenAddress: ""
 
-#   # tlsListenAddress defines the ip on which Trickster's Front-end TLS Proxy server listens.
-#   # empty by default, listening on all interfaces
-#   tlsListenAddress: ""
+  # tlsListenAddress defines the ip on which Trickster's Front-end TLS Proxy server listens.
+  # empty by default, listening on all interfaces
+  tlsListenAddress: ""
 
-#   # tlsListenPort defines the port on which Trickster's Front-end TLS Proxy server listens.
-#   # The default is 0, which means TLS is not used, even if certificates are configured below.
-#   tlsListenPort: ""
+  # tlsListenPort defines the port on which Trickster's Front-end TLS Proxy server listens.
+  # The default is 0, which means TLS is not used, even if certificates are configured below.
+  tlsListenPort: ""
 
-#   # connectionsLimit defines the maximum number of concurrent connections
-#   # Trickster's Proxy server may handle at any time. 0 (default) means unlimited.
-#   connectionsLimit: "0"
+  # connectionsLimit defines the maximum number of concurrent connections
+  # Trickster's Proxy server may handle at any time. 0 (default) means unlimited.
+  connectionsLimit: "0"
 
 
 # Configuration options for mapping Origin(s)
@@ -44,8 +44,8 @@ origins:
 
 #     # hosts indicates which FQDNs requested by the client should route to this Origin (in addition to path-based routing)
 #     # if you are using TLS, all FQDNs should be included in the certfiicate common names to avoid insecure warnings to clients
-#     # default setting is empty list. List format is: hosts = [ '1.example.com', '2.example.com' ]
-#     hosts = []
+#     # default setting is empty list. List format is: hosts: [ '1.example.com', '2.example.com' ]
+#     hosts: []
 
 #     # cacheName identifies the name of the cache (configured above) to use with this origin. default is 'default'
 #     cacheName: default
