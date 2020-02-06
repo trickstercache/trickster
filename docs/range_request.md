@@ -61,7 +61,7 @@ A situation can arise where there is a partial cache hit has multiple ranges tha
 
 Trickster currently does not support revalidation based on `If-Range` request headers, for use with partial download resumptions by clients.  `If-Range` headers are simply ignored by Trickster and passed through to the origin, which can result in unexpected behavior with the Trickster cache for that object.
 
- We plan to provide full support for `If-Range` as part of the Trickster 1.0 GA Release.
+ We plan to provide full support for `If-Range` as part of Trickster 1.1 or 1.2.
 
 ## RangeSim
 
