@@ -15,7 +15,6 @@ package engines
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"net/http"
 	"reflect"
@@ -158,7 +157,6 @@ func TestPCFWaits(t *testing.T) {
 
 	go func() {
 		pcf.WaitServerComplete()
-		fmt.Println("HDFHFD")
 		atomic.StoreUint64(&serverComplete, 1)
 	}()
 
