@@ -23,11 +23,11 @@ type TracingConfig struct {
 	Name string `toml:"-"`
 	// Implementation is the particular implementation to use. Ex OpenTelemetry.
 	// TODO generate with Rob Pike's Stringer
-	Implementation string `toml:"tracer_implementation"`
+	Implementation string `toml:"implementation"`
 	// Exporter is the format used to send to the collector
-	Exporter string `toml:"trace_exporter"`
+	Exporter string `toml:"exporter"`
 	// CollectorEndpoint is the URL of the trace collector it MUST be of Implementation implementation
-	CollectorEndpoint string `toml:"tracing_collector"`
+	CollectorEndpoint string `toml:"collector"`
 	// SampleRate sets the probability that a span will be recorded. Values between 0 and 1 are accepted.
 	SampleRate float64 `toml:"sample_rate"`
 
