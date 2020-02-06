@@ -117,21 +117,24 @@ func (pfc *progressiveCollapseForwarder) AddClient(w io.Writer) error {
 			readIndex++
 		}
 		if err != nil {
-			if err != io.EOF {
-				pfc.clientWaitgroup.Done()
-				return err
-			}
+			// return error at end of function
+			// Nominal case should be io.EOF
 			break
 		}
 	}
 	pfc.clientWaitgroup.Done()
-	return io.EOF
+	return err
 }
 
 // WaitServerComplete blocks until the object has been retrieved from the origin server
 // Need to get payload before can send to actual cache
 func (pfc *progressiveCollapseForwarder) WaitServerComplete() {
+	if atomic.LoadInt32(&pfc.serverReadDone) != 0 {
+		return
+	}
+	pfc.serverWaitCond.L.Lock()
 	pfc.serverWaitCond.Wait()
+	pfc.serverWaitCond.L.Unlock()
 }
 
 // WaitAllComplete will wait till all clients have completed or timedout
@@ -157,13 +160,12 @@ func (pfc *progressiveCollapseForwarder) GetResp() *http.Response {
 // adds a reference to that data, and increments the read index.
 func (pfc *progressiveCollapseForwarder) Write(b []byte) (int, error) {
 	n := atomic.LoadUint64(&pfc.rIndex)
-	l := uint64(len(b))
-	if pfc.dataIndex+l > pfc.dataStoreLen || n > pfc.dataLen {
+	if pfc.dataIndex+uint64(len(b)) > pfc.dataStoreLen || n > pfc.dataLen {
 		return 0, io.ErrShortWrite
 	}
-	pfc.data[n] = pfc.dataStore[pfc.dataIndex : pfc.dataIndex+l]
+	pfc.data[n] = pfc.dataStore[pfc.dataIndex : pfc.dataIndex+uint64(len(b))]
 	copy(pfc.data[n], b)
-	pfc.dataIndex += l
+	pfc.dataIndex += uint64(len(b))
 	atomic.AddUint64(&pfc.rIndex, 1)
 	pfc.readCond.Broadcast()
 	return len(b), nil
@@ -173,7 +175,7 @@ func (pfc *progressiveCollapseForwarder) Write(b []byte) (int, error) {
 // This should be triggered by the client io.EOF
 func (pfc *progressiveCollapseForwarder) Close() {
 	atomic.AddInt32(&pfc.serverReadDone, 1)
-	pfc.serverWaitCond.Signal()
+	pfc.serverWaitCond.Broadcast()
 	pfc.readCond.Broadcast()
 }
 
