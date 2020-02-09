@@ -204,7 +204,7 @@ func registerPathRoutes(handlers map[string]http.Handler, client origins.Client,
 		}
 		log.Debug("registering origin handler path",
 			log.Pairs{"originName": o.Name, "path": v, "handlerName": p.HandlerName,
-				"originHost": o.Host, "handledPath": "/" + o.Name + p.Path, "matchType": p.MatchType, "frontendHosts": o.Hosts})
+				"originHost": o.Host, "handledPath": "/" + o.Name + p.Path, "matchType": p.MatchType, "frontendHosts": strings.Join(o.Hosts, ",")})
 		if p.Handler != nil && len(p.Methods) > 0 {
 
 			if p.Methods[0] == "*" {
