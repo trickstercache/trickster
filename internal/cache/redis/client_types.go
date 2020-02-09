@@ -30,10 +30,13 @@ var clientTypeNames = map[string]clientType{
 	"sentinel": clientTypeSentinel,
 }
 
-var clientTypeValues = map[clientType]string{
-	clientTypeStandard: "standard",
-	clientTypeCluster:  "cluster",
-	clientTypeSentinel: "sentinel",
+var clientTypeValues = map[clientType]string{}
+
+func init() {
+	// create inverse lookup map
+	for k, v := range clientTypeNames {
+		clientTypeValues[v] = k
+	}
 }
 
 func (t clientType) String() string {
