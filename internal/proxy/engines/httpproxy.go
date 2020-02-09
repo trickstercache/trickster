@@ -146,6 +146,10 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	othttptrace.Inject(ctx, r)
 
 	ctx, doSpan := tracing.NewChildSpan(r.Context(), oc.TracingConfig.Tracer, "ProxyRequest")
+
+	// clear the Host header before proxying or it will be forwarded upstream
+	r.Host = ""
+
 	resp, err := oc.HTTPClient.Do(r)
 
 	if err != nil {
