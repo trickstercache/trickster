@@ -96,7 +96,7 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 	if err == redis.Nil {
 		log.Debug("redis cache miss", log.Pairs{"key": cacheKey})
 		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
-		return nil, status.LookupStatusKeyMiss, err
+		return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 	}
 
 	log.Debug("redis cache retrieve failed", log.Pairs{"key": cacheKey, "reason": err.Error()})

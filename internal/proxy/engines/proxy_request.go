@@ -447,7 +447,7 @@ func (pr *proxyRequest) prepareResponse() {
 	if pr.wantsRanges && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusPartialContent) {
 
 		// since the user wants ranges, we have to extract them from what we have already
-		if !d.isLoaded &&
+		if (d == nil || !d.isLoaded) &&
 			(pr.cacheStatus == status.LookupStatusPartialHit || pr.cacheStatus == status.LookupStatusKeyMiss || pr.cacheStatus == status.LookupStatusRangeMiss) {
 			var b []byte
 			if pr.upstreamReader != nil {
