@@ -134,7 +134,7 @@ func GetTimeSeriesData(query string, start time.Time, end time.Time, step time.D
 		}
 		d1 := &Modifiers{rawString: d.rawString}
 		d1.addLabel(fmt.Sprintf(`"%s":"%d"`, mdSeriesID, i))
-		fmt.Fprintf(&b, fmt.Sprintf(`{"metric":{%s},"values":[`, d1.rawString))
+		fmt.Fprintf(&b, `{"metric":{%s},"values":[`, d1.rawString)
 		for j := 0; j <= seriesLen; j++ {
 			if j == seriesLen {
 				sep2 = ""
@@ -142,7 +142,7 @@ func GetTimeSeriesData(query string, start time.Time, end time.Time, step time.D
 			t := start.Add(time.Duration(j) * step)
 			fmt.Fprintf(&b, `[%d,"%d"]%s`, t.Unix(), d.seedFunc(d, i, queryVal, t), sep2)
 		}
-		fmt.Fprintf(&b, fmt.Sprintf(`]}%s`, sep1))
+		fmt.Fprintf(&b, `]}%s`, sep1)
 	}
 	b.WriteString("]}}")
 
