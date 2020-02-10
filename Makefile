@@ -21,6 +21,9 @@ BUILD_TIME     := $(shell date -u +%FT%T%z)
 GIT_LATEST_COMMIT_ID     := $(shell git rev-parse HEAD)
 GO_VER         := $(shell go version | awk '{print $$3}')
 LDFLAGS=-ldflags "-s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicationGitCommitID=$(GIT_LATEST_COMMIT_ID) -X main.applicationGoVersion=$(GO_VER) -X main.applicationGoArch=$(GOARCH)"
+IMAGE_TAG      ?= latest
+IMAGE_ARCH     ?= amd64
+GOARCH         ?= amd64
 GO111MODULE    ?= on
 export GO111MODULE
 
@@ -87,12 +90,14 @@ kube-local:
 
 .PHONY: docker
 docker:
-	docker build -f ./deploy/Dockerfile -t trickster:$(PROGVER) .
+	docker build --build-arg IMAGE_ARCH=$(IMAGE_ARCH) --build-arg GOARCH=$(GOARCH) -f ./deploy/Dockerfile -t trickster:$(PROGVER) .
 
 .PHONY: docker-release
 docker-release:
-	docker tag trickster:$(PROGVER) tricksterio/trickster:$(PROGVER)
-	docker tag tricksterio/trickster:$(PROGVER) tricksterio/trickster:latest
+# linux x86 image
+	docker build --build-arg IMAGE_ARCH=amd64 --build-arg GOARCH=amd64 -f ./deploy/Dockerfile -t tricksterio/trickster:$(IMAGE_TAG) .
+# linux arm image
+	docker build --build-arg IMAGE_ARCH=arm64v8 --build-arg GOARCH=arm64 -f ./deploy/Dockerfile -t tricksterio/trickster:arm64v8-$(IMAGE_TAG) .
 
 .PHONY: style
 style:
