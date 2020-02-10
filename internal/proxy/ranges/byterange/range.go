@@ -11,6 +11,8 @@
 * limitations under the License.
  */
 
+// Package byterange provides acceleration functions for Byte Ranges
+// for use with HTTP Range Requests
 package byterange
 
 import (

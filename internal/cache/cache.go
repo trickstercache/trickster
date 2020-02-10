@@ -11,6 +11,8 @@
 * limitations under the License.
  */
 
+// Package cache defines the Trickster cache interfaces and provides
+// general cache functionality
 package cache
 
 import (

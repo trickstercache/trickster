@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package bbolt is the bbolt implementation of the Trickster Cache
 package bbolt
 
 import (

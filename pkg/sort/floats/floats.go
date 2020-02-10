@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package floats provides sorting capabilities to a slice of type float64
 package floats
 
 // Floats represents an array of float64's

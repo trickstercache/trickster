@@ -11,4 +11,5 @@
 * limitations under the License.
  */
 
+// Package util provides utility sub-packages to Trickster
 package util

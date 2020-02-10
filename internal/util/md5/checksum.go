@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package md5 provides string-based checksum functionality
 package md5
 
 import (

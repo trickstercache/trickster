@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package status governs the possible Cache Lookup Status values
 package status
 
 import "strconv"

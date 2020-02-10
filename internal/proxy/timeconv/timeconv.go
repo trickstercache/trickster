@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package timeconv provides time conversion capabilities to Trickster
 package timeconv
 
 import (

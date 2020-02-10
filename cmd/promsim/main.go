@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package main is the main package for the PromSim application
 package main
 
 import (

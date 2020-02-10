@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package methods provides functionality for handling HTTP methods
 package methods
 
 import "net/http"

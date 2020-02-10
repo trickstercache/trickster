@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package times provides sorting capabilities to a slice of type time
 package times
 
 import (

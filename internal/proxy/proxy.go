@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package proxy provides all proxy services for Trickster
 package proxy
 
 import (

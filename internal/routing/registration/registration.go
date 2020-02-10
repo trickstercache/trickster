@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package registration provides routing registration services to Trickster
 package registration
 
 import (

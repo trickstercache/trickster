@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package errors provides common Error functionality to the Trickster proxy
 package errors
 
 import (

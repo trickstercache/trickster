@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package index defines the Trickster Cache Index
 package index
 
 import (

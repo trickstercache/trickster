@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package badger is the BadgerDB implementation of the Trickster Cache
 package badger
 
 import (

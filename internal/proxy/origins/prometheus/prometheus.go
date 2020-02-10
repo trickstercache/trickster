@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package prometheus provides the Prometheus Origin Type
 package prometheus
 
 import (

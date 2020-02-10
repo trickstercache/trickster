@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package strings provides extended functionality for string types
 package strings
 
 // IndexOfString returns the index of a string element in a given slice

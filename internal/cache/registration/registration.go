@@ -11,6 +11,8 @@
 * limitations under the License.
  */
 
+// Package registration handles the registration of cache implementations
+// to be used by proxy cache handlers
 package registration
 
 import (
