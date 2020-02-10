@@ -1,9 +1,11 @@
 # <img src="./docs/images/logos/trickster-logo.svg" width=90 />&nbsp;&nbsp;&nbsp;&nbsp;<img src="./docs/images/logos/trickster-text.svg" width=420 />
 
+[![License](https://img.shields.io/github/license/Comcast/trickster)](/LICENSE)
+[![Coverage Status](https://coveralls.io/repos/github/Comcast/trickster/badge.svg)](https://coveralls.io/github/Comcast/trickster)
 [![Build Status](https://travis-ci.org/Comcast/trickster.svg?branch=master)](https://travis-ci.org/Comcast/trickster/)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Comcast/trickster)](https://goreportcard.com/report/github.com/Comcast/trickster)
-[![Coverage Status](https://coveralls.io/repos/github/Comcast/trickster/badge.svg)](https://coveralls.io/github/Comcast/trickster)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/2518/badge)](https://bestpractices.coreinfrastructure.org/en/projects/2518)
+[![Release](https://img.shields.io/github/release/Comcast/trickster.svg)](https://github.com/Comcast/trickster/releases/latest)
 [![Docker Pulls](https://img.shields.io/docker/pulls/tricksterio/trickster.svg?maxAge=86400)](https://hub.docker.com/r/tricksterio/trickster)
 [![Follow on Twitter](https://img.shields.io/twitter/follow/tricksterio.svg?style=social&logo=twitter)](https://twitter.com/tricksterio)
 

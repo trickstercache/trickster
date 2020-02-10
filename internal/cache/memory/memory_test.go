@@ -98,7 +98,7 @@ func TestCache_StoreReferenceDirect(t *testing.T) {
 		t.Error(err)
 	}
 	// it should store a value
-	err = mc.store("test", nil, &testReferenceObject{}, 1*time.Second, true)
+	mc.store("test", nil, &testReferenceObject{}, 1*time.Second, true)
 
 	r, _, _ := mc.RetrieveReference("test", true)
 	if r == nil {

@@ -16,7 +16,6 @@ package registration
 import (
 	"errors"
 	"fmt"
-	"sync"
 
 	"go.opentelemetry.io/otel/api/trace"
 
@@ -24,8 +23,6 @@ import (
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/tracing"
 )
-
-var initialize sync.Once
 
 // Flushers represents a slice of Flusher functions for the configured Tracers
 type Flushers []func()

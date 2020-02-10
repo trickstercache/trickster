@@ -1,15 +1,11 @@
 package tracing
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
-	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel/api/global"
 	"google.golang.org/grpc/codes"
@@ -105,36 +101,5 @@ func TestTracingMiddleware(t *testing.T) {
 			}
 			flush()
 		}
-	}
-}
-
-func MiddlewarePassthrough() context.Context {
-	var (
-		req = httptest.NewRequest(http.MethodGet, "http://example.com/foo", new(bytes.Buffer))
-		w   = httptest.NewRecorder()
-	)
-	grabber := &ctxGrabber{}
-	mware := testTrace()(grabber)
-	mware.ServeHTTP(w, req)
-	return grabber.ctx
-
-}
-
-type ctxGrabber struct {
-	ctx context.Context
-}
-
-func (c *ctxGrabber) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	c.ctx = r.Context()
-}
-
-func testTrace() mux.MiddlewareFunc {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			tr := global.TraceProvider().Tracer("noop")
-			r, span := PrepareRequest(r, tr)
-			defer span.End()
-			next.ServeHTTP(w, r)
-		})
 	}
 }

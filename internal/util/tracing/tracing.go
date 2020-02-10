@@ -24,8 +24,7 @@ import (
 )
 
 const (
-	serviceName      = "trickster"
-	tracestateHeader = "tracestate"
+	serviceName = "trickster"
 )
 
 // PrepareRequest extracts trace information from the headers of the incoming request. It returns a pointer to the incoming request with the request context updated to include all span and tracing info. It also returns a span with the name "Request" that is meant to be a parent span for all child spans of this request.

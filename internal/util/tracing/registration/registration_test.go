@@ -44,7 +44,7 @@ func TestRegisterAll(t *testing.T) {
 	cfg := config.NewConfig()
 	tc := cfg.Origins["default"].TracingConfig
 	tc.Implementation = "foo"
-	f, err = RegisterAll(cfg)
+	_, err = RegisterAll(cfg)
 	if err == nil {
 		t.Error("expected error for invalid tracing implementation")
 	}
@@ -65,7 +65,7 @@ func TestRegisterAll(t *testing.T) {
 
 	// test nil origin config
 	cfg.Origins = nil
-	f, _ = RegisterAll(cfg)
+	_, err = RegisterAll(cfg)
 	if err == nil {
 		t.Error(errors.New("expected error for invalid tracing implementation"))
 	}

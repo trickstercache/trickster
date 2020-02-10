@@ -49,7 +49,6 @@ type HTTPDocument struct {
 	isFulfillment    bool
 	isLoaded         bool
 	timeseries       timeseries.Timeseries
-	isCompressed     bool
 }
 
 // Size returns the size of the HTTPDocument's headers, CachingPolicy, RangeParts, Body and timeseries data
