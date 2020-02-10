@@ -117,4 +117,4 @@ test-cover: test
 
 .PHONY: clean
 clean:
-	rm -rf ./trickster ./OPATH ./vendor
+	rm -rf ./trickster ./OPATH
