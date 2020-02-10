@@ -26,9 +26,8 @@ const (
 	defaultTracerImplemetation    = "opentelemetry"
 	defaultExporterImplementation = "noop"
 
-	defaultCacheType        = "memory"
-	defaultCacheTypeID      = CacheTypeMemory
-	defaultCacheCompression = true
+	defaultCacheType   = "memory"
+	defaultCacheTypeID = CacheTypeMemory
 
 	defaultTimeseriesTTLSecs  = 21600
 	defaultFastForwardTTLSecs = 15
