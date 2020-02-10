@@ -6,7 +6,7 @@ The roadmap for Trickster in 2020 focuses on delivering incremental enhancements
 
 ### Q1 2020
 
-- [ ] Trickster 1.0 GA Release
+- [x] Trickster 1.0 GA Release
 - [ ] Register Official Docker Hub Repositories
 - [ ] Submit Helm charts to HelmHub
 - [ ] Submit Trickster for CNCF Sandbox Consideration
