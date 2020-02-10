@@ -44,7 +44,7 @@ var (
 
 const (
 	applicationName    = "trickster"
-	applicationVersion = "1.0.0-rc1"
+	applicationVersion = "1.0.0-rc2"
 )
 
 func main() {

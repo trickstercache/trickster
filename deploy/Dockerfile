@@ -1,12 +1,13 @@
-FROM golang:1.13.6 as builder
+ARG IMAGE_ARCH=amd64
 
+FROM golang:1.13.7 as builder
 COPY . /go/src/github.com/Comcast/trickster
 WORKDIR /go/src/github.com/Comcast/trickster
 
-RUN GOOS=linux GOARCH=amd64 CGO_ENABLED=0 make build
+ARG GOARCH=amd64
+RUN GOOS=linux GOARCH=${GOARCH} CGO_ENABLED=0 make build
 
-
-FROM alpine:3.11.2
+FROM ${IMAGE_ARCH}/alpine:3.11.3
 LABEL maintainer "The Trickster Authors <trickster-developers@googlegroups.com>"
 
 COPY --from=builder /go/src/github.com/Comcast/trickster/OPATH/trickster /usr/local/bin/trickster
