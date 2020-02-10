@@ -56,7 +56,7 @@ func main() {
 
 	err = config.Load(runtime.ApplicationName, runtime.ApplicationVersion, os.Args[1:])
 	if err != nil {
-		fmt.Println("Could not load configuration:", err.Error())
+		fmt.Println("\nERROR: Could not load configuration:", err.Error())
 		printUsage()
 		os.Exit(1)
 	}
