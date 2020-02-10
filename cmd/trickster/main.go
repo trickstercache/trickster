@@ -194,8 +194,8 @@ Trickster Usage:
    trickster -config /path/to/file.conf [-log-level DEBUG|INFO|WARN|ERROR] [-proxy-port PORT]
 
 The configuration file is much more robust than the command line arguments, and the example file
-is well-documented. We also have images on DockerHub, as well as Kubernetes and Helm Deployment
-examples in our GitHub repository.
+is well-documented. We also have docker images on DockerHub, as well as Kubernetes and Helm
+deployment examples in our GitHub repository.
  
 Thank you for using and contributing to Open Source Software!
 
