@@ -11,8 +11,8 @@
 * limitations under the License.
  */
 
-// Package rangesim is a sample HTTP server that fully supports HTTP Range Requests.
-// Rangeesim is used by Trickster for unit testing and integration testing.
+// Package rangesim (RangeeSim) is a sample HTTP server that fully supports HTTP
+// Range Requests. It is used by Trickster for unit testing and integration testing.
 package rangesim
 
 import (
