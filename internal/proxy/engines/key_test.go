@@ -178,8 +178,8 @@ func TestDeriveCacheKey(t *testing.T) {
 
 }
 
-func exampleKeyHasher(path string, params url.Values, headers http.Header, body io.ReadCloser, extra string) string {
-	return "test-key"
+func exampleKeyHasher(path string, params url.Values, headers http.Header, body io.ReadCloser, extra string) (string, io.ReadCloser) {
+	return "test-key", nil
 }
 
 func TestDeriveCacheKeyAuthHeader(t *testing.T) {

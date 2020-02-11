@@ -68,7 +68,7 @@ func TestTextHandlerDeriveCacheKey(t *testing.T) {
 	}
 
 	const expected = "a506d1700414b1d0ac15340bd619fdab"
-	result := client.textHandlerDeriveCacheKey(path, r.URL.Query(), r.Header, r.Body, "extra")
+	result, _ := client.textHandlerDeriveCacheKey(path, r.URL.Query(), r.Header, r.Body, "extra")
 	if result != expected {
 		t.Errorf("expected %s got %s", expected, result)
 	}
