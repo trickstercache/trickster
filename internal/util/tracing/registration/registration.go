@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package registration registered configured tracers for use with handlers
 package registration
 
 import (
