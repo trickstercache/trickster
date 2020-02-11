@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package clickhouse provides the ClickHouse origin type
 package clickhouse
 
 import (

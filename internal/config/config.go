@@ -11,6 +11,9 @@
 * limitations under the License.
  */
 
+// Package config provides Trickster configuration abilities, including
+// parsing and printing configuration files, command line parameters, and
+// environment variables, as well as default values and state.
 package config
 
 import (

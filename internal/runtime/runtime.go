@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package runtime holds application runtime information
 package runtime
 
 // ApplicationName is the name of the Application

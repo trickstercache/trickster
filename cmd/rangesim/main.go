@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package main is the main package for the RangeSim application
 package main
 
 import (

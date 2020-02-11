@@ -11,6 +11,8 @@
 * limitations under the License.
  */
 
+// Package memory is the memory implementation of the Trickster Cache
+// and uses a sync.Map to manage cache objects
 package memory
 
 import (

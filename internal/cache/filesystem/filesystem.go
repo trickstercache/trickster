@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package filesystem is the filesystem implementation of the Trickster Cache
 package filesystem
 
 import (

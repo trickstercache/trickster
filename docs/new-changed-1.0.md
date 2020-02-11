@@ -31,9 +31,9 @@ Since Trickster 1.0 supports multiple Origin Types (instead of just Prometheus),
 
 This means you can't simply run `trickster` and have a functioning proxy to `prometheus:9090` as you could in 0.1. Instead, Trickster will fail out with an error that you have not defined any Origins.
 
-This also means that with Trickster 1.0, you _must_ provide an `origin_type` for each Origin, so Trickster knows how to accelerate requests to it.
+This also means that with Trickster 1.0, you _must_ provide an `origin-type` for each Origin, so Trickster knows how to accelerate requests to it.
 
-So in 1.0, you can run `trickster -origin_type prometheus -origin_url=http://prometheus:9090` or `trickster -config /path/to/example.conf` to achieve the same result as running `trickster` with no arguments in 0.1.
+So in 1.0, you can run `trickster -origin-type prometheus -origin-url=http://prometheus:9090` or `trickster -config /path/to/example.conf` to achieve the same result as running `trickster` with no arguments in 0.1.
 
 See the section below on migrating a 0.1 configuration for more information.
 

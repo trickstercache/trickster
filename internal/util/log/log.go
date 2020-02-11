@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package log provides logging functionality to Trickster
 package log
 
 import (

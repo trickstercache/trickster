@@ -11,30 +11,6 @@
 * limitations under the License.
  */
 
-// Package urls provides capabilities for manipulating URLs that are not
-// provided by the builtin net/url package
-package urls
-
-import "net/url"
-
-// Clone returns a deep copy of a *url.URL
-func Clone(u *url.URL) *url.URL {
-	u2 := &url.URL{
-		Scheme:   u.Scheme,
-		Host:     u.Host,
-		Path:     u.Path,
-		RawQuery: u.RawQuery,
-		Fragment: u.Fragment,
-	}
-	if u.User != nil {
-		var user *url.Userinfo
-		if p, ok := u.User.Password(); ok {
-			user = url.UserPassword(u.User.Username(), p)
-		} else {
-			user = url.User(u.User.Username())
-		}
-		u2.User = user
-	}
-
-	return u2
-}
+// Package engines provides the Reverse Proxy, Reverse Proxy Cache, and
+// Time Series Delta Proxy Cache features for use by handlers.
+package engines

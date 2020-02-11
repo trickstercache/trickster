@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package reverseproxycache provides the HTTP Reverse Proxy Cache Origin Type
 package reverseproxycache
 
 import (

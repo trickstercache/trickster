@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package gzip provides gzip capabilities for byte slices
 package gzip
 
 import (

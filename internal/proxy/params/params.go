@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package params provides support for handling URL Parameters
 package params
 
 import "net/url"

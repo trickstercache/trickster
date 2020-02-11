@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package influxdb provides the InfluxDB Origin Type
 package influxdb
 
 import (

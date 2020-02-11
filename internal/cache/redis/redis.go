@@ -11,6 +11,8 @@
 * limitations under the License.
  */
 
+// Package redis is the redis implementation of the Trickster Cache
+// and supports Standalone, Sentinel and Cluster
 package redis
 
 import (

@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package tracing provides distributed tracing services to Trickster
 package tracing
 
 import (

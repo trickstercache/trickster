@@ -11,6 +11,7 @@
 * limitations under the License.
  */
 
+// Package metrics implements prometheus metrics and exposes the metrics HTTP listener
 package metrics
 
 import (

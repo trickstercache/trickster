@@ -11,6 +11,8 @@
 * limitations under the License.
  */
 
+// Package headers provides functionality for HTTP Headers not provided by
+// the builtin net/http package
 package headers
 
 import (
