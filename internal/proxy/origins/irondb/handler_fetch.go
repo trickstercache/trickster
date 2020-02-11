@@ -121,7 +121,7 @@ func (c *Client) fetchHandlerParseTimeRangeQuery(
 // fetchHandlerDeriveCacheKey calculates a query-specific keyname based on the
 // user request.
 func (c Client) fetchHandlerDeriveCacheKey(path string, params url.Values,
-	headers http.Header, body io.ReadCloser, extra string) string {
+	headers http.Header, body io.ReadCloser, extra string) (string, io.ReadCloser) {
 	var sb strings.Builder
 	sb.WriteString(path)
 	newBody := &bytes.Buffer{}
@@ -141,5 +141,5 @@ func (c Client) fetchHandlerDeriveCacheKey(path string, params url.Values,
 	}
 
 	sb.WriteString(extra)
-	return md5.Checksum(sb.String())
+	return md5.Checksum(sb.String()), body
 }

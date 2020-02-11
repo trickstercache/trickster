@@ -71,7 +71,8 @@ func TestFetchHandlerDeriveCacheKey(t *testing.T) {
 	r.Body = ioutil.NopCloser(bytes.NewReader([]byte("{}")))
 
 	const expected = "a34bbb372c505e9eea0e0589e16c0914"
-	result := client.fetchHandlerDeriveCacheKey(path, r.URL.Query(), r.Header, r.Body, "extra")
+	var result string
+	result, r.Body = client.fetchHandlerDeriveCacheKey(path, r.URL.Query(), r.Header, r.Body, "extra")
 	if result != expected {
 		t.Errorf("expected %s got %s", expected, result)
 	}

@@ -111,7 +111,7 @@ func (c *Client) histogramHandlerParseTimeRangeQuery(
 // histogramHandlerDeriveCacheKey calculates a query-specific keyname based on
 // the user request.
 func (c Client) histogramHandlerDeriveCacheKey(path string, params url.Values,
-	headers http.Header, body io.ReadCloser, extra string) string {
+	headers http.Header, body io.ReadCloser, extra string) (string, io.ReadCloser) {
 	var sb strings.Builder
 	sb.WriteString(path)
 	var ps []string
@@ -129,7 +129,7 @@ func (c Client) histogramHandlerDeriveCacheKey(path string, params url.Values,
 	}
 
 	sb.WriteString(extra)
-	return md5.Checksum(sb.String())
+	return md5.Checksum(sb.String()), body
 }
 
 // histogramHandlerFastForwardURL returns the url to fetch the Fast Forward value

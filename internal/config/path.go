@@ -27,7 +27,7 @@ import (
 type PathMatchType int
 
 // KeyHasherFunc is a custom function that returns a hashed key value string for cache objects
-type KeyHasherFunc func(path string, params url.Values, headers http.Header, body io.ReadCloser, extra string) string
+type KeyHasherFunc func(path string, params url.Values, headers http.Header, body io.ReadCloser, extra string) (string, io.ReadCloser)
 
 const (
 	// PathMatchTypeExact indicates the router will map the Path by exact match against incoming requests

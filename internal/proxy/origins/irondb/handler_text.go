@@ -82,7 +82,7 @@ func (c *Client) textHandlerParseTimeRangeQuery(
 // textHandlerDeriveCacheKey calculates a query-specific keyname based on the
 // user request.
 func (c Client) textHandlerDeriveCacheKey(path string, params url.Values,
-	headers http.Header, body io.ReadCloser, extra string) string {
+	headers http.Header, body io.ReadCloser, extra string) (string, io.ReadCloser) {
 	var sb strings.Builder
 	sb.WriteString(path)
 	ps := strings.SplitN(strings.TrimPrefix(path, "/"), "/", 5)
@@ -91,5 +91,5 @@ func (c Client) textHandlerDeriveCacheKey(path string, params url.Values,
 	}
 
 	sb.WriteString(extra)
-	return md5.Checksum(sb.String())
+	return md5.Checksum(sb.String()), body
 }

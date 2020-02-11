@@ -57,7 +57,9 @@ func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) strin
 	}
 
 	if pc.KeyHasher != nil && len(pc.KeyHasher) == 1 {
-		return pc.KeyHasher[0](pr.URL.Path, params, pr.Header, pr.Body, extra)
+		var k string
+		k, pr.Body = pc.KeyHasher[0](pr.URL.Path, params, pr.Header, pr.Body, extra)
+		return k
 	}
 
 	vals := make([]string, 0, (len(pc.CacheKeyParams) + len(pc.CacheKeyHeaders) + len(pc.CacheKeyFormFields)*2))

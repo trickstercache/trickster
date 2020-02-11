@@ -95,14 +95,14 @@ func TestHistogramHandlerDeriveCacheKey(t *testing.T) {
 	}
 
 	expected := "11cc1b20a869f6ff0559b08b014c3ca6"
-	result := client.histogramHandlerDeriveCacheKey(path, r.URL.Query(), r.Header, r.Body, "extra")
+	result, _ := client.histogramHandlerDeriveCacheKey(path, r.URL.Query(), r.Header, r.Body, "extra")
 	if result != expected {
 		t.Errorf("expected %s got %s", expected, result)
 	}
 
 	expected = "c70681051e3af3de12f37686b6a4224f"
 	path = "/irondb/0/900/00112233-4455-6677-8899-aabbccddeeff/metric"
-	result = client.histogramHandlerDeriveCacheKey(path, r.URL.Query(), r.Header, r.Body, "extra")
+	result, _ = client.histogramHandlerDeriveCacheKey(path, r.URL.Query(), r.Header, r.Body, "extra")
 	if result != expected {
 		t.Errorf("expected %s got %s", expected, result)
 	}
