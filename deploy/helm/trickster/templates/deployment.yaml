@@ -25,8 +25,7 @@ spec:
 {{ toYaml .Values.podAnnotations | indent 8 }}
     {{- end }}    
       labels:
-        app: {{ template "trickster.name" . }}
-        release: {{ .Release.Name }}
+        {{- include "trickster.labels" . | nindent 8 }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
@@ -58,6 +57,8 @@ spec:
           {{- end }}
         {{- end }}
           volumeMounts:
+            - name: cfg-volume
+              mountPath: /etc/trickster
           {{- range .Values.caches }}
           {{- if eq .cacheType "filesystem" }}
             - name: cfg-volume-{{ .name }}
