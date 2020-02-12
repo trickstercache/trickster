@@ -412,11 +412,22 @@ image:
 # Service resource for trickster deplyoment
 # Ref: https://kubernetes.io/docs/concepts/services-networking/service/
 service:
-  type: ClusterIP
-  port: 9090
-  # nodePort: 0
+  annotations: {}
+  labels: {}
+  clusterIP: ""
+
+  ## List of IP addresses at which the trickster service is available
+  ## Ref: https://kubernetes.io/docs/user-guide/services/#external-ips
+  ##
+  externalIPs: []
+
+  loadBalancerIP: ""
+  loadBalancerSourceRanges: []
   metricsPort: 8080
-  # metricsNodePort: 0
+  servicePort: 9090
+  # nodePort: 30000
+  # metricsNodePort: 30001
+  type: ClusterIP
 
 # Ingress resource for trickster service
 # Ref: https://kubernetes.io/docs/concepts/services-networking/ingress/
@@ -508,20 +519,3 @@ resources: {}
 ##
 securityContext: {}
 
-service:
-  annotations: {}
-  labels: {}
-  clusterIP: ""
-
-  ## List of IP addresses at which the trickster service is available
-  ## Ref: https://kubernetes.io/docs/user-guide/services/#external-ips
-  ##
-  externalIPs: []
-
-  loadBalancerIP: ""
-  loadBalancerSourceRanges: []
-  metricsPort: 8080
-  servicePort: 9090
-  # nodePort: 30000
-  # metricsNodePort: 30001
-  type: ClusterIP
