@@ -212,6 +212,9 @@ origins:
 #     # options are 'bbolt', 'badger', 'filesystem', 'memory', and 'redis'
 #     cacheType: memory
 
+#     # if using 'bbolt', 'badger', or 'filesystem' you must link a volume as defined below
+      #volumeName: thing-volume
+
 #     ## Configuration options for the Cache Index
 #     # The Cache Index handles key management and retention for bbolt, filesystem and memory
 #     # Redis and BadgerDB handle those functions natively and does not use the Trickster's Cache Index
@@ -310,11 +313,9 @@ origins:
 #       #idleCheckFrequencyMs is the frequency of idle checks made by idle connections reaper.
 #       idleCheckFrequencyMs: "60000"
 
-#     ## Configuration options when using a Filesystem Cache
-#     filesystem:
-#       # path defines the directory location under which the Trickster cache will be maintained
-#       path: /tmp/trickster
+#     filesystem;
 
+          
 #     ## Configuration options when using a bbolt Cache
 #     bbolt:
 #       # file defines the file where the Trickster cache will be maintained
@@ -323,13 +324,7 @@ origins:
 #       # bucket defines the name of the BotlDb bucket (similar to a namespace) under which our key value store lives
 #       bucket: trickster
 
-#     ## Configuration options when using a Badger cache
-#     badger:
-#       # directory defines the directory location under which the Badger data will be maintained
-#       directory: /tmp/trickster
-
-#       # valueDirectory defines the directory location under which the Badger value log will be maintained
-#       valueDirectory: /tmp/trickster
+#      badger:
 
 # negativeCaches:
 # #  The 'default' negative cache config, mapped by all origins by default, is empty unless you populate it.
@@ -461,40 +456,59 @@ ingress:
   #   hosts:
   #     - chart-example.local
 
-persistentVolume:
-  ## If true, trickster will create/use a Persistent Volume Claim
-  ## If false, use emptyDir
-  ##
-  enabled: false
 
-  ## trickster data Persistent Volume access modes
-  ## Must match those of existing PV or dynamic provisioner
-  ## Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
-  ##
-  accessModes:
-    - ReadWriteOnce
+volumes:
+  persistent:
+    ## If true, trickster will create/use a named Persistent Volume Claim
+    ##
+    type: "persistentVolume"
+    enabled: false
 
-  ## trickster data Persistent Volume Claim annotations
-  ##
-  annotations: {}
+    mountPath: "/tmp/trickster"
+  
+    ## trickster data Persistent Volume access modes
+    ## Must match those of existing PV or dynamic provisioner
+    ## Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
+    ##
+    accessModes:
+      - ReadWriteOnce
+  
+    ## trickster data Persistent Volume Claim annotations
+    ##
+    annotations: {}
+  
+    ## trickster data Persistent Volume existing claim name
+    ## Requires trickster.persistentVolume.enabled: true
+    ## If defined, PVC must be created manually before volume will be bound
+    existingClaim: ""
+  
+    ## trickster data Persistent Volume size
+    ##
+    size: 15Gi
+  
+    ## trickster data Persistent Volume Storage Class
+    ## If defined, storageClassName: <storageClass>
+    ## If set to "-", storageClassName: "", which disables dynamic provisioning
+    ## If undefined (the default) or set to null, no storageClassName spec is
+    ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
+    ##   GKE, AWS & OpenStack)
+    ##
+    # storageClass: "-"
 
-  ## trickster data Persistent Volume existing claim name
-  ## Requires trickster.persistentVolume.enabled: true
-  ## If defined, PVC must be created manually before volume will be bound
-  existingClaim: ""
+    ## Must include
+    mountPath: "/tmp/trickster"
 
-  ## trickster data Persistent Volume size
-  ##
-  size: 15Gi
+  generic:
+    ## Will create an empty dir to be used
+    ##
+    type: "generic"
+    enabled: true
 
-  ## trickster data Persistent Volume Storage Class
-  ## If defined, storageClassName: <storageClass>
-  ## If set to "-", storageClassName: "", which disables dynamic provisioning
-  ## If undefined (the default) or set to null, no storageClassName spec is
-  ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
-  ##   GKE, AWS & OpenStack)
-  ##
-  # storageClass: "-"
+    ## Must include
+    mountPath: "/tmp/trickster"
+
+
+
 
 ## Annotations to be added to trickster pods
 ##
@@ -518,4 +532,3 @@ resources: {}
 ## Security context to be added to trickster pods
 ##
 securityContext: {}
-

@@ -1,27 +1,30 @@
-{{- if .Values.persistentVolume.enabled -}}
-{{- if not .Values.persistentVolume.existingClaim -}}
+{{- range .Values.volumes }}
+{{- if and (eq .type "persistentVolume") .enabled}}
+{{- if (eq .existingClaim "") }}
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  {{- if .Values.persistentVolume.annotations }}
+  {{- if .annotations }}
   annotations:
-{{ toYaml .Values.persistentVolume.annotations | indent 4 }}
+{{ toYaml .annotations | indent 4 }}
   {{- end }}
   labels:
-    {{- include "trickster.labels" . | nindent 4 }}
-  name: {{ template "trickster.fullname" . }}
+    {{- include "trickster.labels" $ | nindent 4 }}
+  name: {{ .volName | printf "trickster-%s-claim" }}
 spec:
   accessModes:
-{{ toYaml .Values.persistentVolume.accessModes | indent 4 }}
-{{- if .Values.persistentVolume.storageClass }}
-{{- if (eq "-" .Values.persistentVolume.storageClass) }}
+{{ toYaml .accessModes | indent 4 }}
+{{- if .storageClass }}
+{{- if (eq "-" .storageClass) }}
   storageClassName: ""
 {{- else }}
-  storageClassName: "{{ .Values.persistentVolume.storageClass }}"
+  storageClassName: "{{ .storageClass }}"
 {{- end }}
 {{- end }}
   resources:
     requests:
-      storage: "{{ .Values.persistentVolume.size }}"
+      storage: "{{ .size }}"
+{{- end -}}
 {{- end -}}
 {{- end -}}
