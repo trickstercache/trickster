@@ -25,8 +25,7 @@ spec:
 {{ toYaml .Values.podAnnotations | indent 8 }}
     {{- end }}    
       labels:
-        app: {{ template "trickster.name" . }}
-        release: {{ .Release.Name }}
+        {{- include "trickster.labels" . | nindent 8 }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
@@ -58,14 +57,15 @@ spec:
           {{- end }}
         {{- end }}
           volumeMounts:
-          {{- range .Values.caches }}
-          {{- if eq .cacheType "filesystem" }}
-            - name: cfg-volume-{{ .name }}
-              {{- if eq .path "" }}
-              mountPath: /tmp/trickster
-              {{- else }}
-              mountPath: {{ .path }}
-              {{- end }}
+            - name: cfg-volume
+              mountPath: /etc/trickster
+          {{- range $key, $value := .Values.volumes }}
+          {{- range $.Values.caches }}
+          {{- if eq .volumeName $key }}
+            - name: cache-volume-{{ $key }}
+              mountPath: {{ $value.mountPath }}
+              subPath: {{ .name }}
+          {{- end }}
           {{- end }}
           {{- end }}
           ports:
@@ -112,10 +112,14 @@ spec:
             items:
               - key: trickster.conf
                 path: trickster.conf
-        - name: cache-volume
-        {{- if .Values.persistentVolume.enabled }}
+      {{- range $key, $value := .Values.volumes }}
+      {{- if $value.enabled }}
+        - name: cache-volume-{{ $key }}
+        {{- if eq $value.type "persistentVolume" }}
           persistentVolumeClaim:
-            claimName: {{ if .Values.persistentVolume.existingClaim }}{{ .Values.persistentVolume.existingClaim }}{{- else }}{{ template "trickster.fullname" . }}{{- end }}
+            claimName: {{ if .existingClaim }}{{ .existingClaim }}{{- else }}{{-  printf "trickster-%s-claim" $key -}}{{- end }}
         {{- else }}
           emptyDir: {}
-        {{- end -}}
+        {{- end }}
+      {{- end }}
+      {{- end }}

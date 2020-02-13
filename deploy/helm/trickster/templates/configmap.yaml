@@ -34,125 +34,130 @@ data:
     {{- if gt (len .Values.caches) 0 }}
 
     [caches]
-      {{- range .Values.caches }}
+      {{- range $key, $cache := .Values.caches }}
 
-      {{ printf "[caches.%s]" .name }}
-        {{- if .cacheType }}
-      cache_type = {{ .cacheType | quote }}
+      {{ printf "[caches.%s]" $cache.name }}
+        {{- if $cache.cacheType }}
+      cache_type = {{ $cache.cacheType | quote }}
         {{- end }}
-        {{- if and (ne .cacheType "redis") (ne .cacheType "badger") }}
-        {{- if .index }}
-        {{ printf "[caches.%s.index]" .name }}
-        {{- if .index.reapIntervalSecs }}
-        reap_interval_secs = {{ .index.reapIntervalSecs }}
+        {{- if and (ne $cache.cacheType "redis") (ne $cache.cacheType "badger") }}
+        {{- if $cache.index }}
+        {{ printf "[caches.%s.index]" $cache.name }}
+        {{- if $cache.index.reapIntervalSecs }}
+        reap_interval_secs = {{ $cache.index.reapIntervalSecs }}
         {{- end }}
-        {{- if .index.flushIntervalSecs }}
-        flush_interval_secs = {{ .index.flushIntervalSecs }}
+        {{- if $cache.index.flushIntervalSecs }}
+        flush_interval_secs = {{ $cache.index.flushIntervalSecs }}
         {{- end }}
-        {{- if .index.maxSizeBytes }}
-        max_size_bytes = {{ .index.maxSizeBytes }}
+        {{- if $cache.index.maxSizeBytes }}
+        max_size_bytes = {{ $cache.index.maxSizeBytes }}
         {{- end }}
-        {{- if .index.maxSizeBackoffBytes }}
-        max_size_backoff_bytes = {{ .index.maxSizeBackoffBytes }}
+        {{- if $cache.index.maxSizeBackoffBytes }}
+        max_size_backoff_bytes = {{ $cache.index.maxSizeBackoffBytes }}
         {{- end }}
-        {{- if .index.maxSizeObjects }}
-        max_size_objects = {{ .index.maxSizeObjects }}
+        {{- if $cache.index.maxSizeObjects }}
+        max_size_objects = {{ $cache.index.maxSizeObjects }}
         {{- end }}
-        {{- if .index.maxSizeBackoffObjects }}
-        max_size_backoff_objects = {{ .index.maxSizeBackoffObjects }}
+        {{- if $cache.index.maxSizeBackoffObjects }}
+        max_size_backoff_objects = {{ $cache.index.maxSizeBackoffObjects }}
         {{- end }}
         {{- end }}
         {{- end }}
-        {{- if and (eq .cacheType "redis") ( .redis ) }}
+        {{- if and (eq $cache.cacheType "redis") ( .redis ) }}
 
-        {{ printf "[caches.%s.redis]" .name }}
-          {{- if .redis.clientType }}
-        client_type = {{ .redis.clientType | quote }}
+        {{ printf "[caches.%s.redis]" $cache.name }}
+          {{- if $cache.redis.clientType }}
+        client_type = {{ $cache.redis.clientType | quote }}
           {{- end }}
-          {{- if .redis.protocol }}
-        protocol = {{ .redis.protocol | quote }}
+          {{- if $cache.redis.protocol }}
+        protocol = {{ $cache.redis.protocol | quote }}
           {{- end }}
-          {{- if .redis.password }}
-        password = {{ .redis.password | quote }}
+          {{- if $cache.redis.password }}
+        password = {{ $cache.redis.password | quote }}
           {{- end }}
-          {{- if or (eq .redis.clientType "cluster") (eq .redis.clientType "sentinel") }}
-            {{- if .redis.endpoints }}
-        endpoints = [ '{{- join "', '" .redis.endpoints }}' ]
+          {{- if or (eq $cache.redis.clientType "cluster") (eq $cache.redis.clientType "sentinel") }}
+            {{- if $cache.redis.endpoints }}
+        endpoints = [ '{{- join "', '" $cache.redis.endpoints }}' ]
             {{- end }}
-            {{- if eq .redis.clientType "sentinel" }}
-              {{- if .redis.sentinelMaster }}
-        sentinel_master = {{ .redis.sentinelMaster | quote }}
+            {{- if eq $cache.redis.clientType "sentinel" }}
+              {{- if $cache.redis.sentinelMaster }}
+        sentinel_master = {{ $cache.redis.sentinelMaster | quote }}
               {{- end }}
             {{- end }}
           {{- else }}
-            {{- if .redis.endpoint }}
-        endpoint = {{ .redis.endpoint | quote }}
+            {{- if $cache.redis.endpoint }}
+        endpoint = {{ $cache.redis.endpoint | quote }}
             {{- end }}
           {{- end }}
-          {{- if .redis.db }}
-        db = {{ .redis.db }}
+          {{- if $cache.redis.db }}
+        db = {{ $cache.redis.db }}
           {{- end }}
-          {{- if .redis.maxRetries }}
-        max_retries = {{ .redis.maxRetries }}
+          {{- if $cache.redis.maxRetries }}
+        max_retries = {{ $cache.redis.maxRetries }}
           {{- end }}
-          {{- if .redis.minRetryBackoffMs }}
-        min_retry_backoff_ms = {{ .redis.minRetryBackoffMs }}
+          {{- if $cache.redis.minRetryBackoffMs }}
+        min_retry_backoff_ms = {{ $cache.redis.minRetryBackoffMs }}
           {{- end }}
-          {{- if .redis.maxRetyBackoffMs }}
-        max_retry_backoff_ms = {{ .redis.maxRetyBackoffMs }}
+          {{- if $cache.redis.maxRetyBackoffMs }}
+        max_retry_backoff_ms = {{ $cache.redis.maxRetyBackoffMs }}
           {{- end }}
-          {{- if .redis.dialTimeoutMs }}
-        dial_timeout_ms = {{ .redis.dialTimeoutMs }}
+          {{- if $cache.redis.dialTimeoutMs }}
+        dial_timeout_ms = {{ $cache.redis.dialTimeoutMs }}
           {{- end }}
-          {{- if .redis.readTimeoutMs }}
-        read_timeout_ms = {{ .redis.readTimeoutMs }}
+          {{- if $cache.redis.readTimeoutMs }}
+        read_timeout_ms = {{ $cache.redis.readTimeoutMs }}
           {{- end }}
-          {{- if .redis.writeTimeoutMs }}
-        write_timeout_ms = {{ .redis.writeTimeoutMs }}
+          {{- if $cache.redis.writeTimeoutMs }}
+        write_timeout_ms = {{ $cache.redis.writeTimeoutMs }}
           {{- end }}
-          {{- if .redis.poolSize }}
-        pool_size = {{ .redis.poolSize }}
+          {{- if $cache.redis.poolSize }}
+        pool_size = {{ $cache.redis.poolSize }}
           {{- end }}
-          {{- if .redis.minIdleConns }}
-        min_idle_conns = {{ .redis.minIdleConns }}
+          {{- if $cache.redis.minIdleConns }}
+        min_idle_conns = {{ $cache.redis.minIdleConns }}
           {{- end }}
-          {{- if .redis.maxConnAgeMs }}
-        max_conn_age_ms = {{ .redis.maxConnAgeMs }}
+          {{- if $cache.redis.maxConnAgeMs }}
+        max_conn_age_ms = {{ $cache.redis.maxConnAgeMs }}
           {{- end }}
-          {{- if .redis.poolTimeoutMs }}
-        pool_timeout_ms = {{ .redis.poolTimeoutMs }}
+          {{- if $cache.redis.poolTimeoutMs }}
+        pool_timeout_ms = {{ $cache.redis.poolTimeoutMs }}
           {{- end }}
-          {{- if .redis.idleTimeoutMs }}
-        idle_timeout_ms = {{ .redis.idleTimeoutMs }}
+          {{- if $cache.redis.idleTimeoutMs }}
+        idle_timeout_ms = {{ $cache.redis.idleTimeoutMs }}
           {{- end }}
-          {{- if .redis.idleCheckFrequencyMs }}
-        idle_check_frequency_ms = {{ .redis.idleCheckFrequencyMs }}
+          {{- if $cache.redis.idleCheckFrequencyMs }}
+        idle_check_frequency_ms = {{ $cache.redis.idleCheckFrequencyMs }}
           {{- end }}
-          {{- else if and (eq .cacheType "filesystem") ( .filesystem ) }}
 
-        {{ printf "[caches.%s.filesystem]" .name }}
-          {{- if .filesystem.path }}
-        cache_path = {{ .filesystem.path | quote }}
+        {{- else if (eq $cache.cacheType "filesystem") }}
+        {{ printf "[caches.%s.filesystem]" $cache.name }}
+          {{- range $vName, $value := $.Values.volumes }}
+          {{- if eq $vName $cache.volumeName }}
+        cache_path = {{ printf "%s/%s/" $value.mountPath $cache.name }}
           {{- end }}
-        {{- else if and (eq .cacheType "bbolt") ( .bbolt ) }}
+          {{- end }}
 
-        {{ printf "[caches.%s.bbolt]" .name }}
-          {{- if .bbolt.file }}
-        filename = {{ .bbolt.file | quote }}
+        {{- else if and (eq $cache.cacheType "bbolt") ( $cache.bbolt ) }}
+        {{ printf "[caches.%s.bbolt]" $cache.name }}
+          {{- range $vName, $value := $.Values.volumes }}
+          {{- if eq $vName $cache.volumeName }}
+        filename = {{ printf "%s/%s/%s" $value.mountPath $cache.name $cache.bbolt.file }}
           {{- end }}
-          {{- if .bbolt.bucket }}
-        bucket = {{ .bbolt.bucket | quote }}
           {{- end }}
-        {{- else if and (eq .cacheType "badger") ( .badger ) }}
+          {{- if $cache.bbolt.bucket }}
+        bucket = {{ $cache.bbolt.bucket | quote }}
+          {{- end }}
 
-        {{ printf "[caches.%s.badger]" .name }}
-          {{- if .badger.directory }}
-        directory = {{ .badger.directory | quote }}
+        {{- else if and (eq $cache.cacheType "badger") ( $cache.badger ) }}
+        {{ printf "[caches.%s.badger]" $cache.name }}
+          {{- range $vName, $value := $.Values.volumes }}
+          {{- if eq $vName $cache.volumeName }}
+        directory = {{ printf "%s/%s/" $value.mountPath $cache.name }}
+        value_directory = {{ printf "%s/" $value.mountPath }}
           {{- end }}
-          {{- if .badger.valueDirectory }}
-        value_directory = {{ .badger.valueDirectory | quote }}
           {{- end }}
         {{- end }}
+
       {{- end }}
     {{- end }}
     {{- end }}
