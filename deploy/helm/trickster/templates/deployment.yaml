@@ -57,14 +57,12 @@ spec:
           {{- end }}
         {{- end }}
           volumeMounts:
+            - name: cfg-volume-{{ .name }}
+              mountPath: /etc/trickster
           {{- range .Values.caches }}
           {{- if eq .cacheType "filesystem" }}
-            - name: cfg-volume-{{ .name }}
-              {{- if eq .path "" }}
-              mountPath: /tmp/trickster
-              {{- else }}
+            - name: cache-volume
               mountPath: {{ .path }}
-              {{- end }}
           {{- end }}
           {{- end }}
           ports:
