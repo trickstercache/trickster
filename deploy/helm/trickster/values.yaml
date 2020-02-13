@@ -214,7 +214,7 @@ origins:
 
 #     # if using 'bbolt', 'badger', or 'filesystem' you must link a volume as defined below in
 #     # the volumes section on the helm chart. Paths will automatically be generated. Just match the names.
-      #volumeName: thing-volume
+      #volumeName: example-volume-name
 
 #     ## Configuration options for the Cache Index
 #     # The Cache Index handles key management and retention for bbolt, filesystem and memory
