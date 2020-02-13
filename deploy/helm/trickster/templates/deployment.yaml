@@ -25,7 +25,7 @@ spec:
 {{ toYaml .Values.podAnnotations | indent 8 }}
     {{- end }}    
       labels:
-        {{- include "trickster.matchLabels" . }}
+        {{- include "trickster.matchLabels" . | nindent 8 }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
