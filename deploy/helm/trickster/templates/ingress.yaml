@@ -5,6 +5,7 @@
 apiVersion: extensions/v1beta1
 kind: Ingress
 metadata:
+  name: {{ template "trickster.fullname" . }}
 {{- if .Values.ingress.annotations }}
   annotations:
 {{ toYaml .Values.ingress.annotations | indent 4 }}
