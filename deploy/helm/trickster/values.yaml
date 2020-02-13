@@ -212,7 +212,8 @@ origins:
 #     # options are 'bbolt', 'badger', 'filesystem', 'memory', and 'redis'
 #     cacheType: memory
 
-#     # if using 'bbolt', 'badger', or 'filesystem' you must link a volume as defined below
+#     # if using 'bbolt', 'badger', or 'filesystem' you must link a volume as defined below in
+#     # the volumes section on the helm chart. Paths will automatically be generated. Just match the names.
       #volumeName: thing-volume
 
 #     ## Configuration options for the Cache Index
@@ -314,7 +315,7 @@ origins:
 #       idleCheckFrequencyMs: "60000"
 
 #     filesystem;
-
+#       # Nothing to include here - this is handled by helm templating. 
           
 #     ## Configuration options when using a bbolt Cache
 #     bbolt:
@@ -324,7 +325,8 @@ origins:
 #       # bucket defines the name of the BotlDb bucket (similar to a namespace) under which our key value store lives
 #       bucket: trickster
 
-#      badger:
+#     badger:
+#       # Nothing to include here - this is handled by helm templating. 
 
 # negativeCaches:
 # #  The 'default' negative cache config, mapped by all origins by default, is empty unless you populate it.
@@ -456,7 +458,10 @@ ingress:
   #   hosts:
   #     - chart-example.local
 
-
+## Enter volumes of type 'persistentVolume', or 'generic'
+## Below are the configuration options for each. 
+## Match the volume names to the volume name per cache.
+## Multiple caches may map to one volume config.
 volumes:
   persistent:
     ## If true, trickster will create/use a named Persistent Volume Claim
@@ -464,6 +469,7 @@ volumes:
     type: "persistentVolume"
     enabled: false
 
+    ## Must include
     mountPath: "/tmp/trickster"
   
     ## trickster data Persistent Volume access modes
@@ -494,9 +500,6 @@ volumes:
     ##   GKE, AWS & OpenStack)
     ##
     # storageClass: "-"
-
-    ## Must include
-    mountPath: "/tmp/trickster"
 
   generic:
     ## Will create an empty dir to be used
