@@ -26,7 +26,12 @@ import (
 // WithResourcesContext ...
 func WithResourcesContext(client origins.Client, oc *config.OriginConfig, c cache.Cache, p *config.PathConfig, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resources := request.NewResources(oc, p, c.Configuration(), c, client)
+		var resources *request.Resources
+		if c == nil {
+			resources = request.NewResources(oc, p, nil, nil, client)
+		} else {
+			resources = request.NewResources(oc, p, c.Configuration(), c, client)
+		}
 		next.ServeHTTP(w, r.WithContext(context.WithResources(r.Context(), resources)))
 	})
 }
