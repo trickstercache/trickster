@@ -12,6 +12,8 @@ Trickster is an HTTP reverse proxy/cache for http applications and a dashboard q
 
 <img src="./docs/images/high-level-1.png" width=512/>
 
+Learn more below, and check out our [roadmap](./docs/roadmap.md) to find out what else is in the works.
+
 ## HTTP Reverse Proxy Cache
 
 Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications like static file servers and web API's.
