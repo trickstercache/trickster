@@ -1,6 +1,6 @@
 ARG IMAGE_ARCH=amd64
 
-FROM golang:1.13.7 as builder
+FROM golang:1.13.8 as builder
 COPY . /go/src/github.com/Comcast/trickster
 WORKDIR /go/src/github.com/Comcast/trickster
 
