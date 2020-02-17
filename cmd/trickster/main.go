@@ -44,7 +44,7 @@ var (
 
 const (
 	applicationName    = "trickster"
-	applicationVersion = "1.0.0"
+	applicationVersion = "1.0.1"
 )
 
 // Package main is the main package for the Trickster application
@@ -170,35 +170,44 @@ func printUsage() {
 Trickster Usage:
  
  You must provide -version, -config or both -origin-url and -origin-type.
- 
- Trickster currently listens on port 9090 by default; Set in a config file,
- or override using -proxy-port.
-
- Default log level is INFO. Set in a config file, or override with -log-level.
 
  Print Version Info:
-   trickster -version
+ trickster -version
+ 
+ Using a configuration file:
+  trickster -config /path/to/file.conf [-log-level DEBUG|INFO|WARN|ERROR] [-proxy-port 8081] [-metrics-port 8082]
 
- Simple HTTP Reverse Proxy Cache listening on 8080
+ Using origin-url and origin-type:
+  trickster -origin-url https://example.com -origin-type reverseproxycache [-log-level DEBUG|INFO|WARN|ERROR] [-proxy-port 8081] [-metrics-port 8082]
+
+------
+
+ Simple HTTP Reverse Proxy Cache listening on 8080:
    trickster -origin-url https://example.com/ -origin-type reverseproxycache -proxy-port 8080
 
- Simple Prometheus Accelerator listening on 9090 (default port) with Debugging
+ Simple Prometheus Accelerator listening on 9090 (default port) with Debugging:
    trickster -origin-url http://prometheus.example.com:9090/ -origin-type prometheus -log-level DEBUG
 
- Simple InfluxDB Accelerator listening on 8086
+ Simple InfluxDB Accelerator listening on 8086:
    trickster -origin-url http://influxdb.example.com:8086/ -origin-type influxdb -proxy-port 8086
 
- Simple ClickHouse Accelerator listening on 8123
+ Simple ClickHouse Accelerator listening on 8123:
    trickster -origin-url http://clickhouse.example.com:8123/ -origin-type clickhouse -proxy-port 8123
 
- Using a configuration file:
-   trickster -config /path/to/file.conf [-log-level DEBUG|INFO|WARN|ERROR] [-proxy-port PORT]
+------
+
+Trickster currently listens on port 9090 by default; Set in a config file,
+or override using -proxy-port. The default port will change in a future release.
+
+Default log level is INFO. Set in a config file, or override with -log-level. 
 
 The configuration file is much more robust than the command line arguments, and the example file
 is well-documented. We also have docker images on DockerHub, as well as Kubernetes and Helm
 deployment examples in our GitHub repository.
  
 Thank you for using and contributing to Open Source Software!
+
+https://github.com/Comcast/trickster
 
 `)
 
