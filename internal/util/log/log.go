@@ -268,6 +268,11 @@ func Fatal(code int, event string, detail Pairs) {
 	}
 }
 
+// Level returns the configured Log Level
+func (l TricksterLogger) Level() string {
+	return l.level
+}
+
 // Close closes any opened file handles that were used for logging.
 func (l TricksterLogger) Close() {
 	if l.closer != nil {

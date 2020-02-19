@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
 	tctx "github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
@@ -139,7 +138,8 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
 
-	if config.Logging.LogLevel == "debug" || config.Logging.LogLevel == "trace" {
+	ll := log.Logger.Level()
+	if ll == "trace" || ll == "debug" {
 		go logUpstreamRequest(oc.Name, oc.OriginType, handlerName, pr.Method, pr.URL.String(), pr.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
 	}
 
