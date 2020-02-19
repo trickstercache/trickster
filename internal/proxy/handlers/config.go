@@ -20,19 +20,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/headers"
 )
 
-// RegisterConfigHandler registers the application's /ping handler
-// func RegisterConfigHandler() {
-// 	routing.Router.HandleFunc(config.Main.ConfigHandlerPath, configHandler).Methods("GET")
-// }
-
-// // configHandler responds to an HTTP Request with 200 OK and "pong"
-// func configHandler(w http.ResponseWriter, r *http.Request) {
-// 	w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
-// 	w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
-// 	w.WriteHeader(http.StatusOK)
-// 	w.Write([]byte(config.Config.String()))
-// }
-
+// ConfigHandleFunc responds to the HTTP request with the running configuration
 func ConfigHandleFunc(conf *config.TricksterConfig) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
