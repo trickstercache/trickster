@@ -61,6 +61,7 @@ func reset() {
 	flags.ProxyListenPort = 0
 	flags.MetricsListenPort = 0
 	flags.ReloadListenPort = 0
+	flags.customPath = false
 
 	providedOriginURL = ""
 	providedOriginType = ""
