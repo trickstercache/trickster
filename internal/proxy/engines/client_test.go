@@ -774,7 +774,7 @@ func (c *TestClient) ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	DoProxy(w, r)
 }
 
-func (c *PromTestClient) SetUpstreamLogging(bool) {
+func (c *TestClient) SetUpstreamLogging(bool) {
 }
 
 func testResultHeaderPartMatch(header http.Header, kvp map[string]string) error {

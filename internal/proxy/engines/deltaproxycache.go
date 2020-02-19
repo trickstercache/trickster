@@ -115,17 +115,19 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		)
 		cacheStatus = status.LookupStatusPurge
 		cache.Remove(key)
-		cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, logUpstreamRequest)
+		// to-do, re-add log request bool
+		cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 		if err != nil {
 			recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 			Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 			locks.Release(key)
 			return // fetchTimeseries logs the error
 		}
+
 	} else {
 		doc, cacheStatus, _, err = QueryCache(ctx, cache, key, nil)
 		if cacheStatus == status.LookupStatusKeyMiss && err == tc.ErrKNF {
-			cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, logUpstreamRequest)
+			cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 			if err != nil {
 				recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 
@@ -148,7 +150,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Error("cache object unmarshaling failed", log.Pairs{"key": key, "originName": client.Name()})
 				cache.Remove(key)
-				cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, logUpstreamRequest)
+				cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 				if err != nil {
 					recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 					Respond(w, doc.StatusCode, doc.Headers, doc.Body)
@@ -230,7 +232,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			defer wg.Done()
 			rq.Request = rq.WithContext(tctx.WithResources(r.Context(), request.NewResources(oc, pc, cc, cache, client)))
 			client.SetExtent(rq.Request, trq, e)
-			body, resp, _ := Fetch(rq, logUpstreamRequest)
+			body, resp, _ := rq.Fetch()
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				nts, err := client.UnmarshalTimeseries(body)
 				if err != nil {
@@ -264,7 +266,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 
 			// create a new context that uses the fast forward path config instead of the time series path config
 			req.URL = ffURL
-			body, resp, isHit := FetchViaObjectProxyCache(req, logUpstreamRequest)
+			body, resp, isHit := FetchViaObjectProxyCache(req)
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				ffts, err = client.UnmarshalInstantaneous(body)
 				if err != nil {
@@ -364,9 +366,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 
 func logDeltaRoutine(p log.Pairs) { log.Debug("delta routine completed", p) }
 
-func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery, client origins.TimeseriesClient, logUpstreamRequest bool) (timeseries.Timeseries, *HTTPDocument, time.Duration, error) {
+func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery, client origins.TimeseriesClient) (timeseries.Timeseries, *HTTPDocument, time.Duration, error) {
 
-	body, resp, elapsed := pr.Fetch(logUpstreamRequest)
+	body, resp, elapsed := pr.Fetch()
 
 	d := &HTTPDocument{
 		Status:     resp.Status,

@@ -42,7 +42,7 @@ func TestSetExtent(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	client := &Client{config: oc}
 
 	client.makeTrqParsers()
@@ -200,7 +200,7 @@ func TestFastForwardURL(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	client := &Client{config: oc}
 
 	client.makeTrqParsers()

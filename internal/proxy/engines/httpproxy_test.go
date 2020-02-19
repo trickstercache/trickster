@@ -280,12 +280,12 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 
 func TestPrepareFetchReaderErr(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-origin-url", "http://example.com/", "-origin-type", "test", "-log-level", "debug"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://example.com/", "-origin-type", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	oc.HTTPClient = http.DefaultClient
 
 	r := httptest.NewRequest("GET", "http://example.com/", nil)

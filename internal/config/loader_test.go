@@ -107,7 +107,7 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 func TestLoadConfigurationInvalidTracingName(t *testing.T) {
 	expected := `invalid tracing config name: test`
 	a := []string{"-config", "../../testdata/test.unknown-tracing-type.conf"}
-	err := Load("trickster-test", "0", a)
+	_, _, err := Load("trickster-test", "0", a)
 	if err == nil {
 		t.Errorf("expected error `%s` got nothing", expected)
 	} else if err.Error() != expected {

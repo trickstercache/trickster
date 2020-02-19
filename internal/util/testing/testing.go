@@ -106,7 +106,7 @@ func NewTestInstance(
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", ts.URL+urlPath, nil)
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	p := NewTestPathConfig(oc, DefaultPathConfigs, urlPath)
 
 	tracer, _, _ := tr.Init(oc.TracingConfig)

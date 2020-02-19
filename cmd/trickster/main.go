@@ -87,7 +87,7 @@ func main() {
 	}
 
 	// Register Tracing Configurations
-	tracerFlushers, err := tr.RegisterAll(config.Config)
+	tracerFlushers, err := tr.RegisterAll(conf)
 	if err != nil {
 		log.Fatal(1, "tracing registration failed", log.Pairs{"detail": err.Error()})
 	}
@@ -139,7 +139,7 @@ func main() {
 					conf.Frontend.ConnectionsLimit,
 					tlsConfig)
 				if err == nil {
-					log.Info("tls listener starting", log.Pairs{"tlsPort": config.Frontend.TLSListenPort, "tlsListenAddress": config.Frontend.TLSListenAddress})
+					log.Info("tls listener starting", log.Pairs{"tlsPort": conf.Frontend.TLSListenPort, "tlsListenAddress": conf.Frontend.TLSListenAddress})
 					err = http.Serve(l, handlers.CompressHandler(mux.NewRouter()))
 				}
 			}
@@ -156,7 +156,7 @@ func main() {
 				conf.Frontend.ConnectionsLimit, nil)
 
 			if err == nil {
-				log.Info("http listener starting", log.Pairs{"httpPort": config.Frontend.ListenPort, "httpListenAddress": config.Frontend.ListenAddress})
+				log.Info("http listener starting", log.Pairs{"httpPort": conf.Frontend.ListenPort, "httpListenAddress": conf.Frontend.ListenAddress})
 				err = http.Serve(l, handlers.CompressHandler(router))
 			}
 			log.Error("exiting", log.Pairs{"err": err})

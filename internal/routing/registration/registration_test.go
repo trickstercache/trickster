@@ -39,11 +39,11 @@ func TestRegisterProxyRoutes(t *testing.T) {
 		t.Error(err)
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	oc.Hosts = []string{"test", "test2"}
 
-	registration.LoadCachesFromConfig()
-	RegisterProxyRoutes()
+	registration.LoadCachesFromConfig(conf)
+	RegisterProxyRoutes(conf, mux.NewRouter(), caches, false)
 
 	if len(ProxyClients) == 0 {
 		t.Errorf("expected %d got %d", 1, 0)
