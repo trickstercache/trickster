@@ -49,7 +49,7 @@ import (
 // var Metrics *MetricsConfig
 
 // TracingConfigs is the TracingConfigs subsection of the Running Configuration
-var TracingConfigs map[string]*TracingConfig
+// var TracingConfigs map[string]*TracingConfig
 
 // // NegativeCacheConfigs is the NegativeCacheConfig subsection of the Running Configuration
 // var NegativeCacheConfigs map[string]NegativeCacheConfig
