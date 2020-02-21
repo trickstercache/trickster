@@ -110,17 +110,17 @@ func ConsoleLogger(logLevel string) *TricksterLogger {
 // Init returns a TricksterLogger for the provided logging configuration. The
 // returned TricksterLogger will write to files distinguished from other TricksterLoggers by the
 // instance string.
-func Init() {
+func Init(conf *config.TricksterConfig) {
 	l := &TricksterLogger{}
 
 	var wr io.Writer
 
-	if config.Logging.LogFile == "" {
+	if conf.Logging.LogFile == "" {
 		wr = os.Stdout
 	} else {
-		logFile := config.Logging.LogFile
-		if config.Main.InstanceID > 0 {
-			logFile = strings.Replace(logFile, ".log", "."+strconv.Itoa(config.Main.InstanceID)+".log", 1)
+		logFile := conf.Logging.LogFile
+		if conf.Main.InstanceID > 0 {
+			logFile = strings.Replace(logFile, ".log", "."+strconv.Itoa(conf.Main.InstanceID)+".log", 1)
 		}
 
 		wr = &lumberjack.Logger{
@@ -141,7 +141,7 @@ func Init() {
 		}),
 	)
 
-	l.level = strings.ToLower(config.Logging.LogLevel)
+	l.level = strings.ToLower(conf.Logging.LogLevel)
 
 	// wrap logger depending on log level
 	switch l.level {
@@ -266,6 +266,11 @@ func Fatal(code int, event string, detail Pairs) {
 	if code >= 0 {
 		os.Exit(code)
 	}
+}
+
+// Level returns the configured Log Level
+func (l TricksterLogger) Level() string {
+	return l.level
 }
 
 // Close closes any opened file handles that were used for logging.

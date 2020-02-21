@@ -67,7 +67,7 @@ func NewTestInstance(
 	originType, urlPath, logLevel string,
 ) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *http.Client, error) {
 
-	metrics.Init()
+	metrics.Init(&config.TricksterConfig{}) // TODO: move after conf.Load
 
 	isBasicTestServer := false
 
@@ -88,14 +88,14 @@ func NewTestInstance(
 		args = append(args, []string{"-config", configFile}...)
 	}
 
-	err := config.Load("trickster", "test", args)
+	conf, _, err := config.Load("trickster", "test", args)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
-	if err != nil {
+	caches := cr.LoadCachesFromConfig(conf)
+	cache, ok := caches["default"]
+	if !ok {
 		return nil, nil, nil, nil, err
 	}
 
@@ -106,7 +106,7 @@ func NewTestInstance(
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", ts.URL+urlPath, nil)
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	p := NewTestPathConfig(oc, DefaultPathConfigs, urlPath)
 
 	tracer, _, _ := tr.Init(oc.TracingConfig)

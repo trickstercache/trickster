@@ -28,7 +28,7 @@ import (
 )
 
 func init() {
-	metrics.Init()
+	metrics.Init(&config.TricksterConfig{})
 }
 
 const cacheType = "bbolt"

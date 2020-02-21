@@ -23,8 +23,12 @@ import (
 
 func TestPingHandler(t *testing.T) {
 
-	config.Load("trickster-test", "test", nil)
-	RegisterPingHandler()
+	conf, _, err := config.Load("trickster-test", "test",
+		[]string{"-origin-type", "reverseproxycache", "-origin-url", "http://0/"})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+	pingHandler := PingHandleFunc(conf)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/trickster/ping", nil)

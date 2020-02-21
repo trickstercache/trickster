@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/methods"
 	"github.com/Comcast/trickster/internal/proxy/origins"
@@ -30,23 +29,23 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/origins/irondb"
 	"github.com/Comcast/trickster/internal/proxy/origins/prometheus"
 	"github.com/Comcast/trickster/internal/proxy/origins/reverseproxycache"
-	"github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/middleware"
+	"github.com/gorilla/mux"
 )
 
 // ProxyClients maintains a list of proxy clients configured for use by Trickster
 var ProxyClients = make(map[string]origins.Client)
 
 // RegisterProxyRoutes iterates the Trickster Configuration and registers the routes for the configured origins
-func RegisterProxyRoutes() error {
+func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router, caches map[string]cache.Cache, logUpstreamRequest bool) error {
 
 	defaultOrigin := ""
 	var ndo *config.OriginConfig // points to the origin config named "default"
 	var cdo *config.OriginConfig // points to the origin config with IsDefault set to true
 
 	// This iteration will ensure default origins are handled properly
-	for k, o := range config.Origins {
+	for k, o := range conf.Origins {
 
 		if !config.IsValidOriginType(o.OriginType) {
 			return fmt.Errorf(`unknown origin type in origin config. originName: %s, originType: %s`, k, o.OriginType)
@@ -69,7 +68,7 @@ func RegisterProxyRoutes() error {
 			continue
 		}
 
-		err := registerOriginRoutes(k, o)
+		err := registerOriginRoutes(router, k, o, caches, logUpstreamRequest)
 		if err != nil {
 			return err
 		}
@@ -81,7 +80,7 @@ func RegisterProxyRoutes() error {
 			cdo = ndo
 			defaultOrigin = "default"
 		} else {
-			err := registerOriginRoutes("default", ndo)
+			err := registerOriginRoutes(router, "default", ndo, caches, logUpstreamRequest)
 			if err != nil {
 				return err
 			}
@@ -89,21 +88,22 @@ func RegisterProxyRoutes() error {
 	}
 
 	if cdo != nil {
-		return registerOriginRoutes(defaultOrigin, cdo)
+		return registerOriginRoutes(router, defaultOrigin, cdo, caches, logUpstreamRequest)
 	}
 
 	return nil
 }
 
-func registerOriginRoutes(k string, o *config.OriginConfig) error {
+func registerOriginRoutes(router *mux.Router, k string, o *config.OriginConfig, caches map[string]cache.Cache, logUpstreamRequest bool) error {
 
 	var client origins.Client
 	var c cache.Cache
+	var ok bool
 	var err error
 
-	c, err = registration.GetCache(o.CacheName)
-	if err != nil {
-		return err
+	c, ok = caches[o.CacheName]
+	if !ok {
+		return fmt.Errorf("Could not find Cache named [%s]", o.CacheName)
 	}
 
 	log.Info("registering route paths", log.Pairs{"originName": k, "originType": o.OriginType, "upstreamHost": o.Host})
@@ -123,11 +123,12 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 	if err != nil {
 		return err
 	}
+
 	if client != nil {
 		o.HTTPClient = client.HTTPClient()
 		ProxyClients[k] = client
 		defaultPaths := client.DefaultPathConfigs(o)
-		registerPathRoutes(client.Handlers(), client, o, c, defaultPaths)
+		registerPathRoutes(router, client.Handlers(), client, o, c, defaultPaths)
 	}
 	return nil
 }
@@ -135,7 +136,7 @@ func registerOriginRoutes(k string, o *config.OriginConfig) error {
 // registerPathRoutes will take the provided default paths map,
 // merge it with any path data in the provided originconfig, and then register
 // the path routes to the appropriate handler from the provided handlers map
-func registerPathRoutes(handlers map[string]http.Handler, client origins.Client, o *config.OriginConfig, c cache.Cache,
+func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler, client origins.Client, o *config.OriginConfig, c cache.Cache,
 	paths map[string]*config.PathConfig) {
 	decorate := func(p *config.PathConfig) http.Handler {
 		// add Origin, Cache, and Path Configs to the HTTP Request's context
@@ -174,7 +175,7 @@ func registerPathRoutes(handlers map[string]http.Handler, client origins.Client,
 		o.HealthCheckUpstreamPath != "" && o.HealthCheckVerb != "" {
 		hp := "/trickster/health/" + o.Name
 		log.Debug("registering health handler path", log.Pairs{"path": hp, "originName": o.Name, "upstreamPath": o.HealthCheckUpstreamPath, "upstreamVerb": o.HealthCheckVerb})
-		routing.Router.PathPrefix(hp).Handler(middleware.WithResourcesContext(client, o, nil, nil, h)).Methods(methods.CacheableHTTPMethods()...)
+		router.PathPrefix(hp).Handler(middleware.WithResourcesContext(client, o, nil, nil, h)).Methods(methods.CacheableHTTPMethods()...)
 	}
 
 	plist := make([]string, 0, len(pathsWithVerbs))
@@ -217,18 +218,18 @@ func registerPathRoutes(handlers map[string]http.Handler, client origins.Client,
 				// Case where we path match by prefix
 				// Host Header Routing
 				for _, h := range o.Hosts {
-					routing.Router.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...).Host(h)
+					router.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...).Host(h)
 				}
 				// Path Routing
-				routing.Router.PathPrefix("/" + o.Name + p.Path).Handler(decorate(p)).Methods(p.Methods...)
+				router.PathPrefix("/" + o.Name + p.Path).Handler(decorate(p)).Methods(p.Methods...)
 			default:
 				// default to exact match
 				// Host Header Routing
 				for _, h := range o.Hosts {
-					routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...).Host(h)
+					router.Handle(p.Path, decorate(p)).Methods(p.Methods...).Host(h)
 				}
 				// Path Routing
-				routing.Router.Handle("/"+o.Name+p.Path, decorate(p)).Methods(p.Methods...)
+				router.Handle("/"+o.Name+p.Path, decorate(p)).Methods(p.Methods...)
 			}
 		}
 	}
@@ -245,12 +246,12 @@ func registerPathRoutes(handlers map[string]http.Handler, client origins.Client,
 				switch p.MatchType {
 				case config.PathMatchTypePrefix:
 					// Case where we path match by prefix
-					routing.Router.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...)
+					router.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...)
 				default:
 					// default to exact match
-					routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...)
+					router.Handle(p.Path, decorate(p)).Methods(p.Methods...)
 				}
-				routing.Router.Handle(p.Path, decorate(p)).Methods(p.Methods...)
+				router.Handle(p.Path, decorate(p)).Methods(p.Methods...)
 			}
 		}
 	}

@@ -22,14 +22,13 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/util/log"
-
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
 func init() {
-	metrics.Init()
+	metrics.Init(&config.TricksterConfig{})
 }
 
 const cacheType = "filesystem"

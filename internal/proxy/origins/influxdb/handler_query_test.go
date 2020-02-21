@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/util/metrics"
@@ -28,7 +29,7 @@ import (
 )
 
 func init() {
-	metrics.Init()
+	metrics.Init(&config.TricksterConfig{})
 }
 
 func TestParseTimeRangeQuery(t *testing.T) {

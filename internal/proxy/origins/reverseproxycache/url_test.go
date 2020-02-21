@@ -25,12 +25,12 @@ func TestBuildUpstreamURL(t *testing.T) {
 
 	expected := "q=up&start=1&end=1&step=1"
 
-	err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "rpc", "-log-level", "debug"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "rpc", "-log-level", "debug"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	client := Client{config: oc, name: "default"}
 
 	u := &url.URL{Path: "/default/query_range", RawQuery: expected}

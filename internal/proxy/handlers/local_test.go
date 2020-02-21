@@ -26,7 +26,10 @@ import (
 
 func TestHandleLocalResponse(t *testing.T) {
 
-	config.Load("trickster-test", "test", []string{"-origin-url", "http://1.2.3.4", "-origin-type", "prometheus"})
+	_, _, err := config.Load("trickster-test", "test", []string{"-origin-url", "http://1.2.3.4", "-origin-type", "prometheus"})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
@@ -69,7 +72,10 @@ func TestHandleLocalResponse(t *testing.T) {
 
 func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 
-	config.Load("trickster-test", "test", []string{"-origin-url", "http://1.2.3.4", "-origin-type", "prometheus"})
+	_, _, err := config.Load("trickster-test", "test", []string{"-origin-url", "http://1.2.3.4", "-origin-type", "prometheus"})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
@@ -112,7 +118,10 @@ func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 
 func TestHandleLocalResponseNoPathConfig(t *testing.T) {
 
-	config.Load("trickster-test", "test", []string{"-origin-url", "http://1.2.3.4", "-origin-type", "prometheus"})
+	_, _, err := config.Load("trickster-test", "test", []string{"-origin-url", "http://1.2.3.4", "-origin-type", "prometheus"})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/trickster/", nil)

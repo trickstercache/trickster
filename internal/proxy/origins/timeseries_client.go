@@ -48,4 +48,6 @@ type TimeseriesClient interface {
 	HTTPClient() *http.Client
 	// SetCache sets the Cache object the client will use when caching origin content
 	SetCache(cache.Cache)
+	// SetUpstreamLogging enables or disables the logging of upstream requests
+	SetUpstreamLogging(bool)
 }

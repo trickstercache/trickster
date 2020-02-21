@@ -21,11 +21,11 @@ import (
 	"os"
 	"sync"
 
-	cr "github.com/Comcast/trickster/internal/cache/registration"
+	"github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy"
 	th "github.com/Comcast/trickster/internal/proxy/handlers"
-	"github.com/Comcast/trickster/internal/routing"
 	rr "github.com/Comcast/trickster/internal/routing/registration"
 	"github.com/Comcast/trickster/internal/runtime"
 	"github.com/Comcast/trickster/internal/util/log"
@@ -33,6 +33,7 @@ import (
 	tr "github.com/Comcast/trickster/internal/util/tracing/registration"
 
 	"github.com/gorilla/handlers"
+	"github.com/gorilla/mux"
 )
 
 var (
@@ -55,19 +56,19 @@ func main() {
 	runtime.ApplicationName = applicationName
 	runtime.ApplicationVersion = applicationVersion
 
-	err = config.Load(runtime.ApplicationName, runtime.ApplicationVersion, os.Args[1:])
+	conf, flags, err := config.Load(runtime.ApplicationName, runtime.ApplicationVersion, os.Args[1:])
 	if err != nil {
 		fmt.Println("\nERROR: Could not load configuration:", err.Error())
 		printUsage()
 		os.Exit(1)
 	}
 
-	if config.Flags.PrintVersion {
+	if flags.PrintVersion {
 		printVersion()
 		os.Exit(0)
 	}
 
-	log.Init()
+	log.Init(conf)
 	defer log.Logger.Close()
 	log.Info("application start up",
 		log.Pairs{
@@ -77,7 +78,7 @@ func main() {
 			"goArch":    applicationGoArch,
 			"commitID":  applicationGitCommitID,
 			"buildTime": applicationBuildTime,
-			"logLevel":  config.Logging.LogLevel,
+			"logLevel":  conf.Logging.LogLevel,
 		},
 	)
 
@@ -85,10 +86,8 @@ func main() {
 		log.Warn(w, log.Pairs{})
 	}
 
-	metrics.Init()
-
 	// Register Tracing Configurations
-	tracerFlushers, err := tr.RegisterAll(config.Config)
+	tracerFlushers, err := tr.RegisterAll(conf)
 	if err != nil {
 		log.Fatal(1, "tracing registration failed", log.Pairs{"detail": err.Error()})
 	}
@@ -99,15 +98,28 @@ func main() {
 		}
 	}
 
-	cr.LoadCachesFromConfig()
-	th.RegisterPingHandler()
-	th.RegisterConfigHandler()
-	err = rr.RegisterProxyRoutes()
+	router := mux.NewRouter()
+	router.HandleFunc(conf.Main.PingHandlerPath, th.PingHandleFunc(conf)).Methods("GET")
+	router.HandleFunc(conf.Main.ConfigHandlerPath, th.ConfigHandleFunc(conf)).Methods("GET")
+	metrics.Init(conf)
+
+	var logUpstreamRequest bool
+	if conf.Logging.LogLevel == "debug" || conf.Logging.LogLevel == "trace" {
+		logUpstreamRequest = true
+	}
+
+	var caches = make(map[string]cache.Cache)
+	for k, v := range conf.Caches {
+		c := registration.NewCache(k, v)
+		caches[k] = c
+	}
+
+	err = rr.RegisterProxyRoutes(conf, router, caches, logUpstreamRequest)
 	if err != nil {
 		log.Fatal(1, "route registration failed", log.Pairs{"detail": err.Error()})
 	}
 
-	if config.Frontend.TLSListenPort < 1 && config.Frontend.ListenPort < 1 {
+	if conf.Frontend.TLSListenPort < 1 && conf.Frontend.ListenPort < 1 {
 		log.Fatal(1, "no http or https listeners configured", log.Pairs{})
 	}
 
@@ -116,19 +128,19 @@ func main() {
 
 	// if TLS port is configured and at least one origin is mapped to a good tls config,
 	// then set up the tls server listener instance
-	if config.Frontend.ServeTLS && config.Frontend.TLSListenPort > 0 {
+	if conf.Frontend.ServeTLS && conf.Frontend.TLSListenPort > 0 {
 		wg.Add(1)
 		go func() {
-			tlsConfig, err := config.Config.TLSCertConfig()
+			tlsConfig, err := conf.TLSCertConfig()
 			if err == nil {
 				l, err = proxy.NewListener(
-					config.Frontend.TLSListenAddress,
-					config.Frontend.TLSListenPort,
-					config.Frontend.ConnectionsLimit,
+					conf.Frontend.TLSListenAddress,
+					conf.Frontend.TLSListenPort,
+					conf.Frontend.ConnectionsLimit,
 					tlsConfig)
 				if err == nil {
-					log.Info("tls listener starting", log.Pairs{"tlsPort": config.Frontend.TLSListenPort, "tlsListenAddress": config.Frontend.TLSListenAddress})
-					err = http.Serve(l, handlers.CompressHandler(routing.TLSRouter))
+					log.Info("tls listener starting", log.Pairs{"tlsPort": conf.Frontend.TLSListenPort, "tlsListenAddress": conf.Frontend.TLSListenAddress})
+					err = http.Serve(l, handlers.CompressHandler(mux.NewRouter()))
 				}
 			}
 			log.Error("exiting", log.Pairs{"err": err})
@@ -137,15 +149,15 @@ func main() {
 	}
 
 	// if the plaintext HTTP port is configured, then set up the http listener instance
-	if config.Frontend.ListenPort > 0 {
+	if conf.Frontend.ListenPort > 0 {
 		wg.Add(1)
 		go func() {
-			l, err := proxy.NewListener(config.Frontend.ListenAddress, config.Frontend.ListenPort,
-				config.Frontend.ConnectionsLimit, nil)
+			l, err := proxy.NewListener(conf.Frontend.ListenAddress, conf.Frontend.ListenPort,
+				conf.Frontend.ConnectionsLimit, nil)
 
 			if err == nil {
-				log.Info("http listener starting", log.Pairs{"httpPort": config.Frontend.ListenPort, "httpListenAddress": config.Frontend.ListenAddress})
-				err = http.Serve(l, handlers.CompressHandler(routing.Router))
+				log.Info("http listener starting", log.Pairs{"httpPort": conf.Frontend.ListenPort, "httpListenAddress": conf.Frontend.ListenAddress})
+				err = http.Serve(l, handlers.CompressHandler(router))
 			}
 			log.Error("exiting", log.Pairs{"err": err})
 			wg.Done()

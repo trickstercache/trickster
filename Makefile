@@ -109,7 +109,7 @@ test:
 
 .PHONY: bench
 bench:
-	$(GO) test -v -coverprofile=.coverprofile ./... -run=nonthingplease -bench=. | grep -v ' app=trickster '
+	bash -c "$(GO) test -v -coverprofile=.coverprofile ./... -run=nonthingplease -bench=. | grep -v ' app=trickster '; exit ${PIPESTATUS[0]}"
 
 .PHONY: test-cover
 test-cover: test

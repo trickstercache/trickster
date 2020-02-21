@@ -115,6 +115,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		)
 		cacheStatus = status.LookupStatusPurge
 		cache.Remove(key)
+		// to-do, re-add log request bool
 		cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 		if err != nil {
 			recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
@@ -122,6 +123,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			locks.Release(key)
 			return // fetchTimeseries logs the error
 		}
+
 	} else {
 		doc, cacheStatus, _, err = QueryCache(ctx, cache, key, nil)
 		if cacheStatus == status.LookupStatusKeyMiss && err == tc.ErrKNF {

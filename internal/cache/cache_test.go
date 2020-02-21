@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
@@ -28,7 +29,7 @@ func init() {
 	testCacheName = "test-cache"
 	testCacheType = "test"
 
-	metrics.Init()
+	metrics.Init(&config.TricksterConfig{})
 
 }
 

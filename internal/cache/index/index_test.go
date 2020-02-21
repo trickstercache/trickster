@@ -23,7 +23,7 @@ import (
 )
 
 func init() {
-	metrics.Init()
+	metrics.Init(&config.TricksterConfig{})
 }
 
 var testBulkIndex *Index
