@@ -153,7 +153,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	resp, err := oc.HTTPClient.Do(r)
 
 	if err != nil {
-		log.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
+		rsc.Logger.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		// if there is an err and the response is nil, the server could not be reached; make a 502 for the downstream response
 		if resp == nil {
 			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r, Header: make(http.Header)}
@@ -190,7 +190,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		d, err := http.ParseTime(date)
 		if err == nil {
 			if offset := time.Since(d); time.Duration(math.Abs(float64(offset))) > time.Minute {
-				log.WarnOnce("clockoffset."+oc.Name,
+				rsc.Logger.WarnOnce("clockoffset."+oc.Name,
 					"clock offset between trickster host and origin is high and may cause data anomalies",
 					log.Pairs{
 						"originName":    oc.Name,

@@ -24,7 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 const (
@@ -99,11 +99,11 @@ var ProxyConnectionFailed prometheus.Counter
 var o sync.Once
 
 // Init initializes the instrumented metrics and starts the listener endpoint
-func Init(conf *config.TricksterConfig) {
-	o.Do(initialize(conf))
+func Init(conf *config.TricksterConfig, log *tl.TricksterLogger) {
+	o.Do(initialize(conf, log))
 }
 
-func initialize(conf *config.TricksterConfig) func() {
+func initialize(conf *config.TricksterConfig, log *tl.TricksterLogger) func() {
 	return func() {
 		FrontendRequestStatus = prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -314,11 +314,11 @@ func initialize(conf *config.TricksterConfig) func() {
 		if conf.Metrics != nil && conf.Metrics.ListenPort > 0 {
 			go func() {
 
-				log.Info("metrics http endpoint starting", log.Pairs{"address": conf.Metrics.ListenAddress, "port": fmt.Sprintf("%d", conf.Metrics.ListenPort)})
+				log.Info("metrics http endpoint starting", tl.Pairs{"address": conf.Metrics.ListenAddress, "port": fmt.Sprintf("%d", conf.Metrics.ListenPort)})
 
 				http.Handle("/metrics", promhttp.Handler())
 				if err := http.ListenAndServe(fmt.Sprintf("%s:%d", conf.Metrics.ListenAddress, conf.Metrics.ListenPort), nil); err != nil {
-					log.Error("unable to start metrics http server", log.Pairs{"detail": err.Error()})
+					log.Error("unable to start metrics http server", tl.Pairs{"detail": err.Error()})
 					os.Exit(1)
 				}
 			}()

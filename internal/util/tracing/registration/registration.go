@@ -21,7 +21,7 @@ import (
 	"go.opentelemetry.io/otel/api/trace"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/tracing"
 )
 
@@ -30,7 +30,7 @@ type Flushers []func()
 
 // RegisterAll registers all Tracers in the provided configuration, and returns
 // their Flushers
-func RegisterAll(cfg *config.TricksterConfig) (Flushers, error) {
+func RegisterAll(cfg *config.TricksterConfig, log *tl.TricksterLogger) (Flushers, error) {
 
 	if cfg == nil {
 		return nil, errors.New("no config provided")
@@ -60,7 +60,7 @@ func RegisterAll(cfg *config.TricksterConfig) (Flushers, error) {
 			}
 
 			if _, ok := activeTracers[oc.TracingConfigName]; !ok {
-				tracer, flusher, err := Init(tc)
+				tracer, flusher, err := Init(tc, log)
 				if err != nil {
 					return nil, err
 				}
@@ -75,7 +75,7 @@ func RegisterAll(cfg *config.TricksterConfig) (Flushers, error) {
 }
 
 // Init initializes tracing and returns a function to flush the tracer. Flush should be called on server shutdown.
-func Init(cfg *config.TracingConfig) (trace.Tracer, func(), error) {
+func Init(cfg *config.TracingConfig, log *tl.TricksterLogger) (trace.Tracer, func(), error) {
 
 	if cfg == nil {
 		log.Info(
@@ -85,7 +85,7 @@ func Init(cfg *config.TracingConfig) (trace.Tracer, func(), error) {
 	}
 	log.Debug(
 		"Trace Init",
-		log.Pairs{
+		tl.Pairs{
 			"Implementation": cfg.Implementation,
 			"Collector":      cfg.CollectorEndpoint,
 			"Type":           tracing.TracerImplementations[cfg.Implementation],

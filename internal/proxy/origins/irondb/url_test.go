@@ -26,6 +26,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/timeseries"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 func TestSetExtent(t *testing.T) {
@@ -49,7 +50,7 @@ func TestSetExtent(t *testing.T) {
 	client.makeExtentSetters()
 
 	pcs := client.DefaultPathConfigs(oc)
-	rsc := request.NewResources(oc, nil, nil, nil, client)
+	rsc := request.NewResources(oc, nil, nil, nil, client, tl.ConsoleLogger("error"))
 
 	cases := []struct {
 		handler  string
@@ -208,7 +209,7 @@ func TestFastForwardURL(t *testing.T) {
 
 	pcs := client.DefaultPathConfigs(oc)
 
-	rsc := request.NewResources(oc, nil, nil, nil, client)
+	rsc := request.NewResources(oc, nil, nil, nil, client, tl.ConsoleLogger("error"))
 
 	cases := []struct {
 		handler string
@@ -374,7 +375,8 @@ func TestParseTimerangeQuery(t *testing.T) {
 	client := &Client{name: "test"}
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 
-	r = request.SetResources(r, request.NewResources(client.config, &config.PathConfig{}, nil, nil, client))
+	r = request.SetResources(r, request.NewResources(client.config, &config.PathConfig{},
+		nil, nil, client, tl.ConsoleLogger("error")))
 
 	_, err := client.ParseTimeRangeQuery(r)
 	if err == nil || err != expected {

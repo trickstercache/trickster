@@ -28,7 +28,7 @@ import (
 	th "github.com/Comcast/trickster/internal/proxy/handlers"
 	rr "github.com/Comcast/trickster/internal/routing/registration"
 	"github.com/Comcast/trickster/internal/runtime"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tr "github.com/Comcast/trickster/internal/util/tracing/registration"
 
@@ -68,10 +68,10 @@ func main() {
 		os.Exit(0)
 	}
 
-	log.Init(conf)
-	defer log.Logger.Close()
+	log := tl.Init(conf)
+	defer log.Close()
 	log.Info("application start up",
-		log.Pairs{
+		tl.Pairs{
 			"name":      runtime.ApplicationName,
 			"version":   runtime.ApplicationVersion,
 			"goVersion": applicationGoVersion,
@@ -83,13 +83,13 @@ func main() {
 	)
 
 	for _, w := range config.LoaderWarnings {
-		log.Warn(w, log.Pairs{})
+		log.Warn(w, tl.Pairs{})
 	}
 
 	// Register Tracing Configurations
-	tracerFlushers, err := tr.RegisterAll(conf)
+	tracerFlushers, err := tr.RegisterAll(conf, log)
 	if err != nil {
-		log.Fatal(1, "tracing registration failed", log.Pairs{"detail": err.Error()})
+		log.Fatal(1, "tracing registration failed", tl.Pairs{"detail": err.Error()})
 	}
 
 	if len(tracerFlushers) > 0 {
@@ -101,26 +101,21 @@ func main() {
 	router := mux.NewRouter()
 	router.HandleFunc(conf.Main.PingHandlerPath, th.PingHandleFunc(conf)).Methods("GET")
 	router.HandleFunc(conf.Main.ConfigHandlerPath, th.ConfigHandleFunc(conf)).Methods("GET")
-	metrics.Init(conf)
-
-	var logUpstreamRequest bool
-	if conf.Logging.LogLevel == "debug" || conf.Logging.LogLevel == "trace" {
-		logUpstreamRequest = true
-	}
+	metrics.Init(conf, log)
 
 	var caches = make(map[string]cache.Cache)
 	for k, v := range conf.Caches {
-		c := registration.NewCache(k, v)
+		c := registration.NewCache(k, v, log)
 		caches[k] = c
 	}
 
-	err = rr.RegisterProxyRoutes(conf, router, caches, logUpstreamRequest)
+	err = rr.RegisterProxyRoutes(conf, router, caches, log)
 	if err != nil {
-		log.Fatal(1, "route registration failed", log.Pairs{"detail": err.Error()})
+		log.Fatal(1, "route registration failed", tl.Pairs{"detail": err.Error()})
 	}
 
 	if conf.Frontend.TLSListenPort < 1 && conf.Frontend.ListenPort < 1 {
-		log.Fatal(1, "no http or https listeners configured", log.Pairs{})
+		log.Fatal(1, "no http or https listeners configured", tl.Pairs{})
 	}
 
 	wg := sync.WaitGroup{}
@@ -137,13 +132,16 @@ func main() {
 					conf.Frontend.TLSListenAddress,
 					conf.Frontend.TLSListenPort,
 					conf.Frontend.ConnectionsLimit,
-					tlsConfig)
+					tlsConfig,
+					log,
+				)
 				if err == nil {
-					log.Info("tls listener starting", log.Pairs{"tlsPort": conf.Frontend.TLSListenPort, "tlsListenAddress": conf.Frontend.TLSListenAddress})
+					log.Info("tls listener starting", tl.Pairs{"tlsPort": conf.Frontend.TLSListenPort,
+						"tlsListenAddress": conf.Frontend.TLSListenAddress})
 					err = http.Serve(l, handlers.CompressHandler(mux.NewRouter()))
 				}
 			}
-			log.Error("exiting", log.Pairs{"err": err})
+			log.Error("exiting", tl.Pairs{"err": err})
 			wg.Done()
 		}()
 	}
@@ -152,14 +150,20 @@ func main() {
 	if conf.Frontend.ListenPort > 0 {
 		wg.Add(1)
 		go func() {
-			l, err := proxy.NewListener(conf.Frontend.ListenAddress, conf.Frontend.ListenPort,
-				conf.Frontend.ConnectionsLimit, nil)
+			l, err := proxy.NewListener(
+				conf.Frontend.ListenAddress,
+				conf.Frontend.ListenPort,
+				conf.Frontend.ConnectionsLimit,
+				nil,
+				log,
+			)
 
 			if err == nil {
-				log.Info("http listener starting", log.Pairs{"httpPort": conf.Frontend.ListenPort, "httpListenAddress": conf.Frontend.ListenAddress})
+				log.Info("http listener starting", tl.Pairs{"httpPort": conf.Frontend.ListenPort,
+					"httpListenAddress": conf.Frontend.ListenAddress})
 				err = http.Serve(l, handlers.CompressHandler(router))
 			}
-			log.Error("exiting", log.Pairs{"err": err})
+			log.Error("exiting", tl.Pairs{"err": err})
 			wg.Done()
 		}()
 	}

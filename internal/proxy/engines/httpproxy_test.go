@@ -25,13 +25,15 @@ import (
 	tc "github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/request"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
+var testLogger = tl.ConsoleLogger("error")
+
 func init() {
-	metrics.Init(&config.TricksterConfig{})
+	metrics.Init(&config.TricksterConfig{}, testLogger)
 }
 
 func TestDoProxy(t *testing.T) {
@@ -58,7 +60,7 @@ func TestDoProxy(t *testing.T) {
 	br := bytes.NewBuffer([]byte("test"))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, testLogger)))
 
 	//req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	DoProxy(w, r)
@@ -106,7 +108,7 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	br := bytes.NewBuffer([]byte("test"))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", badUpstream, br)
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, testLogger)))
 
 	//req := model.NewRequest("TestProxyRequest", r.Method, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	DoProxy(w, r)
@@ -147,9 +149,9 @@ func TestClockOffsetWarning(t *testing.T) {
 	oc.HTTPClient = http.DefaultClient
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", s.URL, nil)
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, testLogger)))
 
-	if log.HasWarnedOnce("clockoffset.default") {
+	if testLogger.HasWarnedOnce("clockoffset.default") {
 		t.Errorf("expected %t got %t", false, true)
 	}
 
@@ -157,7 +159,7 @@ func TestClockOffsetWarning(t *testing.T) {
 	DoProxy(w, r)
 	resp := w.Result()
 
-	if !log.HasWarnedOnce("clockoffset.default") {
+	if !testLogger.HasWarnedOnce("clockoffset.default") {
 		t.Errorf("expected %t got %t", true, false)
 	}
 
@@ -194,7 +196,7 @@ func TestDoProxyWithPCF(t *testing.T) {
 	br := bytes.NewBuffer([]byte("test"))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, testLogger)))
 
 	// get URL
 
@@ -249,7 +251,7 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 	br := bytes.NewBuffer([]byte("test"))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, testLogger)))
 
 	// get URL
 
@@ -289,7 +291,7 @@ func TestPrepareFetchReaderErr(t *testing.T) {
 	oc.HTTPClient = http.DefaultClient
 
 	r := httptest.NewRequest("GET", "http://example.com/", nil)
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, nil, nil, nil, nil)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, nil, nil, nil, nil, testLogger)))
 	r.Method = "\t"
 	_, _, i := PrepareFetchReader(r)
 	if i != 0 {

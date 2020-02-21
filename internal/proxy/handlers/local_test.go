@@ -22,6 +22,7 @@ import (
 	tc "github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/request"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 func TestHandleLocalResponse(t *testing.T) {
@@ -41,7 +42,7 @@ func TestHandleLocalResponse(t *testing.T) {
 		ResponseHeaders:   map[string]string{headers.NameTricksterResult: "1234"},
 	}
 
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(nil, pc, nil, nil, nil)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(nil, pc, nil, nil, nil, tl.ConsoleLogger("error"))))
 
 	HandleLocalResponse(w, r)
 	resp := w.Result()
@@ -87,7 +88,7 @@ func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 		ResponseHeaders:   map[string]string{headers.NameTricksterResult: "1234"},
 	}
 
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(nil, pc, nil, nil, nil)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(nil, pc, nil, nil, nil, tl.ConsoleLogger("error"))))
 
 	HandleLocalResponse(w, r)
 	resp := w.Result()
@@ -126,7 +127,7 @@ func TestHandleLocalResponseNoPathConfig(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
 
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(nil, nil, nil, nil, nil)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(nil, nil, nil, nil, nil, tl.ConsoleLogger("error"))))
 
 	HandleLocalResponse(w, r)
 	resp := w.Result()

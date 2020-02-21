@@ -23,7 +23,7 @@ import (
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 // Redis is the string "redis"
@@ -33,6 +33,7 @@ const Redis = "redis"
 type Cache struct {
 	Name   string
 	Config *config.CachingConfig
+	Logger *tl.TricksterLogger
 
 	client redis.Cmdable
 	closer func() error
@@ -45,7 +46,7 @@ func (c *Cache) Configuration() *config.CachingConfig {
 
 // Connect connects to the configured Redis endpoint
 func (c *Cache) Connect() error {
-	log.Info("connecting to redis", log.Pairs{"protocol": c.Config.Redis.Protocol, "Endpoint": c.Config.Redis.Endpoint})
+	c.Logger.Info("connecting to redis", tl.Pairs{"protocol": c.Config.Redis.Protocol, "Endpoint": c.Config.Redis.Endpoint})
 
 	switch c.Config.Redis.ClientType {
 	case "sentinel":
@@ -79,7 +80,7 @@ func (c *Cache) Connect() error {
 // Store places the the data into the Redis Cache using the provided Key and TTL
 func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
-	log.Debug("redis cache store", log.Pairs{"key": cacheKey})
+	c.Logger.Debug("redis cache store", tl.Pairs{"key": cacheKey})
 	return c.client.Set(cacheKey, data, ttl).Err()
 }
 
@@ -90,25 +91,25 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 
 	if err == nil {
 		data := []byte(res)
-		log.Debug("redis cache retrieve", log.Pairs{"key": cacheKey})
+		c.Logger.Debug("redis cache retrieve", tl.Pairs{"key": cacheKey})
 		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
 		return data, status.LookupStatusHit, nil
 	}
 
 	if err == redis.Nil {
-		log.Debug("redis cache miss", log.Pairs{"key": cacheKey})
+		c.Logger.Debug("redis cache miss", tl.Pairs{"key": cacheKey})
 		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 		return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 	}
 
-	log.Debug("redis cache retrieve failed", log.Pairs{"key": cacheKey, "reason": err.Error()})
+	c.Logger.Debug("redis cache retrieve failed", tl.Pairs{"key": cacheKey, "reason": err.Error()})
 	cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 	return nil, status.LookupStatusError, err
 }
 
 // Remove removes an object in cache, if present
 func (c *Cache) Remove(cacheKey string) {
-	log.Debug("redis cache remove", log.Pairs{"key": cacheKey})
+	c.Logger.Debug("redis cache remove", tl.Pairs{"key": cacheKey})
 	c.client.Del(cacheKey)
 	cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 }
@@ -120,14 +121,14 @@ func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
 
 // BulkRemove removes a list of objects from the cache. noLock is not used for Redis
 func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
-	log.Debug("redis cache bulk remove", log.Pairs{})
+	c.Logger.Debug("redis cache bulk remove", tl.Pairs{})
 	c.client.Del(cacheKeys...)
 	cache.ObserveCacheDel(c.Name, c.Config.CacheType, float64(len(cacheKeys)))
 }
 
 // Close disconnects from the Redis Cache
 func (c *Cache) Close() error {
-	log.Info("closing redis connection", log.Pairs{})
+	c.Logger.Info("closing redis connection", tl.Pairs{})
 	return c.closer()
 }
 
