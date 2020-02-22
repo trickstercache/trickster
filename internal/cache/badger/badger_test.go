@@ -21,12 +21,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/metrics"
 )
-
-func init() {
-	metrics.Init(&config.TricksterConfig{})
-}
 
 const cacheType = "badger"
 const cacheKey = "cacheKey"

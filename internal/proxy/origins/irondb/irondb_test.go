@@ -19,13 +19,7 @@ import (
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/origins"
-	"github.com/Comcast/trickster/internal/util/metrics"
 )
-
-func init() {
-	// Initialize Trickster instrumentation metrics.
-	metrics.Init(&config.TricksterConfig{})
-}
 
 func TestIRONdbClientInterfacing(t *testing.T) {
 

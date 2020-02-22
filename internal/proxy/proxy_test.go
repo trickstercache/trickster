@@ -23,13 +23,8 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/metrics"
 	"github.com/gorilla/mux"
 )
-
-func init() {
-	metrics.Init(&config.TricksterConfig{})
-}
 
 func TestNewHTTPClient(t *testing.T) {
 

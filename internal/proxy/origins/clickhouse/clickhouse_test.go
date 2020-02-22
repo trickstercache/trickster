@@ -21,12 +21,7 @@ import (
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/origins"
-	"github.com/Comcast/trickster/internal/util/metrics"
 )
-
-func init() {
-	metrics.Init(&config.TricksterConfig{})
-}
 
 func TestClickhouseClientInterfacing(t *testing.T) {
 
