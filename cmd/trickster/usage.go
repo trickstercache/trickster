@@ -19,25 +19,14 @@ import (
 	"github.com/Comcast/trickster/internal/runtime"
 )
 
-func printVersion() {
-	fmt.Println("Trickster",
-		"version:", runtime.ApplicationVersion,
-		"buildInfo:", applicationBuildTime, applicationGitCommitID,
-		"goVersion:", applicationGoVersion, "goArch:", applicationGoArch,
-	)
-}
-
-func printUsage() {
-	fmt.Println("")
-	printVersion()
-	fmt.Printf(`
+const usageText = `
 Trickster Usage:
- 
+
  You must provide -version, -config or both -origin-url and -origin-type.
 
  Print Version Info:
  trickster -version
- 
+
  Using a configuration file:
   trickster -config /path/to/file.conf [-log-level DEBUG|INFO|WARN|ERROR] [-proxy-port 8081] [-metrics-port 8082]
 
@@ -63,16 +52,31 @@ Trickster Usage:
 Trickster currently listens on port 9090 by default; Set in a config file,
 or override using -proxy-port. The default port will change in a future release.
 
-Default log level is INFO. Set in a config file, or override with -log-level. 
+Default log level is INFO. Set in a config file, or override with -log-level.
 
 The configuration file is much more robust than the command line arguments, and the example file
 is well-documented. We also have docker images on DockerHub, as well as Kubernetes and Helm
 deployment examples in our GitHub repository.
- 
+
 Thank you for using and contributing to Open Source Software!
 
 https://github.com/Comcast/trickster
+`
 
-`)
+func version() string {
+	return fmt.Sprintf("Trickster version: %s, buildInfo: %s %s, goVersion: %s © 2018 Comcast",
+		runtime.ApplicationVersion,
+		applicationBuildTime, applicationGitCommitID,
+		applicationGoVersion,
+	)
+}
 
+func printVersion() {
+	fmt.Println(version())
+}
+
+func printUsage() {
+	fmt.Println()
+	fmt.Println(version())
+	fmt.Println(usageText)
 }
