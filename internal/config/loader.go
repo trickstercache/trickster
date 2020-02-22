@@ -14,6 +14,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -23,7 +24,7 @@ import (
 
 // Load returns the Application Configuration, starting with a default config,
 // then overriding with any provided config file, then env vars, and finally flags
-func Load(applicationName string, applicationVersion string, arguments []string) (*TricksterConfig, TricksterFlags, error) {
+func Load(applicationName string, applicationVersion string, arguments []string) (*TricksterConfig, *TricksterFlags, error) {
 
 	providedOriginURL = ""
 	providedOriginType = ""
@@ -33,14 +34,14 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	c := NewConfig()
 	flags, err := parseFlags(applicationName, arguments) // Parse here to get config file path and version flags
 	if err != nil {
-		return nil, TricksterFlags{}, err
+		return nil, nil, err
 	}
 	if flags.PrintVersion {
 		return nil, flags, nil
 	}
 	if err := c.loadFile(flags); err != nil && flags.customPath {
 		// a user-provided path couldn't be loaded. return the error for the application to handle
-		return nil, TricksterFlags{}, err
+		return nil, nil, err
 	}
 
 	c.loadEnvVars()
@@ -51,7 +52,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		if providedOriginURL != "" {
 			url, err := url.Parse(providedOriginURL)
 			if err != nil {
-				return nil, TricksterFlags{}, err
+				return nil, nil, err
 			}
 			if providedOriginType != "" {
 				d.OriginType = providedOriginType
@@ -73,17 +74,17 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	}
 
 	if len(c.Origins) == 0 {
-		return nil, TricksterFlags{}, fmt.Errorf("no valid origins configured%s", "")
+		return nil, nil, errors.New("no valid origins configured")
 	}
 
 	for k, n := range c.NegativeCacheConfigs {
 		for c := range n {
 			ci, err := strconv.Atoi(c)
 			if err != nil {
-				return nil, TricksterFlags{}, fmt.Errorf(`invalid negative cache config in %s: %s is not a valid status code`, k, c)
+				return nil, nil, fmt.Errorf(`invalid negative cache config in %s: %s is not a valid status code`, k, c)
 			}
 			if ci < 400 || ci >= 600 {
-				return nil, TricksterFlags{}, fmt.Errorf(`invalid negative cache config in %s: %s is not a valid status code`, k, c)
+				return nil, nil, fmt.Errorf(`invalid negative cache config in %s: %s is not a valid status code`, k, c)
 			}
 		}
 	}
@@ -91,16 +92,16 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	for k, o := range c.Origins {
 
 		if o.OriginURL == "" {
-			return nil, TricksterFlags{}, fmt.Errorf(`missing origin-url for origin "%s"`, k)
+			return nil, nil, fmt.Errorf(`missing origin-url for origin "%s"`, k)
 		}
 
 		url, err := url.Parse(o.OriginURL)
 		if err != nil {
-			return nil, TricksterFlags{}, err
+			return nil, nil, err
 		}
 
 		if o.OriginType == "" {
-			return nil, TricksterFlags{}, fmt.Errorf(`missing origin-type for origin "%s"`, k)
+			return nil, nil, fmt.Errorf(`missing origin-type for origin "%s"`, k)
 		}
 
 		if strings.HasSuffix(url.Path, "/") {
@@ -131,7 +132,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 
 		nc, ok := c.NegativeCacheConfigs[o.NegativeCacheName]
 		if !ok {
-			return nil, TricksterFlags{}, fmt.Errorf(`invalid negative cache name: %s`, o.NegativeCacheName)
+			return nil, nil, fmt.Errorf(`invalid negative cache name: %s`, o.NegativeCacheName)
 		}
 
 		nc2 := map[int]time.Duration{}
@@ -165,5 +166,6 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		c.Index.ReapInterval = time.Duration(c.Index.ReapIntervalSecs) * time.Second
 	}
 
+	fmt.Println("!!")
 	return c, flags, nil
 }

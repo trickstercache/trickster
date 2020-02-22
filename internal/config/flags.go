@@ -29,43 +29,7 @@ const (
 	cfProxyPort   = "proxy-port"
 	cfMetricsPort = "metrics-port"
 	cfReloadPort  = "reload-port"
-
-	// DefaultConfigPath defines the default location of the Trickster config file
-	DefaultConfigPath = "/etc/trickster/trickster.conf"
 )
-
-var flags TricksterFlags
-var flagSet *flag.FlagSet = flag.NewFlagSet("trickster", flag.ExitOnError)
-
-func init() {
-	flagSet.BoolVar(&flags.PrintVersion, cfVersion, false, "Prints trickster version")
-	flagSet.StringVar(&flags.ConfigPath, cfConfig, "", "Path to Trickster Config File")
-	flagSet.StringVar(&flags.LogLevel, cfLogLevel, "", "Level of Logging to use (debug, info, warn, error)")
-	flagSet.IntVar(&flags.InstanceID, cfInstanceID, 0, "Instance ID is for running multiple Trickster processes from the same config while logging to their own files.")
-	flagSet.StringVar(&flags.Origin, cfOrigin, "", "URL to the Origin. Enter it like you would in grafana, e.g., http://prometheus:9090")
-	flagSet.StringVar(&flags.OriginType, cfOriginType, "", "Type of origin (prometheus, influxdb)")
-	flagSet.IntVar(&flags.ProxyListenPort, cfProxyPort, 0, "Port that the primary Proxy server will listen on.")
-	flagSet.IntVar(&flags.MetricsListenPort, cfMetricsPort, 0, "Port that the /metrics endpoint will listen on.")
-	flagSet.IntVar(&flags.ReloadListenPort, cfReloadPort, 0, "Port that the /-/reload endpoint will listen on.")
-}
-
-// reset is utilized
-// TODO: remove this global state..
-func reset() {
-	flags.PrintVersion = false
-	flags.ConfigPath = ""
-	flags.LogLevel = ""
-	flags.InstanceID = 0
-	flags.Origin = ""
-	flags.OriginType = ""
-	flags.ProxyListenPort = 0
-	flags.MetricsListenPort = 0
-	flags.ReloadListenPort = 0
-	flags.customPath = false
-
-	providedOriginURL = ""
-	providedOriginType = ""
-}
 
 var parseOnce sync.Once
 
@@ -81,14 +45,30 @@ type TricksterFlags struct {
 	ReloadListenPort  int
 	LogLevel          string
 	InstanceID        int
+
+	providedOriginURL  string
+	providedOriginType string
 }
 
-func parseFlags(applicationName string, arguments []string) (TricksterFlags, error) {
-	reset()
+func parseFlags(applicationName string, arguments []string) (*TricksterFlags, error) {
+
+	flags := &TricksterFlags{}
+	flagSet := flag.NewFlagSet("trickster", flag.ContinueOnError)
+
+	flagSet.BoolVar(&flags.PrintVersion, cfVersion, false, "Prints trickster version")
+	flagSet.StringVar(&flags.ConfigPath, cfConfig, "", "Path to Trickster Config File")
+	flagSet.StringVar(&flags.LogLevel, cfLogLevel, "", "Level of Logging to use (debug, info, warn, error)")
+	flagSet.IntVar(&flags.InstanceID, cfInstanceID, 0, "Instance ID is for running multiple Trickster processes from the same config while logging to their own files.")
+	flagSet.StringVar(&flags.Origin, cfOrigin, "", "URL to the Origin. Enter it like you would in grafana, e.g., http://prometheus:9090")
+	flagSet.StringVar(&flags.OriginType, cfOriginType, "", "Type of origin (prometheus, influxdb)")
+	flagSet.IntVar(&flags.ProxyListenPort, cfProxyPort, 0, "Port that the primary Proxy server will listen on.")
+	flagSet.IntVar(&flags.MetricsListenPort, cfMetricsPort, 0, "Port that the /metrics endpoint will listen on.")
+	//flagSet.IntVar(&flags.ReloadListenPort, cfReloadPort, 0, "Port that the /-/reload endpoint will listen on.")
+
 	var err error
 	err = flagSet.Parse(arguments)
 	if err != nil {
-		return TricksterFlags{}, err
+		return nil, err
 	}
 	if flags.ConfigPath != "" {
 		flags.customPath = true
@@ -99,7 +79,7 @@ func parseFlags(applicationName string, arguments []string) (TricksterFlags, err
 }
 
 // loadFlags loads configuration from command line flags.
-func (c *TricksterConfig) loadFlags(flags TricksterFlags) {
+func (c *TricksterConfig) loadFlags(flags *TricksterFlags) {
 	if len(flags.Origin) > 0 {
 		providedOriginURL = flags.Origin
 	}
@@ -112,9 +92,9 @@ func (c *TricksterConfig) loadFlags(flags TricksterFlags) {
 	if flags.MetricsListenPort > 0 {
 		c.Metrics.ListenPort = flags.MetricsListenPort
 	}
-	if flags.ReloadListenPort > 0 {
-		c.Main.Reload.ListenPort = flags.ReloadListenPort
-	}
+	// if flags.ReloadListenPort > 0 {
+	// 	c.Main.Reload.ListenPort = flags.ReloadListenPort
+	// }
 	if flags.LogLevel != "" {
 		c.Logging.LogLevel = flags.LogLevel
 	}

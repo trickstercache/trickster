@@ -14,6 +14,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"testing"
@@ -642,6 +643,15 @@ func TestLoadConfigurationBadUrl(t *testing.T) {
 	}
 }
 
+func TestLoadConfigurationBadArg(t *testing.T) {
+	const url = "http://0.0.0.0"
+	a := []string{"-origin-url", url, "-origin-type", "rpc", "-unknown-flag"}
+	_, _, err := Load("trickster-test", "0", a)
+	if err == nil {
+		t.Error(errors.New("expected error: flag provided but not defined: -unknown-flag"))
+	}
+}
+
 func TestLoadConfigurationWarning1(t *testing.T) {
 
 	a := []string{"-config", "../../testdata/test.warning1.conf"}
@@ -676,4 +686,12 @@ func TestLoadConfigurationWarning2(t *testing.T) {
 		t.Errorf("exepcted %d got %d", expected, l)
 	}
 
+}
+
+func TestLoadEmptyArgs(t *testing.T) {
+	a := []string{}
+	_, _, err := Load("trickster-test", "0", a)
+	if err == nil {
+		t.Error(errors.New("expected error: no valid origins configured"))
+	}
 }
