@@ -45,6 +45,10 @@ func startListener(listenerName, address string, port int, connectionsLimit int,
 	err = http.Serve(l, handlers.CompressHandler(router))
 	if err != nil {
 		log.Error("listener stopping", tl.Pairs{"name": listenerName, "detail": err})
+		if exitOnError {
+			// TODO: don't exit when it's a graceful stop
+			os.Exit(1)
+		}
 	}
 	return err
 }
