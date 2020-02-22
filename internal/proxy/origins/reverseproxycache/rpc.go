@@ -67,7 +67,3 @@ func (c *Client) Name() string {
 func (c *Client) SetCache(cc cache.Cache) {
 	c.cache = cc
 }
-
-// SetUpstreamLogging enables or disables the logging of upstream requests
-func (c *Client) SetUpstreamLogging(_ bool) {
-}

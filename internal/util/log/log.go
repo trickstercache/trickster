@@ -31,7 +31,7 @@ import (
 )
 
 // Logger is the handle to the common TricksterLogger
-var Logger *TricksterLogger
+// var Logger *TricksterLogger
 
 func mapToArray(event string, detail Pairs) []interface{} {
 	a := make([]interface{}, (len(detail)*2)+2)
@@ -58,18 +58,21 @@ func mapToArray(event string, detail Pairs) []interface{} {
 	return a
 }
 
-var onceMutex *sync.Mutex
-var onceRanEntries map[string]bool
+// DefaultLogger returns the default logger, which is the console logger at level "info"
+func DefaultLogger() *TricksterLogger {
+	return ConsoleLogger("info")
+}
 
-func init() {
-	Logger = ConsoleLogger("info")
-	onceRanEntries = make(map[string]bool)
-	onceMutex = &sync.Mutex{}
+func noopLogger() *TricksterLogger {
+	return &TricksterLogger{
+		onceRanEntries: make(map[string]bool),
+		onceMutex:      &sync.Mutex{},
+	}
 }
 
 // ConsoleLogger returns a TricksterLogger object that prints log events to the Console
 func ConsoleLogger(logLevel string) *TricksterLogger {
-	l := &TricksterLogger{}
+	l := noopLogger()
 
 	wr := os.Stdout
 
@@ -110,9 +113,9 @@ func ConsoleLogger(logLevel string) *TricksterLogger {
 // Init returns a TricksterLogger for the provided logging configuration. The
 // returned TricksterLogger will write to files distinguished from other TricksterLoggers by the
 // instance string.
-func Init(conf *config.TricksterConfig) {
-	l := &TricksterLogger{}
+func Init(conf *config.TricksterConfig) *TricksterLogger {
 
+	l := noopLogger()
 	var wr io.Writer
 
 	if conf.Logging.LogFile == "" {
@@ -164,8 +167,7 @@ func Init(conf *config.TricksterConfig) {
 		l.closer = c
 	}
 
-	Logger = l
-
+	return l
 }
 
 // Pairs represents a key=value pair that helps to describe a log event
@@ -176,107 +178,110 @@ type TricksterLogger struct {
 	logger log.Logger
 	closer io.Closer
 	level  string
+
+	onceMutex      *sync.Mutex
+	onceRanEntries map[string]bool
 }
 
 // Info sends an "INFO" event to the TricksterLogger
-func Info(event string, detail Pairs) {
-	level.Info(Logger.logger).Log(mapToArray(event, detail)...)
+func (tl *TricksterLogger) Info(event string, detail Pairs) {
+	level.Info(tl.logger).Log(mapToArray(event, detail)...)
 }
 
 // InfoOnce sends a "INFO" event to the TricksterLogger only once per key.
 // Returns true if this invocation was the first, and thus sent to the TricksterLogger
-func InfoOnce(key string, event string, detail Pairs) bool {
-	onceMutex.Lock()
-	defer onceMutex.Unlock()
+func (tl *TricksterLogger) InfoOnce(key string, event string, detail Pairs) bool {
+	tl.onceMutex.Lock()
+	defer tl.onceMutex.Unlock()
 	key = "info." + key
-	if _, ok := onceRanEntries[key]; !ok {
-		onceRanEntries[key] = true
-		Info(event, detail)
+	if _, ok := tl.onceRanEntries[key]; !ok {
+		tl.onceRanEntries[key] = true
+		tl.Info(event, detail)
 		return true
 	}
 	return false
 }
 
 // Warn sends an "WARN" event to the TricksterLogger
-func Warn(event string, detail Pairs) {
-	level.Warn(Logger.logger).Log(mapToArray(event, detail)...)
+func (tl *TricksterLogger) Warn(event string, detail Pairs) {
+	level.Warn(tl.logger).Log(mapToArray(event, detail)...)
 }
 
 // WarnOnce sends a "WARN" event to the TricksterLogger only once per key.
 // Returns true if this invocation was the first, and thus sent to the TricksterLogger
-func WarnOnce(key string, event string, detail Pairs) bool {
-	onceMutex.Lock()
-	defer onceMutex.Unlock()
+func (tl *TricksterLogger) WarnOnce(key string, event string, detail Pairs) bool {
+	tl.onceMutex.Lock()
+	defer tl.onceMutex.Unlock()
 	key = "warn." + key
-	if _, ok := onceRanEntries[key]; !ok {
-		onceRanEntries[key] = true
-		Warn(event, detail)
+	if _, ok := tl.onceRanEntries[key]; !ok {
+		tl.onceRanEntries[key] = true
+		tl.Warn(event, detail)
 		return true
 	}
 	return false
 }
 
-// HasWarnedOnce returns true if a warning for the key has already been sent to the TricksterLoggerr
-func HasWarnedOnce(key string) bool {
-	onceMutex.Lock()
-	defer onceMutex.Unlock()
+// HasWarnedOnce returns true if a warning for the key has already been sent to the TricksterLogger
+func (tl *TricksterLogger) HasWarnedOnce(key string) bool {
+	tl.onceMutex.Lock()
+	defer tl.onceMutex.Unlock()
 	key = "warn." + key
-	_, ok := onceRanEntries[key]
+	_, ok := tl.onceRanEntries[key]
 	return ok
 }
 
 // Error sends an "ERROR" event to the TricksterLogger
-func Error(event string, detail Pairs) {
-	level.Error(Logger.logger).Log(mapToArray(event, detail)...)
+func (tl *TricksterLogger) Error(event string, detail Pairs) {
+	level.Error(tl.logger).Log(mapToArray(event, detail)...)
 }
 
 // ErrorOnce sends an "ERROR" event to the TricksterLogger only once per key
 // Returns true if this invocation was the first, and thus sent to the TricksterLogger
-func ErrorOnce(key string, event string, detail Pairs) bool {
-	onceMutex.Lock()
-	defer onceMutex.Unlock()
+func (tl *TricksterLogger) ErrorOnce(key string, event string, detail Pairs) bool {
+	tl.onceMutex.Lock()
+	defer tl.onceMutex.Unlock()
 	key = "error." + key
-	if _, ok := onceRanEntries[key]; !ok {
-		onceRanEntries[key] = true
-		Error(event, detail)
+	if _, ok := tl.onceRanEntries[key]; !ok {
+		tl.onceRanEntries[key] = true
+		tl.Error(event, detail)
 		return true
 	}
 	return false
 }
 
 // Debug sends an "DEBUG" event to the TricksterLogger
-func Debug(event string, detail Pairs) {
-	level.Debug(Logger.logger).Log(mapToArray(event, detail)...)
+func (tl *TricksterLogger) Debug(event string, detail Pairs) {
+	level.Debug(tl.logger).Log(mapToArray(event, detail)...)
 }
 
 // Trace sends a "TRACE" event to the TricksterLogger
-func Trace(event string, detail Pairs) {
+func (tl *TricksterLogger) Trace(event string, detail Pairs) {
 	// go-kit/log/level does not support Trace, so implemented separately here
-	if Logger.level == "trace" {
+	if tl.level == "trace" {
 		detail["level"] = "trace"
-		Logger.logger.Log(mapToArray(event, detail)...)
+		tl.logger.Log(mapToArray(event, detail)...)
 	}
 }
 
 // Fatal sends a "FATAL" event to the TricksterLogger and exits the program with the provided exit code
-func Fatal(code int, event string, detail Pairs) {
+func (tl *TricksterLogger) Fatal(code int, event string, detail Pairs) {
 	// go-kit/log/level does not support Fatal, so implemented separately here
 	detail["level"] = "fatal"
-	Logger.logger.Log(mapToArray(event, detail)...)
+	tl.logger.Log(mapToArray(event, detail)...)
 	if code >= 0 {
 		os.Exit(code)
 	}
 }
 
 // Level returns the configured Log Level
-func (l TricksterLogger) Level() string {
-	return l.level
+func (tl *TricksterLogger) Level() string {
+	return tl.level
 }
 
 // Close closes any opened file handles that were used for logging.
-func (l TricksterLogger) Close() {
-	if l.closer != nil {
-		l.closer.Close()
+func (tl *TricksterLogger) Close() {
+	if tl.closer != nil {
+		tl.closer.Close()
 	}
 }
 

@@ -23,7 +23,7 @@ import (
 	"github.com/Comcast/trickster/internal/cache/index"
 	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/pkg/locks"
 )
 
@@ -35,6 +35,7 @@ type Cache struct {
 	client sync.Map
 	Config *config.CachingConfig
 	Index  *index.Index
+	Logger *tl.TricksterLogger
 }
 
 // Configuration returns the Configuration for the Cache object
@@ -44,10 +45,10 @@ func (c *Cache) Configuration() *config.CachingConfig {
 
 // Connect initializes the Cache
 func (c *Cache) Connect() error {
-	log.Info("memorycache setup", log.Pairs{"name": c.Name, "maxSizeBytes": c.Config.Index.MaxSizeBytes, "maxSizeObjects": c.Config.Index.MaxSizeObjects})
+	c.Logger.Info("memorycache setup", tl.Pairs{"name": c.Name, "maxSizeBytes": c.Config.Index.MaxSizeBytes, "maxSizeObjects": c.Config.Index.MaxSizeObjects})
 	lockPrefix = c.Name + ".memory."
 	c.client = sync.Map{}
-	c.Index = index.NewIndex(c.Name, c.Config.CacheType, nil, c.Config.Index, c.BulkRemove, nil)
+	c.Index = index.NewIndex(c.Name, c.Config.CacheType, nil, c.Config.Index, c.BulkRemove, nil, c.Logger)
 	return nil
 }
 
@@ -79,7 +80,7 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 		o2 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: time.Now().Add(ttl)}
 	}
 
-	go log.Debug("memorycache cache store", log.Pairs{"cacheKey": cacheKey, "length": l, "ttl": ttl, "is_direct": isDirect})
+	go c.Logger.Debug("memorycache cache store", tl.Pairs{"cacheKey": cacheKey, "length": l, "ttl": ttl, "is_direct": isDirect})
 
 	if o1 != nil && o2 != nil {
 		c.client.Store(cacheKey, o1)
@@ -127,7 +128,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index
 		o.Expiration = c.Index.GetExpiration(cacheKey)
 
 		if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
-			log.Debug("memory cache retrieve", log.Pairs{"cacheKey": cacheKey})
+			c.Logger.Debug("memory cache retrieve", tl.Pairs{"cacheKey": cacheKey})
 			if atime {
 				c.Index.UpdateObjectAccessTime(cacheKey)
 			}

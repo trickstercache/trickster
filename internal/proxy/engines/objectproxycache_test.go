@@ -823,7 +823,7 @@ func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
 	cfg.Paths = map[string]*config.PathConfig{
 		"/": pc,
 	}
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig, rsc.CacheClient, rsc.OriginClient)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig, rsc.CacheClient, rsc.OriginClient, rsc.Logger)))
 
 	_, e := testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "kmiss"})
 	for _, err = range e {

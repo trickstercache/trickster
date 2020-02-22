@@ -21,14 +21,13 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/util/log"
-
 	"github.com/Comcast/trickster/internal/config"
+	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
 func init() {
-	metrics.Init(&config.TricksterConfig{})
+	metrics.Init(&config.TricksterConfig{}, tl.ConsoleLogger("error"))
 }
 
 const cacheType = "bbolt"
@@ -41,11 +40,10 @@ func newCacheConfig() config.CachingConfig {
 }
 
 func storeBenchmark(b *testing.B) Cache {
-	log.Logger = log.ConsoleLogger("none")
 	testDbPath := "/tmp/test.db"
 	os.Remove(testDbPath)
 	cacheConfig := config.CachingConfig{CacheType: cacheType, BBolt: config.BBoltCacheConfig{Filename: testDbPath, Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
-	bc := Cache{Config: &cacheConfig}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
@@ -65,7 +63,7 @@ func storeBenchmark(b *testing.B) Cache {
 
 func TestConfiguration(t *testing.T) {
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	cfg := bc.Configuration()
 	if cfg.CacheType != cacheType {
 		t.Errorf("expected %s got %s", cacheType, cfg.CacheType)
@@ -75,7 +73,7 @@ func TestConfiguration(t *testing.T) {
 func TestBboltCache_Connect(t *testing.T) {
 	cacheConfig := newCacheConfig()
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
-	bc := Cache{Config: &cacheConfig}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	// it should connect
 	err := bc.Connect()
 	if err != nil {
@@ -88,7 +86,7 @@ func TestBboltCache_ConnectFailed(t *testing.T) {
 	const expected = `open /root/noaccess.bbolt:`
 	cacheConfig := newCacheConfig()
 	cacheConfig.BBolt.Filename = "/root/noaccess.bbolt"
-	bc := Cache{Config: &cacheConfig}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	// it should connect
 	err := bc.Connect()
 	if err == nil {
@@ -106,7 +104,7 @@ func TestBboltCache_ConnectBadBucketName(t *testing.T) {
 	cacheConfig := newCacheConfig()
 	cacheConfig.BBolt.Bucket = ""
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
-	bc := Cache{Config: &cacheConfig}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	// it should connect
 	err := bc.Connect()
 	if err == nil {
@@ -121,7 +119,7 @@ func TestBboltCache_ConnectBadBucketName(t *testing.T) {
 func TestBboltCache_Store(t *testing.T) {
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
@@ -145,7 +143,7 @@ func BenchmarkCache_Store(b *testing.B) {
 func TestBboltCache_SetTTL(t *testing.T) {
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
@@ -223,7 +221,7 @@ func TestBboltCache_StoreNoIndex(t *testing.T) {
 	const expected = `value for key [] not in cache`
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	err := bc.Connect()
 	if err != nil {
@@ -308,7 +306,7 @@ func BenchmarkCache_StoreNoIndex(b *testing.B) {
 func TestBboltCache_Remove(t *testing.T) {
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
@@ -388,7 +386,7 @@ func BenchmarkCache_Remove(b *testing.B) {
 func TestBboltCache_BulkRemove(t *testing.T) {
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
@@ -456,7 +454,7 @@ func TestBboltCache_Retrieve(t *testing.T) {
 	const expected2 = `value for key [cacheKey] could not be deserialized from cache`
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()

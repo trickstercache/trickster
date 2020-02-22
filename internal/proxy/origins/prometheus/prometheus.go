@@ -82,11 +82,6 @@ func (c *Client) SetCache(cc cache.Cache) {
 	c.cache = cc
 }
 
-// SetUpstreamLogging enables or disables the logging of upstream requests
-func (c *Client) SetUpstreamLogging(logUpstreamRequest bool) {
-	c.logUpstreamRequest = logUpstreamRequest
-}
-
 // Configuration returns the upstream Configuration for this Client
 func (c *Client) Configuration() *config.OriginConfig {
 	return c.config

@@ -23,6 +23,7 @@ import (
 	"github.com/Comcast/trickster/internal/cache/memory"
 	"github.com/Comcast/trickster/internal/cache/redis"
 	"github.com/Comcast/trickster/internal/config"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 // Cache Interface Types
@@ -45,10 +46,10 @@ const (
 // }
 
 // LoadCachesFromConfig iterates the Caching Config and Connects/Maps each Cache
-func LoadCachesFromConfig(conf *config.TricksterConfig) map[string]cache.Cache {
+func LoadCachesFromConfig(conf *config.TricksterConfig, logger *tl.TricksterLogger) map[string]cache.Cache {
 	caches := make(map[string]cache.Cache)
 	for k, v := range conf.Caches {
-		c := NewCache(k, v)
+		c := NewCache(k, v, logger)
 		caches[k] = c
 	}
 	return caches
@@ -65,22 +66,22 @@ func CloseCaches(caches map[string]cache.Cache) error {
 }
 
 // NewCache returns a Cache object based on the provided config.CachingConfig
-func NewCache(cacheName string, cfg *config.CachingConfig) cache.Cache {
+func NewCache(cacheName string, cfg *config.CachingConfig, logger *tl.TricksterLogger) cache.Cache {
 
 	var c cache.Cache
 
 	switch cfg.CacheType {
 	case ctFilesystem:
-		c = &filesystem.Cache{Name: cacheName, Config: cfg}
+		c = &filesystem.Cache{Name: cacheName, Config: cfg, Logger: logger}
 	case ctRedis:
-		c = &redis.Cache{Name: cacheName, Config: cfg}
+		c = &redis.Cache{Name: cacheName, Config: cfg, Logger: logger}
 	case ctBBolt:
-		c = &bbolt.Cache{Name: cacheName, Config: cfg}
+		c = &bbolt.Cache{Name: cacheName, Config: cfg, Logger: logger}
 	case ctBadger:
-		c = &badger.Cache{Name: cacheName, Config: cfg}
+		c = &badger.Cache{Name: cacheName, Config: cfg, Logger: logger}
 	default:
 		// Default to MemoryCache
-		c = &memory.Cache{Name: cacheName, Config: cfg}
+		c = &memory.Cache{Name: cacheName, Config: cfg, Logger: logger}
 	}
 
 	c.Connect()
