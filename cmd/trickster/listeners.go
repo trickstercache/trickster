@@ -45,9 +45,7 @@ func startListener(listenerName, address string, port int, connectionsLimit int,
 	if err != nil {
 		log.Error("listener stopping", log.Pairs{"name": listenerName, "detail": err})
 	}
-
 	return err
-
 }
 
 func startListenerRouter(listenerName, address string, port int, connectionsLimit int,
