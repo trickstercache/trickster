@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
+	tl "github.com/Comcast/trickster/internal/util/log"
+
 	"github.com/gorilla/mux"
 )
 
@@ -88,7 +90,7 @@ func TestNewHTTPClient(t *testing.T) {
 
 func TestNewListenerErr(t *testing.T) {
 	config.NewConfig()
-	l, err := NewListener("-", 0, 0, nil)
+	l, err := NewListener("-", 0, 0, nil, tl.ConsoleLogger("error"))
 	if err == nil {
 		l.Close()
 		t.Errorf("expected error: %s", `listen tcp: lookup -: no such host`)
@@ -111,7 +113,7 @@ func TestNewListenerTLS(t *testing.T) {
 		t.Error(err)
 	}
 
-	l, err := NewListener("", 0, 0, tlsConfig)
+	l, err := NewListener("", 0, 0, tlsConfig, tl.ConsoleLogger("error"))
 	defer l.Close()
 	if err != nil {
 		t.Error(err)
@@ -167,7 +169,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 
 	for _, tc := range tt {
 		t.Run(tc.Name, func(t *testing.T) {
-			l, err := NewListener("", tc.ListenPort, tc.ConnectionsLimit, nil)
+			l, err := NewListener("", tc.ListenPort, tc.ConnectionsLimit, nil, tl.ConsoleLogger("error"))
 			defer l.Close()
 
 			go func() {

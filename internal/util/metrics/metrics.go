@@ -16,7 +16,6 @@ package metrics
 
 import (
 	"net/http"
-	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -90,8 +89,6 @@ var ProxyConnectionClosed prometheus.Counter
 
 // ProxyConnectionFailed is a counter representing the total number of connections failed to connect for whatever reason
 var ProxyConnectionFailed prometheus.Counter
-
-var o sync.Once
 
 func init() {
 	FrontendRequestStatus = prometheus.NewCounterVec(

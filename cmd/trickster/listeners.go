@@ -20,38 +20,40 @@ import (
 	"sync"
 
 	"github.com/Comcast/trickster/internal/proxy"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
+
 	"github.com/gorilla/handlers"
 )
 
 func startListener(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, router http.Handler, wg *sync.WaitGroup,
-	exitOnError bool) error {
+	exitOnError bool, log *tl.TricksterLogger) error {
 	if wg != nil {
 		defer wg.Done()
 	}
-	l, err := proxy.NewListener(address, port, connectionsLimit, tlsConfig)
+	l, err := proxy.NewListener(address, port, connectionsLimit, tlsConfig, log)
 	if err != nil {
-		log.Error("http listener startup failed", log.Pairs{"name": listenerName, "detail": err})
+		log.Error("http listener startup failed", tl.Pairs{"name": listenerName, "detail": err})
 		if exitOnError {
 			os.Exit(1)
 		}
 		return err
 	}
 	log.Info("proxy listener starting",
-		log.Pairs{"name": listenerName, "port": port, "address": address})
+		tl.Pairs{"name": listenerName, "port": port, "address": address})
 
 	err = http.Serve(l, handlers.CompressHandler(router))
 	if err != nil {
-		log.Error("listener stopping", log.Pairs{"name": listenerName, "detail": err})
+		log.Error("listener stopping", tl.Pairs{"name": listenerName, "detail": err})
 	}
 	return err
 }
 
 func startListenerRouter(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, path string, handler http.Handler, wg *sync.WaitGroup,
-	exitOnError bool) error {
+	exitOnError bool, log *tl.TricksterLogger) error {
 	router := http.NewServeMux()
 	router.Handle(path, handler)
-	return startListener(listenerName, address, port, connectionsLimit, tlsConfig, router, wg, exitOnError)
+	return startListener(listenerName, address, port, connectionsLimit,
+		tlsConfig, router, wg, exitOnError, log)
 }

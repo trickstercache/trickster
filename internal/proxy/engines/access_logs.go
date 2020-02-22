@@ -16,12 +16,12 @@ package engines
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
-func logUpstreamRequest(originName, originType, handlerName, method, path, userAgent string, responseCode, size int, requestDuration float64) {
+func logUpstreamRequest(log *tl.TricksterLogger, originName, originType, handlerName, method, path, userAgent string, responseCode, size int, requestDuration float64) {
 	log.Debug("upstream request",
-		log.Pairs{
+		tl.Pairs{
 			"originName":  originName,
 			"originType":  originType,
 			"handlerName": handlerName,
@@ -34,9 +34,9 @@ func logUpstreamRequest(originName, originType, handlerName, method, path, userA
 		})
 }
 
-func logDownstreamRequest(r *http.Request) {
+func logDownstreamRequest(log *tl.TricksterLogger, r *http.Request) {
 	log.Debug("downtream request",
-		log.Pairs{
+		tl.Pairs{
 			"uri":       r.RequestURI,
 			"method":    r.Method,
 			"userAgent": r.UserAgent(),

@@ -27,6 +27,7 @@ import (
 	tc "github.com/Comcast/trickster/internal/proxy/context"
 	th "github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/request"
+	tl "github.com/Comcast/trickster/internal/util/log"
 	tr "github.com/Comcast/trickster/internal/util/tracing/registration"
 	"github.com/Comcast/trickster/pkg/promsim"
 	"github.com/Comcast/trickster/pkg/rangesim"
@@ -90,7 +91,7 @@ func NewTestInstance(
 		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := cr.LoadCachesFromConfig(conf)
+	caches := cr.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	cache, ok := caches["default"]
 	if !ok {
 		return nil, nil, nil, nil, err
@@ -106,7 +107,7 @@ func NewTestInstance(
 	oc := conf.Origins["default"]
 	p := NewTestPathConfig(oc, DefaultPathConfigs, urlPath)
 
-	tracer, _, _ := tr.Init(oc.TracingConfig)
+	tracer, _, _ := tr.Init(oc.TracingConfig, tl.ConsoleLogger("error"))
 	// TODO worry about running closures for cleanup once the test is complete
 	oc.TracingConfig.Tracer = tracer
 
@@ -114,7 +115,7 @@ func NewTestInstance(
 		p.ResponseHeaders = respHeaders
 	}
 
-	rsc := request.NewResources(oc, p, cache.Configuration(), cache, nil)
+	rsc := request.NewResources(oc, p, cache.Configuration(), cache, nil, tl.ConsoleLogger("error"))
 	r = r.WithContext(tc.WithResources(r.Context(), rsc))
 
 	c := NewTestWebClient()

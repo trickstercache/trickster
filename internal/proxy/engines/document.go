@@ -25,7 +25,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
 	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 //go:generate msgp
@@ -105,7 +105,7 @@ func (d *HTTPDocument) LoadRangeParts() {
 }
 
 // ParsePartialContentBody parses a Partial Content response body into 0 or more discrete parts
-func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte) {
+func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte, log *tl.TricksterLogger) {
 
 	ct := resp.Header.Get(headers.NameContentType)
 	if cr := resp.Header.Get(headers.NameContentRange); cr != "" {
@@ -148,7 +148,7 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte)
 			d.RangeParts.Compress()
 			d.Ranges = d.RangeParts.Ranges()
 		} else {
-			log.Error("unable to parse multipart range response body", log.Pairs{"detail": err.Error})
+			log.Error("unable to parse multipart range response body", tl.Pairs{"detail": err.Error})
 		}
 	} else {
 		if !strings.HasPrefix(ct, headers.ValueMultipartByteRanges) {

@@ -60,7 +60,7 @@ func TestMultiPartByteRange(t *testing.T) {
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
-	caches := cr.LoadCachesFromConfig(conf)
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error(errors.New("could not load cache"))
@@ -71,7 +71,7 @@ func TestMultiPartByteRange(t *testing.T) {
 	resp2.Header.Add(headers.NameContentRange, "bytes 0-10/62")
 	resp2.Header.Add("Content-Type", "multipart/byteranges; boundary=ddffee123")
 	resp2.StatusCode = 200
-	d := DocumentFromHTTPResponse(resp2, []byte("This is a t"), nil)
+	d := DocumentFromHTTPResponse(resp2, []byte("This is a t"), nil, testLogger)
 
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
@@ -91,7 +91,7 @@ func TestCacheHitRangeRequest(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := cr.LoadCachesFromConfig(conf)
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error(errors.New("could not load cache"))
@@ -101,7 +101,7 @@ func TestCacheHitRangeRequest(t *testing.T) {
 	resp2.Header = make(http.Header)
 	resp2.Header.Add(headers.NameContentLength, strconv.Itoa(len(testRangeBody)))
 	resp2.StatusCode = 200
-	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody), nil)
+	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody), nil, testLogger)
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
 
@@ -130,7 +130,7 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := cr.LoadCachesFromConfig(conf)
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error(errors.New("could not load cache"))
@@ -145,7 +145,7 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 	resp2.ContentLength = int64(rl)
 	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
 	resp2.StatusCode = 206
-	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
+	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
 
@@ -173,7 +173,7 @@ func TestCacheHitRangeRequest3(t *testing.T) {
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
-	caches := cr.LoadCachesFromConfig(conf)
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error(errors.New("could not load cache"))
@@ -188,7 +188,7 @@ func TestCacheHitRangeRequest3(t *testing.T) {
 	resp2.ContentLength = int64(rl)
 	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
 	resp2.StatusCode = 206
-	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
+	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
 
@@ -213,7 +213,7 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := cr.LoadCachesFromConfig(conf)
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error(errors.New("could not load cache"))
@@ -228,7 +228,7 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 	resp2.ContentLength = int64(rl)
 	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
 	resp2.StatusCode = 206
-	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
+	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
 
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
@@ -257,7 +257,7 @@ func TestFullCacheMissRangeRequest(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := cr.LoadCachesFromConfig(conf)
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error(errors.New("could not load cache"))
@@ -272,7 +272,7 @@ func TestFullCacheMissRangeRequest(t *testing.T) {
 	resp2.ContentLength = int64(rl)
 	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
 	resp2.StatusCode = 206
-	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
+	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
 
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
@@ -320,7 +320,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := cr.LoadCachesFromConfig(conf)
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error(errors.New("could not load cache"))
@@ -329,7 +329,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
 
-	d := DocumentFromHTTPResponse(resp, bytes, nil)
+	d := DocumentFromHTTPResponse(resp, bytes, nil, testLogger)
 	err = WriteCache(ctx, cache, "testKey2", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
 		t.Error(err)
@@ -364,7 +364,7 @@ func TestQueryCache(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := registration.LoadCachesFromConfig(conf)
+	caches := registration.LoadCachesFromConfig(conf, testLogger)
 	defer registration.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
@@ -375,11 +375,11 @@ func TestQueryCache(t *testing.T) {
 	resp.Header = make(http.Header)
 	resp.StatusCode = 200
 	resp.Header.Add(headers.NameContentLength, "4")
-	d := DocumentFromHTTPResponse(resp, []byte(expected), nil)
+	d := DocumentFromHTTPResponse(resp, []byte(expected), nil, testLogger)
 	d.ContentType = "text/plain"
 
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"], Logger: testLogger})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {

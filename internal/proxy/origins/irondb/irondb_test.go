@@ -19,6 +19,7 @@ import (
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/origins"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 func TestIRONdbClientInterfacing(t *testing.T) {
@@ -45,7 +46,7 @@ func TestNewClient(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := cr.LoadCachesFromConfig(conf)
+	caches := cr.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
@@ -85,7 +86,7 @@ func TestCache(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := cr.LoadCachesFromConfig(conf)
+	caches := cr.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {

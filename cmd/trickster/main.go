@@ -26,7 +26,7 @@ import (
 	th "github.com/Comcast/trickster/internal/proxy/handlers"
 	rr "github.com/Comcast/trickster/internal/routing/registration"
 	"github.com/Comcast/trickster/internal/runtime"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tr "github.com/Comcast/trickster/internal/util/tracing/registration"
 
@@ -65,10 +65,10 @@ func main() {
 		os.Exit(0)
 	}
 
-	log.Init(conf)
-	defer log.Logger.Close()
+	log := tl.Init(conf)
+	defer log.Close()
 	log.Info("application start up",
-		log.Pairs{
+		tl.Pairs{
 			"name":      runtime.ApplicationName,
 			"version":   runtime.ApplicationVersion,
 			"goVersion": applicationGoVersion,
@@ -80,13 +80,13 @@ func main() {
 	)
 
 	for _, w := range config.LoaderWarnings {
-		log.Warn(w, log.Pairs{})
+		log.Warn(w, tl.Pairs{})
 	}
 
 	// Register Tracing Configurations
-	tracerFlushers, err := tr.RegisterAll(conf)
+	tracerFlushers, err := tr.RegisterAll(conf, log)
 	if err != nil {
-		log.Fatal(1, "tracing registration failed", log.Pairs{"detail": err.Error()})
+		log.Fatal(1, "tracing registration failed", tl.Pairs{"detail": err.Error()})
 	}
 
 	if len(tracerFlushers) > 0 {
@@ -99,24 +99,19 @@ func main() {
 	router.HandleFunc(conf.Main.PingHandlerPath, th.PingHandleFunc(conf)).Methods("GET")
 	router.HandleFunc(conf.Main.ConfigHandlerPath, th.ConfigHandleFunc(conf)).Methods("GET")
 
-	var logUpstreamRequest bool
-	if conf.Logging.LogLevel == "debug" || conf.Logging.LogLevel == "trace" {
-		logUpstreamRequest = true
-	}
-
 	var caches = make(map[string]cache.Cache)
 	for k, v := range conf.Caches {
-		c := registration.NewCache(k, v)
+		c := registration.NewCache(k, v, log)
 		caches[k] = c
 	}
 
-	err = rr.RegisterProxyRoutes(conf, router, caches, logUpstreamRequest)
+	err = rr.RegisterProxyRoutes(conf, router, caches, log)
 	if err != nil {
-		log.Fatal(1, "route registration failed", log.Pairs{"detail": err.Error()})
+		log.Fatal(1, "route registration failed", tl.Pairs{"detail": err.Error()})
 	}
 
 	if conf.Frontend.TLSListenPort < 1 && conf.Frontend.ListenPort < 1 {
-		log.Fatal(1, "no http or https listeners configured", log.Pairs{})
+		log.Fatal(1, "no http or https listeners configured", tl.Pairs{})
 	}
 
 	wg := &sync.WaitGroup{}
@@ -127,12 +122,12 @@ func main() {
 		var tlsConfig *tls.Config
 		tlsConfig, err = conf.TLSCertConfig()
 		if err != nil {
-			log.Error("unable to start tls listener due to certificate error", log.Pairs{"detail": err})
+			log.Error("unable to start tls listener due to certificate error", tl.Pairs{"detail": err})
 		} else {
 			wg.Add(1)
 			go startListener("tlsListener",
 				conf.Frontend.TLSListenAddress, conf.Frontend.TLSListenPort,
-				conf.Frontend.ConnectionsLimit, tlsConfig, router, wg, true)
+				conf.Frontend.ConnectionsLimit, tlsConfig, router, wg, true, log)
 		}
 	}
 
@@ -141,7 +136,7 @@ func main() {
 		wg.Add(1)
 		go startListener("httpListener",
 			conf.Frontend.ListenAddress, conf.Frontend.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, router, wg, true)
+			conf.Frontend.ConnectionsLimit, nil, router, wg, true, log)
 	}
 
 	// if the Metrics HTTP port is configured, then set up the http listener instance
@@ -149,7 +144,7 @@ func main() {
 		wg.Add(1)
 		go startListenerRouter("metricsListener",
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, "/metrics", metrics.Handler(), wg, true)
+			conf.Frontend.ConnectionsLimit, nil, "/metrics", metrics.Handler(), wg, true, log)
 	}
 
 	wg.Wait()
