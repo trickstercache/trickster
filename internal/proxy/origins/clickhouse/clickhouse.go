@@ -73,11 +73,6 @@ func (c *Client) SetCache(cc cache.Cache) {
 	c.cache = cc
 }
 
-// SetUpstreamLogging enables or disables the logging of upstream requests
-func (c *Client) SetUpstreamLogging(logUpstreamRequest bool) {
-	c.logUpstreamRequest = logUpstreamRequest
-}
-
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
 func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
 
