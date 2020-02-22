@@ -471,7 +471,7 @@ func NewOriginConfig() *OriginConfig {
 }
 
 // loadFile loads application configuration from a TOML-formatted file.
-func (c *TricksterConfig) loadFile(flags TricksterFlags) error {
+func (c *TricksterConfig) loadFile(flags *TricksterFlags) error {
 	md, err := toml.DecodeFile(flags.ConfigPath, c)
 	if err != nil {
 		c.setDefaults(&toml.MetaData{})
