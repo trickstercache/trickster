@@ -132,7 +132,7 @@ func main() {
 			wg.Add(1)
 			go startListener("tlsListener",
 				conf.Frontend.TLSListenAddress, conf.Frontend.TLSListenPort,
-				conf.Frontend.ConnectionsLimit, tlsConfig, router, wg)
+				conf.Frontend.ConnectionsLimit, tlsConfig, router, wg, true)
 		}
 	}
 
@@ -141,7 +141,7 @@ func main() {
 		wg.Add(1)
 		go startListener("httpListener",
 			conf.Frontend.ListenAddress, conf.Frontend.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, router, wg)
+			conf.Frontend.ConnectionsLimit, nil, router, wg, true)
 	}
 
 	// if the Metrics HTTP port is configured, then set up the http listener instance
@@ -149,7 +149,7 @@ func main() {
 		wg.Add(1)
 		go startListenerRouter("metricsListener",
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, "/metrics", metrics.Handler(), wg)
+			conf.Frontend.ConnectionsLimit, nil, "/metrics", metrics.Handler(), wg, true)
 	}
 
 	wg.Wait()

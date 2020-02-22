@@ -16,6 +16,7 @@ package main
 import (
 	"crypto/tls"
 	"net/http"
+	"os"
 	"sync"
 
 	"github.com/Comcast/trickster/internal/proxy"
@@ -24,13 +25,17 @@ import (
 )
 
 func startListener(listenerName, address string, port int, connectionsLimit int,
-	tlsConfig *tls.Config, router http.Handler, wg *sync.WaitGroup) error {
+	tlsConfig *tls.Config, router http.Handler, wg *sync.WaitGroup,
+	exitOnError bool) error {
 	if wg != nil {
 		defer wg.Done()
 	}
 	l, err := proxy.NewListener(address, port, connectionsLimit, tlsConfig)
 	if err != nil {
-		log.Error("exiting", log.Pairs{"err": err})
+		log.Error("http listener startup failed", log.Pairs{"name": listenerName, "detail": err})
+		if exitOnError {
+			os.Exit(1)
+		}
 		return err
 	}
 	log.Info("proxy listener starting",
@@ -40,12 +45,15 @@ func startListener(listenerName, address string, port int, connectionsLimit int,
 	if err != nil {
 		log.Error("listener stopping", log.Pairs{"name": listenerName, "detail": err})
 	}
+
 	return err
+
 }
 
 func startListenerRouter(listenerName, address string, port int, connectionsLimit int,
-	tlsConfig *tls.Config, path string, handler http.Handler, wg *sync.WaitGroup) error {
+	tlsConfig *tls.Config, path string, handler http.Handler, wg *sync.WaitGroup,
+	exitOnError bool) error {
 	router := http.NewServeMux()
 	router.Handle(path, handler)
-	return startListener(listenerName, address, port, connectionsLimit, tlsConfig, router, wg)
+	return startListener(listenerName, address, port, connectionsLimit, tlsConfig, router, wg, exitOnError)
 }
