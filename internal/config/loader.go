@@ -166,6 +166,5 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		c.Index.ReapInterval = time.Duration(c.Index.ReapIntervalSecs) * time.Second
 	}
 
-	fmt.Println("!!")
 	return c, flags, nil
 }
