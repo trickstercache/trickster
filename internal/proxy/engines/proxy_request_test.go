@@ -20,9 +20,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache/status"
-
 	cr "github.com/Comcast/trickster/internal/cache/registration"
+	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"

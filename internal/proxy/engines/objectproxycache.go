@@ -28,6 +28,7 @@ import (
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/tracing"
 	"github.com/Comcast/trickster/pkg/locks"
+
 	"go.opentelemetry.io/otel/api/core"
 )
 

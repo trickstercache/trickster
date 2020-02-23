@@ -33,6 +33,7 @@ import (
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	"github.com/Comcast/trickster/internal/util/tracing"
+
 	"go.opentelemetry.io/otel/api/core"
 	othttptrace "go.opentelemetry.io/otel/plugin/httptrace"
 )

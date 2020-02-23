@@ -28,7 +28,6 @@ import (
 	th "github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	tl "github.com/Comcast/trickster/internal/util/log"
-	"github.com/Comcast/trickster/internal/util/metrics"
 	tr "github.com/Comcast/trickster/internal/util/tracing/registration"
 	"github.com/Comcast/trickster/pkg/promsim"
 	"github.com/Comcast/trickster/pkg/rangesim"
@@ -67,8 +66,6 @@ func NewTestInstance(
 	respCode int, respBody string, respHeaders map[string]string,
 	originType, urlPath, logLevel string,
 ) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *http.Client, error) {
-
-	metrics.Init(&config.TricksterConfig{}, tl.ConsoleLogger("error")) // TODO: move after conf.Load
 
 	isBasicTestServer := false
 

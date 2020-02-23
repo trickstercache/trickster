@@ -23,12 +23,7 @@ import (
 	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
 	tl "github.com/Comcast/trickster/internal/util/log"
-	"github.com/Comcast/trickster/internal/util/metrics"
 )
-
-func init() {
-	metrics.Init(&config.TricksterConfig{}, tl.ConsoleLogger("error"))
-}
 
 const cacheType = "bbolt"
 const cacheKey = "cacheKey"

@@ -20,14 +20,9 @@ import (
 
 	"github.com/Comcast/trickster/internal/config"
 	tl "github.com/Comcast/trickster/internal/util/log"
-	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
 var testLogger = tl.ConsoleLogger("error")
-
-func init() {
-	metrics.Init(&config.TricksterConfig{}, testLogger)
-}
 
 var testBulkIndex *Index
 

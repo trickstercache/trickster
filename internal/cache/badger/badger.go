@@ -21,6 +21,7 @@ import (
 	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
+
 	"github.com/dgraph-io/badger"
 )
 

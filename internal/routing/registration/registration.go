@@ -31,6 +31,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/origins/reverseproxycache"
 	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/middleware"
+
 	"github.com/gorilla/mux"
 )
 

@@ -26,15 +26,10 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	tl "github.com/Comcast/trickster/internal/util/log"
-	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
 var testLogger = tl.ConsoleLogger("error")
-
-func init() {
-	metrics.Init(&config.TricksterConfig{}, testLogger)
-}
 
 func TestDoProxy(t *testing.T) {
 

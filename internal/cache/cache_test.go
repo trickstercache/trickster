@@ -16,22 +16,14 @@ package cache
 import (
 	"fmt"
 	"testing"
-
-	"github.com/Comcast/trickster/internal/config"
-	tl "github.com/Comcast/trickster/internal/util/log"
-	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
 var testCacheKey, testCacheName, testCacheType string
 
 func init() {
-
 	testCacheKey = "test-key"
 	testCacheName = "test-cache"
 	testCacheType = "test"
-
-	metrics.Init(&config.TricksterConfig{}, tl.ConsoleLogger("error"))
-
 }
 
 func TestObserveCacheMiss(t *testing.T) {
