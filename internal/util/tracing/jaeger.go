@@ -21,9 +21,16 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-func setJaegerExporter(collectorURL string, sampleRate float64) (trace.Tracer, func(), *recorderExporter, error) {
+func setJaegerExporter(opts *ExporterOptions) (trace.Tracer, func(), *recorderExporter, error) {
+
+	endpointOption := jaeger.WithCollectorEndpoint(opts.collectorURL)
+	if opts.agentURL == "" {
+
+		jaeger.WithAgentEndpoint(opts.agentURL)
+	}
+
 	exporter, err := jaeger.NewExporter(
-		jaeger.WithCollectorEndpoint(collectorURL),
+		endpointOption,
 		jaeger.WithProcess(jaeger.Process{
 			ServiceName: serviceName,
 			Tags: []core.KeyValue{
@@ -36,7 +43,7 @@ func setJaegerExporter(collectorURL string, sampleRate float64) (trace.Tracer, f
 	}
 
 	tp, err := sdktrace.NewProvider(
-		sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.ProbabilitySampler(sampleRate)}),
+		sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.ProbabilitySampler(opts.sampleRate)}),
 		sdktrace.WithSyncer(exporter))
 	if err != nil {
 		return tp.Tracer(""), func() {}, nil, err

@@ -18,7 +18,7 @@ import (
 )
 
 // SetTracer sets up the requested tracer implementation
-func SetTracer(impl TracerImplementation, ex TraceExporter, collectorURL string, sampleRate float64) (trace.Tracer, func(), *recorderExporter, error) {
+func SetTracer(impl TracerImplementation, exporter TraceExporter, opts ...ExporterOption) (trace.Tracer, func(), *recorderExporter, error) {
 	var (
 		tracer trace.Tracer
 		flush  func()
@@ -26,13 +26,15 @@ func SetTracer(impl TracerImplementation, ex TraceExporter, collectorURL string,
 		err    error
 	)
 
-	switch ex {
+	options := aggreagteOptions(opts)
+
+	switch exporter {
 	case StdoutExporter:
-		tracer, flush, r, err = setStdOutTracer(sampleRate)
+		tracer, flush, r, err = setStdOutTracer(options)
 	case JaegerExporter:
-		tracer, flush, r, err = setJaegerExporter(collectorURL, sampleRate)
+		tracer, flush, r, err = setJaegerExporter(options)
 	case RecorderExporter:
-		tracer, flush, r, err = setRecorderExporter(nil, sampleRate)
+		tracer, flush, r, err = setRecorderExporter(nil, options)
 	default:
 		tracer, flush, r, err = setNoopExporter()
 	}

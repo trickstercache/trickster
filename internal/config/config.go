@@ -501,8 +501,11 @@ func (c *TricksterConfig) validateConfigMappings() error {
 func (c *TricksterConfig) processTracingConfigs(metadata *toml.MetaData) {
 	// if the user does not provide a sample rate in the config, assume they want 100% sampling
 	for k, v := range c.TracingConfigs {
-		if !metadata.IsDefined("tracing", k, "sample_rate") {
-			v.SampleRate = 1
+		if !metadata.IsDefined("tracing", k, "exporter") {
+			v.Exporter = &TracingExporterOptions{}
+		}
+		if !metadata.IsDefined("tracing", k, "exporter", "sample_rate") {
+			v.Exporter.SampleRate = 1
 		}
 	}
 }

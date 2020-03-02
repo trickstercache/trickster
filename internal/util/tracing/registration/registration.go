@@ -87,16 +87,17 @@ func Init(cfg *config.TracingConfig) (trace.Tracer, func(), error) {
 		"Trace Init",
 		log.Pairs{
 			"Implementation": cfg.Implementation,
-			"Collector":      cfg.CollectorEndpoint,
+			"Collector":      cfg.Exporter.Collector,
 			"Type":           tracing.TracerImplementations[cfg.Implementation],
 		},
 	)
 
 	tracer, flusher, _, err := tracing.SetTracer(
 		tracing.TracerImplementations[cfg.Implementation],
-		tracing.TraceExporters[cfg.Exporter],
-		cfg.CollectorEndpoint,
-		cfg.SampleRate,
+		tracing.TraceExporters[cfg.Exporter.Exporter],
+		tracing.WithSampleRate(cfg.Exporter.SampleRate),
+		tracing.WithCollector(cfg.Exporter.Collector),
+		tracing.WithAgent(cfg.Exporter.Agent),
 	)
 	return tracer, flusher, err
 }
