@@ -28,34 +28,34 @@ import (
 )
 
 // Config is the Running Configuration for Trickster
-var Config *TricksterConfig
+// var Config *TricksterConfig
 
-// Main is the Main subsection of the Running Configuration
-var Main *MainConfig
+// // Main is the Main subsection of the Running Configuration
+// var Main *MainConfig
 
-// Origins is the Origin Map subsection of the Running Configuration
-var Origins map[string]*OriginConfig
+// // Origins is the Origin Map subsection of the Running Configuration
+// var Origins map[string]*OriginConfig
 
-// Caches is the Cache Map subsection of the Running Configuration
-var Caches map[string]*CachingConfig
+// // Caches is the Cache Map subsection of the Running Configuration
+// var Caches map[string]*CachingConfig
 
-// Frontend is the Proxy Server subsection of the Running Configuration
-var Frontend *FrontendConfig
+// // Frontend is the Proxy Server subsection of the Running Configuration
+// var Frontend *FrontendConfig
 
-// Logging is the Logging subsection of the Running Configuration
-var Logging *LoggingConfig
+// // Logging is the Logging subsection of the Running Configuration
+// var Logging *LoggingConfig
 
-// Metrics is the Metrics subsection of the Running Configuration
-var Metrics *MetricsConfig
+// // Metrics is the Metrics subsection of the Running Configuration
+// var Metrics *MetricsConfig
 
 // TracingConfigs is the TracingConfigs subsection of the Running Configuration
-var TracingConfigs map[string]*TracingConfig
+// var TracingConfigs map[string]*TracingConfig
 
-// NegativeCacheConfigs is the NegativeCacheConfig subsection of the Running Configuration
-var NegativeCacheConfigs map[string]NegativeCacheConfig
+// // NegativeCacheConfigs is the NegativeCacheConfig subsection of the Running Configuration
+// var NegativeCacheConfigs map[string]NegativeCacheConfig
 
 // Flags is a collection of command line flags that Trickster loads.
-var Flags = TricksterFlags{}
+// var Flags = TricksterFlags{}
 var providedOriginURL string
 var providedOriginType string
 
@@ -93,6 +93,8 @@ type MainConfig struct {
 	ConfigHandlerPath string `toml:"config_handler_path"`
 	// PingHandlerPath provides the path to register the Ping Handler for checking that Trickster is running
 	PingHandlerPath string `toml:"ping_handler_path"`
+	// ReloadConfig provides the details necessary to enable the config reloading feature of Trickster
+	Reload *ReloadConfig `toml:"reload"`
 }
 
 // OriginConfig is a collection of configurations for prometheus origins proxied by Trickster
@@ -345,6 +347,14 @@ type LoggingConfig struct {
 	LogLevel string `toml:"log_level"`
 }
 
+// ReloadConfig is a collection of Metrics Collection configurations
+type ReloadConfig struct {
+	// ListenAddress is IP address from which the Reload API is available for triggering at /-/reload
+	ListenAddress string `toml:"listen_address"`
+	// ListenPort is TCP Port from which the Reload API is available for triggering at /-/reload
+	ListenPort int `toml:"listen_port"`
+}
+
 // MetricsConfig is a collection of Metrics Collection configurations
 type MetricsConfig struct {
 	// ListenAddress is IP address from which the Application Metrics are available for pulling at /metrics
@@ -461,8 +471,8 @@ func NewOriginConfig() *OriginConfig {
 }
 
 // loadFile loads application configuration from a TOML-formatted file.
-func (c *TricksterConfig) loadFile() error {
-	md, err := toml.DecodeFile(Flags.ConfigPath, c)
+func (c *TricksterConfig) loadFile(flags *TricksterFlags) error {
+	md, err := toml.DecodeFile(flags.ConfigPath, c)
 	if err != nil {
 		c.setDefaults(&toml.MetaData{})
 		return err

@@ -21,7 +21,6 @@ import (
 	"testing"
 	"time"
 
-	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/timeseries"
@@ -871,8 +870,6 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	}
 
 	expected := string(b)
-
-	cr.LoadCachesFromConfig()
 
 	client.QueryRangeHandler(w, r)
 	resp := w.Result()

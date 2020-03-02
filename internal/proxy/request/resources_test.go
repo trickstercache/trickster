@@ -20,10 +20,11 @@ import (
 	"time"
 
 	tc "github.com/Comcast/trickster/internal/proxy/context"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 func TestNewAndCloneResources(t *testing.T) {
-	r := NewResources(nil, nil, nil, nil, nil)
+	r := NewResources(nil, nil, nil, nil, nil, tl.ConsoleLogger("error"))
 	r.AlternateCacheTTL = time.Duration(1) * time.Second
 	r2 := r.Clone()
 	if r2.AlternateCacheTTL != r.AlternateCacheTTL {
@@ -32,7 +33,7 @@ func TestNewAndCloneResources(t *testing.T) {
 }
 
 func TestGetAndSetResources(t *testing.T) {
-	r := NewResources(nil, nil, nil, nil, nil)
+	r := NewResources(nil, nil, nil, nil, nil, tl.ConsoleLogger("error"))
 	r.AlternateCacheTTL = time.Duration(1) * time.Second
 	req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	ctx := context.Background()
