@@ -26,7 +26,7 @@ import (
 	"golang.org/x/net/netutil"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
@@ -106,7 +106,7 @@ func NewHTTPClient(oc *config.OriginConfig) (*http.Client, error) {
 // which observes the connections to set a gauge with the current number of
 // connections (with operates with sampling through scrapes), and a set of
 // counter metrics for connections accepted, rejected and closed.
-func NewListener(listenAddress string, listenPort, connectionsLimit int, tlsConfig *tls.Config) (net.Listener, error) {
+func NewListener(listenAddress string, listenPort, connectionsLimit int, tlsConfig *tls.Config, log *tl.TricksterLogger) (net.Listener, error) {
 
 	var listener net.Listener
 	var err error
@@ -124,7 +124,7 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int, tlsConf
 		return nil, err
 	}
 
-	log.Debug("starting proxy listener", log.Pairs{
+	log.Debug("starting proxy listener", tl.Pairs{
 		"connectionsLimit": connectionsLimit,
 		"scheme":           listenerType,
 		"address":          listenAddress,
@@ -152,10 +152,6 @@ func (l *connectionsLimitObProxy) Accept() (net.Conn, error) {
 
 	c, err := l.Listener.Accept()
 	if err != nil {
-		// This generally happens when a connection gives up waiting for resources and
-		// just goes away on timeout, thus it's more of a client side error, which
-		// gets reflected on the server.
-		log.Debug("failed to accept client connection", log.Pairs{"reason": err})
 		metrics.ProxyConnectionFailed.Inc()
 		return c, err
 	}

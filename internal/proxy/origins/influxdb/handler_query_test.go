@@ -21,15 +21,10 @@ import (
 
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/request"
-	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 
 	"github.com/influxdata/influxdb/pkg/testing/assert"
 )
-
-func init() {
-	metrics.Init()
-}
 
 func TestParseTimeRangeQuery(t *testing.T) {
 	req := &http.Request{URL: &url.URL{

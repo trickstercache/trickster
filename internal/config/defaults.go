@@ -68,6 +68,9 @@ const (
 
 	defaultConfigHandlerPath = "/trickster/config"
 	defaultPingHandlerPath   = "/trickster/ping"
+
+	// DefaultConfigPath defines the default location of the Trickster config file
+	DefaultConfigPath = "/etc/trickster/trickster.conf"
 )
 
 func defaultCompressableTypes() []string {

@@ -22,6 +22,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/origins"
 	"github.com/Comcast/trickster/internal/timeseries"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 // Resources is a collection of resources a Trickster request would need to fulfill the client request
@@ -35,6 +36,7 @@ type Resources struct {
 	OriginClient      origins.Client
 	AlternateCacheTTL time.Duration
 	TimeRangeQuery    *timeseries.TimeRangeQuery
+	Logger            *tl.TricksterLogger
 }
 
 // Clone returns an exact copy of the subject Resources collection
@@ -48,17 +50,20 @@ func (r Resources) Clone() *Resources {
 		OriginClient:      r.OriginClient,
 		AlternateCacheTTL: r.AlternateCacheTTL,
 		TimeRangeQuery:    r.TimeRangeQuery,
+		Logger:            r.Logger,
 	}
 }
 
 // NewResources returns a new Resources collection based on the provided inputs
-func NewResources(oc *config.OriginConfig, pc *config.PathConfig, cc *config.CachingConfig, c cache.Cache, client origins.Client) *Resources {
+func NewResources(oc *config.OriginConfig, pc *config.PathConfig, cc *config.CachingConfig,
+	c cache.Cache, client origins.Client, logger *tl.TricksterLogger) *Resources {
 	return &Resources{
 		OriginConfig: oc,
 		PathConfig:   pc,
 		CacheConfig:  cc,
 		CacheClient:  c,
 		OriginClient: client,
+		Logger:       logger,
 	}
 }
 
