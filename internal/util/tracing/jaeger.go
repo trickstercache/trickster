@@ -24,7 +24,7 @@ import (
 func setJaegerExporter(opts *ExporterOptions) (trace.Tracer, func(), *recorderExporter, error) {
 
 	endpointOption := jaeger.WithCollectorEndpoint(opts.collectorURL)
-	if opts.agentURL == "" {
+	if opts.agentURL != "" {
 
 		endpointOption = jaeger.WithAgentEndpoint(opts.agentURL)
 	}
