@@ -8,7 +8,7 @@ The roadmap for Trickster in 2020 focuses on delivering incremental enhancements
 
 - [x] Trickster 1.0 GA Release
 - [ ] Register Official Docker Hub Repositories
-- [ ] Submit Helm charts to HelmHub
+- [x] Submit Helm charts to HelmHub
 - [ ] Submit Trickster for CNCF Sandbox Consideration
 - [ ] Trickster v1.1 Release
   - [ ] Use RWMutex for cache synchronization
