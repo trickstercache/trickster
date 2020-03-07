@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -161,7 +162,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 			34003,
 			1,
 			10,
-			"Get http://localhost:34003/: net/http: request canceled (Client.Timeout exceeded while awaiting headers)",
+			"(Client.Timeout exceeded while awaiting headers)",
 		},
 	}
 
@@ -187,7 +188,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 				}
 				res, err := http.DefaultClient.Do(r)
 				if err != nil {
-					if fmt.Sprintf("%s", err) != tc.expectedErr {
+					if !strings.HasSuffix(err.Error(), tc.expectedErr) {
 						t.Fatalf("unexpected error when executing request: %s", err)
 					}
 					continue
