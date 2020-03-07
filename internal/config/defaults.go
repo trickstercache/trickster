@@ -20,11 +20,16 @@ const (
 	defaultLogFile  = ""
 	defaultLogLevel = "INFO"
 
-	defaultProxyListenPort    = 9090
+	defaultProxyListenPort    = 8480
 	defaultProxyListenAddress = ""
 
-	defaultMetricsListenPort    = 8082
+	defaultMetricsListenPort    = 8481
 	defaultMetricsListenAddress = ""
+
+	// 8482 is reserved for mockster, allowing the default TLS port to end with 3
+
+	defaultTLSProxyListenPort    = 8483
+	defaultTLSProxyListenAddress = ""
 
 	defaultTracerImplemetation    = "opentelemetry"
 	defaultExporterImplementation = "noop"

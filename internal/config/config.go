@@ -399,7 +399,10 @@ func NewConfig() *TricksterConfig {
 			"default": NewOriginConfig(),
 		},
 		Frontend: &FrontendConfig{
-			ListenPort: defaultProxyListenPort,
+			ListenPort:       defaultProxyListenPort,
+			ListenAddress:    defaultProxyListenAddress,
+			TLSListenPort:    defaultTLSProxyListenPort,
+			TLSListenAddress: defaultTLSProxyListenAddress,
 		},
 		NegativeCacheConfigs: map[string]NegativeCacheConfig{
 			"default": NewNegativeCacheConfig(),
