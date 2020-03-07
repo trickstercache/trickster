@@ -25,14 +25,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/proxy/request"
-
+	"github.com/Comcast/trickster/internal/cache/registration"
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
 	tc "github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
+	"github.com/Comcast/trickster/internal/proxy/request"
 )
 
 const testRangeBody = "This is a test file, to see how the byte range requests work.\n"
@@ -56,15 +56,14 @@ func TestInvalidContentRange(t *testing.T) {
 
 func TestMultiPartByteRange(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
-
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
-	if err != nil {
-		t.Error(err)
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Error(errors.New("could not load cache"))
 	}
 	resp2 := &http.Response{}
 	resp2.Header = make(http.Header)
@@ -72,10 +71,10 @@ func TestMultiPartByteRange(t *testing.T) {
 	resp2.Header.Add(headers.NameContentRange, "bytes 0-10/62")
 	resp2.Header.Add("Content-Type", "multipart/byteranges; boundary=ddffee123")
 	resp2.StatusCode = 200
-	d := DocumentFromHTTPResponse(resp2, []byte("This is a t"), nil)
+	d := DocumentFromHTTPResponse(resp2, []byte("This is a t"), nil, testLogger)
 
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
 
 	ranges := make(byterange.Ranges, 1)
 	ranges[0] = byterange.Range{Start: 5, End: 10}
@@ -87,23 +86,24 @@ func TestMultiPartByteRange(t *testing.T) {
 
 func TestCacheHitRangeRequest(t *testing.T) {
 	expected := "is a "
-	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
-	if err != nil {
-		t.Error(err)
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Error(errors.New("could not load cache"))
 	}
+
 	resp2 := &http.Response{}
 	resp2.Header = make(http.Header)
 	resp2.Header.Add(headers.NameContentLength, strconv.Itoa(len(testRangeBody)))
 	resp2.StatusCode = 200
-	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody), nil)
+	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody), nil, testLogger)
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
@@ -125,15 +125,15 @@ func TestCacheHitRangeRequest(t *testing.T) {
 
 func TestCacheHitRangeRequest2(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
-	if err != nil {
-		t.Error(err)
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Error(errors.New("could not load cache"))
 	}
 
 	have := byterange.Range{Start: 1, End: 20}
@@ -145,9 +145,9 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 	resp2.ContentLength = int64(rl)
 	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
 	resp2.StatusCode = 206
-	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
+	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
@@ -169,15 +169,14 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 }
 
 func TestCacheHitRangeRequest3(t *testing.T) {
-	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
-
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
-	if err != nil {
-		t.Error(err)
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Error(errors.New("could not load cache"))
 	}
 
 	have := byterange.Range{Start: 1, End: 20}
@@ -189,9 +188,9 @@ func TestCacheHitRangeRequest3(t *testing.T) {
 	resp2.ContentLength = int64(rl)
 	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
 	resp2.StatusCode = 206
-	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
+	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
@@ -209,15 +208,15 @@ func TestCacheHitRangeRequest3(t *testing.T) {
 }
 
 func TestPartialCacheMissRangeRequest(t *testing.T) {
-	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
-	if err != nil {
-		t.Error(err)
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Error(errors.New("could not load cache"))
 	}
 
 	have := byterange.Range{Start: 1, End: 9}
@@ -229,10 +228,10 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 	resp2.ContentLength = int64(rl)
 	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
 	resp2.StatusCode = 206
-	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
+	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
 
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
@@ -253,16 +252,17 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 }
 
 func TestFullCacheMissRangeRequest(t *testing.T) {
-	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
-	if err != nil {
-		t.Error(err)
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Error(errors.New("could not load cache"))
 	}
+
 	have := byterange.Range{Start: 1, End: 9}
 	cl := int64(len(testRangeBody))
 	rl := (have.End - have.Start) + 1
@@ -272,10 +272,10 @@ func TestFullCacheMissRangeRequest(t *testing.T) {
 	resp2.ContentLength = int64(rl)
 	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
 	resp2.StatusCode = 206
-	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
+	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
 
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
@@ -315,21 +315,21 @@ func TestRangeRequestFromClient(t *testing.T) {
 	bytes, _ := ioutil.ReadAll(resp.Body)
 
 	//--------------------------------------
-	err = config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
-	cache, e2 := cr.GetCache("default")
-	if e2 != nil {
-		t.Error(e2)
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Error(errors.New("could not load cache"))
 	}
 
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
 
-	d := DocumentFromHTTPResponse(resp, bytes, nil)
+	d := DocumentFromHTTPResponse(resp, bytes, nil, testLogger)
 	err = WriteCache(ctx, cache, "testKey2", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
 		t.Error(err)
@@ -359,26 +359,27 @@ func TestQueryCache(t *testing.T) {
 
 	expected := "1234"
 
-	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
-	if err != nil {
-		t.Error(err)
+	caches := registration.LoadCachesFromConfig(conf, testLogger)
+	defer registration.CloseCaches(caches)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Errorf("Could not find default configuration")
 	}
 
 	resp := &http.Response{}
 	resp.Header = make(http.Header)
 	resp.StatusCode = 200
 	resp.Header.Add(headers.NameContentLength, "4")
-	d := DocumentFromHTTPResponse(resp, []byte(expected), nil)
+	d := DocumentFromHTTPResponse(resp, []byte(expected), nil, testLogger)
 	d.ContentType = "text/plain"
 
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"], Logger: testLogger})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {

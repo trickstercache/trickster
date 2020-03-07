@@ -36,10 +36,10 @@ type Client struct {
 	webClient          *http.Client
 	handlers           map[string]http.Handler
 	handlersRegistered bool
-
-	healthURL     *url.URL
-	healthMethod  string
-	healthHeaders http.Header
+	healthURL          *url.URL
+	healthMethod       string
+	healthHeaders      http.Header
+	logUpstreamRequest bool
 }
 
 // NewClient returns a new Client Instance

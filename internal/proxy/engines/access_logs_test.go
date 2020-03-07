@@ -19,42 +19,41 @@ import (
 	"testing"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 func TestLogUpstreamRequest(t *testing.T) {
 	fileName := "out.log"
 	// it should create a logger that outputs to a log file ("out.test.log")
-	config.Config = config.NewConfig()
-	config.Main = &config.MainConfig{InstanceID: 0}
-	config.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "debug"}
-	log.Init()
-	logUpstreamRequest("testOrigin", "testType", "testHandler", "testMethod", "testPath", "testUserAgent", 200, 0, 1.0)
+	conf := config.NewConfig()
+	conf.Main = &config.MainConfig{InstanceID: 0}
+	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "debug"}
+	log := tl.Init(conf)
+	logUpstreamRequest(log, "testOrigin", "testType", "testHandler", "testMethod", "testPath", "testUserAgent", 200, 0, 1.0)
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
 	}
-	log.Logger.Close()
+	log.Close()
 	os.Remove(fileName)
 }
 
 func TestLogDownstreamRequest(t *testing.T) {
 	fileName := "out.log"
 	// it should create a logger that outputs to a log file ("out.test.log")
-	config.Config = config.NewConfig()
-	config.Main = &config.MainConfig{InstanceID: 0}
-	config.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "debug"}
-	log.Init()
-
+	conf := config.NewConfig()
+	conf.Main = &config.MainConfig{InstanceID: 0}
+	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "debug"}
+	log := tl.Init(conf)
 	r, err := http.NewRequest("get", "http://testOrigin", nil)
 	if err != nil {
 		t.Error(err)
 	}
 
-	logDownstreamRequest(r)
+	logDownstreamRequest(log, r)
 
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
 	}
-	log.Logger.Close()
+	log.Close()
 	os.Remove(fileName)
 }

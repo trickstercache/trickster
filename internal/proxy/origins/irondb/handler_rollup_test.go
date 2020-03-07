@@ -24,6 +24,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/timeseries"
+	tl "github.com/Comcast/trickster/internal/util/log"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
 
@@ -72,7 +73,7 @@ func TestRollupHandlerSetExtent(t *testing.T) {
 		t.Error(err)
 	}
 
-	r = request.SetResources(r, request.NewResources(cfg, nil, nil, nil, client))
+	r = request.SetResources(r, request.NewResources(cfg, nil, nil, nil, client, tl.ConsoleLogger("error")))
 
 	now := time.Now()
 	then := now.Add(-5 * time.Hour)
@@ -99,7 +100,7 @@ func TestRollupHandlerParseTimeRangeQuery(t *testing.T) {
 		t.Error(err)
 	}
 
-	r = request.SetResources(r, request.NewResources(cfg, nil, nil, nil, client))
+	r = request.SetResources(r, request.NewResources(cfg, nil, nil, nil, client, tl.ConsoleLogger("error")))
 
 	// case where everything is good
 	r.URL.RawQuery = "start_ts=0&end_ts=900&rollup_span=300s&type=average"

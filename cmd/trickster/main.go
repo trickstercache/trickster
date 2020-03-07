@@ -14,25 +14,23 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
-	"net"
-	"net/http"
 	_ "net/http/pprof" // Comment to disable. Available on :METRICS_PORT/debug/pprof
 	"os"
 	"sync"
 
-	cr "github.com/Comcast/trickster/internal/cache/registration"
+	"github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy"
 	th "github.com/Comcast/trickster/internal/proxy/handlers"
-	"github.com/Comcast/trickster/internal/routing"
 	rr "github.com/Comcast/trickster/internal/routing/registration"
 	"github.com/Comcast/trickster/internal/runtime"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	tr "github.com/Comcast/trickster/internal/util/tracing/registration"
 
-	"github.com/gorilla/handlers"
+	"github.com/gorilla/mux"
 )
 
 var (
@@ -55,42 +53,40 @@ func main() {
 	runtime.ApplicationName = applicationName
 	runtime.ApplicationVersion = applicationVersion
 
-	err = config.Load(runtime.ApplicationName, runtime.ApplicationVersion, os.Args[1:])
+	conf, flags, err := config.Load(runtime.ApplicationName, runtime.ApplicationVersion, os.Args[1:])
 	if err != nil {
 		fmt.Println("\nERROR: Could not load configuration:", err.Error())
 		printUsage()
 		os.Exit(1)
 	}
 
-	if config.Flags.PrintVersion {
+	if flags.PrintVersion {
 		printVersion()
 		os.Exit(0)
 	}
 
-	log.Init()
-	defer log.Logger.Close()
+	log := tl.Init(conf)
+	defer log.Close()
 	log.Info("application start up",
-		log.Pairs{
+		tl.Pairs{
 			"name":      runtime.ApplicationName,
 			"version":   runtime.ApplicationVersion,
 			"goVersion": applicationGoVersion,
 			"goArch":    applicationGoArch,
 			"commitID":  applicationGitCommitID,
 			"buildTime": applicationBuildTime,
-			"logLevel":  config.Logging.LogLevel,
+			"logLevel":  conf.Logging.LogLevel,
 		},
 	)
 
 	for _, w := range config.LoaderWarnings {
-		log.Warn(w, log.Pairs{})
+		log.Warn(w, tl.Pairs{})
 	}
 
-	metrics.Init()
-
 	// Register Tracing Configurations
-	tracerFlushers, err := tr.RegisterAll(config.Config)
+	tracerFlushers, err := tr.RegisterAll(conf, log)
 	if err != nil {
-		log.Fatal(1, "tracing registration failed", log.Pairs{"detail": err.Error()})
+		log.Fatal(1, "tracing registration failed", tl.Pairs{"detail": err.Error()})
 	}
 
 	if len(tracerFlushers) > 0 {
@@ -99,116 +95,57 @@ func main() {
 		}
 	}
 
-	cr.LoadCachesFromConfig()
-	th.RegisterPingHandler()
-	th.RegisterConfigHandler()
-	err = rr.RegisterProxyRoutes()
+	router := mux.NewRouter()
+	router.HandleFunc(conf.Main.PingHandlerPath, th.PingHandleFunc(conf)).Methods("GET")
+	router.HandleFunc(conf.Main.ConfigHandlerPath, th.ConfigHandleFunc(conf)).Methods("GET")
+
+	var caches = make(map[string]cache.Cache)
+	for k, v := range conf.Caches {
+		c := registration.NewCache(k, v, log)
+		caches[k] = c
+	}
+
+	err = rr.RegisterProxyRoutes(conf, router, caches, log)
 	if err != nil {
-		log.Fatal(1, "route registration failed", log.Pairs{"detail": err.Error()})
+		log.Fatal(1, "route registration failed", tl.Pairs{"detail": err.Error()})
 	}
 
-	if config.Frontend.TLSListenPort < 1 && config.Frontend.ListenPort < 1 {
-		log.Fatal(1, "no http or https listeners configured", log.Pairs{})
+	if conf.Frontend.TLSListenPort < 1 && conf.Frontend.ListenPort < 1 {
+		log.Fatal(1, "no http or https listeners configured", tl.Pairs{})
 	}
 
-	wg := sync.WaitGroup{}
-	var l net.Listener
+	wg := &sync.WaitGroup{}
 
 	// if TLS port is configured and at least one origin is mapped to a good tls config,
 	// then set up the tls server listener instance
-	if config.Frontend.ServeTLS && config.Frontend.TLSListenPort > 0 {
-		wg.Add(1)
-		go func() {
-			tlsConfig, err := config.Config.TLSCertConfig()
-			if err == nil {
-				l, err = proxy.NewListener(
-					config.Frontend.TLSListenAddress,
-					config.Frontend.TLSListenPort,
-					config.Frontend.ConnectionsLimit,
-					tlsConfig)
-				if err == nil {
-					log.Info("tls listener starting", log.Pairs{"tlsPort": config.Frontend.TLSListenPort, "tlsListenAddress": config.Frontend.TLSListenAddress})
-					err = http.Serve(l, handlers.CompressHandler(routing.TLSRouter))
-				}
-			}
-			log.Error("exiting", log.Pairs{"err": err})
-			wg.Done()
-		}()
+	if conf.Frontend.ServeTLS && conf.Frontend.TLSListenPort > 0 {
+		var tlsConfig *tls.Config
+		tlsConfig, err = conf.TLSCertConfig()
+		if err != nil {
+			log.Error("unable to start tls listener due to certificate error", tl.Pairs{"detail": err})
+		} else {
+			wg.Add(1)
+			go startListener("tlsListener",
+				conf.Frontend.TLSListenAddress, conf.Frontend.TLSListenPort,
+				conf.Frontend.ConnectionsLimit, tlsConfig, router, wg, true, log)
+		}
 	}
 
 	// if the plaintext HTTP port is configured, then set up the http listener instance
-	if config.Frontend.ListenPort > 0 {
+	if conf.Frontend.ListenPort > 0 {
 		wg.Add(1)
-		go func() {
-			l, err := proxy.NewListener(config.Frontend.ListenAddress, config.Frontend.ListenPort,
-				config.Frontend.ConnectionsLimit, nil)
+		go startListener("httpListener",
+			conf.Frontend.ListenAddress, conf.Frontend.ListenPort,
+			conf.Frontend.ConnectionsLimit, nil, router, wg, true, log)
+	}
 
-			if err == nil {
-				log.Info("http listener starting", log.Pairs{"httpPort": config.Frontend.ListenPort, "httpListenAddress": config.Frontend.ListenAddress})
-				err = http.Serve(l, handlers.CompressHandler(routing.Router))
-			}
-			log.Error("exiting", log.Pairs{"err": err})
-			wg.Done()
-		}()
+	// if the Metrics HTTP port is configured, then set up the http listener instance
+	if conf.Metrics != nil && conf.Metrics.ListenPort > 0 {
+		wg.Add(1)
+		go startListenerRouter("metricsListener",
+			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
+			conf.Frontend.ConnectionsLimit, nil, "/metrics", metrics.Handler(), wg, true, log)
 	}
 
 	wg.Wait()
-}
-
-func printVersion() {
-	fmt.Println("Trickster",
-		"version:", runtime.ApplicationVersion,
-		"buildInfo:", applicationBuildTime, applicationGitCommitID,
-		"goVersion:", applicationGoVersion, "goArch:", applicationGoArch,
-	)
-}
-
-func printUsage() {
-	fmt.Println("")
-	printVersion()
-	fmt.Printf(`
-Trickster Usage:
- 
- You must provide -version, -config or both -origin-url and -origin-type.
-
- Print Version Info:
- trickster -version
- 
- Using a configuration file:
-  trickster -config /path/to/file.conf [-log-level DEBUG|INFO|WARN|ERROR] [-proxy-port 8081] [-metrics-port 8082]
-
- Using origin-url and origin-type:
-  trickster -origin-url https://example.com -origin-type reverseproxycache [-log-level DEBUG|INFO|WARN|ERROR] [-proxy-port 8081] [-metrics-port 8082]
-
-------
-
- Simple HTTP Reverse Proxy Cache listening on 8080:
-   trickster -origin-url https://example.com/ -origin-type reverseproxycache -proxy-port 8080
-
- Simple Prometheus Accelerator listening on 9090 (default port) with Debugging:
-   trickster -origin-url http://prometheus.example.com:9090/ -origin-type prometheus -log-level DEBUG
-
- Simple InfluxDB Accelerator listening on 8086:
-   trickster -origin-url http://influxdb.example.com:8086/ -origin-type influxdb -proxy-port 8086
-
- Simple ClickHouse Accelerator listening on 8123:
-   trickster -origin-url http://clickhouse.example.com:8123/ -origin-type clickhouse -proxy-port 8123
-
-------
-
-Trickster currently listens on port 9090 by default; Set in a config file,
-or override using -proxy-port. The default port will change in a future release.
-
-Default log level is INFO. Set in a config file, or override with -log-level. 
-
-The configuration file is much more robust than the command line arguments, and the example file
-is well-documented. We also have docker images on DockerHub, as well as Kubernetes and Helm
-deployment examples in our GitHub repository.
- 
-Thank you for using and contributing to Open Source Software!
-
-https://github.com/Comcast/trickster
-
-`)
-
 }

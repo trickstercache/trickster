@@ -23,13 +23,10 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/routing"
-	"github.com/Comcast/trickster/internal/util/metrics"
-)
+	tl "github.com/Comcast/trickster/internal/util/log"
 
-func init() {
-	metrics.Init() // For some reason I need to call it specifically
-}
+	"github.com/gorilla/mux"
+)
 
 func TestNewHTTPClient(t *testing.T) {
 
@@ -93,7 +90,7 @@ func TestNewHTTPClient(t *testing.T) {
 
 func TestNewListenerErr(t *testing.T) {
 	config.NewConfig()
-	l, err := NewListener("-", 0, 0, nil)
+	l, err := NewListener("-", 0, 0, nil, tl.ConsoleLogger("error"))
 	if err == nil {
 		l.Close()
 		t.Errorf("expected error: %s", `listen tcp: lookup -: no such host`)
@@ -116,7 +113,7 @@ func TestNewListenerTLS(t *testing.T) {
 		t.Error(err)
 	}
 
-	l, err := NewListener("", 0, 0, tlsConfig)
+	l, err := NewListener("", 0, 0, tlsConfig, tl.ConsoleLogger("error"))
 	defer l.Close()
 	if err != nil {
 		t.Error(err)
@@ -133,9 +130,9 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 	es := httptest.NewServer(http.HandlerFunc(handler))
 	defer es.Close()
 
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus"})
+	_, _, err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
 	tt := []struct {
@@ -172,11 +169,11 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 
 	for _, tc := range tt {
 		t.Run(tc.Name, func(t *testing.T) {
-			l, err := NewListener("", tc.ListenPort, tc.ConnectionsLimit, nil)
+			l, err := NewListener("", tc.ListenPort, tc.ConnectionsLimit, nil, tl.ConsoleLogger("error"))
 			defer l.Close()
 
 			go func() {
-				http.Serve(l, routing.Router)
+				http.Serve(l, mux.NewRouter())
 			}()
 
 			if err != nil {

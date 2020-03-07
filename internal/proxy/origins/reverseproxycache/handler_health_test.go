@@ -20,13 +20,8 @@ import (
 	"testing"
 
 	"github.com/Comcast/trickster/internal/proxy/request"
-	"github.com/Comcast/trickster/internal/util/metrics"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
-
-func init() {
-	metrics.Init()
-}
 
 func TestHealthHandler(t *testing.T) {
 

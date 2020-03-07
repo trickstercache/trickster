@@ -94,7 +94,7 @@ func TestVerifyTLSConfigs(t *testing.T) {
 func TestProcessTLSConfigs(t *testing.T) {
 
 	a := []string{"-config", "../../testdata/test.full.conf"}
-	err := Load("trickster-test", "0", a)
+	_, _, err := Load("trickster-test", "0", a)
 	if err != nil {
 		t.Error(err)
 	}
