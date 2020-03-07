@@ -192,7 +192,6 @@ func (c *Cache) getFileName(cacheKey string) string {
 // makeDirectory creates a directory on the filesystem and exits the application in the event of a failure.
 func makeDirectory(path string) error {
 	err := os.MkdirAll(path, 0755)
-
 	if err == nil {
 		s := ""
 		if !strings.HasSuffix(path, "/") {
@@ -208,6 +207,5 @@ func makeDirectory(path string) error {
 	if err != nil {
 		return fmt.Errorf("[%s] directory is not writeable by trickster: %v", path, err)
 	}
-
 	return nil
 }
