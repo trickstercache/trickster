@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package proxy
@@ -19,6 +22,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -161,7 +165,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 			34003,
 			1,
 			10,
-			"Get http://localhost:34003/: net/http: request canceled (Client.Timeout exceeded while awaiting headers)",
+			"(Client.Timeout exceeded while awaiting headers)",
 		},
 	}
 
@@ -187,7 +191,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 				}
 				res, err := http.DefaultClient.Do(r)
 				if err != nil {
-					if fmt.Sprintf("%s", err) != tc.expectedErr {
+					if !strings.HasSuffix(err.Error(), tc.expectedErr) {
 						t.Fatalf("unexpected error when executing request: %s", err)
 					}
 					continue

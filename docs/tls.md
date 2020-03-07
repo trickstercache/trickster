@@ -9,8 +9,8 @@ To enable the TLS server, you must specify the `tls_listen_port`, and optionally
 ```toml
 [frontend]
 
-listen_port = 9090
-tls_listen_port = 8443
+listen_port = 8480
+tls_listen_port = 8483
 ```
 
 Note, Trickster will only start listening on the TLS port if at least one origin has a valid certificate and key configured.

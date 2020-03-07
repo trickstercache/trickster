@@ -1,22 +1,25 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package config
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -55,7 +58,7 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 		},
 		{ // Case 1
 			"../../testdata/test.bad_origin_url.conf",
-			fmt.Sprintf(`parse %s: first path segment in URL cannot contain colon`, "sasdf_asd[as;://asdf923_-=a*"),
+			"first path segment in URL cannot contain colon",
 		},
 		{ // Case 2
 			"../../testdata/test.missing_origin_type.conf",
@@ -84,7 +87,7 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 			_, _, err := Load("trickster-test", "0", []string{"-config", test.filename})
 			if err == nil {
 				t.Errorf("expected error `%s` got nothing", test.expected)
-			} else if err.Error() != test.expected {
+			} else if !strings.HasSuffix(err.Error(), test.expected) {
 				t.Errorf("expected error `%s` got `%s`", test.expected, err.Error())
 			}
 
