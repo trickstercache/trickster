@@ -11,25 +11,32 @@ The roadmap for Trickster in 2020 focuses on delivering incremental enhancements
 - [x] Submit Helm charts to HelmHub
 - [ ] Submit Trickster for CNCF Sandbox Consideration
 - [ ] Trickster v1.1 Release
+  - [x] Release Binaries for Windows
+  - [ ] Frontend HTTP 2.0 Support
+  - [ ] Rules-based Request Routing and Rewriting
   - [ ] Use RWMutex for cache synchronization
   - [ ] Reload configuration without process restart
+  - [ ] Add implementation-specific Tracing options in config
   - [ ] Additional performance improvements
-
+  - [x] Relocate and merge PromSim and RangeSim into a separate repo called [mockster](https://github.com/tricksterproxy/mockster)
+  - [x] Relocate Helm charts to a [separate repo](https://github.com/tricksterproxy/helm-charts)
+  - [x] Automate Helm chart releases via GitHub Workflows
 
 ### Q2 2020
 
 - [ ] Kubernetes Ingress Controller
 - [ ] Trickster v1.2 Release
   - [ ] Common Time Series Format
-  - [ ] HTTP 2.0 Basic Support
   - [ ] Importable Golang Handler Package
   - [ ] Graphite Acceleration Support
 
 ### Q3 2020
-- [ ] Trickster RFC Compliance and Benchmarking Suite for Proxies
+- [ ] Trickster v1.3 Release
+  - Main feature set TBA
+- [ ] [Benchster](https://github.com/tricksterproxy/benchster) - RFC Compliance and Benchmarking Suite for Proxies
 
 ### Q4 2020
-- [ ] Trickster v1.3 Release
+- [ ] Trickster v1.4 Release
   - [ ] Support additional Tracing implmementations as exposed by OpenTelemetry
   - [ ] Additional features as requested and contributed
 
@@ -39,7 +46,7 @@ You can help by contributing to Trickster, or trying it out in your environment.
 
 By giving Trickster a spin, you can help us identify and fix defects more quickly. Be sure to file issues if you find something wrong. If you can reliably reproduce the issue, provide detailed steps so that developers can more easily root-cause the issue.
 
-If you want to contribute to Trickster take any issue that is not already assigned as per the contributing guidelines.
+If you want to contribute to Trickster, we'd love the help. Please take any issue that is not already assigned as per the contributing guidelines, or check with the maintainers to find out how best to get involved.
 
 ## Thank You
 
