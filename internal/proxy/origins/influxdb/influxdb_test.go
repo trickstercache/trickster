@@ -19,6 +19,7 @@ import (
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/origins"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 func TestInfluxDBClientInterfacing(t *testing.T) {
@@ -41,15 +42,16 @@ func TestInfluxDBClientInterfacing(t *testing.T) {
 
 func TestNewClient(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-origin-type", "influxdb", "-origin-url", "http://1"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-type", "influxdb", "-origin-url", "http://1"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
-	if err != nil {
-		t.Error(err)
+	caches := cr.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
+	defer cr.CloseCaches(caches)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Errorf("Could not find default configuration")
 	}
 
 	oc := &config.OriginConfig{OriginType: "TEST_CLIENT"}
@@ -82,15 +84,16 @@ func TestConfiguration(t *testing.T) {
 
 func TestCache(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-origin-type", "influxdb", "-origin-url", "http://1"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-type", "influxdb", "-origin-url", "http://1"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
-	if err != nil {
-		t.Error(err)
+	caches := cr.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
+	defer cr.CloseCaches(caches)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Errorf("Could not find default configuration")
 	}
 	client := Client{cache: cache}
 	c := client.Cache()

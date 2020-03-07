@@ -41,7 +41,7 @@ test-go-mod:
 
 .PHONY: build
 build:
-	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o ./OPATH/trickster -a -v $(TRICKSTER_MAIN)/main.go 
+	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o ./OPATH/trickster -a -v $(TRICKSTER_MAIN)/*.go
 
 rpm: build
 	mkdir -p ./OPATH/SOURCES
@@ -64,10 +64,10 @@ release: build release-artifacts docker docker-release
 
 .PHONY: release-artifacts
 release-artifacts:
-	GOOS=darwin   GOARCH=amd64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).darwin-amd64       -a -v $(TRICKSTER_MAIN)/main.go && tar cvfz ./OPATH/trickster-$(PROGVER).darwin-amd64.tar.gz  ./OPATH/trickster-$(PROGVER).darwin-amd64
-	GOOS=linux    GOARCH=amd64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).linux-amd64        -a -v $(TRICKSTER_MAIN)/main.go && tar cvfz ./OPATH/trickster-$(PROGVER).linux-amd64.tar.gz   ./OPATH/trickster-$(PROGVER).linux-amd64
-	GOOS=linux    GOARCH=arm64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).linux-arm64        -a -v $(TRICKSTER_MAIN)/main.go && tar cvfz ./OPATH/trickster-$(PROGVER).linux-arm64.tar.gz   ./OPATH/trickster-$(PROGVER).linux-arm64
-	GOOS=windows  GOARCH=amd64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).windows-amd64.exe  -a -v $(TRICKSTER_MAIN)/main.go && tar cvfz ./OPATH/trickster-$(PROGVER).windows-amd64.tar.gz ./OPATH/trickster-$(PROGVER).windows-amd64.exe
+	GOOS=darwin   GOARCH=amd64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).darwin-amd64       -a -v $(TRICKSTER_MAIN)/*.go && tar cvfz ./OPATH/trickster-$(PROGVER).darwin-amd64.tar.gz  ./OPATH/trickster-$(PROGVER).darwin-amd64
+	GOOS=linux    GOARCH=amd64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).linux-amd64        -a -v $(TRICKSTER_MAIN)/*.go && tar cvfz ./OPATH/trickster-$(PROGVER).linux-amd64.tar.gz   ./OPATH/trickster-$(PROGVER).linux-amd64
+	GOOS=linux    GOARCH=arm64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).linux-arm64        -a -v $(TRICKSTER_MAIN)/*.go && tar cvfz ./OPATH/trickster-$(PROGVER).linux-arm64.tar.gz   ./OPATH/trickster-$(PROGVER).linux-arm64
+	GOOS=windows  GOARCH=amd64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).windows-amd64.exe  -a -v $(TRICKSTER_MAIN)/*.go && tar cvfz ./OPATH/trickster-$(PROGVER).windows-amd64.tar.gz ./OPATH/trickster-$(PROGVER).windows-amd64.exe
 
 # Minikube and helm bootstrapping are done via deploy/helm/Makefile
 .PHONY: helm-local
@@ -110,7 +110,7 @@ test:
 
 .PHONY: bench
 bench:
-	$(GO) test -v -coverprofile=.coverprofile ./... -run=nonthingplease -bench=. | grep -v ' app=trickster '
+	bash -c "$(GO) test -v -coverprofile=.coverprofile ./... -run=nonthingplease -bench=. | grep -v ' app=trickster '; exit ${PIPESTATUS[0]}"
 
 .PHONY: test-cover
 test-cover: test

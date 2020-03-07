@@ -756,9 +756,6 @@ func (c *TestClient) HealthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *TestClient) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
-
-	//rsc := request.NewResources(c.config, c.path
-
 	r.URL = c.BuildUpstreamURL(r)
 	DeltaProxyCacheRequest(w, r)
 }
@@ -775,6 +772,9 @@ func (c *TestClient) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 
 func (c *TestClient) ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	DoProxy(w, r)
+}
+
+func (c *TestClient) SetUpstreamLogging(bool) {
 }
 
 func testResultHeaderPartMatch(header http.Header, kvp map[string]string) error {

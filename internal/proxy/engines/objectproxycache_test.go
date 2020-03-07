@@ -382,7 +382,7 @@ func TestObjectProxyCachePartialHitNotFresh(t *testing.T) {
 	}
 	defer ts.Close()
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: rsc.OriginConfig})
 
 	pr := newProxyRequest(r, w)
 	oc := rsc.OriginConfig
@@ -417,7 +417,7 @@ func TestObjectProxyCachePartialHitFullResponse(t *testing.T) {
 	}
 	defer ts.Close()
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: rsc.OriginConfig})
 
 	pr := newProxyRequest(r, w)
 	oc := rsc.OriginConfig
@@ -823,7 +823,7 @@ func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
 	cfg.Paths = map[string]*config.PathConfig{
 		"/": pc,
 	}
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig, rsc.CacheClient, rsc.OriginClient)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig, rsc.CacheClient, rsc.OriginClient, rsc.Logger)))
 
 	_, e := testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "kmiss"})
 	for _, err = range e {
@@ -1136,36 +1136,6 @@ func TestRangesExhaustive(t *testing.T) {
 	for _, err = range e {
 		t.Error(err)
 	}
-
-	//rsc.OriginConfig.DearticulateUpstreamRanges = b
-
-	/*
-		√	   curl -v --output - -H "Range: bytes=0-6,25-32" http://127.0.0.1:9091/rpc1/testing && \
-		√	   curl -v --output - -H "Range: " http://127.0.0.1:9091/rpc1/testing
-		√	   curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing && \
-		√	   curl -v --output - -H "Range: bytes=5-7" http://127.0.0.1:9091/rpc1/testing && \
-		√	   curl -v --output - -H "Range: bytes=29-29" http://127.0.0.1:9091/rpc1/testing && \
-		√	   curl -v --output - -H "Range: bytes=9-22,28-60" http://127.0.0.1:9091/rpc1/testing && \
-			   curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing && \
-			   curl -v --output - -H "Range: bytes=0-6,10-20" http://127.0.0.1:9091/rpc1/testing && \
-			   curl -v --output - http://127.0.0.1:9091/rpc1/testing && \
-			   curl -v --output - -H "Range: bytes=0-6, 10-19" http://127.0.0.1:9091/rpc1/testing && \
-			   curl -v --output - -H "Range: bytes=0-6,10-20" http://127.0.0.1:9091/rpc1/testing && \
-			   curl -v --output - http://127.0.0.1:9091/rpc1/testing
-			   curl -v --output - -H "Range: bytes=0-6,7-1220" http://127.0.0.1:9091/rpc1/testing2 && \
-			   curl -v --output - http://127.0.0.1:9091/rpc1/testing2 && \
-			   curl -v --output - http://127.0.0.1:9091/rpc1/testing2
-			   curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing3 && \
-			   curl -v --output - -H "Range: bytes=5-20" http://127.0.0.1:9091/rpc1/testing3
-			   curl -v --output - -H "Range: bytes=5-20" http://127.0.0.1:9091/rpc1/testing4 && \
-			   curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing4
-
-			   curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing && \
-			    sleep 6 && curl -v --output - -H "Range: bytes=7-7" http://127.0.0.1:9091/rpc1/testing && \
-			    curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing
-
-	*/
-
 }
 
 func testFetchOPC(r *http.Request, sc int, body string, match map[string]string) (*httptest.ResponseRecorder, []error) {

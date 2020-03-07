@@ -28,6 +28,7 @@ import (
 	ct "github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/request"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 const testMultipartBoundary = `; boundary=------------------------d0509edbe55938c0`
@@ -119,8 +120,12 @@ func TestDeriveCacheKey(t *testing.T) {
 		},
 	}
 
+	newResources := func() *request.Resources {
+		return request.NewResources(cfg, cfg.Paths["root"], nil, nil, nil, tl.ConsoleLogger("error"))
+	}
+
 	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
-	tr = tr.WithContext(ct.WithResources(context.Background(), request.NewResources(cfg, cfg.Paths["root"], nil, nil, nil)))
+	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
 
 	pr := newProxyRequest(tr, nil)
 	key := pr.DeriveCacheKey(nil, "extra")
@@ -140,7 +145,7 @@ func TestDeriveCacheKey(t *testing.T) {
 	const expected = "cb84ad010abb4d0f864470540a46f137"
 
 	tr = httptest.NewRequest(http.MethodPost, "http://127.0.0.1/", bytes.NewReader([]byte("field1=value1")))
-	tr = tr.WithContext(ct.WithResources(context.Background(), request.NewResources(cfg, cfg.Paths["root"], nil, nil, nil)))
+	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
 	tr.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
 	pr = newProxyRequest(tr, nil)
 	key = pr.DeriveCacheKey(nil, "extra")
@@ -149,7 +154,7 @@ func TestDeriveCacheKey(t *testing.T) {
 	}
 
 	tr = httptest.NewRequest(http.MethodPut, "http://127.0.0.1/", bytes.NewReader([]byte(testMultipartBody)))
-	tr = tr.WithContext(ct.WithResources(context.Background(), request.NewResources(cfg, cfg.Paths["root"], nil, nil, nil)))
+	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
 	tr.Header.Set(headers.NameContentType, headers.ValueMultipartFormData+testMultipartBoundary)
 	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testMultipartBody)))
 	pr = newProxyRequest(tr, nil)
@@ -159,7 +164,7 @@ func TestDeriveCacheKey(t *testing.T) {
 	}
 
 	tr = httptest.NewRequest(http.MethodPost, "http://127.0.0.1/", bytes.NewReader([]byte(testJSONDocument)))
-	tr = tr.WithContext(ct.WithResources(context.Background(), request.NewResources(cfg, cfg.Paths["root"], nil, nil, nil)))
+	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
 	tr.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
 	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testJSONDocument)))
 	pr = newProxyRequest(tr, nil)
@@ -198,7 +203,7 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 
 	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
 	tr = tr.WithContext(ct.WithResources(context.Background(),
-		request.NewResources(client.Configuration(), client.Configuration().Paths["root"], nil, nil, nil)))
+		request.NewResources(client.Configuration(), client.Configuration().Paths["root"], nil, nil, nil, tl.ConsoleLogger("error"))))
 
 	tr.Header.Add("Authorization", "test")
 	tr.Header.Add("X-Test-Header", "test2")
@@ -232,7 +237,7 @@ func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
 
 	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
 	tr = tr.WithContext(ct.WithResources(context.Background(),
-		request.NewResources(client.Configuration(), nil, nil, nil, nil)))
+		request.NewResources(client.Configuration(), nil, nil, nil, nil, tl.ConsoleLogger("error"))))
 
 	pr := newProxyRequest(tr, nil)
 	key := pr.DeriveCacheKey(nil, "extra")

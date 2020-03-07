@@ -19,23 +19,19 @@ import (
 	"testing"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/metrics"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
-
-func init() {
-	metrics.Init()
-}
 
 func TestLoadCachesFromConfig(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "test"})
+	conf, _, err := config.Load("trickster", "test", []string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
 	for key, v := range config.CacheTypeNames {
 		cfg := newCacheConfig(t, key)
-		config.Caches[key] = cfg
+		conf.Caches[key] = cfg
 		switch v {
 		case config.CacheTypeBbolt:
 			defer os.RemoveAll(cfg.BBolt.Filename)
@@ -46,21 +42,22 @@ func TestLoadCachesFromConfig(t *testing.T) {
 		}
 	}
 
-	LoadCachesFromConfig()
-	_, err = GetCache("default")
-	if err != nil {
-		t.Error(err)
+	caches := LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
+	defer CloseCaches(caches)
+	_, ok := caches["default"]
+	if !ok {
+		t.Errorf("Could not find default configuration")
 	}
 
 	for key := range config.CacheTypeNames {
-		_, err = GetCache(key)
-		if err != nil {
-			t.Error(err)
+		_, ok := caches[key]
+		if !ok {
+			t.Errorf("Could not find the configuration for %q", key)
 		}
 	}
 
-	_, err = GetCache("foo")
-	if err == nil {
+	_, ok = caches["foo"]
+	if ok {
 		t.Errorf("expected error")
 	}
 

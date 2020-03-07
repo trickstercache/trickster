@@ -35,8 +35,11 @@ func TestLoadFlags(t *testing.T) {
 	}
 
 	// it should read command line flags
-	c.parseFlags("trickster-test", a)
-	c.loadFlags()
+	flags, err := parseFlags("trickster-test", a)
+	if err != nil {
+		t.Error(err)
+	}
+	c.loadFlags(flags)
 
 	if providedOriginURL != a[1] {
 		t.Errorf("wanted \"%s\". got \"%s\".", a[1], providedOriginURL)

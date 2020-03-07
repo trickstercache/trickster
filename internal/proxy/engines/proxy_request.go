@@ -23,12 +23,11 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
 	tctx "github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
 	"github.com/Comcast/trickster/internal/proxy/request"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 type proxyRequest struct {
@@ -71,21 +70,25 @@ type proxyRequest struct {
 
 	collapsedForwarder ProgressiveCollapseForwarder
 	cachingPolicy      *CachingPolicy
+
+	Logger *tl.TricksterLogger
 }
 
 // newProxyRequest accepts the original inbound HTTP Request and Response
 // and returns a proxyRequest object
 func newProxyRequest(r *http.Request, w io.Writer) *proxyRequest {
 
+	rsc := request.GetResources(r)
+
 	pr := &proxyRequest{
 		Request:         r,
+		Logger:          rsc.Logger,
 		upstreamRequest: r.Clone(context.Background()),
 		contentLength:   -1,
 		responseWriter:  w,
 		started:         time.Now(),
 	}
 
-	rsc := request.GetResources(r)
 	pr.upstreamRequest = pr.upstreamRequest.WithContext(tctx.WithResources(pr.upstreamRequest.Context(), rsc))
 
 	return pr
@@ -94,6 +97,7 @@ func newProxyRequest(r *http.Request, w io.Writer) *proxyRequest {
 func (pr *proxyRequest) Clone() *proxyRequest {
 	return &proxyRequest{
 		Request:            pr.Request.Clone(context.Background()),
+		Logger:             pr.Logger,
 		cacheDocument:      pr.cacheDocument,
 		key:                pr.key,
 		cacheStatus:        pr.cacheStatus,
@@ -133,14 +137,16 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 		resp.Body.Close()
 	}
 	if err != nil {
-		log.Error("error reading body from http response", log.Pairs{"url": pr.URL.String(), "detail": err.Error()})
+		pr.Logger.Error("error reading body from http response", tl.Pairs{"url": pr.URL.String(), "detail": err.Error()})
 		return []byte{}, resp, 0
 	}
 
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
 
-	if config.Logging.LogLevel == "debug" || config.Logging.LogLevel == "trace" {
-		go logUpstreamRequest(oc.Name, oc.OriginType, handlerName, pr.Method, pr.URL.String(), pr.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
+	ll := pr.Logger.Level()
+	if ll == "trace" || ll == "debug" {
+		go logUpstreamRequest(pr.Logger, oc.Name, oc.OriginType, handlerName,
+			pr.Method, pr.URL.String(), pr.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
 	}
 
 	return body, resp, elapsed
@@ -453,7 +459,7 @@ func (pr *proxyRequest) prepareResponse() {
 			if pr.upstreamReader != nil {
 				b, _ = ioutil.ReadAll(pr.upstreamReader)
 			}
-			d = DocumentFromHTTPResponse(pr.upstreamResponse, b, pr.cachingPolicy)
+			d = DocumentFromHTTPResponse(pr.upstreamResponse, b, pr.cachingPolicy, pr.Logger)
 			pr.cacheBuffer = bytes.NewBuffer(b)
 			if pr.writeToCache {
 				d.isLoaded = true
@@ -585,7 +591,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 					// is now invalid. lets go ahead and reset it.
 					b, _ := ioutil.ReadAll(resp.Body)
 					appendLock.Lock()
-					parts.ParsePartialContentBody(resp, b)
+					parts.ParsePartialContentBody(resp, b, pr.Logger)
 					appendLock.Unlock()
 					wg.Done()
 				}()
@@ -611,7 +617,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 				if resp.StatusCode == http.StatusPartialContent {
 					b, _ := ioutil.ReadAll(resp.Body)
 					appendLock.Lock()
-					parts.ParsePartialContentBody(resp, b)
+					parts.ParsePartialContentBody(resp, b, pr.Logger)
 					appendLock.Unlock()
 				}
 				wg.Done()

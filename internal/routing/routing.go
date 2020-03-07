@@ -14,12 +14,8 @@
 // Package routing is the Trickster Request Router
 package routing
 
-import (
-	"github.com/gorilla/mux"
-)
+// // Router is the HTTP Routing Object
+// var Router = mux.NewRouter()
 
-// Router is the HTTP Routing Object
-var Router = mux.NewRouter()
-
-// TLSRouter is the HTTPS Routing Object
-var TLSRouter = mux.NewRouter()
+// // TLSRouter is the HTTPS Routing Object
+// var TLSRouter = mux.NewRouter()

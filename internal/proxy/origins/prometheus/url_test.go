@@ -34,12 +34,12 @@ func TestSetExtent(t *testing.T) {
 
 	expected := "end=" + endSecs + "&q=up&start=" + startSecs
 
-	err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "prometheus", "-log-level", "debug"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "prometheus", "-log-level", "debug"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	client := Client{config: oc}
 
 	u := &url.URL{RawQuery: "q=up"}
@@ -56,12 +56,12 @@ func TestFastForwardURL(t *testing.T) {
 
 	expected := "q=up"
 
-	err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "prometheus", "-log-level", "debug"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "prometheus", "-log-level", "debug"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	client := Client{config: oc}
 
 	u := &url.URL{Path: "/query_range", RawQuery: "q=up&start=1&end=1&step=1"}
