@@ -122,7 +122,7 @@ func (c *TricksterConfig) TLSCertConfig() (*tls.Config, error) {
 		return nil, nil
 	}
 
-	tlsConfig := &tls.Config{}
+	tlsConfig := &tls.Config{NextProtos: []string{"h2"}}
 	tlsConfig.Certificates = make([]tls.Certificate, l)
 
 	i := 0

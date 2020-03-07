@@ -18,8 +18,8 @@ package config
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -58,7 +58,7 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 		},
 		{ // Case 1
 			"../../testdata/test.bad_origin_url.conf",
-			fmt.Sprintf(`parse %s: first path segment in URL cannot contain colon`, "sasdf_asd[as;://asdf923_-=a*"),
+			"first path segment in URL cannot contain colon",
 		},
 		{ // Case 2
 			"../../testdata/test.missing_origin_type.conf",
@@ -87,7 +87,7 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 			_, _, err := Load("trickster-test", "0", []string{"-config", test.filename})
 			if err == nil {
 				t.Errorf("expected error `%s` got nothing", test.expected)
-			} else if err.Error() != test.expected {
+			} else if !strings.HasSuffix(err.Error(), test.expected) {
 				t.Errorf("expected error `%s` got `%s`", test.expected, err.Error())
 			}
 
