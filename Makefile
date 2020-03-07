@@ -64,9 +64,10 @@ release: build release-artifacts docker docker-release
 
 .PHONY: release-artifacts
 release-artifacts:
-	GOOS=darwin GOARCH=amd64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).darwin-amd64 -a -v $(TRICKSTER_MAIN)/main.go && tar cvfz ./OPATH/trickster-$(PROGVER).darwin-amd64.tar.gz ./OPATH/trickster-$(PROGVER).darwin-amd64
-	GOOS=linux  GOARCH=amd64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).linux-amd64  -a -v $(TRICKSTER_MAIN)/main.go && tar cvfz ./OPATH/trickster-$(PROGVER).linux-amd64.tar.gz ./OPATH/trickster-$(PROGVER).linux-amd64
-	GOOS=linux  GOARCH=arm64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).linux-arm64  -a -v $(TRICKSTER_MAIN)/main.go && tar cvfz ./OPATH/trickster-$(PROGVER).linux-arm64.tar.gz ./OPATH/trickster-$(PROGVER).linux-arm64
+	GOOS=darwin   GOARCH=amd64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).darwin-amd64       -a -v $(TRICKSTER_MAIN)/main.go && tar cvfz ./OPATH/trickster-$(PROGVER).darwin-amd64.tar.gz  ./OPATH/trickster-$(PROGVER).darwin-amd64
+	GOOS=linux    GOARCH=amd64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).linux-amd64        -a -v $(TRICKSTER_MAIN)/main.go && tar cvfz ./OPATH/trickster-$(PROGVER).linux-amd64.tar.gz   ./OPATH/trickster-$(PROGVER).linux-amd64
+	GOOS=linux    GOARCH=arm64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).linux-arm64        -a -v $(TRICKSTER_MAIN)/main.go && tar cvfz ./OPATH/trickster-$(PROGVER).linux-arm64.tar.gz   ./OPATH/trickster-$(PROGVER).linux-arm64
+	GOOS=windows  GOARCH=amd64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).windows-amd64.exe  -a -v $(TRICKSTER_MAIN)/main.go && tar cvfz ./OPATH/trickster-$(PROGVER).windows-amd64.tar.gz ./OPATH/trickster-$(PROGVER).windows-amd64.exe
 
 # Minikube and helm bootstrapping are done via deploy/helm/Makefile
 .PHONY: helm-local
