@@ -18,10 +18,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strconv"
 	"strings"
 	"time"
-
-	"golang.org/x/sys/unix"
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/index"
@@ -190,15 +189,23 @@ func (c *Cache) getFileName(cacheKey string) string {
 	return prefix + "data"
 }
 
-// writeable returns true if the path is writeable by the calling process.
-func writeable(path string) bool {
-	return unix.Access(path, unix.W_OK) == nil
-}
-
 // makeDirectory creates a directory on the filesystem and exits the application in the event of a failure.
 func makeDirectory(path string) error {
 	err := os.MkdirAll(path, 0755)
-	if err != nil || !writeable(path) {
+
+	if err == nil {
+		s := ""
+		if !strings.HasSuffix(path, "/") {
+			s = "/"
+		}
+		// verify writability by attempting to touch a test file in the cache path
+		tf := path + s + ".test." + strconv.FormatInt(time.Now().Unix(), 10)
+		err = ioutil.WriteFile(tf, []byte(""), 0600)
+		if err == nil {
+			os.Remove(tf)
+		}
+	}
+	if err != nil {
 		return fmt.Errorf("[%s] directory is not writeable by trickster: %v", path, err)
 	}
 
