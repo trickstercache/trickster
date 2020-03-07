@@ -1,6 +1,6 @@
 # Trickster Metrics
 
-Trickster exposes a Prometheus /metrics endpoint with a customizable listener port number (default is 8482). For more information on customizing the metrics configuration, see [configuring.md](configuring.md).
+Trickster exposes a Prometheus /metrics endpoint with a customizable listener port number (default is 8481). For more information on customizing the metrics configuration, see [configuring.md](configuring.md).
 
 ---
 
