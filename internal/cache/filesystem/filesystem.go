@@ -194,7 +194,7 @@ func (c *Cache) getFileName(cacheKey string) string {
 	return prefix + "data"
 }
 
-// makeDirectory creates a directory on the filesystem and exits the application in the event of a failure.
+// makeDirectory creates a directory on the filesystem and returns the error in the event of a failure.
 func makeDirectory(path string) error {
 	err := os.MkdirAll(path, 0755)
 	if err == nil {
