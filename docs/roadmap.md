@@ -12,7 +12,7 @@ The roadmap for Trickster in 2020 focuses on delivering incremental enhancements
 - [ ] Submit Trickster for CNCF Sandbox Consideration
 - [ ] Trickster v1.1 Release
   - [x] Release Binaries for Windows
-  - [ ] Change default frontent listen port to 8480
+  - [ ] Change default frontend listen port to 8480
   - [ ] Frontend HTTP 2.0 Support
   - [ ] Rules-based Request Routing and Rewriting
   - [ ] Use RWMutex for cache synchronization
