@@ -77,6 +77,9 @@ type CaseOptions struct {
 }
 
 /*
+
+Example TOML Config:
+
 [rules]
   [rules.example]
   input_source = 'header'       # path, host, param
