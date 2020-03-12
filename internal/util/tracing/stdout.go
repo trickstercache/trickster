@@ -25,13 +25,13 @@ import (
 // SetStdOutTracer set a std out only tracer
 // It serves as a fallback and was created referencing
 // https://github.com/open-telemetry/opentelemetry-go#quick-start
-func setStdOutTracer(sampleRate float64) (trace.Tracer, func(), *recorderExporter, error) {
+func setStdOutTracer(opts *ExporterOptions) (trace.Tracer, func(), *recorderExporter, error) {
 	f := func() {}
 	// Create stdout exporter to be able to retrieve
 	// the collected spans.
 	exporter, _ := stdout.NewExporter(stdout.Options{PrettyPrint: true})
 
-	tp, err := sdktrace.NewProvider(sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.ProbabilitySampler(sampleRate)}),
+	tp, err := sdktrace.NewProvider(sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.ProbabilitySampler(opts.sampleRate)}),
 		sdktrace.WithSyncer(exporter))
 
 	return tp.Tracer(""), f, nil, err

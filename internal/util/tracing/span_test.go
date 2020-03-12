@@ -34,7 +34,7 @@ func TestNewChildSpan(t *testing.T) {
 
 	// test with nil context but non-nil tracer
 
-	tr, flush, _, err := SetTracer(OpenTelemetryTracer, StdoutExporter, "", 1)
+	tr, flush, _, err := SetTracer(OpenTelemetryTracer, StdoutExporter, WithSampleRate(1))
 	if tr == nil {
 		t.Error(errors.New("expected non-nil tracer"))
 	}

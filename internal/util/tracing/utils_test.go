@@ -108,7 +108,7 @@ func setupTestingTracer(t *testing.T, ex TraceExporter, sampleRate float64, valu
 		func(err error) {
 			t.Error(err)
 		},
-		sampleRate,
+		&ExporterOptions{sampleRate: sampleRate},
 	)
 	if err != nil {
 		t.Error(err)
