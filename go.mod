@@ -9,7 +9,7 @@ require (
 	github.com/alicebob/miniredis v2.5.0+incompatible
 	github.com/coreos/bbolt v1.3.3
 	github.com/dgraph-io/badger v1.6.0
-	github.com/dgryski/go-farm v0.0.0-20191112170834-c2139c5d712b // indirect
+	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/go-kit/kit v0.9.0
 	github.com/go-logfmt/logfmt v0.5.0 // indirect
 	github.com/go-redis/redis v6.15.6+incompatible
@@ -29,9 +29,9 @@ require (
 	go.opentelemetry.io/otel v0.2.0
 	go.opentelemetry.io/otel/exporter/trace/jaeger v0.2.0
 	golang.org/x/net v0.0.0-20200114155413-6afb5195e5aa
-	golang.org/x/sys v0.0.0-20200116001909-b77594299b42
+	golang.org/x/sys v0.0.0-20200116001909-b77594299b42 // indirect
 	google.golang.org/grpc v1.24.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
-go 1.13
+go 1.14
