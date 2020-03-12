@@ -32,8 +32,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/request"
 	tl "github.com/Comcast/trickster/internal/util/log"
 	tr "github.com/Comcast/trickster/internal/util/tracing/registration"
-	"github.com/Comcast/trickster/pkg/promsim"
-	"github.com/Comcast/trickster/pkg/rangesim"
+	"github.com/tricksterproxy/mockster/pkg/testutil"
 )
 
 // NewTestServer returns a new httptest.Server that responds with the provided code, body and headers
@@ -74,10 +73,10 @@ func NewTestInstance(
 
 	var ts *httptest.Server
 	if originType == "promsim" {
-		ts = promsim.NewTestServer()
+		ts = testutil.NewTestServer()
 		originType = "prometheus"
 	} else if originType == "rangesim" {
-		ts = rangesim.NewTestServer()
+		ts = testutil.NewTestServer()
 		originType = "rpc"
 	} else {
 		isBasicTestServer = true

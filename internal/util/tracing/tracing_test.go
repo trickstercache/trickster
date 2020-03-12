@@ -122,7 +122,7 @@ func TestNoPanics(t *testing.T) {
 func noPanic(t *testing.T, tests []panicTest) {
 
 	for _, test := range tests {
-		tr, flush, _, _ := SetTracer(test.tracer, test.exporter, test.collectorURL, test.rate)
+		tr, flush, _, _ := SetTracer(test.tracer, test.exporter, WithCollector(test.collectorURL), WithSampleRate(test.rate))
 		if tr != nil {
 			ctx, span := NewChildSpan(test.ctx, tr, "TestNoPanics")
 			spanCall(ctx, tr)

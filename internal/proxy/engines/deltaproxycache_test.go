@@ -28,7 +28,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/timeseries"
 	tu "github.com/Comcast/trickster/internal/util/testing"
-	"github.com/Comcast/trickster/pkg/promsim"
+	mockprom "github.com/tricksterproxy/mockster/pkg/mocks/prometheus"
 )
 
 // test queries
@@ -44,7 +44,7 @@ var testConfigFile string
 func setupTestHarnessDPC() (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
 
 	client := &TestClient{}
-	ts, w, r, hc, err := tu.NewTestInstance(testConfigFile, client.DefaultPathConfigs, 200, "", nil, "promsim", "/api/v1/query_range", "debug")
+	ts, w, r, hc, err := tu.NewTestInstance(testConfigFile, client.DefaultPathConfigs, 200, "", nil, "promsim", "/prometheus/api/v1/query_range", "debug")
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -54,7 +54,7 @@ func setupTestHarnessDPC() (*httptest.Server, *httptest.ResponseRecorder, *http.
 	pc := rsc.PathConfig
 
 	if pc == nil {
-		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/api/v1/query_range")
+		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/prometheus/api/v1/query_range")
 	}
 
 	oc := rsc.OriginConfig
@@ -91,10 +91,10 @@ func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	client.QueryRangeHandler(w, r)
@@ -168,10 +168,10 @@ func TestDeltaProxyCacheRequestAllItemsTooNew(t *testing.T) {
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(5) * time.Minute), End: end}
 
-	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extr.Start, extr.End, step)
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extr.Start, extr.End, step)
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	client.QueryRangeHandler(w, r)
@@ -225,10 +225,10 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	client.QueryRangeHandler(w, r)
@@ -300,10 +300,10 @@ func TestDeltaProxyCacheRequestRemoveStaleLRU(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	client.QueryRangeHandler(w, r)
@@ -379,7 +379,7 @@ func TestDeltaProxyCacheRequestMarshalFailure(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	client.QueryRangeHandler(w, r)
@@ -427,10 +427,10 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
 
-	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
 		extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency, client.RangeCacheKey, client.InstantCacheKey)
 
@@ -463,7 +463,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	extn.End = normalizeTime(extr.End, step)
 
 	expectedFetched := fmt.Sprintf("[%d:%d]", phitStart.Unix(), extn.End.Unix())
-	expected, _, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
 		extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency, client.RangeCacheKey, client.InstantCacheKey)
@@ -505,7 +505,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	extn.Start = normalizeTime(extr.Start, step)
 
 	expectedFetched = fmt.Sprintf("[%d:%d]", extn.Start.Unix(), phitEnd.Unix())
-	expected, _, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
 		extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency, client.RangeCacheKey, client.InstantCacheKey)
@@ -553,7 +553,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	expectedFetched = fmt.Sprintf("[%d:%d,%d:%d]",
 		extn.Start.Unix(), phitEnd.Unix(), phitStart.Unix(), extn.End.Unix())
 
-	expected, _, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
 		extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency, client.RangeCacheKey, client.InstantCacheKey)
@@ -614,10 +614,10 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
 
-	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	client.QueryRangeHandler(w, r)
@@ -649,7 +649,7 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	extn.End = extr.End.Truncate(step)
 
 	//expectedFetched := fmt.Sprintf("[%d:%d]", phitStart.Truncate(step).Unix(), extn.End.Unix())
-	promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	client.InstantCacheKey = "foo1"
 	client.RangeCacheKey = "foo2"
@@ -701,10 +701,10 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	client.QueryRangeHandler(w, r)
@@ -738,7 +738,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	extn.End = extr.End.Truncate(step)
 
 	expectedFetched := fmt.Sprintf("[%d:%d]", extn.Start.Unix(), extn.End.Unix())
-	expected, _, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	r.URL = u
@@ -784,7 +784,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	extn.End = extr.End.Truncate(step)
 
 	expectedFetched = fmt.Sprintf("[%d:%d", extn.Start.Unix(), extn.End.Unix())
-	expected, _, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 	r.URL = u
 
@@ -844,18 +844,18 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("instantKey=%s&rangeKey=%s&step=%d&start=%d&end=%d&query=%s",
 		client.InstantCacheKey, client.RangeCacheKey, int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	expectedMatrix, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expectedMatrix, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 	em, err := client.UnmarshalTimeseries([]byte(expectedMatrix))
 	if err != nil {
 		t.Error(err)
 	}
 	em.SetExtents(timeseries.ExtentList{extn})
 
-	expectedVector, _, _ := promsim.GetInstantData(queryReturnsOKNoLatency, client.fftime)
+	expectedVector, _, _ := mockprom.GetInstantData(queryReturnsOKNoLatency, client.fftime)
 	ev, err := client.UnmarshalInstantaneous([]byte(expectedVector))
 	if err != nil {
 		t.Error(err)
@@ -996,10 +996,10 @@ func TestDeltaProxyCacheRequestFastForwardUrlError(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("throw_ffurl_error=1&step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	oc.FastForwardDisable = false
@@ -1057,10 +1057,10 @@ func TestDeltaProxyCacheRequestWithRefresh(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	client.QueryRangeHandler(w, r)
@@ -1111,7 +1111,7 @@ func TestDeltaProxyCacheRequestWithRefreshError(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadRequest)
 
 	client.QueryRangeHandler(w, r)
@@ -1148,10 +1148,10 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	client.QueryRangeHandler(w, r)
@@ -1172,7 +1172,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 		t.Error(err)
 	}
 
-	key := oc.Host + ".409d551e3653f5ad5aa9acbdac8d4ac3"
+	key := oc.Host + ".61a603af5b94ea305dc3fa35af4eed98"
 
 	_, _, err = client.cache.Retrieve(key, false)
 	if err != nil {
@@ -1235,7 +1235,7 @@ func TestDeltaProxyCacheRequest_BadParams(t *testing.T) {
 	start := end.Add(-time.Duration(6) * time.Hour)
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	// Intentional typo &q instead of &query to force a proxied request due to ParseTimeRangeQuery() error
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&q=%s", int(step.Seconds()), start.Unix(), end.Unix(), query)
 
@@ -1277,7 +1277,7 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailed(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadRequest)
 
 	client.QueryRangeHandler(w, r)
@@ -1336,10 +1336,10 @@ func TestDeltaProxyCacheRequestOutOfWindow(t *testing.T) {
 	end := time.Unix(1800, 0)
 
 	// we still expect the same results
-	expected, _, _ := promsim.GetTimeSeriesData(query, start, end, step)
+	expected, _, _ := mockprom.GetTimeSeriesData(query, start, end, step)
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), start.Unix(), end.Unix(), query)
 
 	client.QueryRangeHandler(w, r)
@@ -1414,7 +1414,7 @@ func TestDeltaProxyCacheRequestBadGateway(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadGateway)
 
 	client.QueryRangeHandler(w, r)
@@ -1450,10 +1450,10 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 
 	// We can predict what slice will need to be fetched and ensure that is only what is requested upstream
 	expectedFetched := fmt.Sprintf("[%d:%d]", xn.End.Unix(), xn.End.Unix())
-	expected, _, _ := promsim.GetTimeSeriesData(query, xn.Start, xn.End, step)
+	expected, _, _ := mockprom.GetTimeSeriesData(query, xn.Start, xn.End, step)
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), x.Start.Unix(), x.End.Unix(), query)
 
 	client.QueryRangeHandler(w, r)
@@ -1533,10 +1533,10 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	expected, _, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
-	u.Path = "/api/v1/query_range"
+	u.Path = "/prometheus/api/v1/query_range"
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	client.QueryRangeHandler(w, r)

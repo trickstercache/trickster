@@ -26,11 +26,11 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-func setRecorderExporter(ef errorFunc, sampleRate float64) (trace.Tracer, func(), *recorderExporter, error) {
+func setRecorderExporter(ef errorFunc, opts *ExporterOptions) (trace.Tracer, func(), *recorderExporter, error) {
 	f := func() {}
 	exporter, _ := newRecorder(ef)
 
-	tp, err := sdktrace.NewProvider(sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.ProbabilitySampler(sampleRate)}),
+	tp, err := sdktrace.NewProvider(sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.ProbabilitySampler(opts.sampleRate)}),
 		sdktrace.WithSyncer(exporter))
 	if err != nil {
 		return tp.Tracer(""), f, nil, err

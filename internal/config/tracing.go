@@ -20,6 +20,16 @@ import (
 	"go.opentelemetry.io/otel/api/trace"
 )
 
+type TracingExporterOptions struct {
+	Exporter string `toml:"type"`
+	// Collectoris the URL of the trace collector it MUST be of Implementation implementation
+	Collector string `toml:"collector"`
+	// Agent is the URL of the trace agent.
+	Agent string `toml:"agent"`
+	// SampleRate sets the probability that a span will be recorded. Values between 0 and 1 are accepted.
+	SampleRate float64 `toml:"sample_rate"`
+}
+
 // TracingConfig provides the distributed tracing configuration
 type TracingConfig struct {
 	// Name is the name of the Tracing Config
@@ -28,11 +38,7 @@ type TracingConfig struct {
 	// TODO generate with Rob Pike's Stringer
 	Implementation string `toml:"implementation"`
 	// Exporter is the format used to send to the collector
-	Exporter string `toml:"exporter"`
-	// CollectorEndpoint is the URL of the trace collector it MUST be of Implementation implementation
-	CollectorEndpoint string `toml:"collector"`
-	// SampleRate sets the probability that a span will be recorded. Values between 0 and 1 are accepted.
-	SampleRate float64 `toml:"sample_rate"`
+	Exporter *TracingExporterOptions `toml:"exporter"`
 
 	// Tracer is the actual Tracer Object associated with this configuration once loaded
 	Tracer trace.Tracer `toml:"-"`
@@ -43,19 +49,29 @@ func NewTracingConfig() *TracingConfig {
 	return &TracingConfig{
 		Name:           "default",
 		Implementation: defaultTracerImplemetation,
-		Exporter:       defaultExporterImplementation,
-		SampleRate:     1,
+		Exporter: &TracingExporterOptions{
+			Exporter:   defaultExporterImplementation,
+			SampleRate: 1,
+		},
 	}
 }
 
 // Clone returns an exact copy of a tracing config
 func (tc *TracingConfig) Clone() *TracingConfig {
 	return &TracingConfig{
-		Name:              tc.Name,
-		Implementation:    tc.Implementation,
-		Exporter:          tc.Exporter,
-		SampleRate:        tc.SampleRate,
-		CollectorEndpoint: tc.CollectorEndpoint,
-		Tracer:            tc.Tracer,
+		Name:           tc.Name,
+		Implementation: tc.Implementation,
+		Exporter:       tc.Exporter.Clone(),
+		Tracer:         tc.Tracer,
 	}
+}
+
+// Clone returns an exact copy of exporter options
+func (teo *TracingExporterOptions) Clone() *TracingExporterOptions {
+	return &TracingExporterOptions{
+		Exporter:   teo.Exporter,
+		SampleRate: teo.SampleRate,
+		Collector:  teo.Collector,
+	}
+
 }
