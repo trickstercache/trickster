@@ -17,6 +17,7 @@
 package ruler
 
 import (
+	"errors"
 	"strconv"
 	"testing"
 )
@@ -25,15 +26,19 @@ func TestDecodingFuncs(t *testing.T) {
 
 	tests := []struct {
 		encoding, input, expected string
+		idx                       int
 	}{
-		{"base64", "", ""},
-		{"base64", "dHJpY2tzdGVy", "trickster"},
-		{"base64", "a", ""},
+		{"base64", "", "", -1},
+		{"base64", "dHJpY2tzdGVy", "trickster", -1},
+		{"base64", "dHJpY2tzdGVy", "", 1},
+		{"base64", "", "", 1},
+		{"base64", "Basic dHJpY2tzdGVy", "trickster", 1},
+		{"base64", "a", "", -1},
 	}
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			if f, ok := decodingFuncs[encoding(test.encoding)]; ok {
-				got := f(test.input)
+				got := f(test.input, " ", test.idx)
 				if got != test.expected {
 					t.Errorf("\ngot      %s\nexpected %s", got, test.expected)
 				}
@@ -41,6 +46,11 @@ func TestDecodingFuncs(t *testing.T) {
 				t.Errorf("unknown encoding %v", test.encoding)
 			}
 		})
+	}
+
+	s := decodeBase64("")
+	if s != "" {
+		t.Error(errors.New("expected empty string"))
 	}
 
 }

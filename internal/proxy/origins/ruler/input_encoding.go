@@ -16,19 +16,42 @@
 
 package ruler
 
-import "github.com/Comcast/trickster/internal/util/base64"
+import (
+	"strings"
+
+	"github.com/Comcast/trickster/internal/util/base64"
+)
 
 type encoding string
-type decodingFunc func(string) string
+type decodingFunc func(string, string, int) string
 
 var decodingFuncs = map[encoding]decodingFunc{
-	"base64": decodeBase64,
+	"base64": decodeBase64Part,
 }
 
 func decodeBase64(input string) string {
+	if input == "" {
+		return ""
+	}
 	s, err := base64.Decode(input)
 	if err != nil {
 		return ""
 	}
 	return s
+}
+
+func decodeBase64Part(input, sep string, i int) string {
+	if input == "" || sep == "" {
+		return ""
+	}
+
+	if i < 0 {
+		return decodeBase64(input)
+	}
+
+	parts := strings.Split(input, sep)
+	if len(parts) <= i {
+		return ""
+	}
+	return decodeBase64(parts[i])
 }
