@@ -51,6 +51,12 @@ type RuleOptions struct {
 	// InputEncoding is optional, defaulting to '', and defines any special encoding format on
 	// the input. Supported Options are: 'base64'
 	InputEncoding string `toml:"input_encoding"`
+	// InputIndex is optional, defaulting to -1 (no parts / use full string), and indicates which part
+	// of the Input contains the specific value to which this rule applies. InputIndex is zero-based.
+	InputIndex int `toml:"input_index"`
+	// InputDelimiter is optional, defaulting to " ", and indicates the delimiter for separating the Input
+	// into parts. This value has no effect unless InputIndex >= 0
+	InputDelimiter int `toml:"input_delimiter"`
 	// Operation specifies what action to take on the input, whose result is used to
 	// determine if any case is matched. Possible options are as follows.
 	// string:   eq, contains, suffix, prefix, md5, sha1, base64, modulo
@@ -86,6 +92,8 @@ Example TOML Config:
   input_key = 'Cache-Control'
   input_type = 'string'         # num, bool, date, string
   # input_encoding = ''           # set to 'base64' to decode Authorization header, etc.
+  # input_index = -1              # set to a value >= 0 to use a part of the input for the operation
+  # input_delimiter = ' '         # when input_index >=0, this is used to split the input into parts
   operation = 'contains'        # prefix, suffix, contains, eq, le, ge, gt, lt, modulo, md5, sha1
   # operation_arg = '7'           # use to set a modulo operation's denominator, or path depth
   next_route = 'origin1'
