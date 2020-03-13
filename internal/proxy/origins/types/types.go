@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package config
+package types
 
 import "strconv"
 
@@ -36,26 +36,28 @@ const (
 	OriginTypeClickHouse
 )
 
-var originTypeNames = map[string]OriginType{
-	"rpc":               OriginTypeRPC,
+var Names = map[string]OriginType{
 	"rule":              OriginTypeRule,
 	"reverseproxycache": OriginTypeRPC,
+	"rpc":               OriginTypeRPC,
 	"prometheus":        OriginTypePrometheus,
 	"influxdb":          OriginTypeInfluxDB,
 	"irondb":            OriginTypeIronDB,
 	"clickhouse":        OriginTypeClickHouse,
 }
 
-var originTypeValues = make(map[OriginType]string)
+var Values = make(map[OriginType]string)
 
 func init() {
-	for k, v := range originTypeNames {
-		originTypeValues[v] = k
+	for k, v := range Names {
+		Values[v] = k
 	}
+	// ensure consistent reverse mapping for reverseproxycache as rpc
+	Values[OriginTypeRPC] = "rpc"
 }
 
 func (t OriginType) String() string {
-	if v, ok := originTypeValues[t]; ok {
+	if v, ok := Values[t]; ok {
 		return v
 	}
 	return strconv.Itoa(int(t))
@@ -63,6 +65,6 @@ func (t OriginType) String() string {
 
 // IsValidOriginType returns true if the provided OriginType is valid for use with Trickster
 func IsValidOriginType(t string) bool {
-	_, ok := originTypeNames[t]
+	_, ok := Names[t]
 	return ok
 }

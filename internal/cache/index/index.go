@@ -23,9 +23,11 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/cache/index/options"
+	"github.com/Comcast/trickster/internal/cache/metrics"
 	tl "github.com/Comcast/trickster/internal/util/log"
-	"github.com/Comcast/trickster/internal/util/metrics"
+
+	gm "github.com/Comcast/trickster/internal/util/metrics"
 )
 
 //go:generate msgp
@@ -47,7 +49,7 @@ type Index struct {
 
 	name           string                             `msg:"-"`
 	cacheType      string                             `msg:"-"`
-	config         config.CacheIndexConfig            `msg:"-"`
+	config         *options.Options                   `msg:"-"`
 	bulkRemoveFunc func([]string, bool)               `msg:"-"`
 	reapInterval   time.Duration                      `msg:"-"`
 	flushInterval  time.Duration                      `msg:"-"`
@@ -95,7 +97,7 @@ func ObjectFromBytes(data []byte) (*Object, error) {
 }
 
 // NewIndex returns a new Index based on the provided inputs
-func NewIndex(cacheName, cacheType string, indexData []byte, cfg config.CacheIndexConfig,
+func NewIndex(cacheName, cacheType string, indexData []byte, cfg *options.Options,
 	bulkRemoveFunc func([]string, bool), flushFunc func(cacheKey string, data []byte),
 	log *tl.TricksterLogger) *Index {
 	i := &Index{}
@@ -128,8 +130,8 @@ func NewIndex(cacheName, cacheType string, indexData []byte, cfg config.CacheInd
 		log.Warn("cache reaper did not start", tl.Pairs{"cacheName": i.name, "reapInterval": i.reapInterval})
 	}
 
-	metrics.CacheMaxObjects.WithLabelValues(cacheName, cacheType).Set(float64(cfg.MaxSizeObjects))
-	metrics.CacheMaxBytes.WithLabelValues(cacheName, cacheType).Set(float64(cfg.MaxSizeBytes))
+	gm.CacheMaxObjects.WithLabelValues(cacheName, cacheType).Set(float64(cfg.MaxSizeObjects))
+	gm.CacheMaxBytes.WithLabelValues(cacheName, cacheType).Set(float64(cfg.MaxSizeBytes))
 
 	return i
 }
@@ -181,7 +183,7 @@ func (idx *Index) UpdateObject(obj *Object) {
 		idx.ObjectCount++
 	}
 
-	cache.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
+	metrics.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
 
 	idx.Objects[key] = obj
 	indexLock.Unlock()
@@ -198,10 +200,10 @@ func (idx *Index) RemoveObject(key string, noLock bool) {
 		idx.CacheSize -= o.Size
 		idx.ObjectCount--
 
-		cache.ObserveCacheOperation(idx.name, idx.cacheType, "del", "none", float64(o.Size))
+		metrics.ObserveCacheOperation(idx.name, idx.cacheType, "del", "none", float64(o.Size))
 
 		delete(idx.Objects, key)
-		cache.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
+		metrics.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
 	}
 	if !noLock {
 		indexLock.Unlock()
@@ -280,7 +282,7 @@ func (idx *Index) reap(log *tl.TricksterLogger) {
 	}
 
 	if len(removals) > 0 {
-		cache.ObserveCacheEvent(idx.name, idx.cacheType, "eviction", "ttl")
+		metrics.ObserveCacheEvent(idx.name, idx.cacheType, "eviction", "ttl")
 		idx.bulkRemoveFunc(removals, true)
 		cacheChanged = true
 	}
@@ -336,7 +338,7 @@ func (idx *Index) reap(log *tl.TricksterLogger) {
 		}
 
 		if len(removals) > 0 {
-			cache.ObserveCacheEvent(idx.name, idx.cacheType, "eviction", evictionType)
+			metrics.ObserveCacheEvent(idx.name, idx.cacheType, "eviction", evictionType)
 			idx.bulkRemoveFunc(removals, true)
 			cacheChanged = true
 		}

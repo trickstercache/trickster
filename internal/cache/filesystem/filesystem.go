@@ -25,10 +25,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/index"
+	"github.com/Comcast/trickster/internal/cache/metrics"
+	"github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/pkg/locks"
 )
@@ -38,13 +38,13 @@ var lockPrefix string
 // Cache describes a Filesystem Cache
 type Cache struct {
 	Name   string
-	Config *config.CachingConfig
+	Config *options.Options
 	Index  *index.Index
 	Logger *log.TricksterLogger
 }
 
 // Configuration returns the Configuration for the Cache object
-func (c *Cache) Configuration() *config.CachingConfig {
+func (c *Cache) Configuration() *options.Options {
 	return c.Config
 }
 
@@ -87,7 +87,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 		return fmt.Errorf("cacheKey required")
 	}
 
-	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
+	metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 
 	dataFile := c.getFileName(cacheKey)
 
@@ -123,7 +123,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	data, err := ioutil.ReadFile(dataFile)
 	if err != nil {
 		c.Logger.Debug("filesystem cache miss", log.Pairs{"key": cacheKey, "dataFile": dataFile})
-		b, err2 := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+		b, err2 := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 		locks.Release(lockPrefix + cacheKey)
 		return b, status.LookupStatusKeyMiss, err2
 	}
@@ -131,7 +131,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	o, err := index.ObjectFromBytes(data)
 	if err != nil {
 		locks.Release(lockPrefix + cacheKey)
-		_, err2 := cache.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
+		_, err2 := metrics.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
 		return nil, status.LookupStatusError, err2
 	}
 
@@ -148,13 +148,13 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		if atime {
 			c.Index.UpdateObjectAccessTime(cacheKey)
 		}
-		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
+		metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
 		locks.Release(lockPrefix + cacheKey)
 		return o.Value, status.LookupStatusHit, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
 	c.remove(cacheKey, false)
-	b, err := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	b, err := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 	locks.Release(lockPrefix + cacheKey)
 	return b, status.LookupStatusKeyMiss, err
 
@@ -177,7 +177,7 @@ func (c *Cache) remove(cacheKey string, noLock bool) {
 	if err := os.Remove(c.getFileName(cacheKey)); err == nil {
 		c.Index.RemoveObject(cacheKey, noLock)
 	}
-	cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
+	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 }
 
 // BulkRemove removes a list of objects from the cache

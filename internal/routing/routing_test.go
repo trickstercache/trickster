@@ -21,6 +21,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	tl "github.com/Comcast/trickster/internal/util/log"
 
 	"github.com/gorilla/mux"
@@ -50,11 +51,11 @@ func TestRegisterProxyRoutes(t *testing.T) {
 		t.Errorf("expected %d got %d", 1, 0)
 	}
 
-	conf.Origins["default"] = config.NewOriginConfig()
+	conf.Origins["default"] = oo.NewOptions()
 
 	// Test Too Many Defaults
 	o1 := conf.Origins["default"]
-	o2 := config.NewOriginConfig()
+	o2 := oo.NewOptions()
 
 	o1.IsDefault = true
 	o2.IsDefault = true
@@ -183,7 +184,7 @@ func TestRegisterProxyRoutesMultipleDefaults(t *testing.T) {
 
 func TestRegisterProxyRoutesInvalidCert(t *testing.T) {
 	expected := "tls: failed to find any PEM data in certificate input"
-	a := []string{"-config", "../../testdata/test.bad_tls_cert.conf"}
+	a := []string{"-config", "../../testdata/test.bad_tls_cert.routes.conf"}
 	conf, _, err := config.Load("trickster", "test", a)
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())

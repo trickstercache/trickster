@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package cache
+package metrics
 
 import (
 	"fmt"

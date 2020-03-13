@@ -19,7 +19,9 @@ package clickhouse
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/config"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	"github.com/Comcast/trickster/internal/proxy/paths/matching"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 )
 
 func (c *Client) registerHandlers() {
@@ -41,16 +43,15 @@ func (c *Client) Handlers() map[string]http.Handler {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.PathConfig {
-	paths := map[string]*config.PathConfig{
+func (c *Client) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
+	paths := map[string]*po.Options{
 		"/": {
 			Path:           "/",
 			HandlerName:    "query",
 			Methods:        []string{http.MethodGet, http.MethodPost},
-			MatchType:      config.PathMatchTypePrefix,
+			MatchType:      matching.PathMatchTypePrefix,
 			MatchTypeName:  "prefix",
 			CacheKeyParams: []string{"query", "database"},
-			OriginConfig:   oc,
 		},
 	}
 	return paths

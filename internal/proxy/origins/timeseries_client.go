@@ -21,7 +21,8 @@ import (
 	"net/url"
 
 	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/config"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -30,11 +31,11 @@ type TimeseriesClient interface {
 	// Handlers returns a map of the HTTP Handlers the client has registered
 	Handlers() map[string]http.Handler
 	// DefaultPathConfigs returns the default PathConfigs for the given OriginType
-	DefaultPathConfigs(*config.OriginConfig) map[string]*config.PathConfig
+	DefaultPathConfigs(*oo.Options) map[string]*po.Options
 	// ParseTimeRangeQuery returns a timeseries.TimeRangeQuery based on the provided HTTP Request
 	ParseTimeRangeQuery(*http.Request) (*timeseries.TimeRangeQuery, error)
 	// Configuration returns the configuration for the Proxy Client
-	Configuration() *config.OriginConfig
+	Configuration() *oo.Options
 	// Name returns the name of the origin the Proxy Client is handling
 	Name() string
 	// FastForwardURL returns the URL to the origin to collect Fast Forward data points based on the provided HTTP Request

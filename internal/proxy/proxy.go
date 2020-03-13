@@ -28,14 +28,14 @@ import (
 
 	"golang.org/x/net/netutil"
 
-	"github.com/Comcast/trickster/internal/config"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
 // NewHTTPClient returns an HTTP client configured to the specifications of the
 // running Trickster config.
-func NewHTTPClient(oc *config.OriginConfig) (*http.Client, error) {
+func NewHTTPClient(oc *oo.Options) (*http.Client, error) {
 
 	if oc == nil {
 		return nil, nil

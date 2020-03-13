@@ -14,28 +14,5 @@
  * limitations under the License.
  */
 
-package config
-
-import (
-	"testing"
-)
-
-func TestCollapsedForwardingTypeString(t *testing.T) {
-
-	t1 := CFTypeBasic
-	t2 := CFTypeProgressive
-	var t3 CollapsedForwardingType = 13
-
-	if t1.String() != "basic" {
-		t.Errorf("expected %s got %s", "basic", t1.String())
-	}
-
-	if t2.String() != "progressive" {
-		t.Errorf("expected %s got %s", "progressive", t2.String())
-	}
-
-	if t3.String() != "13" {
-		t.Errorf("expected %s got %s", "13", t3.String())
-	}
-
-}
+// Package tls handles options for TLS (https) requests
+package tls

@@ -24,6 +24,9 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/proxy/headers"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
+	to "github.com/Comcast/trickster/internal/proxy/tls/options"
 )
 
 func TestCopy(t *testing.T) {
@@ -36,8 +39,8 @@ func TestCopy(t *testing.T) {
 	oc.CompressableTypes = map[string]bool{"text/plain": true}
 	oc.NegativeCacheName = "default"
 	oc.NegativeCache = map[int]time.Duration{404: time.Duration(10) * time.Second}
-	oc.FastForwardPath = NewPathConfig()
-	oc.TLS = &TLSConfig{CertificateAuthorityPaths: []string{"foo"}}
+	oc.FastForwardPath = po.NewOptions()
+	oc.TLS = &to.Options{CertificateAuthorityPaths: []string{"foo"}}
 	oc.HealthCheckHeaders = map[string]string{headers.NameAuthorization: "Basic SomeHash"}
 
 	c2 := c1.copy()
@@ -58,7 +61,7 @@ func TestOriginConfigClone(t *testing.T) {
 func TestString(t *testing.T) {
 	c1 := NewConfig()
 
-	c1.Origins["default"].Paths["test"] = &PathConfig{}
+	c1.Origins["default"].Paths["test"] = &po.Options{}
 
 	c1.Caches["default"].Redis.Password = "plaintext-password"
 
@@ -78,7 +81,7 @@ func TestHideAuthorizationCredentials(t *testing.T) {
 
 func TestCloneOriginConfig(t *testing.T) {
 
-	oc := NewOriginConfig()
+	oc := oo.NewOptions()
 	oc.Hosts = []string{"test"}
 
 	oc2 := oc.Clone()
