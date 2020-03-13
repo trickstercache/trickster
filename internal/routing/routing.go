@@ -210,6 +210,8 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		plist[i], plist[opp] = plist[opp], plist[i]
 	}
 
+	or := mux.NewRouter()
+
 	for _, v := range plist {
 		p, ok := pathsWithVerbs[v]
 		if !ok {
@@ -233,6 +235,7 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 				}
 				// Path Routing
 				router.PathPrefix("/" + o.Name + p.Path).Handler(decorate(p)).Methods(p.Methods...)
+				or.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...)
 			default:
 				// default to exact match
 				// Host Header Routing
@@ -241,6 +244,7 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 				}
 				// Path Routing
 				router.Handle("/"+o.Name+p.Path, decorate(p)).Methods(p.Methods...)
+				or.Handle(p.Path, decorate(p)).Methods(p.Methods...)
 			}
 		}
 	}
@@ -266,6 +270,7 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 			}
 		}
 	}
+	o.Router = or
 	o.Paths = pathsWithVerbs
 }
 

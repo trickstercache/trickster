@@ -28,6 +28,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/Comcast/trickster/internal/proxy/headers"
+	"github.com/gorilla/mux"
 )
 
 // Config is the Running Configuration for Trickster
@@ -179,6 +180,8 @@ type OriginConfig struct {
 	//
 	// Name is the Name of the origin, taken from the Key in the Origins map[string]*OriginConfig
 	Name string `toml:"-"`
+	// Router is a mux.Router containing this origin's Path Routes; it is set during route registration
+	Router *mux.Router `toml:"-"`
 	// Timeout is the time.Duration representation of TimeoutSecs
 	Timeout time.Duration `toml:"-"`
 	// BackfillTolerance is the time.Duration representation of BackfillToleranceSecs
