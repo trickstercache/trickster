@@ -243,18 +243,22 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 				for _, h := range oo.Hosts {
 					router.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...).Host(h)
 				}
-				// Path Routing
-				router.PathPrefix(routePath).Handler(decorate(p)).Methods(p.Methods...)
-				or.PathPrefix(routePath).Handler(decorate(p)).Methods(p.Methods...)
+				if !oo.PathRoutingDisabled {
+					// Path Routing
+					router.PathPrefix(routePath).Handler(decorate(p)).Methods(p.Methods...)
+				}
+				or.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...)
 			default:
 				// default to exact match
 				// Host Header Routing
 				for _, h := range oo.Hosts {
 					router.Handle(p.Path, decorate(p)).Methods(p.Methods...).Host(h)
 				}
-				// Path Routing
-				router.Handle(routePath, decorate(p)).Methods(p.Methods...)
-				or.Handle(routePath, decorate(p)).Methods(p.Methods...)
+				if !oo.PathRoutingDisabled {
+					// Path Routing
+					router.Handle(routePath, decorate(p)).Methods(p.Methods...)
+				}
+				or.Handle(p.Path, decorate(p)).Methods(p.Methods...)
 			}
 		}
 	}

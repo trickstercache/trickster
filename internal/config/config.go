@@ -260,6 +260,10 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 			oc.RuleName = v.RuleName
 		}
 
+		if metadata.IsDefined("origins", k, "path_routing_disabled") {
+			oc.PathRoutingDisabled = v.PathRoutingDisabled
+		}
+
 		if metadata.IsDefined("origins", k, "hosts") && v != nil {
 			oc.Hosts = make([]string, len(v.Hosts))
 			copy(oc.Hosts, v.Hosts)

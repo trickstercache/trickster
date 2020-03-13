@@ -94,6 +94,8 @@ type Options struct {
 	// RuleName provides the name of the rule config to be used by this origin.
 	// This is only effective if the Origin Type is 'rule'
 	RuleName string `toml:"rule_name"`
+	// PathRoutingDisabled, when true, will bypass /originName/path route registrations
+	PathRoutingDisabled bool `toml:"path_routing_disabled"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `toml:"tls"`
@@ -216,6 +218,7 @@ func (oc *Options) Clone() *Options {
 	o.OriginURL = oc.OriginURL
 	o.PathPrefix = oc.PathPrefix
 	o.RevalidationFactor = oc.RevalidationFactor
+	o.RuleName = oc.RuleName
 	o.Scheme = oc.Scheme
 	o.Timeout = oc.Timeout
 	o.TimeoutSecs = oc.TimeoutSecs
