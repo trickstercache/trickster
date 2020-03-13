@@ -102,8 +102,8 @@ Example TOML Config:
 		matches = ['no-cache', 'no-store']
 		rewrite = [ ['path', 'replace', '${match}', 'myReplacement'],
 					['header', 'set', 'Cache-Control', 'myReplacement'],
-					['header', 'replace', 'Cache-Control', '${match}, 'myReplacement'],
-					['header', 'delete', 'Cache-Control', '${match}] ]
+					['header', 'replace', 'Cache-Control', '${match}', 'myReplacement'],
+					['header', 'delete', 'Cache-Control', '${match}'] ]
 
 		next_route = 'origin2'
 */
