@@ -14,9 +14,7 @@
  * limitations under the License.
  */
 
-package rule
-
-import "github.com/BurntSushi/toml"
+package options
 
 type rewriteList [][]string
 
@@ -82,10 +80,6 @@ type CaseOptions struct {
 	Rewrite rewriteList `toml:"rewrite"`
 	// NextRoute is the name of the next OriginConfig destination for the request in this case
 	NextRoute string `toml:"next_route"`
-}
-
-func (o *Options) Load(metadata *toml.MetaData) {
-
 }
 
 /*
