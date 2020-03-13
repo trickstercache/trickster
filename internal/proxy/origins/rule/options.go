@@ -16,10 +16,12 @@
 
 package rule
 
+import "github.com/BurntSushi/toml"
+
 type rewriteList [][]string
 
-// RuleOptions defines the options for a Rule
-type RuleOptions struct {
+// Options defines the options for a Rule
+type Options struct {
 	// NextRoute indicates the name of the next OriginConfig destination for the request when
 	// none of the cases are met following the execution of the rule
 	NextRoute string `toml:"next_route"`
@@ -80,6 +82,10 @@ type CaseOptions struct {
 	Rewrite rewriteList `toml:"rewrite"`
 	// NextRoute is the name of the next OriginConfig destination for the request in this case
 	NextRoute string `toml:"next_route"`
+}
+
+func (o *Options) Load(metadata *toml.MetaData) {
+
 }
 
 /*

@@ -17,7 +17,6 @@
 package rule
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -29,30 +28,21 @@ import (
 // Handler processes the HTTP request through the rules engine
 func (c *Client) Handler(w http.ResponseWriter, r *http.Request) {
 
-	fmt.Println("!!!!!!!!")
-
 	// TODO: Connect the logic dots that actually determine nextRoute
 	nextRoute := c.rule.nextRoute
 
 	if oc, ok := c.originConfigs[c.rule.nextRoute]; ok {
-		fmt.Println("???????")
 		if strings.HasPrefix(r.URL.Path, c.pathPrefix) {
-			fmt.Println("********")
 			r.URL.Path = strings.Replace(r.URL.Path, c.pathPrefix, "/"+nextRoute+"/", 1)
 		} else {
-			fmt.Println("<<<<<<<<<")
 			r.URL.Path = "/" + nextRoute + "/" + r.URL.Path
 		}
-		fmt.Println("======", r.URL.Path)
 
 		oc.Router.ServeHTTP(w, r)
 		return
 	}
 
-	fmt.Println(":(:(:(")
-
 	c.options.Router.NotFoundHandler.ServeHTTP(w, r)
-
 }
 
 // Client Implements the Proxy Client Interface
@@ -73,7 +63,7 @@ func NewClient(name string, options *config.OriginConfig, ocm map[string]*config
 		options:       options,
 		originConfigs: ocm,
 		pathPrefix:    "/" + name + "/",
-		rule:          &rule{nextRoute: "sim2"},
+		rule:          &rule{nextRoute: "sim1"},
 	}, nil
 }
 
@@ -91,7 +81,7 @@ func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.
 	paths := map[string]*config.PathConfig{
 		"/" + strings.Join(m, "-"): {
 			Path:          "/",
-			HandlerName:   "ruler",
+			HandlerName:   "rule",
 			Methods:       m,
 			OriginConfig:  oc,
 			MatchType:     config.PathMatchTypePrefix,
@@ -106,7 +96,7 @@ func (c *Client) registerHandlers() {
 	c.handlers = make(map[string]http.Handler)
 	// This is the registry of handlers that Trickster supports for the Reverse Proxy Cache,
 	// and are able to be referenced by name (map key) in Config Files
-	c.handlers["ruler"] = http.HandlerFunc(c.Handler)
+	c.handlers["rule"] = http.HandlerFunc(c.Handler)
 }
 
 // Handlers returns a map of the HTTP Handlers the client has registered
@@ -117,12 +107,12 @@ func (c *Client) Handlers() map[string]http.Handler {
 	return c.handlers
 }
 
-// HTTPClient is not used by the Ruler, and is present to conform to the Client interface
+// HTTPClient is not used by the Rule, and is present to conform to the Client interface
 func (c *Client) HTTPClient() *http.Client {
 	return nil
 }
 
-// Cache is not used by the Ruler, and is present to conform to the Client interface
+// Cache is not used by the Rule, and is present to conform to the Client interface
 func (c *Client) Cache() cache.Cache {
 	return nil
 }
@@ -132,5 +122,5 @@ func (c *Client) Name() string {
 	return c.name
 }
 
-// SetCache is not used by the Ruler, and is present to conform to the Client interface
+// SetCache is not used by the Rule, and is present to conform to the Client interface
 func (c *Client) SetCache(cc cache.Cache) {}

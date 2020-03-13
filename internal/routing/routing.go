@@ -32,7 +32,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/origins/irondb"
 	"github.com/Comcast/trickster/internal/proxy/origins/prometheus"
 	"github.com/Comcast/trickster/internal/proxy/origins/reverseproxycache"
-	"github.com/Comcast/trickster/internal/proxy/origins/ruler"
+	"github.com/Comcast/trickster/internal/proxy/origins/rule"
 	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/middleware"
 
@@ -124,8 +124,8 @@ func registerOriginRoutes(router *mux.Router, conf *config.TricksterConfig, k st
 		client, err = clickhouse.NewClient(k, o, c)
 	case "rpc", "reverseproxycache":
 		client, err = reverseproxycache.NewClient(k, o, c)
-	case "ruler":
-		client, err = ruler.NewClient(k, o, conf.Origins)
+	case "rule":
+		client, err = rule.NewClient(k, o, conf.Origins)
 	}
 	if err != nil {
 		return err

@@ -94,17 +94,21 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 
 	for k, o := range c.Origins {
 
-		if o.OriginURL == "" {
+		if o.OriginType == "" {
+			return nil, nil, fmt.Errorf(`missing origin-type for origin "%s"`, k)
+		}
+
+		if o.OriginType == "rule" && o.RuleName == "" {
+			return nil, nil, fmt.Errorf(`missing rule-name for origin "%s"`, k)
+		}
+
+		if o.OriginType != "rule" && o.OriginURL == "" {
 			return nil, nil, fmt.Errorf(`missing origin-url for origin "%s"`, k)
 		}
 
 		url, err := url.Parse(o.OriginURL)
 		if err != nil {
 			return nil, nil, err
-		}
-
-		if o.OriginType == "" {
-			return nil, nil, fmt.Errorf(`missing origin-type for origin "%s"`, k)
 		}
 
 		if strings.HasSuffix(url.Path, "/") {

@@ -24,8 +24,8 @@ type OriginType int
 const (
 	// OriginTypeRPC represents thee Reverse Proxy Cache origin type
 	OriginTypeRPC = OriginType(iota)
-	// OriginTypeRuler represents the Ruler origin type
-	OriginTypeRuler
+	// OriginTypeRule represents the Ruler origin type
+	OriginTypeRule
 	// OriginTypePrometheus represents the Prometheus origin type
 	OriginTypePrometheus
 	// OriginTypeInfluxDB represents the InfluxDB origin type
@@ -38,7 +38,7 @@ const (
 
 var originTypeNames = map[string]OriginType{
 	"rpc":               OriginTypeRPC,
-	"ruler":             OriginTypeRuler,
+	"rule":              OriginTypeRule,
 	"reverseproxycache": OriginTypeRPC,
 	"prometheus":        OriginTypePrometheus,
 	"influxdb":          OriginTypeInfluxDB,

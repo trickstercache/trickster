@@ -161,6 +161,9 @@ type OriginConfig struct {
 	CompressableTypeList []string `toml:"compressable_types"`
 	// TracingConfigName provides the name of the Tracing Config to be used by this Origin
 	TracingConfigName string `toml:"tracing_name"`
+	// RuleName provides the name of the rule config to be used by this origin.
+	// This is only effective if the Origin Type is 'rule'
+	RuleName string `toml:"rule_name"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *TLSConfig `toml:"tls"`
@@ -540,6 +543,10 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 		if metadata.IsDefined("origins", k, "origin_type") {
 			oc.OriginType = v.OriginType
+		}
+
+		if metadata.IsDefined("origins", k, "rule_name") {
+			oc.RuleName = v.RuleName
 		}
 
 		if metadata.IsDefined("origins", k, "hosts") && v != nil {
