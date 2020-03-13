@@ -26,7 +26,9 @@ import (
 
 	"github.com/Comcast/trickster/internal/config"
 	tc "github.com/Comcast/trickster/internal/proxy/context"
+	"github.com/Comcast/trickster/internal/proxy/forwarding"
 	"github.com/Comcast/trickster/internal/proxy/headers"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	tl "github.com/Comcast/trickster/internal/util/log"
 	tu "github.com/Comcast/trickster/internal/util/testing"
@@ -45,7 +47,7 @@ func TestDoProxy(t *testing.T) {
 	}
 
 	oc := conf.Origins["default"]
-	pc := &config.PathConfig{
+	pc := &po.Options{
 		Path:                  "/",
 		RequestHeaders:        map[string]string{},
 		ResponseHeaders:       map[string]string{},
@@ -96,7 +98,7 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	}
 
 	oc := conf.Origins["default"]
-	pc := &config.PathConfig{
+	pc := &po.Options{
 		Path:            "/",
 		RequestHeaders:  map[string]string{},
 		ResponseHeaders: map[string]string{},
@@ -138,7 +140,7 @@ func TestClockOffsetWarning(t *testing.T) {
 	}
 
 	oc := conf.Origins["default"]
-	pc := &config.PathConfig{
+	pc := &po.Options{
 		Path:            "/",
 		RequestHeaders:  map[string]string{},
 		ResponseHeaders: map[string]string{},
@@ -179,7 +181,7 @@ func TestDoProxyWithPCF(t *testing.T) {
 	}
 
 	oc := conf.Origins["default"]
-	pc := &config.PathConfig{
+	pc := &po.Options{
 		Path:                    "/",
 		RequestHeaders:          map[string]string{},
 		ResponseHeaders:         map[string]string{},
@@ -187,7 +189,7 @@ func TestDoProxyWithPCF(t *testing.T) {
 		ResponseBodyBytes:       []byte("test"),
 		HasCustomResponseBody:   true,
 		CollapsedForwardingName: "progressive",
-		CollapsedForwardingType: config.CFTypeProgressive,
+		CollapsedForwardingType: forwarding.CFTypeProgressive,
 	}
 
 	oc.HTTPClient = http.DefaultClient
@@ -234,7 +236,7 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 	}
 
 	oc := conf.Origins["default"]
-	pc := &config.PathConfig{
+	pc := &po.Options{
 		Path:                    "/",
 		RequestHeaders:          map[string]string{},
 		ResponseHeaders:         map[string]string{},
@@ -242,7 +244,7 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 		ResponseBodyBytes:       []byte("test"),
 		HasCustomResponseBody:   true,
 		CollapsedForwardingName: "progressive",
-		CollapsedForwardingType: config.CFTypeProgressive,
+		CollapsedForwardingType: forwarding.CFTypeProgressive,
 	}
 
 	oc.HTTPClient = http.DefaultClient

@@ -29,9 +29,10 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/headers"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
 	"github.com/Comcast/trickster/internal/proxy/urls"
 	"github.com/Comcast/trickster/internal/timeseries"
@@ -68,7 +69,7 @@ const (
 // Client Implements Proxy Client Interface
 type TestClient struct {
 	name      string
-	config    *config.OriginConfig
+	config    *oo.Options
 	cache     cache.Cache
 	webClient *http.Client
 
@@ -102,9 +103,9 @@ func (c *TestClient) Handlers() map[string]http.Handler {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *TestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.PathConfig {
+func (c *TestClient) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
 
-	paths := map[string]*config.PathConfig{
+	paths := map[string]*po.Options{
 
 		APIPath + mnQueryRange: {
 			Path:            APIPath + mnQueryRange,
@@ -215,7 +216,7 @@ func (c *TestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]*con
 }
 
 // Configuration returns the upstream Configuration for this Client
-func (c *TestClient) Configuration() *config.OriginConfig {
+func (c *TestClient) Configuration() *oo.Options {
 	return c.config
 }
 

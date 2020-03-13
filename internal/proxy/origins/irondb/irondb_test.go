@@ -22,6 +22,7 @@ import (
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/origins"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
@@ -56,7 +57,7 @@ func TestNewClient(t *testing.T) {
 		t.Errorf("Could not find default configuration")
 	}
 
-	oc := &config.OriginConfig{OriginType: "TEST_CLIENT"}
+	oc := &oo.Options{OriginType: "TEST_CLIENT"}
 	c, err := NewClient("default", oc, cache)
 	if err != nil {
 		t.Error(err)
@@ -75,7 +76,7 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestConfiguration(t *testing.T) {
-	oc := &config.OriginConfig{OriginType: "TEST"}
+	oc := &oo.Options{OriginType: "TEST"}
 	client := Client{config: oc}
 	c := client.Configuration()
 	if c.OriginType != "TEST" {
@@ -112,7 +113,7 @@ func TestName(t *testing.T) {
 }
 
 func TestHTTPClient(t *testing.T) {
-	oc := &config.OriginConfig{OriginType: "TEST"}
+	oc := &oo.Options{OriginType: "TEST"}
 	client, err := NewClient("test", oc, nil)
 	if err != nil {
 		t.Error(err)
@@ -123,7 +124,7 @@ func TestHTTPClient(t *testing.T) {
 }
 
 func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", oo.NewOptions(), nil)
 	if err != nil {
 		t.Error(err)
 	}

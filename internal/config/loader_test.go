@@ -22,6 +22,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Comcast/trickster/internal/cache/evictionmethods"
+	d "github.com/Comcast/trickster/internal/config/defaults"
 )
 
 func TestLoadConfiguration(t *testing.T) {
@@ -194,8 +197,8 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 666, got %d", o.TimeseriesRetentionFactor)
 	}
 
-	if o.TimeseriesEvictionMethod != EvictionMethodLRU {
-		t.Errorf("expected %s, got %s", EvictionMethodLRU, o.TimeseriesEvictionMethod)
+	if o.TimeseriesEvictionMethod != evictionmethods.EvictionMethodLRU {
+		t.Errorf("expected %s, got %s", evictionmethods.EvictionMethodLRU, o.TimeseriesEvictionMethod)
 	}
 
 	if !o.FastForwardDisable {
@@ -404,30 +407,30 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 	}
 
 	// Test Proxy Server
-	if conf.Frontend.ListenPort != defaultProxyListenPort {
-		t.Errorf("expected %d, got %d", defaultProxyListenPort, conf.Frontend.ListenPort)
+	if conf.Frontend.ListenPort != d.DefaultProxyListenPort {
+		t.Errorf("expected %d, got %d", d.DefaultProxyListenPort, conf.Frontend.ListenPort)
 	}
 
-	if conf.Frontend.ListenAddress != defaultProxyListenAddress {
-		t.Errorf("expected '%s', got '%s'", defaultProxyListenAddress, conf.Frontend.ListenAddress)
+	if conf.Frontend.ListenAddress != d.DefaultProxyListenAddress {
+		t.Errorf("expected '%s', got '%s'", d.DefaultProxyListenAddress, conf.Frontend.ListenAddress)
 	}
 
 	// Test Metrics Server
-	if conf.Metrics.ListenPort != defaultMetricsListenPort {
-		t.Errorf("expected %d, got %d", defaultMetricsListenPort, conf.Metrics.ListenPort)
+	if conf.Metrics.ListenPort != d.DefaultMetricsListenPort {
+		t.Errorf("expected %d, got %d", d.DefaultMetricsListenPort, conf.Metrics.ListenPort)
 	}
 
-	if conf.Metrics.ListenAddress != defaultMetricsListenAddress {
-		t.Errorf("expected '%s', got '%s'", defaultMetricsListenAddress, conf.Metrics.ListenAddress)
+	if conf.Metrics.ListenAddress != d.DefaultMetricsListenAddress {
+		t.Errorf("expected '%s', got '%s'", d.DefaultMetricsListenAddress, conf.Metrics.ListenAddress)
 	}
 
 	// Test Logging
-	if conf.Logging.LogLevel != defaultLogLevel {
-		t.Errorf("expected %s, got %s", defaultLogLevel, conf.Logging.LogLevel)
+	if conf.Logging.LogLevel != d.DefaultLogLevel {
+		t.Errorf("expected %s, got %s", d.DefaultLogLevel, conf.Logging.LogLevel)
 	}
 
-	if conf.Logging.LogFile != defaultLogFile {
-		t.Errorf("expected '%s', got '%s'", defaultLogFile, conf.Logging.LogFile)
+	if conf.Logging.LogFile != d.DefaultLogFile {
+		t.Errorf("expected '%s', got '%s'", d.DefaultLogFile, conf.Logging.LogFile)
 	}
 
 	// Test Origins
@@ -442,8 +445,8 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %s origin type, got %s", "test", o.OriginType)
 	}
 
-	if o.CacheName != defaultOriginCacheName {
-		t.Errorf("expected %s, got %s", defaultOriginCacheName, o.CacheName)
+	if o.CacheName != d.DefaultOriginCacheName {
+		t.Errorf("expected %s, got %s", d.DefaultOriginCacheName, o.CacheName)
 	}
 
 	if o.Scheme != "http" {
@@ -458,28 +461,28 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected '%s', got '%s'", "", o.PathPrefix)
 	}
 
-	if o.TimeseriesRetentionFactor != defaultOriginTRF {
-		t.Errorf("expected %d, got %d", defaultOriginTRF, o.TimeseriesRetentionFactor)
+	if o.TimeseriesRetentionFactor != d.DefaultOriginTRF {
+		t.Errorf("expected %d, got %d", d.DefaultOriginTRF, o.TimeseriesRetentionFactor)
 	}
 
 	if o.FastForwardDisable {
 		t.Errorf("expected fast_forward_disable false, got %t", o.FastForwardDisable)
 	}
 
-	if o.BackfillToleranceSecs != defaultBackfillToleranceSecs {
-		t.Errorf("expected %d, got %d", defaultBackfillToleranceSecs, o.BackfillToleranceSecs)
+	if o.BackfillToleranceSecs != d.DefaultBackfillToleranceSecs {
+		t.Errorf("expected %d, got %d", d.DefaultBackfillToleranceSecs, o.BackfillToleranceSecs)
 	}
 
-	if o.TimeoutSecs != defaultOriginTimeoutSecs {
-		t.Errorf("expected %d, got %d", defaultOriginTimeoutSecs, o.TimeoutSecs)
+	if o.TimeoutSecs != d.DefaultOriginTimeoutSecs {
+		t.Errorf("expected %d, got %d", d.DefaultOriginTimeoutSecs, o.TimeoutSecs)
 	}
 
-	if o.TimeseriesTTLSecs != defaultTimeseriesTTLSecs {
-		t.Errorf("expected %d, got %d", defaultTimeseriesTTLSecs, o.TimeseriesTTLSecs)
+	if o.TimeseriesTTLSecs != d.DefaultTimeseriesTTLSecs {
+		t.Errorf("expected %d, got %d", d.DefaultTimeseriesTTLSecs, o.TimeseriesTTLSecs)
 	}
 
-	if o.FastForwardTTLSecs != defaultFastForwardTTLSecs {
-		t.Errorf("expected %d, got %d", defaultFastForwardTTLSecs, o.FastForwardTTLSecs)
+	if o.FastForwardTTLSecs != d.DefaultFastForwardTTLSecs {
+		t.Errorf("expected %d, got %d", d.DefaultFastForwardTTLSecs, o.FastForwardTTLSecs)
 	}
 
 	c, ok := conf.Caches["default"]
@@ -488,44 +491,44 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if c.CacheType != defaultCacheType {
-		t.Errorf("expected %s, got %s", defaultCacheType, c.CacheType)
+	if c.CacheType != d.DefaultCacheType {
+		t.Errorf("expected %s, got %s", d.DefaultCacheType, c.CacheType)
 	}
 
-	if c.Index.ReapIntervalSecs != defaultCacheIndexReap {
-		t.Errorf("expected %d, got %d", defaultCacheIndexReap, c.Index.ReapIntervalSecs)
+	if c.Index.ReapIntervalSecs != d.DefaultCacheIndexReap {
+		t.Errorf("expected %d, got %d", d.DefaultCacheIndexReap, c.Index.ReapIntervalSecs)
 	}
 
-	if c.Index.FlushIntervalSecs != defaultCacheIndexFlush {
-		t.Errorf("expected %d, got %d", defaultCacheIndexFlush, c.Index.FlushIntervalSecs)
+	if c.Index.FlushIntervalSecs != d.DefaultCacheIndexFlush {
+		t.Errorf("expected %d, got %d", d.DefaultCacheIndexFlush, c.Index.FlushIntervalSecs)
 	}
 
-	if c.Index.MaxSizeBytes != defaultCacheMaxSizeBytes {
-		t.Errorf("expected %d, got %d", defaultCacheMaxSizeBytes, c.Index.MaxSizeBytes)
+	if c.Index.MaxSizeBytes != d.DefaultCacheMaxSizeBytes {
+		t.Errorf("expected %d, got %d", d.DefaultCacheMaxSizeBytes, c.Index.MaxSizeBytes)
 	}
 
-	if c.Index.MaxSizeBackoffBytes != defaultMaxSizeBackoffBytes {
-		t.Errorf("expected %d, got %d", defaultMaxSizeBackoffBytes, c.Index.MaxSizeBackoffBytes)
+	if c.Index.MaxSizeBackoffBytes != d.DefaultMaxSizeBackoffBytes {
+		t.Errorf("expected %d, got %d", d.DefaultMaxSizeBackoffBytes, c.Index.MaxSizeBackoffBytes)
 	}
 
-	if c.Index.MaxSizeObjects != defaultMaxSizeObjects {
-		t.Errorf("expected %d, got %d", defaultMaxSizeObjects, c.Index.MaxSizeObjects)
+	if c.Index.MaxSizeObjects != d.DefaultMaxSizeObjects {
+		t.Errorf("expected %d, got %d", d.DefaultMaxSizeObjects, c.Index.MaxSizeObjects)
 	}
 
-	if c.Index.MaxSizeBackoffObjects != defaultMaxSizeBackoffObjects {
-		t.Errorf("expected %d, got %d", defaultMaxSizeBackoffObjects, c.Index.MaxSizeBackoffObjects)
+	if c.Index.MaxSizeBackoffObjects != d.DefaultMaxSizeBackoffObjects {
+		t.Errorf("expected %d, got %d", d.DefaultMaxSizeBackoffObjects, c.Index.MaxSizeBackoffObjects)
 	}
 
 	if c.Index.ReapIntervalSecs != 3 {
 		t.Errorf("expected 3, got %d", c.Index.ReapIntervalSecs)
 	}
 
-	if c.Redis.ClientType != defaultRedisClientType {
-		t.Errorf("expected %s, got %s", defaultRedisClientType, c.Redis.ClientType)
+	if c.Redis.ClientType != d.DefaultRedisClientType {
+		t.Errorf("expected %s, got %s", d.DefaultRedisClientType, c.Redis.ClientType)
 	}
 
-	if c.Redis.Protocol != defaultRedisProtocol {
-		t.Errorf("expected %s, got %s", defaultRedisProtocol, c.Redis.Protocol)
+	if c.Redis.Protocol != d.DefaultRedisProtocol {
+		t.Errorf("expected %s, got %s", d.DefaultRedisProtocol, c.Redis.Protocol)
 	}
 
 	if c.Redis.Endpoint != "redis:6379" {

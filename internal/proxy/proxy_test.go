@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	tl "github.com/Comcast/trickster/internal/util/log"
 
 	"github.com/gorilla/mux"
@@ -48,7 +49,7 @@ func TestNewHTTPClient(t *testing.T) {
 	const caFileInvalid2 = "../../testdata/test.06.cert.pem"
 
 	// test good originconfig, no CA
-	oc := config.NewOriginConfig()
+	oc := oo.NewOptions()
 	_, err = NewHTTPClient(oc)
 	if err != nil {
 		t.Error(err)

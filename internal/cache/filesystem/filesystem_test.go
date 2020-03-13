@@ -24,8 +24,10 @@ import (
 	"testing"
 	"time"
 
+	fo "github.com/Comcast/trickster/internal/cache/filesystem/options"
+	io "github.com/Comcast/trickster/internal/cache/index/options"
+	co "github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
 	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
@@ -34,7 +36,7 @@ const cacheKey = "cacheKey"
 
 func storeBenchmark(b *testing.B) Cache {
 	dir, _ := ioutil.TempDir("/tmp", cacheType)
-	cacheConfig := config.CachingConfig{CacheType: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: dir}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := co.Options{CacheType: cacheType, Filesystem: &fo.Options{CachePath: dir}, Index: &io.Options{ReapInterval: time.Second}}
 	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
@@ -53,12 +55,12 @@ func storeBenchmark(b *testing.B) Cache {
 	return fc
 }
 
-func newCacheConfig(t *testing.T) config.CachingConfig {
+func newCacheConfig(t *testing.T) co.Options {
 	dir, err := ioutil.TempDir("/tmp", cacheType)
 	if err != nil {
 		t.Fatalf("could not create temp directory (%s): %s", dir, err)
 	}
-	return config.CachingConfig{CacheType: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: dir}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	return co.Options{CacheType: cacheType, Filesystem: &fo.Options{CachePath: dir}, Index: &io.Options{ReapInterval: time.Second}}
 }
 
 func TestConfiguration(t *testing.T) {

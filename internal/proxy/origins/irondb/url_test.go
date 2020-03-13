@@ -27,6 +27,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/errors"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/timeseries"
 	tl "github.com/Comcast/trickster/internal/util/log"
@@ -62,7 +63,7 @@ func TestSetExtent(t *testing.T) {
 		expPath  string
 		expQuery string
 		expBody  string
-		p        *config.PathConfig
+		p        *po.Options
 	}{
 		{ // case 0
 			handler: "CAQLHandler",
@@ -218,7 +219,7 @@ func TestFastForwardURL(t *testing.T) {
 		handler string
 		u       *url.URL
 		exp     string
-		p       *config.PathConfig
+		p       *po.Options
 	}{
 		{ // case 0
 			handler: "CAQLHandler",
@@ -378,7 +379,7 @@ func TestParseTimerangeQuery(t *testing.T) {
 	client := &Client{name: "test"}
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 
-	r = request.SetResources(r, request.NewResources(client.config, &config.PathConfig{},
+	r = request.SetResources(r, request.NewResources(client.config, &po.Options{},
 		nil, nil, client, tl.ConsoleLogger("error")))
 
 	_, err := client.ParseTimeRangeQuery(r)

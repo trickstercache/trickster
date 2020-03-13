@@ -32,41 +32,12 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	origins "github.com/Comcast/trickster/internal/proxy/origins/options"
 	"github.com/Comcast/trickster/internal/proxy/paths/matching"
-	"github.com/Comcast/trickster/internal/proxy/tls"
+	to "github.com/Comcast/trickster/internal/proxy/tls/options"
 	tracing "github.com/Comcast/trickster/internal/util/tracing/options"
 
 	"github.com/BurntSushi/toml"
 )
 
-// Config is the Running Configuration for Trickster
-// var Config *TricksterConfig
-
-// // Main is the Main subsection of the Running Configuration
-// var Main *MainConfig
-
-// // Origins is the Origin Map subsection of the Running Configuration
-// var Origins map[string]*origins.Options
-
-// // Caches is the Cache Map subsection of the Running Configuration
-// var Caches map[string]*CachingConfig
-
-// // Frontend is the Proxy Server subsection of the Running Configuration
-// var Frontend *FrontendConfig
-
-// // Logging is the Logging subsection of the Running Configuration
-// var Logging *LoggingConfig
-
-// // Metrics is the Metrics subsection of the Running Configuration
-// var Metrics *MetricsConfig
-
-// TracingConfigs is the TracingConfigs subsection of the Running Configuration
-// var TracingConfigs map[string]*TracingConfig
-
-// // NegativeCacheConfigs is the NegativeCacheConfig subsection of the Running Configuration
-// var NegativeCacheConfigs map[string]NegativeCacheConfig
-
-// Flags is a collection of command line flags that Trickster loads.
-// var Flags = TricksterFlags{}
 var providedOriginURL string
 var providedOriginType string
 
@@ -420,7 +391,7 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 		}
 
 		if metadata.IsDefined("origins", k, "tls") {
-			oc.TLS = &tls.Options{
+			oc.TLS = &to.Options{
 				InsecureSkipVerify:        v.TLS.InsecureSkipVerify,
 				CertificateAuthorityPaths: v.TLS.CertificateAuthorityPaths,
 				PrivateKeyPath:            v.TLS.PrivateKeyPath,

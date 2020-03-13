@@ -20,8 +20,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/origins"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 )
 
 func TestReverseProxyCacheClientInterfacing(t *testing.T) {
@@ -39,7 +39,7 @@ func TestReverseProxyCacheClientInterfacing(t *testing.T) {
 }
 
 func TestNewNewClient(t *testing.T) {
-	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", oo.NewOptions(), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -49,7 +49,7 @@ func TestNewNewClient(t *testing.T) {
 }
 
 func TestHTTPClient(t *testing.T) {
-	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", oo.NewOptions(), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -59,7 +59,7 @@ func TestHTTPClient(t *testing.T) {
 }
 
 func TestGetCache(t *testing.T) {
-	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", oo.NewOptions(), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -69,7 +69,7 @@ func TestGetCache(t *testing.T) {
 }
 
 func TestClientName(t *testing.T) {
-	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", oo.NewOptions(), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -79,7 +79,7 @@ func TestClientName(t *testing.T) {
 }
 
 func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", oo.NewOptions(), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -90,7 +90,7 @@ func TestSetCache(t *testing.T) {
 }
 
 func TestConfiguration(t *testing.T) {
-	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", oo.NewOptions(), nil)
 	if err != nil {
 		t.Error(err)
 	}

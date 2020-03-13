@@ -23,24 +23,26 @@ import (
 	"testing"
 	"time"
 
+	bo "github.com/Comcast/trickster/internal/cache/bbolt/options"
+	io "github.com/Comcast/trickster/internal/cache/index/options"
+	co "github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
 	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 const cacheType = "bbolt"
 const cacheKey = "cacheKey"
 
-func newCacheConfig() config.CachingConfig {
+func newCacheConfig() co.Options {
 	const testDbPath = "/tmp/test.db"
 	os.Remove(testDbPath)
-	return config.CachingConfig{CacheType: cacheType, BBolt: config.BBoltCacheConfig{Filename: testDbPath, Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	return co.Options{CacheType: cacheType, BBolt: &bo.Options{Filename: testDbPath, Bucket: "trickster_test"}, Index: &io.Options{ReapInterval: time.Second}}
 }
 
 func storeBenchmark(b *testing.B) Cache {
 	testDbPath := "/tmp/test.db"
 	os.Remove(testDbPath)
-	cacheConfig := config.CachingConfig{CacheType: cacheType, BBolt: config.BBoltCacheConfig{Filename: testDbPath, Bucket: "trickster_test"}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	cacheConfig := co.Options{CacheType: cacheType, BBolt: &bo.Options{Filename: testDbPath, Bucket: "trickster_test"}, Index: &io.Options{ReapInterval: time.Second}}
 	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 

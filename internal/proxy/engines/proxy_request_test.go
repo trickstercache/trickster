@@ -27,6 +27,7 @@ import (
 	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	tl "github.com/Comcast/trickster/internal/util/log"
@@ -47,7 +48,7 @@ func TestParseRequestRanges(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	r.Header.Set(headers.NameRange, "bytes=0-10")
 
-	oc := &config.OriginConfig{MultipartRangesDisabled: true}
+	oc := &oo.Options{MultipartRangesDisabled: true}
 	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil, tl.ConsoleLogger("error")))
 
 	pr := proxyRequest{
@@ -180,7 +181,7 @@ func TestPrepareResponse(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	r.Header.Set(headers.NameRange, "bytes=0-10")
 
-	oc := &config.OriginConfig{}
+	oc := &oo.Options{}
 	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil, tl.ConsoleLogger("error")))
 
 	pr := proxyRequest{
@@ -250,7 +251,7 @@ func TestPrepareRevalidationRequest(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	r.Header.Set(headers.NameRange, "bytes=0-10,12-20")
 
-	oc := &config.OriginConfig{DearticulateUpstreamRanges: true}
+	oc := &oo.Options{DearticulateUpstreamRanges: true}
 	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil, tl.ConsoleLogger("error")))
 
 	pr := proxyRequest{
@@ -278,7 +279,7 @@ func TestPrepareRevalidationRequestNoRange(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	r.Header.Set(headers.NameRange, "bytes=0-10,12-20")
 
-	oc := &config.OriginConfig{DearticulateUpstreamRanges: true}
+	oc := &oo.Options{DearticulateUpstreamRanges: true}
 	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil, tl.ConsoleLogger("error")))
 
 	pr := proxyRequest{
@@ -305,7 +306,7 @@ func TestPrepareUpstreamRequests(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	r.Header.Set(headers.NameRange, "bytes=0-10,12-20")
 
-	oc := &config.OriginConfig{DearticulateUpstreamRanges: true}
+	oc := &oo.Options{DearticulateUpstreamRanges: true}
 	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil, tl.ConsoleLogger("error")))
 
 	pr := proxyRequest{

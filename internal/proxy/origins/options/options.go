@@ -23,7 +23,7 @@ import (
 	"github.com/Comcast/trickster/internal/cache/evictionmethods"
 	d "github.com/Comcast/trickster/internal/config/defaults"
 	po "github.com/Comcast/trickster/internal/proxy/paths/options"
-	"github.com/Comcast/trickster/internal/proxy/tls"
+	to "github.com/Comcast/trickster/internal/proxy/tls/options"
 	tracing "github.com/Comcast/trickster/internal/util/tracing/options"
 
 	//rule "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
@@ -96,7 +96,7 @@ type Options struct {
 	RuleName string `toml:"rule_name"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
-	TLS *tls.Options `toml:"tls"`
+	TLS *to.Options `toml:"tls"`
 	// RequireTLS, when true, indicates this Origin Config's paths must only be registered with the TLS Router
 	RequireTLS bool `toml:"require_tls"`
 
@@ -174,7 +174,7 @@ func NewOptions() *Options {
 		NegativeCacheName:            d.DefaultOriginNegativeCacheName,
 		Paths:                        make(map[string]*po.Options),
 		RevalidationFactor:           d.DefaultRevalidationFactor,
-		TLS:                          &tls.Options{},
+		TLS:                          &to.Options{},
 		Timeout:                      time.Second * d.DefaultOriginTimeoutSecs,
 		TimeoutSecs:                  d.DefaultOriginTimeoutSecs,
 		TimeseriesEvictionMethod:     d.DefaultOriginTEM,

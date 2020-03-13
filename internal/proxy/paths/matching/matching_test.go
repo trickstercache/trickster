@@ -14,5 +14,26 @@
  * limitations under the License.
  */
 
-// Package tls handles options for TLS (https) requests
-package tls
+package matching
+
+import "testing"
+
+func TestPMTString(t *testing.T) {
+
+	t1 := PathMatchTypeExact
+	t2 := PathMatchTypePrefix
+
+	var t3 PathMatchType = 3
+
+	if t1.String() != "exact" {
+		t.Errorf("expected %s got %s", "exact", t1.String())
+	}
+
+	if t2.String() != "prefix" {
+		t.Errorf("expected %s got %s", "prefix", t2.String())
+	}
+
+	if t3.String() != "3" {
+		t.Errorf("expected %s got %s", "3", t3.String())
+	}
+}

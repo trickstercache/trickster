@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	co "github.com/Comcast/trickster/internal/cache/options"
+	ro "github.com/Comcast/trickster/internal/cache/redis/options"
 	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
 	tl "github.com/Comcast/trickster/internal/util/log"
@@ -51,7 +53,7 @@ func setupRedisCache(ct clientType) (*Cache, func()) {
 		panic(err)
 	}
 	conf := config.NewConfig()
-	rcfg := config.RedisCacheConfig{Endpoint: s.Addr(), ClientType: ct.String()}
+	rcfg := &ro.Options{Endpoint: s.Addr(), ClientType: ct.String()}
 	if ct != clientTypeStandard {
 		rcfg.Endpoint = ""
 		rcfg.Endpoints = []string{s.Addr()}
@@ -62,8 +64,8 @@ func setupRedisCache(ct clientType) (*Cache, func()) {
 	close := func() {
 		s.Close()
 	}
-	cacheConfig := &config.CachingConfig{CacheType: "redis", Redis: rcfg}
-	conf.Caches = map[string]*config.CachingConfig{"default": cacheConfig}
+	cacheConfig := &co.Options{CacheType: "redis", Redis: rcfg}
+	conf.Caches = map[string]*co.Options{"default": cacheConfig}
 
 	return &Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}, close
 }

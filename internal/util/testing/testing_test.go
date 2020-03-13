@@ -20,7 +20,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/config"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 )
 
 func TestNewTestServer(t *testing.T) {
@@ -77,8 +78,8 @@ func TestNewTestInstance(t *testing.T) {
 
 	// cover promsim conditional and path generation
 
-	f := func(*config.OriginConfig) map[string]*config.PathConfig {
-		return map[string]*config.PathConfig{
+	f := func(*oo.Options) map[string]*po.Options {
+		return map[string]*po.Options{
 			"path1": {},
 			"path2": {},
 		}
