@@ -27,7 +27,7 @@ import (
 	"github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	th "github.com/Comcast/trickster/internal/proxy/handlers"
-	rr "github.com/Comcast/trickster/internal/routing/registration"
+	"github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/runtime"
 	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
@@ -108,7 +108,7 @@ func main() {
 		caches[k] = c
 	}
 
-	err = rr.RegisterProxyRoutes(conf, router, caches, log)
+	err = routing.RegisterProxyRoutes(conf, router, caches, log)
 	if err != nil {
 		log.Fatal(1, "route registration failed", tl.Pairs{"detail": err.Error()})
 	}
