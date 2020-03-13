@@ -14,9 +14,11 @@
  * limitations under the License.
  */
 
-package ruler
+package rule
 
-import "errors"
-
-var errBadParams = errors.New("invalid parameters provided to rewrite instruction")
-var errBadDepthParse = errors.New("unable to parse depth value")
+type rule struct {
+	nextRoute      string
+	extractionFunc extractionFunc
+	decodingFunc   decodingFunc
+	operationFunc  operationFunc
+}

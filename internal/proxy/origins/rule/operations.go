@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package ruler
+package rule
 
 import (
 	"strconv"
