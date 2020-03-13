@@ -14,9 +14,12 @@
  * limitations under the License.
  */
 
+// set 		oc.TLS.ServeTLS = true
+
 package tls
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/Comcast/trickster/internal/config"
@@ -42,8 +45,8 @@ func TestDefaultTLSConfig(t *testing.T) {
 
 func tlsConfig(id string) *options.Options {
 	return &options.Options{
-		FullChainCertPath: "../../testdata/test." + id + ".cert.pem",
-		PrivateKeyPath:    "../../testdata/test." + id + ".key.pem",
+		FullChainCertPath: "../../../testdata/test." + id + ".cert.pem",
+		PrivateKeyPath:    "../../../testdata/test." + id + ".key.pem",
 		ServeTLS:          true,
 	}
 }
@@ -52,7 +55,7 @@ func TestVerifyTLSConfigs(t *testing.T) {
 
 	tls01 := tlsConfig("01")
 
-	err := tls01.Verify()
+	_, err := tls01.Validate()
 	if err != nil {
 		t.Error(err)
 	}
@@ -63,9 +66,9 @@ func TestVerifyTLSConfigs(t *testing.T) {
 	badFile := originalFile + ".nonexistent"
 	tls04.FullChainCertPath = badFile
 
-	err = tls04.Verify()
-	if err != nil {
-		t.Error(err)
+	_, err = tls04.Validate()
+	if err == nil {
+		t.Error(errors.New("expected no such file or directory error"))
 	}
 
 	tls04.FullChainCertPath = originalFile
@@ -74,31 +77,31 @@ func TestVerifyTLSConfigs(t *testing.T) {
 	originalFile = tls04.PrivateKeyPath
 	badFile = originalFile + ".nonexistent"
 	tls04.PrivateKeyPath = badFile
-	err = tls04.Verify()
-	if err != nil {
-		t.Error(err)
+	_, err = tls04.Validate()
+	if err == nil {
+		t.Error(errors.New("expected no such file or directory error"))
 	}
 
 	tls04.PrivateKeyPath = originalFile
-	originalFile = "../../testdata/test.rootca.pem"
+	originalFile = "../../../testdata/test.rootca.pem"
 	badFile = originalFile + ".nonexistent"
 	// test for more RootCA's to add
 	tls04.CertificateAuthorityPaths = []string{originalFile}
-	err = tls04.Verify()
+	_, err = tls04.Validate()
 	if err != nil {
 		t.Error(err)
 	}
 
 	tls04.CertificateAuthorityPaths = []string{badFile}
-	err = tls04.Verify()
-	if err != nil {
-		t.Error(err)
+	_, err = tls04.Validate()
+	if err == nil {
+		t.Error(errors.New("expected no such file or directory error"))
 	}
 }
 
 func TestProcessTLSConfigs(t *testing.T) {
 
-	a := []string{"-config", "../../testdata/test.full.conf"}
+	a := []string{"-config", "../../../testdata/test.full.tls.conf"}
 	_, _, err := config.Load("trickster-test", "0", a)
 	if err != nil {
 		t.Error(err)

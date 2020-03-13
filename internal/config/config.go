@@ -196,11 +196,25 @@ func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
 		return err
 	}
 
-	// TODO: restore this
-	// if err = c.verifyTLSConfigs(); err != nil {
-	// 	return err
-	// }
+	if err = c.validateTLSConfigs(); err != nil {
+		return err
+	}
 
+	return nil
+}
+
+func (c *TricksterConfig) validateTLSConfigs() error {
+	for _, oc := range c.Origins {
+		if oc.TLS != nil {
+			b, err := oc.TLS.Validate()
+			if err != nil {
+				return err
+			}
+			if b {
+				c.Frontend.ServeTLS = true
+			}
+		}
+	}
 	return nil
 }
 

@@ -184,7 +184,7 @@ func TestRegisterProxyRoutesMultipleDefaults(t *testing.T) {
 
 func TestRegisterProxyRoutesInvalidCert(t *testing.T) {
 	expected := "tls: failed to find any PEM data in certificate input"
-	a := []string{"-config", "../../testdata/test.bad_tls_cert.conf"}
+	a := []string{"-config", "../../testdata/test.bad_tls_cert.routes.conf"}
 	conf, _, err := config.Load("trickster", "test", a)
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())

@@ -39,7 +39,7 @@ type Options struct {
 	// Hosts identifies the frontend hostnames this origin should handle (virtual hosting)
 	Hosts []string `toml:"hosts"`
 	// IsDefault indicates if this is the d.Default origin for any request not matching a configured route
-	IsDefault bool `toml:"is_d.Default"`
+	IsDefault bool `toml:"is_default"`
 	// OriginType describes the type of origin (e.g., 'prometheus')
 	OriginType string `toml:"origin_type"`
 	// OriginURL provides the base upstream URL for all proxied requests to this origin.

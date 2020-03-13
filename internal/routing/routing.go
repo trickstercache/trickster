@@ -33,6 +33,7 @@ import (
 	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	"github.com/Comcast/trickster/internal/proxy/origins/prometheus"
 	"github.com/Comcast/trickster/internal/proxy/origins/reverseproxycache"
+	"github.com/Comcast/trickster/internal/proxy/origins/types"
 	"github.com/Comcast/trickster/internal/proxy/paths/matching"
 	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 	tl "github.com/Comcast/trickster/internal/util/log"
@@ -56,7 +57,7 @@ func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router, cache
 	// This iteration will ensure default origins are handled properly
 	for k, o := range conf.Origins {
 
-		if !config.IsValidOriginType(o.OriginType) {
+		if !types.IsValidOriginType(o.OriginType) {
 			return fmt.Errorf(`unknown origin type in origin config. originName: %s, originType: %s`, k, o.OriginType)
 		}
 

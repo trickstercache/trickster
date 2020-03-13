@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-// Package tls handles options for TLS (https) requests
 package options
 
 import (
@@ -71,34 +70,34 @@ func (o *Options) Clone() *Options {
 	}
 }
 
-func (o *Options) Verify() error {
+// Validate returns true if the TLS Options are validated
+func (o *Options) Validate() (bool, error) {
 
-	if (o.FullChainCertPath == "" || o.PrivateKeyPath == "") && (o.CertificateAuthorityPaths == nil || len(o.CertificateAuthorityPaths) == 0) {
-		return nil
+	if (o.FullChainCertPath == "" || o.PrivateKeyPath == "") &&
+		(o.CertificateAuthorityPaths == nil || len(o.CertificateAuthorityPaths) == 0) {
+		return false, nil
 	}
 
 	_, err := ioutil.ReadFile(o.FullChainCertPath)
 	if err != nil {
-		return err
+		return false, err
 	}
 	_, err = ioutil.ReadFile(o.PrivateKeyPath)
 	if err != nil {
-		return err
+		return false, err
 	}
-
-	// TODO: RELOCATE
-	// c.Frontend.ServeTLS = true
-	o.ServeTLS = true
 
 	// Verify CA Paths
 	if o.CertificateAuthorityPaths != nil && len(o.CertificateAuthorityPaths) > 0 {
 		for _, path := range o.CertificateAuthorityPaths {
 			_, err = ioutil.ReadFile(path)
 			if err != nil {
-				return err
+				return false, err
 			}
 		}
 	}
 
-	return nil
+	o.ServeTLS = true
+
+	return true, nil
 }
