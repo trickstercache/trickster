@@ -24,6 +24,7 @@ import (
 	"github.com/Comcast/trickster/internal/cache/bbolt"
 	"github.com/Comcast/trickster/internal/cache/filesystem"
 	"github.com/Comcast/trickster/internal/cache/memory"
+	"github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/cache/redis"
 	"github.com/Comcast/trickster/internal/config"
 	tl "github.com/Comcast/trickster/internal/util/log"
@@ -69,7 +70,7 @@ func CloseCaches(caches map[string]cache.Cache) error {
 }
 
 // NewCache returns a Cache object based on the provided config.CachingConfig
-func NewCache(cacheName string, cfg *config.CachingConfig, logger *tl.TricksterLogger) cache.Cache {
+func NewCache(cacheName string, cfg *options.Options, logger *tl.TricksterLogger) cache.Cache {
 
 	var c cache.Cache
 

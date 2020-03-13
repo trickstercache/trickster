@@ -27,7 +27,7 @@ import (
 	"github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
 	th "github.com/Comcast/trickster/internal/proxy/handlers"
-	rr "github.com/Comcast/trickster/internal/routing/registration"
+	rr "github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/runtime"
 	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"

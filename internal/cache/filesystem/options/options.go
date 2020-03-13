@@ -14,28 +14,18 @@
  * limitations under the License.
  */
 
-package config
+package options
 
 import (
-	"testing"
+	d "github.com/Comcast/trickster/internal/config/defaults"
 )
 
-func TestCollapsedForwardingTypeString(t *testing.T) {
+// Options is a collection of Configurations for storing cached data on the Filesystem
+type Options struct {
+	// CachePath represents the path on disk where our cache will live
+	CachePath string `toml:"cache_path"`
+}
 
-	t1 := CFTypeBasic
-	t2 := CFTypeProgressive
-	var t3 CollapsedForwardingType = 13
-
-	if t1.String() != "basic" {
-		t.Errorf("expected %s got %s", "basic", t1.String())
-	}
-
-	if t2.String() != "progressive" {
-		t.Errorf("expected %s got %s", "progressive", t2.String())
-	}
-
-	if t3.String() != "13" {
-		t.Errorf("expected %s got %s", "13", t3.String())
-	}
-
+func NewOptions() *Options {
+	return &Options{CachePath: d.DefaultCachePath}
 }

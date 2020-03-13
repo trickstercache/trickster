@@ -19,6 +19,8 @@ package config
 import (
 	"flag"
 	"sync"
+
+	d "github.com/Comcast/trickster/internal/config/defaults"
 )
 
 const (
@@ -76,7 +78,7 @@ func parseFlags(applicationName string, arguments []string) (*TricksterFlags, er
 	if flags.ConfigPath != "" {
 		flags.customPath = true
 	} else {
-		flags.ConfigPath = DefaultConfigPath
+		flags.ConfigPath = d.DefaultConfigPath
 	}
 	return flags, nil
 }

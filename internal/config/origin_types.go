@@ -24,6 +24,8 @@ type OriginType int
 const (
 	// OriginTypeRPC represents thee Reverse Proxy Cache origin type
 	OriginTypeRPC = OriginType(iota)
+	// OriginTypeRule represents the Ruler origin type
+	OriginTypeRule
 	// OriginTypePrometheus represents the Prometheus origin type
 	OriginTypePrometheus
 	// OriginTypeInfluxDB represents the InfluxDB origin type
@@ -36,6 +38,7 @@ const (
 
 var originTypeNames = map[string]OriginType{
 	"rpc":               OriginTypeRPC,
+	"rule":              OriginTypeRule,
 	"reverseproxycache": OriginTypeRPC,
 	"prometheus":        OriginTypePrometheus,
 	"influxdb":          OriginTypeInfluxDB,
@@ -43,12 +46,12 @@ var originTypeNames = map[string]OriginType{
 	"clickhouse":        OriginTypeClickHouse,
 }
 
-var originTypeValues = map[OriginType]string{
-	OriginTypeRPC:        "rpc",
-	OriginTypePrometheus: "prometheus",
-	OriginTypeInfluxDB:   "influxdb",
-	OriginTypeIronDB:     "irondb",
-	OriginTypeClickHouse: "clickhouse",
+var originTypeValues = make(map[OriginType]string)
+
+func init() {
+	for k, v := range originTypeNames {
+		originTypeValues[v] = k
+	}
 }
 
 func (t OriginType) String() string {

@@ -29,6 +29,8 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	tc "github.com/Comcast/trickster/internal/proxy/context"
 	th "github.com/Comcast/trickster/internal/proxy/headers"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	tl "github.com/Comcast/trickster/internal/util/log"
 	tr "github.com/Comcast/trickster/internal/util/tracing/registration"
@@ -64,7 +66,7 @@ func NewTestWebClient() *http.Client {
 // NewTestInstance will start a trickster
 func NewTestInstance(
 	configFile string,
-	DefaultPathConfigs func(*config.OriginConfig) map[string]*config.PathConfig,
+	DefaultPathConfigs func(*oo.Options) map[string]*po.Options,
 	respCode int, respBody string, respHeaders map[string]string,
 	originType, urlPath, logLevel string,
 ) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *http.Client, error) {
@@ -127,18 +129,18 @@ func NewTestInstance(
 
 // NewTestPathConfig returns a path config based on the provided parameters
 func NewTestPathConfig(
-	oc *config.OriginConfig,
-	DefaultPathConfigs func(*config.OriginConfig) map[string]*config.PathConfig,
+	oc *oo.Options,
+	DefaultPathConfigs func(*oo.Options) map[string]*po.Options,
 	urlPath string,
-) *config.PathConfig {
-	var paths map[string]*config.PathConfig
+) *po.Options {
+	var paths map[string]*po.Options
 	if DefaultPathConfigs != nil {
 		paths = DefaultPathConfigs(oc)
 	}
 
 	oc.Paths = paths
 
-	p := &config.PathConfig{}
+	p := &po.Options{}
 	if len(paths) > 0 {
 		if p2, ok := paths[urlPath]; ok {
 			p = p2

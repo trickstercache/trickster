@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package config
+package types
 
 import "strconv"
 
@@ -34,8 +34,8 @@ const (
 	CacheTypeBadgerDB
 )
 
-// CacheTypeNames is a map of cache types keyed by name
-var CacheTypeNames = map[string]CacheType{
+// Names is a map of cache types keyed by name
+var Names = map[string]CacheType{
 	"memory":     CacheTypeMemory,
 	"filesystem": CacheTypeFilesystem,
 	"redis":      CacheTypeRedis,
@@ -43,17 +43,17 @@ var CacheTypeNames = map[string]CacheType{
 	"badger":     CacheTypeBadgerDB,
 }
 
-// CacheTypeValues is a map of cache types keyed by internal id
-var CacheTypeValues = map[CacheType]string{
-	CacheTypeMemory:     "memory",
-	CacheTypeFilesystem: "filesystem",
-	CacheTypeRedis:      "redis",
-	CacheTypeBbolt:      "bbolt",
-	CacheTypeBadgerDB:   "badger",
+// Values is a map of cache types keyed by internal id
+var Values = make(map[CacheType]string)
+
+func init() {
+	for k, v := range Names {
+		Values[v] = k
+	}
 }
 
 func (t CacheType) String() string {
-	if v, ok := CacheTypeValues[t]; ok {
+	if v, ok := Values[t]; ok {
 		return v
 	}
 	return strconv.Itoa(int(t))

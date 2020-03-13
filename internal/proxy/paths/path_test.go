@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package config
+package paths
 
 import (
 	"net/http"

@@ -26,8 +26,8 @@ import (
 	"time"
 
 	tc "github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/cache/evictionmethods"
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
 	tctx "github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/origins"
 	"github.com/Comcast/trickster/internal/proxy/request"
@@ -80,7 +80,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 
 	OldestRetainedTimestamp := time.Time{}
-	if oc.TimeseriesEvictionMethod == config.EvictionMethodOldest {
+	if oc.TimeseriesEvictionMethod == evictionmethods.EvictionMethodOldest {
 		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * oc.TimeseriesRetention))
 		if trq.Extent.End.Before(OldestRetainedTimestamp) {
 			pr.Logger.Debug("timerange end is too early to consider caching",
@@ -165,7 +165,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 					return // fetchTimeseries logs the error
 				}
 			} else {
-				if oc.TimeseriesEvictionMethod == config.EvictionMethodLRU {
+				if oc.TimeseriesEvictionMethod == evictionmethods.EvictionMethodLRU {
 					el := cts.Extents()
 					tsc := cts.TimestampCount()
 					if tsc > 0 &&
@@ -341,7 +341,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			defer wg.Done()
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the Backfill Tolerance before storing to cache
 			switch oc.TimeseriesEvictionMethod {
-			case config.EvictionMethodLRU:
+			case evictionmethods.EvictionMethodLRU:
 				cts.CropToSize(oc.TimeseriesRetentionFactor, bf.End, trq.Extent)
 			default:
 				cts.CropToRange(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})

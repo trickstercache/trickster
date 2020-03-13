@@ -14,9 +14,12 @@
  * limitations under the License.
  */
 
-package config
+package options
 
 import (
+	"github.com/BurntSushi/toml"
+	d "github.com/Comcast/trickster/internal/config/defaults"
+
 	"go.opentelemetry.io/otel/api/trace"
 )
 
@@ -30,8 +33,8 @@ type TracingExporterOptions struct {
 	SampleRate float64 `toml:"sample_rate"`
 }
 
-// TracingConfig provides the distributed tracing configuration
-type TracingConfig struct {
+// Options provides the distributed tracing configuration
+type Options struct {
 	// Name is the name of the Tracing Config
 	Name string `toml:"-"`
 	// Implementation is the particular implementation to use. Ex OpenTelemetry.
@@ -44,21 +47,21 @@ type TracingConfig struct {
 	Tracer trace.Tracer `toml:"-"`
 }
 
-// NewTracingConfig returns a new tracing config with default values
-func NewTracingConfig() *TracingConfig {
-	return &TracingConfig{
+// NewOptions returns a new tracing config with default values
+func NewOptions() *Options {
+	return &Options{
 		Name:           "default",
-		Implementation: defaultTracerImplemetation,
+		Implementation: d.DefaultTracerImplemetation,
 		Exporter: &TracingExporterOptions{
-			Exporter:   defaultExporterImplementation,
+			Exporter:   d.DefaultExporterImplementation,
 			SampleRate: 1,
 		},
 	}
 }
 
 // Clone returns an exact copy of a tracing config
-func (tc *TracingConfig) Clone() *TracingConfig {
-	return &TracingConfig{
+func (tc *Options) Clone() *Options {
+	return &Options{
 		Name:           tc.Name,
 		Implementation: tc.Implementation,
 		Exporter:       tc.Exporter.Clone(),
@@ -74,4 +77,16 @@ func (teo *TracingExporterOptions) Clone() *TracingExporterOptions {
 		Collector:  teo.Collector,
 	}
 
+}
+
+func ProcessTracingConfigs(mo map[string]*Options, metadata *toml.MetaData) {
+	for k, v := range mo {
+		if !metadata.IsDefined("tracing", k, "exporter") {
+			v.Exporter = &TracingExporterOptions{}
+		}
+		// if the user does not provide a sample rate in the config, assume they want 100% sampling
+		if !metadata.IsDefined("tracing", k, "exporter", "sample_rate") {
+			v.Exporter.SampleRate = 1
+		}
+	}
 }
