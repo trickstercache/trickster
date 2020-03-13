@@ -21,8 +21,10 @@ import (
 	"strings"
 
 	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/methods"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	"github.com/Comcast/trickster/internal/proxy/paths/matching"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 )
 
 // Handler processes the HTTP request through the rules engine
@@ -48,8 +50,8 @@ func (c *Client) Handler(w http.ResponseWriter, r *http.Request) {
 // Client Implements the Proxy Client Interface
 type Client struct {
 	name               string
-	originConfigs      map[string]*config.OriginConfig
-	options            *config.OriginConfig
+	originConfigs      map[string]*oo.Options
+	options            *oo.Options
 	handlers           map[string]http.Handler
 	handlersRegistered bool
 	rule               *rule
@@ -57,7 +59,7 @@ type Client struct {
 }
 
 // NewClient returns a new Rules Router client reference
-func NewClient(name string, options *config.OriginConfig, ocm map[string]*config.OriginConfig) (*Client, error) {
+func NewClient(name string, options *oo.Options, ocm map[string]*oo.Options) (*Client, error) {
 	return &Client{
 		name:          name,
 		options:       options,
@@ -68,23 +70,22 @@ func NewClient(name string, options *config.OriginConfig, ocm map[string]*config
 }
 
 // Configuration returns the Client Configuration
-func (c *Client) Configuration() *config.OriginConfig {
+func (c *Client) Configuration() *oo.Options {
 	return c.options
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *Client) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.PathConfig {
+func (c *Client) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
 
 	m := methods.CacheableHTTPMethods()
 	m = append(m, methods.CacheableHTTPMethods()...)
 
-	paths := map[string]*config.PathConfig{
+	paths := map[string]*po.Options{
 		"/" + strings.Join(m, "-"): {
 			Path:          "/",
 			HandlerName:   "rule",
 			Methods:       m,
-			OriginConfig:  oc,
-			MatchType:     config.PathMatchTypePrefix,
+			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",
 		},
 	}
