@@ -16,10 +16,8 @@
 
 package ruler
 
-import "net/http"
-
 type rule struct {
-	nextRoute      http.Handler
+	nextRoute      string
 	extractionFunc extractionFunc
 	decodingFunc   decodingFunc
 	operationFunc  operationFunc

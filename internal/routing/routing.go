@@ -32,6 +32,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/origins/irondb"
 	"github.com/Comcast/trickster/internal/proxy/origins/prometheus"
 	"github.com/Comcast/trickster/internal/proxy/origins/reverseproxycache"
+	"github.com/Comcast/trickster/internal/proxy/origins/ruler"
 	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/middleware"
 
@@ -72,7 +73,7 @@ func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router, cache
 			continue
 		}
 
-		err := registerOriginRoutes(router, k, o, caches, log)
+		err := registerOriginRoutes(router, conf, k, o, caches, log)
 		if err != nil {
 			return err
 		}
@@ -84,7 +85,7 @@ func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router, cache
 			cdo = ndo
 			defaultOrigin = "default"
 		} else {
-			err := registerOriginRoutes(router, "default", ndo, caches, log)
+			err := registerOriginRoutes(router, conf, "default", ndo, caches, log)
 			if err != nil {
 				return err
 			}
@@ -92,13 +93,13 @@ func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router, cache
 	}
 
 	if cdo != nil {
-		return registerOriginRoutes(router, defaultOrigin, cdo, caches, log)
+		return registerOriginRoutes(router, conf, defaultOrigin, cdo, caches, log)
 	}
 
 	return nil
 }
 
-func registerOriginRoutes(router *mux.Router, k string, o *config.OriginConfig, caches map[string]cache.Cache, log *tl.TricksterLogger) error {
+func registerOriginRoutes(router *mux.Router, conf *config.TricksterConfig, k string, o *config.OriginConfig, caches map[string]cache.Cache, log *tl.TricksterLogger) error {
 
 	var client origins.Client
 	var c cache.Cache
@@ -123,6 +124,8 @@ func registerOriginRoutes(router *mux.Router, k string, o *config.OriginConfig, 
 		client, err = clickhouse.NewClient(k, o, c)
 	case "rpc", "reverseproxycache":
 		client, err = reverseproxycache.NewClient(k, o, c)
+	case "ruler":
+		client, err = ruler.NewClient(k, o, conf.Origins)
 	}
 	if err != nil {
 		return err
@@ -226,6 +229,8 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 				p.Methods = methods.AllHTTPMethods()
 			}
 
+			routePath := "/" + o.Name + p.Path
+
 			switch p.MatchType {
 			case config.PathMatchTypePrefix:
 				// Case where we path match by prefix
@@ -234,8 +239,8 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 					router.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...).Host(h)
 				}
 				// Path Routing
-				router.PathPrefix("/" + o.Name + p.Path).Handler(decorate(p)).Methods(p.Methods...)
-				or.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...)
+				router.PathPrefix(routePath).Handler(decorate(p)).Methods(p.Methods...)
+				or.PathPrefix(routePath).Handler(decorate(p)).Methods(p.Methods...)
 			default:
 				// default to exact match
 				// Host Header Routing
@@ -243,8 +248,8 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 					router.Handle(p.Path, decorate(p)).Methods(p.Methods...).Host(h)
 				}
 				// Path Routing
-				router.Handle("/"+o.Name+p.Path, decorate(p)).Methods(p.Methods...)
-				or.Handle(p.Path, decorate(p)).Methods(p.Methods...)
+				router.Handle(routePath, decorate(p)).Methods(p.Methods...)
+				or.Handle(routePath, decorate(p)).Methods(p.Methods...)
 			}
 		}
 	}
