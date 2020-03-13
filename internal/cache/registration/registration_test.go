@@ -23,7 +23,7 @@ import (
 
 	bao "github.com/Comcast/trickster/internal/cache/badger/options"
 	bbo "github.com/Comcast/trickster/internal/cache/bbolt/options"
-	fo "github.com/Comcast/trickster/internal/cache/filesystem/options"
+	flo "github.com/Comcast/trickster/internal/cache/filesystem/options"
 	io "github.com/Comcast/trickster/internal/cache/index/options"
 	co "github.com/Comcast/trickster/internal/cache/options"
 	ro "github.com/Comcast/trickster/internal/cache/redis/options"
@@ -101,7 +101,7 @@ func newCacheConfig(t *testing.T, cacheType string) *co.Options {
 	return &co.Options{
 		CacheType:  cacheType,
 		Redis:      &ro.Options{Protocol: "tcp", Endpoint: "redis:6379", Endpoints: []string{"redis:6379"}},
-		Filesystem: &fo.Options{CachePath: fd},
+		Filesystem: &flo.Options{CachePath: fd},
 		BBolt:      &bbo.Options{Filename: "/tmp/test.db", Bucket: "trickster_test"},
 		Badger:     &bao.Options{Directory: bd, ValueDirectory: bd},
 		Index: &io.Options{
