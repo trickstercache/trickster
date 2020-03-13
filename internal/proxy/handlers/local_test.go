@@ -24,6 +24,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	tc "github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/headers"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	tl "github.com/Comcast/trickster/internal/util/log"
 )
@@ -38,7 +39,7 @@ func TestHandleLocalResponse(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
 
-	pc := &config.PathConfig{
+	pc := &po.Options{
 		ResponseCode:      418,
 		ResponseBody:      "[test",
 		ResponseBodyBytes: []byte("[test"),
@@ -84,7 +85,7 @@ func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
 
-	pc := &config.PathConfig{
+	pc := &po.Options{
 		ResponseCode:      0,
 		ResponseBody:      "[test",
 		ResponseBodyBytes: []byte("[test"),

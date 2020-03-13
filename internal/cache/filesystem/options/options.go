@@ -14,28 +14,18 @@
  * limitations under the License.
  */
 
-package config
+package options
 
 import (
-	"testing"
+	d "github.com/Comcast/trickster/internal/config/defaults"
 )
 
-func TestCacheTypeString(t *testing.T) {
+// Options is a collection of Configurations for storing cached data on the Filesystem
+type Options struct {
+	// CachePath represents the path on disk where our cache will live
+	CachePath string `toml:"cache_path"`
+}
 
-	t1 := CacheTypeMemory
-	t2 := CacheTypeFilesystem
-	var t3 CacheType = 13
-
-	if t1.String() != "memory" {
-		t.Errorf("expected %s got %s", "memory", t1.String())
-	}
-
-	if t2.String() != "filesystem" {
-		t.Errorf("expected %s got %s", "filesystem", t2.String())
-	}
-
-	if t3.String() != "13" {
-		t.Errorf("expected %s got %s", "13", t3.String())
-	}
-
+func NewOptions() *Options {
+	return &Options{CachePath: d.DefaultCachePath}
 }

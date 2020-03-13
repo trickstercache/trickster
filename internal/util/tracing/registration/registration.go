@@ -26,6 +26,7 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/tracing"
+	to "github.com/Comcast/trickster/internal/util/tracing/options"
 )
 
 // Flushers represents a slice of Flusher functions for the configured Tracers
@@ -44,7 +45,7 @@ func RegisterAll(cfg *config.TricksterConfig, log *tl.TricksterLogger) (Flushers
 	}
 
 	flushers := make(Flushers, 0, len(cfg.Origins))
-	activeTracers := make(map[string]*config.TracingConfig)
+	activeTracers := make(map[string]*to.Options)
 
 	for _, oc := range cfg.Origins {
 		if oc != nil {
@@ -78,7 +79,7 @@ func RegisterAll(cfg *config.TricksterConfig, log *tl.TricksterLogger) (Flushers
 }
 
 // Init initializes tracing and returns a function to flush the tracer. Flush should be called on server shutdown.
-func Init(cfg *config.TracingConfig, log *tl.TricksterLogger) (trace.Tracer, func(), error) {
+func Init(cfg *to.Options, log *tl.TricksterLogger) (trace.Tracer, func(), error) {
 
 	if cfg == nil {
 		log.Info(

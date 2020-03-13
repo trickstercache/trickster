@@ -24,8 +24,9 @@ import (
 	"github.com/go-redis/redis"
 
 	"github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/cache/metrics"
+	"github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
 	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
@@ -35,7 +36,7 @@ const Redis = "redis"
 // Cache represents a redis cache object that conforms to the Cache interface
 type Cache struct {
 	Name   string
-	Config *config.CachingConfig
+	Config *options.Options
 	Logger *tl.TricksterLogger
 
 	client redis.Cmdable
@@ -43,7 +44,7 @@ type Cache struct {
 }
 
 // Configuration returns the Configuration for the Cache object
-func (c *Cache) Configuration() *config.CachingConfig {
+func (c *Cache) Configuration() *options.Options {
 	return c.Config
 }
 
@@ -82,7 +83,7 @@ func (c *Cache) Connect() error {
 
 // Store places the the data into the Redis Cache using the provided Key and TTL
 func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
-	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
+	metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 	c.Logger.Debug("redis cache store", tl.Pairs{"key": cacheKey})
 	return c.client.Set(cacheKey, data, ttl).Err()
 }
@@ -95,18 +96,18 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 	if err == nil {
 		data := []byte(res)
 		c.Logger.Debug("redis cache retrieve", tl.Pairs{"key": cacheKey})
-		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
+		metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
 		return data, status.LookupStatusHit, nil
 	}
 
 	if err == redis.Nil {
 		c.Logger.Debug("redis cache miss", tl.Pairs{"key": cacheKey})
-		cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+		metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 		return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 	}
 
 	c.Logger.Debug("redis cache retrieve failed", tl.Pairs{"key": cacheKey, "reason": err.Error()})
-	cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 	return nil, status.LookupStatusError, err
 }
 
@@ -114,7 +115,7 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 func (c *Cache) Remove(cacheKey string) {
 	c.Logger.Debug("redis cache remove", tl.Pairs{"key": cacheKey})
 	c.client.Del(cacheKey)
-	cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
+	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 }
 
 // SetTTL updates the TTL for the provided cache object
@@ -126,7 +127,7 @@ func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
 func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
 	c.Logger.Debug("redis cache bulk remove", tl.Pairs{})
 	c.client.Del(cacheKeys...)
-	cache.ObserveCacheDel(c.Name, c.Config.CacheType, float64(len(cacheKeys)))
+	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, float64(len(cacheKeys)))
 }
 
 // Close disconnects from the Redis Cache

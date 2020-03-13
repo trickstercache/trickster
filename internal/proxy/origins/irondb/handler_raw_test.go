@@ -21,7 +21,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/config"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 )
@@ -64,7 +64,7 @@ func TestRawHandlerParseTimeRangeQuery(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
 	hc := tu.NewTestWebClient()
-	cfg := config.NewOriginConfig()
+	cfg := oo.NewOptions()
 	client := &Client{name: "test", webClient: hc, config: cfg}
 
 	cfg.Paths = client.DefaultPathConfigs(cfg)

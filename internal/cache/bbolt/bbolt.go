@@ -21,14 +21,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/coreos/bbolt"
-
-	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/index"
+	"github.com/Comcast/trickster/internal/cache/metrics"
+	"github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/pkg/locks"
+
+	"github.com/coreos/bbolt"
 )
 
 var lockPrefix string
@@ -36,14 +36,14 @@ var lockPrefix string
 // Cache describes a BBolt Cache
 type Cache struct {
 	Name   string
-	Config *config.CachingConfig
+	Config *options.Options
 	dbh    *bbolt.DB
 	Logger *log.TricksterLogger
 	Index  *index.Index
 }
 
 // Configuration returns the Configuration for the Cache object
-func (c *Cache) Configuration() *config.CachingConfig {
+func (c *Cache) Configuration() *options.Options {
 	return c.Config
 }
 
@@ -92,7 +92,7 @@ func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateIndex bool) error {
 
 	locks.Acquire(lockPrefix + cacheKey)
-	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
+	metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 
 	o := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	err := writeToBBolt(c.dbh, c.Config.BBolt.Bucket, cacheKey, o.ToBytes())
@@ -133,7 +133,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		data = b.Get([]byte(cacheKey))
 		if data == nil {
 			c.Logger.Debug("bbolt cache miss", log.Pairs{"key": cacheKey})
-			_, cme := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+			_, cme := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 			locks.Release(lockPrefix + cacheKey)
 			return cme
 		}
@@ -148,7 +148,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	o, err := index.ObjectFromBytes(data)
 	if err != nil {
 		locks.Release(lockPrefix + cacheKey)
-		_, err = cache.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
+		_, err = metrics.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
 		return nil, status.LookupStatusError, err
 	}
 
@@ -166,13 +166,13 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		if atime {
 			c.Index.UpdateObjectAccessTime(cacheKey)
 		}
-		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
+		metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
 		locks.Release(lockPrefix + cacheKey)
 		return o.Value, status.LookupStatusHit, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
 	c.remove(cacheKey, false)
-	b, err := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	b, err := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 	locks.Release(lockPrefix + cacheKey)
 
 	return b, status.LookupStatusKeyMiss, err
@@ -203,7 +203,7 @@ func (c *Cache) remove(cacheKey string, noLock bool) error {
 		return err
 	}
 	c.Index.RemoveObject(cacheKey, noLock)
-	cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
+	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 	c.Logger.Debug("bbolt cache key delete", log.Pairs{"key": cacheKey})
 	return nil
 }

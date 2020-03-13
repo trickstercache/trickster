@@ -24,8 +24,9 @@ import (
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/index"
+	"github.com/Comcast/trickster/internal/cache/metrics"
+	"github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
 	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/pkg/locks"
 )
@@ -36,13 +37,13 @@ var lockPrefix string
 type Cache struct {
 	Name   string
 	client sync.Map
-	Config *config.CachingConfig
+	Config *options.Options
 	Index  *index.Index
 	Logger *tl.TricksterLogger
 }
 
 // Configuration returns the Configuration for the Cache object
-func (c *Cache) Configuration() *config.CachingConfig {
+func (c *Cache) Configuration() *options.Options {
 	return c.Config
 }
 
@@ -74,11 +75,11 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 	isDirect := byteData == nil && refData != nil
 	if byteData != nil {
 		l = len(byteData)
-		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(l))
+		metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(l))
 		o1 = &index.Object{Key: cacheKey, Value: byteData, Expiration: time.Now().Add(ttl)}
 		o2 = &index.Object{Key: cacheKey, Value: byteData, Expiration: time.Now().Add(ttl)}
 	} else if refData != nil {
-		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "setDirect", "none", 0)
+		metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "setDirect", "none", 0)
 		o1 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: time.Now().Add(ttl)}
 		o2 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: time.Now().Add(ttl)}
 	}
@@ -135,7 +136,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index
 			if atime {
 				c.Index.UpdateObjectAccessTime(cacheKey)
 			}
-			cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(o.Value)))
+			metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(o.Value)))
 			locks.Release(lockPrefix + cacheKey)
 			return o, status.LookupStatusHit, nil
 		}
@@ -143,7 +144,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index
 		go c.remove(cacheKey, false)
 	}
 	locks.Release(lockPrefix + cacheKey)
-	_, err := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	_, err := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 	return nil, status.LookupStatusKeyMiss, err
 
 }
@@ -162,7 +163,7 @@ func (c *Cache) remove(cacheKey string, noLock bool) {
 	locks.Acquire(lockPrefix + cacheKey)
 	c.client.Delete(cacheKey)
 	c.Index.RemoveObject(cacheKey, noLock)
-	cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
+	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 	locks.Release(lockPrefix + cacheKey)
 }
 

@@ -27,9 +27,9 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/proxy/errors"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
@@ -63,7 +63,7 @@ const (
 // Client Implements Proxy Client Interface
 type Client struct {
 	name               string
-	config             *config.OriginConfig
+	config             *oo.Options
 	cache              cache.Cache
 	webClient          *http.Client
 	handlers           map[string]http.Handler
@@ -75,7 +75,7 @@ type Client struct {
 }
 
 // NewClient returns a new Client Instance
-func NewClient(name string, oc *config.OriginConfig, cache cache.Cache) (*Client, error) {
+func NewClient(name string, oc *oo.Options, cache cache.Cache) (*Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
 	return &Client{name: name, config: oc, cache: cache, webClient: c}, err
 }
@@ -86,7 +86,7 @@ func (c *Client) SetCache(cc cache.Cache) {
 }
 
 // Configuration returns the upstream Configuration for this Client
-func (c *Client) Configuration() *config.OriginConfig {
+func (c *Client) Configuration() *oo.Options {
 	return c.config
 }
 

@@ -28,7 +28,7 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/forwarding"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/params"
 	"github.com/Comcast/trickster/internal/proxy/request"
@@ -63,7 +63,7 @@ func DoProxy(w io.Writer, r *http.Request) *http.Response {
 	var cacheStatusCode status.LookupStatus
 	var resp *http.Response
 	var reader io.Reader
-	if pc == nil || pc.CollapsedForwardingType != config.CFTypeProgressive {
+	if pc == nil || pc.CollapsedForwardingType != forwarding.CFTypeProgressive {
 		reader, resp, _ = PrepareFetchReader(r)
 		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)

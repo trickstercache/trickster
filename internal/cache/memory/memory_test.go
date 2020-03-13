@@ -22,8 +22,9 @@ import (
 	"testing"
 	"time"
 
+	io "github.com/Comcast/trickster/internal/cache/index/options"
+	co "github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
 	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
@@ -38,7 +39,7 @@ func (r *testReferenceObject) Size() int {
 }
 
 func storeBenchmark(b *testing.B) Cache {
-	cacheConfig := config.CachingConfig{CacheType: cacheType, Index: config.CacheIndexConfig{ReapInterval: 0}}
+	cacheConfig := co.Options{CacheType: cacheType, Index: &io.Options{ReapInterval: 0}}
 	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	err := mc.Connect()
@@ -55,12 +56,12 @@ func storeBenchmark(b *testing.B) Cache {
 	return mc
 }
 
-func newCacheConfig(t *testing.T) config.CachingConfig {
+func newCacheConfig(t *testing.T) co.Options {
 	dir, err := ioutil.TempDir("/tmp", cacheType)
 	if err != nil {
 		t.Fatalf("could not create temp directory (%s): %s", dir, err)
 	}
-	return config.CachingConfig{CacheType: cacheType, Index: config.CacheIndexConfig{ReapInterval: 0}}
+	return co.Options{CacheType: cacheType, Index: &io.Options{ReapInterval: 0}}
 }
 
 func TestConfiguration(t *testing.T) {

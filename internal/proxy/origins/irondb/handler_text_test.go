@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/errors"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/timeseries"
 	tu "github.com/Comcast/trickster/internal/util/testing"
@@ -88,7 +88,7 @@ func TestTextHandlerParseTimeRangeQuery(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
 	hc := tu.NewTestWebClient()
-	cfg := config.NewOriginConfig()
+	cfg := oo.NewOptions()
 	client := &Client{name: "test", webClient: hc, config: cfg}
 	cfg.Paths = client.DefaultPathConfigs(cfg)
 
@@ -129,7 +129,7 @@ func TestTextHandlerSetExtent(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
 	hc := tu.NewTestWebClient()
-	cfg := config.NewOriginConfig()
+	cfg := oo.NewOptions()
 	client := &Client{name: "test", webClient: hc, config: cfg}
 	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0/test", nil)

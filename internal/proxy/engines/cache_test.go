@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	co "github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/cache/registration"
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/cache/status"
@@ -438,7 +439,7 @@ func TestQueryCache(t *testing.T) {
 
 // Mock Cache for testing error conditions
 type testCache struct {
-	configuration *config.CachingConfig
+	configuration *co.Options
 }
 
 func (tc *testCache) Connect() error {
@@ -459,4 +460,4 @@ func (tc *testCache) SetTTL(cacheKey string, ttl time.Duration)  {}
 func (tc *testCache) Remove(cacheKey string)                     {}
 func (tc *testCache) BulkRemove(cacheKeys []string, noLock bool) {}
 func (tc *testCache) Close() error                               { return errTest }
-func (tc *testCache) Configuration() *config.CachingConfig       { return tc.configuration }
+func (tc *testCache) Configuration() *co.Options                 { return tc.configuration }

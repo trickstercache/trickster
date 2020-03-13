@@ -17,10 +17,12 @@
 package testing
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/config"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 )
 
 func TestNewTestServer(t *testing.T) {
@@ -77,8 +79,8 @@ func TestNewTestInstance(t *testing.T) {
 
 	// cover promsim conditional and path generation
 
-	f := func(*config.OriginConfig) map[string]*config.PathConfig {
-		return map[string]*config.PathConfig{
+	f := func(*oo.Options) map[string]*po.Options {
+		return map[string]*po.Options{
 			"path1": {},
 			"path2": {},
 		}
@@ -86,7 +88,7 @@ func TestNewTestInstance(t *testing.T) {
 
 	s, _, _, _, err = NewTestInstance("", f, 200, "", nil, "promsim", "test", "debug")
 	if s == nil {
-		t.Errorf("Expected server pointer, got %v", "nil")
+		t.Error(errors.New("Expected server pointer, got nil"))
 	}
 	if err != nil {
 		t.Error(err)
@@ -96,7 +98,7 @@ func TestNewTestInstance(t *testing.T) {
 
 	_, _, _, _, err = NewTestInstance("../../../testdata/test.full.conf", f, 200, "", nil, "promsim", "test", "debug")
 	if err == nil {
-		t.Errorf("Expected error, got %v", "nil")
+		t.Error(errors.New("Expected error, got nil"))
 	}
 
 	_, _, _, _, err = NewTestInstance("", nil, 200, "", map[string]string{"test-header": "x"}, "rangesim", "test", "debug")

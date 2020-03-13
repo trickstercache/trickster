@@ -14,37 +14,19 @@
  * limitations under the License.
  */
 
-package config
+package options
 
 import (
 	"net/http"
 	"testing"
+
+	"github.com/Comcast/trickster/internal/proxy/forwarding"
+	"github.com/Comcast/trickster/internal/proxy/paths/matching"
 )
 
-func TestPMTString(t *testing.T) {
+func TestNewOptions(t *testing.T) {
 
-	t1 := PathMatchTypeExact
-	t2 := PathMatchTypePrefix
-
-	var t3 PathMatchType = 3
-
-	if t1.String() != "exact" {
-		t.Errorf("expected %s got %s", "exact", t1.String())
-	}
-
-	if t2.String() != "prefix" {
-		t.Errorf("expected %s got %s", "prefix", t2.String())
-	}
-
-	if t3.String() != "3" {
-		t.Errorf("expected %s got %s", "3", t3.String())
-	}
-
-}
-
-func TestNewPathConfig(t *testing.T) {
-
-	pc := NewPathConfig()
+	pc := NewOptions()
 
 	if pc == nil {
 		t.Errorf("expected non-nil value you for %s", "PathConfig")
@@ -58,7 +40,7 @@ func TestNewPathConfig(t *testing.T) {
 
 func TestPathClone(t *testing.T) {
 
-	pc := NewPathConfig()
+	pc := NewOptions()
 	pc2 := pc.Clone()
 
 	if pc2 == nil {
@@ -73,19 +55,17 @@ func TestPathClone(t *testing.T) {
 
 func TestPathMerge(t *testing.T) {
 
-	pc := NewPathConfig()
+	pc := NewOptions()
 	pc2 := pc.Clone()
 
-	pc2.OriginConfig = NewOriginConfig()
-
-	pc2.custom = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers", "cache_key_form_fields",
+	pc2.Custom = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers", "cache_key_form_fields",
 		"request_headers", "request_params", "response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding"}
 
 	expectedPath := "testPath"
 	expectedHandlerName := "testHandler"
 
 	pc2.Path = expectedPath
-	pc2.MatchType = PathMatchTypePrefix
+	pc2.MatchType = matching.PathMatchTypePrefix
 	pc2.HandlerName = expectedHandlerName
 	pc2.Methods = []string{http.MethodPost}
 	pc2.CacheKeyParams = []string{"params"}
@@ -98,7 +78,7 @@ func TestPathMerge(t *testing.T) {
 	pc2.ResponseBody = "trickster"
 	pc2.NoMetrics = true
 	pc2.CollapsedForwardingName = "progressive"
-	pc2.CollapsedForwardingType = CFTypeProgressive
+	pc2.CollapsedForwardingType = forwarding.CFTypeProgressive
 
 	pc.Merge(pc2)
 
@@ -106,8 +86,8 @@ func TestPathMerge(t *testing.T) {
 		t.Errorf("expected %s got %s", expectedPath, pc.Path)
 	}
 
-	if pc.MatchType != PathMatchTypePrefix {
-		t.Errorf("expected %s got %s", PathMatchTypePrefix, pc.MatchType)
+	if pc.MatchType != matching.PathMatchTypePrefix {
+		t.Errorf("expected %s got %s", matching.PathMatchTypePrefix, pc.MatchType)
 	}
 
 	if pc.HandlerName != expectedHandlerName {
@@ -154,11 +134,7 @@ func TestPathMerge(t *testing.T) {
 		t.Errorf("expected %t got %t", true, pc.NoMetrics)
 	}
 
-	if pc.OriginConfig == nil {
-		t.Errorf("expected non-nil value you for %s", "OriginConfig")
-	}
-
-	if pc.CollapsedForwardingName != "progressive" || pc.CollapsedForwardingType != CFTypeProgressive {
+	if pc.CollapsedForwardingName != "progressive" || pc.CollapsedForwardingType != forwarding.CFTypeProgressive {
 		t.Errorf("expected %s got %s", "progressive", pc.CollapsedForwardingName)
 	}
 

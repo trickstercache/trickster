@@ -21,6 +21,13 @@ import (
 	"os"
 	"testing"
 
+	bao "github.com/Comcast/trickster/internal/cache/badger/options"
+	bbo "github.com/Comcast/trickster/internal/cache/bbolt/options"
+	flo "github.com/Comcast/trickster/internal/cache/filesystem/options"
+	io "github.com/Comcast/trickster/internal/cache/index/options"
+	co "github.com/Comcast/trickster/internal/cache/options"
+	ro "github.com/Comcast/trickster/internal/cache/redis/options"
+	"github.com/Comcast/trickster/internal/cache/types"
 	"github.com/Comcast/trickster/internal/config"
 	tl "github.com/Comcast/trickster/internal/util/log"
 )
@@ -32,15 +39,15 @@ func TestLoadCachesFromConfig(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	for key, v := range config.CacheTypeNames {
+	for key, v := range types.Names {
 		cfg := newCacheConfig(t, key)
 		conf.Caches[key] = cfg
 		switch v {
-		case config.CacheTypeBbolt:
+		case types.CacheTypeBbolt:
 			defer os.RemoveAll(cfg.BBolt.Filename)
-		case config.CacheTypeFilesystem:
+		case types.CacheTypeFilesystem:
 			defer os.RemoveAll(cfg.Filesystem.CachePath)
-		case config.CacheTypeBadgerDB:
+		case types.CacheTypeBadgerDB:
 			defer os.RemoveAll(cfg.Badger.Directory)
 		}
 	}
@@ -52,7 +59,7 @@ func TestLoadCachesFromConfig(t *testing.T) {
 		t.Errorf("Could not find default configuration")
 	}
 
-	for key := range config.CacheTypeNames {
+	for key := range types.Names {
 		_, ok := caches[key]
 		if !ok {
 			t.Errorf("Could not find the configuration for %q", key)
@@ -66,38 +73,38 @@ func TestLoadCachesFromConfig(t *testing.T) {
 
 }
 
-func newCacheConfig(t *testing.T, cacheType string) *config.CachingConfig {
+func newCacheConfig(t *testing.T, cacheType string) *co.Options {
 
 	bd := "."
 	fd := "."
 	var err error
 
-	ctid, ok := config.CacheTypeNames[cacheType]
+	ctid, ok := types.Names[cacheType]
 	if !ok {
-		ctid = config.CacheTypeMemory
+		ctid = types.CacheTypeMemory
 	}
 
 	switch ctid {
-	case config.CacheTypeBadgerDB:
+	case types.CacheTypeBadgerDB:
 		bd, err = ioutil.TempDir("/tmp", cacheType)
 		if err != nil {
 			t.Error(err)
 		}
 
-	case config.CacheTypeFilesystem:
+	case types.CacheTypeFilesystem:
 		fd, err = ioutil.TempDir("/tmp", cacheType)
 		if err != nil {
 			t.Error(err)
 		}
 	}
 
-	return &config.CachingConfig{
+	return &co.Options{
 		CacheType:  cacheType,
-		Redis:      config.RedisCacheConfig{Protocol: "tcp", Endpoint: "redis:6379", Endpoints: []string{"redis:6379"}},
-		Filesystem: config.FilesystemCacheConfig{CachePath: fd},
-		BBolt:      config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"},
-		Badger:     config.BadgerCacheConfig{Directory: bd, ValueDirectory: bd},
-		Index: config.CacheIndexConfig{
+		Redis:      &ro.Options{Protocol: "tcp", Endpoint: "redis:6379", Endpoints: []string{"redis:6379"}},
+		Filesystem: &flo.Options{CachePath: fd},
+		BBolt:      &bbo.Options{Filename: "/tmp/test.db", Bucket: "trickster_test"},
+		Badger:     &bao.Options{Directory: bd, ValueDirectory: bd},
+		Index: &io.Options{
 			ReapIntervalSecs:      3,
 			FlushIntervalSecs:     5,
 			MaxSizeBytes:          536870912,

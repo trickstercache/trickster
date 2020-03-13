@@ -20,12 +20,10 @@ package cache
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
+	"github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
 // ErrKNF represents the error "key not found in cache"
@@ -41,7 +39,7 @@ type Cache interface {
 	Remove(cacheKey string)
 	BulkRemove(cacheKeys []string, noLock bool)
 	Close() error
-	Configuration() *config.CachingConfig
+	Configuration() *options.Options
 }
 
 // MemoryCache is the interface for an in-memory cache
@@ -54,7 +52,7 @@ type MemoryCache interface {
 	Remove(cacheKey string)
 	BulkRemove(cacheKeys []string, noLock bool)
 	Close() error
-	Configuration() *config.CachingConfig
+	Configuration() *options.Options
 	StoreReference(cacheKey string, data ReferenceObject, ttl time.Duration) error
 	RetrieveReference(cacheKey string, allowExpired bool) (interface{}, status.LookupStatus, error)
 }
@@ -63,40 +61,4 @@ type MemoryCache interface {
 // the approximate comprehensive byte size of its members, to assist with cache size management
 type ReferenceObject interface {
 	Size() int
-}
-
-// ObserveCacheMiss returns a standard Cache Miss response
-func ObserveCacheMiss(cacheKey, cacheName, cacheType string) ([]byte, error) {
-	ObserveCacheOperation(cacheName, cacheType, "get", "miss", 0)
-	return nil, fmt.Errorf("value for key [%s] not in cache", cacheKey)
-}
-
-// ObserveCacheDel records a cache deletion event
-func ObserveCacheDel(cache, cacheType string, count float64) {
-	ObserveCacheOperation(cache, cacheType, "del", "none", count)
-}
-
-// CacheError returns an empty cache object and the formatted error
-func CacheError(cacheKey, cacheName, cacheType string, msg string) ([]byte, error) {
-	ObserveCacheEvent(cacheName, cacheType, "error", msg)
-	return nil, fmt.Errorf(msg, cacheKey)
-}
-
-// ObserveCacheOperation increments counters as cache operations occur
-func ObserveCacheOperation(cache, cacheType, operation, status string, bytes float64) {
-	metrics.CacheObjectOperations.WithLabelValues(cache, cacheType, operation, status).Inc()
-	if bytes > 0 {
-		metrics.CacheByteOperations.WithLabelValues(cache, cacheType, operation, status).Add(float64(bytes))
-	}
-}
-
-// ObserveCacheEvent increments counters as cache events occur
-func ObserveCacheEvent(cache, cacheType, event, reason string) {
-	metrics.CacheEvents.WithLabelValues(cache, cacheType, event, reason).Inc()
-}
-
-// ObserveCacheSizeChange adjust counters and gauges as the cache size changes due to object operations
-func ObserveCacheSizeChange(cache, cacheType string, byteCount, objectCount int64) {
-	metrics.CacheObjects.WithLabelValues(cache, cacheType).Set(float64(objectCount))
-	metrics.CacheBytes.WithLabelValues(cache, cacheType).Set(float64(byteCount))
 }

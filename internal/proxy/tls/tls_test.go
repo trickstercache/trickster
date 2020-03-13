@@ -14,15 +14,21 @@
  * limitations under the License.
  */
 
-package config
+// set 		oc.TLS.ServeTLS = true
+
+package tls
 
 import (
+	"errors"
 	"testing"
+
+	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/tls/options"
 )
 
 func TestDefaultTLSConfig(t *testing.T) {
 
-	dc := DefaultTLSConfig()
+	dc := options.NewOptions()
 	if dc == nil {
 		t.Errorf("expected config named %s", "default")
 	}
@@ -37,21 +43,19 @@ func TestDefaultTLSConfig(t *testing.T) {
 
 }
 
-func tlsConfig(id string) *TLSConfig {
-	return &TLSConfig{
-		FullChainCertPath: "../../testdata/test." + id + ".cert.pem",
-		PrivateKeyPath:    "../../testdata/test." + id + ".key.pem",
+func tlsConfig(id string) *options.Options {
+	return &options.Options{
+		FullChainCertPath: "../../../testdata/test." + id + ".cert.pem",
+		PrivateKeyPath:    "../../../testdata/test." + id + ".key.pem",
 		ServeTLS:          true,
 	}
 }
 
 func TestVerifyTLSConfigs(t *testing.T) {
 
-	config := NewConfig()
 	tls01 := tlsConfig("01")
-	config.Origins["default"].TLS = tls01
 
-	err := config.verifyTLSConfigs()
+	_, err := tls01.Validate()
 	if err != nil {
 		t.Error(err)
 	}
@@ -61,43 +65,44 @@ func TestVerifyTLSConfigs(t *testing.T) {
 	originalFile := tls04.FullChainCertPath
 	badFile := originalFile + ".nonexistent"
 	tls04.FullChainCertPath = badFile
-	config.Origins["default"].TLS = tls04
-	err = config.verifyTLSConfigs()
+
+	_, err = tls04.Validate()
 	if err == nil {
-		t.Errorf("expected error for bad file %s", badFile)
+		t.Error(errors.New("expected no such file or directory error"))
 	}
+
 	tls04.FullChainCertPath = originalFile
 
 	// test for error when key file can't be read
 	originalFile = tls04.PrivateKeyPath
 	badFile = originalFile + ".nonexistent"
 	tls04.PrivateKeyPath = badFile
-	err = config.verifyTLSConfigs()
+	_, err = tls04.Validate()
 	if err == nil {
-		t.Errorf("expected error for bad file %s", badFile)
+		t.Error(errors.New("expected no such file or directory error"))
 	}
-	tls04.PrivateKeyPath = originalFile
 
-	originalFile = "../../testdata/test.rootca.pem"
+	tls04.PrivateKeyPath = originalFile
+	originalFile = "../../../testdata/test.rootca.pem"
 	badFile = originalFile + ".nonexistent"
 	// test for more RootCA's to add
 	tls04.CertificateAuthorityPaths = []string{originalFile}
-	err = config.verifyTLSConfigs()
+	_, err = tls04.Validate()
 	if err != nil {
 		t.Error(err)
 	}
 
 	tls04.CertificateAuthorityPaths = []string{badFile}
-	err = config.verifyTLSConfigs()
+	_, err = tls04.Validate()
 	if err == nil {
-		t.Errorf("expected error for bad file %s", badFile)
+		t.Error(errors.New("expected no such file or directory error"))
 	}
 }
 
 func TestProcessTLSConfigs(t *testing.T) {
 
-	a := []string{"-config", "../../testdata/test.full.conf"}
-	_, _, err := Load("trickster-test", "0", a)
+	a := []string{"-config", "../../../testdata/test.full.tls.conf"}
+	_, _, err := config.Load("trickster-test", "0", a)
 	if err != nil {
 		t.Error(err)
 	}
@@ -106,7 +111,7 @@ func TestProcessTLSConfigs(t *testing.T) {
 
 func TestTLSCertConfig(t *testing.T) {
 
-	config := NewConfig()
+	config := config.NewConfig()
 
 	// test empty config condition #1 (ServeTLS is false, early bail)
 	n, err := config.TLSCertConfig()

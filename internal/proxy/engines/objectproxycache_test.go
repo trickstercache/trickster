@@ -28,9 +28,10 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
 	tc "github.com/Comcast/trickster/internal/proxy/context"
+	"github.com/Comcast/trickster/internal/proxy/forwarding"
 	"github.com/Comcast/trickster/internal/proxy/headers"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	tu "github.com/Comcast/trickster/internal/util/testing"
 	"github.com/tricksterproxy/mockster/pkg/mocks/byterange"
@@ -93,7 +94,7 @@ func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]
 	}
 
 	pc.CollapsedForwardingName = "progressive"
-	pc.CollapsedForwardingType = config.CFTypeProgressive
+	pc.CollapsedForwardingType = forwarding.CFTypeProgressive
 
 	oc := rsc.OriginConfig
 	cc := rsc.CacheClient
@@ -821,9 +822,9 @@ func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
 	}
 	defer ts.Close()
 
-	pc := config.NewPathConfig()
+	pc := po.NewOptions()
 	cfg := rsc.OriginConfig
-	cfg.Paths = map[string]*config.PathConfig{
+	cfg.Paths = map[string]*po.Options{
 		"/": pc,
 	}
 	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig, rsc.CacheClient, rsc.OriginClient, rsc.Logger)))

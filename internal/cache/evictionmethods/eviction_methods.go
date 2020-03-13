@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package config
+package evictionmethods
 
 import "strconv"
 
@@ -35,18 +35,21 @@ const (
 	EvictionMethodLRU
 )
 
-var timeseriesEvictionMethodNames = map[string]TimeseriesEvictionMethod{
+var Names = map[string]TimeseriesEvictionMethod{
 	"oldest": EvictionMethodOldest,
 	"lru":    EvictionMethodLRU,
 }
 
-var timeseriesEvictionMethodValues = map[TimeseriesEvictionMethod]string{
-	EvictionMethodOldest: "oldest",
-	EvictionMethodLRU:    "lru",
+var Values = make(map[TimeseriesEvictionMethod]string)
+
+func init() {
+	for k, v := range Names {
+		Values[v] = k
+	}
 }
 
 func (t TimeseriesEvictionMethod) String() string {
-	if v, ok := timeseriesEvictionMethodValues[t]; ok {
+	if v, ok := Values[t]; ok {
 		return v
 	}
 	return strconv.Itoa(int(t))

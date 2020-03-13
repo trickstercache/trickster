@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-package registration
+package routing
 
 import (
 	"testing"
 
 	"github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	tl "github.com/Comcast/trickster/internal/util/log"
 
 	"github.com/gorilla/mux"
@@ -46,15 +47,15 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	RegisterProxyRoutes(conf, mux.NewRouter(), caches, log)
 
-	if len(ProxyClients) == 0 {
+	if len(proxyClients) == 0 {
 		t.Errorf("expected %d got %d", 1, 0)
 	}
 
-	conf.Origins["default"] = config.NewOriginConfig()
+	conf.Origins["default"] = oo.NewOptions()
 
 	// Test Too Many Defaults
 	o1 := conf.Origins["default"]
-	o2 := config.NewOriginConfig()
+	o2 := oo.NewOptions()
 
 	o1.IsDefault = true
 	o2.IsDefault = true
@@ -117,7 +118,7 @@ func TestRegisterProxyRoutesInflux(t *testing.T) {
 		t.Error(err)
 	}
 
-	if len(ProxyClients) == 0 {
+	if len(proxyClients) == 0 {
 		t.Errorf("expected %d got %d", 1, 0)
 	}
 
@@ -137,7 +138,7 @@ func TestRegisterProxyRoutesClickHouse(t *testing.T) {
 		t.Error(err)
 	}
 
-	if len(ProxyClients) == 0 {
+	if len(proxyClients) == 0 {
 		t.Errorf("expected %d got %d", 1, 0)
 	}
 
@@ -157,7 +158,7 @@ func TestRegisterProxyRoutesIRONdb(t *testing.T) {
 		t.Error(err)
 	}
 
-	if len(ProxyClients) == 0 {
+	if len(proxyClients) == 0 {
 		t.Errorf("expected %d got %d", 1, 0)
 	}
 }
@@ -166,7 +167,7 @@ func TestRegisterProxyRoutesMultipleDefaults(t *testing.T) {
 	expected1 := "only one origin can be marked as default. Found both test and test2"
 	expected2 := "only one origin can be marked as default. Found both test2 and test"
 
-	a := []string{"-config", "../../../testdata/test.too_many_defaults.conf"}
+	a := []string{"-config", "../../testdata/test.too_many_defaults.conf"}
 	conf, _, err := config.Load("trickster", "test", a)
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -183,7 +184,7 @@ func TestRegisterProxyRoutesMultipleDefaults(t *testing.T) {
 
 func TestRegisterProxyRoutesInvalidCert(t *testing.T) {
 	expected := "tls: failed to find any PEM data in certificate input"
-	a := []string{"-config", "../../../testdata/test.bad_tls_cert.conf"}
+	a := []string{"-config", "../../testdata/test.bad_tls_cert.routes.conf"}
 	conf, _, err := config.Load("trickster", "test", a)
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -201,7 +202,7 @@ func TestRegisterProxyRoutesInvalidCert(t *testing.T) {
 
 func TestRegisterProxyRoutesBadCacheName(t *testing.T) {
 	expected := "invalid cache name [test2] provided in origin config [test]"
-	a := []string{"-config", "../../../testdata/test.bad_cache_name.conf"}
+	a := []string{"-config", "../../testdata/test.bad_cache_name.conf"}
 	_, _, err := config.Load("trickster", "test", a)
 	if err == nil {
 		t.Errorf("expected error `%s` got nothing", expected)
@@ -212,7 +213,7 @@ func TestRegisterProxyRoutesBadCacheName(t *testing.T) {
 
 func TestRegisterProxyRoutesBadOriginType(t *testing.T) {
 	expected := "unknown origin type in origin config. originName: test, originType: foo"
-	a := []string{"-config", "../../../testdata/test.unknown_origin_type.conf"}
+	a := []string{"-config", "../../testdata/test.unknown_origin_type.conf"}
 	conf, _, err := config.Load("trickster", "test", a)
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -228,7 +229,7 @@ func TestRegisterProxyRoutesBadOriginType(t *testing.T) {
 }
 
 func TestRegisterMultipleOrigins(t *testing.T) {
-	a := []string{"-config", "../../../testdata/test.multiple_origins.conf"}
+	a := []string{"-config", "../../testdata/test.multiple_origins.conf"}
 	conf, _, err := config.Load("trickster", "test", a)
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -242,7 +243,7 @@ func TestRegisterMultipleOrigins(t *testing.T) {
 }
 
 func TestRegisterMultipleOriginsPlusDefault(t *testing.T) {
-	a := []string{"-config", "../../../testdata/test.multiple_origins_plus_default.conf"}
+	a := []string{"-config", "../../testdata/test.multiple_origins_plus_default.conf"}
 	conf, _, err := config.Load("trickster", "test", a)
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())

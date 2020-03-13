@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package config
+package types
 
 import "strconv"
 
@@ -24,6 +24,8 @@ type OriginType int
 const (
 	// OriginTypeRPC represents thee Reverse Proxy Cache origin type
 	OriginTypeRPC = OriginType(iota)
+	// OriginTypeRule represents the Ruler origin type
+	OriginTypeRule
 	// OriginTypePrometheus represents the Prometheus origin type
 	OriginTypePrometheus
 	// OriginTypeInfluxDB represents the InfluxDB origin type
@@ -34,25 +36,28 @@ const (
 	OriginTypeClickHouse
 )
 
-var originTypeNames = map[string]OriginType{
-	"rpc":               OriginTypeRPC,
+var Names = map[string]OriginType{
+	"rule":              OriginTypeRule,
 	"reverseproxycache": OriginTypeRPC,
+	"rpc":               OriginTypeRPC,
 	"prometheus":        OriginTypePrometheus,
 	"influxdb":          OriginTypeInfluxDB,
 	"irondb":            OriginTypeIronDB,
 	"clickhouse":        OriginTypeClickHouse,
 }
 
-var originTypeValues = map[OriginType]string{
-	OriginTypeRPC:        "rpc",
-	OriginTypePrometheus: "prometheus",
-	OriginTypeInfluxDB:   "influxdb",
-	OriginTypeIronDB:     "irondb",
-	OriginTypeClickHouse: "clickhouse",
+var Values = make(map[OriginType]string)
+
+func init() {
+	for k, v := range Names {
+		Values[v] = k
+	}
+	// ensure consistent reverse mapping for reverseproxycache as rpc
+	Values[OriginTypeRPC] = "rpc"
 }
 
 func (t OriginType) String() string {
-	if v, ok := originTypeValues[t]; ok {
+	if v, ok := Values[t]; ok {
 		return v
 	}
 	return strconv.Itoa(int(t))
@@ -60,6 +65,6 @@ func (t OriginType) String() string {
 
 // IsValidOriginType returns true if the provided OriginType is valid for use with Trickster
 func IsValidOriginType(t string) bool {
-	_, ok := originTypeNames[t]
+	_, ok := Names[t]
 	return ok
 }

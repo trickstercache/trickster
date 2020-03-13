@@ -14,50 +14,20 @@
  * limitations under the License.
  */
 
-package config
+package options
 
 import (
-	"io"
 	"net/http"
-	"net/url"
-	"strconv"
 
+	"github.com/Comcast/trickster/internal/cache/key"
+	"github.com/Comcast/trickster/internal/proxy/forwarding"
 	"github.com/Comcast/trickster/internal/proxy/methods"
+	"github.com/Comcast/trickster/internal/proxy/paths/matching"
 	ts "github.com/Comcast/trickster/internal/util/strings"
 )
 
-// PathMatchType enumerates the types of Path Matches used when registering Paths with the Router
-type PathMatchType int
-
-// KeyHasherFunc is a custom function that returns a hashed key value string for cache objects
-type KeyHasherFunc func(path string, params url.Values, headers http.Header, body io.ReadCloser, extra string) (string, io.ReadCloser)
-
-const (
-	// PathMatchTypeExact indicates the router will map the Path by exact match against incoming requests
-	PathMatchTypeExact = PathMatchType(iota)
-	// PathMatchTypePrefix indicates the router will map the Path by prefix against incoming requests
-	PathMatchTypePrefix
-)
-
-var pathMatchTypeNames = map[string]PathMatchType{
-	"exact":  PathMatchTypeExact,
-	"prefix": PathMatchTypePrefix,
-}
-
-var pathMatchTypeValues = map[PathMatchType]string{
-	PathMatchTypeExact:  "exact",
-	PathMatchTypePrefix: "prefix",
-}
-
-func (t PathMatchType) String() string {
-	if v, ok := pathMatchTypeValues[t]; ok {
-		return v
-	}
-	return strconv.Itoa(int(t))
-}
-
-// PathConfig defines a URL Path that is associated with an HTTP Handler
-type PathConfig struct {
+// Options defines a URL Path that is associated with an HTTP Handler
+type Options struct {
 	// Path indicates the HTTP Request's URL PATH to which this configuration applies
 	Path string `toml:"path"`
 	// MatchTypeName indicates the type of path match the router will apply to the path ('exact' or 'prefix')
@@ -87,7 +57,7 @@ type PathConfig struct {
 	// CollapsedForwardingName indicates 'basic' or 'progressive' Collapsed Forwarding to be used by this path.
 	CollapsedForwardingName string `toml:"collapsed_forwarding"`
 
-	// Synthesized PathConfig Values
+	// Synthesized Options Values
 	//
 	// Handler is the HTTP Handler represented by the Path's HandlerName
 	Handler http.Handler `toml:"-"`
@@ -97,33 +67,33 @@ type PathConfig struct {
 	// ResponseBodyBytes provides a byte slice version of the ResponseBody value
 	ResponseBodyBytes []byte `toml:"-"`
 	// MatchType is the PathMatchType representation of MatchTypeName
-	MatchType PathMatchType `toml:"-"`
+	MatchType matching.PathMatchType `toml:"-"`
 	// CollapsedForwardingType is the typed representation of CollapsedForwardingName
-	CollapsedForwardingType CollapsedForwardingType `toml:"-"`
-	// OriginConfig is the reference to the PathConfig's parent Origin Config
-	OriginConfig *OriginConfig `toml:"-"`
+	CollapsedForwardingType forwarding.CollapsedForwardingType `toml:"-"`
+	// // OriginConfig is the reference to the Options's parent Origin Config
+	// OriginConfig *oo.Options `toml:"-"`
 	// KeyHasher points to an optional function that hashes the cacheKey with a custom algorithm
 	// NOTE: This is used by some origins like IronDB, but is not configurable by end users
 	// due to a bug in the vendored toml package, this must be a slice to avoid panic
-	KeyHasher []KeyHasherFunc `toml:"-"`
+	KeyHasher []key.HasherFunc `toml:"-"`
 
-	custom []string `toml:"-"`
+	Custom []string `toml:"-"`
 }
 
-// NewPathConfig returns a newly-instantiated *PathConfig
-func NewPathConfig() *PathConfig {
-	return &PathConfig{
+// NewOptions returns a newly-instantiated *Options
+func NewOptions() *Options {
+	return &Options{
 		Path:                    "/",
 		Methods:                 methods.CacheableHTTPMethods(),
 		HandlerName:             "proxy",
 		MatchTypeName:           "exact",
-		MatchType:               PathMatchTypeExact,
+		MatchType:               matching.PathMatchTypeExact,
 		CollapsedForwardingName: "basic",
-		CollapsedForwardingType: CFTypeBasic,
+		CollapsedForwardingType: forwarding.CFTypeBasic,
 		CacheKeyParams:          make([]string, 0),
 		CacheKeyHeaders:         make([]string, 0),
 		CacheKeyFormFields:      make([]string, 0),
-		custom:                  make([]string, 0),
+		Custom:                  make([]string, 0),
 		RequestHeaders:          make(map[string]string),
 		RequestParams:           make(map[string]string),
 		ResponseHeaders:         make(map[string]string),
@@ -131,82 +101,77 @@ func NewPathConfig() *PathConfig {
 	}
 }
 
-// Clone returns an exact copy of the subject PathConfig
-func (p *PathConfig) Clone() *PathConfig {
-	c := &PathConfig{
-		Path:                    p.Path,
-		OriginConfig:            p.OriginConfig,
-		MatchTypeName:           p.MatchTypeName,
-		MatchType:               p.MatchType,
-		HandlerName:             p.HandlerName,
-		Handler:                 p.Handler,
-		RequestHeaders:          ts.CloneMap(p.RequestHeaders),
-		RequestParams:           ts.CloneMap(p.RequestParams),
-		ResponseHeaders:         ts.CloneMap(p.ResponseHeaders),
-		ResponseBody:            p.ResponseBody,
-		ResponseBodyBytes:       p.ResponseBodyBytes,
-		CollapsedForwardingName: p.CollapsedForwardingName,
-		CollapsedForwardingType: p.CollapsedForwardingType,
-		NoMetrics:               p.NoMetrics,
-		HasCustomResponseBody:   p.HasCustomResponseBody,
-		Methods:                 make([]string, len(p.Methods)),
-		CacheKeyParams:          make([]string, len(p.CacheKeyParams)),
-		CacheKeyHeaders:         make([]string, len(p.CacheKeyHeaders)),
-		CacheKeyFormFields:      make([]string, len(p.CacheKeyFormFields)),
-		custom:                  make([]string, len(p.custom)),
-		KeyHasher:               p.KeyHasher,
+// Clone returns an exact copy of the subject Options
+func (o *Options) Clone() *Options {
+	c := &Options{
+		Path: o.Path,
+		//		OriginConfig:            o.OriginConfig,
+		MatchTypeName:           o.MatchTypeName,
+		MatchType:               o.MatchType,
+		HandlerName:             o.HandlerName,
+		Handler:                 o.Handler,
+		RequestHeaders:          ts.CloneMap(o.RequestHeaders),
+		RequestParams:           ts.CloneMap(o.RequestParams),
+		ResponseHeaders:         ts.CloneMap(o.ResponseHeaders),
+		ResponseBody:            o.ResponseBody,
+		ResponseBodyBytes:       o.ResponseBodyBytes,
+		CollapsedForwardingName: o.CollapsedForwardingName,
+		CollapsedForwardingType: o.CollapsedForwardingType,
+		NoMetrics:               o.NoMetrics,
+		HasCustomResponseBody:   o.HasCustomResponseBody,
+		Methods:                 make([]string, len(o.Methods)),
+		CacheKeyParams:          make([]string, len(o.CacheKeyParams)),
+		CacheKeyHeaders:         make([]string, len(o.CacheKeyHeaders)),
+		CacheKeyFormFields:      make([]string, len(o.CacheKeyFormFields)),
+		Custom:                  make([]string, len(o.Custom)),
+		KeyHasher:               o.KeyHasher,
 	}
-	copy(c.Methods, p.Methods)
-	copy(c.CacheKeyParams, p.CacheKeyParams)
-	copy(c.CacheKeyHeaders, p.CacheKeyHeaders)
-	copy(c.CacheKeyFormFields, p.CacheKeyFormFields)
-	copy(c.custom, p.custom)
+	copy(c.Methods, o.Methods)
+	copy(c.CacheKeyParams, o.CacheKeyParams)
+	copy(c.CacheKeyHeaders, o.CacheKeyHeaders)
+	copy(c.CacheKeyFormFields, o.CacheKeyFormFields)
+	copy(c.Custom, o.Custom)
 	return c
-
 }
 
-// Merge merges the non-default values of the provided PathConfig into the subject PathConfig
-func (p *PathConfig) Merge(p2 *PathConfig) {
+// Merge merges the non-default values of the provided Options into the subject Options
+func (o *Options) Merge(o2 *Options) {
 
-	if p2.OriginConfig != nil {
-		p.OriginConfig = p2.OriginConfig
-	}
-
-	for _, c := range p2.custom {
+	for _, c := range o2.Custom {
 		switch c {
 		case "path":
-			p.Path = p2.Path
+			o.Path = o2.Path
 		case "match_type":
-			p.MatchType = p2.MatchType
-			p.MatchTypeName = p2.MatchTypeName
+			o.MatchType = o2.MatchType
+			o.MatchTypeName = o2.MatchTypeName
 		case "handler":
-			p.HandlerName = p2.HandlerName
-			p.Handler = p2.Handler
+			o.HandlerName = o2.HandlerName
+			o.Handler = o2.Handler
 		case "methods":
-			p.Methods = p2.Methods
+			o.Methods = o2.Methods
 		case "cache_key_params":
-			p.CacheKeyParams = p2.CacheKeyParams
+			o.CacheKeyParams = o2.CacheKeyParams
 		case "cache_key_headers":
-			p.CacheKeyHeaders = p2.CacheKeyHeaders
+			o.CacheKeyHeaders = o2.CacheKeyHeaders
 		case "cache_key_form_fields":
-			p.CacheKeyFormFields = p2.CacheKeyFormFields
+			o.CacheKeyFormFields = o2.CacheKeyFormFields
 		case "request_headers":
-			p.RequestHeaders = p2.RequestHeaders
+			o.RequestHeaders = o2.RequestHeaders
 		case "request_params":
-			p.RequestParams = p2.RequestParams
+			o.RequestParams = o2.RequestParams
 		case "response_headers":
-			p.ResponseHeaders = p2.ResponseHeaders
+			o.ResponseHeaders = o2.ResponseHeaders
 		case "response_code":
-			p.ResponseCode = p2.ResponseCode
+			o.ResponseCode = o2.ResponseCode
 		case "response_body":
-			p.ResponseBody = p2.ResponseBody
-			p.HasCustomResponseBody = true
-			p.ResponseBodyBytes = p2.ResponseBodyBytes
+			o.ResponseBody = o2.ResponseBody
+			o.HasCustomResponseBody = true
+			o.ResponseBodyBytes = o2.ResponseBodyBytes
 		case "no_metrics":
-			p.NoMetrics = p2.NoMetrics
+			o.NoMetrics = o2.NoMetrics
 		case "collapsed_forwarding":
-			p.CollapsedForwardingName = p2.CollapsedForwardingName
-			p.CollapsedForwardingType = p2.CollapsedForwardingType
+			o.CollapsedForwardingName = o2.CollapsedForwardingName
+			o.CollapsedForwardingType = o2.CollapsedForwardingType
 		}
 	}
 }

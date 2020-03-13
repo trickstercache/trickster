@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package config
+package forwarding
 
 import "strconv"
 
@@ -35,9 +35,12 @@ var CollapsedForwardingTypeNames = map[string]CollapsedForwardingType{
 }
 
 // CollapsedForwardingTypeValues is a map of cache types keyed by internal id
-var CollapsedForwardingTypeValues = map[CollapsedForwardingType]string{
-	CFTypeBasic:       "basic",
-	CFTypeProgressive: "progressive",
+var CollapsedForwardingTypeValues = make(map[CollapsedForwardingType]string)
+
+func init() {
+	for k, v := range CollapsedForwardingTypeNames {
+		CollapsedForwardingTypeValues[v] = k
+	}
 }
 
 func (t CollapsedForwardingType) String() string {

@@ -22,26 +22,27 @@ import (
 	"testing"
 	"time"
 
+	bo "github.com/Comcast/trickster/internal/cache/badger/options"
+	co "github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
 	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 const cacheType = "badger"
 const cacheKey = "cacheKey"
 
-func newCacheConfig(t *testing.T) config.CachingConfig {
+func newCacheConfig(t *testing.T) *co.Options {
 	dir, err := ioutil.TempDir("/tmp", cacheType)
 	if err != nil {
 		t.Fatalf("could not create temp directory (%s): %s", dir, err)
 	}
-	return config.CachingConfig{CacheType: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
+	return &co.Options{CacheType: cacheType, Badger: &bo.Options{Directory: dir, ValueDirectory: dir}}
 }
 
 func TestConfiguration(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Badger.Directory)
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	cfg := bc.Configuration()
 	if cfg.CacheType != cacheType {
@@ -52,7 +53,7 @@ func TestConfiguration(t *testing.T) {
 func TestBadgerCache_Connect(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Badger.Directory)
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	// it should connect
 	if err := bc.Connect(); err != nil {
@@ -65,7 +66,7 @@ func TestBadgerCache_ConnectFailed(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	cacheConfig.Badger.Directory = "/root/trickster-test-noaccess"
 	os.RemoveAll(cacheConfig.Badger.Directory)
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	// it should connect
 	err := bc.Connect()
@@ -78,7 +79,7 @@ func TestBadgerCache_ConnectFailed(t *testing.T) {
 func TestBadgerCache_Store(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Badger.Directory)
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -95,7 +96,7 @@ func TestBadgerCache_Store(t *testing.T) {
 func TestBadgerCache_Remove(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Badger.Directory)
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -135,7 +136,7 @@ func TestBadgerCache_Remove(t *testing.T) {
 func TestBadgerCache_BulkRemove(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Badger.Directory)
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -178,7 +179,7 @@ func TestBadgerCache_BulkRemove(t *testing.T) {
 func TestBadgerCache_Retrieve(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Badger.Directory)
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -260,8 +261,8 @@ func TestBadgerCache_Close(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	cacheConfig := config.CachingConfig{CacheType: cacheType, Badger: config.BadgerCacheConfig{Directory: dir, ValueDirectory: dir}}
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	cacheConfig := &co.Options{CacheType: cacheType, Badger: &bo.Options{Directory: dir, ValueDirectory: dir}}
+	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
