@@ -26,8 +26,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	"github.com/Comcast/trickster/internal/proxy/headers"
+	ruleopts "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
+
+	"github.com/BurntSushi/toml"
 	"github.com/gorilla/mux"
 )
 
@@ -85,6 +87,8 @@ type TricksterConfig struct {
 	TracingConfigs map[string]*TracingConfig `toml:"tracing"`
 	// NegativeCacheConfigs is a map of NegativeCacheConfigs
 	NegativeCacheConfigs map[string]NegativeCacheConfig `toml:"negative_caches"`
+	// Rules is a map of the Rules
+	Rules map[string]*ruleopts.Options `toml:"rules"`
 
 	activeCaches map[string]bool
 }

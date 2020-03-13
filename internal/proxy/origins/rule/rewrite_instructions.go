@@ -31,6 +31,7 @@ type rewriteInstruction interface {
 	HasTokens() bool
 }
 
+type rewriteList [][]string
 type rewriteInstructions []rewriteInstruction
 
 var rewriters = map[string]func() rewriteInstruction{
