@@ -22,11 +22,13 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
+	"github.com/Comcast/trickster/internal/proxy/urls"
 )
 
 // SeriesHandler proxies requests for path /series to the origin by way of the object proxy cache
 func (c *Client) SeriesHandler(w http.ResponseWriter, r *http.Request) {
-	u := c.BuildUpstreamURL(r)
+
+	u := urls.BuildUpstreamURL(r, c.baseUpstreamURL)
 
 	params := u.Query()
 

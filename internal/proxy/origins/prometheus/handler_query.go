@@ -22,12 +22,13 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
+	"github.com/Comcast/trickster/internal/proxy/urls"
 )
 
 // QueryHandler handles calls to /query (for instantaneous values)
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
-	u := c.BuildUpstreamURL(r)
+	u := urls.BuildUpstreamURL(r, c.baseUpstreamURL)
 	params := u.Query()
 
 	// Round time param down to the nearest 15 seconds if it exists

@@ -31,6 +31,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
+	"github.com/Comcast/trickster/internal/proxy/urls"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -68,6 +69,7 @@ type Client struct {
 	webClient          *http.Client
 	handlers           map[string]http.Handler
 	handlersRegistered bool
+	baseUpstreamURL    *url.URL
 	healthURL          *url.URL
 	healthHeaders      http.Header
 	healthMethod       string
@@ -79,7 +81,8 @@ type Client struct {
 func NewClient(name string, oc *oo.Options, router http.Handler,
 	cache cache.Cache) (*Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
-	return &Client{name: name, config: oc, router: router, cache: cache, webClient: c}, err
+	bur := urls.FromParts(oc.Scheme, oc.Host, oc.PathPrefix, "", "")
+	return &Client{name: name, config: oc, router: router, cache: cache, webClient: c, baseUpstreamURL: bur}, err
 }
 
 // SetCache sets the Cache object the client will use for caching origin content

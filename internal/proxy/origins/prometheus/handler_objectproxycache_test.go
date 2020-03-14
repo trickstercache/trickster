@@ -18,6 +18,7 @@ package prometheus
 
 import (
 	"io/ioutil"
+	"net/url"
 	"testing"
 
 	"github.com/Comcast/trickster/internal/proxy/request"
@@ -30,6 +31,7 @@ func TestObjectProxyCacheHandler(t *testing.T) {
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
 	rsc := request.GetResources(r)
 	rsc.OriginClient = client
+	client.baseUpstreamURL, _ = url.Parse(ts.URL)
 	client.config = rsc.OriginConfig
 	client.webClient = hc
 	client.config.HTTPClient = hc
