@@ -123,14 +123,14 @@ func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router,
 // until all origins are processed, so the rule's destination origin names
 // can be mapped to their respective clients
 func validateRuleClients(clients origins.Origins) error {
-	ruleClients := make(rule.RuleClients, 0, len(clients))
+	ruleClients := make(rule.Clients, 0, len(clients))
 	for _, c := range clients {
 		if rc, ok := c.(*rule.Client); ok {
 			ruleClients = append(ruleClients, rc)
 		}
 	}
 	if len(ruleClients) > 0 {
-		if err := ruleClients.Load(); err != nil {
+		if err := ruleClients.Validate(); err != nil {
 			return err
 		}
 	}

@@ -55,9 +55,12 @@ func NewClient(name string, options *oo.Options, router http.Handler,
 	}, nil
 }
 
-type RuleClients []*Client
+// Clients is a list of *rule.Client
+type Clients []*Client
 
-func (rc RuleClients) Load() error {
+// Validate will fully load the Clients from their options and return an error if the options
+// could not be validated
+func (rc Clients) Validate() error {
 	for _, c := range rc {
 		if c != nil {
 			if err := c.parseOptions(c.options.RuleOptions); err != nil {
