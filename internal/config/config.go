@@ -31,6 +31,7 @@ import (
 	d "github.com/Comcast/trickster/internal/config/defaults"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	origins "github.com/Comcast/trickster/internal/proxy/origins/options"
+	rule "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
 	"github.com/Comcast/trickster/internal/proxy/paths/matching"
 	to "github.com/Comcast/trickster/internal/proxy/tls/options"
 	tracing "github.com/Comcast/trickster/internal/util/tracing/options"
@@ -63,8 +64,8 @@ type TricksterConfig struct {
 	TracingConfigs map[string]*tracing.Options `toml:"tracing"`
 	// NegativeCacheConfigs is a map of NegativeCacheConfigs
 	NegativeCacheConfigs map[string]NegativeCacheConfig `toml:"negative_caches"`
-	// // Rules is a map of the Rules
-	// Rules map[string]*ruleopts.Options `toml:"rules"`
+	// Rules is a map of the Rules
+	Rules map[string]*rule.Options `toml:"rules"`
 
 	activeCaches map[string]bool
 }
@@ -225,20 +226,19 @@ var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_ke
 
 func (c *TricksterConfig) validateConfigMappings() error {
 	for k, oc := range c.Origins {
-		// placeholder for feature being worked on different branch
-		// if oc.OriginType == "rule" {
-		// 	// Rule Type Validations
-		// 	r, ok := c.Rules[oc.RuleName]
-		// 	if !ok {
-		// 		return fmt.Errorf("invalid rule name [%s] provided in origin config [%s]", oc.RuleName, k)
-		// 	}
-		// 	oc.RuleOptions = r
-		// } else {
-		// 	// non-Rule Type Validations
-		if _, ok := c.Caches[oc.CacheName]; !ok {
-			return fmt.Errorf("invalid cache name [%s] provided in origin config [%s]", oc.CacheName, k)
+		if oc.OriginType == "rule" {
+			// Rule Type Validations
+			r, ok := c.Rules[oc.RuleName]
+			if !ok {
+				return fmt.Errorf("invalid rule name [%s] provided in origin config [%s]", oc.RuleName, k)
+			}
+			oc.RuleOptions = r
+		} else {
+			// non-Rule Type Validations
+			if _, ok := c.Caches[oc.CacheName]; !ok {
+				return fmt.Errorf("invalid cache name [%s] provided in origin config [%s]", oc.CacheName, k)
+			}
 		}
-		// }
 	}
 	return nil
 }

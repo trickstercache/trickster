@@ -14,34 +14,11 @@
  * limitations under the License.
  */
 
-// Package origins the interface and generic functionality for Origin Types
-package origins
+package rule
 
-import (
-	"net/http"
-
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-)
-
-type Origins map[string]Client
-
-func (o Origins) Get(originName string) Client {
-	if c, ok := o[originName]; ok {
-		return c
-	}
-	return nil
+type outcome struct {
+	ri        rewriteInstructions
+	nextRoute string
 }
 
-func (o Origins) GetConfig(originName string) *oo.Options {
-	if c, ok := o[originName]; ok {
-		return c.Configuration()
-	}
-	return nil
-}
-
-func (o Origins) GetRouter(originName string) http.Handler {
-	if c, ok := o[originName]; ok {
-		return c.Router()
-	}
-	return nil
-}
+type outcomes map[string]*outcome

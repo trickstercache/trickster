@@ -16,9 +16,26 @@
 
 package rule
 
+import (
+	"github.com/gorilla/mux"
+)
+
 type rule struct {
-	nextRoute      string
+	defaultRouter  *mux.Router
 	extractionFunc extractionFunc
 	decodingFunc   decodingFunc
 	operationFunc  operationFunc
+}
+
+type RuleClients []*Client
+
+func (rc RuleClients) Load() error {
+	for _, c := range rc {
+		if c != nil {
+			if err := c.parseOptions(c.options.RuleOptions); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
