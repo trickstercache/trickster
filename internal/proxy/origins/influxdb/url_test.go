@@ -52,20 +52,3 @@ func TestSetExtent(t *testing.T) {
 		t.Errorf("\nexpected [%s]\ngot    [%s]", expected, r.URL.RawQuery)
 	}
 }
-
-func TestBuildUpstreamURL(t *testing.T) {
-
-	cfg := config.NewConfig()
-	oc := cfg.Origins["default"]
-	oc.Scheme = "http"
-	oc.Host = "0"
-	oc.PathPrefix = ""
-
-	client := &Client{name: "default", config: oc}
-	r, err := http.NewRequest(http.MethodGet, "http://0/default/query", nil)
-	if err != nil {
-		t.Error(err)
-	}
-	client.BuildUpstreamURL(r)
-
-}
