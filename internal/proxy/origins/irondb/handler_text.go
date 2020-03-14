@@ -25,6 +25,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/errors"
+	"github.com/Comcast/trickster/internal/proxy/urls"
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/md5"
 )
@@ -32,7 +33,7 @@ import (
 // TextHandler handles requests for text timeseries data and processes them
 // through the delta proxy cache.
 func (c *Client) TextHandler(w http.ResponseWriter, r *http.Request) {
-	r.URL = c.BuildUpstreamURL(r)
+	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
 	engines.DeltaProxyCacheRequest(w, r)
 }
 

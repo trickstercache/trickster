@@ -24,6 +24,7 @@ import (
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/proxy"
 	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	"github.com/Comcast/trickster/internal/proxy/urls"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -73,6 +74,7 @@ type Client struct {
 	webClient          *http.Client
 	handlers           map[string]http.Handler
 	handlersRegistered bool
+	baseUpstreamURL    *url.URL
 	healthURL          *url.URL
 	healthHeaders      http.Header
 	healthMethod       string
@@ -86,7 +88,9 @@ type Client struct {
 func NewClient(name string, oc *oo.Options, router http.Handler,
 	cache cache.Cache) (*Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
-	client := &Client{name: name, config: oc, router: router, cache: cache, webClient: c}
+	bur := urls.FromParts(oc.Scheme, oc.Host, oc.PathPrefix, "", "")
+	client := &Client{name: name, config: oc, router: router, cache: cache,
+		baseUpstreamURL: bur, webClient: c}
 	client.makeTrqParsers()
 	client.makeExtentSetters()
 	return client, err

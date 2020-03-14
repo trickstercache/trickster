@@ -19,6 +19,7 @@ package irondb
 import (
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"testing"
 
 	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
@@ -37,6 +38,7 @@ func TestRawHandler(t *testing.T) {
 	client.config = rsc.OriginConfig
 	client.webClient = hc
 	client.config.HTTPClient = hc
+	client.baseUpstreamURL, _ = url.Parse(ts.URL)
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)

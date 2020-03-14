@@ -19,6 +19,7 @@ package irondb
 import (
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"reflect"
 	"testing"
 	"time"
@@ -41,6 +42,7 @@ func TestRollupHandler(t *testing.T) {
 	client.config = rsc.OriginConfig
 	client.webClient = hc
 	client.config.HTTPClient = hc
+	client.baseUpstreamURL, _ = url.Parse(ts.URL)
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)

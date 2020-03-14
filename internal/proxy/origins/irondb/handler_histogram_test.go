@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -41,6 +42,7 @@ func TestHistogramHandler(t *testing.T) {
 	client.config = rsc.OriginConfig
 	client.webClient = hc
 	client.config.HTTPClient = hc
+	client.baseUpstreamURL, _ = url.Parse(ts.URL)
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)

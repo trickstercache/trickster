@@ -21,6 +21,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/headers"
+	"github.com/Comcast/trickster/internal/proxy/urls"
 )
 
 // HealthHandler checks the health of the Configured Upstream Origin
@@ -57,7 +58,7 @@ func (c *Client) populateHeathCheckRequestValues() {
 		oc.HealthCheckQuery = ""
 	}
 
-	c.healthURL = c.BaseURL()
+	c.healthURL = urls.Clone(c.baseUpstreamURL)
 	c.healthURL.Path += oc.HealthCheckUpstreamPath
 	c.healthURL.RawQuery = oc.HealthCheckQuery
 	c.healthMethod = oc.HealthCheckVerb
