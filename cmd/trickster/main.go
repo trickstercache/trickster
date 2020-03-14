@@ -108,7 +108,7 @@ func main() {
 		caches[k] = c
 	}
 
-	err = routing.RegisterProxyRoutes(conf, router, caches, log)
+	_, err = routing.RegisterProxyRoutes(conf, router, caches, log)
 	if err != nil {
 		log.Fatal(1, "route registration failed", tl.Pairs{"detail": err.Error()})
 	}

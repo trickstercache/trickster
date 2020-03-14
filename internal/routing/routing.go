@@ -43,11 +43,13 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// proxyClients maintains a list of proxy clients configured for use by Trickster
-var proxyClients = make(map[string]origins.Client)
+// RegisterProxyRoutes iterates the Trickster Configuration and
+// registers the routes for the configured origins
+func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router,
+	caches map[string]cache.Cache, log *tl.TricksterLogger) (origins.Origins, error) {
 
-// RegisterProxyRoutes iterates the Trickster Configuration and registers the routes for the configured origins
-func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router, caches map[string]cache.Cache, log *tl.TricksterLogger) error {
+	// proxyClients maintains a list of proxy clients configured for use by Trickster
+	var clients = make(origins.Origins)
 
 	defaultOrigin := ""
 	var ndo *oo.Options // points to the origin config named "default"
@@ -57,13 +59,17 @@ func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router, cache
 	for k, o := range conf.Origins {
 
 		if !types.IsValidOriginType(o.OriginType) {
-			return fmt.Errorf(`unknown origin type in origin config. originName: %s, originType: %s`, k, o.OriginType)
+			return nil,
+				fmt.Errorf(`unknown origin type in origin config. originName: %s, originType: %s`,
+					k, o.OriginType)
 		}
 
 		// Ensure only one default origin exists
 		if o.IsDefault {
 			if cdo != nil {
-				return fmt.Errorf("only one origin can be marked as default. Found both %s and %s", defaultOrigin, k)
+				return nil,
+					fmt.Errorf("only one origin can be marked as default. Found both %s and %s",
+						defaultOrigin, k)
 			}
 			log.Debug("default origin identified", tl.Pairs{"name": k})
 			defaultOrigin = k
@@ -71,15 +77,16 @@ func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router, cache
 			continue
 		}
 
-		// handle origin named "default" last as it needs special handling based on a full pass over the range
+		// handle origin named "default" last as it needs special
+		// handling based on a full pass over the range
 		if k == "default" {
 			ndo = o
 			continue
 		}
 
-		err := registerOriginRoutes(router, conf, k, o, caches, log)
+		_, err := registerOriginRoutes(router, conf, k, o, clients, caches, log)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -89,21 +96,23 @@ func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router, cache
 			cdo = ndo
 			defaultOrigin = "default"
 		} else {
-			err := registerOriginRoutes(router, conf, "default", ndo, caches, log)
+			_, err := registerOriginRoutes(router, conf, "default", ndo, clients, caches, log)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 
 	if cdo != nil {
-		return registerOriginRoutes(router, conf, defaultOrigin, cdo, caches, log)
+		return registerOriginRoutes(router, conf, defaultOrigin, cdo, clients, caches, log)
 	}
 
-	return nil
+	return clients, nil
 }
 
-func registerOriginRoutes(router *mux.Router, conf *config.TricksterConfig, k string, o *oo.Options, caches map[string]cache.Cache, log *tl.TricksterLogger) error {
+func registerOriginRoutes(router *mux.Router, conf *config.TricksterConfig, k string,
+	o *oo.Options, clients origins.Origins, caches map[string]cache.Cache,
+	log *tl.TricksterLogger) (origins.Origins, error) {
 
 	var client origins.Client
 	var c cache.Cache
@@ -112,10 +121,11 @@ func registerOriginRoutes(router *mux.Router, conf *config.TricksterConfig, k st
 
 	c, ok = caches[o.CacheName]
 	if !ok {
-		return fmt.Errorf("Could not find Cache named [%s]", o.CacheName)
+		return nil, fmt.Errorf("Could not find Cache named [%s]", o.CacheName)
 	}
 
-	log.Info("registering route paths", tl.Pairs{"originName": k, "originType": o.OriginType, "upstreamHost": o.Host})
+	log.Info("registering route paths",
+		tl.Pairs{"originName": k, "originType": o.OriginType, "upstreamHost": o.Host})
 
 	switch strings.ToLower(o.OriginType) {
 	case "prometheus", "":
@@ -129,19 +139,19 @@ func registerOriginRoutes(router *mux.Router, conf *config.TricksterConfig, k st
 	case "rpc", "reverseproxycache":
 		client, err = reverseproxycache.NewClient(k, o, c)
 	case "rule":
-		client, err = rule.NewClient(k, o, conf.Origins)
+		client, err = rule.NewClient(k, o, clients)
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if client != nil {
 		o.HTTPClient = client.HTTPClient()
-		proxyClients[k] = client
+		clients[k] = client
 		defaultPaths := client.DefaultPathConfigs(o)
 		registerPathRoutes(router, client.Handlers(), client, o, c, defaultPaths, log)
 	}
-	return nil
+	return clients, nil
 }
 
 // registerPathRoutes will take the provided default paths map,
@@ -191,7 +201,8 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		log.Debug("registering health handler path",
 			tl.Pairs{"path": hp, "originName": oo.Name,
 				"upstreamPath": oo.HealthCheckUpstreamPath, "upstreamVerb": oo.HealthCheckVerb})
-		router.PathPrefix(hp).Handler(middleware.WithResourcesContext(client, oo, nil, nil, log, h)).
+		router.PathPrefix(hp).
+			Handler(middleware.WithResourcesContext(client, oo, nil, nil, log, h)).
 			Methods(methods.CacheableHTTPMethods()...)
 	}
 
@@ -202,7 +213,8 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 			p.Handler = h
 			plist = append(plist, k)
 		} else {
-			log.Info("invalid handler name for path", tl.Pairs{"path": p.Path, "handlerName": p.HandlerName})
+			log.Info("invalid handler name for path",
+				tl.Pairs{"path": p.Path, "handlerName": p.HandlerName})
 			deletes = append(deletes, p.Path)
 		}
 	}
@@ -228,7 +240,8 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 
 		log.Debug("registering origin handler path",
 			tl.Pairs{"originName": oo.Name, "path": v, "handlerName": p.HandlerName,
-				"originHost": oo.Host, "handledPath": handledPath, "matchType": p.MatchType, "frontendHosts": strings.Join(oo.Hosts, ",")})
+				"originHost": oo.Host, "handledPath": handledPath, "matchType": p.MatchType,
+				"frontendHosts": strings.Join(oo.Hosts, ",")})
 		if p.Handler != nil && len(p.Methods) > 0 {
 
 			if p.Methods[0] == "*" {
@@ -270,7 +283,9 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 				continue
 			}
 			if p.Handler != nil && len(p.Methods) > 0 {
-				log.Debug("registering default origin handler paths", tl.Pairs{"originName": oo.Name, "path": p.Path, "handlerName": p.HandlerName, "matchType": p.MatchType})
+				log.Debug("registering default origin handler paths",
+					tl.Pairs{"originName": oo.Name, "path": p.Path, "handlerName": p.HandlerName,
+						"matchType": p.MatchType})
 				switch p.MatchType {
 				case matching.PathMatchTypePrefix:
 					// Case where we path match by prefix
