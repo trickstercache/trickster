@@ -61,7 +61,7 @@ func TestNewClient(t *testing.T) {
 	}
 
 	oc := &oo.Options{OriginType: "TEST_CLIENT"}
-	c, err := NewClient("default", oc, cache)
+	c, err := NewClient("default", oc, nil, cache)
 	if err != nil {
 		t.Error(err)
 	}
@@ -123,7 +123,7 @@ func TestName(t *testing.T) {
 func TestHTTPClient(t *testing.T) {
 	oc := &oo.Options{OriginType: "TEST"}
 
-	client, err := NewClient("test", oc, nil)
+	client, err := NewClient("test", oc, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -134,7 +134,7 @@ func TestHTTPClient(t *testing.T) {
 }
 
 func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil)
+	c, err := NewClient("test", oo.NewOptions(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}

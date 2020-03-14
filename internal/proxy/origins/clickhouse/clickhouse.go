@@ -43,12 +43,14 @@ type Client struct {
 	healthMethod       string
 	healthHeaders      http.Header
 	logUpstreamRequest bool
+	router             http.Handler
 }
 
 // NewClient returns a new Client Instance
-func NewClient(name string, oc *oo.Options, cache cache.Cache) (*Client, error) {
+func NewClient(name string, oc *oo.Options, router http.Handler,
+	cache cache.Cache) (*Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
-	return &Client{name: name, config: oc, cache: cache, webClient: c}, err
+	return &Client{name: name, config: oc, router: router, cache: cache, webClient: c}, err
 }
 
 // Configuration returns the upstream Configuration for this Client
@@ -74,6 +76,11 @@ func (c *Client) Name() string {
 // SetCache sets the Cache object the client will use for caching origin content
 func (c *Client) SetCache(cc cache.Cache) {
 	c.cache = cc
+}
+
+// Router returns the http.Handler that handles request routing for this Client
+func (c *Client) Router() http.Handler {
+	return c.router
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request

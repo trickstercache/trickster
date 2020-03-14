@@ -22,11 +22,10 @@ import (
 
 	"github.com/Comcast/trickster/internal/cache/evictionmethods"
 	d "github.com/Comcast/trickster/internal/config/defaults"
+	rule "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
 	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 	to "github.com/Comcast/trickster/internal/proxy/tls/options"
 	tracing "github.com/Comcast/trickster/internal/util/tracing/options"
-
-	//rule "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
 
 	"github.com/gorilla/mux"
 )
@@ -149,8 +148,8 @@ type Options struct {
 	CompressableTypes map[string]bool `toml:"-"`
 	// TracingConfig is the reference to the Tracing Config as indicated by TracingConfigName
 	TracingConfig *tracing.Options `toml:"-"`
-	// // RuleOptions is the reference to the Rule Options as indicated by RuleName
-	// RuleOptions *rule.Options `toml:"-"`
+	// RuleOptions is the reference to the Rule Options as indicated by RuleName
+	RuleOptions *rule.Options `toml:"-"`
 }
 
 // NewOptions will return a pointer to an OriginConfig with the default configuration settings
@@ -283,6 +282,11 @@ func (oc *Options) Clone() *Options {
 
 	if oc.FastForwardPath != nil {
 		o.FastForwardPath = oc.FastForwardPath.Clone()
+	}
+
+	if oc.RuleOptions != nil {
+		// TODO: make clone func for this
+		// o.RuleOptions = oc.RuleOptions.Clone()
 	}
 
 	return o

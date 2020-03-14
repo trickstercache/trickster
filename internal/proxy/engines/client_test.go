@@ -72,6 +72,7 @@ type TestClient struct {
 	config    *oo.Options
 	cache     cache.Cache
 	webClient *http.Client
+	router    http.Handler
 
 	fftime          time.Time
 	InstantCacheKey string
@@ -238,6 +239,11 @@ func (c *TestClient) Name() string {
 // Cache returns and handle to the Cache instance used by the Client
 func (c *TestClient) Cache() cache.Cache {
 	return c.cache
+}
+
+// Router returns the http.Handler that handles request routing for this Client
+func (c *TestClient) Router() http.Handler {
+	return c.router
 }
 
 // parseTime converts a query time URL parameter to time.Time.
