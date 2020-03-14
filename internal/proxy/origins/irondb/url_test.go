@@ -358,20 +358,6 @@ func TestBuildUpstreamURL(t *testing.T) {
 	if expected != u2.RawQuery {
 		t.Errorf("\nexpected [%s]\ngot [%s]", expected, u2.RawQuery)
 	}
-
-	u = &url.URL{Path: "/default//", RawQuery: ""}
-
-	r, err = http.NewRequest(http.MethodGet, u.String(), nil)
-	if err != nil {
-		t.Error(err)
-	}
-
-	u2 = client.BuildUpstreamURL(r)
-
-	if u2.Path != "/" {
-		t.Errorf("\nexpected [%s]\ngot [%s]", "/", u2.Path)
-	}
-
 }
 
 func TestParseTimerangeQuery(t *testing.T) {

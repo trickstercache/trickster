@@ -49,17 +49,4 @@ func TestBuildUpstreamURL(t *testing.T) {
 		t.Errorf("\nexpected [%s]\ngot [%s]", expected, u2.RawQuery)
 	}
 
-	u = &url.URL{Path: "/default//", RawQuery: ""}
-
-	r, err = http.NewRequest(http.MethodGet, u.String(), nil)
-	if err != nil {
-		t.Error(err)
-	}
-
-	u2 = client.BuildUpstreamURL(r)
-
-	if u2.Path != "/" {
-		t.Errorf("\nexpected [%s]\ngot [%s]", "/", u2.Path)
-	}
-
 }

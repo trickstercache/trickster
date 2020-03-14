@@ -19,7 +19,6 @@ package reverseproxycache
 import (
 	"net/http"
 	"net/url"
-	"strings"
 )
 
 // BaseURL returns a URL in the form of scheme://host/path based on the proxy configuration
@@ -34,16 +33,7 @@ func (c *Client) BaseURL() *url.URL {
 // BuildUpstreamURL will merge the downstream request with the BaseURL to construct the full upstream URL
 func (c *Client) BuildUpstreamURL(r *http.Request) *url.URL {
 	u := c.BaseURL()
-
-	if strings.HasPrefix(r.URL.Path, "/"+c.name+"/") {
-		u.Path += strings.Replace(r.URL.Path, "/"+c.name+"/", "/", 1)
-		if u.Path == "//" {
-			u.Path = "/"
-		}
-	} else {
-		u.Path += r.URL.Path
-	}
-
+	u.Path += r.URL.Path
 	u.RawQuery = r.URL.RawQuery
 	u.Fragment = r.URL.Fragment
 	u.User = r.URL.User
