@@ -12,12 +12,12 @@ The roadmap for Trickster in 2020 focuses on delivering incremental enhancements
 - [ ] Submit Trickster for CNCF Sandbox Consideration
 - [ ] Trickster v1.1 Release
   - [x] Release Binaries for Windows
-  - [ ] Change default frontend listen port to 8480
-  - [ ] Frontend HTTP 2.0 Support
+  - [x] Change default frontend listen port to 8480
+  - [x] Frontend HTTP 2.0 Support
   - [ ] Rules-based Request Routing and Rewriting
   - [ ] Use RWMutex for cache synchronization
   - [ ] Reload configuration without process restart
-  - [ ] Add implementation-specific Tracing options in config
+  - [x] Add implementation-specific Tracing options in config
   - [ ] Additional performance improvements
   - [x] Relocate and merge PromSim and RangeSim into a separate repo called [mockster](https://github.com/tricksterproxy/mockster)
   - [x] Relocate Helm charts to a [separate repo](https://github.com/tricksterproxy/helm-charts)
@@ -33,7 +33,9 @@ The roadmap for Trickster in 2020 focuses on delivering incremental enhancements
 
 ### Q3 2020
 - [ ] Trickster v1.3 Release
-  - Main feature set TBA
+  - [ ] Origin Pools w/ health checking for high availability
+  - [ ] Round robin, hash, random, etc L7 load balancing schemes
+  - [ ] Parallel requests to multiple origins, with ability merge all or forward first response
 - [ ] [Benchster](https://github.com/tricksterproxy/benchster) - RFC Compliance and Benchmarking Suite for Proxies
 
 ### Q4 2020
