@@ -40,9 +40,9 @@ var sourceExtractionFuncs = map[inputType]extractionFunc{
 }
 
 // IsValidSourceName returns true ony if the provided source name is supported by the Rules engine
-func IsValidSourceName(source string) bool {
-	_, ok := sourceExtractionFuncs[inputType(source)]
-	return ok
+func isValidSourceName(source string) (extractionFunc, bool) {
+	f, ok := sourceExtractionFuncs[inputType(source)]
+	return f, ok
 }
 
 func extractMethodFromSource(r *http.Request, unused string) string {

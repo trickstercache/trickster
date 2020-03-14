@@ -17,6 +17,8 @@
 package rule
 
 import (
+	"net/http"
+
 	"github.com/gorilla/mux"
 )
 
@@ -25,17 +27,56 @@ type rule struct {
 	extractionFunc extractionFunc
 	decodingFunc   decodingFunc
 	operationFunc  operationFunc
+	evaluatorFunc  evaluatorFunc
+	negateOpResult bool
+
+	cases    caseMap
+	caseList caseList
+
+	extractionArg string
+	operationArg  string
 }
 
-type RuleClients []*Client
+type ruleCase struct {
+	matchValue string
+	router     *mux.Router
+}
 
-func (rc RuleClients) Load() error {
-	for _, c := range rc {
-		if c != nil {
-			if err := c.parseOptions(c.options.RuleOptions); err != nil {
-				return err
-			}
+type caseMap map[string]*ruleCase
+type caseList []*ruleCase
+
+type evaluatorFunc func(*http.Request) (http.Handler, error)
+
+func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, error) {
+
+	// TODO: if pre-evaluation rewrite, do it here.
+
+	h := r.defaultRouter
+	result := r.operationFunc(r.extractionFunc(hr, r.extractionArg), r.operationArg, r.negateOpResult)
+	if rh, ok := r.cases[result]; ok {
+		h = rh.router
+		// TODO: if case-based rewrite, do it here.
+	}
+
+	// TODO: if post-evaluation rewrite, do it here.
+
+	return h, nil
+}
+
+func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, error) {
+
+	// TODO: if pre-evaluation rewrite, do it here.
+
+	h := r.defaultRouter
+	for _, c := range r.caseList {
+		result := r.operationFunc(r.extractionFunc(hr, r.extractionArg), c.matchValue, r.negateOpResult)
+		if result == "true" {
+			h = c.router
+			// TODO: if case-based rewrite, do it here.
 		}
 	}
-	return nil
+
+	// TODO: if post-evaluation rewrite, do it here.
+
+	return h, nil
 }

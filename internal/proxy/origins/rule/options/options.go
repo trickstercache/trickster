@@ -20,6 +20,8 @@ type rewriteList [][]string
 
 // Options defines the options for a Rule
 type Options struct {
+	// Name provides the name of the Rule
+	Name string `toml:"-"`
 	// NextRoute indicates the name of the next OriginConfig destination for the request when
 	// none of the cases are met following the execution of the rule
 	NextRoute string `toml:"next_route"`

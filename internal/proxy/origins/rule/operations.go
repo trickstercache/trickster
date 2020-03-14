@@ -29,21 +29,24 @@ type operation string
 type operationFunc func(input string, arg string, negate bool) string
 
 var operationFuncs = map[operation]operationFunc{
+
 	"string-eq":       opStringEquality,
 	"string-contains": opStringContains,
 	"string-prefix":   opStringPrefix,
 	"string-suffix":   opStringSuffix,
-	"string-md5":      opStringMD5,
-	"string-sha1":     opStringSHA1,
-	"string-base64":   opStringBase64,
-	"string-modulo":   opStringModulo,
+	// TODO: understand use case and implementation for these string funcs
+	"string-md5":    opStringMD5,
+	"string-sha1":   opStringSHA1,
+	"string-base64": opStringBase64,
+	"string-modulo": opStringModulo,
 
-	"num-eq":     opNumEquality,
-	"num-gt":     opNumGreaterThan,
-	"num-lt":     opNumLessThan,
-	"num-ge":     opNumGreaterThanEqual,
-	"num-le":     opNumLessThanEqual,
-	"num-bt":     opNumBetween,
+	"num-eq": opNumEquality,
+	"num-gt": opNumGreaterThan,
+	"num-lt": opNumLessThan,
+	"num-ge": opNumGreaterThanEqual,
+	"num-le": opNumLessThanEqual,
+	"num-bt": opNumBetween,
+	// TODO: understand use case and implementation for these num funcs
 	"num-modulo": opNumModulo,
 
 	"bool-eq": opBoolEquality,

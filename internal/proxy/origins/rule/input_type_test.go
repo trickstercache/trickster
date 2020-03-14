@@ -96,7 +96,7 @@ func TestIsValidSourceName(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			b := IsValidSourceName(test.source)
+			_, b := isValidSourceName(test.source)
 			if b != test.expected {
 				t.Errorf("got %t expected %t", b, test.expected)
 			}

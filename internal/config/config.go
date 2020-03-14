@@ -232,6 +232,7 @@ func (c *TricksterConfig) validateConfigMappings() error {
 			if !ok {
 				return fmt.Errorf("invalid rule name [%s] provided in origin config [%s]", oc.RuleName, k)
 			}
+			r.Name = oc.RuleName
 			oc.RuleOptions = r
 		} else {
 			// non-Rule Type Validations

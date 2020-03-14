@@ -55,6 +55,19 @@ func NewClient(name string, options *oo.Options, router http.Handler,
 	}, nil
 }
 
+type RuleClients []*Client
+
+func (rc RuleClients) Load() error {
+	for _, c := range rc {
+		if c != nil {
+			if err := c.parseOptions(c.options.RuleOptions); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // Configuration returns the Client Configuration
 func (c *Client) Configuration() *oo.Options {
 	return c.options
