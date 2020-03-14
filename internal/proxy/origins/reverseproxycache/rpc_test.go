@@ -98,3 +98,13 @@ func TestConfiguration(t *testing.T) {
 		t.Error(errors.New("expected non-nil config"))
 	}
 }
+
+func TestRouter(t *testing.T) {
+	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	if c.Router() != nil {
+		t.Error(errors.New("expected nil router"))
+	}
+}
