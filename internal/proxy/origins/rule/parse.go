@@ -18,10 +18,11 @@ package rule
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
+	"github.com/Comcast/trickster/internal/proxy/handlers"
 	ro "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
-	"github.com/gorilla/mux"
 )
 
 func (c *Client) parseOptions(ro *ro.Options) error {
@@ -42,12 +43,25 @@ func (c *Client) parseOptions(ro *ro.Options) error {
 		return fmt.Errorf("rule client %s options missing operation", c.name)
 	}
 
-	nc := c.clients.Get(ro.NextRoute)
-	if nc == nil || nc.Router() == nil {
-		return fmt.Errorf("invalid default rule route %s in rule %s", ro.NextRoute, ro.Name)
+	var nr http.Handler
+	r := &rule{}
+
+	badDefaultRoute := fmt.Errorf("invalid default rule route %s in rule %s", ro.NextRoute, ro.Name)
+	if ro.NextRoute != "" {
+		nc := c.clients.Get(ro.NextRoute)
+		if nc == nil || nc.Router() == nil {
+			return badDefaultRoute
+		}
+		nr = nc.Router()
+	} else if ro.RedirectURL != "" {
+		r.defaultRedirectURL = ro.RedirectURL
+		r.defaultRedirectCode = 302
+		nr = http.HandlerFunc(handlers.HandleRedirectResponse)
+	} else {
+		return badDefaultRoute
 	}
 
-	r := &rule{defaultRouter: nc.Router().(*mux.Router)}
+	r.defaultRouter = nr
 
 	exf, ok := isValidSourceName(ro.InputSource)
 	if !ok {
@@ -87,7 +101,8 @@ func (c *Client) parseOptions(ro *ro.Options) error {
 		r.caseList = make(caseList, 0)
 
 		for k, v := range ro.CaseOptions {
-			if v.NextRoute == "" {
+
+			if v.NextRoute == "" && v.RedirectURL == "" {
 				return fmt.Errorf("missing next_route in rule %s case %s", ro.Name, k)
 			}
 
@@ -95,13 +110,18 @@ func (c *Client) parseOptions(ro *ro.Options) error {
 				return fmt.Errorf("missing matches in rule %s case %s", ro.Name, k)
 			}
 
-			nr, ok := c.clients[v.NextRoute]
-			if !ok {
-				return fmt.Errorf("unknown next_route %s in rule %s case %s", v.NextRoute, ro.Name, k)
+			if v.RedirectURL != "" {
+				nr = http.HandlerFunc(handlers.HandleRedirectResponse)
+			} else {
+				no, ok := c.clients[v.NextRoute]
+				if !ok {
+					return fmt.Errorf("unknown next_route %s in rule %s case %s", v.NextRoute, ro.Name, k)
+				}
+				nr = no.Router()
 			}
 
 			for _, m := range v.Matches {
-				rc := &ruleCase{matchValue: m, router: nr.Router().(*mux.Router)}
+				rc := &ruleCase{matchValue: m, router: nr, redirectURL: v.RedirectURL, redirectCode: 302}
 				r.caseList = append(r.caseList, rc)
 				r.cases[m] = rc
 			}
@@ -123,10 +143,8 @@ func (c *Client) parseOptions(ro *ro.Options) error {
 
   [rules.example.cases]
 		[rules.example.cases.1]
-		matches = ['no-cache', 'no-store']
 		rewrite = [ ['path', 'replace', '${match}', 'myReplacement'],
 					['header', 'set', 'Cache-Control', 'myReplacement'],
 					['header', 'replace', 'Cache-Control', '${match}', 'myReplacement'],
 					['header', 'delete', 'Cache-Control', '${match}'] ]
-		next_route = 'origin2'
 */

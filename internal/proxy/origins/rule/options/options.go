@@ -71,6 +71,9 @@ type Options struct {
 	OperationArg string `toml:"operation_arg"`
 	// RuleCaseOptions is the map of cases to apply to evaluate against this rule
 	CaseOptions map[string]*CaseOptions `toml:"cases"`
+	// RedirectURL provides a URL to redirect the request in the default case, rather than
+	// handing off to the NextRoute
+	RedirectURL string `toml:"redirect_url"`
 }
 
 // CaseOptions defines the options for a given evaluation case
@@ -82,6 +85,9 @@ type CaseOptions struct {
 	Rewrite rewriteList `toml:"rewrite"`
 	// NextRoute is the name of the next OriginConfig destination for the request in this case
 	NextRoute string `toml:"next_route"`
+	// RedirectURL provides a URL to redirect the request in this case, rather than
+	// handing off to the NextRoute
+	RedirectURL string `toml:"redirect_url"`
 }
 
 /*

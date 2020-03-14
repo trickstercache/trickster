@@ -19,11 +19,11 @@ package rule
 import (
 	"net/http"
 
-	"github.com/gorilla/mux"
+	"github.com/Comcast/trickster/internal/proxy/handlers"
 )
 
 type rule struct {
-	defaultRouter  *mux.Router
+	defaultRouter  http.Handler
 	extractionFunc extractionFunc
 	decodingFunc   decodingFunc
 	operationFunc  operationFunc
@@ -35,48 +35,85 @@ type rule struct {
 
 	extractionArg string
 	operationArg  string
+
+	defaultRedirectURL  string
+	defaultRedirectCode int
 }
 
 type ruleCase struct {
-	matchValue string
-	router     *mux.Router
+	matchValue   string
+	router       http.Handler
+	redirectURL  string
+	redirectCode int
 }
 
 type caseMap map[string]*ruleCase
 type caseList []*ruleCase
 
-type evaluatorFunc func(*http.Request) (http.Handler, error)
+type evaluatorFunc func(*http.Request) (http.Handler, *http.Request, error)
 
-func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, error) {
+func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, error) {
 
 	// TODO: if pre-evaluation rewrite, do it here.
 
-	h := r.defaultRouter
-	result := r.operationFunc(r.extractionFunc(hr, r.extractionArg), r.operationArg, r.negateOpResult)
-	if rh, ok := r.cases[result]; ok {
-		h = rh.router
+	var h http.Handler = r.defaultRouter
+	res := r.operationFunc(r.extractionFunc(hr, r.extractionArg),
+		r.operationArg, r.negateOpResult)
+	var nonDefault bool
+
+	if c, ok := r.cases[res]; ok {
+		nonDefault = true
+		h = c.router
+
+		// if it's a redirect response, set the appropriate context
+		if c.redirectCode > 0 {
+			hr.WithContext(handlers.WithRedirects(hr.Context(),
+				c.redirectCode, c.redirectURL))
+		}
+
 		// TODO: if case-based rewrite, do it here.
 	}
 
 	// TODO: if post-evaluation rewrite, do it here.
 
-	return h, nil
+	if !nonDefault && r.defaultRedirectCode > 0 {
+		hr = hr.WithContext(handlers.WithRedirects(hr.Context(),
+			r.defaultRedirectCode, r.defaultRedirectURL))
+	}
+
+	return h, hr, nil
 }
 
-func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, error) {
+func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, error) {
 
 	// TODO: if pre-evaluation rewrite, do it here.
 
-	h := r.defaultRouter
+	var h http.Handler = r.defaultRouter
+	var nonDefault bool
+
 	for _, c := range r.caseList {
-		result := r.operationFunc(r.extractionFunc(hr, r.extractionArg), c.matchValue, r.negateOpResult)
-		if result == "true" {
+		res := r.operationFunc(r.extractionFunc(hr, r.extractionArg),
+			c.matchValue, r.negateOpResult)
+		if res == "true" {
+			nonDefault = true
 			h = c.router
+
+			// if it's a redirect response, set the appropriate context
+			if c.redirectCode > 0 {
+				hr = hr.WithContext(handlers.WithRedirects(hr.Context(),
+					c.redirectCode, c.redirectURL))
+			}
+
 			// TODO: if case-based rewrite, do it here.
 		}
 	}
 
 	// TODO: if post-evaluation rewrite, do it here.
 
-	return h, nil
+	if !nonDefault && r.defaultRedirectCode > 0 {
+		hr = hr.WithContext(handlers.WithRedirects(hr.Context(),
+			r.defaultRedirectCode, r.defaultRedirectURL))
+	}
+
+	return h, hr, nil
 }

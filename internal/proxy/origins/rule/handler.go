@@ -18,20 +18,14 @@ package rule
 
 import (
 	"net/http"
-	"strings"
 )
 
 // Handler processes the HTTP request through the rules engine
 func (c *Client) Handler(w http.ResponseWriter, r *http.Request) {
 
+	var router http.Handler
 	// Execute the rule to determine where to send this request next
-	router, _ := c.rule.evaluatorFunc(r)
-
-	// Strip the path prefix from the request
-	// TODO: do this more gracefully/generically via contexts, or something
-	if strings.HasPrefix(r.URL.Path, c.pathPrefix) {
-		r.URL.Path = strings.Replace(r.URL.Path, c.pathPrefix, "", 1)
-	}
+	router, r, _ = c.rule.evaluatorFunc(r)
 
 	// Forward the request
 	router.ServeHTTP(w, r)
