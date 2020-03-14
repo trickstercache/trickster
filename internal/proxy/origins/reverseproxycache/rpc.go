@@ -47,7 +47,8 @@ func NewClient(name string, oc *oo.Options, router http.Handler,
 	cache cache.Cache) (*Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
 	bur := urls.FromParts(oc.Scheme, oc.Host, oc.PathPrefix, "", "")
-	return &Client{name: name, config: oc, router: router, cache: cache, webClient: c, baseUpstreamURL: bur}, err
+	return &Client{name: name, config: oc, router: router, cache: cache,
+		webClient: c, baseUpstreamURL: bur}, err
 }
 
 // Configuration returns the upstream Configuration for this Client
