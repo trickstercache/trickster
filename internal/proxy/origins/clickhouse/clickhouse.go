@@ -39,6 +39,7 @@ type Client struct {
 	webClient          *http.Client
 	handlers           map[string]http.Handler
 	handlersRegistered bool
+	baseUpstreamURL    *url.URL
 	healthURL          *url.URL
 	healthMethod       string
 	healthHeaders      http.Header
@@ -50,7 +51,9 @@ type Client struct {
 func NewClient(name string, oc *oo.Options, router http.Handler,
 	cache cache.Cache) (*Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
-	return &Client{name: name, config: oc, router: router, cache: cache, webClient: c}, err
+	bur := urls.FromParts(oc.Scheme, oc.Host, oc.PathPrefix, "", "")
+	return &Client{name: name, config: oc, router: router, cache: cache,
+		baseUpstreamURL: bur, webClient: c}, err
 }
 
 // Configuration returns the upstream Configuration for this Client
