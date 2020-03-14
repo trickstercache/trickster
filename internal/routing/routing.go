@@ -263,7 +263,8 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 			continue
 		}
 
-		handledPath := "/" + oo.Name + p.Path
+		pathPrefix := "/" + oo.Name
+		handledPath := pathPrefix + p.Path
 
 		log.Debug("registering origin handler path",
 			tl.Pairs{"originName": oo.Name, "path": v, "handlerName": p.HandlerName,
@@ -284,7 +285,7 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 				}
 				if !oo.PathRoutingDisabled {
 					// Path Routing
-					router.PathPrefix(handledPath).Handler(decorate(p)).Methods(p.Methods...)
+					router.PathPrefix(handledPath).Handler(middleware.StripPathPrefix(pathPrefix, decorate(p))).Methods(p.Methods...)
 				}
 				or.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...)
 			default:
@@ -295,7 +296,7 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 				}
 				if !oo.PathRoutingDisabled {
 					// Path Routing
-					router.Handle(handledPath, decorate(p)).Methods(p.Methods...)
+					router.Handle(handledPath, middleware.StripPathPrefix(pathPrefix, decorate(p))).Methods(p.Methods...)
 				}
 				or.Handle(p.Path, decorate(p)).Methods(p.Methods...)
 			}
