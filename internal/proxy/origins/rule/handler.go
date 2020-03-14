@@ -33,11 +33,9 @@ func (c *Client) Handler(w http.ResponseWriter, r *http.Request) {
 	// TODO: Connect the logic dots that actually determine nextRoute
 	nextRoute := c.rule.nextRoute
 
-	if oc, ok := c.originConfigs[c.rule.nextRoute]; ok {
+	if oc, ok := c.originConfigs[nextRoute]; ok {
 		if strings.HasPrefix(r.URL.Path, c.pathPrefix) {
-			r.URL.Path = strings.Replace(r.URL.Path, c.pathPrefix, "/"+nextRoute+"/", 1)
-		} else {
-			r.URL.Path = "/" + nextRoute + "/" + r.URL.Path
+			r.URL.Path = strings.Replace(r.URL.Path, c.pathPrefix, "", 1)
 		}
 
 		oc.Router.ServeHTTP(w, r)
@@ -64,7 +62,7 @@ func NewClient(name string, options *oo.Options, ocm map[string]*oo.Options) (*C
 		name:          name,
 		options:       options,
 		originConfigs: ocm,
-		pathPrefix:    "/" + name + "/",
+		pathPrefix:    "/" + name,
 		rule:          &rule{nextRoute: "sim1"},
 	}, nil
 }

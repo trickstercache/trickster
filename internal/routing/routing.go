@@ -223,16 +223,17 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		if !ok {
 			continue
 		}
+
+		handledPath := "/" + oo.Name + p.Path
+
 		log.Debug("registering origin handler path",
 			tl.Pairs{"originName": oo.Name, "path": v, "handlerName": p.HandlerName,
-				"originHost": oo.Host, "handledPath": "/" + oo.Name + p.Path, "matchType": p.MatchType, "frontendHosts": strings.Join(oo.Hosts, ",")})
+				"originHost": oo.Host, "handledPath": handledPath, "matchType": p.MatchType, "frontendHosts": strings.Join(oo.Hosts, ",")})
 		if p.Handler != nil && len(p.Methods) > 0 {
 
 			if p.Methods[0] == "*" {
 				p.Methods = methods.AllHTTPMethods()
 			}
-
-			routePath := "/" + oo.Name + p.Path
 
 			switch p.MatchType {
 			case matching.PathMatchTypePrefix:
@@ -243,7 +244,7 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 				}
 				if !oo.PathRoutingDisabled {
 					// Path Routing
-					router.PathPrefix(routePath).Handler(decorate(p)).Methods(p.Methods...)
+					router.PathPrefix(handledPath).Handler(decorate(p)).Methods(p.Methods...)
 				}
 				or.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...)
 			default:
@@ -254,7 +255,7 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 				}
 				if !oo.PathRoutingDisabled {
 					// Path Routing
-					router.Handle(routePath, decorate(p)).Methods(p.Methods...)
+					router.Handle(handledPath, decorate(p)).Methods(p.Methods...)
 				}
 				or.Handle(p.Path, decorate(p)).Methods(p.Methods...)
 			}
