@@ -40,8 +40,8 @@ type rule struct {
 	defaultRedirectURL  string
 	defaultRedirectCode int
 
-	ingressRewriter rewriter.RewriteInstructions
-	egressRewriter  rewriter.RewriteInstructions
+	ingressReqRewriter rewriter.RewriteInstructions
+	egressReqRewriter  rewriter.RewriteInstructions
 }
 
 type ruleCase struct {
@@ -60,8 +60,8 @@ type evaluatorFunc func(*http.Request) (http.Handler, *http.Request, error)
 func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, error) {
 
 	// if this case includes ingress rewriter instructions, execute those now
-	if len(r.ingressRewriter) > 0 {
-		r.ingressRewriter.Execute(hr)
+	if len(r.ingressReqRewriter) > 0 {
+		r.ingressReqRewriter.Execute(hr)
 	}
 
 	var h http.Handler = r.defaultRouter
@@ -86,8 +86,8 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 	}
 
 	// if this case includes egress rewriter instructions, execute those now
-	if len(r.egressRewriter) > 0 {
-		r.egressRewriter.Execute(hr)
+	if len(r.egressReqRewriter) > 0 {
+		r.egressReqRewriter.Execute(hr)
 	}
 
 	if !nonDefault && r.defaultRedirectCode > 0 {
@@ -101,8 +101,8 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, error) {
 
 	// if this case includes ingress rewriter instructions, execute those now
-	if len(r.ingressRewriter) > 0 {
-		r.ingressRewriter.Execute(hr)
+	if len(r.ingressReqRewriter) > 0 {
+		r.ingressReqRewriter.Execute(hr)
 	}
 
 	var h http.Handler = r.defaultRouter
@@ -129,8 +129,8 @@ func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, e
 	}
 
 	// if this case includes egress rewriter instructions, execute those now
-	if len(r.egressRewriter) > 0 {
-		r.egressRewriter.Execute(hr)
+	if len(r.egressReqRewriter) > 0 {
+		r.egressReqRewriter.Execute(hr)
 	}
 
 	if !nonDefault && r.defaultRedirectCode > 0 {

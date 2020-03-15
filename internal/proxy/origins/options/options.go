@@ -96,9 +96,9 @@ type Options struct {
 	RuleName string `toml:"rule_name"`
 	// PathRoutingDisabled, when true, will bypass /originName/path route registrations
 	PathRoutingDisabled bool `toml:"path_routing_disabled"`
-	// RewriterName is the name of a configured Rewriter that will modify the request prior to
+	// ReqRewriterName is the name of a configured Rewriter that will modify the request prior to
 	// processing by the origin client
-	RewriterName string `toml:"rewriter_name"`
+	ReqRewriterName string `toml:"req_rewriter_name"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `toml:"tls"`
@@ -154,8 +154,8 @@ type Options struct {
 	TracingConfig *tracing.Options `toml:"-"`
 	// RuleOptions is the reference to the Rule Options as indicated by RuleName
 	RuleOptions *rule.Options `toml:"-"`
-	// Rewriter is the rewriter handler as indicated by RuleName
-	Rewriter rewriter.RewriteInstructions
+	// ReqRewriter is the rewriter handler as indicated by RuleName
+	ReqRewriter rewriter.RewriteInstructions
 }
 
 // NewOptions will return a pointer to an OriginConfig with the default configuration settings

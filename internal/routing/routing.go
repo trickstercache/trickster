@@ -195,12 +195,12 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		// add Origin, Cache, and Path Configs to the HTTP Request's context
 		h := middleware.WithResourcesContext(client, oo, c, po, log, po.Handler)
 
-		if len(oo.Rewriter) > 0 {
-			h = rewriter.Rewrite(oo.Rewriter, h)
+		if len(oo.ReqRewriter) > 0 {
+			h = rewriter.Rewrite(oo.ReqRewriter, h)
 		}
 
-		if len(po.Rewriter) > 0 {
-			h = rewriter.Rewrite(po.Rewriter, h)
+		if len(po.ReqRewriter) > 0 {
+			h = rewriter.Rewrite(po.ReqRewriter, h)
 		}
 
 		// decorate frontend prometheus metrics

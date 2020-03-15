@@ -268,14 +268,14 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) error {
 		oc := origins.NewOptions()
 		oc.Name = k
 
-		if metadata.IsDefined("origins", k, "rewriter_name") && v.RewriterName != "" {
-			oc.RewriterName = v.RewriterName
-			ri, ok := c.CompiledRewriters[oc.RewriterName]
+		if metadata.IsDefined("origins", k, "req_rewriter_name") && v.ReqRewriterName != "" {
+			oc.ReqRewriterName = v.ReqRewriterName
+			ri, ok := c.CompiledRewriters[oc.ReqRewriterName]
 			if !ok {
 				return fmt.Errorf("invalid rewriter name %s in origin config %s",
-					oc.RewriterName, k)
+					oc.ReqRewriterName, k)
 			}
-			oc.Rewriter = ri
+			oc.ReqRewriter = ri
 		}
 
 		if metadata.IsDefined("origins", k, "origin_type") {
@@ -370,14 +370,14 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) error {
 		if metadata.IsDefined("origins", k, "paths") {
 			var j = 0
 			for l, p := range v.Paths {
-				if metadata.IsDefined("origins", k, "paths", l, "rewriter_name") &&
-					p.RewriterName != "" {
-					ri, ok := c.CompiledRewriters[p.RewriterName]
+				if metadata.IsDefined("origins", k, "paths", l, "req_rewriter_name") &&
+					p.ReqRewriterName != "" {
+					ri, ok := c.CompiledRewriters[p.ReqRewriterName]
 					if !ok {
 						return fmt.Errorf("invalid rewriter name %s in origin config %s",
-							p.RewriterName, k)
+							p.ReqRewriterName, k)
 					}
-					p.Rewriter = ri
+					p.ReqRewriter = ri
 				}
 				if len(p.Methods) == 0 {
 					p.Methods = []string{http.MethodGet, http.MethodHead}

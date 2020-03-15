@@ -25,12 +25,12 @@ type Options struct {
 	// NextRoute indicates the name of the next OriginConfig destination for the request when
 	// none of the cases are met following the execution of the rule
 	NextRoute string `toml:"next_route"`
-	// IngressRewriterName is the name of a configured Rewriter that will modify the request prior
+	// IngressReqRewriterName is the name of a configured Rewriter that will modify the request prior
 	// to the rule taking any other action
-	IngressRewriterName string `toml:"ingress_rewriter_name"`
-	// EgressRewriterName is the name of a configured Rewriter that will modify the request once
+	IngressReqRewriterName string `toml:"ingress_req_rewriter_name"`
+	// EgressReqRewriterName is the name of a configured Rewriter that will modify the request once
 	// all other rule actions have occurred, prior to the request being passed to the next route
-	EgressRewriterName string `toml:"egress_rewriter_name"`
+	EgressReqRewriterName string `toml:"egress_req_rewriter_name"`
 	// Input source specifies the data source used when executing the rule. Possible options:
 	//  Source           Example Source Used
 	//  url              https://example.com:8480/path1/path2?param1=value
@@ -86,9 +86,9 @@ type Options struct {
 type CaseOptions struct {
 	// Matches indicates the values matching the rule execution's output that apply to this case
 	Matches []string `toml:"matches"`
-	// RewriterName is the name of a configured Rewriter that will modify the request in this case
+	// ReqRewriterName is the name of a configured Rewriter that will modify the request in this case
 	// prior to handing off to the NextRoute
-	RewriterName string `toml:"rewriter_name"`
+	ReqRewriterName string `toml:"req_rewriter_name"`
 	// NextRoute is the name of the next OriginConfig destination for the request in this case
 	NextRoute string `toml:"next_route"`
 	// RedirectURL provides a URL to redirect the request in this case, rather than

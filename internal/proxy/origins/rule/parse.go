@@ -47,22 +47,22 @@ func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteIns
 	var nr http.Handler
 	r := &rule{}
 
-	if ro.EgressRewriterName != "" {
-		ri, ok := rwi[ro.EgressRewriterName]
+	if ro.EgressReqRewriterName != "" {
+		ri, ok := rwi[ro.EgressReqRewriterName]
 		if !ok {
 			return fmt.Errorf("invalid  egress rewriter %s in rule %s",
-				ro.EgressRewriterName, ro.Name)
+				ro.EgressReqRewriterName, ro.Name)
 		}
-		r.egressRewriter = ri
+		r.egressReqRewriter = ri
 	}
 
-	if ro.IngressRewriterName != "" {
-		ri, ok := rwi[ro.IngressRewriterName]
+	if ro.IngressReqRewriterName != "" {
+		ri, ok := rwi[ro.IngressReqRewriterName]
 		if !ok {
 			return fmt.Errorf("invalid  ingress rewriter %s in rule %s",
-				ro.IngressRewriterName, ro.Name)
+				ro.IngressReqRewriterName, ro.Name)
 		}
-		r.ingressRewriter = ri
+		r.ingressReqRewriter = ri
 	}
 
 	badDefaultRoute := fmt.Errorf("invalid default rule route %s in rule %s",
@@ -124,8 +124,8 @@ func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteIns
 		for k, v := range ro.CaseOptions {
 
 			var ri rewriter.RewriteInstructions
-			if v.RewriterName != "" {
-				i, ok := rwi[v.RewriterName]
+			if v.ReqRewriterName != "" {
+				i, ok := rwi[v.ReqRewriterName]
 				if !ok {
 					return fmt.Errorf("invalid rewriter %s in rule %s case %s", k, ro.Name, k)
 				}

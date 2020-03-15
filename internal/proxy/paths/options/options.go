@@ -57,9 +57,9 @@ type Options struct {
 	NoMetrics bool `toml:"no_metrics"`
 	// CollapsedForwardingName indicates 'basic' or 'progressive' Collapsed Forwarding to be used by this path.
 	CollapsedForwardingName string `toml:"collapsed_forwarding"`
-	// RewriterName is the name of a configured Rewriter that will modify the request prior to
+	// ReqRewriterName is the name of a configured Rewriter that will modify the request prior to
 	// processing by the origin client
-	RewriterName string `toml:"rewriter_name"`
+	ReqRewriterName string `toml:"req_rewriter_name"`
 
 	// Synthesized Options Values
 	//
@@ -80,8 +80,8 @@ type Options struct {
 	KeyHasher []key.HasherFunc `toml:"-"`
 	// Custom is a compiled list of any custom settings for this path from the config file
 	Custom []string `toml:"-"`
-	// Rewriter is the rewriter handler as indicated by RuleName
-	Rewriter rewriter.RewriteInstructions
+	// ReqRewriter is the rewriter handler as indicated by RuleName
+	ReqRewriter rewriter.RewriteInstructions
 }
 
 // NewOptions returns a newly-instantiated *Options
