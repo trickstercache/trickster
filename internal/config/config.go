@@ -41,9 +41,6 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-var providedOriginURL string
-var providedOriginType string
-
 // TricksterConfig is the main configuration object
 type TricksterConfig struct {
 	// Main is the primary MainConfig section
@@ -67,8 +64,10 @@ type TricksterConfig struct {
 	// Rewriters is a map of the Rewriters
 	Rewriters map[string]*rwopts.Options `toml:"rewriters"`
 
-	CompiledRewriters map[string]rewriter.RewriteInstructions
-	activeCaches      map[string]bool
+	CompiledRewriters  map[string]rewriter.RewriteInstructions
+	activeCaches       map[string]bool
+	providedOriginURL  string
+	providedOriginType string
 
 	LoaderWarnings []string `toml:"-"`
 }
@@ -181,7 +180,7 @@ func NewNegativeCacheConfig() NegativeCacheConfig {
 }
 
 // loadFile loads application configuration from a TOML-formatted file.
-func (c *TricksterConfig) loadFile(flags *TricksterFlags) error {
+func (c *TricksterConfig) loadFile(flags *Flags) error {
 	md, err := toml.DecodeFile(flags.ConfigPath, c)
 	if err != nil {
 		c.setDefaults(&toml.MetaData{})

@@ -38,8 +38,8 @@ const (
 
 var parseOnce sync.Once
 
-// TricksterFlags holds the values for whitelisted flags
-type TricksterFlags struct {
+// Flags holds the values for whitelisted flags
+type Flags struct {
 	PrintVersion      bool
 	ConfigPath        string
 	customPath        bool
@@ -55,9 +55,9 @@ type TricksterFlags struct {
 	providedOriginType string
 }
 
-func parseFlags(applicationName string, arguments []string) (*TricksterFlags, error) {
+func parseFlags(applicationName string, arguments []string) (*Flags, error) {
 
-	flags := &TricksterFlags{}
+	flags := &Flags{}
 	flagSet := flag.NewFlagSet("trickster", flag.ContinueOnError)
 
 	flagSet.BoolVar(&flags.PrintVersion, cfVersion, false, "Prints trickster version")
@@ -84,12 +84,12 @@ func parseFlags(applicationName string, arguments []string) (*TricksterFlags, er
 }
 
 // loadFlags loads configuration from command line flags.
-func (c *TricksterConfig) loadFlags(flags *TricksterFlags) {
+func (c *TricksterConfig) loadFlags(flags *Flags) {
 	if len(flags.Origin) > 0 {
-		providedOriginURL = flags.Origin
+		c.providedOriginURL = flags.Origin
 	}
 	if len(flags.OriginType) > 0 {
-		providedOriginType = flags.OriginType
+		c.providedOriginType = flags.OriginType
 	}
 	if flags.ProxyListenPort > 0 {
 		c.Frontend.ListenPort = flags.ProxyListenPort
