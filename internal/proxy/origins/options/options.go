@@ -24,6 +24,7 @@ import (
 	d "github.com/Comcast/trickster/internal/config/defaults"
 	rule "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
 	po "github.com/Comcast/trickster/internal/proxy/paths/options"
+	"github.com/Comcast/trickster/internal/proxy/request/rewriter"
 	to "github.com/Comcast/trickster/internal/proxy/tls/options"
 	tracing "github.com/Comcast/trickster/internal/util/tracing/options"
 
@@ -95,6 +96,9 @@ type Options struct {
 	RuleName string `toml:"rule_name"`
 	// PathRoutingDisabled, when true, will bypass /originName/path route registrations
 	PathRoutingDisabled bool `toml:"path_routing_disabled"`
+	// RewriterName is the name of a configured Rewriter that will modify the request prior to
+	// processing by the origin client
+	RewriterName string `toml:"rewriter_name"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `toml:"tls"`
@@ -150,6 +154,8 @@ type Options struct {
 	TracingConfig *tracing.Options `toml:"-"`
 	// RuleOptions is the reference to the Rule Options as indicated by RuleName
 	RuleOptions *rule.Options `toml:"-"`
+	// Rewriter is the rewriter handler as indicated by RuleName
+	Rewriter rewriter.RewriteInstructions
 }
 
 // NewOptions will return a pointer to an OriginConfig with the default configuration settings

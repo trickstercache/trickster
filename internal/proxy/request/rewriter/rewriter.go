@@ -17,6 +17,8 @@
 package rewriter
 
 import (
+	"net/http"
+
 	"github.com/Comcast/trickster/internal/proxy/request/rewriter/options"
 )
 
@@ -52,4 +54,11 @@ func parseRewriteList(rl options.RewriteList) (RewriteInstructions, error) {
 		}
 	}
 	return fri, nil
+}
+
+func Rewrite(ri RewriteInstructions, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ri.Execute(r)
+		next.ServeHTTP(w, r)
+	})
 }

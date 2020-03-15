@@ -23,6 +23,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/forwarding"
 	"github.com/Comcast/trickster/internal/proxy/methods"
 	"github.com/Comcast/trickster/internal/proxy/paths/matching"
+	"github.com/Comcast/trickster/internal/proxy/request/rewriter"
 	ts "github.com/Comcast/trickster/internal/util/strings"
 )
 
@@ -56,6 +57,9 @@ type Options struct {
 	NoMetrics bool `toml:"no_metrics"`
 	// CollapsedForwardingName indicates 'basic' or 'progressive' Collapsed Forwarding to be used by this path.
 	CollapsedForwardingName string `toml:"collapsed_forwarding"`
+	// RewriterName is the name of a configured Rewriter that will modify the request prior to
+	// processing by the origin client
+	RewriterName string `toml:"rewriter_name"`
 
 	// Synthesized Options Values
 	//
@@ -70,14 +74,14 @@ type Options struct {
 	MatchType matching.PathMatchType `toml:"-"`
 	// CollapsedForwardingType is the typed representation of CollapsedForwardingName
 	CollapsedForwardingType forwarding.CollapsedForwardingType `toml:"-"`
-	// // OriginConfig is the reference to the Options's parent Origin Config
-	// OriginConfig *oo.Options `toml:"-"`
 	// KeyHasher points to an optional function that hashes the cacheKey with a custom algorithm
-	// NOTE: This is used by some origins like IronDB, but is not configurable by end users
-	// due to a bug in the vendored toml package, this must be a slice to avoid panic
+	// NOTE: This is used by some origins like IronDB, but is not configurable by end users.
+	// Due to a bug in the vendored toml package, this must be a slice to avoid panic
 	KeyHasher []key.HasherFunc `toml:"-"`
-
+	// Custom is a compiled list of any custom settings for this path from the config file
 	Custom []string `toml:"-"`
+	// Rewriter is the rewriter handler as indicated by RuleName
+	Rewriter rewriter.RewriteInstructions
 }
 
 // NewOptions returns a newly-instantiated *Options

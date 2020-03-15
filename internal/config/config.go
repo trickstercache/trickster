@@ -203,7 +203,11 @@ func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
 	}
 
 	tracing.ProcessTracingConfigs(c.TracingConfigs, metadata)
-	c.processOriginConfigs(metadata)
+
+	if err = c.processOriginConfigs(metadata); err != nil {
+		return err
+	}
+
 	c.processCachingConfigs(metadata)
 
 	if err = c.validateConfigMappings(); err != nil {
@@ -255,7 +259,7 @@ func (c *TricksterConfig) validateConfigMappings() error {
 	return nil
 }
 
-func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
+func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) error {
 
 	c.activeCaches = make(map[string]bool)
 
@@ -263,6 +267,16 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 		oc := origins.NewOptions()
 		oc.Name = k
+
+		if metadata.IsDefined("origins", k, "rewriter_name") && v.RewriterName != "" {
+			oc.RewriterName = v.RewriterName
+			ri, ok := c.CompiledRewriters[oc.RewriterName]
+			if !ok {
+				return fmt.Errorf("invalid rewriter name %s in origin config %s",
+					oc.RewriterName, k)
+			}
+			oc.Rewriter = ri
+		}
 
 		if metadata.IsDefined("origins", k, "origin_type") {
 			oc.OriginType = v.OriginType
@@ -356,6 +370,15 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 		if metadata.IsDefined("origins", k, "paths") {
 			var j = 0
 			for l, p := range v.Paths {
+				if metadata.IsDefined("origins", k, "paths", l, "rewriter_name") &&
+					p.RewriterName != "" {
+					ri, ok := c.CompiledRewriters[p.RewriterName]
+					if !ok {
+						return fmt.Errorf("invalid rewriter name %s in origin config %s",
+							p.RewriterName, k)
+					}
+					p.Rewriter = ri
+				}
 				if len(p.Methods) == 0 {
 					p.Methods = []string{http.MethodGet, http.MethodHead}
 				}
@@ -435,6 +458,7 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 		c.Origins[k] = oc
 	}
+	return nil
 }
 
 func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
