@@ -18,7 +18,6 @@ package config
 
 import (
 	"flag"
-	"sync"
 
 	d "github.com/Comcast/trickster/internal/config/defaults"
 )
@@ -35,8 +34,6 @@ const (
 	cfMetricsPort = "metrics-port"
 	cfReloadPort  = "reload-port"
 )
-
-var parseOnce sync.Once
 
 // Flags holds the values for whitelisted flags
 type Flags struct {
