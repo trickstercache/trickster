@@ -32,8 +32,6 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	providedOriginURL = ""
 	providedOriginType = ""
 
-	LoaderWarnings = make([]string, 0)
-
 	c := NewConfig()
 	flags, err := parseFlags(applicationName, arguments) // Parse here to get config file path and version flags
 	if err != nil {

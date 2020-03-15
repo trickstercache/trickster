@@ -82,8 +82,7 @@ func main() {
 		},
 	)
 
-	// TODO: remove this global state variable
-	for _, w := range config.LoaderWarnings {
+	for _, w := range conf.LoaderWarnings {
 		log.Warn(w, tl.Pairs{})
 	}
 

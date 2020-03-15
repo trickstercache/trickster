@@ -44,10 +44,6 @@ import (
 var providedOriginURL string
 var providedOriginType string
 
-// LoaderWarnings holds warnings generated during config load (before the logger is initialized),
-// so they can be logged at the end of the loading process
-var LoaderWarnings = make([]string, 0)
-
 // TricksterConfig is the main configuration object
 type TricksterConfig struct {
 	// Main is the primary MainConfig section
@@ -73,6 +69,8 @@ type TricksterConfig struct {
 
 	CompiledRewriters map[string]rewriter.RewriteInstructions
 	activeCaches      map[string]bool
+
+	LoaderWarnings []string `toml:"-"`
 }
 
 // MainConfig is a collection of general configuration values.
@@ -173,6 +171,7 @@ func NewConfig() *TricksterConfig {
 		TracingConfigs: map[string]*tracing.Options{
 			"default": tracing.NewOptions(),
 		},
+		LoaderWarnings: make([]string, 0),
 	}
 }
 
@@ -532,11 +531,11 @@ func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
 
 			if cc.Redis.ClientType == "standard" {
 				if hasEndpoints && !hasEndpoint {
-					LoaderWarnings = append(LoaderWarnings, "'standard' redis type configured, but 'endpoints' value is provided instead of 'endpoint'")
+					c.LoaderWarnings = append(c.LoaderWarnings, "'standard' redis type configured, but 'endpoints' value is provided instead of 'endpoint'")
 				}
 			} else {
 				if hasEndpoint && !hasEndpoints {
-					LoaderWarnings = append(LoaderWarnings, fmt.Sprintf("'%s' redis type configured, but 'endpoint' value is provided instead of 'endpoints'", cc.Redis.ClientType))
+					c.LoaderWarnings = append(c.LoaderWarnings, fmt.Sprintf("'%s' redis type configured, but 'endpoint' value is provided instead of 'endpoints'", cc.Redis.ClientType))
 				}
 			}
 
