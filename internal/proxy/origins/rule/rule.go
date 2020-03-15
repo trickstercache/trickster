@@ -26,7 +26,6 @@ import (
 type rule struct {
 	defaultRouter  http.Handler
 	extractionFunc extractionFunc
-	decodingFunc   decodingFunc
 	operationFunc  operationFunc
 	evaluatorFunc  evaluatorFunc
 	negateOpResult bool
@@ -109,8 +108,12 @@ func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, e
 	var nonDefault bool
 
 	for _, c := range r.caseList {
-		res := r.operationFunc(r.extractionFunc(hr, r.extractionArg),
-			c.matchValue, r.negateOpResult)
+
+		extraction := r.extractionFunc(hr, r.extractionArg)
+
+		res := r.operationFunc(extraction, c.matchValue, r.negateOpResult)
+
+		// TODO: support comparison of other values via 'where'
 		if res == "true" {
 			nonDefault = true
 			h = c.router

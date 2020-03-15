@@ -64,7 +64,7 @@ type Options struct {
 	InputIndex int `toml:"input_index"`
 	// InputDelimiter is optional, defaulting to " ", and indicates the delimiter for separating the Input
 	// into parts. This value has no effect unless InputIndex >= 0
-	InputDelimiter int `toml:"input_delimiter"`
+	InputDelimiter string `toml:"input_delimiter"`
 	// Operation specifies what action to take on the input, whose result is used to
 	// determine if any case is matched. Possible options are as follows.
 	// string:   eq, contains, suffix, prefix, md5, sha1, base64, modulo

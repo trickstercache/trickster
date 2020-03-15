@@ -18,6 +18,7 @@ package rule
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/Comcast/trickster/internal/proxy/urls"
 )
@@ -122,4 +123,16 @@ func extractHeaderFromSource(r *http.Request, headerName string) string {
 		return r.Header.Get(headerName)
 	}
 	return ""
+}
+
+// assumes delimiter is not empty string, and part is >= 0
+func extractSourcePart(input, delimiter string, part int) string {
+	if input == "" || len(delimiter) > len(input) {
+		return ""
+	}
+	parts := strings.Split(input, delimiter)
+	if len(parts) <= part {
+		return ""
+	}
+	return parts[part]
 }

@@ -17,8 +17,6 @@
 package rule
 
 import (
-	"strings"
-
 	"github.com/Comcast/trickster/internal/util/base64"
 )
 
@@ -26,10 +24,10 @@ type encoding string
 type decodingFunc func(string, string, int) string
 
 var decodingFuncs = map[encoding]decodingFunc{
-	"base64": decodeBase64Part,
+	"base64": decodeBase64,
 }
 
-func decodeBase64(input string) string {
+func decodeBase64(input, unusedS string, unusedI int) string {
 	if input == "" {
 		return ""
 	}
@@ -38,20 +36,4 @@ func decodeBase64(input string) string {
 		return ""
 	}
 	return s
-}
-
-func decodeBase64Part(input, sep string, i int) string {
-	if input == "" || sep == "" {
-		return ""
-	}
-
-	if i < 0 {
-		return decodeBase64(input)
-	}
-
-	parts := strings.Split(input, sep)
-	if len(parts) <= i {
-		return ""
-	}
-	return decodeBase64(parts[i])
 }

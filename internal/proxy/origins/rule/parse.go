@@ -91,12 +91,24 @@ func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteIns
 	r.extractionFunc = exf
 	r.extractionArg = ro.InputKey
 
+	// if the user only wants a part of the response
+	if ro.InputIndex > -1 && ro.InputDelimiter != "" {
+		f := r.extractionFunc
+		r.extractionFunc = func(hr *http.Request, arg string) string {
+			return extractSourcePart(f(hr, arg), ro.InputDelimiter, ro.InputIndex)
+		}
+	}
+
+	// if the user needs to decode the input
 	if ro.InputEncoding != "" {
+		f := r.extractionFunc
 		df, ok := decodingFuncs[encoding(ro.InputEncoding)]
 		if !ok {
 			return fmt.Errorf("invalid encoding name %s in rule %s", ro.InputEncoding, ro.Name)
 		}
-		r.decodingFunc = df
+		r.extractionFunc = func(hr *http.Request, arg string) string {
+			return df(f(hr, arg), "", 0)
+		}
 	}
 
 	if strings.HasPrefix(ro.Operation, "!") {
@@ -170,20 +182,3 @@ func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteIns
 	c.rule = r
 	return nil
 }
-
-/*
-
- This example TOML serves as a TODO for parts of the rules engine left to fully implement
-
-[rules]
-  [rules.example]
-  # input_index = -1              # set to a value >= 0 to use a part of the input for the operation
-  # input_delimiter = ' '         # when input_index >=0, this is used to split the input into parts
-
-  [rules.example.cases]
-		[rules.example.cases.1]
-		rewrite = [ ['path', 'replace', '${match}', 'myReplacement'],
-					['header', 'set', 'Cache-Control', 'myReplacement'],
-					['header', 'replace', 'Cache-Control', '${match}', 'myReplacement'],
-					['header', 'delete', 'Cache-Control', '${match}'] ]
-*/

@@ -17,7 +17,6 @@
 package rule
 
 import (
-	"errors"
 	"strconv"
 	"testing"
 )
@@ -30,9 +29,7 @@ func TestDecodingFuncs(t *testing.T) {
 	}{
 		{"base64", "", "", -1},
 		{"base64", "dHJpY2tzdGVy", "trickster", -1},
-		{"base64", "dHJpY2tzdGVy", "", 1},
 		{"base64", "", "", 1},
-		{"base64", "Basic dHJpY2tzdGVy", "trickster", 1},
 		{"base64", "a", "", -1},
 	}
 	for i, test := range tests {
@@ -46,11 +43,6 @@ func TestDecodingFuncs(t *testing.T) {
 				t.Errorf("unknown encoding %v", test.encoding)
 			}
 		})
-	}
-
-	s := decodeBase64("")
-	if s != "" {
-		t.Error(errors.New("expected empty string"))
 	}
 
 }
