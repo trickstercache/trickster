@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-package rule
+package options
 
-import "errors"
+type RewriteList [][]string
 
-var errBadParams = errors.New("invalid parameters provided to rewrite instruction")
-var errBadDepthParse = errors.New("unable to parse depth value")
+type Options struct {
+	Instructions RewriteList `toml:"instructions"`
+}

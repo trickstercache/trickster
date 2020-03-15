@@ -14,11 +14,9 @@
  * limitations under the License.
  */
 
-package rule
+package rewriter
 
-type outcome struct {
-	ri        rewriteInstructions
-	nextRoute string
-}
+import "errors"
 
-type outcomes map[string]*outcome
+var errBadParams = errors.New("invalid parameters provided to rewrite instruction")
+var errBadDepthParse = errors.New("unable to parse depth value")

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package rule
+package rewriter
 
 import (
 	"fmt"
@@ -32,7 +32,7 @@ type rewriteInstruction interface {
 }
 
 type rewriteList [][]string
-type rewriteInstructions []rewriteInstruction
+type RewriteInstructions []rewriteInstruction
 
 var rewriters = map[string]func() rewriteInstruction{
 	"header-set":     func() rewriteInstruction { return &rwiKeyBasedSetter{} },
@@ -156,7 +156,7 @@ var scalarSets = map[string]scalarSetFunc{
 	},
 }
 
-func (ris rewriteInstructions) String() string {
+func (ris RewriteInstructions) String() string {
 	l := make([]string, len(ris))
 	for i, instr := range ris {
 		l[i] = instr.String()
@@ -164,30 +164,10 @@ func (ris rewriteInstructions) String() string {
 	return "[" + strings.Join(l, ",") + "]"
 }
 
-func (ris rewriteInstructions) Execute(r *http.Request) {
+func (ris RewriteInstructions) Execute(r *http.Request) {
 	for _, instr := range ris {
 		instr.Execute(r)
 	}
-}
-
-func parseRewriteList(rl rewriteList) (rewriteInstructions, error) {
-	fri := make(rewriteInstructions, 0, len(rl))
-	for _, sri := range rl {
-		if len(sri) > 1 {
-			key := sri[0] + "-" + sri[1]
-			f, ok := rewriters[key]
-			if !ok {
-				return nil, errBadParams
-			}
-			ri := f()
-			err := ri.Parse(sri)
-			if err != nil {
-				return nil, err
-			}
-			fri = append(fri, ri)
-		}
-	}
-	return fri, nil
 }
 
 func checkTokens(input string) bool {

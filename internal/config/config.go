@@ -33,6 +33,8 @@ import (
 	origins "github.com/Comcast/trickster/internal/proxy/origins/options"
 	rule "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
 	"github.com/Comcast/trickster/internal/proxy/paths/matching"
+	rewriter "github.com/Comcast/trickster/internal/proxy/request/rewriter"
+	rwopts "github.com/Comcast/trickster/internal/proxy/request/rewriter/options"
 	to "github.com/Comcast/trickster/internal/proxy/tls/options"
 	tracing "github.com/Comcast/trickster/internal/util/tracing/options"
 
@@ -66,8 +68,11 @@ type TricksterConfig struct {
 	NegativeCacheConfigs map[string]NegativeCacheConfig `toml:"negative_caches"`
 	// Rules is a map of the Rules
 	Rules map[string]*rule.Options `toml:"rules"`
+	// Rewriters is a map of the Rewriters
+	Rewriters map[string]*rwopts.Options `toml:"rewriters"`
 
-	activeCaches map[string]bool
+	CompiledRewriters map[string]rewriter.RewriteInstructions
+	activeCaches      map[string]bool
 }
 
 // MainConfig is a collection of general configuration values.
@@ -190,6 +195,12 @@ func (c *TricksterConfig) loadFile(flags *TricksterFlags) error {
 func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
 
 	var err error
+
+	if c.Rewriters != nil {
+		if c.CompiledRewriters, err = rewriter.ProcessConfigs(c.Rewriters); err != nil {
+			return err
+		}
+	}
 
 	tracing.ProcessTracingConfigs(c.TracingConfigs, metadata)
 	c.processOriginConfigs(metadata)
@@ -590,7 +601,8 @@ func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
 	}
 }
 
-func (c *TricksterConfig) copy() *TricksterConfig {
+// Clone returns an exact copy of the subject *TricksterConfig
+func (c *TricksterConfig) Clone() *TricksterConfig {
 
 	nc := NewConfig()
 	delete(nc.Caches, "default")
@@ -629,11 +641,17 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 		nc.TracingConfigs[k] = v.Clone()
 	}
 
+	nc.Rules = c.Rules
+	// TODO clone rules instead of passing reference
+
+	nc.Rewriters = c.Rewriters
+	// TODO: clone rewriters instead of passing reference
+
 	return nc
 }
 
 func (c *TricksterConfig) String() string {
-	cp := c.copy()
+	cp := c.Clone()
 
 	// the toml library will panic if the Handler is assigned,
 	// even though this field is annotated as skip ("-") in the prototype

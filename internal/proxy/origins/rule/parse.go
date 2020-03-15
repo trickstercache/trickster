@@ -23,9 +23,10 @@ import (
 
 	"github.com/Comcast/trickster/internal/proxy/handlers"
 	ro "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
+	"github.com/Comcast/trickster/internal/proxy/request/rewriter"
 )
 
-func (c *Client) parseOptions(ro *ro.Options) error {
+func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteInstructions) error {
 
 	if ro == nil {
 		return fmt.Errorf("rule client %s failed to parse nil options", c.name)
@@ -46,7 +47,27 @@ func (c *Client) parseOptions(ro *ro.Options) error {
 	var nr http.Handler
 	r := &rule{}
 
-	badDefaultRoute := fmt.Errorf("invalid default rule route %s in rule %s", ro.NextRoute, ro.Name)
+	if ro.EgressRewriterName != "" {
+		ri, ok := rwi[ro.EgressRewriterName]
+		if !ok {
+			return fmt.Errorf("invalid  egress rewriter %s in rule %s",
+				ro.EgressRewriterName, ro.Name)
+		}
+		r.egressRewriter = ri
+	}
+
+	if ro.IngressRewriterName != "" {
+		ri, ok := rwi[ro.IngressRewriterName]
+		if !ok {
+			return fmt.Errorf("invalid  ingress rewriter %s in rule %s",
+				ro.IngressRewriterName, ro.Name)
+		}
+		r.ingressRewriter = ri
+	}
+
+	badDefaultRoute := fmt.Errorf("invalid default rule route %s in rule %s",
+		ro.NextRoute, ro.Name)
+
 	if ro.NextRoute != "" {
 		nc := c.clients.Get(ro.NextRoute)
 		if nc == nil || nc.Router() == nil {
@@ -102,6 +123,15 @@ func (c *Client) parseOptions(ro *ro.Options) error {
 
 		for k, v := range ro.CaseOptions {
 
+			var ri rewriter.RewriteInstructions
+			if v.RewriterName != "" {
+				i, ok := rwi[v.RewriterName]
+				if !ok {
+					return fmt.Errorf("invalid rewriter %s in rule %s case %s", k, ro.Name, k)
+				}
+				ri = i
+			}
+
 			if v.NextRoute == "" && v.RedirectURL == "" {
 				return fmt.Errorf("missing next_route in rule %s case %s", ro.Name, k)
 			}
@@ -110,18 +140,27 @@ func (c *Client) parseOptions(ro *ro.Options) error {
 				return fmt.Errorf("missing matches in rule %s case %s", ro.Name, k)
 			}
 
+			rc := 0
 			if v.RedirectURL != "" {
+				rc = 302
 				nr = http.HandlerFunc(handlers.HandleRedirectResponse)
 			} else {
 				no, ok := c.clients[v.NextRoute]
 				if !ok {
-					return fmt.Errorf("unknown next_route %s in rule %s case %s", v.NextRoute, ro.Name, k)
+					return fmt.Errorf("unknown next_route %s in rule %s case %s",
+						v.NextRoute, ro.Name, k)
 				}
 				nr = no.Router()
 			}
 
 			for _, m := range v.Matches {
-				rc := &ruleCase{matchValue: m, router: nr, redirectURL: v.RedirectURL, redirectCode: 302}
+				rc := &ruleCase{
+					matchValue:   m,
+					router:       nr,
+					redirectURL:  v.RedirectURL,
+					redirectCode: rc,
+					rewriter:     ri,
+				}
 				r.caseList = append(r.caseList, rc)
 				r.cases[m] = rc
 			}

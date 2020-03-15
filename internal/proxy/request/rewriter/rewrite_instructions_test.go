@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package rule
+package rewriter
 
 import (
 	"errors"
@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Comcast/trickster/internal/proxy/request/rewriter/options"
 	"github.com/Comcast/trickster/internal/proxy/urls"
 )
 
@@ -31,7 +32,7 @@ const testURLRaw = "https://example.com:8480/path1/path2?param1=value&param2=val
 
 var testURL, _ = url.Parse(testURLRaw)
 
-var testRL0 = rewriteList{
+var testRL0 = options.RewriteList{
 	[]string{"header", "set", "Cache-Control", "max-age=60"},
 	[]string{"header", "append", "Cache-Control", "max-age=300"},
 	[]string{"header", "append", "Cache-Control", "private"},
@@ -53,19 +54,19 @@ var testRL0 = rewriteList{
 	[]string{"param", "append", "param3", "trickster"},
 }
 
-var testRL1 = rewriteList{
+var testRL1 = options.RewriteList{
 	[]string{"path", "set", "my/path/is/here"},
 	[]string{"path", "set", "was", "2"},
 	[]string{"path", "replace", "he", "the", "3"},
 	[]string{"path", "replace", "the", "the"}, // test depth -1
 }
 
-var testRL2 = rewriteList{
+var testRL2 = options.RewriteList{
 	[]string{"params", "set", "param1=foo&param2=trickster&param3=foo&param1=too"},
 	[]string{"params", "replace", "foo", "bar", "1"},
 }
 
-var testRL3 = rewriteList{
+var testRL3 = options.RewriteList{
 	[]string{"method", "set", "POST"},
 	[]string{"host", "set", "example.com:9090"},
 	[]string{"host", "replace", "example.com", "tricksterproxy.io"},
@@ -74,7 +75,7 @@ var testRL3 = rewriteList{
 	[]string{"port", "replace", "000", "480"},
 }
 
-var testRI0 = rewriteInstructions{
+var testRI0 = RewriteInstructions{
 	&rwiKeyBasedSetter{key: "Cache-Control", value: "max-age=60"},
 	&rwiKeyBasedAppender{key: "Cache-Control", value: "max-age=300"},
 	&rwiKeyBasedAppender{key: "Cache-Control", value: "private"},
@@ -96,19 +97,19 @@ var testRI0 = rewriteInstructions{
 	&rwiKeyBasedAppender{key: "param3", value: "trickster"},
 }
 
-var testRI1 = rewriteInstructions{
+var testRI1 = RewriteInstructions{
 	&rwiPathSetter{value: "my/path/is/here", depth: -1},
 	&rwiPathSetter{value: "was", depth: 2},
 	&rwiPathReplacer{search: "he", replacement: "the", depth: 3},
 	&rwiPathReplacer{search: "the", replacement: "the", depth: -1},
 }
 
-var testRI2 = rewriteInstructions{
+var testRI2 = RewriteInstructions{
 	&rwiBasicSetter{value: "param1=foo&param2=trickster&param3=foo&param1=too"},
 	&rwiBasicReplacer{search: "foo", replacement: "bar", depth: 1},
 }
 
-var testRI3 = rewriteInstructions{
+var testRI3 = RewriteInstructions{
 	&rwiBasicSetter{value: "POST"},
 	&rwiBasicSetter{value: "example.com:9090"},
 	&rwiBasicReplacer{search: "example.com", replacement: "tricksterproxy.io", depth: -1},
@@ -120,8 +121,8 @@ var testRI3 = rewriteInstructions{
 func TestParseRewriteList(t *testing.T) {
 
 	var tests = []struct {
-		rl          rewriteList
-		expected    rewriteInstructions
+		rl          options.RewriteList
+		expected    RewriteInstructions
 		expectedErr error
 	}{
 		// run 0: key-based instructions
@@ -155,7 +156,7 @@ func TestParseRewriteList(t *testing.T) {
 		// runs 4-: error cases
 		{
 			// 4 - key-based set error case A
-			rl: rewriteList{
+			rl: options.RewriteList{
 				[]string{"header", "set"},
 			},
 			expectedErr: errBadParams,
@@ -163,7 +164,7 @@ func TestParseRewriteList(t *testing.T) {
 
 		{
 			// 5 - key-based set error case B
-			rl: rewriteList{
+			rl: options.RewriteList{
 				[]string{"header", "TESTING"},
 			},
 			expectedErr: errBadParams,
@@ -171,63 +172,63 @@ func TestParseRewriteList(t *testing.T) {
 
 		{
 			// 6 - key-based replace error case A
-			rl: rewriteList{
+			rl: options.RewriteList{
 				[]string{"header", "replace"},
 			},
 			expectedErr: errBadParams,
 		},
 		{
 			// 7 - key-based delete error case A
-			rl: rewriteList{
+			rl: options.RewriteList{
 				[]string{"header", "delete"},
 			},
 			expectedErr: errBadParams,
 		},
 		{
 			// 8 - path setter error case A
-			rl: rewriteList{
+			rl: options.RewriteList{
 				[]string{"path", "set"},
 			},
 			expectedErr: errBadParams,
 		},
 		{
 			// 9 - path replacer error case A
-			rl: rewriteList{
+			rl: options.RewriteList{
 				[]string{"path", "replace"},
 			},
 			expectedErr: errBadParams,
 		},
 		{
 			// 10 - basic setter error case A
-			rl: rewriteList{
+			rl: options.RewriteList{
 				[]string{"params", "set"},
 			},
 			expectedErr: errBadParams,
 		},
 		{
 			// 11 - basic setter error case A
-			rl: rewriteList{
+			rl: options.RewriteList{
 				[]string{"params", "replace"},
 			},
 			expectedErr: errBadParams,
 		},
 		{
 			// 12 - basic replacer error case B
-			rl: rewriteList{
+			rl: options.RewriteList{
 				[]string{"params", "replace", "foo", "bar", "not-an-integer"},
 			},
 			expectedErr: errBadDepthParse,
 		},
 		{
 			// 13 - path replacer error case B
-			rl: rewriteList{
+			rl: options.RewriteList{
 				[]string{"path", "replace", "foo", "bar", "not-an-integer"},
 			},
 			expectedErr: errBadDepthParse,
 		},
 		{
 			// 14 - path setter error case B
-			rl: rewriteList{
+			rl: options.RewriteList{
 				[]string{"path", "set", "foo", "not-an-integer"},
 			},
 			expectedErr: errBadDepthParse,
@@ -287,7 +288,7 @@ func TestExecuteRewriteInstructions(t *testing.T) {
 
 	var tests = []struct {
 		in       *http.Request
-		ri       rewriteInstructions
+		ri       RewriteInstructions
 		expected *http.Request
 	}{
 		// run 0: key-based instructions
@@ -341,7 +342,7 @@ func reqLazyEqual(r1, r2 *http.Request) bool {
 
 func TestHasTokens(t *testing.T) {
 
-	ris := rewriteInstructions{
+	ris := RewriteInstructions{
 		&rwiPathSetter{},
 		&rwiPathReplacer{},
 		&rwiKeyBasedDeleter{},

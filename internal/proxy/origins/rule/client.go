@@ -26,6 +26,7 @@ import (
 	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	"github.com/Comcast/trickster/internal/proxy/paths/matching"
 	po "github.com/Comcast/trickster/internal/proxy/paths/options"
+	"github.com/Comcast/trickster/internal/proxy/request/rewriter"
 )
 
 // Client Implements the Proxy Client Interface
@@ -60,10 +61,10 @@ type Clients []*Client
 
 // Validate will fully load the Clients from their options and return an error if the options
 // could not be validated
-func (rc Clients) Validate() error {
+func (rc Clients) Validate(rwi map[string]rewriter.RewriteInstructions) error {
 	for _, c := range rc {
 		if c != nil {
-			if err := c.parseOptions(c.options.RuleOptions); err != nil {
+			if err := c.parseOptions(c.options.RuleOptions, rwi); err != nil {
 				return err
 			}
 		}

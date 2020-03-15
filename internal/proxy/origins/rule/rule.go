@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/Comcast/trickster/internal/proxy/handlers"
+	"github.com/Comcast/trickster/internal/proxy/request/rewriter"
 )
 
 type rule struct {
@@ -38,6 +39,9 @@ type rule struct {
 
 	defaultRedirectURL  string
 	defaultRedirectCode int
+
+	ingressRewriter rewriter.RewriteInstructions
+	egressRewriter  rewriter.RewriteInstructions
 }
 
 type ruleCase struct {
@@ -45,6 +49,7 @@ type ruleCase struct {
 	router       http.Handler
 	redirectURL  string
 	redirectCode int
+	rewriter     rewriter.RewriteInstructions
 }
 
 type caseMap map[string]*ruleCase
@@ -54,7 +59,10 @@ type evaluatorFunc func(*http.Request) (http.Handler, *http.Request, error)
 
 func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, error) {
 
-	// TODO: if pre-evaluation rewrite, do it here.
+	// if this case includes ingress rewriter instructions, execute those now
+	if len(r.ingressRewriter) > 0 {
+		r.ingressRewriter.Execute(hr)
+	}
 
 	var h http.Handler = r.defaultRouter
 	res := r.operationFunc(r.extractionFunc(hr, r.extractionArg),
@@ -65,16 +73,22 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 		nonDefault = true
 		h = c.router
 
+		// if this case includes rewriter instructions, execute those now
+		if len(c.rewriter) > 0 {
+			c.rewriter.Execute(hr)
+		}
+
 		// if it's a redirect response, set the appropriate context
 		if c.redirectCode > 0 {
 			hr.WithContext(handlers.WithRedirects(hr.Context(),
 				c.redirectCode, c.redirectURL))
 		}
-
-		// TODO: if case-based rewrite, do it here.
 	}
 
-	// TODO: if post-evaluation rewrite, do it here.
+	// if this case includes egress rewriter instructions, execute those now
+	if len(r.egressRewriter) > 0 {
+		r.egressRewriter.Execute(hr)
+	}
 
 	if !nonDefault && r.defaultRedirectCode > 0 {
 		hr = hr.WithContext(handlers.WithRedirects(hr.Context(),
@@ -86,7 +100,10 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 
 func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, error) {
 
-	// TODO: if pre-evaluation rewrite, do it here.
+	// if this case includes ingress rewriter instructions, execute those now
+	if len(r.ingressRewriter) > 0 {
+		r.ingressRewriter.Execute(hr)
+	}
 
 	var h http.Handler = r.defaultRouter
 	var nonDefault bool
@@ -98,17 +115,23 @@ func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, e
 			nonDefault = true
 			h = c.router
 
+			// if this case includes rewriter instructions, execute those now
+			if len(c.rewriter) > 0 {
+				c.rewriter.Execute(hr)
+			}
+
 			// if it's a redirect response, set the appropriate context
 			if c.redirectCode > 0 {
 				hr = hr.WithContext(handlers.WithRedirects(hr.Context(),
 					c.redirectCode, c.redirectURL))
 			}
-
-			// TODO: if case-based rewrite, do it here.
 		}
 	}
 
-	// TODO: if post-evaluation rewrite, do it here.
+	// if this case includes egress rewriter instructions, execute those now
+	if len(r.egressRewriter) > 0 {
+		r.egressRewriter.Execute(hr)
+	}
 
 	if !nonDefault && r.defaultRedirectCode > 0 {
 		hr = hr.WithContext(handlers.WithRedirects(hr.Context(),
