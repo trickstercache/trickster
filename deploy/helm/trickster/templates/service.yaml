@@ -44,7 +44,7 @@ spec:
     {{- if .Values.service.nodePort }}
       nodePort: {{ .Values.service.nodePort }}
     {{- end }}
-    - name: metrics
+    - name: http-metrics
       port: {{ .Values.service.metricsPort }}
       protocol: TCP
       targetPort: metrics
