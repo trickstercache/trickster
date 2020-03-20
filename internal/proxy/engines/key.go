@@ -51,7 +51,10 @@ func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) strin
 		r = pr.upstreamRequest
 	}
 
-	if templateURL != nil {
+	if r.Method == http.MethodPost {
+		r.ParseForm()
+		params = r.PostForm
+	} else if templateURL != nil {
 		params = templateURL.Query()
 	} else if r.URL != nil {
 		params = r.URL.Query()

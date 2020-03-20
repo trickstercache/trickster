@@ -134,7 +134,14 @@ func parseDuration(input string) (time.Duration, error) {
 func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
-	qp := r.URL.Query()
+
+	var qp url.Values
+	if r.Method == http.MethodPost {
+		r.ParseForm()
+		qp = r.PostForm
+	} else {
+		qp = r.URL.Query()
+	}
 
 	trq.Statement = qp.Get(upQuery)
 	if trq.Statement == "" {
