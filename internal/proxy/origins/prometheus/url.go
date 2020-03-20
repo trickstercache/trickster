@@ -17,6 +17,8 @@
 package prometheus
 
 import (
+	"bytes"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -53,10 +55,24 @@ func (c *Client) BuildUpstreamURL(r *http.Request) *url.URL {
 
 // SetExtent will change the upstream request query to use the provided Extent
 func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
-	params := r.URL.Query()
-	params.Set(upStart, strconv.FormatInt(extent.Start.Unix(), 10))
-	params.Set(upEnd, strconv.FormatInt(extent.End.Unix(), 10))
-	r.URL.RawQuery = params.Encode()
+	var qp url.Values
+	if r.Method == http.MethodPost {
+		r.ParseForm()
+		qp = r.PostForm
+	} else {
+		qp = r.URL.Query()
+	}
+
+	qp.Set(upStart, strconv.FormatInt(extent.Start.Unix(), 10))
+	qp.Set(upEnd, strconv.FormatInt(extent.End.Unix(), 10))
+	s := qp.Encode()
+
+	if r.Method == http.MethodPost {
+		r.ContentLength = int64(len(s))
+		r.Body = ioutil.NopCloser(bytes.NewBufferString(s))
+	} else {
+		r.URL.RawQuery = s
+	}
 }
 
 // FastForwardURL returns the url to fetch the Fast Forward value based on a timerange url
