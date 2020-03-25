@@ -1,11 +1,11 @@
 # <img src="./docs/images/logos/trickster-logo.svg" width=90 />&nbsp;&nbsp;&nbsp;&nbsp;<img src="./docs/images/logos/trickster-text.svg" width=420 /> [![Follow on Twitter](https://img.shields.io/twitter/follow/tricksterio.svg?style=social&logo=twitter)](https://twitter.com/tricksterio)
 
-[![License](https://img.shields.io/github/license/Comcast/trickster)](/LICENSE)
-[![Coverage Status](https://coveralls.io/repos/github/Comcast/trickster/badge.svg)](https://coveralls.io/github/Comcast/trickster)
-[![Build Status](https://travis-ci.org/Comcast/trickster.svg?branch=master)](https://travis-ci.org/Comcast/trickster/)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Comcast/trickster)](https://goreportcard.com/report/github.com/Comcast/trickster)
+[![License](https://img.shields.io/github/license/tricksterproxy/trickster)](/LICENSE)
+[![Coverage Status](https://coveralls.io/repos/github/tricksterproxy/trickster/badge.svg)](https://coveralls.io/github/tricksterproxy/trickster)
+[![Build Status](https://travis-ci.org/tricksterproxy/trickster.svg?branch=master)](https://travis-ci.org/tricksterproxy/trickster/)
+[![Go Report Card](https://goreportcard.com/badge/github.com/tricksterproxy/trickster)](https://goreportcard.com/report/github.com/tricksterproxy/trickster)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/2518/badge)](https://bestpractices.coreinfrastructure.org/en/projects/2518)
-[![GoDoc](https://godoc.org/github.com/Comcast/trickster?status.svg)](https://godoc.org/github.com/Comcast/trickster)
+[![GoDoc](https://godoc.org/github.com/tricksterproxy/trickster?status.svg)](https://godoc.org/github.com/tricksterproxy/trickster)
 [![Docker Pulls](https://img.shields.io/docker/pulls/tricksterio/trickster.svg?maxAge=86400)](https://hub.docker.com/r/tricksterio/trickster)
 
 Trickster is an HTTP reverse proxy/cache for http applications and a dashboard query accelerator for time series databases.
