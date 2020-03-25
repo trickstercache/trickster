@@ -29,6 +29,7 @@ import (
 	cache "github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/cache/types"
 	d "github.com/Comcast/trickster/internal/config/defaults"
+	"github.com/Comcast/trickster/internal/proxy/forwarding"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	origins "github.com/Comcast/trickster/internal/proxy/origins/options"
 	"github.com/Comcast/trickster/internal/proxy/paths/matching"
@@ -351,7 +352,13 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 					p.ResponseBodyBytes = []byte(p.ResponseBody)
 					p.HasCustomResponseBody = true
 				}
-
+				// TODO: return error condition in v1.1 if user-provided pcf name is invalid
+				if metadata.IsDefined("origins", k, "paths", l, "collapsed_forwarding") {
+					p.CollapsedForwardingType =
+						forwarding.GetCollapsedForwardingType(p.CollapsedForwardingName)
+				} else {
+					p.CollapsedForwardingType = forwarding.CFTypeBasic
+				}
 				if mt, ok := matching.Names[strings.ToLower(p.MatchTypeName)]; ok {
 					p.MatchType = mt
 					p.MatchTypeName = p.MatchType.String()

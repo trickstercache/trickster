@@ -47,6 +47,8 @@ const (
 	LookupStatusNegativeCacheHit
 	// LookupStatusError indicates that there was an error looking up the object in the cache
 	LookupStatusError
+	// LookupStatusProxyHit indicates that the request joined an existing proxy download of the same object
+	LookupStatusProxyHit
 )
 
 var cacheLookupStatusNames = map[string]LookupStatus{
@@ -59,6 +61,7 @@ var cacheLookupStatusNames = map[string]LookupStatus{
 	"proxy-error": LookupStatusProxyError,
 	"proxy-only":  LookupStatusProxyOnly,
 	"nchit":       LookupStatusNegativeCacheHit,
+	"proxy-hit":   LookupStatusProxyHit,
 	"error":       LookupStatusError,
 }
 
@@ -72,6 +75,7 @@ var cacheLookupStatusValues = map[LookupStatus]string{
 	LookupStatusProxyError:       "proxy-error",
 	LookupStatusProxyOnly:        "proxy-only",
 	LookupStatusNegativeCacheHit: "nchit",
+	LookupStatusProxyHit:         "proxy-hit",
 	LookupStatusError:            "error",
 }
 

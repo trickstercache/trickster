@@ -49,3 +49,12 @@ func (t CollapsedForwardingType) String() string {
 	}
 	return strconv.Itoa(int(t))
 }
+
+// GetCollapsedForwardingType returns the CollapsedForwardingType for the provided name
+// or CFTypeBasic if the name is invalid
+func GetCollapsedForwardingType(name string) CollapsedForwardingType {
+	if v, ok := CollapsedForwardingTypeNames[name]; ok {
+		return v
+	}
+	return CFTypeBasic
+}

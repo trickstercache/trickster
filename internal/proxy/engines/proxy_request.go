@@ -75,6 +75,7 @@ type proxyRequest struct {
 	cachingPolicy      *CachingPolicy
 
 	Logger *tl.TricksterLogger
+	isPCF  bool
 }
 
 // newProxyRequest accepts the original inbound HTTP Request and Response
@@ -309,7 +310,9 @@ func (pr *proxyRequest) writeResponseHeader() {
 
 func (pr *proxyRequest) setBodyWriter() {
 
-	PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header)
+	if !pr.isPCF {
+		PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header)
+	}
 
 	if pr.writeToCache && pr.cacheBuffer == nil {
 		pr.cacheBuffer = &bytes.Buffer{}

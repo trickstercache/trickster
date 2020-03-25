@@ -65,6 +65,9 @@ func NewPCF(resp *http.Response, contentLength int64) ProgressiveCollapseForward
 	// This contiguous block of memory is just an underlying byte store, references by the slices defined in refs
 	// Thread safety is provided through a read index, an atomic, which the writer must exceed and readers may not exceed
 	// This effectively limits the readers and writer to separate areas in memory.
+	if contentLength < 0 {
+		return nil
+	}
 	dataStore := make([]byte, contentLength)
 	refs := make([][]byte, ((contentLength/HTTPBlockSize)*2)+1)
 

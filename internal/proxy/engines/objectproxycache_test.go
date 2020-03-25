@@ -582,11 +582,6 @@ func TestObjectProxyCacheRequestWithPCF(t *testing.T) {
 		t.Error(err)
 	}
 
-	// get cache hit coverage too by repeating:
-	_, e = testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "hit"})
-	for _, err = range e {
-		t.Error(err)
-	}
 }
 
 func TestObjectProxyCacheTrueHitNoDocumentErr(t *testing.T) {
@@ -1150,6 +1145,8 @@ func testFetchOPC(r *http.Request, sc int, body string, match map[string]string)
 
 	ObjectProxyCacheRequest(w, r)
 	resp := w.Result()
+
+	fmt.Println("testFetchOPC`", resp.Header)
 
 	err := testStatusCodeMatch(resp.StatusCode, sc)
 	if err != nil {

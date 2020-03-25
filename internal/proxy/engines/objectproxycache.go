@@ -26,6 +26,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/status"
+	"github.com/Comcast/trickster/internal/proxy/forwarding"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/util/log"
@@ -225,6 +226,46 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 }
 
 func handleCacheKeyMiss(pr *proxyRequest) error {
+
+	rsc := request.GetResources(pr.Request)
+	pc := rsc.PathConfig
+	oc := rsc.OriginConfig
+
+	// if a we're using PCF, create that object for the cache miss
+	if !pr.wantsRanges && pc != nil && pc.CollapsedForwardingType == forwarding.CFTypeProgressive {
+		pcfResult, pcfExists := Reqs.Load(pr.key)
+		// a PCF session is in progress for this URL, join this client to it.
+		if pcfExists {
+			locks.Release(pr.key)
+			pcf := pcfResult.(ProgressiveCollapseForwarder)
+			pr.upstreamResponse = pcf.GetResp()
+			pr.responseWriter = PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode,
+				pr.upstreamResponse.Header)
+			pcf.AddClient(pr.responseWriter)
+			return nil
+		}
+
+		reader, resp, contentLength := PrepareFetchReader(pr.Request)
+		pr.upstreamResponse = resp
+
+		pr.writeResponseHeader()
+		pr.responseWriter = PrepareResponseWriter(pr.responseWriter, resp.StatusCode, resp.Header)
+		// Check if we know the content length and if it is less than our max object size.
+		if contentLength > 0 && contentLength < int64(oc.MaxObjectSizeBytes) {
+			pcf := NewPCF(resp, contentLength)
+			Reqs.Store(pr.key, pcf)
+			// Blocks until server completes
+			go func() {
+				io.Copy(pcf, reader)
+				pcf.Close()
+				Reqs.Delete(pr.key)
+			}()
+			pcf.AddClient(pr.responseWriter)
+			pr.determineCacheability()
+			return handleAllWrites(pr)
+		}
+	}
+
 	pr.prepareUpstreamRequests()
 	handleUpstreamTransactions(pr)
 	return handleAllWrites(pr)
@@ -256,7 +297,9 @@ func handleAllWrites(pr *proxyRequest) error {
 
 func handleResponse(pr *proxyRequest) error {
 	pr.prepareResponse()
-	pr.writeResponseHeader()
+	if !pr.isPCF {
+		pr.writeResponseHeader()
+	}
 	pr.setBodyWriter() // what about partial hit? it does not set this
 	pr.writeResponseBody()
 	return nil
@@ -282,18 +325,23 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
 
 	pr.key = oc.CacheKeyPrefix + "." + pr.DeriveCacheKey(nil, "")
+
+	// if a PCF entry exists, or the client requested no-cache for this object, proxy out to it
 	pcfResult, pcfExists := Reqs.Load(pr.key)
-	if (!pr.wantsRanges && pcfExists) || pr.cachingPolicy.NoCache {
+	pr.isPCF = pcfExists && !pr.wantsRanges
+
+	if pr.isPCF || pr.cachingPolicy.NoCache {
 		if pr.cachingPolicy.NoCache {
 			locks.Acquire(pr.key)
 			cc.Remove(pr.key)
 			locks.Release(pr.key)
+			return nil, status.LookupStatusProxyOnly
 		}
-		return nil, status.LookupStatusProxyOnly
-	}
-
-	if pcfExists {
-		pr.collapsedForwarder = pcfResult.(ProgressiveCollapseForwarder)
+		pcf := pcfResult.(ProgressiveCollapseForwarder)
+		pr.upstreamResponse = pcf.GetResp()
+		writer := PrepareResponseWriter(w, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header)
+		pcf.AddClient(writer)
+		return pr.upstreamResponse, status.LookupStatusProxyHit
 	}
 
 	pr.cachingPolicy.ParseClientConditionals()
