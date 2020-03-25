@@ -176,7 +176,7 @@ func (c *Cache) remove(cacheKey string, noLock bool) {
 // BulkRemove removes a list of objects from the cache
 func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
 	for _, cacheKey := range cacheKeys {
-		c.Remove(cacheKey)
+		c.remove(cacheKey, noLock)
 	}
 }
 
