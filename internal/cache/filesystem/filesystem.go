@@ -99,7 +99,6 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 	}
 	locks.Release(lockPrefix + cacheKey)
 	return nil
-
 }
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)
@@ -150,7 +149,6 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	b, err := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 	locks.Release(lockPrefix + cacheKey)
 	return b, status.LookupStatusKeyMiss, err
-
 }
 
 // SetTTL updates the TTL for the provided cache object
