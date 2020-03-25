@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package engines
@@ -20,13 +23,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache/status"
-
 	cr "github.com/Comcast/trickster/internal/cache/registration"
+	"github.com/Comcast/trickster/internal/cache/status"
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/headers"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
 	"github.com/Comcast/trickster/internal/proxy/request"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 func TestCheckCacheFreshness(t *testing.T) {
@@ -44,8 +48,8 @@ func TestParseRequestRanges(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	r.Header.Set(headers.NameRange, "bytes=0-10")
 
-	oc := &config.OriginConfig{MultipartRangesDisabled: true}
-	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil))
+	oc := &oo.Options{MultipartRangesDisabled: true}
+	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil, tl.ConsoleLogger("error")))
 
 	pr := proxyRequest{
 		Request:         r,
@@ -118,19 +122,19 @@ func TestWriteResponseBody(t *testing.T) {
 
 func TestDetermineCacheability(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
-	if err != nil {
-		t.Error(err)
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Error(errors.New("could not load cache"))
 	}
 
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1", nil)
-	r = request.SetResources(r, request.NewResources(nil, nil, cache.Configuration(), cache, nil))
+	r = request.SetResources(r, request.NewResources(nil, nil, cache.Configuration(), cache, nil, tl.ConsoleLogger("error")))
 
 	pr := proxyRequest{
 		Request:       r,
@@ -177,8 +181,8 @@ func TestPrepareResponse(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	r.Header.Set(headers.NameRange, "bytes=0-10")
 
-	oc := &config.OriginConfig{}
-	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil))
+	oc := &oo.Options{}
+	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil, tl.ConsoleLogger("error")))
 
 	pr := proxyRequest{
 		Request:          r,
@@ -247,8 +251,8 @@ func TestPrepareRevalidationRequest(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	r.Header.Set(headers.NameRange, "bytes=0-10,12-20")
 
-	oc := &config.OriginConfig{DearticulateUpstreamRanges: true}
-	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil))
+	oc := &oo.Options{DearticulateUpstreamRanges: true}
+	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil, tl.ConsoleLogger("error")))
 
 	pr := proxyRequest{
 		Request:          r,
@@ -275,8 +279,8 @@ func TestPrepareRevalidationRequestNoRange(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	r.Header.Set(headers.NameRange, "bytes=0-10,12-20")
 
-	oc := &config.OriginConfig{DearticulateUpstreamRanges: true}
-	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil))
+	oc := &oo.Options{DearticulateUpstreamRanges: true}
+	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil, tl.ConsoleLogger("error")))
 
 	pr := proxyRequest{
 		Request:          r,
@@ -302,8 +306,8 @@ func TestPrepareUpstreamRequests(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	r.Header.Set(headers.NameRange, "bytes=0-10,12-20")
 
-	oc := &config.OriginConfig{DearticulateUpstreamRanges: true}
-	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil))
+	oc := &oo.Options{DearticulateUpstreamRanges: true}
+	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil, tl.ConsoleLogger("error")))
 
 	pr := proxyRequest{
 		Request:          r,

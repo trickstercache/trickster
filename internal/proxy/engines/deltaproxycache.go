@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package engines
@@ -23,13 +26,13 @@ import (
 	"time"
 
 	tc "github.com/Comcast/trickster/internal/cache"
+	"github.com/Comcast/trickster/internal/cache/evictionmethods"
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
 	tctx "github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/origins"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	"github.com/Comcast/trickster/internal/util/tracing"
 	"github.com/Comcast/trickster/pkg/locks"
@@ -77,15 +80,19 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 
 	OldestRetainedTimestamp := time.Time{}
-	if oc.TimeseriesEvictionMethod == config.EvictionMethodOldest {
+	if oc.TimeseriesEvictionMethod == evictionmethods.EvictionMethodOldest {
 		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * oc.TimeseriesRetention))
 		if trq.Extent.End.Before(OldestRetainedTimestamp) {
-			log.Debug("timerange end is too early to consider caching", log.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp, "step": trq.Step, "retention": oc.TimeseriesRetention})
+			pr.Logger.Debug("timerange end is too early to consider caching",
+				tl.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp,
+					"step": trq.Step, "retention": oc.TimeseriesRetention})
 			DoProxy(w, r)
 			return
 		}
 		if trq.Extent.Start.After(bf.End) {
-			log.Debug("timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": oc.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
+			pr.Logger.Debug("timerange is too new to cache due to backfill tolerance",
+				tl.Pairs{"backFillToleranceSecs": oc.BackfillToleranceSecs,
+					"newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
 			DoProxy(w, r)
 			return
 		}
@@ -115,6 +122,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		)
 		cacheStatus = status.LookupStatusPurge
 		cache.Remove(key)
+		// to-do, re-add log request bool
 		cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 		if err != nil {
 			recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
@@ -122,6 +130,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			locks.Release(key)
 			return // fetchTimeseries logs the error
 		}
+
 	} else {
 		doc, cacheStatus, _, err = QueryCache(ctx, cache, key, nil)
 		if cacheStatus == status.LookupStatusKeyMiss && err == tc.ErrKNF {
@@ -146,7 +155,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if err != nil {
-				log.Error("cache object unmarshaling failed", log.Pairs{"key": key, "originName": client.Name()})
+				pr.Logger.Error("cache object unmarshaling failed", tl.Pairs{"key": key, "originName": client.Name()})
 				cache.Remove(key)
 				cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 				if err != nil {
@@ -156,19 +165,19 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 					return // fetchTimeseries logs the error
 				}
 			} else {
-				if oc.TimeseriesEvictionMethod == config.EvictionMethodLRU {
+				if oc.TimeseriesEvictionMethod == evictionmethods.EvictionMethodLRU {
 					el := cts.Extents()
 					tsc := cts.TimestampCount()
 					if tsc > 0 &&
 						tsc >= oc.TimeseriesRetentionFactor {
 						if trq.Extent.End.Before(el[0].Start) {
-							log.Debug("timerange end is too early to consider caching", log.Pairs{"step": trq.Step, "retention": oc.TimeseriesRetention})
+							pr.Logger.Debug("timerange end is too early to consider caching", tl.Pairs{"step": trq.Step, "retention": oc.TimeseriesRetention})
 							locks.Release(key)
 							DoProxy(w, r)
 							return
 						}
 						if trq.Extent.Start.After(el[len(el)-1].End) {
-							log.Debug("timerange is too new to cache due to backfill tolerance", log.Pairs{"backFillToleranceSecs": oc.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
+							pr.Logger.Debug("timerange is too new to cache due to backfill tolerance", tl.Pairs{"backFillToleranceSecs": oc.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
 							locks.Release(key)
 							DoProxy(w, r)
 							return
@@ -211,7 +220,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	dpStatus := log.Pairs{"cacheKey": key, "cacheStatus": cacheStatus, "reqStart": trq.Extent.Start.Unix(), "reqEnd": trq.Extent.End.Unix()}
+	dpStatus := tl.Pairs{"cacheKey": key, "cacheStatus": cacheStatus, "reqStart": trq.Extent.Start.Unix(), "reqEnd": trq.Extent.End.Unix()}
 	if len(missRanges) > 0 {
 		dpStatus["extentsFetched"] = timeseries.ExtentList(missRanges).String()
 	}
@@ -228,13 +237,14 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		// This fetches the gaps from the origin and adds their datasets to the merge list
 		go func(e *timeseries.Extent, rq *proxyRequest) {
 			defer wg.Done()
-			rq.Request = rq.WithContext(tctx.WithResources(r.Context(), request.NewResources(oc, pc, cc, cache, client)))
+			rq.Request = rq.WithContext(tctx.WithResources(r.Context(),
+				request.NewResources(oc, pc, cc, cache, client, pr.Logger)))
 			client.SetExtent(rq.Request, trq, e)
 			body, resp, _ := rq.Fetch()
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				nts, err := client.UnmarshalTimeseries(body)
 				if err != nil {
-					log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
+					pr.Logger.Error("proxy object unmarshaling failed", tl.Pairs{"body": string(body)})
 					return
 				}
 				uncachedValueCount += nts.ValueCount()
@@ -254,7 +264,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	if (!trq.FastForwardDisable) && (trq.Extent.End.Equal(normalizedNow.Extent.End)) && ffURL.Scheme != "" {
 
 		wg.Add(1)
-		rs := request.NewResources(oc, oc.FastForwardPath, cc, cache, client)
+		rs := request.NewResources(oc, oc.FastForwardPath, cc, cache, client, pr.Logger)
 		rs.AlternateCacheTTL = oc.FastForwardTTL
 		req := r.Clone(tctx.WithResources(context.Background(), rs))
 		go func() {
@@ -269,7 +279,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				ffts, err = client.UnmarshalInstantaneous(body)
 				if err != nil {
 					ffStatus = "err"
-					log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
+					pr.Logger.Error("proxy object unmarshaling failed", tl.Pairs{"body": string(body)})
 					return
 				}
 				ffts.SetStep(trq.Step)
@@ -331,7 +341,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			defer wg.Done()
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the Backfill Tolerance before storing to cache
 			switch oc.TimeseriesEvictionMethod {
-			case config.EvictionMethodLRU:
+			case evictionmethods.EvictionMethodLRU:
 				cts.CropToSize(oc.TimeseriesRetentionFactor, bf.End, trq.Extent)
 			default:
 				cts.CropToRange(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
@@ -354,7 +364,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Respond to the user. Using the response headers from a Delta Response, so as to not map conflict with cacheData on WriteCache
-	logDeltaRoutine(dpStatus)
+	logDeltaRoutine(pr.Logger, dpStatus)
 	recordDPCResult(r, cacheStatus, doc.StatusCode, r.URL.Path, ffStatus, elapsed.Seconds(), missRanges, rh)
 	Respond(w, doc.StatusCode, rh, rdata)
 
@@ -362,7 +372,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	locks.Release(key)
 }
 
-func logDeltaRoutine(p log.Pairs) { log.Debug("delta routine completed", p) }
+func logDeltaRoutine(log *tl.TricksterLogger, p tl.Pairs) { log.Debug("delta routine completed", p) }
 
 func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery, client origins.TimeseriesClient) (timeseries.Timeseries, *HTTPDocument, time.Duration, error) {
 
@@ -376,13 +386,13 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery, client or
 	}
 
 	if resp.StatusCode != 200 {
-		log.Error("unexpected upstream response", log.Pairs{"statusCode": resp.StatusCode})
+		pr.Logger.Error("unexpected upstream response", tl.Pairs{"statusCode": resp.StatusCode})
 		return nil, d, time.Duration(0), fmt.Errorf("Unexpected Upstream Response")
 	}
 
 	ts, err := client.UnmarshalTimeseries(body)
 	if err != nil {
-		log.Error("proxy object unmarshaling failed", log.Pairs{"body": string(body)})
+		pr.Logger.Error("proxy object unmarshaling failed", tl.Pairs{"body": string(body)})
 		return nil, d, time.Duration(0), err
 	}
 

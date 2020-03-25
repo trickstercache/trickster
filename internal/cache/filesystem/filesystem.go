@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 // Package filesystem is the filesystem implementation of the Trickster Cache
@@ -18,15 +21,14 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
-	"golang.org/x/sys/unix"
-
-	"github.com/Comcast/trickster/internal/cache"
 	"github.com/Comcast/trickster/internal/cache/index"
+	"github.com/Comcast/trickster/internal/cache/metrics"
+	"github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/pkg/locks"
 )
@@ -36,18 +38,20 @@ var lockPrefix string
 // Cache describes a Filesystem Cache
 type Cache struct {
 	Name   string
-	Config *config.CachingConfig
+	Config *options.Options
 	Index  *index.Index
+	Logger *log.TricksterLogger
 }
 
 // Configuration returns the Configuration for the Cache object
-func (c *Cache) Configuration() *config.CachingConfig {
+func (c *Cache) Configuration() *options.Options {
 	return c.Config
 }
 
 // Connect instantiates the Cache mutex map and starts the Expired Entry Reaper goroutine
 func (c *Cache) Connect() error {
-	log.Info("filesystem cache setup", log.Pairs{"name": c.Name, "cachePath": c.Config.Filesystem.CachePath})
+	c.Logger.Info("filesystem cache setup", log.Pairs{"name": c.Name,
+		"cachePath": c.Config.Filesystem.CachePath})
 	if err := makeDirectory(c.Config.Filesystem.CachePath); err != nil {
 		return err
 	}
@@ -55,7 +59,8 @@ func (c *Cache) Connect() error {
 
 	// Load Index here and pass bytes as param2
 	indexData, _, _ := c.retrieve(index.IndexKey, false, false)
-	c.Index = index.NewIndex(c.Name, c.Config.CacheType, indexData, c.Config.Index, c.BulkRemove, c.storeNoIndex)
+	c.Index = index.NewIndex(c.Name, c.Config.CacheType, indexData,
+		c.Config.Index, c.BulkRemove, c.storeNoIndex, c.Logger)
 	return nil
 }
 
@@ -67,7 +72,8 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 	err := c.store(cacheKey, data, 31536000*time.Second, false)
 	if err != nil {
-		log.Error("cache failed to write non-indexed object", log.Pairs{"cacheName": c.Name, "cacheType": "filesystem", "cacheKey": cacheKey, "objectSize": len(data)})
+		c.Logger.Error("cache failed to write non-indexed object", log.Pairs{"cacheName": c.Name,
+			"cacheType": "filesystem", "cacheKey": cacheKey, "objectSize": len(data)})
 	}
 }
 
@@ -81,7 +87,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 		return fmt.Errorf("cacheKey required")
 	}
 
-	cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
+	metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 
 	dataFile := c.getFileName(cacheKey)
 
@@ -93,13 +99,13 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 		locks.Release(lockPrefix + cacheKey)
 		return err
 	}
-	log.Debug("filesystem cache store", log.Pairs{"key": cacheKey, "dataFile": dataFile, "indexed": updateIndex})
+	c.Logger.Debug("filesystem cache store",
+		log.Pairs{"key": cacheKey, "dataFile": dataFile, "indexed": updateIndex})
 	if updateIndex {
 		c.Index.UpdateObject(o)
 	}
 	locks.Release(lockPrefix + cacheKey)
 	return nil
-
 }
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)
@@ -115,8 +121,8 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 
 	data, err := ioutil.ReadFile(dataFile)
 	if err != nil {
-		log.Debug("filesystem cache miss", log.Pairs{"key": cacheKey, "dataFile": dataFile})
-		b, err2 := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+		c.Logger.Debug("filesystem cache miss", log.Pairs{"key": cacheKey, "dataFile": dataFile})
+		b, err2 := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 		locks.Release(lockPrefix + cacheKey)
 		return b, status.LookupStatusKeyMiss, err2
 	}
@@ -124,7 +130,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	o, err := index.ObjectFromBytes(data)
 	if err != nil {
 		locks.Release(lockPrefix + cacheKey)
-		_, err2 := cache.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
+		_, err2 := metrics.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
 		return nil, status.LookupStatusError, err2
 	}
 
@@ -137,20 +143,19 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 
 	o.Expiration = c.Index.GetExpiration(cacheKey)
 	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
-		log.Debug("filesystem cache retrieve", log.Pairs{"key": cacheKey, "dataFile": dataFile})
+		c.Logger.Debug("filesystem cache retrieve", log.Pairs{"key": cacheKey, "dataFile": dataFile})
 		if atime {
 			c.Index.UpdateObjectAccessTime(cacheKey)
 		}
-		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
+		metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
 		locks.Release(lockPrefix + cacheKey)
 		return o.Value, status.LookupStatusHit, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
 	c.remove(cacheKey, false)
-	b, err := cache.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	b, err := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 	locks.Release(lockPrefix + cacheKey)
 	return b, status.LookupStatusKeyMiss, err
-
 }
 
 // SetTTL updates the TTL for the provided cache object
@@ -170,13 +175,13 @@ func (c *Cache) remove(cacheKey string, noLock bool) {
 	if err := os.Remove(c.getFileName(cacheKey)); err == nil {
 		c.Index.RemoveObject(cacheKey, noLock)
 	}
-	cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
+	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 }
 
 // BulkRemove removes a list of objects from the cache
 func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
 	for _, cacheKey := range cacheKeys {
-		c.Remove(cacheKey)
+		c.remove(cacheKey, noLock)
 	}
 }
 
@@ -190,17 +195,23 @@ func (c *Cache) getFileName(cacheKey string) string {
 	return prefix + "data"
 }
 
-// writeable returns true if the path is writeable by the calling process.
-func writeable(path string) bool {
-	return unix.Access(path, unix.W_OK) == nil
-}
-
-// makeDirectory creates a directory on the filesystem and exits the application in the event of a failure.
+// makeDirectory creates a directory on the filesystem and returns the error in the event of a failure.
 func makeDirectory(path string) error {
 	err := os.MkdirAll(path, 0755)
-	if err != nil || !writeable(path) {
+	if err == nil {
+		s := ""
+		if !strings.HasSuffix(path, "/") {
+			s = "/"
+		}
+		// verify writability by attempting to touch a test file in the cache path
+		tf := path + s + ".test." + strconv.FormatInt(time.Now().Unix(), 10)
+		err = ioutil.WriteFile(tf, []byte(""), 0600)
+		if err == nil {
+			os.Remove(tf)
+		}
+	}
+	if err != nil {
 		return fmt.Errorf("[%s] directory is not writeable by trickster: %v", path, err)
 	}
-
 	return nil
 }

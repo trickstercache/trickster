@@ -59,13 +59,13 @@ This is the recommended method for integrating multi-origin support into Grafana
 
 Example Client Request URLs:
 
-* To Request from Origin `foo`: <http://trickster.example.com:9090/foo/query?query=xxx>
+* To Request from Origin `foo`: <http://trickster.example.com:8480/foo/query?query=xxx>
 
-* To Request from Origin `bar`: <http://trickster.example.com:9090/bar/query?query=xxx>
+* To Request from Origin `bar`: <http://trickster.example.com:8480/bar/query?query=xxx>
 
-* To Request from Origin `origin1` as default: <http://trickster.example.com:9090/query?query=xxx>
+* To Request from Origin `origin1` as default: <http://trickster.example.com:8480/query?query=xxx>
 
-* To Request from Origin `origin1` (Method 2, with Origin Name): <http://trickster.example.com:9090/origin1/query?query=xxx>
+* To Request from Origin `origin1` (Method 2, with Origin Name): <http://trickster.example.com:8480/origin1/query?query=xxx>
 
 * Configuring Grafana to request from origin `foo` via Trickster:
 
@@ -106,12 +106,12 @@ Example DNS-based Origin Configuration:
 
 Example Client Request URLs:
 
-* To Request from Origin `foo`: <http://trickster-foo.example.com:9090/query?query=xxx>
+* To Request from Origin `foo`: <http://trickster-foo.example.com:8480/query?query=xxx>
 
-* To Request from Origin `bar`: <http://trickster-bar.example.com:9090/query?query=xxx>
+* To Request from Origin `bar`: <http://trickster-bar.example.com:8480/query?query=xxx>
 
-* To Request from Origin `origin1` as default: <http://trickster.example.com:9090/query?query=xxx> 
+* To Request from Origin `origin1` as default: <http://trickster.example.com:8480/query?query=xxx> 
 
-* To Request from Origin `origin1` (Method 2, via FQDN): <http://origin1.example.com:9090/query?query=xxx>
+* To Request from Origin `origin1` (Method 2, via FQDN): <http://origin1.example.com:8480/query?query=xxx>
 
 Note: It is currently possible to specify the same FQDN in multiple origin configurations. You should not do this (obviously). A future enhancement will cause Trickster to exit fatally upon detection at startup.

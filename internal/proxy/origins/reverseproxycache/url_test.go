@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package reverseproxycache
@@ -25,12 +28,12 @@ func TestBuildUpstreamURL(t *testing.T) {
 
 	expected := "q=up&start=1&end=1&step=1"
 
-	err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "rpc", "-log-level", "debug"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "rpc", "-log-level", "debug"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	client := Client{config: oc, name: "default"}
 
 	u := &url.URL{Path: "/default/query_range", RawQuery: expected}

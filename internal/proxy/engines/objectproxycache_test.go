@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package engines
@@ -25,12 +28,13 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
 	tc "github.com/Comcast/trickster/internal/proxy/context"
+	"github.com/Comcast/trickster/internal/proxy/forwarding"
 	"github.com/Comcast/trickster/internal/proxy/headers"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	tu "github.com/Comcast/trickster/internal/util/testing"
-	"github.com/Comcast/trickster/pkg/rangesim"
+	"github.com/tricksterproxy/mockster/pkg/mocks/byterange"
 )
 
 func setupTestHarnessOPC(file, body string, code int, headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
@@ -38,7 +42,7 @@ func setupTestHarnessOPC(file, body string, code int, headers map[string]string)
 }
 
 func setupTestHarnessOPCRange(hdr map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
-	s, rr, r, rsc, err := setupTestHarnessOPCByType("", "rangesim", "/opc", "", 0, hdr)
+	s, rr, r, rsc, err := setupTestHarnessOPCByType("", "rangesim", "/byterange/opc", "", 0, hdr)
 	return s, rr, r, rsc, err
 }
 
@@ -76,7 +80,7 @@ func setupTestHarnessOPCByType(
 func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
 
 	client := &TestClient{}
-	ts, w, r, hc, err := tu.NewTestInstance(file, client.DefaultPathConfigs, code, body, headers, "prometheus", "/api/v1/query", "debug")
+	ts, w, r, hc, err := tu.NewTestInstance(file, client.DefaultPathConfigs, code, body, headers, "prometheus", "/prometheus/api/v1/query", "debug")
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -86,11 +90,11 @@ func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]
 	pc := rsc.PathConfig
 
 	if pc == nil {
-		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/api/v1/query")
+		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/prometheus/api/v1/query")
 	}
 
 	pc.CollapsedForwardingName = "progressive"
-	pc.CollapsedForwardingType = config.CFTypeProgressive
+	pc.CollapsedForwardingType = forwarding.CFTypeProgressive
 
 	oc := rsc.OriginConfig
 	cc := rsc.CacheClient
@@ -199,7 +203,7 @@ func TestObjectProxyCachePartialHit(t *testing.T) {
 
 	// Fulfill the cache with the remaining parts
 	r.Header.Del(headers.NameRange)
-	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{"status": "phit"})
+	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "phit"})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -207,7 +211,7 @@ func TestObjectProxyCachePartialHit(t *testing.T) {
 	// Test Articulated Upstream
 	rsc.OriginConfig.DearticulateUpstreamRanges = true
 	r.Header.Set(headers.NameRange, "bytes=10-20,50-55,60-65,69-75")
-	r.URL.Path = "/new/test/path"
+	r.URL.Path = "/byterange/new/test/path"
 	expectedBody, err = getExpectedRangeBody(r, "d5a5acd7eb4d3f622c62947a9904b89b")
 	if err != nil {
 		t.Error(err)
@@ -230,7 +234,7 @@ func TestFullArticuation(t *testing.T) {
 	rsc.OriginConfig.DearticulateUpstreamRanges = true
 	rsc.OriginConfig.RevalidationFactor = 2
 	r.Header.Set(headers.NameRange, "bytes=10-20,50-55,60-65,69-75")
-	r.URL.Path = "/new/test/path"
+	r.URL.Path = "/byterange/new/test/path"
 	r.URL.RawQuery = "max-age=1"
 	expectedBody, err := getExpectedRangeBody(r, "d5a5acd7eb4d3f622c62947a9904b89b")
 	if err != nil {
@@ -242,14 +246,14 @@ func TestFullArticuation(t *testing.T) {
 	}
 
 	r.URL.RawQuery = "max-age=1&status=200"
-	r.URL.Path = "/new/test/path/2"
+	r.URL.Path = "/byterange/new/test/path/2"
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
 	for _, err = range e {
 		t.Error(err)
 	}
 
 	r.URL.RawQuery = "max-age=1&ims=200"
-	r.URL.Path = "/new/test/path/3"
+	r.URL.Path = "/byterange/new/test/path/3"
 	r.Header.Set(headers.NameRange, "bytes=10-20")
 	expectedBody, err = getExpectedRangeBody(r, "d5a5acd7eb4d3f622c62947a9904b89b")
 	if err != nil {
@@ -304,7 +308,7 @@ func TestFullArticuation(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	r.URL.Path = "/new/test/path/20"
+	r.URL.Path = "/byterange/new/test/path/20"
 	r.URL.RawQuery = "max-age=1"
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
 	for _, err = range e {
@@ -328,13 +332,13 @@ func TestFullArticuation(t *testing.T) {
 
 	r.Header.Del(headers.NameRange)
 	r.URL.RawQuery = "max-age=1"
-	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{"status": "phit"})
+	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "phit"})
 	for _, err = range e {
 		t.Error(err)
 	}
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 21-22")
-	r.URL.Path = "/new/test/path/21"
+	r.URL.Path = "/byterange/new/test/path/21"
 	expectedBody, err = getExpectedRangeBody(r, "368b9fbcef800068a48e70fa6e040289")
 	if err != nil {
 		t.Error(err)
@@ -345,7 +349,7 @@ func TestFullArticuation(t *testing.T) {
 	}
 
 	r.Header.Set(headers.NameRange, "bytes=0-1221")
-	r.URL.Path = "/new/test/path/22"
+	r.URL.Path = "/byterange/new/test/path/22"
 	r.URL.RawQuery = ""
 	expectedBody, err = getExpectedRangeBody(r, "722af19813169c99d8bda37a2f244f39")
 	if err != nil {
@@ -367,7 +371,7 @@ func TestFullArticuation(t *testing.T) {
 	}
 
 	r.Header.Del(headers.NameRange)
-	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{"status": "hit"})
+	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "hit"})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -382,7 +386,7 @@ func TestObjectProxyCachePartialHitNotFresh(t *testing.T) {
 	}
 	defer ts.Close()
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: rsc.OriginConfig})
 
 	pr := newProxyRequest(r, w)
 	oc := rsc.OriginConfig
@@ -417,7 +421,7 @@ func TestObjectProxyCachePartialHitFullResponse(t *testing.T) {
 	}
 	defer ts.Close()
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: config.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: rsc.OriginConfig})
 
 	pr := newProxyRequest(r, w)
 	oc := rsc.OriginConfig
@@ -527,7 +531,7 @@ func TestObjectProxyCacheRevalidation(t *testing.T) {
 		t.Error(err)
 	}
 
-	r.URL.Path = "/opc/test/10"
+	r.URL.Path = "/byterange/test/10"
 
 	r.Header.Del(headers.NameCacheControl)
 
@@ -659,7 +663,7 @@ func TestObjectProxyCacheIMS(t *testing.T) {
 
 	rsc.OriginConfig.RevalidationFactor = 2
 
-	_, e := testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{"status": "kmiss"})
+	_, e := testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "kmiss"})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -769,14 +773,14 @@ func TestObjectProxyCacheCanRevalidate(t *testing.T) {
 	p.ResponseHeaders = headers
 	rsc.OriginConfig.RevalidationFactor = 2
 
-	_, e := testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{"status": "kmiss"})
+	_, e := testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "kmiss"})
 	for _, err = range e {
 		t.Error(err)
 	}
 
 	time.Sleep(1010 * time.Millisecond)
 
-	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{"status": "rhit"})
+	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "rhit"})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -818,12 +822,12 @@ func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
 	}
 	defer ts.Close()
 
-	pc := config.NewPathConfig()
+	pc := po.NewOptions()
 	cfg := rsc.OriginConfig
-	cfg.Paths = map[string]*config.PathConfig{
+	cfg.Paths = map[string]*po.Options{
 		"/": pc,
 	}
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig, rsc.CacheClient, rsc.OriginClient)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig, rsc.CacheClient, rsc.OriginClient, rsc.Logger)))
 
 	_, e := testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "kmiss"})
 	for _, err = range e {
@@ -891,7 +895,7 @@ func TestRangesExhaustive(t *testing.T) {
 	rsc.OriginConfig.RevalidationFactor = 2
 	rsc.OriginConfig.DearticulateUpstreamRanges = true
 
-	r.URL.Path = "/opc/test/1"
+	r.URL.Path = "/byterange/test/1"
 	r.Header.Set(headers.NameRange, "bytes=0-6,25-32")
 	req := r.Clone(context.Background())
 	expectedBodyA, err := getExpectedRangeBody(req, "563a7014513fc6f0cbb4e8632dd107fc")
@@ -997,7 +1001,7 @@ func TestRangesExhaustive(t *testing.T) {
 
 	rsc.PathConfig.ResponseHeaders = map[string]string{headers.NameCacheControl: "max-age=1"}
 
-	r.URL.Path = "/opc/test/2"
+	r.URL.Path = "/byterange/test/2"
 	r.Header.Set(headers.NameRange, "bytes=0-6")
 	req = r.Clone(context.Background())
 	expectedBody1, err := getExpectedRangeBody(req, "")
@@ -1009,7 +1013,7 @@ func TestRangesExhaustive(t *testing.T) {
 		t.Error(err)
 	}
 
-	r.URL.Path = "/opc/test/3"
+	r.URL.Path = "/byterange/test/3"
 	r.Header.Set(headers.NameRange, "bytes=0-6, 8-10")
 	req = r.Clone(context.Background())
 	expectedBody2, err := getExpectedRangeBody(req, "1b4e59d25d723e317359c5e542d80f5c")
@@ -1021,7 +1025,7 @@ func TestRangesExhaustive(t *testing.T) {
 		t.Error(err)
 	}
 
-	r.URL.Path = "/opc/test/4"
+	r.URL.Path = "/byterange/test/4"
 	r.Header.Set(headers.NameRange, "bytes=0-6, 8-10")
 	req = r.Clone(context.Background())
 	expectedBody3, err := getExpectedRangeBody(req, "1b4e59d25d723e317359c5e542d80f5c")
@@ -1033,7 +1037,7 @@ func TestRangesExhaustive(t *testing.T) {
 		t.Error(err)
 	}
 
-	r.URL.Path = "/opc/test/5"
+	r.URL.Path = "/byterange/test/5"
 	r.Header.Set(headers.NameRange, "bytes=6-20")
 	req = r.Clone(context.Background())
 	expectedBody4, err := getExpectedRangeBody(req, "")
@@ -1045,7 +1049,7 @@ func TestRangesExhaustive(t *testing.T) {
 		t.Error(err)
 	}
 
-	r.URL.Path = "/opc/test/6"
+	r.URL.Path = "/byterange/test/6"
 	r.Header.Set(headers.NameRange, "bytes=6-20")
 	req = r.Clone(context.Background())
 	expectedBody5, err := getExpectedRangeBody(req, "")
@@ -1057,7 +1061,7 @@ func TestRangesExhaustive(t *testing.T) {
 		t.Error(err)
 	}
 
-	r.URL.Path = "/opc/test/7"
+	r.URL.Path = "/byterange/test/7"
 	r.Header.Set(headers.NameRange, "bytes=6-20")
 	req = r.Clone(context.Background())
 	expectedBody6, err := getExpectedRangeBody(req, "")
@@ -1074,14 +1078,14 @@ func TestRangesExhaustive(t *testing.T) {
 
 	// Now make more requests that require a revalidation first.
 
-	r.URL.Path = "/opc/test/2"
+	r.URL.Path = "/byterange/test/2"
 	r.Header.Set(headers.NameRange, "bytes=0-6")
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody1, map[string]string{"status": "rhit"})
 	for _, err = range e {
 		t.Error(err)
 	}
 
-	r.URL.Path = "/opc/test/3"
+	r.URL.Path = "/byterange/test/3"
 	r.Header.Set(headers.NameRange, "bytes=0-6, 8-10")
 	expectedBody2 = strings.Replace(expectedBody2, "TestRangeServerBoundary", "1b4e59d25d723e317359c5e542d80f5c", -1)
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody2, map[string]string{"status": "rhit"})
@@ -1089,7 +1093,7 @@ func TestRangesExhaustive(t *testing.T) {
 		t.Error(err)
 	}
 
-	r.URL.Path = "/opc/test/4"
+	r.URL.Path = "/byterange/test/4"
 	r.Header.Set(headers.NameRange, "bytes=5-9")
 	req = r.Clone(context.Background())
 	expectedBody3, err = getExpectedRangeBody(req, "1b4e59d25d723e317359c5e542d80f5c")
@@ -1101,7 +1105,7 @@ func TestRangesExhaustive(t *testing.T) {
 		t.Error(err)
 	}
 
-	r.URL.Path = "/opc/test/5"
+	r.URL.Path = "/byterange/test/5"
 	r.Header.Set(headers.NameRange, "bytes=0-5")
 	req = r.Clone(context.Background())
 	expectedBody4, err = getExpectedRangeBody(req, "")
@@ -1113,7 +1117,7 @@ func TestRangesExhaustive(t *testing.T) {
 		t.Error(err)
 	}
 
-	r.URL.Path = "/opc/test/6"
+	r.URL.Path = "/byterange/test/6"
 	r.Header.Set(headers.NameRange, "bytes=0-5,21-30")
 	req = r.Clone(context.Background())
 	expectedBody5, err = getExpectedRangeBody(req, "d51d39834c9650e17cc486c4a52cf572")
@@ -1125,7 +1129,7 @@ func TestRangesExhaustive(t *testing.T) {
 		t.Error(err)
 	}
 
-	r.URL.Path = "/opc/test/7"
+	r.URL.Path = "/byterange/test/7"
 	r.Header.Set(headers.NameRange, "bytes=22-30,32-40")
 	req = r.Clone(context.Background())
 	expectedBody6, err = getExpectedRangeBody(req, "bab29463882afe6d6033e88dc74d2bdd")
@@ -1136,36 +1140,6 @@ func TestRangesExhaustive(t *testing.T) {
 	for _, err = range e {
 		t.Error(err)
 	}
-
-	//rsc.OriginConfig.DearticulateUpstreamRanges = b
-
-	/*
-		√	   curl -v --output - -H "Range: bytes=0-6,25-32" http://127.0.0.1:9091/rpc1/testing && \
-		√	   curl -v --output - -H "Range: " http://127.0.0.1:9091/rpc1/testing
-		√	   curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing && \
-		√	   curl -v --output - -H "Range: bytes=5-7" http://127.0.0.1:9091/rpc1/testing && \
-		√	   curl -v --output - -H "Range: bytes=29-29" http://127.0.0.1:9091/rpc1/testing && \
-		√	   curl -v --output - -H "Range: bytes=9-22,28-60" http://127.0.0.1:9091/rpc1/testing && \
-			   curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing && \
-			   curl -v --output - -H "Range: bytes=0-6,10-20" http://127.0.0.1:9091/rpc1/testing && \
-			   curl -v --output - http://127.0.0.1:9091/rpc1/testing && \
-			   curl -v --output - -H "Range: bytes=0-6, 10-19" http://127.0.0.1:9091/rpc1/testing && \
-			   curl -v --output - -H "Range: bytes=0-6,10-20" http://127.0.0.1:9091/rpc1/testing && \
-			   curl -v --output - http://127.0.0.1:9091/rpc1/testing
-			   curl -v --output - -H "Range: bytes=0-6,7-1220" http://127.0.0.1:9091/rpc1/testing2 && \
-			   curl -v --output - http://127.0.0.1:9091/rpc1/testing2 && \
-			   curl -v --output - http://127.0.0.1:9091/rpc1/testing2
-			   curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing3 && \
-			   curl -v --output - -H "Range: bytes=5-20" http://127.0.0.1:9091/rpc1/testing3
-			   curl -v --output - -H "Range: bytes=5-20" http://127.0.0.1:9091/rpc1/testing4 && \
-			   curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing4
-
-			   curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing && \
-			    sleep 6 && curl -v --output - -H "Range: bytes=7-7" http://127.0.0.1:9091/rpc1/testing && \
-			    curl -v --output - -H "Range: bytes=0-6" http://127.0.0.1:9091/rpc1/testing
-
-	*/
-
 }
 
 func testFetchOPC(r *http.Request, sc int, body string, match map[string]string) (*httptest.ResponseRecorder, []error) {

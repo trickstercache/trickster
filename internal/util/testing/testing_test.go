@@ -1,23 +1,28 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package testing
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/config"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 )
 
 func TestNewTestServer(t *testing.T) {
@@ -74,8 +79,8 @@ func TestNewTestInstance(t *testing.T) {
 
 	// cover promsim conditional and path generation
 
-	f := func(*config.OriginConfig) map[string]*config.PathConfig {
-		return map[string]*config.PathConfig{
+	f := func(*oo.Options) map[string]*po.Options {
+		return map[string]*po.Options{
 			"path1": {},
 			"path2": {},
 		}
@@ -83,7 +88,7 @@ func TestNewTestInstance(t *testing.T) {
 
 	s, _, _, _, err = NewTestInstance("", f, 200, "", nil, "promsim", "test", "debug")
 	if s == nil {
-		t.Errorf("Expected server pointer, got %v", "nil")
+		t.Error(errors.New("Expected server pointer, got nil"))
 	}
 	if err != nil {
 		t.Error(err)
@@ -93,7 +98,7 @@ func TestNewTestInstance(t *testing.T) {
 
 	_, _, _, _, err = NewTestInstance("../../../testdata/test.full.conf", f, 200, "", nil, "promsim", "test", "debug")
 	if err == nil {
-		t.Errorf("Expected error, got %v", "nil")
+		t.Error(errors.New("Expected error, got nil"))
 	}
 
 	_, _, _, _, err = NewTestInstance("", nil, 200, "", map[string]string{"test-header": "x"}, "rangesim", "test", "debug")

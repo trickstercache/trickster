@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package engines
@@ -26,7 +29,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
 	"github.com/Comcast/trickster/internal/proxy/request"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/tracing"
 
 	"github.com/golang/snappy"
@@ -97,7 +100,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string, ranges byterange
 		}
 
 		if inflate {
-			log.Debug("decompressing cached data", log.Pairs{"cacheKey": key})
+			rsc.Logger.Debug("decompressing cached data", tl.Pairs{"cacheKey": key})
 			b, err := snappy.Decode(nil, bytes)
 			if err == nil {
 				bytes = b
@@ -197,7 +200,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 	bytes, _ = d.MarshalMsg(nil)
 
 	if compress {
-		log.Debug("compressing cache data", log.Pairs{"cacheKey": key})
+		rsc.Logger.Debug("compressing cache data", tl.Pairs{"cacheKey": key})
 		bytes = append([]byte{1}, snappy.Encode(nil, bytes)...)
 	} else {
 		bytes = append([]byte{0}, bytes...)
@@ -222,7 +225,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 }
 
 // DocumentFromHTTPResponse returns an HTTPDocument from the provided HTTP Response and Body
-func DocumentFromHTTPResponse(resp *http.Response, body []byte, cp *CachingPolicy) *HTTPDocument {
+func DocumentFromHTTPResponse(resp *http.Response, body []byte, cp *CachingPolicy, log *tl.TricksterLogger) *HTTPDocument {
 	d := &HTTPDocument{}
 	d.StatusCode = resp.StatusCode
 	d.Status = resp.Status
@@ -239,7 +242,7 @@ func DocumentFromHTTPResponse(resp *http.Response, body []byte, cp *CachingPolic
 	}
 
 	if d.StatusCode == http.StatusPartialContent && body != nil && len(body) > 0 {
-		d.ParsePartialContentBody(resp, body)
+		d.ParsePartialContentBody(resp, body, log)
 		d.FulfillContentBody()
 	} else {
 		d.SetBody(body)

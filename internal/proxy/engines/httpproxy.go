@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package engines
@@ -25,7 +28,7 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/forwarding"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/params"
 	"github.com/Comcast/trickster/internal/proxy/request"
@@ -33,6 +36,7 @@ import (
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 	"github.com/Comcast/trickster/internal/util/tracing"
+
 	"go.opentelemetry.io/otel/api/core"
 	othttptrace "go.opentelemetry.io/otel/plugin/httptrace"
 )
@@ -59,7 +63,7 @@ func DoProxy(w io.Writer, r *http.Request) *http.Response {
 	var cacheStatusCode status.LookupStatus
 	var resp *http.Response
 	var reader io.Reader
-	if pc == nil || pc.CollapsedForwardingType != config.CFTypeProgressive {
+	if pc == nil || pc.CollapsedForwardingType != forwarding.CFTypeProgressive {
 		reader, resp, _ = PrepareFetchReader(r)
 		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
@@ -153,7 +157,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	resp, err := oc.HTTPClient.Do(r)
 
 	if err != nil {
-		log.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
+		rsc.Logger.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		// if there is an err and the response is nil, the server could not be reached; make a 502 for the downstream response
 		if resp == nil {
 			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r, Header: make(http.Header)}
@@ -190,7 +194,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		d, err := http.ParseTime(date)
 		if err == nil {
 			if offset := time.Since(d); time.Duration(math.Abs(float64(offset))) > time.Minute {
-				log.WarnOnce("clockoffset."+oc.Name,
+				rsc.Logger.WarnOnce("clockoffset."+oc.Name,
 					"clock offset between trickster host and origin is high and may cause data anomalies",
 					log.Pairs{
 						"originName":    oc.Name,

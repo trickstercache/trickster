@@ -1,30 +1,27 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 // Package metrics implements prometheus metrics and exposes the metrics HTTP listener
 package metrics
 
 import (
-	"fmt"
 	"net/http"
-	"os"
-	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-
-	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/log"
 )
 
 const (
@@ -96,15 +93,7 @@ var ProxyConnectionClosed prometheus.Counter
 // ProxyConnectionFailed is a counter representing the total number of connections failed to connect for whatever reason
 var ProxyConnectionFailed prometheus.Counter
 
-var o sync.Once
-
-// Init initializes the instrumented metrics and starts the listener endpoint
-func Init() {
-	o.Do(initialize)
-}
-
-func initialize() {
-
+func init() {
 	FrontendRequestStatus = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -310,18 +299,9 @@ func initialize() {
 	prometheus.MustRegister(CacheMaxObjects)
 	prometheus.MustRegister(CacheMaxBytes)
 
-	// Turn up the Metrics HTTP Server
-	if config.Metrics != nil && config.Metrics.ListenPort > 0 {
-		go func() {
+}
 
-			log.Info("metrics http endpoint starting", log.Pairs{"address": config.Metrics.ListenAddress, "port": fmt.Sprintf("%d", config.Metrics.ListenPort)})
-
-			http.Handle("/metrics", promhttp.Handler())
-			if err := http.ListenAndServe(fmt.Sprintf("%s:%d", config.Metrics.ListenAddress, config.Metrics.ListenPort), nil); err != nil {
-				log.Error("unable to start metrics http server", log.Pairs{"detail": err.Error()})
-				os.Exit(1)
-			}
-		}()
-	}
-
+// Handler returns the http handler for the listener
+func Handler() http.Handler {
+	return promhttp.Handler()
 }

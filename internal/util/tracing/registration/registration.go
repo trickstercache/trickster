@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 // Package registration registers configured tracers for use with handlers
@@ -21,8 +24,9 @@ import (
 	"go.opentelemetry.io/otel/api/trace"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/tracing"
+	to "github.com/Comcast/trickster/internal/util/tracing/options"
 )
 
 // Flushers represents a slice of Flusher functions for the configured Tracers
@@ -30,7 +34,7 @@ type Flushers []func()
 
 // RegisterAll registers all Tracers in the provided configuration, and returns
 // their Flushers
-func RegisterAll(cfg *config.TricksterConfig) (Flushers, error) {
+func RegisterAll(cfg *config.TricksterConfig, log *tl.TricksterLogger) (Flushers, error) {
 
 	if cfg == nil {
 		return nil, errors.New("no config provided")
@@ -41,7 +45,7 @@ func RegisterAll(cfg *config.TricksterConfig) (Flushers, error) {
 	}
 
 	flushers := make(Flushers, 0, len(cfg.Origins))
-	activeTracers := make(map[string]*config.TracingConfig)
+	activeTracers := make(map[string]*to.Options)
 
 	for _, oc := range cfg.Origins {
 		if oc != nil {
@@ -60,7 +64,7 @@ func RegisterAll(cfg *config.TricksterConfig) (Flushers, error) {
 			}
 
 			if _, ok := activeTracers[oc.TracingConfigName]; !ok {
-				tracer, flusher, err := Init(tc)
+				tracer, flusher, err := Init(tc, log)
 				if err != nil {
 					return nil, err
 				}
@@ -75,7 +79,7 @@ func RegisterAll(cfg *config.TricksterConfig) (Flushers, error) {
 }
 
 // Init initializes tracing and returns a function to flush the tracer. Flush should be called on server shutdown.
-func Init(cfg *config.TracingConfig) (trace.Tracer, func(), error) {
+func Init(cfg *to.Options, log *tl.TricksterLogger) (trace.Tracer, func(), error) {
 
 	if cfg == nil {
 		log.Info(
@@ -85,18 +89,19 @@ func Init(cfg *config.TracingConfig) (trace.Tracer, func(), error) {
 	}
 	log.Debug(
 		"Trace Init",
-		log.Pairs{
+		tl.Pairs{
 			"Implementation": cfg.Implementation,
-			"Collector":      cfg.CollectorEndpoint,
+			"Collector":      cfg.Exporter.Collector,
 			"Type":           tracing.TracerImplementations[cfg.Implementation],
 		},
 	)
 
 	tracer, flusher, _, err := tracing.SetTracer(
 		tracing.TracerImplementations[cfg.Implementation],
-		tracing.TraceExporters[cfg.Exporter],
-		cfg.CollectorEndpoint,
-		cfg.SampleRate,
+		tracing.TraceExporters[cfg.Exporter.Exporter],
+		tracing.WithSampleRate(cfg.Exporter.SampleRate),
+		tracing.WithCollector(cfg.Exporter.Collector),
+		tracing.WithAgent(cfg.Exporter.Agent),
 	)
 	return tracer, flusher, err
 }

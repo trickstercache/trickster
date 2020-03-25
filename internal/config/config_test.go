@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package config
@@ -21,6 +24,9 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/proxy/headers"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
+	to "github.com/Comcast/trickster/internal/proxy/tls/options"
 )
 
 func TestCopy(t *testing.T) {
@@ -33,8 +39,8 @@ func TestCopy(t *testing.T) {
 	oc.CompressableTypes = map[string]bool{"text/plain": true}
 	oc.NegativeCacheName = "default"
 	oc.NegativeCache = map[int]time.Duration{404: time.Duration(10) * time.Second}
-	oc.FastForwardPath = NewPathConfig()
-	oc.TLS = &TLSConfig{CertificateAuthorityPaths: []string{"foo"}}
+	oc.FastForwardPath = po.NewOptions()
+	oc.TLS = &to.Options{CertificateAuthorityPaths: []string{"foo"}}
 	oc.HealthCheckHeaders = map[string]string{headers.NameAuthorization: "Basic SomeHash"}
 
 	c2 := c1.copy()
@@ -55,7 +61,7 @@ func TestOriginConfigClone(t *testing.T) {
 func TestString(t *testing.T) {
 	c1 := NewConfig()
 
-	c1.Origins["default"].Paths["test"] = &PathConfig{}
+	c1.Origins["default"].Paths["test"] = &po.Options{}
 
 	c1.Caches["default"].Redis.Password = "plaintext-password"
 
@@ -75,7 +81,7 @@ func TestHideAuthorizationCredentials(t *testing.T) {
 
 func TestCloneOriginConfig(t *testing.T) {
 
-	oc := NewOriginConfig()
+	oc := oo.NewOptions()
 	oc.Hosts = []string{"test"}
 
 	oc2 := oc.Clone()

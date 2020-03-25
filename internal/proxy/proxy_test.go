@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package proxy
@@ -19,17 +22,16 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/routing"
-	"github.com/Comcast/trickster/internal/util/metrics"
-)
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	tl "github.com/Comcast/trickster/internal/util/log"
 
-func init() {
-	metrics.Init() // For some reason I need to call it specifically
-}
+	"github.com/gorilla/mux"
+)
 
 func TestNewHTTPClient(t *testing.T) {
 
@@ -47,7 +49,7 @@ func TestNewHTTPClient(t *testing.T) {
 	const caFileInvalid2 = "../../testdata/test.06.cert.pem"
 
 	// test good originconfig, no CA
-	oc := config.NewOriginConfig()
+	oc := oo.NewOptions()
 	_, err = NewHTTPClient(oc)
 	if err != nil {
 		t.Error(err)
@@ -93,7 +95,7 @@ func TestNewHTTPClient(t *testing.T) {
 
 func TestNewListenerErr(t *testing.T) {
 	config.NewConfig()
-	l, err := NewListener("-", 0, 0, nil)
+	l, err := NewListener("-", 0, 0, nil, tl.ConsoleLogger("error"))
 	if err == nil {
 		l.Close()
 		t.Errorf("expected error: %s", `listen tcp: lookup -: no such host`)
@@ -116,7 +118,7 @@ func TestNewListenerTLS(t *testing.T) {
 		t.Error(err)
 	}
 
-	l, err := NewListener("", 0, 0, tlsConfig)
+	l, err := NewListener("", 0, 0, tlsConfig, tl.ConsoleLogger("error"))
 	defer l.Close()
 	if err != nil {
 		t.Error(err)
@@ -133,9 +135,9 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 	es := httptest.NewServer(http.HandlerFunc(handler))
 	defer es.Close()
 
-	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus"})
+	_, _, err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
 	tt := []struct {
@@ -164,7 +166,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 			34003,
 			1,
 			10,
-			"Get http://localhost:34003/: net/http: request canceled (Client.Timeout exceeded while awaiting headers)",
+			"(Client.Timeout exceeded while awaiting headers)",
 		},
 	}
 
@@ -172,11 +174,11 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 
 	for _, tc := range tt {
 		t.Run(tc.Name, func(t *testing.T) {
-			l, err := NewListener("", tc.ListenPort, tc.ConnectionsLimit, nil)
+			l, err := NewListener("", tc.ListenPort, tc.ConnectionsLimit, nil, tl.ConsoleLogger("error"))
 			defer l.Close()
 
 			go func() {
-				http.Serve(l, routing.Router)
+				http.Serve(l, mux.NewRouter())
 			}()
 
 			if err != nil {
@@ -190,7 +192,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 				}
 				res, err := http.DefaultClient.Do(r)
 				if err != nil {
-					if fmt.Sprintf("%s", err) != tc.expectedErr {
+					if !strings.HasSuffix(err.Error(), tc.expectedErr) {
 						t.Fatalf("unexpected error when executing request: %s", err)
 					}
 					continue

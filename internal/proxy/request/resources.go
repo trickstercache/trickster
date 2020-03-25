@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package request
@@ -18,23 +21,27 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/config"
+	co "github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/origins"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 	"github.com/Comcast/trickster/internal/timeseries"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 // Resources is a collection of resources a Trickster request would need to fulfill the client request
 // This is stored in the client request's context for use by request handers.
 type Resources struct {
-	OriginConfig      *config.OriginConfig
-	PathConfig        *config.PathConfig
-	CacheConfig       *config.CachingConfig
+	OriginConfig      *oo.Options
+	PathConfig        *po.Options
+	CacheConfig       *co.Options
 	NoLock            bool
 	CacheClient       cache.Cache
 	OriginClient      origins.Client
 	AlternateCacheTTL time.Duration
 	TimeRangeQuery    *timeseries.TimeRangeQuery
+	Logger            *tl.TricksterLogger
 }
 
 // Clone returns an exact copy of the subject Resources collection
@@ -48,17 +55,20 @@ func (r Resources) Clone() *Resources {
 		OriginClient:      r.OriginClient,
 		AlternateCacheTTL: r.AlternateCacheTTL,
 		TimeRangeQuery:    r.TimeRangeQuery,
+		Logger:            r.Logger,
 	}
 }
 
 // NewResources returns a new Resources collection based on the provided inputs
-func NewResources(oc *config.OriginConfig, pc *config.PathConfig, cc *config.CachingConfig, c cache.Cache, client origins.Client) *Resources {
+func NewResources(oo *oo.Options, po *po.Options, co *co.Options,
+	c cache.Cache, client origins.Client, logger *tl.TricksterLogger) *Resources {
 	return &Resources{
-		OriginConfig: oc,
-		PathConfig:   pc,
-		CacheConfig:  cc,
+		OriginConfig: oo,
+		PathConfig:   po,
+		CacheConfig:  co,
 		CacheClient:  c,
 		OriginClient: client,
+		Logger:       logger,
 	}
 }
 

@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package redis
@@ -18,23 +21,18 @@ import (
 	"testing"
 	"time"
 
+	co "github.com/Comcast/trickster/internal/cache/options"
+	ro "github.com/Comcast/trickster/internal/cache/redis/options"
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/util/log"
-
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/metrics"
+	tl "github.com/Comcast/trickster/internal/util/log"
 
 	"github.com/alicebob/miniredis"
 )
 
-func init() {
-	metrics.Init()
-}
-
 const cacheKey = `cacheKey`
 
 func storeBenchmark(b *testing.B) (*Cache, func()) {
-	log.Logger = log.ConsoleLogger("none")
 	rc, close := setupRedisCache(clientTypeStandard)
 	err := rc.Connect()
 	if err != nil {
@@ -54,8 +52,8 @@ func setupRedisCache(ct clientType) (*Cache, func()) {
 	if err != nil {
 		panic(err)
 	}
-	config.Config = config.NewConfig()
-	rcfg := config.RedisCacheConfig{Endpoint: s.Addr(), ClientType: ct.String()}
+	conf := config.NewConfig()
+	rcfg := &ro.Options{Endpoint: s.Addr(), ClientType: ct.String()}
 	if ct != clientTypeStandard {
 		rcfg.Endpoint = ""
 		rcfg.Endpoints = []string{s.Addr()}
@@ -66,26 +64,26 @@ func setupRedisCache(ct clientType) (*Cache, func()) {
 	close := func() {
 		s.Close()
 	}
-	cacheConfig := &config.CachingConfig{CacheType: "redis", Redis: rcfg}
-	config.Caches = map[string]*config.CachingConfig{"default": cacheConfig}
+	cacheConfig := &co.Options{CacheType: "redis", Redis: rcfg}
+	conf.Caches = map[string]*co.Options{"default": cacheConfig}
 
-	return &Cache{Config: cacheConfig}, close
+	return &Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}, close
 }
 
 func TestClientSelectionSentinel(t *testing.T) {
 	const expected1 = "ERR unknown command `sentinel`"
 	args := []string{"-config", "../../../testdata/test.redis-sentinel.conf",
 		"-origin-url", "http://0.0.0.0", "-origin-type", "rpc", "-log-level", "info"}
-	err := config.Load("trickster", "test", args)
+	conf, _, err := config.Load("trickster", "test", args)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	const cacheName = "test"
-	cfg, ok := config.Caches[cacheName]
+	cfg, ok := conf.Caches[cacheName]
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := Cache{Name: cacheName, Config: cfg}
+	cache := Cache{Name: cacheName, Config: cfg, Logger: tl.ConsoleLogger("error")}
 	if err != nil {
 		t.Error(err)
 	}
@@ -154,16 +152,16 @@ func TestClientSelectionCluster(t *testing.T) {
 	expected1 := "invalid endpoint"
 	args := []string{"-config", "../../../testdata/test.redis-cluster.conf",
 		"-origin-url", "http://0.0.0.0", "-origin-type", "rpc", "-log-level", "info"}
-	err := config.Load("trickster", "test", args)
+	conf, _, err := config.Load("trickster", "test", args)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	const cacheName = "test"
-	cfg, ok := config.Caches[cacheName]
+	cfg, ok := conf.Caches[cacheName]
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := Cache{Name: cacheName, Config: cfg}
+	cache := Cache{Name: cacheName, Config: cfg, Logger: tl.ConsoleLogger("error")}
 	if err != nil {
 		t.Error(err)
 	}
@@ -177,16 +175,16 @@ func TestClientSelectionStandard(t *testing.T) {
 	expected1 := "invalid endpoint"
 	args := []string{"-config", "../../../testdata/test.redis-standard.conf",
 		"-origin-url", "http://0.0.0.0", "-origin-type", "rpc", "-log-level", "info"}
-	err := config.Load("trickster", "test", args)
+	conf, _, err := config.Load("trickster", "test", args)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	const cacheName = "test"
-	cfg, ok := config.Caches[cacheName]
+	cfg, ok := conf.Caches[cacheName]
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := Cache{Name: cacheName, Config: cfg}
+	cache := Cache{Name: cacheName, Config: cfg, Logger: tl.ConsoleLogger("error")}
 	if err != nil {
 		t.Error(err)
 	}

@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package memory
@@ -19,16 +22,11 @@ import (
 	"testing"
 	"time"
 
+	io "github.com/Comcast/trickster/internal/cache/index/options"
+	co "github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/util/log"
-
-	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/metrics"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
-
-func init() {
-	metrics.Init()
-}
 
 const cacheType = "memory"
 const cacheKey = "cacheKey"
@@ -41,9 +39,8 @@ func (r *testReferenceObject) Size() int {
 }
 
 func storeBenchmark(b *testing.B) Cache {
-	log.Logger = log.ConsoleLogger("none")
-	cacheConfig := config.CachingConfig{CacheType: cacheType, Index: config.CacheIndexConfig{ReapInterval: 0}}
-	mc := Cache{Config: &cacheConfig}
+	cacheConfig := co.Options{CacheType: cacheType, Index: &io.Options{ReapInterval: 0}}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	err := mc.Connect()
 	if err != nil {
@@ -59,17 +56,17 @@ func storeBenchmark(b *testing.B) Cache {
 	return mc
 }
 
-func newCacheConfig(t *testing.T) config.CachingConfig {
+func newCacheConfig(t *testing.T) co.Options {
 	dir, err := ioutil.TempDir("/tmp", cacheType)
 	if err != nil {
 		t.Fatalf("could not create temp directory (%s): %s", dir, err)
 	}
-	return config.CachingConfig{CacheType: cacheType, Index: config.CacheIndexConfig{ReapInterval: 0}}
+	return co.Options{CacheType: cacheType, Index: &io.Options{ReapInterval: 0}}
 }
 
 func TestConfiguration(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	cfg := mc.Configuration()
 	if cfg.CacheType != cacheType {
 		t.Fatalf("expected %s got %s", cacheType, cfg.CacheType)
@@ -79,7 +76,7 @@ func TestConfiguration(t *testing.T) {
 func TestCache_Connect(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	// it should connect
 	err := mc.Connect()
@@ -91,7 +88,7 @@ func TestCache_Connect(t *testing.T) {
 func TestCache_StoreReferenceDirect(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	err := mc.Connect()
 	if err != nil {
@@ -114,7 +111,7 @@ func TestCache_StoreReferenceDirect(t *testing.T) {
 
 func TestCache_StoreReference(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	err := mc.Connect()
 	if err != nil {
@@ -129,7 +126,7 @@ func TestCache_StoreReference(t *testing.T) {
 
 func TestCache_Store(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	err := mc.Connect()
 	if err != nil {
@@ -151,7 +148,7 @@ func TestCache_Retrieve(t *testing.T) {
 	const expected1 = `value for key [cacheKey] not in cache`
 
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	err := mc.Connect()
 	if err != nil {
@@ -238,13 +235,13 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 
 func TestCache_Close(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	mc.Close()
 }
 
 func TestCache_Remove(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	err := mc.Connect()
 	if err != nil {
@@ -322,7 +319,7 @@ func BenchmarkCache_Remove(b *testing.B) {
 
 func TestCache_BulkRemove(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	err := mc.Connect()
 	if err != nil {
@@ -386,7 +383,7 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 func TestMemoryCache_SetTTL(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	err := mc.Connect()
 	if err != nil {

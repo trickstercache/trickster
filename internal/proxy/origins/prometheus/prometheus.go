@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 // Package prometheus provides the Prometheus Origin Type
@@ -24,9 +27,9 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy"
 	"github.com/Comcast/trickster/internal/proxy/errors"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
@@ -60,19 +63,19 @@ const (
 // Client Implements Proxy Client Interface
 type Client struct {
 	name               string
-	config             *config.OriginConfig
+	config             *oo.Options
 	cache              cache.Cache
 	webClient          *http.Client
 	handlers           map[string]http.Handler
 	handlersRegistered bool
-
-	healthURL     *url.URL
-	healthHeaders http.Header
-	healthMethod  string
+	healthURL          *url.URL
+	healthHeaders      http.Header
+	healthMethod       string
+	logUpstreamRequest bool
 }
 
 // NewClient returns a new Client Instance
-func NewClient(name string, oc *config.OriginConfig, cache cache.Cache) (*Client, error) {
+func NewClient(name string, oc *oo.Options, cache cache.Cache) (*Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
 	return &Client{name: name, config: oc, cache: cache, webClient: c}, err
 }
@@ -83,7 +86,7 @@ func (c *Client) SetCache(cc cache.Cache) {
 }
 
 // Configuration returns the upstream Configuration for this Client
-func (c *Client) Configuration() *config.OriginConfig {
+func (c *Client) Configuration() *oo.Options {
 	return c.config
 }
 
@@ -131,7 +134,14 @@ func parseDuration(input string) (time.Duration, error) {
 func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
-	qp := r.URL.Query()
+
+	var qp url.Values
+	if r.Method == http.MethodPost {
+		r.ParseForm()
+		qp = r.PostForm
+	} else {
+		qp = r.URL.Query()
+	}
 
 	trq.Statement = qp.Get(upQuery)
 	if trq.Statement == "" {

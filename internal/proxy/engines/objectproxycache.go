@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package engines
@@ -28,6 +31,7 @@ import (
 	"github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/tracing"
 	"github.com/Comcast/trickster/pkg/locks"
+
 	"go.opentelemetry.io/otel/api/core"
 )
 
@@ -71,7 +75,7 @@ func handleCachePartialHit(pr *proxyRequest) error {
 		b, _ := ioutil.ReadAll(pr.upstreamReader)
 		d2 := &HTTPDocument{}
 
-		d2.ParsePartialContentBody(resp, b)
+		d2.ParsePartialContentBody(resp, b, pr.Logger)
 		d.LoadRangeParts()
 
 		d2.Ranges = d2.RangeParts.Ranges()
@@ -237,10 +241,10 @@ func handleAllWrites(pr *proxyRequest) error {
 	handleResponse(pr)
 	if pr.writeToCache {
 		if pr.cacheDocument == nil || !pr.cacheDocument.isLoaded {
-			d := DocumentFromHTTPResponse(pr.upstreamResponse, nil, pr.cachingPolicy)
+			d := DocumentFromHTTPResponse(pr.upstreamResponse, nil, pr.cachingPolicy, pr.Logger)
 			pr.cacheDocument = d
 			if pr.isPartialResponse {
-				d.ParsePartialContentBody(pr.upstreamResponse, pr.cacheBuffer.Bytes())
+				d.ParsePartialContentBody(pr.upstreamResponse, pr.cacheBuffer.Bytes(), pr.Logger)
 			} else {
 				d.Body = pr.cacheBuffer.Bytes()
 			}
@@ -304,11 +308,11 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		if f, ok := cacheResponseHandlers[pr.cacheStatus]; ok {
 			f(pr)
 		} else {
-			log.Warn("unhandled cache lookup response", log.Pairs{"lookupStatus": pr.cacheStatus})
+			pr.Logger.Warn("unhandled cache lookup response", log.Pairs{"lookupStatus": pr.cacheStatus})
 			return nil, status.LookupStatusProxyOnly
 		}
 	} else {
-		log.Error("cache lookup error", log.Pairs{"detail": err.Error()})
+		pr.Logger.Error("cache lookup error", log.Pairs{"detail": err.Error()})
 		pr.cacheDocument = nil
 		pr.cacheStatus = status.LookupStatusKeyMiss
 		handleCacheKeyMiss(pr)

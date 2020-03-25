@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package engines
@@ -30,7 +33,7 @@ func TestDocumentFromHTTPResponse(t *testing.T) {
 	resp := &http.Response{}
 	resp.Header = http.Header{headers.NameContentRange: []string{"bytes 1-4/8"}}
 	resp.StatusCode = 206
-	d := DocumentFromHTTPResponse(resp, []byte("1234"), nil)
+	d := DocumentFromHTTPResponse(resp, []byte("1234"), nil, testLogger)
 
 	if len(d.Ranges) != 1 {
 		t.Errorf("expected 1 got %d", len(d.Ranges))
@@ -95,7 +98,7 @@ func TestParsePartialContentBodyNoRanges(t *testing.T) {
 
 	d := &HTTPDocument{}
 	resp := &http.Response{Header: make(http.Header)}
-	d.ParsePartialContentBody(resp, []byte("test"))
+	d.ParsePartialContentBody(resp, []byte("test"), testLogger)
 
 	if string(d.Body) != "test" {
 		t.Errorf("expected %s got %s", "test", string(d.Body))
@@ -113,7 +116,7 @@ func TestParsePartialContentBodySingleRange(t *testing.T) {
 		headers.NameContentRange: []string{"bytes 0-10/1222"},
 	}}
 
-	d.ParsePartialContentBody(resp, []byte("Lorem ipsum"))
+	d.ParsePartialContentBody(resp, []byte("Lorem ipsum"), testLogger)
 
 	if string(d.Body) != "" {
 		t.Errorf("expected %s got %s", "", string(d.Body))
@@ -149,7 +152,7 @@ Content-Range: bytes 10-20/1222
 Content-Type: text/plain; charset=utf-8
 
 m dolor sit
---c4fb8e6049a6fdb126d32fa0b15c21e3--`))
+--c4fb8e6049a6fdb126d32fa0b15c21e3--`), testLogger)
 
 	if string(d.Body) != "" {
 		t.Errorf("expected %s got %s", "", string(d.Body))
@@ -185,7 +188,7 @@ Content-Range: baytes 1s0-20/12s22x
 Content-Type: text/plain; charset=utf-8
 
 m dolor sit
---c4fb8e6049a6fdb126d32fa0b15c21e3--`))
+--c4fb8e6049a6fdb126d32fa0b15c21e3--`), testLogger)
 
 	if string(d.Body) != "" {
 		t.Errorf("expected %s got %s", "", string(d.Body))

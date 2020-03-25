@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package config
@@ -28,22 +31,22 @@ func TestLoadEnvVars(t *testing.T) {
 	os.Setenv(evLogLevel, "info")
 
 	a := []string{}
-	err := Load("trickster-test", "0", a)
+	conf, _, err := Load("trickster-test", "0", a)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
-	d := Origins["default"]
+	d := conf.Origins["default"]
 	if d.OriginType != "testing" {
 		t.Errorf("expected %s got %s", "testing", d.OriginType)
 	}
 
-	if Frontend.ListenPort != 4001 {
-		t.Errorf("expected %d got %d", 4001, Frontend.ListenPort)
+	if conf.Frontend.ListenPort != 4001 {
+		t.Errorf("expected %d got %d", 4001, conf.Frontend.ListenPort)
 	}
 
-	if Metrics.ListenPort != 4002 {
-		t.Errorf("expected %d got %d", 4002, Metrics.ListenPort)
+	if conf.Metrics.ListenPort != 4002 {
+		t.Errorf("expected %d got %d", 4002, conf.Metrics.ListenPort)
 	}
 
 	if d.Scheme != "http" {
@@ -58,8 +61,8 @@ func TestLoadEnvVars(t *testing.T) {
 		t.Errorf("expected %s got %s", "/some/path", d.PathPrefix)
 	}
 
-	if strings.ToUpper(Logging.LogLevel) != "INFO" {
-		t.Errorf("expected %s got %s", "INFO", Logging.LogLevel)
+	if strings.ToUpper(conf.Logging.LogLevel) != "INFO" {
+		t.Errorf("expected %s got %s", "INFO", conf.Logging.LogLevel)
 	}
 
 	os.Unsetenv(evOriginURL)

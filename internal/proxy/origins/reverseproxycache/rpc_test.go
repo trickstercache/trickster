@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package reverseproxycache
@@ -17,8 +20,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/origins"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 )
 
 func TestReverseProxyCacheClientInterfacing(t *testing.T) {
@@ -36,7 +39,7 @@ func TestReverseProxyCacheClientInterfacing(t *testing.T) {
 }
 
 func TestNewNewClient(t *testing.T) {
-	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", oo.NewOptions(), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -46,7 +49,7 @@ func TestNewNewClient(t *testing.T) {
 }
 
 func TestHTTPClient(t *testing.T) {
-	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", oo.NewOptions(), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -56,7 +59,7 @@ func TestHTTPClient(t *testing.T) {
 }
 
 func TestGetCache(t *testing.T) {
-	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", oo.NewOptions(), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -66,7 +69,7 @@ func TestGetCache(t *testing.T) {
 }
 
 func TestClientName(t *testing.T) {
-	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", oo.NewOptions(), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -76,7 +79,7 @@ func TestClientName(t *testing.T) {
 }
 
 func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", oo.NewOptions(), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -87,7 +90,7 @@ func TestSetCache(t *testing.T) {
 }
 
 func TestConfiguration(t *testing.T) {
-	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", oo.NewOptions(), nil)
 	if err != nil {
 		t.Error(err)
 	}

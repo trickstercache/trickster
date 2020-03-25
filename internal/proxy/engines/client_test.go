@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package engines
@@ -26,9 +29,10 @@ import (
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/headers"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
 	"github.com/Comcast/trickster/internal/proxy/urls"
 	"github.com/Comcast/trickster/internal/timeseries"
@@ -65,7 +69,7 @@ const (
 // Client Implements Proxy Client Interface
 type TestClient struct {
 	name      string
-	config    *config.OriginConfig
+	config    *oo.Options
 	cache     cache.Cache
 	webClient *http.Client
 
@@ -99,9 +103,9 @@ func (c *TestClient) Handlers() map[string]http.Handler {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
-func (c *TestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]*config.PathConfig {
+func (c *TestClient) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
 
-	paths := map[string]*config.PathConfig{
+	paths := map[string]*po.Options{
 
 		APIPath + mnQueryRange: {
 			Path:            APIPath + mnQueryRange,
@@ -212,7 +216,7 @@ func (c *TestClient) DefaultPathConfigs(oc *config.OriginConfig) map[string]*con
 }
 
 // Configuration returns the upstream Configuration for this Client
-func (c *TestClient) Configuration() *config.OriginConfig {
+func (c *TestClient) Configuration() *oo.Options {
 	return c.config
 }
 
@@ -756,9 +760,6 @@ func (c *TestClient) HealthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *TestClient) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
-
-	//rsc := request.NewResources(c.config, c.path
-
 	r.URL = c.BuildUpstreamURL(r)
 	DeltaProxyCacheRequest(w, r)
 }
@@ -775,6 +776,9 @@ func (c *TestClient) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 
 func (c *TestClient) ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	DoProxy(w, r)
+}
+
+func (c *TestClient) SetUpstreamLogging(bool) {
 }
 
 func testResultHeaderPartMatch(header http.Header, kvp map[string]string) error {

@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package prometheus
@@ -25,6 +28,8 @@ import (
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/origins"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 func TestPrometheusClientInterfacing(t *testing.T) {
@@ -47,18 +52,19 @@ func TestPrometheusClientInterfacing(t *testing.T) {
 
 func TestNewClient(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
-	if err != nil {
-		t.Error(err)
+	caches := cr.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
+	defer cr.CloseCaches(caches)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Errorf("Could not find default configuration")
 	}
 
-	oc := &config.OriginConfig{OriginType: "TEST_CLIENT"}
+	oc := &oo.Options{OriginType: "TEST_CLIENT"}
 	c, err := NewClient("default", oc, cache)
 	if err != nil {
 		t.Error(err)
@@ -108,7 +114,7 @@ func TestParseTimeFails(t *testing.T) {
 }
 
 func TestConfiguration(t *testing.T) {
-	oc := &config.OriginConfig{OriginType: "TEST"}
+	oc := &oo.Options{OriginType: "TEST"}
 	client := Client{config: oc}
 	c := client.Configuration()
 	if c.OriginType != "TEST" {
@@ -117,7 +123,7 @@ func TestConfiguration(t *testing.T) {
 }
 
 func TestHTTPClient(t *testing.T) {
-	oc := &config.OriginConfig{OriginType: "TEST"}
+	oc := &oo.Options{OriginType: "TEST"}
 
 	client, err := NewClient("test", oc, nil)
 	if err != nil {
@@ -131,15 +137,16 @@ func TestHTTPClient(t *testing.T) {
 
 func TestCache(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	cr.LoadCachesFromConfig()
-	cache, err := cr.GetCache("default")
-	if err != nil {
-		t.Error(err)
+	caches := cr.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
+	defer cr.CloseCaches(caches)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Errorf("Could not find default configuration")
 	}
 	client := Client{cache: cache}
 	c := client.Cache()
@@ -382,7 +389,7 @@ func TestParseTimeRangeQueryWithOffset(t *testing.T) {
 }
 
 func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", config.NewOriginConfig(), nil)
+	c, err := NewClient("test", oo.NewOptions(), nil)
 	if err != nil {
 		t.Error(err)
 	}

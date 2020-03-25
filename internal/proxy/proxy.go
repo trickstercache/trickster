@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 // Package proxy provides all proxy services for Trickster
@@ -25,14 +28,14 @@ import (
 
 	"golang.org/x/net/netutil"
 
-	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/log"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	tl "github.com/Comcast/trickster/internal/util/log"
 	"github.com/Comcast/trickster/internal/util/metrics"
 )
 
 // NewHTTPClient returns an HTTP client configured to the specifications of the
 // running Trickster config.
-func NewHTTPClient(oc *config.OriginConfig) (*http.Client, error) {
+func NewHTTPClient(oc *oo.Options) (*http.Client, error) {
 
 	if oc == nil {
 		return nil, nil
@@ -106,7 +109,7 @@ func NewHTTPClient(oc *config.OriginConfig) (*http.Client, error) {
 // which observes the connections to set a gauge with the current number of
 // connections (with operates with sampling through scrapes), and a set of
 // counter metrics for connections accepted, rejected and closed.
-func NewListener(listenAddress string, listenPort, connectionsLimit int, tlsConfig *tls.Config) (net.Listener, error) {
+func NewListener(listenAddress string, listenPort, connectionsLimit int, tlsConfig *tls.Config, log *tl.TricksterLogger) (net.Listener, error) {
 
 	var listener net.Listener
 	var err error
@@ -124,7 +127,7 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int, tlsConf
 		return nil, err
 	}
 
-	log.Debug("starting proxy listener", log.Pairs{
+	log.Debug("starting proxy listener", tl.Pairs{
 		"connectionsLimit": connectionsLimit,
 		"scheme":           listenerType,
 		"address":          listenAddress,
@@ -152,10 +155,6 @@ func (l *connectionsLimitObProxy) Accept() (net.Conn, error) {
 
 	c, err := l.Listener.Accept()
 	if err != nil {
-		// This generally happens when a connection gives up waiting for resources and
-		// just goes away on timeout, thus it's more of a client side error, which
-		// gets reflected on the server.
-		log.Debug("failed to accept client connection", log.Pairs{"reason": err})
 		metrics.ProxyConnectionFailed.Inc()
 		return c, err
 	}

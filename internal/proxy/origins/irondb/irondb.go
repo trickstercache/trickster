@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 // Package irondb provides proxy origin support for IRONdb databases.
@@ -19,8 +22,8 @@ import (
 	"net/url"
 
 	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy"
+	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	"github.com/Comcast/trickster/internal/timeseries"
 )
 
@@ -65,22 +68,21 @@ type extentSetter func(*http.Request, *timeseries.TimeRangeQuery, *timeseries.Ex
 // client interface.
 type Client struct {
 	name               string
-	config             *config.OriginConfig
+	config             *oo.Options
 	cache              cache.Cache
 	webClient          *http.Client
 	handlers           map[string]http.Handler
 	handlersRegistered bool
-
-	healthURL     *url.URL
-	healthHeaders http.Header
-	healthMethod  string
-
-	trqParsers    map[string]trqParser
-	extentSetters map[string]extentSetter
+	healthURL          *url.URL
+	healthHeaders      http.Header
+	healthMethod       string
+	trqParsers         map[string]trqParser
+	extentSetters      map[string]extentSetter
+	logUpstreamRequest bool
 }
 
 // NewClient returns a new Client Instance
-func NewClient(name string, oc *config.OriginConfig, cache cache.Cache) (*Client, error) {
+func NewClient(name string, oc *oo.Options, cache cache.Cache) (*Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
 	client := &Client{name: name, config: oc, cache: cache, webClient: c}
 	client.makeTrqParsers()
@@ -111,7 +113,7 @@ func (c *Client) makeExtentSetters() {
 }
 
 // Configuration returns the upstream Configuration for this Client.
-func (c *Client) Configuration() *config.OriginConfig {
+func (c *Client) Configuration() *oo.Options {
 	return c.config
 }
 

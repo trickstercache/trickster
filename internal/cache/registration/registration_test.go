@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package registration
@@ -18,86 +21,90 @@ import (
 	"os"
 	"testing"
 
+	bao "github.com/Comcast/trickster/internal/cache/badger/options"
+	bbo "github.com/Comcast/trickster/internal/cache/bbolt/options"
+	flo "github.com/Comcast/trickster/internal/cache/filesystem/options"
+	io "github.com/Comcast/trickster/internal/cache/index/options"
+	co "github.com/Comcast/trickster/internal/cache/options"
+	ro "github.com/Comcast/trickster/internal/cache/redis/options"
+	"github.com/Comcast/trickster/internal/cache/types"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/metrics"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
-
-func init() {
-	metrics.Init()
-}
 
 func TestLoadCachesFromConfig(t *testing.T) {
 
-	err := config.Load("trickster", "test", []string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "test"})
+	conf, _, err := config.Load("trickster", "test", []string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "test"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	for key, v := range config.CacheTypeNames {
+	for key, v := range types.Names {
 		cfg := newCacheConfig(t, key)
-		config.Caches[key] = cfg
+		conf.Caches[key] = cfg
 		switch v {
-		case config.CacheTypeBbolt:
+		case types.CacheTypeBbolt:
 			defer os.RemoveAll(cfg.BBolt.Filename)
-		case config.CacheTypeFilesystem:
+		case types.CacheTypeFilesystem:
 			defer os.RemoveAll(cfg.Filesystem.CachePath)
-		case config.CacheTypeBadgerDB:
+		case types.CacheTypeBadgerDB:
 			defer os.RemoveAll(cfg.Badger.Directory)
 		}
 	}
 
-	LoadCachesFromConfig()
-	_, err = GetCache("default")
-	if err != nil {
-		t.Error(err)
+	caches := LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
+	defer CloseCaches(caches)
+	_, ok := caches["default"]
+	if !ok {
+		t.Errorf("Could not find default configuration")
 	}
 
-	for key := range config.CacheTypeNames {
-		_, err = GetCache(key)
-		if err != nil {
-			t.Error(err)
+	for key := range types.Names {
+		_, ok := caches[key]
+		if !ok {
+			t.Errorf("Could not find the configuration for %q", key)
 		}
 	}
 
-	_, err = GetCache("foo")
-	if err == nil {
+	_, ok = caches["foo"]
+	if ok {
 		t.Errorf("expected error")
 	}
 
 }
 
-func newCacheConfig(t *testing.T, cacheType string) *config.CachingConfig {
+func newCacheConfig(t *testing.T, cacheType string) *co.Options {
 
 	bd := "."
 	fd := "."
 	var err error
 
-	ctid, ok := config.CacheTypeNames[cacheType]
+	ctid, ok := types.Names[cacheType]
 	if !ok {
-		ctid = config.CacheTypeMemory
+		ctid = types.CacheTypeMemory
 	}
 
 	switch ctid {
-	case config.CacheTypeBadgerDB:
+	case types.CacheTypeBadgerDB:
 		bd, err = ioutil.TempDir("/tmp", cacheType)
 		if err != nil {
 			t.Error(err)
 		}
 
-	case config.CacheTypeFilesystem:
+	case types.CacheTypeFilesystem:
 		fd, err = ioutil.TempDir("/tmp", cacheType)
 		if err != nil {
 			t.Error(err)
 		}
 	}
 
-	return &config.CachingConfig{
+	return &co.Options{
 		CacheType:  cacheType,
-		Redis:      config.RedisCacheConfig{Protocol: "tcp", Endpoint: "redis:6379", Endpoints: []string{"redis:6379"}},
-		Filesystem: config.FilesystemCacheConfig{CachePath: fd},
-		BBolt:      config.BBoltCacheConfig{Filename: "/tmp/test.db", Bucket: "trickster_test"},
-		Badger:     config.BadgerCacheConfig{Directory: bd, ValueDirectory: bd},
-		Index: config.CacheIndexConfig{
+		Redis:      &ro.Options{Protocol: "tcp", Endpoint: "redis:6379", Endpoints: []string{"redis:6379"}},
+		Filesystem: &flo.Options{CachePath: fd},
+		BBolt:      &bbo.Options{Filename: "/tmp/test.db", Bucket: "trickster_test"},
+		Badger:     &bao.Options{Directory: bd, ValueDirectory: bd},
+		Index: &io.Options{
 			ReapIntervalSecs:      3,
 			FlushIntervalSecs:     5,
 			MaxSizeBytes:          536870912,

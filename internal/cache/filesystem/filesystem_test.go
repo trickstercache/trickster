@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package filesystem
@@ -21,25 +24,20 @@ import (
 	"testing"
 	"time"
 
+	flo "github.com/Comcast/trickster/internal/cache/filesystem/options"
+	io "github.com/Comcast/trickster/internal/cache/index/options"
+	co "github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/util/log"
-
-	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/util/metrics"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
-
-func init() {
-	metrics.Init()
-}
 
 const cacheType = "filesystem"
 const cacheKey = "cacheKey"
 
 func storeBenchmark(b *testing.B) Cache {
-	log.Logger = log.ConsoleLogger("none")
 	dir, _ := ioutil.TempDir("/tmp", cacheType)
-	cacheConfig := config.CachingConfig{CacheType: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: dir}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
-	fc := Cache{Config: &cacheConfig}
+	cacheConfig := co.Options{CacheType: cacheType, Filesystem: &flo.Options{CachePath: dir}, Index: &io.Options{ReapInterval: time.Second}}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := fc.Connect()
@@ -57,18 +55,18 @@ func storeBenchmark(b *testing.B) Cache {
 	return fc
 }
 
-func newCacheConfig(t *testing.T) config.CachingConfig {
+func newCacheConfig(t *testing.T) co.Options {
 	dir, err := ioutil.TempDir("/tmp", cacheType)
 	if err != nil {
 		t.Fatalf("could not create temp directory (%s): %s", dir, err)
 	}
-	return config.CachingConfig{CacheType: cacheType, Filesystem: config.FilesystemCacheConfig{CachePath: dir}, Index: config.CacheIndexConfig{ReapInterval: time.Second}}
+	return co.Options{CacheType: cacheType, Filesystem: &flo.Options{CachePath: dir}, Index: &io.Options{ReapInterval: time.Second}}
 }
 
 func TestConfiguration(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	cfg := fc.Configuration()
 	if cfg.CacheType != cacheType {
 		t.Fatalf("expected %s got %s", cacheType, cfg.CacheType)
@@ -79,7 +77,7 @@ func TestFilesystemCache_Connect(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	// it should connect
 	err := fc.Connect()
@@ -92,7 +90,7 @@ func TestFilesystemCache_ConnectFailed(t *testing.T) {
 	const expected = `[/root/noaccess.trickster.filesystem.cache] directory is not writeable by trickster:`
 	cacheConfig := newCacheConfig(t)
 	cacheConfig.Filesystem.CachePath = "/root/noaccess.trickster.filesystem.cache"
-	fc := Cache{Config: &cacheConfig}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	// it should connect
 	err := fc.Connect()
 	if err == nil {
@@ -111,7 +109,7 @@ func TestFilesystemCache_Store(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	err := fc.Connect()
 	if err != nil {
@@ -156,7 +154,7 @@ func TestFilesystemCache_StoreNoIndex(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	err := fc.Connect()
 	if err != nil {
@@ -240,7 +238,7 @@ func BenchmarkCache_StoreNoIndex(b *testing.B) {
 func TestFilesystemCache_SetTTL(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
-	fc := Cache{Config: &cacheConfig}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
 
 	err := fc.Connect()
@@ -321,7 +319,7 @@ func TestFilesystemCache_Retrieve(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	err := fc.Connect()
 	if err != nil {
@@ -463,7 +461,7 @@ func TestFilesystemCache_Remove(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	err := fc.Connect()
 	if err != nil {
@@ -544,7 +542,7 @@ func TestFilesystemCache_BulkRemove(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	err := fc.Connect()
 	if err != nil {

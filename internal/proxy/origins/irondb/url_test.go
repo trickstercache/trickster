@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package irondb
@@ -24,8 +27,10 @@ import (
 
 	"github.com/Comcast/trickster/internal/config"
 	"github.com/Comcast/trickster/internal/proxy/errors"
+	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 	"github.com/Comcast/trickster/internal/proxy/request"
 	"github.com/Comcast/trickster/internal/timeseries"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 func TestSetExtent(t *testing.T) {
@@ -34,22 +39,22 @@ func TestSetExtent(t *testing.T) {
 	stFl := time.Unix(start.Unix()-(start.Unix()%300), 0)
 	etFl := time.Unix(end.Unix()-(end.Unix()%300), 0)
 	e := &timeseries.Extent{Start: start, End: end}
-	err := config.Load("trickster", "test",
+	conf, _, err := config.Load("trickster", "test",
 		[]string{"-origin-url", "none:9090",
 			"-origin-type", "irondb",
 			"-log-level", "debug"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	client := &Client{config: oc}
 
 	client.makeTrqParsers()
 	client.makeExtentSetters()
 
 	pcs := client.DefaultPathConfigs(oc)
-	rsc := request.NewResources(oc, nil, nil, nil, client)
+	rsc := request.NewResources(oc, nil, nil, nil, client, tl.ConsoleLogger("error"))
 
 	cases := []struct {
 		handler  string
@@ -58,7 +63,7 @@ func TestSetExtent(t *testing.T) {
 		expPath  string
 		expQuery string
 		expBody  string
-		p        *config.PathConfig
+		p        *po.Options
 	}{
 		{ // case 0
 			handler: "CAQLHandler",
@@ -192,15 +197,15 @@ func TestFastForwardURL(t *testing.T) {
 	now := time.Now().Unix()
 	start := now - (now % 300)
 	end := start + 300
-	err := config.Load("trickster", "test",
+	conf, _, err := config.Load("trickster", "test",
 		[]string{"-origin-url", "none:9090",
 			"-origin-type", "irondb",
 			"-log-level", "debug"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	client := &Client{config: oc}
 
 	client.makeTrqParsers()
@@ -208,13 +213,13 @@ func TestFastForwardURL(t *testing.T) {
 
 	pcs := client.DefaultPathConfigs(oc)
 
-	rsc := request.NewResources(oc, nil, nil, nil, client)
+	rsc := request.NewResources(oc, nil, nil, nil, client, tl.ConsoleLogger("error"))
 
 	cases := []struct {
 		handler string
 		u       *url.URL
 		exp     string
-		p       *config.PathConfig
+		p       *po.Options
 	}{
 		{ // case 0
 			handler: "CAQLHandler",
@@ -333,12 +338,12 @@ func TestBuildUpstreamURL(t *testing.T) {
 
 	expected := "q=up&start=1&end=1&step=1"
 
-	err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "rpc", "-log-level", "debug"})
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "rpc", "-log-level", "debug"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := config.Origins["default"]
+	oc := conf.Origins["default"]
 	client := Client{config: oc, name: "default"}
 
 	u := &url.URL{Path: "/default/query_range", RawQuery: expected}
@@ -374,7 +379,8 @@ func TestParseTimerangeQuery(t *testing.T) {
 	client := &Client{name: "test"}
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 
-	r = request.SetResources(r, request.NewResources(client.config, &config.PathConfig{}, nil, nil, client))
+	r = request.SetResources(r, request.NewResources(client.config, &po.Options{},
+		nil, nil, client, tl.ConsoleLogger("error")))
 
 	_, err := client.ParseTimeRangeQuery(r)
 	if err == nil || err != expected {

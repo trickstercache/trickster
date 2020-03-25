@@ -1,14 +1,17 @@
-/**
-* Copyright 2018 Comcast Cable Communications Management, LLC
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-* http://www.apache.org/licenses/LICENSE-2.0
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+/*
+ * Copyright 2018 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package engines
@@ -25,7 +28,7 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
 	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/internal/util/log"
+	tl "github.com/Comcast/trickster/internal/util/log"
 )
 
 //go:generate msgp
@@ -105,7 +108,7 @@ func (d *HTTPDocument) LoadRangeParts() {
 }
 
 // ParsePartialContentBody parses a Partial Content response body into 0 or more discrete parts
-func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte) {
+func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte, log *tl.TricksterLogger) {
 
 	ct := resp.Header.Get(headers.NameContentType)
 	if cr := resp.Header.Get(headers.NameContentRange); cr != "" {
@@ -148,7 +151,7 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte)
 			d.RangeParts.Compress()
 			d.Ranges = d.RangeParts.Ranges()
 		} else {
-			log.Error("unable to parse multipart range response body", log.Pairs{"detail": err.Error})
+			log.Error("unable to parse multipart range response body", tl.Pairs{"detail": err.Error})
 		}
 	} else {
 		if !strings.HasPrefix(ct, headers.ValueMultipartByteRanges) {
