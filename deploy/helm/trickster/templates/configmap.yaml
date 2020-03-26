@@ -360,22 +360,21 @@ data:
     {{- end }}
 
     [tracing]
-      {{- range .Values.tracing }}
-      
+    {{- range .Values.tracing }}
       {{ printf "[tracing.%s]" .name }}
-            {{- if .implementation }}
-          implementation = {{ .implementation | quote }}
-            {{- end }}
-            {{- if .exporter }}
-          exporter = {{ .exporter | quote }}
-            {{- end }}
-            {{- if .collector }}
-          collector = {{ .collector | quote }}
-            {{- end }}
-            {{- if .sampleRate }}
-          sample_rate = {{ .sampleRate }}
-            {{- end }}
+      {{- if .implementation }}
+      implementation = {{ .implementation | quote }}
       {{- end }}
+      {{- if .exporter }}
+      exporter = {{ .exporter | quote }}
+      {{- end }}
+      {{- if .collector }}
+      collector = {{ .collector | quote }}
+      {{- end }}
+      {{- if .sampleRate }}
+      sample_rate = {{ .sampleRate }}
+      {{- end }}
+    {{- end }}
 
     {{- if .Values.service.metricsPort }}
 

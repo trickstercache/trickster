@@ -1,12 +1,17 @@
 apiVersion: v1
 kind: Service
 metadata:
-{{- if .Values.service.annotations }}
+{{- if or .Values.service.annotations .Values.prometheusScrape }}
   annotations:
+  {{- if .Values.service.annotations }}
+{{ toYaml .Values.service.annotations | indent 4 }}
+  {{- end }}
+  {{- if .Values.prometheusScrape }}
     prometheus.io/scrape: {{ .Values.prometheusScrape | quote }}
     prometheus.io/port: {{ .Values.service.metricsPort | quote }}
     prometheus.io/path: /metrics
   {{- end }}
+{{- end }}
   name: {{ template "trickster.fullname" . }}
   labels:
     {{- include "trickster.labels" . | nindent 4 }}
@@ -39,7 +44,7 @@ spec:
     {{- if .Values.service.nodePort }}
       nodePort: {{ .Values.service.nodePort }}
     {{- end }}
-    - name: metrics
+    - name: http-metrics
       port: {{ .Values.service.metricsPort }}
       protocol: TCP
       targetPort: metrics
