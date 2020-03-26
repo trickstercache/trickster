@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/Comcast/trickster/internal/runtime"
 	"github.com/Comcast/trickster/internal/timeseries"
@@ -148,19 +149,28 @@ func UpdateHeaders(headers http.Header, updates map[string]string) {
 	}
 }
 
+var viaHeader string
+
+var once sync.Once
+var onceVia = func() {
+	viaHeader = strings.Trim(runtime.ApplicationName+" "+runtime.ApplicationVersion, " ")
+}
+
 // AddProxyHeaders injects standard Trickster headers into proxied upstream HTTP requests
 func AddProxyHeaders(remoteAddr string, headers http.Header) {
+	once.Do(onceVia)
 	if remoteAddr != "" {
 		headers.Set(NameXForwardedFor, remoteAddr)
-		headers.Set(NameVia, runtime.ApplicationName+" "+runtime.ApplicationVersion)
+		headers.Set(NameVia, viaHeader)
 	}
 }
 
 // AddResponseHeaders injects standard Trickster headers into downstream HTTP responses
 func AddResponseHeaders(headers http.Header) {
+	once.Do(onceVia)
 	// We're read only and a harmless API, so allow all CORS
 	headers.Set(NameAllowOrigin, "*")
-	headers.Set(NameVia, runtime.ApplicationName+" "+runtime.ApplicationVersion)
+	headers.Set(NameVia, viaHeader)
 }
 
 // SetResultsHeader adds a response header summarizing Trickster's handling of the HTTP request

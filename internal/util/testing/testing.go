@@ -32,10 +32,17 @@ import (
 	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	po "github.com/Comcast/trickster/internal/proxy/paths/options"
 	"github.com/Comcast/trickster/internal/proxy/request"
+	"github.com/Comcast/trickster/internal/runtime"
 	tl "github.com/Comcast/trickster/internal/util/log"
 	tr "github.com/Comcast/trickster/internal/util/tracing/registration"
 	"github.com/tricksterproxy/mockster/pkg/testutil"
 )
+
+// this actively sets the ApplicationName for testing purposes
+// do not import this package from main or any of its recursive imports
+func init() {
+	runtime.ApplicationName = "trickster-unit-tests"
+}
 
 // NewTestServer returns a new httptest.Server that responds with the provided code, body and headers
 func NewTestServer(responseCode int, responseBody string, headers map[string]string) *httptest.Server {
