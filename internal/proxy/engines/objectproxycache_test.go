@@ -1146,8 +1146,6 @@ func testFetchOPC(r *http.Request, sc int, body string, match map[string]string)
 	ObjectProxyCacheRequest(w, r)
 	resp := w.Result()
 
-	fmt.Println("testFetchOPC`", resp.Header)
-
 	err := testStatusCodeMatch(resp.StatusCode, sc)
 	if err != nil {
 		e = append(e, err)
