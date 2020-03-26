@@ -43,26 +43,11 @@ Optional Rule Parts
 
 ### input_type permitted values and operations
 
-| type name          | permitted operations
-| ------------------ | 
-| string  (default)  | 
-| num                |
-| bool               |
-
-### operation permitted values
-
-| source name   | example extracted value                             |
-| ------------- | --------------------------------------------------- |
-| prefix           | https://example.com:8480/path1/path2?param1=value   |
-| suffix | https://example.com:8480/path1/path2                |
-| contains        | https                                               |
-| eq          | example.com:8480                                    |
-| le      | example.com                                         |
-| ge          | 8480 (80/443 are inferred when no port is provided) |
-| gt          | /path1/path2                                        |
-| lt        | ?param1=value                                       |
-| modulo         | (must be used with input_key as described below)    |
-| header        | (must be used with input_key as described below)    |
+| type name          | permitted operations  |
+| ------------------ | ----------------------|
+| string  (default)  | prefix, suffix, contains, eq, md5, sha1, modulo |
+| num                | eq, le, ge, gt, lt, modulo |
+| bool               | eq |
 
 ## Example Rule - Route Request by Basic Auth Username
 
@@ -70,6 +55,7 @@ Optional Rule Parts
 [rules]
   [rules.example-user-router]
 
+  # default route is reader cluster
   next_route = 'example-reader-cluster'
 
   input_source = 'header'
@@ -83,7 +69,7 @@ Optional Rule Parts
 
   [rules.example-user-router.cases]
     [rules.example-user-router.cases.1]
-    matches = ['johndoe:', 'janedoe:'] # route johndoe and janedoe to writer
+    matches = ['johndoe:', 'janedoe:'] # route johndoe and janedoe to writer cluster
     next_route = 'example-writer-cluster'
 
 [origins]
