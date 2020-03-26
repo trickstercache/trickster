@@ -23,7 +23,7 @@ func TestLookupStatusString(t *testing.T) {
 	t1 := LookupStatusHit
 	t2 := LookupStatusKeyMiss
 
-	var t3 LookupStatus = 10
+	var t3 LookupStatus = 99
 
 	if t1.String() != "hit" {
 		t.Errorf("expected %s got %s", "hit", t1.String())
@@ -33,7 +33,7 @@ func TestLookupStatusString(t *testing.T) {
 		t.Errorf("expected %s got %s", "kmiss", t2.String())
 	}
 
-	if t3.String() != "10" {
-		t.Errorf("expected %s got %s", "9", t3.String())
+	if t3.String() != "99" {
+		t.Errorf("expected %s got %s", "99", t3.String())
 	}
 }
