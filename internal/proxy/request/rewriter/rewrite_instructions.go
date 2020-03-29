@@ -35,24 +35,27 @@ type rewriteList [][]string
 type RewriteInstructions []rewriteInstruction
 
 var rewriters = map[string]func() rewriteInstruction{
-	"header-set":     func() rewriteInstruction { return &rwiKeyBasedSetter{} },
-	"header-replace": func() rewriteInstruction { return &rwiKeyBasedReplacer{} },
-	"header-delete":  func() rewriteInstruction { return &rwiKeyBasedDeleter{} },
-	"header-append":  func() rewriteInstruction { return &rwiKeyBasedAppender{} },
-	"path-set":       func() rewriteInstruction { return &rwiPathSetter{} },
-	"path-replace":   func() rewriteInstruction { return &rwiPathReplacer{} },
-	"param-set":      func() rewriteInstruction { return &rwiKeyBasedSetter{} },
-	"param-replace":  func() rewriteInstruction { return &rwiKeyBasedReplacer{} },
-	"param-delete":   func() rewriteInstruction { return &rwiKeyBasedDeleter{} },
-	"param-append":   func() rewriteInstruction { return &rwiKeyBasedAppender{} },
-	"params-set":     func() rewriteInstruction { return &rwiBasicSetter{} },
-	"params-replace": func() rewriteInstruction { return &rwiBasicReplacer{} },
-	"method-set":     func() rewriteInstruction { return &rwiBasicSetter{} },
-	"host-set":       func() rewriteInstruction { return &rwiBasicSetter{} },
-	"host-replace":   func() rewriteInstruction { return &rwiBasicReplacer{} },
-	"port-set":       func() rewriteInstruction { return &rwiBasicSetter{} },
-	"port-replace":   func() rewriteInstruction { return &rwiBasicReplacer{} },
-	"port-delete":    func() rewriteInstruction { return &rwiPortDeleter{} },
+	"scheme-set":       func() rewriteInstruction { return &rwiBasicSetter{} },
+	"header-set":       func() rewriteInstruction { return &rwiKeyBasedSetter{} },
+	"header-replace":   func() rewriteInstruction { return &rwiKeyBasedReplacer{} },
+	"header-delete":    func() rewriteInstruction { return &rwiKeyBasedDeleter{} },
+	"header-append":    func() rewriteInstruction { return &rwiKeyBasedAppender{} },
+	"path-set":         func() rewriteInstruction { return &rwiPathSetter{} },
+	"path-replace":     func() rewriteInstruction { return &rwiPathReplacer{} },
+	"param-set":        func() rewriteInstruction { return &rwiKeyBasedSetter{} },
+	"param-replace":    func() rewriteInstruction { return &rwiKeyBasedReplacer{} },
+	"param-delete":     func() rewriteInstruction { return &rwiKeyBasedDeleter{} },
+	"param-append":     func() rewriteInstruction { return &rwiKeyBasedAppender{} },
+	"params-set":       func() rewriteInstruction { return &rwiBasicSetter{} },
+	"params-replace":   func() rewriteInstruction { return &rwiBasicReplacer{} },
+	"method-set":       func() rewriteInstruction { return &rwiBasicSetter{} },
+	"host-set":         func() rewriteInstruction { return &rwiBasicSetter{} },
+	"host-replace":     func() rewriteInstruction { return &rwiBasicReplacer{} },
+	"hostname-set":     func() rewriteInstruction { return &rwiBasicSetter{} },
+	"hostname-replace": func() rewriteInstruction { return &rwiBasicReplacer{} },
+	"port-set":         func() rewriteInstruction { return &rwiBasicSetter{} },
+	"port-replace":     func() rewriteInstruction { return &rwiBasicReplacer{} },
+	"port-delete":      func() rewriteInstruction { return &rwiPortDeleter{} },
 }
 
 type dictable interface {
@@ -115,6 +118,11 @@ var scalarGets = map[string]scalarGetFunc{
 }
 
 var scalarSets = map[string]scalarSetFunc{
+	"scheme": func(r *http.Request, v string) {
+		if r != nil && r.URL != nil {
+			r.URL.Scheme = v
+		}
+	},
 	"params": func(r *http.Request, v string) {
 		if r != nil && r.URL != nil {
 			r.URL.RawQuery = v
