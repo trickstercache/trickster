@@ -84,6 +84,8 @@ Optional Rule Parts
   [origins.example-writer-cluster]
   origin_type = 'rpc'
   origin_url = 'http://writer-cluster.example.com'
+  path_routing_disabled = true  # restrict routing to this origin via rule only
+                                # users cannot directly access via /example-writer-cluster/
 
 ```
 
