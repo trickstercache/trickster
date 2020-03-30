@@ -31,6 +31,7 @@ type Options struct {
 	// EgressReqRewriterName is the name of a configured Rewriter that will modify the request once
 	// all other rule actions have occurred, prior to the request being passed to the next route
 	EgressReqRewriterName string `toml:"egress_req_rewriter_name"`
+	//
 	// Input source specifies the data source used when executing the rule. Possible options:
 	//  Source           Example Source Used
 	//  url              https://example.com:8480/path1/path2?param1=value
@@ -44,6 +45,7 @@ type Options struct {
 	//  param            [must be used with InputKey as described below]
 	//  header           [must be used with InputKey as described below]
 	InputSource string `toml:"input_source"`
+	//
 	// PreOpRewrite is a list of URL and Header rewrite instructions that permanently modifiy the
 	// http request prior to executing the rule
 	PreOpRewrite rewriteList `toml:"rewrite"`
@@ -65,6 +67,7 @@ type Options struct {
 	// InputDelimiter is optional, defaulting to " ", and indicates the delimiter for separating the Input
 	// into parts. This value has no effect unless InputIndex >= 0
 	InputDelimiter string `toml:"input_delimiter"`
+	//
 	// Operation specifies what action to take on the input, whose result is used to
 	// determine if any case is matched. Possible options are as follows.
 	// string:   eq, contains, suffix, prefix, md5, sha1, base64, modulo
@@ -72,6 +75,7 @@ type Options struct {
 	// bool:     eq
 	// any boolean operation (everything but md5, sha1, base64, modulo) can be prefixed with !
 	Operation string `toml:"operation"`
+	//
 	// OperationArg is optional and provides extra information used when performing the
 	// configured Operation, such as the demonimator when the operation is modulus
 	OperationArg string `toml:"operation_arg"`
@@ -95,29 +99,3 @@ type CaseOptions struct {
 	// handing off to the NextRoute
 	RedirectURL string `toml:"redirect_url"`
 }
-
-/*
-
-Example TOML Config:
-
-[rules]
-  [rules.example]
-  input_source = 'header'       # path, host, param
-  input_key = 'Cache-Control'
-  input_type = 'string'         # num, bool, date, string
-  # input_encoding = ''           # set to 'base64' to decode Authorization header, etc.
-  # input_index = -1              # set to a value >= 0 to use a part of the input for the operation
-  # input_delimiter = ' '         # when input_index >=0, this is used to split the input into parts
-  operation = 'contains'        # prefix, suffix, contains, eq, le, ge, gt, lt, modulo, md5, sha1
-  # operation_arg = '7'           # use to set a modulo operation's denominator, or path depth
-  next_route = 'origin1'
-	[rules.example.cases]
-		[rules.example.cases.1]
-		matches = ['no-cache', 'no-store']
-		rewrite = [ ['path', 'replace', '${match}', 'myReplacement'],
-					['header', 'set', 'Cache-Control', 'myReplacement'],
-					['header', 'replace', 'Cache-Control', '${match}', 'myReplacement'],
-					['header', 'delete', 'Cache-Control', '${match}'] ]
-
-		next_route = 'origin2'
-*/
