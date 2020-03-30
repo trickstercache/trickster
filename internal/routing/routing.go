@@ -49,8 +49,12 @@ import (
 func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router,
 	caches map[string]cache.Cache, log *tl.TricksterLogger) (origins.Origins, error) {
 
+	// a fake "top-level" origin representing the main frontend, so rules can route
+	// to it via the clients map
+	tlo, _ := reverseproxycache.NewClient("frontend", &oo.Options{}, router, nil)
+
 	// proxyClients maintains a list of proxy clients configured for use by Trickster
-	var clients = make(origins.Origins)
+	var clients = origins.Origins{"frontend": tlo}
 	var err error
 
 	defaultOrigin := ""

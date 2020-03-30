@@ -23,7 +23,8 @@ Optional Rule Parts
 - `input_encoding` - the encoding of the input, which is decoded prior to peforming the operation
 - `input_index` - when > -1, the source is split into parts and the input is extracted from parts\[input_index\]
 - `input-delimiter` - when input_index > -1, this delimiter is used to split the source into parts, and defaults to a standard space (' ')
-- `req_rewriter_name` provides the name of a Request Rewriter to operate on the Request during rule execution.
+- `req_rewriter_name` - provides the name of a Request Rewriter to operate on the Request during rule execution.
+- `max_internal_redirects` - limits the number of rules a Request is passed through, and aborts with a 400 status code when exceeded. Default is 16.
 
 ### input_source permitted values
 
