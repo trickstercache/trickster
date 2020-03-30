@@ -17,6 +17,7 @@
 package options
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -30,6 +31,8 @@ import (
 
 	"github.com/gorilla/mux"
 )
+
+var restrictedOriginNames = map[string]bool{"frontend": true}
 
 // Options is a collection of configurations for Origins proxied by Trickster
 type Options struct {
@@ -297,4 +300,13 @@ func (oc *Options) Clone() *Options {
 
 	return o
 
+}
+
+// ValidateOriginName ensures the origin name is permitted against the dictionary of
+// restructed words
+func ValidateOriginName(name string) error {
+	if _, ok := restrictedOriginNames[name]; ok {
+		return errors.New("invalid origin name:" + name)
+	}
+	return nil
 }

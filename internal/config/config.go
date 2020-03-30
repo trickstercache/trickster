@@ -21,6 +21,7 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -239,6 +240,15 @@ var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_ke
 
 func (c *TricksterConfig) validateConfigMappings() error {
 	for k, oc := range c.Origins {
+
+		if err := origins.ValidateOriginName(k); err != nil {
+			return err
+		}
+
+		if oc.Name == "frontend" {
+			return errors.New("inva")
+		}
+
 		if oc.OriginType == "rule" {
 			// Rule Type Validations
 			r, ok := c.Rules[oc.RuleName]

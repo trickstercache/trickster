@@ -16,9 +16,25 @@
 
 package context
 
-type contextKey int
+import (
+	"context"
 
-const (
-	resourcesKey contextKey = iota
-	hopsKey
+	"github.com/Comcast/trickster/internal/config/defaults"
 )
+
+// WithHops returns a copy of the provided context that also includes
+// rule-based Hop information about the request
+func WithHops(ctx context.Context, current, max int) context.Context {
+	return context.WithValue(ctx, hopsKey, []int{current, max})
+}
+
+// Hops returns the Hops data associated with the request
+func Hops(ctx context.Context) (current, max int) {
+	v := ctx.Value(hopsKey)
+	if v != nil {
+		if i, ok := v.([]int); ok && len(i) == 2 {
+			return i[0], i[1]
+		}
+	}
+	return 0, defaults.DefaultMaxInternalRedirects
+}

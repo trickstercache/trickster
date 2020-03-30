@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Comcast/trickster/internal/config/defaults"
 	"github.com/Comcast/trickster/internal/proxy/handlers"
 	ro "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
 	"github.com/Comcast/trickster/internal/proxy/request/rewriter"
@@ -44,8 +45,12 @@ func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteIns
 		return fmt.Errorf("rule client %s options missing operation", c.name)
 	}
 
+	if ro.MaxInternalRedirects == 0 {
+		ro.MaxInternalRedirects = defaults.DefaultMaxInternalRedirects
+	}
+
 	var nr http.Handler
-	r := &rule{}
+	r := &rule{maxInternalRedirects: ro.MaxInternalRedirects}
 
 	if ro.EgressReqRewriterName != "" {
 		ri, ok := rwi[ro.EgressReqRewriterName]

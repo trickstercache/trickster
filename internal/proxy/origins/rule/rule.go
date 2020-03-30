@@ -19,6 +19,7 @@ package rule
 import (
 	"net/http"
 
+	"github.com/Comcast/trickster/internal/proxy/context"
 	"github.com/Comcast/trickster/internal/proxy/handlers"
 	"github.com/Comcast/trickster/internal/proxy/request/rewriter"
 )
@@ -41,6 +42,8 @@ type rule struct {
 
 	ingressReqRewriter rewriter.RewriteInstructions
 	egressReqRewriter  rewriter.RewriteInstructions
+
+	maxInternalRedirects int
 }
 
 type ruleCase struct {
@@ -57,6 +60,15 @@ type caseList []*ruleCase
 type evaluatorFunc func(*http.Request) (http.Handler, *http.Request, error)
 
 func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, error) {
+
+	currentHops, maxHops := context.Hops(hr.Context())
+	if r.maxInternalRedirects < maxHops {
+		maxHops = r.maxInternalRedirects
+	}
+
+	if currentHops >= maxHops {
+		return http.HandlerFunc(handlers.HandleBadRequestResponse), hr, nil
+	}
 
 	// if this case includes ingress rewriter instructions, execute those now
 	if len(r.ingressReqRewriter) > 0 {
@@ -93,6 +105,8 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 		hr = hr.WithContext(handlers.WithRedirects(hr.Context(),
 			r.defaultRedirectCode, r.defaultRedirectURL))
 	}
+
+	hr = hr.WithContext(context.WithHops(hr.Context(), currentHops+1, maxHops))
 
 	return h, hr, nil
 }

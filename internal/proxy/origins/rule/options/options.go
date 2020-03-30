@@ -84,6 +84,9 @@ type Options struct {
 	// RedirectURL provides a URL to redirect the request in the default case, rather than
 	// handing off to the NextRoute
 	RedirectURL string `toml:"redirect_url"`
+	// MaxInternalRedirects limits the maximum number of per-Request rule-based hops so as to avoid
+	// execution loops.
+	MaxInternalRedirects int `toml:"max_internal_redirects"`
 }
 
 // CaseOptions defines the options for a given evaluation case
