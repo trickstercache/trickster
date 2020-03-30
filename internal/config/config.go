@@ -30,6 +30,7 @@ import (
 	cache "github.com/Comcast/trickster/internal/cache/options"
 	"github.com/Comcast/trickster/internal/cache/types"
 	d "github.com/Comcast/trickster/internal/config/defaults"
+	"github.com/Comcast/trickster/internal/proxy/forwarding"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	origins "github.com/Comcast/trickster/internal/proxy/origins/options"
 	rule "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
@@ -236,7 +237,7 @@ func (c *TricksterConfig) validateTLSConfigs() error {
 }
 
 var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers", "default_ttl_secs",
-	"request_headers", "response_headers", "response_headers", "response_code", "response_body", "no_metrics", "progressive_collapsed_forwarding"}
+	"request_headers", "response_headers", "response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding"}
 
 func (c *TricksterConfig) validateConfigMappings() error {
 	for k, oc := range c.Origins {
@@ -400,7 +401,13 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) error {
 					p.ResponseBodyBytes = []byte(p.ResponseBody)
 					p.HasCustomResponseBody = true
 				}
-
+				// TODO: return error condition in v1.1 if user-provided pcf name is invalid
+				if metadata.IsDefined("origins", k, "paths", l, "collapsed_forwarding") {
+					p.CollapsedForwardingType =
+						forwarding.GetCollapsedForwardingType(p.CollapsedForwardingName)
+				} else {
+					p.CollapsedForwardingType = forwarding.CFTypeBasic
+				}
 				if mt, ok := matching.Names[strings.ToLower(p.MatchTypeName)]; ok {
 					p.MatchType = mt
 					p.MatchTypeName = p.MatchType.String()
