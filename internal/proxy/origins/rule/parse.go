@@ -45,12 +45,12 @@ func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteIns
 		return fmt.Errorf("rule client %s options missing operation", c.name)
 	}
 
-	if ro.MaxInternalRedirects == 0 {
-		ro.MaxInternalRedirects = defaults.DefaultMaxInternalRedirects
+	if ro.MaxRuleExecutions == 0 {
+		ro.MaxRuleExecutions = defaults.DefaultMaxRuleExecutions
 	}
 
 	var nr http.Handler
-	r := &rule{maxInternalRedirects: ro.MaxInternalRedirects}
+	r := &rule{maxRuleExecutions: ro.MaxRuleExecutions}
 
 	if ro.EgressReqRewriterName != "" {
 		ri, ok := rwi[ro.EgressReqRewriterName]

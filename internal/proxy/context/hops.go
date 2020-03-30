@@ -36,5 +36,5 @@ func Hops(ctx context.Context) (current, max int) {
 			return i[0], i[1]
 		}
 	}
-	return 0, defaults.DefaultMaxInternalRedirects
+	return 0, defaults.DefaultMaxRuleExecutions
 }

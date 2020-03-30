@@ -82,7 +82,7 @@ const (
 	DefaultConfigHandlerPath = "/trickster/config"
 	DefaultPingHandlerPath   = "/trickster/ping"
 
-	DefaultMaxInternalRedirects = 16
+	DefaultMaxRuleExecutions = 16
 
 	// DefaultConfigPath defines the default location of the Trickster config file
 	DefaultConfigPath = "/etc/trickster/trickster.conf"

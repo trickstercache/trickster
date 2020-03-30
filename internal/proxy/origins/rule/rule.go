@@ -43,7 +43,7 @@ type rule struct {
 	ingressReqRewriter rewriter.RewriteInstructions
 	egressReqRewriter  rewriter.RewriteInstructions
 
-	maxInternalRedirects int
+	maxRuleExecutions int
 }
 
 type ruleCase struct {
@@ -62,8 +62,8 @@ type evaluatorFunc func(*http.Request) (http.Handler, *http.Request, error)
 func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, error) {
 
 	currentHops, maxHops := context.Hops(hr.Context())
-	if r.maxInternalRedirects < maxHops {
-		maxHops = r.maxInternalRedirects
+	if r.maxRuleExecutions < maxHops {
+		maxHops = r.maxRuleExecutions
 	}
 
 	if currentHops >= maxHops {

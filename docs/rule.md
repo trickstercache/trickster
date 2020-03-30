@@ -15,7 +15,8 @@ Required Rule Parts
 - `input_source` - The part of the Request the Rule inspects
 - `input_type` - The source data type
 - `operation` - The operation taken on the input source
-- `next_route` - The Origin Name indicating the default next route for the Rule if no matching cases
+- `next_route` - The Origin Name indicating the default next route for the Rule if no matching cases. Not required if `redirect_url` is provided.
+- `redirect_url` - The fully-qualified URL to issue as a 302 redirect to the client in the default case. Not required if `next_route` is provided.
 
 Optional Rule Parts
 
@@ -23,8 +24,9 @@ Optional Rule Parts
 - `input_encoding` - the encoding of the input, which is decoded prior to peforming the operation
 - `input_index` - when > -1, the source is split into parts and the input is extracted from parts\[input_index\]
 - `input-delimiter` - when input_index > -1, this delimiter is used to split the source into parts, and defaults to a standard space (' ')
-- `req_rewriter_name` - provides the name of a Request Rewriter to operate on the Request during rule execution.
-- `max_internal_redirects` - limits the number of rules a Request is passed through, and aborts with a 400 status code when exceeded. Default is 16.
+- `ingress_req_rewriter name` - provides the name of a Request Rewriter to operate on the Request before rule execution.
+- `egress_req_rewriter name` - provides the name of a Request Rewriter to operate on the Request after rule execution.
+- `max_rule_executions` - limits the number of rules a Request is passed through, and aborts with a 400 status code when exceeded. Default is 16.
 
 ### input_source permitted values
 
@@ -48,6 +50,22 @@ Optional Rule Parts
 | string  (default)  | prefix, suffix, contains, eq, md5, sha1, modulo |
 | num                | eq, le, ge, gt, lt, modulo |
 | bool               | eq |
+
+## Rule Cases
+
+Rule cases define the possible values are able to alter the Request and change the next route.
+
+## Case Parts
+
+Required Case Parts
+
+- `matches` - A string list of values applicable to this case.
+- `next_route` - The Origin Name indicating the  next route for the Rule when a request matches this Case. Not required if `redirect_url` is provided.
+- `redirect_url` - The fully-qualified URL to issue as a 302 redirect to the client when the Request matches this Case. Not required if `next_route` is provided.
+
+Optional Case Parts
+
+- `req_rewriter name` - provides the name of a Request Rewriter to operate on the Request when this case is matched.
 
 ## Example Rule - Route Request by Basic Auth Username
 
