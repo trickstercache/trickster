@@ -63,8 +63,8 @@ type TricksterConfig struct {
 	NegativeCacheConfigs map[string]NegativeCacheConfig `toml:"negative_caches"`
 	// Rules is a map of the Rules
 	Rules map[string]*rule.Options `toml:"rules"`
-	// Rewriters is a map of the Rewriters
-	Rewriters map[string]*rwopts.Options `toml:"rewriters"`
+	// RequestRewriters is a map of the Rewriters
+	RequestRewriters map[string]*rwopts.Options `toml:"request_rewriters"`
 
 	CompiledRewriters  map[string]rewriter.RewriteInstructions
 	activeCaches       map[string]bool
@@ -196,8 +196,8 @@ func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
 
 	var err error
 
-	if c.Rewriters != nil {
-		if c.CompiledRewriters, err = rewriter.ProcessConfigs(c.Rewriters); err != nil {
+	if c.RequestRewriters != nil {
+		if c.CompiledRewriters, err = rewriter.ProcessConfigs(c.RequestRewriters); err != nil {
 			return err
 		}
 	}
@@ -683,7 +683,7 @@ func (c *TricksterConfig) Clone() *TricksterConfig {
 	nc.Rules = c.Rules
 	// TODO clone rules instead of passing reference
 
-	nc.Rewriters = c.Rewriters
+	nc.RequestRewriters = c.RequestRewriters
 	// TODO: clone rewriters instead of passing reference
 
 	return nc

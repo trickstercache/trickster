@@ -70,6 +70,15 @@ func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteIns
 		r.ingressReqRewriter = ri
 	}
 
+	if ro.DefaultReqRewriterName != "" {
+		ri, ok := rwi[ro.DefaultReqRewriterName]
+		if !ok {
+			return fmt.Errorf("invalid  default rewriter %s in rule %s",
+				ro.DefaultReqRewriterName, ro.Name)
+		}
+		r.defaultRewriter = ri
+	}
+
 	badDefaultRoute := fmt.Errorf("invalid default rule route %s in rule %s",
 		ro.NextRoute, ro.Name)
 

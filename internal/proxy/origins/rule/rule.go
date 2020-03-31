@@ -39,6 +39,7 @@ type rule struct {
 
 	defaultRedirectURL  string
 	defaultRedirectCode int
+	defaultRewriter     rewriter.RewriteInstructions
 
 	ingressReqRewriter rewriter.RewriteInstructions
 	egressReqRewriter  rewriter.RewriteInstructions
@@ -143,6 +144,10 @@ func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, e
 					c.redirectCode, c.redirectURL))
 			}
 		}
+	}
+
+	if nonDefault && r.defaultRewriter != nil {
+		r.defaultRewriter.Execute(hr)
 	}
 
 	// if this case includes egress rewriter instructions, execute those now
