@@ -26,6 +26,7 @@ Optional Rule Parts
 - `input-delimiter` - when input_index > -1, this delimiter is used to split the source into parts, and defaults to a standard space (' ')
 - `ingress_req_rewriter name` - provides the name of a Request Rewriter to operate on the Request before rule execution.
 - `egress_req_rewriter name` - provides the name of a Request Rewriter to operate on the Request after rule execution.
+- `default_req_rewriter name` - provides the name of a Request Rewriter to operate on the Request after rule execution if the request did not match any cases.
 - `max_rule_executions` - limits the number of rules a Request is passed through, and aborts with a 400 status code when exceeded. Default is 16.
 
 ### input_source permitted values
