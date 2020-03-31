@@ -97,6 +97,10 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 		}
 	}
 
+	if nonDefault && r.defaultRewriter != nil {
+		r.defaultRewriter.Execute(hr)
+	}
+
 	// if this case includes egress rewriter instructions, execute those now
 	if len(r.egressReqRewriter) > 0 {
 		r.egressReqRewriter.Execute(hr)
@@ -113,6 +117,15 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 }
 
 func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, error) {
+
+	currentHops, maxHops := context.Hops(hr.Context())
+	if r.maxRuleExecutions < maxHops {
+		maxHops = r.maxRuleExecutions
+	}
+
+	if currentHops >= maxHops {
+		return http.HandlerFunc(handlers.HandleBadRequestResponse), hr, nil
+	}
 
 	// if this case includes ingress rewriter instructions, execute those now
 	if len(r.ingressReqRewriter) > 0 {
@@ -159,6 +172,8 @@ func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, e
 		hr = hr.WithContext(handlers.WithRedirects(hr.Context(),
 			r.defaultRedirectCode, r.defaultRedirectURL))
 	}
+
+	hr = hr.WithContext(context.WithHops(hr.Context(), currentHops+1, maxHops))
 
 	return h, hr, nil
 }
