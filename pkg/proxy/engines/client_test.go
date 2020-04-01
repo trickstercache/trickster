@@ -35,8 +35,8 @@ import (
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	tt "github.com/tricksterproxy/trickster/pkg/proxy/timeconv"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
+	"github.com/tricksterproxy/trickster/pkg/sort/times"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	"github.com/Comcast/trickster/pkg/sort/times"
 
 	"github.com/prometheus/common/model"
 )

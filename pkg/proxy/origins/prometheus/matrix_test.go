@@ -22,9 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/pkg/sort/times"
-
+	"github.com/tricksterproxy/trickster/pkg/sort/times"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
+
 	"github.com/prometheus/common/model"
 )
 

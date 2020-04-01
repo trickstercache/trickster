@@ -30,6 +30,7 @@ import (
 	tc "github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/locks"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
@@ -37,7 +38,6 @@ import (
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 	"github.com/tricksterproxy/trickster/pkg/util/tracing"
-	"github.com/Comcast/trickster/pkg/locks"
 )
 
 // DeltaProxyCache is used for Time Series Acceleration, and not used for normal HTTP Object Caching
