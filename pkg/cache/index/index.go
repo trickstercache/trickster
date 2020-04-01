@@ -22,12 +22,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/cache/index/options"
-	"github.com/Comcast/trickster/internal/cache/metrics"
-	tl "github.com/Comcast/trickster/internal/util/log"
+	"github.com/tricksterproxy/trickster/pkg/cache"
+	"github.com/tricksterproxy/trickster/pkg/cache/index/options"
+	"github.com/tricksterproxy/trickster/pkg/cache/metrics"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 
-	gm "github.com/Comcast/trickster/internal/util/metrics"
+	gm "github.com/tricksterproxy/trickster/pkg/util/metrics"
 )
 
 //go:generate msgp

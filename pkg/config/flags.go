@@ -19,7 +19,7 @@ package config
 import (
 	"flag"
 
-	d "github.com/Comcast/trickster/internal/config/defaults"
+	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 )
 
 const (

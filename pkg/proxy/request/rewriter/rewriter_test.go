@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/Comcast/trickster/internal/proxy/request/rewriter/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 
 	"testing"
 )

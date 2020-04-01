@@ -19,7 +19,7 @@ package context
 import (
 	"context"
 
-	"github.com/Comcast/trickster/internal/config/defaults"
+	"github.com/tricksterproxy/trickster/pkg/config/defaults"
 )
 
 // WithHops returns a copy of the provided context that also includes

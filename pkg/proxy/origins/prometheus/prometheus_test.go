@@ -25,12 +25,12 @@ import (
 	"testing"
 	"time"
 
-	cr "github.com/Comcast/trickster/internal/cache/registration"
-	"github.com/Comcast/trickster/internal/config"
-	pe "github.com/Comcast/trickster/internal/proxy/errors"
-	"github.com/Comcast/trickster/internal/proxy/origins"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	tl "github.com/Comcast/trickster/internal/util/log"
+	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
+	"github.com/tricksterproxy/trickster/pkg/config"
+	pe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 func TestPrometheusClientInterfacing(t *testing.T) {

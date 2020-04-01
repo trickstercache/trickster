@@ -21,7 +21,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/config"
+	"github.com/tricksterproxy/trickster/pkg/config"
 )
 
 func TestConfigHandler(t *testing.T) {

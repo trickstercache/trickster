@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Comcast/trickster/internal/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 )
 
 // ParseDuration returns a duration from a string. Slightly improved over the builtin, since it supports units larger than hour.

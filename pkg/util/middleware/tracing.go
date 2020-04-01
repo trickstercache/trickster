@@ -19,7 +19,7 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/util/tracing"
+	"github.com/tricksterproxy/trickster/pkg/util/tracing"
 	"go.opentelemetry.io/otel/api/trace"
 )
 

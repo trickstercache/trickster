@@ -19,8 +19,8 @@ package irondb
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/urls"
+	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
+	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
 // ProxyHandler sends a request through the basic reverse proxy to the origin

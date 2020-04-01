@@ -28,8 +28,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Comcast/trickster/internal/proxy/headers"
-	"github.com/Comcast/trickster/internal/util/md5"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/util/md5"
 )
 
 // MultipartByteRange represents one part of a list of multipart byte ranges

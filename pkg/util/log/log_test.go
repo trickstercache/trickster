@@ -20,7 +20,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/config"
+	"github.com/tricksterproxy/trickster/pkg/config"
 )
 
 func TestConsoleLogger(t *testing.T) {

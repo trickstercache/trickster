@@ -20,11 +20,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Comcast/trickster/internal/proxy/handlers"
-	"github.com/Comcast/trickster/internal/proxy/methods"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	"github.com/Comcast/trickster/internal/proxy/paths/matching"
-	po "github.com/Comcast/trickster/internal/proxy/paths/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
+	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 )
 
 func (c *Client) registerHandlers() {

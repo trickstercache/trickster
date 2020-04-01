@@ -20,10 +20,10 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/Comcast/trickster/internal/cache"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	po "github.com/Comcast/trickster/internal/proxy/paths/options"
-	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/cache"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 // TimeseriesClient is the primary interface for interoperating with Trickster and upstream TSDB's

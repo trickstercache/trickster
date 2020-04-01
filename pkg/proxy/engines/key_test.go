@@ -27,13 +27,13 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/cache/key"
-	ct "github.com/Comcast/trickster/internal/proxy/context"
-	"github.com/Comcast/trickster/internal/proxy/headers"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	po "github.com/Comcast/trickster/internal/proxy/paths/options"
-	"github.com/Comcast/trickster/internal/proxy/request"
-	tl "github.com/Comcast/trickster/internal/util/log"
+	"github.com/tricksterproxy/trickster/pkg/cache/key"
+	ct "github.com/tricksterproxy/trickster/pkg/proxy/context"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 const testMultipartBoundary = `; boundary=------------------------d0509edbe55938c0`

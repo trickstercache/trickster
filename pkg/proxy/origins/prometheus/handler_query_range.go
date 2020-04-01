@@ -19,8 +19,8 @@ package prometheus
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/urls"
+	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
+	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
 // QueryRangeHandler handles timeseries requests for Prometheus and processes them through the delta proxy cache

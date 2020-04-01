@@ -21,8 +21,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/urls"
+	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
+	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
 // SeriesHandler proxies requests for path /series to the origin by way of the object proxy cache

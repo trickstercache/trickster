@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 )
 
 func TestCachingPolicyClone(t *testing.T) {

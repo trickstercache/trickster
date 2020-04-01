@@ -20,8 +20,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/proxy/origins"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 )
 
 func TestReverseProxyCacheClientInterfacing(t *testing.T) {

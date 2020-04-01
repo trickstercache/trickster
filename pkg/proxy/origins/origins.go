@@ -20,7 +20,7 @@ package origins
 import (
 	"net/http"
 
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 )
 
 type Origins map[string]Client

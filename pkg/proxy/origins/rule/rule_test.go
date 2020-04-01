@@ -20,12 +20,12 @@ import (
 	"context"
 	"net/http"
 
-	tc "github.com/Comcast/trickster/internal/proxy/context"
-	"github.com/Comcast/trickster/internal/proxy/origins"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	ro "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
-	"github.com/Comcast/trickster/internal/proxy/request/rewriter"
-	rwo "github.com/Comcast/trickster/internal/proxy/request/rewriter/options"
+	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	ro "github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
+	rwo "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 
 	"testing"
 )

@@ -25,12 +25,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache/status"
-	tctx "github.com/Comcast/trickster/internal/proxy/context"
-	"github.com/Comcast/trickster/internal/proxy/headers"
-	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
-	"github.com/Comcast/trickster/internal/proxy/request"
-	tl "github.com/Comcast/trickster/internal/util/log"
+	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 type proxyRequest struct {

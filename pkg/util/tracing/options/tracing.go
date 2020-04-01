@@ -18,7 +18,7 @@ package options
 
 import (
 	"github.com/BurntSushi/toml"
-	d "github.com/Comcast/trickster/internal/config/defaults"
+	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 
 	"go.opentelemetry.io/otel/api/trace"
 )

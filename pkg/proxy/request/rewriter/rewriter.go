@@ -19,7 +19,7 @@ package rewriter
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/proxy/request/rewriter/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 )
 
 // ProcessConfigs validates and compiles rewriter instructions from

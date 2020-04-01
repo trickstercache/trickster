@@ -19,7 +19,7 @@ package influxdb
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 // Upstream Endpoints

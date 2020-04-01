@@ -26,13 +26,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/proxy"
-	"github.com/Comcast/trickster/internal/proxy/errors"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	tt "github.com/Comcast/trickster/internal/proxy/timeconv"
-	"github.com/Comcast/trickster/internal/proxy/urls"
-	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/cache"
+	"github.com/tricksterproxy/trickster/pkg/proxy"
+	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	tt "github.com/tricksterproxy/trickster/pkg/proxy/timeconv"
+	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 // Prometheus API

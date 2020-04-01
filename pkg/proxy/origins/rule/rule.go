@@ -19,9 +19,9 @@ package rule
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/proxy/context"
-	"github.com/Comcast/trickster/internal/proxy/handlers"
-	"github.com/Comcast/trickster/internal/proxy/request/rewriter"
+	"github.com/tricksterproxy/trickster/pkg/proxy/context"
+	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 )
 
 type rule struct {

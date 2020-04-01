@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"github.com/Comcast/trickster/pkg/sort/times"
 	"github.com/influxdata/influxdb/models"
 )

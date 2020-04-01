@@ -17,7 +17,7 @@
 package options
 
 import (
-	d "github.com/Comcast/trickster/internal/config/defaults"
+	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 )
 
 // Options is a collection of Configurations for storing cached data on the Filesystem

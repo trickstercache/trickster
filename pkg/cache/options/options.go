@@ -17,13 +17,13 @@
 package options
 
 import (
-	badger "github.com/Comcast/trickster/internal/cache/badger/options"
-	bbolt "github.com/Comcast/trickster/internal/cache/bbolt/options"
-	filesystem "github.com/Comcast/trickster/internal/cache/filesystem/options"
-	index "github.com/Comcast/trickster/internal/cache/index/options"
-	redis "github.com/Comcast/trickster/internal/cache/redis/options"
-	"github.com/Comcast/trickster/internal/cache/types"
-	d "github.com/Comcast/trickster/internal/config/defaults"
+	badger "github.com/tricksterproxy/trickster/pkg/cache/badger/options"
+	bbolt "github.com/tricksterproxy/trickster/pkg/cache/bbolt/options"
+	filesystem "github.com/tricksterproxy/trickster/pkg/cache/filesystem/options"
+	index "github.com/tricksterproxy/trickster/pkg/cache/index/options"
+	redis "github.com/tricksterproxy/trickster/pkg/cache/redis/options"
+	"github.com/tricksterproxy/trickster/pkg/cache/types"
+	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 )
 
 // Options is a collection of defining the Trickster Caching Behavior

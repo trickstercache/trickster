@@ -23,8 +23,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Comcast/trickster/internal/timeseries"
-	str "github.com/Comcast/trickster/internal/util/strings"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	str "github.com/tricksterproxy/trickster/pkg/util/strings"
 	"github.com/Comcast/trickster/pkg/sort/times"
 
 	"github.com/influxdata/influxdb/models"

@@ -24,8 +24,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/proxy/request/rewriter/options"
-	"github.com/Comcast/trickster/internal/proxy/urls"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
 const testURLRaw = "https://example.com:8480/path1/path2?param1=value&param2=value&param1=value2"

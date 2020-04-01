@@ -17,7 +17,7 @@
 package main
 
 import (
-	"github.com/Comcast/trickster/internal/runtime"
+	"github.com/tricksterproxy/trickster/pkg/runtime"
 )
 
 // ExamplePrintVersion tests the output of the printVersion() func

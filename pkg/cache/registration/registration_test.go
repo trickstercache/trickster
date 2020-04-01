@@ -21,15 +21,15 @@ import (
 	"os"
 	"testing"
 
-	bao "github.com/Comcast/trickster/internal/cache/badger/options"
-	bbo "github.com/Comcast/trickster/internal/cache/bbolt/options"
-	flo "github.com/Comcast/trickster/internal/cache/filesystem/options"
-	io "github.com/Comcast/trickster/internal/cache/index/options"
-	co "github.com/Comcast/trickster/internal/cache/options"
-	ro "github.com/Comcast/trickster/internal/cache/redis/options"
-	"github.com/Comcast/trickster/internal/cache/types"
-	"github.com/Comcast/trickster/internal/config"
-	tl "github.com/Comcast/trickster/internal/util/log"
+	bao "github.com/tricksterproxy/trickster/pkg/cache/badger/options"
+	bbo "github.com/tricksterproxy/trickster/pkg/cache/bbolt/options"
+	flo "github.com/tricksterproxy/trickster/pkg/cache/filesystem/options"
+	io "github.com/tricksterproxy/trickster/pkg/cache/index/options"
+	co "github.com/tricksterproxy/trickster/pkg/cache/options"
+	ro "github.com/tricksterproxy/trickster/pkg/cache/redis/options"
+	"github.com/tricksterproxy/trickster/pkg/cache/types"
+	"github.com/tricksterproxy/trickster/pkg/config"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 func TestLoadCachesFromConfig(t *testing.T) {

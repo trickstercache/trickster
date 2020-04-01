@@ -24,11 +24,11 @@ import (
 	"testing"
 	"time"
 
-	flo "github.com/Comcast/trickster/internal/cache/filesystem/options"
-	io "github.com/Comcast/trickster/internal/cache/index/options"
-	co "github.com/Comcast/trickster/internal/cache/options"
-	"github.com/Comcast/trickster/internal/cache/status"
-	tl "github.com/Comcast/trickster/internal/util/log"
+	flo "github.com/tricksterproxy/trickster/pkg/cache/filesystem/options"
+	io "github.com/tricksterproxy/trickster/pkg/cache/index/options"
+	co "github.com/tricksterproxy/trickster/pkg/cache/options"
+	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 const cacheType = "filesystem"

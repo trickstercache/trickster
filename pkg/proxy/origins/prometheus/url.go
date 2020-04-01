@@ -24,8 +24,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Comcast/trickster/internal/proxy/urls"
-	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 // SetExtent will change the upstream request query to use the provided Extent

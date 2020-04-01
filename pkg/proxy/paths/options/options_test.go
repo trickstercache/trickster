@@ -20,8 +20,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/proxy/forwarding"
-	"github.com/Comcast/trickster/internal/proxy/paths/matching"
+	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
+	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 )
 
 func TestNewOptions(t *testing.T) {

@@ -22,8 +22,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/Comcast/trickster/internal/proxy"
-	tl "github.com/Comcast/trickster/internal/util/log"
+	"github.com/tricksterproxy/trickster/pkg/proxy"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 
 	"github.com/gorilla/handlers"
 )

@@ -20,12 +20,12 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/errors"
-	"github.com/Comcast/trickster/internal/proxy/timeconv"
-	"github.com/Comcast/trickster/internal/proxy/urls"
-	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/internal/util/regexp/matching"
+	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
+	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/timeconv"
+	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/util/regexp/matching"
 )
 
 // QueryHandler handles timeseries requests for InfluxDB and processes them through the delta proxy cache

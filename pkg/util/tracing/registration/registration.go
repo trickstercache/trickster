@@ -23,10 +23,10 @@ import (
 
 	"go.opentelemetry.io/otel/api/trace"
 
-	"github.com/Comcast/trickster/internal/config"
-	tl "github.com/Comcast/trickster/internal/util/log"
-	"github.com/Comcast/trickster/internal/util/tracing"
-	to "github.com/Comcast/trickster/internal/util/tracing/options"
+	"github.com/tricksterproxy/trickster/pkg/config"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	"github.com/tricksterproxy/trickster/pkg/util/tracing"
+	to "github.com/tricksterproxy/trickster/pkg/util/tracing/options"
 )
 
 // Flushers represents a slice of Flusher functions for the configured Tracers

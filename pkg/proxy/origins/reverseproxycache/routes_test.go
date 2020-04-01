@@ -19,8 +19,8 @@ package reverseproxycache
 import (
 	"testing"
 
-	"github.com/Comcast/trickster/internal/proxy/request"
-	tu "github.com/Comcast/trickster/internal/util/testing"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 )
 
 const localResponse = "localresponse"

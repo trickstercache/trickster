@@ -19,10 +19,10 @@ package irondb
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/cache/key"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	"github.com/Comcast/trickster/internal/proxy/paths/matching"
-	po "github.com/Comcast/trickster/internal/proxy/paths/options"
+	"github.com/tricksterproxy/trickster/pkg/cache/key"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
+	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 )
 
 func (c *Client) registerHandlers() {

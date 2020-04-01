@@ -22,8 +22,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache/options"
-	"github.com/Comcast/trickster/internal/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/cache/options"
+	"github.com/tricksterproxy/trickster/pkg/cache/status"
 )
 
 // ErrKNF represents the error "key not found in cache"

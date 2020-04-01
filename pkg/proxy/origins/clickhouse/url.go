@@ -19,7 +19,7 @@ package clickhouse
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 // Common URL Parameter Names

@@ -19,8 +19,8 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/proxy/headers"
-	"github.com/Comcast/trickster/internal/proxy/request"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 )
 
 // HandleLocalResponse responds to an HTTP Request based on the local configuration without making any upstream requests

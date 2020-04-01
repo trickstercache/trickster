@@ -23,11 +23,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/proxy/errors"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	"github.com/Comcast/trickster/internal/proxy/request"
-	"github.com/Comcast/trickster/internal/timeseries"
-	tu "github.com/Comcast/trickster/internal/util/testing"
+	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 )
 
 func TestTextHandler(t *testing.T) {

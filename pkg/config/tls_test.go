@@ -19,7 +19,7 @@ package config
 import (
 	"testing"
 
-	"github.com/Comcast/trickster/internal/proxy/tls/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
 )
 
 func TestTLSCertConfig(t *testing.T) {

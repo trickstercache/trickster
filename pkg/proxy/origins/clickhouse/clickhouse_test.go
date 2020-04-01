@@ -21,11 +21,11 @@ import (
 	"net/url"
 	"testing"
 
-	cr "github.com/Comcast/trickster/internal/cache/registration"
-	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy/origins"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	tl "github.com/Comcast/trickster/internal/util/log"
+	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
+	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 func TestClickhouseClientInterfacing(t *testing.T) {
