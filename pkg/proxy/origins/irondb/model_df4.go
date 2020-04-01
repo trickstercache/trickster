@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 // DF4SeriesEnvelope values represent DF4 format time series data from the

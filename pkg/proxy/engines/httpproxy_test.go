@@ -24,14 +24,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/config"
-	tc "github.com/Comcast/trickster/internal/proxy/context"
-	"github.com/Comcast/trickster/internal/proxy/forwarding"
-	"github.com/Comcast/trickster/internal/proxy/headers"
-	po "github.com/Comcast/trickster/internal/proxy/paths/options"
-	"github.com/Comcast/trickster/internal/proxy/request"
-	tl "github.com/Comcast/trickster/internal/util/log"
-	tu "github.com/Comcast/trickster/internal/util/testing"
+	"github.com/tricksterproxy/trickster/pkg/config"
+	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
+	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 )
 
 var testLogger = tl.ConsoleLogger("error")

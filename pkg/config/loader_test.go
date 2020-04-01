@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache/evictionmethods"
-	d "github.com/Comcast/trickster/internal/config/defaults"
+	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
+	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 )
 
 func TestLoadConfiguration(t *testing.T) {

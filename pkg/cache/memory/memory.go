@@ -22,13 +22,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/cache/index"
-	"github.com/Comcast/trickster/internal/cache/metrics"
-	"github.com/Comcast/trickster/internal/cache/options"
-	"github.com/Comcast/trickster/internal/cache/status"
-	tl "github.com/Comcast/trickster/internal/util/log"
-	"github.com/Comcast/trickster/pkg/locks"
+	"github.com/tricksterproxy/trickster/pkg/cache"
+	"github.com/tricksterproxy/trickster/pkg/cache/index"
+	"github.com/tricksterproxy/trickster/pkg/cache/metrics"
+	"github.com/tricksterproxy/trickster/pkg/cache/options"
+	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/locks"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 var lockPrefix string

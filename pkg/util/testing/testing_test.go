@@ -21,8 +21,8 @@ import (
 	"net/http"
 	"testing"
 
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	po "github.com/Comcast/trickster/internal/proxy/paths/options"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 )
 
 func TestNewTestServer(t *testing.T) {

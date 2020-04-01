@@ -19,8 +19,8 @@ package prometheus
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/urls"
+	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
+	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
 // ObjectProxyCacheHandler handles calls to /query (for instantaneous values)

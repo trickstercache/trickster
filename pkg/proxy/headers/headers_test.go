@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/runtime"
-	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/runtime"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 func TestAddProxyHeaders(t *testing.T) {

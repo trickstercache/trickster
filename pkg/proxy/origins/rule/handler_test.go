@@ -17,7 +17,7 @@
 package rule
 
 import (
-	tu "github.com/Comcast/trickster/internal/util/testing"
+	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 
 	"testing"
 )

@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/pkg/sort/times"
+	"github.com/tricksterproxy/trickster/pkg/sort/times"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 // Step returns the step for the Timeseries

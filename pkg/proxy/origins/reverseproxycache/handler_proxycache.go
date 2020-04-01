@@ -19,8 +19,8 @@ package reverseproxycache
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/urls"
+	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
+	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
 // ProxyCacheHandler routes an HTTP Request through the Object Proxy Cache

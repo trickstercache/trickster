@@ -23,10 +23,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/proxy/headers"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	po "github.com/Comcast/trickster/internal/proxy/paths/options"
-	to "github.com/Comcast/trickster/internal/proxy/tls/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
+	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
 )
 
 func TestClone(t *testing.T) {

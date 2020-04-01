@@ -22,8 +22,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy/tls/options"
+	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
 )
 
 func TestDefaultTLSConfig(t *testing.T) {

@@ -17,8 +17,8 @@
 package rule
 
 import (
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	"github.com/Comcast/trickster/internal/proxy/origins/rule/options"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
 
 	"errors"
 	"testing"

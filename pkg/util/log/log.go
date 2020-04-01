@@ -25,12 +25,12 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/tricksterproxy/trickster/pkg/config"
+
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/go-stack/stack"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
-
-	"github.com/Comcast/trickster/internal/config"
 )
 
 // Logger is the handle to the common TricksterLogger
@@ -296,5 +296,5 @@ type pkgCaller struct {
 
 // String returns a path from the call stack that is relative to the root of the project
 func (pc pkgCaller) String() string {
-	return strings.TrimPrefix(fmt.Sprintf("%+v", pc.c), "github.com/Comcast/trickster/internal/")
+	return strings.TrimPrefix(fmt.Sprintf("%+v", pc.c), "github.com/tricksterproxy/trickster/pkg/")
 }

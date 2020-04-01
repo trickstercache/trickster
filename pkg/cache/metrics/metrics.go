@@ -19,7 +19,7 @@ package metrics
 import (
 	"fmt"
 
-	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 )
 
 // ObserveCacheMiss returns a standard Cache Miss response

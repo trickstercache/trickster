@@ -19,8 +19,8 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 )
 
 // RegisterPingHandler registers the application's /ping handler

@@ -26,11 +26,11 @@ import (
 	"net/http"
 	"time"
 
-	"golang.org/x/net/netutil"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	tl "github.com/Comcast/trickster/internal/util/log"
-	"github.com/Comcast/trickster/internal/util/metrics"
+	"golang.org/x/net/netutil"
 )
 
 // NewHTTPClient returns an HTTP client configured to the specifications of the

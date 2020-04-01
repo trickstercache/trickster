@@ -20,14 +20,14 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache"
-	co "github.com/Comcast/trickster/internal/cache/options"
-	"github.com/Comcast/trickster/internal/proxy/context"
-	"github.com/Comcast/trickster/internal/proxy/origins"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	po "github.com/Comcast/trickster/internal/proxy/paths/options"
-	"github.com/Comcast/trickster/internal/timeseries"
-	tl "github.com/Comcast/trickster/internal/util/log"
+	"github.com/tricksterproxy/trickster/pkg/cache"
+	co "github.com/tricksterproxy/trickster/pkg/cache/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/context"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 // Resources is a collection of resources a Trickster request would need to fulfill the client request

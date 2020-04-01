@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 // SeriesEnvelope values represent a time series data response from the

@@ -21,10 +21,10 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/proxy"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	"github.com/Comcast/trickster/internal/proxy/urls"
+	"github.com/tricksterproxy/trickster/pkg/cache"
+	"github.com/tricksterproxy/trickster/pkg/proxy"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
 // Client Implements the Proxy Client Interface

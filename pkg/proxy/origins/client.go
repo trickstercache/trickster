@@ -19,9 +19,9 @@ package origins
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/cache"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	po "github.com/Comcast/trickster/internal/proxy/paths/options"
+	"github.com/tricksterproxy/trickster/pkg/cache"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 )
 
 // Client is the primary interface for interoperating with Trickster and upstream TSDB's

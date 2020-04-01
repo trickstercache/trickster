@@ -23,8 +23,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Comcast/trickster/internal/timeseries"
-	"github.com/Comcast/trickster/internal/util/regexp/matching"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/util/regexp/matching"
 )
 
 // This file handles tokenization of time parameters within ClickHouse queries

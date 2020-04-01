@@ -23,14 +23,14 @@ import (
 	"testing"
 	"time"
 
-	cr "github.com/Comcast/trickster/internal/cache/registration"
-	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy/headers"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
-	"github.com/Comcast/trickster/internal/proxy/request"
-	tl "github.com/Comcast/trickster/internal/util/log"
+	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
+	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 func TestCheckCacheFreshness(t *testing.T) {

@@ -21,13 +21,13 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache/evictionmethods"
-	d "github.com/Comcast/trickster/internal/config/defaults"
-	rule "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
-	po "github.com/Comcast/trickster/internal/proxy/paths/options"
-	"github.com/Comcast/trickster/internal/proxy/request/rewriter"
-	to "github.com/Comcast/trickster/internal/proxy/tls/options"
-	tracing "github.com/Comcast/trickster/internal/util/tracing/options"
+	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
+	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
+	rule "github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
+	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
+	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
+	tracing "github.com/tricksterproxy/trickster/pkg/util/tracing/options"
 
 	"github.com/gorilla/mux"
 )

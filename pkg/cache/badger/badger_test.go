@@ -22,10 +22,10 @@ import (
 	"testing"
 	"time"
 
-	bo "github.com/Comcast/trickster/internal/cache/badger/options"
-	co "github.com/Comcast/trickster/internal/cache/options"
-	"github.com/Comcast/trickster/internal/cache/status"
-	tl "github.com/Comcast/trickster/internal/util/log"
+	bo "github.com/tricksterproxy/trickster/pkg/cache/badger/options"
+	co "github.com/tricksterproxy/trickster/pkg/cache/options"
+	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 const cacheType = "badger"

@@ -22,9 +22,9 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/Comcast/trickster/internal/proxy/errors"
-	"github.com/Comcast/trickster/internal/proxy/request"
-	tu "github.com/Comcast/trickster/internal/util/testing"
+	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 
 	"github.com/influxdata/influxdb/pkg/testing/assert"
 )

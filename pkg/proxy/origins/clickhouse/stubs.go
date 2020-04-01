@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 // This file holds funcs required by the Proxy Client or Timeseries interfaces,

@@ -19,9 +19,9 @@ package prometheus
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/proxy/engines"
-	"github.com/Comcast/trickster/internal/proxy/headers"
-	"github.com/Comcast/trickster/internal/proxy/urls"
+	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
 // HealthHandler checks the health of the Configured Upstream Origin

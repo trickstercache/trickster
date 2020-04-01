@@ -26,9 +26,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/config"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	tl "github.com/Comcast/trickster/internal/util/log"
+	"github.com/tricksterproxy/trickster/pkg/config"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 
 	"github.com/gorilla/mux"
 )

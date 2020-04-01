@@ -24,14 +24,14 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/cache/status"
-	"github.com/Comcast/trickster/internal/proxy/forwarding"
-	"github.com/Comcast/trickster/internal/proxy/headers"
-	"github.com/Comcast/trickster/internal/proxy/request"
-	"github.com/Comcast/trickster/internal/util/log"
-	"github.com/Comcast/trickster/internal/util/tracing"
-	"github.com/Comcast/trickster/pkg/locks"
+	"github.com/tricksterproxy/trickster/pkg/cache"
+	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/locks"
+	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	"github.com/tricksterproxy/trickster/pkg/util/log"
+	"github.com/tricksterproxy/trickster/pkg/util/tracing"
 
 	"go.opentelemetry.io/otel/api/core"
 )

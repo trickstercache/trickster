@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Comcast/trickster/internal/proxy/urls"
+	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
 // TimeRangeQuery represents a timeseries database query parsed from an inbound HTTP request

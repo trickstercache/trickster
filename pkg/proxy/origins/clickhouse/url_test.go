@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 func TestSetExtent(t *testing.T) {

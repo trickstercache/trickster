@@ -19,13 +19,13 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/proxy/context"
-	"github.com/Comcast/trickster/internal/proxy/origins"
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	po "github.com/Comcast/trickster/internal/proxy/paths/options"
-	"github.com/Comcast/trickster/internal/proxy/request"
-	tl "github.com/Comcast/trickster/internal/util/log"
+	"github.com/tricksterproxy/trickster/pkg/cache"
+	"github.com/tricksterproxy/trickster/pkg/proxy/context"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 // WithResourcesContext ...

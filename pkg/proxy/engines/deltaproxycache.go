@@ -27,17 +27,17 @@ import (
 	"sync"
 	"time"
 
-	tc "github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/cache/evictionmethods"
-	"github.com/Comcast/trickster/internal/cache/status"
-	tctx "github.com/Comcast/trickster/internal/proxy/context"
-	"github.com/Comcast/trickster/internal/proxy/origins"
-	"github.com/Comcast/trickster/internal/proxy/request"
-	"github.com/Comcast/trickster/internal/timeseries"
-	tl "github.com/Comcast/trickster/internal/util/log"
-	"github.com/Comcast/trickster/internal/util/metrics"
-	"github.com/Comcast/trickster/internal/util/tracing"
-	"github.com/Comcast/trickster/pkg/locks"
+	tc "github.com/tricksterproxy/trickster/pkg/cache"
+	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
+	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/locks"
+	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	"github.com/tricksterproxy/trickster/pkg/util/metrics"
+	"github.com/tricksterproxy/trickster/pkg/util/tracing"
 )
 
 // DeltaProxyCache is used for Time Series Acceleration, and not used for normal HTTP Object Caching

@@ -24,11 +24,11 @@ import (
 	"testing"
 	"time"
 
-	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
-	"github.com/Comcast/trickster/internal/proxy/request"
-	"github.com/Comcast/trickster/internal/timeseries"
-	tl "github.com/Comcast/trickster/internal/util/log"
-	tu "github.com/Comcast/trickster/internal/util/testing"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 )
 
 func TestFetchHandler(t *testing.T) {

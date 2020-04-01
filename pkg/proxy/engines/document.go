@@ -24,11 +24,11 @@ import (
 	"strconv"
 	"strings"
 
-	txe "github.com/Comcast/trickster/internal/proxy/errors"
-	"github.com/Comcast/trickster/internal/proxy/headers"
-	"github.com/Comcast/trickster/internal/proxy/ranges/byterange"
-	"github.com/Comcast/trickster/internal/timeseries"
-	tl "github.com/Comcast/trickster/internal/util/log"
+	txe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 //go:generate msgp

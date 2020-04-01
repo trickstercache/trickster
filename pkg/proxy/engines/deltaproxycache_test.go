@@ -24,11 +24,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/proxy/headers"
-	"github.com/Comcast/trickster/internal/proxy/request"
-	"github.com/Comcast/trickster/internal/timeseries"
-	tu "github.com/Comcast/trickster/internal/util/testing"
 	mockprom "github.com/tricksterproxy/mockster/pkg/mocks/prometheus"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 )
 
 // test queries

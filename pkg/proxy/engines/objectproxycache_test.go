@@ -27,14 +27,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Comcast/trickster/internal/cache/status"
-	tc "github.com/Comcast/trickster/internal/proxy/context"
-	"github.com/Comcast/trickster/internal/proxy/forwarding"
-	"github.com/Comcast/trickster/internal/proxy/headers"
-	po "github.com/Comcast/trickster/internal/proxy/paths/options"
-	"github.com/Comcast/trickster/internal/proxy/request"
-	tu "github.com/Comcast/trickster/internal/util/testing"
 	"github.com/tricksterproxy/mockster/pkg/mocks/byterange"
+	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
+	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 )
 
 func setupTestHarnessOPC(file, body string, code int, headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {

@@ -19,15 +19,15 @@
 package registration
 
 import (
-	"github.com/Comcast/trickster/internal/cache"
-	"github.com/Comcast/trickster/internal/cache/badger"
-	"github.com/Comcast/trickster/internal/cache/bbolt"
-	"github.com/Comcast/trickster/internal/cache/filesystem"
-	"github.com/Comcast/trickster/internal/cache/memory"
-	"github.com/Comcast/trickster/internal/cache/options"
-	"github.com/Comcast/trickster/internal/cache/redis"
-	"github.com/Comcast/trickster/internal/config"
-	tl "github.com/Comcast/trickster/internal/util/log"
+	"github.com/tricksterproxy/trickster/pkg/cache"
+	"github.com/tricksterproxy/trickster/pkg/cache/badger"
+	"github.com/tricksterproxy/trickster/pkg/cache/bbolt"
+	"github.com/tricksterproxy/trickster/pkg/cache/filesystem"
+	"github.com/tricksterproxy/trickster/pkg/cache/memory"
+	"github.com/tricksterproxy/trickster/pkg/cache/options"
+	"github.com/tricksterproxy/trickster/pkg/cache/redis"
+	"github.com/tricksterproxy/trickster/pkg/config"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 // Cache Interface Types

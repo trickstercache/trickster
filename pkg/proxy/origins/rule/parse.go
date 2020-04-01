@@ -21,10 +21,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Comcast/trickster/internal/config/defaults"
-	"github.com/Comcast/trickster/internal/proxy/handlers"
-	ro "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
-	"github.com/Comcast/trickster/internal/proxy/request/rewriter"
+	"github.com/tricksterproxy/trickster/pkg/config/defaults"
+	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
+	ro "github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 )
 
 func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteInstructions) error {

@@ -19,12 +19,12 @@ package options
 import (
 	"net/http"
 
-	"github.com/Comcast/trickster/internal/cache/key"
-	"github.com/Comcast/trickster/internal/proxy/forwarding"
-	"github.com/Comcast/trickster/internal/proxy/methods"
-	"github.com/Comcast/trickster/internal/proxy/paths/matching"
-	"github.com/Comcast/trickster/internal/proxy/request/rewriter"
-	ts "github.com/Comcast/trickster/internal/util/strings"
+	"github.com/tricksterproxy/trickster/pkg/cache/key"
+	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
+	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
+	ts "github.com/tricksterproxy/trickster/pkg/util/strings"
 )
 
 // Options defines a URL Path that is associated with an HTTP Handler
