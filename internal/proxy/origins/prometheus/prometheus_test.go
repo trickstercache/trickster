@@ -27,7 +27,7 @@ import (
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
-	te "github.com/Comcast/trickster/internal/proxy/errors"
+	pe "github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/origins"
 	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	tl "github.com/Comcast/trickster/internal/util/log"
@@ -196,7 +196,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 }
 
 func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
-	expected := te.MissingURLParam(upQuery).Error()
+	expected := pe.MissingURLParam(upQuery).Error()
 	req := &http.Request{URL: &url.URL{
 		Scheme: "https",
 		Host:   "blah.com",

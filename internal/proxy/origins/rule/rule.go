@@ -60,6 +60,8 @@ type caseList []*ruleCase
 
 type evaluatorFunc func(*http.Request) (http.Handler, *http.Request, error)
 
+var badRequestHandler = http.HandlerFunc(handlers.HandleBadRequestResponse)
+
 func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, error) {
 
 	currentHops, maxHops := context.Hops(hr.Context())
@@ -68,7 +70,7 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 	}
 
 	if currentHops >= maxHops {
-		return http.HandlerFunc(handlers.HandleBadRequestResponse), hr, nil
+		return badRequestHandler, hr, nil
 	}
 
 	// if this case includes ingress rewriter instructions, execute those now

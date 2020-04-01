@@ -40,7 +40,7 @@ var sourceExtractionFuncs = map[inputType]extractionFunc{
 	"header":        extractHeaderFromSource,
 }
 
-// IsValidSourceName returns true ony if the provided source name is supported by the Rules engine
+// IsValidSourceName returns true only if the provided source name is supported by the Rules engine
 func isValidSourceName(source string) (extractionFunc, bool) {
 	f, ok := sourceExtractionFuncs[inputType(source)]
 	return f, ok

@@ -50,10 +50,10 @@ type Options struct {
 	//  header           [must be used with InputKey as described below]
 	InputSource string `toml:"input_source"`
 	//
-	// PreOpRewrite is a list of URL and Header rewrite instructions that permanently modifiy the
+	// PreOpRewrite is a list of URL and Header rewrite instructions that permanently modify the
 	// http request prior to executing the rule
 	PreOpRewrite rewriteList `toml:"rewrite"`
-	// PostOpRewrite is a list of URL and Header rewrite instructions that permanently modifiy the
+	// PostOpRewrite is a list of URL and Header rewrite instructions that permanently modify the
 	// http request after executing the rule
 	PostOpRewrite rewriteList `toml:"rewrite"`
 	// InputKey is optional and provides extra information for locating the data source

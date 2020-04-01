@@ -34,7 +34,7 @@ func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteIns
 	}
 
 	if ro.InputSource == "" {
-		return fmt.Errorf("rule client %s options missing input_type", c.name)
+		return fmt.Errorf("rule client %s options missing input_source", c.name)
 	}
 
 	if ro.InputType == "" {
@@ -158,7 +158,7 @@ func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteIns
 				ri = i
 			}
 
-			if v.NextRoute == "" && v.RedirectURL == "" {
+			if v.NextRoute == "" && v.RedirectURL == "" && v.ReqRewriterName == "" {
 				return fmt.Errorf("missing next_route in rule %s case %s", ro.Name, k)
 			}
 
@@ -170,7 +170,7 @@ func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteIns
 			if v.RedirectURL != "" {
 				rc = 302
 				nr = http.HandlerFunc(handlers.HandleRedirectResponse)
-			} else {
+			} else if v.NextRoute != "" {
 				no, ok := c.clients[v.NextRoute]
 				if !ok {
 					return fmt.Errorf("unknown next_route %s in rule %s case %s",

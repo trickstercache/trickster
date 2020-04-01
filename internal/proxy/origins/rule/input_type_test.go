@@ -104,3 +104,18 @@ func TestIsValidSourceName(t *testing.T) {
 	}
 
 }
+
+func TestExtractSourcePart(t *testing.T) {
+	v := extractSourcePart("part one", " ", 1)
+	if v != "one" {
+		t.Errorf("expected %s got %s", "one", v)
+	}
+	v = extractSourcePart("", " ", 1)
+	if v != "" {
+		t.Errorf("expected %s got %s", "", v)
+	}
+	v = extractSourcePart("test", " ", 1)
+	if v != "" {
+		t.Errorf("expected %s got %s", "", v)
+	}
+}
