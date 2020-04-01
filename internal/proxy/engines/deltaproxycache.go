@@ -17,9 +17,11 @@
 package engines
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"sync"
@@ -386,7 +388,25 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery, client or
 	}
 
 	if resp.StatusCode != 200 {
-		pr.Logger.Error("unexpected upstream response", tl.Pairs{"statusCode": resp.StatusCode})
+
+		body, _ = ioutil.ReadAll(resp.Body)
+		if len(body) > 0 {
+			resp.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+		}
+
+		pr.Logger.Error("unexpected upstream response",
+			tl.Pairs{
+				"statusCode":              resp.StatusCode,
+				"clientRequestURL":        pr.Request.URL.String(),
+				"clientRequestMethod":     pr.Request.Method,
+				"clientRequestHeaders":    pr.Request.Header,
+				"upstreamRequestURL":      pr.upstreamRequest.URL.String(),
+				"upstreamRequestMethod":   pr.upstreamRequest.Method,
+				"upstreamRequestHeaders":  pr.upstreamRequest.Header,
+				"upstreamResponseHeaders": resp.Header,
+				"upstreamResponseBody":    string(body),
+			},
+		)
 		return nil, d, time.Duration(0), fmt.Errorf("Unexpected Upstream Response")
 	}
 
