@@ -662,13 +662,13 @@ func TestLoadConfigurationWarning1(t *testing.T) {
 
 	a := []string{"-config", "../../testdata/test.warning1.conf"}
 	// it should not error if config path is not set
-	_, _, err := Load("trickster-test", "0", a)
+	conf, _, err := Load("trickster-test", "0", a)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	expected := 1
-	l := len(LoaderWarnings)
+	l := len(conf.LoaderWarnings)
 
 	if l != expected {
 		t.Errorf("exepcted %d got %d", expected, l)
@@ -680,13 +680,13 @@ func TestLoadConfigurationWarning2(t *testing.T) {
 
 	a := []string{"-config", "../../testdata/test.warning2.conf"}
 	// it should not error if config path is not set
-	_, _, err := Load("trickster-test", "0", a)
+	conf, _, err := Load("trickster-test", "0", a)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	expected := 1
-	l := len(LoaderWarnings)
+	l := len(conf.LoaderWarnings)
 
 	if l != expected {
 		t.Errorf("exepcted %d got %d", expected, l)

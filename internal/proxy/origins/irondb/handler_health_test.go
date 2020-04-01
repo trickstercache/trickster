@@ -19,6 +19,7 @@ package irondb
 import (
 	"io/ioutil"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/Comcast/trickster/internal/proxy/request"
@@ -34,6 +35,7 @@ func TestHealthHandler(t *testing.T) {
 	client.config = rsc.OriginConfig
 	client.webClient = hc
 	client.config.HTTPClient = hc
+	client.baseUpstreamURL, _ = url.Parse(ts.URL)
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
@@ -78,7 +80,7 @@ func TestHealthHandlerCustomPath(t *testing.T) {
 
 	rsc := request.GetResources(r)
 	client.config = rsc.OriginConfig
-
+	client.baseUpstreamURL, _ = url.Parse(ts.URL)
 	client.config.HealthCheckUpstreamPath = "-"
 	client.config.HealthCheckVerb = "-"
 	client.config.HealthCheckQuery = "-"

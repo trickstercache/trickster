@@ -18,8 +18,6 @@ package influxdb
 
 import (
 	"net/http"
-	"net/url"
-	"strings"
 
 	"github.com/Comcast/trickster/internal/timeseries"
 )
@@ -34,31 +32,6 @@ const (
 	upQuery = "q"
 	upDB    = "db"
 )
-
-// BaseURL returns a URL in the form of scheme://host/path based on the proxy configuration
-func (c Client) BaseURL() *url.URL {
-	u := &url.URL{}
-	u.Scheme = c.config.Scheme
-	u.Host = c.config.Host
-	u.Path = c.config.PathPrefix
-	return u
-}
-
-// BuildUpstreamURL will merge the downstream request with the BaseURL to construct the full upstream URL
-func (c Client) BuildUpstreamURL(r *http.Request) *url.URL {
-	u := c.BaseURL()
-
-	if strings.HasPrefix(r.URL.Path, "/"+c.name+"/") {
-		u.Path += strings.Replace(r.URL.Path, "/"+c.name+"/", "/", 1)
-	} else {
-		u.Path += r.URL.Path
-	}
-
-	u.RawQuery = r.URL.RawQuery
-	u.Fragment = r.URL.Fragment
-	u.User = r.URL.User
-	return u
-}
 
 // SetExtent will change the upstream request query to use the provided Extent
 func (c Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {

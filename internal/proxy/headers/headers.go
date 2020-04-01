@@ -109,6 +109,8 @@ const (
 	NameExpires = "Expires"
 	// NameETag represents the HTTP Header Name of "etag"
 	NameETag = "Etag"
+	// NameLocation represents the HTTP Header Name of "location"
+	NameLocation = "Location"
 )
 
 // Merge merges the source http.Header map into destination map.

@@ -28,6 +28,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
 	"github.com/Comcast/trickster/internal/proxy/errors"
+	"github.com/Comcast/trickster/internal/proxy/urls"
 	"github.com/Comcast/trickster/internal/timeseries"
 	"github.com/Comcast/trickster/internal/util/md5"
 )
@@ -35,7 +36,7 @@ import (
 // FetchHandler handles requests for numeric timeseries data with specified
 // spans and processes them through the delta proxy cache.
 func (c *Client) FetchHandler(w http.ResponseWriter, r *http.Request) {
-	r.URL = c.BuildUpstreamURL(r)
+	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
 	engines.DeltaProxyCacheRequest(w, r)
 }
 

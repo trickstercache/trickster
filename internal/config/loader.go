@@ -27,12 +27,7 @@ import (
 
 // Load returns the Application Configuration, starting with a default config,
 // then overriding with any provided config file, then env vars, and finally flags
-func Load(applicationName string, applicationVersion string, arguments []string) (*TricksterConfig, *TricksterFlags, error) {
-
-	providedOriginURL = ""
-	providedOriginType = ""
-
-	LoaderWarnings = make([]string, 0)
+func Load(applicationName string, applicationVersion string, arguments []string) (*TricksterConfig, *Flags, error) {
 
 	c := NewConfig()
 	flags, err := parseFlags(applicationName, arguments) // Parse here to get config file path and version flags
@@ -52,15 +47,15 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 
 	// set the default origin url from the flags
 	if d, ok := c.Origins["default"]; ok {
-		if providedOriginURL != "" {
-			url, err := url.Parse(providedOriginURL)
+		if c.providedOriginURL != "" {
+			url, err := url.Parse(c.providedOriginURL)
 			if err != nil {
 				return nil, nil, err
 			}
-			if providedOriginType != "" {
-				d.OriginType = providedOriginType
+			if c.providedOriginType != "" {
+				d.OriginType = c.providedOriginType
 			}
-			d.OriginURL = providedOriginURL
+			d.OriginURL = c.providedOriginURL
 			d.Scheme = url.Scheme
 			d.Host = url.Host
 			d.PathPrefix = url.Path
@@ -71,8 +66,8 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 			delete(c.Origins, "default")
 		}
 
-		if providedOriginType != "" {
-			d.OriginType = providedOriginType
+		if c.providedOriginType != "" {
+			d.OriginType = c.providedOriginType
 		}
 	}
 

@@ -334,45 +334,31 @@ func TestParseTimestamp(t *testing.T) {
 
 }
 
-func TestBuildUpstreamURL(t *testing.T) {
+// func TestBuildUpstreamURL(t *testing.T) {
 
-	expected := "q=up&start=1&end=1&step=1"
+// 	expected := "q=up&start=1&end=1&step=1"
 
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "rpc", "-log-level", "debug"})
-	if err != nil {
-		t.Fatalf("Could not load configuration: %s", err.Error())
-	}
+// 	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "none:9090", "-origin-type", "rpc", "-log-level", "debug"})
+// 	if err != nil {
+// 		t.Fatalf("Could not load configuration: %s", err.Error())
+// 	}
 
-	oc := conf.Origins["default"]
-	client := Client{config: oc, name: "default"}
+// 	oc := conf.Origins["default"]
+// 	client := Client{config: oc, name: "default"}
 
-	u := &url.URL{Path: "/default/query_range", RawQuery: expected}
+// 	u := &url.URL{Path: "/default/query_range", RawQuery: expected}
 
-	r, err := http.NewRequest(http.MethodGet, u.String(), nil)
-	if err != nil {
-		t.Error(err)
-	}
+// 	r, err := http.NewRequest(http.MethodGet, u.String(), nil)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
 
-	u2 := client.BuildUpstreamURL(r)
+// 	u2 := client.BuildUpstreamURL(r)
 
-	if expected != u2.RawQuery {
-		t.Errorf("\nexpected [%s]\ngot [%s]", expected, u2.RawQuery)
-	}
-
-	u = &url.URL{Path: "/default//", RawQuery: ""}
-
-	r, err = http.NewRequest(http.MethodGet, u.String(), nil)
-	if err != nil {
-		t.Error(err)
-	}
-
-	u2 = client.BuildUpstreamURL(r)
-
-	if u2.Path != "/" {
-		t.Errorf("\nexpected [%s]\ngot [%s]", "/", u2.Path)
-	}
-
-}
+// 	if expected != u2.RawQuery {
+// 		t.Errorf("\nexpected [%s]\ngot [%s]", expected, u2.RawQuery)
+// 	}
+// }
 
 func TestParseTimerangeQuery(t *testing.T) {
 	expected := errors.ErrNotTimeRangeQuery

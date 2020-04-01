@@ -29,7 +29,7 @@ import (
 	to "github.com/Comcast/trickster/internal/proxy/tls/options"
 )
 
-func TestCopy(t *testing.T) {
+func TestClone(t *testing.T) {
 	c1 := NewConfig()
 
 	oc := c1.Origins["default"]
@@ -43,7 +43,7 @@ func TestCopy(t *testing.T) {
 	oc.TLS = &to.Options{CertificateAuthorityPaths: []string{"foo"}}
 	oc.HealthCheckHeaders = map[string]string{headers.NameAuthorization: "Basic SomeHash"}
 
-	c2 := c1.copy()
+	c2 := c1.Clone()
 	if !reflect.DeepEqual(c1, c2) {
 		t.Errorf("copy mistmatch")
 	}

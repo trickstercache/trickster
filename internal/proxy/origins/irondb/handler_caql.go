@@ -32,7 +32,7 @@ import (
 // CAQLHandler handles CAQL requests for timeseries data and processes them
 // through the delta proxy cache.
 func (c *Client) CAQLHandler(w http.ResponseWriter, r *http.Request) {
-	r.URL = c.BuildUpstreamURL(r)
+	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
 	engines.DeltaProxyCacheRequest(w, r)
 }
 

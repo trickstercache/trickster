@@ -20,11 +20,12 @@ import (
 	"net/http"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
+	"github.com/Comcast/trickster/internal/proxy/urls"
 )
 
 // StateHandler handles requests for state data and processes them through the
 // basic reverse proxy to the origin for non-cacheable API calls.
 func (c *Client) StateHandler(w http.ResponseWriter, r *http.Request) {
-	r.URL = c.BuildUpstreamURL(r)
+	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
 	engines.DoProxy(w, r)
 }

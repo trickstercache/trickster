@@ -40,3 +40,9 @@ func HandleLocalResponse(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Write([]byte(p.ResponseBody))
 }
+
+// HandleBadRequestResponse responds to an HTTP Request with 400 Bad Request
+func HandleBadRequestResponse(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusBadRequest)
+	w.Write(nil)
+}

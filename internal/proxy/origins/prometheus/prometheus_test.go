@@ -17,6 +17,7 @@
 package prometheus
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -26,7 +27,7 @@ import (
 
 	cr "github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/proxy/errors"
+	pe "github.com/Comcast/trickster/internal/proxy/errors"
 	"github.com/Comcast/trickster/internal/proxy/origins"
 	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	tl "github.com/Comcast/trickster/internal/util/log"
@@ -65,7 +66,7 @@ func TestNewClient(t *testing.T) {
 	}
 
 	oc := &oo.Options{OriginType: "TEST_CLIENT"}
-	c, err := NewClient("default", oc, cache)
+	c, err := NewClient("default", oc, nil, cache)
 	if err != nil {
 		t.Error(err)
 	}
@@ -125,7 +126,7 @@ func TestConfiguration(t *testing.T) {
 func TestHTTPClient(t *testing.T) {
 	oc := &oo.Options{OriginType: "TEST"}
 
-	client, err := NewClient("test", oc, nil)
+	client, err := NewClient("test", oc, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -195,7 +196,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 }
 
 func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
-	expected := errors.MissingURLParam(upQuery).Error()
+	expected := pe.MissingURLParam(upQuery).Error()
 	req := &http.Request{URL: &url.URL{
 		Scheme: "https",
 		Host:   "blah.com",
@@ -389,12 +390,22 @@ func TestParseTimeRangeQueryWithOffset(t *testing.T) {
 }
 
 func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil)
+	c, err := NewClient("test", oo.NewOptions(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
 	c.SetCache(nil)
 	if c.Cache() != nil {
 		t.Errorf("expected nil cache for client named %s", "test")
+	}
+}
+
+func TestRouter(t *testing.T) {
+	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	if c.Router() != nil {
+		t.Error(errors.New("expected nil router"))
 	}
 }

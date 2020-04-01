@@ -20,4 +20,5 @@ type contextKey int
 
 const (
 	resourcesKey contextKey = iota
+	hopsKey
 )

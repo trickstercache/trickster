@@ -17,19 +17,22 @@
 package options
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/Comcast/trickster/internal/cache/evictionmethods"
 	d "github.com/Comcast/trickster/internal/config/defaults"
+	rule "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
 	po "github.com/Comcast/trickster/internal/proxy/paths/options"
+	"github.com/Comcast/trickster/internal/proxy/request/rewriter"
 	to "github.com/Comcast/trickster/internal/proxy/tls/options"
 	tracing "github.com/Comcast/trickster/internal/util/tracing/options"
 
-	//rule "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
-
 	"github.com/gorilla/mux"
 )
+
+var restrictedOriginNames = map[string]bool{"frontend": true}
 
 // Options is a collection of configurations for Origins proxied by Trickster
 type Options struct {
@@ -94,6 +97,11 @@ type Options struct {
 	// RuleName provides the name of the rule config to be used by this origin.
 	// This is only effective if the Origin Type is 'rule'
 	RuleName string `toml:"rule_name"`
+	// PathRoutingDisabled, when true, will bypass /originName/path route registrations
+	PathRoutingDisabled bool `toml:"path_routing_disabled"`
+	// ReqRewriterName is the name of a configured Rewriter that will modify the request prior to
+	// processing by the origin client
+	ReqRewriterName string `toml:"req_rewriter_name"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `toml:"tls"`
@@ -147,8 +155,10 @@ type Options struct {
 	CompressableTypes map[string]bool `toml:"-"`
 	// TracingConfig is the reference to the Tracing Config as indicated by TracingConfigName
 	TracingConfig *tracing.Options `toml:"-"`
-	// // RuleOptions is the reference to the Rule Options as indicated by RuleName
-	// RuleOptions *rule.Options `toml:"-"`
+	// RuleOptions is the reference to the Rule Options as indicated by RuleName
+	RuleOptions *rule.Options `toml:"-"`
+	// ReqRewriter is the rewriter handler as indicated by RuleName
+	ReqRewriter rewriter.RewriteInstructions
 }
 
 // NewOptions will return a pointer to an OriginConfig with the default configuration settings
@@ -216,6 +226,7 @@ func (oc *Options) Clone() *Options {
 	o.OriginURL = oc.OriginURL
 	o.PathPrefix = oc.PathPrefix
 	o.RevalidationFactor = oc.RevalidationFactor
+	o.RuleName = oc.RuleName
 	o.Scheme = oc.Scheme
 	o.Timeout = oc.Timeout
 	o.TimeoutSecs = oc.TimeoutSecs
@@ -282,6 +293,20 @@ func (oc *Options) Clone() *Options {
 		o.FastForwardPath = oc.FastForwardPath.Clone()
 	}
 
+	if oc.RuleOptions != nil {
+		// TODO: make clone func for this
+		// o.RuleOptions = oc.RuleOptions.Clone()
+	}
+
 	return o
 
+}
+
+// ValidateOriginName ensures the origin name is permitted against the dictionary of
+// restructed words
+func ValidateOriginName(name string) error {
+	if _, ok := restrictedOriginNames[name]; ok {
+		return errors.New("invalid origin name:" + name)
+	}
+	return nil
 }

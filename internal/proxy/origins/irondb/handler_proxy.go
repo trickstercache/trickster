@@ -20,11 +20,12 @@ import (
 	"net/http"
 
 	"github.com/Comcast/trickster/internal/proxy/engines"
+	"github.com/Comcast/trickster/internal/proxy/urls"
 )
 
 // ProxyHandler sends a request through the basic reverse proxy to the origin
 // for non-cacheable API calls.
 func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	r.URL = c.BuildUpstreamURL(r)
+	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
 	engines.DoProxy(w, r)
 }

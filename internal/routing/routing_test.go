@@ -21,6 +21,7 @@ import (
 
 	"github.com/Comcast/trickster/internal/cache/registration"
 	"github.com/Comcast/trickster/internal/config"
+	"github.com/Comcast/trickster/internal/proxy/origins"
 	oo "github.com/Comcast/trickster/internal/proxy/origins/options"
 	tl "github.com/Comcast/trickster/internal/util/log"
 
@@ -29,6 +30,8 @@ import (
 
 func TestRegisterProxyRoutes(t *testing.T) {
 
+	var proxyClients = make(origins.Origins)
+
 	log := tl.ConsoleLogger("info")
 	conf, _, err := config.Load("trickster", "test", []string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "prometheus"})
 	if err != nil {
@@ -36,7 +39,7 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	}
 	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, log)
+	proxyClients, err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, log)
 	if err != nil {
 		t.Error(err)
 	}
@@ -66,26 +69,26 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	conf.Origins["2"] = o2
 
 	router := mux.NewRouter()
-	err = RegisterProxyRoutes(conf, router, caches, log)
+	proxyClients, err = RegisterProxyRoutes(conf, router, caches, log)
 	if err == nil {
 		t.Errorf("Expected error for too many default origins.%s", "")
 	}
 
 	o1.IsDefault = false
-	err = RegisterProxyRoutes(conf, router, caches, log)
+	proxyClients, err = RegisterProxyRoutes(conf, router, caches, log)
 	if err != nil {
 		t.Error(err)
 	}
 
 	o2.IsDefault = false
 	o2.CacheName = "invalid"
-	err = RegisterProxyRoutes(conf, router, caches, log)
+	proxyClients, err = RegisterProxyRoutes(conf, router, caches, log)
 	if err == nil {
 		t.Errorf("Expected error for invalid cache name%s", "")
 	}
 
 	o2.CacheName = "default"
-	err = RegisterProxyRoutes(conf, router, caches, log)
+	proxyClients, err = RegisterProxyRoutes(conf, router, caches, log)
 	if err != nil {
 		t.Error(err)
 	}
@@ -98,7 +101,7 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	conf.Origins["1"] = o1
 	delete(conf.Origins, "default")
 
-	err = RegisterProxyRoutes(conf, router, caches, log)
+	proxyClients, err = RegisterProxyRoutes(conf, router, caches, log)
 	if err != nil {
 		t.Error(err)
 	}
@@ -113,7 +116,7 @@ func TestRegisterProxyRoutesInflux(t *testing.T) {
 
 	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
+	proxyClients, err := RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
 	if err != nil {
 		t.Error(err)
 	}
@@ -133,7 +136,7 @@ func TestRegisterProxyRoutesClickHouse(t *testing.T) {
 
 	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
+	proxyClients, err := RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
 	if err != nil {
 		t.Error(err)
 	}
@@ -153,7 +156,7 @@ func TestRegisterProxyRoutesIRONdb(t *testing.T) {
 
 	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
+	proxyClients, err := RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
 	if err != nil {
 		t.Error(err)
 	}
@@ -174,7 +177,7 @@ func TestRegisterProxyRoutesMultipleDefaults(t *testing.T) {
 	}
 	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
+	_, err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
 	if err == nil {
 		t.Errorf("expected error `%s` got nothing", expected1)
 	} else if err.Error() != expected1 && err.Error() != expected2 {
@@ -191,7 +194,7 @@ func TestRegisterProxyRoutesInvalidCert(t *testing.T) {
 	}
 	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
+	_, err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
 	if err == nil {
 		t.Errorf("expected error: %s", expected)
 	}
@@ -220,7 +223,7 @@ func TestRegisterProxyRoutesBadOriginType(t *testing.T) {
 	}
 	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
+	_, err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
 	if err == nil {
 		t.Errorf("expected error `%s` got nothing", expected)
 	} else if err.Error() != expected {
@@ -236,7 +239,7 @@ func TestRegisterMultipleOrigins(t *testing.T) {
 	}
 	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
+	_, err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
 	if err != nil {
 		t.Error(err)
 	}
@@ -250,7 +253,7 @@ func TestRegisterMultipleOriginsPlusDefault(t *testing.T) {
 	}
 	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
+	_, err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
 	if err != nil {
 		t.Error(err)
 	}

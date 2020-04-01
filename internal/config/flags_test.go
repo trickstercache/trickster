@@ -44,11 +44,11 @@ func TestLoadFlags(t *testing.T) {
 	}
 	c.loadFlags(flags)
 
-	if providedOriginURL != a[1] {
-		t.Errorf("wanted \"%s\". got \"%s\".", a[1], providedOriginURL)
+	if c.providedOriginURL != a[1] {
+		t.Errorf("wanted \"%s\". got \"%s\".", a[1], c.providedOriginURL)
 	}
-	if providedOriginType != a[7] {
-		t.Errorf("wanted \"%s\". got \"%s\".", a[1], providedOriginType)
+	if c.providedOriginType != a[7] {
+		t.Errorf("wanted \"%s\". got \"%s\".", a[1], c.providedOriginType)
 	}
 	if c.Frontend.ListenPort != 9091 {
 		t.Errorf("wanted \"%d\". got \"%d\".", 9091, c.Frontend.ListenPort)

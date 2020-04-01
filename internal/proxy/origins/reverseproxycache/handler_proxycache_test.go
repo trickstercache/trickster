@@ -17,6 +17,7 @@
 package reverseproxycache
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/Comcast/trickster/internal/proxy/request"
@@ -31,6 +32,8 @@ func TestProxyCacheHandler(t *testing.T) {
 	client.config = rsc.OriginConfig
 	client.webClient = hc
 	client.config.HTTPClient = hc
+	client.baseUpstreamURL, _ = url.Parse(ts.URL)
+
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)

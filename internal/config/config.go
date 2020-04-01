@@ -21,6 +21,7 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -32,19 +33,15 @@ import (
 	"github.com/Comcast/trickster/internal/proxy/forwarding"
 	"github.com/Comcast/trickster/internal/proxy/headers"
 	origins "github.com/Comcast/trickster/internal/proxy/origins/options"
+	rule "github.com/Comcast/trickster/internal/proxy/origins/rule/options"
 	"github.com/Comcast/trickster/internal/proxy/paths/matching"
+	rewriter "github.com/Comcast/trickster/internal/proxy/request/rewriter"
+	rwopts "github.com/Comcast/trickster/internal/proxy/request/rewriter/options"
 	to "github.com/Comcast/trickster/internal/proxy/tls/options"
 	tracing "github.com/Comcast/trickster/internal/util/tracing/options"
 
 	"github.com/BurntSushi/toml"
 )
-
-var providedOriginURL string
-var providedOriginType string
-
-// LoaderWarnings holds warnings generated during config load (before the logger is initialized),
-// so they can be logged at the end of the loading process
-var LoaderWarnings = make([]string, 0)
 
 // TricksterConfig is the main configuration object
 type TricksterConfig struct {
@@ -64,8 +61,17 @@ type TricksterConfig struct {
 	TracingConfigs map[string]*tracing.Options `toml:"tracing"`
 	// NegativeCacheConfigs is a map of NegativeCacheConfigs
 	NegativeCacheConfigs map[string]NegativeCacheConfig `toml:"negative_caches"`
+	// Rules is a map of the Rules
+	Rules map[string]*rule.Options `toml:"rules"`
+	// RequestRewriters is a map of the Rewriters
+	RequestRewriters map[string]*rwopts.Options `toml:"request_rewriters"`
 
-	activeCaches map[string]bool
+	CompiledRewriters  map[string]rewriter.RewriteInstructions
+	activeCaches       map[string]bool
+	providedOriginURL  string
+	providedOriginType string
+
+	LoaderWarnings []string `toml:"-"`
 }
 
 // MainConfig is a collection of general configuration values.
@@ -166,6 +172,7 @@ func NewConfig() *TricksterConfig {
 		TracingConfigs: map[string]*tracing.Options{
 			"default": tracing.NewOptions(),
 		},
+		LoaderWarnings: make([]string, 0),
 	}
 }
 
@@ -175,7 +182,7 @@ func NewNegativeCacheConfig() NegativeCacheConfig {
 }
 
 // loadFile loads application configuration from a TOML-formatted file.
-func (c *TricksterConfig) loadFile(flags *TricksterFlags) error {
+func (c *TricksterConfig) loadFile(flags *Flags) error {
 	md, err := toml.DecodeFile(flags.ConfigPath, c)
 	if err != nil {
 		c.setDefaults(&toml.MetaData{})
@@ -189,8 +196,18 @@ func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
 
 	var err error
 
+	if c.RequestRewriters != nil {
+		if c.CompiledRewriters, err = rewriter.ProcessConfigs(c.RequestRewriters); err != nil {
+			return err
+		}
+	}
+
 	tracing.ProcessTracingConfigs(c.TracingConfigs, metadata)
-	c.processOriginConfigs(metadata)
+
+	if err = c.processOriginConfigs(metadata); err != nil {
+		return err
+	}
+
 	c.processCachingConfigs(metadata)
 
 	if err = c.validateConfigMappings(); err != nil {
@@ -224,25 +241,34 @@ var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_ke
 
 func (c *TricksterConfig) validateConfigMappings() error {
 	for k, oc := range c.Origins {
-		// placeholder for feature being worked on different branch
-		// if oc.OriginType == "rule" {
-		// 	// Rule Type Validations
-		// 	r, ok := c.Rules[oc.RuleName]
-		// 	if !ok {
-		// 		return fmt.Errorf("invalid rule name [%s] provided in origin config [%s]", oc.RuleName, k)
-		// 	}
-		// 	oc.RuleOptions = r
-		// } else {
-		// 	// non-Rule Type Validations
-		if _, ok := c.Caches[oc.CacheName]; !ok {
-			return fmt.Errorf("invalid cache name [%s] provided in origin config [%s]", oc.CacheName, k)
+
+		if err := origins.ValidateOriginName(k); err != nil {
+			return err
 		}
-		// }
+
+		if oc.Name == "frontend" {
+			return errors.New("inva")
+		}
+
+		if oc.OriginType == "rule" {
+			// Rule Type Validations
+			r, ok := c.Rules[oc.RuleName]
+			if !ok {
+				return fmt.Errorf("invalid rule name [%s] provided in origin config [%s]", oc.RuleName, k)
+			}
+			r.Name = oc.RuleName
+			oc.RuleOptions = r
+		} else {
+			// non-Rule Type Validations
+			if _, ok := c.Caches[oc.CacheName]; !ok {
+				return fmt.Errorf("invalid cache name [%s] provided in origin config [%s]", oc.CacheName, k)
+			}
+		}
 	}
 	return nil
 }
 
-func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
+func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) error {
 
 	c.activeCaches = make(map[string]bool)
 
@@ -251,12 +277,26 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 		oc := origins.NewOptions()
 		oc.Name = k
 
+		if metadata.IsDefined("origins", k, "req_rewriter_name") && v.ReqRewriterName != "" {
+			oc.ReqRewriterName = v.ReqRewriterName
+			ri, ok := c.CompiledRewriters[oc.ReqRewriterName]
+			if !ok {
+				return fmt.Errorf("invalid rewriter name %s in origin config %s",
+					oc.ReqRewriterName, k)
+			}
+			oc.ReqRewriter = ri
+		}
+
 		if metadata.IsDefined("origins", k, "origin_type") {
 			oc.OriginType = v.OriginType
 		}
 
 		if metadata.IsDefined("origins", k, "rule_name") {
 			oc.RuleName = v.RuleName
+		}
+
+		if metadata.IsDefined("origins", k, "path_routing_disabled") {
+			oc.PathRoutingDisabled = v.PathRoutingDisabled
 		}
 
 		if metadata.IsDefined("origins", k, "hosts") && v != nil {
@@ -339,6 +379,15 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 		if metadata.IsDefined("origins", k, "paths") {
 			var j = 0
 			for l, p := range v.Paths {
+				if metadata.IsDefined("origins", k, "paths", l, "req_rewriter_name") &&
+					p.ReqRewriterName != "" {
+					ri, ok := c.CompiledRewriters[p.ReqRewriterName]
+					if !ok {
+						return fmt.Errorf("invalid rewriter name %s in origin config %s",
+							p.ReqRewriterName, k)
+					}
+					p.ReqRewriter = ri
+				}
 				if len(p.Methods) == 0 {
 					p.Methods = []string{http.MethodGet, http.MethodHead}
 				}
@@ -424,6 +473,7 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) {
 
 		c.Origins[k] = oc
 	}
+	return nil
 }
 
 func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
@@ -497,11 +547,11 @@ func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
 
 			if cc.Redis.ClientType == "standard" {
 				if hasEndpoints && !hasEndpoint {
-					LoaderWarnings = append(LoaderWarnings, "'standard' redis type configured, but 'endpoints' value is provided instead of 'endpoint'")
+					c.LoaderWarnings = append(c.LoaderWarnings, "'standard' redis type configured, but 'endpoints' value is provided instead of 'endpoint'")
 				}
 			} else {
 				if hasEndpoint && !hasEndpoints {
-					LoaderWarnings = append(LoaderWarnings, fmt.Sprintf("'%s' redis type configured, but 'endpoint' value is provided instead of 'endpoints'", cc.Redis.ClientType))
+					c.LoaderWarnings = append(c.LoaderWarnings, fmt.Sprintf("'%s' redis type configured, but 'endpoint' value is provided instead of 'endpoints'", cc.Redis.ClientType))
 				}
 			}
 
@@ -590,7 +640,8 @@ func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
 	}
 }
 
-func (c *TricksterConfig) copy() *TricksterConfig {
+// Clone returns an exact copy of the subject *TricksterConfig
+func (c *TricksterConfig) Clone() *TricksterConfig {
 
 	nc := NewConfig()
 	delete(nc.Caches, "default")
@@ -629,11 +680,17 @@ func (c *TricksterConfig) copy() *TricksterConfig {
 		nc.TracingConfigs[k] = v.Clone()
 	}
 
+	nc.Rules = c.Rules
+	// TODO clone rules instead of passing reference
+
+	nc.RequestRewriters = c.RequestRewriters
+	// TODO: clone rewriters instead of passing reference
+
 	return nc
 }
 
 func (c *TricksterConfig) String() string {
-	cp := c.copy()
+	cp := c.Clone()
 
 	// the toml library will panic if the Handler is assigned,
 	// even though this field is annotated as skip ("-") in the prototype
