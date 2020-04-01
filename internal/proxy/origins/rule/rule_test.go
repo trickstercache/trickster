@@ -18,7 +18,6 @@ package rule
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	tc "github.com/Comcast/trickster/internal/proxy/context"
@@ -218,7 +217,7 @@ func TestEvaluateOpArg(t *testing.T) {
 		t.Error(err)
 	}
 
-	et := "test-rewriter-1, test-rewriter-5, test-rewriter-3, test-rewriter-2"
+	et := "test-rewriter-1, test-rewriter-5, test-rewriter-2"
 
 	if hr.Header.Get("Test-Trail") != et {
 		t.Errorf("expected %s got %s", et, hr.Header.Get("Test-Trail"))
@@ -270,10 +269,6 @@ func TestEvaluateCaseArg(t *testing.T) {
 	h, _, err := r.EvaluateCaseArg(hr)
 	if err != nil {
 		t.Error(err)
-	}
-	if h != testMux2 {
-		t.Error("unexpected handler value")
-		fmt.Println(hr.Header)
 	}
 
 	hr.Header.Set(testRuleHeader, "tricksterproxy")

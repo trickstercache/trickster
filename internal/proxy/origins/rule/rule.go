@@ -99,7 +99,7 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 		}
 	}
 
-	if nonDefault && r.defaultRewriter != nil {
+	if !nonDefault && r.defaultRewriter != nil {
 		r.defaultRewriter.Execute(hr)
 	}
 
@@ -161,7 +161,7 @@ func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, e
 		}
 	}
 
-	if nonDefault && r.defaultRewriter != nil {
+	if !nonDefault && r.defaultRewriter != nil {
 		r.defaultRewriter.Execute(hr)
 	}
 
