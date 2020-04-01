@@ -37,52 +37,52 @@ var testRuleHeader = "Test-Rule-Header"
 func newTestRewriterOpts() map[string]*rwo.Options {
 
 	return map[string]*rwo.Options{
-		"test-rewriter-1": &rwo.Options{
+		"test-rewriter-1": {
 			Instructions: [][]string{
-				[]string{
+				{
 					"header", "set", "Test", "test-rewriter-1",
 				},
-				[]string{
+				{
 					"header", "append", "Test-Trail", "test-rewriter-1",
 				},
 			},
 		},
-		"test-rewriter-2": &rwo.Options{
+		"test-rewriter-2": {
 			Instructions: [][]string{
-				[]string{
+				{
 					"header", "set", "Test", "test-rewriter-2",
 				},
-				[]string{
+				{
 					"header", "append", "Test-Trail", "test-rewriter-2",
 				},
 			},
 		},
-		"test-rewriter-3": &rwo.Options{
+		"test-rewriter-3": {
 			Instructions: [][]string{
-				[]string{
+				{
 					"header", "set", "Test", "test-rewriter-3",
 				},
-				[]string{
+				{
 					"header", "append", "Test-Trail", "test-rewriter-3",
 				},
 			},
 		},
-		"test-rewriter-4": &rwo.Options{
+		"test-rewriter-4": {
 			Instructions: [][]string{
-				[]string{
+				{
 					"header", "set", "Test", "test-rewriter-4",
 				},
-				[]string{
+				{
 					"header", "append", "Test-Trail", "test-rewriter-4",
 				},
 			},
 		},
-		"test-rewriter-5": &rwo.Options{
+		"test-rewriter-5": {
 			Instructions: [][]string{
-				[]string{
+				{
 					"header", "set", "Test", "test-rewriter-5",
 				},
-				[]string{
+				{
 					"header", "append", "Test-Trail", "test-rewriter-5",
 				},
 			},
@@ -113,19 +113,19 @@ func newTestRuleOpts() *ro.Options {
 func newTestCaseOpts() map[string]*ro.CaseOptions {
 
 	return map[string]*ro.CaseOptions{
-		"1": &ro.CaseOptions{
+		"1": {
 			Matches:   []string{"trickster"},
 			NextRoute: "test-origin-2",
 		},
-		"2": &ro.CaseOptions{
+		"2": {
 			Matches:         []string{"proxy"},
 			ReqRewriterName: "test-rewriter-4",
 		},
-		"3": &ro.CaseOptions{
+		"3": {
 			Matches:     []string{"tricksterproxy"},
 			RedirectURL: "http://tricksterproxy.io",
 		},
-		"4": &ro.CaseOptions{
+		"4": {
 			Matches:         []string{"true"},
 			ReqRewriterName: "test-rewriter-5",
 			RedirectURL:     "http://tricksterproxy.io",
