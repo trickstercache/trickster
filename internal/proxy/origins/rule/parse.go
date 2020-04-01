@@ -55,7 +55,7 @@ func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteIns
 	if ro.EgressReqRewriterName != "" {
 		ri, ok := rwi[ro.EgressReqRewriterName]
 		if !ok {
-			return fmt.Errorf("invalid  egress rewriter %s in rule %s",
+			return fmt.Errorf("invalid egress rewriter %s in rule %s",
 				ro.EgressReqRewriterName, ro.Name)
 		}
 		r.egressReqRewriter = ri
@@ -64,7 +64,7 @@ func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteIns
 	if ro.IngressReqRewriterName != "" {
 		ri, ok := rwi[ro.IngressReqRewriterName]
 		if !ok {
-			return fmt.Errorf("invalid  ingress rewriter %s in rule %s",
+			return fmt.Errorf("invalid ingress rewriter %s in rule %s",
 				ro.IngressReqRewriterName, ro.Name)
 		}
 		r.ingressReqRewriter = ri
@@ -73,7 +73,7 @@ func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteIns
 	if ro.DefaultReqRewriterName != "" {
 		ri, ok := rwi[ro.DefaultReqRewriterName]
 		if !ok {
-			return fmt.Errorf("invalid  default rewriter %s in rule %s",
+			return fmt.Errorf("invalid default rewriter %s in rule %s",
 				ro.DefaultReqRewriterName, ro.Name)
 		}
 		r.defaultRewriter = ri
@@ -132,7 +132,7 @@ func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteIns
 
 	of, ok := operationFuncs[operation(ro.InputType+"-"+ro.Operation)]
 	if !ok {
-		return fmt.Errorf("invalid encoding name %s in rule %s", ro.InputEncoding, ro.Name)
+		return fmt.Errorf("invalid operation %s in rule %s", ro.InputType+"-"+ro.Operation, ro.Name)
 	}
 	r.operationFunc = of
 	r.operationArg = ro.OperationArg

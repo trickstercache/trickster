@@ -18,6 +18,7 @@ package rule
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	tc "github.com/Comcast/trickster/internal/proxy/context"
@@ -91,6 +92,11 @@ func newTestRewriterOpts() map[string]*rwo.Options {
 	}
 }
 
+func newTestRewriterInstructions() map[string]rewriter.RewriteInstructions {
+	rwi, _ := rewriter.ProcessConfigs(newTestRewriterOpts())
+	return rwi
+}
+
 func newTestRuleOpts() *ro.Options {
 	return &ro.Options{
 		Name:                   "test-rule",
@@ -121,7 +127,7 @@ func newTestCaseOpts() map[string]*ro.CaseOptions {
 			Matches:     []string{"tricksterproxy"},
 			RedirectURL: "http://tricksterproxy.io",
 		},
-		"5": &ro.CaseOptions{
+		"4": &ro.CaseOptions{
 			Matches:         []string{"true"},
 			ReqRewriterName: "test-rewriter-5",
 			RedirectURL:     "http://tricksterproxy.io",
@@ -133,10 +139,7 @@ func newTestRules() ([]*rule, error) {
 
 	oopts := oo.NewOptions()
 
-	rwi, err := rewriter.ProcessConfigs(newTestRewriterOpts())
-	if err != nil {
-		return nil, err
-	}
+	rwi := newTestRewriterInstructions()
 
 	ropts := newTestRuleOpts()
 
@@ -270,6 +273,7 @@ func TestEvaluateCaseArg(t *testing.T) {
 	}
 	if h != testMux2 {
 		t.Error("unexpected handler value")
+		fmt.Println(hr.Header)
 	}
 
 	hr.Header.Set(testRuleHeader, "tricksterproxy")
