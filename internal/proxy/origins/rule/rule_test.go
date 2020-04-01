@@ -239,7 +239,7 @@ func TestEvaluateOpArg(t *testing.T) {
 		t.Error(err)
 	}
 
-	// on the final try, execeed the hop number so we can test the abort sequence
+	// on the final try, exceed the hop number so we can test the abort sequence
 
 	hr = hr.WithContext(tc.WithHops(ctx, 20, 10))
 	h, _, err := r.EvaluateOpArg(hr)
@@ -287,7 +287,7 @@ func TestEvaluateCaseArg(t *testing.T) {
 		t.Error(err)
 	}
 
-	// on the final try, execeed the hop number so we can test the abort sequence
+	// on the final try, exceed the hop number so we can test the abort sequence
 
 	hr = hr.WithContext(tc.WithHops(ctx, 20, 10))
 	h, _, err = r.EvaluateCaseArg(hr)
