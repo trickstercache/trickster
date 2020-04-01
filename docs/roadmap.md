@@ -11,10 +11,11 @@ The roadmap for Trickster in 2020 focuses on delivering incremental enhancements
 - [x] Submit Helm charts to Helm Hub
 - [ ] Submit Trickster for CNCF Sandbox Consideration
 - [ ] Trickster v1.1 Release
+  - [x] Relocate project to `tricksterproxy` organization
   - [x] Release Binaries for Windows
   - [x] Change default frontend listen port to 8480
   - [x] Frontend HTTP 2.0 Support
-  - [ ] Rules-based Request Routing and Rewriting
+  - [x] Rules-based Request Routing and Rewriting
   - [ ] Use RWMutex for cache synchronization
   - [ ] Reload configuration without process restart
   - [x] Add implementation-specific Tracing options in config
