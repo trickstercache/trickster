@@ -17,15 +17,16 @@
 package rule
 
 import (
-	"net/http"
+	tu "github.com/Comcast/trickster/internal/util/testing"
+
+	"testing"
 )
 
-// Handler processes the HTTP request through the rules engine
-func (c *Client) Handler(w http.ResponseWriter, r *http.Request) {
-	var router http.Handler
-	// Execute the rule to determine where to send this request next
-	router, r, _ = c.rule.evaluatorFunc(r)
-
-	// Forward the request
-	router.ServeHTTP(w, r)
+func TestHandler(t *testing.T) {
+	c, _ := newTestClient()
+	_, w, r, _, _ := tu.NewTestInstance("", c.DefaultPathConfigs, 200, "{}", nil, "rpc", "/health", "debug")
+	c.Handler(w, r)
+	if r.Header.Get("Test") == "" {
+		t.Error("expected non-empty header")
+	}
 }

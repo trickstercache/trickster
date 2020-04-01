@@ -35,11 +35,9 @@ var testMux2 = http.NewServeMux()
 
 var testRuleHeader = "Test-Rule-Header"
 
-func newTestRules() ([]*rule, error) {
+func newTestRewriterOpts() map[string]*rwo.Options {
 
-	oopts := oo.NewOptions()
-
-	rwopts := map[string]*rwo.Options{
+	return map[string]*rwo.Options{
 		"test-rewriter-1": &rwo.Options{
 			Instructions: [][]string{
 				[]string{
@@ -91,13 +89,26 @@ func newTestRules() ([]*rule, error) {
 			},
 		},
 	}
+}
 
-	rwi, err := rewriter.ProcessConfigs(rwopts)
-	if err != nil {
-		return nil, err
+func newTestRuleOpts() *ro.Options {
+	return &ro.Options{
+		Name:                   "test-rule",
+		InputType:              "string",
+		InputSource:            "header",
+		InputKey:               testRuleHeader,
+		Operation:              "eq",
+		NextRoute:              "test-origin-1",
+		IngressReqRewriterName: "test-rewriter-1",
+		EgressReqRewriterName:  "test-rewriter-2",
+		DefaultReqRewriterName: "test-rewriter-3",
+		CaseOptions:            newTestCaseOpts(),
 	}
+}
 
-	copts := map[string]*ro.CaseOptions{
+func newTestCaseOpts() map[string]*ro.CaseOptions {
+
+	return map[string]*ro.CaseOptions{
 		"1": &ro.CaseOptions{
 			Matches:   []string{"trickster"},
 			NextRoute: "test-origin-2",
@@ -116,18 +127,18 @@ func newTestRules() ([]*rule, error) {
 			RedirectURL:     "http://tricksterproxy.io",
 		},
 	}
-	ropts := &ro.Options{
-		Name:                   "test-rule",
-		InputType:              "string",
-		InputSource:            "header",
-		InputKey:               testRuleHeader,
-		Operation:              "eq",
-		NextRoute:              "test-origin-1",
-		IngressReqRewriterName: "test-rewriter-1",
-		EgressReqRewriterName:  "test-rewriter-2",
-		DefaultReqRewriterName: "test-rewriter-3",
-		CaseOptions:            copts,
+}
+
+func newTestRules() ([]*rule, error) {
+
+	oopts := oo.NewOptions()
+
+	rwi, err := rewriter.ProcessConfigs(newTestRewriterOpts())
+	if err != nil {
+		return nil, err
 	}
+
+	ropts := newTestRuleOpts()
 
 	clients := origins.Origins{"test-origin-1": &Client{router: testMux1},
 		"test-origin-2": &Client{router: testMux2}}
@@ -155,6 +166,34 @@ func newTestRules() ([]*rule, error) {
 	rules = append(rules, c.rule)
 
 	return rules, nil
+}
+
+func newTestClient() (*Client, error) {
+
+	oopts := oo.NewOptions()
+
+	rwi, err := rewriter.ProcessConfigs(newTestRewriterOpts())
+	if err != nil {
+		return nil, err
+	}
+
+	ropts := newTestRuleOpts()
+
+	clients := origins.Origins{"test-origin-1": &Client{router: testMux1},
+		"test-origin-2": &Client{router: testMux2}}
+
+	c, err := NewClient("test-client", oopts, nil, clients)
+	if err != nil {
+		return nil, err
+	}
+
+	// This creates an OpArg test rule
+	err = c.parseOptions(ropts, rwi)
+	if err != nil {
+		return nil, err
+	}
+
+	return c, nil
 }
 
 func TestEvaluateOpArg(t *testing.T) {
