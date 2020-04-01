@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tricksterproxy/mockster/pkg/testutil"
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
@@ -35,7 +36,6 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/runtime"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	tr "github.com/tricksterproxy/trickster/pkg/util/tracing/registration"
-	"github.com/tricksterproxy/mockster/pkg/testutil"
 )
 
 // this actively sets the ApplicationName for testing purposes

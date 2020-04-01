@@ -20,6 +20,7 @@ package engines
 
 import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
+
 	"github.com/tinylib/msgp/msgp"
 )
 

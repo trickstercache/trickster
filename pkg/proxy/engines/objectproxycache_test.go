@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tricksterproxy/mockster/pkg/mocks/byterange"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
@@ -34,7 +35,6 @@ import (
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
-	"github.com/tricksterproxy/mockster/pkg/mocks/byterange"
 )
 
 func setupTestHarnessOPC(file, body string, code int, headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
