@@ -73,6 +73,9 @@ var testRL3 = options.RewriteList{
 	[]string{"port", "delete"},
 	[]string{"port", "set", "8000"},
 	[]string{"port", "replace", "000", "480"},
+	[]string{"scheme", "set", "https"},
+	[]string{"hostname", "set", "example.com"},
+	[]string{"hostname", "replace", "example.com", "tricksterproxy.io"},
 }
 
 var testRI0 = RewriteInstructions{
@@ -116,6 +119,9 @@ var testRI3 = RewriteInstructions{
 	&rwiPortDeleter{},
 	&rwiBasicSetter{value: "8000"},
 	&rwiBasicReplacer{search: "000", replacement: "480", depth: -1},
+	&rwiBasicSetter{value: "https"},
+	&rwiBasicSetter{value: "example.com"},
+	&rwiBasicReplacer{search: "example.com", replacement: "tricksterproxy.io", depth: -1},
 }
 
 func TestParseRewriteList(t *testing.T) {
