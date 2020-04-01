@@ -19,7 +19,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/Comcast/trickster/internal/runtime"
+	"github.com/tricksterproxy/trickster/pkg/runtime"
 )
 
 const usageText = `

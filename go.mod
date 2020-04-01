@@ -1,4 +1,4 @@
-module github.com/Comcast/trickster
+module github.com/tricksterproxy/trickster
 
 require (
 	github.com/BurntSushi/toml v0.3.1
