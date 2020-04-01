@@ -113,11 +113,18 @@ func TestName(t *testing.T) {
 
 	client := Client{name: "TEST"}
 	c := client.Name()
-
 	if c != "TEST" {
 		t.Errorf("expected %s got %s", "TEST", c)
 	}
 
+}
+
+func TestRouter(t *testing.T) {
+	client := Client{name: "TEST"}
+	r := client.Router()
+	if r != nil {
+		t.Error("expected nil router")
+	}
 }
 
 func TestHTTPClient(t *testing.T) {

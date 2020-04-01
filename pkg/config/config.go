@@ -21,7 +21,6 @@ package config
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -244,10 +243,6 @@ func (c *TricksterConfig) validateConfigMappings() error {
 
 		if err := origins.ValidateOriginName(k); err != nil {
 			return err
-		}
-
-		if oc.Name == "frontend" {
-			return errors.New("inva")
 		}
 
 		if oc.OriginType == "rule" {

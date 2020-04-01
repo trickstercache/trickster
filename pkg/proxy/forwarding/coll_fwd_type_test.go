@@ -38,4 +38,14 @@ func TestCollapsedForwardingTypeString(t *testing.T) {
 		t.Errorf("expected %s got %s", "13", t3.String())
 	}
 
+	t3 = GetCollapsedForwardingType("basic")
+	if t3 != CFTypeBasic {
+		t.Errorf("expected %s got %s", "basic", t3.String())
+	}
+
+	t3 = GetCollapsedForwardingType("13")
+	if t3 != CFTypeBasic {
+		t.Errorf("expected %s got %s", "basic", t3.String())
+	}
+
 }

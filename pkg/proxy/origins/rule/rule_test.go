@@ -265,7 +265,7 @@ func TestEvaluateCaseArg(t *testing.T) {
 	ctx := tc.WithHops(context.Background(), 0, 20)
 	hr = hr.WithContext(ctx)
 
-	h, _, err := r.EvaluateCaseArg(hr)
+	_, _, err = r.EvaluateCaseArg(hr)
 	if err != nil {
 		t.Error(err)
 	}
@@ -289,7 +289,7 @@ func TestEvaluateCaseArg(t *testing.T) {
 	// on the final try, exceed the hop number so we can test the abort sequence
 
 	hr = hr.WithContext(tc.WithHops(ctx, 20, 10))
-	h, _, err = r.EvaluateCaseArg(hr)
+	h, _, err := r.EvaluateCaseArg(hr)
 	if err != nil {
 		t.Error(err)
 	}

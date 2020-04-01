@@ -10,14 +10,17 @@
 * See the License for the specific language governing permissions and
 * limitations under the License.
  */
+
 package tracing
 
 const (
-	SampleRateDefault float64 = 0
+	sampleRateDefault float64 = 0
 )
 
+// ExporterOption represents a function that returns an ExporterOptions reference
 type ExporterOption func(*ExporterOptions)
 
+// ExporterOptions is a collection of settings pertaining to a Tracing Exporter
 type ExporterOptions struct {
 	collectorURL string
 	agentURL     string
@@ -28,7 +31,7 @@ type ExporterOptions struct {
 
 func aggreagteOptions(opts []ExporterOption) *ExporterOptions {
 	o := ExporterOptions{
-		sampleRate: SampleRateDefault,
+		sampleRate: sampleRateDefault,
 	}
 	for _, opt := range opts {
 		opt(&o)
@@ -43,14 +46,14 @@ func WithCollector(uri string) ExporterOption {
 	}
 }
 
-// Option that directs the collector to report to a local agent, rather than a remote collector
+// WithAgent directs the collector to report to a local agent, rather than a remote collector
 func WithAgent(uri string) ExporterOption {
 	return func(e *ExporterOptions) {
 		e.agentURL = uri
 	}
 }
 
-// Option that sets the sample rate for the collector
+// WithSampleRate sets the sample rate for the collector
 func WithSampleRate(rate float64) ExporterOption {
 	return func(e *ExporterOptions) {
 		e.sampleRate = rate
@@ -71,6 +74,7 @@ func WithPassword(password string) ExporterOption {
 	}
 }
 
+// NewExporterOptions returns a reference to a new ExporterOptions
 func NewExporterOptions(opts ...ExporterOption) *ExporterOptions {
 	options := ExporterOptions{}
 	for _, o := range opts {

@@ -35,11 +35,13 @@ const (
 	EvictionMethodLRU
 )
 
+// Names is a map of TimeseriesEvictionMethods keyed by string name
 var Names = map[string]TimeseriesEvictionMethod{
 	"oldest": EvictionMethodOldest,
 	"lru":    EvictionMethodLRU,
 }
 
+// Values is a map of TimeseriesEvictionMethods valued by string name
 var Values = make(map[TimeseriesEvictionMethod]string)
 
 func init() {

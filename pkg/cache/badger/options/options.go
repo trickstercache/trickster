@@ -20,7 +20,7 @@ import (
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 )
 
-// BadgerCacheConfig is a collection of Configurations for storing cached data on the Filesystem in a Badger key-value store
+// Options is a collection of Configurations for storing cached data on the Filesystem in a Badger key-value store
 type Options struct {
 	// Directory represents the path on disk where the Badger database should store data
 	Directory string `toml:"directory"`
@@ -28,6 +28,7 @@ type Options struct {
 	ValueDirectory string `toml:"value_directory"`
 }
 
+// NewOptions returns a reference to a new Badger Options
 func NewOptions() *Options {
 	return &Options{Directory: d.DefaultCachePath, ValueDirectory: d.DefaultCachePath}
 }

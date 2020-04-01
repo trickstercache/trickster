@@ -32,6 +32,8 @@ type rewriteInstruction interface {
 }
 
 type rewriteList [][]string
+
+// RewriteInstructions is a list of type []rewriteInstruction
 type RewriteInstructions []rewriteInstruction
 
 var rewriters = map[string]func() rewriteInstruction{
@@ -172,6 +174,7 @@ func (ris RewriteInstructions) String() string {
 	return "[" + strings.Join(l, ",") + "]"
 }
 
+// Execute executes the Rewriter Instructions on the provided HTTP Request
 func (ris RewriteInstructions) Execute(r *http.Request) {
 	for _, instr := range ris {
 		instr.Execute(r)

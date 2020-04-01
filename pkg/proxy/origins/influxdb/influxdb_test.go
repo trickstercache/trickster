@@ -118,6 +118,14 @@ func TestName(t *testing.T) {
 
 }
 
+func TestRouter(t *testing.T) {
+	client := Client{name: "TEST"}
+	r := client.Router()
+	if r != nil {
+		t.Error("expected nil router")
+	}
+}
+
 func TestHTTPClient(t *testing.T) {
 	oc := &oo.Options{OriginType: "TEST"}
 

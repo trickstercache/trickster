@@ -151,3 +151,12 @@ func TestHandleLocalResponseNoPathConfig(t *testing.T) {
 	}
 
 }
+
+func TestHandleBadRequestResponse(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
+	HandleBadRequestResponse(w, r)
+	if w.Result().StatusCode != 400 {
+		t.Errorf("expected %d got %d", 400, w.Result().StatusCode)
+	}
+}

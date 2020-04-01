@@ -23,6 +23,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/config"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 
 	"github.com/gorilla/mux"
@@ -30,7 +31,7 @@ import (
 
 func TestRegisterProxyRoutes(t *testing.T) {
 
-	var proxyClients = make(origins.Origins)
+	var proxyClients origins.Origins
 
 	log := tl.ConsoleLogger("info")
 	conf, _, err := config.Load("trickster", "test", []string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "prometheus"})
@@ -69,26 +70,26 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	conf.Origins["2"] = o2
 
 	router := mux.NewRouter()
-	proxyClients, err = RegisterProxyRoutes(conf, router, caches, log)
+	_, err = RegisterProxyRoutes(conf, router, caches, log)
 	if err == nil {
 		t.Errorf("Expected error for too many default origins.%s", "")
 	}
 
 	o1.IsDefault = false
-	proxyClients, err = RegisterProxyRoutes(conf, router, caches, log)
+	_, err = RegisterProxyRoutes(conf, router, caches, log)
 	if err != nil {
 		t.Error(err)
 	}
 
 	o2.IsDefault = false
 	o2.CacheName = "invalid"
-	proxyClients, err = RegisterProxyRoutes(conf, router, caches, log)
+	_, err = RegisterProxyRoutes(conf, router, caches, log)
 	if err == nil {
 		t.Errorf("Expected error for invalid cache name%s", "")
 	}
 
 	o2.CacheName = "default"
-	proxyClients, err = RegisterProxyRoutes(conf, router, caches, log)
+	_, err = RegisterProxyRoutes(conf, router, caches, log)
 	if err != nil {
 		t.Error(err)
 	}
@@ -101,7 +102,7 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	conf.Origins["1"] = o1
 	delete(conf.Origins, "default")
 
-	proxyClients, err = RegisterProxyRoutes(conf, router, caches, log)
+	_, err = RegisterProxyRoutes(conf, router, caches, log)
 	if err != nil {
 		t.Error(err)
 	}
@@ -153,6 +154,29 @@ func TestRegisterProxyRoutesIRONdb(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
+
+	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
+	defer registration.CloseCaches(caches)
+	proxyClients, err := RegisterProxyRoutes(conf, mux.NewRouter(), caches, tl.ConsoleLogger("info"))
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(proxyClients) == 0 {
+		t.Errorf("expected %d got %d", 1, 0)
+	}
+}
+
+func TestRegisterProxyRoutesRules(t *testing.T) {
+
+	conf, _, err := config.Load("trickster", "test", []string{"-config", "../../testdata/test.routing.rules.conf"})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	tpo := po.NewOptions()
+	tpo.ReqRewriterName = "path"
+	conf.Origins["test"].Paths["test"] = tpo
 
 	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)

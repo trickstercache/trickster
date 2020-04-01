@@ -17,11 +17,9 @@
 package engines
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"sync"
@@ -145,7 +143,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				return // fetchTimeseries logs the error
 			}
 		} else {
-
 			// Load the Cached Timeseries
 			if doc == nil {
 				err = errors.New("empty document body")
@@ -388,12 +385,6 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery, client or
 	}
 
 	if resp.StatusCode != 200 {
-
-		body, _ = ioutil.ReadAll(resp.Body)
-		if len(body) > 0 {
-			resp.Body = ioutil.NopCloser(bytes.NewBuffer(body))
-		}
-
 		pr.Logger.Error("unexpected upstream response",
 			tl.Pairs{
 				"statusCode":              resp.StatusCode,
