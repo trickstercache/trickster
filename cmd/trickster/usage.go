@@ -73,11 +73,13 @@ func version() string {
 	)
 }
 
-func printVersion() {
+// PrintVersion prints Trickster's Version
+func PrintVersion() {
 	fmt.Println(version())
 }
 
-func printUsage() {
+// PrintUsage prints Trickster's usage instructions
+func PrintUsage() {
 	fmt.Println()
 	fmt.Println(version())
 	fmt.Println(usageText)
