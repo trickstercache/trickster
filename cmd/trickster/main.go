@@ -19,6 +19,7 @@ package main
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	_ "net/http/pprof" // Comment to disable. Available on :METRICS_PORT/debug/pprof
 	"os"
@@ -53,6 +54,8 @@ const (
 var fatalStartupErrors = true
 
 func main() {
+	runtime.ApplicationName = applicationName
+	runtime.ApplicationVersion = applicationVersion
 	wg := &sync.WaitGroup{}
 	runTrickster(wg, os.Args[1:], fatalStartupErrors)
 	wg.Wait()
@@ -62,19 +65,27 @@ func runTrickster(wg *sync.WaitGroup, args []string, isStartup bool) {
 
 	var err error
 
-	runtime.ApplicationName = applicationName
-	runtime.ApplicationVersion = applicationVersion
-
 	conf, flags, err := config.Load(runtime.ApplicationName, runtime.ApplicationVersion, args)
 	if err != nil {
 		fmt.Println("\nERROR: Could not load configuration:", err.Error())
-		PrintUsage()
+		if flags != nil && !flags.ValidateConfig {
+			PrintUsage()
+		}
 		handleStartupIssue("", nil, nil, isStartup)
 		return
 	}
 
 	if flags.PrintVersion {
 		PrintVersion()
+		return
+	}
+
+	if flags.ValidateConfig {
+		err = validateConfig(conf)
+		if err != nil {
+			handleStartupIssue("ERROR: Could not load configuration: "+err.Error(), nil, nil, true)
+		}
+		fmt.Println("Trickster configuration validation succeeded.")
 		return
 	}
 
@@ -119,7 +130,7 @@ func runTrickster(wg *sync.WaitGroup, args []string, isStartup bool) {
 		caches[k] = c
 	}
 
-	_, err = routing.RegisterProxyRoutes(conf, router, caches, log)
+	_, err = routing.RegisterProxyRoutes(conf, router, caches, log, false)
 	if err != nil {
 		handleStartupIssue("route registration failed", tl.Pairs{"detail": err.Error()}, log, isStartup)
 		return
@@ -163,15 +174,52 @@ func runTrickster(wg *sync.WaitGroup, args []string, isStartup bool) {
 }
 
 func handleStartupIssue(event string, detail log.Pairs, logger *log.TricksterLogger, exitFatal bool) {
-	if event != "" && detail != nil && logger != nil {
-		if exitFatal {
-			logger.Fatal(1, event, detail)
+	if event != "" {
+		if logger != nil {
+			if exitFatal {
+				logger.Fatal(1, event, detail)
+				return
+			}
+			logger.Error(event, detail)
 			return
 		}
-		logger.Error(event, detail)
-		return
+		fmt.Println(event)
 	}
 	if exitFatal {
 		os.Exit(1)
 	}
+}
+
+func validateConfig(conf *config.TricksterConfig) error {
+
+	for _, w := range conf.LoaderWarnings {
+		fmt.Println(w)
+	}
+
+	// TODO: Tracers w/ Dry Run
+
+	var caches = make(map[string]cache.Cache)
+	for k := range conf.Caches {
+		caches[k] = nil
+	}
+
+	router := mux.NewRouter()
+	log := log.ConsoleLogger(conf.Logging.LogLevel)
+	_, err := routing.RegisterProxyRoutes(conf, router, caches, log, false)
+	if err != nil {
+		return err
+	}
+
+	if conf.Frontend.TLSListenPort < 1 && conf.Frontend.ListenPort < 1 {
+		return errors.New("no http or https listeners configured")
+	}
+
+	if conf.Frontend.ServeTLS && conf.Frontend.TLSListenPort > 0 {
+		_, err = conf.TLSCertConfig()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

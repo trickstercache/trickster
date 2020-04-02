@@ -66,7 +66,7 @@ https://github.com/tricksterproxy/trickster
 `
 
 func version() string {
-	return fmt.Sprintf("Trickster version: %s, buildInfo: %s %s, goVersion: %s © 2018 Comcast",
+	return fmt.Sprintf("Trickster version: %s, buildInfo: %s %s, goVersion: %s © 2018 Comcast Corporation",
 		runtime.ApplicationVersion,
 		applicationBuildTime, applicationGitCommitID,
 		applicationGoVersion,
