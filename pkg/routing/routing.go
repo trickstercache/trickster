@@ -47,7 +47,7 @@ import (
 // RegisterProxyRoutes iterates the Trickster Configuration and
 // registers the routes for the configured origins
 func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router,
-	caches map[string]cache.Cache, log *tl.TricksterLogger) (origins.Origins, error) {
+	caches map[string]cache.Cache, log *tl.TricksterLogger, dryRun bool) (origins.Origins, error) {
 
 	// a fake "top-level" origin representing the main frontend, so rules can route
 	// to it via the clients map
@@ -90,7 +90,7 @@ func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router,
 			continue
 		}
 
-		_, err = registerOriginRoutes(router, conf, k, o, clients, caches, log)
+		_, err = registerOriginRoutes(router, conf, k, o, clients, caches, log, dryRun)
 		if err != nil {
 			return nil, err
 		}
@@ -102,7 +102,7 @@ func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router,
 			cdo = ndo
 			defaultOrigin = "default"
 		} else {
-			_, err = registerOriginRoutes(router, conf, "default", ndo, clients, caches, log)
+			_, err = registerOriginRoutes(router, conf, "default", ndo, clients, caches, log, dryRun)
 			if err != nil {
 				return nil, err
 			}
@@ -110,7 +110,7 @@ func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router,
 	}
 
 	if cdo != nil {
-		clients, err = registerOriginRoutes(router, conf, defaultOrigin, cdo, clients, caches, log)
+		clients, err = registerOriginRoutes(router, conf, defaultOrigin, cdo, clients, caches, log, dryRun)
 		if err != nil {
 			return nil, err
 		}
@@ -146,7 +146,7 @@ func validateRuleClients(clients origins.Origins,
 
 func registerOriginRoutes(router *mux.Router, conf *config.TricksterConfig, k string,
 	o *oo.Options, clients origins.Origins, caches map[string]cache.Cache,
-	log *tl.TricksterLogger) (origins.Origins, error) {
+	log *tl.TricksterLogger, dryRun bool) (origins.Origins, error) {
 
 	var client origins.Client
 	var c cache.Cache
@@ -159,7 +159,7 @@ func registerOriginRoutes(router *mux.Router, conf *config.TricksterConfig, k st
 	}
 
 	log.Info("registering route paths",
-		tl.Pairs{"originName": k, "originType": o.OriginType, "upstreamHost": o.Host})
+		tl.Pairs{"originName": k, "originType": o.OriginType, "upstreamHost": o.Host, "dryRun": dryRun})
 
 	switch strings.ToLower(o.OriginType) {
 	case "prometheus", "":
@@ -179,7 +179,7 @@ func registerOriginRoutes(router *mux.Router, conf *config.TricksterConfig, k st
 		return nil, err
 	}
 
-	if client != nil {
+	if client != nil && !dryRun {
 		o.HTTPClient = client.HTTPClient()
 		clients[k] = client
 		defaultPaths := client.DefaultPathConfigs(o)
