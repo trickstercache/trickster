@@ -17,6 +17,7 @@
 package urls
 
 import (
+	"net/http"
 	"net/url"
 	"testing"
 )
@@ -35,4 +36,14 @@ func TestClone(t *testing.T) {
 		t.Errorf("expected %s got %s", "127.0.0.1", u2.Hostname())
 	}
 
+}
+
+func TestBuildUpstreamURL(t *testing.T) {
+	u1, _ := url.Parse("http://127.0.0.1:8080/base-path")
+	r, _ := http.NewRequest("GET", "http://test/new-path", nil)
+	expected := "/base-path/new-path"
+	u2 := BuildUpstreamURL(r, u1)
+	if u2.Path != expected {
+		t.Errorf("expected %s got %s", expected, u2.Path)
+	}
 }

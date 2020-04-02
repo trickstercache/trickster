@@ -23,8 +23,10 @@ import (
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 )
 
+// Origins represents a map of Origin Clients keyed by Client Name
 type Origins map[string]Client
 
+// Get returns the named origin
 func (o Origins) Get(originName string) Client {
 	if c, ok := o[originName]; ok {
 		return c
@@ -32,6 +34,7 @@ func (o Origins) Get(originName string) Client {
 	return nil
 }
 
+// GetConfig returns the named origin's Configuration Options
 func (o Origins) GetConfig(originName string) *oo.Options {
 	if c, ok := o[originName]; ok {
 		return c.Configuration()
@@ -39,6 +42,7 @@ func (o Origins) GetConfig(originName string) *oo.Options {
 	return nil
 }
 
+// GetRouter returns the named origin's Request Router
 func (o Origins) GetRouter(originName string) http.Handler {
 	if c, ok := o[originName]; ok {
 		return c.Router()

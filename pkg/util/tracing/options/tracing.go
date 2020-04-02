@@ -24,6 +24,7 @@ import (
 	"go.opentelemetry.io/otel/api/trace"
 )
 
+// TracingExporterOptions is a collection of Tracing Exporter Options
 type TracingExporterOptions struct {
 	Exporter string `toml:"type"`
 	// Collectoris the URL of the trace collector it MUST be of Implementation implementation
@@ -80,6 +81,7 @@ func (teo *TracingExporterOptions) Clone() *TracingExporterOptions {
 
 }
 
+// ProcessTracingConfigs enriches the configuration data of the provided Tracing Options collection
 func ProcessTracingConfigs(mo map[string]*Options, metadata *toml.MetaData) {
 	for k, v := range mo {
 		if !metadata.IsDefined("tracing", k, "exporter") {

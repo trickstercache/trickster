@@ -28,11 +28,13 @@ const (
 	PathMatchTypePrefix
 )
 
+// Names is a map of PathMatchTypes keyed by string name
 var Names = map[string]PathMatchType{
 	"exact":  PathMatchTypeExact,
 	"prefix": PathMatchTypePrefix,
 }
 
+// Values is a map of PathMatchTypes valued by string name
 var Values = make(map[PathMatchType]string)
 
 func init() {

@@ -56,6 +56,8 @@ func parseRewriteList(rl options.RewriteList) (RewriteInstructions, error) {
 	return fri, nil
 }
 
+// Rewrite returns a handler that executes the Rewriter and passes
+// the request to the next Handler
 func Rewrite(ri RewriteInstructions, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ri.Execute(r)

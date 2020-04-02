@@ -36,6 +36,7 @@ const (
 	OriginTypeClickHouse
 )
 
+// Names is a map of OriginTypes keyed by string name
 var Names = map[string]OriginType{
 	"rule":              OriginTypeRule,
 	"reverseproxycache": OriginTypeRPC,
@@ -46,6 +47,7 @@ var Names = map[string]OriginType{
 	"clickhouse":        OriginTypeClickHouse,
 }
 
+// Values is a map of OriginTypes valued by string name
 var Values = make(map[OriginType]string)
 
 func init() {

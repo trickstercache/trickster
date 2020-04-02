@@ -23,14 +23,14 @@ import (
 // ExamplePrintVersion tests the output of the printVersion() func
 func ExamplePrintVersion() {
 	runtime.ApplicationVersion = "test"
-	printVersion()
+	PrintVersion()
 	// Output: Trickster version: test, buildInfo:  , goVersion:  © 2018 Comcast
 }
 
 func ExamplePrintUsage() {
 
 	runtime.ApplicationVersion = "test"
-	printUsage()
+	PrintUsage()
 	// Output: Trickster version: test, buildInfo:  , goVersion:  © 2018 Comcast
 	//
 	// Trickster Usage:

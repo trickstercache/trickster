@@ -18,6 +18,7 @@ package main
 
 import (
 	"crypto/tls"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -27,6 +28,8 @@ import (
 
 	"github.com/gorilla/handlers"
 )
+
+var listeners = make(map[string]net.Listener)
 
 func startListener(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, router http.Handler, wg *sync.WaitGroup,
@@ -44,6 +47,8 @@ func startListener(listenerName, address string, port int, connectionsLimit int,
 	}
 	log.Info("proxy listener starting",
 		tl.Pairs{"name": listenerName, "port": port, "address": address})
+
+	listeners[listenerName] = l
 
 	err = http.Serve(l, handlers.CompressHandler(router))
 	if err != nil {

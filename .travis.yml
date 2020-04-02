@@ -11,10 +11,11 @@ matrix:
 
   - language: go
     go:
-    - "1.13.x"
+    - "1.14.x"
     - master
     before_install:
     - go get github.com/mattn/goveralls
+    - go mod vendor
     script:
     - make style test build
     - sed -i -e '/^.*_gen\.go:.*$/d' .coverprofile

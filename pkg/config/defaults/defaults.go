@@ -22,72 +22,111 @@ import (
 )
 
 const (
-	DefaultLogFile  = ""
+	// DefaultLogFile is the default disk location for log files.
+	// we use an empty string to indicate log to console
+	DefaultLogFile = ""
+	// DefaultLogLevel is the default level for logging
 	DefaultLogLevel = "INFO"
 
-	DefaultProxyListenPort    = 8480
+	// DefaultProxyListenPort is the default port that the HTTP frontend will listen on
+	DefaultProxyListenPort = 8480
+	// DefaultProxyListenAddress is the default address that the HTTP frontend will listen on
 	DefaultProxyListenAddress = ""
 
-	DefaultMetricsListenPort    = 8481
+	// DefaultMetricsListenPort is the default port that the HTTP metrics endpoint will listen on
+	DefaultMetricsListenPort = 8481
+	// DefaultMetricsListenAddress is the default address that the HTTP metrics endpoint will listen on
 	DefaultMetricsListenAddress = ""
 
 	// 8482 is reserved for mockster, allowing the default TLS port to end with 3
 
-	DefaultTLSProxyListenPort    = 8483
+	// DefaultTLSProxyListenPort is the default port that the TLS frontend endpoint will listen on
+	DefaultTLSProxyListenPort = 8483
+	// DefaultTLSProxyListenAddress is the default address that the TLS frontend endpoint will listen on
 	DefaultTLSProxyListenAddress = ""
 
-	DefaultTracerImplemetation    = "opentelemetry"
+	// DefaultTracerImplemetation is the default distributed tracer implementation
+	DefaultTracerImplemetation = "opentelemetry"
+	// DefaultExporterImplementation is the default distributed tracer exporter implementation
 	DefaultExporterImplementation = "noop"
 
-	DefaultCacheType   = "memory"
+	// DefaultCacheType is the default cache type for any defined cache
+	DefaultCacheType = "memory"
+	// DefaultCacheTypeID is the default cache type ID for any defined cache
+	// and should align with DefaultCacheType
 	DefaultCacheTypeID = types.CacheTypeMemory
 
-	DefaultTimeseriesTTLSecs  = 21600
+	// DefaultTimeseriesTTLSecs is the default Cache TTL for Time Series Objects
+	DefaultTimeseriesTTLSecs = 21600
+	// DefaultFastForwardTTLSecs is the default Cache TTL for Time Series Fast Forward Objects
 	DefaultFastForwardTTLSecs = 15
-	DefaultMaxTTLSecs         = 86400
+	// DefaultMaxTTLSecs is the default Maximum TTL of any cache object
+	DefaultMaxTTLSecs = 86400
+	// DefaultRevalidationFactor is the default Cache Object Freshness Lifetime to TTL mulitplier
 	DefaultRevalidationFactor = 2
-
+	// DefaultCachePath is the default Cache Path for the Filesystem Cache
 	DefaultCachePath = "/tmp/trickster"
-
+	// DefaultRedisClientType is the default Redis Client Type
 	DefaultRedisClientType = "standard"
-	DefaultRedisProtocol   = "tcp"
-	DefaultRedisEndpoint   = "redis:6379"
-
-	DefaultBBoltFile   = "trickster.db"
+	// DefaultRedisProtocol is the default Redis Client protocol
+	DefaultRedisProtocol = "tcp"
+	// DefaultRedisEndpoint is the default Redis Client endpoint
+	DefaultRedisEndpoint = "redis:6379"
+	// DefaultBBoltFile is the default bbolt Cache filename
+	DefaultBBoltFile = "trickster.db"
+	// DefaultBBoltBucket is the default bbolt Cache bucket name
 	DefaultBBoltBucket = "trickster"
-
-	DefaultCacheIndexReap        = 3
-	DefaultCacheIndexFlush       = 5
-	DefaultCacheMaxSizeBytes     = 536870912
-	DefaultMaxSizeBackoffBytes   = 16777216
-	DefaultMaxSizeObjects        = 0
+	// DefaultCacheIndexReap is the default Cache Index Reap interval (in seconds)
+	DefaultCacheIndexReap = 3
+	// DefaultCacheIndexFlush is the default Cache Index Flush interval (in seconds)
+	DefaultCacheIndexFlush = 5
+	// DefaultCacheMaxSizeBytes is the default Max Cache Size in Bytes
+	DefaultCacheMaxSizeBytes = 536870912
+	// DefaultMaxSizeBackoffBytes is the default Max Cache Backoff Size in Bytes
+	DefaultMaxSizeBackoffBytes = 16777216
+	// DefaultMaxSizeObjects is the default Max Cache Object Count
+	DefaultMaxSizeObjects = 0
+	// DefaultMaxSizeBackoffObjects is the default Max Cache Backoff Object Count
 	DefaultMaxSizeBackoffObjects = 100
-	DefaultMaxObjectSizeBytes    = 524288
-
-	DefaultOriginTRF               = 1024
-	DefaultOriginTEM               = evictionmethods.EvictionMethodOldest
-	DefaultOriginTEMName           = "oldest"
-	DefaultOriginTimeoutSecs       = 180
-	DefaultOriginCacheName         = "default"
+	// DefaultMaxObjectSizeBytes is the default Max Size of any Cache Object
+	DefaultMaxObjectSizeBytes = 524288
+	// DefaultOriginTRF is the default Timeseries Retention Factor for Time Series-based Origins
+	DefaultOriginTRF = 1024
+	// DefaultOriginTEM is the default Timeseries Eviction Method for Time Series-based Origins
+	DefaultOriginTEM = evictionmethods.EvictionMethodOldest
+	// DefaultOriginTEMName is the default Timeseries Eviction Method name for Time Series-based Origins
+	DefaultOriginTEMName = "oldest"
+	// DefaultOriginTimeoutSecs is the default Upstream Request Timeout for Origins
+	DefaultOriginTimeoutSecs = 180
+	// DefaultOriginCacheName is the default Cache Name for Origins
+	DefaultOriginCacheName = "default"
+	// DefaultOriginNegativeCacheName is the default Negative Cache Name for Origins
 	DefaultOriginNegativeCacheName = "default"
-	DefaultTracingConfigName       = "default"
-	DefaultBackfillToleranceSecs   = 0
-	DefaultKeepAliveTimeoutSecs    = 300
-	DefaultMaxIdleConns            = 20
-
-	DefaultHealthCheckPath  = "-"
+	// DefaultTracingConfigName is the default Tracing Config Name for Origins
+	DefaultTracingConfigName = "default"
+	// DefaultBackfillToleranceSecs is the default Backfill Tolerance setting for Origins
+	DefaultBackfillToleranceSecs = 0
+	// DefaultKeepAliveTimeoutSecs is the default Keep Alive Timeout for Origins' upstream client pools
+	DefaultKeepAliveTimeoutSecs = 300
+	// DefaultMaxIdleConns is the default number of Idle Connections in Origins' upstream client pools
+	DefaultMaxIdleConns = 20
+	// DefaultHealthCheckPath is the default value (noop) for Origins' Health Check Path
+	DefaultHealthCheckPath = "-"
+	// DefaultHealthCheckQuery is the default value (noop) for Origins' Health Check Query Parameters
 	DefaultHealthCheckQuery = "-"
-	DefaultHealthCheckVerb  = "-"
-
+	// DefaultHealthCheckVerb is the default value (noop) for Origins' Health Check Verb
+	DefaultHealthCheckVerb = "-"
+	// DefaultConfigHandlerPath is the default value for the Trickster Config Printout Handler path
 	DefaultConfigHandlerPath = "/trickster/config"
-	DefaultPingHandlerPath   = "/trickster/ping"
-
+	// DefaultPingHandlerPath is the default value for the Trickster Config Ping Handler path
+	DefaultPingHandlerPath = "/trickster/ping"
+	// DefaultMaxRuleExecutions is the default value for the number of allowed Rule executions per Request
 	DefaultMaxRuleExecutions = 16
-
 	// DefaultConfigPath defines the default location of the Trickster config file
 	DefaultConfigPath = "/etc/trickster/trickster.conf"
 )
 
+// DefaultCompressableTypes returns a list of types that Trickster should compress before caching
 func DefaultCompressableTypes() []string {
 	return []string{
 		"text/html",

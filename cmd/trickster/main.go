@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+// Package main is the main package for the Trickster application
 package main
 
 import (
@@ -29,6 +30,7 @@ import (
 	th "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	"github.com/tricksterproxy/trickster/pkg/routing"
 	"github.com/tricksterproxy/trickster/pkg/runtime"
+	"github.com/tricksterproxy/trickster/pkg/util/log"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 	tr "github.com/tricksterproxy/trickster/pkg/util/tracing/registration"
@@ -48,24 +50,32 @@ const (
 	applicationVersion = "1.1.0"
 )
 
-// Package main is the main package for the Trickster application
+var fatalStartupErrors = true
+
 func main() {
+	wg := &sync.WaitGroup{}
+	runTrickster(wg, os.Args[1:], fatalStartupErrors)
+	wg.Wait()
+}
+
+func runTrickster(wg *sync.WaitGroup, args []string, isStartup bool) {
 
 	var err error
 
 	runtime.ApplicationName = applicationName
 	runtime.ApplicationVersion = applicationVersion
 
-	conf, flags, err := config.Load(runtime.ApplicationName, runtime.ApplicationVersion, os.Args[1:])
+	conf, flags, err := config.Load(runtime.ApplicationName, runtime.ApplicationVersion, args)
 	if err != nil {
 		fmt.Println("\nERROR: Could not load configuration:", err.Error())
-		printUsage()
-		os.Exit(1)
+		PrintUsage()
+		handleStartupIssue("", nil, nil, isStartup)
+		return
 	}
 
 	if flags.PrintVersion {
-		printVersion()
-		os.Exit(0)
+		PrintVersion()
+		return
 	}
 
 	log := tl.Init(conf)
@@ -89,7 +99,8 @@ func main() {
 	// Register Tracing Configurations
 	tracerFlushers, err := tr.RegisterAll(conf, log)
 	if err != nil {
-		log.Fatal(1, "tracing registration failed", tl.Pairs{"detail": err.Error()})
+		handleStartupIssue("tracing registration failed", tl.Pairs{"detail": err.Error()}, log, isStartup)
+		return
 	}
 
 	if len(tracerFlushers) > 0 {
@@ -110,14 +121,14 @@ func main() {
 
 	_, err = routing.RegisterProxyRoutes(conf, router, caches, log)
 	if err != nil {
-		log.Fatal(1, "route registration failed", tl.Pairs{"detail": err.Error()})
+		handleStartupIssue("route registration failed", tl.Pairs{"detail": err.Error()}, log, isStartup)
+		return
 	}
 
 	if conf.Frontend.TLSListenPort < 1 && conf.Frontend.ListenPort < 1 {
-		log.Fatal(1, "no http or https listeners configured", tl.Pairs{})
+		handleStartupIssue("no http or https listeners configured", tl.Pairs{}, log, isStartup)
+		return
 	}
-
-	wg := &sync.WaitGroup{}
 
 	// if TLS port is configured and at least one origin is mapped to a good tls config,
 	// then set up the tls server listener instance
@@ -149,6 +160,18 @@ func main() {
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
 			conf.Frontend.ConnectionsLimit, nil, "/metrics", metrics.Handler(), wg, true, log)
 	}
+}
 
-	wg.Wait()
+func handleStartupIssue(event string, detail log.Pairs, logger *log.TricksterLogger, exitFatal bool) {
+	if event != "" && detail != nil && logger != nil {
+		if exitFatal {
+			logger.Fatal(1, event, detail)
+			return
+		}
+		logger.Error(event, detail)
+		return
+	}
+	if exitFatal {
+		os.Exit(1)
+	}
 }

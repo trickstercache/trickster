@@ -14,12 +14,28 @@
  * limitations under the License.
  */
 
-package options
+package handlers
 
-// RewriteList is a list of Rewrite Instructions
-type RewriteList [][]string
+import (
+	"context"
+	"net/http/httptest"
+	"testing"
+)
 
-// Options is a collection of Options pertaining to Request Rewriter Instructions
-type Options struct {
-	Instructions RewriteList `toml:"instructions"`
+func TestRedirector(t *testing.T) {
+	ctx := context.Background()
+	ctx = WithRedirects(ctx, 302, "http://tricksterproxy.io")
+	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
+	w := httptest.NewRecorder()
+	HandleRedirectResponse(w, r)
+	if w.Result().StatusCode != 400 {
+		t.Errorf("expected %d got %d", 400, w.Result().StatusCode)
+	}
+
+	r = r.WithContext(ctx)
+	w = httptest.NewRecorder()
+	HandleRedirectResponse(w, r)
+	if w.Result().StatusCode != 302 {
+		t.Errorf("expected %d got %d", 302, w.Result().StatusCode)
+	}
 }

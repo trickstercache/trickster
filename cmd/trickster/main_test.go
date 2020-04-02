@@ -14,12 +14,25 @@
  * limitations under the License.
  */
 
-package options
+package main
 
-// RewriteList is a list of Rewrite Instructions
-type RewriteList [][]string
+import (
+	"sync"
+	"testing"
+)
 
-// Options is a collection of Options pertaining to Request Rewriter Instructions
-type Options struct {
-	Instructions RewriteList `toml:"instructions"`
+func TestMain(t *testing.T) {
+	fatalStartupErrors = false
+	main()
+	// Successful test criteria is that the call to main returns without timing out on wg.Wait()
+}
+
+func TestRunTrickster(t *testing.T) {
+	wg := &sync.WaitGroup{}
+	runTrickster(wg, []string{}, false)
+
+	runTrickster(wg, []string{"-version"}, false)
+
+	runTrickster(wg, []string{"-origin-type", "rpc", "-origin-url", "http://tricksterproxy.io"}, false)
+
 }
