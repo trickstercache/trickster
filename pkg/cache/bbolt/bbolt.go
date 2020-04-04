@@ -38,7 +38,7 @@ type Cache struct {
 	Name   string
 	Config *options.Options
 	dbh    *bbolt.DB
-	Logger *log.TricksterLogger
+	Logger *log.Logger
 	Index  *index.Index
 }
 

@@ -42,8 +42,8 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// TricksterConfig is the main configuration object
-type TricksterConfig struct {
+// Config is the main configuration object
+type Config struct {
 	// Main is the primary MainConfig section
 	Main *MainConfig `toml:"main"`
 	// Origins is a map of OriginConfigs
@@ -81,8 +81,8 @@ type MainConfig struct {
 	ConfigHandlerPath string `toml:"config_handler_path"`
 	// PingHandlerPath provides the path to register the Ping Handler for checking that Trickster is running
 	PingHandlerPath string `toml:"ping_handler_path"`
-	// ReloadConfig provides the details necessary to enable the config reloading feature of Trickster
-	Reload *ReloadConfig `toml:"reload"`
+	// ReloadHandlerPath provides the path to register the Config Reload Handler
+	ReloadHandlerPath string `toml:"reload_handler_path"`
 }
 
 // FrontendConfig is a collection of configurations for the main http frontend for the application
@@ -111,14 +111,6 @@ type LoggingConfig struct {
 	LogLevel string `toml:"log_level"`
 }
 
-// ReloadConfig is a collection of Metrics Collection configurations
-type ReloadConfig struct {
-	// ListenAddress is IP address from which the Reload API is available for triggering at /-/reload
-	ListenAddress string `toml:"listen_address"`
-	// ListenPort is TCP Port from which the Reload API is available for triggering at /-/reload
-	ListenPort int `toml:"listen_port"`
-}
-
 // MetricsConfig is a collection of Metrics Collection configurations
 type MetricsConfig struct {
 	// ListenAddress is IP address from which the Application Metrics are available for pulling at /metrics
@@ -140,8 +132,8 @@ func (nc NegativeCacheConfig) Clone() NegativeCacheConfig {
 }
 
 // NewConfig returns a Config initialized with default values.
-func NewConfig() *TricksterConfig {
-	return &TricksterConfig{
+func NewConfig() *Config {
+	return &Config{
 		Caches: map[string]*cache.Options{
 			"default": cache.NewOptions(),
 		},
@@ -181,7 +173,7 @@ func NewNegativeCacheConfig() NegativeCacheConfig {
 }
 
 // loadFile loads application configuration from a TOML-formatted file.
-func (c *TricksterConfig) loadFile(flags *Flags) error {
+func (c *Config) loadFile(flags *Flags) error {
 	md, err := toml.DecodeFile(flags.ConfigPath, c)
 	if err != nil {
 		c.setDefaults(&toml.MetaData{})
@@ -191,7 +183,7 @@ func (c *TricksterConfig) loadFile(flags *Flags) error {
 	return err
 }
 
-func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
+func (c *Config) setDefaults(metadata *toml.MetaData) error {
 
 	var err error
 
@@ -220,7 +212,7 @@ func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
 	return nil
 }
 
-func (c *TricksterConfig) validateTLSConfigs() error {
+func (c *Config) validateTLSConfigs() error {
 	for _, oc := range c.Origins {
 		if oc.TLS != nil {
 			b, err := oc.TLS.Validate()
@@ -238,7 +230,7 @@ func (c *TricksterConfig) validateTLSConfigs() error {
 var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers", "default_ttl_secs",
 	"request_headers", "response_headers", "response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding"}
 
-func (c *TricksterConfig) validateConfigMappings() error {
+func (c *Config) validateConfigMappings() error {
 	for k, oc := range c.Origins {
 
 		if err := origins.ValidateOriginName(k); err != nil {
@@ -263,7 +255,7 @@ func (c *TricksterConfig) validateConfigMappings() error {
 	return nil
 }
 
-func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) error {
+func (c *Config) processOriginConfigs(metadata *toml.MetaData) error {
 
 	c.activeCaches = make(map[string]bool)
 
@@ -471,7 +463,7 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) error {
 	return nil
 }
 
-func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
+func (c *Config) processCachingConfigs(metadata *toml.MetaData) {
 
 	// setCachingDefaults assumes that processOriginConfigs was just ran
 
@@ -635,8 +627,8 @@ func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
 	}
 }
 
-// Clone returns an exact copy of the subject *TricksterConfig
-func (c *TricksterConfig) Clone() *TricksterConfig {
+// Clone returns an exact copy of the subject *Config
+func (c *Config) Clone() *Config {
 
 	nc := NewConfig()
 	delete(nc.Caches, "default")
@@ -684,7 +676,7 @@ func (c *TricksterConfig) Clone() *TricksterConfig {
 	return nc
 }
 
-func (c *TricksterConfig) String() string {
+func (c *Config) String() string {
 	cp := c.Clone()
 
 	// the toml library will panic if the Handler is assigned,

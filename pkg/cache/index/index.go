@@ -98,7 +98,7 @@ func ObjectFromBytes(data []byte) (*Object, error) {
 // NewIndex returns a new Index based on the provided inputs
 func NewIndex(cacheName, cacheType string, indexData []byte, cfg *options.Options,
 	bulkRemoveFunc func([]string, bool), flushFunc func(cacheKey string, data []byte),
-	log *tl.TricksterLogger) *Index {
+	log *tl.Logger) *Index {
 	i := &Index{}
 
 	if len(indexData) > 0 {
@@ -222,7 +222,7 @@ func (idx *Index) GetExpiration(cacheKey string) time.Time {
 }
 
 // flusher periodically calls the cache's index flush func that writes the cache index to disk
-func (idx *Index) flusher(log *tl.TricksterLogger) {
+func (idx *Index) flusher(log *tl.Logger) {
 	var lastFlush time.Time
 	for {
 		time.Sleep(idx.flushInterval)
@@ -234,7 +234,7 @@ func (idx *Index) flusher(log *tl.TricksterLogger) {
 	}
 }
 
-func (idx *Index) flushOnce(log *tl.TricksterLogger) {
+func (idx *Index) flushOnce(log *tl.Logger) {
 	indexLock.Lock()
 	bytes, err := idx.MarshalMsg(nil)
 	indexLock.Unlock()
@@ -246,7 +246,7 @@ func (idx *Index) flushOnce(log *tl.TricksterLogger) {
 }
 
 // reaper continually iterates through the cache to find expired elements and removes them
-func (idx *Index) reaper(log *tl.TricksterLogger) {
+func (idx *Index) reaper(log *tl.Logger) {
 	for {
 		idx.reap(log)
 		time.Sleep(idx.reapInterval)
@@ -257,7 +257,7 @@ type objectsAtime []*Object
 
 // reap makes a single iteration through the cache index to to find and remove expired elements
 // and evict least-recently-accessed elements to maintain the Maximum allowed Cache Size
-func (idx *Index) reap(log *tl.TricksterLogger) {
+func (idx *Index) reap(log *tl.Logger) {
 
 	indexLock.Lock()
 	defer indexLock.Unlock()

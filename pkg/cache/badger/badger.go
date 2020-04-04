@@ -32,7 +32,7 @@ import (
 type Cache struct {
 	Name   string
 	Config *options.Options
-	Logger *log.TricksterLogger
+	Logger *log.Logger
 	dbh    *badger.DB
 }
 

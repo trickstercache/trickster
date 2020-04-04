@@ -40,7 +40,7 @@ type Cache struct {
 	Name   string
 	Config *options.Options
 	Index  *index.Index
-	Logger *log.TricksterLogger
+	Logger *log.Logger
 }
 
 // Configuration returns the Configuration for the Cache object

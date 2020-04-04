@@ -46,8 +46,8 @@ import (
 
 // RegisterProxyRoutes iterates the Trickster Configuration and
 // registers the routes for the configured origins
-func RegisterProxyRoutes(conf *config.TricksterConfig, router *mux.Router,
-	caches map[string]cache.Cache, log *tl.TricksterLogger, dryRun bool) (origins.Origins, error) {
+func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
+	caches map[string]cache.Cache, log *tl.Logger, dryRun bool) (origins.Origins, error) {
 
 	// a fake "top-level" origin representing the main frontend, so rules can route
 	// to it via the clients map
@@ -144,9 +144,9 @@ func validateRuleClients(clients origins.Origins,
 	return nil
 }
 
-func registerOriginRoutes(router *mux.Router, conf *config.TricksterConfig, k string,
+func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 	o *oo.Options, clients origins.Origins, caches map[string]cache.Cache,
-	log *tl.TricksterLogger, dryRun bool) (origins.Origins, error) {
+	log *tl.Logger, dryRun bool) (origins.Origins, error) {
 
 	var client origins.Client
 	var c cache.Cache
@@ -193,7 +193,7 @@ func registerOriginRoutes(router *mux.Router, conf *config.TricksterConfig, k st
 // the path routes to the appropriate handler from the provided handlers map
 func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 	client origins.Client, oo *oo.Options, c cache.Cache,
-	paths map[string]*po.Options, log *tl.TricksterLogger) {
+	paths map[string]*po.Options, log *tl.Logger) {
 
 	decorate := func(po *po.Options) http.Handler {
 		// add Origin, Cache, and Path Configs to the HTTP Request's context

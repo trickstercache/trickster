@@ -123,7 +123,7 @@ func (tl *Logger) SetLogLevel(logLevel string) {
 // New returns a Logger for the provided logging configuration. The
 // returned Logger will write to files distinguished from other Loggers by the
 // instance string.
-func New(conf *config.TricksterConfig) *Logger {
+func New(conf *config.Config) *Logger {
 
 	l := noopLogger()
 	var wr io.Writer

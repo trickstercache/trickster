@@ -37,7 +37,7 @@ import (
 // }
 
 // PingHandleFunc responds to an HTTP Request with 200 OK and "pong"
-func PingHandleFunc(conf *config.TricksterConfig) func(http.ResponseWriter, *http.Request) {
+func PingHandleFunc(conf *config.Config) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 		w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)

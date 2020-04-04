@@ -74,7 +74,7 @@ type proxyRequest struct {
 	collapsedForwarder ProgressiveCollapseForwarder
 	cachingPolicy      *CachingPolicy
 
-	Logger *tl.TricksterLogger
+	Logger *tl.Logger
 	isPCF  bool
 }
 

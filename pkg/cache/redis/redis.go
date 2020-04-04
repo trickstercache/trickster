@@ -37,7 +37,7 @@ const Redis = "redis"
 type Cache struct {
 	Name   string
 	Config *options.Options
-	Logger *tl.TricksterLogger
+	Logger *tl.Logger
 
 	client redis.Cmdable
 	closer func() error

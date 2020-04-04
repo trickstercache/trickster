@@ -27,7 +27,7 @@ import (
 
 // Load returns the Application Configuration, starting with a default config,
 // then overriding with any provided config file, then env vars, and finally flags
-func Load(applicationName string, applicationVersion string, arguments []string) (*TricksterConfig, *Flags, error) {
+func Load(applicationName string, applicationVersion string, arguments []string) (*Config, *Flags, error) {
 
 	c := NewConfig()
 	flags, err := parseFlags(applicationName, arguments) // Parse here to get config file path and version flags

@@ -23,7 +23,7 @@ import (
 )
 
 // TLSCertConfig returns the crypto/tls configuration object with a list of name-bound certs derifed from the running config
-func (c *TricksterConfig) TLSCertConfig() (*tls.Config, error) {
+func (c *Config) TLSCertConfig() (*tls.Config, error) {
 	var err error
 	if !c.Frontend.ServeTLS {
 		return nil, nil

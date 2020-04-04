@@ -120,6 +120,8 @@ const (
 	DefaultConfigHandlerPath = "/trickster/config"
 	// DefaultPingHandlerPath is the default value for the Trickster Config Ping Handler path
 	DefaultPingHandlerPath = "/trickster/ping"
+	// DefaultReloadHandlerPath defines the defaupt path for the Reload Handler
+	DefaultReloadHandlerPath = "/trickster/config/reload"
 	// DefaultMaxRuleExecutions is the default value for the number of allowed Rule executions per Request
 	DefaultMaxRuleExecutions = 16
 	// DefaultConfigPath defines the default location of the Trickster config file

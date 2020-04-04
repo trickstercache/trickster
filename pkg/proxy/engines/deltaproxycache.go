@@ -371,7 +371,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	locks.Release(key)
 }
 
-func logDeltaRoutine(log *tl.TricksterLogger, p tl.Pairs) { log.Debug("delta routine completed", p) }
+func logDeltaRoutine(log *tl.Logger, p tl.Pairs) { log.Debug("delta routine completed", p) }
 
 func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery, client origins.TimeseriesClient) (timeseries.Timeseries, *HTTPDocument, time.Duration, error) {
 

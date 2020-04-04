@@ -39,7 +39,7 @@ type Cache struct {
 	client sync.Map
 	Config *options.Options
 	Index  *index.Index
-	Logger *tl.TricksterLogger
+	Logger *tl.Logger
 }
 
 // Configuration returns the Configuration for the Cache object

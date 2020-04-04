@@ -84,7 +84,7 @@ func parseFlags(applicationName string, arguments []string) (*Flags, error) {
 }
 
 // loadFlags loads configuration from command line flags.
-func (c *TricksterConfig) loadFlags(flags *Flags) {
+func (c *Config) loadFlags(flags *Flags) {
 	if len(flags.Origin) > 0 {
 		c.providedOriginURL = flags.Origin
 	}
