@@ -113,10 +113,10 @@ func ConsoleLogger(logLevel string) *TricksterLogger {
 	return l
 }
 
-// Init returns a TricksterLogger for the provided logging configuration. The
+// New returns a TricksterLogger for the provided logging configuration. The
 // returned TricksterLogger will write to files distinguished from other TricksterLoggers by the
 // instance string.
-func Init(conf *config.TricksterConfig) *TricksterLogger {
+func New(conf *config.TricksterConfig) *TricksterLogger {
 
 	l := noopLogger()
 	var wr io.Writer
