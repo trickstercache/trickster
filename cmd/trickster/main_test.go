@@ -27,12 +27,12 @@ func TestMain(t *testing.T) {
 	// Successful test criteria is that the call to main returns without timing out on wg.Wait()
 }
 
-func TestRunTrickster(t *testing.T) {
+func TestRunConfig(t *testing.T) {
 	wg := &sync.WaitGroup{}
-	runTrickster(wg, []string{}, false)
+	runConfig(nil, wg, nil, []string{}, false)
 
-	runTrickster(wg, []string{"-version"}, false)
+	runConfig(nil, wg, nil, []string{"-version"}, false)
 
-	runTrickster(wg, []string{"-origin-type", "rpc", "-origin-url", "http://tricksterproxy.io"}, false)
+	runConfig(nil, wg, nil, []string{"-origin-type", "rpc", "-origin-url", "http://tricksterproxy.io"}, false)
 
 }

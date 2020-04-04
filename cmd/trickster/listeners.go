@@ -33,7 +33,7 @@ var listeners = make(map[string]net.Listener)
 
 func startListener(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, router http.Handler, wg *sync.WaitGroup,
-	exitOnError bool, log *tl.TricksterLogger) error {
+	exitOnError bool, log *tl.Logger) error {
 	if wg != nil {
 		defer wg.Done()
 	}
@@ -63,7 +63,7 @@ func startListener(listenerName, address string, port int, connectionsLimit int,
 
 func startListenerRouter(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, path string, handler http.Handler, wg *sync.WaitGroup,
-	exitOnError bool, log *tl.TricksterLogger) error {
+	exitOnError bool, log *tl.Logger) error {
 	router := http.NewServeMux()
 	router.Handle(path, handler)
 	return startListener(listenerName, address, port, connectionsLimit,

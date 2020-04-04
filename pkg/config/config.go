@@ -83,6 +83,8 @@ type MainConfig struct {
 	PingHandlerPath string `toml:"ping_handler_path"`
 	// ReloadHandlerPath provides the path to register the Config Reload Handler
 	ReloadHandlerPath string `toml:"reload_handler_path"`
+	// ConfigFilePath provides the path to the config file used in this running config
+	ConfigFilePath string `toml:"-"`
 }
 
 // FrontendConfig is a collection of configurations for the main http frontend for the application
