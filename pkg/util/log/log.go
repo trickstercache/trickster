@@ -35,9 +35,10 @@ import (
 
 // Logger is a container for the underlying log provider
 type Logger struct {
-	logger log.Logger
-	closer io.Closer
-	level  string
+	baseLogger log.Logger // the logger prior to leveling, used to relevel in config reload
+	logger     log.Logger // the logger after leveling, which is used by importing packages
+	closer     io.Closer
+	level      string
 
 	onceMutex      *sync.Mutex
 	onceRanEntries map[string]bool
@@ -82,42 +83,41 @@ func noopLogger() *Logger {
 
 // ConsoleLogger returns a Logger object that prints log events to the Console
 func ConsoleLogger(logLevel string) *Logger {
+
 	l := noopLogger()
-
 	wr := os.Stdout
-
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(wr))
-	logger = log.With(logger,
+	l.baseLogger = log.NewLogfmtLogger(log.NewSyncWriter(wr))
+	l.baseLogger = log.With(l.baseLogger,
 		"time", log.DefaultTimestampUTC,
 		"app", "trickster",
 		"caller", log.Valuer(func() interface{} {
 			return pkgCaller{stack.Caller(6)}
 		}),
 	)
-
-	l.level = strings.ToLower(logLevel)
-
-	// wrap logger depending on log level
-	switch l.level {
-	case "debug":
-		logger = level.NewFilter(logger, level.AllowDebug())
-	case "info":
-		logger = level.NewFilter(logger, level.AllowInfo())
-	case "warn":
-		logger = level.NewFilter(logger, level.AllowWarn())
-	case "error":
-		logger = level.NewFilter(logger, level.AllowError())
-	case "trace":
-		logger = level.NewFilter(logger, level.AllowDebug())
-	case "none":
-		logger = level.NewFilter(logger, level.AllowNone())
-	default:
-		logger = level.NewFilter(logger, level.AllowInfo())
-	}
-
-	l.logger = logger
-
+	l.SetLogLevel(logLevel)
 	return l
+}
+
+// SetLogLevel sets the log level, defaulting to "Info" if the provided level is unknown
+func (tl *Logger) SetLogLevel(logLevel string) {
+	tl.level = strings.ToLower(logLevel)
+	// wrap logger depending on log level
+	switch tl.level {
+	case "debug":
+		tl.logger = level.NewFilter(tl.baseLogger, level.AllowDebug())
+	case "info":
+		tl.logger = level.NewFilter(tl.baseLogger, level.AllowInfo())
+	case "warn":
+		tl.logger = level.NewFilter(tl.baseLogger, level.AllowWarn())
+	case "error":
+		tl.logger = level.NewFilter(tl.baseLogger, level.AllowError())
+	case "trace":
+		tl.logger = level.NewFilter(tl.baseLogger, level.AllowDebug())
+	case "none":
+		tl.logger = level.NewFilter(tl.baseLogger, level.AllowNone())
+	default:
+		tl.logger = level.NewFilter(tl.baseLogger, level.AllowInfo())
+	}
 }
 
 // New returns a Logger for the provided logging configuration. The
@@ -145,8 +145,8 @@ func New(conf *config.TricksterConfig) *Logger {
 		}
 	}
 
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(wr))
-	logger = log.With(logger,
+	l.baseLogger = log.NewLogfmtLogger(log.NewSyncWriter(wr))
+	l.baseLogger = log.With(l.baseLogger,
 		"time", log.DefaultTimestampUTC,
 		"app", "trickster",
 		"caller", log.Valuer(func() interface{} {
@@ -154,25 +154,8 @@ func New(conf *config.TricksterConfig) *Logger {
 		}),
 	)
 
-	l.level = strings.ToLower(conf.Logging.LogLevel)
+	l.SetLogLevel(conf.Logging.LogLevel)
 
-	// wrap logger depending on log level
-	switch l.level {
-	case "debug":
-		logger = level.NewFilter(logger, level.AllowDebug())
-	case "info":
-		logger = level.NewFilter(logger, level.AllowInfo())
-	case "warn":
-		logger = level.NewFilter(logger, level.AllowWarn())
-	case "error":
-		logger = level.NewFilter(logger, level.AllowError())
-	case "trace":
-		logger = level.NewFilter(logger, level.AllowDebug())
-	default:
-		logger = level.NewFilter(logger, level.AllowInfo())
-	}
-
-	l.logger = logger
 	if c, ok := wr.(io.Closer); ok && c != nil {
 		l.closer = c
 	}

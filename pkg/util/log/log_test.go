@@ -260,3 +260,17 @@ func TestNewLoggerFatal_LogFile(t *testing.T) {
 	log.Close()
 	os.Remove(fileName)
 }
+
+func TestSetLogLevel(t *testing.T) {
+
+	l := DefaultLogger()
+	if l.level != "info" {
+		t.Errorf("expected %s got %s", "info", l.level)
+	}
+
+	l.SetLogLevel("warn")
+	if l.Level() != "warn" {
+		t.Errorf("expected %s got %s", "warn", l.level)
+	}
+
+}
