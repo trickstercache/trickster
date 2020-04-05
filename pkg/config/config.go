@@ -23,7 +23,10 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	cache "github.com/tricksterproxy/trickster/pkg/cache/options"
@@ -83,8 +86,11 @@ type MainConfig struct {
 	PingHandlerPath string `toml:"ping_handler_path"`
 	// ReloadHandlerPath provides the path to register the Config Reload Handler
 	ReloadHandlerPath string `toml:"reload_handler_path"`
-	// ConfigFilePath provides the path to the config file used in this running config
-	ConfigFilePath string `toml:"-"`
+
+	configFilePath      string
+	configLastModified  time.Time
+	configRateLimitTime time.Time
+	stalenessCheckLock  *sync.Mutex
 }
 
 // FrontendConfig is a collection of configurations for the main http frontend for the application
@@ -144,8 +150,10 @@ func NewConfig() *Config {
 			LogLevel: d.DefaultLogLevel,
 		},
 		Main: &MainConfig{
-			ConfigHandlerPath: d.DefaultConfigHandlerPath,
-			PingHandlerPath:   d.DefaultPingHandlerPath,
+			ConfigHandlerPath:  d.DefaultConfigHandlerPath,
+			PingHandlerPath:    d.DefaultPingHandlerPath,
+			ReloadHandlerPath:  d.DefaultReloadHandlerPath,
+			stalenessCheckLock: &sync.Mutex{},
 		},
 		Metrics: &MetricsConfig{
 			ListenPort: d.DefaultMetricsListenPort,
@@ -182,7 +190,23 @@ func (c *Config) loadFile(flags *Flags) error {
 		return err
 	}
 	err = c.setDefaults(&md)
+	if err == nil {
+		c.Main.configFilePath = flags.ConfigPath
+		c.Main.configLastModified = c.CheckFileLastModified()
+	}
 	return err
+}
+
+// CheckFileLastModified returns the last modified date of the running config file, if present
+func (c *Config) CheckFileLastModified() time.Time {
+	if c.Main.configFilePath == "" || c.Main == nil {
+		return time.Time{}
+	}
+	file, err := os.Stat(c.Main.configFilePath)
+	if err != nil {
+		return time.Time{}
+	}
+	return file.ModTime()
 }
 
 func (c *Config) setDefaults(metadata *toml.MetaData) error {
@@ -639,6 +663,7 @@ func (c *Config) Clone() *Config {
 	nc.Main.ConfigHandlerPath = c.Main.ConfigHandlerPath
 	nc.Main.InstanceID = c.Main.InstanceID
 	nc.Main.PingHandlerPath = c.Main.PingHandlerPath
+	nc.Main.ReloadHandlerPath = c.Main.ReloadHandlerPath
 
 	nc.Logging.LogFile = c.Logging.LogFile
 	nc.Logging.LogLevel = c.Logging.LogLevel
@@ -678,6 +703,25 @@ func (c *Config) Clone() *Config {
 	return nc
 }
 
+// IsStale returns true if the running config is stale versus the
+func (c *Config) IsStale() bool {
+
+	if c.Main == nil || c.Main.configFilePath == "" ||
+		time.Now().Before(c.Main.configRateLimitTime) {
+		return false
+	}
+
+	c.Main.stalenessCheckLock.Lock()
+	defer c.Main.stalenessCheckLock.Unlock()
+
+	c.Main.configRateLimitTime = time.Now().Add(time.Second * 5)
+	t := c.CheckFileLastModified()
+	if t.IsZero() {
+		return false
+	}
+	return t != c.Main.configLastModified
+}
+
 func (c *Config) String() string {
 	cp := c.Clone()
 
@@ -715,6 +759,14 @@ func (c *Config) String() string {
 	e := toml.NewEncoder(&buf)
 	e.Encode(cp)
 	return buf.String()
+}
+
+// ConfigFilePath returns the file path from which this configuration is based
+func (c *Config) ConfigFilePath() string {
+	if c.Main != nil {
+		return c.Main.configFilePath
+	}
+	return ""
 }
 
 var sensitiveCredentials = map[string]bool{headers.NameAuthorization: true}

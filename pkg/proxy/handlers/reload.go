@@ -18,19 +18,28 @@ package handlers
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/pkg/config/reload"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 // ReloadHandleFunc will reload the running configuration if it has changed
-func ReloadHandleFunc(conf *config.Config) func(http.ResponseWriter, *http.Request) {
-
+func ReloadHandleFunc(f reload.ReloaderFunc, conf *config.Config, wg *sync.WaitGroup,
+	log *log.Logger, args []string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if conf.IsStale() {
+			f(conf, wg, log, args, false)
+			w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
+			w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("configuration reloaded"))
+		}
 		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 		w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(conf.String()))
+		w.Write([]byte("configuration NOT reloaded"))
 	}
-
 }

@@ -37,9 +37,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	if flags.PrintVersion {
 		return nil, flags, nil
 	}
-	if err := c.loadFile(flags); err == nil {
-		c.Main.ConfigFilePath = flags.ConfigPath
-	} else if flags.customPath {
+	if err := c.loadFile(flags); err != nil && flags.customPath {
 		// a user-provided path couldn't be loaded. return the error for the application to handle
 		return nil, flags, err
 	}

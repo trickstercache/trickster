@@ -28,6 +28,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	th "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	"github.com/tricksterproxy/trickster/pkg/routing"
 	"github.com/tricksterproxy/trickster/pkg/runtime"
@@ -105,7 +106,11 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup,
 	router := mux.NewRouter()
 	router.HandleFunc(conf.Main.PingHandlerPath, th.PingHandleFunc(conf)).Methods("GET")
 	router.HandleFunc(conf.Main.ConfigHandlerPath, th.ConfigHandleFunc(conf)).Methods("GET")
-	// TODO: Add Reload Handler w/ Relevant stuff (incl. this func)
+	router.HandleFunc(conf.Main.ReloadHandlerPath,
+		handlers.ReloadHandleFunc(runConfig, conf, wg, log, args),
+	).Methods("GET")
+
+	startHupMonitor(conf, wg, log, args)
 
 	// TODO: Validate if anything about the caches has changed (e.g., are more than one cache using same filename)
 	// has the filename moved from and old to a new config - and if so, can we keep that handle.
@@ -154,7 +159,6 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup,
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
 			conf.Frontend.ConnectionsLimit, nil, "/metrics", metrics.Handler(), wg, true, log)
 	}
-
 }
 
 func applyLoggingConfig(c, oc *config.Config, oldLog *log.Logger) *log.Logger {
@@ -198,7 +202,7 @@ func initLogger(c *config.Config) *log.Logger {
 			"commitID":  applicationGitCommitID,
 			"buildTime": applicationBuildTime,
 			"logLevel":  c.Logging.LogLevel,
-			"config":    c.Main.ConfigFilePath,
+			"config":    c.ConfigFilePath(),
 		},
 	)
 	return log
