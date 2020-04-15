@@ -343,7 +343,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				} else {
 					cdata, err := client.MarshalTimeseries(cts)
 					if err != nil {
-						locks.Release(key)
 						return
 					}
 					doc.Body = cdata
