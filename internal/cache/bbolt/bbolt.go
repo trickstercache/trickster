@@ -159,7 +159,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
 		log.Debug("bbolt cache retrieve", log.Pairs{"cacheKey": cacheKey})
 		if atime {
-			c.Index.UpdateObjectAccessTime(cacheKey)
+			go c.Index.UpdateObjectAccessTime(cacheKey)
 		}
 		cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
 		locks.Release(lockPrefix + cacheKey)

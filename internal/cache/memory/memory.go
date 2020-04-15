@@ -129,7 +129,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index
 		if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
 			log.Debug("memory cache retrieve", log.Pairs{"cacheKey": cacheKey})
 			if atime {
-				c.Index.UpdateObjectAccessTime(cacheKey)
+				go c.Index.UpdateObjectAccessTime(cacheKey)
 			}
 			cache.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(o.Value)))
 			locks.Release(lockPrefix + cacheKey)
