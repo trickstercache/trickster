@@ -45,14 +45,14 @@ func startListener(listenerName, address string, port int, connectionsLimit int,
 		}
 		return err
 	}
-	log.Info("proxy listener starting",
+	log.Info("http listener starting",
 		tl.Pairs{"name": listenerName, "port": port, "address": address})
 
 	listeners[listenerName] = l
 
 	err = http.Serve(l, handlers.CompressHandler(router))
 	if err != nil {
-		log.Error("listener stopping", tl.Pairs{"name": listenerName, "detail": err})
+		log.Error("http listener stopping", tl.Pairs{"name": listenerName, "detail": err})
 		if exitOnError {
 			// TODO: don't exit when it's a graceful stop
 			os.Exit(1)
