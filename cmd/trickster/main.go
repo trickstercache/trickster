@@ -18,7 +18,6 @@
 package main
 
 import (
-	_ "net/http/pprof" // Comment to disable. Available on :METRICS_PORT/debug/pprof
 	"os"
 	"sync"
 

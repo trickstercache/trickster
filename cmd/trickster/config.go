@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -42,6 +43,8 @@ var cfgLock = &sync.Mutex{}
 
 func runConfig(oldConf *config.Config, wg *sync.WaitGroup,
 	log *log.Logger, args []string, errorsFatal bool) {
+
+	metrics.BuildInfo.WithLabelValues(applicationGoVersion, applicationGitCommitID, applicationVersion).Set(1)
 
 	cfgLock.Lock()
 	defer cfgLock.Unlock()
@@ -152,14 +155,17 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup,
 			conf.Frontend.ConnectionsLimit, nil, router, wg, true, log)
 	}
 
-	metrics.BuildInfo.WithLabelValues(applicationGoVersion, applicationGitCommitID, applicationVersion).Set(1)
-
 	// if the Metrics HTTP port is configured, then set up the http listener instance
 	if conf.Metrics != nil && conf.Metrics.ListenPort > 0 {
+		mr := http.NewServeMux()
+		mr.Handle("/metrics", metrics.Handler())
+		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "metrics" {
+			routing.RegisterPprofRoutes("metrics", mr, log)
+		}
 		wg.Add(1)
-		go startListenerRouter("metricsListener",
+		go startListener("metricsListener",
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, "/metrics", metrics.Handler(), wg, true, log)
+			conf.Frontend.ConnectionsLimit, nil, mr, wg, true, log)
 	}
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))

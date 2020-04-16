@@ -21,6 +21,7 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -86,6 +87,9 @@ type MainConfig struct {
 	PingHandlerPath string `toml:"ping_handler_path"`
 	// ReloadHandlerPath provides the path to register the Config Reload Handler
 	ReloadHandlerPath string `toml:"reload_handler_path"`
+	// PprofServer provides the name of the http listener that will host the pprof debugging routes
+	// Options are: "metrics", "reload", "both", or "off"; default is both
+	PprofServer string `toml:"pprof_server"`
 
 	configFilePath      string
 	configLastModified  time.Time
@@ -153,6 +157,7 @@ func NewConfig() *Config {
 			ConfigHandlerPath:  d.DefaultConfigHandlerPath,
 			PingHandlerPath:    d.DefaultPingHandlerPath,
 			ReloadHandlerPath:  d.DefaultReloadHandlerPath,
+			PprofServer:        d.DefaultPprofServerName,
 			stalenessCheckLock: &sync.Mutex{},
 		},
 		Metrics: &MetricsConfig{
@@ -213,6 +218,10 @@ func (c *Config) setDefaults(metadata *toml.MetaData) error {
 
 	var err error
 
+	if err = c.processPprofConfig(); err != nil {
+		return err
+	}
+
 	if c.RequestRewriters != nil {
 		if c.CompiledRewriters, err = rewriter.ProcessConfigs(c.RequestRewriters); err != nil {
 			return err
@@ -236,6 +245,20 @@ func (c *Config) setDefaults(metadata *toml.MetaData) error {
 	}
 
 	return nil
+}
+
+// ErrInvalidPprofServerName returns an error for invalid pprof server name
+var ErrInvalidPprofServerName = errors.New("invalid pprof server name")
+
+func (c *Config) processPprofConfig() error {
+	switch c.Main.PprofServer {
+	case "metrics", "reload", "off", "both":
+		return nil
+	case "":
+		c.Main.PprofServer = d.DefaultPprofServerName
+		return nil
+	}
+	return ErrInvalidPprofServerName
 }
 
 func (c *Config) validateTLSConfigs() error {
@@ -664,6 +687,7 @@ func (c *Config) Clone() *Config {
 	nc.Main.InstanceID = c.Main.InstanceID
 	nc.Main.PingHandlerPath = c.Main.PingHandlerPath
 	nc.Main.ReloadHandlerPath = c.Main.ReloadHandlerPath
+	nc.Main.PprofServer = c.Main.PprofServer
 
 	nc.Logging.LogFile = c.Logging.LogFile
 	nc.Logging.LogLevel = c.Logging.LogLevel

@@ -20,6 +20,7 @@ package routing
 import (
 	"fmt"
 	"net/http"
+	"net/http/pprof"
 	"sort"
 	"strings"
 
@@ -43,6 +44,16 @@ import (
 
 	"github.com/gorilla/mux"
 )
+
+// RegisterPprofRoutes will register the Pprof Debugging endpoints to the provided router
+func RegisterPprofRoutes(routerName string, h *http.ServeMux, log *tl.Logger) {
+	log.Info("registering pprof /debug routes", tl.Pairs{"routerName": routerName})
+	h.HandleFunc("/debug/pprof/", pprof.Index)
+	h.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	h.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	h.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	h.HandleFunc("/debug/pprof/trace", pprof.Trace)
+}
 
 // RegisterProxyRoutes iterates the Trickster Configuration and
 // registers the routes for the configured origins

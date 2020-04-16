@@ -126,6 +126,8 @@ const (
 	DefaultMaxRuleExecutions = 16
 	// DefaultConfigPath defines the default location of the Trickster config file
 	DefaultConfigPath = "/etc/trickster/trickster.conf"
+	// DefaultPprofServerName defines the default Pprof Server Name
+	DefaultPprofServerName = "both"
 )
 
 // DefaultCompressableTypes returns a list of types that Trickster should compress before caching
