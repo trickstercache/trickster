@@ -756,9 +756,6 @@ func (c *TestClient) HealthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *TestClient) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
-
-	//rsc := request.NewResources(c.config, c.path
-
 	r.URL = c.BuildUpstreamURL(r)
 	DeltaProxyCacheRequest(w, r)
 }

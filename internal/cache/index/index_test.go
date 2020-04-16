@@ -28,10 +28,7 @@ func init() {
 
 var testBulkIndex *Index
 
-func testBulkRemoveFunc(cacheKeys []string, noLock bool) {
-	for _, cacheKey := range cacheKeys {
-		testBulkIndex.RemoveObject(cacheKey, noLock)
-	}
+func testBulkRemoveFunc(cacheKeys []string) {
 }
 func fakeFlusherFunc(string, []byte) {}
 
@@ -219,7 +216,7 @@ func TestRemoveObject(t *testing.T) {
 		t.Errorf("test object missing from index")
 	}
 
-	idx.RemoveObject("test", false)
+	idx.RemoveObject("test")
 	if _, ok := idx.Objects["test"]; ok {
 		t.Errorf("test object should be missing from index")
 	}

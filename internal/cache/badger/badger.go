@@ -102,7 +102,7 @@ func (c *Cache) Remove(cacheKey string) {
 }
 
 // BulkRemove removes a list of objects from the cache. noLock is not used for Badger
-func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
+func (c *Cache) BulkRemove(cacheKeys []string) {
 	log.Debug("badger cache bulk remove", log.Pairs{})
 
 	c.dbh.Update(func(txn *badger.Txn) error {

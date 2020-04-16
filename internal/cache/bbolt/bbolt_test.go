@@ -414,7 +414,7 @@ func TestBboltCache_BulkRemove(t *testing.T) {
 	if ls != status.LookupStatusHit {
 		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
 	}
-	bc.BulkRemove([]string{cacheKey}, true)
+	bc.BulkRemove([]string{cacheKey})
 
 	// it should be a cache miss
 	_, ls, err = bc.Retrieve(cacheKey, false)
@@ -436,7 +436,7 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 		keyArray = append(keyArray, cacheKey+strconv.Itoa(n))
 	}
 
-	bc.BulkRemove(keyArray, true)
+	bc.BulkRemove(keyArray)
 
 	// it should be a cache miss
 	for n := 0; n < b.N; n++ {

@@ -45,7 +45,7 @@ type Index struct {
 	name           string                             `msg:"-"`
 	cacheType      string                             `msg:"-"`
 	config         config.CacheIndexConfig            `msg:"-"`
-	bulkRemoveFunc func([]string, bool)               `msg:"-"`
+	bulkRemoveFunc func([]string)                     `msg:"-"`
 	reapInterval   time.Duration                      `msg:"-"`
 	flushInterval  time.Duration                      `msg:"-"`
 	flushFunc      func(cacheKey string, data []byte) `msg:"-"`
@@ -92,7 +92,7 @@ func ObjectFromBytes(data []byte) (*Object, error) {
 }
 
 // NewIndex returns a new Index based on the provided inputs
-func NewIndex(cacheName, cacheType string, indexData []byte, cfg config.CacheIndexConfig, bulkRemoveFunc func([]string, bool), flushFunc func(cacheKey string, data []byte)) *Index {
+func NewIndex(cacheName, cacheType string, indexData []byte, cfg config.CacheIndexConfig, bulkRemoveFunc func([]string), flushFunc func(cacheKey string, data []byte)) *Index {
 	i := &Index{}
 
 	if len(indexData) > 0 {
@@ -183,25 +183,37 @@ func (idx *Index) UpdateObject(obj *Object) {
 }
 
 // RemoveObject removes an Object's Metadata from the Index
-func (idx *Index) RemoveObject(key string, noLock bool) {
-
-	if !noLock {
-		indexLock.Lock()
-		idx.lastWrite = time.Now()
-	}
+func (idx *Index) RemoveObject(key string) {
+	indexLock.Lock()
+	idx.lastWrite = time.Now()
 	if o, ok := idx.Objects[key]; ok {
 		idx.CacheSize -= o.Size
 		idx.ObjectCount--
-
 		cache.ObserveCacheOperation(idx.name, idx.cacheType, "del", "none", float64(o.Size))
-
 		delete(idx.Objects, key)
 		cache.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
 	}
+	indexLock.Unlock()
+}
+
+// RemoveObjects removes a list of Objects' Metadata from the Index
+func (idx *Index) RemoveObjects(keys []string, noLock bool) {
+	if !noLock {
+		indexLock.Lock()
+	}
+	for _, key := range keys {
+		if o, ok := idx.Objects[key]; ok {
+			idx.CacheSize -= o.Size
+			idx.ObjectCount--
+			cache.ObserveCacheOperation(idx.name, idx.cacheType, "del", "none", float64(o.Size))
+			delete(idx.Objects, key)
+			cache.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
+		}
+	}
+	idx.lastWrite = time.Now()
 	if !noLock {
 		indexLock.Unlock()
 	}
-
 }
 
 // GetExpiration returns the cache index's expiration for the object of the given key
@@ -276,7 +288,8 @@ func (idx *Index) reap() {
 
 	if len(removals) > 0 {
 		cache.ObserveCacheEvent(idx.name, idx.cacheType, "eviction", "ttl")
-		idx.bulkRemoveFunc(removals, true)
+		idx.bulkRemoveFunc(removals)
+		idx.RemoveObjects(removals, true)
 		cacheChanged = true
 	}
 
@@ -332,7 +345,8 @@ func (idx *Index) reap() {
 
 		if len(removals) > 0 {
 			cache.ObserveCacheEvent(idx.name, idx.cacheType, "eviction", evictionType)
-			idx.bulkRemoveFunc(removals, true)
+			idx.bulkRemoveFunc(removals)
+			idx.RemoveObjects(removals, true)
 			cacheChanged = true
 		}
 

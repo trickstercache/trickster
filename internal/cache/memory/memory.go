@@ -154,19 +154,27 @@ func (c *Cache) Remove(cacheKey string) {
 	c.remove(cacheKey, false)
 }
 
-func (c *Cache) remove(cacheKey string, noLock bool) {
+func (c *Cache) remove(cacheKey string, isBulk bool) {
 	locks.Acquire(lockPrefix + cacheKey)
 	c.client.Delete(cacheKey)
-	c.Index.RemoveObject(cacheKey, noLock)
+	if !isBulk {
+		c.Index.RemoveObject(cacheKey)
+	}
 	cache.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 	locks.Release(lockPrefix + cacheKey)
 }
 
 // BulkRemove removes a list of objects from the cache
-func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
+func (c *Cache) BulkRemove(cacheKeys []string) {
+	wg := &sync.WaitGroup{}
 	for _, cacheKey := range cacheKeys {
-		c.remove(cacheKey, noLock)
+		wg.Add(1)
+		go func(key string) {
+			c.remove(key, true)
+			wg.Done()
+		}(cacheKey)
 	}
+	wg.Wait()
 }
 
 // Close is not used for Cache, and is here to fully prototype the Cache Interface

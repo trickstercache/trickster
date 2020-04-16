@@ -570,7 +570,7 @@ func TestFilesystemCache_BulkRemove(t *testing.T) {
 		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
 	}
 
-	fc.BulkRemove([]string{cacheKey}, true)
+	fc.BulkRemove([]string{cacheKey})
 
 	// it should be a cache miss
 	_, ls, err = fc.Retrieve(cacheKey, false)
@@ -591,7 +591,7 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 		keyArray = append(keyArray, cacheKey+strconv.Itoa(n))
 	}
 
-	fc.BulkRemove(keyArray, true)
+	fc.BulkRemove(keyArray)
 
 	// it should be a cache miss
 	for n := 0; n < b.N; n++ {
