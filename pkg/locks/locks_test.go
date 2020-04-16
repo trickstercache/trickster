@@ -1,26 +1,26 @@
-/*
- * Copyright 2018 Comcast Cable Communications Management, LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+/**
+* Copyright 2018 Comcast Cable Communications Management, LLC
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+* http://www.apache.org/licenses/LICENSE-2.0
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
  */
 
 package locks
 
 import (
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
 )
+
+const testKey = "testKey"
 
 func TestLocks(t *testing.T) {
 
@@ -47,12 +47,53 @@ func TestLocks(t *testing.T) {
 		t.Errorf("expected 11 got %d", testVal)
 	}
 
-	// Cover Empty String Cases
-	mtx := Acquire("")
-	if mtx != nil {
-		t.Errorf("expected nil got %v", mtx)
+	expected := "invalid lock name: "
+	err := Acquire("")
+	if err.Error() != expected {
+		t.Errorf("got %s expected %s", err.Error(), expected)
 	}
-	// Shouldn't matter but covers the code
-	Release("")
+
+	err = Release("")
+	if err.Error() != expected {
+		t.Errorf("got %s expected %s", err.Error(), expected)
+	}
+
+	expected = "no such lock name: invalid"
+	err = Release("invalid")
+	if err.Error() != expected {
+		t.Errorf("got %s expected %s", err.Error(), expected)
+	}
+
+}
+
+func TestLocksConcurrent(t *testing.T) {
+
+	const size = 10000000
+
+	wg := &sync.WaitGroup{}
+	errs := make([]error, 0, size)
+
+	rand.Seed(time.Now().UnixNano())
+
+	for i := 0; i < size; i++ {
+		wg.Add(1)
+		go func() {
+			err := Acquire(testKey)
+			if err != nil {
+				errs = append(errs, err)
+			}
+			err = Release(testKey)
+			if err != nil {
+				errs = append(errs, err)
+			}
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+
+	for _, err := range errs {
+		t.Error(err)
+	}
 
 }

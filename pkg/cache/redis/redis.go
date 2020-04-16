@@ -124,7 +124,7 @@ func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
 }
 
 // BulkRemove removes a list of objects from the cache. noLock is not used for Redis
-func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
+func (c *Cache) BulkRemove(cacheKeys []string) {
 	c.Logger.Debug("redis cache bulk remove", tl.Pairs{})
 	c.client.Del(cacheKeys...)
 	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, float64(len(cacheKeys)))

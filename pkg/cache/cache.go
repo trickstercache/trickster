@@ -37,7 +37,7 @@ type Cache interface {
 	Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error)
 	SetTTL(cacheKey string, ttl time.Duration)
 	Remove(cacheKey string)
-	BulkRemove(cacheKeys []string, noLock bool)
+	BulkRemove(cacheKeys []string)
 	Close() error
 	Configuration() *options.Options
 }
@@ -50,7 +50,7 @@ type MemoryCache interface {
 	Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error)
 	SetTTL(cacheKey string, ttl time.Duration)
 	Remove(cacheKey string)
-	BulkRemove(cacheKeys []string, noLock bool)
+	BulkRemove(cacheKeys []string)
 	Close() error
 	Configuration() *options.Options
 	StoreReference(cacheKey string, data ReferenceObject, ttl time.Duration) error
