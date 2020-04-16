@@ -288,7 +288,7 @@ func (idx *Index) reap() {
 
 	if len(removals) > 0 {
 		cache.ObserveCacheEvent(idx.name, idx.cacheType, "eviction", "ttl")
-		idx.bulkRemoveFunc(removals)
+		go idx.bulkRemoveFunc(removals)
 		idx.RemoveObjects(removals, true)
 		cacheChanged = true
 	}
@@ -345,7 +345,7 @@ func (idx *Index) reap() {
 
 		if len(removals) > 0 {
 			cache.ObserveCacheEvent(idx.name, idx.cacheType, "eviction", evictionType)
-			idx.bulkRemoveFunc(removals)
+			go idx.bulkRemoveFunc(removals)
 			idx.RemoveObjects(removals, true)
 			cacheChanged = true
 		}
