@@ -92,7 +92,7 @@ func (pr *proxyRequest) Clone() *proxyRequest {
 	return &proxyRequest{
 		Request: pr.Request.Clone(context.Background()),
 		upstreamRequest: pr.upstreamRequest.
-			Clone(tctx.WithResources(pr.upstreamRequest.Context(), rsc)),
+			Clone(tctx.WithResources(context.Background(), rsc)),
 		cacheDocument:      pr.cacheDocument,
 		key:                pr.key,
 		cacheStatus:        pr.cacheStatus,
