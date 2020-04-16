@@ -97,7 +97,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup,
 
 	if len(tracerFlushers) > 0 {
 		for _, f := range tracerFlushers {
-			// TODO: Move elsewhere
+			// TODO: Move elsewhere, these will close the tracer flushers prematurely here
 			defer f()
 		}
 	}
@@ -152,6 +152,8 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup,
 			conf.Frontend.ConnectionsLimit, nil, router, wg, true, log)
 	}
 
+	metrics.BuildInfo.WithLabelValues(applicationGoVersion, applicationGitCommitID, applicationVersion).Set(1)
+
 	// if the Metrics HTTP port is configured, then set up the http listener instance
 	if conf.Metrics != nil && conf.Metrics.ListenPort > 0 {
 		wg.Add(1)
@@ -159,6 +161,9 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup,
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
 			conf.Frontend.ConnectionsLimit, nil, "/metrics", metrics.Handler(), wg, true, log)
 	}
+
+	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
+	metrics.LastReloadSuccessful.Set(1)
 }
 
 func applyLoggingConfig(c, oc *config.Config, oldLog *log.Logger) *log.Logger {
@@ -220,6 +225,7 @@ func delayedLogCloser(log *log.Logger) {
 }
 
 func handleStartupIssue(event string, detail log.Pairs, logger *log.Logger, exitFatal bool) {
+	metrics.LastReloadSuccessful.Set(0)
 	if event != "" {
 		if logger != nil {
 			if exitFatal {
