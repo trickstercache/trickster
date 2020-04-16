@@ -64,8 +64,7 @@ func Release(lockName string) error {
 	}
 
 	mapLock.Lock()
-	nl, ok := locks[lockName]
-	if ok {
+	if nl, ok := locks[lockName]; ok {
 		nl.queueSize--
 		if nl.queueSize == 0 {
 			delete(locks, lockName)
