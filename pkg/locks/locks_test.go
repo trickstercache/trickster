@@ -14,10 +14,13 @@
 package locks
 
 import (
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
 )
+
+const testKey = "testKey"
 
 func TestLocks(t *testing.T) {
 
@@ -44,12 +47,53 @@ func TestLocks(t *testing.T) {
 		t.Errorf("expected 11 got %d", testVal)
 	}
 
-	// Cover Empty String Cases
-	mtx := Acquire("")
-	if mtx != nil {
-		t.Errorf("expected nil got %v", mtx)
+	expected := "invalid lock name: "
+	err := Acquire("")
+	if err.Error() != expected {
+		t.Errorf("got %s expected %s", err.Error(), expected)
 	}
-	// Shouldn't matter but covers the code
-	Release("")
+
+	err = Release("")
+	if err.Error() != expected {
+		t.Errorf("got %s expected %s", err.Error(), expected)
+	}
+
+	expected = "no such lock name: invalid"
+	err = Release("invalid")
+	if err.Error() != expected {
+		t.Errorf("got %s expected %s", err.Error(), expected)
+	}
+
+}
+
+func TestLocksConcurrent(t *testing.T) {
+
+	const size = 10000000
+
+	wg := &sync.WaitGroup{}
+	errs := make([]error, 0, size)
+
+	rand.Seed(time.Now().UnixNano())
+
+	for i := 0; i < size; i++ {
+		wg.Add(1)
+		go func() {
+			err := Acquire(testKey)
+			if err != nil {
+				errs = append(errs, err)
+			}
+			err = Release(testKey)
+			if err != nil {
+				errs = append(errs, err)
+			}
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+
+	for _, err := range errs {
+		t.Error(err)
+	}
 
 }
