@@ -91,7 +91,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	client.SetExtent(r, trq, &trq.Extent)
+	client.SetExtent(pr.upstreamRequest, trq, &trq.Extent)
 	key := oc.CacheKeyPrefix + "." + pr.DeriveCacheKey(trq.TemplateURL, "")
 
 	locks.Acquire(key)
@@ -229,7 +229,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		go func(e *timeseries.Extent, rq *proxyRequest) {
 			defer wg.Done()
 			rq.Request = rq.WithContext(tctx.WithResources(r.Context(), request.NewResources(oc, pc, cc, cache, client)))
-			client.SetExtent(rq.Request, trq, e)
+			client.SetExtent(rq.upstreamRequest, trq, e)
 			body, resp, _ := rq.Fetch()
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				nts, err := client.UnmarshalTimeseries(body)
@@ -343,7 +343,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				} else {
 					cdata, err := client.MarshalTimeseries(cts)
 					if err != nil {
-						locks.Release(key)
 						return
 					}
 					doc.Body = cdata

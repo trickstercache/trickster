@@ -161,8 +161,8 @@ func TestBadgerCache_BulkRemove(t *testing.T) {
 		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
 	}
 
-	bc.BulkRemove([]string{""}, true)
-	bc.BulkRemove([]string{cacheKey}, true)
+	bc.BulkRemove([]string{""})
+	bc.BulkRemove([]string{cacheKey})
 
 	// it should be a cache miss
 	_, ls, err = bc.Retrieve(cacheKey, false)
