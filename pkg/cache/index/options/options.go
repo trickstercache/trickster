@@ -56,3 +56,19 @@ func NewOptions() *Options {
 		MaxSizeBackoffObjects: d.DefaultMaxSizeBackoffObjects,
 	}
 }
+
+// Equal returns true if all members of the subject and provided Options
+// are identical
+func (o *Options) Equal(o2 *Options) bool {
+
+	if o2 == nil {
+		return false
+	}
+
+	return o.ReapIntervalSecs == o2.ReapIntervalSecs &&
+		o.FlushIntervalSecs == o2.FlushIntervalSecs &&
+		o.MaxSizeBytes == o2.MaxSizeBytes &&
+		o.MaxSizeBackoffBytes == o2.MaxSizeBackoffBytes &&
+		o.MaxSizeObjects == o2.MaxSizeObjects &&
+		o.MaxSizeBackoffObjects == o2.MaxSizeBackoffObjects
+}

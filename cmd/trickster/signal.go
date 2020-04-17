@@ -34,15 +34,22 @@ func init() {
 }
 
 func startHupMonitor(conf *config.Config, wg *sync.WaitGroup, log *log.Logger, args []string) {
+	if conf == nil {
+		return
+	}
 	// assumes all parameters are instantiated
 	go func() {
 		for {
-			<-hups
-			if conf.IsStale() {
-				runConfig(conf, wg, log, args, false)
-				break // runConfig will start a new HupMonitor in place of this one
+			select {
+			case <-hups:
+				if conf.IsStale() {
+					runConfig(conf, wg, log, args, false)
+					return // runConfig will start a new HupMonitor in place of this one
+				}
+				fmt.Println("configuration NOT reloaded")
+			case <-conf.QuitChan:
+				return
 			}
-			fmt.Println("configuration NOT reloaded")
 		}
 	}()
 }

@@ -17,7 +17,6 @@
 package main
 
 import (
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/http"
@@ -28,7 +27,9 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
+	"github.com/tricksterproxy/trickster/pkg/cache/types"
 	"github.com/tricksterproxy/trickster/pkg/config"
+	ro "github.com/tricksterproxy/trickster/pkg/config/reload/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	th "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	"github.com/tricksterproxy/trickster/pkg/routing"
@@ -83,6 +84,14 @@ func runConfig(oldConf *config.Config, wg *sync.WaitGroup,
 func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup,
 	log *log.Logger, args []string, errorsFatal bool) {
 
+	if conf == nil {
+		return
+	}
+
+	if conf.ReloadConfig == nil {
+		conf.ReloadConfig = ro.NewOptions()
+	}
+
 	log = applyLoggingConfig(conf, oldConf, log)
 
 	for _, w := range conf.LoaderWarnings {
@@ -105,23 +114,18 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup,
 		}
 	}
 
-	// every config reload is a new router
+	// every config (re)load is a new router
 	router := mux.NewRouter()
-	router.HandleFunc(conf.Main.PingHandlerPath, th.PingHandleFunc(conf)).Methods("GET")
-	router.HandleFunc(conf.Main.ConfigHandlerPath, th.ConfigHandleFunc(conf)).Methods("GET")
-	router.HandleFunc(conf.Main.ReloadHandlerPath,
-		handlers.ReloadHandleFunc(runConfig, conf, wg, log, args),
-	).Methods("GET")
+	router.HandleFunc(conf.Main.PingHandlerPath, th.PingHandleFunc(conf)).Methods(http.MethodGet)
+	router.HandleFunc(conf.Main.ConfigHandlerPath, th.ConfigHandleFunc(conf)).Methods(http.MethodGet)
 
-	startHupMonitor(conf, wg, log, args)
-
-	// TODO: Validate if anything about the caches has changed (e.g., are more than one cache using same filename)
-	// has the filename moved from and old to a new config - and if so, can we keep that handle.
-	var caches = make(map[string]cache.Cache)
-	for k, v := range conf.Caches {
-		c := registration.NewCache(k, v, log)
-		caches[k] = c
+	rh := handlers.ReloadHandleFunc(runConfig, conf, wg, log, args)
+	if conf.ReloadConfig.FrontendRouting {
+		// add Config Reload HTTP Handler
+		router.HandleFunc(conf.ReloadConfig.HandlerPath, rh).Methods(http.MethodGet)
 	}
+
+	var caches = applyCachingConfig(conf, oldConf, log, nil)
 
 	_, err = routing.RegisterProxyRoutes(conf, router, caches, log, false)
 	if err != nil {
@@ -130,52 +134,25 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup,
 		return
 	}
 
-	// TODO: Validate if the ports or addresses have changed and adjust
-	//
-	// if TLS port is configured and at least one origin is mapped to a good tls config,
-	// then set up the tls server listener instance
-	if conf.Frontend.ServeTLS && conf.Frontend.TLSListenPort > 0 {
-		var tlsConfig *tls.Config
-		tlsConfig, err = conf.TLSCertConfig()
-		if err != nil {
-			log.Error("unable to start tls listener due to certificate error", tl.Pairs{"detail": err})
-		} else {
-			wg.Add(1)
-			go startListener("tlsListener",
-				conf.Frontend.TLSListenAddress, conf.Frontend.TLSListenPort,
-				conf.Frontend.ConnectionsLimit, tlsConfig, router, wg, true, log)
-		}
-	}
-
-	// if the plaintext HTTP port is configured, then set up the http listener instance
-	if conf.Frontend.ListenPort > 0 {
-		wg.Add(1)
-		go startListener("httpListener",
-			conf.Frontend.ListenAddress, conf.Frontend.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, router, wg, true, log)
-	}
-
-	// if the Metrics HTTP port is configured, then set up the http listener instance
-	if conf.Metrics != nil && conf.Metrics.ListenPort > 0 {
-		mr := http.NewServeMux()
-		mr.Handle("/metrics", metrics.Handler())
-		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "metrics" {
-			routing.RegisterPprofRoutes("metrics", mr, log)
-		}
-		wg.Add(1)
-		go startListener("metricsListener",
-			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, mr, wg, true, log)
-	}
+	applyListenerConfigs(conf, oldConf, router, http.HandlerFunc(rh), log)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
+	// add Config Reload HUP Signal Monitor
+	if oldConf != nil {
+		oldConf.QuitChan <- true // this signals the old hup monitor goroutine to exit
+	}
+	startHupMonitor(conf, wg, log, args)
 }
 
 func applyLoggingConfig(c, oc *config.Config, oldLog *log.Logger) *log.Logger {
 
 	if c == nil || c.Logging == nil {
 		return oldLog
+	}
+
+	if c.ReloadConfig == nil {
+		c.ReloadConfig = ro.NewOptions()
 	}
 
 	if oc != nil && oc.Logging != nil {
@@ -188,7 +165,9 @@ func applyLoggingConfig(c, oc *config.Config, oldLog *log.Logger) *log.Logger {
 		if c.Logging.LogFile != oc.Logging.LogFile {
 			if oc.Logging.LogFile != "" {
 				// if we're changing from file1 -> console or file1 -> file2, close file1 handle
-				go delayedLogCloser(oldLog)
+				// the extra 1s allows HTTP listeners to close first and finish their log writes
+				go delayedLogCloser(oldLog,
+					time.Duration(c.ReloadConfig.BleedTimeoutSecs+1)*time.Second)
 			}
 			return initLogger(c)
 		}
@@ -200,6 +179,60 @@ func applyLoggingConfig(c, oc *config.Config, oldLog *log.Logger) *log.Logger {
 	}
 
 	return initLogger(c)
+}
+
+func applyCachingConfig(c, oc *config.Config, logger *log.Logger,
+	oldCaches map[string]cache.Cache) map[string]cache.Cache {
+
+	if c == nil {
+		return nil
+	}
+
+	caches := make(map[string]cache.Cache)
+
+	if oc == nil || oldCaches == nil {
+		fmt.Println("Caches reload")
+		for k, v := range c.Caches {
+			caches[k] = registration.NewCache(k, v, logger)
+		}
+		return caches
+	}
+
+	fmt.Println("CACHE STUFF")
+
+	for k, v := range c.Caches {
+
+		if w, ok := oldCaches[k]; ok {
+
+			ocfg := w.Configuration()
+
+			// if a cache is in both the old and new config, and unchanged, pass the
+			// pre-existing object instead of making a new one
+			if v.Equal(ocfg) {
+				fmt.Println("PASS ALONG")
+				caches[k] = w
+				continue
+			}
+
+			// if the new and old caches with the same name are the same type, then assume
+			// the cache should be preserved between reconfigurations, but only if the Index
+			// is the only change. In this case, we'll apply the new index configuration,
+			// then add the old cache with the new index config to the new cache map
+			if ocfg.CacheTypeID == v.CacheTypeID &&
+				ocfg.CacheTypeID == types.CacheTypeMemory {
+				fmt.Println("MEMORY YO")
+				// TODO: Apply Index Config
+				caches[k] = w
+				continue
+			}
+		}
+
+		fmt.Println("REGISTERING ANEW", k)
+
+		// the newly-named cache is not in the old config or couldn't be reused, so make it anew
+		caches[k] = registration.NewCache(k, v, logger)
+	}
+	return caches
 }
 
 func initLogger(c *config.Config) *log.Logger {
@@ -219,14 +252,14 @@ func initLogger(c *config.Config) *log.Logger {
 	return log
 }
 
-func delayedLogCloser(log *log.Logger) {
+func delayedLogCloser(log *log.Logger, delay time.Duration) {
 	// we can't immediately close the log, because some outstanding
 	// http requests might still be on the old reference, so this will
 	// allow time for those connections to bleed off
 	if log == nil {
 		return
 	}
-	time.Sleep(time.Second * 30)
+	time.Sleep(delay)
 	log.Close()
 }
 

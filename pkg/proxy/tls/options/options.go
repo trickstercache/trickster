@@ -18,6 +18,8 @@ package options
 
 import (
 	"io/ioutil"
+
+	"github.com/tricksterproxy/trickster/pkg/util/strings"
 )
 
 // Options is a collection of TLS-related client and server configurations
@@ -68,6 +70,16 @@ func (o *Options) Clone() *Options {
 		ClientCertPath:            o.ClientCertPath,
 		ClientKeyPath:             o.ClientKeyPath,
 	}
+}
+
+// Equal returns true if all TOML-exposed option members are equal
+func (o *Options) Equal(o2 *Options) bool {
+	return o.FullChainCertPath == o2.FullChainCertPath &&
+		o.PrivateKeyPath == o2.PrivateKeyPath &&
+		o.InsecureSkipVerify == o2.InsecureSkipVerify &&
+		strings.Equal(o.CertificateAuthorityPaths, o2.CertificateAuthorityPaths) &&
+		o.ClientCertPath == o2.ClientCertPath &&
+		o.ClientKeyPath == o2.ClientKeyPath
 }
 
 // Validate returns true if the TLS Options are validated

@@ -36,6 +36,7 @@ func ReloadHandleFunc(f reload.ReloaderFunc, conf *config.Config, wg *sync.WaitG
 			w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("configuration reloaded"))
+			return
 		}
 		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 		w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)

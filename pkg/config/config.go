@@ -33,6 +33,7 @@ import (
 	cache "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/types"
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
+	reload "github.com/tricksterproxy/trickster/pkg/config/reload/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	origins "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
@@ -68,13 +69,16 @@ type Config struct {
 	Rules map[string]*rule.Options `toml:"rules"`
 	// RequestRewriters is a map of the Rewriters
 	RequestRewriters map[string]*rwopts.Options `toml:"request_rewriters"`
+	// ReloadConfig provides configurations for in-process config reloading
+	ReloadConfig *reload.Options `toml:"reloading"`
 
 	CompiledRewriters  map[string]rewriter.RewriteInstructions
 	activeCaches       map[string]bool
 	providedOriginURL  string
 	providedOriginType string
 
-	LoaderWarnings []string `toml:"-"`
+	LoaderWarnings []string  `toml:"-"`
+	QuitChan       chan bool `toml:"-"`
 }
 
 // MainConfig is a collection of general configuration values.
@@ -178,7 +182,9 @@ func NewConfig() *Config {
 		TracingConfigs: map[string]*tracing.Options{
 			"default": tracing.NewOptions(),
 		},
+		ReloadConfig:   reload.NewOptions(),
 		LoaderWarnings: make([]string, 0),
+		QuitChan:       make(chan bool, 1),
 	}
 }
 
@@ -738,7 +744,12 @@ func (c *Config) IsStale() bool {
 	c.Main.stalenessCheckLock.Lock()
 	defer c.Main.stalenessCheckLock.Unlock()
 
-	c.Main.configRateLimitTime = time.Now().Add(time.Second * 5)
+	if c.ReloadConfig == nil {
+		c.ReloadConfig = reload.NewOptions()
+	}
+
+	c.Main.configRateLimitTime =
+		time.Now().Add(time.Second * time.Duration(c.ReloadConfig.RateLimitSecs))
 	t := c.CheckFileLastModified()
 	if t.IsZero() {
 		return false
@@ -791,6 +802,11 @@ func (c *Config) ConfigFilePath() string {
 		return c.Main.configFilePath
 	}
 	return ""
+}
+
+// Equal returns true if the FrontendConfigs are identical in value.
+func (fc *FrontendConfig) Equal(fc2 *FrontendConfig) bool {
+	return *fc == *fc2
 }
 
 var sensitiveCredentials = map[string]bool{headers.NameAuthorization: true}

@@ -45,6 +45,16 @@ const (
 	// DefaultTLSProxyListenAddress is the default address that the TLS frontend endpoint will listen on
 	DefaultTLSProxyListenAddress = ""
 
+	// DefaultReloadPort is the default port that the Reload endpoint will listen on
+	DefaultReloadPort = 8484
+	// DefaultReloadAddress is the default address that the Reload endpoint will listen on
+	DefaultReloadAddress = "127.0.0.1"
+	// DefaultBleedTimeoutSecs is the default time that is allowed for an old configuration's requests to bleed
+	// before its resources are closed
+	DefaultBleedTimeoutSecs = 30
+	// DefaultRateLimitSecs is the default Rate Limit time for Config Reloads
+	DefaultRateLimitSecs = 3
+
 	// DefaultTracerImplemetation is the default distributed tracer implementation
 	DefaultTracerImplemetation = "opentelemetry"
 	// DefaultExporterImplementation is the default distributed tracer exporter implementation
