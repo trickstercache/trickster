@@ -26,6 +26,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/tricksterproxy/trickster/pkg/cache"
+	"github.com/tricksterproxy/trickster/pkg/cache/memory"
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/cache/types"
 	"github.com/tricksterproxy/trickster/pkg/config"
@@ -42,8 +43,8 @@ import (
 
 var cfgLock = &sync.Mutex{}
 
-func runConfig(oldConf *config.Config, wg *sync.WaitGroup,
-	log *log.Logger, args []string, errorsFatal bool) {
+func runConfig(oldConf *config.Config, wg *sync.WaitGroup, log *log.Logger,
+	oldCaches map[string]cache.Cache, args []string, errorsFatal bool) {
 
 	metrics.BuildInfo.WithLabelValues(applicationGoVersion, applicationGitCommitID, applicationVersion).Set(1)
 
@@ -77,12 +78,12 @@ func runConfig(oldConf *config.Config, wg *sync.WaitGroup,
 		os.Exit(0)
 	}
 
-	applyConfig(conf, oldConf, wg, log, args, errorsFatal)
+	applyConfig(conf, oldConf, wg, log, oldCaches, args, errorsFatal)
 
 }
 
-func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup,
-	log *log.Logger, args []string, errorsFatal bool) {
+func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logger,
+	oldCaches map[string]cache.Cache, args []string, errorsFatal bool) {
 
 	if conf == nil {
 		return
@@ -119,9 +120,8 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup,
 	router.HandleFunc(conf.Main.PingHandlerPath, th.PingHandleFunc(conf)).Methods(http.MethodGet)
 	router.HandleFunc(conf.Main.ConfigHandlerPath, th.ConfigHandleFunc(conf)).Methods(http.MethodGet)
 
-	rh := handlers.ReloadHandleFunc(runConfig, conf, wg, log, args)
-
-	var caches = applyCachingConfig(conf, oldConf, log, nil)
+	var caches = applyCachingConfig(conf, oldConf, log, oldCaches)
+	rh := handlers.ReloadHandleFunc(runConfig, conf, wg, log, caches, args)
 
 	_, err = routing.RegisterProxyRoutes(conf, router, caches, log, false)
 	if err != nil {
@@ -138,7 +138,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup,
 	if oldConf != nil {
 		oldConf.QuitChan <- true // this signals the old hup monitor goroutine to exit
 	}
-	startHupMonitor(conf, wg, log, args)
+	startHupMonitor(conf, wg, log, caches, args)
 }
 
 func applyLoggingConfig(c, oc *config.Config, oldLog *log.Logger) *log.Logger {
@@ -187,7 +187,7 @@ func applyCachingConfig(c, oc *config.Config, logger *log.Logger,
 	caches := make(map[string]cache.Cache)
 
 	if oc == nil || oldCaches == nil {
-		fmt.Println("Caches reload")
+		fmt.Println("Caches load")
 		for k, v := range c.Caches {
 			caches[k] = registration.NewCache(k, v, logger)
 		}
@@ -217,13 +217,14 @@ func applyCachingConfig(c, oc *config.Config, logger *log.Logger,
 			if ocfg.CacheTypeID == v.CacheTypeID &&
 				ocfg.CacheTypeID == types.CacheTypeMemory {
 				fmt.Println("MEMORY YO")
-				// TODO: Apply Index Config
+				if v.Index != nil {
+					mc := w.(*memory.Cache)
+					mc.Index.UpdateOptions(v.Index)
+				}
 				caches[k] = w
 				continue
 			}
 		}
-
-		fmt.Println("REGISTERING ANEW", k)
 
 		// the newly-named cache is not in the old config or couldn't be reused, so make it anew
 		caches[k] = registration.NewCache(k, v, logger)
