@@ -20,10 +20,12 @@ package reload
 import (
 	"sync"
 
+	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	"github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 // ReloaderFunc describes a function that loads and applies a Trickster config at startup,
 // or gracefully over an existing running Config
-type ReloaderFunc func(oldConf *config.Config, wg *sync.WaitGroup, log *log.Logger, args []string, errorsFatal bool)
+type ReloaderFunc func(oldConf *config.Config, wg *sync.WaitGroup, log *log.Logger,
+	caches map[string]cache.Cache, args []string, errorsFatal bool)

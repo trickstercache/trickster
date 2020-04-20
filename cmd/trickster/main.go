@@ -42,6 +42,6 @@ var wg = &sync.WaitGroup{}
 func main() {
 	runtime.ApplicationName = applicationName
 	runtime.ApplicationVersion = applicationVersion
-	runConfig(nil, wg, nil, os.Args[1:], fatalStartupErrors)
+	runConfig(nil, wg, nil, nil, os.Args[1:], fatalStartupErrors)
 	wg.Wait()
 }

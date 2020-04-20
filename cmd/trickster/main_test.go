@@ -29,10 +29,10 @@ func TestMain(t *testing.T) {
 
 func TestRunConfig(t *testing.T) {
 	wg := &sync.WaitGroup{}
-	runConfig(nil, wg, nil, []string{}, false)
+	runConfig(nil, wg, nil, nil, []string{}, false)
 
-	runConfig(nil, wg, nil, []string{"-version"}, false)
+	runConfig(nil, wg, nil, nil, []string{"-version"}, false)
 
-	runConfig(nil, wg, nil, []string{"-origin-type", "rpc", "-origin-url", "http://tricksterproxy.io"}, false)
+	runConfig(nil, wg, nil, nil, []string{"-origin-type", "rpc", "-origin-url", "http://tricksterproxy.io"}, false)
 
 }
