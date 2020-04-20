@@ -120,10 +120,6 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup,
 	router.HandleFunc(conf.Main.ConfigHandlerPath, th.ConfigHandleFunc(conf)).Methods(http.MethodGet)
 
 	rh := handlers.ReloadHandleFunc(runConfig, conf, wg, log, args)
-	if conf.ReloadConfig.FrontendRouting {
-		// add Config Reload HTTP Handler
-		router.HandleFunc(conf.ReloadConfig.HandlerPath, rh).Methods(http.MethodGet)
-	}
 
 	var caches = applyCachingConfig(conf, oldConf, log, nil)
 

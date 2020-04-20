@@ -30,9 +30,6 @@ type Options struct {
 	// BleedTimeoutSecs provides the duration to wait for all sessions to bleed before closing
 	// old resources following a reload
 	BleedTimeoutSecs int `toml:"bleed_timeout_secs"`
-	// FrontendRouting, when set to true, will expose the Reload Handler at ReloadHandlerPath on
-	// the main frontend proxy port, in addition to any configured listener in this ReloadConfig
-	FrontendRouting bool `toml:"frontend_routing"`
 	// RateLimitSecs limits the # of handled config reload HTTP requests to 1 per CheckRateSecs
 	// if multiple HTTP requests are received in the rate limit window, only the first is handled
 	// This prevents a bad actor from stating the config file with millions of concurrent requets
