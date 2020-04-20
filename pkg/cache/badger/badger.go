@@ -20,6 +20,7 @@ package badger
 import (
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/metrics"
 	"github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
@@ -87,6 +88,7 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 	}
 
 	if err == badger.ErrKeyNotFound {
+		err = cache.ErrKNF
 		c.Logger.Debug("badger cache miss", log.Pairs{"key": cacheKey})
 		metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 		return nil, status.LookupStatusKeyMiss, err
