@@ -72,13 +72,15 @@ type Config struct {
 	// ReloadConfig provides configurations for in-process config reloading
 	ReloadConfig *reload.Options `toml:"reloading"`
 
-	CompiledRewriters  map[string]rewriter.RewriteInstructions
+	// Resources holds runtime resources uses by the Config
+	Resources *Resources `toml:"-"`
+
+	CompiledRewriters  map[string]rewriter.RewriteInstructions `toml:"-"`
 	activeCaches       map[string]bool
 	providedOriginURL  string
 	providedOriginType string
 
-	LoaderWarnings []string  `toml:"-"`
-	QuitChan       chan bool `toml:"-"`
+	LoaderWarnings []string `toml:"-"`
 }
 
 // MainConfig is a collection of general configuration values.
@@ -135,6 +137,11 @@ type MetricsConfig struct {
 	ListenPort int `toml:"listen_port"`
 }
 
+// Resources is a collection of values used by configs at runtime that are not part of the config itself
+type Resources struct {
+	QuitChan chan bool `toml:"-"`
+}
+
 // NegativeCacheConfig is a collection of response codes and their TTLs
 type NegativeCacheConfig map[string]int
 
@@ -184,7 +191,9 @@ func NewConfig() *Config {
 		},
 		ReloadConfig:   reload.NewOptions(),
 		LoaderWarnings: make([]string, 0),
-		QuitChan:       make(chan bool, 1),
+		Resources: &Resources{
+			QuitChan: make(chan bool, 1),
+		},
 	}
 }
 
@@ -707,6 +716,10 @@ func (c *Config) Clone() *Config {
 	nc.Frontend.TLSListenPort = c.Frontend.TLSListenPort
 	nc.Frontend.ConnectionsLimit = c.Frontend.ConnectionsLimit
 	nc.Frontend.ServeTLS = c.Frontend.ServeTLS
+
+	nc.Resources = &Resources{
+		QuitChan: make(chan bool, 1),
+	}
 
 	for k, v := range c.Origins {
 		nc.Origins[k] = v.Clone()

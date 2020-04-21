@@ -18,7 +18,6 @@ package config
 
 import (
 	"errors"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -35,17 +34,20 @@ func TestClone(t *testing.T) {
 	oc := c1.Origins["default"]
 	c1.NegativeCacheConfigs["default"]["404"] = 10
 
+	const expected = "trickster"
+
 	oc.CompressableTypeList = []string{"text/plain"}
 	oc.CompressableTypes = map[string]bool{"text/plain": true}
 	oc.NegativeCacheName = "default"
 	oc.NegativeCache = map[int]time.Duration{404: time.Duration(10) * time.Second}
 	oc.FastForwardPath = po.NewOptions()
 	oc.TLS = &to.Options{CertificateAuthorityPaths: []string{"foo"}}
-	oc.HealthCheckHeaders = map[string]string{headers.NameAuthorization: "Basic SomeHash"}
+	oc.HealthCheckHeaders = map[string]string{headers.NameAuthorization: expected}
 
 	c2 := c1.Clone()
-	if !reflect.DeepEqual(c1, c2) {
-		t.Errorf("copy mistmatch")
+	x := c2.Origins["default"].HealthCheckHeaders[headers.NameAuthorization]
+	if x != expected {
+		t.Errorf("clone mismatch")
 	}
 }
 

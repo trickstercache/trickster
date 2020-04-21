@@ -35,7 +35,7 @@ func init() {
 
 func startHupMonitor(conf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
 	caches map[string]cache.Cache, args []string) {
-	if conf == nil {
+	if conf == nil || conf.Resources == nil {
 		return
 	}
 	// assumes all parameters are instantiated
@@ -49,7 +49,7 @@ func startHupMonitor(conf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
 					return // runConfig will start a new HupMonitor in place of this one
 				}
 				log.Warn("configuration NOT reloaded", tl.Pairs{})
-			case <-conf.QuitChan:
+			case <-conf.Resources.QuitChan:
 				return
 			}
 		}

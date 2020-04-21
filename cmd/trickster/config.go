@@ -135,8 +135,8 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logg
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
 	// add Config Reload HUP Signal Monitor
-	if oldConf != nil {
-		oldConf.QuitChan <- true // this signals the old hup monitor goroutine to exit
+	if oldConf != nil && oldConf.Resources != nil {
+		oldConf.Resources.QuitChan <- true // this signals the old hup monitor goroutine to exit
 	}
 	startHupMonitor(conf, wg, log, caches, args)
 }
