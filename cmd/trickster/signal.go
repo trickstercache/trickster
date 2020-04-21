@@ -17,7 +17,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"os/signal"
 	"sync"
@@ -49,7 +48,7 @@ func startHupMonitor(conf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
 					runConfig(conf, wg, log, caches, args, false)
 					return // runConfig will start a new HupMonitor in place of this one
 				}
-				fmt.Println("configuration NOT reloaded")
+				log.Warn("configuration NOT reloaded", tl.Pairs{})
 			case <-conf.QuitChan:
 				return
 			}

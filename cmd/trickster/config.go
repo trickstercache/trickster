@@ -187,14 +187,11 @@ func applyCachingConfig(c, oc *config.Config, logger *log.Logger,
 	caches := make(map[string]cache.Cache)
 
 	if oc == nil || oldCaches == nil {
-		fmt.Println("Caches load")
 		for k, v := range c.Caches {
 			caches[k] = registration.NewCache(k, v, logger)
 		}
 		return caches
 	}
-
-	fmt.Println("CACHE STUFF")
 
 	for k, v := range c.Caches {
 
@@ -205,7 +202,6 @@ func applyCachingConfig(c, oc *config.Config, logger *log.Logger,
 			// if a cache is in both the old and new config, and unchanged, pass the
 			// pre-existing object instead of making a new one
 			if v.Equal(ocfg) {
-				fmt.Println("PASS ALONG")
 				caches[k] = w
 				continue
 			}
@@ -216,7 +212,6 @@ func applyCachingConfig(c, oc *config.Config, logger *log.Logger,
 			// then add the old cache with the new index config to the new cache map
 			if ocfg.CacheTypeID == v.CacheTypeID &&
 				ocfg.CacheTypeID == types.CacheTypeMemory {
-				fmt.Println("MEMORY YO")
 				if v.Index != nil {
 					mc := w.(*memory.Cache)
 					mc.Index.UpdateOptions(v.Index)

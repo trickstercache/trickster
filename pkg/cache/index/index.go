@@ -18,7 +18,6 @@
 package index
 
 import (
-	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -135,7 +134,6 @@ func NewIndex(cacheName, cacheType string, indexData []byte, o *options.Options,
 // UpdateOptions updates the existing Index with a new Options reference
 func (idx *Index) UpdateOptions(o *options.Options) {
 	indexLock.Lock()
-	fmt.Println("Updating Index Options!", o)
 	idx.options = o
 	indexLock.Unlock()
 }
