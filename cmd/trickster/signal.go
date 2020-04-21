@@ -25,7 +25,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/config"
-	"github.com/tricksterproxy/trickster/pkg/util/log"
+	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 var hups = make(chan os.Signal, 1)
@@ -34,7 +34,7 @@ func init() {
 	signal.Notify(hups, syscall.SIGHUP)
 }
 
-func startHupMonitor(conf *config.Config, wg *sync.WaitGroup, log *log.Logger,
+func startHupMonitor(conf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
 	caches map[string]cache.Cache, args []string) {
 	if conf == nil {
 		return
@@ -45,6 +45,7 @@ func startHupMonitor(conf *config.Config, wg *sync.WaitGroup, log *log.Logger,
 			select {
 			case <-hups:
 				if conf.IsStale() {
+					log.Warn("configuration reload starting now", tl.Pairs{"source": "sighup"})
 					runConfig(conf, wg, log, caches, args, false)
 					return // runConfig will start a new HupMonitor in place of this one
 				}
