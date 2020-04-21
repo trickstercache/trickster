@@ -736,13 +736,13 @@ func (c *Config) Clone() *Config {
 // IsStale returns true if the running config is stale versus the
 func (c *Config) IsStale() bool {
 
+	c.Main.stalenessCheckLock.Lock()
+	defer c.Main.stalenessCheckLock.Unlock()
+
 	if c.Main == nil || c.Main.configFilePath == "" ||
 		time.Now().Before(c.Main.configRateLimitTime) {
 		return false
 	}
-
-	c.Main.stalenessCheckLock.Lock()
-	defer c.Main.stalenessCheckLock.Unlock()
 
 	if c.ReloadConfig == nil {
 		c.ReloadConfig = reload.NewOptions()
