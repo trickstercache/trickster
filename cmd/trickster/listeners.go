@@ -18,7 +18,6 @@ package main
 
 import (
 	"crypto/tls"
-	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -44,6 +43,7 @@ type listenerGroup struct {
 	tlsConfig    *tls.Config
 	tlsSwapper   *sw.CertSwapper
 	routeSwapper *ph.SwitchHandler
+	exitOnError  bool
 }
 
 func startListener(listenerName, address string, port int, connectionsLimit int,
@@ -53,7 +53,7 @@ func startListener(listenerName, address string, port int, connectionsLimit int,
 		defer wg.Done()
 	}
 
-	lg := &listenerGroup{routeSwapper: ph.NewSwitchHandler(router)}
+	lg := &listenerGroup{routeSwapper: ph.NewSwitchHandler(router), exitOnError: exitOnError}
 	if tlsConfig != nil && len(tlsConfig.Certificates) > 0 {
 		lg.tlsConfig = tlsConfig
 		lg.tlsSwapper = &sw.CertSwapper{
@@ -83,8 +83,7 @@ func startListener(listenerName, address string, port int, connectionsLimit int,
 	err = http.Serve(l, handlers.CompressHandler(lg.routeSwapper))
 	if err != nil {
 		log.Error("http listener stopping", tl.Pairs{"name": listenerName, "detail": err})
-		if exitOnError {
-			// TODO: don't exit when it's a graceful stop
+		if lg.exitOnError {
 			os.Exit(1)
 		}
 	}
@@ -105,6 +104,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 
 	var err error
 	var routerRefreshed bool
+	var tlsConfig *tls.Config
 
 	if conf == nil || conf.Frontend == nil {
 		return
@@ -117,13 +117,18 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	if conf.Frontend != nil && oldConf != nil &&
 		oldConf.Frontend != nil && oldConf.Frontend.Equal(conf.Frontend) {
 		updateRouters(router, adminRouter)
+		if TLSOptionsChanged(conf, oldConf) {
+			tlsConfig, err = conf.TLSCertConfig()
+			if lg, ok := listeners["tlsListener"]; ok && lg != nil && lg.tlsSwapper != nil {
+				lg.tlsSwapper.SetCerts(tlsConfig.Certificates)
+			}
+		}
 		return
 	}
 
 	hasOldFC := oldConf != nil && oldConf.Frontend != nil
 	hasOldMC := oldConf != nil && oldConf.Metrics != nil
 	hasOldRC := oldConf != nil && oldConf.ReloadConfig != nil
-	var tlsConfig *tls.Config
 
 	bleedTime := time.Duration(conf.ReloadConfig.BleedTimeoutSecs) * time.Second
 
@@ -134,7 +139,6 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		(oldConf.Frontend.TLSListenAddress != conf.Frontend.TLSListenAddress ||
 			oldConf.Frontend.TLSListenPort != conf.Frontend.TLSListenPort)) {
 
-		fmt.Println("STARTING NEW TLS LISTENER")
 		spinDownListener("tlsListener", bleedTime)
 
 		tlsConfig, err = conf.TLSCertConfig()
@@ -152,9 +156,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		// the TLS configs have been removed between the last config load and this one,
 		// the TLS listener port needs to be stopped
 		spinDownListener("tlsListener", bleedTime)
-
 	} else if conf.Frontend.ServeTLS && TLSOptionsChanged(conf, oldConf) {
-		fmt.Println("SWAP CERT CONFIG")
 		tlsConfig, _ = conf.TLSCertConfig()
 		if err != nil {
 			log.Error("unable to update tls config to certificate error", tl.Pairs{"detail": err})
@@ -234,6 +236,7 @@ func updateRouters(mainRouter http.Handler, adminRouter http.Handler) {
 
 func spinDownListener(listenerName string, bleedWait time.Duration) {
 	if lg, ok := listeners[listenerName]; ok {
+		lg.exitOnError = false
 		delete(listeners, listenerName)
 		if lg == nil || lg.listener == nil {
 			return
@@ -241,13 +244,12 @@ func spinDownListener(listenerName string, bleedWait time.Duration) {
 		go func() {
 			time.Sleep(bleedWait)
 			lg.listener.Close()
-			// TODO: find a way for this to not cause the application to error out w/ isGraceful flag, etc.
 		}()
 	}
 }
 
 // TLSOptionsChanged will return true if the TLS options for any origin
-// is different between
+// is different between configs
 func TLSOptionsChanged(conf, oldConf *config.Config) bool {
 
 	if conf == nil {
@@ -257,13 +259,11 @@ func TLSOptionsChanged(conf, oldConf *config.Config) bool {
 		return true
 	}
 
-	// TODO: refine this logic to allow for outgoing or incoming origins that
-	// do not impact the TLS config to come and go without returning true
-
 	for k, v := range oldConf.Origins {
 		if v.TLS != nil && v.TLS.ServeTLS {
 			if o, ok := conf.Origins[k]; !ok ||
-				o.TLS == nil || !o.TLS.ServeTLS {
+				o.TLS == nil || !o.TLS.ServeTLS ||
+				!o.TLS.Equal(v.TLS) {
 				return true
 			}
 		}
@@ -272,7 +272,8 @@ func TLSOptionsChanged(conf, oldConf *config.Config) bool {
 	for k, v := range conf.Origins {
 		if v.TLS != nil && v.TLS.ServeTLS {
 			if o, ok := oldConf.Origins[k]; !ok ||
-				o.TLS == nil || !o.TLS.ServeTLS {
+				o.TLS == nil || !o.TLS.ServeTLS ||
+				!o.TLS.Equal(v.TLS) {
 				return true
 			}
 		}
