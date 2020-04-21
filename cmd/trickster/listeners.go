@@ -118,11 +118,18 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		oldConf.Frontend != nil && oldConf.Frontend.Equal(conf.Frontend) {
 		updateRouters(router, adminRouter)
 		if TLSOptionsChanged(conf, oldConf) {
-			tlsConfig, err = conf.TLSCertConfig()
+			tlsConfig, _ = conf.TLSCertConfig()
 			if lg, ok := listeners["tlsListener"]; ok && lg != nil && lg.tlsSwapper != nil {
 				lg.tlsSwapper.SetCerts(tlsConfig.Certificates)
 			}
 		}
+		return
+	}
+
+	if oldConf != nil && oldConf.Frontend.ConnectionsLimit != conf.Frontend.ConnectionsLimit {
+		log.Warn("connections limit change requires a process restart. listeners not updated.",
+			tl.Pairs{"oldLimit": oldConf.Frontend.ConnectionsLimit,
+				"newLimit": conf.Frontend.ConnectionsLimit})
 		return
 	}
 
