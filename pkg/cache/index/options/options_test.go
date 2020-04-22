@@ -24,3 +24,17 @@ func TestNewOptions(t *testing.T) {
 		t.Error("expected non-nil options")
 	}
 }
+
+func TestEqual(t *testing.T) {
+
+	o := NewOptions()
+
+	if o.Equal(nil) {
+		t.Error("expected false")
+	}
+
+	if !o.Equal(o) {
+		t.Error("expected true")
+	}
+
+}

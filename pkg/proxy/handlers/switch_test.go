@@ -14,28 +14,35 @@
  * limitations under the License.
  */
 
-package options
+package handlers
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
-func TestNewOptions(t *testing.T) {
-	o := NewOptions()
-	if o != nil {
-		t.Error("expected non-nil options")
+func TestNewSwitchHandler(t *testing.T) {
+	router := http.NewServeMux()
+	sh := NewSwitchHandler(router)
+	if sh == nil {
+		t.Error("expected non-nill handler")
 	}
 }
 
-func TestCloneAndEqual(t *testing.T) {
+func TestServeHTTP(t *testing.T) {
+	router := http.NewServeMux()
+	sh := NewSwitchHandler(router)
+	w := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "/", nil)
+	sh.setReloading(true)
+	sh.ServeHTTP(w, r)
+	sh.setReloading(false)
+	sh.ServeHTTP(w, r)
+}
 
-	o := NewOptions()
-	o2 := o.Clone()
-
-	if !o.Equal(o2) {
-		t.Error("expected true")
-	}
-
-	if o.Equal(nil) {
-		t.Error("expected false")
-	}
-
+func TestUpdate(t *testing.T) {
+	router := http.NewServeMux()
+	sh := NewSwitchHandler(router)
+	sh.Update(router)
 }
