@@ -30,6 +30,9 @@ Trickster Usage:
  Print Version Info:
  trickster -version
 
+ Validating a configuration file:
+  trickster -validate-config -config /path/to/file.conf
+
  Using a configuration file:
   trickster -config /path/to/file.conf [-log-level DEBUG|INFO|WARN|ERROR] [-proxy-port 8480] [-metrics-port 8481]
 
