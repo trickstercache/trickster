@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"strings"
@@ -140,6 +141,7 @@ type MetricsConfig struct {
 // Resources is a collection of values used by configs at runtime that are not part of the config itself
 type Resources struct {
 	QuitChan chan bool `toml:"-"`
+	metadata *toml.MetaData
 }
 
 // NegativeCacheConfig is a collection of response codes and their TTLs
@@ -204,7 +206,17 @@ func NewNegativeCacheConfig() NegativeCacheConfig {
 
 // loadFile loads application configuration from a TOML-formatted file.
 func (c *Config) loadFile(flags *Flags) error {
-	md, err := toml.DecodeFile(flags.ConfigPath, c)
+	b, err := ioutil.ReadFile(flags.ConfigPath)
+	if err != nil {
+		c.setDefaults(&toml.MetaData{})
+		return err
+	}
+	return c.loadTOMLConfig(string(b), flags)
+}
+
+// loadTOMLConfig loads application configuration from a TOML-formatted byte slice.
+func (c *Config) loadTOMLConfig(tml string, flags *Flags) error {
+	md, err := toml.Decode(tml, c)
 	if err != nil {
 		c.setDefaults(&toml.MetaData{})
 		return err
@@ -219,7 +231,7 @@ func (c *Config) loadFile(flags *Flags) error {
 
 // CheckFileLastModified returns the last modified date of the running config file, if present
 func (c *Config) CheckFileLastModified() time.Time {
-	if c.Main.configFilePath == "" || c.Main == nil {
+	if c.Main == nil || c.Main.configFilePath == "" {
 		return time.Time{}
 	}
 	file, err := os.Stat(c.Main.configFilePath)
@@ -230,6 +242,8 @@ func (c *Config) CheckFileLastModified() time.Time {
 }
 
 func (c *Config) setDefaults(metadata *toml.MetaData) error {
+
+	c.Resources.metadata = metadata
 
 	var err error
 
@@ -320,6 +334,10 @@ func (c *Config) validateConfigMappings() error {
 }
 
 func (c *Config) processOriginConfigs(metadata *toml.MetaData) error {
+
+	if metadata == nil {
+		return errors.New("invalid config metadata")
+	}
 
 	c.activeCaches = make(map[string]bool)
 
@@ -434,8 +452,8 @@ func (c *Config) processOriginConfigs(metadata *toml.MetaData) error {
 					p.ReqRewriterName != "" {
 					ri, ok := c.CompiledRewriters[p.ReqRewriterName]
 					if !ok {
-						return fmt.Errorf("invalid rewriter name %s in origin config %s",
-							p.ReqRewriterName, k)
+						return fmt.Errorf("invalid rewriter name %s in path %s of origin config %s",
+							p.ReqRewriterName, l, k)
 					}
 					p.ReqRewriter = ri
 				}

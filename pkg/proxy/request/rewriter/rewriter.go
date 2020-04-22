@@ -17,6 +17,7 @@
 package rewriter
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
@@ -25,6 +26,10 @@ import (
 // ProcessConfigs validates and compiles rewriter instructions from
 // the provided configuration map
 func ProcessConfigs(rwl map[string]*options.Options) (map[string]RewriteInstructions, error) {
+	if rwl == nil {
+		return nil, errors.New("invalid rewriter options")
+	}
+
 	crw := make(map[string]RewriteInstructions)
 	for k, v := range rwl {
 		ri, err := parseRewriteList(v.Instructions)
