@@ -19,7 +19,3 @@ The HTTP Reverse Proxy Cache origin type does not have a built-in health check, 
 ## Other Ways to Monitor Health
 
 In addition to the out-of-the-box health checks to determine up-or-down status, you may want to setup alarms and thresholds based on the metrics instrumented by Trickster. See [metrics.md](metrics.md) for collecting performance metrics about Trickster.
-
-## Config Endpoint
-
-Trickster also provides a `/trickster/config` endpoint, that returns the toml output of the currently-running Trickster configuration. The TOML-formatted configuration will include all defaults populated, overlaid with any configuration file settings, command-line arguments and or applicable environment variables. The path to the Config endpoint is configurable, see the configuration documentation for more information.
