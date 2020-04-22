@@ -20,7 +20,7 @@ import "testing"
 
 func TestNewOptions(t *testing.T) {
 	o := NewOptions()
-	if o != nil {
+	if o == nil {
 		t.Error("expected non-nil options")
 	}
 }
