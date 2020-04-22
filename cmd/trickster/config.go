@@ -118,7 +118,6 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logg
 	// every config (re)load is a new router
 	router := mux.NewRouter()
 	router.HandleFunc(conf.Main.PingHandlerPath, th.PingHandleFunc(conf)).Methods(http.MethodGet)
-	router.HandleFunc(conf.Main.ConfigHandlerPath, th.ConfigHandleFunc(conf)).Methods(http.MethodGet)
 
 	var caches = applyCachingConfig(conf, oldConf, log, oldCaches)
 	rh := handlers.ReloadHandleFunc(runConfig, conf, wg, log, caches, args)

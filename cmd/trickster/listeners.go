@@ -195,6 +195,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		spinDownListener("metricsListener", 0)
 		mr := http.NewServeMux()
 		mr.Handle("/metrics", metrics.Handler())
+		mr.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "metrics" {
 			routing.RegisterPprofRoutes("metrics", mr, log)
 		}
@@ -211,6 +212,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		wg.Add(1)
 		spinDownListener("reloadListener", time.Millisecond*500)
 		mr := http.NewServeMux()
+		mr.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
 		mr.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "reload" {
 			routing.RegisterPprofRoutes("reload", mr, log)
