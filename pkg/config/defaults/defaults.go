@@ -49,9 +49,9 @@ const (
 	DefaultReloadPort = 8484
 	// DefaultReloadAddress is the default address that the Reload endpoint will listen on
 	DefaultReloadAddress = "127.0.0.1"
-	// DefaultBleedTimeoutSecs is the default time that is allowed for an old configuration's requests to bleed
+	// DefaultDrainTimeoutSecs is the default time that is allowed for an old configuration's requests to drain
 	// before its resources are closed
-	DefaultBleedTimeoutSecs = 30
+	DefaultDrainTimeoutSecs = 30
 	// DefaultRateLimitSecs is the default Rate Limit time for Config Reloads
 	DefaultRateLimitSecs = 3
 

@@ -27,9 +27,9 @@ type Options struct {
 	ListenPort int `toml:"listen_port"`
 	// ReloadHandlerPath provides the path to register the Config Reload Handler
 	HandlerPath string `toml:"handler_path"`
-	// BleedTimeoutSecs provides the duration to wait for all sessions to bleed before closing
+	// DrainTimeoutSecs provides the duration to wait for all sessions to drain before closing
 	// old resources following a reload
-	BleedTimeoutSecs int `toml:"bleed_timeout_secs"`
+	DrainTimeoutSecs int `toml:"drain_timeout_secs"`
 	// RateLimitSecs limits the # of handled config reload HTTP requests to 1 per CheckRateSecs
 	// if multiple HTTP requests are received in the rate limit window, only the first is handled
 	// This prevents a bad actor from stating the config file with millions of concurrent requets
@@ -43,7 +43,7 @@ func NewOptions() *Options {
 		ListenAddress:    defaults.DefaultReloadAddress,
 		ListenPort:       defaults.DefaultReloadPort,
 		HandlerPath:      defaults.DefaultReloadHandlerPath,
-		BleedTimeoutSecs: defaults.DefaultBleedTimeoutSecs,
+		DrainTimeoutSecs: defaults.DefaultDrainTimeoutSecs,
 		RateLimitSecs:    defaults.DefaultRateLimitSecs,
 	}
 }

@@ -135,7 +135,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	hasOldMC := oldConf != nil && oldConf.Metrics != nil
 	hasOldRC := oldConf != nil && oldConf.ReloadConfig != nil
 
-	bleedTime := time.Duration(conf.ReloadConfig.BleedTimeoutSecs) * time.Second
+	drainTime := time.Duration(conf.ReloadConfig.DrainTimeoutSecs) * time.Second
 
 	// if TLS port is configured and at least one origin is mapped to a good tls config,
 	// then set up the tls server listener instance
@@ -144,7 +144,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		(oldConf.Frontend.TLSListenAddress != conf.Frontend.TLSListenAddress ||
 			oldConf.Frontend.TLSListenPort != conf.Frontend.TLSListenPort)) {
 
-		spinDownListener("tlsListener", bleedTime)
+		spinDownListener("tlsListener", drainTime)
 
 		tlsConfig, err = conf.TLSCertConfig()
 		if err != nil {
@@ -160,7 +160,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	} else if !conf.Frontend.ServeTLS && hasOldFC && oldConf.Frontend.ServeTLS {
 		// the TLS configs have been removed between the last config load and this one,
 		// the TLS listener port needs to be stopped
-		spinDownListener("tlsListener", bleedTime)
+		spinDownListener("tlsListener", drainTime)
 	} else if conf.Frontend.ServeTLS && TLSOptionsChanged(conf, oldConf) {
 		tlsConfig, _ = conf.TLSCertConfig()
 		if err != nil {
@@ -177,7 +177,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		(oldConf.Frontend.ListenAddress != conf.Frontend.ListenAddress &&
 			oldConf.Frontend.ListenPort != conf.Frontend.ListenPort)) {
 
-		spinDownListener("httpListener", bleedTime)
+		spinDownListener("httpListener", drainTime)
 		wg.Add(1)
 		routerRefreshed = true
 		go startListener("httpListener",
@@ -241,7 +241,7 @@ func updateRouters(mainRouter http.Handler, adminRouter http.Handler) {
 	}
 }
 
-func spinDownListener(listenerName string, bleedWait time.Duration) {
+func spinDownListener(listenerName string, drainWait time.Duration) {
 	if lg, ok := listeners[listenerName]; ok {
 		lg.exitOnError = false
 		delete(listeners, listenerName)
@@ -249,7 +249,7 @@ func spinDownListener(listenerName string, bleedWait time.Duration) {
 			return
 		}
 		go func() {
-			time.Sleep(bleedWait)
+			time.Sleep(drainWait)
 			lg.listener.Close()
 		}()
 	}

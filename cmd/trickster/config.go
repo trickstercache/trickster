@@ -162,7 +162,7 @@ func applyLoggingConfig(c, oc *config.Config, oldLog *log.Logger) *log.Logger {
 				// if we're changing from file1 -> console or file1 -> file2, close file1 handle
 				// the extra 1s allows HTTP listeners to close first and finish their log writes
 				go delayedLogCloser(oldLog,
-					time.Duration(c.ReloadConfig.BleedTimeoutSecs+1)*time.Second)
+					time.Duration(c.ReloadConfig.DrainTimeoutSecs+1)*time.Second)
 			}
 			return initLogger(c)
 		}
@@ -246,7 +246,7 @@ func initLogger(c *config.Config) *log.Logger {
 func delayedLogCloser(log *log.Logger, delay time.Duration) {
 	// we can't immediately close the log, because some outstanding
 	// http requests might still be on the old reference, so this will
-	// allow time for those connections to bleed off
+	// allow time for those connections to drain
 	if log == nil {
 		return
 	}
