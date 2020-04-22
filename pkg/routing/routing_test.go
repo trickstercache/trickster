@@ -17,6 +17,7 @@
 package routing
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
@@ -28,6 +29,17 @@ import (
 
 	"github.com/gorilla/mux"
 )
+
+func TestRegisterPprofRoutes(t *testing.T) {
+	router := http.NewServeMux()
+	log := tl.ConsoleLogger("info")
+	RegisterPprofRoutes("test", router, log)
+	r, _ := http.NewRequest("GET", "http://0/debug/pprof", nil)
+	_, p := router.Handler(r)
+	if p != "/debug/pprof/" {
+		t.Error("expected pprof route path")
+	}
+}
 
 func TestRegisterProxyRoutes(t *testing.T) {
 
