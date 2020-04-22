@@ -25,11 +25,18 @@ import (
 // CertSwapper is used by a TLSConfig to dynamically update the running Listener's Certificate list
 // This allows Trickster to load and unload TLS certificate configs without restarting the process
 type CertSwapper struct {
-	sync.Mutex
+	*sync.Mutex
 	Certificates []tls.Certificate
 }
 
 var errNoCertificates = errors.New("tls: no certificates configured")
+
+func NewSwapper(certList []tls.Certificate) *CertSwapper {
+	return &CertSwapper{
+		Mutex:        &sync.Mutex{},
+		Certificates: certList,
+	}
+}
 
 func (c *CertSwapper) GetCert(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	c.Lock()

@@ -56,9 +56,7 @@ func startListener(listenerName, address string, port int, connectionsLimit int,
 	lg := &listenerGroup{routeSwapper: ph.NewSwitchHandler(router), exitOnError: exitOnError}
 	if tlsConfig != nil && len(tlsConfig.Certificates) > 0 {
 		lg.tlsConfig = tlsConfig
-		lg.tlsSwapper = &sw.CertSwapper{
-			Certificates: tlsConfig.Certificates,
-		}
+		lg.tlsSwapper = sw.NewSwapper(tlsConfig.Certificates)
 
 		// Replace the normal GetCertificate function in the TLS config with lg.tlsSwapper's,
 		// so users swap certs in the config later without restarting the entire process
