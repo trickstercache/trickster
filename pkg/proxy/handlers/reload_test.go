@@ -37,7 +37,7 @@ func TestReloadHandleFunc(t *testing.T) {
 		map[string]cache.Cache, []string, bool) {
 	}
 
-	testFile := fmt.Sprintf("/tmp/trickster_test_config.%d.conf", time.Now().UnixNano())
+	testFile := fmt.Sprintf("trickster_test_config.%d.conf", time.Now().UnixNano())
 
 	tml, err := ioutil.ReadFile("../../../testdata/test.empty.conf")
 	if err != nil {
@@ -58,7 +58,7 @@ func TestReloadHandleFunc(t *testing.T) {
 
 	f := ReloadHandleFunc(emptyFunc, cfg, nil, log, nil, nil)
 	f(w, r)
-	ioutil.WriteFile(testFile, tml, 0666)
+	ioutil.WriteFile(testFile, []byte(string(tml)+" "), 0666)
 	f(w, r)
 
 }
