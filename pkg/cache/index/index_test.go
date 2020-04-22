@@ -283,3 +283,28 @@ func TestUpdateObjectTTL(t *testing.T) {
 	}
 
 }
+
+func TestUpdateOptions(t *testing.T) {
+
+	cacheConfig := &co.Options{CacheType: "test", Index: &io.Options{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
+	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, testLogger)
+
+	options := io.NewOptions()
+	options.MaxSizeBytes = 5
+	idx.UpdateOptions(options)
+
+	if idx.options.MaxSizeBytes != 5 {
+		t.Errorf("expected %d got %d", 5, idx.options.MaxSizeBytes)
+	}
+}
+
+func TestRemoveObjects(t *testing.T) {
+	cacheConfig := &co.Options{CacheType: "test", Index: &io.Options{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
+	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, testLogger)
+	obj := &Object{Key: "test", Value: []byte("test_value")}
+	idx.UpdateObject(obj)
+	idx.RemoveObjects([]string{"test"}, false)
+	if _, ok := idx.Objects["test"]; ok {
+		t.Error("key should not be in map")
+	}
+}
