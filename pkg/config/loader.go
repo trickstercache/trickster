@@ -93,10 +93,6 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 			return nil, flags, fmt.Errorf(`missing origin-type for origin "%s"`, k)
 		}
 
-		if o.OriginType == "rule" && o.RuleName == "" {
-			return nil, flags, fmt.Errorf(`missing rule-name for origin "%s"`, k)
-		}
-
 		if o.OriginType != "rule" && o.OriginURL == "" {
 			return nil, flags, fmt.Errorf(`missing origin-url for origin "%s"`, k)
 		}
