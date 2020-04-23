@@ -20,7 +20,7 @@ package defaults
 
 const (
 	// DefaultCachePath is the default Cache Path for the Filesystem Cache
-	DefaultCachePath = `%TEMP%\trickster`
+	DefaultCachePath = "/tmp/trickster"
 	// DefaultConfigPath defines the default location of the Trickster config file
-	DefaultConfigPath = `%APPDATA%\trickster\trickster.conf`
+	DefaultConfigPath = "/etc/trickster/trickster.conf"
 )
