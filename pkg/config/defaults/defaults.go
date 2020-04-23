@@ -64,8 +64,6 @@ const (
 	DefaultMaxTTLSecs = 86400
 	// DefaultRevalidationFactor is the default Cache Object Freshness Lifetime to TTL mulitplier
 	DefaultRevalidationFactor = 2
-	// DefaultCachePath is the default Cache Path for the Filesystem Cache
-	DefaultCachePath = "/tmp/trickster"
 	// DefaultRedisClientType is the default Redis Client Type
 	DefaultRedisClientType = "standard"
 	// DefaultRedisProtocol is the default Redis Client protocol
@@ -122,8 +120,6 @@ const (
 	DefaultPingHandlerPath = "/trickster/ping"
 	// DefaultMaxRuleExecutions is the default value for the number of allowed Rule executions per Request
 	DefaultMaxRuleExecutions = 16
-	// DefaultConfigPath defines the default location of the Trickster config file
-	DefaultConfigPath = "/etc/trickster/trickster.conf"
 )
 
 // DefaultCompressableTypes returns a list of types that Trickster should compress before caching
