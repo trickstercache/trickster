@@ -108,7 +108,7 @@ func (d *HTTPDocument) LoadRangeParts() {
 }
 
 // ParsePartialContentBody parses a Partial Content response body into 0 or more discrete parts
-func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte, log *tl.TricksterLogger) {
+func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte, log *tl.Logger) {
 
 	ct := resp.Header.Get(headers.NameContentType)
 	if cr := resp.Header.Get(headers.NameContentRange); cr != "" {

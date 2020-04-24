@@ -245,7 +245,7 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 			return nil
 		}
 
-		reader, resp, contentLength := PrepareFetchReader(pr.Request)
+		reader, resp, contentLength := PrepareFetchReader(pr.upstreamRequest)
 		pr.upstreamResponse = resp
 
 		pr.writeResponseHeader()

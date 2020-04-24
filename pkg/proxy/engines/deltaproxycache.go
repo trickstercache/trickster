@@ -98,7 +98,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	client.SetExtent(r, trq, &trq.Extent)
+	client.SetExtent(pr.upstreamRequest, trq, &trq.Extent)
 	key := oc.CacheKeyPrefix + "." + pr.DeriveCacheKey(trq.TemplateURL, "")
 
 	locks.Acquire(key)
@@ -238,7 +238,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			defer wg.Done()
 			rq.Request = rq.WithContext(tctx.WithResources(r.Context(),
 				request.NewResources(oc, pc, cc, cache, client, pr.Logger)))
-			client.SetExtent(rq.Request, trq, e)
+			client.SetExtent(rq.upstreamRequest, trq, e)
 			body, resp, _ := rq.Fetch()
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				nts, err := client.UnmarshalTimeseries(body)
@@ -371,7 +371,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	locks.Release(key)
 }
 
-func logDeltaRoutine(log *tl.TricksterLogger, p tl.Pairs) { log.Debug("delta routine completed", p) }
+func logDeltaRoutine(log *tl.Logger, p tl.Pairs) { log.Debug("delta routine completed", p) }
 
 func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery, client origins.TimeseriesClient) (timeseries.Timeseries, *HTTPDocument, time.Duration, error) {
 

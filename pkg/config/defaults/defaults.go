@@ -45,6 +45,16 @@ const (
 	// DefaultTLSProxyListenAddress is the default address that the TLS frontend endpoint will listen on
 	DefaultTLSProxyListenAddress = ""
 
+	// DefaultReloadPort is the default port that the Reload endpoint will listen on
+	DefaultReloadPort = 8484
+	// DefaultReloadAddress is the default address that the Reload endpoint will listen on
+	DefaultReloadAddress = "127.0.0.1"
+	// DefaultDrainTimeoutSecs is the default time that is allowed for an old configuration's requests to drain
+	// before its resources are closed
+	DefaultDrainTimeoutSecs = 30
+	// DefaultRateLimitSecs is the default Rate Limit time for Config Reloads
+	DefaultRateLimitSecs = 3
+
 	// DefaultTracerImplemetation is the default distributed tracer implementation
 	DefaultTracerImplemetation = "opentelemetry"
 	// DefaultExporterImplementation is the default distributed tracer exporter implementation
@@ -120,10 +130,14 @@ const (
 	DefaultConfigHandlerPath = "/trickster/config"
 	// DefaultPingHandlerPath is the default value for the Trickster Config Ping Handler path
 	DefaultPingHandlerPath = "/trickster/ping"
+	// DefaultReloadHandlerPath defines the defaupt path for the Reload Handler
+	DefaultReloadHandlerPath = "/trickster/config/reload"
 	// DefaultMaxRuleExecutions is the default value for the number of allowed Rule executions per Request
 	DefaultMaxRuleExecutions = 16
 	// DefaultConfigPath defines the default location of the Trickster config file
 	DefaultConfigPath = "/etc/trickster/trickster.conf"
+	// DefaultPprofServerName defines the default Pprof Server Name
+	DefaultPprofServerName = "both"
 )
 
 // DefaultCompressableTypes returns a list of types that Trickster should compress before caching

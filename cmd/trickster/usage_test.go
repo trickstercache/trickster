@@ -24,14 +24,14 @@ import (
 func ExamplePrintVersion() {
 	runtime.ApplicationVersion = "test"
 	PrintVersion()
-	// Output: Trickster version: test, buildInfo:  , goVersion:  © 2018 Comcast
+	// Output: Trickster version: test, buildInfo:  , goVersion: , copyright: © 2018 Comcast Corporation
 }
 
 func ExamplePrintUsage() {
 
 	runtime.ApplicationVersion = "test"
 	PrintUsage()
-	// Output: Trickster version: test, buildInfo:  , goVersion:  © 2018 Comcast
+	// Output: Trickster version: test, buildInfo:  , goVersion: , copyright: © 2018 Comcast Corporation
 	//
 	// Trickster Usage:
 	//
@@ -39,6 +39,9 @@ func ExamplePrintUsage() {
 	//
 	//  Print Version Info:
 	//  trickster -version
+	//
+	//  Validating a configuration file:
+	//   trickster -validate-config -config /path/to/file.conf
 	//
 	//  Using a configuration file:
 	//   trickster -config /path/to/file.conf [-log-level DEBUG|INFO|WARN|ERROR] [-proxy-port 8480] [-metrics-port 8481]

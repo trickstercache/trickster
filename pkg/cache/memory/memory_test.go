@@ -345,7 +345,7 @@ func TestCache_BulkRemove(t *testing.T) {
 		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
 	}
 
-	mc.BulkRemove([]string{cacheKey}, true)
+	mc.BulkRemove([]string{cacheKey})
 
 	// it should be a cache miss
 	_, ls, err = mc.Retrieve(cacheKey, false)
@@ -366,7 +366,7 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 
 	mc := storeBenchmark(b)
 
-	mc.BulkRemove(keyArray, true)
+	mc.BulkRemove(keyArray)
 
 	// it should be a cache miss
 	for n := 0; n < b.N; n++ {

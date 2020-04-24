@@ -38,7 +38,7 @@ type Cache struct {
 	Name   string
 	Config *options.Options
 	dbh    *bbolt.DB
-	Logger *log.TricksterLogger
+	Logger *log.Logger
 	Index  *index.Index
 }
 
@@ -164,7 +164,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
 		c.Logger.Debug("bbolt cache retrieve", log.Pairs{"cacheKey": cacheKey})
 		if atime {
-			c.Index.UpdateObjectAccessTime(cacheKey)
+			go c.Index.UpdateObjectAccessTime(cacheKey)
 		}
 		metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
 		locks.Release(lockPrefix + cacheKey)
@@ -192,7 +192,7 @@ func (c *Cache) Remove(cacheKey string) {
 	locks.Release(lockPrefix + cacheKey)
 }
 
-func (c *Cache) remove(cacheKey string, noLock bool) error {
+func (c *Cache) remove(cacheKey string, isBulk bool) error {
 
 	err := c.dbh.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
@@ -202,16 +202,18 @@ func (c *Cache) remove(cacheKey string, noLock bool) error {
 		c.Logger.Error("bbolt cache key delete failure", log.Pairs{"cacheKey": cacheKey, "reason": err.Error()})
 		return err
 	}
-	c.Index.RemoveObject(cacheKey, noLock)
+	if !isBulk {
+		c.Index.RemoveObject(cacheKey)
+	}
 	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 	c.Logger.Debug("bbolt cache key delete", log.Pairs{"key": cacheKey})
 	return nil
 }
 
 // BulkRemove removes a list of objects from the cache
-func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
+func (c *Cache) BulkRemove(cacheKeys []string) {
 	for _, cacheKey := range cacheKeys {
-		c.remove(cacheKey, noLock)
+		c.remove(cacheKey, true)
 	}
 }
 

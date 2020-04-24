@@ -34,7 +34,7 @@ type Flushers []func()
 
 // RegisterAll registers all Tracers in the provided configuration, and returns
 // their Flushers
-func RegisterAll(cfg *config.TricksterConfig, log *tl.TricksterLogger) (Flushers, error) {
+func RegisterAll(cfg *config.Config, log *tl.Logger) (Flushers, error) {
 
 	if cfg == nil {
 		return nil, errors.New("no config provided")
@@ -79,7 +79,7 @@ func RegisterAll(cfg *config.TricksterConfig, log *tl.TricksterLogger) (Flushers
 }
 
 // Init initializes tracing and returns a function to flush the tracer. Flush should be called on server shutdown.
-func Init(cfg *to.Options, log *tl.TricksterLogger) (trace.Tracer, func(), error) {
+func Init(cfg *to.Options, log *tl.Logger) (trace.Tracer, func(), error) {
 
 	if cfg == nil {
 		log.Info(

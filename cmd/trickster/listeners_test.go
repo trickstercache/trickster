@@ -38,7 +38,7 @@ func TestListeners(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 300)
 	l := listeners["httpListener"]
-	l.Close()
+	l.listener.Close()
 	time.Sleep(time.Millisecond * 100)
 	if err == nil {
 		t.Error("expected non-nil err")
@@ -51,7 +51,7 @@ func TestListeners(t *testing.T) {
 	}()
 	time.Sleep(time.Millisecond * 300)
 	l = listeners["httpListener2"]
-	l.Close()
+	l.listener.Close()
 	time.Sleep(time.Millisecond * 100)
 	if err == nil {
 		t.Error("expected non-nil err")

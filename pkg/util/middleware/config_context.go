@@ -30,7 +30,7 @@ import (
 
 // WithResourcesContext ...
 func WithResourcesContext(client origins.Client, oc *oo.Options,
-	c cache.Cache, p *po.Options, l *tl.TricksterLogger, next http.Handler) http.Handler {
+	c cache.Cache, p *po.Options, l *tl.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var resources *request.Resources
 		if c == nil {

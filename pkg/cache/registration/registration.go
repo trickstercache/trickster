@@ -50,7 +50,7 @@ const (
 // }
 
 // LoadCachesFromConfig iterates the Caching Config and Connects/Maps each Cache
-func LoadCachesFromConfig(conf *config.TricksterConfig, logger *tl.TricksterLogger) map[string]cache.Cache {
+func LoadCachesFromConfig(conf *config.Config, logger *tl.Logger) map[string]cache.Cache {
 	caches := make(map[string]cache.Cache)
 	for k, v := range conf.Caches {
 		c := NewCache(k, v, logger)
@@ -70,7 +70,7 @@ func CloseCaches(caches map[string]cache.Cache) error {
 }
 
 // NewCache returns a Cache object based on the provided config.CachingConfig
-func NewCache(cacheName string, cfg *options.Options, logger *tl.TricksterLogger) cache.Cache {
+func NewCache(cacheName string, cfg *options.Options, logger *tl.Logger) cache.Cache {
 
 	var c cache.Cache
 

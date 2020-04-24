@@ -27,19 +27,19 @@ import (
 
 // Load returns the Application Configuration, starting with a default config,
 // then overriding with any provided config file, then env vars, and finally flags
-func Load(applicationName string, applicationVersion string, arguments []string) (*TricksterConfig, *Flags, error) {
+func Load(applicationName string, applicationVersion string, arguments []string) (*Config, *Flags, error) {
 
 	c := NewConfig()
 	flags, err := parseFlags(applicationName, arguments) // Parse here to get config file path and version flags
 	if err != nil {
-		return nil, nil, err
+		return nil, flags, err
 	}
 	if flags.PrintVersion {
 		return nil, flags, nil
 	}
 	if err := c.loadFile(flags); err != nil && flags.customPath {
 		// a user-provided path couldn't be loaded. return the error for the application to handle
-		return nil, nil, err
+		return nil, flags, err
 	}
 
 	c.loadEnvVars()
@@ -50,7 +50,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		if c.providedOriginURL != "" {
 			url, err := url.Parse(c.providedOriginURL)
 			if err != nil {
-				return nil, nil, err
+				return nil, flags, err
 			}
 			if c.providedOriginType != "" {
 				d.OriginType = c.providedOriginType
@@ -72,17 +72,17 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	}
 
 	if len(c.Origins) == 0 {
-		return nil, nil, errors.New("no valid origins configured")
+		return nil, flags, errors.New("no valid origins configured")
 	}
 
 	for k, n := range c.NegativeCacheConfigs {
 		for c := range n {
 			ci, err := strconv.Atoi(c)
 			if err != nil {
-				return nil, nil, fmt.Errorf(`invalid negative cache config in %s: %s is not a valid status code`, k, c)
+				return nil, flags, fmt.Errorf(`invalid negative cache config in %s: %s is not a valid status code`, k, c)
 			}
 			if ci < 400 || ci >= 600 {
-				return nil, nil, fmt.Errorf(`invalid negative cache config in %s: %s is not a valid status code`, k, c)
+				return nil, flags, fmt.Errorf(`invalid negative cache config in %s: %s is not a valid status code`, k, c)
 			}
 		}
 	}
@@ -90,20 +90,16 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	for k, o := range c.Origins {
 
 		if o.OriginType == "" {
-			return nil, nil, fmt.Errorf(`missing origin-type for origin "%s"`, k)
-		}
-
-		if o.OriginType == "rule" && o.RuleName == "" {
-			return nil, nil, fmt.Errorf(`missing rule-name for origin "%s"`, k)
+			return nil, flags, fmt.Errorf(`missing origin-type for origin "%s"`, k)
 		}
 
 		if o.OriginType != "rule" && o.OriginURL == "" {
-			return nil, nil, fmt.Errorf(`missing origin-url for origin "%s"`, k)
+			return nil, flags, fmt.Errorf(`missing origin-url for origin "%s"`, k)
 		}
 
 		url, err := url.Parse(o.OriginURL)
 		if err != nil {
-			return nil, nil, err
+			return nil, flags, err
 		}
 
 		if strings.HasSuffix(url.Path, "/") {
@@ -134,7 +130,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 
 		nc, ok := c.NegativeCacheConfigs[o.NegativeCacheName]
 		if !ok {
-			return nil, nil, fmt.Errorf(`invalid negative cache name: %s`, o.NegativeCacheName)
+			return nil, flags, fmt.Errorf(`invalid negative cache name: %s`, o.NegativeCacheName)
 		}
 
 		nc2 := map[int]time.Duration{}

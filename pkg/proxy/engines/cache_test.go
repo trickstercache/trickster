@@ -456,8 +456,8 @@ func (tc *testCache) Retrieve(cacheKey string, allowExpired bool) ([]byte, statu
 	return nil, status.LookupStatusError, errTest
 }
 
-func (tc *testCache) SetTTL(cacheKey string, ttl time.Duration)  {}
-func (tc *testCache) Remove(cacheKey string)                     {}
-func (tc *testCache) BulkRemove(cacheKeys []string, noLock bool) {}
-func (tc *testCache) Close() error                               { return errTest }
-func (tc *testCache) Configuration() *co.Options                 { return tc.configuration }
+func (tc *testCache) SetTTL(cacheKey string, ttl time.Duration) {}
+func (tc *testCache) Remove(cacheKey string)                    {}
+func (tc *testCache) BulkRemove(cacheKeys []string)             {}
+func (tc *testCache) Close() error                              { return errTest }
+func (tc *testCache) Configuration() *co.Options                { return tc.configuration }

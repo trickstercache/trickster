@@ -30,10 +30,7 @@ var testLogger = tl.ConsoleLogger("error")
 
 var testBulkIndex *Index
 
-func testBulkRemoveFunc(cacheKeys []string, noLock bool) {
-	for _, cacheKey := range cacheKeys {
-		testBulkIndex.RemoveObject(cacheKey, noLock)
-	}
+func testBulkRemoveFunc(cacheKeys []string) {
 }
 func fakeFlusherFunc(string, []byte) {}
 
@@ -221,7 +218,7 @@ func TestRemoveObject(t *testing.T) {
 		t.Errorf("test object missing from index")
 	}
 
-	idx.RemoveObject("test", false)
+	idx.RemoveObject("test")
 	if _, ok := idx.Objects["test"]; ok {
 		t.Errorf("test object should be missing from index")
 	}
@@ -285,4 +282,29 @@ func TestUpdateObjectTTL(t *testing.T) {
 		t.Errorf("expected non-zero time, got %v", obj.Expiration)
 	}
 
+}
+
+func TestUpdateOptions(t *testing.T) {
+
+	cacheConfig := &co.Options{CacheType: "test", Index: &io.Options{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
+	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, testLogger)
+
+	options := io.NewOptions()
+	options.MaxSizeBytes = 5
+	idx.UpdateOptions(options)
+
+	if idx.options.MaxSizeBytes != 5 {
+		t.Errorf("expected %d got %d", 5, idx.options.MaxSizeBytes)
+	}
+}
+
+func TestRemoveObjects(t *testing.T) {
+	cacheConfig := &co.Options{CacheType: "test", Index: &io.Options{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
+	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, testLogger)
+	obj := &Object{Key: "test", Value: []byte("test_value")}
+	idx.UpdateObject(obj)
+	idx.RemoveObjects([]string{"test"}, false)
+	if _, ok := idx.Objects["test"]; ok {
+		t.Error("key should not be in map")
+	}
 }

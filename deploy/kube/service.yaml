@@ -3,13 +3,13 @@ kind: Service
 metadata:
   annotations:
     prometheus.io/scrape: "true"
-    prometheus.io/port: "8082"
+    prometheus.io/port: "8481"
     prometheus.io/path: "/metrics"
   name: trickster
 spec:
   ports:
-    - port: 9090
-      targetPort: 9090
+    - port: 8480
+      targetPort: 8480
       name: metrics
   selector:
     name: trickster

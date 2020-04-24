@@ -35,3 +35,16 @@ func CloneMap(in map[string]string) map[string]string {
 	}
 	return out
 }
+
+// Equal returns true if the slices contain identical values in the identical order
+func Equal(s1, s2 []string) bool {
+	if len(s1) != len(s2) {
+		return false
+	}
+	for i, v := range s1 {
+		if v != s2[i] {
+			return false
+		}
+	}
+	return true
+}
