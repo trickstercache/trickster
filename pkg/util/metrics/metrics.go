@@ -28,6 +28,8 @@ const (
 	metricNamespace   = "trickster"
 	cacheSubsystem    = "cache"
 	proxySubsystem    = "proxy"
+	configSubsystem   = "config"
+	buildSubsystem    = "build"
 	frontendSubsystem = "frontend"
 )
 
@@ -35,6 +37,15 @@ const (
 var (
 	defaultBuckets = []float64{0.05, 0.1, 0.5, 1, 5, 10, 20}
 )
+
+// BuildInfo is a Gauge representing the Trickster binary build information of the running server instance
+var BuildInfo *prometheus.GaugeVec
+
+// LastReloadSuccessful gauge will be set to 1 if Trickster's last config reload succeeded else 0
+var LastReloadSuccessful prometheus.Gauge
+
+// LastReloadSuccessfulTimestamp gauge is the epoch time of the most recent successful config load
+var LastReloadSuccessfulTimestamp prometheus.Gauge
 
 // FrontendRequestStatus is a Counter of front end requests that have been processed with their status
 var FrontendRequestStatus *prometheus.CounterVec
@@ -94,6 +105,35 @@ var ProxyConnectionClosed prometheus.Counter
 var ProxyConnectionFailed prometheus.Counter
 
 func init() {
+
+	BuildInfo = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: "build",
+			Name:      "info",
+			Help:      "A metric with a constant '1' value labeled by version, revision, and goversion from which Trickster was built.",
+		},
+		[]string{"goversion", "revision", "version"},
+	)
+
+	LastReloadSuccessfulTimestamp = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: configSubsystem,
+			Name:      "last_reload_success_time_seconds",
+			Help:      "Timestamp of the last successful configuration reload.",
+		},
+	)
+
+	LastReloadSuccessful = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: configSubsystem,
+			Name:      "last_reload_successful",
+			Help:      "Whether the last configuration reload attempt was successful.",
+		},
+	)
+
 	FrontendRequestStatus = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -298,7 +338,9 @@ func init() {
 	prometheus.MustRegister(CacheBytes)
 	prometheus.MustRegister(CacheMaxObjects)
 	prometheus.MustRegister(CacheMaxBytes)
-
+	prometheus.MustRegister(BuildInfo)
+	prometheus.MustRegister(LastReloadSuccessful)
+	prometheus.MustRegister(LastReloadSuccessfulTimestamp)
 }
 
 // Handler returns the http handler for the listener

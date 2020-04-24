@@ -21,14 +21,20 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	cache "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/types"
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
+	reload "github.com/tricksterproxy/trickster/pkg/config/reload/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	origins "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
@@ -42,8 +48,8 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// TricksterConfig is the main configuration object
-type TricksterConfig struct {
+// Config is the main configuration object
+type Config struct {
 	// Main is the primary MainConfig section
 	Main *MainConfig `toml:"main"`
 	// Origins is a map of OriginConfigs
@@ -64,8 +70,13 @@ type TricksterConfig struct {
 	Rules map[string]*rule.Options `toml:"rules"`
 	// RequestRewriters is a map of the Rewriters
 	RequestRewriters map[string]*rwopts.Options `toml:"request_rewriters"`
+	// ReloadConfig provides configurations for in-process config reloading
+	ReloadConfig *reload.Options `toml:"reloading"`
 
-	CompiledRewriters  map[string]rewriter.RewriteInstructions
+	// Resources holds runtime resources uses by the Config
+	Resources *Resources `toml:"-"`
+
+	CompiledRewriters  map[string]rewriter.RewriteInstructions `toml:"-"`
 	activeCaches       map[string]bool
 	providedOriginURL  string
 	providedOriginType string
@@ -81,8 +92,16 @@ type MainConfig struct {
 	ConfigHandlerPath string `toml:"config_handler_path"`
 	// PingHandlerPath provides the path to register the Ping Handler for checking that Trickster is running
 	PingHandlerPath string `toml:"ping_handler_path"`
-	// ReloadConfig provides the details necessary to enable the config reloading feature of Trickster
-	Reload *ReloadConfig `toml:"reload"`
+	// ReloadHandlerPath provides the path to register the Config Reload Handler
+	ReloadHandlerPath string `toml:"reload_handler_path"`
+	// PprofServer provides the name of the http listener that will host the pprof debugging routes
+	// Options are: "metrics", "reload", "both", or "off"; default is both
+	PprofServer string `toml:"pprof_server"`
+
+	configFilePath      string
+	configLastModified  time.Time
+	configRateLimitTime time.Time
+	stalenessCheckLock  *sync.Mutex
 }
 
 // FrontendConfig is a collection of configurations for the main http frontend for the application
@@ -111,20 +130,18 @@ type LoggingConfig struct {
 	LogLevel string `toml:"log_level"`
 }
 
-// ReloadConfig is a collection of Metrics Collection configurations
-type ReloadConfig struct {
-	// ListenAddress is IP address from which the Reload API is available for triggering at /-/reload
-	ListenAddress string `toml:"listen_address"`
-	// ListenPort is TCP Port from which the Reload API is available for triggering at /-/reload
-	ListenPort int `toml:"listen_port"`
-}
-
 // MetricsConfig is a collection of Metrics Collection configurations
 type MetricsConfig struct {
 	// ListenAddress is IP address from which the Application Metrics are available for pulling at /metrics
 	ListenAddress string `toml:"listen_address"`
 	// ListenPort is TCP Port from which the Application Metrics are available for pulling at /metrics
 	ListenPort int `toml:"listen_port"`
+}
+
+// Resources is a collection of values used by configs at runtime that are not part of the config itself
+type Resources struct {
+	QuitChan chan bool `toml:"-"`
+	metadata *toml.MetaData
 }
 
 // NegativeCacheConfig is a collection of response codes and their TTLs
@@ -140,8 +157,8 @@ func (nc NegativeCacheConfig) Clone() NegativeCacheConfig {
 }
 
 // NewConfig returns a Config initialized with default values.
-func NewConfig() *TricksterConfig {
-	return &TricksterConfig{
+func NewConfig() *Config {
+	return &Config{
 		Caches: map[string]*cache.Options{
 			"default": cache.NewOptions(),
 		},
@@ -150,8 +167,11 @@ func NewConfig() *TricksterConfig {
 			LogLevel: d.DefaultLogLevel,
 		},
 		Main: &MainConfig{
-			ConfigHandlerPath: d.DefaultConfigHandlerPath,
-			PingHandlerPath:   d.DefaultPingHandlerPath,
+			ConfigHandlerPath:  d.DefaultConfigHandlerPath,
+			PingHandlerPath:    d.DefaultPingHandlerPath,
+			ReloadHandlerPath:  d.DefaultReloadHandlerPath,
+			PprofServer:        d.DefaultPprofServerName,
+			stalenessCheckLock: &sync.Mutex{},
 		},
 		Metrics: &MetricsConfig{
 			ListenPort: d.DefaultMetricsListenPort,
@@ -171,7 +191,11 @@ func NewConfig() *TricksterConfig {
 		TracingConfigs: map[string]*tracing.Options{
 			"default": tracing.NewOptions(),
 		},
+		ReloadConfig:   reload.NewOptions(),
 		LoaderWarnings: make([]string, 0),
+		Resources: &Resources{
+			QuitChan: make(chan bool, 1),
+		},
 	}
 }
 
@@ -181,19 +205,51 @@ func NewNegativeCacheConfig() NegativeCacheConfig {
 }
 
 // loadFile loads application configuration from a TOML-formatted file.
-func (c *TricksterConfig) loadFile(flags *Flags) error {
-	md, err := toml.DecodeFile(flags.ConfigPath, c)
+func (c *Config) loadFile(flags *Flags) error {
+	b, err := ioutil.ReadFile(flags.ConfigPath)
+	if err != nil {
+		c.setDefaults(&toml.MetaData{})
+		return err
+	}
+	return c.loadTOMLConfig(string(b), flags)
+}
+
+// loadTOMLConfig loads application configuration from a TOML-formatted byte slice.
+func (c *Config) loadTOMLConfig(tml string, flags *Flags) error {
+	md, err := toml.Decode(tml, c)
 	if err != nil {
 		c.setDefaults(&toml.MetaData{})
 		return err
 	}
 	err = c.setDefaults(&md)
+	if err == nil {
+		c.Main.configFilePath = flags.ConfigPath
+		c.Main.configLastModified = c.CheckFileLastModified()
+	}
 	return err
 }
 
-func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
+// CheckFileLastModified returns the last modified date of the running config file, if present
+func (c *Config) CheckFileLastModified() time.Time {
+	if c.Main == nil || c.Main.configFilePath == "" {
+		return time.Time{}
+	}
+	file, err := os.Stat(c.Main.configFilePath)
+	if err != nil {
+		return time.Time{}
+	}
+	return file.ModTime()
+}
+
+func (c *Config) setDefaults(metadata *toml.MetaData) error {
+
+	c.Resources.metadata = metadata
 
 	var err error
+
+	if err = c.processPprofConfig(); err != nil {
+		return err
+	}
 
 	if c.RequestRewriters != nil {
 		if c.CompiledRewriters, err = rewriter.ProcessConfigs(c.RequestRewriters); err != nil {
@@ -220,7 +276,21 @@ func (c *TricksterConfig) setDefaults(metadata *toml.MetaData) error {
 	return nil
 }
 
-func (c *TricksterConfig) validateTLSConfigs() error {
+// ErrInvalidPprofServerName returns an error for invalid pprof server name
+var ErrInvalidPprofServerName = errors.New("invalid pprof server name")
+
+func (c *Config) processPprofConfig() error {
+	switch c.Main.PprofServer {
+	case "metrics", "reload", "off", "both":
+		return nil
+	case "":
+		c.Main.PprofServer = d.DefaultPprofServerName
+		return nil
+	}
+	return ErrInvalidPprofServerName
+}
+
+func (c *Config) validateTLSConfigs() error {
 	for _, oc := range c.Origins {
 		if oc.TLS != nil {
 			b, err := oc.TLS.Validate()
@@ -238,7 +308,7 @@ func (c *TricksterConfig) validateTLSConfigs() error {
 var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers", "default_ttl_secs",
 	"request_headers", "response_headers", "response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding"}
 
-func (c *TricksterConfig) validateConfigMappings() error {
+func (c *Config) validateConfigMappings() error {
 	for k, oc := range c.Origins {
 
 		if err := origins.ValidateOriginName(k); err != nil {
@@ -263,7 +333,11 @@ func (c *TricksterConfig) validateConfigMappings() error {
 	return nil
 }
 
-func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) error {
+func (c *Config) processOriginConfigs(metadata *toml.MetaData) error {
+
+	if metadata == nil {
+		return errors.New("invalid config metadata")
+	}
 
 	c.activeCaches = make(map[string]bool)
 
@@ -378,8 +452,8 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) error {
 					p.ReqRewriterName != "" {
 					ri, ok := c.CompiledRewriters[p.ReqRewriterName]
 					if !ok {
-						return fmt.Errorf("invalid rewriter name %s in origin config %s",
-							p.ReqRewriterName, k)
+						return fmt.Errorf("invalid rewriter name %s in path %s of origin config %s",
+							p.ReqRewriterName, l, k)
 					}
 					p.ReqRewriter = ri
 				}
@@ -471,7 +545,7 @@ func (c *TricksterConfig) processOriginConfigs(metadata *toml.MetaData) error {
 	return nil
 }
 
-func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
+func (c *Config) processCachingConfigs(metadata *toml.MetaData) {
 
 	// setCachingDefaults assumes that processOriginConfigs was just ran
 
@@ -635,8 +709,8 @@ func (c *TricksterConfig) processCachingConfigs(metadata *toml.MetaData) {
 	}
 }
 
-// Clone returns an exact copy of the subject *TricksterConfig
-func (c *TricksterConfig) Clone() *TricksterConfig {
+// Clone returns an exact copy of the subject *Config
+func (c *Config) Clone() *Config {
 
 	nc := NewConfig()
 	delete(nc.Caches, "default")
@@ -645,6 +719,8 @@ func (c *TricksterConfig) Clone() *TricksterConfig {
 	nc.Main.ConfigHandlerPath = c.Main.ConfigHandlerPath
 	nc.Main.InstanceID = c.Main.InstanceID
 	nc.Main.PingHandlerPath = c.Main.PingHandlerPath
+	nc.Main.ReloadHandlerPath = c.Main.ReloadHandlerPath
+	nc.Main.PprofServer = c.Main.PprofServer
 
 	nc.Logging.LogFile = c.Logging.LogFile
 	nc.Logging.LogLevel = c.Logging.LogLevel
@@ -658,6 +734,10 @@ func (c *TricksterConfig) Clone() *TricksterConfig {
 	nc.Frontend.TLSListenPort = c.Frontend.TLSListenPort
 	nc.Frontend.ConnectionsLimit = c.Frontend.ConnectionsLimit
 	nc.Frontend.ServeTLS = c.Frontend.ServeTLS
+
+	nc.Resources = &Resources{
+		QuitChan: make(chan bool, 1),
+	}
 
 	for k, v := range c.Origins {
 		nc.Origins[k] = v.Clone()
@@ -684,7 +764,31 @@ func (c *TricksterConfig) Clone() *TricksterConfig {
 	return nc
 }
 
-func (c *TricksterConfig) String() string {
+// IsStale returns true if the running config is stale versus the
+func (c *Config) IsStale() bool {
+
+	c.Main.stalenessCheckLock.Lock()
+	defer c.Main.stalenessCheckLock.Unlock()
+
+	if c.Main == nil || c.Main.configFilePath == "" ||
+		time.Now().Before(c.Main.configRateLimitTime) {
+		return false
+	}
+
+	if c.ReloadConfig == nil {
+		c.ReloadConfig = reload.NewOptions()
+	}
+
+	c.Main.configRateLimitTime =
+		time.Now().Add(time.Second * time.Duration(c.ReloadConfig.RateLimitSecs))
+	t := c.CheckFileLastModified()
+	if t.IsZero() {
+		return false
+	}
+	return t != c.Main.configLastModified
+}
+
+func (c *Config) String() string {
 	cp := c.Clone()
 
 	// the toml library will panic if the Handler is assigned,
@@ -721,6 +825,19 @@ func (c *TricksterConfig) String() string {
 	e := toml.NewEncoder(&buf)
 	e.Encode(cp)
 	return buf.String()
+}
+
+// ConfigFilePath returns the file path from which this configuration is based
+func (c *Config) ConfigFilePath() string {
+	if c.Main != nil {
+		return c.Main.configFilePath
+	}
+	return ""
+}
+
+// Equal returns true if the FrontendConfigs are identical in value.
+func (fc *FrontendConfig) Equal(fc2 *FrontendConfig) bool {
+	return *fc == *fc2
 }
 
 var sensitiveCredentials = map[string]bool{headers.NameAuthorization: true}

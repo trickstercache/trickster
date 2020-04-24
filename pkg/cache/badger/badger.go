@@ -20,6 +20,7 @@ package badger
 import (
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/metrics"
 	"github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
@@ -32,7 +33,7 @@ import (
 type Cache struct {
 	Name   string
 	Config *options.Options
-	Logger *log.TricksterLogger
+	Logger *log.Logger
 	dbh    *badger.DB
 }
 
@@ -87,6 +88,7 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 	}
 
 	if err == badger.ErrKeyNotFound {
+		err = cache.ErrKNF
 		c.Logger.Debug("badger cache miss", log.Pairs{"key": cacheKey})
 		metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 		return nil, status.LookupStatusKeyMiss, err
@@ -107,7 +109,7 @@ func (c *Cache) Remove(cacheKey string) {
 }
 
 // BulkRemove removes a list of objects from the cache. noLock is not used for Badger
-func (c *Cache) BulkRemove(cacheKeys []string, noLock bool) {
+func (c *Cache) BulkRemove(cacheKeys []string) {
 	c.Logger.Debug("badger cache bulk remove", log.Pairs{})
 
 	c.dbh.Update(func(txn *badger.Txn) error {

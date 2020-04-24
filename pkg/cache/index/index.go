@@ -48,10 +48,8 @@ type Index struct {
 
 	name           string                             `msg:"-"`
 	cacheType      string                             `msg:"-"`
-	config         *options.Options                   `msg:"-"`
-	bulkRemoveFunc func([]string, bool)               `msg:"-"`
-	reapInterval   time.Duration                      `msg:"-"`
-	flushInterval  time.Duration                      `msg:"-"`
+	options        *options.Options                   `msg:"-"`
+	bulkRemoveFunc func([]string)                     `msg:"-"`
 	flushFunc      func(cacheKey string, data []byte) `msg:"-"`
 	lastWrite      time.Time                          `msg:"-"`
 }
@@ -96,9 +94,9 @@ func ObjectFromBytes(data []byte) (*Object, error) {
 }
 
 // NewIndex returns a new Index based on the provided inputs
-func NewIndex(cacheName, cacheType string, indexData []byte, cfg *options.Options,
-	bulkRemoveFunc func([]string, bool), flushFunc func(cacheKey string, data []byte),
-	log *tl.TricksterLogger) *Index {
+func NewIndex(cacheName, cacheType string, indexData []byte, o *options.Options,
+	bulkRemoveFunc func([]string), flushFunc func(cacheKey string, data []byte),
+	log *tl.Logger) *Index {
 	i := &Index{}
 
 	if len(indexData) > 0 {
@@ -109,30 +107,35 @@ func NewIndex(cacheName, cacheType string, indexData []byte, cfg *options.Option
 
 	i.name = cacheName
 	i.cacheType = cacheType
-	i.flushInterval = cfg.FlushInterval
 	i.flushFunc = flushFunc
-	i.reapInterval = cfg.ReapInterval
 	i.bulkRemoveFunc = bulkRemoveFunc
-	i.config = cfg
+	i.options = o
 
 	if flushFunc != nil {
-		if i.flushInterval > 0 {
+		if o.FlushInterval > 0 {
 			go i.flusher(log)
 		} else {
-			log.Warn("cache index flusher did not start", tl.Pairs{"cacheName": i.name, "flushInterval": i.flushInterval})
+			log.Warn("cache index flusher did not start", tl.Pairs{"cacheName": i.name, "flushInterval": o.FlushInterval})
 		}
 	}
 
-	if i.reapInterval > 0 {
+	if o.ReapInterval > 0 {
 		go i.reaper(log)
 	} else {
-		log.Warn("cache reaper did not start", tl.Pairs{"cacheName": i.name, "reapInterval": i.reapInterval})
+		log.Warn("cache reaper did not start", tl.Pairs{"cacheName": i.name, "reapInterval": o.ReapInterval})
 	}
 
-	gm.CacheMaxObjects.WithLabelValues(cacheName, cacheType).Set(float64(cfg.MaxSizeObjects))
-	gm.CacheMaxBytes.WithLabelValues(cacheName, cacheType).Set(float64(cfg.MaxSizeBytes))
+	gm.CacheMaxObjects.WithLabelValues(cacheName, cacheType).Set(float64(o.MaxSizeObjects))
+	gm.CacheMaxBytes.WithLabelValues(cacheName, cacheType).Set(float64(o.MaxSizeBytes))
 
 	return i
+}
+
+// UpdateOptions updates the existing Index with a new Options reference
+func (idx *Index) UpdateOptions(o *options.Options) {
+	indexLock.Lock()
+	idx.options = o
+	indexLock.Unlock()
 }
 
 // UpdateObjectAccessTime updates the LastAccess for the object with the provided key
@@ -189,12 +192,9 @@ func (idx *Index) UpdateObject(obj *Object) {
 }
 
 // RemoveObject removes an Object's Metadata from the Index
-func (idx *Index) RemoveObject(key string, noLock bool) {
-
-	if !noLock {
-		indexLock.Lock()
-		idx.lastWrite = time.Now()
-	}
+func (idx *Index) RemoveObject(key string) {
+	indexLock.Lock()
+	idx.lastWrite = time.Now()
 	if o, ok := idx.Objects[key]; ok {
 		idx.CacheSize -= o.Size
 		idx.ObjectCount--
@@ -204,10 +204,27 @@ func (idx *Index) RemoveObject(key string, noLock bool) {
 		delete(idx.Objects, key)
 		metrics.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
 	}
+	indexLock.Unlock()
+}
+
+// RemoveObjects removes a list of Objects' Metadata from the Index
+func (idx *Index) RemoveObjects(keys []string, noLock bool) {
+	if !noLock {
+		indexLock.Lock()
+	}
+	for _, key := range keys {
+		if o, ok := idx.Objects[key]; ok {
+			idx.CacheSize -= o.Size
+			idx.ObjectCount--
+			metrics.ObserveCacheOperation(idx.name, idx.cacheType, "del", "none", float64(o.Size))
+			delete(idx.Objects, key)
+			metrics.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
+		}
+	}
+	idx.lastWrite = time.Now()
 	if !noLock {
 		indexLock.Unlock()
 	}
-
 }
 
 // GetExpiration returns the cache index's expiration for the object of the given key
@@ -222,10 +239,10 @@ func (idx *Index) GetExpiration(cacheKey string) time.Time {
 }
 
 // flusher periodically calls the cache's index flush func that writes the cache index to disk
-func (idx *Index) flusher(log *tl.TricksterLogger) {
+func (idx *Index) flusher(log *tl.Logger) {
 	var lastFlush time.Time
 	for {
-		time.Sleep(idx.flushInterval)
+		time.Sleep(idx.options.FlushInterval)
 		if idx.lastWrite.Before(lastFlush) {
 			continue
 		}
@@ -234,7 +251,7 @@ func (idx *Index) flusher(log *tl.TricksterLogger) {
 	}
 }
 
-func (idx *Index) flushOnce(log *tl.TricksterLogger) {
+func (idx *Index) flushOnce(log *tl.Logger) {
 	indexLock.Lock()
 	bytes, err := idx.MarshalMsg(nil)
 	indexLock.Unlock()
@@ -246,10 +263,10 @@ func (idx *Index) flushOnce(log *tl.TricksterLogger) {
 }
 
 // reaper continually iterates through the cache to find expired elements and removes them
-func (idx *Index) reaper(log *tl.TricksterLogger) {
+func (idx *Index) reaper(log *tl.Logger) {
 	for {
 		idx.reap(log)
-		time.Sleep(idx.reapInterval)
+		time.Sleep(idx.options.ReapInterval)
 	}
 }
 
@@ -257,7 +274,7 @@ type objectsAtime []*Object
 
 // reap makes a single iteration through the cache index to to find and remove expired elements
 // and evict least-recently-accessed elements to maintain the Maximum allowed Cache Size
-func (idx *Index) reap(log *tl.TricksterLogger) {
+func (idx *Index) reap(log *tl.Logger) {
 
 	indexLock.Lock()
 	defer indexLock.Unlock()
@@ -282,16 +299,17 @@ func (idx *Index) reap(log *tl.TricksterLogger) {
 
 	if len(removals) > 0 {
 		metrics.ObserveCacheEvent(idx.name, idx.cacheType, "eviction", "ttl")
-		idx.bulkRemoveFunc(removals, true)
+		go idx.bulkRemoveFunc(removals)
+		idx.RemoveObjects(removals, true)
 		cacheChanged = true
 	}
 
-	if ((idx.config.MaxSizeBytes > 0 && idx.CacheSize > idx.config.MaxSizeBytes) || (idx.config.MaxSizeObjects > 0 && idx.ObjectCount > idx.config.MaxSizeObjects)) && len(remainders) > 0 {
+	if ((idx.options.MaxSizeBytes > 0 && idx.CacheSize > idx.options.MaxSizeBytes) || (idx.options.MaxSizeObjects > 0 && idx.ObjectCount > idx.options.MaxSizeObjects)) && len(remainders) > 0 {
 
 		var evictionType string
-		if idx.config.MaxSizeBytes > 0 && idx.CacheSize > idx.config.MaxSizeBytes {
+		if idx.options.MaxSizeBytes > 0 && idx.CacheSize > idx.options.MaxSizeBytes {
 			evictionType = "size_bytes"
-		} else if idx.config.MaxSizeObjects > 0 && idx.ObjectCount > idx.config.MaxSizeObjects {
+		} else if idx.options.MaxSizeObjects > 0 && idx.ObjectCount > idx.options.MaxSizeObjects {
 			evictionType = "size_objects"
 		} else {
 			return
@@ -300,8 +318,8 @@ func (idx *Index) reap(log *tl.TricksterLogger) {
 		log.Debug("max cache size reached. evicting least-recently-accessed records",
 			tl.Pairs{
 				"reason":         evictionType,
-				"cacheSizeBytes": idx.CacheSize, "maxSizeBytes": idx.config.MaxSizeBytes,
-				"cacheSizeObjects": idx.ObjectCount, "maxSizeObjects": idx.config.MaxSizeObjects,
+				"cacheSizeBytes": idx.CacheSize, "maxSizeBytes": idx.options.MaxSizeBytes,
+				"cacheSizeObjects": idx.ObjectCount, "maxSizeObjects": idx.options.MaxSizeObjects,
 			},
 		)
 
@@ -313,9 +331,9 @@ func (idx *Index) reap(log *tl.TricksterLogger) {
 		j := len(remainders)
 
 		if evictionType == "size_bytes" {
-			bytesNeeded := (idx.CacheSize - idx.config.MaxSizeBytes)
-			if idx.config.MaxSizeBytes > idx.config.MaxSizeBackoffBytes {
-				bytesNeeded += idx.config.MaxSizeBackoffBytes
+			bytesNeeded := (idx.CacheSize - idx.options.MaxSizeBytes)
+			if idx.options.MaxSizeBytes > idx.options.MaxSizeBackoffBytes {
+				bytesNeeded += idx.options.MaxSizeBackoffBytes
 			}
 			bytesSelected := int64(0)
 			for bytesSelected < bytesNeeded && i < j {
@@ -324,9 +342,9 @@ func (idx *Index) reap(log *tl.TricksterLogger) {
 				i++
 			}
 		} else {
-			objectsNeeded := (idx.ObjectCount - idx.config.MaxSizeObjects)
-			if idx.config.MaxSizeObjects > idx.config.MaxSizeBackoffObjects {
-				objectsNeeded += idx.config.MaxSizeBackoffObjects
+			objectsNeeded := (idx.ObjectCount - idx.options.MaxSizeObjects)
+			if idx.options.MaxSizeObjects > idx.options.MaxSizeBackoffObjects {
+				objectsNeeded += idx.options.MaxSizeBackoffObjects
 			}
 			objectsSelected := int64(0)
 			for objectsSelected < objectsNeeded && i < j {
@@ -338,15 +356,16 @@ func (idx *Index) reap(log *tl.TricksterLogger) {
 
 		if len(removals) > 0 {
 			metrics.ObserveCacheEvent(idx.name, idx.cacheType, "eviction", evictionType)
-			idx.bulkRemoveFunc(removals, true)
+			go idx.bulkRemoveFunc(removals)
+			idx.RemoveObjects(removals, true)
 			cacheChanged = true
 		}
 
 		log.Debug("size-based cache eviction exercise completed",
 			tl.Pairs{
 				"reason":         evictionType,
-				"cacheSizeBytes": idx.CacheSize, "maxSizeBytes": idx.config.MaxSizeBytes,
-				"cacheSizeObjects": idx.ObjectCount, "maxSizeObjects": idx.config.MaxSizeObjects,
+				"cacheSizeBytes": idx.CacheSize, "maxSizeBytes": idx.options.MaxSizeBytes,
+				"cacheSizeObjects": idx.ObjectCount, "maxSizeObjects": idx.options.MaxSizeObjects,
 			})
 
 	}

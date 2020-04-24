@@ -41,7 +41,7 @@ type Resources struct {
 	OriginClient      origins.Client
 	AlternateCacheTTL time.Duration
 	TimeRangeQuery    *timeseries.TimeRangeQuery
-	Logger            *tl.TricksterLogger
+	Logger            *tl.Logger
 }
 
 // Clone returns an exact copy of the subject Resources collection
@@ -61,7 +61,7 @@ func (r Resources) Clone() *Resources {
 
 // NewResources returns a new Resources collection based on the provided inputs
 func NewResources(oo *oo.Options, po *po.Options, co *co.Options,
-	c cache.Cache, client origins.Client, logger *tl.TricksterLogger) *Resources {
+	c cache.Cache, client origins.Client, logger *tl.Logger) *Resources {
 	return &Resources{
 		OriginConfig: oo,
 		PathConfig:   po,

@@ -83,6 +83,9 @@ func (teo *TracingExporterOptions) Clone() *TracingExporterOptions {
 
 // ProcessTracingConfigs enriches the configuration data of the provided Tracing Options collection
 func ProcessTracingConfigs(mo map[string]*Options, metadata *toml.MetaData) {
+	if metadata == nil {
+		return
+	}
 	for k, v := range mo {
 		if !metadata.IsDefined("tracing", k, "exporter") {
 			v.Exporter = &TracingExporterOptions{}

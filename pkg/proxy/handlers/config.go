@@ -24,7 +24,7 @@ import (
 )
 
 // ConfigHandleFunc responds to the HTTP request with the running configuration
-func ConfigHandleFunc(conf *config.TricksterConfig) func(http.ResponseWriter, *http.Request) {
+func ConfigHandleFunc(conf *config.Config) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 		w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)

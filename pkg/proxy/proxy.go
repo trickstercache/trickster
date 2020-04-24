@@ -109,7 +109,7 @@ func NewHTTPClient(oc *oo.Options) (*http.Client, error) {
 // which observes the connections to set a gauge with the current number of
 // connections (with operates with sampling through scrapes), and a set of
 // counter metrics for connections accepted, rejected and closed.
-func NewListener(listenAddress string, listenPort, connectionsLimit int, tlsConfig *tls.Config, log *tl.TricksterLogger) (net.Listener, error) {
+func NewListener(listenAddress string, listenPort, connectionsLimit int, tlsConfig *tls.Config, log *tl.Logger) (net.Listener, error) {
 
 	var listener net.Listener
 	var err error

@@ -112,3 +112,17 @@ func (cc *Options) Clone() *Options {
 	return c
 
 }
+
+// Equal returns true if all values in the Options references and their
+// their child Option references are completely identical
+func (cc *Options) Equal(cc2 *Options) bool {
+
+	if cc2 == nil {
+		return false
+	}
+
+	return cc.Name == cc2.Name &&
+		cc.CacheType == cc2.CacheType &&
+		cc.CacheTypeID == cc2.CacheTypeID
+
+}

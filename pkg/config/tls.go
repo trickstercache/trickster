@@ -23,7 +23,7 @@ import (
 )
 
 // TLSCertConfig returns the crypto/tls configuration object with a list of name-bound certs derifed from the running config
-func (c *TricksterConfig) TLSCertConfig() (*tls.Config, error) {
+func (c *Config) TLSCertConfig() (*tls.Config, error) {
 	var err error
 	if !c.Frontend.ServeTLS {
 		return nil, nil
@@ -43,13 +43,11 @@ func (c *TricksterConfig) TLSCertConfig() (*tls.Config, error) {
 	tlsConfig := &tls.Config{NextProtos: []string{"h2"}}
 	tlsConfig.Certificates = make([]tls.Certificate, l)
 
-	i := 0
-	for _, tc := range to {
+	for i, tc := range to {
 		tlsConfig.Certificates[i], err = tls.LoadX509KeyPair(tc.TLS.FullChainCertPath, tc.TLS.PrivateKeyPath)
 		if err != nil {
 			return nil, err
 		}
-		i++
 	}
 
 	tlsConfig.BuildNameToCertificate()

@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-// set 		oc.TLS.ServeTLS = true
-
 package tls
 
 import (

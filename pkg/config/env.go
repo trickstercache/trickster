@@ -30,7 +30,7 @@ const (
 	evLogLevel    = "TRK_LOG_LEVEL"
 )
 
-func (c *TricksterConfig) loadEnvVars() {
+func (c *Config) loadEnvVars() {
 	// Origin
 	if x := os.Getenv(evOriginURL); x != "" {
 		c.providedOriginURL = x

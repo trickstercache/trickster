@@ -225,6 +225,7 @@ func (oc *Options) Clone() *Options {
 	o.OriginType = oc.OriginType
 	o.OriginURL = oc.OriginURL
 	o.PathPrefix = oc.PathPrefix
+	o.ReqRewriterName = oc.ReqRewriterName
 	o.RevalidationFactor = oc.RevalidationFactor
 	o.RuleName = oc.RuleName
 	o.Scheme = oc.Scheme

@@ -74,33 +74,31 @@ type proxyRequest struct {
 	collapsedForwarder ProgressiveCollapseForwarder
 	cachingPolicy      *CachingPolicy
 
-	Logger *tl.TricksterLogger
+	Logger *tl.Logger
 	isPCF  bool
 }
 
 // newProxyRequest accepts the original inbound HTTP Request and Response
 // and returns a proxyRequest object
 func newProxyRequest(r *http.Request, w io.Writer) *proxyRequest {
-
 	rsc := request.GetResources(r)
-
 	pr := &proxyRequest{
 		Request:         r,
 		Logger:          rsc.Logger,
-		upstreamRequest: r.Clone(context.Background()),
+		upstreamRequest: r.Clone(tctx.WithResources(context.Background(), rsc)),
 		contentLength:   -1,
 		responseWriter:  w,
 		started:         time.Now(),
 	}
-
-	pr.upstreamRequest = pr.upstreamRequest.WithContext(tctx.WithResources(pr.upstreamRequest.Context(), rsc))
-
 	return pr
 }
 
 func (pr *proxyRequest) Clone() *proxyRequest {
+	rsc := request.GetResources(pr.Request)
 	return &proxyRequest{
-		Request:            pr.Request.Clone(context.Background()),
+		Request: pr.Request.Clone(context.Background()),
+		upstreamRequest: pr.upstreamRequest.
+			Clone(tctx.WithResources(context.Background(), rsc)),
 		Logger:             pr.Logger,
 		cacheDocument:      pr.cacheDocument,
 		key:                pr.key,
@@ -122,7 +120,7 @@ func (pr *proxyRequest) Clone() *proxyRequest {
 // response and elapsed time to the caller.
 func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 
-	rsc := request.GetResources(pr.Request)
+	rsc := request.GetResources(pr.upstreamRequest)
 	oc := rsc.OriginConfig
 	pc := rsc.PathConfig
 
@@ -132,7 +130,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 	}
 
 	start := time.Now()
-	reader, resp, _ := PrepareFetchReader(pr.Request)
+	reader, resp, _ := PrepareFetchReader(pr.upstreamRequest)
 
 	var body []byte
 	var err error
