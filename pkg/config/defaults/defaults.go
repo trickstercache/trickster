@@ -74,8 +74,6 @@ const (
 	DefaultMaxTTLSecs = 86400
 	// DefaultRevalidationFactor is the default Cache Object Freshness Lifetime to TTL mulitplier
 	DefaultRevalidationFactor = 2
-	// DefaultCachePath is the default Cache Path for the Filesystem Cache
-	DefaultCachePath = "/tmp/trickster"
 	// DefaultRedisClientType is the default Redis Client Type
 	DefaultRedisClientType = "standard"
 	// DefaultRedisProtocol is the default Redis Client protocol

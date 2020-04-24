@@ -20,12 +20,17 @@ PROGVER        := $(shell grep 'applicationVersion = ' $(TRICKSTER_MAIN)/main.go
 BUILD_TIME     := $(shell date -u +%FT%T%z)
 GIT_LATEST_COMMIT_ID     := $(shell git rev-parse HEAD)
 GO_VER         := $(shell go version | awk '{print $$3}')
-LDFLAGS=-ldflags "-s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicationGitCommitID=$(GIT_LATEST_COMMIT_ID) -X main.applicationGoVersion=$(GO_VER) -X main.applicationGoArch=$(GOARCH)"
 IMAGE_TAG      ?= latest
 IMAGE_ARCH     ?= amd64
 GOARCH         ?= amd64
-GO111MODULE    ?= on
-export GO111MODULE
+TAGVER         ?= unspecified
+LDFLAGS         =-ldflags "-s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicationGitCommitID=$(GIT_LATEST_COMMIT_ID) -X main.applicationGoVersion=$(GO_VER) -X main.applicationGoArch=$(GOARCH)"
+
+.PHONY: validate-app-version
+validate-app-version:
+	@if [ "$(PROGVER)" != $(TAGVER) ]; then\
+		(echo "mismatch between TAGVER '$(TAGVER)' and applicationVersion '$(PROGVER)'"; exit 1);\
+	fi
 
 .PHONY: go-mod-vendor
 go-mod-vendor:
@@ -60,7 +65,7 @@ install:
 	$(GO) install -o $(TRICKSTER) $(PROGVER)
 
 .PHONY: release
-release: build release-artifacts docker docker-release
+release: validate-app-version clean go-mod-tidy go-mod-vendor release-artifacts
 
 .PHONY: release-artifacts
 release-artifacts:
