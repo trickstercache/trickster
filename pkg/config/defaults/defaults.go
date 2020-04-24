@@ -132,8 +132,6 @@ const (
 	DefaultReloadHandlerPath = "/trickster/config/reload"
 	// DefaultMaxRuleExecutions is the default value for the number of allowed Rule executions per Request
 	DefaultMaxRuleExecutions = 16
-	// DefaultConfigPath defines the default location of the Trickster config file
-	DefaultConfigPath = "/etc/trickster/trickster.conf"
 	// DefaultPprofServerName defines the default Pprof Server Name
 	DefaultPprofServerName = "both"
 )
