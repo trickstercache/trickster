@@ -1,4 +1,0 @@
-# namespace to deploy Tiller
-namespace: trickster
-
-registry: gcr.io/kubernetes-helm/tiller
