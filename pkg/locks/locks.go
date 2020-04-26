@@ -21,18 +21,18 @@ import (
 )
 
 var locks = make(map[string]*namedLock)
-var mapLock = sync.Mutex{}
+var mapLock = &sync.Mutex{}
 
 type namedLock struct {
-	*sync.Mutex
+	*sync.RWMutex
 	name      string
 	queueSize int
 }
 
 func newNamedLock(name string) *namedLock {
 	return &namedLock{
-		name:  name,
-		Mutex: &sync.Mutex{},
+		name:    name,
+		RWMutex: &sync.RWMutex{},
 	}
 }
 
