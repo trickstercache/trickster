@@ -15,6 +15,7 @@ package locks
 
 import (
 	"math/rand"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -94,6 +95,49 @@ func TestLocksConcurrent(t *testing.T) {
 
 	for _, err := range errs {
 		t.Error(err)
+	}
+
+}
+
+func TestLockReadAndWrite(t *testing.T) {
+
+	i := 0
+	j := 0
+
+	wg := &sync.WaitGroup{}
+
+	Acquire("test")
+
+	wg.Add(1)
+	go func() {
+		RAcquire("test")
+		j = i
+		RRelease("test")
+		wg.Done()
+	}()
+
+	i = 10
+	Release("test")
+
+	wg.Wait()
+
+	if j != 10 {
+		t.Errorf("expected 10 got %d", j)
+	}
+
+	err := RAcquire("")
+	if err == nil || !strings.HasPrefix(err.Error(), "invalid lock name:") {
+		t.Error("expected error for invalid lock name")
+	}
+
+	err = RRelease("")
+	if err == nil || !strings.HasPrefix(err.Error(), "invalid lock name:") {
+		t.Error("expected error for invalid lock name")
+	}
+
+	err = RRelease("invalid")
+	if err == nil || !strings.HasPrefix(err.Error(), "no such lock name:") {
+		t.Error("expected error for no such lock name")
 	}
 
 }
