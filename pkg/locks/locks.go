@@ -20,94 +20,154 @@ import (
 	"sync"
 )
 
-var locks = make(map[string]*namedLock)
-var mapLock = &sync.Mutex{}
-
-type namedLock struct {
-	*sync.RWMutex
-	name      string
-	queueSize int
+type NamedLocker interface {
+	Acquire(string) (NamedLock, error)
+	RAcquire(string) (NamedLock, error)
 }
 
-func newNamedLock(name string) *namedLock {
+type namedLocker struct {
+	locks   map[string]*namedLock
+	mapLock *sync.Mutex
+}
+
+func NewNamedLocker() NamedLocker {
+	return &namedLocker{
+		locks:   make(map[string]*namedLock),
+		mapLock: &sync.Mutex{},
+	}
+}
+
+type NamedLock interface {
+	Release() error
+	WriteLockCounter() int
+}
+
+func newNamedLock(name string, locker *namedLocker) *namedLock {
 	return &namedLock{
 		name:    name,
 		RWMutex: &sync.RWMutex{},
+		locker:  locker,
 	}
 }
 
-// Acquire locks the named lock, and blocks until the lock is acquired
-func Acquire(lockName string) error {
-	if lockName == "" {
-		return fmt.Errorf("invalid lock name: %s", lockName)
-	}
-
-	mapLock.Lock()
-	nl, ok := locks[lockName]
-	if !ok {
-		nl = newNamedLock(lockName)
-		locks[lockName] = nl
-	}
-	nl.queueSize++
-	mapLock.Unlock()
-
-	nl.Lock()
-	return nil
+type namedLock struct {
+	*sync.RWMutex
+	name           string
+	queueSize      int
+	writeLockCount int
+	hasWriteLock   bool
+	hasReadLock    bool
+	releaser       func()
+	locker         *namedLocker
 }
 
-// RAcquire locks the named lock for reading, and blocks until the rlock is acquired
-func RAcquire(lockName string) error {
-	if lockName == "" {
-		return fmt.Errorf("invalid lock name: %s", lockName)
+func (nl *namedLock) Release() error {
+
+	if nl.name == "" {
+		return fmt.Errorf("invalid lock name: %s", nl.name)
 	}
 
-	mapLock.Lock()
-	nl, ok := locks[lockName]
-	if !ok {
-		nl = newNamedLock(lockName)
-		locks[lockName] = nl
+	if !nl.hasReadLock && !nl.hasWriteLock {
+		return fmt.Errorf("not currently locked: %s", nl.name)
 	}
-	nl.queueSize++
-	mapLock.Unlock()
 
-	nl.RLock()
-	return nil
-}
+	nl.queueSize--
+	if nl.queueSize == 0 {
+		nl.locker.mapLock.Lock()
+		delete(nl.locker.locks, nl.name)
+		nl.locker.mapLock.Unlock()
+	}
 
-// Release unlocks and releases a named lock
-func Release(lockName string) error {
-	if lockName == "" {
-		return fmt.Errorf("invalid lock name: %s", lockName)
-	}
-	mapLock.Lock()
-	if nl, ok := locks[lockName]; ok {
-		nl.queueSize--
-		if nl.queueSize == 0 {
-			delete(locks, lockName)
-		}
-		mapLock.Unlock()
-		nl.Unlock()
-		return nil
-	}
-	mapLock.Unlock()
-	return fmt.Errorf("no such lock name: %s", lockName)
-}
-
-// RRelease unlocks and releases a read-only named lock
-func RRelease(lockName string) error {
-	if lockName == "" {
-		return fmt.Errorf("invalid lock name: %s", lockName)
-	}
-	mapLock.Lock()
-	if nl, ok := locks[lockName]; ok {
-		nl.queueSize--
-		if nl.queueSize == 0 {
-			delete(locks, lockName)
-		}
-		mapLock.Unlock()
+	if nl.hasReadLock {
+		nl.hasReadLock = false
 		nl.RUnlock()
 		return nil
 	}
-	mapLock.Unlock()
-	return fmt.Errorf("no such lock name: %s", lockName)
+
+	nl.hasWriteLock = false
+	nl.Unlock()
+	return nil
 }
+
+func (nl *namedLock) WriteLockCounter() int {
+	return nl.writeLockCount
+}
+
+// Acquire locks the named lock, and blocks until the lock is acquired
+func (lk *namedLocker) Acquire(lockName string) (NamedLock, error) {
+	if lockName == "" {
+		return nil, fmt.Errorf("invalid lock name: %s", lockName)
+	}
+
+	lk.mapLock.Lock()
+	nl, ok := lk.locks[lockName]
+	if !ok {
+		nl = newNamedLock(lockName, lk)
+		lk.locks[lockName] = nl
+	}
+	nl.queueSize++
+	lk.mapLock.Unlock()
+
+	nl.Lock()
+	nl.hasWriteLock = true
+	nl.writeLockCount++
+	return nl, nil
+}
+
+// RAcquire locks the named lock for reading, and blocks until the rlock is acquired
+func (lk *namedLocker) RAcquire(lockName string) (NamedLock, error) {
+	if lockName == "" {
+		return nil, fmt.Errorf("invalid lock name: %s", lockName)
+	}
+
+	lk.mapLock.Lock()
+	nl, ok := lk.locks[lockName]
+	if !ok {
+		nl = newNamedLock(lockName, lk)
+		lk.locks[lockName] = nl
+	}
+	nl.queueSize++
+	lk.mapLock.Unlock()
+
+	nl.RLock()
+	nl.hasReadLock = true
+	return nl, nil
+}
+
+// // Release unlocks and releases a named lock
+// func Release(lockName string) error {
+// 	if lockName == "" {
+// 		return fmt.Errorf("invalid lock name: %s", lockName)
+// 	}
+// 	mapLock.Lock()
+// 	if nl, ok := locks[lockName]; ok {
+// 		nl.queueSize--
+// 		if nl.queueSize == 0 {
+// 			delete(locks, lockName)
+// 		}
+// 		mapLock.Unlock()
+// 		nl.Unlock()
+// 		return nil
+// 	}
+// 	mapLock.Unlock()
+// 	return fmt.Errorf("no such lock name: %s", lockName)
+// }
+
+// // RRelease unlocks and releases a read-only named lock
+// func RRelease(lockName string) error {
+// 	if lockName == "" {
+// 		return fmt.Errorf("invalid lock name: %s", lockName)
+// 	}
+// 	mapLock.Lock()
+// 	if nl, ok := locks[lockName]; ok {
+// 		nl.queueSize--
+// 		if nl.queueSize == 0 {
+// 			delete(locks, lockName)
+// 		}
+// 		mapLock.Unlock()
+// 		nl.RUnlock()
+// 		return nil
+// 	}
+// 	mapLock.Unlock()
+// 	return fmt.Errorf("no such lock name: %s", lockName)
+// }

@@ -27,13 +27,15 @@ func TestLocks(t *testing.T) {
 
 	var testVal = 0
 
-	Acquire("test")
+	lk := NewNamedLocker()
+
+	nl, _ := lk.Acquire("test")
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
-		Acquire("test")
+		nl2, _ := lk.Acquire("test")
 		testVal += 10
-		Release("test")
+		nl2.Release()
 		wg.Done()
 	}()
 	testVal++
@@ -41,35 +43,38 @@ func TestLocks(t *testing.T) {
 		t.Errorf("expected 1 got %d", testVal)
 	}
 	time.Sleep(time.Second * 1)
-	Release("test")
+	nl.Release()
 	wg.Wait()
 
 	if testVal != 11 {
 		t.Errorf("expected 11 got %d", testVal)
 	}
 
-	expected := "invalid lock name: "
-	err := Acquire("")
+	expected := "not currently locked: test"
+	err := nl.Release()
 	if err.Error() != expected {
 		t.Errorf("got %s expected %s", err.Error(), expected)
 	}
 
-	err = Release("")
+	expected = "invalid lock name: "
+	_, err = lk.Acquire("")
 	if err.Error() != expected {
 		t.Errorf("got %s expected %s", err.Error(), expected)
 	}
 
-	expected = "no such lock name: invalid"
-	err = Release("invalid")
+	nl = &namedLock{}
+
+	err = nl.Release()
 	if err.Error() != expected {
 		t.Errorf("got %s expected %s", err.Error(), expected)
 	}
-
 }
 
 func TestLocksConcurrent(t *testing.T) {
 
 	const size = 10000000
+
+	lk := NewNamedLocker()
 
 	wg := &sync.WaitGroup{}
 	errs := make([]error, 0, size)
@@ -79,11 +84,11 @@ func TestLocksConcurrent(t *testing.T) {
 	for i := 0; i < size; i++ {
 		wg.Add(1)
 		go func() {
-			err := Acquire(testKey)
+			nl, err := lk.Acquire(testKey)
 			if err != nil {
 				errs = append(errs, err)
 			}
-			err = Release(testKey)
+			err = nl.Release()
 			if err != nil {
 				errs = append(errs, err)
 			}
@@ -96,28 +101,34 @@ func TestLocksConcurrent(t *testing.T) {
 	for _, err := range errs {
 		t.Error(err)
 	}
-
 }
 
 func TestLockReadAndWrite(t *testing.T) {
+
+	lk := NewNamedLocker()
 
 	i := 0
 	j := 0
 
 	wg := &sync.WaitGroup{}
 
-	Acquire("test")
+	nl, _ := lk.Acquire("test")
+
+	_, err := lk.RAcquire("")
+	if err == nil {
+		t.Error("expected error for invalid key name")
+	}
 
 	wg.Add(1)
 	go func() {
-		RAcquire("test")
+		nl1, _ := lk.RAcquire("test")
 		j = i
-		RRelease("test")
+		nl1.Release()
 		wg.Done()
 	}()
 
 	i = 10
-	Release("test")
+	nl.Release()
 
 	wg.Wait()
 
@@ -125,19 +136,28 @@ func TestLockReadAndWrite(t *testing.T) {
 		t.Errorf("expected 10 got %d", j)
 	}
 
-	err := RAcquire("")
+	_, err = lk.Acquire("")
 	if err == nil || !strings.HasPrefix(err.Error(), "invalid lock name:") {
 		t.Error("expected error for invalid lock name")
 	}
 
-	err = RRelease("")
+	nl, _ = lk.RAcquire("testKeyReadOnly")
+	nl.(*namedLock).name = ""
+
+	err = nl.Release()
 	if err == nil || !strings.HasPrefix(err.Error(), "invalid lock name:") {
 		t.Error("expected error for invalid lock name")
 	}
+}
 
-	err = RRelease("invalid")
-	if err == nil || !strings.HasPrefix(err.Error(), "no such lock name:") {
-		t.Error("expected error for no such lock name")
+func TestWriteLockCounter(t *testing.T) {
+
+	const expected = 50
+	nl := newNamedLock("testKey", nil)
+	nl.writeLockCount = expected
+	v := nl.WriteLockCounter()
+	if v != expected {
+		t.Errorf("expected %d got %d", expected, v)
 	}
 
 }
