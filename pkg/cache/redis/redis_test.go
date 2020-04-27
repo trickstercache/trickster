@@ -25,6 +25,7 @@ import (
 	ro "github.com/tricksterproxy/trickster/pkg/cache/redis/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/pkg/locks"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 
 	"github.com/alicebob/miniredis"
@@ -513,5 +514,15 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 		if ls != status.LookupStatusKeyMiss {
 			b.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
 		}
+	}
+}
+
+func TestLocker(t *testing.T) {
+	cache := Cache{locker: locks.NewNamedLocker()}
+	l := cache.Locker()
+	cache.SetLocker(locks.NewNamedLocker())
+	m := cache.Locker()
+	if l == m {
+		t.Errorf("error setting locker")
 	}
 }

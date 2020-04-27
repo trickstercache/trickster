@@ -27,6 +27,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/metrics"
 	"github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/locks"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
@@ -38,9 +39,18 @@ type Cache struct {
 	Name   string
 	Config *options.Options
 	Logger *tl.Logger
+	locker locks.NamedLocker
 
 	client redis.Cmdable
 	closer func() error
+}
+
+func (c *Cache) Locker() locks.NamedLocker {
+	return c.locker
+}
+
+func (c *Cache) SetLocker(l locks.NamedLocker) {
+	c.locker = l
 }
 
 // Configuration returns the Configuration for the Cache object
