@@ -19,7 +19,6 @@ package engines
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -318,8 +317,6 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	rsc := request.GetResources(r)
 	oc := rsc.OriginConfig
 	cc := rsc.CacheClient
-
-	fmt.Println("!!!!!!!!", cc.Locker())
 
 	pr := newProxyRequest(r, w)
 	pr.parseRequestRanges()
