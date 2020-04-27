@@ -41,6 +41,15 @@ type Cache struct {
 	Config *options.Options
 	Index  *index.Index
 	Logger *log.Logger
+	locker locks.NamedLocker
+}
+
+func (c *Cache) Locker() locks.NamedLocker {
+	return c.locker
+}
+
+func (c *Cache) SetLocker(l locks.NamedLocker) {
+	c.locker = l
 }
 
 // Configuration returns the Configuration for the Cache object
@@ -91,12 +100,12 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 
 	dataFile := c.getFileName(cacheKey)
 
-	locks.Acquire(lockPrefix + cacheKey)
+	nl, _ := c.locker.Acquire(lockPrefix + cacheKey)
 
 	o := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	err := ioutil.WriteFile(dataFile, o.ToBytes(), os.FileMode(0777))
 	if err != nil {
-		locks.Release(lockPrefix + cacheKey)
+		nl.Release()
 		return err
 	}
 	c.Logger.Debug("filesystem cache store",
@@ -104,7 +113,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 	if updateIndex {
 		c.Index.UpdateObject(o)
 	}
-	locks.Release(lockPrefix + cacheKey)
+	nl.Release()
 	return nil
 }
 
@@ -117,19 +126,19 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 
 	dataFile := c.getFileName(cacheKey)
 
-	locks.Acquire(lockPrefix + cacheKey)
+	nl, _ := c.locker.RAcquire(lockPrefix + cacheKey)
 
 	data, err := ioutil.ReadFile(dataFile)
 	if err != nil {
 		c.Logger.Debug("filesystem cache miss", log.Pairs{"key": cacheKey, "dataFile": dataFile})
 		b, err2 := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
-		locks.Release(lockPrefix + cacheKey)
+		nl.Release()
 		return b, status.LookupStatusKeyMiss, err2
 	}
 
 	o, err := index.ObjectFromBytes(data)
 	if err != nil {
-		locks.Release(lockPrefix + cacheKey)
+		nl.Release()
 		_, err2 := metrics.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
 		return nil, status.LookupStatusError, err2
 	}
@@ -137,7 +146,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	// if retrieve() is being called to load the index, the index will be nil, so just return the value
 	// so as to instantiate the index
 	if c.Index == nil {
-		locks.Release(lockPrefix + cacheKey)
+		nl.Release()
 		return o.Value, status.LookupStatusHit, nil
 	}
 
@@ -148,13 +157,13 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 			go c.Index.UpdateObjectAccessTime(cacheKey)
 		}
 		metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
-		locks.Release(lockPrefix + cacheKey)
+		nl.Release()
 		return o.Value, status.LookupStatusHit, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
-	c.remove(cacheKey, false)
+	go c.remove(cacheKey, false)
 	b, err := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
-	locks.Release(lockPrefix + cacheKey)
+	nl.Release()
 	return b, status.LookupStatusKeyMiss, err
 }
 
@@ -165,16 +174,15 @@ func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
 
 // Remove removes an object from the cache
 func (c *Cache) Remove(cacheKey string) {
-	locks.Acquire(lockPrefix + cacheKey)
 	c.remove(cacheKey, false)
-	locks.Release(lockPrefix + cacheKey)
 }
 
 func (c *Cache) remove(cacheKey string, isBulk bool) {
-
+	nl, _ := c.locker.Acquire(lockPrefix + cacheKey)
 	if err := os.Remove(c.getFileName(cacheKey)); err == nil && !isBulk {
 		c.Index.RemoveObject(cacheKey)
 	}
+	nl.Release()
 	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 }
 

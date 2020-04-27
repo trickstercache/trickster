@@ -28,6 +28,7 @@ import (
 	io "github.com/tricksterproxy/trickster/pkg/cache/index/options"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/locks"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
@@ -37,7 +38,7 @@ const cacheKey = "cacheKey"
 func storeBenchmark(b *testing.B) Cache {
 	dir, _ := ioutil.TempDir("/tmp", cacheType)
 	cacheConfig := co.Options{CacheType: cacheType, Filesystem: &flo.Options{CachePath: dir}, Index: &io.Options{ReapInterval: time.Second}}
-	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := fc.Connect()
@@ -66,7 +67,7 @@ func newCacheConfig(t *testing.T) co.Options {
 func TestConfiguration(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	cfg := fc.Configuration()
 	if cfg.CacheType != cacheType {
 		t.Fatalf("expected %s got %s", cacheType, cfg.CacheType)
@@ -77,7 +78,7 @@ func TestFilesystemCache_Connect(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 
 	// it should connect
 	err := fc.Connect()
@@ -90,7 +91,7 @@ func TestFilesystemCache_ConnectFailed(t *testing.T) {
 	const expected = `[/root/noaccess.trickster.filesystem.cache] directory is not writeable by trickster:`
 	cacheConfig := newCacheConfig(t)
 	cacheConfig.Filesystem.CachePath = "/root/noaccess.trickster.filesystem.cache"
-	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	// it should connect
 	err := fc.Connect()
 	if err == nil {
@@ -109,7 +110,7 @@ func TestFilesystemCache_Store(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 
 	err := fc.Connect()
 	if err != nil {
@@ -154,7 +155,7 @@ func TestFilesystemCache_StoreNoIndex(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 
 	err := fc.Connect()
 	if err != nil {
@@ -238,7 +239,7 @@ func BenchmarkCache_StoreNoIndex(b *testing.B) {
 func TestFilesystemCache_SetTTL(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
-	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
 
 	err := fc.Connect()
@@ -315,11 +316,11 @@ func BenchmarkCache_SetTTL(b *testing.B) {
 func TestFilesystemCache_Retrieve(t *testing.T) {
 
 	const expected1 = `value for key [cacheKey] not in cache`
-	const expected2 = `value for key [cacheKey] could not be deserialized from cache`
+	const expected2 = `value for key [cacheKey-invalid] could not be deserialized from cache`
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 
 	err := fc.Connect()
 	if err != nil {
@@ -380,12 +381,12 @@ func TestFilesystemCache_Retrieve(t *testing.T) {
 	}
 
 	// should fail
-	filename := fc.getFileName(cacheKey)
+	filename := fc.getFileName(cacheKey + "-invalid")
 	err = ioutil.WriteFile(filename, []byte("junk"), os.FileMode(0777))
 	if err != nil {
 		t.Error(err)
 	}
-	_, ls, err = fc.Retrieve(cacheKey, false)
+	_, ls, err = fc.Retrieve(cacheKey+"-invalid", false)
 	if err == nil {
 		t.Errorf("expected error for %s", expected2)
 	}
@@ -461,7 +462,7 @@ func TestFilesystemCache_Remove(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 
 	err := fc.Connect()
 	if err != nil {
@@ -542,7 +543,7 @@ func TestFilesystemCache_BulkRemove(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
-	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 
 	err := fc.Connect()
 	if err != nil {
@@ -600,5 +601,15 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 		if ls != status.LookupStatusKeyMiss {
 			b.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
 		}
+	}
+}
+
+func TestLocker(t *testing.T) {
+	cache := Cache{locker: locks.NewNamedLocker()}
+	l := cache.Locker()
+	cache.SetLocker(locks.NewNamedLocker())
+	m := cache.Locker()
+	if l == m {
+		t.Errorf("error setting locker")
 	}
 }
