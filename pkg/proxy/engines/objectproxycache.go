@@ -19,6 +19,7 @@ package engines
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -26,7 +27,6 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
-	"github.com/tricksterproxy/trickster/pkg/locks"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
@@ -236,7 +236,7 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 		pcfResult, pcfExists := Reqs.Load(pr.key)
 		// a PCF session is in progress for this URL, join this client to it.
 		if pcfExists {
-			locks.Release(pr.key)
+			pr.cacheLock.Release()
 			pcf := pcfResult.(ProgressiveCollapseForwarder)
 			pr.upstreamResponse = pcf.GetResp()
 			pr.responseWriter = PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode,
@@ -319,6 +319,8 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	oc := rsc.OriginConfig
 	cc := rsc.CacheClient
 
+	fmt.Println("!!!!!!!!", cc.Locker())
+
 	pr := newProxyRequest(r, w)
 	pr.parseRequestRanges()
 
@@ -332,9 +334,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 
 	if pr.isPCF || pr.cachingPolicy.NoCache {
 		if pr.cachingPolicy.NoCache {
-			locks.Acquire(pr.key)
 			cc.Remove(pr.key)
-			locks.Release(pr.key)
 			return nil, status.LookupStatusProxyOnly
 		}
 		pcf := pcfResult.(ProgressiveCollapseForwarder)
@@ -347,7 +347,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	pr.cachingPolicy.ParseClientConditionals()
 
 	if !rsc.NoLock {
-		locks.Acquire(pr.key)
+		pr.cacheLock, _ = cc.Locker().Acquire(pr.key)
 	}
 
 	var err error
@@ -367,7 +367,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	}
 
 	if !rsc.NoLock {
-		locks.Release(pr.key)
+		pr.cacheLock.Release()
 	}
 
 	// newProxyRequest sets pr.started to time.Now()

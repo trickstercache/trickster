@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/locks"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
@@ -53,6 +54,7 @@ type proxyRequest struct {
 
 	cacheDocument *HTTPDocument
 	cacheBuffer   *bytes.Buffer
+	cacheLock     locks.NamedLock
 
 	key          string
 	started      time.Time

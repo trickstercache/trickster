@@ -29,6 +29,7 @@ import (
 
 	"github.com/tricksterproxy/mockster/pkg/mocks/byterange"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/locks"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
@@ -1184,7 +1185,7 @@ func TestFetchViaObjectProxyCacheRequestErroringCache(t *testing.T) {
 	}
 	defer ts.Close()
 
-	tc := &testCache{configuration: rsc.CacheConfig}
+	tc := &testCache{configuration: rsc.CacheConfig, locker: locks.NewNamedLocker()}
 	rsc.CacheClient = tc
 	tc.configuration.CacheType = "test"
 
