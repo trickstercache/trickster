@@ -100,7 +100,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	client.SetExtent(pr.upstreamRequest, trq, &trq.Extent)
 	key := oc.CacheKeyPrefix + "." + pr.DeriveCacheKey(trq.TemplateURL, "")
 
-	nl, _ := cache.Locker().Acquire(key)
+	nl, _ := cache.Locker().RAcquire(key)
 
 	// this is used to determine if Fast Forward should be activated for this request
 	normalizedNow := &timeseries.TimeRangeQuery{
@@ -200,6 +200,19 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		cacheStatus = status.LookupStatusHit
 	} else if len(missRanges) == 1 && missRanges[0].Start.Equal(trq.Extent.Start) && missRanges[0].End.Equal(trq.Extent.End) {
 		cacheStatus = status.LookupStatusRangeMiss
+	}
+
+	if cacheStatus != status.LookupStatusHit {
+		wrc := nl.WriteLockCounter() + 1
+		nl.Release()
+		nl, _ = cache.Locker().Acquire(key)
+		if wrc != nl.WriteLockCounter() {
+			// something else got the write lock before we did. there is a possiblity the object
+			// is now fresh for us. so we will re-run the request through the delta proxy cache
+			nl.Release()
+			go DeltaProxyCacheRequest(w, r)
+			return
+		}
 	}
 
 	ffStatus := "off"
