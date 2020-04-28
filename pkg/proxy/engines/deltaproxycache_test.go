@@ -120,6 +120,9 @@ func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 		t.Error(err)
 	}
 
+	// Give time for the object to be written to cache in a separate goroutine from response
+	time.Sleep(time.Millisecond * 10)
+
 	// get cache hit coverage too by repeating:
 
 	w = httptest.NewRecorder()
@@ -730,6 +733,9 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 		t.Error(err)
 	}
 
+	// Give time for the object to be written to cache in a separate goroutine from response
+	time.Sleep(time.Millisecond * 10)
+
 	// Test Range Miss Low End
 
 	extr.Start = extr.Start.Add(time.Duration(-3) * time.Hour)
@@ -901,6 +907,9 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+
+	// Give time for the object to be written to cache in a separate goroutine from response
+	time.Sleep(time.Millisecond * 10)
 
 	// do it again and look for a cache hit on the timeseries and fast forward
 
@@ -1172,6 +1181,9 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 		t.Error(err)
 	}
 
+	// Give time for the object to be written to cache in a separate goroutine from response
+	time.Sleep(time.Millisecond * 10)
+
 	key := oc.Host + ".61a603af5b94ea305dc3fa35af4eed98"
 
 	_, _, err = client.cache.Retrieve(key, false)
@@ -1199,6 +1211,9 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+
+	// Give time for the object to be written to cache in a separate goroutine from response
+	time.Sleep(time.Millisecond * 10)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s", int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadRequest)
 	client.cache.Store(key, []byte("foo"), time.Duration(30)*time.Second)
@@ -1478,6 +1493,9 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+
+	// Give time for the object to be written to cache in a separate goroutine from response
+	time.Sleep(time.Millisecond * 10)
 
 	// get cache partial hit coverage too by repeating:
 	w = httptest.NewRecorder()

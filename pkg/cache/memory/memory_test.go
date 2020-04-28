@@ -163,6 +163,8 @@ func TestCache_Retrieve(t *testing.T) {
 		t.Error(err)
 	}
 
+	time.Sleep(time.Millisecond * 10)
+
 	// it should retrieve a value
 	var data []byte
 	var ls status.LookupStatus
@@ -179,6 +181,8 @@ func TestCache_Retrieve(t *testing.T) {
 
 	// expire the object
 	mc.SetTTL(cacheKey, -1*time.Hour)
+
+	time.Sleep(time.Millisecond * 10)
 
 	// this should now return error
 	data, ls, err = mc.Retrieve(cacheKey, false)
@@ -405,6 +409,8 @@ func TestMemoryCache_SetTTL(t *testing.T) {
 		t.Error(err)
 	}
 
+	time.Sleep(time.Millisecond * 10)
+
 	exp1 = mc.Index.GetExpiration(cacheKey)
 	if exp1.IsZero() {
 		t.Errorf("expected time %d, got zero", int(time.Now().Unix())+60)
@@ -413,6 +419,8 @@ func TestMemoryCache_SetTTL(t *testing.T) {
 	e1 := int(exp1.Unix())
 
 	mc.SetTTL(cacheKey, time.Duration(3600)*time.Second)
+
+	time.Sleep(time.Millisecond * 10)
 
 	exp2 := mc.Index.GetExpiration(cacheKey)
 	if exp2.IsZero() {

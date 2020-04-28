@@ -96,7 +96,7 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 		go c.Logger.Debug("memorycache cache store", tl.Pairs{"cacheKey": cacheKey, "length": l, "ttl": ttl, "is_direct": isDirect})
 		c.client.Store(cacheKey, o1)
 		if updateIndex {
-			go c.Index.UpdateObject(o2)
+			c.Index.UpdateObject(o2)
 		}
 		nl.Release()
 	}

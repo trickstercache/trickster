@@ -391,6 +391,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 
 	if isLocked {
 		nl.Release()
+		isLocked = false
 	}
 
 	// Respond to the user. Using the response headers from a Delta Response,
