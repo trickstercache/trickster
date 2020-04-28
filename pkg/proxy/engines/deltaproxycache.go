@@ -28,6 +28,7 @@ import (
 	tc "github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/locks"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
@@ -53,6 +54,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	pc := rsc.PathConfig
 	cache := rsc.CacheClient
 	cc := rsc.CacheConfig
+	locker := cache.Locker()
 
 	client := rsc.OriginClient.(origins.TimeseriesClient)
 
@@ -100,8 +102,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	client.SetExtent(pr.upstreamRequest, trq, &trq.Extent)
 	key := oc.CacheKeyPrefix + "." + pr.DeriveCacheKey(trq.TemplateURL, "")
 
-	nl, _ := cache.Locker().RAcquire(key)
-
 	// this is used to determine if Fast Forward should be activated for this request
 	normalizedNow := &timeseries.TimeRangeQuery{
 		Extent: timeseries.Extent{Start: time.Unix(0, 0), End: now},
@@ -120,13 +120,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			"Not Caching",
 		)
 		cacheStatus = status.LookupStatusPurge
-		cache.Remove(key)
+		go cache.Remove(key)
 		// to-do, re-add log request bool
 		cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 		if err != nil {
 			recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 			Respond(w, doc.StatusCode, doc.Headers, doc.Body)
-			nl.Release()
 			return // fetchTimeseries logs the error
 		}
 
@@ -138,7 +137,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 
 				Respond(w, doc.StatusCode, doc.Headers, doc.Body)
-				nl.Release()
 				return // fetchTimeseries logs the error
 			}
 		} else {
@@ -154,12 +152,11 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			}
 			if err != nil {
 				pr.Logger.Error("cache object unmarshaling failed", tl.Pairs{"key": key, "originName": client.Name()})
-				cache.Remove(key)
+				go cache.Remove(key)
 				cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 				if err != nil {
 					recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 					Respond(w, doc.StatusCode, doc.Headers, doc.Body)
-					nl.Release()
 					return // fetchTimeseries logs the error
 				}
 			} else {
@@ -170,13 +167,11 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 						tsc >= oc.TimeseriesRetentionFactor {
 						if trq.Extent.End.Before(el[0].Start) {
 							pr.Logger.Debug("timerange end is too early to consider caching", tl.Pairs{"step": trq.Step, "retention": oc.TimeseriesRetention})
-							nl.Release()
 							DoProxy(w, r)
 							return
 						}
 						if trq.Extent.Start.After(el[len(el)-1].End) {
 							pr.Logger.Debug("timerange is too new to cache due to backfill tolerance", tl.Pairs{"backFillToleranceSecs": oc.BackfillToleranceSecs, "newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
-							nl.Release()
 							DoProxy(w, r)
 							return
 						}
@@ -184,7 +179,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				}
 				cacheStatus = status.LookupStatusPartialHit
 			}
-
 		}
 	}
 
@@ -202,17 +196,13 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		cacheStatus = status.LookupStatusRangeMiss
 	}
 
+	var nl locks.NamedLock
+	var isLocked bool
+
 	if cacheStatus != status.LookupStatusHit {
-		wrc := nl.WriteLockCounter() + 1
-		nl.Release()
-		nl, _ = cache.Locker().Acquire(key)
-		if wrc != nl.WriteLockCounter() {
-			// something else got the write lock before we did. there is a possiblity the object
-			// is now fresh for us. so we will re-run the request through the delta proxy cache
-			nl.Release()
-			go DeltaProxyCacheRequest(w, r)
-			return
-		}
+		nl, _ = locker.Acquire(key)
+		// TODO: refactor/re-add write lock counter
+		isLocked = true
 	}
 
 	ffStatus := "off"
@@ -346,10 +336,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 
 	switch cacheStatus {
 	case status.LookupStatusKeyMiss, status.LookupStatusPartialHit, status.LookupStatusRangeMiss:
-		wg.Add(1)
 		// Write the newly-merged object back to the cache
 		go func() {
-			defer wg.Done()
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the Backfill Tolerance before storing to cache
 			switch oc.TimeseriesEvictionMethod {
 			case evictionmethods.EvictionMethodLRU:
@@ -364,7 +352,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				} else {
 					cdata, err := client.MarshalTimeseries(cts)
 					if err != nil {
-						nl.Release()
 						return
 					}
 					doc.Body = cdata
@@ -374,13 +361,14 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 
+	if isLocked {
+		nl.Release()
+	}
+
 	// Respond to the user. Using the response headers from a Delta Response, so as to not map conflict with cacheData on WriteCache
 	logDeltaRoutine(pr.Logger, dpStatus)
 	recordDPCResult(r, cacheStatus, doc.StatusCode, r.URL.Path, ffStatus, elapsed.Seconds(), missRanges, rh)
 	Respond(w, doc.StatusCode, rh, rdata)
-
-	wg.Wait()
-	nl.Release()
 }
 
 func logDeltaRoutine(log *tl.Logger, p tl.Pairs) { log.Debug("delta routine completed", p) }
