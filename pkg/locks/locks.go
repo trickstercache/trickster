@@ -18,6 +18,7 @@ package locks
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 )
 
 type NamedLocker interface {
@@ -54,7 +55,7 @@ func newNamedLock(name string, locker *namedLocker) *namedLock {
 type namedLock struct {
 	*sync.RWMutex
 	name           string
-	queueSize      int
+	queueSize      int32
 	writeLockCount int
 	// hasWriteLock   bool
 	// hasReadLock    bool
@@ -68,8 +69,8 @@ func (nl *namedLock) Release() error {
 		return fmt.Errorf("invalid lock name: %s", nl.name)
 	}
 
-	nl.queueSize--
-	if nl.queueSize == 0 {
+	qs := atomic.AddInt32(&nl.queueSize, -1)
+	if qs == 0 {
 		nl.locker.mapLock.Lock()
 		delete(nl.locker.locks, nl.name)
 		nl.locker.mapLock.Unlock()
@@ -85,8 +86,8 @@ func (nl *namedLock) RRelease() error {
 		return fmt.Errorf("invalid lock name: %s", nl.name)
 	}
 
-	nl.queueSize--
-	if nl.queueSize == 0 {
+	qs := atomic.AddInt32(&nl.queueSize, -1)
+	if qs == 0 {
 		nl.locker.mapLock.Lock()
 		delete(nl.locker.locks, nl.name)
 		nl.locker.mapLock.Unlock()
@@ -112,7 +113,8 @@ func (lk *namedLocker) Acquire(lockName string) (NamedLock, error) {
 		nl = newNamedLock(lockName, lk)
 		lk.locks[lockName] = nl
 	}
-	nl.queueSize++
+
+	atomic.AddInt32(&nl.queueSize, 1)
 	lk.mapLock.Unlock()
 
 	nl.Lock()
@@ -132,7 +134,8 @@ func (lk *namedLocker) RAcquire(lockName string) (NamedLock, error) {
 		nl = newNamedLock(lockName, lk)
 		lk.locks[lockName] = nl
 	}
-	nl.queueSize++
+
+	atomic.AddInt32(&nl.queueSize, 1)
 	lk.mapLock.Unlock()
 
 	nl.RLock()
