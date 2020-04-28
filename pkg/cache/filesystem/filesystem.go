@@ -23,6 +23,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/cache/index"
@@ -127,18 +128,18 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	dataFile := c.getFileName(cacheKey)
 
 	nl, _ := c.locker.RAcquire(lockPrefix + cacheKey)
-
 	data, err := ioutil.ReadFile(dataFile)
+	nl.RRelease()
+
 	if err != nil {
 		c.Logger.Debug("filesystem cache miss", log.Pairs{"key": cacheKey, "dataFile": dataFile})
 		b, err2 := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
-		nl.Release()
 		return b, status.LookupStatusKeyMiss, err2
 	}
 
 	o, err := index.ObjectFromBytes(data)
 	if err != nil {
-		nl.Release()
+
 		_, err2 := metrics.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
 		return nil, status.LookupStatusError, err2
 	}
@@ -146,7 +147,6 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	// if retrieve() is being called to load the index, the index will be nil, so just return the value
 	// so as to instantiate the index
 	if c.Index == nil {
-		nl.Release()
 		return o.Value, status.LookupStatusHit, nil
 	}
 
@@ -157,19 +157,17 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 			go c.Index.UpdateObjectAccessTime(cacheKey)
 		}
 		metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
-		nl.Release()
 		return o.Value, status.LookupStatusHit, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
 	go c.remove(cacheKey, false)
 	b, err := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
-	nl.Release()
 	return b, status.LookupStatusKeyMiss, err
 }
 
 // SetTTL updates the TTL for the provided cache object
 func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
-	c.Index.UpdateObjectTTL(cacheKey, ttl)
+	go c.Index.UpdateObjectTTL(cacheKey, ttl)
 }
 
 // Remove removes an object from the cache
@@ -179,18 +177,26 @@ func (c *Cache) Remove(cacheKey string) {
 
 func (c *Cache) remove(cacheKey string, isBulk bool) {
 	nl, _ := c.locker.Acquire(lockPrefix + cacheKey)
-	if err := os.Remove(c.getFileName(cacheKey)); err == nil && !isBulk {
-		c.Index.RemoveObject(cacheKey)
-	}
+	err := os.Remove(c.getFileName(cacheKey))
 	nl.Release()
+	if err == nil && !isBulk {
+		go c.Index.RemoveObject(cacheKey)
+	}
 	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 }
 
 // BulkRemove removes a list of objects from the cache
 func (c *Cache) BulkRemove(cacheKeys []string) {
+	wg := &sync.WaitGroup{}
+
 	for _, cacheKey := range cacheKeys {
-		c.remove(cacheKey, true)
+		wg.Add(1)
+		go func(key string) {
+			c.remove(key, true)
+			wg.Done()
+		}(cacheKey)
 	}
+	wg.Wait()
 }
 
 // Close is not used for Cache

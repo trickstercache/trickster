@@ -268,6 +268,8 @@ func TestFilesystemCache_SetTTL(t *testing.T) {
 
 	fc.SetTTL(cacheKey, time.Duration(3600)*time.Second)
 
+	time.Sleep(time.Millisecond * 10)
+
 	exp2 := fc.Index.GetExpiration(cacheKey)
 	if exp2.IsZero() {
 		t.Errorf("expected time %d, got zero", int(time.Now().Unix())+3600)

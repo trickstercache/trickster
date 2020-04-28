@@ -177,6 +177,8 @@ func TestBboltCache_SetTTL(t *testing.T) {
 
 	bc.SetTTL(cacheKey, time.Duration(3600)*time.Second)
 
+	time.Sleep(time.Millisecond * 10)
+
 	exp2 := bc.Index.GetExpiration(cacheKey)
 	if exp2.IsZero() {
 		t.Errorf("expected time %d, got zero", int(time.Now().Unix())+3600)
@@ -505,6 +507,8 @@ func TestBboltCache_Retrieve(t *testing.T) {
 
 	// expire the object
 	bc.SetTTL(cacheKey, -1*time.Hour)
+
+	time.Sleep(time.Millisecond * 10)
 
 	// this should now return error
 	data, ls, err = bc.Retrieve(cacheKey, false)

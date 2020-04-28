@@ -102,20 +102,19 @@ func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 
 func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateIndex bool) error {
 
-	nl, _ := c.locker.Acquire(lockPrefix + cacheKey)
 	metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 
 	o := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
+	nl, _ := c.locker.Acquire(lockPrefix + cacheKey)
 	err := writeToBBolt(c.dbh, c.Config.BBolt.Bucket, cacheKey, o.ToBytes())
+	nl.Release()
 	if err != nil {
-		nl.Release()
 		return err
 	}
 	c.Logger.Debug("bbolt cache store", log.Pairs{"key": cacheKey, "ttl": ttl, "indexed": updateIndex})
 	if updateIndex {
 		c.Index.UpdateObject(o)
 	}
-	nl.Release()
 	return nil
 }
 
@@ -136,8 +135,6 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte, status.LookupStatus, error) {
 
 	nl, _ := c.locker.RAcquire(lockPrefix + cacheKey)
-	defer nl.Release()
-
 	var data []byte
 	err := c.dbh.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
@@ -149,6 +146,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		}
 		return nil
 	})
+	nl.RRelease()
 	if err != nil {
 		return nil, status.LookupStatusKeyMiss, err
 	}
@@ -183,7 +181,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 
 // SetTTL updates the TTL for the provided cache object
 func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
-	c.Index.UpdateObjectTTL(cacheKey, ttl)
+	go c.Index.UpdateObjectTTL(cacheKey, ttl)
 }
 
 // Remove removes an object in cache, if present
@@ -193,17 +191,17 @@ func (c *Cache) Remove(cacheKey string) {
 
 func (c *Cache) remove(cacheKey string, isBulk bool) error {
 	nl, _ := c.locker.Acquire(lockPrefix + cacheKey)
-	defer nl.Release()
 	err := c.dbh.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
 		return b.Delete([]byte(cacheKey))
 	})
+	nl.Release()
 	if err != nil {
 		c.Logger.Error("bbolt cache key delete failure", log.Pairs{"cacheKey": cacheKey, "reason": err.Error()})
 		return err
 	}
 	if !isBulk {
-		c.Index.RemoveObject(cacheKey)
+		go c.Index.RemoveObject(cacheKey)
 	}
 	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
 	c.Logger.Debug("bbolt cache key delete", log.Pairs{"key": cacheKey})
