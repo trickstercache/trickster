@@ -28,7 +28,6 @@ import (
 	tc "github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
-	"github.com/tricksterproxy/trickster/pkg/locks"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
@@ -101,7 +100,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client.SetExtent(pr.upstreamRequest, trq, &trq.Extent)
-	key := oc.CacheKeyPrefix + "." + pr.DeriveCacheKey(trq.TemplateURL, "")
+	key := oc.CacheKeyPrefix + ".dpc." + pr.DeriveCacheKey(trq.TemplateURL, "")
+	pr.cacheLock, _ = locker.RAcquire(key)
 
 	// this is used to determine if Fast Forward should be activated for this request
 	normalizedNow := &timeseries.TimeRangeQuery{
@@ -125,17 +125,18 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		// to-do, re-add log request bool
 		cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 		if err != nil {
+			pr.cacheLock.RRelease()
 			recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode,
 				r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 			Respond(w, doc.StatusCode, doc.Headers, doc.Body)
 			return // fetchTimeseries logs the error
 		}
-
 	} else {
 		doc, cacheStatus, _, err = QueryCache(ctx, cache, key, nil)
 		if cacheStatus == status.LookupStatusKeyMiss && err == tc.ErrKNF {
 			cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 			if err != nil {
+				pr.cacheLock.RRelease()
 				recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode,
 					r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 
@@ -159,6 +160,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				go cache.Remove(key)
 				cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 				if err != nil {
+					pr.cacheLock.RRelease()
 					recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode,
 						r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
 					Respond(w, doc.StatusCode, doc.Headers, doc.Body)
@@ -171,13 +173,15 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 					if tsc > 0 &&
 						tsc >= oc.TimeseriesRetentionFactor {
 						if trq.Extent.End.Before(el[0].Start) {
-							pr.Logger.Debug("timerange end is too early to consider caching",
+							pr.cacheLock.RRelease()
+							go pr.Logger.Debug("timerange end is too early to consider caching",
 								tl.Pairs{"step": trq.Step, "retention": oc.TimeseriesRetention})
 							DoProxy(w, r)
 							return
 						}
 						if trq.Extent.Start.After(el[len(el)-1].End) {
-							pr.Logger.Debug("timerange not cached due to backfill tolerance",
+							pr.cacheLock.RRelease()
+							go pr.Logger.Debug("timerange not cached due to backfill tolerance",
 								tl.Pairs{
 									"backFillToleranceSecs":   oc.BackfillToleranceSecs,
 									"newestRetainedTimestamp": bf.End,
@@ -210,12 +214,39 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		cacheStatus = status.LookupStatusRangeMiss
 	}
 
-	var nl locks.NamedLock
 	var isLocked bool
 
-	if cacheStatus != status.LookupStatusHit {
-		nl, _ = locker.Acquire(key)
-		// TODO: refactor/re-add write lock counter
+	if cacheStatus == status.LookupStatusHit {
+		// In a cache hit, nothing changes so we just release the reader lock
+		pr.cacheLock.RRelease()
+	} else {
+		// in this case, it's not a cache hit, so something is _likely_ going to be cached now.
+		// we write lock here, so as to prevent other concurrent client requests for the same url,
+		// which will have the same cacheStatus, from causing the same or similar HTTP requests
+		// to be made against the origin, since just one should do.
+
+		// to do this we can ask the lock object how many write locks have been acquired. since
+		// we have a read lock, this number can't be updated again until all reads are released.
+		cwc := pr.cacheLock.WriteLockCounter()
+		// acquire a write lock via the Upgrade method, which will swap your read lock for a key
+		// for a write lock, ensuring that write lock counter state is intact during the upgrade
+		pr.cacheLock, _ = pr.cacheLock.Upgrade()
+		// now we have the write lock. so we can check if the write lock counter incremented by 1
+		// or more. If the difference is just 1, that means this request was the first to acquire
+		// a write lock following all of the read locks being released. That means it is good to
+		// proceed with upstream communciations and caching. when the difference is > 1, it means
+		// another requests was first to acquire the mutex, and we have no idea what changed in
+		// the cache since between when we queried, and the other requests with the lock serviced
+		// so in that case, we will just send the request back through the DPC from the top in
+		// case the updated cache might benefit them.
+
+		// now check if we were the first request for this url to upgrade from a reader to writer
+		if pr.cacheLock.WriteLockCounter()-cwc != 1 {
+			// we weren't first, so quickly drop our write lock, and re-run the request
+			pr.cacheLock.Release()
+			DeltaProxyCacheRequest(w, r)
+			return
+		}
 		isLocked = true
 	}
 
@@ -390,7 +421,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isLocked {
-		nl.Release()
+		pr.cacheLock.Release()
 		isLocked = false
 	}
 

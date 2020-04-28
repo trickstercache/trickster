@@ -162,3 +162,29 @@ func TestWriteLockCounter(t *testing.T) {
 	}
 
 }
+
+func TestWriteLockMode(t *testing.T) {
+
+	nl := newNamedLock("testKey", nil)
+	if nl.WriteLockMode() {
+		t.Error("expected false")
+	}
+	nl.writeLockMode = 1
+	if !nl.WriteLockMode() {
+		t.Error("expected true")
+	}
+
+}
+
+func TestUpgrade(t *testing.T) {
+
+	locker := NewNamedLocker()
+	nl, _ := locker.RAcquire("test")
+	if nl.WriteLockCounter() != 0 {
+		t.Errorf("expected 0 got %d", nl.WriteLockCounter())
+	}
+	nl, _ = nl.Upgrade()
+	if nl.WriteLockCounter() != 1 {
+		t.Errorf("expected 1 got %d", nl.WriteLockCounter())
+	}
+}

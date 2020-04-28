@@ -44,7 +44,9 @@ func NewNamedLocker() NamedLocker {
 type NamedLock interface {
 	Release() error
 	RRelease() error
+	Upgrade() (NamedLock, error)
 	WriteLockCounter() int
+	WriteLockMode() bool
 }
 
 func newNamedLock(name string, locker *namedLocker) *namedLock {
@@ -60,6 +62,7 @@ type namedLock struct {
 	name           string
 	queueSize      int32
 	writeLockCount int
+	writeLockMode  int32
 	releaser       func()
 	locker         *namedLocker
 }
@@ -71,6 +74,7 @@ func (nl *namedLock) Release() error {
 		return fmt.Errorf("invalid lock name: %s", nl.name)
 	}
 
+	atomic.StoreInt32(&nl.writeLockMode, 0)
 	qs := atomic.AddInt32(&nl.queueSize, -1)
 	if qs == 0 {
 		nl.locker.mapLock.Lock()
@@ -107,6 +111,39 @@ func (nl *namedLock) WriteLockCounter() int {
 	return nl.writeLockCount
 }
 
+// WriteLockMode returns true if a caller is waiting for a write lock
+func (nl *namedLock) WriteLockMode() bool {
+	return atomic.LoadInt32(&nl.writeLockMode) == 1
+}
+
+// Upgrade will upgrade the current read-lock to a write lock without losing the reference to the
+// underlying sync map, enabling goroutines to check if state has changed during the upgrade
+func (nl *namedLock) Upgrade() (NamedLock, error) {
+
+	var wl NamedLock
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		wl, _ = nl.locker.Acquire(nl.name)
+		wg.Done()
+	}()
+
+	wg.Add(1)
+	go func() {
+		// once we know the write lock is requested, we can release our read lock
+		for !nl.WriteLockMode() {
+		}
+		nl.RRelease()
+		wg.Done()
+	}()
+
+	// wait until write mode is set, read lock is released, and write lock is acquired
+	wg.Wait()
+
+	return wl, nil
+}
+
 // Acquire locks the named lock for writing, and blocks until the wlock is acquired
 func (lk *namedLocker) Acquire(lockName string) (NamedLock, error) {
 	if lockName == "" {
@@ -119,11 +156,12 @@ func (lk *namedLocker) Acquire(lockName string) (NamedLock, error) {
 		nl = newNamedLock(lockName, lk)
 		lk.locks[lockName] = nl
 	}
-
 	atomic.AddInt32(&nl.queueSize, 1)
 	lk.mapLock.Unlock()
+	atomic.StoreInt32(&nl.writeLockMode, 1)
 
 	nl.Lock()
+
 	nl.writeLockCount++
 	return nl, nil
 }
@@ -143,6 +181,7 @@ func (lk *namedLocker) RAcquire(lockName string) (NamedLock, error) {
 
 	atomic.AddInt32(&nl.queueSize, 1)
 	lk.mapLock.Unlock()
+	atomic.StoreInt32(&nl.writeLockMode, 0)
 
 	nl.RLock()
 	return nl, nil
