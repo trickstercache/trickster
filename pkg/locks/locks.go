@@ -64,6 +64,7 @@ type namedLock struct {
 	locker         *namedLocker
 }
 
+// Release releases the write lock on the subject Named Lock
 func (nl *namedLock) Release() error {
 
 	if nl.name == "" {
@@ -81,6 +82,7 @@ func (nl *namedLock) Release() error {
 	return nil
 }
 
+// RRelease releases the read lock on the subject Named Lock
 func (nl *namedLock) RRelease() error {
 
 	if nl.name == "" {
@@ -105,7 +107,7 @@ func (nl *namedLock) WriteLockCounter() int {
 	return nl.writeLockCount
 }
 
-// Acquire locks the named lock, and blocks until the lock is acquired
+// Acquire locks the named lock for writing, and blocks until the wlock is acquired
 func (lk *namedLocker) Acquire(lockName string) (NamedLock, error) {
 	if lockName == "" {
 		return nil, fmt.Errorf("invalid lock name: %s", lockName)
