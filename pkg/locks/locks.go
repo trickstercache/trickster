@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 )
 
+// NamedLocker provides a locker for handling Named Locks
 type NamedLocker interface {
 	Acquire(string) (NamedLock, error)
 	RAcquire(string) (NamedLock, error)
@@ -31,6 +32,7 @@ type namedLocker struct {
 	mapLock *sync.Mutex
 }
 
+// NewNamedLocker returns a new Named Locker
 func NewNamedLocker() NamedLocker {
 	return &namedLocker{
 		locks:   make(map[string]*namedLock),
@@ -38,6 +40,7 @@ func NewNamedLocker() NamedLocker {
 	}
 }
 
+// NamedLock defines the interface for implementing Named Locks
 type NamedLock interface {
 	Release() error
 	RRelease() error
@@ -57,10 +60,8 @@ type namedLock struct {
 	name           string
 	queueSize      int32
 	writeLockCount int
-	// hasWriteLock   bool
-	// hasReadLock    bool
-	releaser func()
-	locker   *namedLocker
+	releaser       func()
+	locker         *namedLocker
 }
 
 func (nl *namedLock) Release() error {
@@ -97,6 +98,9 @@ func (nl *namedLock) RRelease() error {
 	return nil
 }
 
+// WriteLockCounter returns the number of write locks acquired by the namedLock
+// This function should only be called by a goroutine actively holding a write lock,
+// as it is otherwise not atomic
 func (nl *namedLock) WriteLockCounter() int {
 	return nl.writeLockCount
 }
