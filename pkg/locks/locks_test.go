@@ -50,14 +50,15 @@ func TestLocks(t *testing.T) {
 		t.Errorf("expected 11 got %d", testVal)
 	}
 
-	expected := "not currently locked: test"
-	err := nl.Release()
+	expected := "invalid lock name: "
+	_, err := lk.Acquire("")
 	if err.Error() != expected {
 		t.Errorf("got %s expected %s", err.Error(), expected)
 	}
 
-	expected = "invalid lock name: "
-	_, err = lk.Acquire("")
+	nl3, _ := lk.Acquire("test1")
+	nl3.(*namedLock).name = ""
+	err = nl3.RRelease()
 	if err.Error() != expected {
 		t.Errorf("got %s expected %s", err.Error(), expected)
 	}
@@ -123,7 +124,7 @@ func TestLockReadAndWrite(t *testing.T) {
 	go func() {
 		nl1, _ := lk.RAcquire("test")
 		j = i
-		nl1.Release()
+		nl1.RRelease()
 		wg.Done()
 	}()
 
