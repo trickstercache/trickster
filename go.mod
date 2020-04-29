@@ -21,7 +21,7 @@ require (
 	github.com/prometheus/common v0.9.1
 	github.com/stretchr/testify v1.5.1
 	github.com/tinylib/msgp v1.1.1
-	github.com/tricksterproxy/mockster v1.1.0
+	github.com/tricksterproxy/mockster v1.1.1
 	github.com/yuin/gopher-lua v0.0.0-20190514113301-1cd887cd7036 // indirect
 	go.opentelemetry.io/otel v0.2.0
 	go.opentelemetry.io/otel/exporter/trace/jaeger v0.2.0

@@ -108,7 +108,7 @@ github.com/stretchr/testify/assert
 # github.com/tinylib/msgp v1.1.1
 ## explicit
 github.com/tinylib/msgp/msgp
-# github.com/tricksterproxy/mockster v1.1.0
+# github.com/tricksterproxy/mockster v1.1.1
 ## explicit
 github.com/tricksterproxy/mockster/pkg/mocks/byterange
 github.com/tricksterproxy/mockster/pkg/mocks/prometheus
