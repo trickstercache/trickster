@@ -117,31 +117,34 @@ func (nl *namedLock) WriteLockMode() bool {
 }
 
 // Upgrade will upgrade the current read-lock to a write lock without losing the reference to the
-// underlying sync map, enabling goroutines to check if state has changed during the upgrade
+// underlying sync map, enabling goroutines, after receiving a write lock, to know how many other
+// goroutines acquired a write lock (naturally or upgraded) during the time this routine released
+// it's read lock and got a write lock. This helps the receiver of the write lock know if any extra
+// state checks are required (e.g., re-querying a cache that might have changed) before proceeding.
 func (nl *namedLock) Upgrade() (NamedLock, error) {
 
-	var wl NamedLock
-
+	ch := make(chan bool, 1)
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
-		wl, _ = nl.locker.Acquire(nl.name)
+		atomic.AddInt32(&nl.queueSize, 1)
+		ch <- true
+		atomic.StoreInt32(&nl.writeLockMode, 1)
+		nl.Lock()
+		nl.writeLockCount++
 		wg.Done()
 	}()
 
-	wg.Add(1)
-	go func() {
-		// once we know the write lock is requested, we can release our read lock
-		for !nl.WriteLockMode() {
-		}
+	// once we know the write lock queueSize is incremented, we can release our read lock
+	select {
+	case <-ch:
 		nl.RRelease()
-		wg.Done()
-	}()
+	}
 
 	// wait until write mode is set, read lock is released, and write lock is acquired
 	wg.Wait()
 
-	return wl, nil
+	return nl, nil
 }
 
 // Acquire locks the named lock for writing, and blocks until the wlock is acquired
