@@ -366,6 +366,9 @@ func TestFilesystemCache_Retrieve(t *testing.T) {
 	// expire the object
 	fc.SetTTL(cacheKey, -1*time.Hour)
 
+	// add sleep to let TTL be set in a separate goroutine
+	time.Sleep(time.Millisecond * 10)
+
 	// this should now return error
 	data, ls, err = fc.Retrieve(cacheKey, false)
 	if err == nil {
