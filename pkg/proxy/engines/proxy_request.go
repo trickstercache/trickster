@@ -55,6 +55,10 @@ type proxyRequest struct {
 	cacheDocument *HTTPDocument
 	cacheBuffer   *bytes.Buffer
 	cacheLock     locks.NamedLock
+	mapLock       *sync.Mutex
+	hasWriteLock  bool
+	hasReadLock   bool
+	wasReran      bool
 
 	key          string
 	started      time.Time
@@ -91,6 +95,7 @@ func newProxyRequest(r *http.Request, w io.Writer) *proxyRequest {
 		contentLength:   -1,
 		responseWriter:  w,
 		started:         time.Now(),
+		mapLock:         &sync.Mutex{},
 	}
 	return pr
 }
@@ -115,6 +120,7 @@ func (pr *proxyRequest) Clone() *proxyRequest {
 		revalidation:       pr.revalidation,
 		isPartialResponse:  pr.isPartialResponse,
 		started:            time.Now(),
+		mapLock:            &sync.Mutex{},
 	}
 }
 
@@ -311,7 +317,9 @@ func (pr *proxyRequest) writeResponseHeader() {
 func (pr *proxyRequest) setBodyWriter() {
 
 	if !pr.isPCF {
+		pr.mapLock.Lock()
 		PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header)
+		pr.mapLock.Unlock()
 	}
 
 	if pr.writeToCache && pr.cacheBuffer == nil {
