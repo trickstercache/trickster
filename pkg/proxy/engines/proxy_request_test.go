@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"errors"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -91,6 +92,7 @@ func TestSetBodyWriter(t *testing.T) {
 		responseWriter:   bytes.NewBuffer(buff),
 		upstreamResponse: &http.Response{StatusCode: http.StatusOK},
 		cachingPolicy:    &CachingPolicy{},
+		mapLock:          &sync.Mutex{},
 	}
 
 	PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header)

@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	txe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
@@ -52,6 +53,7 @@ type HTTPDocument struct {
 	isFulfillment    bool
 	isLoaded         bool
 	timeseries       timeseries.Timeseries
+	headerLock       *sync.Mutex
 }
 
 // Size returns the size of the HTTPDocument's headers, CachingPolicy, RangeParts, Body and timeseries data

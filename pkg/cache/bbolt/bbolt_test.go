@@ -27,6 +27,7 @@ import (
 	io "github.com/tricksterproxy/trickster/pkg/cache/index/options"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/locks"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
@@ -42,8 +43,12 @@ func newCacheConfig() co.Options {
 func storeBenchmark(b *testing.B) Cache {
 	testDbPath := "/tmp/test.db"
 	os.Remove(testDbPath)
-	cacheConfig := co.Options{CacheType: cacheType, BBolt: &bo.Options{Filename: testDbPath, Bucket: "trickster_test"}, Index: &io.Options{ReapInterval: time.Second}}
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	cacheConfig := co.Options{
+		CacheType: cacheType,
+		BBolt:     &bo.Options{Filename: testDbPath, Bucket: "trickster_test"},
+		Index:     &io.Options{ReapInterval: time.Second},
+	}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
@@ -63,7 +68,7 @@ func storeBenchmark(b *testing.B) Cache {
 
 func TestConfiguration(t *testing.T) {
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	cfg := bc.Configuration()
 	if cfg.CacheType != cacheType {
 		t.Errorf("expected %s got %s", cacheType, cfg.CacheType)
@@ -73,7 +78,7 @@ func TestConfiguration(t *testing.T) {
 func TestBboltCache_Connect(t *testing.T) {
 	cacheConfig := newCacheConfig()
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	// it should connect
 	err := bc.Connect()
 	if err != nil {
@@ -86,7 +91,7 @@ func TestBboltCache_ConnectFailed(t *testing.T) {
 	const expected = `open /root/noaccess.bbolt:`
 	cacheConfig := newCacheConfig()
 	cacheConfig.BBolt.Filename = "/root/noaccess.bbolt"
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	// it should connect
 	err := bc.Connect()
 	if err == nil {
@@ -104,7 +109,7 @@ func TestBboltCache_ConnectBadBucketName(t *testing.T) {
 	cacheConfig := newCacheConfig()
 	cacheConfig.BBolt.Bucket = ""
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	// it should connect
 	err := bc.Connect()
 	if err == nil {
@@ -119,7 +124,7 @@ func TestBboltCache_ConnectBadBucketName(t *testing.T) {
 func TestBboltCache_Store(t *testing.T) {
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
@@ -143,7 +148,7 @@ func BenchmarkCache_Store(b *testing.B) {
 func TestBboltCache_SetTTL(t *testing.T) {
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
@@ -171,6 +176,8 @@ func TestBboltCache_SetTTL(t *testing.T) {
 	e1 := int(exp1.Unix())
 
 	bc.SetTTL(cacheKey, time.Duration(3600)*time.Second)
+
+	time.Sleep(time.Millisecond * 10)
 
 	exp2 := bc.Index.GetExpiration(cacheKey)
 	if exp2.IsZero() {
@@ -221,7 +228,7 @@ func TestBboltCache_StoreNoIndex(t *testing.T) {
 	const expected = `value for key [] not in cache`
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 
 	err := bc.Connect()
 	if err != nil {
@@ -306,7 +313,7 @@ func BenchmarkCache_StoreNoIndex(b *testing.B) {
 func TestBboltCache_Remove(t *testing.T) {
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
@@ -386,7 +393,7 @@ func BenchmarkCache_Remove(b *testing.B) {
 func TestBboltCache_BulkRemove(t *testing.T) {
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
@@ -451,10 +458,10 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 func TestBboltCache_Retrieve(t *testing.T) {
 
 	const expected1 = `value for key [cacheKey] not in cache`
-	const expected2 = `value for key [cacheKey] could not be deserialized from cache`
+	const expected2 = `value for key [cacheKey-invalid] could not be deserialized from cache`
 
 	cacheConfig := newCacheConfig()
-	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
@@ -501,6 +508,8 @@ func TestBboltCache_Retrieve(t *testing.T) {
 	// expire the object
 	bc.SetTTL(cacheKey, -1*time.Hour)
 
+	time.Sleep(time.Millisecond * 10)
+
 	// this should now return error
 	data, ls, err = bc.Retrieve(cacheKey, false)
 	if err == nil {
@@ -518,16 +527,12 @@ func TestBboltCache_Retrieve(t *testing.T) {
 	}
 
 	// create a corrupted cache entry and expect an error
-	writeToBBolt(bc.dbh, cacheConfig.BBolt.Bucket, cacheKey, []byte("asdasdfasf"))
+	writeToBBolt(bc.dbh, cacheConfig.BBolt.Bucket, cacheKey+"-invalid", []byte("asdasdfasf"))
 
 	// it should fail to retrieve a value
-	data, ls, err = bc.Retrieve(cacheKey, false)
-	if err == nil {
-		t.Errorf("expected error for %s", expected2)
-		bc.Close()
-	}
-	if err.Error() != expected2 {
-		t.Errorf("expected error '%s' got '%s'", expected2, err.Error())
+	data, ls, err = bc.Retrieve(cacheKey+"-invalid", false)
+	if err == nil || err.Error() != expected2 {
+		t.Errorf("expected error '%s' got '%s'", expected2, err)
 	}
 	if string(data) != "" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
@@ -593,5 +598,15 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 		if ls != status.LookupStatusKeyMiss {
 			b.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
 		}
+	}
+}
+
+func TestLocker(t *testing.T) {
+	cache := Cache{locker: locks.NewNamedLocker()}
+	l := cache.Locker()
+	cache.SetLocker(locks.NewNamedLocker())
+	m := cache.Locker()
+	if l == m {
+		t.Errorf("error setting locker")
 	}
 }

@@ -25,6 +25,7 @@ import (
 	bo "github.com/tricksterproxy/trickster/pkg/cache/badger/options"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/locks"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
@@ -271,5 +272,15 @@ func TestBadgerCache_Close(t *testing.T) {
 	// it should close
 	if err := bc.Close(); err != nil {
 		t.Error(err)
+	}
+}
+
+func TestLocker(t *testing.T) {
+	cache := Cache{locker: locks.NewNamedLocker()}
+	l := cache.Locker()
+	cache.SetLocker(locks.NewNamedLocker())
+	m := cache.Locker()
+	if l == m {
+		t.Errorf("error setting locker")
 	}
 }

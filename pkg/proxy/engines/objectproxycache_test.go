@@ -29,6 +29,7 @@ import (
 
 	"github.com/tricksterproxy/mockster/pkg/mocks/byterange"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/locks"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
@@ -149,6 +150,7 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 }
 
 func TestObjectProxyCachePartialHit(t *testing.T) {
+
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
 	if err != nil {
 		t.Error(err)
@@ -161,6 +163,7 @@ func TestObjectProxyCachePartialHit(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+
 	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
 	for _, err = range e {
 		t.Error(err)
@@ -348,7 +351,7 @@ func TestFullArticuation(t *testing.T) {
 		t.Error(err)
 	}
 
-	r.Header.Set(headers.NameRange, "bytes=0-1221")
+	r.Header.Set(headers.NameRange, "bytes=0-1223")
 	r.URL.Path = "/byterange/new/test/path/22"
 	r.URL.RawQuery = ""
 	expectedBody, err = getExpectedRangeBody(r, "722af19813169c99d8bda37a2f244f39")
@@ -360,8 +363,8 @@ func TestFullArticuation(t *testing.T) {
 		t.Error(err)
 	}
 
-	r.Header.Set(headers.NameRange, "bytes=0-1220,1221-1221")
-	expectedBody, err = getExpectedRangeBody(r, "0a6d16343fbe859a10cf1ac673e23dc9")
+	r.Header.Set(headers.NameRange, "bytes=0-1220,1221-1223")
+	expectedBody, err = getExpectedRangeBody(r, "f8813b96e6b06ea1d826bb921690f87b")
 	if err != nil {
 		t.Error(err)
 	}
@@ -1182,7 +1185,7 @@ func TestFetchViaObjectProxyCacheRequestErroringCache(t *testing.T) {
 	}
 	defer ts.Close()
 
-	tc := &testCache{configuration: rsc.CacheConfig}
+	tc := &testCache{configuration: rsc.CacheConfig, locker: locks.NewNamedLocker()}
 	rsc.CacheClient = tc
 	tc.configuration.CacheType = "test"
 

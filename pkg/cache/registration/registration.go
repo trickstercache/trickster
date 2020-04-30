@@ -27,6 +27,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/redis"
 	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/pkg/locks"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
@@ -88,6 +89,7 @@ func NewCache(cacheName string, cfg *options.Options, logger *tl.Logger) cache.C
 		c = &memory.Cache{Name: cacheName, Config: cfg, Logger: logger}
 	}
 
+	c.SetLocker(locks.NewNamedLocker())
 	c.Connect()
 	return c
 }

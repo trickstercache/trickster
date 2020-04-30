@@ -24,6 +24,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/locks"
 )
 
 // ErrKNF represents the error "key not found in cache"
@@ -40,6 +41,8 @@ type Cache interface {
 	BulkRemove(cacheKeys []string)
 	Close() error
 	Configuration() *options.Options
+	Locker() locks.NamedLocker
+	SetLocker(locks.NamedLocker)
 }
 
 // MemoryCache is the interface for an in-memory cache
@@ -55,6 +58,8 @@ type MemoryCache interface {
 	Configuration() *options.Options
 	StoreReference(cacheKey string, data ReferenceObject, ttl time.Duration) error
 	RetrieveReference(cacheKey string, allowExpired bool) (interface{}, status.LookupStatus, error)
+	Locker() locks.NamedLocker
+	SetLocker(locks.NamedLocker)
 }
 
 // ReferenceObject defines an interface for a cache object possessing the ability to report

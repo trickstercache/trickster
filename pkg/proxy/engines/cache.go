@@ -21,6 +21,7 @@ import (
 	"mime"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
@@ -69,6 +70,9 @@ func QueryCache(ctx context.Context, c cache.Cache, key string, ranges byterange
 
 		if ifc != nil {
 			d, _ = ifc.(*HTTPDocument)
+			if d.headerLock == nil {
+				d.headerLock = &sync.Mutex{}
+			}
 		} else {
 			return d, status.LookupStatusKeyMiss, ranges, err
 		}
@@ -138,6 +142,9 @@ func QueryCache(ctx context.Context, c cache.Cache, key string, ranges byterange
 		}
 
 	}
+	if d.headerLock == nil {
+		d.headerLock = &sync.Mutex{}
+	}
 	return d, lookupStatus, delta, nil
 }
 
@@ -182,6 +189,9 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		mc := c.(cache.MemoryCache)
 
 		if d != nil {
+			if d.headerLock == nil {
+				d.headerLock = &sync.Mutex{}
+			}
 			// during unmarshal, these would come back as false, so lets set them as such even for direct access
 			d.rangePartsLoaded = false
 			d.isFulfillment = false

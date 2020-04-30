@@ -40,6 +40,15 @@ type Cache struct {
 	Config *options.Options
 	Index  *index.Index
 	Logger *tl.Logger
+	locker locks.NamedLocker
+}
+
+func (c *Cache) Locker() locks.NamedLocker {
+	return c.locker
+}
+
+func (c *Cache) SetLocker(l locks.NamedLocker) {
+	c.locker = l
 }
 
 // Configuration returns the Configuration for the Cache object
@@ -68,8 +77,6 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 
 func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceObject, ttl time.Duration, updateIndex bool) error {
 
-	locks.Acquire(lockPrefix + cacheKey)
-
 	var o1, o2 *index.Object
 	var l int
 	isDirect := byteData == nil && refData != nil
@@ -84,16 +91,16 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 		o2 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: time.Now().Add(ttl)}
 	}
 
-	go c.Logger.Debug("memorycache cache store", tl.Pairs{"cacheKey": cacheKey, "length": l, "ttl": ttl, "is_direct": isDirect})
-
 	if o1 != nil && o2 != nil {
+		nl, _ := c.locker.Acquire(lockPrefix + cacheKey)
+		go c.Logger.Debug("memorycache cache store", tl.Pairs{"cacheKey": cacheKey, "length": l, "ttl": ttl, "is_direct": isDirect})
 		c.client.Store(cacheKey, o1)
 		if updateIndex {
 			c.Index.UpdateObject(o2)
 		}
+		nl.Release()
 	}
 
-	locks.Release(lockPrefix + cacheKey)
 	return nil
 }
 
@@ -123,9 +130,9 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 
 func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index.Object, status.LookupStatus, error) {
 
-	locks.Acquire(lockPrefix + cacheKey)
-
+	nl, _ := c.locker.RAcquire(lockPrefix + cacheKey)
 	record, ok := c.client.Load(cacheKey)
+	nl.RRelease()
 
 	if ok {
 		o := record.(*index.Object)
@@ -137,21 +144,18 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index
 				go c.Index.UpdateObjectAccessTime(cacheKey)
 			}
 			metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(o.Value)))
-			locks.Release(lockPrefix + cacheKey)
 			return o, status.LookupStatusHit, nil
 		}
 		// Cache Object has been expired but not reaped, go ahead and delete it
 		go c.remove(cacheKey, false)
 	}
-	locks.Release(lockPrefix + cacheKey)
 	_, err := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
 	return nil, status.LookupStatusKeyMiss, err
-
 }
 
 // SetTTL updates the TTL for the provided cache object
 func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
-	c.Index.UpdateObjectTTL(cacheKey, ttl)
+	go c.Index.UpdateObjectTTL(cacheKey, ttl)
 }
 
 // Remove removes an object from the cache
@@ -160,13 +164,13 @@ func (c *Cache) Remove(cacheKey string) {
 }
 
 func (c *Cache) remove(cacheKey string, isBulk bool) {
-	locks.Acquire(lockPrefix + cacheKey)
+	nl, _ := c.locker.Acquire(lockPrefix + cacheKey)
 	c.client.Delete(cacheKey)
+	nl.Release()
 	if !isBulk {
-		c.Index.RemoveObject(cacheKey)
+		go c.Index.RemoveObject(cacheKey)
 	}
 	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
-	locks.Release(lockPrefix + cacheKey)
 }
 
 // BulkRemove removes a list of objects from the cache

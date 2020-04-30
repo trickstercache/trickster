@@ -24,6 +24,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/metrics"
 	"github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/locks"
 	"github.com/tricksterproxy/trickster/pkg/util/log"
 
 	"github.com/dgraph-io/badger"
@@ -34,7 +35,17 @@ type Cache struct {
 	Name   string
 	Config *options.Options
 	Logger *log.Logger
-	dbh    *badger.DB
+	locker locks.NamedLocker
+
+	dbh *badger.DB
+}
+
+func (c *Cache) Locker() locks.NamedLocker {
+	return c.locker
+}
+
+func (c *Cache) SetLocker(l locks.NamedLocker) {
+	c.locker = l
 }
 
 // Configuration returns the Configuration for the Cache object

@@ -26,7 +26,6 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
-	"github.com/tricksterproxy/trickster/pkg/locks"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
@@ -46,6 +45,10 @@ func handleCacheKeyHit(pr *proxyRequest) error {
 
 	ok, err := confirmTrueCacheHit(pr)
 	if ok {
+		if pr.hasReadLock {
+			pr.cacheLock.RRelease()
+			pr.hasReadLock = false
+		}
 		return handleTrueCacheHit(pr)
 	}
 
@@ -64,6 +67,12 @@ func handleCachePartialHit(pr *proxyRequest) error {
 			// request to the correct handle; we just return its result here.
 			return err
 		}
+	}
+
+	b1, b2 := upgradeLock(pr)
+	if b1 && !b2 {
+		rerunRequest(pr)
+		return nil
 	}
 
 	pr.prepareUpstreamRequests()
@@ -137,6 +146,12 @@ func handleCacheRangeMiss(pr *proxyRequest) error {
 }
 
 func handleCacheRevalidation(pr *proxyRequest) error {
+
+	b1, b2 := upgradeLock(pr)
+	if b1 && !b2 {
+		rerunRequest(pr)
+		return nil
+	}
 
 	rsc := request.GetResources(pr.Request)
 	oc := rsc.OriginConfig
@@ -212,7 +227,9 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 		pr.cacheStatus = status.LookupStatusNegativeCacheHit
 	}
 
-	pr.upstreamResponse = &http.Response{StatusCode: d.StatusCode, Request: pr.Request, Header: d.Headers}
+	d.headerLock.Lock()
+	pr.upstreamResponse = &http.Response{StatusCode: d.StatusCode, Request: pr.Request, Header: http.Header(d.Headers).Clone()}
+	d.headerLock.Unlock()
 	if pr.wantsRanges {
 		h, b := d.RangeParts.ExtractResponseRange(pr.wantedRanges, d.ContentLength, d.ContentType, d.Body)
 		headers.Merge(pr.upstreamResponse.Header, h)
@@ -227,6 +244,12 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 
 func handleCacheKeyMiss(pr *proxyRequest) error {
 
+	b1, b2 := upgradeLock(pr)
+	if b1 && !b2 {
+		rerunRequest(pr)
+		return nil
+	}
+
 	rsc := request.GetResources(pr.Request)
 	pc := rsc.PathConfig
 	oc := rsc.OriginConfig
@@ -236,7 +259,8 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 		pcfResult, pcfExists := Reqs.Load(pr.key)
 		// a PCF session is in progress for this URL, join this client to it.
 		if pcfExists {
-			locks.Release(pr.key)
+			pr.cacheLock.Release()
+			pr.hasWriteLock = false
 			pcf := pcfResult.(ProgressiveCollapseForwarder)
 			pr.upstreamResponse = pcf.GetResp()
 			pr.responseWriter = PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode,
@@ -305,12 +329,16 @@ func handleResponse(pr *proxyRequest) error {
 	return nil
 }
 
-// Cache Status Response Handler Mappings
-var cacheResponseHandlers = map[status.LookupStatus]func(*proxyRequest) error{
-	status.LookupStatusHit:        handleCacheKeyHit,
-	status.LookupStatusPartialHit: handleCachePartialHit,
-	status.LookupStatusKeyMiss:    handleCacheKeyMiss,
-	status.LookupStatusRangeMiss:  handleCacheRangeMiss,
+var cacheResponseHandlers map[status.LookupStatus]func(*proxyRequest) error
+
+func init() {
+	// Cache Status Response Handler Mappings
+	cacheResponseHandlers = map[status.LookupStatus]func(*proxyRequest) error{
+		status.LookupStatusHit:        handleCacheKeyHit,
+		status.LookupStatusPartialHit: handleCachePartialHit,
+		status.LookupStatusKeyMiss:    handleCacheKeyMiss,
+		status.LookupStatusRangeMiss:  handleCacheRangeMiss,
+	}
 }
 
 func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, status.LookupStatus) {
@@ -324,7 +352,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 
 	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
 
-	pr.key = oc.CacheKeyPrefix + "." + pr.DeriveCacheKey(nil, "")
+	pr.key = oc.CacheKeyPrefix + ".opc." + pr.DeriveCacheKey(nil, "")
 
 	// if a PCF entry exists, or the client requested no-cache for this object, proxy out to it
 	pcfResult, pcfExists := Reqs.Load(pr.key)
@@ -332,9 +360,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 
 	if pr.isPCF || pr.cachingPolicy.NoCache {
 		if pr.cachingPolicy.NoCache {
-			locks.Acquire(pr.key)
 			cc.Remove(pr.key)
-			locks.Release(pr.key)
 			return nil, status.LookupStatusProxyOnly
 		}
 		pcf := pcfResult.(ProgressiveCollapseForwarder)
@@ -347,7 +373,8 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	pr.cachingPolicy.ParseClientConditionals()
 
 	if !rsc.NoLock {
-		locks.Acquire(pr.key)
+		pr.cacheLock, _ = cc.Locker().RAcquire(pr.key)
+		pr.hasReadLock = true
 	}
 
 	var err error
@@ -366,14 +393,20 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		handleCacheKeyMiss(pr)
 	}
 
-	if !rsc.NoLock {
-		locks.Release(pr.key)
+	if pr.hasWriteLock {
+		pr.cacheLock.Release()
+	} else if pr.hasReadLock {
+		pr.cacheLock.RRelease()
+	}
+
+	if pr.wasReran {
+		return nil, status.LookupStatusRevalidated
 	}
 
 	// newProxyRequest sets pr.started to time.Now()
 	pr.elapsed = time.Since(pr.started)
 	el := float64(pr.elapsed.Milliseconds()) / 1000.0
-	recordOPCResult(r, pr.cacheStatus, pr.upstreamResponse.StatusCode, r.URL.Path, el, pr.upstreamResponse.Header)
+	recordOPCResult(pr, pr.cacheStatus, pr.upstreamResponse.StatusCode, r.URL.Path, el, pr.upstreamResponse.Header)
 
 	return pr.upstreamResponse, pr.cacheStatus
 }
@@ -396,6 +429,33 @@ func FetchViaObjectProxyCache(r *http.Request) ([]byte, *http.Response, bool) {
 	return w.Bytes(), resp, cacheStatus == status.LookupStatusHit
 }
 
-func recordOPCResult(r *http.Request, cacheStatus status.LookupStatus, httpStatus int, path string, elapsed float64, header http.Header) {
-	recordResults(r, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, header)
+func recordOPCResult(pr *proxyRequest, cacheStatus status.LookupStatus, httpStatus int, path string, elapsed float64, header http.Header) {
+	pr.mapLock.Lock()
+	recordResults(pr.Request, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, header)
+	pr.mapLock.Unlock()
+}
+
+func upgradeLock(pr *proxyRequest) (bool, bool) {
+	if pr.hasReadLock && !pr.hasWriteLock {
+		cwc := pr.cacheLock.WriteLockCounter()
+		pr.cacheLock.Upgrade()
+		pr.hasReadLock = false
+		pr.hasWriteLock = true
+		if pr.cacheLock.WriteLockCounter()-cwc != 1 {
+			return true, false
+		}
+		return true, true
+	}
+	return false, false
+}
+
+func rerunRequest(pr *proxyRequest) {
+	pr.wasReran = true
+	if w, ok := pr.responseWriter.(http.ResponseWriter); ok {
+		if pr.hasWriteLock {
+			pr.cacheLock.Release()
+			pr.hasWriteLock = false
+		}
+		ObjectProxyCacheRequest(w, pr.Request)
+	}
 }

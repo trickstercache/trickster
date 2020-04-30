@@ -25,6 +25,7 @@ import (
 	io "github.com/tricksterproxy/trickster/pkg/cache/index/options"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/locks"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
@@ -34,13 +35,15 @@ const cacheKey = "cacheKey"
 type testReferenceObject struct {
 }
 
+var testLocker = locks.NewNamedLocker()
+
 func (r *testReferenceObject) Size() int {
 	return 1
 }
 
 func storeBenchmark(b *testing.B) Cache {
 	cacheConfig := co.Options{CacheType: cacheType, Index: &io.Options{ReapInterval: 0}}
-	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {
@@ -88,7 +91,7 @@ func TestCache_Connect(t *testing.T) {
 func TestCache_StoreReferenceDirect(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {
@@ -111,7 +114,7 @@ func TestCache_StoreReferenceDirect(t *testing.T) {
 
 func TestCache_StoreReference(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {
@@ -126,7 +129,7 @@ func TestCache_StoreReference(t *testing.T) {
 
 func TestCache_Store(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {
@@ -148,7 +151,7 @@ func TestCache_Retrieve(t *testing.T) {
 	const expected1 = `value for key [cacheKey] not in cache`
 
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {
@@ -159,6 +162,8 @@ func TestCache_Retrieve(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+
+	time.Sleep(time.Millisecond * 10)
 
 	// it should retrieve a value
 	var data []byte
@@ -176,6 +181,8 @@ func TestCache_Retrieve(t *testing.T) {
 
 	// expire the object
 	mc.SetTTL(cacheKey, -1*time.Hour)
+
+	time.Sleep(time.Millisecond * 10)
 
 	// this should now return error
 	data, ls, err = mc.Retrieve(cacheKey, false)
@@ -241,7 +248,7 @@ func TestCache_Close(t *testing.T) {
 
 func TestCache_Remove(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {
@@ -319,7 +326,7 @@ func BenchmarkCache_Remove(b *testing.B) {
 
 func TestCache_BulkRemove(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {
@@ -383,7 +390,7 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 func TestMemoryCache_SetTTL(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
+	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {
@@ -402,6 +409,8 @@ func TestMemoryCache_SetTTL(t *testing.T) {
 		t.Error(err)
 	}
 
+	time.Sleep(time.Millisecond * 10)
+
 	exp1 = mc.Index.GetExpiration(cacheKey)
 	if exp1.IsZero() {
 		t.Errorf("expected time %d, got zero", int(time.Now().Unix())+60)
@@ -410,6 +419,8 @@ func TestMemoryCache_SetTTL(t *testing.T) {
 	e1 := int(exp1.Unix())
 
 	mc.SetTTL(cacheKey, time.Duration(3600)*time.Second)
+
+	time.Sleep(time.Millisecond * 10)
 
 	exp2 := mc.Index.GetExpiration(cacheKey)
 	if exp2.IsZero() {
@@ -453,5 +464,15 @@ func BenchmarkCache_SetTTL(b *testing.B) {
 		if diff < expected {
 			b.Errorf("expected diff >= %d, got %d from: %d - %d", expected, diff, e2, e1)
 		}
+	}
+}
+
+func TestLocker(t *testing.T) {
+	cache := Cache{locker: locks.NewNamedLocker()}
+	l := cache.Locker()
+	cache.SetLocker(locks.NewNamedLocker())
+	m := cache.Locker()
+	if l == m {
+		t.Errorf("error setting locker")
 	}
 }
