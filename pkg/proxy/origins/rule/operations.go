@@ -63,23 +63,19 @@ func btos(t bool, negate bool) string {
 }
 
 func opStringEquality(input, arg string, negate bool) string {
-	t := input == arg
-	return btos(t, negate)
+	return btos(input == arg, negate)
 }
 
 func opStringContains(input, arg string, negate bool) string {
-	t := strings.Index(input, arg) > -1
-	return btos(t, negate)
+	return btos(strings.Contains(input, arg), negate)
 }
 
 func opStringPrefix(input, arg string, negate bool) string {
-	t := strings.HasPrefix(input, arg)
-	return btos(t, negate)
+	return btos(strings.HasPrefix(input, arg), negate)
 }
 
 func opStringSuffix(input, arg string, negate bool) string {
-	t := strings.HasSuffix(input, arg)
-	return btos(t, negate)
+	return btos(strings.HasSuffix(input, arg), negate)
 }
 
 func opStringMD5(input, arg string, negate bool) string {

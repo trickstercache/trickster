@@ -80,7 +80,6 @@ type Client struct {
 	healthMethod       string
 	trqParsers         map[string]trqParser
 	extentSetters      map[string]extentSetter
-	logUpstreamRequest bool
 	router             http.Handler
 }
 

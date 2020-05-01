@@ -43,7 +43,6 @@ type Client struct {
 	healthURL          *url.URL
 	healthMethod       string
 	healthHeaders      http.Header
-	logUpstreamRequest bool
 	router             http.Handler
 }
 

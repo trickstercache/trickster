@@ -119,9 +119,10 @@ func TestNewListenerTLS(t *testing.T) {
 	}
 
 	l, err := NewListener("", 0, 0, tlsConfig, tl.ConsoleLogger("error"))
-	defer l.Close()
 	if err != nil {
 		t.Error(err)
+	} else {
+		defer l.Close()
 	}
 
 }
@@ -175,7 +176,11 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 	for _, tc := range tt {
 		t.Run(tc.Name, func(t *testing.T) {
 			l, err := NewListener("", tc.ListenPort, tc.ConnectionsLimit, nil, tl.ConsoleLogger("error"))
-			defer l.Close()
+			if err != nil {
+				t.Fatal(err)
+			} else {
+				defer l.Close()
+			}
 
 			go func() {
 				http.Serve(l, mux.NewRouter())

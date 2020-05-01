@@ -63,7 +63,6 @@ type namedLock struct {
 	queueSize      int32
 	writeLockCount int
 	writeLockMode  int32
-	releaser       func()
 	locker         *namedLocker
 }
 
@@ -136,10 +135,8 @@ func (nl *namedLock) Upgrade() (NamedLock, error) {
 	}()
 
 	// once we know the write lock queueSize is incremented, we can release our read lock
-	select {
-	case <-ch:
-		nl.RRelease()
-	}
+	<-ch
+	nl.RRelease()
 
 	// wait until write mode is set, read lock is released, and write lock is acquired
 	wg.Wait()

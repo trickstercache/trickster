@@ -307,7 +307,7 @@ func TestLoadTOMLConfig(t *testing.T) {
 func TestIsStale(t *testing.T) {
 
 	testFile := fmt.Sprintf("/tmp/trickster_test_config.%d.conf", time.Now().UnixNano())
-	c, tml := emptyTestConfig()
+	_, tml := emptyTestConfig()
 
 	err := ioutil.WriteFile(testFile, []byte(tml), 0666)
 	if err != nil {
@@ -315,7 +315,7 @@ func TestIsStale(t *testing.T) {
 	}
 	defer os.Remove(testFile)
 
-	c, _, _ = Load("testing", "testing", []string{"-config", testFile})
+	c, _, _ := Load("testing", "testing", []string{"-config", testFile})
 	c.ReloadConfig.RateLimitSecs = 0
 
 	if c.IsStale() {

@@ -140,9 +140,9 @@ func TestPCFWaits(t *testing.T) {
 		var err error
 		for {
 			n, err = r.Read(buf)
-			if err != nil && n != 0 {
-
-			}
+			 if err != nil && n != 0 {
+				 break
+			 }
 			time.Sleep(50 * time.Millisecond)
 			n, err = pcf.Write(buf)
 			if err != nil && n == 0 {
