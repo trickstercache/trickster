@@ -28,6 +28,7 @@ import (
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	rule "github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	rwo "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
@@ -57,6 +58,10 @@ func TestClone(t *testing.T) {
 	oc.FastForwardPath = po.NewOptions()
 	oc.TLS = &to.Options{CertificateAuthorityPaths: []string{"foo"}}
 	oc.HealthCheckHeaders = map[string]string{headers.NameAuthorization: expected}
+
+	c1.Rules = map[string]*rule.Options{
+		"test": {},
+	}
 
 	c2 := c1.Clone()
 	x := c2.Origins["default"].HealthCheckHeaders[headers.NameAuthorization]

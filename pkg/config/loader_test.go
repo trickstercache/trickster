@@ -83,6 +83,10 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 			"../../testdata/test.invalid-negative-cache-3.conf",
 			`invalid negative cache name: foo`,
 		},
+		{ // Case 7
+			"../../testdata/test.invalid-pcf-name.conf",
+			`invalid collapsed_forwarding name: INVALID`,
+		},
 	}
 
 	for i, test := range tests {
