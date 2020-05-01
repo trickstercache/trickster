@@ -19,7 +19,7 @@ package jaeger
 
 import (
 	"github.com/tricksterproxy/trickster/pkg/tracing"
-	tre "github.com/tricksterproxy/trickster/pkg/tracing/errors"
+	errs "github.com/tricksterproxy/trickster/pkg/tracing/errors"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 
 	"go.opentelemetry.io/otel/api/core"
@@ -36,7 +36,7 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 	var flusher func()
 
 	if options == nil {
-		return nil, tre.ErrNoTracerOptions
+		return nil, errs.ErrNoTracerOptions
 	}
 
 	var sampler sdktrace.Sampler

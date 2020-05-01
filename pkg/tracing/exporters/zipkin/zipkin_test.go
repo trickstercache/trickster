@@ -20,14 +20,14 @@ package zipkin
 import (
 	"testing"
 
-	tre "github.com/tricksterproxy/trickster/pkg/tracing/errors"
+	errs "github.com/tricksterproxy/trickster/pkg/tracing/errors"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 )
 
 func TestNewTracer(t *testing.T) {
 
 	_, err := NewTracer(nil)
-	if err != tre.ErrNoTracerOptions {
+	if err != errs.ErrNoTracerOptions {
 		t.Error("expected error for no tracer options")
 	}
 
