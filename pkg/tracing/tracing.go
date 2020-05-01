@@ -21,6 +21,7 @@ import (
 	"net/http"
 
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
+
 	"go.opentelemetry.io/otel/api/trace"
 	"google.golang.org/grpc/codes"
 )

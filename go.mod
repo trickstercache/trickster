@@ -29,6 +29,7 @@ require (
 	go.opentelemetry.io/otel v0.4.3
 	go.opentelemetry.io/otel/exporters/trace/jaeger v0.4.3
 	golang.org/x/net v0.0.0-20200114155413-6afb5195e5aa
+	google.golang.org/grpc v1.27.1
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
