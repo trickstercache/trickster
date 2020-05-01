@@ -21,6 +21,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 
+	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/key"
 	"go.opentelemetry.io/otel/exporters/trace/stdout"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -62,11 +64,17 @@ func NewTracer(opts *options.Options) (*tracing.Tracer, error) {
 		sampler = sdktrace.ProbabilitySampler(opts.SampleRate)
 	}
 
-	// TODO: SET ATTRIBUTES
-	//	sdktrace.WithResourceAttributes(key.String("rk1", "rv11"), key.Int64("rk2", 5)))
+	var tags []core.KeyValue
+	if opts.Tags != nil && len(opts.Tags) > 0 {
+		tags = make([]core.KeyValue, len(opts.Tags))
+		for k, v := range opts.Tags {
+			tags = append(tags, key.String(k, v))
+		}
+	}
 
 	tp, err := sdktrace.NewProvider(sdktrace.WithSyncer(exp),
 		sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sampler}),
+		sdktrace.WithResourceAttributes(tags...),
 	)
 	if err != nil {
 		return nil, err

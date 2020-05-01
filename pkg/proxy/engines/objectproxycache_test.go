@@ -681,26 +681,6 @@ func TestObjectProxyCacheIMS(t *testing.T) {
 	for _, err = range e {
 		t.Error(err)
 	}
-
-	//t.Errorf("%s", "foo")
-
-}
-
-func TestObjectProxyCacheIUS(t *testing.T) {
-
-	// TODO: how does this test IUS???
-
-	headers := map[string]string{"Cache-Control": "max-age=60"}
-	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
 }
 
 func TestObjectProxyCacheINM(t *testing.T) {

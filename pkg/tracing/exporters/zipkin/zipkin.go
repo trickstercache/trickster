@@ -56,8 +56,6 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 		}
 	}
 
-	// TODO: USE THE TAGS
-
 	exporter, err := zipkin.NewExporter(
 		options.CollectorURL,
 		options.ServiceName,
@@ -72,6 +70,7 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 			sdktrace.WithScheduleDelayMillis(5),
 			sdktrace.WithMaxExportBatchSize(10),
 		),
+		sdktrace.WithResourceAttributes(tags...),
 	)
 	if err != nil {
 		return nil, err
