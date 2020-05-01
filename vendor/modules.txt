@@ -81,6 +81,8 @@ github.com/matttproud/golang_protobuf_extensions/pbutil
 ## explicit
 # github.com/onsi/gomega v1.7.0
 ## explicit
+# github.com/openzipkin/zipkin-go v0.2.2
+github.com/openzipkin/zipkin-go/model
 # github.com/philhofer/fwd v1.0.0
 ## explicit
 github.com/philhofer/fwd
@@ -147,6 +149,9 @@ go.opentelemetry.io/otel/sdk/trace/internal
 ## explicit
 go.opentelemetry.io/otel/exporters/trace/jaeger
 go.opentelemetry.io/otel/exporters/trace/jaeger/internal/gen-go/jaeger
+# go.opentelemetry.io/otel/exporters/trace/zipkin v0.4.3
+## explicit
+go.opentelemetry.io/otel/exporters/trace/zipkin
 # golang.org/x/net v0.0.0-20200114155413-6afb5195e5aa
 ## explicit
 golang.org/x/net/internal/timeseries
