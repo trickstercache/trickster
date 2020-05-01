@@ -27,7 +27,7 @@ import (
 // indicates the request did not succeed due to a request error or origin-side error
 var ErrUnexpectedUpstreamResponse = errors.New("unexpected upstream response")
 
-// ErrEmptyDocumentBody indicates a cached object did not contain an HTTP Document upon retreival
+// ErrEmptyDocumentBody indicates a cached object did not contain an HTTP Document upon retrieval
 var ErrEmptyDocumentBody = errors.New("empty document body")
 
 // ErrStepParse indicates an error parsing the step interval of a time series request
