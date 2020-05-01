@@ -43,10 +43,12 @@ type Cache struct {
 	locker locks.NamedLocker
 }
 
+// Locker returns the cache's locker
 func (c *Cache) Locker() locks.NamedLocker {
 	return c.locker
 }
 
+// SetLocker sets the cache's locker
 func (c *Cache) SetLocker(l locks.NamedLocker) {
 	c.locker = l
 }

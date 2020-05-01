@@ -23,6 +23,7 @@ import (
 	"go.opentelemetry.io/otel/api/trace"
 )
 
+// NewTracer returns a new Noop Tracer
 func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 	tracer := &tracing.Tracer{
 		Options: options,

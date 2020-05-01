@@ -25,6 +25,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
+// NewTracer returns a new Stdout Tracer
 func NewTracer(opts *options.Options) (*tracing.Tracer, error) {
 
 	var exp *stdout.Exporter

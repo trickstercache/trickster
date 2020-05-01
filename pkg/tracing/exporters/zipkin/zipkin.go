@@ -28,13 +28,14 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
+// NewTracer returns a new Zipkin Tracer
 func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 
 	var tp *sdktrace.Provider
 	var err error
 
 	if options == nil {
-		return nil, te.NoTracerOptions
+		return nil, te.ErrNoTracerOptions
 	}
 
 	var sampler sdktrace.Sampler

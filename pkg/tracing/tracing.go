@@ -26,8 +26,10 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
+// FlusherFunc defines a function used to Flush a Tracer
 type FlusherFunc func()
 
+// Tracer is a Tracer object used by Trickster
 type Tracer struct {
 	trace.Tracer
 	Name    string
@@ -35,6 +37,7 @@ type Tracer struct {
 	Options *options.Options
 }
 
+// Tracers is a map of *Tracer objects
 type Tracers map[string]*Tracer
 
 // HTTPToCode translates an HTTP status code into a GRPC code

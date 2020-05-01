@@ -16,10 +16,12 @@
 
 package options
 
+// Options is a collection of Stdout-specific options
 type Options struct {
 	PrettyPrint bool `toml:"pretty_print"`
 }
 
+// Clone returns a perfect copy of the subject *Options
 func (o *Options) Clone() *Options {
 	return &Options{PrettyPrint: o.PrettyPrint}
 }

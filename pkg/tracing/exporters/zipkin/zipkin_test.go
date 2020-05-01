@@ -27,7 +27,7 @@ import (
 func TestNewTracer(t *testing.T) {
 
 	_, err := NewTracer(nil)
-	if err != te.NoTracerOptions {
+	if err != te.ErrNoTracerOptions {
 		t.Error("expected error for no tracer options")
 	}
 

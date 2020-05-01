@@ -198,7 +198,6 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		var t2 tracing.Tracers
 		if !tracerFlusherSet {
 			t2 = tracers
-			tracerFlusherSet = true
 		}
 
 		go startListener("httpListener",

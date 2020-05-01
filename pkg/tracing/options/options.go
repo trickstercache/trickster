@@ -24,6 +24,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/util/strings"
 )
 
+// Options is a Tracing Options collection
 type Options struct {
 	Name          string            `toml:"-"`
 	TracerType    string            `toml:"tracer_type"`

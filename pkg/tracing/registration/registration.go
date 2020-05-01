@@ -80,6 +80,7 @@ func RegisterAll(cfg *config.Config, log *tl.Logger) (tracing.Tracers, error) {
 	return tracers, nil
 }
 
+// GetTracer returns a *Tracer based on the provided options
 func GetTracer(options *options.Options, log *tl.Logger) (*tracing.Tracer, error) {
 
 	if options == nil {

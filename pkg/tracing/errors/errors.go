@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-// Package jaeger provides a Jager Tracer
+// Package errors provides tracing errors
 package errors
 
 import "errors"
 
-var NoTracerOptions = errors.New("no tracer options provided")
+// ErrNoTracerOptions is an error when the user calls GetTracer with nil *Options
+var ErrNoTracerOptions = errors.New("no tracer options provided")

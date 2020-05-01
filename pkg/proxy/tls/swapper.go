@@ -31,6 +31,7 @@ type CertSwapper struct {
 
 var errNoCertificates = errors.New("tls: no certificates configured")
 
+// NewSwapper returns a new *CertSwapper based on the provided certList
 func NewSwapper(certList []tls.Certificate) *CertSwapper {
 	return &CertSwapper{
 		Mutex:        &sync.Mutex{},
@@ -38,6 +39,7 @@ func NewSwapper(certList []tls.Certificate) *CertSwapper {
 	}
 }
 
+// GetCert returns the best-matching certificate for the provided clientHello
 func (c *CertSwapper) GetCert(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	c.Lock()
 	defer c.Unlock()
@@ -61,6 +63,7 @@ func (c *CertSwapper) GetCert(clientHello *tls.ClientHelloInfo) (*tls.Certificat
 	return &c.Certificates[0], nil
 }
 
+// SetCerts safely updates the certs list for the subject *CertSwapper
 func (c *CertSwapper) SetCerts(certs []tls.Certificate) {
 	c.Lock()
 	defer c.Unlock()

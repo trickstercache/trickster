@@ -28,6 +28,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
+// NewTracer returns a new Jaeger Tracer based on the provided options
 func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 
 	var tp *sdktrace.Provider
@@ -35,7 +36,7 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 	var flusher func()
 
 	if options == nil {
-		return nil, te.NoTracerOptions
+		return nil, te.ErrNoTracerOptions
 	}
 
 	var sampler sdktrace.Sampler
