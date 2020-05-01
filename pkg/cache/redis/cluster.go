@@ -17,15 +17,13 @@
 package redis
 
 import (
-	"fmt"
-
 	"github.com/go-redis/redis"
 )
 
 func (c *Cache) clusterOpts() (*redis.ClusterOptions, error) {
 
 	if len(c.Config.Redis.Endpoints) == 0 {
-		return nil, fmt.Errorf("Invalid 'endpoints' config")
+		return nil, ErrInvalidEndpointsConfig
 	}
 
 	o := &redis.ClusterOptions{

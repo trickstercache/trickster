@@ -18,8 +18,6 @@ package engines
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
@@ -29,6 +27,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
+	tpe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -145,7 +144,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// Load the Cached Timeseries
 			if doc == nil {
-				err = errors.New("empty document body")
+				err = tpe.ErrEmptyDocumentBody
 			} else {
 				if cc.CacheType == "memory" {
 					cts = doc.timeseries
@@ -233,7 +232,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		// now we have the write lock. so we can check if the write lock counter incremented by 1
 		// or more. If the difference is just 1, that means this request was the first to acquire
 		// a write lock following all of the read locks being released. That means it is good to
-		// proceed with upstream communciations and caching. when the difference is > 1, it means
+		// proceed with upstream communications and caching. when the difference is > 1, it means
 		// another requests was first to acquire the mutex, and we have no idea what changed in
 		// the cache since between when we queried, and the other requests with the lock serviced
 		// so in that case, we will just send the request back through the DPC from the top in
@@ -459,7 +458,7 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 				"upstreamResponseBody":    string(body),
 			},
 		)
-		return nil, d, time.Duration(0), fmt.Errorf("Unexpected Upstream Response")
+		return nil, d, time.Duration(0), tpe.ErrUnexpectedUpstreamResponse
 	}
 
 	ts, err := client.UnmarshalTimeseries(body)

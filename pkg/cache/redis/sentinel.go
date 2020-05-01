@@ -17,19 +17,17 @@
 package redis
 
 import (
-	"fmt"
-
 	"github.com/go-redis/redis"
 )
 
 func (c *Cache) sentinelOpts() (*redis.FailoverOptions, error) {
 
 	if len(c.Config.Redis.Endpoints) == 0 {
-		return nil, fmt.Errorf("Invalid 'endpoints' config")
+		return nil, ErrInvalidEndpointsConfig
 	}
 
 	if c.Config.Redis.SentinelMaster == "" {
-		return nil, fmt.Errorf("Invalid 'sentinel_master' config")
+		return nil, ErrInvalidSentinalMasterConfig
 	}
 
 	o := &redis.FailoverOptions{

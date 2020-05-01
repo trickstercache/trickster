@@ -73,7 +73,7 @@ const (
 	DefaultFastForwardTTLSecs = 15
 	// DefaultMaxTTLSecs is the default Maximum TTL of any cache object
 	DefaultMaxTTLSecs = 86400
-	// DefaultRevalidationFactor is the default Cache Object Freshness Lifetime to TTL mulitplier
+	// DefaultRevalidationFactor is the default Cache Object Freshness Lifetime to TTL multiplier
 	DefaultRevalidationFactor = 2
 	// DefaultRedisClientType is the default Redis Client Type
 	DefaultRedisClientType = "standard"

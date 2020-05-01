@@ -70,7 +70,7 @@ type namedLock struct {
 func (nl *namedLock) Release() error {
 
 	if nl.name == "" {
-		return fmt.Errorf("invalid lock name: %s", nl.name)
+		return errInvalidLockName(nl.name)
 	}
 
 	atomic.StoreInt32(&nl.writeLockMode, 0)
@@ -89,7 +89,7 @@ func (nl *namedLock) Release() error {
 func (nl *namedLock) RRelease() error {
 
 	if nl.name == "" {
-		return fmt.Errorf("invalid lock name: %s", nl.name)
+		return errInvalidLockName(nl.name)
 	}
 
 	qs := atomic.AddInt32(&nl.queueSize, -1)
@@ -136,6 +136,7 @@ func (nl *namedLock) Upgrade() (NamedLock, error) {
 
 	// once we know the write lock queueSize is incremented, we can release our read lock
 	<-ch
+	close(ch)
 	nl.RRelease()
 
 	// wait until write mode is set, read lock is released, and write lock is acquired
@@ -147,7 +148,7 @@ func (nl *namedLock) Upgrade() (NamedLock, error) {
 // Acquire locks the named lock for writing, and blocks until the wlock is acquired
 func (lk *namedLocker) Acquire(lockName string) (NamedLock, error) {
 	if lockName == "" {
-		return nil, fmt.Errorf("invalid lock name: %s", lockName)
+		return nil, errInvalidLockName(lockName)
 	}
 
 	lk.mapLock.Lock()
@@ -169,7 +170,7 @@ func (lk *namedLocker) Acquire(lockName string) (NamedLock, error) {
 // RAcquire locks the named lock for reading, and blocks until the rlock is acquired
 func (lk *namedLocker) RAcquire(lockName string) (NamedLock, error) {
 	if lockName == "" {
-		return nil, fmt.Errorf("invalid lock name: %s", lockName)
+		return nil, errInvalidLockName(lockName)
 	}
 
 	lk.mapLock.Lock()
@@ -185,4 +186,8 @@ func (lk *namedLocker) RAcquire(lockName string) (NamedLock, error) {
 
 	nl.RLock()
 	return nl, nil
+}
+
+func errInvalidLockName(name string) error {
+	return fmt.Errorf("invalid lock name: %s", name)
 }

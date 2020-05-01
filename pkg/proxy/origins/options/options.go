@@ -295,7 +295,7 @@ func (oc *Options) Clone() *Options {
 }
 
 // ValidateOriginName ensures the origin name is permitted against the dictionary of
-// restructed words
+// restricted words
 func ValidateOriginName(name string) error {
 	if _, ok := restrictedOriginNames[name]; ok {
 		return errors.New("invalid origin name:" + name)
