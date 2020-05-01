@@ -1175,3 +1175,22 @@ func TestFetchViaObjectProxyCacheRequestErroringCache(t *testing.T) {
 		t.Errorf("expected %t got %t", false, b)
 	}
 }
+
+func TestRerunRequest(t *testing.T) {
+	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer ts.Close()
+	}
+	w := httptest.NewRecorder()
+	pr := newProxyRequest(r, w)
+	locker := locks.NewNamedLocker()
+	nl, _ := locker.Acquire("test")
+	pr.cacheLock = nl
+	pr.hasWriteLock = true
+	rerunRequest(pr)
+	if !pr.wasReran {
+		t.Error("expected true")
+	}
+}

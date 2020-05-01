@@ -17,6 +17,7 @@
 package prometheus
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
@@ -46,6 +48,7 @@ func TestSetExtent(t *testing.T) {
 	client := Client{config: oc}
 
 	u := &url.URL{RawQuery: "q=up"}
+
 	r, _ := http.NewRequest(http.MethodGet, u.String(), nil)
 	e := &timeseries.Extent{Start: start, End: end}
 	client.SetExtent(r, nil, e)
@@ -53,6 +56,18 @@ func TestSetExtent(t *testing.T) {
 	if expected != r.URL.RawQuery {
 		t.Errorf("\nexpected [%s]\ngot [%s]", expected, r.URL.RawQuery)
 	}
+
+	u2 := urls.Clone(u)
+	u2.RawQuery = ""
+
+	b := bytes.NewBufferString(expected)
+	r, _ = http.NewRequest(http.MethodPost, u2.String(), b)
+
+	client.SetExtent(r, nil, e)
+	if r.ContentLength != 31 {
+		t.Errorf("expected 31 got %d", r.ContentLength)
+	}
+
 }
 
 func TestFastForwardURL(t *testing.T) {
