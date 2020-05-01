@@ -41,9 +41,9 @@ func (r *testReferenceObject) Size() int {
 	return 1
 }
 
-func storeBenchmark(b *testing.B) Cache {
+func storeBenchmark(b *testing.B) *Cache {
 	cacheConfig := co.Options{CacheType: cacheType, Index: &io.Options{ReapInterval: 0}}
-	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: testLocker}
+	mc := &Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {
