@@ -20,14 +20,14 @@ package jaeger
 import (
 	"testing"
 
-	te "github.com/tricksterproxy/trickster/pkg/tracing/errors"
+	tre "github.com/tricksterproxy/trickster/pkg/tracing/errors"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 )
 
 func TestNewTracer(t *testing.T) {
 
 	_, err := NewTracer(nil)
-	if err != te.ErrNoTracerOptions {
+	if err != tre.ErrNoTracerOptions {
 		t.Error("expected error for no tracer options")
 	}
 

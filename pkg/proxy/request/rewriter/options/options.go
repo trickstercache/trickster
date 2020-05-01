@@ -24,7 +24,7 @@ type Options struct {
 	Instructions RewriteList `toml:"instructions"`
 }
 
-// Clone returns an exact copy fo the subject *Options
+// Clone returns an exact copy of the subject *Options
 func (o *Options) Clone() *Options {
 	o2 := &Options{}
 	if len(o.Instructions) > 0 {
