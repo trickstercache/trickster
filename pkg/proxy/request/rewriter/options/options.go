@@ -23,3 +23,25 @@ type RewriteList [][]string
 type Options struct {
 	Instructions RewriteList `toml:"instructions"`
 }
+
+// Clone returns an exact copy fo the subject *Options
+func (o *Options) Clone() *Options {
+	o2 := &Options{}
+	if len(o.Instructions) > 0 {
+		o2.Instructions = o.Instructions.Clone()
+	}
+	return o2
+}
+
+// Clone returns an exact copy of the subject RewriteList
+func (rl RewriteList) Clone() RewriteList {
+	var rl2 RewriteList
+	if len(rl) > 0 {
+		rl2 = make(RewriteList, len(rl))
+		for i := range rl {
+			rl2[i] = make([]string, len(rl[i]))
+			copy(rl2[i], rl[i])
+		}
+	}
+	return rl2
+}

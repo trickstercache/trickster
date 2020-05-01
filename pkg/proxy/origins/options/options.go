@@ -288,12 +288,10 @@ func (oc *Options) Clone() *Options {
 	}
 
 	if oc.RuleOptions != nil {
-		// TODO: make clone func for this
-		// o.RuleOptions = oc.RuleOptions.Clone()
+		o.RuleOptions = oc.RuleOptions.Clone()
 	}
 
 	return o
-
 }
 
 // ValidateOriginName ensures the origin name is permitted against the dictionary of

@@ -472,8 +472,10 @@ func (c *Config) processOriginConfigs(metadata *toml.MetaData) error {
 					p.ResponseBodyBytes = []byte(p.ResponseBody)
 					p.HasCustomResponseBody = true
 				}
-				// TODO: return error condition in v1.1 if user-provided pcf name is invalid
 				if metadata.IsDefined("origins", k, "paths", l, "collapsed_forwarding") {
+					if _, ok := forwarding.CollapsedForwardingTypeNames[p.CollapsedForwardingName]; !ok {
+						return fmt.Errorf("invalid collapsed_forwarding name: %s", p.CollapsedForwardingName)
+					}
 					p.CollapsedForwardingType =
 						forwarding.GetCollapsedForwardingType(p.CollapsedForwardingName)
 				} else {
@@ -757,11 +759,19 @@ func (c *Config) Clone() *Config {
 		nc.TracingConfigs[k] = v.Clone()
 	}
 
-	nc.Rules = c.Rules
-	// TODO clone rules instead of passing reference
+	if c.Rules != nil && len(c.Rules) > 0 {
+		nc.Rules = make(map[string]*rule.Options)
+		for k, v := range c.Rules {
+			nc.Rules[k] = v.Clone()
+		}
+	}
 
-	nc.RequestRewriters = c.RequestRewriters
-	// TODO: clone rewriters instead of passing reference
+	if c.RequestRewriters != nil && len(c.RequestRewriters) > 0 {
+		nc.RequestRewriters = make(map[string]*rwopts.Options)
+		for k, v := range c.RequestRewriters {
+			nc.RequestRewriters[k] = v.Clone()
+		}
+	}
 
 	return nc
 }
