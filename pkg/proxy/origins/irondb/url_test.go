@@ -54,7 +54,7 @@ func TestSetExtent(t *testing.T) {
 	client.makeExtentSetters()
 
 	pcs := client.DefaultPathConfigs(oc)
-	rsc := request.NewResources(oc, nil, nil, nil, client, tl.ConsoleLogger("error"))
+	rsc := request.NewResources(oc, nil, nil, nil, client, nil, tl.ConsoleLogger("error"))
 
 	cases := []struct {
 		handler  string
@@ -213,7 +213,7 @@ func TestFastForwardURL(t *testing.T) {
 
 	pcs := client.DefaultPathConfigs(oc)
 
-	rsc := request.NewResources(oc, nil, nil, nil, client, tl.ConsoleLogger("error"))
+	rsc := request.NewResources(oc, nil, nil, nil, client, nil, tl.ConsoleLogger("error"))
 
 	cases := []struct {
 		handler string
@@ -340,7 +340,7 @@ func TestParseTimerangeQuery(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 
 	r = request.SetResources(r, request.NewResources(client.config, &po.Options{},
-		nil, nil, client, tl.ConsoleLogger("error")))
+		nil, nil, client, nil, tl.ConsoleLogger("error")))
 
 	_, err := client.ParseTimeRangeQuery(r)
 	if err == nil || err != expected {

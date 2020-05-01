@@ -33,8 +33,9 @@ import (
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/runtime"
+	"github.com/tricksterproxy/trickster/pkg/tracing"
+	tr "github.com/tricksterproxy/trickster/pkg/tracing/registration"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
-	tr "github.com/tricksterproxy/trickster/pkg/util/tracing/registration"
 
 	"github.com/tricksterproxy/mockster/pkg/testutil"
 )
@@ -119,15 +120,21 @@ func NewTestInstance(
 	oc := conf.Origins["default"]
 	p := NewTestPathConfig(oc, DefaultPathConfigs, urlPath)
 
-	tracer, _, _ := tr.Init(oc.TracingConfig, tl.ConsoleLogger("error"))
-	// TODO worry about running closures for cleanup once the test is complete
-	oc.TracingConfig.Tracer = tracer
+	var tracer *tracing.Tracer
+
+	logger := tl.ConsoleLogger("error")
+
+	if oc.TracingConfigName != "" {
+		if tc, ok := conf.TracingConfigs[oc.TracingConfigName]; ok {
+			tracer, _ = tr.GetTracer(tc, logger)
+		}
+	}
 
 	if !isBasicTestServer && respHeaders != nil {
 		p.ResponseHeaders = respHeaders
 	}
 
-	rsc := request.NewResources(oc, p, cache.Configuration(), cache, nil, tl.ConsoleLogger("error"))
+	rsc := request.NewResources(oc, p, cache.Configuration(), cache, nil, tracer, logger)
 	r = r.WithContext(tc.WithResources(r.Context(), rsc))
 
 	c := NewTestWebClient()

@@ -30,8 +30,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	"github.com/tricksterproxy/trickster/pkg/tracing/span"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
-	"github.com/tricksterproxy/trickster/pkg/util/tracing"
 
 	"github.com/golang/snappy"
 	kv "go.opentelemetry.io/otel/api/key"
@@ -41,9 +41,8 @@ import (
 func QueryCache(ctx context.Context, c cache.Cache, key string, ranges byterange.Ranges) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
 
 	rsc := tc.Resources(ctx).(*request.Resources)
-	oc := rsc.OriginConfig
 
-	ctx, span := tracing.NewChildSpan(ctx, oc.TracingConfig.Tracer, "QueryCache")
+	ctx, span := span.NewChildSpan(ctx, rsc.Tracer, "QueryCache")
 	defer span.End()
 
 	d := &HTTPDocument{}
@@ -159,9 +158,8 @@ func stripConditionalHeaders(h http.Header) {
 func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument, ttl time.Duration, compressTypes map[string]bool) error {
 
 	rsc := tc.Resources(ctx).(*request.Resources)
-	oc := rsc.OriginConfig
 
-	ctx, span := tracing.NewChildSpan(ctx, oc.TracingConfig.Tracer, "WriteCache")
+	ctx, span := span.NewChildSpan(ctx, rsc.Tracer, "WriteCache")
 	defer span.End()
 
 	h := http.Header(d.Headers)

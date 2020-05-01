@@ -43,7 +43,7 @@ import (
 	rewriter "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	rwopts "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
-	tracing "github.com/tricksterproxy/trickster/pkg/util/tracing/options"
+	tracing "github.com/tricksterproxy/trickster/pkg/tracing/options"
 
 	"github.com/BurntSushi/toml"
 )
@@ -257,11 +257,13 @@ func (c *Config) setDefaults(metadata *toml.MetaData) error {
 		}
 	}
 
-	tracing.ProcessTracingConfigs(c.TracingConfigs, metadata)
-
 	if err = c.processOriginConfigs(metadata); err != nil {
 		return err
 	}
+
+	tracing.ProcessTracingOptions(c.TracingConfigs, metadata)
+
+	//_, err = tracereg.RegisterAll()
 
 	c.processCachingConfigs(metadata)
 

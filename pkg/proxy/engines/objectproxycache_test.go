@@ -825,14 +825,15 @@ func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
 	cfg.Paths = map[string]*po.Options{
 		"/": pc,
 	}
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig, rsc.CacheClient, rsc.OriginClient, rsc.Logger)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig,
+		rsc.CacheClient, rsc.OriginClient, nil, rsc.Logger)))
 
 	_, e := testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "kmiss"})
 	for _, err = range e {
 		t.Error(err)
 	}
 
-	// request again, should still cache miss, but this time, put 404's into the Negative Cache for 30s
+	// request again, should still cache miss, but this time, Negative Cache 404's for 30s
 	cfg.NegativeCache[404] = time.Second * 30
 
 	_, e = testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "kmiss"})

@@ -32,9 +32,9 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
-	"github.com/tricksterproxy/trickster/pkg/util/tracing"
 )
 
 // DeltaProxyCache is used for Time Series Acceleration, but not for normal HTTP Object Caching
@@ -47,8 +47,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	rsc := request.GetResources(r)
 	oc := rsc.OriginConfig
 
-	ctx, span := tracing.NewChildSpan(r.Context(),
-		oc.TracingConfig.Tracer, "DeltaProxyCacheRequest")
+	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "DeltaProxyCacheRequest")
 	defer span.End()
 
 	pc := rsc.PathConfig
@@ -289,7 +288,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		go func(e *timeseries.Extent, rq *proxyRequest) {
 			defer wg.Done()
 			rq.Request = rq.WithContext(tctx.WithResources(r.Context(),
-				request.NewResources(oc, pc, cc, cache, client, pr.Logger)))
+				request.NewResources(oc, pc, cc, cache, client, rsc.Tracer, pr.Logger)))
 			client.SetExtent(rq.upstreamRequest, trq, e)
 			body, resp, _ := rq.Fetch()
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
@@ -316,12 +315,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	if (!trq.FastForwardDisable) &&
 		(trq.Extent.End.Equal(normalizedNow.Extent.End)) && ffURL.Scheme != "" {
 		wg.Add(1)
-		rs := request.NewResources(oc, oc.FastForwardPath, cc, cache, client, pr.Logger)
+		rs := request.NewResources(oc, oc.FastForwardPath, cc, cache, client, rsc.Tracer, pr.Logger)
 		rs.AlternateCacheTTL = oc.FastForwardTTL
 		req := r.Clone(tctx.WithResources(context.Background(), rs))
 		go func() {
 			defer wg.Done()
-			_, span := tracing.NewChildSpan(ctx, oc.TracingConfig.Tracer, "FastForward")
+			_, span := tspan.NewChildSpan(ctx, rsc.Tracer, "FastForward")
 			defer span.End()
 
 			// create a new context that uses the fast forward path

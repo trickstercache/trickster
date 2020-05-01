@@ -97,7 +97,7 @@ func TestFetchHandlerSetExtent(t *testing.T) {
 		t.Error(err)
 	}
 
-	r = request.SetResources(r, request.NewResources(cfg, nil, nil, nil, client, tl.ConsoleLogger("error")))
+	r = request.SetResources(r, request.NewResources(cfg, nil, nil, nil, client, nil, tl.ConsoleLogger("error")))
 
 	now := time.Now()
 	then := now.Add(-5 * time.Hour)

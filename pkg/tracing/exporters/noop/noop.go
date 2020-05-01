@@ -14,42 +14,22 @@
  * limitations under the License.
  */
 
-package tracing
+// Package noop provides a Noop Tracer
+package noop
 
 import (
-	"context"
-
-	"go.opentelemetry.io/otel/api/core"
+	"github.com/tricksterproxy/trickster/pkg/tracing"
+	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 	"go.opentelemetry.io/otel/api/trace"
 )
 
-// NewChildSpan returns the context with a new Span situated as the child of the previous span
-func NewChildSpan(ctx context.Context, tr trace.Tracer, spanName string) (context.Context, trace.Span) {
-
-	if tr == nil {
-		return ctx, trace.NoopSpan{}
+func NewTracer(options *options.Options) (*tracing.Tracer, error) {
+	tracer := &tracing.Tracer{
+		Options: options,
+		Tracer:  trace.NoopTracer{},
 	}
-
-	if ctx == nil {
-		ctx = context.Background()
+	if options != nil {
+		tracer.Name = options.Name
 	}
-
-	attrs, ok := ctx.Value(attrKey).([]core.KeyValue)
-	if !ok {
-		attrs = make([]core.KeyValue, 0)
-	}
-	spanCtx, ok := ctx.Value(spanCtxKey).(core.SpanContext)
-	if !ok {
-		return ctx, trace.NoopSpan{}
-	}
-
-	ctx, span := tr.Start(
-		ctx,
-		spanName,
-		trace.WithAttributes(attrs...),
-		trace.ChildOf(spanCtx),
-	)
-
-	return ctx, span
-
+	return tracer, nil
 }

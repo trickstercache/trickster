@@ -14,44 +14,21 @@
  * limitations under the License.
  */
 
-package tracing
+// Package noop provides a Noop Tracer
+package noop
 
 import (
-	"errors"
 	"testing"
 
-	"go.opentelemetry.io/otel/api/trace"
+	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 )
 
-func TestNewChildSpan(t *testing.T) {
+func TestNewTracer(t *testing.T) {
 
-	// test with nil tracer:
-	_, span := NewChildSpan(nil, nil, "test")
-
-	if _, ok := span.(trace.NoopSpan); !ok {
-		t.Error(errors.New("expected NoopSpan"))
-	}
-
-	// test with nil context but non-nil tracer
-
-	tr, flush, _, err := SetTracer(OpenTelemetryTracer, StdoutExporter, WithSampleRate(1))
-	if tr == nil {
-		t.Error(errors.New("expected non-nil tracer"))
-	}
-
+	o := options.NewOptions()
+	_, err := NewTracer(o)
 	if err != nil {
 		t.Error(err)
 	}
-
-	ctx, span := NewChildSpan(nil, tr, "test")
-	if ctx == nil {
-		t.Error(errors.New("expected non-nil context"))
-	}
-
-	if span == nil {
-		t.Error(errors.New("expected non-nil span"))
-	}
-
-	flush()
 
 }

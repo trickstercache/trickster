@@ -18,44 +18,23 @@
 package tracing
 
 import (
-	"context"
 	"net/http"
 
-	"go.opentelemetry.io/otel/api/distributedcontext"
+	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 	"go.opentelemetry.io/otel/api/trace"
-	"go.opentelemetry.io/otel/plugin/httptrace"
 	"google.golang.org/grpc/codes"
 )
 
-const (
-	serviceName = "trickster"
-)
+type FlusherFunc func()
 
-// PrepareRequest extracts trace information from the headers of the incoming request. It returns a pointer to the incoming request with the request context updated to include all span and tracing info. It also returns a span with the name "Request" that is meant to be a parent span for all child spans of this request.
-func PrepareRequest(r *http.Request, tr trace.Tracer) (*http.Request, trace.Span) {
-
-	attrs, entries, spanCtx := httptrace.Extract(r.Context(), r)
-
-	ctx := distributedcontext.WithMap(
-		r.Context(),
-		distributedcontext.NewMap(
-			distributedcontext.MapUpdate{
-				MultiKV: entries,
-			},
-		),
-	)
-	ctx = context.WithValue(ctx, spanCtxKey, spanCtx)
-	ctx = context.WithValue(ctx, attrKey, attrs)
-
-	ctx, span := tr.Start(
-		ctx,
-		"Request",
-		trace.WithAttributes(attrs...),
-		trace.ChildOf(spanCtx),
-	)
-
-	return r.WithContext(ctx), span
+type Tracer struct {
+	trace.Tracer
+	Name    string
+	Flusher FlusherFunc
+	Options *options.Options
 }
+
+type Tracers map[string]*Tracer
 
 // HTTPToCode translates an HTTP status code into a GRPC code
 func HTTPToCode(status int) codes.Code {

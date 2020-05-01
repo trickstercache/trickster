@@ -60,7 +60,7 @@ func TestDoProxy(t *testing.T) {
 	br := bytes.NewBuffer([]byte("test"))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, testLogger)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, nil, testLogger)))
 
 	//req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	DoProxy(w, r)
@@ -108,7 +108,7 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	br := bytes.NewBuffer([]byte("test"))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", badUpstream, br)
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, testLogger)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, nil, testLogger)))
 
 	//req := model.NewRequest("TestProxyRequest", r.Method, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
 	DoProxy(w, r)
@@ -149,7 +149,7 @@ func TestClockOffsetWarning(t *testing.T) {
 	oc.HTTPClient = http.DefaultClient
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", s.URL, nil)
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, testLogger)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, nil, testLogger)))
 
 	if testLogger.HasWarnedOnce("clockoffset.default") {
 		t.Errorf("expected %t got %t", false, true)
@@ -196,7 +196,7 @@ func TestDoProxyWithPCF(t *testing.T) {
 	br := bytes.NewBuffer([]byte("test"))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, testLogger)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, nil, testLogger)))
 
 	// get URL
 
@@ -251,7 +251,7 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 	br := bytes.NewBuffer([]byte("test"))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, testLogger)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, nil, testLogger)))
 
 	// get URL
 
@@ -291,7 +291,7 @@ func TestPrepareFetchReaderErr(t *testing.T) {
 	oc.HTTPClient = http.DefaultClient
 
 	r := httptest.NewRequest("GET", "http://example.com/", nil)
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, nil, nil, nil, nil, testLogger)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, nil, nil, nil, nil, nil, testLogger)))
 	r.Method = "\t"
 	_, _, i := PrepareFetchReader(r)
 	if i != 0 {

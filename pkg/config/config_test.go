@@ -69,7 +69,7 @@ func TestOriginConfigClone(t *testing.T) {
 	c := NewConfig()
 	oc1 := c.Origins["default"]
 	oc2 := oc1.Clone()
-	if oc2.TracingConfig == nil {
+	if oc2.Paths == nil {
 		t.Error(errors.New("expected non-nil cloned config"))
 	}
 }

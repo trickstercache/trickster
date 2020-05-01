@@ -29,8 +29,8 @@ import (
 
 // ReloadHandleFunc will reload the running configuration if it has changed
 func ReloadHandleFunc(f reload.ReloaderFunc, conf *config.Config, wg *sync.WaitGroup,
-	log *tl.Logger, caches map[string]cache.Cache, args []string) func(http.ResponseWriter,
-	*http.Request) {
+	log *tl.Logger, caches map[string]cache.Cache,
+	args []string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if conf.IsStale() {
 			log.Warn("configuration reload starting now", tl.Pairs{"source": "reloadEndpoint"})

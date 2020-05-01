@@ -19,7 +19,7 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/util/tracing"
+	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 
 	"go.opentelemetry.io/otel/api/trace"
 )
@@ -27,7 +27,7 @@ import (
 // Trace attaches a Tracer to an HTTP request
 func Trace(tr trace.Tracer, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r, span := tracing.PrepareRequest(r, tr)
+		r, span := tspan.PrepareRequest(r, tr)
 		if span != nil {
 			defer span.End()
 		}

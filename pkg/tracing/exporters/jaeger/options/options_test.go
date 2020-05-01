@@ -14,12 +14,20 @@
  * limitations under the License.
  */
 
-package tracing
+package options
 
-import (
-	"go.opentelemetry.io/otel/api/trace"
-)
+import "testing"
 
-func setNoopExporter() (trace.Tracer, func(), *recorderExporter, error) {
-	return trace.NoopTracer{}, func() {}, nil, nil
+func TestClone(t *testing.T) {
+
+	o := &Options{
+		EndpointType: "test",
+	}
+
+	o2 := o.Clone()
+
+	if o2.EndpointType != "test" {
+		t.Errorf("clone failed")
+	}
+
 }

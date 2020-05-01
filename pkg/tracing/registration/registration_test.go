@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
@@ -46,26 +47,61 @@ func TestRegisterAll(t *testing.T) {
 
 	// test bad implementation
 	cfg := config.NewConfig()
-	tc := cfg.Origins["default"].TracingConfig
-	tc.Implementation = "foo"
+	tc := options.NewOptions()
+
+	cfg.TracingConfigs = make(map[string]*options.Options)
+	cfg.TracingConfigs["test"] = tc
+	cfg.TracingConfigs["test3"] = tc
+	cfg.Origins["default"].TracingConfigName = "test"
+
+	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"))
+	if err != nil {
+		t.Error(err)
+	}
+
+	tc.TracerType = "jaeger"
+	tc.CollectorURL = "http://example.com"
+	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"))
+	if err != nil {
+		t.Error(err)
+	}
+
+	tc.TracerType = "stdout"
+	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"))
+	if err != nil {
+		t.Error(err)
+	}
+
+	tc.TracerType = "foo"
+
 	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"))
 	if err == nil {
-		t.Error("expected error for invalid tracing implementation")
+		t.Error("expected error for invalid tracer type")
 	}
 
 	// test empty implementation
-	tc.Implementation = ""
+	tc.TracerType = ""
 	f, _ = RegisterAll(cfg, tl.ConsoleLogger("error"))
 	if len(f) > 0 {
 		t.Errorf("expected %d got %d", 0, len(f))
 	}
 
+	tc.TracerType = "none"
+	cfg.Origins["default"].TracingConfigName = "test2"
+	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"))
+	if err == nil {
+		t.Error("expected error for invalid tracing config name")
+	}
+	cfg.Origins["default"].TracingConfigName = "test"
+
+	temp := cfg.TracingConfigs
+	cfg.TracingConfigs = nil
 	// test nil tracing config
-	cfg.Origins["default"].TracingConfig = nil
 	f, _ = RegisterAll(cfg, tl.ConsoleLogger("error"))
 	if len(f) > 0 {
 		t.Errorf("expected %d got %d", 0, len(f))
 	}
+	cfg.TracingConfigs = temp
 
 	// test nil origin config
 	cfg.Origins = nil
@@ -76,8 +112,8 @@ func TestRegisterAll(t *testing.T) {
 
 }
 
-func TestInit(t *testing.T) {
-	tr, _, _ := Init(nil, tl.ConsoleLogger("error"))
+func TestGetTracer(t *testing.T) {
+	tr, _ := GetTracer(nil, tl.ConsoleLogger("error"))
 	if tr == nil {
 		t.Error("expected non-nil (noop) tracer")
 	}

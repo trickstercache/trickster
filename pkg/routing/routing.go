@@ -39,6 +39,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
+	"github.com/tricksterproxy/trickster/pkg/tracing"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/middleware"
 
@@ -58,7 +59,8 @@ func RegisterPprofRoutes(routerName string, h *http.ServeMux, log *tl.Logger) {
 // RegisterProxyRoutes iterates the Trickster Configuration and
 // registers the routes for the configured origins
 func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
-	caches map[string]cache.Cache, log *tl.Logger, dryRun bool) (origins.Origins, error) {
+	caches map[string]cache.Cache, tracers tracing.Tracers,
+	log *tl.Logger, dryRun bool) (origins.Origins, error) {
 
 	// a fake "top-level" origin representing the main frontend, so rules can route
 	// to it via the clients map
@@ -101,7 +103,7 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 			continue
 		}
 
-		_, err = registerOriginRoutes(router, conf, k, o, clients, caches, log, dryRun)
+		_, err = registerOriginRoutes(router, conf, k, o, clients, caches, tracers, log, dryRun)
 		if err != nil {
 			return nil, err
 		}
@@ -113,7 +115,7 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 			cdo = ndo
 			defaultOrigin = "default"
 		} else {
-			_, err = registerOriginRoutes(router, conf, "default", ndo, clients, caches, log, dryRun)
+			_, err = registerOriginRoutes(router, conf, "default", ndo, clients, caches, tracers, log, dryRun)
 			if err != nil {
 				return nil, err
 			}
@@ -121,7 +123,7 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 	}
 
 	if cdo != nil {
-		clients, err = registerOriginRoutes(router, conf, defaultOrigin, cdo, clients, caches, log, dryRun)
+		clients, err = registerOriginRoutes(router, conf, defaultOrigin, cdo, clients, caches, tracers, log, dryRun)
 		if err != nil {
 			return nil, err
 		}
@@ -157,7 +159,7 @@ func validateRuleClients(clients origins.Origins,
 
 func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 	o *oo.Options, clients origins.Origins, caches map[string]cache.Cache,
-	log *tl.Logger, dryRun bool) (origins.Origins, error) {
+	tracers tracing.Tracers, log *tl.Logger, dryRun bool) (origins.Origins, error) {
 
 	var client origins.Client
 	var c cache.Cache
@@ -194,7 +196,7 @@ func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 		o.HTTPClient = client.HTTPClient()
 		clients[k] = client
 		defaultPaths := client.DefaultPathConfigs(o)
-		registerPathRoutes(router, client.Handlers(), client, o, c, defaultPaths, log)
+		registerPathRoutes(router, client.Handlers(), client, o, c, defaultPaths, tracers, log)
 	}
 	return clients, nil
 }
@@ -204,11 +206,20 @@ func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 // the path routes to the appropriate handler from the provided handlers map
 func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 	client origins.Client, oo *oo.Options, c cache.Cache,
-	paths map[string]*po.Options, log *tl.Logger) {
+	paths map[string]*po.Options, tracers tracing.Tracers, log *tl.Logger) {
+
+	var tr *tracing.Tracer
+	// attach distributed tracer
+	if oo != nil {
+		if t, ok := tracers[oo.TracingConfigName]; ok {
+			tr = t
+		}
+	}
 
 	decorate := func(po *po.Options) http.Handler {
+
 		// add Origin, Cache, and Path Configs to the HTTP Request's context
-		h := middleware.WithResourcesContext(client, oo, c, po, log, po.Handler)
+		h := middleware.WithResourcesContext(client, oo, c, po, tr, log, po.Handler)
 
 		if len(oo.ReqRewriter) > 0 {
 			h = rewriter.Rewrite(oo.ReqRewriter, h)
@@ -223,10 +234,8 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 			h = middleware.Decorate(oo.Name, oo.OriginType, po.Path, h)
 		}
 		// attach distributed tracer
-		if oo != nil &&
-			oo.TracingConfig != nil &&
-			oo.TracingConfig.Tracer != nil {
-			h = middleware.Trace(oo.TracingConfig.Tracer, h)
+		if tr != nil {
+			h = middleware.Trace(tr, h)
 		}
 		return h
 	}
@@ -256,7 +265,7 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 			tl.Pairs{"path": hp, "originName": oo.Name,
 				"upstreamPath": oo.HealthCheckUpstreamPath, "upstreamVerb": oo.HealthCheckVerb})
 		router.PathPrefix(hp).
-			Handler(middleware.WithResourcesContext(client, oo, nil, nil, log, h)).
+			Handler(middleware.WithResourcesContext(client, oo, nil, nil, tr, log, h)).
 			Methods(methods.CacheableHTTPMethods()...)
 	}
 

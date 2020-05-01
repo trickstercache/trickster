@@ -35,10 +35,10 @@ import (
 	th "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	"github.com/tricksterproxy/trickster/pkg/routing"
 	"github.com/tricksterproxy/trickster/pkg/runtime"
+	tr "github.com/tricksterproxy/trickster/pkg/tracing/registration"
 	"github.com/tricksterproxy/trickster/pkg/util/log"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
-	tr "github.com/tricksterproxy/trickster/pkg/util/tracing/registration"
 )
 
 var cfgLock = &sync.Mutex{}
@@ -46,7 +46,8 @@ var cfgLock = &sync.Mutex{}
 func runConfig(oldConf *config.Config, wg *sync.WaitGroup, log *log.Logger,
 	oldCaches map[string]cache.Cache, args []string, errorsFatal bool) {
 
-	metrics.BuildInfo.WithLabelValues(applicationGoVersion, applicationGitCommitID, applicationVersion).Set(1)
+	metrics.BuildInfo.WithLabelValues(applicationGoVersion,
+		applicationGitCommitID, applicationVersion).Set(1)
 
 	cfgLock.Lock()
 	defer cfgLock.Unlock()
@@ -71,7 +72,8 @@ func runConfig(oldConf *config.Config, wg *sync.WaitGroup, log *log.Logger,
 
 	err = validateConfig(conf)
 	if err != nil {
-		handleStartupIssue("ERROR: Could not load configuration: "+err.Error(), nil, nil, errorsFatal)
+		handleStartupIssue("ERROR: Could not load configuration: "+err.Error(),
+			nil, nil, errorsFatal)
 	}
 	if flags.ValidateConfig {
 		fmt.Println("Trickster configuration validation succeeded.")
@@ -99,20 +101,12 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logg
 		log.Warn(w, tl.Pairs{})
 	}
 
-	// TODO: move to function and  handle differences
 	//Register Tracing Configurations
-	tracerFlushers, err := tr.RegisterAll(conf, log)
+	tracers, err := tr.RegisterAll(conf, log)
 	if err != nil {
 		handleStartupIssue("tracing registration failed", tl.Pairs{"detail": err.Error()},
 			log, errorsFatal)
 		return
-	}
-
-	if len(tracerFlushers) > 0 {
-		for _, f := range tracerFlushers {
-			// TODO: Move elsewhere, these will close the tracer flushers prematurely here
-			defer f()
-		}
 	}
 
 	// every config (re)load is a new router
@@ -122,14 +116,14 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logg
 	var caches = applyCachingConfig(conf, oldConf, log, oldCaches)
 	rh := handlers.ReloadHandleFunc(runConfig, conf, wg, log, caches, args)
 
-	_, err = routing.RegisterProxyRoutes(conf, router, caches, log, false)
+	_, err = routing.RegisterProxyRoutes(conf, router, caches, tracers, log, false)
 	if err != nil {
 		handleStartupIssue("route registration failed", tl.Pairs{"detail": err.Error()},
 			log, errorsFatal)
 		return
 	}
 
-	applyListenerConfigs(conf, oldConf, router, http.HandlerFunc(rh), log)
+	applyListenerConfigs(conf, oldConf, router, http.HandlerFunc(rh), log, tracers)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
@@ -278,8 +272,6 @@ func validateConfig(conf *config.Config) error {
 		fmt.Println(w)
 	}
 
-	// TODO: Tracers w/ Dry Run
-
 	var caches = make(map[string]cache.Cache)
 	for k := range conf.Caches {
 		caches[k] = nil
@@ -287,7 +279,13 @@ func validateConfig(conf *config.Config) error {
 
 	router := mux.NewRouter()
 	log := log.ConsoleLogger(conf.Logging.LogLevel)
-	_, err := routing.RegisterProxyRoutes(conf, router, caches, log, false)
+
+	tracers, err := tr.RegisterAll(conf, log)
+	if err != nil {
+		return err
+	}
+
+	_, err = routing.RegisterProxyRoutes(conf, router, caches, tracers, log, false)
 	if err != nil {
 		return err
 	}

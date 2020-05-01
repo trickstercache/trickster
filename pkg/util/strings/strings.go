@@ -29,6 +29,9 @@ func IndexOfString(arr []string, val string) int {
 
 // CloneMap returns an exact copy of a map consisting string key and values
 func CloneMap(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
 	out := make(map[string]string)
 	for k, v := range in {
 		out[k] = v
