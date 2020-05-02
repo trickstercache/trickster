@@ -27,6 +27,12 @@ import (
 // indicates the request did not succeed due to a request error or origin-side error
 var ErrUnexpectedUpstreamResponse = errors.New("unexpected upstream response")
 
+// ErrServerRequestNotCompleted indicates the remote origin could not service the request
+var ErrServerRequestNotCompleted = errors.New("server request not completed")
+
+// ErrReadIndexTooLarge is an error indicating the read index is too large
+var ErrReadIndexTooLarge = errors.New("read index too large")
+
 // ErrEmptyDocumentBody indicates a cached object did not contain an HTTP Document upon retrieval
 var ErrEmptyDocumentBody = errors.New("empty document body")
 

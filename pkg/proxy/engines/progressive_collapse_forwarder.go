@@ -17,15 +17,13 @@
 package engines
 
 import (
-	"errors"
 	"io"
 	"net/http"
 	"sync"
 	"sync/atomic"
-)
 
-// ErrReadIndexTooLarge is an error indicating the read index is too large
-var ErrReadIndexTooLarge = errors.New("read index too large")
+	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+)
 
 // NEED TO DEAL WITH TIMEOUT
 
@@ -152,7 +150,7 @@ func (pfc *progressiveCollapseForwarder) WaitAllComplete() {
 // GetBody returns the underlying body of the data written into a PCF
 func (pfc *progressiveCollapseForwarder) GetBody() ([]byte, error) {
 	if atomic.LoadInt32(&pfc.serverReadDone) == 0 {
-		return nil, errors.New("Server request not completed")
+		return nil, errors.ErrServerRequestNotCompleted
 	}
 	return pfc.dataStore[0:pfc.dataIndex], nil
 }
@@ -192,7 +190,7 @@ func (pfc *progressiveCollapseForwarder) IndexRead(index uint64, b []byte) (int,
 	if index >= i {
 		// need to check completion and return io.EOF
 		if index > pfc.dataLen {
-			return 0, ErrReadIndexTooLarge
+			return 0, errors.ErrReadIndexTooLarge
 		} else if atomic.LoadInt32(&pfc.serverReadDone) != 0 {
 			return 0, io.EOF
 		}

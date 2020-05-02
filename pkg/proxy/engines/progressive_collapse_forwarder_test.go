@@ -25,6 +25,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 )
 
 var testString = "Hey, I'm an http response body string."
@@ -247,7 +249,7 @@ func TestPCFIndexReadTooLarge(t *testing.T) {
 
 	_, err := pcf.IndexRead(12412, buf)
 
-	if err != ErrReadIndexTooLarge {
+	if err != errors.ErrReadIndexTooLarge {
 		t.Errorf("PCF did not return ErrReadIndexTooLarge, got %e", err)
 	}
 }
