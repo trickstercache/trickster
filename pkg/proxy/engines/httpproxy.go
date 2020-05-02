@@ -189,7 +189,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		if err != nil {
 			originalLen = -1
 		}
-		resp.ContentLength = int64(originalLen)
+		resp.ContentLength = originalLen
 	}
 	rc = resp.Body
 

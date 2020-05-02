@@ -271,7 +271,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		"reqEnd":      trq.Extent.End.Unix(),
 	}
 	if len(missRanges) > 0 {
-		dpStatus["extentsFetched"] = timeseries.ExtentList(missRanges).String()
+		dpStatus["extentsFetched"] = missRanges.String()
 	}
 
 	// maintain a list of timeseries to merge into the main timeseries

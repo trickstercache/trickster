@@ -202,7 +202,7 @@ func ParseMultipartRangeResponseBody(body io.Reader,
 			}
 		}
 	}
-	return parts, ct, ranges, int64(fullContentLength), nil
+	return parts, ct, ranges, fullContentLength, nil
 }
 
 // ExtractResponseRange returns http headers and body representing the subject MultipartByteRanges map,

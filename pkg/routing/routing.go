@@ -168,7 +168,7 @@ func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 
 	c, ok = caches[o.CacheName]
 	if !ok {
-		return nil, fmt.Errorf("Could not find Cache named [%s]", o.CacheName)
+		return nil, fmt.Errorf("could not find cache named [%s]", o.CacheName)
 	}
 
 	log.Info("registering route paths",

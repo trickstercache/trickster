@@ -179,7 +179,7 @@ func TestPCFWaits(t *testing.T) {
 	}
 
 	// Wait for pcf to finish in goroutine
-	sleepDur := time.Duration(65 * (int(l/HTTPBlockSize) + 1))
+	sleepDur := time.Duration(65*(l/HTTPBlockSize) + 1)
 	time.Sleep(sleepDur * time.Millisecond)
 
 	if a := atomic.LoadUint64(&serverComplete); a != 1 {

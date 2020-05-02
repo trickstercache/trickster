@@ -595,7 +595,7 @@ func TestCompress(t *testing.T) {
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 
-			result := ExtentList(test.uncompressed).Compress(time.Duration(30) * time.Second)
+			result := test.uncompressed.Compress(time.Duration(30) * time.Second)
 
 			if !reflect.DeepEqual(result, test.compressed) {
 				t.Errorf("mismatch in Compress: expected=%s got=%s", test.compressed, result)

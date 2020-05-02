@@ -42,7 +42,7 @@ func Decorate(originName, originType, path string, next http.Handler) http.Handl
 		metrics.FrontendRequestStatus.WithLabelValues(originName, originType,
 			r.Method, path, observer.status).Inc()
 		metrics.FrontendRequestWrittenBytes.WithLabelValues(originName, originType,
-			r.Method, path, observer.status).Add(float64(observer.bytesWritten))
+			r.Method, path, observer.status).Add(observer.bytesWritten)
 	})
 }
 

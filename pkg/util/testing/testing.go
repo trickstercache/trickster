@@ -101,7 +101,7 @@ func NewTestInstance(
 
 	conf, _, err := config.Load("trickster", "test", args)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
+		return nil, nil, nil, nil, fmt.Errorf("could not load configuration: %s", err.Error())
 	}
 
 	caches := cr.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))

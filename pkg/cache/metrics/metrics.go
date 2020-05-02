@@ -43,7 +43,7 @@ func CacheError(cacheKey, cacheName, cacheType string, msg string) ([]byte, erro
 func ObserveCacheOperation(cache, cacheType, operation, status string, bytes float64) {
 	metrics.CacheObjectOperations.WithLabelValues(cache, cacheType, operation, status).Inc()
 	if bytes > 0 {
-		metrics.CacheByteOperations.WithLabelValues(cache, cacheType, operation, status).Add(float64(bytes))
+		metrics.CacheByteOperations.WithLabelValues(cache, cacheType, operation, status).Add(bytes)
 	}
 }
 
