@@ -142,7 +142,8 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	o, err := index.ObjectFromBytes(data)
 	if err != nil {
 
-		_, err2 := metrics.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
+		_, err2 := metrics.CacheError(cacheKey, c.Name, c.Config.CacheType,
+			"value for key [%s] could not be deserialized from cache")
 		return nil, status.LookupStatusError, err2
 	}
 

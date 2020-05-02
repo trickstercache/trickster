@@ -27,7 +27,8 @@ import (
 func TestCalculateDeltas(t *testing.T) {
 
 	// test when start is after end
-	trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(20, 0), End: time.Unix(10, 0)}, Step: time.Duration(10) * time.Second}
+	trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(20, 0),
+		End: time.Unix(10, 0)}, Step: time.Duration(10) * time.Second}
 	trq.CalculateDeltas(ExtentList{Extent{}})
 
 	tests := []struct {
@@ -47,7 +48,8 @@ func TestCalculateDeltas(t *testing.T) {
 		},
 		{
 			[]Extent{{Start: time.Unix(50, 0), End: time.Unix(100, 0)}},
-			[]Extent{{Start: time.Unix(1, 0), End: time.Unix(49, 0)}, {Start: time.Unix(101, 0), End: time.Unix(101, 0)}},
+			[]Extent{{Start: time.Unix(1, 0), End: time.Unix(49, 0)},
+				{Start: time.Unix(101, 0), End: time.Unix(101, 0)}},
 			1, 101, 1,
 		},
 		{
@@ -60,7 +62,8 @@ func TestCalculateDeltas(t *testing.T) {
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 
-			trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(test.start, 0), End: time.Unix(test.end, 0)}, Step: time.Duration(test.stepSecs) * time.Second}
+			trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(test.start, 0),
+				End: time.Unix(test.end, 0)}, Step: time.Duration(test.stepSecs) * time.Second}
 			trq.NormalizeExtent()
 			d := trq.CalculateDeltas(test.have)
 
@@ -114,7 +117,8 @@ func TestNormalizeExtent(t *testing.T) {
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 
-			trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(test.start, 0), End: time.Unix(test.end, 0)}, Step: time.Duration(test.stepSecs) * time.Second}
+			trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(test.start, 0),
+				End: time.Unix(test.end, 0)}, Step: time.Duration(test.stepSecs) * time.Second}
 
 			trq.NormalizeExtent()
 
@@ -130,7 +134,8 @@ func TestNormalizeExtent(t *testing.T) {
 
 func TestClone(t *testing.T) {
 	u, _ := url.Parse("http://127.0.0.1/")
-	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{Start: time.Unix(5, 0), End: time.Unix(10, 0)}, Step: time.Duration(5) * time.Second, TemplateURL: u}
+	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{Start: time.Unix(5, 0),
+		End: time.Unix(10, 0)}, Step: time.Duration(5) * time.Second, TemplateURL: u}
 	c := trq.Clone()
 	if !reflect.DeepEqual(trq, c) {
 		t.Errorf("expected %s got %s", trq.String(), c.String())
@@ -141,7 +146,8 @@ func TestStringTRQ(t *testing.T) {
 
 	const expected = `{ "statement": "1234", "step": "5s", "extent": "5-10" }`
 
-	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{Start: time.Unix(5, 0), End: time.Unix(10, 0)}, Step: time.Duration(5) * time.Second}
+	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{Start: time.Unix(5, 0),
+		End: time.Unix(10, 0)}, Step: time.Duration(5) * time.Second}
 	s := trq.String()
 
 	if s != expected {

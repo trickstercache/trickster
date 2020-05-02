@@ -23,7 +23,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
-// QueryRangeHandler handles timeseries requests for Prometheus and processes them through the delta proxy cache
+// QueryRangeHandler handles timeseries requests for
+// Prometheus and processes them through the delta proxy cache
 func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
 	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
 	engines.DeltaProxyCacheRequest(w, r)

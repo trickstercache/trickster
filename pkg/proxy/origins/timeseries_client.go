@@ -38,15 +38,18 @@ type TimeseriesClient interface {
 	Configuration() *oo.Options
 	// Name returns the name of the origin the Proxy Client is handling
 	Name() string
-	// FastForwardURL returns the URL to the origin to collect Fast Forward data points based on the provided HTTP Request
+	// FastForwardURL returns the URL to the origin to collect Fast Forward
+	// data points based on the provided HTTP Request
 	FastForwardURL(*http.Request) (*url.URL, error)
-	// SetExtent will update an upstream request's timerange parameters based on the provided timeseries.Extent
+	// SetExtent will update an upstream request's timerange
+	// parameters based on the provided timeseries.Extent
 	SetExtent(*http.Request, *timeseries.TimeRangeQuery, *timeseries.Extent)
 	// UnmarshalTimeseries will return a Timeseries from the provided byte slice
 	UnmarshalTimeseries([]byte) (timeseries.Timeseries, error)
 	// MarshalTimeseries will return a byte slice from  the provided Timeseries
 	MarshalTimeseries(timeseries.Timeseries) ([]byte, error)
-	// UnmarshalInstantaneous will return an Instantaneous Timeseries (only one value instead of a series) from the provided byte slice
+	// UnmarshalInstantaneous will return an Instantaneous Timeseries
+	// (only one value instead of a series) from the provided byte slice
 	UnmarshalInstantaneous([]byte) (timeseries.Timeseries, error)
 	// HTTPClient will return the HTTP Client for this Origin
 	HTTPClient() *http.Client

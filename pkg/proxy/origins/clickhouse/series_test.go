@@ -311,10 +311,12 @@ func TestMerge(t *testing.T) {
 				StepDuration: time.Duration(5000) * time.Second,
 			},
 			merged: &ResultsEnvelope{
-				isCounted:  true,
-				isSorted:   true,
-				tslist:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0), time.Unix(30000, 0), time.Unix(35000, 0)},
-				timestamps: map[time.Time]bool{time.Unix(10000, 0): true, time.Unix(15000, 0): true, time.Unix(30000, 0): true, time.Unix(35000, 0): true},
+				isCounted: true,
+				isSorted:  true,
+				tslist: times.Times{time.Unix(10000, 0), time.Unix(15000, 0),
+					time.Unix(30000, 0), time.Unix(35000, 0)},
+				timestamps: map[time.Time]bool{time.Unix(10000, 0): true,
+					time.Unix(15000, 0): true, time.Unix(30000, 0): true, time.Unix(35000, 0): true},
 				Data: map[string]*DataSet{
 					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
@@ -391,10 +393,11 @@ func TestMerge(t *testing.T) {
 				StepDuration: time.Duration(5000) * time.Second,
 			},
 			merged: &ResultsEnvelope{
-				isCounted:  true,
-				isSorted:   true,
-				tslist:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0), time.Unix(20000, 0)},
-				timestamps: map[time.Time]bool{time.Unix(10000, 0): true, time.Unix(15000, 0): true, time.Unix(20000, 0): true},
+				isCounted: true,
+				isSorted:  true,
+				tslist:    times.Times{time.Unix(10000, 0), time.Unix(15000, 0), time.Unix(20000, 0)},
+				timestamps: map[time.Time]bool{time.Unix(10000, 0): true,
+					time.Unix(15000, 0): true, time.Unix(20000, 0): true},
 				Data: map[string]*DataSet{
 					"a": {
 						Metric: map[string]interface{}{"__name__": "a"},
@@ -1265,7 +1268,8 @@ func TestSort(t *testing.T) {
 			after: &ResultsEnvelope{
 				isSorted:  true,
 				isCounted: true,
-				tslist:    []time.Time{time.Unix(1544004000, 0), time.Unix(1544004200, 0), time.Unix(1544004600, 0), time.Unix(1544004800, 0)},
+				tslist: []time.Time{time.Unix(1544004000, 0),
+					time.Unix(1544004200, 0), time.Unix(1544004600, 0), time.Unix(1544004800, 0)},
 				timestamps: map[time.Time]bool{time.Unix(1544004000, 0): true, time.Unix(1544004200, 0): true,
 					time.Unix(1544004600, 0): true, time.Unix(1544004800, 0): true},
 				Data: map[string]*DataSet{

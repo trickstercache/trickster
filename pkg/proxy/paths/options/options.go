@@ -37,11 +37,13 @@ type Options struct {
 	HandlerName string `toml:"handler"`
 	// Methods provides the list of permitted HTTP request methods for this Path
 	Methods []string `toml:"methods"`
-	// CacheKeyParams provides the list of http request query parameters to be included in the hash for each request's cache key
+	// CacheKeyParams provides the list of http request query parameters to be included
+	//  in the hash for each request's cache key
 	CacheKeyParams []string `toml:"cache_key_params"`
 	// CacheKeyHeaders provides the list of http request headers to be included in the hash for each request's cache key
 	CacheKeyHeaders []string `toml:"cache_key_headers"`
-	// CacheKeyFormFields provides the list of http request body fields to be included in the hash for each request's cache key
+	// CacheKeyFormFields provides the list of http request body fields to be included
+	// in the hash for each request's cache key
 	CacheKeyFormFields []string `toml:"cache_key_form_fields"`
 	// RequestHeaders is a map of headers that will be added to requests to the upstream Origin for this path
 	RequestHeaders map[string]string `toml:"request_headers"`

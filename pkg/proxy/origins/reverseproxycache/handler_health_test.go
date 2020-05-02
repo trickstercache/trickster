@@ -63,7 +63,8 @@ func TestHealthHandler(t *testing.T) {
 
 func TestHealthHandlerCustomPath(t *testing.T) {
 	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("../../../../testdata/test.custom_health.conf", client.DefaultPathConfigs, 200, "{}", nil, "rpc", "/health", "debug")
+	ts, w, r, hc, err := tu.NewTestInstance("../../../../testdata/test.custom_health.conf",
+		client.DefaultPathConfigs, 200, "{}", nil, "rpc", "/health", "debug")
 	if err != nil {
 		t.Error(err)
 	} else {

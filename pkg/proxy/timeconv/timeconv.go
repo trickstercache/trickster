@@ -25,7 +25,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 )
 
-// ParseDuration returns a duration from a string. Slightly improved over the builtin, since it supports units larger than hour.
+// ParseDuration returns a duration from a string. Slightly improved over the builtin,
+// since it supports units larger than hour.
 func ParseDuration(input string) (time.Duration, error) {
 	for i := range input {
 		if input[i] > 47 && input[i] < 58 {
@@ -43,7 +44,7 @@ func ParseDuration(input string) (time.Duration, error) {
 			if err != nil {
 				return errors.ParseDuration(input)
 			}
-			v = v * units
+			v *= units
 			return time.Duration(v), nil
 		}
 	}

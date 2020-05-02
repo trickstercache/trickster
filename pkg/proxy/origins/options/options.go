@@ -66,14 +66,17 @@ type Options struct {
 	// HealthCheckHeaders provides the HTTP Headers to apply when making an upstream health check
 	HealthCheckHeaders map[string]string `toml:"health_check_headers"`
 	// Object Proxy Cache and Delta Proxy Cache Configurations
-	// TimeseriesRetentionFactor limits the maximum the number of chronological timestamps worth of data to store in cache for each query
+	// TimeseriesRetentionFactor limits the maximum the number of chronological
+	// timestamps worth of data to store in cache for each query
 	TimeseriesRetentionFactor int `toml:"timeseries_retention_factor"`
-	// TimeseriesEvictionMethodName specifies which methodology ("oldest", "lru") is used to identify timeseries to evict from a full cache object
+	// TimeseriesEvictionMethodName specifies which methodology ("oldest", "lru") is used to identify
+	//timeseries to evict from a full cache object
 	TimeseriesEvictionMethodName string `toml:"timeseries_eviction_method"`
 	// FastForwardDisable indicates whether the FastForward feature should be disabled for this origin
 	FastForwardDisable bool `toml:"fast_forward_disable"`
-	// BackfillToleranceSecs prevents values with timestamps newer than the provided number of seconds from being cached
-	// this allows propagation of upstream backfill operations that modify recently-served data
+	// BackfillToleranceSecs prevents values with timestamps newer than the provided
+	// number of seconds from being cached this allows propagation of upstream backfill operations
+	// that modify recently-served data
 	BackfillToleranceSecs int64 `toml:"backfill_tolerance_secs"`
 	// PathList is a list of Path Options that control the behavior of the given paths when requested
 	Paths map[string]*po.Options `toml:"paths"`
@@ -85,11 +88,13 @@ type Options struct {
 	FastForwardTTLSecs int `toml:"fastforward_ttl_secs"`
 	// MaxTTLSecs specifies the maximum allowed TTL for any cache object
 	MaxTTLSecs int `toml:"max_ttl_secs"`
-	// RevalidationFactor specifies how many times to multiply the object freshness lifetime by to calculate an absolute cache TTL
+	// RevalidationFactor specifies how many times to multiply the object freshness lifetime
+	// by to calculate an absolute cache TTL
 	RevalidationFactor float64 `toml:"revalidation_factor"`
 	// MaxObjectSizeBytes specifies the max objectsize to be accepted for any given cache object
 	MaxObjectSizeBytes int `toml:"max_object_size_bytes"`
-	// CompressableTypeList specifies the HTTP Object Content Types that will be compressed internally when stored in the Trickster cache
+	// CompressableTypeList specifies the HTTP Object Content Types that will be compressed internally
+	// when stored in the Trickster cache
 	CompressableTypeList []string `toml:"compressable_types"`
 	// TracingConfigName provides the name of the Tracing Config to be used by this Origin
 	TracingConfigName string `toml:"tracing_name"`
@@ -107,12 +112,13 @@ type Options struct {
 	// RequireTLS, when true, indicates this Origin Config's paths must only be registered with the TLS Router
 	RequireTLS bool `toml:"require_tls"`
 
-	// MultipartRangesDisabled, when true, indicates that if a downstream client requests multiple ranges in a single Range request,
-	// Trickster will instead request and return a 200 OK with the full object body
+	// MultipartRangesDisabled, when true, indicates that if a downstream client requests multiple ranges
+	// in a single request, Trickster will instead request and return a 200 OK with the full object body
 	MultipartRangesDisabled bool `toml:"multipart_ranges_disabled"`
-	// DearticulateUpstreamRanges, when true, indicates that when Trickster requests multiple ranges from the origin,
-	// that they be requested as individual upstream requests instead of a single request that expects a multipart response
-	// this optimizes Trickster to request as few bytes as possible when fronting origins that only support single range requests
+	// DearticulateUpstreamRanges, when true, indicates that when Trickster requests multiple ranges from
+	// the origin, that they be requested as individual upstream requests instead of a single request that
+	// expects a multipart response	// this optimizes Trickster to request as few bytes as possible when
+	// fronting origins that only support single range requests
 	DearticulateUpstreamRanges bool `toml:"dearticulate_upstream_ranges"`
 
 	// Synthesized Configurations
@@ -130,13 +136,16 @@ type Options struct {
 	ValueRetention time.Duration `toml:"-"`
 	// Scheme is the layer 7 protocol indicator (e.g. 'http'), derived from OriginURL
 	Scheme string `toml:"-"`
-	// Host is the upstream hostname/IP[:port] the origin client will connect to when fetching uncached data, derived from OriginURL
+	// Host is the upstream hostname/IP[:port] the origin client will connect to when fetching uncached data,
+	// derived from OriginURL
 	Host string `toml:"-"`
-	// PathPrefix provides any prefix added to the front of the requested path when constructing the upstream request url, derived from OriginURL
+	// PathPrefix provides any prefix added to the front of the requested path when constructing the upstream
+	// request url, derived from OriginURL
 	PathPrefix string `toml:"-"`
 	// NegativeCache provides a map for the negative cache, with TTLs converted to time.Durations
 	NegativeCache map[int]time.Duration `toml:"-"`
-	// TimeseriesRetention when subtracted from time.Now() represents the oldest allowable timestamp in a timeseries when EvictionMethod is 'oldest'
+	// TimeseriesRetention when subtracted from time.Now() represents the oldest allowable timestamp in a
+	// timeseries when EvictionMethod is 'oldest'
 	TimeseriesRetention time.Duration `toml:"-"`
 	// TimeseriesEvictionMethod is the parsed value of TimeseriesEvictionMethodName
 	TimeseriesEvictionMethod evictionmethods.TimeseriesEvictionMethod `toml:"-"`

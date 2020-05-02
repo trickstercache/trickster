@@ -99,8 +99,10 @@ func DoProxy(w io.Writer, r *http.Request) *http.Response {
 			pcf.AddClient(writer)
 		}
 	}
+
 	elapsed = time.Since(start)
-	recordResults(r, "HTTPProxy", cacheStatusCode, resp.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, resp.Header)
+	recordResults(r, "HTTPProxy", cacheStatusCode, resp.StatusCode,
+		r.URL.Path, "", elapsed.Seconds(), nil, resp.Header)
 	return resp
 }
 
@@ -159,7 +161,8 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	if err != nil {
 		rsc.Logger.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
-		// if there is an err and the response is nil, the server could not be reached; make a 502 for the downstream response
+		// if there is an err and the response is nil, the server could not be reached
+		// so make a 502 for the downstream response
 		if resp == nil {
 			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r, Header: make(http.Header)}
 		}
@@ -223,7 +226,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 }
 
 // Respond sends an HTTP Response down to the requesting client
-func Respond(w http.ResponseWriter, code int, header http.Header, body []byte) {
+func Respond(w io.Writer, code int, header http.Header, body []byte) {
 	PrepareResponseWriter(w, code, header)
 	w.Write(body)
 }
@@ -237,7 +240,8 @@ func setStatusHeader(httpStatus int, header http.Header) status.LookupStatus {
 	return st
 }
 
-func recordResults(r *http.Request, engine string, cacheStatus status.LookupStatus, statusCode int, path, ffStatus string, elapsed float64, extents timeseries.ExtentList, header http.Header) {
+func recordResults(r *http.Request, engine string, cacheStatus status.LookupStatus,
+	statusCode int, path, ffStatus string, elapsed float64, extents timeseries.ExtentList, header http.Header) {
 
 	rsc := request.GetResources(r)
 	pc := rsc.PathConfig
@@ -249,7 +253,8 @@ func recordResults(r *http.Request, engine string, cacheStatus status.LookupStat
 		httpStatus := strconv.Itoa(statusCode)
 		metrics.ProxyRequestStatus.WithLabelValues(oc.Name, oc.OriginType, r.Method, status, httpStatus, path).Inc()
 		if elapsed > 0 {
-			metrics.ProxyRequestDuration.WithLabelValues(oc.Name, oc.OriginType, r.Method, status, httpStatus, path).Observe(elapsed)
+			metrics.ProxyRequestDuration.WithLabelValues(oc.Name, oc.OriginType,
+				r.Method, status, httpStatus, path).Observe(elapsed)
 		}
 	}
 	headers.SetResultsHeader(header, engine, status, ffStatus, extents)

@@ -45,7 +45,8 @@ func TestIRONdbClientInterfacing(t *testing.T) {
 }
 
 func TestNewClient(t *testing.T) {
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://example.com", "-origin-type", "TEST_CLIENT"})
+	conf, _, err := config.Load("trickster", "test",
+		[]string{"-origin-url", "http://example.com", "-origin-type", "TEST_CLIENT"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -85,7 +86,8 @@ func TestConfiguration(t *testing.T) {
 }
 
 func TestCache(t *testing.T) {
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://example.com", "-origin-type", "TEST_CLIENT"})
+	conf, _, err := config.Load("trickster", "test",
+		[]string{"-origin-url", "http://example.com", "-origin-type", "TEST_CLIENT"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

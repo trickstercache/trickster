@@ -28,8 +28,9 @@ import (
 func TestFindHandler(t *testing.T) {
 
 	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "irondb", "/find/1/tags?query=metric"+
-		"&activity_start_secs=0&activity_end_secs=900", "debug")
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs,
+		200, "{}", nil, "irondb", "/find/1/tags?query=metric"+
+			"&activity_start_secs=0&activity_end_secs=900", "debug")
 	rsc := request.GetResources(r)
 	rsc.OriginClient = client
 	client.config = rsc.OriginConfig

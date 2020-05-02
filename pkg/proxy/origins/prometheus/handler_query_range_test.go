@@ -28,7 +28,9 @@ import (
 func TestQueryRangeHandler(t *testing.T) {
 
 	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/query_range?q=up&start=0&end=900&step=15", "debug")
+	ts, w, r, hc, err := tu.NewTestInstance("",
+		client.DefaultPathConfigs, 200, "{}", nil, "prometheus",
+		"/query_range?q=up&start=0&end=900&step=15", "debug")
 	rsc := request.GetResources(r)
 	rsc.OriginClient = client
 	client.config = rsc.OriginConfig

@@ -22,7 +22,8 @@ import (
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
-func logUpstreamRequest(log *tl.Logger, originName, originType, handlerName, method, path, userAgent string, responseCode, size int, requestDuration float64) {
+func logUpstreamRequest(log *tl.Logger, originName, originType, handlerName, method,
+	path, userAgent string, responseCode, size int, requestDuration float64) {
 	log.Debug("upstream request",
 		tl.Pairs{
 			"originName":  originName,

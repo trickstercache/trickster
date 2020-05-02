@@ -58,8 +58,10 @@ func TestPathMerge(t *testing.T) {
 	pc := NewOptions()
 	pc2 := pc.Clone()
 
-	pc2.Custom = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers", "cache_key_form_fields",
-		"request_headers", "request_params", "response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding"}
+	pc2.Custom = []string{"path", "match_type", "handler", "methods",
+		"cache_key_params", "cache_key_headers", "cache_key_form_fields",
+		"request_headers", "request_params", "response_headers",
+		"response_code", "response_body", "no_metrics", "collapsed_forwarding"}
 
 	expectedPath := "testPath"
 	expectedHandlerName := "testHandler"
@@ -134,7 +136,8 @@ func TestPathMerge(t *testing.T) {
 		t.Errorf("expected %t got %t", true, pc.NoMetrics)
 	}
 
-	if pc.CollapsedForwardingName != "progressive" || pc.CollapsedForwardingType != forwarding.CFTypeProgressive {
+	if pc.CollapsedForwardingName != "progressive" ||
+		pc.CollapsedForwardingType != forwarding.CFTypeProgressive {
 		t.Errorf("expected %s got %s", "progressive", pc.CollapsedForwardingName)
 	}
 

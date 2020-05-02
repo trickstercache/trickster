@@ -35,8 +35,9 @@ import (
 func TestHistogramHandler(t *testing.T) {
 
 	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "irondb", "/histogram/0/900/300/00112233-4455-6677-8899-aabbccddeeff/"+
-		"metric", "debug")
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200,
+		"{}", nil, "irondb", "/histogram/0/900/300/00112233-4455-6677-8899-aabbccddeeff/"+
+			"metric", "debug")
 	rsc := request.GetResources(r)
 	rsc.OriginClient = client
 	client.config = rsc.OriginConfig

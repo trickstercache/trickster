@@ -80,10 +80,10 @@ var CacheObjects *prometheus.GaugeVec
 // CacheBytes is a Gauge representing the number of bytes in a Trickster cache
 var CacheBytes *prometheus.GaugeVec
 
-// CacheMaxObjects is a Gauge representing the Trickster cache's Max Object Threshold for triggering an eviction exercise
+// CacheMaxObjects is a Gauge for the Trickster cache's Max Object Threshold for triggering an eviction exercise
 var CacheMaxObjects *prometheus.GaugeVec
 
-// CacheMaxBytes is a Gauge representing the Trickster cache's Max Object Threshold for triggering an eviction exercise
+// CacheMaxBytes is a Gauge for the Trickster cache's Max Object Threshold for triggering an eviction exercise
 var CacheMaxBytes *prometheus.GaugeVec
 
 // ProxyMaxConnections is a Gauge representing the max number of active concurrent connections in the server
@@ -101,7 +101,7 @@ var ProxyConnectionAccepted prometheus.Counter
 // ProxyConnectionClosed is a counter representing the total number of connections closed by the Proxy
 var ProxyConnectionClosed prometheus.Counter
 
-// ProxyConnectionFailed is a counter representing the total number of connections failed to connect for whatever reason
+// ProxyConnectionFailed is a counter for the total number of connections failed to connect for whatever reason
 var ProxyConnectionFailed prometheus.Counter
 
 func init() {
@@ -111,7 +111,8 @@ func init() {
 			Namespace: metricNamespace,
 			Subsystem: buildSubsystem,
 			Name:      "info",
-			Help:      "A metric with a constant '1' value labeled by version, revision, and goversion from which Trickster was built.",
+			Help: "A metric with a constant '1' value labeled by version," +
+				"revision, and goversion from which Trickster was built.",
 		},
 		[]string{"goversion", "revision", "version"},
 	)

@@ -26,7 +26,10 @@ import (
 	"go.opentelemetry.io/otel/plugin/httptrace"
 )
 
-// PrepareRequest extracts trace information from the headers of the incoming request. It returns a pointer to the incoming request with the request context updated to include all span and tracing info. It also returns a span with the name "Request" that is meant to be a parent span for all child spans of this request.
+// PrepareRequest extracts trace information from the headers of the incoming request.
+// It returns a pointer to the incoming request with the request context updated to include
+// all span and tracing info. It also returns a span with the name "Request" that is meant
+// to be a parent span for all child spans of this request.
 func PrepareRequest(r *http.Request, tr trace.Tracer) (*http.Request, trace.Span) {
 
 	attrs, entries, spanCtx := httptrace.Extract(r.Context(), r)
@@ -46,7 +49,8 @@ func PrepareRequest(r *http.Request, tr trace.Tracer) (*http.Request, trace.Span
 }
 
 // NewChildSpan returns the context with a new Span situated as the child of the previous span
-func NewChildSpan(ctx context.Context, tr *tracing.Tracer, spanName string) (context.Context, trace.Span) {
+func NewChildSpan(ctx context.Context, tr *tracing.Tracer,
+	spanName string) (context.Context, trace.Span) {
 
 	if ctx == nil {
 		ctx = context.Background()

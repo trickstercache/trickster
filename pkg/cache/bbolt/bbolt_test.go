@@ -37,7 +37,8 @@ const cacheKey = "cacheKey"
 func newCacheConfig() co.Options {
 	const testDbPath = "/tmp/test.db"
 	os.Remove(testDbPath)
-	return co.Options{CacheType: cacheType, BBolt: &bo.Options{Filename: testDbPath, Bucket: "trickster_test"}, Index: &io.Options{ReapInterval: time.Second}}
+	return co.Options{CacheType: cacheType, BBolt: &bo.Options{
+		Filename: testDbPath, Bucket: "trickster_test"}, Index: &io.Options{ReapInterval: time.Second}}
 }
 
 func storeBenchmark(b *testing.B) Cache {

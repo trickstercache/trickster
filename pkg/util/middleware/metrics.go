@@ -37,9 +37,12 @@ func Decorate(originName, originType, path string, next http.Handler) http.Handl
 		n := time.Now()
 		next.ServeHTTP(observer, r)
 
-		metrics.FrontendRequestDuration.WithLabelValues(originName, originType, r.Method, path, observer.status).Observe(time.Since(n).Seconds())
-		metrics.FrontendRequestStatus.WithLabelValues(originName, originType, r.Method, path, observer.status).Inc()
-		metrics.FrontendRequestWrittenBytes.WithLabelValues(originName, originType, r.Method, path, observer.status).Add(float64(observer.bytesWritten))
+		metrics.FrontendRequestDuration.WithLabelValues(originName, originType,
+			r.Method, path, observer.status).Observe(time.Since(n).Seconds())
+		metrics.FrontendRequestStatus.WithLabelValues(originName, originType,
+			r.Method, path, observer.status).Inc()
+		metrics.FrontendRequestWrittenBytes.WithLabelValues(originName, originType,
+			r.Method, path, observer.status).Add(float64(observer.bytesWritten))
 	})
 }
 

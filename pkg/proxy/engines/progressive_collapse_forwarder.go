@@ -185,7 +185,8 @@ func (pfc *progressiveCollapseForwarder) Close() {
 	pfc.readCond.Broadcast()
 }
 
-// Read will return the given index data requested by the read is behind the PCF readindex, else blocks and waits for the data
+// Read will return the given index data requested by the read is behind the PCF readindex,
+// else blocks and waits for the data
 func (pfc *progressiveCollapseForwarder) IndexRead(index uint64, b []byte) (int, error) {
 	i := atomic.LoadUint64(&pfc.rIndex)
 	if index >= i {

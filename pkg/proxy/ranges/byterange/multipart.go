@@ -156,7 +156,8 @@ func (mbrs MultipartByteRanges) Compress() {
 }
 
 // ParseMultipartRangeResponseBody returns a MultipartByteRanges from the provided body
-func ParseMultipartRangeResponseBody(body io.Reader, contentTypeHeader string) (MultipartByteRanges, string, Ranges, int64, error) {
+func ParseMultipartRangeResponseBody(body io.Reader,
+	contentTypeHeader string) (MultipartByteRanges, string, Ranges, int64, error) {
 	parts := make(MultipartByteRanges)
 	ranges := make(Ranges, 0)
 	fullContentLength := int64(-1)
@@ -206,7 +207,8 @@ func ParseMultipartRangeResponseBody(body io.Reader, contentTypeHeader string) (
 
 // ExtractResponseRange returns http headers and body representing the subject MultipartByteRanges map,
 // cropped to the provided ranges
-func (mbrs MultipartByteRanges) ExtractResponseRange(ranges Ranges, fullContentLength int64, contentType string, body []byte) (http.Header, []byte) {
+func (mbrs MultipartByteRanges) ExtractResponseRange(ranges Ranges, fullContentLength int64,
+	contentType string, body []byte) (http.Header, []byte) {
 
 	if ranges == nil || len(ranges) == 0 {
 		return nil, body

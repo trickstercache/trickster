@@ -60,7 +60,8 @@ func (c *Cache) Configuration() *options.Options {
 
 // Connect initializes the Cache
 func (c *Cache) Connect() error {
-	c.Logger.Info("memorycache setup", tl.Pairs{"name": c.Name, "maxSizeBytes": c.Config.Index.MaxSizeBytes, "maxSizeObjects": c.Config.Index.MaxSizeObjects})
+	c.Logger.Info("memorycache setup", tl.Pairs{"name": c.Name,
+		"maxSizeBytes": c.Config.Index.MaxSizeBytes, "maxSizeObjects": c.Config.Index.MaxSizeObjects})
 	lockPrefix = c.Name + ".memory."
 	c.client = sync.Map{}
 	c.Index = index.NewIndex(c.Name, c.Config.CacheType, nil, c.Config.Index, c.BulkRemove, nil, c.Logger)
@@ -77,7 +78,8 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 	return c.store(cacheKey, data, nil, ttl, true)
 }
 
-func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceObject, ttl time.Duration, updateIndex bool) error {
+func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceObject,
+	ttl time.Duration, updateIndex bool) error {
 
 	var o1, o2 *index.Object
 	var l int
@@ -95,7 +97,8 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 
 	if o1 != nil && o2 != nil {
 		nl, _ := c.locker.Acquire(lockPrefix + cacheKey)
-		go c.Logger.Debug("memorycache cache store", tl.Pairs{"cacheKey": cacheKey, "length": l, "ttl": ttl, "is_direct": isDirect})
+		go c.Logger.Debug("memorycache cache store",
+			tl.Pairs{"cacheKey": cacheKey, "length": l, "ttl": ttl, "is_direct": isDirect})
 		c.client.Store(cacheKey, o1)
 		if updateIndex {
 			c.Index.UpdateObject(o2)
@@ -107,7 +110,8 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 }
 
 // RetrieveReference looks for an object in cache and returns it (or an error if not found)
-func (c *Cache) RetrieveReference(cacheKey string, allowExpired bool) (interface{}, status.LookupStatus, error) {
+func (c *Cache) RetrieveReference(cacheKey string, allowExpired bool) (interface{},
+	status.LookupStatus, error) {
 	o, s, err := c.retrieve(cacheKey, allowExpired, true)
 	if err != nil {
 		return nil, s, err
@@ -130,7 +134,8 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 	return nil, s, nil
 }
 
-func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index.Object, status.LookupStatus, error) {
+func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index.Object,
+	status.LookupStatus, error) {
 
 	nl, _ := c.locker.RAcquire(lockPrefix + cacheKey)
 	record, ok := c.client.Load(cacheKey)

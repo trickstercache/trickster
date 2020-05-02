@@ -23,7 +23,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
-// ProxyHandler sends a request through the basic reverse proxy to the origin, and services non-cacheable InfluxDB API calls
+// ProxyHandler sends a request through the basic reverse proxy to the origin,
+// and services non-cacheable InfluxDB API calls
 func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
 	engines.DoProxy(w, r)

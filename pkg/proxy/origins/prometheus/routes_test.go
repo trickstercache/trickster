@@ -42,7 +42,8 @@ func TestHandlers(t *testing.T) {
 func TestDefaultPathConfigs(t *testing.T) {
 
 	client := &Client{name: "test"}
-	ts, _, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
+	ts, _, r, hc, err := tu.NewTestInstance("",
+		client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
 	rsc := request.GetResources(r)
 	rsc.OriginClient = client
 	client.config = rsc.OriginConfig

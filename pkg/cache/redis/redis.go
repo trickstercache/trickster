@@ -62,7 +62,8 @@ func (c *Cache) Configuration() *options.Options {
 
 // Connect connects to the configured Redis endpoint
 func (c *Cache) Connect() error {
-	c.Logger.Info("connecting to redis", tl.Pairs{"protocol": c.Config.Redis.Protocol, "Endpoint": c.Config.Redis.Endpoint})
+	c.Logger.Info("connecting to redis",
+		tl.Pairs{"protocol": c.Config.Redis.Protocol, "Endpoint": c.Config.Redis.Endpoint})
 
 	switch c.Config.Redis.ClientType {
 	case "sentinel":

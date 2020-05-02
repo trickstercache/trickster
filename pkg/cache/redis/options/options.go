@@ -26,9 +26,9 @@ type Options struct {
 	ClientType string `toml:"client_type"`
 	// Protocol represents the connection method (e.g., "tcp", "unix", etc.)
 	Protocol string `toml:"protocol"`
-	// Endpoint represents FQDN:port or IPAddress:Port of the Redis Endpoint
+	// Endpoint represents FQDN:port or IP:Port of the Redis Endpoint
 	Endpoint string `toml:"endpoint"`
-	// Endpoints represents FQDN:port or IPAddress:Port collection of a Redis Cluster or Sentinel Nodes
+	// Endpoints represents FQDN:port or IP:Port collection of a Redis Cluster or Sentinel Nodes
 	Endpoints []string `toml:"endpoints"`
 	// Password can be set when using password protected redis instance.
 	Password string `toml:"password"`
@@ -44,17 +44,21 @@ type Options struct {
 	MaxRetryBackoffMS int `toml:"max_retry_backoff_ms"`
 	// DialTimeoutMS is the timeout for establishing new connections.
 	DialTimeoutMS int `toml:"dial_timeout_ms"`
-	// ReadTimeoutMS is the timeout for socket reads. If reached, commands will fail with a timeout instead of blocking.
+	// ReadTimeoutMS is the timeout for socket reads.
+	// If reached, commands will fail with a timeout instead of blocking.
 	ReadTimeoutMS int `toml:"read_timeout_ms"`
-	// WriteTimeoutMS is the timeout for socket writes. If reached, commands will fail with a timeout instead of blocking.
+	// WriteTimeoutMS is the timeout for socket writes.
+	// If reached, commands will fail with a timeout instead of blocking.
 	WriteTimeoutMS int `toml:"write_timeout_ms"`
 	// PoolSize is the maximum number of socket connections.
 	PoolSize int `toml:"pool_size"`
-	// MinIdleConns is the minimum number of idle connections which is useful when establishing new connection is slow.
+	// MinIdleConns is the minimum number of idle connections
+	// which is useful when establishing new connection is slow.
 	MinIdleConns int `toml:"min_idle_conns"`
 	// MaxConnAgeMS is the connection age at which client retires (closes) the connection.
 	MaxConnAgeMS int `toml:"max_conn_age_ms"`
-	// PoolTimeoutMS is the amount of time client waits for connection if all connections are busy before returning an error.
+	// PoolTimeoutMS is the amount of time client waits for connection if all
+	// connections are busy before returning an error.
 	PoolTimeoutMS int `toml:"pool_timeout_ms"`
 	// IdleTimeoutMS is the amount of time after which client closes idle connections.
 	IdleTimeoutMS int `toml:"idle_timeout_ms"`

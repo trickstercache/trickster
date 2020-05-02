@@ -50,10 +50,8 @@ func GetNamedMatches(re *regexp.Regexp, input string, filter []string) map[strin
 					found[name] = n
 				}
 			}
-		} else {
-			if have[i] != "" && n != "" {
-				found[have[i]] = n
-			}
+		} else if have[i] != "" && n != "" {
+			found[have[i]] = n
 		}
 	}
 	return found

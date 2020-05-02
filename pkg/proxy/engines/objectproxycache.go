@@ -106,14 +106,12 @@ func handleCachePartialHit(pr *proxyRequest) error {
 			pr.upstreamReader = ioutil.NopCloser(bytes.NewBuffer(b))
 		}
 
-	} else {
-		if d != nil {
-			d.RangeParts = nil
-			d.Ranges = nil
-			d.StoredRangeParts = nil
-			d.StatusCode = resp.StatusCode
-			http.Header(d.Headers).Del(headers.NameContentRange)
-		}
+	} else if d != nil {
+		d.RangeParts = nil
+		d.Ranges = nil
+		d.StoredRangeParts = nil
+		d.StatusCode = resp.StatusCode
+		http.Header(d.Headers).Del(headers.NameContentRange)
 	}
 
 	pr.store()
@@ -227,7 +225,8 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 	}
 
 	d.headerLock.Lock()
-	pr.upstreamResponse = &http.Response{StatusCode: d.StatusCode, Request: pr.Request, Header: http.Header(d.Headers).Clone()}
+	pr.upstreamResponse = &http.Response{StatusCode: d.StatusCode, Request: pr.Request,
+		Header: http.Header(d.Headers).Clone()}
 	d.headerLock.Unlock()
 	if pr.wantsRanges {
 		h, b := d.RangeParts.ExtractResponseRange(pr.wantedRanges, d.ContentLength, d.ContentType, d.Body)
@@ -418,7 +417,8 @@ func ObjectProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss), writes the object to the cache, and returns the object to the caller
+// FetchViaObjectProxyCache Fetches an object from Cache or Origin (on miss),
+// writes the object to the cache, and returns the object to the caller
 func FetchViaObjectProxyCache(r *http.Request) ([]byte, *http.Response, bool) {
 	w := bytes.NewBuffer(nil)
 	resp, cacheStatus := fetchViaObjectProxyCache(w, r)
@@ -428,7 +428,8 @@ func FetchViaObjectProxyCache(r *http.Request) ([]byte, *http.Response, bool) {
 	return w.Bytes(), resp, cacheStatus == status.LookupStatusHit
 }
 
-func recordOPCResult(pr *proxyRequest, cacheStatus status.LookupStatus, httpStatus int, path string, elapsed float64, header http.Header) {
+func recordOPCResult(pr *proxyRequest, cacheStatus status.LookupStatus, httpStatus int,
+	path string, elapsed float64, header http.Header) {
 	pr.mapLock.Lock()
 	recordResults(pr.Request, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, header)
 	pr.mapLock.Unlock()

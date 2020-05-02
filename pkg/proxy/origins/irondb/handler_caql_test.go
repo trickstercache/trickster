@@ -33,9 +33,10 @@ import (
 func TestCAQLHandler(t *testing.T) {
 
 	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "irondb", "/extension/lua/caql_v1"+
-		"?query=metric:average(%2200112233-4455-6677-8899-aabbccddeeff%22,"+
-		"%22metric%22)&start=0&end=900&period=300", "debug")
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200,
+		"{}", nil, "irondb", "/extension/lua/caql_v1"+
+			"?query=metric:average(%2200112233-4455-6677-8899-aabbccddeeff%22,"+
+			"%22metric%22)&start=0&end=900&period=300", "debug")
 	rsc := request.GetResources(r)
 	rsc.OriginClient = client
 	client.config = rsc.OriginConfig
@@ -183,7 +184,8 @@ func TestCaqlHandlerParseTimeRangeQuery(t *testing.T) {
 func TestCaqlHandlerFastForwardURLError(t *testing.T) {
 
 	client := &Client{name: "test"}
-	_, _, r, _, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "irondb", "/extension/lua/caql_v1", "debug")
+	_, _, r, _, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}",
+		nil, "irondb", "/extension/lua/caql_v1", "debug")
 	if err != nil {
 		t.Error(err)
 	}
