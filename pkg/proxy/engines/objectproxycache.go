@@ -414,7 +414,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 func ObjectProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	_, cacheStatus := fetchViaObjectProxyCache(w, r)
 	if cacheStatus == status.LookupStatusProxyOnly {
-		DoProxy(w, r)
+		DoProxy(w, r, true)
 	}
 }
 
@@ -423,8 +423,13 @@ func FetchViaObjectProxyCache(r *http.Request) ([]byte, *http.Response, bool) {
 	w := bytes.NewBuffer(nil)
 	resp, cacheStatus := fetchViaObjectProxyCache(w, r)
 	if cacheStatus == status.LookupStatusProxyOnly {
-		resp = DoProxy(w, r)
+		resp = DoProxy(w, r, false)
 	}
+
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
+
 	return w.Bytes(), resp, cacheStatus == status.LookupStatusHit
 }
 

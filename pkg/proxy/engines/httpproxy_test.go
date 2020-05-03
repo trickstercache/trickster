@@ -63,7 +63,7 @@ func TestDoProxy(t *testing.T) {
 	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, nil, testLogger)))
 
 	//req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-	DoProxy(w, r)
+	DoProxy(w, r, true)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -111,7 +111,7 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(oc, pc, nil, nil, nil, nil, testLogger)))
 
 	//req := model.NewRequest("TestProxyRequest", r.Method, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-	DoProxy(w, r)
+	DoProxy(w, r, true)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadGateway)
@@ -156,7 +156,7 @@ func TestClockOffsetWarning(t *testing.T) {
 	}
 
 	//req := model.NewRequest("TestProxyRequest", http.MethodGet, r.URL, make(http.Header), time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-	DoProxy(w, r)
+	DoProxy(w, r, true)
 	resp := w.Result()
 
 	if !testLogger.HasWarnedOnce("clockoffset.default") {
@@ -201,7 +201,7 @@ func TestDoProxyWithPCF(t *testing.T) {
 	// get URL
 
 	//req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-	DoProxy(w, r)
+	DoProxy(w, r, true)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -256,7 +256,7 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 	// get URL
 
 	//req := model.NewRequest("TestProxyRequest", r.Method, r.URL, http.Header{"testHeaderName": []string{"testHeaderValue"}}, time.Duration(30)*time.Second, r, tu.NewTestWebClient())
-	DoProxy(w, r)
+	DoProxy(w, r, true)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)

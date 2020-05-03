@@ -762,7 +762,7 @@ func (me *MatrixEnvelope) ValueCount() int {
 func (c *TestClient) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	u := c.BaseURL()
 	u.Path += APIPath + mnLabels
-	DoProxy(w, r)
+	DoProxy(w, r, true)
 }
 
 func (c *TestClient) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
@@ -781,7 +781,7 @@ func (c *TestClient) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *TestClient) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	DoProxy(w, r)
+	DoProxy(w, r, true)
 }
 
 func (c *TestClient) SetUpstreamLogging(bool) {

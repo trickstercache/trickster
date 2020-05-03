@@ -59,7 +59,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	trq, err := client.ParseTimeRangeQuery(r)
 	if err != nil {
 		// err may simply mean incompatible query (e.g., non-select), so just proxy
-		DoProxy(w, r)
+		DoProxy(w, r, true)
 		return
 	}
 
@@ -85,14 +85,14 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			pr.Logger.Debug("timerange end is too early to consider caching",
 				tl.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp,
 					"step": trq.Step, "retention": oc.TimeseriesRetention})
-			DoProxy(w, r)
+			DoProxy(w, r, true)
 			return
 		}
 		if trq.Extent.Start.After(bf.End) {
 			pr.Logger.Debug("timerange is too new to cache due to backfill tolerance",
 				tl.Pairs{"backFillToleranceSecs": oc.BackfillToleranceSecs,
 					"newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
-			DoProxy(w, r)
+			DoProxy(w, r, true)
 			return
 		}
 	}
@@ -174,7 +174,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 							pr.cacheLock.RRelease()
 							go pr.Logger.Debug("timerange end is too early to consider caching",
 								tl.Pairs{"step": trq.Step, "retention": oc.TimeseriesRetention})
-							DoProxy(w, r)
+							DoProxy(w, r, true)
 							return
 						}
 						if trq.Extent.Start.After(el[len(el)-1].End) {
@@ -186,7 +186,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 									"queryStart":              trq.Extent.Start,
 								},
 							)
-							DoProxy(w, r)
+							DoProxy(w, r, true)
 							return
 						}
 					}

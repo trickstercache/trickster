@@ -40,7 +40,7 @@ func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	req = req.WithContext(r.Context())
 
 	req.Header = c.healthHeaders
-	engines.DoProxy(w, req)
+	engines.DoProxy(w, req, true)
 
 }
 
