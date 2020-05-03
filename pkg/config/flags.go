@@ -33,7 +33,6 @@ const (
 	cfOriginType  = "origin-type"
 	cfProxyPort   = "proxy-port"
 	cfMetricsPort = "metrics-port"
-	cfReloadPort  = "reload-port"
 )
 
 // Flags holds the values for whitelisted flags
@@ -49,9 +48,6 @@ type Flags struct {
 	ReloadListenPort  int
 	LogLevel          string
 	InstanceID        int
-
-	providedOriginURL  string
-	providedOriginType string
 }
 
 func parseFlags(applicationName string, arguments []string) (*Flags, error) {
@@ -70,8 +66,7 @@ func parseFlags(applicationName string, arguments []string) (*Flags, error) {
 	flagSet.IntVar(&flags.MetricsListenPort, cfMetricsPort, 0, "Port that the /metrics endpoint will listen on")
 	//flagSet.IntVar(&flags.ReloadListenPort, cfReloadPort, 0, "Port that the /-/reload endpoint will listen on.")
 
-	var err error
-	err = flagSet.Parse(arguments)
+	err := flagSet.Parse(arguments)
 	if err != nil {
 		return nil, err
 	}

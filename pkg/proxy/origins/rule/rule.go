@@ -94,7 +94,7 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 
 		// if it's a redirect response, set the appropriate context
 		if c.redirectCode > 0 {
-			hr.WithContext(handlers.WithRedirects(hr.Context(),
+			hr = hr.WithContext(handlers.WithRedirects(hr.Context(),
 				c.redirectCode, c.redirectURL))
 		}
 	}

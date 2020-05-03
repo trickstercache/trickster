@@ -29,6 +29,7 @@ import (
 	ph "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	sw "github.com/tricksterproxy/trickster/pkg/proxy/tls"
 	"github.com/tricksterproxy/trickster/pkg/routing"
+	"github.com/tricksterproxy/trickster/pkg/tracing"
 	"github.com/tricksterproxy/trickster/pkg/util/log"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
@@ -47,7 +48,7 @@ type listenerGroup struct {
 }
 
 func startListener(listenerName, address string, port int, connectionsLimit int,
-	tlsConfig *tls.Config, router http.Handler, wg *sync.WaitGroup,
+	tlsConfig *tls.Config, router http.Handler, wg *sync.WaitGroup, tracers tracing.Tracers,
 	exitOnError bool, log *tl.Logger) error {
 	if wg != nil {
 		defer wg.Done()
@@ -78,6 +79,15 @@ func startListener(listenerName, address string, port int, connectionsLimit int,
 	lg.listener = l
 	listeners[listenerName] = lg
 
+	// defer the tracer flush here where the listener connection ends
+	if tracers != nil {
+		for _, v := range tracers {
+			if v != nil && v.Flusher != nil {
+				defer v.Flusher()
+			}
+		}
+	}
+
 	err = http.Serve(l, handlers.CompressHandler(lg.routeSwapper))
 	if err != nil {
 		log.Error("http listener stopping", tl.Pairs{"name": listenerName, "detail": err})
@@ -90,15 +100,16 @@ func startListener(listenerName, address string, port int, connectionsLimit int,
 
 func startListenerRouter(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, path string, handler http.Handler, wg *sync.WaitGroup,
-	exitOnError bool, log *tl.Logger) error {
+	tracers tracing.Tracers, exitOnError bool, log *tl.Logger) error {
 	router := http.NewServeMux()
 	router.Handle(path, handler)
 	return startListener(listenerName, address, port, connectionsLimit,
-		tlsConfig, router, wg, exitOnError, log)
+		tlsConfig, router, wg, tracers, exitOnError, log)
 }
 
 func applyListenerConfigs(conf, oldConf *config.Config,
-	router, reloadHandler http.Handler, log *log.Logger) {
+	router, reloadHandler http.Handler, log *log.Logger,
+	tracers tracing.Tracers) {
 
 	var err error
 	var routerRefreshed bool
@@ -137,6 +148,8 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 
 	drainTime := time.Duration(conf.ReloadConfig.DrainTimeoutSecs) * time.Second
 
+	var tracerFlusherSet bool
+
 	// if TLS port is configured and at least one origin is mapped to a good tls config,
 	// then set up the tls server listener instance
 	if conf.Frontend.ServeTLS && conf.Frontend.TLSListenPort > 0 && (!hasOldFC ||
@@ -152,9 +165,10 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		} else {
 			wg.Add(1)
 			routerRefreshed = true
+			tracerFlusherSet = true
 			go startListener("tlsListener",
 				conf.Frontend.TLSListenAddress, conf.Frontend.TLSListenPort,
-				conf.Frontend.ConnectionsLimit, tlsConfig, router, wg, true, log)
+				conf.Frontend.ConnectionsLimit, tlsConfig, router, wg, tracers, true, log)
 		}
 
 	} else if !conf.Frontend.ServeTLS && hasOldFC && oldConf.Frontend.ServeTLS {
@@ -180,9 +194,15 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		spinDownListener("httpListener", drainTime)
 		wg.Add(1)
 		routerRefreshed = true
+
+		var t2 tracing.Tracers
+		if !tracerFlusherSet {
+			t2 = tracers
+		}
+
 		go startListener("httpListener",
 			conf.Frontend.ListenAddress, conf.Frontend.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, router, wg, true, log)
+			conf.Frontend.ConnectionsLimit, nil, router, wg, t2, true, log)
 
 	}
 
@@ -200,7 +220,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		wg.Add(1)
 		go startListener("metricsListener",
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, mr, wg, true, log)
+			conf.Frontend.ConnectionsLimit, nil, mr, wg, nil, true, log)
 	}
 
 	// if the Reload HTTP port is configured, then set up the http listener instance
@@ -218,7 +238,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 
 		go startListener("reloadListener",
 			conf.ReloadConfig.ListenAddress, conf.ReloadConfig.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, mr, wg, true, log)
+			conf.Frontend.ConnectionsLimit, nil, mr, wg, nil, true, log)
 	}
 
 	if routerRefreshed {

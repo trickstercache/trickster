@@ -16,7 +16,9 @@
 
 package options
 
-type rewriteList [][]string
+import rewropts "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
+
+//type rewriteList [][]string
 
 // Options defines the options for a Rule
 type Options struct {
@@ -52,10 +54,10 @@ type Options struct {
 	//
 	// PreOpRewrite is a list of URL and Header rewrite instructions that permanently modify the
 	// http request prior to executing the rule
-	PreOpRewrite rewriteList `toml:"rewrite"`
+	PreOpRewrite rewropts.RewriteList `toml:"rewrite"`
 	// PostOpRewrite is a list of URL and Header rewrite instructions that permanently modify the
 	// http request after executing the rule
-	PostOpRewrite rewriteList `toml:"rewrite"`
+	PostOpRewrite rewropts.RewriteList `toml:"rewrite"`
 	// InputKey is optional and provides extra information for locating the data source
 	// when the InputSource is header or param, the input key must be the target header or param name
 	InputKey string `toml:"input_key"`
@@ -105,4 +107,35 @@ type CaseOptions struct {
 	// RedirectURL provides a URL to redirect the request in this case, rather than
 	// handing off to the NextRoute
 	RedirectURL string `toml:"redirect_url"`
+}
+
+// Clone returns a perfect copy of the subject *Options
+func (o *Options) Clone() *Options {
+	var preRL, postRL rewropts.RewriteList
+	if len(o.PreOpRewrite) > 0 {
+		preRL = o.PreOpRewrite.Clone()
+	}
+	if len(o.PostOpRewrite) > 0 {
+		postRL = o.PreOpRewrite.Clone()
+	}
+	return &Options{
+		Name:                   o.Name,
+		NextRoute:              o.NextRoute,
+		IngressReqRewriterName: o.IngressReqRewriterName,
+		EgressReqRewriterName:  o.EgressReqRewriterName,
+		DefaultReqRewriterName: o.DefaultReqRewriterName,
+		InputSource:            o.InputSource,
+		PreOpRewrite:           preRL,
+		PostOpRewrite:          postRL,
+		InputKey:               o.InputKey,
+		InputType:              o.InputType,
+		InputEncoding:          o.InputEncoding,
+		InputIndex:             o.InputIndex,
+		InputDelimiter:         o.InputDelimiter,
+		Operation:              o.Operation,
+		OperationArg:           o.OperationArg,
+		CaseOptions:            o.CaseOptions,
+		RedirectURL:            o.RedirectURL,
+		MaxRuleExecutions:      o.MaxRuleExecutions,
+	}
 }

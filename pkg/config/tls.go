@@ -50,8 +50,6 @@ func (c *Config) TLSCertConfig() (*tls.Config, error) {
 		}
 	}
 
-	tlsConfig.BuildNameToCertificate()
-
 	return tlsConfig, nil
 
 }

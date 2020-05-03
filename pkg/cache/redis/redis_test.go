@@ -96,8 +96,8 @@ func TestClientSelectionSentinel(t *testing.T) {
 
 func TestSentinelOpts(t *testing.T) {
 
-	const expected1 = `Invalid 'endpoints' config`
-	const expected2 = `Invalid 'sentinel_master' config`
+	const expected1 = `invalid 'endpoints' config`
+	const expected2 = `invalid 'sentinel_master' config`
 
 	rc, close := setupRedisCache(clientTypeSentinel)
 	defer close()
@@ -121,7 +121,7 @@ func TestSentinelOpts(t *testing.T) {
 
 func TestClusterOpts(t *testing.T) {
 
-	const expected1 = `Invalid 'endpoints' config`
+	const expected1 = `invalid 'endpoints' config`
 
 	rc, close := setupRedisCache(clientTypeCluster)
 	defer close()

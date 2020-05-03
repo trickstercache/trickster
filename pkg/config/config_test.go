@@ -28,6 +28,7 @@ import (
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	rule "github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	rwo "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
@@ -58,6 +59,10 @@ func TestClone(t *testing.T) {
 	oc.TLS = &to.Options{CertificateAuthorityPaths: []string{"foo"}}
 	oc.HealthCheckHeaders = map[string]string{headers.NameAuthorization: expected}
 
+	c1.Rules = map[string]*rule.Options{
+		"test": {},
+	}
+
 	c2 := c1.Clone()
 	x := c2.Origins["default"].HealthCheckHeaders[headers.NameAuthorization]
 	if x != expected {
@@ -69,7 +74,7 @@ func TestOriginConfigClone(t *testing.T) {
 	c := NewConfig()
 	oc1 := c.Origins["default"]
 	oc2 := oc1.Clone()
-	if oc2.TracingConfig == nil {
+	if oc2.Paths == nil {
 		t.Error(errors.New("expected non-nil cloned config"))
 	}
 }
@@ -307,7 +312,7 @@ func TestLoadTOMLConfig(t *testing.T) {
 func TestIsStale(t *testing.T) {
 
 	testFile := fmt.Sprintf("/tmp/trickster_test_config.%d.conf", time.Now().UnixNano())
-	c, tml := emptyTestConfig()
+	_, tml := emptyTestConfig()
 
 	err := ioutil.WriteFile(testFile, []byte(tml), 0666)
 	if err != nil {
@@ -315,7 +320,7 @@ func TestIsStale(t *testing.T) {
 	}
 	defer os.Remove(testFile)
 
-	c, _, _ = Load("testing", "testing", []string{"-config", testFile})
+	c, _, _ := Load("testing", "testing", []string{"-config", testFile})
 	c.ReloadConfig.RateLimitSecs = 0
 
 	if c.IsStale() {

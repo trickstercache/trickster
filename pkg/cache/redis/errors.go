@@ -14,12 +14,15 @@
  * limitations under the License.
  */
 
-package tracing
+package redis
 
-import (
-	"go.opentelemetry.io/otel/api/trace"
-)
+import "errors"
 
-func setNoopExporter() (trace.Tracer, func(), *recorderExporter, error) {
-	return trace.NoopTracer{}, func() {}, nil, nil
-}
+// ErrInvalidEndpointConfig indicates an invalid endpoint config
+var ErrInvalidEndpointConfig = errors.New("invalid 'endpoint' config")
+
+// ErrInvalidEndpointsConfig indicates an invalid endpoints config
+var ErrInvalidEndpointsConfig = errors.New("invalid 'endpoints' config")
+
+// ErrInvalidSentinalMasterConfig indicates an invalid sentinel_master config
+var ErrInvalidSentinalMasterConfig = errors.New("invalid 'sentinel_master' config")

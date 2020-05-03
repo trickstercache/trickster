@@ -33,9 +33,10 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/tracing"
+	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	"github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
-	"github.com/tricksterproxy/trickster/pkg/util/tracing"
 
 	"go.opentelemetry.io/otel/api/core"
 	othttptrace "go.opentelemetry.io/otel/plugin/httptrace"
@@ -48,13 +49,13 @@ var Reqs sync.Map
 const HTTPBlockSize = 32 * 1024
 
 // DoProxy proxies an inbound request to its corresponding upstream origin with no caching features
-func DoProxy(w io.Writer, r *http.Request) *http.Response {
+func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 
 	rsc := request.GetResources(r)
 	oc := rsc.OriginConfig
 
 	start := time.Now()
-	_, span := tracing.NewChildSpan(r.Context(), oc.TracingConfig.Tracer, "ProxyRequest")
+	_, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
 	defer span.End()
 
 	pc := rsc.PathConfig
@@ -62,7 +63,8 @@ func DoProxy(w io.Writer, r *http.Request) *http.Response {
 	var elapsed time.Duration
 	var cacheStatusCode status.LookupStatus
 	var resp *http.Response
-	var reader io.Reader
+	var reader io.ReadCloser
+
 	if pc == nil || pc.CollapsedForwardingType != forwarding.CFTypeProgressive {
 		reader, resp, _ = PrepareFetchReader(r)
 		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
@@ -84,10 +86,15 @@ func DoProxy(w io.Writer, r *http.Request) *http.Response {
 				pcf := NewPCF(resp, contentLength)
 				Reqs.Store(key, pcf)
 				// Blocks until server completes
+				grClose := reader != nil && closeResponse
+				closeResponse = false
 				go func() {
 					io.Copy(pcf, reader)
 					pcf.Close()
 					Reqs.Delete(key)
+					if grClose {
+						reader.Close()
+					}
 				}()
 				pcf.AddClient(writer)
 			}
@@ -98,6 +105,11 @@ func DoProxy(w io.Writer, r *http.Request) *http.Response {
 			pcf.AddClient(writer)
 		}
 	}
+
+	if closeResponse && reader != nil {
+		reader.Close()
+	}
+
 	elapsed = time.Since(start)
 	recordResults(r, "HTTPProxy", cacheStatusCode, resp.StatusCode, r.URL.Path, "", elapsed.Seconds(), nil, resp.Header)
 	return resp
@@ -124,7 +136,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	rsc := request.GetResources(r)
 	oc := rsc.OriginConfig
 
-	ctx, span := tracing.NewChildSpan(r.Context(), oc.TracingConfig.Tracer, "PrepareFetchReader")
+	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "PrepareFetchReader")
 	defer span.End()
 
 	pc := rsc.PathConfig
@@ -149,13 +161,12 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	ctx, r = othttptrace.W3C(ctx, r)
 	othttptrace.Inject(ctx, r)
 
-	ctx, doSpan := tracing.NewChildSpan(r.Context(), oc.TracingConfig.Tracer, "ProxyRequest")
+	ctx, doSpan := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
 
 	// clear the Host header before proxying or it will be forwarded upstream
 	r.Host = ""
 
 	resp, err := oc.HTTPClient.Do(r)
-
 	if err != nil {
 		rsc.Logger.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		// if there is an err and the response is nil, the server could not be reached; make a 502 for the downstream response
@@ -169,7 +180,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 			core.Key("Error").String(err.Error()),
 			core.Key("HTTPStatus").Int(resp.StatusCode),
 		)
-		doSpan.SetStatus(tracing.HTTPToCode(resp.StatusCode))
+		doSpan.SetStatus(tracing.HTTPToCode(resp.StatusCode), "")
 
 		if pc != nil {
 			headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
@@ -187,7 +198,6 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		}
 		resp.ContentLength = int64(originalLen)
 	}
-	rc = resp.Body
 
 	// warn if the clock between trickster and the origin is off by more than 1 minute
 	if date := resp.Header.Get(headers.NameDate); date != "" {
@@ -215,7 +225,11 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	}
 
 	if hasCustomResponseBody {
+		// Since we are not responding with the actual upstream response body, close it here
+		resp.Body.Close()
 		rc = ioutil.NopCloser(bytes.NewBuffer(pc.ResponseBodyBytes))
+	} else {
+		rc = resp.Body
 	}
 
 	return rc, resp, originalLen

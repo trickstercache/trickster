@@ -83,6 +83,10 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 			"../../testdata/test.invalid-negative-cache-3.conf",
 			`invalid negative cache name: foo`,
 		},
+		{ // Case 7
+			"../../testdata/test.invalid-pcf-name.conf",
+			`invalid collapsed_forwarding name: INVALID`,
+		},
 	}
 
 	for i, test := range tests {
@@ -97,29 +101,6 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 		})
 	}
 
-}
-
-// TODO: this fails.. the default config has a url set, unsure why this would error
-// func TestLoadConfigurationMissingOriginURL(t *testing.T) {
-// 	expected := `no valid origins configured`
-// 	a := []string{"-origin-type", "testing"}
-// 	_, _, err := Load("trickster-test", "0", a)
-// 	if err == nil {
-// 		t.Errorf("expected error `%s` got nothing", expected)
-// 	} else if err.Error() != expected {
-// 		t.Errorf("expected error `%s` got `%s`", expected, err.Error())
-// 	}
-// }
-
-func TestLoadConfigurationInvalidTracingName(t *testing.T) {
-	expected := `invalid tracing config name: test`
-	a := []string{"-config", "../../testdata/test.unknown-tracing-type.conf"}
-	_, _, err := Load("trickster-test", "0", a)
-	if err == nil {
-		t.Errorf("expected error `%s` got nothing", expected)
-	} else if err.Error() != expected {
-		t.Errorf("expected error `%s` got `%s`", expected, err.Error())
-	}
 }
 
 func TestFullLoadConfiguration(t *testing.T) {

@@ -73,9 +73,11 @@ func TestHealthHandlerCustomPath(t *testing.T) {
 
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("../../../../testdata/test.custom_health.conf", client.DefaultPathConfigs, 200, "{}", nil, "clickhouse", "/health", "debug")
-	defer ts.Close()
+
 	if err != nil {
 		t.Error(err)
+	} else {
+		defer ts.Close()
 	}
 
 	rsc := request.GetResources(r)

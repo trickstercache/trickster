@@ -90,12 +90,14 @@ func newProxyRequest(r *http.Request, w io.Writer) *proxyRequest {
 	rsc := request.GetResources(r)
 	pr := &proxyRequest{
 		Request:         r,
-		Logger:          rsc.Logger,
 		upstreamRequest: r.Clone(tctx.WithResources(context.Background(), rsc)),
 		contentLength:   -1,
 		responseWriter:  w,
 		started:         time.Now(),
 		mapLock:         &sync.Mutex{},
+	}
+	if rsc != nil {
+		pr.Logger = rsc.Logger
 	}
 	return pr
 }

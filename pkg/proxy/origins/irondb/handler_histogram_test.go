@@ -182,7 +182,7 @@ func TestHistogramHandlerSetExtent(t *testing.T) {
 		t.Error(err)
 	}
 
-	r = request.SetResources(r, request.NewResources(cfg, nil, nil, nil, client, tl.ConsoleLogger("error")))
+	r = request.SetResources(r, request.NewResources(cfg, nil, nil, nil, client, nil, tl.ConsoleLogger("error")))
 
 	now := time.Now()
 	then := now.Add(-5 * time.Hour)
@@ -215,7 +215,7 @@ func TestHistogramHandlerFastForwardURLError(t *testing.T) {
 		t.Error(err)
 	}
 
-	rsc := request.NewResources(cfg, nil, nil, nil, client, tl.ConsoleLogger("error"))
+	rsc := request.NewResources(cfg, nil, nil, nil, client, nil, tl.ConsoleLogger("error"))
 	r = request.SetResources(r, rsc)
 
 	r.URL.Path = "/histogram/x/900/300/00112233-4455-6677-8899-aabbccddeeff/metric"

@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/util/md5"
@@ -146,12 +147,12 @@ func deepSearch(document map[string]interface{}, key string) (string, error) {
 	for i, p := range parts {
 		v, ok := m[p]
 		if !ok {
-			return "", fmt.Errorf("could not find key: %s", key)
+			return "", errors.CouldNotFindKey(key)
 		}
 		if l != i {
 			m, ok = v.(map[string]interface{})
 			if !ok {
-				return "", fmt.Errorf("could not find key: %s", key)
+				return "", errors.CouldNotFindKey(key)
 			}
 			continue
 		}
@@ -169,5 +170,5 @@ func deepSearch(document map[string]interface{}, key string) (string, error) {
 		}
 
 	}
-	return "", fmt.Errorf("could not find key: %s", key)
+	return "", errors.CouldNotFindKey(key)
 }

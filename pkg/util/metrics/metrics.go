@@ -109,7 +109,7 @@ func init() {
 	BuildInfo = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
-			Subsystem: "build",
+			Subsystem: buildSubsystem,
 			Name:      "info",
 			Help:      "A metric with a constant '1' value labeled by version, revision, and goversion from which Trickster was built.",
 		},

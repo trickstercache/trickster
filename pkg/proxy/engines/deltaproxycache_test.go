@@ -473,6 +473,8 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 
 	r.URL = u
 
+	time.Sleep(time.Millisecond * 10)
+
 	w = httptest.NewRecorder()
 	client.QueryRangeHandler(w, r)
 	resp = w.Result()
@@ -514,6 +516,8 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 		extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency, client.RangeCacheKey, client.InstantCacheKey)
 
 	r.URL = u
+
+	time.Sleep(time.Millisecond * 10)
 
 	w = httptest.NewRecorder()
 	client.QueryRangeHandler(w, r)
@@ -560,6 +564,8 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
 		extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency, client.RangeCacheKey, client.InstantCacheKey)
+
+	time.Sleep(time.Millisecond * 10)
 
 	r.URL = u
 	w = httptest.NewRecorder()

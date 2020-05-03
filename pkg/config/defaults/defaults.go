@@ -55,10 +55,11 @@ const (
 	// DefaultRateLimitSecs is the default Rate Limit time for Config Reloads
 	DefaultRateLimitSecs = 3
 
-	// DefaultTracerImplemetation is the default distributed tracer implementation
-	DefaultTracerImplemetation = "opentelemetry"
-	// DefaultExporterImplementation is the default distributed tracer exporter implementation
-	DefaultExporterImplementation = "noop"
+	// DefaultTracerType is the default distributed tracer exporter implementation
+	DefaultTracerType = "none"
+
+	// DefaultTracerServiceName is the default service.name field in distributed trace attributes/tags
+	DefaultTracerServiceName = "trickster"
 
 	// DefaultCacheType is the default cache type for any defined cache
 	DefaultCacheType = "memory"
@@ -72,7 +73,7 @@ const (
 	DefaultFastForwardTTLSecs = 15
 	// DefaultMaxTTLSecs is the default Maximum TTL of any cache object
 	DefaultMaxTTLSecs = 86400
-	// DefaultRevalidationFactor is the default Cache Object Freshness Lifetime to TTL mulitplier
+	// DefaultRevalidationFactor is the default Cache Object Freshness Lifetime to TTL multiplier
 	DefaultRevalidationFactor = 2
 	// DefaultRedisClientType is the default Redis Client Type
 	DefaultRedisClientType = "standard"

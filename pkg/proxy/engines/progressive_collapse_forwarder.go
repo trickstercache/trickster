@@ -25,7 +25,7 @@ import (
 )
 
 // ErrReadIndexTooLarge is an error indicating the read index is too large
-var ErrReadIndexTooLarge = errors.New("Read index too large")
+var ErrReadIndexTooLarge = errors.New("read index too large")
 
 // NEED TO DEAL WITH TIMEOUT
 

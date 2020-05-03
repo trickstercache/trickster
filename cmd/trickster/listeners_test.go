@@ -30,10 +30,10 @@ func TestListeners(t *testing.T) {
 
 	wg := &sync.WaitGroup{}
 	var err error
+	wg.Add(1)
 	go func() {
-		wg.Add(1)
 		err = startListener("httpListener",
-			"", 0, 20, nil, http.NewServeMux(), wg, false, log.ConsoleLogger("info"))
+			"", 0, 20, nil, http.NewServeMux(), wg, nil, false, log.ConsoleLogger("info"))
 	}()
 
 	time.Sleep(time.Millisecond * 300)
@@ -44,10 +44,11 @@ func TestListeners(t *testing.T) {
 		t.Error("expected non-nil err")
 	}
 
+	wg.Add(1)
 	go func() {
-		wg.Add(1)
 		err = startListenerRouter("httpListener2",
-			"", 0, 20, nil, "/", http.HandlerFunc(handlers.HandleLocalResponse), wg, false, log.ConsoleLogger("info"))
+			"", 0, 20, nil, "/", http.HandlerFunc(handlers.HandleLocalResponse), wg,
+			nil, false, log.ConsoleLogger("info"))
 	}()
 	time.Sleep(time.Millisecond * 300)
 	l = listeners["httpListener2"]

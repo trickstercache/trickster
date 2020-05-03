@@ -8,7 +8,7 @@ metadata:
 data:
   trickster-conf: |-
     #
-    # Trickster 1.0 Example Configuration File - Exhaustive
+    # Trickster 1.1 Example Configuration File - Exhaustive
     #
     # To use this, run: trickster -config /path/to/example.conf
     #
@@ -475,29 +475,64 @@ data:
         ## to origins by the 'tracing_name' value in origin configs, which, by default, use 'default'
         # [tracing.default]
 
-        ## implementation specifies the Tracing API that you use in your platform.
-        ## options are: 'opentelemetry' (default) and 'opentracing'
-        # implementation: 'opentelemetry'
+        ## tracer_type specifies the type backend tracing system where traces are sent
+        ## options are: jaeger, zipkin, stdout or none.  none is the default
+        # tracer_type = 'none'
 
-        ## exporter specifies the tracing format sent to the collection system
-        ## options are: jaeger, recorder, stdout or noop.  noop is the default
-        # exporter = 'noop'
+        ## service_name specifies the service.name tag/attribute value included in traces
+        ## default is 'trickster'
+        # service_name = 'trickster'
 
-        ## collector is the URL of the trace collector which MUST be in the exporter format
-        ## the default is empty string, meaning no traces are sent to the collector
-        # collector = ''
+        ## collector_url is the URL of the tracing backend
+        ## required for zipkin and jaeger, unused for stdout
+        # collector_url = ''
 
-        ## An integer or floating point value of 0 to 1.0 (inclusive) is permitted.
-        ## sampleRate sets the probability that a span will be recorded.
+        ## collector_user is the username credential for authenticating with the tracing backend
+        ## optional jaeger; unused for zipkin and stdout
+        # collector_user = ''
+
+        ## collector_pass is the username credential for authenticating with the tracing backend
+        ## optional jaeger; unused for zipkin and stdout
+        # collector_pass = ''
+
+        ## sample_rate sets the probability that a span will be recorded.
+        ## A floating point value of 0.0 to 1.0 (inclusive) is permitted
         ## default is 1.0 (meaning 100% of requests are recorded)
         # sample_rate = 1.0
         
-        ## another example tracing config named 'example' using jaeger backend and a 50% sample rate
+        ## tags will append these tags/attributes to each trace that is recorded
+        ## only string key/value tags are supported. numeric values, etc are not.
+        ## default tags list is empty
+        # [tracing.default.tags]
+        # key1 = "value1"
+        # key2 = "value2"
+
+        ## configurations for this tracer, specific to jaeger
+        # [tracing.default.jaeger]
+        ## endpoint_type indicates whether the jaeger tracing backend is a 'collector' or 'agent'
+        ## default is 'collector'
+        # endpoint_type = 'collector'
+
+        ## configurations for this tracer, specific to stdout
+        # [tracing.default.stdout]
+        ## pretty_print indicates whether the output to stdout is formatted better human readability
+        ## default is false
+        # pretty_print = false
+
+        ## another example tracing config named 'example' using jaeger agent backend and a 50% sample rate
         # [tracing.example]
-        # implementation = 'opentelemetry'
-        # exporter = 'jaeger'
-        # collector = 'https://jaeger.example.com/'
+        # tracer_type = 'jaeger'
+        # collector_url = 'https://jaeger.example.com/'
         # sample_rate = .5
+        #   [tracing.example.jaeger]
+        #   endpoint_type = 'agent'
+
+        ## another example tracing config named 'zipkin-example' using zipkin backend and a 10% sample rate
+        # [tracing.zipkin-example]
+        # tracer_type = 'zipkin'
+        # collector_url = 'https://zipkin.example.com/'
+        # sample_rate = .1
+
 
     ## Configuration Options for Metrics Instrumentation
     # [metrics]
@@ -519,10 +554,10 @@ data:
     ## handler_path defines the HTTP path where the Reload interface is available.
     ## by default, this is '/trickster/config/reload'
     # handler_path = '/trickster/config/reload'
-    ## bleed_timeout_secs defines how long old HTTP listeners will live to allow
+    ## drain_timeout_secs defines how long old HTTP listeners will live to allow
     ## outstanding connection to close organically, before the listener is forcefully closed
     ## the default is 30
-    # bleed_timeout_secs = 30
+    # drain_timeout_secs = 30
     ## rate_limit_secs specifies the rate limit timeout duration to apply to the HTTP reload interface.
     ## The reload interface is disabled for this duration of time whenever a config reload request is
     ## made that fails because the underlying config file is unmodified. default is 3

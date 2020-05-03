@@ -34,6 +34,11 @@ const (
 	nanosPerMillisecond = int64(time.Millisecond / time.Nanosecond)
 )
 
+// ErrNotEnoughFields returns an error when there are too few number of fields
+func ErrNotEnoughFields(count int) error {
+	return fmt.Errorf("must have at least two fields; only have %d", count)
+}
+
 func msToTime(ms string) (time.Time, error) {
 	msInt, err := strconv.ParseInt(ms, 10, 64)
 	if err != nil {
@@ -152,7 +157,7 @@ func noParts() (string, time.Time, float64, ResponseValue) {
 func (re ResultsEnvelope) MarshalJSON() ([]byte, error) {
 
 	if len(re.Meta) < 2 {
-		return nil, fmt.Errorf("Must have at least two fields; only have %d", len(re.Meta))
+		return nil, ErrNotEnoughFields(len(re.Meta))
 	}
 
 	var mpl, fl int
@@ -289,7 +294,7 @@ func (re *ResultsEnvelope) UnmarshalJSON(b []byte) error {
 	}
 
 	if len(response.Meta) < 2 {
-		return fmt.Errorf("Must have at least two fields; only have %d", len(response.Meta))
+		return ErrNotEnoughFields(len(response.Meta))
 	}
 
 	re.Meta = response.Meta

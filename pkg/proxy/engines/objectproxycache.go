@@ -29,8 +29,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	"github.com/tricksterproxy/trickster/pkg/util/log"
-	"github.com/tricksterproxy/trickster/pkg/util/tracing"
 
 	"go.opentelemetry.io/otel/api/core"
 )
@@ -154,9 +154,8 @@ func handleCacheRevalidation(pr *proxyRequest) error {
 	}
 
 	rsc := request.GetResources(pr.Request)
-	oc := rsc.OriginConfig
 
-	ctx, span := tracing.NewChildSpan(pr.Request.Context(), oc.TracingConfig.Tracer, "CacheRevalidation")
+	ctx, span := tspan.NewChildSpan(pr.Request.Context(), rsc.Tracer, "CacheRevalidation")
 	defer func() {
 		reval := revalidationStatusValues[pr.revalidation]
 		span.AddEvent(
@@ -415,7 +414,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 func ObjectProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	_, cacheStatus := fetchViaObjectProxyCache(w, r)
 	if cacheStatus == status.LookupStatusProxyOnly {
-		DoProxy(w, r)
+		DoProxy(w, r, true)
 	}
 }
 
@@ -424,8 +423,13 @@ func FetchViaObjectProxyCache(r *http.Request) ([]byte, *http.Response, bool) {
 	w := bytes.NewBuffer(nil)
 	resp, cacheStatus := fetchViaObjectProxyCache(w, r)
 	if cacheStatus == status.LookupStatusProxyOnly {
-		resp = DoProxy(w, r)
+		resp = DoProxy(w, r, false)
 	}
+
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
+
 	return w.Bytes(), resp, cacheStatus == status.LookupStatusHit
 }
 

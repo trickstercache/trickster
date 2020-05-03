@@ -27,5 +27,5 @@ import (
 // basic reverse proxy to the origin for non-cacheable API calls.
 func (c *Client) StateHandler(w http.ResponseWriter, r *http.Request) {
 	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
-	engines.DoProxy(w, r)
+	engines.DoProxy(w, r, true)
 }

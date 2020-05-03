@@ -27,6 +27,7 @@ import (
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/tracing"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
@@ -41,6 +42,7 @@ type Resources struct {
 	OriginClient      origins.Client
 	AlternateCacheTTL time.Duration
 	TimeRangeQuery    *timeseries.TimeRangeQuery
+	Tracer            *tracing.Tracer
 	Logger            *tl.Logger
 }
 
@@ -55,13 +57,15 @@ func (r Resources) Clone() *Resources {
 		OriginClient:      r.OriginClient,
 		AlternateCacheTTL: r.AlternateCacheTTL,
 		TimeRangeQuery:    r.TimeRangeQuery,
+		Tracer:            r.Tracer,
 		Logger:            r.Logger,
 	}
 }
 
 // NewResources returns a new Resources collection based on the provided inputs
 func NewResources(oo *oo.Options, po *po.Options, co *co.Options,
-	c cache.Cache, client origins.Client, logger *tl.Logger) *Resources {
+	c cache.Cache, client origins.Client, t *tracing.Tracer,
+	logger *tl.Logger) *Resources {
 	return &Resources{
 		OriginConfig: oo,
 		PathConfig:   po,

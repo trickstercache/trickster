@@ -27,7 +27,6 @@ import (
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
-	tracing "github.com/tricksterproxy/trickster/pkg/util/tracing/options"
 
 	"github.com/gorilla/mux"
 )
@@ -153,8 +152,6 @@ type Options struct {
 	HTTPClient *http.Client `toml:"-"`
 	// CompressableTypes is the map version of CompressableTypeList for fast lookup
 	CompressableTypes map[string]bool `toml:"-"`
-	// TracingConfig is the reference to the Tracing Config as indicated by TracingConfigName
-	TracingConfig *tracing.Options `toml:"-"`
 	// RuleOptions is the reference to the Rule Options as indicated by RuleName
 	RuleOptions *rule.Options `toml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
@@ -194,7 +191,6 @@ func NewOptions() *Options {
 		TimeseriesTTL:                d.DefaultTimeseriesTTLSecs * time.Second,
 		TimeseriesTTLSecs:            d.DefaultTimeseriesTTLSecs,
 		TracingConfigName:            d.DefaultTracingConfigName,
-		TracingConfig:                tracing.NewOptions(),
 	}
 }
 
@@ -240,9 +236,6 @@ func (oc *Options) Clone() *Options {
 	o.ValueRetention = oc.ValueRetention
 
 	o.TracingConfigName = oc.TracingConfigName
-	if oc.TracingConfig != nil {
-		o.TracingConfig = oc.TracingConfig.Clone()
-	}
 
 	if oc.Hosts != nil {
 		o.Hosts = make([]string, len(oc.Hosts))
@@ -295,16 +288,14 @@ func (oc *Options) Clone() *Options {
 	}
 
 	if oc.RuleOptions != nil {
-		// TODO: make clone func for this
-		// o.RuleOptions = oc.RuleOptions.Clone()
+		o.RuleOptions = oc.RuleOptions.Clone()
 	}
 
 	return o
-
 }
 
 // ValidateOriginName ensures the origin name is permitted against the dictionary of
-// restructed words
+// restricted words
 func ValidateOriginName(name string) error {
 	if _, ok := restrictedOriginNames[name]; ok {
 		return errors.New("invalid origin name:" + name)

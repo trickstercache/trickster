@@ -23,6 +23,13 @@ import (
 	"time"
 )
 
+// ErrUnexpectedUpstreamResponse indicates the http.Response received from an upstream origin
+// indicates the request did not succeed due to a request error or origin-side error
+var ErrUnexpectedUpstreamResponse = errors.New("unexpected upstream response")
+
+// ErrEmptyDocumentBody indicates a cached object did not contain an HTTP Document upon retrieval
+var ErrEmptyDocumentBody = errors.New("empty document body")
+
 // ErrStepParse indicates an error parsing the step interval of a time series request
 var ErrStepParse = errors.New("unable to parse timeseries step from downstream request")
 
@@ -65,4 +72,9 @@ func ParseRequestBody(err error) error {
 // required parameter.
 func MissingRequestParam(param string) error {
 	return fmt.Errorf("missing request parameter: %s", param)
+}
+
+// CouldNotFindKey returns an error indicating the key could not be found in the document
+func CouldNotFindKey(name string) error {
+	return fmt.Errorf("could not find key: %s", name)
 }

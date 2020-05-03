@@ -681,26 +681,6 @@ func TestObjectProxyCacheIMS(t *testing.T) {
 	for _, err = range e {
 		t.Error(err)
 	}
-
-	//t.Errorf("%s", "foo")
-
-}
-
-func TestObjectProxyCacheIUS(t *testing.T) {
-
-	// TODO: how does this test IUS???
-
-	headers := map[string]string{"Cache-Control": "max-age=60"}
-	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
 }
 
 func TestObjectProxyCacheINM(t *testing.T) {
@@ -825,14 +805,15 @@ func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
 	cfg.Paths = map[string]*po.Options{
 		"/": pc,
 	}
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig, rsc.CacheClient, rsc.OriginClient, rsc.Logger)))
+	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig,
+		rsc.CacheClient, rsc.OriginClient, nil, rsc.Logger)))
 
 	_, e := testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "kmiss"})
 	for _, err = range e {
 		t.Error(err)
 	}
 
-	// request again, should still cache miss, but this time, put 404's into the Negative Cache for 30s
+	// request again, should still cache miss, but this time, Negative Cache 404's for 30s
 	cfg.NegativeCache[404] = time.Second * 30
 
 	_, e = testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "kmiss"})
@@ -1192,5 +1173,24 @@ func TestFetchViaObjectProxyCacheRequestErroringCache(t *testing.T) {
 	_, _, b := FetchViaObjectProxyCache(r)
 	if b {
 		t.Errorf("expected %t got %t", false, b)
+	}
+}
+
+func TestRerunRequest(t *testing.T) {
+	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer ts.Close()
+	}
+	w := httptest.NewRecorder()
+	pr := newProxyRequest(r, w)
+	locker := locks.NewNamedLocker()
+	nl, _ := locker.Acquire("test")
+	pr.cacheLock = nl
+	pr.hasWriteLock = true
+	rerunRequest(pr)
+	if !pr.wasReran {
+		t.Error("expected true")
 	}
 }

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// Package reload helps with reloading the running Trickster configuration
+// Package options provides options for configuration reload support
 package options
 
 import "github.com/tricksterproxy/trickster/pkg/config/defaults"

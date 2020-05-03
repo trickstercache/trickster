@@ -36,9 +36,10 @@ func TestHealthHandler(t *testing.T) {
 	client.webClient = hc
 	client.config.HTTPClient = hc
 	client.baseUpstreamURL, _ = url.Parse(ts.URL)
-	defer ts.Close()
 	if err != nil {
 		t.Error(err)
+	} else {
+		defer ts.Close()
 	}
 
 	client.HealthHandler(w, r)
@@ -73,9 +74,10 @@ func TestHealthHandlerCustomPath(t *testing.T) {
 
 	client := &Client{name: "test"}
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "", nil, "influxdb", "/health", "debug")
-	defer ts.Close()
 	if err != nil {
 		t.Error(err)
+	} else {
+		defer ts.Close()
 	}
 
 	rsc := request.GetResources(r)

@@ -36,6 +36,11 @@ func TestIndexOfString(t *testing.T) {
 
 func TestCloneMap(t *testing.T) {
 
+	m1 := CloneMap(nil)
+	if m1 != nil {
+		t.Error("expected nil map")
+	}
+
 	const expected = "pass"
 
 	m := map[string]string{"test": expected}

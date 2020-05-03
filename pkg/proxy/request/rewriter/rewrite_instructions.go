@@ -31,8 +31,6 @@ type rewriteInstruction interface {
 	HasTokens() bool
 }
 
-type rewriteList [][]string
-
 // RewriteInstructions is a list of type []rewriteInstruction
 type RewriteInstructions []rewriteInstruction
 
@@ -215,12 +213,10 @@ func (ri *rwiKeyBasedSetter) Parse(parts []string) error {
 }
 
 func (ri *rwiKeyBasedSetter) Execute(r *http.Request) {
-
 	dict := ri.dict(r)
 	dict.Set(ri.key, ri.value)
 	if qp, ok := dict.(url.Values); ok {
 		r.URL.RawQuery = qp.Encode()
-	} else {
 	}
 }
 
@@ -405,9 +401,9 @@ func (ri *rwiKeyBasedReplacer) HasTokens() bool {
 }
 
 type rwiKeyBasedDeleter struct {
-	key, value, separator string
-	hasTokens             bool
-	dict                  dictFunc
+	key, value string
+	hasTokens  bool
+	dict       dictFunc
 }
 
 func (ri *rwiKeyBasedDeleter) String() string {
@@ -521,9 +517,7 @@ func (ri *rwiPathSetter) HasTokens() bool {
 
 func (ri *rwiPathSetter) Execute(r *http.Request) {
 	if ri.depth > -1 {
-		if strings.HasPrefix(r.URL.Path, "/") {
-			r.URL.Path = r.URL.Path[1:]
-		}
+		r.URL.Path = strings.TrimPrefix(r.URL.Path, "/")
 		parts := strings.Split(r.URL.Path, "/")
 		if len(parts) >= ri.depth {
 			parts[ri.depth] = ri.value
@@ -615,11 +609,11 @@ func (ri *rwiBasicSetter) HasTokens() bool {
 }
 
 type rwiBasicReplacer struct {
-	value, search, replacement string
-	depth                      int
-	setter                     scalarSetFunc
-	getter                     scalarGetFunc
-	hasTokens                  bool
+	search, replacement string
+	depth               int
+	setter              scalarSetFunc
+	getter              scalarGetFunc
+	hasTokens           bool
 }
 
 func (ri *rwiBasicReplacer) String() string {

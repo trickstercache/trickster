@@ -18,8 +18,6 @@ package engines
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
@@ -29,12 +27,13 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
+	tpe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
-	"github.com/tricksterproxy/trickster/pkg/util/tracing"
 )
 
 // DeltaProxyCache is used for Time Series Acceleration, but not for normal HTTP Object Caching
@@ -47,8 +46,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	rsc := request.GetResources(r)
 	oc := rsc.OriginConfig
 
-	ctx, span := tracing.NewChildSpan(r.Context(),
-		oc.TracingConfig.Tracer, "DeltaProxyCacheRequest")
+	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "DeltaProxyCacheRequest")
 	defer span.End()
 
 	pc := rsc.PathConfig
@@ -61,7 +59,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	trq, err := client.ParseTimeRangeQuery(r)
 	if err != nil {
 		// err may simply mean incompatible query (e.g., non-select), so just proxy
-		DoProxy(w, r)
+		DoProxy(w, r, true)
 		return
 	}
 
@@ -87,14 +85,14 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			pr.Logger.Debug("timerange end is too early to consider caching",
 				tl.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp,
 					"step": trq.Step, "retention": oc.TimeseriesRetention})
-			DoProxy(w, r)
+			DoProxy(w, r, true)
 			return
 		}
 		if trq.Extent.Start.After(bf.End) {
 			pr.Logger.Debug("timerange is too new to cache due to backfill tolerance",
 				tl.Pairs{"backFillToleranceSecs": oc.BackfillToleranceSecs,
 					"newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
-			DoProxy(w, r)
+			DoProxy(w, r, true)
 			return
 		}
 	}
@@ -146,7 +144,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// Load the Cached Timeseries
 			if doc == nil {
-				err = errors.New("empty document body")
+				err = tpe.ErrEmptyDocumentBody
 			} else {
 				if cc.CacheType == "memory" {
 					cts = doc.timeseries
@@ -176,7 +174,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 							pr.cacheLock.RRelease()
 							go pr.Logger.Debug("timerange end is too early to consider caching",
 								tl.Pairs{"step": trq.Step, "retention": oc.TimeseriesRetention})
-							DoProxy(w, r)
+							DoProxy(w, r, true)
 							return
 						}
 						if trq.Extent.Start.After(el[len(el)-1].End) {
@@ -188,7 +186,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 									"queryStart":              trq.Extent.Start,
 								},
 							)
-							DoProxy(w, r)
+							DoProxy(w, r, true)
 							return
 						}
 					}
@@ -234,7 +232,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		// now we have the write lock. so we can check if the write lock counter incremented by 1
 		// or more. If the difference is just 1, that means this request was the first to acquire
 		// a write lock following all of the read locks being released. That means it is good to
-		// proceed with upstream communciations and caching. when the difference is > 1, it means
+		// proceed with upstream communications and caching. when the difference is > 1, it means
 		// another requests was first to acquire the mutex, and we have no idea what changed in
 		// the cache since between when we queried, and the other requests with the lock serviced
 		// so in that case, we will just send the request back through the DPC from the top in
@@ -289,7 +287,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		go func(e *timeseries.Extent, rq *proxyRequest) {
 			defer wg.Done()
 			rq.Request = rq.WithContext(tctx.WithResources(r.Context(),
-				request.NewResources(oc, pc, cc, cache, client, pr.Logger)))
+				request.NewResources(oc, pc, cc, cache, client, rsc.Tracer, pr.Logger)))
 			client.SetExtent(rq.upstreamRequest, trq, e)
 			body, resp, _ := rq.Fetch()
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
@@ -316,12 +314,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	if (!trq.FastForwardDisable) &&
 		(trq.Extent.End.Equal(normalizedNow.Extent.End)) && ffURL.Scheme != "" {
 		wg.Add(1)
-		rs := request.NewResources(oc, oc.FastForwardPath, cc, cache, client, pr.Logger)
+		rs := request.NewResources(oc, oc.FastForwardPath, cc, cache, client, rsc.Tracer, pr.Logger)
 		rs.AlternateCacheTTL = oc.FastForwardTTL
 		req := r.Clone(tctx.WithResources(context.Background(), rs))
 		go func() {
 			defer wg.Done()
-			_, span := tracing.NewChildSpan(ctx, oc.TracingConfig.Tracer, "FastForward")
+			_, span := tspan.NewChildSpan(ctx, rsc.Tracer, "FastForward")
 			defer span.End()
 
 			// create a new context that uses the fast forward path
@@ -422,7 +420,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 
 	if isLocked {
 		pr.cacheLock.Release()
-		isLocked = false
 	}
 
 	// Respond to the user. Using the response headers from a Delta Response,
@@ -461,7 +458,7 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 				"upstreamResponseBody":    string(body),
 			},
 		)
-		return nil, d, time.Duration(0), fmt.Errorf("Unexpected Upstream Response")
+		return nil, d, time.Duration(0), tpe.ErrUnexpectedUpstreamResponse
 	}
 
 	ts, err := client.UnmarshalTimeseries(body)

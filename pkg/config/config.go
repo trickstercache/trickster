@@ -43,7 +43,7 @@ import (
 	rewriter "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	rwopts "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
-	tracing "github.com/tricksterproxy/trickster/pkg/util/tracing/options"
+	tracing "github.com/tricksterproxy/trickster/pkg/tracing/options"
 
 	"github.com/BurntSushi/toml"
 )
@@ -257,11 +257,11 @@ func (c *Config) setDefaults(metadata *toml.MetaData) error {
 		}
 	}
 
-	tracing.ProcessTracingConfigs(c.TracingConfigs, metadata)
-
 	if err = c.processOriginConfigs(metadata); err != nil {
 		return err
 	}
+
+	tracing.ProcessTracingOptions(c.TracingConfigs, metadata)
 
 	c.processCachingConfigs(metadata)
 
@@ -470,8 +470,10 @@ func (c *Config) processOriginConfigs(metadata *toml.MetaData) error {
 					p.ResponseBodyBytes = []byte(p.ResponseBody)
 					p.HasCustomResponseBody = true
 				}
-				// TODO: return error condition in v1.1 if user-provided pcf name is invalid
 				if metadata.IsDefined("origins", k, "paths", l, "collapsed_forwarding") {
+					if _, ok := forwarding.CollapsedForwardingTypeNames[p.CollapsedForwardingName]; !ok {
+						return fmt.Errorf("invalid collapsed_forwarding name: %s", p.CollapsedForwardingName)
+					}
 					p.CollapsedForwardingType =
 						forwarding.GetCollapsedForwardingType(p.CollapsedForwardingName)
 				} else {
@@ -755,11 +757,19 @@ func (c *Config) Clone() *Config {
 		nc.TracingConfigs[k] = v.Clone()
 	}
 
-	nc.Rules = c.Rules
-	// TODO clone rules instead of passing reference
+	if c.Rules != nil && len(c.Rules) > 0 {
+		nc.Rules = make(map[string]*rule.Options)
+		for k, v := range c.Rules {
+			nc.Rules[k] = v.Clone()
+		}
+	}
 
-	nc.RequestRewriters = c.RequestRewriters
-	// TODO: clone rewriters instead of passing reference
+	if c.RequestRewriters != nil && len(c.RequestRewriters) > 0 {
+		nc.RequestRewriters = make(map[string]*rwopts.Options)
+		for k, v := range c.RequestRewriters {
+			nc.RequestRewriters[k] = v.Clone()
+		}
+	}
 
 	return nc
 }
