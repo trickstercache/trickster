@@ -114,7 +114,8 @@ func (c *TestClient) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{upQuery, upStep},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 86400)},
+			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d",
+				headers.ValueSharedMaxAge, 86400)},
 		},
 
 		APIPath + mnQuery: {
@@ -123,7 +124,8 @@ func (c *TestClient) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
 			Methods:         []string{http.MethodGet, http.MethodPost},
 			CacheKeyParams:  []string{upQuery, upTime},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
-			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 30)},
+			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d",
+				headers.ValueSharedMaxAge, 30)},
 		},
 
 		APIPath + mnSeries: {
@@ -451,7 +453,8 @@ func (ve *VectorEnvelope) ToMatrix() *MatrixEnvelope {
 	for _, v := range ve.Data.Result {
 		v.Timestamp = model.TimeFromUnix(v.Timestamp.Unix()) // Round to nearest Second
 		ts = v.Timestamp.Time()
-		me.Data.Result = append(me.Data.Result, &model.SampleStream{Metric: v.Metric, Values: []model.SamplePair{{Timestamp: v.Timestamp, Value: v.Value}}})
+		me.Data.Result = append(me.Data.Result, &model.SampleStream{Metric: v.Metric,
+			Values: []model.SamplePair{{Timestamp: v.Timestamp, Value: v.Value}}})
 	}
 	me.ExtentList = timeseries.ExtentList{timeseries.Extent{Start: ts, End: ts}}
 	return me
@@ -467,7 +470,8 @@ func (me *MatrixEnvelope) SetStep(step time.Duration) {
 	me.StepDuration = step
 }
 
-// Merge merges the provided Timeseries list into the base Timeseries (in the order provided) and optionally sorts the merged Timeseries
+// Merge merges the provided Timeseries list into the base Timeseries
+// (in the order provided) and optionally sorts the merged Timeseries
 func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) {
 	meMetrics := make(map[string]*model.SampleStream)
 	for _, s := range me.Data.Result {
@@ -798,7 +802,8 @@ func testResultHeaderPartMatch(header http.Header, kvp map[string]string) error 
 	if h, ok := header["X-Trickster-Result"]; ok {
 		res := strings.Join(h, "; ")
 		for k, v := range kvp {
-			if !strings.Contains(res, fmt.Sprintf("; %s=%s", k, v)) && strings.Index(res, fmt.Sprintf("%s=%s", k, v)) != 0 {
+			if !strings.Contains(res, fmt.Sprintf("; %s=%s", k, v)) &&
+				strings.Index(res, fmt.Sprintf("%s=%s", k, v)) != 0 {
 				return fmt.Errorf("invalid status, expected %s=%s in %s", k, v, h)
 			}
 		}

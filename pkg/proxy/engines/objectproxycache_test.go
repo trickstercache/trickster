@@ -38,11 +38,14 @@ import (
 	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 )
 
-func setupTestHarnessOPC(file, body string, code int, headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
+func setupTestHarnessOPC(file, body string, code int,
+	headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder,
+	*http.Request, *request.Resources, error) {
 	return setupTestHarnessOPCByType(file, "test", "/opc", body, code, headers)
 }
 
-func setupTestHarnessOPCRange(hdr map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
+func setupTestHarnessOPCRange(hdr map[string]string) (*httptest.Server,
+	*httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
 	s, rr, r, rsc, err := setupTestHarnessOPCByType("", "rangesim", "/byterange/opc", "", 0, hdr)
 	return s, rr, r, rsc, err
 }
@@ -52,7 +55,8 @@ func setupTestHarnessOPCByType(
 ) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
 
 	client := &TestClient{}
-	ts, w, r, hc, err := tu.NewTestInstance(file, client.DefaultPathConfigs, code, body, headers, serverType, path, "debug")
+	ts, w, r, hc, err := tu.NewTestInstance(file, client.DefaultPathConfigs,
+		code, body, headers, serverType, path, "debug")
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -78,10 +82,12 @@ func setupTestHarnessOPCByType(
 	return ts, w, r, rsc, nil
 }
 
-func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
+func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]string) (*httptest.Server,
+	*httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
 
 	client := &TestClient{}
-	ts, w, r, hc, err := tu.NewTestInstance(file, client.DefaultPathConfigs, code, body, headers, "prometheus", "/prometheus/api/v1/query", "debug")
+	ts, w, r, hc, err := tu.NewTestInstance(file, client.DefaultPathConfigs, code, body, headers,
+		"prometheus", "/prometheus/api/v1/query", "debug")
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -552,17 +558,6 @@ func TestObjectProxyCacheRevalidation(t *testing.T) {
 	for _, err = range e {
 		t.Error(err)
 	}
-
-	// delete(rsc.PathConfig.ResponseHeaders, headers.NameLastModified)
-	// delete(rsc.PathConfig.ResponseHeaders, headers.NameExpires)
-
-	// expectedBody, err = getExpectedRangeBody(r, "")
-	// _, e = testFetchOPC(r, http.StatusOK, expectedBody, map[string]string{"status": "kmiss"})
-	// if e != nil {
-	// 	for _, err = range e {
-	// 		t.Error(err)
-	// 	}
-	// }
 }
 
 func TestObjectProxyCacheRequestWithPCF(t *testing.T) {
@@ -1121,7 +1116,8 @@ func TestRangesExhaustive(t *testing.T) {
 	}
 }
 
-func testFetchOPC(r *http.Request, sc int, body string, match map[string]string) (*httptest.ResponseRecorder, []error) {
+func testFetchOPC(r *http.Request, sc int, body string,
+	match map[string]string) (*httptest.ResponseRecorder, []error) {
 
 	e := make([]error, 0)
 

@@ -22,7 +22,8 @@ import (
 	origins "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 )
 
-// TLSCertConfig returns the crypto/tls configuration object with a list of name-bound certs derifed from the running config
+// TLSCertConfig returns the crypto/tls configuration object with a list of name-bound
+// certs derifed from the running config
 func (c *Config) TLSCertConfig() (*tls.Config, error) {
 	var err error
 	if !c.Frontend.ServeTLS {

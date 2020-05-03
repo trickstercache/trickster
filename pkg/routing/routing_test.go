@@ -46,7 +46,8 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	var proxyClients origins.Origins
 
 	log := tl.ConsoleLogger("info")
-	conf, _, err := config.Load("trickster", "test", []string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "prometheus"})
+	conf, _, err := config.Load("trickster", "test",
+		[]string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "prometheus"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -122,7 +123,8 @@ func TestRegisterProxyRoutes(t *testing.T) {
 }
 
 func TestRegisterProxyRoutesInflux(t *testing.T) {
-	conf, _, err := config.Load("trickster", "test", []string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "influxdb"})
+	conf, _, err := config.Load("trickster", "test",
+		[]string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "influxdb"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -142,7 +144,8 @@ func TestRegisterProxyRoutesInflux(t *testing.T) {
 
 func TestRegisterProxyRoutesClickHouse(t *testing.T) {
 
-	conf, _, err := config.Load("trickster", "test", []string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "clickhouse"})
+	conf, _, err := config.Load("trickster", "test",
+		[]string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "clickhouse"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -162,7 +165,8 @@ func TestRegisterProxyRoutesClickHouse(t *testing.T) {
 
 func TestRegisterProxyRoutesIRONdb(t *testing.T) {
 
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://example.com", "-origin-type", "irondb", "-log-level", "debug"})
+	conf, _, err := config.Load("trickster", "test",
+		[]string{"-origin-url", "http://example.com", "-origin-type", "irondb", "-log-level", "debug"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

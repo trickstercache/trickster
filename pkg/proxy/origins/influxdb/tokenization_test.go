@@ -48,7 +48,8 @@ func TestGetQueryParts(t *testing.T) {
 
 func TestTokenizeQuery(t *testing.T) {
 
-	out := tokenizeQuery("where time >= 150000ms and time <= 150001ms", map[string]string{"timeExpr1": "exp1", "timeExpr2": "exp2", "preOp2": "where", "postOp2": "and"})
+	out := tokenizeQuery("where time >= 150000ms and time <= 150001ms",
+		map[string]string{"timeExpr1": "exp1", "timeExpr2": "exp2", "preOp2": "where", "postOp2": "and"})
 
 	expected := "where time >= 150000ms and time <= 150001ms"
 	if out != expected {

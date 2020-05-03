@@ -98,7 +98,9 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 	err := c.store(cacheKey, data, 31536000*time.Second, false)
 	if err != nil {
-		c.Logger.Error("cache failed to write non-indexed object", log.Pairs{"cacheName": c.Name, "cacheType": "bbolt", "cacheKey": cacheKey, "objectSize": len(data)})
+		c.Logger.Error("cache failed to write non-indexed object",
+			log.Pairs{"cacheName": c.Name, "cacheType": "bbolt",
+				"cacheKey": cacheKey, "objectSize": len(data)})
 	}
 }
 
@@ -134,7 +136,8 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 	return c.retrieve(cacheKey, allowExpired, true)
 }
 
-func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte, status.LookupStatus, error) {
+func (c *Cache) retrieve(cacheKey string, allowExpired bool,
+	atime bool) ([]byte, status.LookupStatus, error) {
 
 	nl, _ := c.locker.RAcquire(lockPrefix + cacheKey)
 	var data []byte
@@ -155,7 +158,8 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 
 	o, err := index.ObjectFromBytes(data)
 	if err != nil {
-		_, err = metrics.CacheError(cacheKey, c.Name, c.Config.CacheType, "value for key [%s] could not be deserialized from cache")
+		_, err = metrics.CacheError(cacheKey, c.Name, c.Config.CacheType,
+			"value for key [%s] could not be deserialized from cache")
 		return nil, status.LookupStatusError, err
 	}
 
@@ -199,7 +203,8 @@ func (c *Cache) remove(cacheKey string, isBulk bool) error {
 	})
 	nl.Release()
 	if err != nil {
-		c.Logger.Error("bbolt cache key delete failure", log.Pairs{"cacheKey": cacheKey, "reason": err.Error()})
+		c.Logger.Error("bbolt cache key delete failure",
+			log.Pairs{"cacheKey": cacheKey, "reason": err.Error()})
 		return err
 	}
 	if !isBulk {

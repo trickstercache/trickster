@@ -44,15 +44,21 @@ func init() {
 
 	// Regexp for extracting the time elements from an InfluxDB Timeseries Query with equality operators: >=, >, =
 	// If it's a relative time range (e.g.,  where time >= now() - 24h  ), this expression is all that is required
-	reTime1 = regexp.MustCompile(`(?i)(?P<preOp1>where|and)\s+(?P<timeExpr1>time\s+(?P<relationalOp1>>=|>|=)\s+(?P<value1>((?P<ts1>[0-9]+)(?P<tsUnit1>ns|µ|u|ms|s|m|h|d|w|y)|(?P<now1>now\(\))\s+(?P<operand1>[+-])\s+(?P<offset1>[0-9]+[mhsdwy]))))(\s+(?P<postOp1>and|or|group|order|limit)|$)`)
+	reTime1 = regexp.MustCompile(`(?i)(?P<preOp1>where|and)\s+(?P<timeExpr1>time\s+(?P<relationalOp1>>=|>|=)\s+` +
+		`(?P<value1>((?P<ts1>[0-9]+)(?P<tsUnit1>ns|µ|u|ms|s|m|h|d|w|y)|(?P<now1>now\(\))\s+(?P<operand1>[+-])\s+` +
+		`(?P<offset1>[0-9]+[mhsdwy]))))(\s+(?P<postOp1>and|or|group|order|limit)|$)`)
 
 	// Regexp for extracting the time elements from an InfluxDB Timeseries Query with equality operators: <=, <
-	// If it's an absolute time range (e.g.,  where time >= 150000ms and time <= 150001ms ), this expression catches the second clause
-	reTime2 = regexp.MustCompile(`(?i)(?P<preOp2>where|and)\s+(?P<timeExpr2>time\s+(?P<relationalOp2><=|<)\s+(?P<value2>((?P<ts2>[0-9]+)(?P<tsUnit2>ns|µ|u|ms|s|m|h|d|w|y)|(?P<now2>now\(\))\s+(?P<operand2>[+-])\s+(?P<offset2>[0-9]+[mhsdwy]))))(\s+(?P<postOp2>and|or|group|order|limit)|$)`)
+	// If it's an absolute time range (e.g.,  where time >= 150000ms and time <= 150001ms ), this expression
+	// catches the second clause
+	reTime2 = regexp.MustCompile(`(?i)(?P<preOp2>where|and)\s+(?P<timeExpr2>time\s+(?P<relationalOp2><=|<)\s+` +
+		`(?P<value2>((?P<ts2>[0-9]+)(?P<tsUnit2>ns|µ|u|ms|s|m|h|d|w|y)|(?P<now2>now\(\))\s+(?P<operand2>[+-])\s+` +
+		`(?P<offset2>[0-9]+[mhsdwy]))))(\s+(?P<postOp2>and|or|group|order|limit)|$)`)
 }
 
 func interpolateTimeQuery(template string, extent *timeseries.Extent) string {
-	return strings.Replace(template, tkTime, fmt.Sprintf("time >= %dms AND time <= %dms", extent.Start.Unix()*1000, extent.End.Unix()*1000), -1)
+	return strings.Replace(template, tkTime, fmt.Sprintf("time >= %dms AND time <= %dms",
+		extent.Start.Unix()*1000, extent.End.Unix()*1000), -1)
 }
 
 func getQueryParts(query string) (string, timeseries.Extent) {

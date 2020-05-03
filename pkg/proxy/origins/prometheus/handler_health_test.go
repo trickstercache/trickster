@@ -29,7 +29,8 @@ import (
 func TestHealthHandler(t *testing.T) {
 
 	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
+	ts, w, r, hc, err := tu.NewTestInstance("",
+		client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
 
 	rsc := request.GetResources(r)
 	client.config = rsc.OriginConfig
@@ -72,7 +73,8 @@ func TestHealthHandler(t *testing.T) {
 func TestHealthHandlerCustomPath(t *testing.T) {
 
 	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "", nil, "prometheus", "/health", "debug")
+	ts, w, r, hc, err := tu.NewTestInstance("",
+		client.DefaultPathConfigs, 200, "", nil, "prometheus", "/health", "debug")
 	if err != nil {
 		t.Error(err)
 	} else {

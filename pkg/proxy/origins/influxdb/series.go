@@ -119,7 +119,8 @@ func (t tags) String() string {
 	return pairs
 }
 
-// Merge merges the provided Timeseries list into the base Timeseries (in the order provided) and optionally sorts the merged Timeseries
+// Merge merges the provided Timeseries list into the base Timeseries
+// (in the order provided) and optionally sorts the merged Timeseries
 func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) {
 
 	mtx := sync.Mutex{}
@@ -131,7 +132,8 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 			wg.Add(1)
 			go func(s *models.Row) {
 				mtx.Lock()
-				series[seriesKey{ResultID: i, StatementID: r.StatementID, Name: s.Name, Tags: tags(s.Tags).String(), Columns: strings.Join(s.Columns, ",")}] = s
+				series[seriesKey{ResultID: i, StatementID: r.StatementID, Name: s.Name,
+					Tags: tags(s.Tags).String(), Columns: strings.Join(s.Columns, ",")}] = s
 				mtx.Unlock()
 				wg.Done()
 			}(&se.Results[i].Series[j])
@@ -155,7 +157,8 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 					wg.Add(1)
 					go func(s *models.Row, resultID int) {
 						mtx.Lock()
-						sk := seriesKey{ResultID: g, StatementID: r.StatementID, Name: s.Name, Tags: tags(s.Tags).String(), Columns: strings.Join(s.Columns, ",")}
+						sk := seriesKey{ResultID: g, StatementID: r.StatementID, Name: s.Name,
+							Tags: tags(s.Tags).String(), Columns: strings.Join(s.Columns, ",")}
 						if _, ok := series[sk]; !ok {
 							series[sk] = s
 							se.Results[resultID].Series = append(se.Results[resultID].Series, *s)

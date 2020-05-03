@@ -45,7 +45,6 @@ type Flags struct {
 	OriginType        string
 	ProxyListenPort   int
 	MetricsListenPort int
-	ReloadListenPort  int
 	LogLevel          string
 	InstanceID        int
 }
@@ -55,16 +54,25 @@ func parseFlags(applicationName string, arguments []string) (*Flags, error) {
 	flags := &Flags{}
 	flagSet := flag.NewFlagSet("trickster", flag.ContinueOnError)
 
-	flagSet.BoolVar(&flags.PrintVersion, cfVersion, false, "Prints the Trickster version")
-	flagSet.BoolVar(&flags.ValidateConfig, cfValidate, false, "Validates a Trickster config and exits without running the server")
-	flagSet.StringVar(&flags.ConfigPath, cfConfig, "", "Path to Trickster Config File")
-	flagSet.StringVar(&flags.LogLevel, cfLogLevel, "", "Level of Logging to use (debug, info, warn, error)")
-	flagSet.IntVar(&flags.InstanceID, cfInstanceID, 0, "Instance ID is for running multiple Trickster processes from the same config while logging to their own files")
-	flagSet.StringVar(&flags.Origin, cfOrigin, "", "URL to the Origin. Enter it like you would in grafana, e.g., http://prometheus:9090")
-	flagSet.StringVar(&flags.OriginType, cfOriginType, "", "Type of origin (prometheus, influxdb)")
-	flagSet.IntVar(&flags.ProxyListenPort, cfProxyPort, 0, "Port that the primary Proxy server will listen on")
-	flagSet.IntVar(&flags.MetricsListenPort, cfMetricsPort, 0, "Port that the /metrics endpoint will listen on")
-	//flagSet.IntVar(&flags.ReloadListenPort, cfReloadPort, 0, "Port that the /-/reload endpoint will listen on.")
+	flagSet.BoolVar(&flags.PrintVersion, cfVersion, false,
+		"Prints the Trickster version")
+	flagSet.BoolVar(&flags.ValidateConfig, cfValidate, false,
+		"Validates a Trickster config and exits without running the server")
+	flagSet.StringVar(&flags.ConfigPath, cfConfig, "",
+		"Path to Trickster Config File")
+	flagSet.StringVar(&flags.LogLevel, cfLogLevel, "",
+		"Level of Logging to use (debug, info, warn, error)")
+	flagSet.IntVar(&flags.InstanceID, cfInstanceID, 0,
+		"Instance ID is for running multiple Trickster processes"+
+			" from the same config while logging to their own files")
+	flagSet.StringVar(&flags.Origin, cfOrigin, "",
+		"URL to the Origin. Enter it like you would in grafana, e.g., http://prometheus:9090")
+	flagSet.StringVar(&flags.OriginType, cfOriginType, "",
+		"Type of origin (prometheus, influxdb)")
+	flagSet.IntVar(&flags.ProxyListenPort, cfProxyPort, 0,
+		"Port that the primary Proxy server will listen on")
+	flagSet.IntVar(&flags.MetricsListenPort, cfMetricsPort, 0,
+		"Port that the /metrics endpoint will listen on")
 
 	err := flagSet.Parse(arguments)
 	if err != nil {

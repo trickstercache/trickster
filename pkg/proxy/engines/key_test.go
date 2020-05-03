@@ -188,7 +188,8 @@ func TestDeriveCacheKey(t *testing.T) {
 
 }
 
-func exampleKeyHasher(path string, params url.Values, headers http.Header, body io.ReadCloser, extra string) (string, io.ReadCloser) {
+func exampleKeyHasher(path string, params url.Values, headers http.Header,
+	body io.ReadCloser, extra string) (string, io.ReadCloser) {
 	return "test-key", nil
 }
 
@@ -208,15 +209,13 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 
 	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
 	tr = tr.WithContext(ct.WithResources(context.Background(),
-		request.NewResources(client.Configuration(), client.Configuration().Paths["root"], nil, nil, nil, nil, tl.ConsoleLogger("error"))))
+		request.NewResources(client.Configuration(), client.Configuration().Paths["root"],
+			nil, nil, nil, nil, tl.ConsoleLogger("error"))))
 
 	tr.Header.Add("Authorization", "test")
 	tr.Header.Add("X-Test-Header", "test2")
 
 	pr := newProxyRequest(tr, nil)
-
-	//r := &model.Request{URL: u, TimeRangeQuery: &timeseries.TimeRangeQuery{Step: 300000}, ClientRequest: tr}
-	//r.Headers = tr.Header
 
 	ck := pr.DeriveCacheKey(nil, "extra")
 

@@ -305,8 +305,9 @@ func (c *Config) validateTLSConfigs() error {
 	return nil
 }
 
-var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params", "cache_key_headers", "default_ttl_secs",
-	"request_headers", "response_headers", "response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding"}
+var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params",
+	"cache_key_headers", "default_ttl_secs", "request_headers", "response_headers",
+	"response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding"}
 
 func (c *Config) validateConfigMappings() error {
 	for k, oc := range c.Origins {
@@ -323,12 +324,11 @@ func (c *Config) validateConfigMappings() error {
 			}
 			r.Name = oc.RuleName
 			oc.RuleOptions = r
-		} else {
-			// non-Rule Type Validations
-			if _, ok := c.Caches[oc.CacheName]; !ok {
-				return fmt.Errorf("invalid cache name [%s] provided in origin config [%s]", oc.CacheName, k)
-			}
+		} else // non-Rule Type Validations
+		if _, ok := c.Caches[oc.CacheName]; !ok {
+			return fmt.Errorf("invalid cache name [%s] provided in origin config [%s]", oc.CacheName, k)
 		}
+
 	}
 	return nil
 }
@@ -618,11 +618,14 @@ func (c *Config) processCachingConfigs(metadata *toml.MetaData) {
 
 			if cc.Redis.ClientType == "standard" {
 				if hasEndpoints && !hasEndpoint {
-					c.LoaderWarnings = append(c.LoaderWarnings, "'standard' redis type configured, but 'endpoints' value is provided instead of 'endpoint'")
+					c.LoaderWarnings = append(c.LoaderWarnings,
+						"'standard' redis type configured, but 'endpoints' value is provided instead of 'endpoint'")
 				}
 			} else {
 				if hasEndpoint && !hasEndpoints {
-					c.LoaderWarnings = append(c.LoaderWarnings, fmt.Sprintf("'%s' redis type configured, but 'endpoint' value is provided instead of 'endpoints'", cc.Redis.ClientType))
+					c.LoaderWarnings = append(c.LoaderWarnings, fmt.Sprintf(
+						"'%s' redis type configured, but 'endpoint' value is provided instead of 'endpoints'",
+						cc.Redis.ClientType))
 				}
 			}
 

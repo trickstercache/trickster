@@ -149,7 +149,8 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 		resp.Body.Close()
 	}
 	if err != nil {
-		pr.Logger.Error("error reading body from http response", tl.Pairs{"url": pr.URL.String(), "detail": err.Error()})
+		pr.Logger.Error("error reading body from http response",
+			tl.Pairs{"url": pr.URL.String(), "detail": err.Error()})
 		return []byte{}, resp, 0
 	}
 
@@ -167,7 +168,8 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 func (pr *proxyRequest) prepareRevalidationRequest() {
 
 	pr.revalidation = RevalStatusInProgress
-	pr.revalidationRequest = request.SetResources(pr.upstreamRequest.Clone(context.Background()), request.GetResources(pr.Request))
+	pr.revalidationRequest = request.SetResources(pr.upstreamRequest.Clone(context.Background()),
+		request.GetResources(pr.Request))
 
 	if pr.cacheStatus == status.LookupStatusPartialHit {
 		var rh string
@@ -206,7 +208,8 @@ func (pr *proxyRequest) prepareRevalidationRequest() {
 		pr.revalidationRequest.Header.Set(headers.NameIfNoneMatch, pr.cachingPolicy.ETag)
 	}
 	if !pr.cachingPolicy.LastModified.IsZero() {
-		pr.revalidationRequest.Header.Set(headers.NameIfModifiedSince, pr.cachingPolicy.LastModified.Format(time.RFC1123))
+		pr.revalidationRequest.Header.Set(headers.NameIfModifiedSince,
+			pr.cachingPolicy.LastModified.Format(time.RFC1123))
 	}
 
 }
@@ -381,7 +384,8 @@ func (pr *proxyRequest) determineCacheability() {
 
 	if rsc.AlternateCacheTTL > 0 {
 		pr.writeToCache = true
-		pr.cachingPolicy = &CachingPolicy{LocalDate: time.Now(), FreshnessLifetime: int(rsc.AlternateCacheTTL.Seconds())}
+		pr.cachingPolicy = &CachingPolicy{LocalDate: time.Now(),
+			FreshnessLifetime: int(rsc.AlternateCacheTTL.Seconds())}
 		return
 	}
 
@@ -421,7 +425,8 @@ func (pr *proxyRequest) store() error {
 	}
 
 	d.CachingPolicy = pr.cachingPolicy
-	err := WriteCache(pr.Context(), rsc.CacheClient, pr.key, d, pr.cachingPolicy.TTL(rf, oc.MaxTTL), oc.CompressableTypes)
+	err := WriteCache(pr.Context(), rsc.CacheClient, pr.key, d,
+		pr.cachingPolicy.TTL(rf, oc.MaxTTL), oc.CompressableTypes)
 	if err != nil {
 		return err
 	}
@@ -470,7 +475,8 @@ func (pr *proxyRequest) prepareResponse() {
 
 		// since the user wants ranges, we have to extract them from what we have already
 		if (d == nil || !d.isLoaded) &&
-			(pr.cacheStatus == status.LookupStatusPartialHit || pr.cacheStatus == status.LookupStatusKeyMiss || pr.cacheStatus == status.LookupStatusRangeMiss) {
+			(pr.cacheStatus == status.LookupStatusPartialHit || pr.cacheStatus == status.LookupStatusKeyMiss ||
+				pr.cacheStatus == status.LookupStatusRangeMiss) {
 			var b []byte
 			if pr.upstreamReader != nil {
 				b, _ = ioutil.ReadAll(pr.upstreamReader)
@@ -503,7 +509,8 @@ func (pr *proxyRequest) prepareResponse() {
 			resp.StatusCode = http.StatusOK
 		}
 		resp.Header.Del(headers.NameContentRange)
-		if pr.cacheStatus == status.LookupStatusHit || pr.cacheStatus == status.LookupStatusRevalidated || pr.cacheStatus == status.LookupStatusPartialHit {
+		if pr.cacheStatus == status.LookupStatusHit || pr.cacheStatus == status.LookupStatusRevalidated ||
+			pr.cacheStatus == status.LookupStatusPartialHit {
 			pr.responseBody = d.Body
 		}
 	}
@@ -599,7 +606,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 			resp := pr.revalidationResponse
 
 			// if it's a 304 Not Modified, just don't do anything, since the cached document is good as-is, and
-			// the new responses below will returned to be merged with the existing cache. so we only check for 206 here.
+			// the new responses below will returned to be merged with the existing cache. so just check for 206 here.
 			if resp.StatusCode == http.StatusPartialContent {
 				wg.Add(1)
 				go func() {

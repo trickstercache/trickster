@@ -142,11 +142,13 @@ func (cp *CachingPolicy) TTL(multiplier float64, max time.Duration) time.Duratio
 }
 
 func (cp *CachingPolicy) String() string {
-	return fmt.Sprintf(`{ "is_fresh":%t, "no_cache":%t, "no_transform":%t, "freshness_lifetime":%d, "can_revalidate":%t, "must_revalidate":%t,`+
+	return fmt.Sprintf(`{ "is_fresh":%t, "no_cache":%t, "no_transform":%t, 
+	"freshness_lifetime":%d, "can_revalidate":%t, "must_revalidate":%t,`+
 		` "last_modified":%d, "expires":%d, "date":%d, "local_date":%d, "etag":"%s", "if_none_match":"%s"`+
 		` "if_modified_since":%d, "if_unmodified_since":%d, "is_negative_cache":%t }`,
-		cp.IsFresh, cp.NoCache, cp.NoTransform, cp.FreshnessLifetime, cp.CanRevalidate, cp.MustRevalidate, cp.LastModified.Unix(), cp.Expires.Unix(), cp.Date.Unix(), cp.LocalDate.Unix(),
-		cp.ETag, cp.IfNoneMatchValue, cp.IfModifiedSinceTime.Unix(), cp.IfUnmodifiedSinceTime.Unix(), cp.IsNegativeCache)
+		cp.IsFresh, cp.NoCache, cp.NoTransform, cp.FreshnessLifetime, cp.CanRevalidate, cp.MustRevalidate,
+		cp.LastModified.Unix(), cp.Expires.Unix(), cp.Date.Unix(), cp.LocalDate.Unix(), cp.ETag,
+		cp.IfNoneMatchValue, cp.IfModifiedSinceTime.Unix(), cp.IfUnmodifiedSinceTime.Unix(), cp.IsNegativeCache)
 }
 
 // GetResponseCachingPolicy examines HTTP response headers for caching headers
@@ -303,7 +305,8 @@ func (cp *CachingPolicy) parseCacheControlDirectives(directives string) {
 				cp.FreshnessLifetime = secs
 			}
 		}
-		if (d == headers.ValueMustRevalidate || d == headers.ValueProxyRevalidate) || (cp.FreshnessLifetime == 0 && foundFreshnessDirective) {
+		if (d == headers.ValueMustRevalidate || d == headers.ValueProxyRevalidate) ||
+			(cp.FreshnessLifetime == 0 && foundFreshnessDirective) {
 			cp.MustRevalidate = true
 			cp.FreshnessLifetime = 0
 		}

@@ -118,7 +118,7 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte,
 			d.ContentType = ct
 		}
 		r, cl, err := byterange.ParseContentRangeHeader(cr)
-		d.ContentLength = int64(cl)
+		d.ContentLength = cl
 		if err == nil && (r.Start >= 0 || r.End >= 0) {
 			mpbr := &byterange.MultipartByteRange{Range: r, Content: body}
 			if d.RangeParts == nil {
@@ -128,7 +128,7 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte,
 			}
 		}
 		if d.RangeParts != nil {
-			byterange.MultipartByteRanges(d.RangeParts).Compress()
+			d.RangeParts.Compress()
 			d.Ranges = d.RangeParts.Ranges()
 
 			if d.RangeParts != nil {
@@ -146,7 +146,7 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte,
 				d.Ranges = d.RangeParts.Ranges()
 			}
 			d.StoredRangeParts = d.RangeParts.PackableMultipartByteRanges()
-			d.ContentLength = int64(cl)
+			d.ContentLength = cl
 			if !strings.HasPrefix(ct, headers.ValueMultipartByteRanges) {
 				d.ContentType = ct
 			}

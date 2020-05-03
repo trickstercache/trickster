@@ -75,7 +75,7 @@ func NewTestWebClient() *http.Client {
 // NewTestInstance will start a trickster
 func NewTestInstance(
 	configFile string,
-	DefaultPathConfigs func(*oo.Options) map[string]*po.Options,
+	defaultPathConfigs func(*oo.Options) map[string]*po.Options,
 	respCode int, respBody string, respHeaders map[string]string,
 	originType, urlPath, logLevel string,
 ) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *http.Client, error) {
@@ -101,7 +101,7 @@ func NewTestInstance(
 
 	conf, _, err := config.Load("trickster", "test", args)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
+		return nil, nil, nil, nil, fmt.Errorf("could not load configuration: %s", err.Error())
 	}
 
 	caches := cr.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
@@ -118,7 +118,7 @@ func NewTestInstance(
 	r := httptest.NewRequest("GET", ts.URL+urlPath, nil)
 
 	oc := conf.Origins["default"]
-	p := NewTestPathConfig(oc, DefaultPathConfigs, urlPath)
+	p := NewTestPathConfig(oc, defaultPathConfigs, urlPath)
 
 	var tracer *tracing.Tracer
 
@@ -145,12 +145,12 @@ func NewTestInstance(
 // NewTestPathConfig returns a path config based on the provided parameters
 func NewTestPathConfig(
 	oc *oo.Options,
-	DefaultPathConfigs func(*oo.Options) map[string]*po.Options,
+	defaultPathConfigs func(*oo.Options) map[string]*po.Options,
 	urlPath string,
 ) *po.Options {
 	var paths map[string]*po.Options
-	if DefaultPathConfigs != nil {
-		paths = DefaultPathConfigs(oc)
+	if defaultPathConfigs != nil {
+		paths = defaultPathConfigs(oc)
 	}
 
 	oc.Paths = paths

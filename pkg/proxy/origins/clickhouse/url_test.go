@@ -30,11 +30,14 @@ func TestSetExtent(t *testing.T) {
 
 	start := time.Now().Add(time.Duration(-6) * time.Hour)
 	end := time.Now()
-	expected := "query=select+%28intdiv%28touint32%28myTimeField%29%2C+60%29+%2A+60%29+%2A+where+myTimeField+BETWEEN+toDateTime%28" +
-		fmt.Sprintf("%d", start.Unix()) + "%29+AND+toDateTime%28" + fmt.Sprintf("%d", end.Unix()) + "%29+end"
+	expected := "query=select+%28intdiv%28touint32%28myTimeField%29%2C+" +
+		"60%29+%2A+60%29+%2A+where+myTimeField+BETWEEN+toDateTime%28" +
+		fmt.Sprintf("%d", start.Unix()) + "%29+AND+toDateTime%28" +
+		fmt.Sprintf("%d", end.Unix()) + "%29+end"
 
 	client := &Client{}
-	tu := &url.URL{RawQuery: "query=select (intdiv(touint32(myTimeField), 60) * 60) * where myTimeField BETWEEN toDateTime(<$TIMESTAMP1$>) AND toDateTime(<$TIMESTAMP2$>) end"}
+	tu := &url.URL{RawQuery: "query=select (intdiv(touint32(myTimeField), 60) * 60) " +
+		"* where myTimeField BETWEEN toDateTime(<$TIMESTAMP1$>) AND toDateTime(<$TIMESTAMP2$>) end"}
 	e := &timeseries.Extent{Start: start, End: end}
 
 	r, _ := http.NewRequest(http.MethodGet, tu.String(), nil)

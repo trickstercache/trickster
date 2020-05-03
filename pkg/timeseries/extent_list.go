@@ -103,7 +103,7 @@ func (el ExtentList) Crop(e Extent) ExtentList {
 // Compress sorts an ExtentList and merges time-adjacent Extents so that the total extent of
 // data is accurately represented in as few Extents as possible
 func (el ExtentList) Compress(step time.Duration) ExtentList {
-	exc := ExtentList(el).Clone()
+	exc := el.Clone()
 	if len(el) == 0 {
 		return exc
 	}

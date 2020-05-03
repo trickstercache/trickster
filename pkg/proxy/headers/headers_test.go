@@ -62,18 +62,14 @@ func TestExtractHeader(t *testing.T) {
 
 	if h, ok := ExtractHeader(headers, NameXForwardedFor); !ok {
 		t.Errorf("missing header %s", NameXForwardedFor)
-	} else {
-		if h != testIP {
-			t.Errorf(`expected "%s". got "%s"`, testIP, h)
-		}
+	} else if h != testIP {
+		t.Errorf(`expected "%s". got "%s"`, testIP, h)
 	}
 
 	if h, ok := ExtractHeader(headers, NameVia); !ok {
 		t.Errorf("missing header %s", NameVia)
-	} else {
-		if h != appString {
-			t.Errorf(`expected "%s". got "%s"`, appString, h)
-		}
+	} else if h != appString {
+		t.Errorf(`expected "%s". got "%s"`, appString, h)
 	}
 
 	if _, ok := ExtractHeader(headers, NameAllowOrigin); ok {
@@ -91,7 +87,8 @@ func TestUpdateHeaders(t *testing.T) {
 		t.Errorf("expected %d got %d", len(headers), 3)
 	}
 
-	UpdateHeaders(headers, map[string]string{"": "ineffectual", "foo1": "bar", "-foo2": "", "+foo3": "bar", "foo4": "bar", "+foo5": "bar", "-foo6": ""})
+	UpdateHeaders(headers, map[string]string{"": "ineffectual", "foo1": "bar", "-foo2": "",
+		"+foo3": "bar", "foo4": "bar", "+foo5": "bar", "-foo6": ""})
 	if !reflect.DeepEqual(headers, expected) {
 		fmt.Printf("mismatch\nexpected: %v\n     got: %v\n", expected, headers)
 	}
@@ -156,7 +153,8 @@ func TestAddResponseHeaders(t *testing.T) {
 
 func TestSetResultsHeader(t *testing.T) {
 	h := http.Header{}
-	SetResultsHeader(h, "test-engine", "test-status", "test-ffstatus", timeseries.ExtentList{timeseries.Extent{Start: time.Unix(1, 0), End: time.Unix(2, 0)}})
+	SetResultsHeader(h, "test-engine", "test-status", "test-ffstatus",
+		timeseries.ExtentList{timeseries.Extent{Start: time.Unix(1, 0), End: time.Unix(2, 0)}})
 	const expected = "engine=test-engine; status=test-status; fetched=[1:2]; ffstatus=test-ffstatus"
 	if h.Get(NameTricksterResult) != expected {
 		t.Errorf("expected %s got %s", expected, h.Get(NameTricksterResult))
@@ -165,7 +163,8 @@ func TestSetResultsHeader(t *testing.T) {
 
 func TestSetResultsHeaderEmtpy(t *testing.T) {
 	h := http.Header{}
-	SetResultsHeader(h, "", "test-status", "test-ffstatus", timeseries.ExtentList{timeseries.Extent{Start: time.Unix(1, 0), End: time.Unix(2, 0)}})
+	SetResultsHeader(h, "", "test-status", "test-ffstatus",
+		timeseries.ExtentList{timeseries.Extent{Start: time.Unix(1, 0), End: time.Unix(2, 0)}})
 	if len(h) > 0 {
 		t.Errorf("Expected header length of %d", 0)
 	}

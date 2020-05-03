@@ -42,7 +42,9 @@ func (r *testReferenceObject) Size() int {
 }
 
 func TestNewIndex(t *testing.T) {
-	cacheConfig := &co.Options{CacheType: "test", Index: &io.Options{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
+	cacheConfig := &co.Options{CacheType: "test",
+		Index: &io.Options{ReapInterval: time.Second * time.Duration(10),
+			FlushInterval: time.Second * time.Duration(10)}}
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, testLogger)
 
 	// this gives a chance for the reaper to run through for test coverage
@@ -70,7 +72,9 @@ func TestNewIndex(t *testing.T) {
 
 func TestReap(t *testing.T) {
 
-	cacheConfig := &co.Options{CacheType: "test", Index: &io.Options{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
+	cacheConfig := &co.Options{CacheType: "test",
+		Index: &io.Options{ReapInterval: time.Second * time.Duration(10),
+			FlushInterval: time.Second * time.Duration(10)}}
 	cacheConfig.Index.MaxSizeObjects = 5
 	cacheConfig.Index.MaxSizeBackoffObjects = 3
 	cacheConfig.Index.MaxSizeBytes = 100
@@ -135,7 +139,9 @@ func TestReap(t *testing.T) {
 	}
 
 	// add key with large body to reach byte size threshold
-	idx.UpdateObject(&Object{Key: "test.7", Value: []byte("test_value00000000000000000000000000000000000000000000000000000000000000000000000000000"), Expiration: time.Now().Add(time.Minute)})
+	idx.UpdateObject(&Object{Key: "test.7",
+		Value:      []byte("test_value00000000000000000000000000000000000000000000000000000000000000000000000000000"),
+		Expiration: time.Now().Add(time.Minute)})
 
 	// trigger a byte-based reap
 	idx.reap(testLogger)
@@ -170,7 +176,9 @@ func TestObjectFromBytes(t *testing.T) {
 func TestUpdateObject(t *testing.T) {
 
 	obj := Object{Key: "", Value: []byte("test_value")}
-	cacheConfig := &co.Options{CacheType: "test", Index: &io.Options{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
+	cacheConfig := &co.Options{CacheType: "test",
+		Index: &io.Options{ReapInterval: time.Second * time.Duration(10),
+			FlushInterval: time.Second * time.Duration(10)}}
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, testLogger)
 
 	idx.UpdateObject(&obj)
@@ -210,7 +218,9 @@ func TestUpdateObject(t *testing.T) {
 func TestRemoveObject(t *testing.T) {
 
 	obj := Object{Key: "test", Value: []byte("test_value")}
-	cacheConfig := &co.Options{CacheType: "test", Index: &io.Options{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
+	cacheConfig := &co.Options{CacheType: "test",
+		Index: &io.Options{ReapInterval: time.Second * time.Duration(10),
+			FlushInterval: time.Second * time.Duration(10)}}
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, testLogger)
 
 	idx.UpdateObject(&obj)
@@ -261,7 +271,9 @@ func TestUpdateObjectTTL(t *testing.T) {
 
 	cacheKey := "test-ttl-key"
 	obj := Object{Key: cacheKey, Value: []byte("test_value")}
-	cacheConfig := &co.Options{CacheType: "test", Index: &io.Options{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
+	cacheConfig := &co.Options{CacheType: "test",
+		Index: &io.Options{ReapInterval: time.Second * time.Duration(10),
+			FlushInterval: time.Second * time.Duration(10)}}
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, testLogger)
 
 	exp := idx.GetExpiration(cacheKey)
@@ -286,7 +298,9 @@ func TestUpdateObjectTTL(t *testing.T) {
 
 func TestUpdateOptions(t *testing.T) {
 
-	cacheConfig := &co.Options{CacheType: "test", Index: &io.Options{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
+	cacheConfig := &co.Options{CacheType: "test",
+		Index: &io.Options{ReapInterval: time.Second * time.Duration(10),
+			FlushInterval: time.Second * time.Duration(10)}}
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, testLogger)
 
 	options := io.NewOptions()
@@ -299,7 +313,9 @@ func TestUpdateOptions(t *testing.T) {
 }
 
 func TestRemoveObjects(t *testing.T) {
-	cacheConfig := &co.Options{CacheType: "test", Index: &io.Options{ReapInterval: time.Second * time.Duration(10), FlushInterval: time.Second * time.Duration(10)}}
+	cacheConfig := &co.Options{CacheType: "test",
+		Index: &io.Options{ReapInterval: time.Second * time.Duration(10),
+			FlushInterval: time.Second * time.Duration(10)}}
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, testLogger)
 	obj := &Object{Key: "test", Value: []byte("test_value")}
 	idx.UpdateObject(obj)

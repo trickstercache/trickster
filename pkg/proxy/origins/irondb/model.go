@@ -102,7 +102,7 @@ func (dp *DataPoint) MarshalJSON() ([]byte, error) {
 	tn := float64(0)
 	fv, err := strconv.ParseFloat(formatTimestamp(dp.Time, true), 64)
 	if err == nil {
-		tn = float64(fv)
+		tn = fv
 	}
 
 	v = append(v, tn)

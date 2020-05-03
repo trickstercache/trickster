@@ -37,7 +37,8 @@ const cacheKey = "cacheKey"
 
 func storeBenchmark(b *testing.B) Cache {
 	dir, _ := ioutil.TempDir("/tmp", cacheType)
-	cacheConfig := co.Options{CacheType: cacheType, Filesystem: &flo.Options{CachePath: dir}, Index: &io.Options{ReapInterval: time.Second}}
+	cacheConfig := co.Options{CacheType: cacheType,
+		Filesystem: &flo.Options{CachePath: dir}, Index: &io.Options{ReapInterval: time.Second}}
 	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
@@ -48,7 +49,8 @@ func storeBenchmark(b *testing.B) Cache {
 
 	// it should store a value
 	for n := 0; n < b.N; n++ {
-		err = fc.Store(cacheKey+strconv.Itoa(n), []byte("data"+strconv.Itoa(n)), time.Duration(60)*time.Second)
+		err = fc.Store(cacheKey+strconv.Itoa(n), []byte("data"+strconv.Itoa(n)),
+			time.Duration(60)*time.Second)
 		if err != nil {
 			b.Error(err)
 		}
@@ -61,7 +63,8 @@ func newCacheConfig(t *testing.T) co.Options {
 	if err != nil {
 		t.Fatalf("could not create temp directory (%s): %s", dir, err)
 	}
-	return co.Options{CacheType: cacheType, Filesystem: &flo.Options{CachePath: dir}, Index: &io.Options{ReapInterval: time.Second}}
+	return co.Options{CacheType: cacheType, Filesystem: &flo.Options{CachePath: dir},
+		Index: &io.Options{ReapInterval: time.Second}}
 }
 
 func TestConfiguration(t *testing.T) {

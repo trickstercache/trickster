@@ -98,7 +98,8 @@ func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) strin
 
 	if _, ok := methodsWithBody[pr.Method]; ok && pc.CacheKeyFormFields != nil && len(pc.CacheKeyFormFields) > 0 {
 		ct := pr.Header.Get(headers.NameContentType)
-		if ct == headers.ValueXFormURLEncoded || strings.HasPrefix(ct, headers.ValueMultipartFormData) || ct == headers.ValueApplicationJSON {
+		if ct == headers.ValueXFormURLEncoded ||
+			strings.HasPrefix(ct, headers.ValueMultipartFormData) || ct == headers.ValueApplicationJSON {
 			b, _ := ioutil.ReadAll(pr.Body)
 			pr.Body = ioutil.NopCloser(bytes.NewReader(b))
 			if ct == headers.ValueXFormURLEncoded {

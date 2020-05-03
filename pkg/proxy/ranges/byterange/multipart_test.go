@@ -45,13 +45,15 @@ Content-Range: bytes %s/%s
 
 %s
 --%s--`, testSeparator, testContentType1, testRange1, testContentLength,
-	testPart1Body, testSeparator, testContentType1, testRange2, testContentLength, testPart2Body, testSeparator))
+	testPart1Body, testSeparator, testContentType1, testRange2, testContentLength,
+	testPart2Body, testSeparator))
 
 func TestParseMultipartRangeResponseBody(t *testing.T) {
 
 	reader := ioutil.NopCloser(bytes.NewBuffer(content))
 
-	parts, ct, ranges, cl, err := ParseMultipartRangeResponseBody(reader, headers.ValueMultipartByteRanges+testSeparator)
+	parts, ct, ranges, cl, err := ParseMultipartRangeResponseBody(reader,
+		headers.ValueMultipartByteRanges+testSeparator)
 	if err != nil {
 		t.Error(err)
 	}
@@ -291,7 +293,3 @@ func TestExtractResponseRange(t *testing.T) {
 	}
 
 }
-
-// ExtractResponseRange returns http headers and body representing the subject MultipartByteRanges map,
-// cropped to the provided ranges
-//func (mbrs MultipartByteRanges) ExtractResponseRange(ranges Ranges, fullContentLength int64, contentType string, body []byte) (http.Header, []byte) {

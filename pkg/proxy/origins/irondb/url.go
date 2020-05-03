@@ -93,7 +93,7 @@ func parseTimestamp(s string) (time.Time, error) {
 				s, err.Error())
 		}
 
-		nsec = nsec * 1000000
+		nsec *= 1000000
 	}
 
 	return time.Unix(sec, nsec), nil

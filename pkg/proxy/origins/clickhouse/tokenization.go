@@ -39,17 +39,21 @@ const (
 var reTimeFieldAndStep, reTimeClauseAlt *regexp.Regexp
 
 func init() {
-	reTimeFieldAndStep = regexp.MustCompile(`(?i)select\s+\(\s*intdiv\s*\(\s*touint32\s*\(\s*(?P<timeField>[a-zA-Z0-9\._-]+)\s*\)\s*,\s*(?P<step>[0-9]+)\s*\)\s*\*\s*[0-9]+\s*\)`)
-	reTimeClauseAlt = regexp.MustCompile(`(?i)\s+(?P<expression>(?P<operator>>=|>|=|between)\s+(?P<modifier>toDate(Time)?)\((?P<ts1>[0-9]+)\)(?P<timeExpr2>\s+and\s+toDate(Time)?\((?P<ts2>[0-9]+)\))?)`)
+	reTimeFieldAndStep = regexp.MustCompile(`(?i)select\s+\(\s*intdiv\s*\(\s*touint32\s*\(\s*` +
+		`(?P<timeField>[a-zA-Z0-9\._-]+)\s*\)\s*,\s*(?P<step>[0-9]+)\s*\)\s*\*\s*[0-9]+\s*\)`)
+	reTimeClauseAlt = regexp.MustCompile(`(?i)\s+(?P<expression>(?P<operator>>=|>|=|between)\s+` +
+		`(?P<modifier>toDate(Time)?)\((?P<ts1>[0-9]+)\)(?P<timeExpr2>\s+and\s+toDate(Time)?\((?P<ts2>[0-9]+)\))?)`)
 }
 
 func interpolateTimeQuery(template, timeField string, extent *timeseries.Extent) string {
-	return strings.Replace(strings.Replace(template, tkTimestamp1, strconv.Itoa(int(extent.Start.Unix())), -1), tkTimestamp2, strconv.Itoa(int(extent.End.Unix())), -1)
+	return strings.Replace(strings.Replace(template, tkTimestamp1,
+		strconv.Itoa(int(extent.Start.Unix())), -1), tkTimestamp2, strconv.Itoa(int(extent.End.Unix())), -1)
 }
 
 var compiledRe = make(map[string]*regexp.Regexp)
 
-const timeClauseRe = `(?i)(?P<conjunction>where|and)\s+#TIME_FIELD#\s+(?P<timeExpr1>(?P<operator>>=|>|=|between)\s+(?P<modifier>toDate(Time)?)\((?P<ts1>[0-9]+)\))(?P<timeExpr2>\s+and\s+toDate(Time)?\((?P<ts2>[0-9]+)\))?`
+const timeClauseRe = `(?i)(?P<conjunction>where|and)\s+#TIME_FIELD#\s+(?P<timeExpr1>(?P<operator>>=|>|=|between)\s+` +
+	`(?P<modifier>toDate(Time)?)\((?P<ts1>[0-9]+)\))(?P<timeExpr2>\s+and\s+toDate(Time)?\((?P<ts2>[0-9]+)\))?`
 
 func getQueryParts(query string, timeField string) (string, timeseries.Extent, bool, error) {
 
@@ -79,7 +83,8 @@ func tokenizeQuery(query string, timeParts map[string]string) string {
 	// First check the existence of timeExpr1, and if exists, tokenize
 	if expr, ok := timeParts["timeExpr1"]; ok {
 		if modifier, ok := timeParts["modifier"]; ok {
-			query = strings.Replace(query, expr, fmt.Sprintf("BETWEEN %s(%s) AND %s(%s)", modifier, tkTimestamp1, modifier, tkTimestamp2), -1)
+			query = strings.Replace(query, expr, fmt.Sprintf("BETWEEN %s(%s) AND %s(%s)",
+				modifier, tkTimestamp1, modifier, tkTimestamp2), -1)
 			// Then check the existence of timeExpr2, and if exists, remove from tokenized version
 			if expr, ok := timeParts["timeExpr2"]; ok {
 				query = strings.Replace(query, expr, "", -1)
@@ -93,7 +98,8 @@ func tokenizeQuery(query string, timeParts map[string]string) string {
 			if len(m) > 0 {
 				if modifier, ok := m["modifier"]; ok {
 					if expression, ok := m["expression"]; ok {
-						query = strings.Replace(query, expression, fmt.Sprintf("BETWEEN %s(%s) AND %s(%s)", modifier, tkTimestamp1, modifier, tkTimestamp2), -1)
+						query = strings.Replace(query, expression, fmt.Sprintf("BETWEEN %s(%s) AND %s(%s)",
+							modifier, tkTimestamp1, modifier, tkTimestamp2), -1)
 					}
 				}
 			}

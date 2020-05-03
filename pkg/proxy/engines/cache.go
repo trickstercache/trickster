@@ -38,7 +38,8 @@ import (
 )
 
 // QueryCache queries the cache for an HTTPDocument and returns it
-func QueryCache(ctx context.Context, c cache.Cache, key string, ranges byterange.Ranges) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
+func QueryCache(ctx context.Context, c cache.Cache, key string,
+	ranges byterange.Ranges) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
 
 	rsc := tc.Resources(ctx).(*request.Resources)
 
@@ -54,7 +55,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string, ranges byterange
 		mc := c.(cache.MemoryCache)
 		var ifc interface{}
 		ifc, lookupStatus, err = mc.RetrieveReference(key, true)
-		// normalize any cache miss errors to cache.ErrKNF. We'll get all of them updated so we can remove this code
+		// normalize any cache miss errors to cache.ErrKNF.
 		if err != nil && err != cache.ErrKNF && strings.HasSuffix(err.Error(), "not in cache") {
 			err = cache.ErrKNF
 		}
@@ -79,7 +80,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string, ranges byterange
 	} else {
 
 		bytes, lookupStatus, err = c.Retrieve(key, true)
-		// normalize any cache miss errors to cache.ErrKNF. We'll get all of them updated so we can remove this code
+		// normalize any cache miss errors to cache.ErrKNF.
 		if err != nil && err != cache.ErrKNF && strings.HasSuffix(err.Error(), "not in cache") {
 			err = cache.ErrKNF
 		}
@@ -155,7 +156,8 @@ func stripConditionalHeaders(h http.Header) {
 }
 
 // WriteCache writes an HTTPDocument to the cache
-func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument, ttl time.Duration, compressTypes map[string]bool) error {
+func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
+	ttl time.Duration, compressTypes map[string]bool) error {
 
 	rsc := tc.Resources(ctx).(*request.Resources)
 

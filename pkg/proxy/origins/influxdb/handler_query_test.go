@@ -31,10 +31,12 @@ import (
 
 func TestParseTimeRangeQuery(t *testing.T) {
 	req := &http.Request{URL: &url.URL{
-		Scheme:   "https",
-		Host:     "blah.com",
-		Path:     "/",
-		RawQuery: url.Values(map[string][]string{"q": {`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY time(15s), "cluster" fill(null)`}, "epoch": {"ms"}}).Encode(),
+		Scheme: "https",
+		Host:   "blah.com",
+		Path:   "/",
+		RawQuery: url.Values(map[string][]string{"q": {
+			`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h ` +
+				`GROUP BY time(15s), "cluster" fill(null)`}, "epoch": {"ms"}}).Encode(),
 	}}
 	client := &Client{}
 	res, err := client.ParseTimeRangeQuery(req)
@@ -49,7 +51,8 @@ func TestParseTimeRangeQuery(t *testing.T) {
 func TestQueryHandlerWithSelect(t *testing.T) {
 
 	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/query?q=select%20test", "debug")
+	ts, w, r, hc, err := tu.NewTestInstance("",
+		client.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/query?q=select%20test", "debug")
 	rsc := request.GetResources(r)
 	rsc.OriginClient = client
 	client.config = rsc.OriginConfig
@@ -120,7 +123,8 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 		Host:   "blah.com",
 		Path:   "/",
 		RawQuery: url.Values(map[string][]string{
-			"q_":    {`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY time(15s), "cluster" fill(null)`},
+			"q_": {`SELECT mean("value") FROM "monthly"."rollup.1min" ` +
+				`WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY time(15s), "cluster" fill(null)`},
 			"epoch": {"ms"},
 		}).Encode(),
 	}}
@@ -144,7 +148,8 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 		Host:   "blah.com",
 		Path:   "/",
 		RawQuery: url.Values(map[string][]string{
-			"q":     {`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY times(15s), "cluster" fill(null)`},
+			"q": {`SELECT mean("value") FROM "monthly"."rollup.1min" ` +
+				`WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY times(15s), "cluster" fill(null)`},
 			"epoch": {"ms"},
 		}).Encode(),
 	}}
@@ -158,51 +163,3 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 		t.Errorf(`Expected "%s", got "%s"`, expected.Error(), err.Error())
 	}
 }
-
-// func TestParseTimeRangeQueryWithBothTimes(t *testing.T) {
-// 	req := &http.Request{URL: &url.URL{
-// 		Scheme:   "https",
-// 		Host:     "blah.com",
-// 		Path:     "/",
-// 		RawQuery: url.Values(map[string][]string{"q": []string{`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h AND time < now() - 3h GROUP BY time(15s), "cluster" fill(null)`}, "epoch": []string{"ms"}}).Encode(),
-// 	}}
-// 	client := &Client{}
-// 	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
-// 	if err != nil {
-// 	} else {
-// 		assert.Equal(t, int(res.Step), 15)
-// 		assert.Equal(t, int(res.Extent.End.Sub(res.Extent.Start).Hours()), 3)
-// 	}
-// }
-
-// func TestParseTimeRangeQueryWithoutNow(t *testing.T) {
-// 	req := &http.Request{URL: &url.URL{
-// 		Scheme:   "https",
-// 		Host:     "blah.com",
-// 		Path:     "/",
-// 		RawQuery: url.Values(map[string][]string{"q": []string{`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time > 2052926911485ms AND time < 52926911486ms GROUP BY time(15s), "cluster" fill(null)`}, "epoch": []string{"ms"}}).Encode(),
-// 	}}
-// 	client := &Client{}
-// 	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
-// 	if err != nil {
-// 	} else {
-// 		assert.Equal(t, int(res.Step), 15)
-// 		assert.Equal(t, res.Extent.End.UTC().Second()-res.Extent.Start.UTC().Second(), 1)
-// 	}
-// }
-
-// func TestParseTimeRangeQueryWithAbsoluteTime(t *testing.T) {
-// 	req := &http.Request{URL: &url.URL{
-// 		Scheme:   "https",
-// 		Host:     "blah.com",
-// 		Path:     "/",
-// 		RawQuery: url.Values(map[string][]string{"q": []string{`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time < 2052926911486ms GROUP BY time(15s), "cluster" fill(null)`}, "epoch": []string{"ms"}}).Encode(),
-// 	}}
-// 	client := &Client{}
-// 	res, err := client.ParseTimeRangeQuery(&model.Request{ClientRequest: req, URL: req.URL, TemplateURL: req.URL})
-// 	if err != nil {
-// 	} else {
-// 		assert.Equal(t, int(res.Step), 15)
-// 		assert.Equal(t, res.Extent.Start.UTC().IsZero(), true)
-// 	}
-// }

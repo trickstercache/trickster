@@ -21,9 +21,9 @@ import (
 	"net/http"
 
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
+	"google.golang.org/grpc/codes"
 
 	"go.opentelemetry.io/otel/api/trace"
-	"google.golang.org/grpc/codes"
 )
 
 // FlusherFunc defines a function used to Flush a Tracer

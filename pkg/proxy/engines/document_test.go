@@ -62,7 +62,9 @@ func TestCachingPolicyString(t *testing.T) {
 func TestSetBody(t *testing.T) {
 
 	r := byterange.Range{Start: 0, End: 10}
-	d := &HTTPDocument{ContentLength: -1, RangeParts: byterange.MultipartByteRanges{r: &byterange.MultipartByteRange{Range: r, Content: []byte("01234567890")}}}
+	d := &HTTPDocument{ContentLength: -1,
+		RangeParts: byterange.MultipartByteRanges{r: &byterange.MultipartByteRange{Range: r,
+			Content: []byte("01234567890")}}}
 	d.SetBody([]byte("testing"))
 
 	if d.ContentLength < 0 {
@@ -72,7 +74,9 @@ func TestSetBody(t *testing.T) {
 
 func TestSize(t *testing.T) {
 	r := byterange.Range{Start: 0, End: 10}
-	d := &HTTPDocument{ContentLength: -1, RangeParts: byterange.MultipartByteRanges{r: &byterange.MultipartByteRange{Range: r, Content: []byte("01234567890")}}}
+	d := &HTTPDocument{ContentLength: -1,
+		RangeParts: byterange.MultipartByteRanges{r: &byterange.MultipartByteRange{Range: r,
+			Content: []byte("01234567890")}}}
 
 	i := d.Size()
 

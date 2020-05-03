@@ -25,6 +25,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 )
 
 var testString = "Hey, I'm an http response body string."
@@ -48,7 +50,8 @@ func TestPCFReadWriteSingle(t *testing.T) {
 	}
 
 	if w.String() != testString {
-		t.Errorf("PCF result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), w.String(), len(w.String()))
+		t.Errorf("PCF result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)",
+			testString, len(testString), w.String(), len(w.String()))
 	}
 }
 
@@ -74,11 +77,13 @@ func TestPCFReadWriteMultiple(t *testing.T) {
 	}
 
 	if w.String() != testString {
-		t.Errorf("PCF result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), w.String(), len(w.String()))
+		t.Errorf("PCF result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)",
+			testString, len(testString), w.String(), len(w.String()))
 	}
 
 	if w1.String() != testString {
-		t.Errorf("PCF second client result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), w1.String(), len(w1.String()))
+		t.Errorf("PCF second client result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)",
+			testString, len(testString), w1.String(), len(w1.String()))
 	}
 }
 
@@ -107,7 +112,8 @@ func TestPCFReadWriteGetBody(t *testing.T) {
 	}
 
 	if w.String() != testString {
-		t.Errorf("PCF result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), w.String(), len(w.String()))
+		t.Errorf("PCF result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)",
+			testString, len(testString), w.String(), len(w.String()))
 	}
 
 	body, err := pcf.GetBody()
@@ -116,7 +122,8 @@ func TestPCFReadWriteGetBody(t *testing.T) {
 	}
 
 	if string(body) != testString {
-		t.Errorf("PCF result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), string(body), len(body))
+		t.Errorf("PCF result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)",
+			testString, len(testString), string(body), len(body))
 	}
 }
 
@@ -172,7 +179,7 @@ func TestPCFWaits(t *testing.T) {
 	}
 
 	// Wait for pcf to finish in goroutine
-	sleepDur := time.Duration(65 * (int(l/HTTPBlockSize) + 1))
+	sleepDur := time.Duration(65*(l/HTTPBlockSize) + 1)
 	time.Sleep(sleepDur * time.Millisecond)
 
 	if a := atomic.LoadUint64(&serverComplete); a != 1 {
@@ -242,7 +249,7 @@ func TestPCFIndexReadTooLarge(t *testing.T) {
 
 	_, err := pcf.IndexRead(12412, buf)
 
-	if err != ErrReadIndexTooLarge {
+	if err != errors.ErrReadIndexTooLarge {
 		t.Errorf("PCF did not return ErrReadIndexTooLarge, got %e", err)
 	}
 }
@@ -266,7 +273,8 @@ func TestPCFReadLarge(t *testing.T) {
 	}
 
 	if bytes.Equal(r.Bytes(), w.Bytes()) {
-		t.Errorf("PCF result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)", testString, len(testString), w.String(), len(w.String()))
+		t.Errorf("PCF result was not correct, expected: \"%s\" (Len: %d), got: \"%s\" (Len: %d)",
+			testString, len(testString), w.String(), len(w.String()))
 	}
 }
 

@@ -149,7 +149,7 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 	resp2 := &http.Response{}
 	resp2.Header = make(http.Header)
 	resp2.Header.Add(headers.NameContentLength, strconv.FormatInt(rl, 10))
-	resp2.ContentLength = int64(rl)
+	resp2.ContentLength = rl
 	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
 	resp2.StatusCode = 206
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
@@ -192,7 +192,7 @@ func TestCacheHitRangeRequest3(t *testing.T) {
 	resp2 := &http.Response{}
 	resp2.Header = make(http.Header)
 	resp2.Header.Add(headers.NameContentLength, strconv.FormatInt(rl, 10))
-	resp2.ContentLength = int64(rl)
+	resp2.ContentLength = rl
 	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
 	resp2.StatusCode = 206
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
@@ -232,7 +232,7 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 	resp2 := &http.Response{}
 	resp2.Header = make(http.Header)
 	resp2.Header.Add(headers.NameContentLength, strconv.FormatInt(rl, 10))
-	resp2.ContentLength = int64(rl)
+	resp2.ContentLength = rl
 	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
 	resp2.StatusCode = 206
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
@@ -276,7 +276,7 @@ func TestFullCacheMissRangeRequest(t *testing.T) {
 	resp2 := &http.Response{}
 	resp2.Header = make(http.Header)
 	resp2.Header.Add(headers.NameContentLength, strconv.FormatInt(rl, 10))
-	resp2.ContentLength = int64(rl)
+	resp2.ContentLength = rl
 	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
 	resp2.StatusCode = 206
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
@@ -398,8 +398,8 @@ func TestQueryCache(t *testing.T) {
 		t.Error(err)
 	}
 
-	if string(d2.Body) != string(expected) {
-		t.Errorf("expected %s got %s", string(expected), string(d2.Body))
+	if string(d2.Body) != expected {
+		t.Errorf("expected %s got %s", expected, string(d2.Body))
 	}
 
 	if d2.StatusCode != 200 {
@@ -430,8 +430,8 @@ func TestQueryCache(t *testing.T) {
 		t.Error(err)
 	}
 
-	if string(d2.Body) != string(expected) {
-		t.Errorf("expected %s got %s", string(expected), string(d2.Body))
+	if string(d2.Body) != expected {
+		t.Errorf("expected %s got %s", expected, string(d2.Body))
 	}
 
 	if d2.StatusCode != 200 {

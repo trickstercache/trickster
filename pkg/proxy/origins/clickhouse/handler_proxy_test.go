@@ -28,7 +28,8 @@ import (
 func TestProxyHandler(t *testing.T) {
 
 	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "test", nil, "clickhouse", "/health", "debug")
+	ts, w, r, hc, err := tu.NewTestInstance("",
+		client.DefaultPathConfigs, 200, "test", nil, "clickhouse", "/health", "debug")
 
 	rsc := request.GetResources(r)
 	client.config = rsc.OriginConfig

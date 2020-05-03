@@ -62,7 +62,8 @@ func (idx *Index) ToBytes() []byte {
 
 // Object contains metadata about an item in the Cache
 type Object struct {
-	// Key represents the name of the Object and is the accessor in a hashed collection of Cache Objects
+	// Key represents the name of the Object and is the
+	// accessor in a hashed collection of Cache Objects
 	Key string `msg:"key"`
 	// Expiration represents the time that the Object expires from Cache
 	Expiration time.Time `msg:"expiration"`
@@ -115,14 +116,16 @@ func NewIndex(cacheName, cacheType string, indexData []byte, o *options.Options,
 		if o.FlushInterval > 0 {
 			go i.flusher(log)
 		} else {
-			log.Warn("cache index flusher did not start", tl.Pairs{"cacheName": i.name, "flushInterval": o.FlushInterval})
+			log.Warn("cache index flusher did not start",
+				tl.Pairs{"cacheName": i.name, "flushInterval": o.FlushInterval})
 		}
 	}
 
 	if o.ReapInterval > 0 {
 		go i.reaper(log)
 	} else {
-		log.Warn("cache reaper did not start", tl.Pairs{"cacheName": i.name, "reapInterval": o.ReapInterval})
+		log.Warn("cache reaper did not start",
+			tl.Pairs{"cacheName": i.name, "reapInterval": o.ReapInterval})
 	}
 
 	gm.CacheMaxObjects.WithLabelValues(cacheName, cacheType).Set(float64(o.MaxSizeObjects))
@@ -256,7 +259,8 @@ func (idx *Index) flushOnce(log *tl.Logger) {
 	bytes, err := idx.MarshalMsg(nil)
 	indexLock.Unlock()
 	if err != nil {
-		log.Warn("unable to serialize index for flushing", tl.Pairs{"cacheName": idx.name, "detail": err.Error()})
+		log.Warn("unable to serialize index for flushing",
+			tl.Pairs{"cacheName": idx.name, "detail": err.Error()})
 		return
 	}
 	idx.flushFunc(IndexKey, bytes)
@@ -304,7 +308,9 @@ func (idx *Index) reap(log *tl.Logger) {
 		cacheChanged = true
 	}
 
-	if ((idx.options.MaxSizeBytes > 0 && idx.CacheSize > idx.options.MaxSizeBytes) || (idx.options.MaxSizeObjects > 0 && idx.ObjectCount > idx.options.MaxSizeObjects)) && len(remainders) > 0 {
+	if ((idx.options.MaxSizeBytes > 0 && idx.CacheSize > idx.options.MaxSizeBytes) ||
+		(idx.options.MaxSizeObjects > 0 && idx.ObjectCount > idx.options.MaxSizeObjects)) &&
+		len(remainders) > 0 {
 
 		var evictionType string
 		if idx.options.MaxSizeBytes > 0 && idx.CacheSize > idx.options.MaxSizeBytes {
