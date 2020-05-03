@@ -263,8 +263,6 @@ func (c *Config) setDefaults(metadata *toml.MetaData) error {
 
 	tracing.ProcessTracingOptions(c.TracingConfigs, metadata)
 
-	//_, err = tracereg.RegisterAll()
-
 	c.processCachingConfigs(metadata)
 
 	if err = c.validateConfigMappings(); err != nil {

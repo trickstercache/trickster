@@ -21,9 +21,9 @@ import (
 	"net/http"
 
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
+	"google.golang.org/grpc/codes"
 
 	"go.opentelemetry.io/otel/api/trace"
-	"google.golang.org/grpc/codes"
 )
 
 // FlusherFunc defines a function used to Flush a Tracer
@@ -56,3 +56,41 @@ func HTTPToCode(status int) codes.Code {
 		return codes.Internal
 	}
 }
+
+// // PrepareRequest extracts trace information from the headers of the incoming request. It returns a pointer to the incoming request with the request context updated to include all span and tracing info. It also returns a span with the name "Request" that is meant to be a parent span for all child spans of this request.
+// func PrepareRequest(r *http.Request, tr trace.Tracer) (*http.Request, trace.Span) {
+
+// 	attrs, entries, spanCtx := httptrace.Extract(r.Context(), r)
+
+// 	r = r.WithContext(correlation.ContextWithMap(r.Context(),
+// 		correlation.NewMap(correlation.MapUpdate{
+// 			MultiKV: entries,
+// 		})))
+
+// 	ctx, span := tr.Start(
+// 		trace.ContextWithRemoteSpanContext(r.Context(), spanCtx),
+// 		"request",
+// 		trace.WithAttributes(attrs...),
+// 	)
+
+// 	return r.WithContext(ctx), span
+// }
+
+// // NewChildSpan returns the context with a new Span situated as the child of the previous span
+// func NewChildSpan(ctx context.Context, tr *tracing.Tracer, spanName string) (context.Context, trace.Span) {
+
+// 	if ctx == nil {
+// 		ctx = context.Background()
+// 	}
+
+// 	if tr == nil {
+// 		return ctx, trace.NoopSpan{}
+// 	}
+
+// 	ctx, span := tr.Start(
+// 		ctx,
+// 		spanName,
+// 	)
+
+// 	return ctx, span
+// }

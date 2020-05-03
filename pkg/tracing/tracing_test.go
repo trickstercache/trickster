@@ -52,7 +52,6 @@ func TestHTTPToCode(t *testing.T) {
 			v := HTTPToCode(test.code)
 			if v != test.expected {
 				t.Errorf("expected %d got %d", test.expected, v)
-
 			}
 		})
 	}

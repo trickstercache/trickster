@@ -64,7 +64,7 @@ func TestDoProxy(t *testing.T) {
 	r = r.WithContext(tc.WithResources(r.Context(),
 		request.NewResources(oc, pc, nil, nil, nil, nil, testLogger)))
 
-	DoProxy(w, r)
+	DoProxy(w, r, true)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -113,7 +113,7 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	r = r.WithContext(tc.WithResources(r.Context(),
 		request.NewResources(oc, pc, nil, nil, nil, nil, testLogger)))
 
-	DoProxy(w, r)
+	DoProxy(w, r, true)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadGateway)
@@ -159,7 +159,7 @@ func TestClockOffsetWarning(t *testing.T) {
 		t.Errorf("expected %t got %t", false, true)
 	}
 
-	DoProxy(w, r)
+	DoProxy(w, r, true)
 	resp := w.Result()
 
 	if !testLogger.HasWarnedOnce("clockoffset.default") {
@@ -204,7 +204,7 @@ func TestDoProxyWithPCF(t *testing.T) {
 		request.NewResources(oc, pc, nil, nil, nil, nil, testLogger)))
 
 	// get URL
-	DoProxy(w, r)
+	DoProxy(w, r, true)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
@@ -259,7 +259,7 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 		request.NewResources(oc, pc, nil, nil, nil, nil, testLogger)))
 
 	// get URL
-	DoProxy(w, r)
+	DoProxy(w, r, true)
 	resp := w.Result()
 
 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
