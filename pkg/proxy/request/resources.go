@@ -73,6 +73,7 @@ func NewResources(oo *oo.Options, po *po.Options, co *co.Options,
 		CacheClient:  c,
 		OriginClient: client,
 		Logger:       logger,
+		Tracer:       t,
 	}
 }
 
