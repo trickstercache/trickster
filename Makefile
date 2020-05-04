@@ -11,6 +11,7 @@
 
 DEFAULT: build
 
+PROJECT_DIR    := $(shell pwd)
 GO             ?= go
 GOFMT          ?= $(GO)fmt
 FIRST_GOPATH   := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
@@ -25,6 +26,10 @@ IMAGE_ARCH     ?= amd64
 GOARCH         ?= amd64
 TAGVER         ?= unspecified
 LDFLAGS         =-ldflags "-s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicationGitCommitID=$(GIT_LATEST_COMMIT_ID) -X main.applicationGoVersion=$(GO_VER) -X main.applicationGoArch=$(GOARCH)"
+BUILD_SUBDIR   := OPATH
+PACKAGE_DIR    := ./$(BUILD_SUBDIR)/trickster-$(PROGVER)
+BIN_DIR        := $(PACKAGE_DIR)/bin
+CONF_DIR       := $(PACKAGE_DIR)/conf
 
 .PHONY: validate-app-version
 validate-app-version:
@@ -46,16 +51,16 @@ test-go-mod:
 
 .PHONY: build
 build:
-	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o ./OPATH/trickster -a -v $(TRICKSTER_MAIN)/*.go
+	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o ./$(BUILD_SUBDIR)/trickster -a -v $(TRICKSTER_MAIN)/*.go
 
 rpm: build
-	mkdir -p ./OPATH/SOURCES
-	cp -p ./OPATH/trickster ./OPATH/SOURCES/
-	cp $(TRICKSTER_MAIN)/conf/trickster.service ./OPATH/SOURCES/
+	mkdir -p ./$(BUILD_SUBDIR)/SOURCES
+	cp -p ./$(BUILD_SUBDIR)/trickster ./$(BUILD_SUBDIR)/SOURCES/
+	cp $(TRICKSTER_MAIN)/conf/trickster.service ./$(BUILD_SUBDIR)/SOURCES/
 	sed -e 's%^# log_file =.*$$%log_file = "/var/log/trickster/trickster.log"%' \
 		-e 's%prometheus:9090%localhost:9090%' \
-		< $(TRICKSTER_MAIN)/conf/example.conf > ./OPATH/SOURCES/trickster.conf
-	rpmbuild --define "_topdir $(CURDIR)/OPATH" \
+		< $(TRICKSTER_MAIN)/conf/example.conf > ./$(BUILD_SUBDIR)/SOURCES/trickster.conf
+	rpmbuild --define "_topdir $(CURDIR)/$(BUILD_SUBDIR)" \
 		--define "_version $(PROGVER)" \
 		--define "_release 1" \
 		-ba deploy/packaging/trickster.spec
@@ -68,11 +73,25 @@ install:
 release: validate-app-version clean go-mod-tidy go-mod-vendor release-artifacts
 
 .PHONY: release-artifacts
-release-artifacts:
-	GOOS=darwin   GOARCH=amd64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).darwin-amd64       -a -v $(TRICKSTER_MAIN)/*.go && tar cvfz ./OPATH/trickster-$(PROGVER).darwin-amd64.tar.gz  ./OPATH/trickster-$(PROGVER).darwin-amd64
-	GOOS=linux    GOARCH=amd64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).linux-amd64        -a -v $(TRICKSTER_MAIN)/*.go && tar cvfz ./OPATH/trickster-$(PROGVER).linux-amd64.tar.gz   ./OPATH/trickster-$(PROGVER).linux-amd64
-	GOOS=linux    GOARCH=arm64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).linux-arm64        -a -v $(TRICKSTER_MAIN)/*.go && tar cvfz ./OPATH/trickster-$(PROGVER).linux-arm64.tar.gz   ./OPATH/trickster-$(PROGVER).linux-arm64
-	GOOS=windows  GOARCH=amd64 $(GO) build $(LDFLAGS) -o ./OPATH/trickster-$(PROGVER).windows-amd64.exe  -a -v $(TRICKSTER_MAIN)/*.go && tar cvfz ./OPATH/trickster-$(PROGVER).windows-amd64.tar.gz ./OPATH/trickster-$(PROGVER).windows-amd64.exe
+release-artifacts: clean
+
+	mkdir -p $(PACKAGE_DIR)
+	mkdir -p $(BIN_DIR)
+	mkdir -p $(CONF_DIR)
+
+	cp -r ./docs $(PACKAGE_DIR)
+	cp -r ./deploy $(PACKAGE_DIR)
+	cp ./README.md $(PACKAGE_DIR)
+	cp ./CONTRIBUTING.md $(PACKAGE_DIR)
+	cp ./LICENSE $(PACKAGE_DIR)
+	cp ./cmd/trickster/conf/*.conf $(CONF_DIR)
+	
+	GOOS=darwin  GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).darwin-amd64  -a -v $(TRICKSTER_MAIN)/*.go
+	GOOS=linux   GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-amd64   -a -v $(TRICKSTER_MAIN)/*.go
+	GOOS=linux   GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-arm64   -a -v $(TRICKSTER_MAIN)/*.go
+	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).windows-amd64 -a -v $(TRICKSTER_MAIN)/*.go
+
+	cd ./$(BUILD_SUBDIR) && tar cvfz ./trickster-$(PROGVER).tar.gz ./trickster-$(PROGVER)/*
 
 # Minikube and helm bootstrapping are done via deploy/helm/Makefile
 .PHONY: helm-local
@@ -123,4 +142,4 @@ test-cover: test
 
 .PHONY: clean
 clean:
-	rm -rf ./trickster ./OPATH
+	rm -rf ./trickster ./$(BUILD_SUBDIR)
