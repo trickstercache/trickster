@@ -6,9 +6,19 @@ Trickster exposes a Prometheus /metrics endpoint with a customizable listener po
 
 The following metrics are available for polling with any Trickster configuration:
 
+* `trickster_build_info` (Gauge) - This guage is always 1 when Trickster is running
+  * labels:
+    * `goversion` - the version of go under which the running Trickster binary was built
+    * `revision` - the commit ID on which the running Trickster binary was built
+    * `version` - semantic version of the running Trickster binary
+
+* `trickster_config_last_reload_successful` (Gauge) - The value is 1 when true (the last config reload was successful) or 0 when false
+
+* `trickster_config_last_reload_success_time_seconds` (Gauge) - Epoch timestamp of the last successful configuration reload
+
 * `trickster_frontend_requests_total` (Counter) - Count of front end requests handled by Trickster
   * labels:
-    * `origin_name` - the name of the configured origin handling the proxy request$
+    * `origin_name` - the name of the configured origin handling the proxy request
     * `origin_type` - the type of the configured origin handling the proxy request
     * `method` - the HTTP Method of the proxied request
     * `http_status` - The HTTP response code provided by the origin
@@ -16,25 +26,23 @@ The following metrics are available for polling with any Trickster configuration
 
 * `trickster_frontend_requests_duration_seconds` (Histogram) - Histogram of front end request durations handled by Trickster
   * labels:
-    * `origin_name` - the name of the configured origin handling the proxy request$
+    * `origin_name` - the name of the configured origin handling the proxy request
     * `origin_type` - the type of the configured origin handling the proxy request
     * `method` - the HTTP Method of the proxied request
     * `http_status` - The HTTP response code provided by the origin
     * `path` - the Path portion of the requested URL
 
-* `trickster_frontend_written_byte_total` (Counter) - Count of bytes written in front end requests handled by Trickster`
+* `trickster_frontend_written_byte_total` (Counter) - Count of bytes written in front end requests handled by Trickster
   * labels:
-    * `origin_name` - the name of the configured origin handling the proxy request$
+    * `origin_name` - the name of the configured origin handling the proxy request
     * `origin_type` - the type of the configured origin handling the proxy request
     * `method` - the HTTP Method of the proxied request
     * `http_status` - The HTTP response code provided by the origin
     * `path` - the Path portion of the requested URL
-
-
 
 * `trickster_proxy_requests_total` (Counter) - The total number of requests Trickster has handled.
   * labels:
-    * `origin_name` - the name of the configured origin handling the proxy request$
+    * `origin_name` - the name of the configured origin handling the proxy request
     * `origin_type` - the type of the configured origin handling the proxy request
     * `method` - the HTTP Method of the proxied request
     * `cache_status` - 'hit', 'phit', (partial hit) 'kmiss', (key miss) 'rmiss' (range miss)
@@ -43,14 +51,14 @@ The following metrics are available for polling with any Trickster configuration
 
 * `trickster_proxy_points_total` (Counter) - The total number of data points Trickster has handled.
   * labels:
-    * `origin_name` - the name of the configured origin handling the proxy request$
+    * `origin_name` - the name of the configured origin handling the proxy request
     * `origin_type` - the type of the configured origin handling the proxy request
     * `cache_status` - 'hit', 'phit', (partial hit) 'kmiss', (key miss) 'rmiss' (range miss)
     * `path` - the Path portion of the requested URL
 
 * `trickster_proxy_request_duration_seconds` (Histogram) - Time required to proxy a given Prometheus query.
   * labels:
-    * `origin_name` - the name of the configured origin handling the proxy request$
+    * `origin_name` - the name of the configured origin handling the proxy request
     * `origin_type` - the type of the configured origin handling the proxy request
     * `method` - the HTTP Method of the proxied request
     * `cache_status` - 'hit', 'phit', (partial hit) 'kmiss', (key miss) 'rmiss' (range miss)
@@ -75,7 +83,6 @@ The following metrics are available for polling with any Trickster configuration
     * `cache_type` - the type of the configured cache performing the operation
     * `operation` - the name of the operation being performed (read, write, etc.)
     * `status` - the result of the operation being performed
-
 
 * `trickster_cache_operation_bytes_total` (Counter) - The total number of bytes upon which the Trickster cache has operated.
   * labels:
