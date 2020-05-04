@@ -16,10 +16,6 @@
 
 package options
 
-import rewropts "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
-
-//type rewriteList [][]string
-
 // Options defines the options for a Rule
 type Options struct {
 	// Name provides the name of the Rule
@@ -52,12 +48,6 @@ type Options struct {
 	//  header           [must be used with InputKey as described below]
 	InputSource string `toml:"input_source"`
 	//
-	// PreOpRewrite is a list of URL and Header rewrite instructions that permanently modify the
-	// http request prior to executing the rule
-	PreOpRewrite rewropts.RewriteList `toml:"rewrite"`
-	// PostOpRewrite is a list of URL and Header rewrite instructions that permanently modify the
-	// http request after executing the rule
-	PostOpRewrite rewropts.RewriteList `toml:"rewrite"`
 	// InputKey is optional and provides extra information for locating the data source
 	// when the InputSource is header or param, the input key must be the target header or param name
 	InputKey string `toml:"input_key"`
@@ -111,13 +101,6 @@ type CaseOptions struct {
 
 // Clone returns a perfect copy of the subject *Options
 func (o *Options) Clone() *Options {
-	var preRL, postRL rewropts.RewriteList
-	if len(o.PreOpRewrite) > 0 {
-		preRL = o.PreOpRewrite.Clone()
-	}
-	if len(o.PostOpRewrite) > 0 {
-		postRL = o.PreOpRewrite.Clone()
-	}
 	return &Options{
 		Name:                   o.Name,
 		NextRoute:              o.NextRoute,
@@ -125,8 +108,6 @@ func (o *Options) Clone() *Options {
 		EgressReqRewriterName:  o.EgressReqRewriterName,
 		DefaultReqRewriterName: o.DefaultReqRewriterName,
 		InputSource:            o.InputSource,
-		PreOpRewrite:           preRL,
-		PostOpRewrite:          postRL,
 		InputKey:               o.InputKey,
 		InputType:              o.InputType,
 		InputEncoding:          o.InputEncoding,
