@@ -82,10 +82,10 @@ func TestParseOptions(t *testing.T) {
 		t.Errorf("expected error for %s", expected)
 	}
 
-	temp = ropts.DefaultReqRewriterName
-	ropts.DefaultReqRewriterName = "x"
+	temp = ropts.NoMatchReqRewriterName
+	ropts.NoMatchReqRewriterName = "x"
 	err = c.parseOptions(ropts, rwi)
-	ropts.DefaultReqRewriterName = temp
+	ropts.NoMatchReqRewriterName = temp
 	expected = "invalid default rewriter"
 	if err == nil || !strings.Contains(err.Error(), expected) {
 		t.Errorf("expected error for %s", expected)

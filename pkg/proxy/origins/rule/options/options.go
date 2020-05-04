@@ -29,10 +29,10 @@ type Options struct {
 	// EgressReqRewriterName is the name of a configured Rewriter that will modify the request once
 	// all other rule actions have occurred, prior to the request being passed to the next route
 	EgressReqRewriterName string `toml:"egress_req_rewriter_name"`
-	// DefaultReqRewriterName is the name of a configured Rewriter that will modify the request once
+	// NoMatchReqRewriterName is the name of a configured Rewriter that will modify the request once
 	// all other rule actions have occurred, and only if the Request did not match any defined case,
 	// prior to the request being passed to the next route
-	DefaultReqRewriterName string `toml:"default_req_rewriter_name"`
+	NoMatchReqRewriterName string `toml:"nomatch_req_rewriter_name"`
 	//
 	// Input source specifies the data source used when executing the rule. Possible options:
 	//  Source           Example Source Used
@@ -106,7 +106,7 @@ func (o *Options) Clone() *Options {
 		NextRoute:              o.NextRoute,
 		IngressReqRewriterName: o.IngressReqRewriterName,
 		EgressReqRewriterName:  o.EgressReqRewriterName,
-		DefaultReqRewriterName: o.DefaultReqRewriterName,
+		NoMatchReqRewriterName: o.NoMatchReqRewriterName,
 		InputSource:            o.InputSource,
 		InputKey:               o.InputKey,
 		InputType:              o.InputType,

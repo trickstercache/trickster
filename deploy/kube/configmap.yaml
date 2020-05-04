@@ -481,7 +481,7 @@ data:
     #   ingress_req_rewriter_name = '' # name of a rewriter to process the request before evaluating the rule
     #   egress_req_rewriter_name = ''  # name of a rewriter to process the request after evaluating the rule
     ##                                 # and handing off to the new route
-    #   default_req_rewriter_name = '' # name of a rewriter to run the request through when there are no matching cases
+    #   nomatch_req_rewriter_name = '' # name of a rewriter to run the request through when there are no matching cases
     #   operation_arg = '' # an argument to pass to the operation.
     #   redirect_url = '' # provides a URL to redirect the request in the default case, rather than handing to next_route
     #   max_rule_executions = 16        # limits the max number of per-Request rule-based hops to avoid execution loops.
