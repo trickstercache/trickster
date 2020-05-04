@@ -30,7 +30,34 @@ The `methods` section of a Path Config takes a string array of HTTP Methods that
 - Affix an Authorization header to requests proxied out by Trickster.
 - Control which paths are cached by Trickster, and which ones are simply proxied.
 
+## Request Rewriters
+
+You can configure paths send inbound requests through a request rewriter that can modify any aspect of the inbound request (method, url, headers, etc.), before being processed by the path route. This means, when the path route inspects the request, it will have already been modified by the rewriter. Provide a rewriter with the `req_rewriter_name` config. It must map to a named/configured request rewriter (see [request rewrtiers](./request_rewriters) for more info). Note, you can also send requests through a rewriter at the origin level. If both are configured, origin-level rewriters are executed before path rewriters are.
+
+```toml
+
+[request_rewriters]
+    # this example request rewriter adds an additional header to the request
+    [request_rewriters.example]
+        instructions = [
+            ["header", "set", "Example-Header-Name", "Example Value"]
+        ]
+
+[origins]
+
+    [origins.default]
+    origin_type = 'rpc'
+    origin_url = 'http://example.com'
+
+        [origins.default.paths]
+            [origins.default.paths.root]
+            path = '/'
+            req_rewriter_name = 'example'
+```
+
 ## Header and Query Parameter Behavior
+
+In addition to running the request through a named rewriter, it is currently possible to make similar changes to the request with legacy path features that are described in this section. Note that these are likely to be deprecated in a future Trickster release, in favor of the more versatile named rewriters desribed above, which accomplish the same thing. Currently, if both a named rewriter and legacy path-based rewriting configs are defined for a given path, the named rewriter will be executed first.
 
 ### Basics
 
@@ -72,12 +99,12 @@ Trickster supports parsing of the Request body as a JSON document, including doc
 
 ```json
 {
-	"requestType": "query",
-	"query": {
-		"table": "movies",
-		"fields": "eidr,title",
-		"filter": "year=1979"
-	}
+    "requestType": "query",
+    "query": {
+        "table": "movies",
+        "fields": "eidr,title",
+        "filter": "year=1979"
+    }
 }
 ```
 
@@ -202,7 +229,7 @@ Examples of customizing Path Configs for Origin Types with Pre-Definitions:
             methods = [ 'GET' ]
             match_type = 'prefix'
             handler = 'proxy'
-            
+
             # route fictional new /api/v1/coffee to ProxyCache
             [origins.default.paths.series_range]
             path = '/api/v1/coffee'
@@ -210,7 +237,7 @@ Examples of customizing Path Configs for Origin Types with Pre-Definitions:
             match_type = 'prefix'
             handler = 'proxycache'
             cache_key_params = [ 'beans' ]
-            
+
             # block /api/v1/admin/ from being reachable via Trickster
             [origins.default.paths.admin]
             path = '/api/v1/admin/'
