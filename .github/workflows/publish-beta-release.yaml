@@ -7,7 +7,7 @@ name: Publish Trickster Beta Release to GitHub and Docker Hub
 
 jobs:
   build:
-    name: Publish Release Candidate
+    name: Publish Beta Release
     runs-on: ubuntu-latest
     steps:
       - name: Get current date
@@ -29,47 +29,17 @@ jobs:
         with:
           tag_name: ${{ github.ref }}
           release_name: Release v${{ steps.baretag.outputs.baretag }} / ${{ steps.date.outputs.date }}
-          draft: false
+          draft: true
           prerelease: true
-      - name: Upload Release Asset (linux-amd64)
+      - name: Upload Release Binaries Tarball
         id: upload-release-asset-linux-amd64
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./OPATH/trickster-${{ steps.baretag.outputs.baretag }}.linux-amd64.tar.gz
-          asset_name: trickster-${{ steps.baretag.outputs.baretag }}.linux-amd64.tar.gz
-          asset_content_type: application/gzip
-      - name: Upload Release Asset (linux-arm64)
-        id: upload-release-asset-linux-arm64
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./OPATH/trickster-${{ steps.baretag.outputs.baretag }}.linux-arm64.tar.gz
-          asset_name: trickster-${{ steps.baretag.outputs.baretag }}.linux-arm64.tar.gz
-          asset_content_type: application/gzip
-      - name: Upload Release Asset (darwin-amd64)
-        id: upload-release-asset-darwin-amd64
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./OPATH/trickster-${{ steps.baretag.outputs.baretag }}.darwin-amd64.tar.gz
-          asset_name: trickster-${{ steps.baretag.outputs.baretag }}.darwin-amd64.tar.gz
-          asset_content_type: application/gzip
-      - name: Upload Release Asset (windows-amd64)
-        id: upload-release-asset-windows-amd64
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./OPATH/trickster-${{ steps.baretag.outputs.baretag }}.windows-amd64.tar.gz
-          asset_name: trickster-${{ steps.baretag.outputs.baretag }}.windows-amd64.tar.gz
+          asset_path: ./OPATH/trickster-${{ steps.baretag.outputs.baretag }}.tar.gz
+          asset_name: trickster-${{ steps.baretag.outputs.baretag }}.tar.gz
           asset_content_type: application/gzip
       - name: build-push-tricksterio-amd
         uses: docker/build-push-action@v1
@@ -78,6 +48,7 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
           repository: tricksterio/trickster
           tags: ${{ steps.baretag.outputs.baretag }}
+          dockerfile: ./deploy/Dockerfile
       - name: build-push-tricksterproxy-amd
         uses: docker/build-push-action@v1
         with:
@@ -85,6 +56,7 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
           repository: tricksterproxy/trickster
           tags: ${{ steps.baretag.outputs.baretag }}
+          dockerfile: ./deploy/Dockerfile
       - name: build-push-tricksterio-arm
         uses: docker/build-push-action@v1
         with:
@@ -93,6 +65,7 @@ jobs:
           repository: tricksterio/trickster
           build_args: IMAGE_ARCH=arm64v8,GOARCH=arm64
           tags: arm64v8-${{ steps.baretag.outputs.baretag }}
+          dockerfile: ./deploy/Dockerfile
       - name: build-push-tricksterproxy-arm
         uses: docker/build-push-action@v1
         with:
@@ -101,3 +74,4 @@ jobs:
           repository: tricksterproxy/trickster
           build_args: IMAGE_ARCH=arm64v8,GOARCH=arm64
           tags: arm64v8-${{ steps.baretag.outputs.baretag }}
+          dockerfile: ./deploy/Dockerfile
