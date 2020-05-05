@@ -298,7 +298,7 @@ func TestPrepareFetchReaderErr(t *testing.T) {
 	r = r.WithContext(tc.WithResources(r.Context(),
 		request.NewResources(oc, nil, nil, nil, nil, nil, testLogger)))
 	r.Method = "\t"
-	_, _, i := PrepareFetchReader(r)
+	_, _, i := PrepareFetchReader(r.Context(), r)
 	if i != 0 {
 		t.Errorf("expected 0 got %d", i)
 	}
