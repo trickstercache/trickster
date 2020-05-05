@@ -10,15 +10,16 @@ The roadmap for Trickster in 2020 focuses on delivering incremental enhancements
 - [ ] Register Official Docker Hub Repositories
 - [x] Submit Helm charts to Helm Hub
 - [ ] Submit Trickster for CNCF Sandbox Consideration
-- [ ] Trickster v1.1 Release
+- [x] Trickster v1.1 Release
+  - [x] Relocate project to `tricksterproxy` organization
   - [x] Release Binaries for Windows
   - [x] Change default frontend listen port to 8480
   - [x] Frontend HTTP 2.0 Support
-  - [ ] Rules-based Request Routing and Rewriting
-  - [ ] Use RWMutex for cache synchronization
-  - [ ] Reload configuration without process restart
+  - [x] Rules-based Request Routing and Rewriting
+  - [x] Use RWMutex for cache synchronization
+  - [x] Reload configuration without process restart
   - [x] Add implementation-specific Tracing options in config
-  - [ ] Additional performance improvements
+  - [x] Additional performance improvements
   - [x] Relocate and merge PromSim and RangeSim into a separate repo called [mockster](https://github.com/tricksterproxy/mockster)
   - [x] Relocate Helm charts to a [separate repo](https://github.com/tricksterproxy/helm-charts)
   - [x] Automate Helm chart releases via GitHub Workflows
