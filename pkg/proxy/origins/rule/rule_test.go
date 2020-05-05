@@ -105,7 +105,7 @@ func newTestRuleOpts() *ro.Options {
 		NextRoute:              "test-origin-1",
 		IngressReqRewriterName: "test-rewriter-1",
 		EgressReqRewriterName:  "test-rewriter-2",
-		DefaultReqRewriterName: "test-rewriter-3",
+		NoMatchReqRewriterName: "test-rewriter-3",
 		CaseOptions:            newTestCaseOpts(),
 	}
 }

@@ -17,6 +17,11 @@
 // Package strings provides extended functionality for string types
 package strings
 
+import (
+	"fmt"
+	"strings"
+)
+
 // IndexOfString returns the index of a string element in a given slice
 func IndexOfString(arr []string, val string) int {
 	for i, v := range arr {
@@ -50,4 +55,19 @@ func Equal(s1, s2 []string) bool {
 		}
 	}
 	return true
+}
+
+// StringMap represents a map[string]string
+type StringMap map[string]string
+
+func (m StringMap) String() string {
+	delimiter := ""
+	sb := &strings.Builder{}
+	sb.WriteString("{")
+	for k, v := range m {
+		sb.WriteString(fmt.Sprintf(`%s"%s":"%s"`, delimiter, k, v))
+		delimiter = ", "
+	}
+	sb.WriteString("}")
+	return sb.String()
 }

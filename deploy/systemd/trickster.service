@@ -1,8 +1,8 @@
 # -*- mode: conf -*-
 
 [Unit]
-Description=Dashboard Accelerator for Prometheus
-Documentation=https://github.com/Comcast/trickster
+Description=Dashboard Accelerator for Prometheus and HTTP Reverse Proxy Cache
+Documentation=https://github.com/tricksterproxy/trickster
 After=network.target
 
 [Service]

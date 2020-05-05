@@ -102,7 +102,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logg
 	}
 
 	//Register Tracing Configurations
-	tracers, err := tr.RegisterAll(conf, log)
+	tracers, err := tr.RegisterAll(conf, log, false)
 	if err != nil {
 		handleStartupIssue("tracing registration failed", tl.Pairs{"detail": err.Error()},
 			log, errorsFatal)
@@ -280,7 +280,7 @@ func validateConfig(conf *config.Config) error {
 	router := mux.NewRouter()
 	log := log.ConsoleLogger(conf.Logging.LogLevel)
 
-	tracers, err := tr.RegisterAll(conf, log)
+	tracers, err := tr.RegisterAll(conf, log, true)
 	if err != nil {
 		return err
 	}

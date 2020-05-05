@@ -65,6 +65,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			if lookupStatus == status.LookupStatusKeyMiss && ranges != nil && len(ranges) > 0 {
 				nr = ranges
 			}
+			span.SetAttributes(kv.String("cacheStatus", lookupStatus.String()))
 			return d, lookupStatus, nr, err
 		}
 
@@ -74,6 +75,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				d.headerLock = &sync.Mutex{}
 			}
 		} else {
+			span.SetAttributes(kv.String("cacheStatus", status.LookupStatusKeyMiss.String()))
 			return d, status.LookupStatusKeyMiss, ranges, err
 		}
 
@@ -91,6 +93,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				nr = ranges
 
 			}
+			span.SetAttributes(kv.String("cacheStatus", lookupStatus.String()))
 			return d, lookupStatus, nr, err
 		}
 
@@ -112,6 +115,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 		_, err = d.UnmarshalMsg(bytes)
 		if err != nil {
+			span.SetAttributes(kv.String("cacheStatus", status.LookupStatusKeyMiss.String()))
 			return d, status.LookupStatusKeyMiss, ranges, err
 		}
 
@@ -145,6 +149,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	if d.headerLock == nil {
 		d.headerLock = &sync.Mutex{}
 	}
+	span.SetAttributes(kv.String("cacheStatus", lookupStatus.String()))
 	return d, lookupStatus, delta, nil
 }
 

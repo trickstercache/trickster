@@ -58,7 +58,7 @@ const (
 	// DefaultTracerType is the default distributed tracer exporter implementation
 	DefaultTracerType = "none"
 
-	// DefaultTracerServiceName is the default service.name field in distributed trace attributes/tags
+	// DefaultTracerServiceName is the default service name under which traces are registered
 	DefaultTracerServiceName = "trickster"
 
 	// DefaultCacheType is the default cache type for any defined cache

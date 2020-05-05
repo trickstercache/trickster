@@ -18,6 +18,7 @@ package engines
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"io/ioutil"
 	"math"
@@ -66,7 +67,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	var reader io.ReadCloser
 
 	if pc == nil || pc.CollapsedForwardingType != forwarding.CFTypeProgressive {
-		reader, resp, _ = PrepareFetchReader(r)
+		reader, resp, _ = PrepareFetchReader(r.Context(), r)
 		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 		if writer != nil && reader != nil {
@@ -78,7 +79,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 		result, ok := Reqs.Load(key)
 		if !ok {
 			var contentLength int64
-			reader, resp, contentLength = PrepareFetchReader(r)
+			reader, resp, contentLength = PrepareFetchReader(r.Context(), r)
 			cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 			// Check if we know the content length and if it is less than our max object size.
@@ -132,12 +133,12 @@ func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer 
 // PrepareFetchReader prepares an http response and returns io.ReadCloser to
 // provide the response data, the response object and the content length.
 // Used in Fetch.
-func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) {
+func PrepareFetchReader(traceContext context.Context, r *http.Request) (io.ReadCloser, *http.Response, int64) {
 
 	rsc := request.GetResources(r)
 	oc := rsc.OriginConfig
 
-	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "PrepareFetchReader")
+	ctx, span := tspan.NewChildSpan(traceContext, rsc.Tracer, "PrepareFetchReader")
 	defer span.End()
 
 	pc := rsc.PathConfig

@@ -140,7 +140,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 	}
 
 	start := time.Now()
-	reader, resp, _ := PrepareFetchReader(pr.upstreamRequest)
+	reader, resp, _ := PrepareFetchReader(pr.Request.Context(), pr.upstreamRequest)
 
 	var body []byte
 	var err error
@@ -237,6 +237,7 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 		pr.originRequests = make([]*http.Request, 0, l)
 	}
 
+	// TODO: This looks suspicious
 	rsc.OriginConfig.DearticulateUpstreamRanges = true
 	// if we are articulating the origin range requests, break those out here
 	if pr.neededRanges != nil && len(pr.neededRanges) > 0 && rsc.OriginConfig.DearticulateUpstreamRanges {
@@ -257,7 +258,7 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 	if pr.revalidationRequest != nil {
 		wg.Add(1)
 		go func() {
-			pr.revalidationReader, pr.revalidationResponse, _ = PrepareFetchReader(pr.revalidationRequest)
+			pr.revalidationReader, pr.revalidationResponse, _ = PrepareFetchReader(pr.Request.Context(), pr.revalidationRequest)
 			wg.Done()
 		}()
 	}
@@ -268,7 +269,7 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 		for i := range pr.originRequests {
 			wg.Add(1)
 			go func(j int) {
-				pr.originReaders[j], pr.originResponses[j], _ = PrepareFetchReader(pr.originRequests[j])
+				pr.originReaders[j], pr.originResponses[j], _ = PrepareFetchReader(pr.Request.Context(), pr.originRequests[j])
 				wg.Done()
 			}(i)
 		}

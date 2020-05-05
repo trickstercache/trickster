@@ -1,0 +1,54 @@
+# config file version
+apiVersion: 1
+
+datasources:
+# Prometheus
+- name: prom-direct
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_prom_direct
+  url: http://prometheus:9090
+  version: 1
+  editable: true
+- name: prom-trickster-memory-stdout
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_prom1_trickster
+  url: http://trickster:8480/prom1
+  version: 1
+  editable: true
+- name: prom-trickster-filesystem-jc
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_prom2_trickster
+  url: http://trickster:8480/prom2
+  version: 1
+  editable: true
+# Mockster (Prom API Simulator)
+- name: sim-direct
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_sim_direct
+  url: http://mockster:8482/prometheus
+  version: 1
+  editable: true
+- name: sim-trickster-memory-ja
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_sim1_trickster
+  url: http://trickster:8480/sim1
+  version: 1
+  editable: true
+- name: sim-trickster-redis-ja
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_sim2_trickster
+  url: http://trickster:8480/sim2
+  version: 1
+  editable: true

@@ -28,7 +28,8 @@ The default origin can be configured by setting `is_default = true` for the orig
 In this mode, Trickster will use a single FQDN but still map to multiple upstream origins. This is the simplest setup and requires the least amount of work. The client will indicate which origin is desired in URL Path for the request.
 
 Example Path-based Multi-Origin Configuration:
-```
+
+```toml
 [origins]
 
     # origin1 origin
@@ -110,7 +111,7 @@ Example Client Request URLs:
 
 * To Request from Origin `bar`: <http://trickster-bar.example.com:8480/query?query=xxx>
 
-* To Request from Origin `origin1` as default: <http://trickster.example.com:8480/query?query=xxx> 
+* To Request from Origin `origin1` as default: <http://trickster.example.com:8480/query?query=xxx>
 
 * To Request from Origin `origin1` (Method 2, via FQDN): <http://origin1.example.com:8480/query?query=xxx>
 
