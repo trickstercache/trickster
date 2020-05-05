@@ -60,3 +60,10 @@ func TestMissingRequestParam(t *testing.T) {
 		t.Errorf("ErrorMissingRequestParam failed, got: %v", err.Error())
 	}
 }
+
+func TestCouldNotFindKey(t *testing.T) {
+	err := CouldNotFindKey("test")
+	if err.Error() != "could not find key: test" {
+		t.Errorf("ErrorCouldNotFindKey failed, got: %v", err.Error())
+	}
+}
