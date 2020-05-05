@@ -1,0 +1,96 @@
+version: '3.7'
+
+networks:
+  trk-ex-front-tier:
+  trk-ex-back-tier:
+
+services:
+
+  prometheus:
+    image: prom/prometheus:v2.17.2
+    volumes:
+      - ./docker-compose-data/prometheus-config:/etc/prometheus
+      - ./docker-compose-data/prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - 9090:9090
+    networks:
+      - trk-ex-back-tier
+    restart: always
+
+  grafana:
+    image: grafana/grafana:6.7.3
+    user: nobody
+    ports:
+      - 3000:3000
+    volumes:
+      - ./docker-compose-data/grafana-config:/etc/grafana
+      - ./docker-compose-data/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - trk-ex-back-tier
+      - trk-ex-front-tier
+    restart: always
+
+  mockster:
+    image: tricksterproxy/mockster:latest
+    ports:
+      - 8482:8482
+    networks:
+      - trk-ex-back-tier
+    restart: always
+
+  redis:
+    image: redis:latest
+    user: nobody
+    ports:
+      - 6379:6379
+    networks:
+      - trk-ex-back-tier
+    restart: always
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.17
+    ports:
+     - 5775:5775/udp
+     - 6831:6831/udp
+     - 6832:6832/udp
+     - 5778:5778
+     - 16686:16686
+     - 14268:14268
+     - 14250:14250
+    networks:
+      - trk-ex-back-tier
+    restart: always
+
+  trickster:
+    image: tricksterproxy/trickster:1.1.0 
+    depends_on:
+      - prometheus
+      - mockster
+      - grafana
+      - jaeger
+      - redis
+    ports:
+      - 8480:8480   # primary frontend proxy port (insecure)
+      - 8481:8481   # metrics port (insecure)
+      # - 8483:8483 # tls frontend proxy port
+      - 8484:8484   # config reload port (insecure), exposed publicly for demonstration purposes only
+    volumes:
+      - ./docker-compose-data/trickster-config:/etc/trickster
+      - ./docker-compose-data/trickster-data:/data/trickster
+    networks:
+      - trk-ex-back-tier
+    restart: always
+
+  # zipkin:
+  #   image: openzipkin/zipkin:latest
+  #   ports:
+  #    - 9411:9411
+  #   networks:
+  #     - trk-ex-back-tier
+  #   restart: always
+
