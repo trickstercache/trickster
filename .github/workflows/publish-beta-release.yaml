@@ -57,21 +57,21 @@ jobs:
           repository: tricksterproxy/trickster
           tags: ${{ steps.baretag.outputs.baretag }}
           dockerfile: ./deploy/Dockerfile
-      - name: build-push-tricksterio-arm
-        uses: docker/build-push-action@v1
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-          repository: tricksterio/trickster
-          build_args: IMAGE_ARCH=arm64v8,GOARCH=arm64
-          tags: arm64v8-${{ steps.baretag.outputs.baretag }}
-          dockerfile: ./deploy/Dockerfile
-      - name: build-push-tricksterproxy-arm
-        uses: docker/build-push-action@v1
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-          repository: tricksterproxy/trickster
-          build_args: IMAGE_ARCH=arm64v8,GOARCH=arm64
-          tags: arm64v8-${{ steps.baretag.outputs.baretag }}
-          dockerfile: ./deploy/Dockerfile
+      #- name: build-push-tricksterio-arm
+      #  uses: docker/build-push-action@v1
+      #  with:
+      #    username: ${{ secrets.DOCKER_USERNAME }}
+      #    password: ${{ secrets.DOCKER_PASSWORD }}
+      #    repository: tricksterio/trickster
+      #    build_args: IMAGE_ARCH=arm64v8,GOARCH=arm64
+      #    tags: arm64v8-${{ steps.baretag.outputs.baretag }}
+      #    dockerfile: ./deploy/Dockerfile
+      #- name: build-push-tricksterproxy-arm
+      #  uses: docker/build-push-action@v1
+      #  with:
+      #    username: ${{ secrets.DOCKER_USERNAME }}
+      #    password: ${{ secrets.DOCKER_PASSWORD }}
+      #    repository: tricksterproxy/trickster
+      #    build_args: IMAGE_ARCH=arm64v8,GOARCH=arm64
+      #    tags: arm64v8-${{ steps.baretag.outputs.baretag }}
+      #    dockerfile: ./deploy/Dockerfile
