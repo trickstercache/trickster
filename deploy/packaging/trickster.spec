@@ -10,7 +10,7 @@ Vendor:     Comcast
 Packager:   Comcast
 Group:      System Environment/Daemons
 License:    ASL 2.0
-URL:        https://github.com/Comcast/trickster
+URL:        https://github.com/tricksterproxy/trickster
 
 Prefix:     /opt
 BuildRoot:  %{_tmppath}/%{name}

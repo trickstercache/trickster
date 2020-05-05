@@ -29,10 +29,9 @@ If you find a bug in Trickster, please file a detailed report as an Issue. We cu
 
 Likewise, if you have a Feature Request, please file a detailed Issue, explaining the feature's functionality and use cases. Features should be useful to the broader community, so be sure to consider that before filing.
 
-If you find a security vulnerability in Trickster, please report it at https://my.xfinity.com/vulnerabilityreport and contact the [Maintainers](MAINTAINERS.md).
+If you find a security vulnerability in Trickster, please report it at <https://my.xfinity.com/vulnerabilityreport> and contact the [Maintainers](MAINTAINERS.md).
 
 ## Steps to Contribute
-
 
 Should you wish to work on an issue, please claim it first by commenting on the GitHub issue that you want to work on it. This is to prevent duplicated efforts from contributors on the same issue.
 
@@ -41,15 +40,15 @@ If you have questions about one of the issues, please comment on them and one of
 For complete instructions on how to compile see: [Building From Source](https://github.com/tricksterproxy/trickster#building-from-source)
 
 For quickly compiling and testing your changes do:
-```
+
+```bash
 # For building.
 make
-./trickster
+./OPATH/trickster
 
 # For testing.
 make test
 ```
-
 
 ## Pull Request Checklist
 

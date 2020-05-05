@@ -1,6 +1,6 @@
 # ClickHouse Support
 
-Trickster 1.0 provides experimental support for accelerating ClickHouse queries that return time series data normally visualized on a dashboard. Acceleration works by using the Time Series Delta Proxy Cache to minimize the number and time range of queries to the upstream ClickHouse server.
+Trickster 1.0 provides support for accelerating ClickHouse queries that return time series data normally visualized on a dashboard. Acceleration works by using the Time Series Delta Proxy Cache to minimize the number and time range of queries to the upstream ClickHouse server.
 
 ## Scope of Support
 
@@ -15,7 +15,7 @@ Trickster currently supports the following query patterns (case-insensitive) in 
 ```sql
 SELECT (intDiv(toUInt32(time_col), 60) * 60) * 1000 AS t, countMerge(val_col) AS cnt, field1, field2
 FROM exampledb.example_table WHERE time_col BETWEEN toDateTime(1574686300) AND toDateTime(1574689900)
-	AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1, field2
+    AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1, field2
 FORMAT JSON
 ```
 

@@ -67,19 +67,27 @@ Trickster's Fast Forward feature ensures that even with step boundary normalizat
 
 <img src="./docs/images/fast-forward.png" width=640 />
 
-## Install
+## Trying Out Trickster
+
+Check out our end-to-end [Docker Compose demo composition](./deploy/trickster-demo) for a zero-configuration running environment.
+
+## Installing
 
 ### Docker
 
 Docker images are available on Docker Hub:
 
-    $ docker run --name trickster -d -v /path/to/trickster.conf:/etc/trickster/trickster.conf -p 0.0.0.0:9090:9090 tricksterio/trickster
+    $ docker run --name trickster -d -v /path/to/trickster.conf:/etc/trickster/trickster.conf -p 0.0.0.0:8480:8480 tricksterproxy/trickster
 
 See the 'deploy' Directory for more information about using or creating Trickster docker images.
 
-### Kubernetes and Helm
+### Kubernetes
 
-See the 'deploy' Directory for both Kube and Helm deployment files and examples.
+See the 'deploy' Directory for Kube and deployment files and examples.
+
+### Helm
+
+Trickster Helm Charts are located at <https://helm.tricksterproxy.io> for installation, and maintained at <https://github.com/tricksterproxy/helm-charts>. We welcome chart contributions.
 
 ### Building from source
 

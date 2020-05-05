@@ -1,6 +1,6 @@
 # InfluxDB Support
 
-Trickster 1.0 provides experimental support for accelerating InfluxDB queries that return time series data normally visualized on a dashboard. Acceleration works by using the Time Series Delta Proxy Cache to minimize the number and time range of queries to the upstream InfluxDB server.
+Trickster 1.0 provides support for accelerating InfluxDB queries that return time series data normally visualized on a dashboard. Acceleration works by using the Time Series Delta Proxy Cache to minimize the number and time range of queries to the upstream InfluxDB server.
 
 ## Scope of Support
 

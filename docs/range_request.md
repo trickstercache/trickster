@@ -63,8 +63,8 @@ Trickster currently does not support revalidation based on `If-Range` request he
 
  We plan to provide full support for `If-Range` as part of Trickster 1.1 or 1.2.
 
-## RangeSim
+## Mockster Byte Range
 
-For verification of Trickster's compatibility with Byte Range Requests, we created a golang library and accompanying standalone application dubbed RangeSim. RangeSim simply prints out the `Lorem ipsum ...` sample text, pared down to the requested range or multipart ranges, with a few bells and whistles that allow you to customize its response for unit testing purposes. We make extensive use of RangeSim in unit testing to verify the integrity of Trickster's output after performing operations like merging disparate range parts, extracting ranges from other ranges, or from a full body, compressing adjacent ranges into a single range in the cache, etc.
+For verification of Trickster's compatibility with Byte Range Requests (as well as Time Series data), we created a golang library and accompanying standalone application dubbed Mockster. Mockster's Byte Range library simply prints out the `Lorem ipsum ...` sample text, pared down to the requested range or multipart ranges, with a few bells and whistles that allow you to customize its response for unit testing purposes. We make extensive use of Mockster in unit testing to verify the integrity of Trickster's output after performing operations like merging disparate range parts, extracting ranges from other ranges, or from a full body, compressing adjacent ranges into a single range in the cache, etc.
 
-You can check out RangeSim in the codebase at /cmd/rangesim and /pkg/rangesim. It is fairly straightforward to run or import into your own applications. For examples of using RangeSim for Unit Testing, see /internal/proxy/engines/objectproxycache_test.go
+It is fairly straightforward to run or import Mockster into your own applications. For examples of using it for Unit Testing, check out [/internal/proxy/engines/objectproxycache_test.go](https://github.com/Comcast/trickster/blob/master/internal/proxy/engines/objectproxycache_test.go).
