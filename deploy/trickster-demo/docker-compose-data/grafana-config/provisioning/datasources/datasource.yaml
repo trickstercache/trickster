@@ -44,7 +44,7 @@ datasources:
   url: http://trickster:8480/sim1
   version: 1
   editable: true
-- name: prom-trickster-redis-ja
+- name: sim-trickster-redis-ja
   type: prometheus
   access: proxy
   orgId: 1
