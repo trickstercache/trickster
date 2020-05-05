@@ -9,12 +9,13 @@ Trickster 1.1 is currently in Public Beta. We anticipate a short beta cycle with
 1.1 continues to improve the Trickster project, with a ton of new features, bug fixes, and optimizations. Here's the quick rundown of what's new and improved:
 
 - Our GitHub project is relocated from `Comcast/trickster` to `tricksterproxy/trickster`
-- Our docker hub organization name is changed from `tricksterio` to `tricksterproxy`
+- Our Docker Hub organization name is changed from `tricksterio` to `tricksterproxy`
 - Helm charts are relocated to `tricksterproxy/helm-charts` and published at <https://helm.tricksterproxy.io>
 - All project references and package imports updated per the project relocation
 - All project packages are moved from `./internal` to `./pkg` to faciliate importation by other projects
-- Trickster Releases are now fully automated with GitHub Actions
-- Added Windows support, win64 binaries are now included in Release
+- Trickster Releases are now published using fully-automated GitHub Actions
+- New [trickster-demo](../deploy/trickster-demo) Docker Compose reference environment for anyone to easily check out Trickster in action
+- Added Windows support; win64 binaries are now included in Release
 - We now use a single, all-platforms release tarball, complete with `bin` `docs` and `conf` directories
 - Trickster-specific default listener ports: `8480` (http), `8481` (metrics), `8483` (tls), `8484` (reload)
 - In-process config reloading via HUP or optional http listener endpoint
@@ -24,9 +25,10 @@ Trickster 1.1 is currently in Public Beta. We anticipate a short beta cycle with
 - Updated Named Locks packages to support RWMutex for concurrent cached object reads
 - New Rules Engine for custom request handling and rewriting
 - HTTP 2.0 Support
+- systemd service file (`trickster.service`) is relocated from `./cmd/trickster/conf/` to `./deploy/systemd/`
 - `rangesim` package has been rebranded as `mockster`, and moved to [its own project](https://github.com/tricksterproxy/mockster), with its own docker image using port `8482`
 - Fully support acceleration of HTTP POST requests to Prometheus `query` and `query_range` endpoints
-- New [trickster-demo](../deploy/trickster-demo) Docker Compose reference environment for anyone to easily check out Trickster in action
+- Updated dependencies to Go 1.14.2, Alpine 3.11.5, InfluxDB 1.8.0
 
 ## Installing
 
