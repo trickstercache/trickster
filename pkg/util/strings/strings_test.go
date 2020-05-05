@@ -76,3 +76,15 @@ func TestEqual(t *testing.T) {
 		t.Error("expected false got true")
 	}
 }
+
+func TestStringMap(t *testing.T) {
+
+	sm := StringMap(map[string]string{"test": "value"})
+	s := sm.String()
+	const expected = `{"test":"value"}`
+
+	if s != expected {
+		t.Errorf("expected %s got %s", expected, s)
+	}
+
+}

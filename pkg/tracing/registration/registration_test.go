@@ -61,7 +61,7 @@ func TestRegisterAll(t *testing.T) {
 
 	tc.TracerType = "jaeger"
 	tc.CollectorURL = "http://example.com"
-	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
+	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), false)
 	if err != nil {
 		t.Error(err)
 	}
