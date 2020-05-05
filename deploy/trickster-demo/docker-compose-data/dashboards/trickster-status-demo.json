@@ -1,46 +1,4 @@
 {
-  "__inputs": [
-    {
-      "name": "DS_PROMETHEUS",
-      "label": "Prometheus",
-      "description": "",
-      "type": "datasource",
-      "pluginId": "prometheus",
-      "pluginName": "Prometheus"
-    }
-  ],
-  "__requires": [
-    {
-      "type": "grafana",
-      "id": "grafana",
-      "name": "Grafana",
-      "version": "6.4.2"
-    },
-    {
-      "type": "panel",
-      "id": "graph",
-      "name": "Graph",
-      "version": ""
-    },
-    {
-      "type": "datasource",
-      "id": "prometheus",
-      "name": "Prometheus",
-      "version": "1.0.0"
-    },
-    {
-      "type": "panel",
-      "id": "singlestat",
-      "name": "Singlestat",
-      "version": ""
-    },
-    {
-      "type": "panel",
-      "id": "text",
-      "name": "Text",
-      "version": ""
-    }
-  ],
   "annotations": {
     "list": [
       {
@@ -54,12 +12,12 @@
       }
     ]
   },
-  "description": "Dashboard for monitoring of Prometheus v2.x.x",
+  "description": "Demonstration Dashboard for Trickster",
   "editable": true,
   "gnetId": 3681,
   "graphTooltip": 1,
-  "id": null,
-  "iteration": 1588634574428,
+  "id": 2,
+  "iteration": 1588708030077,
   "links": [
     {
       "icon": "question",
@@ -102,7 +60,6 @@
       },
       "id": 80,
       "mode": "html",
-      "options": {},
       "timeFrom": null,
       "timeShift": null,
       "title": "",
@@ -151,7 +108,6 @@
       "maxDataPoints": 100,
       "nullPointMode": "connected",
       "nullText": null,
-      "options": {},
       "pluginVersion": "6.4.2",
       "postfix": "",
       "postfixFontSize": "50%",
@@ -175,7 +131,7 @@
       "tableColumn": "",
       "targets": [
         {
-          "expr": "up{job=\"$job\",instance=\"$instance\"}",
+          "expr": "up{job=\"trickster\"}",
           "instant": true,
           "refId": "A"
         }
@@ -207,90 +163,6 @@
       "valueName": "current"
     },
     {
-      "cacheTimeout": null,
-      "colorBackground": false,
-      "colorValue": false,
-      "colors": [
-        "#299c46",
-        "rgba(237, 129, 40, 0.89)",
-        "#d44a3a"
-      ],
-      "datasource": "${DS_PROMETHEUS}",
-      "format": "none",
-      "gauge": {
-        "maxValue": 100,
-        "minValue": 0,
-        "show": false,
-        "thresholdLabels": false,
-        "thresholdMarkers": true
-      },
-      "gridPos": {
-        "h": 3,
-        "w": 3,
-        "x": 2,
-        "y": 0
-      },
-      "id": 90,
-      "interval": null,
-      "links": [],
-      "mappingType": 1,
-      "mappingTypes": [
-        {
-          "name": "value to text",
-          "value": 1
-        },
-        {
-          "name": "range to text",
-          "value": 2
-        }
-      ],
-      "maxDataPoints": 100,
-      "nullPointMode": "connected",
-      "nullText": null,
-      "options": {},
-      "postfix": "",
-      "postfixFontSize": "50%",
-      "prefix": "",
-      "prefixFontSize": "50%",
-      "rangeMaps": [
-        {
-          "from": "null",
-          "text": "N/A",
-          "to": "null"
-        }
-      ],
-      "sparkline": {
-        "fillColor": "rgba(31, 118, 189, 0.18)",
-        "full": false,
-        "lineColor": "rgb(31, 120, 193)",
-        "show": false,
-        "ymax": null,
-        "ymin": null
-      },
-      "tableColumn": "",
-      "targets": [
-        {
-          "expr": "trickster_build_info{job=\"$job\",instance=\"$instance\"}",
-          "instant": true,
-          "refId": "A"
-        }
-      ],
-      "thresholds": "",
-      "timeFrom": null,
-      "timeShift": null,
-      "title": "Panel Title",
-      "type": "singlestat",
-      "valueFontSize": "80%",
-      "valueMaps": [
-        {
-          "op": "=",
-          "text": "N/A",
-          "value": "null"
-        }
-      ],
-      "valueName": "avg"
-    },
-    {
       "collapsed": false,
       "datasource": "${DS_PROMETHEUS}",
       "gridPos": {
@@ -318,6 +190,7 @@
         "x": 0,
         "y": 4
       },
+      "hiddenSeries": false,
       "id": 57,
       "legend": {
         "avg": false,
@@ -346,10 +219,9 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "go_goroutines{job=\"$job\",instance=\"$instance\"}",
+          "expr": "go_goroutines{job=\"trickster\"}",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
@@ -410,6 +282,7 @@
         "x": 8,
         "y": 4
       },
+      "hiddenSeries": false,
       "id": 84,
       "legend": {
         "avg": false,
@@ -438,14 +311,14 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "go_memstats_alloc_bytes{job=\"$job\",instance=\"$instance\"}",
+          "expr": "go_memstats_alloc_bytes{job=\"trickster\"}",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "alloc",
           "refId": "A"
         },
         {
-          "expr": "go_memstats_heap_alloc_bytes{job=\"$job\",instance=\"$instance\"}",
+          "expr": "go_memstats_heap_alloc_bytes{job=\"trickster\"}",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "heap",
@@ -509,6 +382,7 @@
         "x": 16,
         "y": 4
       },
+      "hiddenSeries": false,
       "id": 63,
       "legend": {
         "avg": false,
@@ -537,10 +411,9 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "go_memstats_gc_cpu_fraction{job=\"$job\",instance=\"$instance\"}",
+          "expr": "go_memstats_gc_cpu_fraction{job=\"trickster\"}",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
@@ -616,6 +489,7 @@
         "x": 0,
         "y": 13
       },
+      "hiddenSeries": false,
       "id": 61,
       "interval": "",
       "legend": {
@@ -649,7 +523,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(delta(trickster_proxy_requests_total{job=\"$job\",instance=\"$instance\"}[1m])) by (cache_status)",
+          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[1m])) by (cache_status)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{cache_status}}",
@@ -717,6 +591,7 @@
         "x": 8,
         "y": 13
       },
+      "hiddenSeries": false,
       "id": 25,
       "legend": {
         "alignAsTable": false,
@@ -748,7 +623,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(trickster_cache_usage_bytes{job=\"$job\",instance=\"$instance\"}) by (cache_name)",
+          "expr": "sum(trickster_cache_usage_bytes{job=\"trickster\"}) by (cache_name)",
           "format": "time_series",
           "interval": "",
           "intervalFactor": 1,
@@ -820,6 +695,7 @@
         "x": 16,
         "y": 13
       },
+      "hiddenSeries": false,
       "id": 64,
       "legend": {
         "alignAsTable": false,
@@ -851,7 +727,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(trickster_cache_usage_objects{job=\"$job\",instance=\"$instance\"}) by (cache_name)",
+          "expr": "sum(trickster_cache_usage_objects{job=\"trickster\"}) by (cache_name)",
           "format": "time_series",
           "interval": "",
           "intervalFactor": 1,
@@ -919,6 +795,7 @@
         "x": 0,
         "y": 21
       },
+      "hiddenSeries": false,
       "id": 15,
       "legend": {
         "avg": false,
@@ -947,7 +824,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(delta(trickster_cache_events_total{event=\"eviction\",job=\"$job\",instance=\"$instance\"}[1m])) by (cache_name)",
+          "expr": "sum(delta(trickster_cache_events_total{event=\"eviction\",job=\"trickster\"}[1m])) by (cache_name)",
           "legendFormat": "{{cache_name}}",
           "refId": "B"
         }
@@ -1012,6 +889,7 @@
         "x": 8,
         "y": 21
       },
+      "hiddenSeries": false,
       "id": 77,
       "legend": {
         "avg": false,
@@ -1040,7 +918,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(delta(trickster_cache_operation_bytes_total{job=\"$job\",instance=\"$instance\"}[1m])) by (cache_name, operation)",
+          "expr": "sum(delta(trickster_cache_operation_bytes_total{job=\"trickster\"}[1m])) by (cache_name, operation)",
           "legendFormat": "{{cache_name}} - {{operation}}",
           "refId": "B"
         }
@@ -1106,6 +984,7 @@
         "x": 16,
         "y": 21
       },
+      "hiddenSeries": false,
       "id": 78,
       "legend": {
         "avg": false,
@@ -1134,7 +1013,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(delta(trickster_cache_operation_objects_total{job=\"$job\",instance=\"$instance\"}[1m])) by (cache_name, operation)",
+          "expr": "sum(delta(trickster_cache_operation_objects_total{job=\"trickster\"}[1m])) by (cache_name, operation)",
           "legendFormat": "{{cache_name}} - {{operation}}",
           "refId": "B"
         }
@@ -1211,6 +1090,7 @@
         "x": 0,
         "y": 30
       },
+      "hiddenSeries": false,
       "id": 71,
       "legend": {
         "avg": false,
@@ -1239,7 +1119,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(idelta(trickster_frontend_requests_total{job=\"trickster\",job=\"$job\",instance=\"$instance\"}[1m])) by (origin_name, http_status)",
+          "expr": "sum(idelta(trickster_frontend_requests_total{job=\"trickster\",job=\"trickster\"}[1m])) by (origin_name, http_status)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{origin_name}} - {{http_status}}",
@@ -1304,6 +1184,7 @@
         "x": 8,
         "y": 30
       },
+      "hiddenSeries": false,
       "id": 72,
       "interval": "",
       "legend": {
@@ -1340,14 +1221,14 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(idelta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"$job\",instance=\"$instance\"}[1m])) by (origin_name)",
+          "expr": "sum(idelta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[1m])) by (origin_name)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{origin_name}}",
           "refId": "A"
         },
         {
-          "expr": "sum(idelta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"$job\",instance=\"$instance\"}[1m]))",
+          "expr": "sum(idelta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[1m]))",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "total",
@@ -1414,6 +1295,7 @@
         "x": 16,
         "y": 30
       },
+      "hiddenSeries": false,
       "id": 73,
       "legend": {
         "avg": false,
@@ -1442,28 +1324,28 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(idelta(trickster_proxy_requested_connections_total{job=\"$job\",instance=\"$instance\"}[1m])) ",
+          "expr": "sum(idelta(trickster_proxy_requested_connections_total{job=\"trickster\"}[1m])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "requested",
           "refId": "B"
         },
         {
-          "expr": "sum(idelta(trickster_proxy_accepted_connections_total{job=\"$job\",instance=\"$instance\"}[1m])) ",
+          "expr": "sum(idelta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[1m])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "accepted",
           "refId": "A"
         },
         {
-          "expr": "sum(idelta(trickster_proxy_closed_connections_total{job=\"$job\",instance=\"$instance\"}[1m])) ",
+          "expr": "sum(idelta(trickster_proxy_closed_connections_total{job=\"trickster\"}[1m])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "closed",
           "refId": "C"
         },
         {
-          "expr": "sum(idelta(trickster_proxy_failed_connections_total{job=\"$job\",instance=\"$instance\"}[1m])) ",
+          "expr": "sum(idelta(trickster_proxy_failed_connections_total{job=\"trickster\"}[1m])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "failed",
@@ -1541,6 +1423,7 @@
         "x": 0,
         "y": 39
       },
+      "hiddenSeries": false,
       "id": 76,
       "legend": {
         "avg": false,
@@ -1569,7 +1452,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(idelta(trickster_proxy_requests_total{job=\"$job\",instance=\"$instance\"}[1m])) by (origin_name)",
+          "expr": "sum(idelta(trickster_proxy_requests_total{job=\"trickster\"}[1m])) by (origin_name)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{origin_name}}",
@@ -1619,7 +1502,7 @@
     }
   ],
   "refresh": "5s",
-  "schemaVersion": 20,
+  "schemaVersion": 22,
   "style": "dark",
   "tags": [],
   "templating": {
@@ -1627,8 +1510,9 @@
       {
         "current": {
           "selected": true,
-          "text": "TrickProm",
-          "value": "TrickProm"
+          "tags": [],
+          "text": "sim-trickster-redis-ja",
+          "value": "sim-trickster-redis-ja"
         },
         "hide": 0,
         "includeAll": false,
@@ -1641,50 +1525,6 @@
         "regex": "",
         "skipUrlSync": false,
         "type": "datasource"
-      },
-      {
-        "allValue": null,
-        "current": {},
-        "datasource": "$datasource",
-        "definition": "label_values(trickster_proxy_requests_total, job)",
-        "hide": 0,
-        "includeAll": false,
-        "label": "Job Name",
-        "multi": false,
-        "name": "job",
-        "options": [],
-        "query": "label_values(trickster_proxy_requests_total, job)",
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "tagValuesQuery": "",
-        "tags": [],
-        "tagsQuery": "",
-        "type": "query",
-        "useTags": false
-      },
-      {
-        "allValue": null,
-        "current": {},
-        "datasource": "$datasource",
-        "definition": "label_values(trickster_proxy_requests_total, instance)",
-        "hide": 0,
-        "includeAll": false,
-        "label": "Instance",
-        "multi": false,
-        "name": "instance",
-        "options": [],
-        "query": "label_values(trickster_proxy_requests_total, instance)",
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "tagValuesQuery": "",
-        "tags": [],
-        "tagsQuery": "",
-        "type": "query",
-        "useTags": false
       }
     ]
   },
@@ -1720,5 +1560,8 @@
   "timezone": "browser",
   "title": "Trickster Status",
   "uid": "uAJ8w1wZz",
-  "version": 53
+  "variables": {
+    "list": []
+  },
+  "version": 4
 }
