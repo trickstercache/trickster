@@ -43,3 +43,10 @@ If you rely on default settings in your deployment, rather than setting explicit
 ### Distributed Tracing Configuration
 
 The `[tracing]` section of the Trickster TOML config specification has changed slightly, and is incompatible with a v1.0 config. If you use the tracing feature, be sure to check the [example.conf](../cmd/trickster/conf/example.conf) and adjust yours accordingly.
+
+## Known Issues w/ v1.1 Beta
+
+### Zipkin
+
+- Exported Zipkin traces do not include custom-configured tags
+- Zipkin implementation currently works with the OpenZipkin but not Jaeger Collector's Zipkin-compatible endpoints
