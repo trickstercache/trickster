@@ -467,10 +467,10 @@ data:
     #   input_delimiter = ' '
     #   operation = 'prefix'              # check the input value matches any of the defined cases:
     #   next_route = 'reader-cluster' # by default, route to reader-cluster origin (would need to be defined)
-    # 	[rules.example.cases]
-    # 	  [rules.example.cases.1]
-    # 	  matches = ['johndoe:', 'janedoe:']  # if the Authorization header has user johndoe or janedoe,
-    # 	  next_route = 'writer-cluster'       # route the request to hypothetical writer-cluster origin
+    #   [rules.example.cases]
+    #     [rules.example.cases.1]
+    #     matches = ['johndoe:', 'janedoe:']  # if the Authorization header has user johndoe or janedoe,
+    #     next_route = 'writer-cluster'       # route the request to hypothetical writer-cluster origin
     ##
     ##    Other available case configs that are not pertinent to this example:
     #     req_rewriter_name = ''      # name of a rewriter to process the request if it matches this case
