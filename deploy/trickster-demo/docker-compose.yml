@@ -10,7 +10,6 @@ services:
     image: prom/prometheus:v2.17.2
     volumes:
       - ./docker-compose-data/prometheus-config:/etc/prometheus
-      - ./docker-compose-data/prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -67,7 +66,7 @@ services:
     restart: always
 
   trickster:
-    image: tricksterproxy/trickster:1.1.0 
+    image: tricksterproxy/trickster:1.1.0-beta
     depends_on:
       - prometheus
       - mockster
@@ -77,7 +76,7 @@ services:
     ports:
       - 8480:8480   # primary frontend proxy port (insecure)
       - 8481:8481   # metrics port (insecure)
-      # - 8483:8483 # tls frontend proxy port
+      # - 8483:8483 # tls frontend proxy port, unused in this demo
       - 8484:8484   # config reload port (insecure), exposed publicly for demonstration purposes only
     volumes:
       - ./docker-compose-data/trickster-config:/etc/trickster
