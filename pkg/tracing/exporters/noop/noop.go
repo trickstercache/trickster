@@ -20,17 +20,9 @@ package noop
 import (
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
-	"go.opentelemetry.io/otel/api/trace"
 )
 
 // NewTracer returns a new Noop Tracer
 func NewTracer(options *options.Options) (*tracing.Tracer, error) {
-	tracer := &tracing.Tracer{
-		Options: options,
-		Tracer:  trace.NoopTracer{},
-	}
-	if options != nil {
-		tracer.Name = options.Name
-	}
-	return tracer, nil
+	return nil, nil
 }
