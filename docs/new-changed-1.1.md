@@ -12,7 +12,7 @@ Trickster 1.1 is currently in Public Beta. We anticipate a short beta cycle with
 - Our Docker Hub organization name is changed from `tricksterio` to `tricksterproxy`
 - Helm charts are relocated to `tricksterproxy/helm-charts` and published at <https://helm.tricksterproxy.io>
 - All project references and package imports updated per the project relocation
-- All project packages are moved from `./internal` to `./pkg` to faciliate importation by other projects
+- All project packages are moved from `./internal` to `./pkg` to facilitate importation by other projects
 - Trickster Releases are now published using fully-automated GitHub Actions
 - New [trickster-demo](../deploy/trickster-demo) Docker Compose reference environment for anyone to easily check out Trickster in action
 - Added Windows support; win64 binaries are now included in Release

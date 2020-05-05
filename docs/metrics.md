@@ -6,7 +6,7 @@ Trickster exposes a Prometheus /metrics endpoint with a customizable listener po
 
 The following metrics are available for polling with any Trickster configuration:
 
-* `trickster_build_info` (Gauge) - This guage is always 1 when Trickster is running
+* `trickster_build_info` (Gauge) - This gauge is always 1 when Trickster is running
   * labels:
     * `goversion` - the version of go under which the running Trickster binary was built
     * `revision` - the commit ID on which the running Trickster binary was built

@@ -57,7 +57,7 @@ You can configure paths send inbound requests through a request rewriter that ca
 
 ## Header and Query Parameter Behavior
 
-In addition to running the request through a named rewriter, it is currently possible to make similar changes to the request with legacy path features that are described in this section. Note that these are likely to be deprecated in a future Trickster release, in favor of the more versatile named rewriters desribed above, which accomplish the same thing. Currently, if both a named rewriter and legacy path-based rewriting configs are defined for a given path, the named rewriter will be executed first.
+In addition to running the request through a named rewriter, it is currently possible to make similar changes to the request with legacy path features that are described in this section. Note that these are likely to be deprecated in a future Trickster release, in favor of the more versatile named rewriters described above, which accomplish the same thing. Currently, if both a named rewriter and legacy path-based rewriting configs are defined for a given path, the named rewriter will be executed first.
 
 ### Basics
 
