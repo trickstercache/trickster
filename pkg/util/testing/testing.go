@@ -126,7 +126,7 @@ func NewTestInstance(
 
 	if oc.TracingConfigName != "" {
 		if tc, ok := conf.TracingConfigs[oc.TracingConfigName]; ok {
-			tracer, _ = tr.GetTracer(tc, logger)
+			tracer, _ = tr.GetTracer(tc, logger, true)
 		}
 	}
 

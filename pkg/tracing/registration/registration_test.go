@@ -28,7 +28,7 @@ import (
 func TestRegisterAll(t *testing.T) {
 
 	// test nil config
-	f, err := RegisterAll(nil, tl.ConsoleLogger("error"))
+	f, err := RegisterAll(nil, tl.ConsoleLogger("error"), true)
 	if err == nil {
 		t.Error(errors.New("expected error for no config provided"))
 	}
@@ -37,7 +37,7 @@ func TestRegisterAll(t *testing.T) {
 	}
 
 	// test good config
-	f, err = RegisterAll(config.NewConfig(), tl.ConsoleLogger("error"))
+	f, err = RegisterAll(config.NewConfig(), tl.ConsoleLogger("error"), true)
 	if err != nil {
 		t.Error(err)
 	}
@@ -54,41 +54,47 @@ func TestRegisterAll(t *testing.T) {
 	cfg.TracingConfigs["test3"] = tc
 	cfg.Origins["default"].TracingConfigName = "test"
 
-	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"))
+	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if err != nil {
 		t.Error(err)
 	}
 
 	tc.TracerType = "jaeger"
 	tc.CollectorURL = "http://example.com"
-	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"))
+	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if err != nil {
 		t.Error(err)
 	}
 
 	tc.TracerType = "stdout"
-	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"))
+	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
+	if err != nil {
+		t.Error(err)
+	}
+
+	tc.TracerType = "zipkin"
+	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if err != nil {
 		t.Error(err)
 	}
 
 	tc.TracerType = "foo"
 
-	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"))
+	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if err == nil {
 		t.Error("expected error for invalid tracer type")
 	}
 
 	// test empty implementation
 	tc.TracerType = ""
-	f, _ = RegisterAll(cfg, tl.ConsoleLogger("error"))
+	f, _ = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if len(f) > 0 {
 		t.Errorf("expected %d got %d", 0, len(f))
 	}
 
 	tc.TracerType = "none"
 	cfg.Origins["default"].TracingConfigName = "test2"
-	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"))
+	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if err == nil {
 		t.Error("expected error for invalid tracing config name")
 	}
@@ -97,7 +103,7 @@ func TestRegisterAll(t *testing.T) {
 	temp := cfg.TracingConfigs
 	cfg.TracingConfigs = nil
 	// test nil tracing config
-	f, _ = RegisterAll(cfg, tl.ConsoleLogger("error"))
+	f, _ = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if len(f) > 0 {
 		t.Errorf("expected %d got %d", 0, len(f))
 	}
@@ -105,7 +111,7 @@ func TestRegisterAll(t *testing.T) {
 
 	// test nil origin config
 	cfg.Origins = nil
-	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"))
+	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if err == nil {
 		t.Error(errors.New("expected error for invalid tracing implementation"))
 	}
@@ -113,8 +119,8 @@ func TestRegisterAll(t *testing.T) {
 }
 
 func TestGetTracer(t *testing.T) {
-	tr, _ := GetTracer(nil, tl.ConsoleLogger("error"))
-	if tr == nil {
-		t.Error("expected non-nil (noop) tracer")
+	tr, _ := GetTracer(nil, tl.ConsoleLogger("error"), true)
+	if tr != nil {
+		t.Error("expected nil tracer")
 	}
 }

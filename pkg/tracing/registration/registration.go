@@ -26,14 +26,16 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/jaeger"
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/noop"
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/stdout"
+	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/zipkin"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 	"github.com/tricksterproxy/trickster/pkg/tracing/types"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	"github.com/tricksterproxy/trickster/pkg/util/strings"
 )
 
 // RegisterAll registers all Tracers in the provided configuration, and returns
 // their Flushers
-func RegisterAll(cfg *config.Config, log *tl.Logger) (tracing.Tracers, error) {
+func RegisterAll(cfg *config.Config, log *tl.Logger, isDryRun bool) (tracing.Tracers, error) {
 	if cfg == nil {
 		return nil, errors.New("no config provided")
 	}
@@ -71,40 +73,50 @@ func RegisterAll(cfg *config.Config, log *tl.Logger) (tracing.Tracers, error) {
 			return nil, fmt.Errorf("invalid tracer type [%s] for tracing config [%s]",
 				tc.TracerType, k)
 		}
-		tracer, err := GetTracer(tc, log)
+		tracer, err := GetTracer(tc, log, isDryRun)
 		if err != nil {
 			return nil, err
 		}
-		tracers[tracer.Name] = tracer
+		tracers[k] = tracer
 	}
 	return tracers, nil
 }
 
 // GetTracer returns a *Tracer based on the provided options
-func GetTracer(options *options.Options, log *tl.Logger) (*tracing.Tracer, error) {
+func GetTracer(options *options.Options, log *tl.Logger, isDryRun bool) (*tracing.Tracer, error) {
 
 	if options == nil {
 		log.Info("nil tracing config, using noop tracer", nil)
 		return noop.NewTracer(options)
 	}
-	log.Debug(
-		"tracer registration",
-		tl.Pairs{
-			"name":         options.Name,
-			"tracerType":   options.TracerType,
-			"serviceName":  options.ServiceName,
-			"collectorURL": options.CollectorURL,
-			"sampleRate":   options.SampleRate,
-			"tags":         options.Tags,
-		},
-	)
+
+	logTracerRegistration := func() {
+		if isDryRun {
+			return
+		}
+		log.Info(
+			"tracer registration",
+			tl.Pairs{
+				"name":         options.Name,
+				"tracerType":   options.TracerType,
+				"serviceName":  options.ServiceName,
+				"collectorURL": options.CollectorURL,
+				"sampleRate":   options.SampleRate,
+				"tags":         strings.StringMap(options.Tags).String(),
+			},
+		)
+	}
 
 	switch options.TracerType {
 	case types.TracerTypeStdout.String():
+		logTracerRegistration()
 		return stdout.NewTracer(options)
 	case types.TracerTypeJaeger.String():
+		logTracerRegistration()
 		return jaeger.NewTracer(options)
 	case types.TracerTypeZipkin.String():
+		logTracerRegistration()
+		return zipkin.NewTracer(options)
 	}
 
 	return noop.NewTracer(options)
