@@ -52,6 +52,8 @@ func PrepareRequest(r *http.Request, tr trace.Tracer) (*http.Request, trace.Span
 func NewChildSpan(ctx context.Context, tr *tracing.Tracer,
 	spanName string) (context.Context, trace.Span) {
 
+	var span trace.Span
+
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -60,7 +62,7 @@ func NewChildSpan(ctx context.Context, tr *tracing.Tracer,
 		return ctx, trace.NoopSpan{}
 	}
 
-	ctx, span := tr.Start(
+	ctx, span = tr.Start(
 		ctx,
 		spanName,
 	)
