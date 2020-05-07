@@ -22,8 +22,6 @@ import (
 	errs "github.com/tricksterproxy/trickster/pkg/tracing/errors"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 
-	"go.opentelemetry.io/otel/api/core"
-	"go.opentelemetry.io/otel/api/key"
 	"go.opentelemetry.io/otel/exporters/trace/zipkin"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -48,12 +46,9 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 		sampler = sdktrace.ProbabilitySampler(options.SampleRate)
 	}
 
-	var tags []core.KeyValue
+	var tags tracing.Tags
 	if options.Tags != nil && len(options.Tags) > 0 {
-		tags = make([]core.KeyValue, len(options.Tags))
-		for k, v := range options.Tags {
-			tags = append(tags, key.String(k, v))
-		}
+		tags = options.Tags
 	}
 
 	exporter, err := zipkin.NewExporter(
@@ -70,7 +65,6 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 			sdktrace.WithScheduleDelayMillis(5),
 			sdktrace.WithMaxExportBatchSize(10),
 		),
-		sdktrace.WithResourceAttributes(tags...),
 	)
 	if err != nil {
 		return nil, err
@@ -83,6 +77,7 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 		Tracer:  tracer,
 		Options: options,
 		Flusher: nil,
+		Tags:    tags,
 	}, nil
 
 }

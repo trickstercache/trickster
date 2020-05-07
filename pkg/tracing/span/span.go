@@ -21,8 +21,11 @@ import (
 	"net/http"
 
 	"github.com/tricksterproxy/trickster/pkg/tracing"
+
 	"go.opentelemetry.io/otel/api/correlation"
 	"go.opentelemetry.io/otel/api/trace"
+
+	//"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/plugin/httptrace"
 )
 
@@ -30,7 +33,11 @@ import (
 // It returns a pointer to the incoming request with the request context updated to include
 // all span and tracing info. It also returns a span with the name "Request" that is meant
 // to be a parent span for all child spans of this request.
-func PrepareRequest(r *http.Request, tr trace.Tracer) (*http.Request, trace.Span) {
+func PrepareRequest(r *http.Request, tr *tracing.Tracer) (*http.Request, trace.Span) {
+
+	if tr == nil || tr.Tracer == nil {
+		return r, nil
+	}
 
 	attrs, entries, spanCtx := httptrace.Extract(r.Context(), r)
 
@@ -38,6 +45,15 @@ func PrepareRequest(r *http.Request, tr trace.Tracer) (*http.Request, trace.Span
 		correlation.NewMap(correlation.MapUpdate{
 			MultiKV: entries,
 		})))
+
+	// This will add any configured static tags to the span for Zipkin
+	// For Jaeger, they are automatically included in the Process section of the Trace
+	if tr.Tags != nil && len(tr.Tags) > 0 {
+		if len(attrs) > 0 {
+			tr.Tags.MergeAttr(attrs)
+		}
+		attrs = tr.Tags.ToAttr()
+	}
 
 	ctx, span := tr.Start(
 		trace.ContextWithRemoteSpanContext(r.Context(), spanCtx),
@@ -66,6 +82,10 @@ func NewChildSpan(ctx context.Context, tr *tracing.Tracer,
 		ctx,
 		spanName,
 	)
+
+	if tr.Tags != nil && len(tr.Tags) > 0 {
+		span.SetAttributes(tr.Tags.ToAttr()...)
+	}
 
 	return ctx, span
 
