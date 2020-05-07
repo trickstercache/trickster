@@ -1,8 +1,15 @@
 # Distributed Tracing via OpenTelemetry
 
-Trickster instruments Distributed Tracing with [OpenTelemetry](http://opentelemetry.io/), which is a currently emergent, comprehensive observability stack that is in Public Beta. We import the [OpenTelemetry golang packages](https://github.com/open-telemetry/opentelemetry-go) to instrument support for Jaeger and Zipkin tracing, as well as a StdOut tracer that is useful for debugging and local testing.
+Trickster instruments Distributed Tracing with [OpenTelemetry](http://opentelemetry.io/), which is a currently emergent, comprehensive observability stack that is in Public Beta. We import the [OpenTelemetry golang packages](https://github.com/open-telemetry/opentelemetry-go) to instrument support for tracing.
 
 As OpenTelemetry evolves to support additional exporter formats, we will work to extend Trickster to support those as quickly as possible. We also make a best effort to update our otel package imports to the latest releases, whenever we publish a new Trickster release. You can check the [go.mod](../go.mod) file to see which release of opentelemetry-go we are is using. In this view, to see which version of otel a specific Trickster release imports, use the branch selector dropdown to switch to the tag corresponding to that version of Trickster.
+
+## Supported Tracing Backends
+
+- Jaeger
+- Jaeger Collector
+- Zipkin
+- Console/Stdout (printed locally by the Trickster process)
 
 ## Configuration
 
