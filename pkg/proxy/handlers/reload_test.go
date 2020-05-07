@@ -34,7 +34,8 @@ import (
 func TestReloadHandleFunc(t *testing.T) {
 
 	var emptyFunc = func(*config.Config, *sync.WaitGroup, *tl.Logger,
-		map[string]cache.Cache, []string, bool) {
+		map[string]cache.Cache, []string, bool) error {
+		return nil
 	}
 
 	testFile := fmt.Sprintf("trickster_test_config.%d.conf", time.Now().UnixNano())
