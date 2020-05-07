@@ -1,4 +1,6 @@
-# Cache Types
+# Cache Options
+
+## Supported Caches
 
 There are several cache types supported by Trickster
 
@@ -68,3 +70,17 @@ Stop the Trickster process and delete the configured bbolt file.
 ### Purging BadgerDB Cache
 
 Stop the Trickster process and delete the configured BadgerDB path.
+
+## Cache Status
+
+Trickster reports several cache statuses in metrics, logs, and tracing, which are listed and described in the table below.
+
+| Status | Description |
+| ----- | ----- |
+| kmiss | The requested object was not in cache and was fetched from the origin |
+| rmiss | Object is in cache, but the specific data range requested (timestamps or byte ranges) was not |
+| hit | The object was fully cached and served from cache to the client |
+| phit | The object was cached for some of the data requested, but not all |
+| nchit | The response was served from the [Negative Cache](./negative-caching.md) |
+| proxy-only | The request was proxied 1:1 to the origin and not cached |
+| proxy-error | The upstream request needed to fulfill an associated client request returned an error |
