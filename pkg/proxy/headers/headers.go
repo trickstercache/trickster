@@ -233,3 +233,31 @@ func String(h http.Header) string {
 	sb.WriteString("\n")
 	return sb.String()
 }
+
+// LogString returns a compact string representation of the headers suitable for
+// use with logging
+func LogString(h http.Header) string {
+	if h == nil || len(h) == 0 {
+		return "{}"
+	}
+
+	names := make([]string, len(h))
+	i := 0
+	for k := range h {
+		names[i] = k
+		i++
+	}
+
+	sb := strings.Builder{}
+	sb.WriteString("{")
+	sep := ""
+	for _, k := range names {
+		v := h[k]
+		if len(v) > 0 {
+			sb.WriteString(fmt.Sprintf("%s[%s:%s]", sep, k, v[0]))
+			sep = ","
+		}
+	}
+	sb.WriteString("}")
+	return sb.String()
+}

@@ -28,6 +28,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	tpe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -476,8 +477,8 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 				"clientRequestHeaders":    pr.Request.Header,
 				"upstreamRequestURL":      pr.upstreamRequest.URL.String(),
 				"upstreamRequestMethod":   pr.upstreamRequest.Method,
-				"upstreamRequestHeaders":  pr.upstreamRequest.Header,
-				"upstreamResponseHeaders": resp.Header,
+				"upstreamRequestHeaders":  headers.LogString(pr.upstreamRequest.Header),
+				"upstreamResponseHeaders": headers.LogString(resp.Header),
 				"upstreamResponseBody":    string(body),
 			},
 		)
