@@ -28,6 +28,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	"github.com/tricksterproxy/trickster/pkg/util/log"
@@ -354,7 +355,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 
 	// if a PCF entry exists, or the client requested no-cache for this object, proxy out to it
 	pcfResult, pcfExists := Reqs.Load(pr.key)
-	pr.isPCF = pcfExists && !pr.wantsRanges
+	pr.isPCF = methods.IsCacheable(pr.Method) && pcfExists && !pr.wantsRanges
 
 	if pr.isPCF || pr.cachingPolicy.NoCache {
 		if pr.cachingPolicy.NoCache {

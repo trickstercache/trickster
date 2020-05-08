@@ -43,3 +43,8 @@ func UncacheableHTTPMethods() []string {
 	return []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodConnect,
 		http.MethodOptions, http.MethodTrace, http.MethodPatch, MethodPurge}
 }
+
+// IsCacheable returns true if the method is HEAD or GET
+func IsCacheable(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead
+}

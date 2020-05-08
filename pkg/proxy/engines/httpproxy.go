@@ -31,6 +31,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -73,7 +74,8 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	var resp *http.Response
 	var reader io.ReadCloser
 
-	if pc == nil || pc.CollapsedForwardingType != forwarding.CFTypeProgressive {
+	if pc == nil || pc.CollapsedForwardingType != forwarding.CFTypeProgressive ||
+		!methods.IsCacheable(r.Method) {
 		reader, resp, _ = PrepareFetchReader(r.Context(), r)
 		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
