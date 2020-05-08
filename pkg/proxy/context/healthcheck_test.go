@@ -16,10 +16,30 @@
 
 package context
 
-type contextKey int
-
-const (
-	resourcesKey contextKey = iota
-	hopsKey
-	healthCheckKey
+import (
+	"context"
+	"testing"
 )
+
+func TestHealthcheck(t *testing.T) {
+
+	b := HealthCheckFlag(nil)
+	if b {
+		t.Error("expected false")
+	}
+
+	ctx := context.Background()
+
+	b = HealthCheckFlag(ctx)
+	if b {
+		t.Error("expected false")
+	}
+
+	// cover nil short circuit case
+	ctx = WithHealthCheckFlag(ctx, true)
+	b = HealthCheckFlag(ctx)
+	if !b {
+		t.Error("expected true")
+	}
+
+}

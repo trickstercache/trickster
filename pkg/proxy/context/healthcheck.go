@@ -16,10 +16,26 @@
 
 package context
 
-type contextKey int
-
-const (
-	resourcesKey contextKey = iota
-	hopsKey
-	healthCheckKey
+import (
+	"context"
 )
+
+// WithHealthCheckFlag returns a copy of the provided context that also includes a bit
+// indicating the request is performing a health check
+func WithHealthCheckFlag(ctx context.Context, isHealthCheck bool) context.Context {
+	return context.WithValue(ctx, healthCheckKey, isHealthCheck)
+}
+
+// HealthCheckFlag returns true if the request is a health check request
+func HealthCheckFlag(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	v := ctx.Value(healthCheckKey)
+	if v != nil {
+		if b, ok := v.(bool); ok {
+			return b
+		}
+	}
+	return false
+}

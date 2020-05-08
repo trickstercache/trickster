@@ -17,10 +17,13 @@
 package irondb
 
 import (
+	"context"
 	"net/http"
 
+	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
@@ -37,7 +40,8 @@ func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req, _ := http.NewRequest(c.healthMethod, c.healthURL.String(), nil)
-	req = req.WithContext(r.Context())
+	rsc := request.GetResources(r)
+	req = req.WithContext(tctx.WithHealthCheckFlag(tctx.WithResources(context.Background(), rsc), true))
 
 	req.Header = c.healthHeaders
 	engines.DoProxy(w, req, true)
