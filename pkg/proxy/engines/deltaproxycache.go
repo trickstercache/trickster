@@ -34,7 +34,9 @@ import (
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
+
 	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/trace"
 )
 
 // DeltaProxyCache is used for Time Series Acceleration, but not for normal HTTP Object Caching
@@ -51,6 +53,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	if span != nil {
 		defer span.End()
 	}
+
+	r = r.WithContext(ctx)
 
 	pc := rsc.PathConfig
 	cache := rsc.CacheClient
@@ -297,6 +301,13 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			rq.Request = rq.WithContext(tctx.WithResources(r.Context(),
 				request.NewResources(oc, pc, cc, cache, client, rsc.Tracer, pr.Logger)))
 			client.SetExtent(rq.upstreamRequest, trq, e)
+
+			_, span := tspan.NewChildSpan(ctx, rsc.Tracer, "FetchUpstream")
+			if span != nil {
+				defer span.End()
+			}
+			rq.Request = rq.WithContext(trace.ContextWithSpan(rq.Context(), span))
+
 			body, resp, _ := rq.Fetch()
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				nts, err := client.UnmarshalTimeseries(body)
@@ -327,8 +338,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		req := r.Clone(tctx.WithResources(context.Background(), rs))
 		go func() {
 			defer wg.Done()
-			_, span := tspan.NewChildSpan(ctx, rsc.Tracer, "FastForward")
-			defer span.End()
+			_, span := tspan.NewChildSpan(ctx, rsc.Tracer, "FetchFastForward")
+			if span != nil {
+				defer span.End()
+			}
+
+			req = req.WithContext(trace.ContextWithSpan(req.Context(), span))
 
 			// create a new context that uses the fast forward path
 			// config instead of the time series path config

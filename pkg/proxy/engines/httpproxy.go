@@ -40,6 +40,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
 	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/trace"
 	othttptrace "go.opentelemetry.io/otel/plugin/httptrace"
 )
 
@@ -56,8 +57,14 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	oc := rsc.OriginConfig
 
 	start := time.Now()
-	_, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
-	defer span.End()
+
+	var span trace.Span
+	if !strings.HasPrefix(r.URL.Path, "/trickster/health") {
+		_, span = tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
+		if span != nil {
+			defer span.End()
+		}
+	}
 
 	pc := rsc.PathConfig
 
@@ -139,7 +146,9 @@ func PrepareFetchReader(traceContext context.Context, r *http.Request) (io.ReadC
 	oc := rsc.OriginConfig
 
 	ctx, span := tspan.NewChildSpan(traceContext, rsc.Tracer, "PrepareFetchReader")
-	defer span.End()
+	if span != nil {
+		defer span.End()
+	}
 
 	pc := rsc.PathConfig
 
@@ -177,21 +186,25 @@ func PrepareFetchReader(traceContext context.Context, r *http.Request) (io.ReadC
 			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r, Header: make(http.Header)}
 		}
 
-		doSpan.AddEvent(
-			ctx,
-			"Failure",
-			core.Key("Error").String(err.Error()),
-			core.Key("HTTPStatus").Int(resp.StatusCode),
-		)
-		doSpan.SetStatus(tracing.HTTPToCode(resp.StatusCode), "")
-
 		if pc != nil {
 			headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
 		}
-		doSpan.End()
+
+		if doSpan != nil {
+			doSpan.AddEvent(
+				ctx,
+				"Failure",
+				core.Key("Error").String(err.Error()),
+				core.Key("HTTPStatus").Int(resp.StatusCode),
+			)
+			doSpan.SetStatus(tracing.HTTPToCode(resp.StatusCode), "")
+			doSpan.End()
+		}
 		return nil, resp, 0
 	}
-	doSpan.End()
+	if doSpan != nil {
+		doSpan.End()
+	}
 
 	originalLen := int64(-1)
 	if v, ok := resp.Header[headers.NameContentLength]; ok {
