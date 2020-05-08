@@ -53,8 +53,10 @@ func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) strin
 	}
 
 	if r.Method == http.MethodPost {
+		b, _ := ioutil.ReadAll(r.Body)
 		r.ParseForm()
 		params = r.PostForm
+		r.Body = ioutil.NopCloser(bytes.NewReader(b))
 	} else if templateURL != nil {
 		params = templateURL.Query()
 	} else if r.URL != nil {

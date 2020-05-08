@@ -254,7 +254,8 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 	oc := rsc.OriginConfig
 
 	// if a we're using PCF, create that object for the cache miss
-	if !pr.wantsRanges && pc != nil && pc.CollapsedForwardingType == forwarding.CFTypeProgressive {
+	if methods.IsCacheable(pr.Method) && !pr.wantsRanges && pc != nil &&
+		pc.CollapsedForwardingType == forwarding.CFTypeProgressive {
 		pcfResult, pcfExists := Reqs.Load(pr.key)
 		// a PCF session is in progress for this URL, join this client to it.
 		if pcfExists {
