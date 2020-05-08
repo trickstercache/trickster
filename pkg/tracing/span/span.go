@@ -20,12 +20,11 @@ import (
 	"context"
 	"net/http"
 
+	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 
 	"go.opentelemetry.io/otel/api/correlation"
 	"go.opentelemetry.io/otel/api/trace"
-
-	//"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/plugin/httptrace"
 )
 
@@ -36,6 +35,10 @@ import (
 func PrepareRequest(r *http.Request, tr *tracing.Tracer) (*http.Request, trace.Span) {
 
 	if tr == nil || tr.Tracer == nil {
+		return r, nil
+	}
+
+	if tctx.HealthCheckFlag(r.Context()) {
 		return r, nil
 	}
 
@@ -70,6 +73,10 @@ func NewChildSpan(ctx context.Context, tr *tracing.Tracer,
 
 	var span trace.Span
 
+	if tctx.HealthCheckFlag(ctx) {
+		return ctx, nil
+	}
+
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -83,7 +90,7 @@ func NewChildSpan(ctx context.Context, tr *tracing.Tracer,
 		spanName,
 	)
 
-	if tr.Tags != nil && len(tr.Tags) > 0 {
+	if span != nil && tr.Tags != nil && len(tr.Tags) > 0 {
 		span.SetAttributes(tr.Tags.ToAttr()...)
 	}
 
