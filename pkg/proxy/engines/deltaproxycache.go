@@ -34,6 +34,7 @@ import (
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
+	"go.opentelemetry.io/otel/api/core"
 )
 
 // DeltaProxyCache is used for Time Series Acceleration, but not for normal HTTP Object Caching
@@ -47,7 +48,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	oc := rsc.OriginConfig
 
 	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "DeltaProxyCacheRequest")
-	defer span.End()
+	if span != nil {
+		defer span.End()
+	}
 
 	pc := rsc.PathConfig
 	cache := rsc.CacheClient
@@ -212,6 +215,11 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		cacheStatus = status.LookupStatusRangeMiss
 	}
 
+	if span != nil {
+		span.SetAttributes([]core.KeyValue{core.Key.String(core.Key("cache.status"),
+			cacheStatus.String())}...)
+	}
+
 	var isLocked bool
 
 	if cacheStatus == status.LookupStatusHit {
@@ -226,8 +234,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		// to do this we can ask the lock object how many write locks have been acquired. since
 		// we have a read lock, this number can't be updated again until all reads are released.
 		cwc := pr.cacheLock.WriteLockCounter()
-		// acquire a write lock via the Upgrade method, which will swap your read lock for a key
-		// for a write lock, ensuring that write lock counter state is intact during the upgrade
+		// acquire a write lock via the Upgrade method, which will swap your read lock for a
+		// write lock, ensuring that write lock counter state is intact during the upgrade
 		pr.cacheLock, _ = pr.cacheLock.Upgrade()
 		// now we have the write lock. so we can check if the write lock counter incremented by 1
 		// or more. If the difference is just 1, that means this request was the first to acquire
