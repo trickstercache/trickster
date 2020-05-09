@@ -31,7 +31,10 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	"go.opentelemetry.io/otel/api/key"
+	"go.opentelemetry.io/otel/api/trace"
 )
 
 type proxyRequest struct {
@@ -89,12 +92,16 @@ type proxyRequest struct {
 func newProxyRequest(r *http.Request, w io.Writer) *proxyRequest {
 	rsc := request.GetResources(r)
 	pr := &proxyRequest{
-		Request:         r,
-		upstreamRequest: r.Clone(tctx.WithResources(context.Background(), rsc)),
-		contentLength:   -1,
-		responseWriter:  w,
-		started:         time.Now(),
-		mapLock:         &sync.Mutex{},
+		Request: r,
+		upstreamRequest: r.Clone(
+			tctx.WithResources(
+				trace.ContextWithSpan(context.Background(),
+					trace.SpanFromContext(r.Context())),
+				rsc)),
+		contentLength:  -1,
+		responseWriter: w,
+		started:        time.Now(),
+		mapLock:        &sync.Mutex{},
 	}
 	if rsc != nil {
 		pr.Logger = rsc.Logger
@@ -105,9 +112,16 @@ func newProxyRequest(r *http.Request, w io.Writer) *proxyRequest {
 func (pr *proxyRequest) Clone() *proxyRequest {
 	rsc := request.GetResources(pr.Request)
 	return &proxyRequest{
-		Request: pr.Request.Clone(context.Background()),
-		upstreamRequest: pr.upstreamRequest.
-			Clone(tctx.WithResources(context.Background(), rsc)),
+		Request: pr.Request.Clone(
+			tctx.WithResources(
+				trace.ContextWithSpan(context.Background(),
+					trace.SpanFromContext(pr.Request.Context())),
+				rsc)),
+		upstreamRequest: pr.upstreamRequest.Clone(
+			tctx.WithResources(
+				trace.ContextWithSpan(context.Background(),
+					trace.SpanFromContext(pr.upstreamRequest.Context())),
+				rsc)),
 		Logger:             pr.Logger,
 		cacheDocument:      pr.cacheDocument,
 		key:                pr.key,
@@ -139,8 +153,15 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 		handlerName = pc.HandlerName
 	}
 
+	// span := trace.SpanFromContext(pr.upstreamRequest.Context())
+	// _, span := tspan.NewChildSpan(pr.Context(), rsc.Tracer, "Fetch")
+	// if span != nil {
+	// 	pr.upstreamRequest = pr.upstreamRequest.WithContext(trace.ContextWithSpan(pr.upstreamRequest.Context(), span))
+	// 	defer span.End()
+	// }
+
 	start := time.Now()
-	reader, resp, _ := PrepareFetchReader(pr.Request.Context(), pr.upstreamRequest)
+	reader, resp, _ := PrepareFetchReader(pr.upstreamRequest)
 
 	var body []byte
 	var err error
@@ -167,9 +188,17 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 
 func (pr *proxyRequest) prepareRevalidationRequest() {
 
+	rsc := request.GetResources(pr.upstreamRequest)
 	pr.revalidation = RevalStatusInProgress
 	pr.revalidationRequest = request.SetResources(pr.upstreamRequest.Clone(context.Background()),
 		request.GetResources(pr.Request))
+
+	_, span := tspan.NewChildSpan(pr.revalidationRequest.Context(), rsc.Tracer, "FetchRevlidation")
+	if span != nil {
+		pr.revalidationRequest =
+			pr.revalidationRequest.WithContext(trace.ContextWithSpan(pr.revalidationRequest.Context(), span))
+		defer span.End()
+	}
 
 	if pr.cacheStatus == status.LookupStatusPartialHit {
 		var rh string
@@ -237,8 +266,9 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 		pr.originRequests = make([]*http.Request, 0, l)
 	}
 
-	// TODO: This looks suspicious
-	rsc.OriginConfig.DearticulateUpstreamRanges = true
+	// // TODO: This looks suspicious
+	// rsc.OriginConfig.DearticulateUpstreamRanges = true
+
 	// if we are articulating the origin range requests, break those out here
 	if pr.neededRanges != nil && len(pr.neededRanges) > 0 && rsc.OriginConfig.DearticulateUpstreamRanges {
 		for _, r := range pr.neededRanges {
@@ -255,10 +285,23 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 
 	wg := sync.WaitGroup{}
 
+	rsc := request.GetResources(pr.Request)
+
 	if pr.revalidationRequest != nil {
 		wg.Add(1)
 		go func() {
-			pr.revalidationReader, pr.revalidationResponse, _ = PrepareFetchReader(pr.Request.Context(), pr.revalidationRequest)
+			req := pr.revalidationRequest
+			_, span := tspan.NewChildSpan(req.Context(), rsc.Tracer, "FetchRevalidation")
+			if span != nil {
+				if req.Header != nil {
+					if _, ok := req.Header[headers.NameRange]; ok {
+						span.SetAttributes(key.Bool("isRange", true))
+					}
+				}
+				req = req.WithContext(trace.ContextWithSpan(req.Context(), span))
+				defer span.End()
+			}
+			pr.revalidationReader, pr.revalidationResponse, _ = PrepareFetchReader(pr.revalidationRequest)
 			wg.Done()
 		}()
 	}
@@ -269,7 +312,18 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 		for i := range pr.originRequests {
 			wg.Add(1)
 			go func(j int) {
-				pr.originReaders[j], pr.originResponses[j], _ = PrepareFetchReader(pr.Request.Context(), pr.originRequests[j])
+				req := pr.originRequests[j]
+				_, span := tspan.NewChildSpan(req.Context(), rsc.Tracer, "Fetch")
+				if span != nil {
+					if req.Header != nil {
+						if _, ok := req.Header[headers.NameRange]; ok {
+							span.SetAttributes(key.Bool("isRange", true))
+						}
+					}
+					req = req.WithContext(trace.ContextWithSpan(req.Context(), span))
+					defer span.End()
+				}
+				pr.originReaders[j], pr.originResponses[j], _ = PrepareFetchReader(req)
 				wg.Done()
 			}(i)
 		}
@@ -426,7 +480,7 @@ func (pr *proxyRequest) store() error {
 	}
 
 	d.CachingPolicy = pr.cachingPolicy
-	err := WriteCache(pr.Context(), rsc.CacheClient, pr.key, d,
+	err := WriteCache(pr.upstreamRequest.Context(), rsc.CacheClient, pr.key, d,
 		pr.cachingPolicy.TTL(rf, oc.MaxTTL), oc.CompressableTypes)
 	if err != nil {
 		return err

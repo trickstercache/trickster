@@ -17,7 +17,9 @@
 package engines
 
 import (
+	"bytes"
 	"context"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"sync"
@@ -54,7 +56,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	if span != nil {
 		defer span.End()
 	}
-
 	r = r.WithContext(ctx)
 
 	pc := rsc.PathConfig
@@ -299,15 +300,16 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		// This fetches the gaps from the origin and adds their datasets to the merge list
 		go func(e *timeseries.Extent, rq *proxyRequest) {
 			defer wg.Done()
-			rq.Request = rq.WithContext(tctx.WithResources(r.Context(),
+			rq.upstreamRequest = rq.WithContext(tctx.WithResources(
+				trace.ContextWithSpan(context.Background(), span),
 				request.NewResources(oc, pc, cc, cache, client, rsc.Tracer, pr.Logger)))
 			client.SetExtent(rq.upstreamRequest, trq, e)
 
-			_, span := tspan.NewChildSpan(ctx, rsc.Tracer, "FetchUpstream")
-			if span != nil {
-				defer span.End()
+			ctxMR, spanMR := tspan.NewChildSpan(rq.upstreamRequest.Context(), rsc.Tracer, "FetchRange")
+			if spanMR != nil {
+				rq.upstreamRequest = rq.upstreamRequest.WithContext(ctxMR)
+				defer spanMR.End()
 			}
-			rq.Request = rq.WithContext(trace.ContextWithSpan(rq.Context(), span))
 
 			body, resp, _ := rq.Fetch()
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
@@ -341,14 +343,22 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			defer wg.Done()
 			_, span := tspan.NewChildSpan(ctx, rsc.Tracer, "FetchFastForward")
 			if span != nil {
+				req = req.WithContext(trace.ContextWithSpan(req.Context(), span))
 				defer span.End()
 			}
-
-			req = req.WithContext(trace.ContextWithSpan(req.Context(), span))
 
 			// create a new context that uses the fast forward path
 			// config instead of the time series path config
 			req.URL = ffURL
+
+			// the FastForwardURL function returns a *URL with the QueryString on it.
+			// we currently have to convert that into a new request body for POST
+			if req.Method == http.MethodPost {
+				req.Body = ioutil.NopCloser(bytes.NewBufferString(ffURL.RawQuery))
+				req.ContentLength = int64(len(ffURL.RawQuery))
+				ffURL.RawQuery = ""
+			}
+
 			body, resp, isHit := FetchViaObjectProxyCache(req)
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				ffts, err = client.UnmarshalInstantaneous(body)
@@ -458,6 +468,14 @@ func logDeltaRoutine(log *tl.Logger, p tl.Pairs) { log.Debug("delta routine comp
 
 func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	client origins.TimeseriesClient) (timeseries.Timeseries, *HTTPDocument, time.Duration, error) {
+
+	rsc := request.GetResources(pr.Request)
+
+	ctx, span := tspan.NewChildSpan(pr.upstreamRequest.Context(), rsc.Tracer, "FetchTimeSeries")
+	if span != nil {
+		defer span.End()
+	}
+	pr.upstreamRequest = pr.upstreamRequest.WithContext(ctx)
 
 	body, resp, elapsed := pr.Fetch()
 

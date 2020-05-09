@@ -34,6 +34,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/util/log"
 
 	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/key"
+	"go.opentelemetry.io/otel/api/trace"
 )
 
 func handleCacheKeyHit(pr *proxyRequest) error {
@@ -269,7 +271,14 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 			return nil
 		}
 
-		reader, resp, contentLength := PrepareFetchReader(pr.Request.Context(), pr.upstreamRequest)
+		ctx, span := tspan.NewChildSpan(pr.upstreamRequest.Context(), rsc.Tracer, "FetchObject")
+		if span != nil {
+			span.SetAttributes(key.Bool("isPCF", true))
+			defer span.End()
+		}
+		pr.upstreamRequest = pr.upstreamRequest.WithContext(ctx)
+
+		reader, resp, contentLength := PrepareFetchReader(pr.upstreamRequest)
 		pr.upstreamResponse = resp
 
 		pr.writeResponseHeader()
@@ -348,6 +357,13 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	cc := rsc.CacheClient
 
 	pr := newProxyRequest(r, w)
+
+	_, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ObjectProxyCacheRequest")
+	if span != nil {
+		pr.upstreamRequest = pr.upstreamRequest.WithContext(trace.ContextWithSpan(pr.upstreamRequest.Context(), span))
+		defer span.End()
+	}
+
 	pr.parseRequestRanges()
 
 	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
@@ -378,7 +394,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	}
 
 	var err error
-	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(pr.Context(), cc, pr.key, pr.wantedRanges)
+	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges)
 	if err == nil || err == cache.ErrKNF {
 		if f, ok := cacheResponseHandlers[pr.cacheStatus]; ok {
 			f(pr)
