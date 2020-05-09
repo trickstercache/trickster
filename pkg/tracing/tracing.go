@@ -81,7 +81,7 @@ func (t Tags) MergeAttr(attr []core.KeyValue) {
 	}
 }
 
-// ToAttr merges returns the Tags map as an Attributes List
+// ToAttr returns the Tags map as an Attributes List
 func (t Tags) ToAttr() []core.KeyValue {
 	attr := make([]core.KeyValue, len(t))
 	i := 0
