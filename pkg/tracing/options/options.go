@@ -83,18 +83,20 @@ func (o *Options) Clone() *Options {
 
 // ProcessTracingOptions enriches the configuration data of the provided Tracing Options collection
 func ProcessTracingOptions(mo map[string]*Options, metadata *toml.MetaData) {
-	if metadata == nil || mo == nil {
+	if mo == nil || len(mo) == 0 {
 		return
 	}
 	for k, v := range mo {
-		if !metadata.IsDefined("tracing", k, "sample_rate") {
-			v.SampleRate = 1
-		}
-		if !metadata.IsDefined("tracing", k, "service_name") {
-			v.ServiceName = defaults.DefaultTracerServiceName
-		}
-		if !metadata.IsDefined("tracing", k, "tracer_type") {
-			v.TracerType = defaults.DefaultTracerType
+		if metadata != nil {
+			if !metadata.IsDefined("tracing", k, "sample_rate") {
+				v.SampleRate = 1
+			}
+			if !metadata.IsDefined("tracing", k, "service_name") {
+				v.ServiceName = defaults.DefaultTracerServiceName
+			}
+			if !metadata.IsDefined("tracing", k, "tracer_type") {
+				v.TracerType = defaults.DefaultTracerType
+			}
 		}
 		v.generateOmitTags()
 		v.setAttachTags()
@@ -111,6 +113,7 @@ func (o *Options) generateOmitTags() {
 	}
 }
 
+// AttachTagsToSpan indicates that Tags should be attached to the span
 func (o *Options) AttachTagsToSpan() bool {
 	return o.attachTagsToSpan
 }

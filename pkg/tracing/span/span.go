@@ -112,7 +112,7 @@ func SetAttributes(tr *tracing.Tracer, span trace.Span, kvs ...core.KeyValue) {
 
 func filterAttributes(tr *tracing.Tracer, kvs []core.KeyValue) []core.KeyValue {
 	l := len(kvs)
-	if tr == nil || l == 0 || tr.Options.OmitTags == nil || len(tr.Options.OmitTags) == 0 {
+	if tr == nil || l == 0 || tr.Options == nil || len(tr.Options.OmitTagsList) == 0 {
 		return kvs
 	}
 	approved := make([]core.KeyValue, 0, l)

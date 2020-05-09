@@ -49,3 +49,25 @@ func TestProcessTracingConfigs(t *testing.T) {
 	}
 
 }
+
+func TestGenerateOmitTags(t *testing.T) {
+
+	o := &Options{OmitTagsList: []string{"test1"}}
+	o.generateOmitTags()
+	if _, ok := o.OmitTags["test1"]; !ok {
+		t.Error("expected map entry")
+	}
+}
+
+func TestAttachTagsToSpan(t *testing.T) {
+
+	o := &Options{TracerType: "zipkin", Tags: map[string]string{"test": "test"}}
+	if o.AttachTagsToSpan() {
+		t.Error("expected false")
+	}
+	o.setAttachTags()
+	if !o.AttachTagsToSpan() {
+		t.Error("expected true")
+	}
+
+}
