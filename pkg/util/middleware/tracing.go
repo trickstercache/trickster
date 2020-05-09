@@ -34,18 +34,12 @@ func Trace(tr *tracing.Tracer, next http.Handler) http.Handler {
 		if span != nil {
 			defer span.End()
 
-			span.SetAttributes(
-				[]core.KeyValue{
-					key.String("testing", "pass"),
-				}...,
-			)
-
 			rsc := request.GetResources(r)
 			if rsc != nil &&
 				rsc.OriginConfig != nil &&
 				rsc.PathConfig != nil &&
 				rsc.CacheConfig != nil {
-				span.SetAttributes(
+				tspan.SetAttributes(tr, span,
 					[]core.KeyValue{
 						key.String("origin.name", rsc.OriginConfig.Name),
 						key.String("origin.type", rsc.OriginConfig.OriginType),

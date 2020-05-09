@@ -221,10 +221,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		cacheStatus = status.LookupStatusRangeMiss
 	}
 
-	if span != nil {
-		span.SetAttributes([]core.KeyValue{core.Key.String(core.Key("cache.status"),
-			cacheStatus.String())}...)
-	}
+	tspan.SetAttributes(rsc.Tracer, span,
+		core.Key.String(core.Key("cache.status"), cacheStatus.String()))
 
 	var isLocked bool
 
