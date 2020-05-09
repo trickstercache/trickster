@@ -46,11 +46,6 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 		sampler = sdktrace.ProbabilitySampler(options.SampleRate)
 	}
 
-	var tags tracing.Tags
-	if options.Tags != nil && len(options.Tags) > 0 {
-		tags = options.Tags
-	}
-
 	exporter, err := zipkin.NewExporter(
 		options.CollectorURL,
 		options.ServiceName,
@@ -77,7 +72,6 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 		Tracer:  tracer,
 		Options: options,
 		Flusher: nil,
-		Tags:    tags,
 	}, nil
 
 }

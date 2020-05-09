@@ -36,7 +36,6 @@ type Tracer struct {
 	Name    string
 	Flusher FlusherFunc
 	Options *options.Options
-	Tags    Tags
 }
 
 // Tracers is a map of *Tracer objects
