@@ -34,9 +34,14 @@ type Options struct {
 	CollectorPass string            `toml:"collector_pass"`
 	SampleRate    float64           `toml:"sample_rate"`
 	Tags          map[string]string `toml:"tags"`
+	OmitTagsList  []string          `toml:"omit_tags"`
 
 	StdOutOptions *stdoutopts.Options `toml:"stdout"`
 	JaegerOptions *jaegeropts.Options `toml:"jaeger"`
+
+	OmitTags map[string]bool `toml:"-"`
+	// for tracers that don't support WithProcess (e.g., Zipkin)
+	attachTagsToSpan bool
 }
 
 // NewOptions returns a new *Options with the default values
@@ -60,16 +65,19 @@ func (o *Options) Clone() *Options {
 		jo = o.JaegerOptions.Clone()
 	}
 	return &Options{
-		Name:          o.Name,
-		TracerType:    o.TracerType,
-		ServiceName:   o.ServiceName,
-		CollectorURL:  o.CollectorURL,
-		CollectorUser: o.CollectorUser,
-		CollectorPass: o.CollectorPass,
-		SampleRate:    o.SampleRate,
-		Tags:          strings.CloneMap(o.Tags),
-		StdOutOptions: so,
-		JaegerOptions: jo,
+		Name:             o.Name,
+		TracerType:       o.TracerType,
+		ServiceName:      o.ServiceName,
+		CollectorURL:     o.CollectorURL,
+		CollectorUser:    o.CollectorUser,
+		CollectorPass:    o.CollectorPass,
+		SampleRate:       o.SampleRate,
+		Tags:             strings.CloneMap(o.Tags),
+		OmitTags:         strings.CloneBoolMap(o.OmitTags),
+		OmitTagsList:     strings.CloneList(o.OmitTagsList),
+		StdOutOptions:    so,
+		JaegerOptions:    jo,
+		attachTagsToSpan: o.attachTagsToSpan,
 	}
 }
 
@@ -88,5 +96,27 @@ func ProcessTracingOptions(mo map[string]*Options, metadata *toml.MetaData) {
 		if !metadata.IsDefined("tracing", k, "tracer_type") {
 			v.TracerType = defaults.DefaultTracerType
 		}
+		v.generateOmitTags()
+		v.setAttachTags()
+	}
+}
+
+func (o *Options) generateOmitTags() {
+	o.OmitTags = make(map[string]bool)
+	if len(o.OmitTagsList) == 0 {
+		return
+	}
+	for _, v := range o.OmitTagsList {
+		o.OmitTags[v] = true
+	}
+}
+
+func (o *Options) AttachTagsToSpan() bool {
+	return o.attachTagsToSpan
+}
+
+func (o *Options) setAttachTags() {
+	if o.TracerType == "zipkin" && o.Tags != nil && len(o.Tags) > 0 {
+		o.attachTagsToSpan = true
 	}
 }

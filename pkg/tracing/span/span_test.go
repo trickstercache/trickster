@@ -37,7 +37,7 @@ func TestNewChildSpan(t *testing.T) {
 
 	// test with nil context but non-nil tracer
 	tr, _ := stdout.NewTracer(nil)
-	tr.Tags = map[string]string{"testTagName": "testTagValue"}
+	tr.Options.Tags = map[string]string{"testTagName": "testTagValue"}
 
 	ctx, span := NewChildSpan(nil, tr, "test")
 	if ctx == nil {
@@ -73,7 +73,7 @@ func TestPrepareRequest(t *testing.T) {
 	}
 	r = r.WithContext(context.WithHealthCheckFlag(r.Context(), false))
 
-	tr.Tags = map[string]string{"testTagName": "testTagValue"}
+	tr.Options.Tags = map[string]string{"testTagName": "testTagValue"}
 	_, sp = PrepareRequest(r, tr)
 	if sp == nil {
 		t.Error("expected non-nill span")

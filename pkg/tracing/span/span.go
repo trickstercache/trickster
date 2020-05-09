@@ -23,6 +23,7 @@ import (
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 
+	"go.opentelemetry.io/otel/api/core"
 	"go.opentelemetry.io/otel/api/correlation"
 	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/plugin/httptrace"
@@ -44,6 +45,8 @@ func PrepareRequest(r *http.Request, tr *tracing.Tracer) (*http.Request, trace.S
 
 	attrs, entries, spanCtx := httptrace.Extract(r.Context(), r)
 
+	attrs = filterAttributes(tr, attrs)
+
 	r = r.WithContext(correlation.ContextWithMap(r.Context(),
 		correlation.NewMap(correlation.MapUpdate{
 			MultiKV: entries,
@@ -51,11 +54,11 @@ func PrepareRequest(r *http.Request, tr *tracing.Tracer) (*http.Request, trace.S
 
 	// This will add any configured static tags to the span for Zipkin
 	// For Jaeger, they are automatically included in the Process section of the Trace
-	if tr.Tags != nil && len(tr.Tags) > 0 {
+	if tr.Options.AttachTagsToSpan() {
 		if len(attrs) > 0 {
-			tr.Tags.MergeAttr(attrs)
+			tracing.Tags(tr.Options.Tags).MergeAttr(attrs)
 		}
-		attrs = tr.Tags.ToAttr()
+		attrs = tracing.Tags(tr.Options.Tags).ToAttr()
 	}
 
 	ctx, span := tr.Start(
@@ -90,10 +93,34 @@ func NewChildSpan(ctx context.Context, tr *tracing.Tracer,
 		spanName,
 	)
 
-	if span != nil && tr.Tags != nil && len(tr.Tags) > 0 {
-		span.SetAttributes(tr.Tags.ToAttr()...)
+	if span != nil && tr.Options.AttachTagsToSpan() {
+		span.SetAttributes(tracing.Tags(tr.Options.Tags).ToAttr()...)
 	}
 
 	return ctx, span
 
+}
+
+// SetAttributes safely sets attributes on a span, unless they are in the omit list
+func SetAttributes(tr *tracing.Tracer, span trace.Span, kvs ...core.KeyValue) {
+	l := len(kvs)
+	if tr == nil || span == nil || l == 0 {
+		return
+	}
+	span.SetAttributes(filterAttributes(tr, kvs)...)
+}
+
+func filterAttributes(tr *tracing.Tracer, kvs []core.KeyValue) []core.KeyValue {
+	l := len(kvs)
+	if tr == nil || l == 0 || tr.Options.OmitTags == nil || len(tr.Options.OmitTags) == 0 {
+		return kvs
+	}
+	approved := make([]core.KeyValue, 0, l)
+	for _, kv := range kvs {
+		// if the key is not in the omit list, add it to the approved list
+		if _, ok := tr.Options.OmitTags[string(kv.Key)]; !ok {
+			approved = append(approved, kv)
+		}
+	}
+	return approved
 }
