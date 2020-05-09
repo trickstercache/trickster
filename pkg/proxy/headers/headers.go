@@ -21,6 +21,7 @@ package headers
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 
@@ -247,6 +248,7 @@ func LogString(h http.Header) string {
 		names[i] = k
 		i++
 	}
+	sort.Strings(names)
 
 	sb := strings.Builder{}
 	sb.WriteString("{")
