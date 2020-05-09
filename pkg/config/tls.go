@@ -23,7 +23,7 @@ import (
 )
 
 // TLSCertConfig returns the crypto/tls configuration object with a list of name-bound
-// certs derifed from the running config
+// certs derived from the running config
 func (c *Config) TLSCertConfig() (*tls.Config, error) {
 	var err error
 	if !c.Frontend.ServeTLS {
@@ -41,8 +41,7 @@ func (c *Config) TLSCertConfig() (*tls.Config, error) {
 		return nil, nil
 	}
 
-	tlsConfig := &tls.Config{NextProtos: []string{"h2"}}
-	tlsConfig.Certificates = make([]tls.Certificate, l)
+	tlsConfig := &tls.Config{Certificates: make([]tls.Certificate, l), NextProtos: []string{"h2"}}
 
 	for i, tc := range to {
 		tlsConfig.Certificates[i], err = tls.LoadX509KeyPair(tc.TLS.FullChainCertPath, tc.TLS.PrivateKeyPath)
