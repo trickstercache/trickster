@@ -88,6 +88,21 @@ func startListener(listenerName, address string, port int, connectionsLimit int,
 		}
 	}
 
+	if tlsConfig != nil {
+		svr := &http.Server{
+			Handler:   handlers.CompressHandler(lg.routeSwapper),
+			TLSConfig: tlsConfig,
+		}
+		err = svr.Serve(l)
+		if err != nil {
+			log.Error("https listener stopping", tl.Pairs{"name": listenerName, "detail": err})
+			if lg.exitOnError {
+				os.Exit(1)
+			}
+		}
+		return err
+	}
+
 	err = http.Serve(l, handlers.CompressHandler(lg.routeSwapper))
 	if err != nil {
 		log.Error("http listener stopping", tl.Pairs{"name": listenerName, "detail": err})
