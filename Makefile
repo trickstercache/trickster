@@ -32,6 +32,7 @@ BUILD_SUBDIR   := OPATH
 PACKAGE_DIR    := ./$(BUILD_SUBDIR)/trickster-$(PROGVER)
 BIN_DIR        := $(PACKAGE_DIR)/bin
 CONF_DIR       := $(PACKAGE_DIR)/conf
+CGO_ENABLED    ?= 0
 
 .PHONY: validate-app-version
 validate-app-version:
@@ -88,10 +89,10 @@ release-artifacts: clean
 	cp ./LICENSE $(PACKAGE_DIR)
 	cp ./cmd/trickster/conf/*.conf $(CONF_DIR)
 	
-	GOOS=darwin  GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).darwin-amd64  -a -v $(TRICKSTER_MAIN)/*.go
-	GOOS=linux   GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-amd64   -a -v $(TRICKSTER_MAIN)/*.go
-	GOOS=linux   GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-arm64   -a -v $(TRICKSTER_MAIN)/*.go
-	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).windows-amd64 -a -v $(TRICKSTER_MAIN)/*.go
+	GOOS=darwin  GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).darwin-amd64  -a -v $(TRICKSTER_MAIN)/*.go
+	GOOS=linux   GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-amd64   -a -v $(TRICKSTER_MAIN)/*.go
+	GOOS=linux   GOARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-arm64   -a -v $(TRICKSTER_MAIN)/*.go
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).windows-amd64 -a -v $(TRICKSTER_MAIN)/*.go
 
 	cd ./$(BUILD_SUBDIR) && tar cvfz ./trickster-$(PROGVER).tar.gz ./trickster-$(PROGVER)/*
 
