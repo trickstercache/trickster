@@ -381,6 +381,10 @@ func (c *Config) processOriginConfigs(metadata *toml.MetaData) error {
 			oc.IsDefault = true
 		}
 
+		if metadata.IsDefined("origins", k, "forwarded_headers") {
+			oc.ForwardedHeaders = v.ForwardedHeaders
+		}
+
 		if metadata.IsDefined("origins", k, "require_tls") {
 			oc.RequireTLS = v.RequireTLS
 		}
