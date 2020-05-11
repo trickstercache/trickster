@@ -23,6 +23,7 @@ Trickster can insert several spans to the traces that it captures, depending upo
 
 | Span Name              | Observes when Trickster is: |
 | ---------------------- | ------------- |
+| request                | initially handling the client request by an Origin |
 | QueryCache             | querying the cache for an object |
 | WriteCache             | writing an object to the cache |
 | DeltaProxyCacheRequest | handling a Time Series-based client request |
@@ -30,3 +31,9 @@ Trickster can insert several spans to the traces that it captures, depending upo
 | ProxyRequest           | communicating with an Origin server to fulfill a client request |
 | PrepareFetchReader     | preparing a client response from a cached or Origin response |
 | CacheRevalidation      | revalidating a stale cache object against its Origin |
+
+## Tags / Attributes
+
+Trickster supports adding custom tags to every span via the configuration. See the example.conf.
+
+Trickster also supports omitting any tags that Trickster inserts by default. For example on the "request" span, an `http.url` tag is attached with the current full URL. In deployments where that tag may introduce too much cardinality in your backend trace storage system, you may wish to omit that tag and rely on the more concise `path` tag. Each tracer config can be provided a string list of tags to omit from traces.
