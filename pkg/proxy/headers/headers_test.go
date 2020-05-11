@@ -27,24 +27,6 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
-func TestAddProxyHeaders(t *testing.T) {
-
-	headers := http.Header{}
-	runtime.ApplicationName = "trickster-test"
-	runtime.ApplicationVersion = "tests"
-
-	AddProxyHeaders("0.0.0.0", headers)
-
-	if _, ok := headers[NameXForwardedFor]; !ok {
-		t.Errorf("missing header %s", NameXForwardedFor)
-	}
-
-	if _, ok := headers[NameVia]; !ok {
-		t.Errorf("missing header %s", NameVia)
-	}
-
-}
-
 func TestExtractHeader(t *testing.T) {
 
 	headers := http.Header{}
@@ -58,7 +40,8 @@ func TestExtractHeader(t *testing.T) {
 
 	const testIP = "0.0.0.0"
 
-	AddProxyHeaders(testIP, headers)
+	headers.Set(NameXForwardedFor, testIP)
+	headers.Set(NameVia, appString)
 
 	if h, ok := ExtractHeader(headers, NameXForwardedFor); !ok {
 		t.Errorf("missing header %s", NameXForwardedFor)

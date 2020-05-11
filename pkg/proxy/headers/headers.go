@@ -22,9 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 
-	"github.com/tricksterproxy/trickster/pkg/runtime"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
@@ -67,6 +65,8 @@ const (
 	NameCacheControl = "Cache-Control"
 	// NameAllowOrigin represents the HTTP Header Name of "Access-Control-Allow-Origin"
 	NameAllowOrigin = "Access-Control-Allow-Origin"
+	// NameConnection represents the HTTP Header Name of "Connection"
+	NameConnection = "Connection"
 	// NameContentType represents the HTTP Header Name of "Content-Type"
 	NameContentType = "Content-Type"
 	// NameContentEncoding represents the HTTP Header Name of "Content-Encoding"
@@ -79,10 +79,6 @@ const (
 	NameContentRange = "Content-Range"
 	// NameTricksterResult represents the HTTP Header Name of "X-Trickster-Result"
 	NameTricksterResult = "X-Trickster-Result"
-	// NameVia represents the HTTP Header Name of "Via"
-	NameVia = "Via"
-	// NameXForwardedFor represents the HTTP Header Name of "X-Forwarded-For"
-	NameXForwardedFor = "X-Forwarded-For"
 	// NameAcceptEncoding represents the HTTP Header Name of "Accept-Encoding"
 	NameAcceptEncoding = "Accept-Encoding"
 	// NameSetCookie represents the HTTP Header Name of "Set-Cookie"
@@ -103,6 +99,14 @@ const (
 	NameDate = "Date"
 	// NamePragma represents the HTTP Header Name of "pragma"
 	NamePragma = "Pragma"
+	// NameProxyAuthenticate represents the HTTP Header Name of "Proxy-Authenticate"
+	NameProxyAuthenticate = "Proxy-Authenticate"
+	// NameProxyAuthorization represents the HTTP Header Name of "Proxy-Authorization"
+	NameProxyAuthorization = "Proxy-Authorization"
+	// NameProxyConnection represents the HTTP Header Name of "Proxy-Connection"
+	NameProxyConnection = "Proxy-Connection"
+	// NameKeepAlive represents the HTTP Header Name of "Keep-Alive"
+	NameKeepAlive = "Keep-Alive"
 	// NameLastModified represents the HTTP Header Name of "last-modified"
 	NameLastModified = "Last-Modified"
 	// NameExpires represents the HTTP Header Name of "expires"
@@ -111,6 +115,12 @@ const (
 	NameETag = "Etag"
 	// NameLocation represents the HTTP Header Name of "location"
 	NameLocation = "Location"
+	// NameTe represents the HTTP Header Name of "TE"
+	NameTe = "Te"
+	// NameTrailer represents the HTTP Header Name of "Trailer"
+	NameTrailer = "Trailer"
+	// NameUpgrade represents the HTTP Header Name of "Upgrade"
+	NameUpgrade = "Upgrade"
 )
 
 // Merge merges the source http.Header map into destination map.
@@ -151,30 +161,6 @@ func UpdateHeaders(headers http.Header, updates map[string]string) {
 	}
 }
 
-var viaHeader string
-
-var once sync.Once
-var onceVia = func() {
-	viaHeader = strings.Trim(runtime.ApplicationName+" "+runtime.ApplicationVersion, " ")
-}
-
-// AddProxyHeaders injects standard Trickster headers into proxied upstream HTTP requests
-func AddProxyHeaders(remoteAddr string, headers http.Header) {
-	once.Do(onceVia)
-	if remoteAddr != "" {
-		headers.Set(NameXForwardedFor, remoteAddr)
-		headers.Set(NameVia, viaHeader)
-	}
-}
-
-// AddResponseHeaders injects standard Trickster headers into downstream HTTP responses
-func AddResponseHeaders(headers http.Header) {
-	once.Do(onceVia)
-	// We're read only and a harmless API, so allow all CORS
-	headers.Set(NameAllowOrigin, "*")
-	headers.Set(NameVia, viaHeader)
-}
-
 // SetResultsHeader adds a response header summarizing Trickster's handling of the HTTP request
 func SetResultsHeader(headers http.Header, engine, status, ffstatus string, fetched timeseries.ExtentList) {
 
@@ -212,11 +198,6 @@ func ExtractHeader(headers http.Header, header string) (string, bool) {
 	return "", false
 }
 
-// RemoveClientHeaders strips certain headers from the HTTP request to facililate acceleration
-func RemoveClientHeaders(headers http.Header) {
-	headers.Del(NameAcceptEncoding)
-}
-
 // String returns the string representation of the headers as if
 // they were transmitted over the wire (Header1: value1\nHeader2: value2\n\n)
 func String(h http.Header) string {
@@ -229,7 +210,9 @@ func String(h http.Header) string {
 			sb.WriteString(fmt.Sprintf("%s: %s\n", k, v[0]))
 		}
 	}
+
 	// add the header section end new line
 	sb.WriteString("\n")
 	return sb.String()
+
 }

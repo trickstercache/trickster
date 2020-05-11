@@ -66,8 +66,9 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	var resp *http.Response
 	var reader io.ReadCloser
 
+	// Non-collapsed
 	if pc == nil || pc.CollapsedForwardingType != forwarding.CFTypeProgressive {
-		reader, resp, _ = PrepareFetchReader(r.Context(), r)
+		reader, resp, _ = PrepareFetchReader(r.Context(), r, r)
 		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 		if writer != nil && reader != nil {
@@ -79,7 +80,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 		result, ok := Reqs.Load(key)
 		if !ok {
 			var contentLength int64
-			reader, resp, contentLength = PrepareFetchReader(r.Context(), r)
+			reader, resp, contentLength = PrepareFetchReader(r.Context(), r, r)
 			cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 			// Check if we know the content length and if it is less than our max object size.
@@ -133,7 +134,7 @@ func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer 
 // PrepareFetchReader prepares an http response and returns io.ReadCloser to
 // provide the response data, the response object and the content length.
 // Used in Fetch.
-func PrepareFetchReader(traceContext context.Context, r *http.Request) (io.ReadCloser, *http.Response, int64) {
+func PrepareFetchReader(traceContext context.Context, inbound, r *http.Request) (io.ReadCloser, *http.Response, int64) {
 
 	rsc := request.GetResources(r)
 	oc := rsc.OriginConfig
@@ -145,8 +146,8 @@ func PrepareFetchReader(traceContext context.Context, r *http.Request) (io.ReadC
 
 	var rc io.ReadCloser
 
-	if r != nil && r.Header != nil {
-		headers.AddProxyHeaders(r.RemoteAddr, r.Header)
+	if inbound != nil {
+		headers.AddForwardingHeaders(inbound, r, oc.ForwardedHeaders)
 	}
 
 	headers.RemoveClientHeaders(r.Header)
@@ -156,6 +157,7 @@ func PrepareFetchReader(traceContext context.Context, r *http.Request) (io.ReadC
 		params.UpdateParams(r.URL.Query(), pc.RequestParams)
 	}
 
+	r.Close = false
 	r.RequestURI = ""
 
 	// Processing traces for proxies
