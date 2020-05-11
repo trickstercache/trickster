@@ -45,7 +45,7 @@ The following metrics are available for polling with any Trickster configuration
     * `origin_name` - the name of the configured origin handling the proxy request
     * `origin_type` - the type of the configured origin handling the proxy request
     * `method` - the HTTP Method of the proxied request
-    * `cache_status` - 'hit', 'phit', (partial hit) 'kmiss', (key miss) 'rmiss' (range miss)
+    * `cache_status` - status codes are described [here](./caches.md#cache-status)
     * `http_status` - The HTTP response code provided by the origin
     * `path` - the Path portion of the requested URL
 
@@ -53,7 +53,7 @@ The following metrics are available for polling with any Trickster configuration
   * labels:
     * `origin_name` - the name of the configured origin handling the proxy request
     * `origin_type` - the type of the configured origin handling the proxy request
-    * `cache_status` - 'hit', 'phit', (partial hit) 'kmiss', (key miss) 'rmiss' (range miss)
+    * `cache_status` - status codes are described [here](./caches.md#cache-status)
     * `path` - the Path portion of the requested URL
 
 * `trickster_proxy_request_duration_seconds` (Histogram) - Time required to proxy a given Prometheus query.
@@ -61,7 +61,7 @@ The following metrics are available for polling with any Trickster configuration
     * `origin_name` - the name of the configured origin handling the proxy request
     * `origin_type` - the type of the configured origin handling the proxy request
     * `method` - the HTTP Method of the proxied request
-    * `cache_status` - 'hit', 'phit', (partial hit) 'kmiss', (key miss) 'rmiss' (range miss)
+    * `cache_status` - status codes are described [here](./caches.md#cache-status)
     * `http_status` - The HTTP response code provided by the origin
     * `path` - the Path portion of the requested URL
 

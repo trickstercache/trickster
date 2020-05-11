@@ -17,7 +17,9 @@
 package engines
 
 import (
+	"bytes"
 	"context"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"sync"
@@ -28,12 +30,16 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	tpe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
+
+	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/trace"
 )
 
 // DeltaProxyCache is used for Time Series Acceleration, but not for normal HTTP Object Caching
@@ -47,7 +53,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	oc := rsc.OriginConfig
 
 	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "DeltaProxyCacheRequest")
-	defer span.End()
+	if span != nil {
+		defer span.End()
+	}
+	r = r.WithContext(ctx)
 
 	pc := rsc.PathConfig
 	cache := rsc.CacheClient
@@ -212,6 +221,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		cacheStatus = status.LookupStatusRangeMiss
 	}
 
+	tspan.SetAttributes(rsc.Tracer, span,
+		core.Key.String(core.Key("cache.status"), cacheStatus.String()))
+
 	var isLocked bool
 
 	if cacheStatus == status.LookupStatusHit {
@@ -226,8 +238,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		// to do this we can ask the lock object how many write locks have been acquired. since
 		// we have a read lock, this number can't be updated again until all reads are released.
 		cwc := pr.cacheLock.WriteLockCounter()
-		// acquire a write lock via the Upgrade method, which will swap your read lock for a key
-		// for a write lock, ensuring that write lock counter state is intact during the upgrade
+		// acquire a write lock via the Upgrade method, which will swap your read lock for a
+		// write lock, ensuring that write lock counter state is intact during the upgrade
 		pr.cacheLock, _ = pr.cacheLock.Upgrade()
 		// now we have the write lock. so we can check if the write lock counter incremented by 1
 		// or more. If the difference is just 1, that means this request was the first to acquire
@@ -286,9 +298,17 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		// This fetches the gaps from the origin and adds their datasets to the merge list
 		go func(e *timeseries.Extent, rq *proxyRequest) {
 			defer wg.Done()
-			rq.Request = rq.WithContext(tctx.WithResources(r.Context(),
+			rq.upstreamRequest = rq.WithContext(tctx.WithResources(
+				trace.ContextWithSpan(context.Background(), span),
 				request.NewResources(oc, pc, cc, cache, client, rsc.Tracer, pr.Logger)))
 			client.SetExtent(rq.upstreamRequest, trq, e)
+
+			ctxMR, spanMR := tspan.NewChildSpan(rq.upstreamRequest.Context(), rsc.Tracer, "FetchRange")
+			if spanMR != nil {
+				rq.upstreamRequest = rq.upstreamRequest.WithContext(ctxMR)
+				defer spanMR.End()
+			}
+
 			body, resp, _ := rq.Fetch()
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				nts, err := client.UnmarshalTimeseries(body)
@@ -319,12 +339,24 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		req := r.Clone(tctx.WithResources(context.Background(), rs))
 		go func() {
 			defer wg.Done()
-			_, span := tspan.NewChildSpan(ctx, rsc.Tracer, "FastForward")
-			defer span.End()
+			_, span := tspan.NewChildSpan(ctx, rsc.Tracer, "FetchFastForward")
+			if span != nil {
+				req = req.WithContext(trace.ContextWithSpan(req.Context(), span))
+				defer span.End()
+			}
 
 			// create a new context that uses the fast forward path
 			// config instead of the time series path config
 			req.URL = ffURL
+
+			// the FastForwardURL function returns a *URL with the QueryString on it.
+			// we currently have to convert that into a new request body for POST
+			if req.Method == http.MethodPost {
+				req.Body = ioutil.NopCloser(bytes.NewBufferString(ffURL.RawQuery))
+				req.ContentLength = int64(len(ffURL.RawQuery))
+				ffURL.RawQuery = ""
+			}
+
 			body, resp, isHit := FetchViaObjectProxyCache(req)
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				ffts, err = client.UnmarshalInstantaneous(body)
@@ -435,6 +467,14 @@ func logDeltaRoutine(log *tl.Logger, p tl.Pairs) { log.Debug("delta routine comp
 func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	client origins.TimeseriesClient) (timeseries.Timeseries, *HTTPDocument, time.Duration, error) {
 
+	rsc := request.GetResources(pr.Request)
+
+	ctx, span := tspan.NewChildSpan(pr.upstreamRequest.Context(), rsc.Tracer, "FetchTimeSeries")
+	if span != nil {
+		defer span.End()
+	}
+	pr.upstreamRequest = pr.upstreamRequest.WithContext(ctx)
+
 	body, resp, elapsed := pr.Fetch()
 
 	d := &HTTPDocument{
@@ -453,8 +493,8 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 				"clientRequestHeaders":    pr.Request.Header,
 				"upstreamRequestURL":      pr.upstreamRequest.URL.String(),
 				"upstreamRequestMethod":   pr.upstreamRequest.Method,
-				"upstreamRequestHeaders":  pr.upstreamRequest.Header,
-				"upstreamResponseHeaders": resp.Header,
+				"upstreamRequestHeaders":  headers.LogString(pr.upstreamRequest.Header),
+				"upstreamResponseHeaders": headers.LogString(resp.Header),
 				"upstreamResponseBody":    string(body),
 			},
 		)

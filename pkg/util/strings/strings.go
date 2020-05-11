@@ -32,7 +32,7 @@ func IndexOfString(arr []string, val string) int {
 	return -1
 }
 
-// CloneMap returns an exact copy of a map consisting string key and values
+// CloneMap returns an exact copy of a map consisting string key and value
 func CloneMap(in map[string]string) map[string]string {
 	if in == nil {
 		return nil
@@ -41,6 +41,29 @@ func CloneMap(in map[string]string) map[string]string {
 	for k, v := range in {
 		out[k] = v
 	}
+	return out
+}
+
+// CloneBoolMap returns an exact copy of a map consisting string key and bool value
+func CloneBoolMap(in map[string]bool) map[string]bool {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]bool)
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+// CloneList returns an exact copy of the provided string slice
+func CloneList(in []string) []string {
+	if in == nil {
+		return nil
+	}
+	l := len(in)
+	out := make([]string, l)
+	copy(out, in)
 	return out
 }
 

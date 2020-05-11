@@ -18,7 +18,6 @@ package engines
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"io/ioutil"
 	"math"
@@ -31,6 +30,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -40,6 +40,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
 	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/trace"
 	othttptrace "go.opentelemetry.io/otel/plugin/httptrace"
 )
 
@@ -56,8 +57,14 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	oc := rsc.OriginConfig
 
 	start := time.Now()
-	_, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
-	defer span.End()
+
+	var span trace.Span
+	if !strings.HasPrefix(r.URL.Path, "/trickster/health") {
+		_, span = tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
+		if span != nil {
+			defer span.End()
+		}
+	}
 
 	pc := rsc.PathConfig
 
@@ -66,8 +73,9 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	var resp *http.Response
 	var reader io.ReadCloser
 
-	if pc == nil || pc.CollapsedForwardingType != forwarding.CFTypeProgressive {
-		reader, resp, _ = PrepareFetchReader(r.Context(), r)
+	if pc == nil || pc.CollapsedForwardingType != forwarding.CFTypeProgressive ||
+		!methods.IsCacheable(r.Method) {
+		reader, resp, _ = PrepareFetchReader(r)
 		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 		if writer != nil && reader != nil {
@@ -79,7 +87,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 		result, ok := Reqs.Load(key)
 		if !ok {
 			var contentLength int64
-			reader, resp, contentLength = PrepareFetchReader(r.Context(), r)
+			reader, resp, contentLength = PrepareFetchReader(r)
 			cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 			// Check if we know the content length and if it is less than our max object size.
@@ -133,13 +141,15 @@ func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer 
 // PrepareFetchReader prepares an http response and returns io.ReadCloser to
 // provide the response data, the response object and the content length.
 // Used in Fetch.
-func PrepareFetchReader(traceContext context.Context, r *http.Request) (io.ReadCloser, *http.Response, int64) {
+func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) {
 
 	rsc := request.GetResources(r)
 	oc := rsc.OriginConfig
 
-	ctx, span := tspan.NewChildSpan(traceContext, rsc.Tracer, "PrepareFetchReader")
-	defer span.End()
+	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "PrepareFetchReader")
+	if span != nil {
+		defer span.End()
+	}
 
 	pc := rsc.PathConfig
 
@@ -177,21 +187,25 @@ func PrepareFetchReader(traceContext context.Context, r *http.Request) (io.ReadC
 			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r, Header: make(http.Header)}
 		}
 
-		doSpan.AddEvent(
-			ctx,
-			"Failure",
-			core.Key("Error").String(err.Error()),
-			core.Key("HTTPStatus").Int(resp.StatusCode),
-		)
-		doSpan.SetStatus(tracing.HTTPToCode(resp.StatusCode), "")
-
 		if pc != nil {
 			headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
 		}
-		doSpan.End()
+
+		if doSpan != nil {
+			doSpan.AddEvent(
+				ctx,
+				"Failure",
+				core.Key("Error").String(err.Error()),
+				core.Key("HTTPStatus").Int(resp.StatusCode),
+			)
+			doSpan.SetStatus(tracing.HTTPToCode(resp.StatusCode), "")
+			doSpan.End()
+		}
 		return nil, resp, 0
 	}
-	doSpan.End()
+	if doSpan != nil {
+		doSpan.End()
+	}
 
 	originalLen := int64(-1)
 	if v, ok := resp.Header[headers.NameContentLength]; ok {

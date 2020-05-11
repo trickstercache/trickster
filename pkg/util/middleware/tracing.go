@@ -19,17 +19,37 @@ package middleware
 import (
 	"net/http"
 
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	"github.com/tricksterproxy/trickster/pkg/tracing"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
-
-	"go.opentelemetry.io/otel/api/trace"
+	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/key"
 )
 
 // Trace attaches a Tracer to an HTTP request
-func Trace(tr trace.Tracer, next http.Handler) http.Handler {
+func Trace(tr *tracing.Tracer, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
 		r, span := tspan.PrepareRequest(r, tr)
 		if span != nil {
 			defer span.End()
+
+			rsc := request.GetResources(r)
+			if rsc != nil &&
+				rsc.OriginConfig != nil &&
+				rsc.PathConfig != nil &&
+				rsc.CacheConfig != nil {
+				tspan.SetAttributes(tr, span,
+					[]core.KeyValue{
+						key.String("origin.name", rsc.OriginConfig.Name),
+						key.String("origin.type", rsc.OriginConfig.OriginType),
+						key.String("router.path", rsc.PathConfig.Path),
+						key.String("cache.name", rsc.CacheConfig.Name),
+						key.String("cache.type", rsc.CacheConfig.CacheType),
+					}...,
+				)
+			}
+
 		}
 		next.ServeHTTP(w, r)
 	})

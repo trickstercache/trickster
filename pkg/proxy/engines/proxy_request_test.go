@@ -341,16 +341,14 @@ func TestStoreTrueContentType(t *testing.T) {
 
 	expected := "1234"
 
-	pr := proxyRequest{
-		Request:       r,
-		cachingPolicy: &CachingPolicy{NoCache: true, LastModified: time.Unix(1, 0)},
-		writeToCache:  true,
-		cacheDocument: &HTTPDocument{
-			CachingPolicy: &CachingPolicy{},
-			ContentType:   "5678",
-		},
-		trueContentType: expected,
+	pr := newProxyRequest(r, nil)
+	pr.cachingPolicy = &CachingPolicy{NoCache: true, LastModified: time.Unix(1, 0)}
+	pr.writeToCache = true
+	pr.cacheDocument = &HTTPDocument{
+		CachingPolicy: &CachingPolicy{},
+		ContentType:   "5678",
 	}
+	pr.trueContentType = expected
 
 	err := pr.store()
 	if err != nil {

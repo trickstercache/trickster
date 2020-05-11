@@ -23,6 +23,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 	"google.golang.org/grpc/codes"
 
+	"go.opentelemetry.io/otel/api/core"
 	"go.opentelemetry.io/otel/api/trace"
 )
 
@@ -40,6 +41,9 @@ type Tracer struct {
 // Tracers is a map of *Tracer objects
 type Tracers map[string]*Tracer
 
+// Tags represents a collection of Tags
+type Tags map[string]string
+
 // HTTPToCode translates an HTTP status code into a GRPC code
 func HTTPToCode(status int) codes.Code {
 	switch {
@@ -55,4 +59,35 @@ func HTTPToCode(status int) codes.Code {
 	default: // all remaining possiblitiies are values >= 500
 		return codes.Internal
 	}
+}
+
+// Merge merges t2, when not nil, into t
+func (t Tags) Merge(t2 Tags) {
+	if t2 == nil {
+		return
+	}
+	for k, v := range t2 {
+		t[k] = v
+	}
+}
+
+// MergeAttr merges the provided attributes into the Tags map
+func (t Tags) MergeAttr(attr []core.KeyValue) {
+	if len(attr) == 0 {
+		return
+	}
+	for _, v := range attr {
+		t[string(v.Key)] = v.Value.AsString()
+	}
+}
+
+// ToAttr returns the Tags map as an Attributes List
+func (t Tags) ToAttr() []core.KeyValue {
+	attr := make([]core.KeyValue, len(t))
+	i := 0
+	for k, v := range t {
+		attr[i] = core.Key.String(core.Key(k), v)
+		i++
+	}
+	return attr
 }

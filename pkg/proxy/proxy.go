@@ -135,13 +135,13 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int,
 		"port":             listenPort,
 	})
 
-	if connectionsLimit > 0 {
-		listener = netutil.LimitListener(listener, connectionsLimit)
-		metrics.ProxyMaxConnections.Set(float64(connectionsLimit))
+	if connectionsLimit == 0 {
+		return listener, nil
 	}
 
+	metrics.ProxyMaxConnections.Set(float64(connectionsLimit))
 	return &connectionsLimitObProxy{
-		listener,
+		netutil.LimitListener(listener, connectionsLimit),
 	}, nil
 }
 

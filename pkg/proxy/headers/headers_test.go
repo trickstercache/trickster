@@ -187,3 +187,26 @@ func TestString(t *testing.T) {
 	}
 
 }
+
+func TestLogString(t *testing.T) {
+
+	expected := "{[test1:test],[test2:test2val]}"
+	h := http.Header{"test1": {"test"}, "test2": {"test2val"}}
+	x := LogString(h)
+	if x != expected {
+		t.Errorf("expected %s got %s", expected, x)
+	}
+
+	expected = "{}"
+	h = http.Header{}
+	x = LogString(h)
+	if x != expected {
+		t.Errorf("expected %s got %s", expected, x)
+	}
+
+	x = LogString(nil)
+	if x != expected {
+		t.Errorf("expected %s got %s", expected, x)
+	}
+
+}

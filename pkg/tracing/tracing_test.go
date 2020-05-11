@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"testing"
 
+	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/key"
 	"google.golang.org/grpc/codes"
 )
 
@@ -54,6 +56,39 @@ func TestHTTPToCode(t *testing.T) {
 				t.Errorf("expected %d got %d", test.expected, v)
 			}
 		})
+	}
+
+}
+
+func TestTags(t *testing.T) {
+
+	t1 := Tags{"testKey1": "testValue1"}
+	t2 := Tags{"testKey2": "testValue2"}
+
+	t1.Merge(nil)
+	if len(t1) != 1 {
+		t.Errorf("expected %d got %d", 1, len(t1))
+	}
+
+	t1.Merge(t2)
+	if len(t1) != 2 {
+		t.Errorf("expected %d got %d", 2, len(t1))
+	}
+
+	t1.MergeAttr(nil)
+	if len(t1) != 2 {
+		t.Errorf("expected %d got %d", 2, len(t1))
+	}
+
+	attrs := []core.KeyValue{key.String("testKey3", "testValue3")}
+	t1.MergeAttr(attrs)
+	if len(t1) != 3 {
+		t.Errorf("expected %d got %d", 3, len(t1))
+	}
+
+	attrs = t1.ToAttr()
+	if len(attrs) != 3 {
+		t.Errorf("expected %d got %d", 3, len(attrs))
 	}
 
 }

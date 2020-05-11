@@ -44,7 +44,7 @@ import (
 var cfgLock = &sync.Mutex{}
 
 func runConfig(oldConf *config.Config, wg *sync.WaitGroup, log *log.Logger,
-	oldCaches map[string]cache.Cache, args []string, errorsFatal bool) {
+	oldCaches map[string]cache.Cache, args []string, errorsFatal bool) error {
 
 	metrics.BuildInfo.WithLabelValues(applicationGoVersion,
 		applicationGitCommitID, applicationVersion).Set(1)
@@ -61,7 +61,7 @@ func runConfig(oldConf *config.Config, wg *sync.WaitGroup, log *log.Logger,
 			PrintUsage()
 		}
 		handleStartupIssue("", nil, nil, errorsFatal)
-		return
+		return err
 	}
 
 	// if it's a -version command, print version and exit
@@ -80,15 +80,15 @@ func runConfig(oldConf *config.Config, wg *sync.WaitGroup, log *log.Logger,
 		os.Exit(0)
 	}
 
-	applyConfig(conf, oldConf, wg, log, oldCaches, args, errorsFatal)
+	return applyConfig(conf, oldConf, wg, log, oldCaches, args, errorsFatal)
 
 }
 
 func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logger,
-	oldCaches map[string]cache.Cache, args []string, errorsFatal bool) {
+	oldCaches map[string]cache.Cache, args []string, errorsFatal bool) error {
 
 	if conf == nil {
-		return
+		return nil
 	}
 
 	if conf.ReloadConfig == nil {
@@ -106,7 +106,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logg
 	if err != nil {
 		handleStartupIssue("tracing registration failed", tl.Pairs{"detail": err.Error()},
 			log, errorsFatal)
-		return
+		return err
 	}
 
 	// every config (re)load is a new router
@@ -120,7 +120,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logg
 	if err != nil {
 		handleStartupIssue("route registration failed", tl.Pairs{"detail": err.Error()},
 			log, errorsFatal)
-		return
+		return err
 	}
 
 	applyListenerConfigs(conf, oldConf, router, http.HandlerFunc(rh), log, tracers)
@@ -132,6 +132,8 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logg
 		oldConf.Resources.QuitChan <- true // this signals the old hup monitor goroutine to exit
 	}
 	startHupMonitor(conf, wg, log, caches, args)
+
+	return nil
 }
 
 func applyLoggingConfig(c, oc *config.Config, oldLog *log.Logger) *log.Logger {
