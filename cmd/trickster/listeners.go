@@ -37,6 +37,7 @@ import (
 	"github.com/gorilla/handlers"
 )
 
+var listenersLock = &sync.Mutex{}
 var listeners = make(map[string]*listenerGroup)
 
 type listenerGroup struct {
@@ -77,7 +78,9 @@ func startListener(listenerName, address string, port int, connectionsLimit int,
 		tl.Pairs{"name": listenerName, "port": port, "address": address})
 
 	lg.listener = l
+	listenersLock.Lock()
 	listeners[listenerName] = lg
+	listenersLock.Unlock()
 
 	// defer the tracer flush here where the listener connection ends
 	if tracers != nil {
@@ -86,6 +89,21 @@ func startListener(listenerName, address string, port int, connectionsLimit int,
 				defer v.Flusher()
 			}
 		}
+	}
+
+	if tlsConfig != nil {
+		svr := &http.Server{
+			Handler:   handlers.CompressHandler(lg.routeSwapper),
+			TLSConfig: tlsConfig,
+		}
+		err = svr.Serve(l)
+		if err != nil {
+			log.Error("https listener stopping", tl.Pairs{"name": listenerName, "detail": err})
+			if lg.exitOnError {
+				os.Exit(1)
+			}
+		}
+		return err
 	}
 
 	err = http.Serve(l, handlers.CompressHandler(lg.routeSwapper))
@@ -128,9 +146,11 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		updateRouters(router, adminRouter)
 		if TLSOptionsChanged(conf, oldConf) {
 			tlsConfig, _ = conf.TLSCertConfig()
+			listenersLock.Lock()
 			if lg, ok := listeners["tlsListener"]; ok && lg != nil && lg.tlsSwapper != nil {
 				lg.tlsSwapper.SetCerts(tlsConfig.Certificates)
 			}
+			listenersLock.Unlock()
 		}
 		return
 	}
@@ -181,9 +201,11 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			log.Error("unable to update tls config to certificate error", tl.Pairs{"detail": err})
 			return
 		}
+		listenersLock.Lock()
 		if lg, ok := listeners["tlsListener"]; ok && lg != nil && lg.tlsSwapper != nil {
 			lg.tlsSwapper.SetCerts(tlsConfig.Certificates)
 		}
+		listenersLock.Unlock()
 	}
 
 	// if the plaintext HTTP port is configured, then set up the http listener instance
@@ -256,12 +278,15 @@ func updateRouters(mainRouter http.Handler, adminRouter http.Handler) {
 			}
 		}
 	}
+	listenersLock.Lock()
 	if v, ok := listeners["reloadListener"]; ok && adminRouter != nil {
 		v.routeSwapper.Update(adminRouter)
 	}
+	listenersLock.Unlock()
 }
 
 func spinDownListener(listenerName string, drainWait time.Duration) {
+	listenersLock.Lock()
 	if lg, ok := listeners[listenerName]; ok {
 		lg.exitOnError = false
 		delete(listeners, listenerName)
@@ -273,6 +298,7 @@ func spinDownListener(listenerName string, drainWait time.Duration) {
 			lg.listener.Close()
 		}()
 	}
+	listenersLock.Unlock()
 }
 
 // TLSOptionsChanged will return true if the TLS options for any origin

@@ -28,11 +28,14 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	"github.com/tricksterproxy/trickster/pkg/util/log"
 
 	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/key"
+	"go.opentelemetry.io/otel/api/trace"
 )
 
 func handleCacheKeyHit(pr *proxyRequest) error {
@@ -253,7 +256,8 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 	oc := rsc.OriginConfig
 
 	// if a we're using PCF, create that object for the cache miss
-	if !pr.wantsRanges && pc != nil && pc.CollapsedForwardingType == forwarding.CFTypeProgressive {
+	if methods.IsCacheable(pr.Method) && !pr.wantsRanges && pc != nil &&
+		pc.CollapsedForwardingType == forwarding.CFTypeProgressive {
 		pcfResult, pcfExists := Reqs.Load(pr.key)
 		// a PCF session is in progress for this URL, join this client to it.
 		if pcfExists {
@@ -267,8 +271,14 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 			return nil
 		}
 
-		reader, resp, contentLength := PrepareFetchReader(pr.Request.Context(),
-			pr.Request, pr.upstreamRequest)
+		ctx, span := tspan.NewChildSpan(pr.upstreamRequest.Context(), rsc.Tracer, "FetchObject")
+		if span != nil {
+			span.SetAttributes(key.Bool("isPCF", true))
+			defer span.End()
+		}
+		pr.upstreamRequest = pr.upstreamRequest.WithContext(ctx)
+
+		reader, resp, contentLength := PrepareFetchReader(pr.Request, pr.upstreamRequest)
 		pr.upstreamResponse = resp
 
 		pr.writeResponseHeader()
@@ -347,6 +357,13 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	cc := rsc.CacheClient
 
 	pr := newProxyRequest(r, w)
+
+	_, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ObjectProxyCacheRequest")
+	if span != nil {
+		pr.upstreamRequest = pr.upstreamRequest.WithContext(trace.ContextWithSpan(pr.upstreamRequest.Context(), span))
+		defer span.End()
+	}
+
 	pr.parseRequestRanges()
 
 	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
@@ -355,7 +372,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 
 	// if a PCF entry exists, or the client requested no-cache for this object, proxy out to it
 	pcfResult, pcfExists := Reqs.Load(pr.key)
-	pr.isPCF = pcfExists && !pr.wantsRanges
+	pr.isPCF = methods.IsCacheable(pr.Method) && pcfExists && !pr.wantsRanges
 
 	if pr.isPCF || pr.cachingPolicy.NoCache {
 		if pr.cachingPolicy.NoCache {
@@ -377,7 +394,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	}
 
 	var err error
-	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(pr.Context(), cc, pr.key, pr.wantedRanges)
+	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges)
 	if err == nil || err == cache.ErrKNF {
 		if f, ok := cacheResponseHandlers[pr.cacheStatus]; ok {
 			f(pr)

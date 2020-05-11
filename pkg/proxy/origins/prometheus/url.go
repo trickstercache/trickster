@@ -59,11 +59,22 @@ func (c *Client) FastForwardURL(r *http.Request) (*url.URL, error) {
 		u.Path = u.Path[0 : len(u.Path)-6]
 	}
 
-	p := u.Query()
-	p.Del(upStart)
-	p.Del(upEnd)
-	p.Del(upStep)
-	u.RawQuery = p.Encode()
+	var b []byte
+	var qp url.Values
+
+	if r.Method == http.MethodPost {
+		b, _ = ioutil.ReadAll(r.Body)
+		r.ParseForm()
+		qp = r.PostForm
+		r.Body = ioutil.NopCloser(bytes.NewBuffer(b))
+	} else {
+		qp = r.URL.Query()
+	}
+
+	qp.Del(upStart)
+	qp.Del(upEnd)
+	qp.Del(upStep)
+	u.RawQuery = qp.Encode()
 
 	return u, nil
 }

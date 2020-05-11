@@ -218,8 +218,15 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 
 	decorate := func(po *po.Options) http.Handler {
 
+		h := po.Handler
+
+		// attach distributed tracer
+		if tr != nil {
+			h = middleware.Trace(tr, h)
+		}
+
 		// add Origin, Cache, and Path Configs to the HTTP Request's context
-		h := middleware.WithResourcesContext(client, oo, c, po, tr, log, po.Handler)
+		h = middleware.WithResourcesContext(client, oo, c, po, tr, log, h)
 
 		if len(oo.ReqRewriter) > 0 {
 			h = rewriter.Rewrite(oo.ReqRewriter, h)
@@ -233,10 +240,7 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		if !po.NoMetrics {
 			h = middleware.Decorate(oo.Name, oo.OriginType, po.Path, h)
 		}
-		// attach distributed tracer
-		if tr != nil {
-			h = middleware.Trace(tr, h)
-		}
+
 		return h
 	}
 

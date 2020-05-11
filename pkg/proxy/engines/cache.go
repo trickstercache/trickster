@@ -30,7 +30,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	"github.com/tricksterproxy/trickster/pkg/tracing/span"
+	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 
 	"github.com/golang/snappy"
@@ -43,8 +43,10 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 
 	rsc := tc.Resources(ctx).(*request.Resources)
 
-	ctx, span := span.NewChildSpan(ctx, rsc.Tracer, "QueryCache")
-	defer span.End()
+	ctx, span := tspan.NewChildSpan(ctx, rsc.Tracer, "QueryCache")
+	if span != nil {
+		defer span.End()
+	}
 
 	d := &HTTPDocument{}
 	var lookupStatus status.LookupStatus
@@ -65,7 +67,9 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			if lookupStatus == status.LookupStatusKeyMiss && ranges != nil && len(ranges) > 0 {
 				nr = ranges
 			}
-			span.SetAttributes(kv.String("cacheStatus", lookupStatus.String()))
+
+			tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", lookupStatus.String()))
+
 			return d, lookupStatus, nr, err
 		}
 
@@ -75,7 +79,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				d.headerLock = &sync.Mutex{}
 			}
 		} else {
-			span.SetAttributes(kv.String("cacheStatus", status.LookupStatusKeyMiss.String()))
+			tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", status.LookupStatusKeyMiss.String()))
 			return d, status.LookupStatusKeyMiss, ranges, err
 		}
 
@@ -93,7 +97,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				nr = ranges
 
 			}
-			span.SetAttributes(kv.String("cacheStatus", lookupStatus.String()))
+			tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", lookupStatus.String()))
 			return d, lookupStatus, nr, err
 		}
 
@@ -115,7 +119,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 		_, err = d.UnmarshalMsg(bytes)
 		if err != nil {
-			span.SetAttributes(kv.String("cacheStatus", status.LookupStatusKeyMiss.String()))
+			tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", status.LookupStatusKeyMiss.String()))
 			return d, status.LookupStatusKeyMiss, ranges, err
 		}
 
@@ -128,10 +132,12 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	d.isFulfillment = (d.Ranges != nil && len(d.Ranges) > 0) && (ranges == nil || len(ranges) == 0)
 
 	if d.isFulfillment {
-		span.AddEvent(
-			ctx,
-			"Cache Fulfillment",
-		)
+		if span != nil {
+			span.AddEvent(
+				ctx,
+				"Cache Fulfillment",
+			)
+		}
 		ranges = byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength - 1}}
 	}
 
@@ -149,7 +155,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	if d.headerLock == nil {
 		d.headerLock = &sync.Mutex{}
 	}
-	span.SetAttributes(kv.String("cacheStatus", lookupStatus.String()))
+	tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", lookupStatus.String()))
 	return d, lookupStatus, delta, nil
 }
 
@@ -166,8 +172,10 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 
 	rsc := tc.Resources(ctx).(*request.Resources)
 
-	ctx, span := span.NewChildSpan(ctx, rsc.Tracer, "WriteCache")
-	defer span.End()
+	ctx, span := tspan.NewChildSpan(ctx, rsc.Tracer, "WriteCache")
+	if span != nil {
+		defer span.End()
+	}
 
 	h := http.Header(d.Headers)
 	h.Del(headers.NameDate)
@@ -223,18 +231,22 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 
 	err := c.Store(key, bytes, ttl)
 	if err != nil {
-		span.AddEvent(
-			ctx,
-			"Cache Write Failure",
-			kv.String("Error", err.Error()),
-		)
+		if span != nil {
+			span.AddEvent(
+				ctx,
+				"Cache Write Failure",
+				kv.String("Error", err.Error()),
+			)
+		}
 		return err
 	}
-	span.AddEvent(
-		ctx,
-		"Cache Write",
-		kv.Int("bytesWritten", len(bytes)),
-	)
+	if span != nil {
+		span.AddEvent(
+			ctx,
+			"Cache Write",
+			kv.Int("bytesWritten", len(bytes)),
+		)
+	}
 	return nil
 
 }

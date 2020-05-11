@@ -21,7 +21,11 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/stdout"
+	"github.com/tricksterproxy/trickster/pkg/tracing/options"
+	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/key"
 	"go.opentelemetry.io/otel/api/trace"
 )
 
@@ -36,6 +40,12 @@ func TestNewChildSpan(t *testing.T) {
 
 	// test with nil context but non-nil tracer
 	tr, _ := stdout.NewTracer(nil)
+	tr.Options.Tags = map[string]string{"testTagName": "testTagValue"}
+
+	// force coverage of tags attachment
+	tr.Options.TracerType = "zipkin"
+	options.ProcessTracingOptions(map[string]*options.Options{"default": tr.Options}, nil)
+
 	ctx, span := NewChildSpan(nil, tr, "test")
 	if ctx == nil {
 		t.Error(errors.New("expected non-nil context"))
@@ -45,16 +55,59 @@ func TestNewChildSpan(t *testing.T) {
 		t.Error(errors.New("expected non-nil span"))
 	}
 
+	ctx = context.WithHealthCheckFlag(ctx, true)
+	_, span = NewChildSpan(ctx, tr, "test")
+	if span != nil {
+		t.Error(errors.New("expected nil span"))
+	}
 }
 
 func TestPrepareRequest(t *testing.T) {
 
 	r, _ := http.NewRequest("GET", "http://example.com", nil)
+
+	_, sp := PrepareRequest(r, nil)
+	if sp != nil {
+		t.Error("expected nil")
+	}
+
 	tr, _ := stdout.NewTracer(nil)
 
-	_, sp := PrepareRequest(r, tr)
+	r = r.WithContext(context.WithHealthCheckFlag(r.Context(), true))
+	_, sp = PrepareRequest(r, tr)
+	if sp != nil {
+		t.Error("expected nil")
+	}
+	r = r.WithContext(context.WithHealthCheckFlag(r.Context(), false))
+
+	tr.Options.Tags = map[string]string{"testTagName": "testTagValue"}
+	_, sp = PrepareRequest(r, tr)
 	if sp == nil {
 		t.Error("expected non-nill span")
+	}
+
+	tr.Options.TracerType = "zipkin"
+	options.ProcessTracingOptions(map[string]*options.Options{"default": tr.Options}, nil)
+
+	_, sp = PrepareRequest(r, tr)
+	if sp == nil {
+		t.Error("expected non-nill span")
+	}
+}
+
+func TestFilterAttributes(t *testing.T) {
+	SetAttributes(nil, nil)
+	tr, _ := stdout.NewTracer(nil)
+	r, _ := http.NewRequest("GET", "http://example.com", nil)
+	_, sp := PrepareRequest(r, tr)
+	kvs := []core.KeyValue{key.String("testKey", "testValue")}
+	tr.Options.OmitTagsList = []string{"testKey2"}
+	tr.Options.OmitTags = map[string]bool{"testKey2": true}
+	SetAttributes(tr, sp, kvs...)
+	kvs = filterAttributes(tr, kvs)
+
+	if len(kvs) != 1 {
+		t.Errorf("expected %d got %d", 1, len(kvs))
 	}
 
 }

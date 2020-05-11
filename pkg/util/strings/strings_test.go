@@ -88,3 +88,45 @@ func TestStringMap(t *testing.T) {
 	}
 
 }
+
+func TestCloneBoolMap(t *testing.T) {
+
+	m1 := CloneBoolMap(nil)
+	if m1 != nil {
+		t.Error("expected nil map")
+	}
+
+	const expected = true
+
+	m := map[string]bool{"test": expected}
+	m2 := CloneBoolMap(m)
+
+	v, ok := m2["test"]
+	if !ok {
+		t.Errorf("expected true got %t", ok)
+	}
+
+	if v != expected {
+		t.Errorf("expected %t got %t", expected, v)
+	}
+
+}
+
+func TestCloneList(t *testing.T) {
+
+	m1 := CloneList(nil)
+	if m1 != nil {
+		t.Error("expected nil map")
+	}
+
+	m := []string{"test"}
+
+	m2 := CloneList(m)
+	if len(m2) != 1 {
+		t.Errorf("expected %d got %d", 1, len(m2))
+	}
+	if m2[0] != "test" {
+		t.Errorf("expected %s got %s", "test", m2[0])
+	}
+
+}
