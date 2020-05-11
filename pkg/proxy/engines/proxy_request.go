@@ -298,7 +298,7 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 						span.SetAttributes(key.Bool("isRange", true))
 					}
 				}
-				req = req.WithContext(trace.ContextWithSpan(req.Context(), span))
+				pr.revalidationRequest = req.WithContext(trace.ContextWithSpan(req.Context(), span))
 				defer span.End()
 			}
 			pr.revalidationReader, pr.revalidationResponse, _ = PrepareFetchReader(pr.revalidationRequest)

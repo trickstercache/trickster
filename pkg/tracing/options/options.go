@@ -83,7 +83,7 @@ func (o *Options) Clone() *Options {
 
 // ProcessTracingOptions enriches the configuration data of the provided Tracing Options collection
 func ProcessTracingOptions(mo map[string]*Options, metadata *toml.MetaData) {
-	if mo == nil || len(mo) == 0 {
+	if len(mo) == 0 {
 		return
 	}
 	for k, v := range mo {

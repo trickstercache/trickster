@@ -56,7 +56,7 @@ func TestNewChildSpan(t *testing.T) {
 	}
 
 	ctx = context.WithHealthCheckFlag(ctx, true)
-	ctx, span = NewChildSpan(ctx, tr, "test")
+	_, span = NewChildSpan(ctx, tr, "test")
 	if span != nil {
 		t.Error(errors.New("expected nil span"))
 	}
