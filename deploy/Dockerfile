@@ -7,7 +7,7 @@ WORKDIR /go/src/github.com/tricksterproxy/trickster
 ARG GOARCH=amd64
 RUN GOOS=linux GOARCH=${GOARCH} CGO_ENABLED=0 make build
 
-FROM ${IMAGE_ARCH}/alpine:3.11.5
+FROM ${IMAGE_ARCH}/alpine:3.11.6
 LABEL maintainer "The Trickster Authors <trickster-developers@googlegroups.com>"
 
 COPY --from=builder /go/src/github.com/tricksterproxy/trickster/OPATH/trickster /usr/local/bin/trickster
