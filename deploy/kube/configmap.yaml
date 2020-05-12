@@ -43,6 +43,10 @@ data:
     ## Options are: "metrics", "reload", "both", or "off"; default is both
     # pprof_server = 'both'
 
+    ## server_name provides the name of this server instance, used to self-identfy in Via and other Forwarding headers
+    ## server_name defaults to os.Hostname() when left blank
+    # server_name = ''
+
     # Configuration options for the Trickster Frontend
     [frontend]
 

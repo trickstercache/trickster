@@ -97,6 +97,9 @@ type MainConfig struct {
 	// PprofServer provides the name of the http listener that will host the pprof debugging routes
 	// Options are: "metrics", "reload", "both", or "off"; default is both
 	PprofServer string `toml:"pprof_server"`
+	// ServerName represents the server name that is conveyed in Via headers to upstream origins
+	// defaults to os.Hostname
+	ServerName string `toml:"server_name"`
 
 	configFilePath      string
 	configLastModified  time.Time
@@ -158,6 +161,7 @@ func (nc NegativeCacheConfig) Clone() NegativeCacheConfig {
 
 // NewConfig returns a Config initialized with default values.
 func NewConfig() *Config {
+	hn, _ := os.Hostname()
 	return &Config{
 		Caches: map[string]*cache.Options{
 			"default": cache.NewOptions(),
@@ -172,6 +176,7 @@ func NewConfig() *Config {
 			ReloadHandlerPath:  d.DefaultReloadHandlerPath,
 			PprofServer:        d.DefaultPprofServerName,
 			stalenessCheckLock: &sync.Mutex{},
+			ServerName:         hn,
 		},
 		Metrics: &MetricsConfig{
 			ListenPort: d.DefaultMetricsListenPort,
@@ -730,6 +735,7 @@ func (c *Config) Clone() *Config {
 	nc.Main.PingHandlerPath = c.Main.PingHandlerPath
 	nc.Main.ReloadHandlerPath = c.Main.ReloadHandlerPath
 	nc.Main.PprofServer = c.Main.PprofServer
+	nc.Main.ServerName = c.Main.ServerName
 
 	nc.Logging.LogFile = c.Logging.LogFile
 	nc.Logging.LogLevel = c.Logging.LogLevel

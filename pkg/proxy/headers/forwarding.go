@@ -21,7 +21,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/tricksterproxy/trickster/pkg/runtime"
 )
@@ -41,7 +40,31 @@ const (
 	NameXForwardedProto = "X-Forwarded-Proto"
 )
 
-var hopHeaders = []string{
+// Hop describes a collection of data about the forwarded request
+// to be used in Via, Forwarded and X-Forwarded-* headers
+type Hop struct {
+	// RemoteAddr is the client address for which the request is being forwarded.
+	RemoteAddr string
+	// Host header as received by the proxy
+	Host string
+	// Scheme is the protocol scheme requested of the proxy
+	Scheme string
+	// Server is an identier for the server running the Trickster process
+	Server string
+	// protocol indicates the HTTP protocol Version in proper format (.eg., "HTTP/1.1")
+	// requested by the client
+	Protocol string
+	// Hops is a list of previous X-Forwarded-For or Forwarded headers to which we can append our hop
+	Hops Hops
+	// Via is the previous Via header, we will append ours to it.
+	Via string
+}
+
+// Hops defines a list of Hop References
+type Hops []*Hop
+
+// HopHeaders defines a list of headers that Proxies should not pass through
+var HopHeaders = []string{
 	NameAcceptEncoding,
 	NameConnection,
 	NameProxyConnection,
@@ -55,16 +78,20 @@ var hopHeaders = []string{
 	NameAcceptEncoding,
 }
 
-var viaHeader string
-var once sync.Once
-var onceVia = func() {
-	viaHeader = strings.Trim(runtime.ApplicationName+" "+runtime.ApplicationVersion, " ")
+// ForwardingHeaders defines a list of headers that Proxies use to identify themselves in a request
+var ForwardingHeaders = []string{
+	NameXForwardedFor,
+	NameXForwardedHost,
+	NameXForwardedProto,
+	NameXForwardedServer,
+	NameForwarded,
+	NameVia,
 }
 
-var forwardingFuncs = map[string]func(*http.Request, *ForwardedData){
+var forwardingFuncs = map[string]func(*http.Request, *Hop){
 	"standard": AddForwarded,
 	"x":        AddXForwarded,
-	"none":     SetVia,
+	"none":     nil,
 	"both":     AddForwardedAndX,
 }
 
@@ -76,153 +103,228 @@ func IsValidForwardingType(input string) bool {
 }
 
 // AddForwardingHeaders sets or appends to the forwarding headers to the provided request
-func AddForwardingHeaders(inbound, outbound *http.Request, headerType string) {
-	SetVia(outbound, nil)
-	if headerType == "none" {
+func AddForwardingHeaders(r *http.Request, headerType string) {
+	if r == nil {
 		return
 	}
-	fd := fdFromRequest(inbound)
-	if f, ok := forwardingFuncs[headerType]; ok {
-		f(outbound, fd)
+	hop := HopsFromRequest(r)
+	// Now we can safely remove any pre-existing Forwarding headers before we set them fresh
+	StripClientHeaders(r.Header)
+	StripForwardingHeaders(r.Header)
+	SetVia(r, hop)
+	if f, ok := forwardingFuncs[headerType]; ok && f != nil {
+		f(r, hop)
 	}
-}
-
-// ForwardedData describes a collection of data about the forwarded request
-// to be used in Via, Forwarded and X-Forwarded-* headers
-type ForwardedData struct {
-	// RemoteAddr is the client address for which the request is being forwarded.
-	RemoteAddr string
-	// Host header as received by the proxy
-	Host string
-	// Scheme is the protocol scheme requested of the proxy
-	Scheme string
-	// Server is an identier for the server running the Trickster process
-	Server string
-	// Protocol indicates the HTTP Protocol Version in proper format (.eg., "HTTP/1.1")
-	// requested by the client
-	Protocol string
-	// Fors is a list of previous X-Forwarded-For or Forwarded headers to which we can append our hop
-	Hops []*ForwardedData
 }
 
 // String returns a "Forwarded" Header value
-func (fd *ForwardedData) String(expand ...bool) string {
+func (hop *Hop) String(expand ...bool) string {
 	parts := make([]string, 0, 4)
-	if fd.Server != "" {
-		parts = append(parts, fmt.Sprintf("by=%s", fd.Server))
+	if hop.Server != "" {
+		parts = append(parts, fmt.Sprintf("by=%s", formatForwardedAddress(hop.Server)))
 	}
-	if fd.RemoteAddr != "" {
-		parts = append(parts, fmt.Sprintf("for=%s", fd.RemoteAddr))
+	if hop.RemoteAddr != "" {
+		parts = append(parts, fmt.Sprintf("for=%s", formatForwardedAddress(hop.RemoteAddr)))
 	}
-	if fd.Host != "" {
-		parts = append(parts, fmt.Sprintf("host=%s", fd.Host))
+	if hop.Host != "" {
+		parts = append(parts, fmt.Sprintf("host=%s", formatForwardedAddress(hop.Host)))
 	}
-	if fd.Scheme != "" {
-		parts = append(parts, fmt.Sprintf("proto=%s", fd.Scheme))
+	if hop.Scheme != "" {
+		parts = append(parts, fmt.Sprintf("proto=%s", formatForwardedAddress(hop.Scheme)))
 	}
-	currentFor := strings.Join(parts, ";")
-	if (len(expand) == 1 && !expand[0]) || len(fd.Hops) == 0 {
-		return currentFor
+	currentHop := strings.Join(parts, ";")
+	if (len(expand) == 1 && !expand[0]) || len(hop.Hops) == 0 {
+		return currentHop
 	}
-	l := len(fd.Hops)
+	l := len(hop.Hops)
 	parts = make([]string, l+1)
 	for i := 0; i < l; i++ {
-		parts[i] = fd.Hops[i].String(false)
+		parts[i] = hop.Hops[i].String(false)
 	}
-	parts[l] = currentFor
+	parts[l] = currentHop
 	return strings.Join(parts, ", ")
 }
 
 // XHeader returns an http.Header containing the "X-Forwarded-*" headers
-func (fd *ForwardedData) XHeader() http.Header {
+func (hop *Hop) XHeader() http.Header {
 	h := make(http.Header)
-	if fd.Server != "" {
-		h.Set(NameXForwardedServer, fd.Server)
+	if hop.Server != "" {
+		h.Set(NameXForwardedServer, hop.Server)
 	}
-	if fd.RemoteAddr != "" {
-		l := len(fd.Hops)
+	if hop.RemoteAddr != "" {
+		l := len(hop.Hops)
 		if l > 0 {
-			hops := make([]string, l+1)
-			for i, hop := range fd.Hops {
-				hops[i] = hop.RemoteAddr
+			Hops := make([]string, l+1)
+			for i, hop := range hop.Hops {
+				Hops[i] = hop.RemoteAddr
 			}
-			hops[l] = fd.RemoteAddr
-			h.Set(NameXForwardedFor, strings.Join(hops, ", "))
+			Hops[l] = hop.RemoteAddr
+			h.Set(NameXForwardedFor, strings.Join(Hops, ", "))
 		} else {
-			h.Set(NameXForwardedFor, fd.RemoteAddr)
+			h.Set(NameXForwardedFor, hop.RemoteAddr)
 		}
 	}
-	if fd.Host != "" {
-		h.Set(NameXForwardedHost, fd.Host)
+	if hop.Host != "" {
+		h.Set(NameXForwardedHost, hop.Host)
 	}
-	if fd.Scheme != "" {
-		h.Set(NameXForwardedProto, fd.Scheme)
+	if hop.Scheme != "" {
+		h.Set(NameXForwardedProto, hop.Scheme)
 	}
 	return h
 }
 
 // AddForwarded sets or appends to the standard Forwarded header to the provided request
-func AddForwarded(r *http.Request, fd *ForwardedData) {
-	r.Header.Set(NameForwarded, fd.String())
+func AddForwarded(r *http.Request, hop *Hop) {
+	r.Header.Set(NameForwarded, hop.String())
 }
 
 // AddXForwarded sets or appends to the "X-Forwarded-*" headers to the provided request
-func AddXForwarded(r *http.Request, fd *ForwardedData) {
-	h := fd.XHeader()
+func AddXForwarded(r *http.Request, hop *Hop) {
+	h := hop.XHeader()
 	Merge(r.Header, h)
 }
 
 // AddForwardedAndX sets or appends to the to the "X-Forwarded-*" headers
 // headers, and to the standard Forwarded header to the provided request
-func AddForwardedAndX(r *http.Request, fd *ForwardedData) {
-	h := fd.XHeader()
-	h.Set(NameForwarded, fd.String())
+func AddForwardedAndX(r *http.Request, hop *Hop) {
+	h := hop.XHeader()
+	h.Set(NameForwarded, hop.String())
 	Merge(r.Header, h)
 }
 
 // SetVia sets the "Via" header to the provided request
-func SetVia(r *http.Request, fd *ForwardedData) {
-	if r != nil {
-		setVia(r.Header)
+func SetVia(r *http.Request, hop *Hop) {
+	if r == nil || r.Header == nil || hop == nil {
+		return
+	}
+	if hop.Via != "" {
+		r.Header.Set(NameVia, hop.Via+", "+hop.Protocol+" "+runtime.Server)
+	} else {
+		r.Header.Set(NameVia, hop.Protocol+" "+runtime.Server)
 	}
 }
 
-// setVia sets the "Via" header to the provided request
-func setVia(h http.Header) {
-	if h == nil {
-		h = make(http.Header)
-	}
-	once.Do(onceVia)
-	h.Set(NameVia, viaHeader)
-}
-
-func fdFromRequest(r *http.Request) *ForwardedData {
-
-	// TODO: Get any previously-passed headers forwarded headers
-
-	if r.Header == nil {
-		r.Header = make(http.Header)
-	}
-
+// HopsFromRequest extracts a Hop reference that includes a list of any previous hops
+func HopsFromRequest(r *http.Request) *Hop {
 	clientIP, _, _ := net.SplitHostPort(r.RemoteAddr)
-	fd := &ForwardedData{
+	hop := &Hop{
 		RemoteAddr: clientIP,
 		Scheme:     r.URL.Scheme,
 		Protocol:   r.Proto,
 	}
-	return fd
+	if r.Header == nil {
+		return hop
+	}
+	hop.Via = r.Header.Get(NameVia)
+	hop.Hops = HopsFromHeader(r.Header)
+	return hop
+}
+
+// HopsFromHeader extracts a hop from the header
+func HopsFromHeader(h http.Header) Hops {
+	if _, ok := h[NameForwarded]; ok {
+		return parseForwardHeaders(h)
+	} else if _, ok := h[NameXForwardedFor]; ok {
+		return parseXForwardHeaders(h)
+	}
+	return nil
+}
+
+func parseForwardHeaders(h http.Header) Hops {
+	var hops Hops
+	xff := h.Get(NameForwarded)
+	if xff != "" {
+		fwds := strings.Split(strings.Replace(xff, " ", "", -1), ",")
+		hops = make(Hops, 0, len(fwds))
+		for _, f := range fwds {
+			hop := &Hop{}
+			var ok bool
+			parts := strings.Split(f, ";")
+			for _, p := range parts {
+				subparts := strings.Split(p, "=")
+				if len(subparts) == 2 {
+					switch subparts[0] {
+					case "for":
+						hop.RemoteAddr = subparts[1]
+						ok = true
+					case "by":
+						hop.Server = subparts[1]
+					case "proto":
+						hop.Protocol = subparts[1]
+					case "host":
+						hop.Host = subparts[1]
+					}
+				}
+			}
+			if ok {
+				hop.normalizeAddresses()
+				hops = append(hops, hop)
+			}
+		}
+	}
+	return hops
+}
+
+func (hop *Hop) normalizeAddresses() {
+	hop.Host = normalizeAddress(hop.Host)
+	hop.RemoteAddr = normalizeAddress(hop.RemoteAddr)
+	hop.Server = normalizeAddress(hop.Server)
+}
+
+func normalizeAddress(input string) string {
+	const v6LB = `["`
+	const v6RB = `"]`
+	strings.TrimPrefix(input, v6LB)
+	strings.TrimSuffix(input, v6RB)
+	return input
+}
+
+func formatForwardedAddress(input string) string {
+	if isV6Address(input) {
+		input = `["` + input + `"]`
+	}
+	return input
+}
+
+func parseXForwardHeaders(h http.Header) Hops {
+	xff := h.Get(NameXForwardedFor)
+	if xff != "" {
+		fwds := strings.Split(strings.Replace(xff, " ", "", -1), ",")
+		hops := make(Hops, len(fwds))
+		for i, f := range fwds {
+			hop := &Hop{RemoteAddr: f}
+			hop.Host = h.Get(NameXForwardedHost)
+			hop.Protocol = h.Get(NameXForwardedProto)
+			hop.Server = h.Get(NameXForwardedServer)
+			hop.normalizeAddresses()
+			hops[i] = hop
+		}
+		return hops
+	}
+	return nil
 }
 
 // AddResponseHeaders injects standard Trickster headers into downstream HTTP responses
 func AddResponseHeaders(h http.Header) {
 	// We're read only and a harmless API, so allow all CORS
 	h.Set(NameAllowOrigin, "*")
-	setVia(h)
 }
 
-// RemoveClientHeaders strips certain headers from the HTTP request to facililate acceleration
-func RemoveClientHeaders(headers http.Header) {
-	for _, k := range hopHeaders {
-		headers.Del(k)
+// StripClientHeaders strips certain headers from the HTTP request to facililate acceleration
+func StripClientHeaders(h http.Header) {
+	for _, k := range HopHeaders {
+		h.Del(k)
 	}
+}
+
+// StripForwardingHeaders strips certain headers from the HTTP request to facililate acceleration
+func StripForwardingHeaders(h http.Header) {
+	for _, k := range ForwardingHeaders {
+		h.Del(k)
+	}
+}
+
+func isV6Address(input string) bool {
+	ip := net.ParseIP(input)
+	return ip != nil && strings.Contains(input, ":")
 }

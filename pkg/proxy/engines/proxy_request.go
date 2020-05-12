@@ -153,15 +153,8 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 		handlerName = pc.HandlerName
 	}
 
-	// span := trace.SpanFromContext(pr.upstreamRequest.Context())
-	// _, span := tspan.NewChildSpan(pr.Context(), rsc.Tracer, "Fetch")
-	// if span != nil {
-	// 	pr.upstreamRequest = pr.upstreamRequest.WithContext(trace.ContextWithSpan(pr.upstreamRequest.Context(), span))
-	// 	defer span.End()
-	// }
-
 	start := time.Now()
-	reader, resp, _ := PrepareFetchReader(pr.Request, pr.upstreamRequest)
+	reader, resp, _ := PrepareFetchReader(pr.upstreamRequest)
 
 	var body []byte
 	var err error
@@ -301,7 +294,7 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 				pr.revalidationRequest = req.WithContext(trace.ContextWithSpan(req.Context(), span))
 				defer span.End()
 			}
-			pr.revalidationReader, pr.revalidationResponse, _ = PrepareFetchReader(pr.Request, pr.revalidationRequest)
+			pr.revalidationReader, pr.revalidationResponse, _ = PrepareFetchReader(pr.revalidationRequest)
 			wg.Done()
 		}()
 	}
@@ -323,7 +316,7 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 					req = req.WithContext(trace.ContextWithSpan(req.Context(), span))
 					defer span.End()
 				}
-				pr.originReaders[j], pr.originResponses[j], _ = PrepareFetchReader(pr.Request, req)
+				pr.originReaders[j], pr.originResponses[j], _ = PrepareFetchReader(req)
 				wg.Done()
 			}(i)
 		}

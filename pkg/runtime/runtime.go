@@ -17,8 +17,14 @@
 // Package runtime holds application runtime information
 package runtime
 
+import "os"
+
 // ApplicationName is the name of the Application
 var ApplicationName string
 
 // ApplicationVersion holds the version of the Application
 var ApplicationVersion string
+
+// Server is the name, hostname or ip of the server as advertised in HTTP Headers
+// By default uses the hostname reported by the kernel
+var Server, _ = os.Hostname()

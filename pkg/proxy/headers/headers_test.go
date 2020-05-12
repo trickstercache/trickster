@@ -83,7 +83,7 @@ func TestRemoveClientHeaders(t *testing.T) {
 	headers := http.Header{}
 	headers.Set(NameAcceptEncoding, "test")
 
-	RemoveClientHeaders(headers)
+	StripClientHeaders(headers)
 
 	if _, ok := ExtractHeader(headers, NameAcceptEncoding); ok {
 		t.Errorf("unexpected header %s", NameAcceptEncoding)
@@ -126,10 +126,6 @@ func TestAddResponseHeaders(t *testing.T) {
 
 	if _, ok := headers[NameAllowOrigin]; !ok {
 		t.Errorf("missing header %s", NameAllowOrigin)
-	}
-
-	if _, ok := headers[NameVia]; !ok {
-		t.Errorf("missing header %s", NameVia)
 	}
 
 }
