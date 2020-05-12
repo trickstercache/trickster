@@ -84,7 +84,6 @@ func (c *Client) Configuration() *oo.Options {
 func (c *Client) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
 
 	m := methods.CacheableHTTPMethods()
-	m = append(m, methods.CacheableHTTPMethods()...)
 
 	paths := map[string]*po.Options{
 		"/" + strings.Join(m, "-"): {

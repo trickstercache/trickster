@@ -80,6 +80,24 @@ func Equal(s1, s2 []string) bool {
 	return true
 }
 
+// Unique returns a uniqueified version of the list
+func Unique(in []string) []string {
+	l := len(in)
+	if l == 0 {
+		return in
+	}
+	m := make(map[string]bool)
+	out := make([]string, 0, l)
+	for _, v := range in {
+		if _, ok := m[v]; ok {
+			continue
+		}
+		out = append(out, v)
+		m[v] = true
+	}
+	return out
+}
+
 // StringMap represents a map[string]string
 type StringMap map[string]string
 
