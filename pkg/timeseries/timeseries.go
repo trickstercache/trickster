@@ -20,6 +20,10 @@ package timeseries
 
 import "time"
 
+// FastForwardUserDisableFlag is a string that is checked to determine if Fast Forward
+// should be selectively disabled for the provided query
+const FastForwardUserDisableFlag = "trickster-fast-forward:off"
+
 // Timeseries represents a Response Object from a Timeseries Database
 type Timeseries interface {
 	// SetExtents sets the Extents of the Timeseries
