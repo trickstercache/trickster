@@ -28,7 +28,7 @@ import (
 const (
 	// NameVia represents the HTTP Header Name of "Via"
 	NameVia = "Via"
-	// NameForwarded reqresents teh HTTP Header Name o "Forwarded"
+	// NameForwarded reqresents the HTTP Header Name of "Forwarded"
 	NameForwarded = "Forwarded"
 	// NameXForwardedFor represents the HTTP Header Name of "X-Forwarded-For"
 	NameXForwardedFor = "X-Forwarded-For"
