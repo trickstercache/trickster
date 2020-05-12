@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
+	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
@@ -63,10 +64,12 @@ type Clients []*Client
 // could not be validated
 func (rc Clients) Validate(rwi map[string]rewriter.RewriteInstructions) error {
 	for _, c := range rc {
-		if c != nil {
+		if c != nil && c.options != nil {
 			if err := c.parseOptions(c.options.RuleOptions, rwi); err != nil {
 				return err
 			}
+		} else {
+			return errors.ErrInvalidRuleOptions
 		}
 	}
 	return nil

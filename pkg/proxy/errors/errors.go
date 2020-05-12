@@ -48,6 +48,9 @@ var ErrNotTimeRangeQuery = errors.New("not a time range query")
 // ErrNoRanges indicates an error that the range request does not contain any usable ranges
 var ErrNoRanges = errors.New("no usable ranges")
 
+// ErrInvalidRuleOptions indicates an error that the provided rule options were invalid
+var ErrInvalidRuleOptions = errors.New("invalid rule options")
+
 // MissingURLParam returns a Formatted Error
 func MissingURLParam(param string) error {
 	return fmt.Errorf("missing URL parameter: [%s]", param)

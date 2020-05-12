@@ -252,6 +252,10 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		pathsWithVerbs[p.Path+"-"+strings.Join(p.Methods, "-")] = p
 	}
 
+	if oo == nil {
+		return
+	}
+
 	for k, p := range oo.Paths {
 		if p2, ok := pathsWithVerbs[k]; ok {
 			p2.Merge(p)
