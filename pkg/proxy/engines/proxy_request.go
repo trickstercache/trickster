@@ -153,13 +153,6 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 		handlerName = pc.HandlerName
 	}
 
-	// span := trace.SpanFromContext(pr.upstreamRequest.Context())
-	// _, span := tspan.NewChildSpan(pr.Context(), rsc.Tracer, "Fetch")
-	// if span != nil {
-	// 	pr.upstreamRequest = pr.upstreamRequest.WithContext(trace.ContextWithSpan(pr.upstreamRequest.Context(), span))
-	// 	defer span.End()
-	// }
-
 	start := time.Now()
 	reader, resp, _ := PrepareFetchReader(pr.upstreamRequest)
 

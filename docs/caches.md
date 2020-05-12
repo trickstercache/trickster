@@ -82,5 +82,6 @@ Trickster reports several cache statuses in metrics, logs, and tracing, which ar
 | hit | The object was fully cached and served from cache to the client |
 | phit | The object was cached for some of the data requested, but not all |
 | nchit | The response was served from the [Negative Cache](./negative-caching.md) |
+| rhit | The object was served from cache to the client, after being revalidated for freshness against the origin |
 | proxy-only | The request was proxied 1:1 to the origin and not cached |
 | proxy-error | The upstream request needed to fulfill an associated client request returned an error |

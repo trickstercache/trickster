@@ -43,6 +43,10 @@ data:
     ## Options are: "metrics", "reload", "both", or "off"; default is both
     # pprof_server = 'both'
 
+    ## server_name provides the name of this server instance, used to self-identfy in Via and other Forwarding headers
+    ## server_name defaults to os.Hostname() when left blank
+    # server_name = ''
+
     # Configuration options for the Trickster Frontend
     [frontend]
 
@@ -271,6 +275,12 @@ data:
 
         ## cache_name identifies the name of the cache (configured above) that you want to use with this origin proxy. default is 'default'
         # cache_name = 'default'
+
+        ## forwarded_headers indicates whether Trickster should use 'Forwarded', 'X-Forwarded-*'
+        ## or no forwarded headers when communicating with origins. A Via header is always sent,
+        ## regardless of this value's setting.
+        ## Options are 'standard', 'x', 'both', or 'none'; default is 'standard'
+        # forwarded_headers = 'standard'
 
         ## cache_key_prefix defines the prefix this origin appends to cache keys. When using a shared cache like Redis,
         ## this can help partition multiple trickster instances that may have the same same hostname or ip address (the default prefix)

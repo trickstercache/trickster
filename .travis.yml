@@ -4,7 +4,7 @@ matrix:
     install:
     - pip install codespell
     script:
-    - codespell --skip="vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz"
+    - codespell --skip="vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz" --ignore-words="./testdata/ignore_words.txt"
 
   - language: go
     go:

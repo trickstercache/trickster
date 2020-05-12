@@ -135,6 +135,8 @@ const (
 	DefaultMaxRuleExecutions = 16
 	// DefaultPprofServerName defines the default Pprof Server Name
 	DefaultPprofServerName = "both"
+	// DefaultForwardedHeaders defines which class of 'Forwarded' headers are attached to upstream requests
+	DefaultForwardedHeaders = "standard"
 )
 
 // DefaultCompressableTypes returns a list of types that Trickster should compress before caching
