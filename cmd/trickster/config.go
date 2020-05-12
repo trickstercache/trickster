@@ -94,7 +94,6 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logg
 	if conf.Main.ServerName == "" {
 		conf.Main.ServerName, _ = os.Hostname()
 	}
-
 	runtime.Server = conf.Main.ServerName
 
 	if conf.ReloadConfig == nil {

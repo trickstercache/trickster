@@ -232,9 +232,9 @@ func HopsFromHeader(h http.Header) Hops {
 
 func parseForwardHeaders(h http.Header) Hops {
 	var hops Hops
-	xff := h.Get(NameForwarded)
-	if xff != "" {
-		fwds := strings.Split(strings.Replace(xff, " ", "", -1), ",")
+	fh := h.Get(NameForwarded)
+	if fh != "" {
+		fwds := strings.Split(strings.Replace(fh, " ", "", -1), ",")
 		hops = make(Hops, 0, len(fwds))
 		for _, f := range fwds {
 			hop := &Hop{}
@@ -271,9 +271,10 @@ func (hop *Hop) normalizeAddresses() {
 	hop.Server = normalizeAddress(hop.Server)
 }
 
+const v6LB = `["`
+const v6RB = `"]`
+
 func normalizeAddress(input string) string {
-	const v6LB = `["`
-	const v6RB = `"]`
 	strings.TrimPrefix(input, v6LB)
 	strings.TrimSuffix(input, v6RB)
 	return input
@@ -281,7 +282,7 @@ func normalizeAddress(input string) string {
 
 func formatForwardedAddress(input string) string {
 	if isV6Address(input) {
-		input = `["` + input + `"]`
+		input = v6LB + input + v6RB
 	}
 	return input
 }

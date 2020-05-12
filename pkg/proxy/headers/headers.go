@@ -211,11 +211,9 @@ func String(h http.Header) string {
 			sb.WriteString(fmt.Sprintf("%s: %s\n", k, v[0]))
 		}
 	}
-
 	// add the header section end new line
 	sb.WriteString("\n")
 	return sb.String()
-
 }
 
 // LogString returns a compact string representation of the headers suitable for
