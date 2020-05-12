@@ -155,17 +155,14 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	var rc io.ReadCloser
 
-	if r != nil && r.Header != nil {
-		headers.AddProxyHeaders(r.RemoteAddr, r.Header)
-	}
-
-	headers.RemoveClientHeaders(r.Header)
+	headers.AddForwardingHeaders(r, oc.ForwardedHeaders)
 
 	if pc != nil {
 		headers.UpdateHeaders(r.Header, pc.RequestHeaders)
 		params.UpdateParams(r.URL.Query(), pc.RequestParams)
 	}
 
+	r.Close = false
 	r.RequestURI = ""
 
 	// Processing traces for proxies

@@ -34,12 +34,14 @@ func ReloadHandleFunc(f reload.ReloaderFunc, conf *config.Config, wg *sync.WaitG
 	return func(w http.ResponseWriter, r *http.Request) {
 		if conf.IsStale() {
 			log.Warn("configuration reload starting now", tl.Pairs{"source": "reloadEndpoint"})
-			f(conf, wg, log, caches, args, false)
-			w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
-			w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("configuration reloaded"))
-			return
+			err := f(conf, wg, log, caches, args, false)
+			if err == nil {
+				w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
+				w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("configuration reloaded"))
+				return
+			}
 		}
 		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 		w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)

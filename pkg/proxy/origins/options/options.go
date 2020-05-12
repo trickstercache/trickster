@@ -112,6 +112,9 @@ type Options struct {
 	// RequireTLS, when true, indicates this Origin Config's paths must only be registered with the TLS Router
 	RequireTLS bool `toml:"require_tls"`
 
+	// ForwardedHeaders indicates the class of 'Forwarded' header to attach to upstream requests
+	ForwardedHeaders string `toml:"forwarded_headers"`
+
 	// MultipartRangesDisabled, when true, indicates that if a downstream client requests multiple ranges
 	// in a single request, Trickster will instead request and return a 200 OK with the full object body
 	MultipartRangesDisabled bool `toml:"multipart_ranges_disabled"`
@@ -177,6 +180,7 @@ func NewOptions() *Options {
 		CompressableTypeList:         d.DefaultCompressableTypes(),
 		FastForwardTTL:               d.DefaultFastForwardTTLSecs * time.Second,
 		FastForwardTTLSecs:           d.DefaultFastForwardTTLSecs,
+		ForwardedHeaders:             d.DefaultForwardedHeaders,
 		HealthCheckHeaders:           make(map[string]string),
 		HealthCheckQuery:             d.DefaultHealthCheckQuery,
 		HealthCheckUpstreamPath:      d.DefaultHealthCheckPath,
@@ -215,6 +219,7 @@ func (oc *Options) Clone() *Options {
 	o.FastForwardDisable = oc.FastForwardDisable
 	o.FastForwardTTL = oc.FastForwardTTL
 	o.FastForwardTTLSecs = oc.FastForwardTTLSecs
+	o.ForwardedHeaders = oc.ForwardedHeaders
 	o.HealthCheckUpstreamPath = oc.HealthCheckUpstreamPath
 	o.HealthCheckVerb = oc.HealthCheckVerb
 	o.HealthCheckQuery = oc.HealthCheckQuery
