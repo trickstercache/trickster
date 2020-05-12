@@ -206,10 +206,10 @@ func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 // the path routes to the appropriate handler from the provided handlers map
 func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 	client origins.Client, oo *oo.Options, c cache.Cache,
-	paths map[string]*po.Options, tracers tracing.Tracers, log *tl.Logger) {
+	defaultPaths map[string]*po.Options, tracers tracing.Tracers, log *tl.Logger) {
 
+	// get the distributed tracer if configured
 	var tr *tracing.Tracer
-	// attach distributed tracer
 	if oo != nil {
 		if t, ok := tracers[oo.TracingConfigName]; ok {
 			tr = t
@@ -217,35 +217,45 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 	}
 
 	decorate := func(po *po.Options) http.Handler {
-
+		// default base route is the path handler
 		h := po.Handler
-
 		// attach distributed tracer
 		if tr != nil {
 			h = middleware.Trace(tr, h)
 		}
-
 		// add Origin, Cache, and Path Configs to the HTTP Request's context
 		h = middleware.WithResourcesContext(client, oo, c, po, tr, log, h)
-
+		// attach any request rewriters
 		if len(oo.ReqRewriter) > 0 {
 			h = rewriter.Rewrite(oo.ReqRewriter, h)
 		}
-
 		if len(po.ReqRewriter) > 0 {
 			h = rewriter.Rewrite(po.ReqRewriter, h)
 		}
-
 		// decorate frontend prometheus metrics
 		if !po.NoMetrics {
 			h = middleware.Decorate(oo.Name, oo.OriginType, po.Path, h)
 		}
-
 		return h
 	}
 
+	// now we'll go ahead and register the health handler
+	if h, ok := handlers["health"]; ok &&
+		oo.HealthCheckUpstreamPath != "" && oo.HealthCheckVerb != "" {
+		hp := "/trickster/health/" + oo.Name
+		log.Debug("registering health handler path",
+			tl.Pairs{"path": hp, "originName": oo.Name,
+				"upstreamPath": oo.HealthCheckUpstreamPath, "upstreamVerb": oo.HealthCheckVerb})
+		router.PathPrefix(hp).
+			Handler(middleware.WithResourcesContext(client, oo, nil, nil, tr, log, h)).
+			Methods(methods.CacheableHTTPMethods()...)
+	}
+
+	// This takes the default paths, named like '/api/v1/query' and morphs the name
+	// into what the router wants, with methods like '/api/v1/query-GET-HEAD', to help
+	// route sorting
 	pathsWithVerbs := make(map[string]*po.Options)
-	for _, p := range paths {
+	for _, p := range defaultPaths {
 		if len(p.Methods) == 0 {
 			p.Methods = methods.CacheableHTTPMethods()
 		}
@@ -256,25 +266,18 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		return
 	}
 
-	for k, p := range oo.Paths {
-		if p2, ok := pathsWithVerbs[k]; ok {
-			p2.Merge(p)
-			continue
+	// now we will iterate through the configured paths, and overlay them on those paths
+	// for rule router, we stick with the default "/" for everything
+	if oo.OriginType != "rule" {
+		for k, p := range oo.Paths {
+			if p2, ok := pathsWithVerbs[k]; ok {
+				p2.Merge(p)
+				continue
+			}
+			p3 := po.NewOptions()
+			p3.Merge(p)
+			pathsWithVerbs[k] = p3
 		}
-		p3 := po.NewOptions()
-		p3.Merge(p)
-		pathsWithVerbs[k] = p3
-	}
-
-	if h, ok := handlers["health"]; ok &&
-		oo.HealthCheckUpstreamPath != "" && oo.HealthCheckVerb != "" {
-		hp := "/trickster/health/" + oo.Name
-		log.Debug("registering health handler path",
-			tl.Pairs{"path": hp, "originName": oo.Name,
-				"upstreamPath": oo.HealthCheckUpstreamPath, "upstreamVerb": oo.HealthCheckVerb})
-		router.PathPrefix(hp).
-			Handler(middleware.WithResourcesContext(client, oo, nil, nil, tr, log, h)).
-			Methods(methods.CacheableHTTPMethods()...)
 	}
 
 	plist := make([]string, 0, len(pathsWithVerbs))
