@@ -32,7 +32,7 @@ Trickster 1.1 is currently in Public Beta. We anticipate a short beta cycle with
 
 ## Installing
 
-You can build the 1.1 binary from the `master` branch, download binaries from the Releases page, or use the `tricksterproxy/trickster:1.1-beta` Docker image tag in containerized environments. Helm Charts version `1.5.0-beta1` is the chart release associated with Trickster v1.1.
+You can build the 1.1 binary from the `master` branch, download binaries from the Releases page, or use the `tricksterproxy/trickster:1.1-beta` Docker image tag in containerized environments. Helm Charts version `1.5.0-beta` is the chart release associated with Trickster v1.1.
 
 ## Breaking Changes from 1.0
 
@@ -48,5 +48,4 @@ The `[tracing]` section of the Trickster TOML config specification has changed s
 
 ### Zipkin
 
-- Exported Zipkin traces do not include custom-configured tags
 - Zipkin implementation currently works with the OpenZipkin but not Jaeger Collector's Zipkin-compatible endpoints

@@ -193,5 +193,9 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		trq.FastForwardDisable = true
 	}
 
+	if strings.Contains(trq.Statement, timeseries.FastForwardUserDisableFlag) {
+		trq.FastForwardDisable = true
+	}
+
 	return trq, nil
 }
