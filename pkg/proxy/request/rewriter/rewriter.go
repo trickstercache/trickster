@@ -23,11 +23,13 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 )
 
+var errInvalidRewriterOptions = errors.New("invalid rewriter options")
+
 // ProcessConfigs validates and compiles rewriter instructions from
 // the provided configuration map
 func ProcessConfigs(rwl map[string]*options.Options) (map[string]RewriteInstructions, error) {
 	if rwl == nil {
-		return nil, errors.New("invalid rewriter options")
+		return nil, errInvalidRewriterOptions
 	}
 
 	crw := make(map[string]RewriteInstructions)
