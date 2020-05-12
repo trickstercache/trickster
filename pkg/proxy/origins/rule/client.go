@@ -82,9 +82,7 @@ func (c *Client) Configuration() *oo.Options {
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
 func (c *Client) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
-
 	m := methods.CacheableHTTPMethods()
-
 	paths := map[string]*po.Options{
 		"/" + strings.Join(m, "-"): {
 			Path:          "/",

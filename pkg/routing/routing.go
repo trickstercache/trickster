@@ -208,6 +208,10 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 	client origins.Client, oo *oo.Options, c cache.Cache,
 	defaultPaths map[string]*po.Options, tracers tracing.Tracers, log *tl.Logger) {
 
+	if oo == nil {
+		return
+	}
+
 	// get the distributed tracer if configured
 	var tr *tracing.Tracer
 	if oo != nil {
@@ -262,12 +266,8 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		pathsWithVerbs[p.Path+"-"+strings.Join(p.Methods, "-")] = p
 	}
 
-	if oo == nil {
-		return
-	}
-
-	// now we will iterate through the configured paths, and overlay them on those paths
-	// for rule router, we stick with the default "/" for everything
+	// now we will iterate through the configured paths, and overlay them on those default paths.
+	// for a rule origin type, only the default paths are used with no overlay or importable config
 	if oo.OriginType != "rule" {
 		for k, p := range oo.Paths {
 			if p2, ok := pathsWithVerbs[k]; ok {
