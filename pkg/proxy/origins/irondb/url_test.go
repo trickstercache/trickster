@@ -50,6 +50,8 @@ func TestSetExtent(t *testing.T) {
 	oc := conf.Origins["default"]
 	client := &Client{config: oc}
 
+	client.SetExtent(nil, nil, nil)
+
 	client.makeTrqParsers()
 	client.makeExtentSetters()
 
@@ -207,6 +209,11 @@ func TestFastForwardURL(t *testing.T) {
 
 	oc := conf.Origins["default"]
 	client := &Client{config: oc}
+
+	_, err = client.FastForwardURL(nil)
+	if err == nil {
+		t.Error("expected error")
+	}
 
 	client.makeTrqParsers()
 	client.makeExtentSetters()

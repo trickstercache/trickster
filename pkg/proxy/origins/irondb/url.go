@@ -34,7 +34,7 @@ import (
 func (c Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
 
 	rsc := request.GetResources(r)
-	if rsc.PathConfig == nil {
+	if rsc == nil || rsc.PathConfig == nil {
 		return
 	}
 
@@ -48,7 +48,7 @@ func (c Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exten
 func (c *Client) FastForwardURL(r *http.Request) (*url.URL, error) {
 
 	rsc := request.GetResources(r)
-	if rsc.PathConfig == nil {
+	if rsc == nil || rsc.PathConfig == nil {
 		return nil, errors.New("missing path config")
 	}
 

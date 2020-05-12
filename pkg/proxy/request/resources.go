@@ -79,6 +79,9 @@ func NewResources(oo *oo.Options, po *po.Options, co *co.Options,
 
 // GetResources will return a casted Resource object from the HTTP Request's context
 func GetResources(r *http.Request) *Resources {
+	if r == nil {
+		return nil
+	}
 	v := context.Resources(r.Context())
 	rsc, ok := v.(*Resources)
 	if ok {
