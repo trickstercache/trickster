@@ -52,6 +52,15 @@ type Index struct {
 	bulkRemoveFunc func([]string)                     `msg:"-"`
 	flushFunc      func(cacheKey string, data []byte) `msg:"-"`
 	lastWrite      time.Time                          `msg:"-"`
+
+	isClosing     bool
+	flusherExited bool
+	reaperExited  bool
+}
+
+// Close is called to signal the index to shut down any subroutines
+func (idx *Index) Close() {
+	idx.isClosing = true
 }
 
 // ToBytes returns a serialized byte slice representing the Index
@@ -244,7 +253,7 @@ func (idx *Index) GetExpiration(cacheKey string) time.Time {
 // flusher periodically calls the cache's index flush func that writes the cache index to disk
 func (idx *Index) flusher(log *tl.Logger) {
 	var lastFlush time.Time
-	for {
+	for !idx.isClosing {
 		time.Sleep(idx.options.FlushInterval)
 		if idx.lastWrite.Before(lastFlush) {
 			continue
@@ -252,6 +261,7 @@ func (idx *Index) flusher(log *tl.Logger) {
 		idx.flushOnce(log)
 		lastFlush = time.Now()
 	}
+	idx.flusherExited = true
 }
 
 func (idx *Index) flushOnce(log *tl.Logger) {
@@ -268,10 +278,11 @@ func (idx *Index) flushOnce(log *tl.Logger) {
 
 // reaper continually iterates through the cache to find expired elements and removes them
 func (idx *Index) reaper(log *tl.Logger) {
-	for {
+	for !idx.isClosing {
 		idx.reap(log)
 		time.Sleep(idx.options.ReapInterval)
 	}
+	idx.reaperExited = true
 }
 
 type objectsAtime []*Object

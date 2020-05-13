@@ -219,6 +219,12 @@ func applyCachingConfig(c, oc *config.Config, logger *log.Logger,
 				caches[k] = w
 				continue
 			}
+
+			// if we got to this point, the cache won't be used, so lets close it
+			go func() {
+				time.Sleep(time.Second * time.Duration(c.ReloadConfig.DrainTimeoutSecs))
+				w.Close()
+			}()
 		}
 
 		// the newly-named cache is not in the old config or couldn't be reused, so make it anew

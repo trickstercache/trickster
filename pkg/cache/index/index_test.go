@@ -43,8 +43,8 @@ func (r *testReferenceObject) Size() int {
 
 func TestNewIndex(t *testing.T) {
 	cacheConfig := &co.Options{CacheType: "test",
-		Index: &io.Options{ReapInterval: time.Second * time.Duration(10),
-			FlushInterval: time.Second * time.Duration(10)}}
+		Index: &io.Options{ReapInterval: time.Millisecond * 100,
+			FlushInterval: time.Millisecond * 100}}
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, testLogger)
 
 	// this gives a chance for the reaper to run through for test coverage
@@ -55,6 +55,15 @@ func TestNewIndex(t *testing.T) {
 	}
 
 	idx.flushOnce(testLogger)
+
+	idx.Close()
+	time.Sleep(500 * time.Millisecond)
+	if !idx.reaperExited {
+		t.Error("expected true")
+	}
+	if !idx.flusherExited {
+		t.Error("expected true")
+	}
 
 	idx2 := NewIndex("test", "test", idx.ToBytes(), cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, testLogger)
 	if idx2 == nil {

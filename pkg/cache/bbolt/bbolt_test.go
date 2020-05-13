@@ -611,3 +611,13 @@ func TestLocker(t *testing.T) {
 		t.Errorf("error setting locker")
 	}
 }
+
+func TestClose(t *testing.T) {
+	cacheConfig := newCacheConfig()
+	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
+	bc.dbh = nil
+	err := bc.Close()
+	if err != nil {
+		t.Error(err)
+	}
+}
