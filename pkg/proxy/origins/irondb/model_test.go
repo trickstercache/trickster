@@ -17,7 +17,6 @@
 package irondb
 
 import (
-	"errors"
 	"testing"
 	"time"
 
@@ -90,7 +89,7 @@ func TestDataPointMarshalJSON(t *testing.T) {
 	dp = &DataPoint{}
 	err = dp.UnmarshalJSON([]byte(ts))
 	if err == nil {
-		t.Error(errors.New("expected error for invalid character"))
+		t.Error("expected error for invalid character")
 	}
 
 }
@@ -523,7 +522,7 @@ func TestUnMarshalJSONEnvelope(t *testing.T) {
 	se := &SeriesEnvelope{}
 	err := se.UnmarshalJSON(bytes)
 	if err == nil {
-		t.Error(errors.New("expected error for invalid character"))
+		t.Error("expected error for invalid character")
 	}
 
 }

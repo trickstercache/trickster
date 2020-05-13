@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
+	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
@@ -63,10 +64,12 @@ type Clients []*Client
 // could not be validated
 func (rc Clients) Validate(rwi map[string]rewriter.RewriteInstructions) error {
 	for _, c := range rc {
-		if c != nil {
+		if c != nil && c.options != nil {
 			if err := c.parseOptions(c.options.RuleOptions, rwi); err != nil {
 				return err
 			}
+		} else {
+			return errors.ErrInvalidRuleOptions
 		}
 	}
 	return nil
@@ -79,10 +82,7 @@ func (c *Client) Configuration() *oo.Options {
 
 // DefaultPathConfigs returns the default PathConfigs for the given OriginType
 func (c *Client) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
-
 	m := methods.CacheableHTTPMethods()
-	m = append(m, methods.CacheableHTTPMethods()...)
-
 	paths := map[string]*po.Options{
 		"/" + strings.Join(m, "-"): {
 			Path:          "/",

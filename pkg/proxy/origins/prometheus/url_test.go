@@ -96,4 +96,13 @@ func TestFastForwardURL(t *testing.T) {
 		t.Errorf("\nexpected [%s]\ngot [%s]", expected, u2.RawQuery)
 	}
 
+	u2.RawQuery = ""
+	b := bytes.NewBufferString(expected)
+	r, _ = http.NewRequest(http.MethodPost, u2.String(), b)
+
+	u2, err = client.FastForwardURL(r)
+	if err != nil {
+		t.Error(err)
+	}
+
 }

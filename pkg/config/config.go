@@ -312,7 +312,9 @@ func (c *Config) validateTLSConfigs() error {
 
 var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params",
 	"cache_key_headers", "default_ttl_secs", "request_headers", "response_headers",
-	"response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding"}
+	"response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding",
+	"req_rewriter_name",
+}
 
 func (c *Config) validateConfigMappings() error {
 	for k, oc := range c.Origins {

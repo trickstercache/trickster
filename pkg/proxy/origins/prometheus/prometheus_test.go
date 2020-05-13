@@ -17,7 +17,7 @@
 package prometheus
 
 import (
-	"errors"
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -30,6 +30,7 @@ import (
 	pe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
@@ -169,17 +170,22 @@ func TestName(t *testing.T) {
 }
 
 func TestParseTimeRangeQuery(t *testing.T) {
-	req := &http.Request{URL: &url.URL{
-		Scheme: "https",
-		Host:   "blah.com",
-		Path:   "/",
-		RawQuery: url.Values(map[string][]string{
-			"query": {`up`},
-			"start": {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
-			"end":   {strconv.Itoa(int(time.Now().Unix()))},
-			"step":  {"15"},
-		}).Encode(),
-	}}
+
+	qp := url.Values(map[string][]string{
+		"query": {`up-` + timeseries.FastForwardUserDisableFlag},
+		"start": {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+		"end":   {strconv.Itoa(int(time.Now().Unix()))},
+		"step":  {"15"},
+	})
+
+	u := &url.URL{
+		Scheme:   "https",
+		Host:     "blah.com",
+		Path:     "/",
+		RawQuery: qp.Encode(),
+	}
+
+	req := &http.Request{URL: u}
 	client := &Client{}
 	res, err := client.ParseTimeRangeQuery(req)
 	if err != nil {
@@ -192,6 +198,15 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		if int(res.Extent.End.Sub(res.Extent.Start).Hours()) != 6 {
 			t.Errorf("expected 6 got %d", int(res.Extent.End.Sub(res.Extent.Start).Hours()))
 		}
+	}
+
+	b := bytes.NewBufferString(qp.Encode())
+	u.RawQuery = ""
+	req, _ = http.NewRequest(http.MethodPost, u.String(), b)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	_, err = client.ParseTimeRangeQuery(req)
+	if err != nil {
+		t.Error(err)
 	}
 }
 
@@ -406,6 +421,6 @@ func TestRouter(t *testing.T) {
 		t.Error(err)
 	}
 	if c.Router() != nil {
-		t.Error(errors.New("expected nil router"))
+		t.Error("expected nil router")
 	}
 }

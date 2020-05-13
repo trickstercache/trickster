@@ -17,10 +17,10 @@
 package rule
 
 import (
+	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
 
-	"errors"
 	"testing"
 )
 
@@ -40,7 +40,7 @@ func TestHTTPClient(t *testing.T) {
 		t.Error(err)
 	}
 	if c.HTTPClient() != nil {
-		t.Error(errors.New("expected nil client"))
+		t.Error("expected nil client")
 	}
 }
 
@@ -81,7 +81,7 @@ func TestConfiguration(t *testing.T) {
 		t.Error(err)
 	}
 	if c.Configuration() == nil {
-		t.Error(errors.New("expected non-nil config"))
+		t.Error("expected non-nil config")
 	}
 }
 
@@ -91,7 +91,7 @@ func TestRouter(t *testing.T) {
 		t.Error(err)
 	}
 	if c.Router() != nil {
-		t.Error(errors.New("expected nil router"))
+		t.Error("expected nil router")
 	}
 }
 
@@ -99,7 +99,7 @@ func TestDefaultPathConfigs(t *testing.T) {
 	c := &Client{}
 	dpc := c.DefaultPathConfigs(nil)
 	if dpc == nil {
-		t.Error(errors.New("expected non-nil path config"))
+		t.Error("expected non-nil path config")
 	}
 }
 
@@ -124,8 +124,14 @@ func TestValidate(t *testing.T) {
 		RuleOptions: &options.Options{InputType: "header"}}}}
 	err := c.Validate(nil)
 	if err == nil {
-		t.Error(errors.New("expected error"))
+		t.Error("expected error")
 	}
+	c = Clients{&Client{}}
+	err = c.Validate(nil)
+	if err != errors.ErrInvalidRuleOptions {
+		t.Error("expected error for invalid rule options")
+	}
+
 	c = Clients{}
 	err = c.Validate(nil)
 	if err != nil {

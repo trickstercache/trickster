@@ -18,7 +18,6 @@ package engines
 
 import (
 	"bytes"
-	"errors"
 	"net/http"
 	"sync"
 	"testing"
@@ -99,7 +98,7 @@ func TestSetBodyWriter(t *testing.T) {
 
 	pr.setBodyWriter()
 	if pr.cacheBuffer == nil {
-		t.Error(errors.New("expected non-nil cacheBody"))
+		t.Error("expected non-nil cacheBody")
 	}
 
 	pr.cachingPolicy.IsClientFresh = true
@@ -108,7 +107,7 @@ func TestSetBodyWriter(t *testing.T) {
 
 	pr.setBodyWriter()
 	if pr.cacheBuffer == nil {
-		t.Error(errors.New("expected non-nil cacheBody"))
+		t.Error("expected non-nil cacheBody")
 	}
 
 }
@@ -118,7 +117,7 @@ func TestWriteResponseBody(t *testing.T) {
 	pr := proxyRequest{}
 	pr.writeResponseBody()
 	if pr.responseWriter != nil {
-		t.Error(errors.New("expected nil writer"))
+		t.Error("expected nil writer")
 	}
 }
 
@@ -133,7 +132,7 @@ func TestDetermineCacheability(t *testing.T) {
 	caches := cr.LoadCachesFromConfig(conf, testLogger)
 	cache, ok := caches["default"]
 	if !ok {
-		t.Error(errors.New("could not load cache"))
+		t.Error("could not load cache")
 	}
 
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1", nil)

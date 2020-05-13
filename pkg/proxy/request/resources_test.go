@@ -36,7 +36,13 @@ func TestNewAndCloneResources(t *testing.T) {
 }
 
 func TestGetAndSetResources(t *testing.T) {
-	r := NewResources(nil, nil, nil, nil, nil, nil, tl.ConsoleLogger("error"))
+
+	r := GetResources(nil)
+	if r != nil {
+		t.Error("expected nil reference")
+	}
+
+	r = NewResources(nil, nil, nil, nil, nil, nil, tl.ConsoleLogger("error"))
 	r.AlternateCacheTTL = time.Duration(1) * time.Second
 	req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	ctx := context.Background()

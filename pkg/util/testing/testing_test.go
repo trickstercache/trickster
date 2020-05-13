@@ -17,7 +17,6 @@
 package testing
 
 import (
-	"errors"
 	"net/http"
 	"testing"
 
@@ -88,7 +87,7 @@ func TestNewTestInstance(t *testing.T) {
 
 	s, _, _, _, err = NewTestInstance("", f, 200, "", nil, "promsim", "test", "debug")
 	if s == nil {
-		t.Error(errors.New("Expected server pointer, got nil"))
+		t.Error("Expected server pointer, got nil")
 	}
 	if err != nil {
 		t.Error(err)
@@ -98,7 +97,7 @@ func TestNewTestInstance(t *testing.T) {
 
 	_, _, _, _, err = NewTestInstance("../../../testdata/test.full.conf", f, 200, "", nil, "promsim", "test", "debug")
 	if err == nil {
-		t.Error(errors.New("Expected error, got nil"))
+		t.Error("Expected error, got nil")
 	}
 
 	_, _, _, _, err = NewTestInstance("", nil, 200, "", map[string]string{"test-header": "x"}, "rangesim", "test", "debug")

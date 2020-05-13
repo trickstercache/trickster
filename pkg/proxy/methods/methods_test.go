@@ -17,6 +17,7 @@
 package methods
 
 import (
+	"net/http"
 	"testing"
 )
 
@@ -41,5 +42,14 @@ func TestUncacheableHTTPMethods(t *testing.T) {
 	l := len(UncacheableHTTPMethods())
 	if l != expected {
 		t.Errorf("expected %d got %d", expected, l)
+	}
+}
+
+func TestIsCacheable(t *testing.T) {
+	if !IsCacheable(http.MethodGet) {
+		t.Error("expected true")
+	}
+	if IsCacheable(http.MethodPut) {
+		t.Error("expected false")
 	}
 }

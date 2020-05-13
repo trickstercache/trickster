@@ -24,6 +24,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
+	"github.com/tricksterproxy/trickster/pkg/util/strings"
 	ts "github.com/tricksterproxy/trickster/pkg/util/strings"
 )
 
@@ -118,6 +119,8 @@ func (o *Options) Clone() *Options {
 		Handler:                 o.Handler,
 		RequestHeaders:          ts.CloneMap(o.RequestHeaders),
 		RequestParams:           ts.CloneMap(o.RequestParams),
+		ReqRewriter:             o.ReqRewriter,
+		ReqRewriterName:         o.ReqRewriterName,
 		ResponseHeaders:         ts.CloneMap(o.ResponseHeaders),
 		ResponseBody:            o.ResponseBody,
 		ResponseBodyBytes:       o.ResponseBodyBytes,
@@ -142,8 +145,11 @@ func (o *Options) Clone() *Options {
 
 // Merge merges the non-default values of the provided Options into the subject Options
 func (o *Options) Merge(o2 *Options) {
-
+	if o.Custom == nil {
+		o.Custom = make([]string, 0, len(o2.Custom))
+	}
 	for _, c := range o2.Custom {
+		o.Custom = append(o.Custom, c)
 		switch c {
 		case "path":
 			o.Path = o2.Path
@@ -178,6 +184,10 @@ func (o *Options) Merge(o2 *Options) {
 		case "collapsed_forwarding":
 			o.CollapsedForwardingName = o2.CollapsedForwardingName
 			o.CollapsedForwardingType = o2.CollapsedForwardingType
+		case "req_rewriter_name":
+			o.ReqRewriterName = o2.ReqRewriterName
+			o.ReqRewriter = o2.ReqRewriter
 		}
 	}
+	o.Custom = strings.Unique(o.Custom)
 }

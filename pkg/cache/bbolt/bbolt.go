@@ -230,5 +230,11 @@ func (c *Cache) BulkRemove(cacheKeys []string) {
 
 // Close closes the Cache
 func (c *Cache) Close() error {
-	return c.dbh.Close()
+	if c.Index != nil {
+		c.Index.Close()
+	}
+	if c.dbh != nil {
+		return c.dbh.Close()
+	}
+	return nil
 }

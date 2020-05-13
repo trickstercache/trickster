@@ -204,6 +204,9 @@ func (c *Cache) BulkRemove(cacheKeys []string) {
 
 // Close is not used for Cache
 func (c *Cache) Close() error {
+	if c.Index != nil {
+		c.Index.Close()
+	}
 	return nil
 }
 

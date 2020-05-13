@@ -18,7 +18,6 @@ package engines
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -487,7 +486,7 @@ func TestObjectProxyCacheRevalidation(t *testing.T) {
 
 	r.Header.Set(headers.NameRange, "bytes=0-10")
 	if rsc.PathConfig == nil {
-		t.Error(errors.New("nil path config"))
+		t.Error("nil path config")
 	}
 
 	if rsc.PathConfig.ResponseHeaders == nil {

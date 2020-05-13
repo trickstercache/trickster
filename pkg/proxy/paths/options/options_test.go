@@ -142,3 +142,15 @@ func TestPathMerge(t *testing.T) {
 	}
 
 }
+
+func TestMerge(t *testing.T) {
+
+	o := &Options{}
+	o2 := &Options{Custom: []string{"req_rewriter_name"}}
+	o.Merge(o2)
+
+	if len(o.Custom) != 1 {
+		t.Errorf("expected %d got %d", 1, len(o.Custom))
+	}
+
+}
