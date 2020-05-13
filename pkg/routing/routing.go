@@ -305,10 +305,7 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 	or := client.Router().(*mux.Router)
 
 	for _, v := range plist {
-		p, ok := pathsWithVerbs[v]
-		if !ok {
-			continue
-		}
+		p := pathsWithVerbs[v]
 
 		pathPrefix := "/" + oo.Name
 		handledPath := pathPrefix + p.Path
@@ -353,10 +350,7 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 	if oo.IsDefault {
 		log.Info("registering default origin handler paths", tl.Pairs{"originName": oo.Name})
 		for _, v := range plist {
-			p, ok := pathsWithVerbs[v]
-			if !ok {
-				continue
-			}
+			p := pathsWithVerbs[v]
 			if p.Handler != nil && len(p.Methods) > 0 {
 				log.Debug("registering default origin handler paths",
 					tl.Pairs{"originName": oo.Name, "path": p.Path, "handlerName": p.HandlerName,

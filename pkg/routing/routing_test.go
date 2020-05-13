@@ -24,6 +24,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/config"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins/reverseproxycache"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/rule"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
@@ -202,9 +203,10 @@ func TestRegisterProxyRoutesIRONdb(t *testing.T) {
 	}
 }
 
-func TestRegisterProxyRoutesRules(t *testing.T) {
+func TestRegisterProxyRoutesWithReqRewriters(t *testing.T) {
 
-	conf, _, err := config.Load("trickster", "test", []string{"-config", "../../testdata/test.routing.rules.conf"})
+	conf, _, err := config.Load("trickster", "test",
+		[]string{"-config", "../../testdata/test.routing.req_rewriter.conf"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -220,8 +222,8 @@ func TestRegisterProxyRoutesRules(t *testing.T) {
 		t.Error(err)
 	}
 
-	if len(proxyClients) == 0 {
-		t.Errorf("expected %d got %d", 1, 0)
+	if len(proxyClients) != 2 {
+		t.Errorf("expected %d got %d", 1, len(proxyClients))
 	}
 }
 
@@ -322,10 +324,20 @@ func TestRegisterMultipleOriginsPlusDefault(t *testing.T) {
 }
 
 func TestRegisterPathRoutes(t *testing.T) {
-
 	p := map[string]*po.Options{"test": {}}
-
 	registerPathRoutes(nil, nil, nil, nil, nil, p, nil, nil)
+
+	conf, _, err := config.Load("trickster", "test",
+		[]string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "rpc"})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	oo := conf.Origins["default"]
+	rpc, _ := reverseproxycache.NewClient("test", oo, mux.NewRouter(), nil)
+	dpc := rpc.DefaultPathConfigs(oo)
+	dpc["/-GET-HEAD"].Methods = nil
+	registerPathRoutes(nil, nil, rpc, oo, nil, dpc, nil, tl.ConsoleLogger("INFO"))
 
 }
 
