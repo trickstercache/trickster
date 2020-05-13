@@ -59,7 +59,9 @@ func TestReloadHandleFunc(t *testing.T) {
 
 	f := ReloadHandleFunc(emptyFunc, cfg, nil, log, nil, nil)
 	f(w, r)
-	ioutil.WriteFile(testFile, []byte(string(tml)+" "), 0666)
+	os.Remove(testFile)
+	time.Sleep(time.Millisecond * 500)
+	ioutil.WriteFile(testFile, []byte(string(tml)), 0666)
+	time.Sleep(time.Millisecond * 500)
 	f(w, r)
-
 }
