@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -34,6 +35,7 @@ import (
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 )
 
 const testMultipartBoundary = `; boundary=------------------------d0509edbe55938c0`
@@ -68,7 +70,10 @@ const testJSONDocument = `
 func TestDeepSearch(t *testing.T) {
 
 	var document map[string]interface{}
-	json.Unmarshal([]byte(testJSONDocument), &document)
+	err := json.Unmarshal([]byte(testJSONDocument), &document)
+	if err != nil {
+		t.Error(err)
+	}
 
 	val, err := deepSearch(document, "query/table")
 	if err != nil {
@@ -168,15 +173,17 @@ func TestDeriveCacheKey(t *testing.T) {
 		t.Errorf("expected %s got %s", "4766201eee9ef1916f57309deae22f90", ck)
 	}
 
-	tr = httptest.NewRequest(http.MethodPost, "http://127.0.0.1/", bytes.NewReader([]byte(testJSONDocument)))
+	_, _, tr, _, _ = tu.NewTestInstance("", nil, 0, "", nil, "rpc", "http://127.0.0.1/", "INFO")
+	tr.Method = http.MethodPost
+	tr.Body = ioutil.NopCloser(bytes.NewReader([]byte(testJSONDocument)))
 	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
 	tr.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
 	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testJSONDocument)))
 	pr = newProxyRequest(tr, nil)
-	pr.upstreamRequest.URL = nil
+
 	ck = pr.DeriveCacheKey(nil, "extra")
-	if ck != expected {
-		t.Errorf("expected %s got %s", expected, ck)
+	if ck != "82c1d86126a02b96b8d0fcb94a9f486a" {
+		t.Errorf("expected %s got %s", "82c1d86126a02b96b8d0fcb94a9f486a", ck)
 	}
 
 	// Test Custom KeyHasher Integration
@@ -186,6 +193,17 @@ func TestDeriveCacheKey(t *testing.T) {
 		t.Errorf("expected %s got %s", "test-key", ck)
 	}
 
+	tr = httptest.NewRequest(http.MethodPost, "http://127.0.0.1/", nil)
+	tr.Body = ioutil.NopCloser(bytes.NewReader([]byte(testJSONDocument)))
+	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
+	tr.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
+	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testJSONDocument)))
+	pr = newProxyRequest(tr, nil)
+	pr.upstreamRequest.URL = nil
+	ck = pr.DeriveCacheKey(nil, "extra")
+	if ck != "test-key" {
+		t.Errorf("expected %s got %s", expected, ck)
+	}
 }
 
 func exampleKeyHasher(path string, params url.Values, headers http.Header,
@@ -250,4 +268,16 @@ func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
 		t.Errorf("expected %s got %s", "f53b04ce5c434a7357804ae15a64ee6c", ck)
 	}
 
+}
+
+func TestDeriveCacheKeyNilURL(t *testing.T) {
+
+	_, w, r, _, _ := tu.NewTestInstance("", nil, 0, "", nil, "rpc", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", "INFO")
+
+	pr := newProxyRequest(r, w)
+	pr.upstreamRequest.URL = nil
+	k := pr.DeriveCacheKey(nil, "")
+	if k != "c04284eb2c269dd939d54437d4efb071" {
+		t.Errorf("unexpected cache key: %s", k)
+	}
 }

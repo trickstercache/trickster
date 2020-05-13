@@ -50,10 +50,15 @@ func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) strin
 
 	if pr.upstreamRequest != nil {
 		r = pr.upstreamRequest
+		if r.URL == nil {
+			r.URL = pr.URL
+			params = pr.URL.Query()
+		}
 	}
 
+	var b []byte
 	if r.Method == http.MethodPost {
-		b, _ := ioutil.ReadAll(r.Body)
+		b, _ = ioutil.ReadAll(r.Body)
 		r.ParseForm()
 		params = r.PostForm
 		r.Body = ioutil.NopCloser(bytes.NewReader(b))
@@ -61,24 +66,22 @@ func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) strin
 		params = templateURL.Query()
 	} else if r.URL != nil {
 		params = r.URL.Query()
-	} else {
-		params = pr.URL.Query()
 	}
 
 	if pc.KeyHasher != nil && len(pc.KeyHasher) == 1 {
 		var k string
-		k, pr.Body = pc.KeyHasher[0](pr.URL.Path, params, pr.Header, pr.Body, extra)
+		k, r.Body = pc.KeyHasher[0](r.URL.Path, params, r.Header, r.Body, extra)
 		return k
 	}
 
 	vals := make([]string, 0, (len(pc.CacheKeyParams) + len(pc.CacheKeyHeaders) + len(pc.CacheKeyFormFields)*2))
 
-	if v := pr.Header.Get(headers.NameAuthorization); v != "" {
+	if v := r.Header.Get(headers.NameAuthorization); v != "" {
 		vals = append(vals, fmt.Sprintf("%s.%s.", headers.NameAuthorization, v))
 	}
 
 	// Append the http method to the slice for creating the derived cache key
-	vals = append(vals, fmt.Sprintf("%s.%s.", "method", pr.Method))
+	vals = append(vals, fmt.Sprintf("%s.%s.", "method", r.Method))
 
 	if len(pc.CacheKeyParams) == 1 && pc.CacheKeyParams[0] == "*" {
 		for p := range params {
@@ -93,20 +96,16 @@ func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) strin
 	}
 
 	for _, p := range pc.CacheKeyHeaders {
-		if v := pr.Header.Get(p); v != "" {
+		if v := r.Header.Get(p); v != "" {
 			vals = append(vals, fmt.Sprintf("%s.%s.", p, v))
 		}
 	}
 
-	if _, ok := methodsWithBody[pr.Method]; ok && pc.CacheKeyFormFields != nil && len(pc.CacheKeyFormFields) > 0 {
-		ct := pr.Header.Get(headers.NameContentType)
+	if _, ok := methodsWithBody[r.Method]; ok && pc.CacheKeyFormFields != nil && len(pc.CacheKeyFormFields) > 0 {
+		ct := r.Header.Get(headers.NameContentType)
 		if ct == headers.ValueXFormURLEncoded ||
 			strings.HasPrefix(ct, headers.ValueMultipartFormData) || ct == headers.ValueApplicationJSON {
-			b, _ := ioutil.ReadAll(pr.Body)
-			pr.Body = ioutil.NopCloser(bytes.NewReader(b))
-			if ct == headers.ValueXFormURLEncoded {
-				pr.ParseForm()
-			} else if strings.HasPrefix(ct, headers.ValueMultipartFormData) {
+			if strings.HasPrefix(ct, headers.ValueMultipartFormData) {
 				pr.ParseMultipartForm(1024 * 1024)
 			} else if ct == headers.ValueApplicationJSON {
 				var document map[string]interface{}
