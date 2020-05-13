@@ -18,7 +18,6 @@ package prometheus
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -422,6 +421,6 @@ func TestRouter(t *testing.T) {
 		t.Error(err)
 	}
 	if c.Router() != nil {
-		t.Error(errors.New("expected nil router"))
+		t.Error("expected nil router")
 	}
 }

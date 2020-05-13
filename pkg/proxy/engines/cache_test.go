@@ -68,7 +68,7 @@ func TestMultiPartByteRange(t *testing.T) {
 	caches := cr.LoadCachesFromConfig(conf, testLogger)
 	cache, ok := caches["default"]
 	if !ok {
-		t.Error(errors.New("could not load cache"))
+		t.Error("could not load cache")
 	}
 	resp2 := &http.Response{}
 	resp2.Header = make(http.Header)
@@ -99,7 +99,7 @@ func TestCacheHitRangeRequest(t *testing.T) {
 	caches := cr.LoadCachesFromConfig(conf, testLogger)
 	cache, ok := caches["default"]
 	if !ok {
-		t.Error(errors.New("could not load cache"))
+		t.Error("could not load cache")
 	}
 
 	resp2 := &http.Response{}
@@ -140,7 +140,7 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 	caches := cr.LoadCachesFromConfig(conf, testLogger)
 	cache, ok := caches["default"]
 	if !ok {
-		t.Error(errors.New("could not load cache"))
+		t.Error("could not load cache")
 	}
 
 	have := byterange.Range{Start: 1, End: 20}
@@ -183,7 +183,7 @@ func TestCacheHitRangeRequest3(t *testing.T) {
 	caches := cr.LoadCachesFromConfig(conf, testLogger)
 	cache, ok := caches["default"]
 	if !ok {
-		t.Error(errors.New("could not load cache"))
+		t.Error("could not load cache")
 	}
 
 	have := byterange.Range{Start: 1, End: 20}
@@ -223,7 +223,7 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 	caches := cr.LoadCachesFromConfig(conf, testLogger)
 	cache, ok := caches["default"]
 	if !ok {
-		t.Error(errors.New("could not load cache"))
+		t.Error("could not load cache")
 	}
 
 	have := byterange.Range{Start: 1, End: 9}
@@ -267,7 +267,7 @@ func TestFullCacheMissRangeRequest(t *testing.T) {
 	caches := cr.LoadCachesFromConfig(conf, testLogger)
 	cache, ok := caches["default"]
 	if !ok {
-		t.Error(errors.New("could not load cache"))
+		t.Error("could not load cache")
 	}
 
 	have := byterange.Range{Start: 1, End: 9}
@@ -330,7 +330,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 	caches := cr.LoadCachesFromConfig(conf, testLogger)
 	cache, ok := caches["default"]
 	if !ok {
-		t.Error(errors.New("could not load cache"))
+		t.Error("could not load cache")
 	}
 
 	ctx := context.Background()

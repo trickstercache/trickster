@@ -14,7 +14,6 @@
 package base64
 
 import (
-	"errors"
 	"testing"
 )
 
@@ -24,7 +23,7 @@ func TestDecode(t *testing.T) {
 
 	_, err := Decode("asd")
 	if err == nil {
-		t.Error(errors.New("expected error for invalid input"))
+		t.Error("expected error for invalid input")
 	}
 
 	s, err = Decode("dHJpY2tzdGVy")

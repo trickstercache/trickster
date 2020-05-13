@@ -17,7 +17,6 @@
 package rewriter
 
 import (
-	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -266,13 +265,13 @@ func TestDictFuncsNilRequest(t *testing.T) {
 	f := dicts["header"]
 	d := f(nil)
 	if d != nil {
-		t.Error(errors.New("expected nil value"))
+		t.Error("expected nil value")
 	}
 
 	f = dicts["param"]
 	d = f(nil)
 	if d != nil {
-		t.Error(errors.New("expected nil value"))
+		t.Error("expected nil value")
 	}
 
 }
@@ -362,7 +361,7 @@ func TestHasTokens(t *testing.T) {
 
 	for _, ri := range ris {
 		if ri.HasTokens() {
-			t.Error(errors.New("expected false got true"))
+			t.Error("expected false got true")
 		}
 	}
 
@@ -415,42 +414,42 @@ func TestMiscRequestSetters(t *testing.T) {
 	s = &rwiKeyBasedSetter{}
 	err := s.Parse([]string{"foo", "foo", "foo", "foo"})
 	if err != errBadParams {
-		t.Error(errors.New("expected bad params error"))
+		t.Error("expected bad params error")
 	}
 
 	s = &rwiKeyBasedReplacer{}
 	err = s.Parse([]string{"foo", "foo", "foo", "foo", "foo"})
 	if err != errBadParams {
-		t.Error(errors.New("expected bad params error"))
+		t.Error("expected bad params error")
 	}
 
 	s = &rwiKeyBasedDeleter{}
 	err = s.Parse([]string{"foo", "foo", "foo", "foo"})
 	if err != errBadParams {
-		t.Error(errors.New("expected bad params error"))
+		t.Error("expected bad params error")
 	}
 
 	s = &rwiBasicReplacer{}
 	err = s.Parse([]string{"foo", "foo", "foo", "foo"})
 	if err != errBadParams {
-		t.Error(errors.New("expected bad params error"))
+		t.Error("expected bad params error")
 	}
 
 	s = &rwiBasicSetter{}
 	err = s.Parse([]string{"foo", "foo", "foo"})
 	if err != errBadParams {
-		t.Error(errors.New("expected bad params error"))
+		t.Error("expected bad params error")
 	}
 
 	s = &rwiKeyBasedAppender{}
 	err = s.Parse([]string{"foo", "foo", "foo"})
 	if err != errBadParams {
-		t.Error(errors.New("expected bad params error"))
+		t.Error("expected bad params error")
 	}
 
 	err = s.Parse([]string{"foo", "foo", "foo", "foo"})
 	if err != errBadParams {
-		t.Error(errors.New("expected bad params error"))
+		t.Error("expected bad params error")
 	}
 }
 

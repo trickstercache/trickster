@@ -17,7 +17,6 @@
 package floats
 
 import (
-	"errors"
 	"sort"
 	"testing"
 )
@@ -26,6 +25,6 @@ func TestSortFloats(t *testing.T) {
 	f := Floats{2, 1, 6, 5}
 	sort.Sort(f)
 	if f[0] != 1 && f[3] != 6 {
-		t.Error(errors.New("sort failed"))
+		t.Error("sort failed")
 	}
 }

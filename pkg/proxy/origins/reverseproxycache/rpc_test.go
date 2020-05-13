@@ -17,7 +17,6 @@
 package reverseproxycache
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
@@ -95,7 +94,7 @@ func TestConfiguration(t *testing.T) {
 		t.Error(err)
 	}
 	if c.Configuration() == nil {
-		t.Error(errors.New("expected non-nil config"))
+		t.Error("expected non-nil config")
 	}
 }
 
@@ -105,6 +104,6 @@ func TestRouter(t *testing.T) {
 		t.Error(err)
 	}
 	if c.Router() != nil {
-		t.Error(errors.New("expected nil router"))
+		t.Error("expected nil router")
 	}
 }

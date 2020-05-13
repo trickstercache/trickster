@@ -17,7 +17,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -75,7 +74,7 @@ func TestOriginConfigClone(t *testing.T) {
 	oc1 := c.Origins["default"]
 	oc2 := oc1.Clone()
 	if oc2.Paths == nil {
-		t.Error(errors.New("expected non-nil cloned config"))
+		t.Error("expected non-nil cloned config")
 	}
 }
 

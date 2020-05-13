@@ -17,7 +17,6 @@
 package registration
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
@@ -30,7 +29,7 @@ func TestRegisterAll(t *testing.T) {
 	// test nil config
 	f, err := RegisterAll(nil, tl.ConsoleLogger("error"), true)
 	if err == nil {
-		t.Error(errors.New("expected error for no config provided"))
+		t.Error("expected error for no config provided")
 	}
 	if len(f) > 0 {
 		t.Errorf("expected %d got %d", 0, len(f))
@@ -113,7 +112,7 @@ func TestRegisterAll(t *testing.T) {
 	cfg.Origins = nil
 	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if err == nil {
-		t.Error(errors.New("expected error for invalid tracing implementation"))
+		t.Error("expected error for invalid tracing implementation")
 	}
 
 }

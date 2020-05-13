@@ -17,7 +17,6 @@
 package times
 
 import (
-	"errors"
 	"sort"
 	"testing"
 	"time"
@@ -27,7 +26,7 @@ func TestSortFloats(t *testing.T) {
 	f := Times{time.Unix(2, 0), time.Unix(1, 0)}
 	sort.Sort(f)
 	if f[0] != time.Unix(1, 0) {
-		t.Error(errors.New("sort failed"))
+		t.Error("sort failed")
 	}
 }
 

@@ -17,7 +17,6 @@
 package tls
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
@@ -66,7 +65,7 @@ func TestVerifyTLSConfigs(t *testing.T) {
 
 	_, err = tls04.Validate()
 	if err == nil {
-		t.Error(errors.New("expected no such file or directory error"))
+		t.Error("expected no such file or directory error")
 	}
 
 	tls04.FullChainCertPath = originalFile
@@ -77,7 +76,7 @@ func TestVerifyTLSConfigs(t *testing.T) {
 	tls04.PrivateKeyPath = badFile
 	_, err = tls04.Validate()
 	if err == nil {
-		t.Error(errors.New("expected no such file or directory error"))
+		t.Error("expected no such file or directory error")
 	}
 
 	tls04.PrivateKeyPath = originalFile
@@ -93,7 +92,7 @@ func TestVerifyTLSConfigs(t *testing.T) {
 	tls04.CertificateAuthorityPaths = []string{badFile}
 	_, err = tls04.Validate()
 	if err == nil {
-		t.Error(errors.New("expected no such file or directory error"))
+		t.Error("expected no such file or directory error")
 	}
 }
 

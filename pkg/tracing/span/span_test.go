@@ -17,7 +17,6 @@
 package span
 
 import (
-	"errors"
 	"net/http"
 	"testing"
 
@@ -35,7 +34,7 @@ func TestNewChildSpan(t *testing.T) {
 	_, span := NewChildSpan(nil, nil, "test")
 
 	if _, ok := span.(trace.NoopSpan); !ok {
-		t.Error(errors.New("expected NoopSpan"))
+		t.Error("expected NoopSpan")
 	}
 
 	// test with nil context but non-nil tracer
@@ -48,17 +47,17 @@ func TestNewChildSpan(t *testing.T) {
 
 	ctx, span := NewChildSpan(nil, tr, "test")
 	if ctx == nil {
-		t.Error(errors.New("expected non-nil context"))
+		t.Error("expected non-nil context")
 	}
 
 	if span == nil {
-		t.Error(errors.New("expected non-nil span"))
+		t.Error("expected non-nil span")
 	}
 
 	ctx = context.WithHealthCheckFlag(ctx, true)
 	_, span = NewChildSpan(ctx, tr, "test")
 	if span != nil {
-		t.Error(errors.New("expected nil span"))
+		t.Error("expected nil span")
 	}
 }
 
