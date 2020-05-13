@@ -16,7 +16,10 @@
 
 package strings
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestIndexOfString(t *testing.T) {
 
@@ -129,4 +132,18 @@ func TestCloneList(t *testing.T) {
 		t.Errorf("expected %s got %s", "test", m2[0])
 	}
 
+}
+
+func TestUnique(t *testing.T) {
+	initial := []string{"test", "test", "test1", "test2", "test2", "test", "test3"}
+	expected := "test,test1,test2,test3"
+	after := strings.Join(Unique(initial), ",")
+	if expected != after {
+		t.Errorf("expected %s got %s", expected, after)
+	}
+
+	empty := Unique(nil)
+	if len(empty) != 0 {
+		t.Error("expected empty list")
+	}
 }
