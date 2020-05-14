@@ -34,7 +34,7 @@ import (
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 
 	"github.com/golang/snappy"
-	kv "go.opentelemetry.io/otel/api/key"
+	"go.opentelemetry.io/otel/api/kv"
 )
 
 // QueryCache queries the cache for an HTTPDocument and returns it

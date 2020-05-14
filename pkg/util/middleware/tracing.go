@@ -22,8 +22,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
-	"go.opentelemetry.io/otel/api/core"
-	"go.opentelemetry.io/otel/api/key"
+
+	"go.opentelemetry.io/otel/api/kv"
 )
 
 // Trace attaches a Tracer to an HTTP request
@@ -40,12 +40,12 @@ func Trace(tr *tracing.Tracer, next http.Handler) http.Handler {
 				rsc.PathConfig != nil &&
 				rsc.CacheConfig != nil {
 				tspan.SetAttributes(tr, span,
-					[]core.KeyValue{
-						key.String("origin.name", rsc.OriginConfig.Name),
-						key.String("origin.type", rsc.OriginConfig.OriginType),
-						key.String("router.path", rsc.PathConfig.Path),
-						key.String("cache.name", rsc.CacheConfig.Name),
-						key.String("cache.type", rsc.CacheConfig.CacheType),
+					[]kv.KeyValue{
+						kv.String("origin.name", rsc.OriginConfig.Name),
+						kv.String("origin.type", rsc.OriginConfig.OriginType),
+						kv.String("router.path", rsc.PathConfig.Path),
+						kv.String("cache.name", rsc.CacheConfig.Name),
+						kv.String("cache.type", rsc.CacheConfig.CacheType),
 					}...,
 				)
 			}

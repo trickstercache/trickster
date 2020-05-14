@@ -20,7 +20,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 
-	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/kv"
 )
 
 type NoopSpan struct {
@@ -29,8 +29,8 @@ type NoopSpan struct {
 var _ Span = (*NoopSpan)(nil)
 
 // SpanContext returns an invalid span context.
-func (NoopSpan) SpanContext() core.SpanContext {
-	return core.EmptySpanContext()
+func (NoopSpan) SpanContext() SpanContext {
+	return EmptySpanContext()
 }
 
 // IsRecording always returns false for NoopSpan.
@@ -47,7 +47,11 @@ func (NoopSpan) SetError(v bool) {
 }
 
 // SetAttributes does nothing.
-func (NoopSpan) SetAttributes(attributes ...core.KeyValue) {
+func (NoopSpan) SetAttributes(attributes ...kv.KeyValue) {
+}
+
+// SetAttribute does nothing.
+func (NoopSpan) SetAttribute(k string, v interface{}) {
 }
 
 // End does nothing.
@@ -64,11 +68,11 @@ func (NoopSpan) Tracer() Tracer {
 }
 
 // AddEvent does nothing.
-func (NoopSpan) AddEvent(ctx context.Context, name string, attrs ...core.KeyValue) {
+func (NoopSpan) AddEvent(ctx context.Context, name string, attrs ...kv.KeyValue) {
 }
 
 // AddEventWithTimestamp does nothing.
-func (NoopSpan) AddEventWithTimestamp(ctx context.Context, timestamp time.Time, name string, attrs ...core.KeyValue) {
+func (NoopSpan) AddEventWithTimestamp(ctx context.Context, timestamp time.Time, name string, attrs ...kv.KeyValue) {
 }
 
 // SetName does nothing.

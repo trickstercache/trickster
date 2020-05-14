@@ -17,16 +17,14 @@ package metric
 import (
 	"context"
 
-	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/kv"
 )
 
-// MeterImpl is a convenient interface for SDK and test
-// implementations that would provide a `Meter` but do not wish to
-// re-implement the API's type-safe interfaces.  Helpers provided in
-// this package will construct a `Meter` given a `MeterImpl`.
+// MeterImpl is the interface an SDK must implement to supply a Meter
+// implementation.
 type MeterImpl interface {
 	// RecordBatch atomically records a batch of measurements.
-	RecordBatch(context.Context, []core.KeyValue, ...Measurement)
+	RecordBatch(context.Context, []kv.KeyValue, ...Measurement)
 
 	// NewSyncInstrument returns a newly constructed
 	// synchronous instrument implementation or an error, should
@@ -38,7 +36,7 @@ type MeterImpl interface {
 	// one occur.
 	NewAsyncInstrument(
 		descriptor Descriptor,
-		callback func(func(core.Number, []core.KeyValue)),
+		runner AsyncRunner,
 	) (AsyncImpl, error)
 }
 
@@ -61,10 +59,10 @@ type SyncImpl interface {
 
 	// Bind creates an implementation-level bound instrument,
 	// binding a label set with this instrument implementation.
-	Bind(labels []core.KeyValue) BoundSyncImpl
+	Bind(labels []kv.KeyValue) BoundSyncImpl
 
 	// RecordOne captures a single synchronous metric event.
-	RecordOne(ctx context.Context, number core.Number, labels []core.KeyValue)
+	RecordOne(ctx context.Context, number Number, labels []kv.KeyValue)
 }
 
 // BoundSyncImpl is the implementation-level interface to a
@@ -72,7 +70,7 @@ type SyncImpl interface {
 type BoundSyncImpl interface {
 
 	// RecordOne captures a single synchronous metric event.
-	RecordOne(ctx context.Context, number core.Number)
+	RecordOne(ctx context.Context, number Number)
 
 	// Unbind frees the resources associated with this bound instrument. It
 	// does not affect the metric this bound instrument was created through.
@@ -83,34 +81,7 @@ type BoundSyncImpl interface {
 // asynchronous instrument (e.g., Observer instruments).
 type AsyncImpl interface {
 	InstrumentImpl
-
-	// Note: An `Unregister()` API could be supported here.
 }
-
-// wrappedMeterImpl implements the `Meter` interface given a
-// `MeterImpl` implementation.
-type wrappedMeterImpl struct {
-	impl        MeterImpl
-	libraryName string
-}
-
-// int64ObserverResult is an adapter for int64-valued asynchronous
-// callbacks.
-type int64ObserverResult struct {
-	observe func(core.Number, []core.KeyValue)
-}
-
-// float64ObserverResult is an adapter for float64-valued asynchronous
-// callbacks.
-type float64ObserverResult struct {
-	observe func(core.Number, []core.KeyValue)
-}
-
-var (
-	_ Meter                 = (*wrappedMeterImpl)(nil)
-	_ Int64ObserverResult   = int64ObserverResult{}
-	_ Float64ObserverResult = float64ObserverResult{}
-)
 
 // Configure is a helper that applies all the options to a Config.
 func Configure(opts []Option) Config {
@@ -124,131 +95,87 @@ func Configure(opts []Option) Config {
 // WrapMeterImpl constructs a `Meter` implementation from a
 // `MeterImpl` implementation.
 func WrapMeterImpl(impl MeterImpl, libraryName string) Meter {
-	return &wrappedMeterImpl{
+	return Meter{
 		impl:        impl,
 		libraryName: libraryName,
 	}
 }
 
-func (m *wrappedMeterImpl) RecordBatch(ctx context.Context, ls []core.KeyValue, ms ...Measurement) {
-	m.impl.RecordBatch(ctx, ls, ms...)
+// MeterImpl returns the underlying MeterImpl of this Meter.
+func (m Meter) MeterImpl() MeterImpl {
+	return m.impl
 }
 
-func (m *wrappedMeterImpl) newSync(name string, metricKind Kind, numberKind core.NumberKind, opts []Option) (SyncImpl, error) {
+// newSync constructs one new synchronous instrument.
+func (m Meter) newSync(name string, metricKind Kind, numberKind NumberKind, opts []Option) (SyncImpl, error) {
+	if m.impl == nil {
+		return NoopSync{}, nil
+	}
 	desc := NewDescriptor(name, metricKind, numberKind, opts...)
 	desc.config.LibraryName = m.libraryName
 	return m.impl.NewSyncInstrument(desc)
 }
 
-func (m *wrappedMeterImpl) NewInt64Counter(name string, opts ...Option) (Int64Counter, error) {
-	return WrapInt64CounterInstrument(
-		m.newSync(name, CounterKind, core.Int64NumberKind, opts))
-}
-
-// WrapInt64CounterInstrument returns an `Int64Counter` from a
+// wrapInt64CounterInstrument returns an `Int64Counter` from a
 // `SyncImpl`.  An error will be generated if the
 // `SyncImpl` is nil (in which case a No-op is substituted),
 // otherwise the error passes through.
-func WrapInt64CounterInstrument(syncInst SyncImpl, err error) (Int64Counter, error) {
+func wrapInt64CounterInstrument(syncInst SyncImpl, err error) (Int64Counter, error) {
 	common, err := checkNewSync(syncInst, err)
 	return Int64Counter{syncInstrument: common}, err
 }
 
-func (m *wrappedMeterImpl) NewFloat64Counter(name string, opts ...Option) (Float64Counter, error) {
-	return WrapFloat64CounterInstrument(
-		m.newSync(name, CounterKind, core.Float64NumberKind, opts))
-}
-
-// WrapFloat64CounterInstrument returns an `Float64Counter` from a
+// wrapFloat64CounterInstrument returns an `Float64Counter` from a
 // `SyncImpl`.  An error will be generated if the
 // `SyncImpl` is nil (in which case a No-op is substituted),
 // otherwise the error passes through.
-func WrapFloat64CounterInstrument(syncInst SyncImpl, err error) (Float64Counter, error) {
+func wrapFloat64CounterInstrument(syncInst SyncImpl, err error) (Float64Counter, error) {
 	common, err := checkNewSync(syncInst, err)
 	return Float64Counter{syncInstrument: common}, err
 }
 
-func (m *wrappedMeterImpl) NewInt64Measure(name string, opts ...Option) (Int64Measure, error) {
-	return WrapInt64MeasureInstrument(
-		m.newSync(name, MeasureKind, core.Int64NumberKind, opts))
-}
-
-// WrapInt64MeasureInstrument returns an `Int64Measure` from a
+// wrapInt64MeasureInstrument returns an `Int64Measure` from a
 // `SyncImpl`.  An error will be generated if the
 // `SyncImpl` is nil (in which case a No-op is substituted),
 // otherwise the error passes through.
-func WrapInt64MeasureInstrument(syncInst SyncImpl, err error) (Int64Measure, error) {
+func wrapInt64MeasureInstrument(syncInst SyncImpl, err error) (Int64Measure, error) {
 	common, err := checkNewSync(syncInst, err)
 	return Int64Measure{syncInstrument: common}, err
 }
 
-func (m *wrappedMeterImpl) NewFloat64Measure(name string, opts ...Option) (Float64Measure, error) {
-	return WrapFloat64MeasureInstrument(
-		m.newSync(name, MeasureKind, core.Float64NumberKind, opts))
-}
-
-// WrapFloat64MeasureInstrument returns an `Float64Measure` from a
+// wrapFloat64MeasureInstrument returns an `Float64Measure` from a
 // `SyncImpl`.  An error will be generated if the
 // `SyncImpl` is nil (in which case a No-op is substituted),
 // otherwise the error passes through.
-func WrapFloat64MeasureInstrument(syncInst SyncImpl, err error) (Float64Measure, error) {
+func wrapFloat64MeasureInstrument(syncInst SyncImpl, err error) (Float64Measure, error) {
 	common, err := checkNewSync(syncInst, err)
 	return Float64Measure{syncInstrument: common}, err
 }
 
-func (m *wrappedMeterImpl) newAsync(name string, mkind Kind, nkind core.NumberKind, opts []Option, callback func(func(core.Number, []core.KeyValue))) (AsyncImpl, error) {
+// newAsync constructs one new asynchronous instrument.
+func (m Meter) newAsync(name string, mkind Kind, nkind NumberKind, opts []Option, runner AsyncRunner) (AsyncImpl, error) {
+	if m.impl == nil {
+		return NoopAsync{}, nil
+	}
 	desc := NewDescriptor(name, mkind, nkind, opts...)
 	desc.config.LibraryName = m.libraryName
-	return m.impl.NewAsyncInstrument(desc, callback)
+	return m.impl.NewAsyncInstrument(desc, runner)
 }
 
-func (m *wrappedMeterImpl) RegisterInt64Observer(name string, callback Int64ObserverCallback, opts ...Option) (Int64Observer, error) {
-	if callback == nil {
-		return NoopMeter{}.RegisterInt64Observer("", nil)
-	}
-	return WrapInt64ObserverInstrument(
-		m.newAsync(name, ObserverKind, core.Int64NumberKind, opts,
-			func(observe func(core.Number, []core.KeyValue)) {
-				// Note: this memory allocation could be avoided by
-				// using a pointer to this object and mutating it
-				// on each collection interval.
-				callback(int64ObserverResult{observe})
-			}))
-}
-
-// WrapInt64ObserverInstrument returns an `Int64Observer` from a
+// wrapInt64ObserverInstrument returns an `Int64Observer` from a
 // `AsyncImpl`.  An error will be generated if the
 // `AsyncImpl` is nil (in which case a No-op is substituted),
 // otherwise the error passes through.
-func WrapInt64ObserverInstrument(asyncInst AsyncImpl, err error) (Int64Observer, error) {
+func wrapInt64ObserverInstrument(asyncInst AsyncImpl, err error) (Int64Observer, error) {
 	common, err := checkNewAsync(asyncInst, err)
 	return Int64Observer{asyncInstrument: common}, err
 }
 
-func (m *wrappedMeterImpl) RegisterFloat64Observer(name string, callback Float64ObserverCallback, opts ...Option) (Float64Observer, error) {
-	if callback == nil {
-		return NoopMeter{}.RegisterFloat64Observer("", nil)
-	}
-	return WrapFloat64ObserverInstrument(
-		m.newAsync(name, ObserverKind, core.Float64NumberKind, opts,
-			func(observe func(core.Number, []core.KeyValue)) {
-				callback(float64ObserverResult{observe})
-			}))
-}
-
-// WrapFloat64ObserverInstrument returns an `Float64Observer` from a
+// wrapFloat64ObserverInstrument returns an `Float64Observer` from a
 // `AsyncImpl`.  An error will be generated if the
 // `AsyncImpl` is nil (in which case a No-op is substituted),
 // otherwise the error passes through.
-func WrapFloat64ObserverInstrument(asyncInst AsyncImpl, err error) (Float64Observer, error) {
+func wrapFloat64ObserverInstrument(asyncInst AsyncImpl, err error) (Float64Observer, error) {
 	common, err := checkNewAsync(asyncInst, err)
 	return Float64Observer{asyncInstrument: common}, err
-}
-
-func (io int64ObserverResult) Observe(value int64, labels ...core.KeyValue) {
-	io.observe(core.NewInt64Number(value), labels)
-}
-
-func (fo float64ObserverResult) Observe(value float64, labels ...core.KeyValue) {
-	fo.observe(core.NewFloat64Number(value), labels)
 }

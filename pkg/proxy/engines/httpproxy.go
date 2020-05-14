@@ -39,7 +39,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
-	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/trace"
 	othttptrace "go.opentelemetry.io/otel/plugin/httptrace"
 )
@@ -192,8 +192,8 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 			doSpan.AddEvent(
 				ctx,
 				"Failure",
-				core.Key("Error").String(err.Error()),
-				core.Key("HTTPStatus").Int(resp.StatusCode),
+				kv.String("error", err.Error()),
+				kv.Int("httpStatus", resp.StatusCode),
 			)
 			doSpan.SetStatus(tracing.HTTPToCode(resp.StatusCode), "")
 			doSpan.End()

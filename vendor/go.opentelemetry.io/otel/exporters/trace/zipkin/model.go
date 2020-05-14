@@ -21,7 +21,7 @@ import (
 
 	zkmodel "github.com/openzipkin/zipkin-go/model"
 
-	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/trace"
 	export "go.opentelemetry.io/otel/sdk/export/trace"
 )
@@ -62,18 +62,18 @@ func toZipkinSpanContext(data *export.SpanData) zkmodel.SpanContext {
 	}
 }
 
-func toZipkinTraceID(traceID core.TraceID) zkmodel.TraceID {
+func toZipkinTraceID(traceID trace.ID) zkmodel.TraceID {
 	return zkmodel.TraceID{
 		High: binary.BigEndian.Uint64(traceID[:8]),
 		Low:  binary.BigEndian.Uint64(traceID[8:]),
 	}
 }
 
-func toZipkinID(spanID core.SpanID) zkmodel.ID {
+func toZipkinID(spanID trace.SpanID) zkmodel.ID {
 	return zkmodel.ID(binary.BigEndian.Uint64(spanID[:]))
 }
 
-func toZipkinParentID(spanID core.SpanID) *zkmodel.ID {
+func toZipkinParentID(spanID trace.SpanID) *zkmodel.ID {
 	if spanID.IsValid() {
 		id := toZipkinID(spanID)
 		return &id
@@ -122,7 +122,7 @@ func toZipkinAnnotations(events []export.Event) []zkmodel.Annotation {
 	return annotations
 }
 
-func attributesToJSONMapString(attributes []core.KeyValue) string {
+func attributesToJSONMapString(attributes []kv.KeyValue) string {
 	m := make(map[string]interface{}, len(attributes))
 	for _, attribute := range attributes {
 		m[(string)(attribute.Key)] = attribute.Value.AsInterface()

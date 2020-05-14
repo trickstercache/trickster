@@ -23,8 +23,8 @@ import (
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 
-	"go.opentelemetry.io/otel/api/core"
 	"go.opentelemetry.io/otel/api/correlation"
+	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/plugin/httptrace"
 )
@@ -102,7 +102,7 @@ func NewChildSpan(ctx context.Context, tr *tracing.Tracer,
 }
 
 // SetAttributes safely sets attributes on a span, unless they are in the omit list
-func SetAttributes(tr *tracing.Tracer, span trace.Span, kvs ...core.KeyValue) {
+func SetAttributes(tr *tracing.Tracer, span trace.Span, kvs ...kv.KeyValue) {
 	l := len(kvs)
 	if tr == nil || span == nil || l == 0 {
 		return
@@ -110,12 +110,12 @@ func SetAttributes(tr *tracing.Tracer, span trace.Span, kvs ...core.KeyValue) {
 	span.SetAttributes(filterAttributes(tr, kvs)...)
 }
 
-func filterAttributes(tr *tracing.Tracer, kvs []core.KeyValue) []core.KeyValue {
+func filterAttributes(tr *tracing.Tracer, kvs []kv.KeyValue) []kv.KeyValue {
 	l := len(kvs)
 	if tr == nil || l == 0 || tr.Options == nil || len(tr.Options.OmitTagsList) == 0 {
 		return kvs
 	}
-	approved := make([]core.KeyValue, 0, l)
+	approved := make([]kv.KeyValue, 0, l)
 	for _, kv := range kvs {
 		// if the key is not in the omit list, add it to the approved list
 		if _, ok := tr.Options.OmitTags[string(kv.Key)]; !ok {
