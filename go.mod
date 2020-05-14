@@ -25,11 +25,12 @@ require (
 	github.com/tricksterproxy/mockster v1.1.1
 	github.com/yuin/gopher-lua v0.0.0-20190514113301-1cd887cd7036 // indirect
 	go.etcd.io/bbolt v1.3.2 // indirect
-	go.opentelemetry.io/otel v0.4.3
-	go.opentelemetry.io/otel/exporters/trace/jaeger v0.4.3
-	go.opentelemetry.io/otel/exporters/trace/zipkin v0.4.3
-	golang.org/x/net v0.0.0-20200114155413-6afb5195e5aa
-	google.golang.org/grpc v1.27.1
+	go.opentelemetry.io/otel v0.5.0
+	go.opentelemetry.io/otel/exporters/trace/jaeger v0.5.0
+	go.opentelemetry.io/otel/exporters/trace/zipkin v0.5.0
+	golang.org/x/net v0.0.0-20200324143707-d3edc9973b7e
+	google.golang.org/api v0.24.0 // indirect
+	google.golang.org/grpc v1.29.1
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
