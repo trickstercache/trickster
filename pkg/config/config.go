@@ -743,6 +743,10 @@ func (c *Config) Clone() *Config {
 	nc.Main.PprofServer = c.Main.PprofServer
 	nc.Main.ServerName = c.Main.ServerName
 
+	nc.Main.configFilePath = c.Main.configFilePath
+	nc.Main.configLastModified = c.Main.configLastModified
+	nc.Main.configRateLimitTime = c.Main.configRateLimitTime
+
 	nc.Logging.LogFile = c.Logging.LogFile
 	nc.Logging.LogLevel = c.Logging.LogLevel
 
