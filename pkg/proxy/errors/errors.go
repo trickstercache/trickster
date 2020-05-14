@@ -33,6 +33,9 @@ var ErrServerRequestNotCompleted = errors.New("server request not completed")
 // ErrReadIndexTooLarge is an error indicating the read index is too large
 var ErrReadIndexTooLarge = errors.New("read index too large")
 
+// ErrNilCacheDocument indicates a cache object reference is nil
+var ErrNilCacheDocument = errors.New("nil cache document")
+
 // ErrEmptyDocumentBody indicates a cached object did not contain an HTTP Document upon retrieval
 var ErrEmptyDocumentBody = errors.New("empty document body")
 
@@ -50,6 +53,9 @@ var ErrNoRanges = errors.New("no usable ranges")
 
 // ErrInvalidRuleOptions indicates an error that the provided rule options were invalid
 var ErrInvalidRuleOptions = errors.New("invalid rule options")
+
+// ErrPCFContentLength indicates that a response's content length does not permit PCF
+var ErrPCFContentLength = errors.New("content length does not permit PCF")
 
 // MissingURLParam returns a Formatted Error
 func MissingURLParam(param string) error {

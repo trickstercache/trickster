@@ -18,7 +18,6 @@ package engines
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -26,6 +25,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
@@ -219,7 +219,7 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 
 	d := pr.cacheDocument
 	if d == nil {
-		return errors.New("nil cacheDocument")
+		return errors.ErrNilCacheDocument
 	}
 
 	if pr.cachingPolicy.IsNegativeCache {
@@ -252,49 +252,13 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 
 	rsc := request.GetResources(pr.Request)
 	pc := rsc.PathConfig
-	oc := rsc.OriginConfig
 
-	// if a we're using PCF, create that object for the cache miss
+	// if a we're using PCF, handle that separately
 	if methods.IsCacheable(pr.Method) && !pr.wantsRanges && pc != nil &&
 		pc.CollapsedForwardingType == forwarding.CFTypeProgressive {
-		pcfResult, pcfExists := Reqs.Load(pr.key)
-		// a PCF session is in progress for this URL, join this client to it.
-		if pcfExists {
-			pr.cacheLock.Release()
-			pr.hasWriteLock = false
-			pcf := pcfResult.(ProgressiveCollapseForwarder)
-			pr.upstreamResponse = pcf.GetResp()
-			pr.responseWriter = PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode,
-				pr.upstreamResponse.Header)
-			pcf.AddClient(pr.responseWriter)
-			return nil
-		}
-
-		ctx, span := tspan.NewChildSpan(pr.upstreamRequest.Context(), rsc.Tracer, "FetchObject")
-		if span != nil {
-			span.SetAttributes(kv.Bool("isPCF", true))
-			defer span.End()
-		}
-		pr.upstreamRequest = pr.upstreamRequest.WithContext(ctx)
-
-		reader, resp, contentLength := PrepareFetchReader(pr.upstreamRequest)
-		pr.upstreamResponse = resp
-
-		pr.writeResponseHeader()
-		pr.responseWriter = PrepareResponseWriter(pr.responseWriter, resp.StatusCode, resp.Header)
-		// Check if we know the content length and if it is less than our max object size.
-		if contentLength > 0 && contentLength < int64(oc.MaxObjectSizeBytes) {
-			pcf := NewPCF(resp, contentLength)
-			Reqs.Store(pr.key, pcf)
-			// Blocks until server completes
-			go func() {
-				io.Copy(pcf, reader)
-				pcf.Close()
-				Reqs.Delete(pr.key)
-			}()
-			pcf.AddClient(pr.responseWriter)
-			pr.determineCacheability()
-			return handleAllWrites(pr)
+		if err := handlePCF(pr); err != errors.ErrPCFContentLength {
+			// if err is nil, or something else, we'll proceed.
+			return err
 		}
 	}
 
@@ -308,6 +272,65 @@ func handleUpstreamTransactions(pr *proxyRequest) error {
 	pr.reconstituteResponses()
 	pr.determineCacheability()
 	return nil
+}
+
+func handlePCF(pr *proxyRequest) error {
+
+	rsc := request.GetResources(pr.Request)
+	oc := rsc.OriginConfig
+
+	pr.isPCF = true
+	pcfResult, pcfExists := Reqs.Load(pr.key)
+	// a PCF session is in progress for this URL, join this client to it.
+	if pcfExists {
+		pr.cacheLock.Release()
+		pr.hasWriteLock = false
+		pcf := pcfResult.(ProgressiveCollapseForwarder)
+		pr.upstreamResponse = pcf.GetResp()
+		pr.responseWriter = PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode,
+			pr.upstreamResponse.Header)
+		pcf.AddClient(pr.responseWriter)
+		return nil
+	}
+
+	ctx, span := tspan.NewChildSpan(pr.upstreamRequest.Context(), rsc.Tracer, "FetchObject")
+	if span != nil {
+		span.SetAttributes(kv.Bool("isPCF", true))
+		defer span.End()
+	}
+	pr.upstreamRequest = pr.upstreamRequest.WithContext(ctx)
+
+	reader, resp, contentLength := PrepareFetchReader(pr.upstreamRequest)
+	pr.upstreamResponse = resp
+
+	pr.writeResponseHeader()
+	pr.responseWriter = PrepareResponseWriter(pr.responseWriter, resp.StatusCode, resp.Header)
+	// Check if we know the content length and if it is less than our max object size.
+	if contentLength > 0 && contentLength < int64(oc.MaxObjectSizeBytes) {
+		pcf := NewPCF(resp, contentLength)
+		Reqs.Store(pr.key, pcf)
+		// Blocks until server completes
+
+		pr.cachingPolicy.Merge(GetResponseCachingPolicy(pr.upstreamResponse.StatusCode,
+			rsc.OriginConfig.NegativeCache, pr.upstreamResponse.Header))
+		pr.determineCacheability()
+
+		go func() {
+			var dest io.Writer = pcf
+			if pr.writeToCache {
+				pr.cacheBuffer = &bytes.Buffer{}
+				dest = io.MultiWriter(pcf, pr.cacheBuffer)
+			}
+			io.Copy(dest, reader)
+			pcf.Close()
+			Reqs.Delete(pr.key)
+		}()
+
+		pcf.AddClient(pr.responseWriter)
+
+		return handleAllWrites(pr)
+	}
+	return errors.ErrPCFContentLength
 }
 
 func handleAllWrites(pr *proxyRequest) error {
