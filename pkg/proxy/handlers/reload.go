@@ -32,15 +32,19 @@ func ReloadHandleFunc(f reload.ReloaderFunc, conf *config.Config, wg *sync.WaitG
 	log *tl.Logger, caches map[string]cache.Cache,
 	args []string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if conf.IsStale() {
-			log.Warn("configuration reload starting now", tl.Pairs{"source": "reloadEndpoint"})
-			err := f(conf, wg, log, caches, args, false)
-			if err == nil {
-				w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
-				w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("configuration reloaded"))
-				return
+		if conf != nil {
+			conf.Main.ReloaderLock.Lock()
+			defer conf.Main.ReloaderLock.Unlock()
+			if conf.IsStale() {
+				log.Warn("configuration reload starting now", tl.Pairs{"source": "reloadEndpoint"})
+				err := f(conf, wg, log, caches, args, false)
+				if err == nil {
+					w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
+					w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
+					w.WriteHeader(http.StatusOK)
+					w.Write([]byte("configuration reloaded"))
+					return
+				}
 			}
 		}
 		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)

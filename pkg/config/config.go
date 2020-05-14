@@ -101,6 +101,9 @@ type MainConfig struct {
 	// defaults to os.Hostname
 	ServerName string `toml:"server_name"`
 
+	// ReloaderLock is used to lock the config for reloading
+	ReloaderLock *sync.Mutex `toml:"-"`
+
 	configFilePath      string
 	configLastModified  time.Time
 	configRateLimitTime time.Time
@@ -177,6 +180,7 @@ func NewConfig() *Config {
 			PprofServer:        d.DefaultPprofServerName,
 			stalenessCheckLock: &sync.Mutex{},
 			ServerName:         hn,
+			ReloaderLock:       &sync.Mutex{},
 		},
 		Metrics: &MetricsConfig{
 			ListenPort: d.DefaultMetricsListenPort,
