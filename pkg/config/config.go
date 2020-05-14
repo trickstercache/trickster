@@ -102,12 +102,12 @@ type MainConfig struct {
 	ServerName string `toml:"server_name"`
 
 	// ReloaderLock is used to lock the config for reloading
-	ReloaderLock *sync.Mutex `toml:"-"`
+	ReloaderLock sync.Mutex `toml:"-"`
 
 	configFilePath      string
 	configLastModified  time.Time
 	configRateLimitTime time.Time
-	stalenessCheckLock  *sync.Mutex
+	stalenessCheckLock  sync.Mutex
 }
 
 // FrontendConfig is a collection of configurations for the main http frontend for the application
@@ -174,13 +174,11 @@ func NewConfig() *Config {
 			LogLevel: d.DefaultLogLevel,
 		},
 		Main: &MainConfig{
-			ConfigHandlerPath:  d.DefaultConfigHandlerPath,
-			PingHandlerPath:    d.DefaultPingHandlerPath,
-			ReloadHandlerPath:  d.DefaultReloadHandlerPath,
-			PprofServer:        d.DefaultPprofServerName,
-			stalenessCheckLock: &sync.Mutex{},
-			ServerName:         hn,
-			ReloaderLock:       &sync.Mutex{},
+			ConfigHandlerPath: d.DefaultConfigHandlerPath,
+			PingHandlerPath:   d.DefaultPingHandlerPath,
+			ReloadHandlerPath: d.DefaultReloadHandlerPath,
+			PprofServer:       d.DefaultPprofServerName,
+			ServerName:        hn,
 		},
 		Metrics: &MetricsConfig{
 			ListenPort: d.DefaultMetricsListenPort,
