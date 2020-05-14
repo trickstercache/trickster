@@ -33,8 +33,7 @@ import (
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	"github.com/tricksterproxy/trickster/pkg/util/log"
 
-	"go.opentelemetry.io/otel/api/core"
-	"go.opentelemetry.io/otel/api/key"
+	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/trace"
 )
 
@@ -162,7 +161,7 @@ func handleCacheRevalidation(pr *proxyRequest) error {
 		span.AddEvent(
 			ctx,
 			"Complete",
-			core.Key("Result").String(reval),
+			kv.String("result", reval),
 		)
 		span.End()
 	}()
@@ -273,7 +272,7 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 
 		ctx, span := tspan.NewChildSpan(pr.upstreamRequest.Context(), rsc.Tracer, "FetchObject")
 		if span != nil {
-			span.SetAttributes(key.Bool("isPCF", true))
+			span.SetAttributes(kv.Bool("isPCF", true))
 			defer span.End()
 		}
 		pr.upstreamRequest = pr.upstreamRequest.WithContext(ctx)

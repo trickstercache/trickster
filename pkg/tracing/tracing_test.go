@@ -21,8 +21,7 @@ import (
 	"strconv"
 	"testing"
 
-	"go.opentelemetry.io/otel/api/core"
-	"go.opentelemetry.io/otel/api/key"
+	"go.opentelemetry.io/otel/api/kv"
 	"google.golang.org/grpc/codes"
 )
 
@@ -80,7 +79,7 @@ func TestTags(t *testing.T) {
 		t.Errorf("expected %d got %d", 2, len(t1))
 	}
 
-	attrs := []core.KeyValue{key.String("testKey3", "testValue3")}
+	attrs := []kv.KeyValue{kv.String("testKey3", "testValue3")}
 	t1.MergeAttr(attrs)
 	if len(t1) != 3 {
 		t.Errorf("expected %d got %d", 3, len(t1))
