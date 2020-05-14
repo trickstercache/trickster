@@ -19,7 +19,7 @@ package metric
 import (
 	"context"
 
-	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/unit"
 )
 
@@ -53,7 +53,7 @@ type Option interface {
 // (e.g., Int64Counter.Measurement()).
 type Measurement struct {
 	// number needs to be aligned for 64-bit atomic operations.
-	number     core.Number
+	number     Number
 	instrument SyncImpl
 }
 
@@ -65,7 +65,7 @@ func (m Measurement) SyncImpl() SyncImpl {
 }
 
 // Number returns a number recorded in this measurement.
-func (m Measurement) Number() core.Number {
+func (m Measurement) Number() Number {
 	return m.number
 }
 
@@ -87,12 +87,12 @@ const (
 type Descriptor struct {
 	name       string
 	kind       Kind
-	numberKind core.NumberKind
+	numberKind NumberKind
 	config     Config
 }
 
 // NewDescriptor returns a Descriptor with the given contents.
-func NewDescriptor(name string, mkind Kind, nkind core.NumberKind, opts ...Option) Descriptor {
+func NewDescriptor(name string, mkind Kind, nkind NumberKind, opts ...Option) Descriptor {
 	return Descriptor{
 		name:       name,
 		kind:       mkind,
@@ -125,7 +125,7 @@ func (d Descriptor) Unit() unit.Unit {
 
 // NumberKind returns whether this instrument is declared over int64,
 // float64, or uint64 values.
-func (d Descriptor) NumberKind() core.NumberKind {
+func (d Descriptor) NumberKind() NumberKind {
 	return d.numberKind
 }
 
@@ -135,38 +135,92 @@ func (d Descriptor) LibraryName() string {
 	return d.config.LibraryName
 }
 
-// Meter is an interface to the metrics portion of the OpenTelemetry SDK.
-type Meter interface {
-	// RecordBatch atomically records a batch of measurements.
-	RecordBatch(context.Context, []core.KeyValue, ...Measurement)
+// Meter is the OpenTelemetry metric API, based on a `MeterImpl`
+// implementation and the `Meter` library name.
+//
+// An uninitialized Meter is a no-op implementation.
+type Meter struct {
+	impl        MeterImpl
+	libraryName string
+}
 
-	// All instrument constructors may return an error for
-	// conditions such as:
-	//   `name` is an empty string
-	//   `name` was previously registered as a different kind of instrument
-	//          for a given named `Meter`.
+// RecordBatch atomically records a batch of measurements.
+func (m Meter) RecordBatch(ctx context.Context, ls []kv.KeyValue, ms ...Measurement) {
+	if m.impl == nil {
+		return
+	}
+	m.impl.RecordBatch(ctx, ls, ms...)
+}
 
-	// NewInt64Counter creates a new integral counter with a given
-	// name and customized with passed options.
-	NewInt64Counter(name string, opts ...Option) (Int64Counter, error)
-	// NewFloat64Counter creates a new floating point counter with
-	// a given name and customized with passed options.
-	NewFloat64Counter(name string, opts ...Option) (Float64Counter, error)
-	// NewInt64Measure creates a new integral measure with a given
-	// name and customized with passed options.
-	NewInt64Measure(name string, opts ...Option) (Int64Measure, error)
-	// NewFloat64Measure creates a new floating point measure with
-	// a given name and customized with passed options.
-	NewFloat64Measure(name string, opts ...Option) (Float64Measure, error)
+// NewInt64Counter creates a new integer Counter instrument with the
+// given name, customized with options.  May return an error if the
+// name is invalid (e.g., empty) or improperly registered (e.g.,
+// duplicate registration).
+func (m Meter) NewInt64Counter(name string, options ...Option) (Int64Counter, error) {
+	return wrapInt64CounterInstrument(
+		m.newSync(name, CounterKind, Int64NumberKind, options))
+}
 
-	// RegisterInt64Observer creates a new integral observer with a
-	// given name, running a given callback, and customized with passed
-	// options. Callback may be nil.
-	RegisterInt64Observer(name string, callback Int64ObserverCallback, opts ...Option) (Int64Observer, error)
-	// RegisterFloat64Observer creates a new floating point observer
-	// with a given name, running a given callback, and customized with
-	// passed options. Callback may be nil.
-	RegisterFloat64Observer(name string, callback Float64ObserverCallback, opts ...Option) (Float64Observer, error)
+// NewFloat64Counter creates a new floating point Counter with the
+// given name, customized with options.  May return an error if the
+// name is invalid (e.g., empty) or improperly registered (e.g.,
+// duplicate registration).
+func (m Meter) NewFloat64Counter(name string, options ...Option) (Float64Counter, error) {
+	return wrapFloat64CounterInstrument(
+		m.newSync(name, CounterKind, Float64NumberKind, options))
+}
+
+// NewInt64Measure creates a new integer Measure instrument with the
+// given name, customized with options.  May return an error if the
+// name is invalid (e.g., empty) or improperly registered (e.g.,
+// duplicate registration).
+func (m Meter) NewInt64Measure(name string, opts ...Option) (Int64Measure, error) {
+	return wrapInt64MeasureInstrument(
+		m.newSync(name, MeasureKind, Int64NumberKind, opts))
+}
+
+// NewFloat64Measure creates a new floating point Measure with the
+// given name, customized with options.  May return an error if the
+// name is invalid (e.g., empty) or improperly registered (e.g.,
+// duplicate registration).
+func (m Meter) NewFloat64Measure(name string, opts ...Option) (Float64Measure, error) {
+	return wrapFloat64MeasureInstrument(
+		m.newSync(name, MeasureKind, Float64NumberKind, opts))
+}
+
+// RegisterInt64Observer creates a new integer Observer instrument
+// with the given name, running a given callback, and customized with
+// options.  May return an error if the name is invalid (e.g., empty)
+// or improperly registered (e.g., duplicate registration).
+func (m Meter) RegisterInt64Observer(name string, callback Int64ObserverCallback, opts ...Option) (Int64Observer, error) {
+	if callback == nil {
+		return wrapInt64ObserverInstrument(NoopAsync{}, nil)
+	}
+	return wrapInt64ObserverInstrument(
+		m.newAsync(name, ObserverKind, Int64NumberKind, opts,
+			newInt64AsyncRunner(callback)))
+}
+
+// RegisterFloat64Observer creates a new floating point Observer with
+// the given name, running a given callback, and customized with
+// options.  May return an error if the name is invalid (e.g., empty)
+// or improperly registered (e.g., duplicate registration).
+func (m Meter) RegisterFloat64Observer(name string, callback Float64ObserverCallback, opts ...Option) (Float64Observer, error) {
+	if callback == nil {
+		return wrapFloat64ObserverInstrument(NoopAsync{}, nil)
+	}
+	return wrapFloat64ObserverInstrument(
+		m.newAsync(name, ObserverKind, Float64NumberKind, opts,
+			newFloat64AsyncRunner(callback)))
+}
+
+// NewBatchObserver creates a new BatchObserver that supports
+// making batches of observations for multiple instruments.
+func (m Meter) NewBatchObserver(callback BatchObserverCallback) BatchObserver {
+	return BatchObserver{
+		meter:  m,
+		runner: newBatchAsyncRunner(callback),
+	}
 }
 
 // WithDescription applies provided description.

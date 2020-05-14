@@ -14,20 +14,20 @@
 
 package trace
 
-import "go.opentelemetry.io/otel/api/core"
+import "go.opentelemetry.io/otel/api/kv"
 
 type Sampler interface {
 	// ShouldSample returns a Decision that contains a decision whether to sample
 	// or not sample the span to be created. Decision is based on a Sampler specific
 	// algorithm that takes into account one or more input parameters.
 	ShouldSample(
-		sc core.SpanContext,
+		sc SpanContext,
 		remote bool,
-		traceID core.TraceID,
-		spanID core.SpanID,
+		traceID ID,
+		spanID SpanID,
 		spanName string,
 		spanKind SpanKind,
-		attributes []core.KeyValue,
+		attributes []kv.KeyValue,
 		links []Link,
 	) Decision
 
@@ -43,5 +43,5 @@ type Decision struct {
 
 	// Attributes provides insight into Sample	r's decision process.
 	// It could be empty slice or nil if no attributes are recorded by the sampler.
-	Attributes []core.KeyValue
+	Attributes []kv.KeyValue
 }

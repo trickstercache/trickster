@@ -18,7 +18,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/kv"
 	api "go.opentelemetry.io/otel/api/trace"
 )
 
@@ -30,13 +30,13 @@ type Sampler interface {
 
 // SamplingParameters contains the values passed to a Sampler.
 type SamplingParameters struct {
-	ParentContext   core.SpanContext
-	TraceID         core.TraceID
-	SpanID          core.SpanID
+	ParentContext   api.SpanContext
+	TraceID         api.ID
+	SpanID          api.SpanID
 	Name            string
 	HasRemoteParent bool
 	Kind            api.SpanKind
-	Attributes      []core.KeyValue
+	Attributes      []kv.KeyValue
 	Links           []api.Link
 }
 
@@ -53,7 +53,7 @@ const (
 // SamplingResult conveys a SamplingDecision and a set of Attributes.
 type SamplingResult struct {
 	Decision   SamplingDecision
-	Attributes []core.KeyValue
+	Attributes []kv.KeyValue
 }
 
 type probabilitySampler struct {

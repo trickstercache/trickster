@@ -23,15 +23,15 @@ import (
 
 	"google.golang.org/grpc/codes"
 
-	"go.opentelemetry.io/otel/api/core"
+	"go.opentelemetry.io/otel/api/kv"
 	apitrace "go.opentelemetry.io/otel/api/trace"
 	export "go.opentelemetry.io/otel/sdk/export/trace"
 	"go.opentelemetry.io/otel/sdk/internal"
 )
 
 const (
-	errorTypeKey    = core.Key("error.type")
-	errorMessageKey = core.Key("error.message")
+	errorTypeKey    = kv.Key("error.type")
+	errorMessageKey = kv.Key("error.message")
 	errorEventName  = "error"
 )
 
@@ -44,7 +44,7 @@ type span struct {
 	// SpanContext, so that the trace ID is propagated.
 	data        *export.SpanData
 	mu          sync.Mutex // protects the contents of *data (but not the pointer value.)
-	spanContext core.SpanContext
+	spanContext apitrace.SpanContext
 
 	// attributes are capped at configured limit. When the capacity is reached an oldest entry
 	// is removed to create room for a new entry.
@@ -66,9 +66,9 @@ type span struct {
 
 var _ apitrace.Span = &span{}
 
-func (s *span) SpanContext() core.SpanContext {
+func (s *span) SpanContext() apitrace.SpanContext {
 	if s == nil {
-		return core.EmptySpanContext()
+		return apitrace.EmptySpanContext()
 	}
 	return s.spanContext
 }
@@ -93,11 +93,15 @@ func (s *span) SetStatus(code codes.Code, msg string) {
 	s.mu.Unlock()
 }
 
-func (s *span) SetAttributes(attributes ...core.KeyValue) {
+func (s *span) SetAttributes(attributes ...kv.KeyValue) {
 	if !s.IsRecording() {
 		return
 	}
 	s.copyToCappedAttributes(attributes...)
+}
+
+func (s *span) SetAttribute(k string, v interface{}) {
+	s.SetAttributes(kv.Infer(k, v))
 }
 
 func (s *span) End(options ...apitrace.EndOption) {
@@ -172,21 +176,21 @@ func (s *span) Tracer() apitrace.Tracer {
 	return s.tracer
 }
 
-func (s *span) AddEvent(ctx context.Context, name string, attrs ...core.KeyValue) {
+func (s *span) AddEvent(ctx context.Context, name string, attrs ...kv.KeyValue) {
 	if !s.IsRecording() {
 		return
 	}
 	s.addEventWithTimestamp(time.Now(), name, attrs...)
 }
 
-func (s *span) AddEventWithTimestamp(ctx context.Context, timestamp time.Time, name string, attrs ...core.KeyValue) {
+func (s *span) AddEventWithTimestamp(ctx context.Context, timestamp time.Time, name string, attrs ...kv.KeyValue) {
 	if !s.IsRecording() {
 		return
 	}
 	s.addEventWithTimestamp(timestamp, name, attrs...)
 }
 
-func (s *span) addEventWithTimestamp(timestamp time.Time, name string, attrs ...core.KeyValue) {
+func (s *span) addEventWithTimestamp(timestamp time.Time, name string, attrs ...kv.KeyValue) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messageEvents.add(export.Event{
@@ -207,9 +211,9 @@ func (s *span) SetName(name string) {
 	s.data.Name = name
 	// SAMPLING
 	noParent := !s.data.ParentSpanID.IsValid()
-	var ctx core.SpanContext
+	var ctx apitrace.SpanContext
 	if noParent {
-		ctx = core.EmptySpanContext()
+		ctx = apitrace.EmptySpanContext()
 	} else {
 		// FIXME: Where do we get the parent context from?
 		// From SpanStore?
@@ -281,7 +285,7 @@ func (s *span) interfaceArrayToMessageEventArray() []export.Event {
 	return messageEventArr
 }
 
-func (s *span) copyToCappedAttributes(attributes ...core.KeyValue) {
+func (s *span) copyToCappedAttributes(attributes ...kv.KeyValue) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, a := range attributes {
@@ -298,14 +302,14 @@ func (s *span) addChild() {
 	s.mu.Unlock()
 }
 
-func startSpanInternal(tr *tracer, name string, parent core.SpanContext, remoteParent bool, o apitrace.StartConfig) *span {
+func startSpanInternal(tr *tracer, name string, parent apitrace.SpanContext, remoteParent bool, o apitrace.StartConfig) *span {
 	var noParent bool
 	span := &span{}
 	span.spanContext = parent
 
 	cfg := tr.provider.config.Load().(*Config)
 
-	if parent == core.EmptySpanContext() {
+	if parent == apitrace.EmptySpanContext() {
 		span.spanContext.TraceID = cfg.IDGenerator.NewTraceID()
 		noParent = true
 	}
@@ -365,11 +369,11 @@ func startSpanInternal(tr *tracer, name string, parent core.SpanContext, remoteP
 type samplingData struct {
 	noParent     bool
 	remoteParent bool
-	parent       core.SpanContext
+	parent       apitrace.SpanContext
 	name         string
 	cfg          *Config
 	span         *span
-	attributes   []core.KeyValue
+	attributes   []kv.KeyValue
 	links        []apitrace.Link
 	kind         apitrace.SpanKind
 }
@@ -398,13 +402,13 @@ func makeSamplingDecision(data samplingData) SamplingResult {
 			Links:           data.links,
 		})
 		if sampled.Decision == RecordAndSampled {
-			spanContext.TraceFlags |= core.TraceFlagsSampled
+			spanContext.TraceFlags |= apitrace.FlagsSampled
 		} else {
-			spanContext.TraceFlags &^= core.TraceFlagsSampled
+			spanContext.TraceFlags &^= apitrace.FlagsSampled
 		}
 		return sampled
 	}
-	if data.parent.TraceFlags&core.TraceFlagsSampled != 0 {
+	if data.parent.TraceFlags&apitrace.FlagsSampled != 0 {
 		return SamplingResult{Decision: RecordAndSampled}
 	}
 	return SamplingResult{Decision: NotRecord}
