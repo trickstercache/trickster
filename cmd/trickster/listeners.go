@@ -50,8 +50,8 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	adminRouter.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
 
 	// No changes in frontend config
-	if conf.Frontend != nil && oldConf != nil &&
-		oldConf.Frontend != nil && oldConf.Frontend.Equal(conf.Frontend) {
+	if oldConf != nil && oldConf.Frontend != nil &&
+		oldConf.Frontend.Equal(conf.Frontend) {
 		lg.UpdateRouters(router, adminRouter)
 		if ttls.OptionsChanged(conf, oldConf) {
 			tlsConfig, _ = conf.TLSCertConfig()
@@ -118,7 +118,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 
 	// if the plaintext HTTP port is configured, then set up the http listener instance
 	if conf.Frontend.ListenPort > 0 && (!hasOldFC ||
-		(oldConf.Frontend.ListenAddress != conf.Frontend.ListenAddress &&
+		(oldConf.Frontend.ListenAddress != conf.Frontend.ListenAddress ||
 			oldConf.Frontend.ListenPort != conf.Frontend.ListenPort)) {
 		lg.DrainAndClose("httpListener", drainTimeout)
 		wg.Add(1)
