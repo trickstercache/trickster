@@ -54,6 +54,15 @@ var ErrNoRanges = errors.New("no usable ranges")
 // ErrInvalidRuleOptions indicates an error that the provided rule options were invalid
 var ErrInvalidRuleOptions = errors.New("invalid rule options")
 
+// ErrNilListener indicates an error that the underlying net.Listener is nil
+var ErrNilListener = errors.New("nil listener")
+
+// ErrNoSuchListener indicates an error that the provided listener name is unknown
+var ErrNoSuchListener = errors.New("no such listener")
+
+// ErrDrainTimeout indicates an error that the connection drain took longer than the requested timeout
+var ErrDrainTimeout = errors.New("timed out draining")
+
 // ErrPCFContentLength indicates that a response's content length does not permit PCF
 var ErrPCFContentLength = errors.New("content length does not permit PCF")
 

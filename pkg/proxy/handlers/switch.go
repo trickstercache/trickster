@@ -51,6 +51,14 @@ func (s *SwitchHandler) Update(h http.Handler) {
 	s.setReloading(false)
 }
 
+// Handler returns the current mux
+func (s *SwitchHandler) Handler() http.Handler {
+	if s.isReloading() {
+		return s.oldMux
+	}
+	return s.mux
+}
+
 func (s *SwitchHandler) isReloading() bool {
 	return atomic.LoadInt32(&s.reloading) != 0
 }
