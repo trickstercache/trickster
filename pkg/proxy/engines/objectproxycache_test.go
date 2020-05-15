@@ -30,6 +30,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/locks"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
+	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
@@ -583,12 +584,10 @@ func TestObjectProxyCacheRequestWithPCF(t *testing.T) {
 
 func TestObjectProxyCacheTrueHitNoDocumentErr(t *testing.T) {
 
-	const expected = "nil cacheDocument"
-
 	pr := &proxyRequest{}
 	err := handleTrueCacheHit(pr)
-	if err.Error() != expected {
-		t.Errorf("expected %s got %s", expected, err.Error())
+	if err != errors.ErrNilCacheDocument {
+		t.Errorf("expected %s got %s", errors.ErrNilCacheDocument, err)
 	}
 }
 

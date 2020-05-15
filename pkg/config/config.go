@@ -101,10 +101,13 @@ type MainConfig struct {
 	// defaults to os.Hostname
 	ServerName string `toml:"server_name"`
 
+	// ReloaderLock is used to lock the config for reloading
+	ReloaderLock sync.Mutex `toml:"-"`
+
 	configFilePath      string
 	configLastModified  time.Time
 	configRateLimitTime time.Time
-	stalenessCheckLock  *sync.Mutex
+	stalenessCheckLock  sync.Mutex
 }
 
 // FrontendConfig is a collection of configurations for the main http frontend for the application
@@ -171,12 +174,11 @@ func NewConfig() *Config {
 			LogLevel: d.DefaultLogLevel,
 		},
 		Main: &MainConfig{
-			ConfigHandlerPath:  d.DefaultConfigHandlerPath,
-			PingHandlerPath:    d.DefaultPingHandlerPath,
-			ReloadHandlerPath:  d.DefaultReloadHandlerPath,
-			PprofServer:        d.DefaultPprofServerName,
-			stalenessCheckLock: &sync.Mutex{},
-			ServerName:         hn,
+			ConfigHandlerPath: d.DefaultConfigHandlerPath,
+			PingHandlerPath:   d.DefaultPingHandlerPath,
+			ReloadHandlerPath: d.DefaultReloadHandlerPath,
+			PprofServer:       d.DefaultPprofServerName,
+			ServerName:        hn,
 		},
 		Metrics: &MetricsConfig{
 			ListenPort: d.DefaultMetricsListenPort,
@@ -738,6 +740,10 @@ func (c *Config) Clone() *Config {
 	nc.Main.ReloadHandlerPath = c.Main.ReloadHandlerPath
 	nc.Main.PprofServer = c.Main.PprofServer
 	nc.Main.ServerName = c.Main.ServerName
+
+	nc.Main.configFilePath = c.Main.configFilePath
+	nc.Main.configLastModified = c.Main.configLastModified
+	nc.Main.configRateLimitTime = c.Main.configRateLimitTime
 
 	nc.Logging.LogFile = c.Logging.LogFile
 	nc.Logging.LogLevel = c.Logging.LogLevel

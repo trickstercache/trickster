@@ -43,13 +43,16 @@ func startHupMonitor(conf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
 		for {
 			select {
 			case <-hups:
+				conf.Main.ReloaderLock.Lock()
 				if conf.IsStale() {
 					log.Warn("configuration reload starting now", tl.Pairs{"source": "sighup"})
 					err := runConfig(conf, wg, log, caches, args, false)
 					if err == nil {
+						conf.Main.ReloaderLock.Unlock()
 						return // runConfig will start a new HupMonitor in place of this one
 					}
 				}
+				conf.Main.ReloaderLock.Unlock()
 				log.Warn("configuration NOT reloaded", tl.Pairs{})
 			case <-conf.Resources.QuitChan:
 				return
