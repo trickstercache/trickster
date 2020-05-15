@@ -21,7 +21,7 @@ Trickster 1.1 is currently in Public Beta. We anticipate a short beta cycle with
 - In-process config reloading via HUP or optional http listener endpoint
 - Added `-validate-config` command line flag
 - Customizable pprof debugging server configurations
-- Updated to OpenTelemetry 0.4.3, streamined Tracing configs, added Zipkin exporter support
+- Updated to OpenTelemetry 0.5.0, streamlined Tracing configs, added Zipkin exporter support
 - Updated Named Locks package to support RWMutex for concurrent cached object reads
 - New Rules Engine for custom request handling and rewriting
 - HTTP 2.0 Support
