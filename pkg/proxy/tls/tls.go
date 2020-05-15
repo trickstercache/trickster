@@ -16,3 +16,39 @@
 
 // Package tls handles options for TLS (https) requests
 package tls
+
+import "github.com/tricksterproxy/trickster/pkg/config"
+
+// OptionsChanged will return true if the TLS options for any origin
+// is different between configs
+func OptionsChanged(conf, oldConf *config.Config) bool {
+
+	if conf == nil {
+		return false
+	}
+	if oldConf == nil {
+		return true
+	}
+
+	for k, v := range oldConf.Origins {
+		if v.TLS != nil && v.TLS.ServeTLS {
+			if o, ok := conf.Origins[k]; !ok ||
+				o.TLS == nil || !o.TLS.ServeTLS ||
+				!o.TLS.Equal(v.TLS) {
+				return true
+			}
+		}
+	}
+
+	for k, v := range conf.Origins {
+		if v.TLS != nil && v.TLS.ServeTLS {
+			if o, ok := oldConf.Origins[k]; !ok ||
+				o.TLS == nil || !o.TLS.ServeTLS ||
+				!o.TLS.Equal(v.TLS) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
