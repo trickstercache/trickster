@@ -399,7 +399,6 @@ func (pr *proxyRequest) writeResponseBody() {
 		return
 	}
 	io.Copy(pr.responseWriter, pr.upstreamReader)
-
 }
 
 func (pr *proxyRequest) determineCacheability() {
@@ -572,8 +571,6 @@ func (pr *proxyRequest) prepareResponse() {
 // we have just one response for the initial request
 func (pr *proxyRequest) reconstituteResponses() {
 
-	// rsc1 := request.GetResources(pr.Request)
-
 	hasRevalidationRequest := pr.revalidationRequest != nil
 
 	var wasRevalidated bool
@@ -623,7 +620,6 @@ func (pr *proxyRequest) reconstituteResponses() {
 				pr.upstreamRequest = pr.originRequests[i]
 				pr.upstreamResponse = pr.originResponses[i]
 				pr.upstreamReader = pr.originResponses[i].Body
-				//pr.cachingPolicy = &CachingPolicy{}
 				pr.upstreamResponse.Header.Del(headers.NameContentRange)
 				requestCount = 1
 				break
