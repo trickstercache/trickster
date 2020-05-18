@@ -53,13 +53,15 @@ type HTTPDocument struct {
 	isFulfillment    bool
 	isLoaded         bool
 	timeseries       timeseries.Timeseries
-	headerLock       *sync.Mutex
+	headerLock       sync.Mutex
 }
 
 // Size returns the size of the HTTPDocument's headers, CachingPolicy, RangeParts, Body and timeseries data
 func (d *HTTPDocument) Size() int {
 	var i int
+	d.headerLock.Lock()
 	i += len(headers.String(http.Header(d.Headers)))
+	d.headerLock.Unlock()
 	i += len(d.Body)
 	if d.RangeParts != nil {
 		for _, p := range d.RangeParts {
@@ -168,8 +170,9 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte,
 		d.FulfillContentBody()
 	}
 
+	d.headerLock.Lock()
 	http.Header(d.Headers).Del(headers.NameContentType)
-
+	d.headerLock.Unlock()
 }
 
 // FulfillContentBody will concatenate the document's Range parts into a single, full content body

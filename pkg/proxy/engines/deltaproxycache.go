@@ -418,7 +418,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	rts.SetExtents(nil) // so they are not included in the client response json
 	rts.SetStep(0)
 	rdata, err := client.MarshalTimeseries(rts)
+	doc.headerLock.Lock()
 	rh := http.Header(doc.Headers).Clone()
+	doc.headerLock.Unlock()
 
 	switch cacheStatus {
 	case status.LookupStatusKeyMiss, status.LookupStatusPartialHit, status.LookupStatusRangeMiss:
