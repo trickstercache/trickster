@@ -325,7 +325,7 @@ func TestRegisterMultipleOriginsPlusDefault(t *testing.T) {
 
 func TestRegisterPathRoutes(t *testing.T) {
 	p := map[string]*po.Options{"test": {}}
-	registerPathRoutes(nil, nil, nil, nil, nil, p, nil, nil)
+	registerPathRoutes(nil, nil, nil, nil, nil, p, nil, "", nil)
 
 	conf, _, err := config.Load("trickster", "test",
 		[]string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "rpc"})
@@ -337,7 +337,7 @@ func TestRegisterPathRoutes(t *testing.T) {
 	rpc, _ := reverseproxycache.NewClient("test", oo, mux.NewRouter(), nil)
 	dpc := rpc.DefaultPathConfigs(oo)
 	dpc["/-GET-HEAD"].Methods = nil
-	registerPathRoutes(nil, nil, rpc, oo, nil, dpc, nil, tl.ConsoleLogger("INFO"))
+	registerPathRoutes(nil, nil, rpc, oo, nil, dpc, nil, "", tl.ConsoleLogger("INFO"))
 
 }
 

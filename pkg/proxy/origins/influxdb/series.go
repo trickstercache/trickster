@@ -409,6 +409,7 @@ func (se *SeriesEnvelope) Sort() {
 		return
 	}
 
+	var hasWarned bool
 	tsm := map[time.Time]bool{}
 	m := make(map[int64][]interface{})
 	if ti := str.IndexOfString(se.Results[0].Series[0].Columns, "time"); ti != -1 {
@@ -418,14 +419,22 @@ func (se *SeriesEnvelope) Sort() {
 				for _, v := range se.Results[ri].Series[si].Values {
 					wg.Add(1)
 					go func(s []interface{}) {
-						t := int64(s[ti].(float64))
-						mtx.Lock()
-						if _, ok := m[t]; !ok {
-							keys = append(keys, t)
-							m[t] = s
+						if tf, ok := s[ti].(float64); ok {
+							t := int64(tf)
+							mtx.Lock()
+							if _, ok := m[t]; !ok {
+								keys = append(keys, t)
+								m[t] = s
+							}
+							tsm[time.Unix(t/1000, 0)] = true
+							mtx.Unlock()
+						} else if !hasWarned {
+							hasWarned = true
+							// this makeshift warning is temporary during the beta cycle to help
+							// troubleshoot #433
+							fmt.Println("WARN", "could not convert influxdb time to a float64:",
+								s[ti], "resultSet:", se)
 						}
-						tsm[time.Unix(t/1000, 0)] = true
-						mtx.Unlock()
 						wg.Done()
 					}(v)
 				}

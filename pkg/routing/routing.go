@@ -196,7 +196,8 @@ func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 		o.HTTPClient = client.HTTPClient()
 		clients[k] = client
 		defaultPaths := client.DefaultPathConfigs(o)
-		registerPathRoutes(router, client.Handlers(), client, o, c, defaultPaths, tracers, log)
+		registerPathRoutes(router, client.Handlers(), client, o, c, defaultPaths,
+			tracers, conf.Main.HealthHandlerPath, log)
 	}
 	return clients, nil
 }
@@ -206,7 +207,8 @@ func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 // the path routes to the appropriate handler from the provided handlers map
 func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 	client origins.Client, oo *oo.Options, c cache.Cache,
-	defaultPaths map[string]*po.Options, tracers tracing.Tracers, log *tl.Logger) {
+	defaultPaths map[string]*po.Options, tracers tracing.Tracers,
+	healthHandlerPath string, log *tl.Logger) {
 
 	if oo == nil {
 		return
@@ -245,11 +247,12 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 
 	// now we'll go ahead and register the health handler
 	if h, ok := handlers["health"]; ok &&
-		oo.HealthCheckUpstreamPath != "" && oo.HealthCheckVerb != "" {
-		hp := "/trickster/health/" + oo.Name
+		oo.HealthCheckUpstreamPath != "" && oo.HealthCheckVerb != "" && healthHandlerPath != "" {
+		hp := strings.Replace(healthHandlerPath+"/"+oo.Name, "//", "/", -1)
 		log.Debug("registering health handler path",
 			tl.Pairs{"path": hp, "originName": oo.Name,
-				"upstreamPath": oo.HealthCheckUpstreamPath, "upstreamVerb": oo.HealthCheckVerb})
+				"upstreamPath": oo.HealthCheckUpstreamPath,
+				"upstreamVerb": oo.HealthCheckVerb})
 		router.PathPrefix(hp).
 			Handler(middleware.WithResourcesContext(client, oo, nil, nil, tr, log, h)).
 			Methods(methods.CacheableHTTPMethods()...)

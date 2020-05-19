@@ -460,7 +460,9 @@ func (pr *proxyRequest) store() error {
 
 	if pr.trueContentType != "" {
 		pr.Header.Del(headers.NameContentType)
+		d.headerLock.Lock()
 		http.Header(d.Headers).Del(headers.NameContentType)
+		d.headerLock.Unlock()
 		d.ContentType = pr.trueContentType
 	}
 

@@ -113,7 +113,9 @@ func handleCachePartialHit(pr *proxyRequest) error {
 		d.Ranges = nil
 		d.StoredRangeParts = nil
 		d.StatusCode = resp.StatusCode
+		d.headerLock.Lock()
 		http.Header(d.Headers).Del(headers.NameContentRange)
+		d.headerLock.Unlock()
 	}
 
 	pr.store()

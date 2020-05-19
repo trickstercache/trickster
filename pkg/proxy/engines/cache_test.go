@@ -115,8 +115,6 @@ func TestCacheHitRangeRequest(t *testing.T) {
 		t.Error(err)
 	}
 
-	d.headerLock = nil
-
 	ranges := byterange.Ranges{byterange.Range{Start: 5, End: 10}}
 	d2, _, deltas, err := QueryCache(ctx, cache, "testKey", ranges)
 	if err != nil {

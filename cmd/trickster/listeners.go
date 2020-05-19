@@ -39,7 +39,6 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	tracers tracing.Tracers) {
 
 	var err error
-	var routerRefreshed bool
 	var tlsConfig *tls.Config
 
 	if conf == nil || conf.Frontend == nil {
@@ -52,7 +51,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	// No changes in frontend config
 	if oldConf != nil && oldConf.Frontend != nil &&
 		oldConf.Frontend.Equal(conf.Frontend) {
-		lg.UpdateRouters(router, adminRouter)
+		lg.UpdateFrontendRouters(router, adminRouter)
 		if ttls.OptionsChanged(conf, oldConf) {
 			tlsConfig, _ = conf.TLSCertConfig()
 			l := lg.Get("tlsListener")
@@ -90,7 +89,6 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			log.Error("unable to start tls listener due to certificate error", tl.Pairs{"detail": err})
 		} else {
 			wg.Add(1)
-			routerRefreshed = true
 			tracerFlusherSet = true
 			go lg.StartListener("tlsListener",
 				conf.Frontend.TLSListenAddress, conf.Frontend.TLSListenPort,
@@ -122,7 +120,6 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			oldConf.Frontend.ListenPort != conf.Frontend.ListenPort)) {
 		lg.DrainAndClose("httpListener", drainTimeout)
 		wg.Add(1)
-		routerRefreshed = true
 		var t2 tracing.Tracers
 		if !tracerFlusherSet {
 			t2 = tracers
@@ -147,6 +144,11 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		go lg.StartListener("metricsListener",
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
 			conf.Frontend.ConnectionsLimit, nil, mr, wg, nil, true, 0, log)
+	} else {
+		mr := http.NewServeMux()
+		mr.Handle("/metrics", metrics.Handler())
+		mr.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
+		lg.UpdateRouter("metricsListener", mr)
 	}
 
 	// if the Reload HTTP port is configured, then set up the http listener instance
@@ -164,8 +166,10 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		go lg.StartListener("reloadListener",
 			conf.ReloadConfig.ListenAddress, conf.ReloadConfig.ListenPort,
 			conf.Frontend.ConnectionsLimit, nil, mr, wg, nil, true, 0, log)
-	}
-	if routerRefreshed {
-		return
+	} else {
+		mr := http.NewServeMux()
+		mr.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
+		mr.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
+		lg.UpdateRouter("reloadListener", mr)
 	}
 }

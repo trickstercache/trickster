@@ -94,6 +94,8 @@ type MainConfig struct {
 	PingHandlerPath string `toml:"ping_handler_path"`
 	// ReloadHandlerPath provides the path to register the Config Reload Handler
 	ReloadHandlerPath string `toml:"reload_handler_path"`
+	// HeatlHandlerPath provides the base Health Check Handler path
+	HealthHandlerPath string `toml:"health_handler_path"`
 	// PprofServer provides the name of the http listener that will host the pprof debugging routes
 	// Options are: "metrics", "reload", "both", or "off"; default is both
 	PprofServer string `toml:"pprof_server"`
@@ -177,6 +179,7 @@ func NewConfig() *Config {
 			ConfigHandlerPath: d.DefaultConfigHandlerPath,
 			PingHandlerPath:   d.DefaultPingHandlerPath,
 			ReloadHandlerPath: d.DefaultReloadHandlerPath,
+			HealthHandlerPath: d.DefaultHealthHandlerPath,
 			PprofServer:       d.DefaultPprofServerName,
 			ServerName:        hn,
 		},
@@ -738,6 +741,7 @@ func (c *Config) Clone() *Config {
 	nc.Main.InstanceID = c.Main.InstanceID
 	nc.Main.PingHandlerPath = c.Main.PingHandlerPath
 	nc.Main.ReloadHandlerPath = c.Main.ReloadHandlerPath
+	nc.Main.HealthHandlerPath = c.Main.HealthHandlerPath
 	nc.Main.PprofServer = c.Main.PprofServer
 	nc.Main.ServerName = c.Main.ServerName
 
