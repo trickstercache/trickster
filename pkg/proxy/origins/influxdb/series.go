@@ -418,14 +418,16 @@ func (se *SeriesEnvelope) Sort() {
 				for _, v := range se.Results[ri].Series[si].Values {
 					wg.Add(1)
 					go func(s []interface{}) {
-						t := int64(s[ti].(float64))
-						mtx.Lock()
-						if _, ok := m[t]; !ok {
-							keys = append(keys, t)
-							m[t] = s
+						if tf, ok := s[ti].(float64); ok {
+							t := int64(tf)
+							mtx.Lock()
+							if _, ok := m[t]; !ok {
+								keys = append(keys, t)
+								m[t] = s
+							}
+							tsm[time.Unix(t/1000, 0)] = true
+							mtx.Unlock()
 						}
-						tsm[time.Unix(t/1000, 0)] = true
-						mtx.Unlock()
 						wg.Done()
 					}(v)
 				}
