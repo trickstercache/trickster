@@ -238,8 +238,8 @@ func (lg *ListenerGroup) DrainAndClose(listenerName string, drainWait time.Durat
 	return errors.ErrNoSuchListener
 }
 
-// UpdateRouters will swap out the routers across the named Listeners with the provided ones
-func (lg *ListenerGroup) UpdateRouters(mainRouter http.Handler, adminRouter http.Handler) {
+// UpdateFrontendRouters will swap out the routers across the named Listeners with the provided ones
+func (lg *ListenerGroup) UpdateFrontendRouters(mainRouter http.Handler, adminRouter http.Handler) {
 	lg.listenersLock.Lock()
 	defer lg.listenersLock.Unlock()
 	if mainRouter != nil {
@@ -253,4 +253,13 @@ func (lg *ListenerGroup) UpdateRouters(mainRouter http.Handler, adminRouter http
 	if v, ok := lg.members["reloadListener"]; ok && adminRouter != nil {
 		v.routeSwapper.Update(adminRouter)
 	}
+}
+
+// UpdateRouter will swap out the router for the ListenerGroup with the provided name
+func (lg *ListenerGroup) UpdateRouter(routerName string, router http.Handler) {
+	lg.listenersLock.Lock()
+	if r, ok := lg.members[routerName]; ok {
+		r.routeSwapper.Update(router)
+	}
+	defer lg.listenersLock.Unlock()
 }
