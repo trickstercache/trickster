@@ -99,17 +99,16 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	mp := []string{"step", "timeField"}
 	found := matching.GetNamedMatches(reTimeFieldAndStep, trq.Statement, mp)
-
-	for _, f := range mp {
-		v, ok := found[f]
-		if !ok || v == "" {
+	if len(found) == 2 {
+		trq.TimestampFieldName = found["timeField"]
+		trq.Step, _ = tt.ParseDuration(found["step"] + "s")
+	} else {
+		found = matching.GetNamedMatches(reTimeFuncAndStep, trq.Statement, mp)
+		if len(found) == 2 {
+			trq.TimestampFieldName = found["timeField"]
+			trq.Step, _ = tt.ParseDuration(timeFuncMap[found["step"]])
+		} else {
 			return nil, errors.ErrNotTimeRangeQuery
-		}
-		switch f {
-		case "timeField":
-			trq.TimestampFieldName = v
-		case "step":
-			trq.Step, _ = tt.ParseDuration(v + "s")
 		}
 	}
 

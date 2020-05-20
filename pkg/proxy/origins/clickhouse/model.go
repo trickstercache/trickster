@@ -113,7 +113,7 @@ func (c *Client) UnmarshalTimeseries(data []byte) (timeseries.Timeseries, error)
 // Parts ...
 func (rv ResponseValue) Parts(timeKey, valKey string) (string, time.Time, float64, ResponseValue) {
 
-	if len(rv) < 3 {
+	if len(rv) < 2 {
 		return noParts()
 	}
 
@@ -229,12 +229,12 @@ func (re ResultsEnvelope) MarshalJSON() ([]byte, error) {
 		rsp.RawData = append(rsp.RawData, tm[t]...)
 	}
 
-	bytes, err := json.Marshal(rsp)
+	b, err := json.Marshal(rsp)
 	if err != nil {
 		return nil, err
 	}
 
-	return bytes, nil
+	return b, nil
 }
 
 // MarshalJSON ...
