@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Comcast Cable Communications Management, LLC
+ * Copyright 2020 Comcast Cable Communications Management, LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,92 +17,16 @@
 package clickhouse
 
 import (
-	"encoding/json"
 	"reflect"
-	"sort"
 	"testing"
 	"time"
-
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
-
-func TestParts(t *testing.T) {
-
-	rv1 := ResponseValue{
-		"t":     "1557766080000",
-		"cnt":   "27",
-		"meta1": 200,
-		"meta2": "value3",
-	}
-
-	metric, ts, val, _ := rv1.Parts("t", "cnt")
-
-	expectedTs := time.Unix(1557766080, 0)
-	expectedMetric := "{meta1=200;meta2=value3}"
-	var expectedValue float64 = 27
-
-	if ts != expectedTs {
-		t.Errorf("expected %d got %d", expectedTs.Unix(), ts.Unix())
-	}
-
-	if metric != expectedMetric {
-		t.Errorf("expected %s got %s", expectedMetric, metric)
-	}
-
-	if val != expectedValue {
-		t.Errorf("expected %f got %f", expectedValue, val)
-	}
-
-	rv2 := ResponseValue{
-		"t":   "1557766080000",
-		"cnt": "27",
-	}
-
-	metric, _, _, _ = rv2.Parts("t", "cnt")
-	if metric != "{}" {
-		t.Errorf("expected '{}' got %s", metric)
-	}
-
-	rv3 := ResponseValue{
-		"t":     "A557766080000",
-		"cnt":   "27",
-		"meta1": 200,
-	}
-
-	metric, _, _, _ = rv3.Parts("t", "cnt")
-	if metric != "{}" {
-		t.Errorf("expected '{}' got %s", metric)
-	}
-
-	rv4 := ResponseValue{
-		"t":     "1557766080000",
-		"cnt":   "2a7",
-		"meta1": 200,
-	}
-
-	metric, _, _, _ = rv4.Parts("t", "cnt")
-	if metric != "{}" {
-		t.Errorf("expected '{}' got %s", metric)
-	}
-
-	rv5 := ResponseValue{
-		"t":     "1557766080000",
-		"cnt":   27.5,
-		"meta1": 200,
-	}
-
-	metric, _, _, _ = rv5.Parts("t", "cnt")
-	if metric != "{meta1=200}" {
-		t.Errorf("expected '{meta1=200}' got %s", metric)
-	}
-
-}
 
 var testJSON1 = []byte(`{"meta":[{"name":"t","type":"UInt64"},{"name":"cnt","type":"UInt64"},` +
 	`{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],` +
 	`"data":[{"t":"1557766080000","cnt":"12648509","meta1":200,"meta2":"value2"},` +
-	`{"t":"1557766080000","cnt":"10260032","meta1":200,"meta2":"value3"},` +
-	`{"t":"1557766080000","cnt":"1","meta1":206,"meta2":"value3"}],"rows":3}`,
+	`{"t":"1557766680000","cnt":"10260032","meta1":200,"meta2":"value3"},` +
+	`{"t":"1557767280000","cnt":"1","meta1":206,"meta2":"value3"}],"rows":3}`,
 )
 var testJSON2 = []byte(`{"meta":[{"name":"t"}],"data":[{"t":"1557766080000","cnt":"12648509",` +
 	`"meta1":200,"meta2":"value2"},{"t":"1557766080000","cnt":"10260032","meta1":200,"meta2":"value3"},` +
@@ -129,43 +53,28 @@ var testRE1 = &ResultsEnvelope{
 		},
 	},
 
-	SeriesOrder: []string{"1", "2", "3"},
-
-	Data: map[string]*DataSet{
-		"1": {
-			Metric: map[string]interface{}{
+	Data: []Point{
+		{
+			Timestamp: time.Unix(1557766080, 0),
+			Values: map[string]interface{}{
+				"cnt":   12648509,
 				"meta1": 200,
 				"meta2": "value2",
 			},
-			Points: []Point{
-				{
-					Timestamp: time.Unix(1557766080, 0),
-					Value:     12648509,
-				},
-			},
 		},
-		"2": {
-			Metric: map[string]interface{}{
+		{
+			Timestamp: time.Unix(1557766680, 0),
+			Values: map[string]interface{}{
+				"cnt":   10260032,
 				"meta1": 200,
 				"meta2": "value3",
 			},
-			Points: []Point{
-				{
-					Timestamp: time.Unix(1557766080, 0),
-					Value:     10260032,
-				},
-			},
 		},
-		"3": {
-			Metric: map[string]interface{}{
+		{Timestamp: time.Unix(1557767280, 0),
+			Values: map[string]interface{}{
+				"cnt":   1,
 				"meta1": 206,
 				"meta2": "value3",
-			},
-			Points: []Point{
-				{
-					Timestamp: time.Unix(1557766080, 0),
-					Value:     1,
-				},
 			},
 		},
 	},
@@ -194,29 +103,6 @@ func TestREMarshalJSON(t *testing.T) {
 	_, err = re.MarshalJSON()
 	if err == nil {
 		t.Errorf("expected error: %s", `Must have at least two fields; only have 0`)
-	}
-
-}
-
-func TestRSPMarshalJSON(t *testing.T) {
-
-	rsp := &Response{ExtentList: timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(5, 0)}}}
-
-	bytes, err := rsp.MarshalJSON()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	rsp1 := &Response{}
-	json.Unmarshal(bytes, rsp1)
-
-	if rsp.ExtentList[0].Start.Unix() != rsp1.ExtentList[0].Start.Unix() {
-		t.Errorf("expected %d got %d", rsp.ExtentList[0].Start.Unix(), rsp.ExtentList[0].Start.Unix())
-	}
-
-	if rsp.ExtentList[0].End.Unix() != rsp1.ExtentList[0].End.Unix() {
-		t.Errorf("expected %d got %d", rsp.ExtentList[0].End.Unix(), rsp.ExtentList[0].End.Unix())
 	}
 
 }
@@ -294,20 +180,8 @@ func TestUnmarshalJSON(t *testing.T) {
 		return
 	}
 
-	key := "{meta1=206;meta2=value3}"
-	v, ok := re.Data[key]
-	if !ok {
-		t.Errorf(`expected to find key %s`, key)
-		return
-	}
-
-	if len(v.Points) != 1 {
-		t.Errorf(`expected 1 got %d`, len(v.Points))
-		return
-	}
-
-	if v.Points[0].Value != 1 {
-		t.Errorf(`expected 1 got %f`, v.Points[0].Value)
+	if re.Data[0].Values["cnt"] != 1 {
+		t.Errorf(`expected 1 got %f`, re.Data[0].Values["cnt"])
 		return
 	}
 
@@ -321,25 +195,6 @@ func TestUnmarshalJSON(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected error: %s", `Must have at least two fields; only have 1`)
 		return
-	}
-
-}
-
-func TestMSToTime(t *testing.T) {
-	_, err := msToTime("bad")
-	if err == nil {
-		t.Errorf("expected error for invalid syntax")
-	}
-}
-
-func TestSortPoints(t *testing.T) {
-
-	p := Points{{Timestamp: time.Unix(1, 0), Value: 12},
-		{Timestamp: time.Unix(0, 0), Value: 13}, {Timestamp: time.Unix(2, 0), Value: 22}}
-	sort.Sort(p)
-
-	if p[0].Timestamp.Unix() != 0 {
-		t.Errorf("expected %d got %d", 0, p[0].Timestamp.Unix())
 	}
 
 }

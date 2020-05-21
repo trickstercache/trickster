@@ -35,33 +35,23 @@ func (re *ResultsEnvelope) SetStep(step time.Duration) {
 	re.StepDuration = step
 }
 
-// Merge merges the provided Timeseries list into the base Timeseries (in the order provided)
+// Merges the provided Timeseries list into the base Timeseries (in the order provided)
 // and optionally sorts the merged Timeseries
 func (re *ResultsEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) {
-
 	wg := sync.WaitGroup{}
 	mtx := sync.Mutex{}
 
 	for _, ts := range collection {
 		if ts != nil {
 			re2 := ts.(*ResultsEnvelope)
-			for k, s := range re2.Data {
+			go func() {
 				wg.Add(1)
-				go func(l string, d *DataSet) {
-					mtx.Lock()
-					if _, ok := re.Data[l]; !ok {
-						re.Data[l] = d
-						mtx.Unlock()
-						wg.Done()
-						return
-					}
-					re.Data[l].Points = append(re.Data[l].Points, d.Points...)
-					mtx.Unlock()
-					wg.Done()
-				}(k, s)
-			}
+				mtx.Lock()
+				re.Data = append(re.Data, re2.Data...)
+				mtx.Unlock()
+				wg.Done()
+			}()
 			wg.Wait()
-			re.mergeSeriesOrder(re2.SeriesOrder)
 			re.ExtentList = append(re.ExtentList, re2.ExtentList...)
 		}
 	}
@@ -74,51 +64,7 @@ func (re *ResultsEnvelope) Merge(sort bool, collection ...timeseries.Timeseries)
 	}
 }
 
-func (re *ResultsEnvelope) mergeSeriesOrder(so2 []string) {
-
-	if len(so2) == 0 {
-		return
-	}
-
-	if len(re.SeriesOrder) == 0 {
-		re.SeriesOrder = so2
-		return
-	}
-
-	so1 := make([]string, len(re.SeriesOrder), len(re.SeriesOrder)+len(so2))
-	copy(so1, re.SeriesOrder)
-	adds := make([]string, 0, len(so2))
-	added := make(map[string]bool)
-
-	for _, n := range so2 {
-		if _, ok := re.Data[n]; !ok {
-			if _, ok2 := added[n]; !ok2 {
-				adds = append(adds, n)
-				added[n] = true
-			}
-			continue
-		}
-
-		if len(adds) > 0 {
-			for i, v := range so1 {
-				if v == n {
-					adds = append(adds, so1[i:]...)
-					so1 = append(so1[0:i], adds...)
-				}
-			}
-			adds = adds[:0]
-		}
-	}
-
-	if len(adds) > 0 {
-		so1 = append(so1, adds...)
-	}
-
-	re.SeriesOrder = so1
-
-}
-
-// Clone returns a perfect copy of the base Timeseries
+// Returns a perfect copy of the base Timeseries
 func (re *ResultsEnvelope) Clone() timeseries.Timeseries {
 	re2 := &ResultsEnvelope{
 		isCounted:    re.isCounted,
@@ -126,22 +72,14 @@ func (re *ResultsEnvelope) Clone() timeseries.Timeseries {
 		StepDuration: re.StepDuration,
 	}
 
-	wg := sync.WaitGroup{}
-	mtx := sync.Mutex{}
-
-	if re.SeriesOrder != nil {
-		re2.SeriesOrder = make([]string, len(re.SeriesOrder))
-		copy(re2.SeriesOrder, re.SeriesOrder)
-	}
-
 	if re.ExtentList != nil {
 		re2.ExtentList = make(timeseries.ExtentList, len(re.ExtentList))
 		copy(re2.ExtentList, re.ExtentList)
 	}
 
-	if re.tslist != nil {
-		re2.tslist = make(times.Times, len(re.tslist))
-		copy(re2.tslist, re.tslist)
+	if re.tsList != nil {
+		re2.tsList = make(times.Times, len(re.tsList))
+		copy(re2.tsList, re.tsList)
 	}
 
 	if re.Meta != nil {
@@ -149,48 +87,23 @@ func (re *ResultsEnvelope) Clone() timeseries.Timeseries {
 		copy(re2.Meta, re.Meta)
 	}
 
-	if re.Serializers != nil {
-		re2.Serializers = make(map[string]func(interface{}))
-		wg.Add(1)
-		go func() {
-			for k, s := range re.Serializers {
-				re2.Serializers[k] = s
-			}
-			wg.Done()
-		}()
-	}
-
 	if re.timestamps != nil {
 		re2.timestamps = make(map[time.Time]bool)
 		for k, v := range re.timestamps {
-			wg.Add(1)
-			go func(t time.Time, b bool) {
-				mtx.Lock()
-				re2.timestamps[t] = b
-				mtx.Unlock()
-				wg.Done()
-			}(k, v)
+			re2.timestamps[k] = v
 		}
 	}
 
 	if re.Data != nil {
-		re2.Data = make(map[string]*DataSet)
-		wg.Add(1)
-		go func() {
-			for k, ds := range re.Data {
-				ds2 := &DataSet{Metric: make(map[string]interface{})}
-				for l, v := range ds.Metric {
-					ds2.Metric[l] = v
-				}
-				ds2.Points = ds.Points[:]
-				re2.Data[k] = ds2
+		re2.Data = make([]Point, 0)
+		for _, p1 := range re.Data {
+			p2 := Point{Timestamp: p1.Timestamp, Values: make(map[string]interface{})}
+			for l, v := range p1.Values {
+				p2.Values[l] = v
 			}
-			wg.Done()
-		}()
+			re2.Data = append(re2.Data, p2)
+		}
 	}
-
-	wg.Wait()
-
 	return re2
 }
 
@@ -203,7 +116,7 @@ func (re *ResultsEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent
 	x := len(re.ExtentList)
 	// The Series has no extents, so no need to do anything
 	if x < 1 {
-		re.Data = make(map[string]*DataSet)
+		re.Data = make([]Point, 0)
 		re.ExtentList = timeseries.ExtentList{}
 		return
 	}
@@ -220,7 +133,7 @@ func (re *ResultsEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent
 		return
 	}
 
-	rc := tc - sz // # of required timestamps we must delete to meet the rentention policy
+	rc := tc - sz // # of required timestamps we must delete to meet the retention policy
 	removals := make(map[time.Time]bool)
 	done := false
 	var ok bool
@@ -237,24 +150,11 @@ func (re *ResultsEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent
 		}
 	}
 
-	wg := sync.WaitGroup{}
-	mtx := sync.Mutex{}
-
-	for _, s := range re.Data {
-		tmp := s.Points[:0]
-		for _, r := range s.Points {
-			wg.Add(1)
-			go func(p Point) {
-				mtx.Lock()
-				if _, ok := removals[p.Timestamp]; !ok {
-					tmp = append(tmp, p)
-				}
-				mtx.Unlock()
-				wg.Done()
-			}(r)
+	for _, p := range re.Data {
+		tmp := make([]Point, 0, len(re.Data)-len(removals))
+		if _, ok := removals[p.Timestamp]; !ok {
+			tmp = append(tmp, p)
 		}
-		wg.Wait()
-		s.Points = tmp
 	}
 
 	tl := times.FromMap(removals)
@@ -267,7 +167,6 @@ func (re *ResultsEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent
 			}
 		}
 	}
-	wg.Wait()
 
 	re.ExtentList = timeseries.ExtentList(el).Compress(re.StepDuration)
 	re.Sort()
@@ -277,17 +176,10 @@ func (re *ResultsEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent
 // CropToRange assumes the base Timeseries is already sorted, and will corrupt an unsorted Timeseries
 func (re *ResultsEnvelope) CropToRange(e timeseries.Extent) {
 	re.isCounted = false
-	x := len(re.ExtentList)
-	// The Series has no extents, so no need to do anything
-	if x < 1 {
-		re.Data = make(map[string]*DataSet)
-		re.ExtentList = timeseries.ExtentList{}
-		return
-	}
 
-	// if the extent of the series is entirely outside the extent of the crop range, return empty set and bail
-	if re.ExtentList.OutsideOf(e) {
-		re.Data = make(map[string]*DataSet)
+	// The Series has no extents, or is outside of the crop range, so no need to do anything
+	if len(re.ExtentList) < 1 || re.ExtentList.OutsideOf(e) {
+		re.Data = make([]Point, 0)
 		re.ExtentList = timeseries.ExtentList{}
 		return
 	}
@@ -295,7 +187,7 @@ func (re *ResultsEnvelope) CropToRange(e timeseries.Extent) {
 	// if the series extent is entirely inside the extent of the crop range, simply adjust down its ExtentList
 	if re.ExtentList.InsideOf(e) {
 		if re.ValueCount() == 0 {
-			re.Data = make(map[string]*DataSet)
+			re.Data = make([]Point, 0)
 		}
 		re.ExtentList = re.ExtentList.Crop(e)
 		return
@@ -306,51 +198,41 @@ func (re *ResultsEnvelope) CropToRange(e timeseries.Extent) {
 		return
 	}
 
-	deletes := make(map[string]bool)
-
-	for i, s := range re.Data {
-		start := -1
-		end := -1
-		for j, val := range s.Points {
-			t := val.Timestamp
-			if t.Equal(e.End) {
-				// for cases where the first element is the only qualifying element,
-				// start must be incremented or an empty response is returned
-				if j == 0 || t.Equal(e.Start) || start == -1 {
-					start = j
-				}
-				end = j + 1
-				break
-			}
-			if t.After(e.End) {
-				end = j
-				break
-			}
-			if t.Before(e.Start) {
-				continue
-			}
-			if start == -1 && (t.Equal(e.Start) || (e.End.After(t) && t.After(e.Start))) {
+	start := -1
+	end := -1
+	for j, val := range re.Data {
+		t := val.Timestamp
+		if t.Equal(e.End) {
+			// for cases where the first element is the only qualifying element,
+			// start must be incremented or an empty response is returned
+			if j == 0 || t.Equal(e.Start) || start == -1 {
 				start = j
 			}
+			end = j + 1
+			break
 		}
-		if start != -1 && len(s.Points) > 0 {
-			if end == -1 {
-				end = len(s.Points)
-			}
-			re.Data[i].Points = s.Points[start:end]
-		} else {
-			deletes[i] = true
+		if t.After(e.End) {
+			end = j
+			break
+		}
+		if t.Before(e.Start) {
+			continue
+		}
+		if start == -1 && (t.Equal(e.Start) || (e.End.After(t) && t.After(e.Start))) {
+			start = j
 		}
 	}
-
-	for i := range deletes {
-		delete(re.Data, i)
+	if start != -1 && len(re.Data) > 0 {
+		if end == -1 {
+			end = len(re.Data)
+		}
+		re.Data = re.Data[start:end]
 	}
 
 	re.ExtentList = re.ExtentList.Crop(e)
 }
 
-// Sort sorts all Values in each Series chronologically by their timestamp
+// Sorts all Points chronologically by their timestamp
 func (re *ResultsEnvelope) Sort() {
 
 	if re.isSorted || len(re.Data) == 0 {
@@ -358,65 +240,39 @@ func (re *ResultsEnvelope) Sort() {
 	}
 
 	tsm := map[time.Time]bool{}
-	wg := sync.WaitGroup{}
-	mtx := sync.Mutex{}
-
-	for i, s := range re.Data {
-		m := make(map[time.Time]Point)
-		keys := make(times.Times, 0, len(s.Points))
-		for _, v := range s.Points {
-			wg.Add(1)
-			go func(sp Point) {
-				mtx.Lock()
-				if _, ok := m[sp.Timestamp]; !ok {
-					keys = append(keys, sp.Timestamp)
-					m[sp.Timestamp] = sp
-				}
-				tsm[sp.Timestamp] = true
-				mtx.Unlock()
-				wg.Done()
-			}(v)
+	m := make(map[time.Time]Point)
+	keys := make(times.Times, 0, len(re.Data))
+	for _, v := range re.Data {
+		if _, ok := m[v.Timestamp]; !ok {
+			keys = append(keys, v.Timestamp)
+			m[v.Timestamp] = v
 		}
-		wg.Wait()
-		sort.Sort(keys)
-		sm := make(Points, 0, len(keys))
-		for _, key := range keys {
-			sm = append(sm, m[key])
-		}
-		re.Data[i].Points = sm
+		tsm[v.Timestamp] = true
 	}
-
+	sort.Sort(keys)
+	sm := make([]Point, 0, len(keys))
+	for _, key := range keys {
+		sm = append(sm, m[key])
+	}
+	re.Data = sm
 	sort.Sort(re.ExtentList)
 
 	re.timestamps = tsm
-	re.tslist = times.FromMap(tsm)
+	re.tsList = times.FromMap(tsm)
 	re.isCounted = true
 	re.isSorted = true
 }
 
 func (re *ResultsEnvelope) updateTimestamps() {
-
-	wg := sync.WaitGroup{}
-	mtx := sync.Mutex{}
-
 	if re.isCounted {
 		return
 	}
 	m := make(map[time.Time]bool)
-	for _, s := range re.Data {
-		for _, v := range s.Points {
-			wg.Add(1)
-			go func(t time.Time) {
-				mtx.Lock()
-				m[t] = true
-				mtx.Unlock()
-				wg.Done()
-			}(v.Timestamp)
-		}
+	for _, p := range re.Data {
+		m[p.Timestamp] = true
 	}
-	wg.Wait()
 	re.timestamps = m
-	re.tslist = times.FromMap(m)
+	re.tsList = times.FromMap(m)
 	re.isCounted = true
 }
 
@@ -437,77 +293,26 @@ func (re *ResultsEnvelope) TimestampCount() int {
 	return len(re.timestamps)
 }
 
-// SeriesCount returns the number of individual Series in the Timeseries object
-func (re *ResultsEnvelope) SeriesCount() int {
-	return len(re.Data)
-}
-
 // ValueCount returns the count of all values across all Series in the Timeseries object
 func (re *ResultsEnvelope) ValueCount() int {
-	c := 0
-	wg := sync.WaitGroup{}
-	mtx := sync.Mutex{}
-	for i := range re.Data {
-		wg.Add(1)
-		go func(j int) {
-			mtx.Lock()
-			c += j
-			mtx.Unlock()
-			wg.Done()
-		}(len(re.Data[i].Points))
-	}
-	wg.Wait()
-	return c
+	return len(re.Data)
 }
 
 // Size returns the approximate memory utilization in bytes of the timeseries
 func (re *ResultsEnvelope) Size() int {
-
 	var size int
-	wg := sync.WaitGroup{}
-
-	var a int
-	ma := sync.Mutex{}
-	for i := range re.Meta {
-		wg.Add(1)
-		go func(j int) {
-			ma.Lock()
-			a += len(re.Meta[j].Name) + len(re.Meta[j].Type)
-			ma.Unlock()
-			wg.Done()
-		}(i)
+	for _, m := range re.Meta {
+		size += len(m.Name) + len(m.Type)
 	}
 
-	var b int
-	mb := sync.Mutex{}
-	for k, v := range re.Data {
-		b += len(k)
-		wg.Add(1)
-		go func(d *DataSet) {
-			mb.Lock()
-			b += len(d.Points) * 16
-			mb.Unlock()
-			wg.Done()
-		}(v)
-	}
-
-	var c int
-	mc := sync.Mutex{}
-	for _, s := range re.SeriesOrder {
-		wg.Add(1)
-		go func(t string) {
-			mc.Lock()
-			c += len(t)
-			mc.Unlock()
-			wg.Done()
-		}(s)
+	for _, p := range re.Data {
+		size += 16 // Timestamp guess
+		for k := range p.Values {
+			size += len(k) + 16 // Key length + values guess
+		}
 	}
 
 	// ExtentList + StepDuration + Timestamps + Times + isCounted + isSorted
-	d := (len(re.ExtentList) * 24) + 8 + (len(re.timestamps) * 9) + (len(re.tslist) * 8) + 2
-
-	wg.Wait()
-	size = a + b + c + d
+	size += (len(re.ExtentList) * 24) + 8 + (len(re.timestamps) * 9) + (len(re.tsList) * 8) + 2
 	return size
-
 }

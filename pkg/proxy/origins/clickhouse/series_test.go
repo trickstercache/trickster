@@ -84,7 +84,7 @@ func TestMerge(t *testing.T) {
 			merged: &ResultsEnvelope{
 				isCounted:  true,
 				isSorted:   true,
-				tslist:     times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
+				tsList:     times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
 				timestamps: map[time.Time]bool{time.Unix(5, 0): true, time.Unix(10, 0): true, time.Unix(15, 0): true},
 				Data: map[string]*DataSet{
 					"a": {
@@ -131,7 +131,7 @@ func TestMerge(t *testing.T) {
 			merged: &ResultsEnvelope{
 				isCounted:  true,
 				isSorted:   true,
-				tslist:     times.Times{time.Unix(10000, 0)},
+				tsList:     times.Times{time.Unix(10000, 0)},
 				timestamps: map[time.Time]bool{time.Unix(10000, 0): true},
 				Data: map[string]*DataSet{
 					"b": {
@@ -180,7 +180,7 @@ func TestMerge(t *testing.T) {
 			merged: &ResultsEnvelope{
 				isCounted:  true,
 				isSorted:   true,
-				tslist:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0)},
+				tsList:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0)},
 				timestamps: map[time.Time]bool{time.Unix(10000, 0): true, time.Unix(15000, 0): true},
 				Data: map[string]*DataSet{
 					"b": {
@@ -241,7 +241,7 @@ func TestMerge(t *testing.T) {
 			merged: &ResultsEnvelope{
 				isCounted:  true,
 				isSorted:   true,
-				tslist:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0)},
+				tsList:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0)},
 				timestamps: map[time.Time]bool{time.Unix(10000, 0): true, time.Unix(15000, 0): true},
 				Data: map[string]*DataSet{
 					"b": {
@@ -313,7 +313,7 @@ func TestMerge(t *testing.T) {
 			merged: &ResultsEnvelope{
 				isCounted: true,
 				isSorted:  true,
-				tslist: times.Times{time.Unix(10000, 0), time.Unix(15000, 0),
+				tsList: times.Times{time.Unix(10000, 0), time.Unix(15000, 0),
 					time.Unix(30000, 0), time.Unix(35000, 0)},
 				timestamps: map[time.Time]bool{time.Unix(10000, 0): true,
 					time.Unix(15000, 0): true, time.Unix(30000, 0): true, time.Unix(35000, 0): true},
@@ -395,7 +395,7 @@ func TestMerge(t *testing.T) {
 			merged: &ResultsEnvelope{
 				isCounted: true,
 				isSorted:  true,
-				tslist:    times.Times{time.Unix(10000, 0), time.Unix(15000, 0), time.Unix(20000, 0)},
+				tsList:    times.Times{time.Unix(10000, 0), time.Unix(15000, 0), time.Unix(20000, 0)},
 				timestamps: map[time.Time]bool{time.Unix(10000, 0): true,
 					time.Unix(15000, 0): true, time.Unix(20000, 0): true},
 				Data: map[string]*DataSet{
@@ -1011,7 +1011,7 @@ func TestCropToSize(t *testing.T) {
 				},
 				StepDuration: testStep,
 				timestamps:   map[time.Time]bool{time.Unix(1444004600, 0): true},
-				tslist:       times.Times{time.Unix(1444004600, 0)},
+				tsList:       times.Times{time.Unix(1444004600, 0)},
 				isCounted:    true,
 			},
 			extent: timeseries.Extent{
@@ -1053,7 +1053,7 @@ func TestCropToSize(t *testing.T) {
 				},
 				StepDuration: testStep,
 				timestamps:   map[time.Time]bool{time.Unix(1444004610, 0): true},
-				tslist:       times.Times{time.Unix(1444004610, 0)},
+				tsList:       times.Times{time.Unix(1444004610, 0)},
 				isCounted:    true,
 				isSorted:     true,
 			},
@@ -1118,7 +1118,7 @@ func TestCropToSize(t *testing.T) {
 				},
 				StepDuration: testStep,
 				timestamps:   map[time.Time]bool{time.Unix(1444004610, 0): true},
-				tslist:       times.Times{time.Unix(1444004610, 0)},
+				tsList:       times.Times{time.Unix(1444004610, 0)},
 				isCounted:    true,
 				isSorted:     false,
 			},
@@ -1167,7 +1167,7 @@ func TestClone(t *testing.T) {
 			before: &ResultsEnvelope{
 				Meta:        []FieldDefinition{{Name: "1", Type: "string"}},
 				Serializers: map[string]func(interface{}){"test": nil},
-				tslist:      times.Times{time.Unix(1644001200, 0)},
+				tsList:      times.Times{time.Unix(1644001200, 0)},
 				timestamps:  map[time.Time]bool{time.Unix(1644001200, 0): true},
 				Data: map[string]*DataSet{
 					"a": {
@@ -1188,7 +1188,7 @@ func TestClone(t *testing.T) {
 		// Run 1
 		{
 			before: &ResultsEnvelope{
-				tslist:     times.Times{time.Unix(1644001200, 0), time.Unix(1644004800, 0)},
+				tsList:     times.Times{time.Unix(1644001200, 0), time.Unix(1644004800, 0)},
 				timestamps: map[time.Time]bool{time.Unix(1644001200, 0): true, time.Unix(1644004800, 0): true},
 				Data: map[string]*DataSet{
 					"a": {
@@ -1268,7 +1268,7 @@ func TestSort(t *testing.T) {
 			after: &ResultsEnvelope{
 				isSorted:  true,
 				isCounted: true,
-				tslist: []time.Time{time.Unix(1544004000, 0),
+				tsList: []time.Time{time.Unix(1544004000, 0),
 					time.Unix(1544004200, 0), time.Unix(1544004600, 0), time.Unix(1544004800, 0)},
 				timestamps: map[time.Time]bool{time.Unix(1544004000, 0): true, time.Unix(1544004200, 0): true,
 					time.Unix(1544004600, 0): true, time.Unix(1544004800, 0): true},
@@ -1485,7 +1485,7 @@ func TestSize(t *testing.T) {
 	r := &ResultsEnvelope{
 		isCounted:  true,
 		isSorted:   true,
-		tslist:     times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
+		tsList:     times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
 		timestamps: map[time.Time]bool{time.Unix(5, 0): true, time.Unix(10, 0): true, time.Unix(15, 0): true},
 		Data: map[string]*DataSet{
 			"a": {
