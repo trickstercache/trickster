@@ -19,6 +19,7 @@ package clickhouse
 import (
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/sort/times"
@@ -462,52 +463,38 @@ func (re *ResultsEnvelope) ValueCount() int {
 
 // Size returns the approximate memory utilization in bytes of the timeseries
 func (re *ResultsEnvelope) Size() int {
-
-	var size int
 	wg := sync.WaitGroup{}
-
-	var a int
-	ma := sync.Mutex{}
+	c := uint64(24 + // .stepDuration
+		(25 * len(re.timestamps)) + // time.Time (24) + bool(1)
+		(24 * len(re.tslist)) + // time.Time (24)
+		(len(re.ExtentList) * 72) + // time.Time (24) * 3
+		2, // .isSorted + .isCounted
+	)
 	for i := range re.Meta {
 		wg.Add(1)
 		go func(j int) {
-			ma.Lock()
-			a += len(re.Meta[j].Name) + len(re.Meta[j].Type)
-			ma.Unlock()
+			atomic.AddUint64(&c, uint64(len(re.Meta[j].Name)+len(re.Meta[j].Type)))
 			wg.Done()
 		}(i)
 	}
-
-	var b int
-	mb := sync.Mutex{}
-	for k, v := range re.Data {
-		b += len(k)
-		wg.Add(1)
-		go func(d *DataSet) {
-			mb.Lock()
-			b += len(d.Points) * 16
-			mb.Unlock()
-			wg.Done()
-		}(v)
-	}
-
-	var c int
-	mc := sync.Mutex{}
 	for _, s := range re.SeriesOrder {
 		wg.Add(1)
 		go func(t string) {
-			mc.Lock()
-			c += len(t)
-			mc.Unlock()
+			atomic.AddUint64(&c, uint64(len(t)))
 			wg.Done()
 		}(s)
 	}
-
-	// ExtentList + StepDuration + Timestamps + Times + isCounted + isSorted
-	d := (len(re.ExtentList) * 24) + 8 + (len(re.timestamps) * 9) + (len(re.tslist) * 8) + 2
-
+	for k, v := range re.Data {
+		atomic.AddUint64(&c, uint64(len(k)))
+		wg.Add(1)
+		go func(d *DataSet) {
+			atomic.AddUint64(&c, uint64(len(d.Points)*32))
+			for mk := range d.Metric {
+				atomic.AddUint64(&c, uint64(len(mk)+8)) // + approx len of value (interface)
+			}
+			wg.Done()
+		}(v)
+	}
 	wg.Wait()
-	size = a + b + c + d
-	return size
-
+	return int(c)
 }

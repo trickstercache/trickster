@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/sort/times"
@@ -459,28 +460,31 @@ func (se *SeriesEnvelope) Sort() {
 
 // Size returns the approximate memory utilization in bytes of the timeseries
 func (se *SeriesEnvelope) Size() int {
-	c := 8 + len(se.Err)
+	c := uint64(24 + // .stepDuration
+		len(se.Err) +
+		se.ExtentList.Size() + // time.Time (24) * 3
+		(25 * len(se.timestamps)) + // time.Time (24) + bool(1)
+		(24 * len(se.tslist)) + // time.Time (24)
+		2, // .isSorted + .isCounted
+	)
 	wg := sync.WaitGroup{}
-	mtx := sync.Mutex{}
-	for i := range se.Results {
-		for j := range se.Results[i].Series {
-
+	for i, res := range se.Results {
+		atomic.AddUint64(&c, uint64(8+len(res.Err))) // .StatementID
+		for j := range res.Series {
 			wg.Add(1)
 			go func(r models.Row) {
-				mtx.Lock()
-				c += len(r.Name)
+				atomic.AddUint64(&c, uint64(len(r.Name)+1)) // .Partial
 				for k, v := range r.Tags {
-					c += len(k) + len(v)
+					atomic.AddUint64(&c, uint64(len(k)+len(v)))
 				}
 				for _, v := range r.Columns {
-					c += len(v)
+					atomic.AddUint64(&c, uint64(len(v)))
 				}
-				c += 16 // approximate size of timestamp + value
-				mtx.Unlock()
+				atomic.AddUint64(&c, 32) // size of timestamp (24) + approximate value size (8)
 				wg.Done()
 			}(se.Results[i].Series[j])
 		}
 	}
 	wg.Wait()
-	return c
+	return int(c)
 }

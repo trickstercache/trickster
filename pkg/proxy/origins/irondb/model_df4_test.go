@@ -366,22 +366,22 @@ func TestUnmarshalDF4Timeseries(t *testing.T) {
 
 	se := ts.(*DF4SeriesEnvelope)
 	if len(se.Data) != 2 {
-		t.Errorf(`Expected length: 2. got %d`, len(se.Data))
+		t.Errorf(`expected length: 2. got %d`, len(se.Data))
 		return
 	}
 
 	if se.Data[1][1] != 2.0 {
-		t.Errorf(`Expected value: 2.0. got %f`, se.Data[1][1])
+		t.Errorf(`expected value: 2.0. got %f`, se.Data[1][1])
 		return
 	}
 
 	if se.Head.Start != 300 {
-		t.Errorf(`Expected time start: 300. got %d`, se.Head.Start)
+		t.Errorf(`expected time start: 300. got %d`, se.Head.Start)
 		return
 	}
 
 	if se.Head.Period != 300 {
-		t.Errorf(`Expected time period: 300. got %d`, se.Head.Period)
+		t.Errorf(`expected time period: 300. got %d`, se.Head.Period)
 		return
 	}
 }
@@ -390,7 +390,7 @@ func TestSize(t *testing.T) {
 
 	client := &Client{}
 	s, _ := client.UnmarshalTimeseries([]byte(testDF4Response))
-	expected := 75
+	expected := 136
 
 	if s.Size() != expected {
 		t.Errorf("expected %d got %d", expected, s.Size())

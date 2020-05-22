@@ -20,6 +20,7 @@ package index
 import (
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
@@ -191,10 +192,10 @@ func (idx *Index) UpdateObject(obj *Object) {
 	obj.LastWrite = obj.LastAccess
 
 	if o, ok := idx.Objects[key]; ok {
-		idx.CacheSize += o.Size - idx.Objects[key].Size
+		atomic.AddInt64(&idx.CacheSize, obj.Size-o.Size)
 	} else {
-		idx.CacheSize += obj.Size
-		idx.ObjectCount++
+		atomic.AddInt64(&idx.CacheSize, obj.Size)
+		atomic.AddInt64(&idx.ObjectCount, 1)
 	}
 
 	metrics.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
@@ -208,8 +209,8 @@ func (idx *Index) RemoveObject(key string) {
 	indexLock.Lock()
 	idx.lastWrite = time.Now()
 	if o, ok := idx.Objects[key]; ok {
-		idx.CacheSize -= o.Size
-		idx.ObjectCount--
+		atomic.AddInt64(&idx.CacheSize, -o.Size)
+		atomic.AddInt64(&idx.ObjectCount, -1)
 
 		metrics.ObserveCacheOperation(idx.name, idx.cacheType, "del", "none", float64(o.Size))
 
@@ -226,8 +227,8 @@ func (idx *Index) RemoveObjects(keys []string, noLock bool) {
 	}
 	for _, key := range keys {
 		if o, ok := idx.Objects[key]; ok {
-			idx.CacheSize -= o.Size
-			idx.ObjectCount--
+			atomic.AddInt64(&idx.CacheSize, -o.Size)
+			atomic.AddInt64(&idx.ObjectCount, -1)
 			metrics.ObserveCacheOperation(idx.name, idx.cacheType, "del", "none", float64(o.Size))
 			delete(idx.Objects, key)
 			metrics.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)

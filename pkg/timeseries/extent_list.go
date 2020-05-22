@@ -164,6 +164,11 @@ func (el ExtentList) Clone() ExtentList {
 	return c
 }
 
+// Size returns the approximate memory utilization in bytes of the timeseries
+func (el ExtentList) Size() int {
+	return len(el) * 72
+}
+
 // ExtentListLRU is a type of []Extent used for sorting the slice by LRU
 type ExtentListLRU []Extent
 
