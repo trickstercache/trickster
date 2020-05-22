@@ -57,7 +57,7 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 	tp, err = sdktrace.NewProvider(
 		sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sampler}),
 		sdktrace.WithBatcher(exporter,
-			sdktrace.WithScheduleDelayMillis(5),
+			sdktrace.WithBatchTimeout(5),
 			sdktrace.WithMaxExportBatchSize(10),
 		),
 	)
