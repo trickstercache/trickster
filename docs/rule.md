@@ -21,7 +21,7 @@ Required Rule Parts
 Optional Rule Parts
 
 - `input_key` - case-sensitive lookup key; required when the source is `header` or URL `param`
-- `input_encoding` - the encoding of the input, which is decoded prior to peforming the operation
+- `input_encoding` - the encoding of the input, which is decoded prior to performing the operation
 - `input_index` - when > -1, the source is split into parts and the input is extracted from parts\[input_index\]
 - `input-delimiter` - when input_index > -1, this delimiter is used to split the source into parts, and defaults to a standard space (' ')
 - `ingress_req_rewriter name` - provides the name of a Request Rewriter to operate on the Request before rule execution.

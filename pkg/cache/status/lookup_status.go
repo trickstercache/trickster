@@ -32,7 +32,7 @@ const (
 	LookupStatusRangeMiss
 	// LookupStatusKeyMiss indicates a full key miss (cache key does not exist) on lookup
 	LookupStatusKeyMiss
-	// LookupStatusRevalidated indicates the cached object execeeded the freshness lifetime but
+	// LookupStatusRevalidated indicates the cached object exceeded the freshness lifetime but
 	// was revalidated against the upstream server and is treated as a cache hit
 	LookupStatusRevalidated
 	// LookupStatusPurge indicates the cache key, if it existed, was purged as directed
