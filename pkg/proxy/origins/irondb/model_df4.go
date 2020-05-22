@@ -335,7 +335,7 @@ func (se *DF4SeriesEnvelope) Size() int {
 	for i := range se.Meta {
 		wg.Add(1)
 		go func(j int) {
-			for k := range se.Meta[i] {
+			for k := range se.Meta[j] {
 				atomic.AddUint64(&c, uint64(len(k)+8)) // + approximate Meta Value size (8)
 			}
 			wg.Done()
