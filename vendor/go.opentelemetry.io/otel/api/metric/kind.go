@@ -12,10 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package opentelemetry contains Go support for OpenTelemetry.
-package opentelemetry // import "go.opentelemetry.io/otel/sdk"
+//go:generate stringer -type=Kind
 
-// Version is the current release version of OpenTelemetry in use.
-func Version() string {
-	return "0.6.0"
-}
+package metric
+
+// Kind describes the kind of instrument.
+type Kind int8
+
+const (
+	// ValueRecorderKind indicates a ValueRecorder instrument.
+	ValueRecorderKind Kind = iota
+	// ValueObserverKind indicates an ValueObserver instrument.
+	ValueObserverKind
+
+	// CounterKind indicates a Counter instrument.
+	CounterKind
+	// UpDownCounterKind indicates a UpDownCounter instrument.
+	UpDownCounterKind
+
+	// SumObserverKind indicates a SumObserver instrument.
+	SumObserverKind
+	// UpDownSumObserverKind indicates a UpDownSumObserver instrument.
+	UpDownSumObserverKind
+)
