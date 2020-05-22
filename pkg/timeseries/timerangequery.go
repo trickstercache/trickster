@@ -19,6 +19,7 @@ package timeseries
 import (
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -118,4 +119,22 @@ func (trq *TimeRangeQuery) CalculateDeltas(have ExtentList) ExtentList {
 func (trq *TimeRangeQuery) String() string {
 	return fmt.Sprintf(`{ "statement": "%s", "step": "%s", "extent": "%s" }`,
 		strings.Replace(trq.Statement, `"`, `\"`, -1), trq.Step.String(), trq.Extent.String())
+}
+
+// GetBackfillTolerance will return the backfill tolerance for the query based on the provided
+// default, and any query-specific tolerance directives included in the query comments
+func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration) time.Duration {
+	if x := strings.Index(trq.Statement, "trickster-backfill-tolerance:"); x > 1 {
+		x += 29
+		y := x
+		for ; y < len(trq.Statement); y++ {
+			if trq.Statement[y] < 48 || trq.Statement[y] > 57 {
+				break
+			}
+		}
+		if i, err := strconv.Atoi(trq.Statement[x:y]); err == nil {
+			return time.Second * time.Duration(i)
+		}
+	}
+	return def
 }

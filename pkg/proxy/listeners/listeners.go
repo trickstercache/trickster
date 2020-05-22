@@ -72,7 +72,7 @@ func NewListenerGroup() *ListenerGroup {
 
 // NewListener creates a new network listener which obeys to the configuration max
 // connection limit, monitors connections with prometheus metrics, and is able
-// to be gracefullly drained
+// to be gracefully drained
 //
 // The way this works is by creating a listener and wrapping it with a
 // netutil.LimitListener to set a limit.

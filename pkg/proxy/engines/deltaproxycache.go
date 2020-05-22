@@ -80,9 +80,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 
 	// this is used to ensure the head of the cache respects the BackFill Tolerance
 	bf := timeseries.Extent{Start: time.Unix(0, 0), End: trq.Extent.End}
+	bt := trq.GetBackfillTolerance(oc.BackfillTolerance)
 
-	if !trq.IsOffset && oc.BackfillTolerance > 0 {
-		bf.End = bf.End.Add(-oc.BackfillTolerance)
+	if !trq.IsOffset && bt > 0 {
+		bf.End = bf.End.Add(-bt)
 	}
 
 	now := time.Now()
@@ -99,7 +100,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		if trq.Extent.Start.After(bf.End) {
 			pr.Logger.Debug("timerange is too new to cache due to backfill tolerance",
-				tl.Pairs{"backFillToleranceSecs": oc.BackfillToleranceSecs,
+				tl.Pairs{"backFillToleranceSecs": bt,
 					"newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
 			DoProxy(w, r, true)
 			return
@@ -190,7 +191,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 							pr.cacheLock.RRelease()
 							go pr.Logger.Debug("timerange not cached due to backfill tolerance",
 								tl.Pairs{
-									"backFillToleranceSecs":   oc.BackfillToleranceSecs,
+									"backFillToleranceSecs":   bt,
 									"newestRetainedTimestamp": bf.End,
 									"queryStart":              trq.Extent.Start,
 								},
