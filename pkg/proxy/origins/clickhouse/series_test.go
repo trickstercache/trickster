@@ -1505,7 +1505,7 @@ func TestSize(t *testing.T) {
 		StepDuration: time.Duration(5) * time.Second,
 	}
 	i := r.Size()
-	const expected = 146
+	const expected = 370
 	if i != expected {
 		t.Errorf("expected %d got %d", expected, i)
 	}

@@ -359,9 +359,8 @@ func (c Client) UnmarshalInstantaneous(
 
 // Size returns the approximate memory utilization in bytes of the timeseries
 func (se *SeriesEnvelope) Size() int {
-
-	// TODO this implementation is a rough approximation to ensure we conform to the
-	// interface specification, it requires refinement in order to be in the ballpark
-	c := len(se.Data) * 24
+	c := len(se.Data)*36 + // time.Time (24) + Step (4) + Value (8)
+		(len(se.ExtentList) * 72) + // time.Time (24) * 3
+		24 // .StepDuration
 	return c
 }

@@ -18,6 +18,7 @@ package irondb
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -325,22 +326,28 @@ func (se *DF4SeriesEnvelope) Sort() {
 
 // Size returns the approximate memory utilization in bytes of the timeseries
 func (se *DF4SeriesEnvelope) Size() int {
-
-	// TODO this implementation is a rough approximation to ensure we conform to the
-	// interface specification, it requires refinement in order to be in the ballpark
-
-	c := 24 + len(se.Ver) // accounts for head + ver
 	wg := sync.WaitGroup{}
-	mtx := sync.Mutex{}
+	c := uint64(len(se.Ver) +
+		24 + // .Head
+		24 + // .StepDuration
+		se.ExtentList.Size(),
+	)
+	for i := range se.Meta {
+		wg.Add(1)
+		go func(j int) {
+			for k := range se.Meta[i] {
+				atomic.AddUint64(&c, uint64(len(k)+8)) // + approximate Meta Value size (8)
+			}
+			wg.Done()
+		}(i)
+	}
 	for i := range se.Data {
 		wg.Add(1)
 		go func(s []interface{}) {
-			mtx.Lock()
-			c += (len(s) * 16)
-			mtx.Unlock()
+			atomic.AddUint64(&c, uint64(len(s)*16)) // + approximate data value size
 			wg.Done()
 		}(se.Data[i])
 	}
 	wg.Wait()
-	return c
+	return int(c)
 }
