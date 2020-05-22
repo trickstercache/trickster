@@ -44,7 +44,7 @@ var (
 
 const (
 	applicationName    = "trickster"
-	applicationVersion = "1.0.3"
+	applicationVersion = "1.0.4"
 )
 
 // Package main is the main package for the Trickster application
