@@ -58,7 +58,7 @@ func TestValidateOriginName(t *testing.T) {
 
 	err = ValidateOriginName("frontend")
 	if err == nil {
-		t.Error("expexted error for invalid origin name")
+		t.Error("expected error for invalid origin name")
 	}
 
 }

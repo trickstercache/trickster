@@ -22,7 +22,7 @@ Each origin section of a Trickster config file can be augmented with the optiona
 
     [origins.example] # origin for example
 
-        [origins.example.tls] # TLS settigs for origin named example
+        [origins.example.tls] # TLS settings for origin named example
         # front-end configs
         full_chain_cert_path = '/path/to/my/cert.pem'
         private_key_path = '/path/to/my/key.pem'
