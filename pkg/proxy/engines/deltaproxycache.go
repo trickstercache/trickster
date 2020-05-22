@@ -130,13 +130,13 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 		)
 		cacheStatus = status.LookupStatusPurge
 		go cache.Remove(key)
-		// to-do, re-add log request bool
 		cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 		if err != nil {
 			pr.cacheLock.RRelease()
+			h := doc.SafeHeaderClone()
 			recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode,
-				r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
-			Respond(w, doc.StatusCode, doc.Headers, doc.Body)
+				r.URL.Path, "", elapsed.Seconds(), nil, h)
+			Respond(w, doc.StatusCode, h, doc.Body)
 			return // fetchTimeseries logs the error
 		}
 	} else {
@@ -145,10 +145,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 			if err != nil {
 				pr.cacheLock.RRelease()
+				h := doc.SafeHeaderClone()
 				recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode,
-					r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
-
-				Respond(w, doc.StatusCode, doc.Headers, doc.Body)
+					r.URL.Path, "", elapsed.Seconds(), nil, h)
+				Respond(w, doc.StatusCode, h, doc.Body)
 				return // fetchTimeseries logs the error
 			}
 		} else {
@@ -169,9 +169,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
 				if err != nil {
 					pr.cacheLock.RRelease()
+					h := doc.SafeHeaderClone()
 					recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode,
-						r.URL.Path, "", elapsed.Seconds(), nil, doc.Headers)
-					Respond(w, doc.StatusCode, doc.Headers, doc.Body)
+						r.URL.Path, "", elapsed.Seconds(), nil, h)
+					Respond(w, doc.StatusCode, h, doc.Body)
 					return // fetchTimeseries logs the error
 				}
 			} else {
@@ -419,9 +420,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	rts.SetExtents(nil) // so they are not included in the client response json
 	rts.SetStep(0)
 	rdata, err := client.MarshalTimeseries(rts)
-	doc.headerLock.Lock()
-	rh := http.Header(doc.Headers).Clone()
-	doc.headerLock.Unlock()
+	rh := doc.SafeHeaderClone()
 
 	switch cacheStatus {
 	case status.LookupStatusKeyMiss, status.LookupStatusPartialHit, status.LookupStatusRangeMiss:

@@ -228,10 +228,8 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 		pr.cacheStatus = status.LookupStatusNegativeCacheHit
 	}
 
-	d.headerLock.Lock()
 	pr.upstreamResponse = &http.Response{StatusCode: d.StatusCode, Request: pr.Request,
-		Header: http.Header(d.Headers).Clone()}
-	d.headerLock.Unlock()
+		Header: d.SafeHeaderClone()}
 	if pr.wantsRanges {
 		h, b := d.RangeParts.ExtractResponseRange(pr.wantedRanges, d.ContentLength, d.ContentType, d.Body)
 		headers.Merge(pr.upstreamResponse.Header, h)

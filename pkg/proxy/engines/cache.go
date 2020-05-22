@@ -170,24 +170,25 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		defer span.End()
 	}
 
+	d.headerLock.Lock()
 	h := http.Header(d.Headers)
 	h.Del(headers.NameDate)
 	h.Del(headers.NameTransferEncoding)
 	h.Del(headers.NameContentRange)
 	h.Del(headers.NameTricksterResult)
+	ce := h.Get(headers.NameContentEncoding)
+	d.headerLock.Unlock()
 
 	var bytes []byte
-
 	var compress bool
 
-	if ce := http.Header(d.Headers).Get(headers.NameContentEncoding); (ce == "" || ce == "identity") &&
+	if (ce == "" || ce == "identity") &&
 		(d.CachingPolicy == nil || !d.CachingPolicy.NoTransform) {
 		if mt, _, err := mime.ParseMediaType(d.ContentType); err == nil {
 			if _, ok := compressTypes[mt]; ok {
 				compress = true
 			}
 		}
-
 	}
 
 	// for memory cache, don't serialize the document, since we can retrieve it by reference.
@@ -250,10 +251,14 @@ func DocumentFromHTTPResponse(resp *http.Response, body []byte, cp *CachingPolic
 	d.ContentLength = resp.ContentLength
 
 	if resp.Header != nil {
+		d.headerLock.Lock()
 		d.Headers = resp.Header.Clone()
+		d.headerLock.Unlock()
 	}
 
+	d.headerLock.Lock()
 	ct := http.Header(d.Headers).Get(headers.NameContentType)
+	d.headerLock.Unlock()
 	if !strings.HasPrefix(ct, headers.ValueMultipartByteRanges) {
 		d.ContentType = ct
 	}

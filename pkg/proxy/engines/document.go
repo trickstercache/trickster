@@ -56,6 +56,14 @@ type HTTPDocument struct {
 	headerLock       sync.Mutex
 }
 
+// SafeHeaderClone returns a threadsafe copy of the Document Header
+func (d *HTTPDocument) SafeHeaderClone() http.Header {
+	d.headerLock.Lock()
+	h := http.Header(d.Headers).Clone()
+	d.headerLock.Unlock()
+	return h
+}
+
 // Size returns the size of the HTTPDocument's headers, CachingPolicy, RangeParts, Body and timeseries data
 func (d *HTTPDocument) Size() int {
 	var i int
@@ -91,7 +99,9 @@ func (d *HTTPDocument) SetBody(body []byte) {
 	if d.Headers == nil {
 		d.Headers = make(http.Header)
 	}
+	d.headerLock.Lock()
 	http.Header(d.Headers).Set(headers.NameContentLength, strconv.Itoa(len(body)))
+	d.headerLock.Unlock()
 }
 
 // LoadRangeParts convert a StoredRangeParts into a RangeParts
