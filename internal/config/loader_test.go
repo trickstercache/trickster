@@ -54,7 +54,7 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 		},
 		{ // Case 1
 			"../../testdata/test.bad_origin_url.conf",
-			fmt.Sprintf(`parse %s: first path segment in URL cannot contain colon`, "sasdf_asd[as;://asdf923_-=a*"),
+			fmt.Sprintf(`parse "%s": first path segment in URL cannot contain colon`, "sasdf_asd[as;://asdf923_-=a*"),
 		},
 		{ // Case 2
 			"../../testdata/test.missing_origin_type.conf",

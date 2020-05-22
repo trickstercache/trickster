@@ -19,12 +19,13 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Comcast/trickster/internal/config"
-	"github.com/Comcast/trickster/internal/routing"
 	"github.com/Comcast/trickster/internal/util/metrics"
+	"github.com/gorilla/mux"
 )
 
 func init() {
@@ -135,7 +136,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 
 	err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus"})
 	if err != nil {
-		t.Errorf("Could not load configuration: %s", err.Error())
+		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
 	tt := []struct {
@@ -164,7 +165,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 			34003,
 			1,
 			10,
-			"Get http://localhost:34003/: net/http: request canceled (Client.Timeout exceeded while awaiting headers)",
+			"(Client.Timeout exceeded while awaiting headers)",
 		},
 	}
 
@@ -173,10 +174,14 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 	for _, tc := range tt {
 		t.Run(tc.Name, func(t *testing.T) {
 			l, err := NewListener("", tc.ListenPort, tc.ConnectionsLimit, nil)
-			defer l.Close()
+			if err != nil {
+				t.Fatal(err)
+			} else {
+				defer l.Close()
+			}
 
 			go func() {
-				http.Serve(l, routing.Router)
+				http.Serve(l, mux.NewRouter())
 			}()
 
 			if err != nil {
@@ -190,7 +195,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 				}
 				res, err := http.DefaultClient.Do(r)
 				if err != nil {
-					if fmt.Sprintf("%s", err) != tc.expectedErr {
+					if !strings.HasSuffix(err.Error(), tc.expectedErr) {
 						t.Fatalf("unexpected error when executing request: %s", err)
 					}
 					continue
