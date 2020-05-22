@@ -10,7 +10,7 @@ Trickster offers `health` endpoints for monitoring the health of the Trickster s
 
 Each configured origin's health check path is `/trickster/health/ORIGIN_NAME`. For example, if your origin is named `foo`, you can perform a health check of the upstream URL at `http://<trickster_address:port>/trickster/health/foo`.
 
-The orogin health path prefix `/trickster/health/` is customizable. See the [example.conf](../cmd/trickster/conf/example.conf) for more info.
+The origin health path prefix `/trickster/health/` is customizable. See the [example.conf](../cmd/trickster/conf/example.conf) for more info.
 
  The behavior of a `health` request will vary based on the Origin Type, as each Origin Type implements a custom default health check behavior. For example, with Prometheus, Trickster makes a request to `/query?query=up` and (hopefully) receives a `200 OK`, while for InfluxDB the request is to `/ping` which returns a `204 No Content`. You can customize the behavior in the Trickster configuration. See the [example.conf](../cmd/trickster/conf/example.conf) for guidance.
 
