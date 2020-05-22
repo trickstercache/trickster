@@ -603,3 +603,19 @@ func TestCompress(t *testing.T) {
 		})
 	}
 }
+
+func TestSize(t *testing.T) {
+
+	el := ExtentList{
+		Extent{Start: time.Unix(90, 0), End: time.Unix(120, 0)},
+		Extent{Start: time.Unix(90, 0), End: time.Unix(120, 0)},
+		Extent{Start: time.Unix(180, 0), End: time.Unix(180, 0)},
+		Extent{Start: time.Unix(180, 0), End: time.Unix(180, 0)},
+	}
+
+	expected := 288
+	if el.Size() != expected {
+		t.Errorf("expected %d got %d", expected, el.Size())
+	}
+
+}
