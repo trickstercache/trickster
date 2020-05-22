@@ -387,7 +387,7 @@ func TestSize(t *testing.T) {
 
 	client := &Client{}
 	s, _ := client.UnmarshalTimeseries([]byte(testDF4Response))
-	expected := 75
+	expected := 136
 
 	if s.Size() != expected {
 		t.Errorf("expected %d got %d", expected, s.Size())

@@ -263,3 +263,8 @@ func (el ExtentListLRU) UpdateLastUsed(lur Extent, step time.Duration) ExtentLis
 	}
 	return ExtentListLRU(el2.Compress(step))
 }
+
+// Size returns the approximate memory utilization in bytes of the timeseries
+func (el ExtentList) Size() int {
+	return len(el) * 72
+}

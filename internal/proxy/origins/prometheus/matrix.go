@@ -16,6 +16,7 @@ package prometheus
 import (
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Comcast/trickster/internal/timeseries"
@@ -396,19 +397,21 @@ func (me *MatrixEnvelope) ValueCount() int {
 
 // Size returns the approximate memory utilization in bytes of the timeseries
 func (me *MatrixEnvelope) Size() int {
-
-	c := 0
 	wg := sync.WaitGroup{}
-	mtx := sync.Mutex{}
+	c := uint64(len(me.Status) +
+		me.ExtentList.Size() +
+		24 + // me.StepDuration
+		(25 * len(me.timestamps)) +
+		(24 * len(me.tslist)) +
+		2 + // isSorted + isCounted
+		len(me.Data.ResultType))
 	for i := range me.Data.Result {
 		wg.Add(1)
 		go func(s *model.SampleStream) {
-			mtx.Lock()
-			c += (len(s.Values) * 16) + len(s.Metric.String())
-			mtx.Unlock()
+			atomic.AddUint64(&c, uint64((len(s.Values)*32)+len(s.Metric.String())))
 			wg.Done()
 		}(me.Data.Result[i])
 	}
 	wg.Wait()
-	return c
+	return int(c)
 }
