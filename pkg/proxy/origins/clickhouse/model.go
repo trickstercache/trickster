@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/sort/times"
@@ -40,7 +41,7 @@ type ResponseValue map[string]interface{}
 
 type Point struct {
 	Timestamp time.Time
-	Values    map[string]interface{}
+	Values    ResponseValue
 }
 
 // Response is the JSON response document structure for ClickHouse query results
@@ -59,17 +60,16 @@ type ResultsEnvelope struct {
 
 	timestamps map[time.Time]bool // tracks unique timestamps in the matrix data
 	tsList     times.Times
-	isSorted   bool // tracks if the matrix data is currently sorted
-	isCounted  bool // tracks if timestamps slice is up-to-date
+	isSorted   bool
+	isCounted  bool
 }
 
-// MarshalTimeseries converts a Timeseries into a JSON blob
+// Converts a Timeseries into a JSON blob
 func (c *Client) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, error) {
-	// Marshal the Envelope back to a json object for Cache Storage
 	return json.Marshal(ts.(*ResultsEnvelope))
 }
 
-// UnmarshalTimeseries converts a JSON blob into a Timeseries
+// Converts a JSON blob into a Timeseries
 func (c *Client) UnmarshalTimeseries(data []byte) (timeseries.Timeseries, error) {
 	re := &ResultsEnvelope{}
 	err := json.Unmarshal(data, re)
@@ -77,6 +77,9 @@ func (c *Client) UnmarshalTimeseries(data []byte) (timeseries.Timeseries, error)
 }
 
 func (re ResultsEnvelope) MarshalJSON() ([]byte, error) {
+	if len(re.Meta) == 0 {
+		return nil, fmt.Errorf("no metadata in ResultsEnvelope")
+	}
 	tsField := re.Meta[0].Name
 	rsp := &Response{
 		Meta:    re.Meta,
@@ -98,13 +101,15 @@ func (re ResultsEnvelope) SeriesCount() int {
 }
 
 func (re *ResultsEnvelope) UnmarshalJSON(b []byte) error {
+	var msInt int64
+	var err error
 	response := Response{}
 	if err := json.Unmarshal(b, &response); err != nil {
 		return err
 	}
-
 	re.Meta = response.Meta
 	tsField := response.Meta[0].Name
+	isString := strings.HasSuffix(response.Meta[0].Type, "64")
 	re.Data = make([]Point, 0, len(response.RawData))
 	for _, v := range response.RawData {
 		ms, ok := v[tsField]
@@ -112,9 +117,13 @@ func (re *ResultsEnvelope) UnmarshalJSON(b []byte) error {
 			return fmt.Errorf("missing timestamp field in response data")
 		}
 		delete(v, tsField)
-		msInt, err := strconv.ParseInt(ms.(string), 10, 64)
-		if err != nil {
-			return err
+		if isString {
+			msInt, err = strconv.ParseInt(ms.(string), 10, 64)
+			if err != nil {
+				return err
+			}
+		} else {
+			msInt = int64(ms.(int))
 		}
 		ts := time.Unix(msInt/millisPerSecond, (msInt%millisPerSecond)*nanosPerMillisecond)
 		re.Data = append(re.Data, Point{Timestamp: ts, Values: v})

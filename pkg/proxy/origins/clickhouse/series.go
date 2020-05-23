@@ -18,7 +18,6 @@ package clickhouse
 
 import (
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/sort/times"
@@ -38,20 +37,10 @@ func (re *ResultsEnvelope) SetStep(step time.Duration) {
 // Merges the provided Timeseries list into the base Timeseries (in the order provided)
 // and optionally sorts the merged Timeseries
 func (re *ResultsEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) {
-	wg := sync.WaitGroup{}
-	mtx := sync.Mutex{}
-
 	for _, ts := range collection {
 		if ts != nil {
 			re2 := ts.(*ResultsEnvelope)
-			go func() {
-				wg.Add(1)
-				mtx.Lock()
-				re.Data = append(re.Data, re2.Data...)
-				mtx.Unlock()
-				wg.Done()
-			}()
-			wg.Wait()
+			re.Data = append(re.Data, re2.Data...)
 			re.ExtentList = append(re.ExtentList, re2.ExtentList...)
 		}
 	}

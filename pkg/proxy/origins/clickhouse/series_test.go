@@ -17,15 +17,13 @@
 package clickhouse
 
 import (
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"reflect"
-	"strconv"
-	"strings"
 	"testing"
 	"time"
-
-	"github.com/tricksterproxy/trickster/pkg/sort/times"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
+
+const testStep = time.Duration(10) * time.Second
 
 func TestSetStep(t *testing.T) {
 	re := ResultsEnvelope{}
@@ -45,558 +43,90 @@ func TestStep(t *testing.T) {
 	}
 }
 
+func testRe() *ResultsEnvelope {
+	return newRe().addMeta("t", "UInt64", "v", "Float")
+}
+
+func testEx(start int64, end int64) timeseries.Extent {
+	return timeseries.Extent{Start: time.Unix(start, 0), End: time.Unix(end, 0)}
+}
+
+// Multi-series tests omitted for single series ClickHouse
 func TestMerge(t *testing.T) {
-	tests := []struct {
-		a, b, merged *ResultsEnvelope
-	}{
-		// Run 0: Series that adhere to rule
-		{
-			a: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(10, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(10, 0), End: time.Unix(10, 0)},
-				},
-				StepDuration: time.Duration(5) * time.Second,
-			},
-			b: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(5, 0), Value: 1.5},
-							{Timestamp: time.Unix(15, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(5, 0)},
-					timeseries.Extent{Start: time.Unix(15, 0), End: time.Unix(15, 0)},
-				},
-				StepDuration: time.Duration(5) * time.Second,
-			},
-			merged: &ResultsEnvelope{
-				isCounted:  true,
-				isSorted:   true,
-				tsList:     times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
-				timestamps: map[time.Time]bool{time.Unix(5, 0): true, time.Unix(10, 0): true, time.Unix(15, 0): true},
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(5, 0), Value: 1.5},
-							{Timestamp: time.Unix(10, 0), Value: 1.5},
-							{Timestamp: time.Unix(15, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(15, 0)},
-				},
-				StepDuration: time.Duration(5) * time.Second,
-			},
-		},
-		// Run 1: Empty second series
-		{
-			a: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(10000, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(10000, 0)},
-				},
-				StepDuration: time.Duration(5000) * time.Second,
-			},
-			b: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{},
-					},
-				},
-				ExtentList:   timeseries.ExtentList{},
-				StepDuration: time.Duration(5000) * time.Second,
-			},
-			merged: &ResultsEnvelope{
-				isCounted:  true,
-				isSorted:   true,
-				tsList:     times.Times{time.Unix(10000, 0)},
-				timestamps: map[time.Time]bool{time.Unix(10000, 0): true},
-				Data: map[string]*DataSet{
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(10000, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(10000, 0)},
-				},
-				StepDuration: time.Duration(5000) * time.Second,
-			},
-		},
-		// Run 2: second series has new metric
-		{
-			a: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(10000, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(10000, 0)},
-				},
-				StepDuration: time.Duration(5000) * time.Second,
-			},
-			b: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"c": {
-						Metric: map[string]interface{}{"__name__": "c"},
-						Points: []Point{
-							{Timestamp: time.Unix(15000, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(15000, 0), End: time.Unix(15000, 0)},
-				},
-				StepDuration: time.Duration(5000) * time.Second,
-			},
-			merged: &ResultsEnvelope{
-				isCounted:  true,
-				isSorted:   true,
-				tsList:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0)},
-				timestamps: map[time.Time]bool{time.Unix(10000, 0): true, time.Unix(15000, 0): true},
-				Data: map[string]*DataSet{
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(10000, 0), Value: 1.5},
-						},
-					},
-					"c": {
-						Metric: map[string]interface{}{"__name__": "c"},
-						Points: []Point{
-							{Timestamp: time.Unix(15000, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(15000, 0)},
-				},
-				StepDuration: time.Duration(5000) * time.Second,
-			},
-		},
-		// Run 3: merge one metric, one metric unchanged
-		{
-			a: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(10000, 0), Value: 1.5},
-						},
-					},
-					"c": {
-						Metric: map[string]interface{}{"__name__": "c"},
-						Points: []Point{
-							{Timestamp: time.Unix(10000, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(10000, 0)},
-				},
-				StepDuration: time.Duration(5000) * time.Second,
-			},
-			b: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"c": {
-						Metric: map[string]interface{}{"__name__": "c"},
-						Points: []Point{
-							{Timestamp: time.Unix(15000, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(15000, 0), End: time.Unix(15000, 0)},
-				},
-				StepDuration: time.Duration(5000) * time.Second,
-			},
-			merged: &ResultsEnvelope{
-				isCounted:  true,
-				isSorted:   true,
-				tsList:     times.Times{time.Unix(10000, 0), time.Unix(15000, 0)},
-				timestamps: map[time.Time]bool{time.Unix(10000, 0): true, time.Unix(15000, 0): true},
-				Data: map[string]*DataSet{
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(10000, 0), Value: 1.5},
-						},
-					},
-					"c": {
-						Metric: map[string]interface{}{"__name__": "c"},
-						Points: []Point{
-							{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							{Timestamp: time.Unix(15000, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(15000, 0)},
-				},
-				StepDuration: time.Duration(5000) * time.Second,
-			},
-		},
-		// Run 4: merge multiple extents
-		{
-			a: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							{Timestamp: time.Unix(15000, 0), Value: 1.5},
-						},
-					},
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							{Timestamp: time.Unix(15000, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(15000, 0)},
-				},
-				StepDuration: time.Duration(5000) * time.Second,
-			},
-			b: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(30000, 0), Value: 1.5},
-							{Timestamp: time.Unix(35000, 0), Value: 1.5},
-						},
-					},
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(30000, 0), Value: 1.5},
-							{Timestamp: time.Unix(35000, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(30000, 0), End: time.Unix(35000, 0)},
-				},
-				StepDuration: time.Duration(5000) * time.Second,
-			},
-			merged: &ResultsEnvelope{
-				isCounted: true,
-				isSorted:  true,
-				tsList: times.Times{time.Unix(10000, 0), time.Unix(15000, 0),
-					time.Unix(30000, 0), time.Unix(35000, 0)},
-				timestamps: map[time.Time]bool{time.Unix(10000, 0): true,
-					time.Unix(15000, 0): true, time.Unix(30000, 0): true, time.Unix(35000, 0): true},
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							{Timestamp: time.Unix(15000, 0), Value: 1.5},
-							{Timestamp: time.Unix(30000, 0), Value: 1.5},
-							{Timestamp: time.Unix(35000, 0), Value: 1.5},
-						},
-					},
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							{Timestamp: time.Unix(15000, 0), Value: 1.5},
-							{Timestamp: time.Unix(30000, 0), Value: 1.5},
-							{Timestamp: time.Unix(35000, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(15000, 0)},
-					timeseries.Extent{Start: time.Unix(30000, 0), End: time.Unix(35000, 0)},
-				},
-				StepDuration: time.Duration(5000) * time.Second,
-			},
-		},
-		//
-		//
-		// Run 5: merge with some overlapping extents
-		{
-			a: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							{Timestamp: time.Unix(15000, 0), Value: 1.5},
-						},
-					},
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							{Timestamp: time.Unix(15000, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(15000, 0)},
-				},
-				StepDuration: time.Duration(5000) * time.Second,
-			},
-			b: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(15000, 0), Value: 1.5},
-							{Timestamp: time.Unix(20000, 0), Value: 1.5},
-						},
-					},
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(15000, 0), Value: 1.5},
-							{Timestamp: time.Unix(20000, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(15000, 0), End: time.Unix(20000, 0)},
-				},
-				StepDuration: time.Duration(5000) * time.Second,
-			},
-			merged: &ResultsEnvelope{
-				isCounted: true,
-				isSorted:  true,
-				tsList:    times.Times{time.Unix(10000, 0), time.Unix(15000, 0), time.Unix(20000, 0)},
-				timestamps: map[time.Time]bool{time.Unix(10000, 0): true,
-					time.Unix(15000, 0): true, time.Unix(20000, 0): true},
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							{Timestamp: time.Unix(15000, 0), Value: 1.5},
-							{Timestamp: time.Unix(20000, 0), Value: 1.5},
-						},
-					},
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(10000, 0), Value: 1.5},
-							{Timestamp: time.Unix(15000, 0), Value: 1.5},
-							{Timestamp: time.Unix(20000, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(10000, 0), End: time.Unix(20000, 0)},
-				},
-				StepDuration: time.Duration(5000) * time.Second,
-			},
-		},
-	}
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			test.a.Merge(true, test.b)
-			if !reflect.DeepEqual(test.merged, test.a) {
-				t.Errorf("mismatch\n  actual=%v\nexpected=%v", test.a, test.merged)
+	var a, b, merged *ResultsEnvelope
+	test := func(run string) {
+		t.Run(run, func(t *testing.T) {
+			merged.Sort()
+			a.Merge(true, b)
+			if !reflect.DeepEqual(merged, a) {
+				t.Errorf("mismatch\n  actual=%v\nexpected=%v", a, merged)
 			}
 		})
 	}
+
+	a = testRe().addPoint(10, 1.5).addExtent(10).setStep("5s")
+	b = testRe().addPoint(5, 1.5).addPoint(15, 1.5).addExtent(5).addExtent(15).setStep("5s")
+	merged = testRe().addPoint(5, 1.5).addPoint(10, 1.5).addPoint(15, 1.5).addExtents(5, 15).setStep("5s")
+	test("Series that adhere to rule")
+
+	a = testRe().addPoint(1000, 1.5).addExtent(10000).setStep("5000s")
+	b = testRe().setStep("5000s")
+	merged = testRe().addPoint(1000, 1.5).addExtent(10000).setStep("5000s")
+	test("Empty second series")
+
+	a = testRe().addPoint(10000, 1.5).addPoint(15000, 1.5).addExtents(10000, 15000).setStep("5000s")
+	b = testRe().addPoint(30000, 1.5).addPoint(35000, 1.5).addExtents(30000, 35000).setStep("5000s")
+	merged = testRe().addPoint(10000, 1.5).addPoint(15000, 1.5).addPoint(30000, 1.5).addPoint(35000, 1.5).
+		addExtents(10000, 15000).addExtents(30000, 35000).setStep("5000s")
+	test("Merge multiple extends")
+
+	a = testRe().addPoint(10000, 1.5).addPoint(15000, 1.5).addExtents(10000, 15000).setStep("5000s")
+	b = testRe().addPoint(15000, 1.5).addPoint(20000, 1.5).addExtents(15000, 20000).setStep("5000s")
+	merged = testRe().addPoint(10000, 1.5).addPoint(15000, 1.5).addPoint(20000, 1.5).
+		addExtents(10000, 20000).setStep("5000s")
+	test("Merge with some overlapping extents")
 }
 
 func TestCropToRange(t *testing.T) {
-	tests := []struct {
-		before, after *ResultsEnvelope
-		extent        timeseries.Extent
-	}{
-		// Run 0: Case where the very first element in the matrix has a timestamp matching the extent's end
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(1644004600, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(1644004600, 0), End: time.Unix(1644004600, 0)},
-				},
-				StepDuration: testStep,
-			},
-			after: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(1644004600, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(1644004600, 0), End: time.Unix(1644004600, 0)},
-				},
-				StepDuration: testStep,
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(0, 0),
-				End:   time.Unix(1644004600, 0),
-			},
-		},
-		// Run 1: Case where we trim nothing
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
-				},
-				StepDuration: testStep,
-			},
-			after: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
-				},
-				StepDuration: testStep,
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(0, 0),
-				End:   time.Unix(1644004600, 0),
-			},
-		},
-		// Run 2: Case where we trim everything (all data is too late)
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(1544004600, 0), End: time.Unix(1544004600, 0)},
-				},
-				StepDuration: testStep,
-			},
-			after: &ResultsEnvelope{
-				Data:         map[string]*DataSet{},
-				ExtentList:   timeseries.ExtentList{},
-				StepDuration: testStep,
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(0, 0),
-				End:   time.Unix(10, 0),
-			},
-		},
-		// Run 3: Case where we trim everything (all data is too early)
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"c": {
-						Metric: map[string]interface{}{"__name__": "c"},
-						Points: []Point{
-							{Timestamp: time.Unix(100, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(100, 0)},
-				},
-				StepDuration: testStep,
-			},
-			after: &ResultsEnvelope{
-				Data:         map[string]*DataSet{},
-				ExtentList:   timeseries.ExtentList{},
-				StepDuration: testStep,
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(10000, 0),
-				End:   time.Unix(20000, 0),
-			},
-		},
-		// Run 4: Case where we trim some off the beginning
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"d": {
-						Metric: map[string]interface{}{"__name__": "d"},
-						Points: []Point{
-							{Timestamp: time.Unix(100, 0), Value: 1.5},
-							{Timestamp: time.Unix(200, 0), Value: 1.5},
-							{Timestamp: time.Unix(300, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(300, 0)},
-				},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			after: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"d": {
-						Metric: map[string]interface{}{"__name__": "d"},
-						Points: []Point{
-							{Timestamp: time.Unix(300, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(300, 0), End: time.Unix(300, 0)},
-				},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(300, 0),
-				End:   time.Unix(400, 0),
-			},
-		},
+	var before, after *ResultsEnvelope
+	var extent timeseries.Extent
+	test := func(run string) {
+		t.Run(run, func(t *testing.T) {
+			before.CropToRange(extent)
+			if !reflect.DeepEqual(before, after) {
+				t.Errorf("mismatch\nexpected=%v\ngot=%v", after, before)
+			}
+		})
+	}
+
+	before = testRe().addPoint(1644004600, 1.5).addExtent(1644004600).setStep("10s")
+	after = testRe().addPoint(1644004600, 1.5).addExtent(1644004600).setStep("10s")
+	extent = testEx(0, 1644004600)
+	test("First element as timestamp matching extent end")
+
+	before = testRe().addPoint(1544004600, 1.5).addExtent(1544004600).setStep("10s")
+	after = testRe().addPoint(1544004600, 1.5).addExtent(1544004600).setStep("10s")
+	extent = testEx(0, 1644004600)
+	test("Trim nothing when series within crop range")
+
+	before = testRe().addPoint(1544004600, 1.5).addExtent(1544004600).setStep("10s")
+	after = testRe().setStep("10s")
+	extent = testEx(0, 10)
+	test("Trim everything when all data is too late")
+
+	before = testRe().addPoint(100, 1.5).addExtent(100).setStep("10s")
+	after = testRe().setStep("10s")
+	extent = testEx(10000, 20000)
+	test("Trim everything when all data is too early")
+
+	before = testRe().addPoint(100, 1.5).addPoint(200, 1.5).addPoint(300, 1.5).addExtents(100, 300).setStep("100s")
+	after = testRe().addPoint(300, 1.5).addExtent(300).setStep("100s")
+	extent = testEx(300, 400)
+	test("Trim some off the beginning")
+}
+
+/*
+
 		// Run 5: Case where we trim some off the ends
 		{
 			before: &ResultsEnvelope{
@@ -959,17 +489,8 @@ func TestCropToRange(t *testing.T) {
 		},
 	}
 
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			test.before.CropToRange(test.extent)
-			if !reflect.DeepEqual(test.before, test.after) {
-				t.Errorf("mismatch\nexpected=%v\ngot=%v", test.after, test.before)
-			}
-		})
-	}
-}
 
-const testStep = time.Duration(10) * time.Second
+}
 
 func TestCropToSize(t *testing.T) {
 
@@ -1510,3 +1031,4 @@ func TestSize(t *testing.T) {
 		t.Errorf("expected %d got %d", expected, i)
 	}
 }
+*/
