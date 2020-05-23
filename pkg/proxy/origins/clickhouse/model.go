@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/sort/times"
@@ -31,6 +30,8 @@ const (
 	millisPerSecond     = int64(time.Second / time.Millisecond)
 	nanosPerMillisecond = int64(time.Millisecond / time.Nanosecond)
 )
+
+var year2100Seconds int64
 
 type FieldDefinition struct {
 	Name string `json:"name"`
@@ -62,6 +63,30 @@ type ResultsEnvelope struct {
 	tsList     times.Times
 	isSorted   bool
 	isCounted  bool
+}
+
+type timeFunc func(interface{}) (time.Time, error)
+
+var fromMs timeFunc = func(v interface{}) (time.Time, error) {
+	msInt := int64(v.(float64))
+	return time.Unix(msInt/millisPerSecond, (msInt%millisPerSecond)*nanosPerMillisecond), nil
+}
+
+var fromMsString timeFunc = func(v interface{}) (time.Time, error) {
+	msInt, err := strconv.ParseInt(v.(string), 10, 64)
+	if err == nil {
+		return time.Unix(msInt/millisPerSecond, (msInt%millisPerSecond)*nanosPerMillisecond), nil
+	}
+	return time.Time{}, err
+}
+
+var fromSec timeFunc = func(v interface{}) (time.Time, error) {
+	return time.Unix(int64(v.(float64)), 0), nil
+}
+
+func init() {
+	utcLoc, _ := time.LoadLocation("UTC")
+	year2100Seconds = time.Date(2100, time.January, 1, 0, 0, 0, 0, utcLoc).Unix()
 }
 
 // Converts a Timeseries into a JSON blob
@@ -101,31 +126,45 @@ func (re ResultsEnvelope) SeriesCount() int {
 }
 
 func (re *ResultsEnvelope) UnmarshalJSON(b []byte) error {
-	var msInt int64
-	var err error
 	response := Response{}
 	if err := json.Unmarshal(b, &response); err != nil {
 		return err
 	}
 	re.Meta = response.Meta
-	tsField := response.Meta[0].Name
-	isString := strings.HasSuffix(response.Meta[0].Type, "64")
 	re.Data = make([]Point, 0, len(response.RawData))
+
+	if len(response.RawData) == 0 {
+		return nil // No data points, we're done
+	}
+
+	tsField := response.Meta[0].Name
+	// Determine time format based on first value
+	var tf timeFunc
+	fv := response.RawData[0][tsField]
+	switch fv.(type) {
+	case float64:
+		tvInt64 := int64(fv.(float64))
+		if tvInt64 > year2100Seconds {
+			tf = fromMs
+		} else {
+			tf = fromSec
+		}
+	case string:
+		tf = fromMsString
+	default:
+		return fmt.Errorf("timestamp field not of recognized type")
+	}
+
 	for _, v := range response.RawData {
-		ms, ok := v[tsField]
+		tv, ok := v[tsField]
 		if !ok {
 			return fmt.Errorf("missing timestamp field in response data")
 		}
-		delete(v, tsField)
-		if isString {
-			msInt, err = strconv.ParseInt(ms.(string), 10, 64)
-			if err != nil {
-				return err
-			}
-		} else {
-			msInt = int64(ms.(int))
+		ts, err := tf(tv)
+		if err != nil {
+			return fmt.Errorf("unparseable timestamp field in response data")
 		}
-		ts := time.Unix(msInt/millisPerSecond, (msInt%millisPerSecond)*nanosPerMillisecond)
+		delete(v, tsField)
 		re.Data = append(re.Data, Point{Timestamp: ts, Values: v})
 	}
 	re.Sort()

@@ -67,7 +67,24 @@ var testJSON1 = []byte(`{"meta":[{"name":"t","type":"UInt64"},{"name":"cnt","typ
 	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":"1557766680000"},` +
 	`{"cnt":"1","meta1":206,"meta2":"value3","t":"1557767280000"}],"rows":3}`)
 
-var testBadJSON = []byte(`{"meta":[{"name":"t"}],"data":[{"bad":"1557766080000","cnt":"12648509",` +
+var testJSONInt32 = []byte(`{"meta":[{"name":"t","type":"UInt32"},{"name":"cnt","type":"UInt64"},` +
+	`{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],` +
+	`"data":[{"cnt":"12648509","meta1":200,"meta2":"value2","t":1557766080},` +
+	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":1557766680},` +
+	`{"cnt":"1","meta1":206,"meta2":"value3","t":1557767280}],"rows":3}`)
+
+var testJSONInt64 = []byte(`{"meta":[{"name":"t","type":"UInt32"},{"name":"cnt","type":"UInt64"},` +
+	`{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],` +
+	`"data":[{"cnt":"12648509","meta1":200,"meta2":"value2","t":1557766080000},` +
+	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":1557766680000},` +
+	`{"cnt":"1","meta1":206,"meta2":"value3","t":1557767280000}],"rows":3}`)
+
+var testMissingTimestampJSON = []byte(`{"meta":[{"name":"t", "type":"String"}],"data":[{"bad":"1557766080000","cnt":"12648509",` +
+	`"meta1":200,"meta2":"value2"},{"bad":"1557766080000","cnt":"10260032","meta1":200,"meta2":"value3"},` +
+	`{"bad":"1557766080000","cnt":"1","meta1":206,"meta2":"value3"}],"rows":3}`,
+)
+
+var testBadTimestampJSON = []byte(`{"meta":[{"name":"t"}, {"type":"UInt8"}],"data":[{"t":null,"cnt":"12648509",` +
 	`"meta1":200,"meta2":"value2"},{"t":"1557766080000","cnt":"10260032","meta1":200,"meta2":"value3"},` +
 	`{"t":"1557766080000","cnt":"1","meta1":206,"meta2":"value3"}],"rows":3}`,
 )
@@ -104,7 +121,6 @@ func TestREMarshalJSON(t *testing.T) {
 }
 
 func TestUnmarshalTimeseries(t *testing.T) {
-
 	client := &Client{}
 	ts, err := client.UnmarshalTimeseries(testJSON1)
 	if err != nil {
@@ -146,7 +162,6 @@ func TestMarshalTimeseries(t *testing.T) {
 }
 
 func TestUnmarshalJSON(t *testing.T) {
-
 	re := ResultsEnvelope{}
 	err := re.UnmarshalJSON(testJSON1)
 	if err != nil {
@@ -181,9 +196,31 @@ func TestUnmarshalJSON(t *testing.T) {
 		return
 	}
 
-	err = re.UnmarshalJSON(testBadJSON)
+	err = re.UnmarshalJSON(testJSONInt32)
+	if err != nil {
+		t.Error(err)
+	}
+	if re.Data[0].Timestamp != time.Unix(1557766080, 0) {
+		t.Errorf("incorrect timestamp for point %v", re.Data[0])
+	}
+
+	err = re.UnmarshalJSON(testJSONInt64)
+	if err != nil {
+		t.Error(err)
+	}
+	if re.Data[1].Timestamp != time.Unix(1557766680, 0) {
+		t.Errorf("incorrect timestamp for point %v", re.Data[1])
+	}
+
+	err = re.UnmarshalJSON(testMissingTimestampJSON)
 	if err == nil {
 		t.Errorf("expected error: %s", `missing timestamp field in response data`)
+		return
+	}
+
+	err = re.UnmarshalJSON(testBadTimestampJSON)
+	if err == nil {
+		t.Errorf("expected error: %s", `timestamp not of recognized type`)
 		return
 	}
 
