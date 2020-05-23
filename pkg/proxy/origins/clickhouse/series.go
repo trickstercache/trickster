@@ -296,7 +296,7 @@ func (re *ResultsEnvelope) Size() int {
 	}
 
 	for _, p := range re.Data {
-		size += 16 // Timestamp guess
+		size += 8 // Timestamp guess
 		for k := range p.Values {
 			size += len(k) + 16 // Key length + values guess
 		}

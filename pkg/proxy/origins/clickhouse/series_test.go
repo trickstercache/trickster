@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Comcast Cable Communications Management, LLC
+ * Copyright 2020 Comcast Cable Communications Management, LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,12 +19,14 @@ package clickhouse
 import (
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"reflect"
-
 	"testing"
 	"time"
 )
 
 const testStep = time.Duration(10) * time.Second
+
+var before, after *ResultsEnvelope
+var extent timeseries.Extent
 
 func TestSetStep(t *testing.T) {
 	re := ResultsEnvelope{}
@@ -90,8 +92,6 @@ func TestMerge(t *testing.T) {
 
 // Multi-series tests omitted for single series ClickHouse
 func TestCropToRange(t *testing.T) {
-	var before, after *ResultsEnvelope
-	var extent timeseries.Extent
 	test := func(run string) {
 		t.Run(run, func(t *testing.T) {
 			before.CropToRange(extent)
@@ -143,11 +143,10 @@ func TestCropToRange(t *testing.T) {
 }
 
 func TestCropToSize(t *testing.T) {
-	var before, after *ResultsEnvelope
 	var size int
 	var bft time.Time
-	var extent timeseries.Extent
 	now := time.Now().Truncate(testStep)
+	nowSec := now.Unix()
 	test := func(run string) {
 		t.Run(run, func(t *testing.T) {
 			before.CropToSize(size, bft, extent)
@@ -166,315 +165,71 @@ func TestCropToSize(t *testing.T) {
 	extent = testEx(0, 1444004600)
 	size = 1
 	bft = now
-	//test("Size already less than crop")
+	test("Size already less than crop")
 
-	before = testRe().addPoint(1444004600, 1.5).addPoint(1444004610, 1.5).addExtents(1444004600, 144404610).setStep("10s")
+	before = testRe().addPoint(1444004600, 1.5).addPoint(1444004610, 1.5).addExtents(1444004600, 1444004610).setStep("10s")
 	after = testRe().addPoint(1444004610, 1.5).addExtent(1444004610).setStep("10s")
 	after.Sort()
 	extent = testEx(0, 1444004610)
 	size = 1
 	bft = now
-	test("Crop oldest")
-}
+	test("Crop least recently used")
 
-/*
+	before = testRe().setStep("10s")
+	after = testRe().setStep("10s")
+	extent = testEx(0, nowSec)
+	size = 2
+	bft = now
+	test("Empty extent list")
 
-		// case 1
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(1444004600, 0), Value: 1.5},
-							{Timestamp: time.Unix(1444004610, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004610, 0)},
-				},
-				StepDuration: testStep,
-			},
-			after: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(1444004610, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(1444004610, 0), End: time.Unix(1444004610, 0)},
-				},
-				StepDuration: testStep,
-				timestamps:   map[time.Time]bool{time.Unix(1444004610, 0): true},
-				tsList:       times.Times{time.Unix(1444004610, 0)},
-				isCounted:    true,
-				isSorted:     true,
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(0, 0),
-				End:   time.Unix(1444004610, 0),
-			},
-			size: 1,
-			bft:  now,
-		},
-
-		// case 2 - empty extent list
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{},
-					},
-				},
-				ExtentList:   timeseries.ExtentList{},
-				StepDuration: testStep,
-			},
-			after: &ResultsEnvelope{
-				Data:         map[string]*DataSet{},
-				ExtentList:   timeseries.ExtentList{},
-				StepDuration: testStep,
-			},
-			extent: timeseries.Extent{},
-			size:   1,
-			bft:    now,
-		},
-
-		// case 3 - backfill tolerance
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(1444004610, 0), Value: 1.5},
-							{Timestamp: now, Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(1444004610, 0), End: now},
-				},
-				StepDuration: testStep,
-			},
-			after: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(1444004610, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(1444004610, 0), End: now.Add(-5 * time.Minute)},
-				},
-				StepDuration: testStep,
-				timestamps:   map[time.Time]bool{time.Unix(1444004610, 0): true},
-				tsList:       times.Times{time.Unix(1444004610, 0)},
-				isCounted:    true,
-				isSorted:     false,
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(0, 0),
-				End:   now,
-			},
-			size: 2,
-			bft:  now.Add(-5 * time.Minute),
-		},
-	}
-
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			test.before.CropToSize(test.size, test.bft, test.extent)
-
-			for i := range test.before.ExtentList {
-				test.before.ExtentList[i].LastUsed = time.Time{}
-			}
-
-			if !reflect.DeepEqual(test.before, test.after) {
-				t.Errorf("mismatch\nexpected=%v\n     got=%v", test.after, test.before)
-			}
-		})
-	}
+	before = testRe().addPoint(1444004610, 1.5).addPoint(int(nowSec), 1.5).addExtents(1444004610, nowSec)
+	after = testRe().addPoint(1444004610, 1.5).addExtents(1444004610, nowSec-300)
+	after.updateTimestamps()
+	size = 2
+	extent = testEx(0, nowSec)
+	bft = now.Add(-5 * time.Minute)
+	test("Backfill tolerance")
 }
 
 func TestUpdateTimestamps(t *testing.T) {
-
 	// test edge condition here (core functionality is tested across this file)
 	re := ResultsEnvelope{isCounted: true}
 	re.updateTimestamps()
 	if re.timestamps != nil {
 		t.Errorf("expected nil map, got size %d", len(re.timestamps))
 	}
-
 }
 
 func TestClone(t *testing.T) {
-
-	tests := []struct {
-		before *ResultsEnvelope
-	}{
-		// Run 0
-		{
-			before: &ResultsEnvelope{
-				Meta:        []FieldDefinition{{Name: "1", Type: "string"}},
-				Serializers: map[string]func(interface{}){"test": nil},
-				tsList:      times.Times{time.Unix(1644001200, 0)},
-				timestamps:  map[time.Time]bool{time.Unix(1644001200, 0): true},
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(1644001200, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(1644001200, 0), End: time.Unix(1644001200, 0)},
-				},
-				StepDuration: time.Duration(3600) * time.Second,
-				SeriesOrder:  []string{"a"},
-			},
-		},
-
-		// Run 1
-		{
-			before: &ResultsEnvelope{
-				tsList:     times.Times{time.Unix(1644001200, 0), time.Unix(1644004800, 0)},
-				timestamps: map[time.Time]bool{time.Unix(1644001200, 0): true, time.Unix(1644004800, 0): true},
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(1644001200, 0), Value: 1.5},
-						},
-					},
-
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(1644001200, 0), Value: 1.5},
-							{Timestamp: time.Unix(1644004800, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(1644001200, 0), End: time.Unix(1644004800, 0)},
-				},
-				StepDuration: time.Duration(3600) * time.Second,
-				SeriesOrder:  []string{"a", "b"},
-			},
-		},
+	before = testRe().addPoint(1644001200, 1.5).addPoint(1644004800, 77.4).addExtents(1644001200, 1644004800).setStep("3600s")
+	before.Sort()
+	after := before.Clone()
+	after.Sort()
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("mismatch\nexpected %v\nactual   %v", before, after)
 	}
-
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			after := test.before.Clone()
-			if !reflect.DeepEqual(test.before, after) {
-				t.Errorf("mismatch\nexpected %v\nactual   %v", test.before, after)
-			}
-		})
-	}
-
 }
 
 func TestSort(t *testing.T) {
-	tests := []struct {
-		before, after *ResultsEnvelope
-		extent        timeseries.Extent
-	}{
-		// Case where we trim nothing
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(1544004200, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004800, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004000, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004000, 0), Value: 1.5}, // sort should also dupe kill
-						},
-					},
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004200, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004000, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004800, 0), Value: 1.5},
-						},
-					},
-					"c": {
-						Metric: map[string]interface{}{"__name__": "c"},
-						Points: []Point{
-							{Timestamp: time.Unix(1544004800, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004200, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004000, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
-						},
-					},
-				},
-			},
-			after: &ResultsEnvelope{
-				isSorted:  true,
-				isCounted: true,
-				tsList: []time.Time{time.Unix(1544004000, 0),
-					time.Unix(1544004200, 0), time.Unix(1544004600, 0), time.Unix(1544004800, 0)},
-				timestamps: map[time.Time]bool{time.Unix(1544004000, 0): true, time.Unix(1544004200, 0): true,
-					time.Unix(1544004600, 0): true, time.Unix(1544004800, 0): true},
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(1544004000, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004200, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004800, 0), Value: 1.5},
-						},
-					},
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(1544004000, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004200, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004800, 0), Value: 1.5},
-						},
-					},
-					"c": {
-						Metric: map[string]interface{}{"__name__": "c"},
-						Points: []Point{
-							{Timestamp: time.Unix(1544004000, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004200, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004600, 0), Value: 1.5},
-							{Timestamp: time.Unix(1544004800, 0), Value: 1.5},
-						},
-					},
-				},
-			},
-		},
-	}
+	before = testRe().addPoint(1544004200, 1.5).addPoint(1544004600, 1.5).addPoint(1544004800, 1.5).
+		addPoint(1544004000, 1.5).addPoint(1544004000, 1.5)
+	after = testRe().addPoint(1544004000, 1.5).addPoint(1544004200, 1.5).addPoint(1544004600, 1.5).addPoint(1544004800, 1.5)
+	after.isCounted = true
+	after.isSorted = true
+	after.tsList = []time.Time{time.Unix(1544004000, 0),
+		time.Unix(1544004200, 0), time.Unix(1544004600, 0), time.Unix(1544004800, 0)}
+	after.timestamps = map[time.Time]bool{time.Unix(1544004000, 0): true, time.Unix(1544004200, 0): true,
+		time.Unix(1544004600, 0): true, time.Unix(1544004800, 0): true}
 
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			test.before.isSorted = false
-			test.before.Sort()
-			if !reflect.DeepEqual(test.before, test.after) {
-				t.Errorf("mismatch\nexpected=%v\n  actual=%v", test.after, test.before)
-			}
-			// test isSorted short circuit
-			test.before.Sort()
-			if !reflect.DeepEqual(test.before, test.after) {
-				t.Errorf("mismatch\nexpected=%v\n  actual=%v", test.after, test.before)
-			}
-		})
+	before.isSorted = false
+	before.Sort()
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("mismatch\nexpected=%v\n  actual=%v", after, before)
+	}
+	// test isSorted short circuit
+	before.Sort()
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("mismatch\nexpected=%v\n  actual=%v", after, before)
 	}
 }
 
@@ -498,173 +253,36 @@ func TestExtents(t *testing.T) {
 }
 
 func TestSeriesCount(t *testing.T) {
-	re := &ResultsEnvelope{
-		Data: map[string]*DataSet{
-			"d": {
-				Metric: map[string]interface{}{"__name__": "d"},
-				Points: []Point{
-					{Timestamp: time.Unix(99, 0), Value: 1.5},
-					{Timestamp: time.Unix(199, 0), Value: 1.5},
-					{Timestamp: time.Unix(299, 0), Value: 1.5},
-				},
-			},
-		},
-	}
+	re := testRe().addPoint(99, 1.5).addPoint(199, 1.5).addPoint(299, 1.5)
 	if re.SeriesCount() != 1 {
 		t.Errorf("expected 1 got %d.", re.SeriesCount())
 	}
 }
 
 func TestValueCount(t *testing.T) {
-	re := &ResultsEnvelope{
-		Data: map[string]*DataSet{
-			"d": {
-				Metric: map[string]interface{}{"__name__": "d"},
-				Points: []Point{
-					{Timestamp: time.Unix(99, 0), Value: 1.5},
-					{Timestamp: time.Unix(199, 0), Value: 1.5},
-					{Timestamp: time.Unix(299, 0), Value: 1.5},
-				},
-			},
-		},
-	}
+	re := testRe().addPoint(99, 1.5).addPoint(199, 1.5).addPoint(299, 1.5)
 	if re.ValueCount() != 3 {
 		t.Errorf("expected 3 got %d.", re.ValueCount())
 	}
 }
 
 func TestTimestampCount(t *testing.T) {
-
-	tests := []struct {
-		ts       *ResultsEnvelope
-		expected int
-	}{
-		{
-			ts: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"d": {
-						Metric: map[string]interface{}{"__name__": "d"},
-						Points: []Point{
-							{Timestamp: time.Unix(99, 0), Value: 1.5},
-							{Timestamp: time.Unix(199, 0), Value: 1.5},
-							{Timestamp: time.Unix(299, 0), Value: 1.5},
-						},
-					},
-				},
-			},
-			expected: 3,
-		},
-
-		{
-			ts: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"d": {
-						Metric: map[string]interface{}{"__name__": "d"},
-						Points: []Point{
-							{Timestamp: time.Unix(99, 0), Value: 1.5},
-							{Timestamp: time.Unix(199, 0), Value: 1.5},
-						},
-					},
-				},
-			},
-			expected: 2,
-		},
-
-		{
-			ts: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "d"},
-						Points: []Point{
-							{Timestamp: time.Unix(99, 0), Value: 1.5},
-							{Timestamp: time.Unix(199, 0), Value: 1.5},
-						},
-					},
-					"e": {
-						Metric: map[string]interface{}{"__name__": "e"},
-						Points: []Point{
-							{Timestamp: time.Unix(99, 0), Value: 1.5},
-							{Timestamp: time.Unix(299, 0), Value: 1.5},
-						},
-					},
-				},
-			},
-			expected: 3,
-		},
+	before = testRe().addPoint(99, 1.5).addPoint(199, 1.5).addPoint(299, 1.5)
+	if before.TimestampCount() != 3 {
+		t.Errorf("expected 3 got %d.", before.TimestampCount())
 	}
-
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			tc := test.ts.TimestampCount()
-			if tc != test.expected {
-				t.Errorf("expected %d got %d.", test.expected, tc)
-			}
-		})
+	before = testRe().addPoint(99, 1.5).addPoint(199, 1.5)
+	if before.TimestampCount() != 2 {
+		t.Errorf("expected 2 got %d.", before.TimestampCount())
 	}
-}
-
-func TestMergeSeriesOrder(t *testing.T) {
-
-	re := ResultsEnvelope{}
-	so1 := []string{"a", "e"}
-	re.mergeSeriesOrder(so1)
-	if !reflect.DeepEqual(re.SeriesOrder, so1) {
-		t.Errorf("expected [%s] got [%s]", strings.Join(so1, ","), strings.Join(re.SeriesOrder, ","))
-	}
-	re.Data = map[string]*DataSet{"a": nil, "e": nil}
-
-	so2 := []string{"d", "e"}
-	ex2 := []string{"a", "d", "e"}
-	re.mergeSeriesOrder(so2)
-	if !reflect.DeepEqual(re.SeriesOrder, ex2) {
-		t.Errorf("expected [%s] got [%s]", strings.Join(ex2, ","), strings.Join(re.SeriesOrder, ","))
-	}
-	re.Data = map[string]*DataSet{"a": nil, "d": nil, "e": nil}
-
-	so3 := []string{"b", "c", "e"}
-	ex3 := []string{"a", "d", "b", "c", "e"}
-	re.mergeSeriesOrder(so3)
-	if !reflect.DeepEqual(re.SeriesOrder, ex3) {
-		t.Errorf("expected [%s] got [%s]", strings.Join(ex3, ","), strings.Join(re.SeriesOrder, ","))
-	}
-	re.Data = map[string]*DataSet{"a": nil, "d": nil, "b": nil, "c": nil, "e": nil}
-
-	so4 := []string{"f"}
-	ex4 := []string{"a", "d", "b", "c", "e", "f"}
-	re.mergeSeriesOrder(so4)
-	if !reflect.DeepEqual(re.SeriesOrder, ex4) {
-		t.Errorf("expected [%s] got [%s]", strings.Join(ex4, ","), strings.Join(re.SeriesOrder, ","))
-	}
-
 }
 
 func TestSize(t *testing.T) {
-	r := &ResultsEnvelope{
-		isCounted:  true,
-		isSorted:   true,
-		tsList:     times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
-		timestamps: map[time.Time]bool{time.Unix(5, 0): true, time.Unix(10, 0): true, time.Unix(15, 0): true},
-		Data: map[string]*DataSet{
-			"a": {
-				Metric: map[string]interface{}{"__name__": "a"},
-				Points: []Point{
-					{Timestamp: time.Unix(5, 0), Value: 1.5},
-					{Timestamp: time.Unix(10, 0), Value: 1.5},
-					{Timestamp: time.Unix(15, 0), Value: 1.5},
-				},
-			},
-		},
-		Meta:        []FieldDefinition{{Name: "test", Type: "Test"}},
-		SeriesOrder: []string{"test"},
-		ExtentList: timeseries.ExtentList{
-			timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(15, 0)},
-		},
-		StepDuration: time.Duration(5) * time.Second,
-	}
-	i := r.Size()
-	const expected = 146
+	re := testRe().addPoint(5, 1.5).addPoint(10, 1.5).addPoint(15, 1.5).addExtents(5, 15).setStep("5s")
+	re.Sort()
+	i := re.Size()
+	const expected = 173
 	if i != expected {
 		t.Errorf("expected %d got %d", expected, i)
 	}
 }
-*/
