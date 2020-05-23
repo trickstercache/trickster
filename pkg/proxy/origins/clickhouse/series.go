@@ -139,12 +139,13 @@ func (re *ResultsEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent
 		}
 	}
 
+	tmp := make([]Point, 0, len(re.Data)-len(removals))
 	for _, p := range re.Data {
-		tmp := make([]Point, 0, len(re.Data)-len(removals))
 		if _, ok := removals[p.Timestamp]; !ok {
 			tmp = append(tmp, p)
 		}
 	}
+	re.Data = tmp
 
 	tl := times.FromMap(removals)
 	sort.Sort(tl)

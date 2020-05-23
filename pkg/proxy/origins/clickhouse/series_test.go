@@ -19,6 +19,7 @@ package clickhouse
 import (
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"reflect"
+
 	"testing"
 	"time"
 )
@@ -87,6 +88,7 @@ func TestMerge(t *testing.T) {
 	test("Merge with some overlapping extents")
 }
 
+// Multi-series tests omitted for single series ClickHouse
 func TestCropToRange(t *testing.T) {
 	var before, after *ResultsEnvelope
 	var extent timeseries.Extent
@@ -123,425 +125,59 @@ func TestCropToRange(t *testing.T) {
 	after = testRe().addPoint(300, 1.5).addExtent(300).setStep("100s")
 	extent = testEx(300, 400)
 	test("Trim some off the beginning")
-}
 
-/*
+	before = testRe().addPoint(100, 1.5).addPoint(200, 1.5).addPoint(300, 1.5).addExtents(100, 300).setStep("100s")
+	after = testRe().addPoint(200, 1.5).addExtent(200).setStep("100s")
+	extent = testEx(200, 200)
+	test("Trim some off of both ends")
 
-		// Run 5: Case where we trim some off the ends
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"e": {
-						Metric: map[string]interface{}{"__name__": "e"},
-						Points: []Point{
-							{Timestamp: time.Unix(100, 0), Value: 1.5},
-							{Timestamp: time.Unix(200, 0), Value: 1.5},
-							{Timestamp: time.Unix(300, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(300, 0)},
-				},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			after: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"e": {
-						Metric: map[string]interface{}{"__name__": "e"},
-						Points: []Point{
-							{Timestamp: time.Unix(200, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(200, 0)},
-				},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(200, 0),
-				End:   time.Unix(200, 0),
-			},
-		},
-		// Run 6: Case where the last datapoint is on the Crop extent
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"f": {
-						Metric: map[string]interface{}{"__name__": "f"},
-						Points: []Point{
-							{Timestamp: time.Unix(100, 0), Value: 1.5},
-							{Timestamp: time.Unix(200, 0), Value: 1.5},
-							{Timestamp: time.Unix(300, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(300, 0)},
-				},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			after: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"f": {
-						Metric: map[string]interface{}{"__name__": "f"},
-						Points: []Point{
-							{Timestamp: time.Unix(200, 0), Value: 1.5},
-							{Timestamp: time.Unix(300, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
-				},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(200, 0),
-				End:   time.Unix(300, 0),
-			},
-		},
-		// Run 7: Case where we aren't given any datapoints
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"g": {
-						Metric: map[string]interface{}{"__name__": "g"},
-						Points: []Point{},
-					},
-				},
-				ExtentList:   timeseries.ExtentList{},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			after: &ResultsEnvelope{
-				Data:         map[string]*DataSet{},
-				ExtentList:   timeseries.ExtentList{},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(200, 0),
-				End:   time.Unix(300, 0),
-			},
-		},
+	before = testRe().addPoint(100, 1.5).addPoint(200, 1.5).addPoint(300, 1.5).addExtents(100, 300).setStep("100s")
+	after = testRe().addPoint(200, 1.5).addPoint(300, 1.5).addExtents(200, 300).setStep("100s")
+	extent = testEx(200, 300)
+	test("last datapoint is on the Crop extent")
 
-		// Run 9: Case where after cropping, an inner series is empty/removed
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(100, 0), Value: 1.5},
-							{Timestamp: time.Unix(200, 0), Value: 1.5},
-							{Timestamp: time.Unix(300, 0), Value: 1.5},
-							{Timestamp: time.Unix(400, 0), Value: 1.5},
-							{Timestamp: time.Unix(500, 0), Value: 1.5},
-							{Timestamp: time.Unix(600, 0), Value: 1.5},
-						},
-					},
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(100, 0), Value: 1.5},
-							{Timestamp: time.Unix(200, 0), Value: 1.5},
-							{Timestamp: time.Unix(300, 0), Value: 1.5},
-						},
-					},
-					"c": {
-						Metric: map[string]interface{}{"__name__": "c"},
-						Points: []Point{
-							{Timestamp: time.Unix(100, 0), Value: 1.5},
-							{Timestamp: time.Unix(200, 0), Value: 1.5},
-							{Timestamp: time.Unix(300, 0), Value: 1.5},
-							{Timestamp: time.Unix(400, 0), Value: 1.5},
-							{Timestamp: time.Unix(500, 0), Value: 1.5},
-							{Timestamp: time.Unix(600, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(600, 0)},
-				},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			after: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(400, 0), Value: 1.5},
-							{Timestamp: time.Unix(500, 0), Value: 1.5},
-							{Timestamp: time.Unix(600, 0), Value: 1.5},
-						},
-					},
-					"c": {
-						Metric: map[string]interface{}{"__name__": "c"},
-						Points: []Point{
-							{Timestamp: time.Unix(400, 0), Value: 1.5},
-							{Timestamp: time.Unix(500, 0), Value: 1.5},
-							{Timestamp: time.Unix(600, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(400, 0), End: time.Unix(600, 0)},
-				},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(400, 0),
-				End:   time.Unix(600, 0),
-			},
-		},
-		// Run 10: Case where after cropping, the front series is empty/removed
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(100, 0), Value: 1.5},
-							{Timestamp: time.Unix(200, 0), Value: 1.5},
-							{Timestamp: time.Unix(300, 0), Value: 1.5},
-						},
-					},
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(100, 0), Value: 1.5},
-							{Timestamp: time.Unix(200, 0), Value: 1.5},
-							{Timestamp: time.Unix(300, 0), Value: 1.5},
-							{Timestamp: time.Unix(400, 0), Value: 1.5},
-							{Timestamp: time.Unix(500, 0), Value: 1.5},
-							{Timestamp: time.Unix(600, 0), Value: 1.5},
-						},
-					},
-					"c": {
-						Metric: map[string]interface{}{"__name__": "c"},
-						Points: []Point{
-							{Timestamp: time.Unix(100, 0), Value: 1.5},
-							{Timestamp: time.Unix(200, 0), Value: 1.5},
-							{Timestamp: time.Unix(300, 0), Value: 1.5},
-							{Timestamp: time.Unix(400, 0), Value: 1.5},
-							{Timestamp: time.Unix(500, 0), Value: 1.5},
-							{Timestamp: time.Unix(600, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(600, 0)},
-				},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			after: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(400, 0), Value: 1.5},
-							{Timestamp: time.Unix(500, 0), Value: 1.5},
-							{Timestamp: time.Unix(600, 0), Value: 1.5},
-						},
-					},
-					"c": {
-						Metric: map[string]interface{}{"__name__": "c"},
-						Points: []Point{
-							{Timestamp: time.Unix(400, 0), Value: 1.5},
-							{Timestamp: time.Unix(500, 0), Value: 1.5},
-							{Timestamp: time.Unix(600, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(400, 0), End: time.Unix(600, 0)},
-				},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(400, 0),
-				End:   time.Unix(600, 0),
-			},
-		},
-		// Run 11: Case where after cropping, the back series is empty/removed
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(100, 0), Value: 1.5},
-							{Timestamp: time.Unix(200, 0), Value: 1.5},
-							{Timestamp: time.Unix(300, 0), Value: 1.5},
-							{Timestamp: time.Unix(400, 0), Value: 1.5},
-							{Timestamp: time.Unix(500, 0), Value: 1.5},
-							{Timestamp: time.Unix(600, 0), Value: 1.5},
-						},
-					},
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(100, 0), Value: 1.5},
-							{Timestamp: time.Unix(200, 0), Value: 1.5},
-							{Timestamp: time.Unix(300, 0), Value: 1.5},
-							{Timestamp: time.Unix(400, 0), Value: 1.5},
-							{Timestamp: time.Unix(500, 0), Value: 1.5},
-							{Timestamp: time.Unix(600, 0), Value: 1.5},
-						},
-					},
-					"c": {
-						Metric: map[string]interface{}{"__name__": "c"},
-						Points: []Point{
-							{Timestamp: time.Unix(100, 0), Value: 1.5},
-							{Timestamp: time.Unix(200, 0), Value: 1.5},
-							{Timestamp: time.Unix(300, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(600, 0)},
-				},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			after: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(400, 0), Value: 1.5},
-							{Timestamp: time.Unix(500, 0), Value: 1.5},
-							{Timestamp: time.Unix(600, 0), Value: 1.5},
-						},
-					},
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{
-							{Timestamp: time.Unix(400, 0), Value: 1.5},
-							{Timestamp: time.Unix(500, 0), Value: 1.5},
-							{Timestamp: time.Unix(600, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(400, 0), End: time.Unix(600, 0)},
-				},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(400, 0),
-				End:   time.Unix(600, 0),
-			},
-		},
-		// Run 12: Case where we short circuit since the dataset is already entirely inside the crop range
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{},
-					},
-					"b": {
-						Metric: map[string]interface{}{"__name__": "b"},
-						Points: []Point{},
-					},
-					"c": {
-						Metric: map[string]interface{}{"__name__": "c"},
-						Points: []Point{},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
-				},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			after: &ResultsEnvelope{
-				Data: map[string]*DataSet{},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
-				},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(100, 0),
-				End:   time.Unix(600, 0),
-			},
-		},
-		// Run 13: Case where we short circuit since the dataset is empty
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)},
-				},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			after: &ResultsEnvelope{
-				Data: map[string]*DataSet{},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(300, 0), End: time.Unix(300, 0)},
-				},
-				StepDuration: time.Duration(100) * time.Second,
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(300, 0),
-				End:   time.Unix(600, 0),
-			},
-		},
-	}
-
-
+	before = testRe().setStep("100s")
+	after = testRe().setStep("100s")
+	extent = testEx(200, 300)
+	test("no data in series provided")
 }
 
 func TestCropToSize(t *testing.T) {
-
+	var before, after *ResultsEnvelope
+	var size int
+	var bft time.Time
+	var extent timeseries.Extent
 	now := time.Now().Truncate(testStep)
+	test := func(run string) {
+		t.Run(run, func(t *testing.T) {
+			before.CropToSize(size, bft, extent)
+			for i := range before.ExtentList {
+				before.ExtentList[i].LastUsed = time.Time{}
+			}
+			if !reflect.DeepEqual(before, after) {
+				t.Errorf("mismatch\nexpected=%v\n     got=%v", after, before)
+			}
+		})
+	}
 
-	tests := []struct {
-		before, after *ResultsEnvelope
-		size          int
-		bft           time.Time
-		extent        timeseries.Extent
-	}{
-		// case 0: where we already have the number of timestamps we are cropping to
-		{
-			before: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(1444004600, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004600, 0)},
-				},
-				StepDuration: testStep,
-			},
-			after: &ResultsEnvelope{
-				Data: map[string]*DataSet{
-					"a": {
-						Metric: map[string]interface{}{"__name__": "a"},
-						Points: []Point{
-							{Timestamp: time.Unix(1444004600, 0), Value: 1.5},
-						},
-					},
-				},
-				ExtentList: timeseries.ExtentList{
-					timeseries.Extent{Start: time.Unix(1444004600, 0), End: time.Unix(1444004600, 0)},
-				},
-				StepDuration: testStep,
-				timestamps:   map[time.Time]bool{time.Unix(1444004600, 0): true},
-				tsList:       times.Times{time.Unix(1444004600, 0)},
-				isCounted:    true,
-			},
-			extent: timeseries.Extent{
-				Start: time.Unix(0, 0),
-				End:   time.Unix(1444004600, 0),
-			},
-			size: 1,
-			bft:  now,
-		},
+	before = testRe().addPoint(1444004600, 1.5).addExtent(1444004600).setStep("10s")
+	after = testRe().addPoint(1444004600, 1.5).addExtent(1444004600).setStep("10s")
+	after.updateTimestamps()
+	extent = testEx(0, 1444004600)
+	size = 1
+	bft = now
+	//test("Size already less than crop")
+
+	before = testRe().addPoint(1444004600, 1.5).addPoint(1444004610, 1.5).addExtents(1444004600, 144404610).setStep("10s")
+	after = testRe().addPoint(1444004610, 1.5).addExtent(1444004610).setStep("10s")
+	after.Sort()
+	extent = testEx(0, 1444004610)
+	size = 1
+	bft = now
+	test("Crop oldest")
+}
+
+/*
 
 		// case 1
 		{
