@@ -140,6 +140,16 @@ func TestCropToRange(t *testing.T) {
 	after = testRe().setStep("100s")
 	extent = testEx(200, 300)
 	test("no data in series provided")
+
+	before = testRe().addExtents(100, 300).setStep("100s")
+	after = testRe().addExtents(100, 300).setStep("100s")
+	extent = testEx(0, 500)
+	test("empty extents fully inside of crop range")
+
+	before = testRe().addExtents(0, 600).setStep("100s")
+	after = testRe().addExtents(100, 500).setStep("100s")
+	extent = testEx(100, 500)
+	test("adjust empty series to crop range")
 }
 
 func TestCropToSize(t *testing.T) {

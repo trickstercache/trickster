@@ -162,7 +162,7 @@ func (re *ResultsEnvelope) UnmarshalJSON(b []byte) error {
 		}
 		ts, err := tf(tv)
 		if err != nil {
-			return fmt.Errorf("unparseable timestamp field in response data")
+			return fmt.Errorf("timestamp field does not parse to date")
 		}
 		delete(v, tsField)
 		re.Data = append(re.Data, Point{Timestamp: ts, Values: v})
