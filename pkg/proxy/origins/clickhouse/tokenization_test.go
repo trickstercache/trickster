@@ -20,7 +20,21 @@ import (
 	"testing"
 )
 
-func TestGetQueryPartsFailure(t *testing.T) {
+func TestFindParts(t *testing.T) {
+	/*query := "WITH  3600  as  x  SELECT (  intDiv(toUInt32(datetime), x) * x) * 1000 AS t," +
+	" count() as cnt FROM comcast_ott_maple.atsec_chi WHERE datetime BETWEEN toDateTime(1589904000) AND toDateTime(1589997600)" +
+	" GROUP BY t ORDER BY  t DESC FORMAT JSON"*/
+	query := `WITH  'igor * 31 + \' dks( k )'  as  igor, 3600 as x  SELECT (  intDiv(toUInt32(datetime), x) * x) * 1000 AS t,` +
+		` count() as cnt FROM comcast_ott_maple.atsec_chi WHERE datetime >= 1589904000 AND datetime < 1589997600)` +
+		` GROUP BY t ORDER BY  t DESC FORMAT JSON`
+	parts := findParts(query)
+	if len(parts) != 30 {
+		t.Errorf("Find parts return incorrect number of parts")
+	}
+
+}
+
+/*func TestGetQueryPartsFailure(t *testing.T) {
 	query := "this should fail to parse"
 	_, _, _, err := getQueryParts(query, "")
 	if err == nil {
@@ -56,4 +70,4 @@ func TestParseQueryExtents(t *testing.T) {
 		t.Error(err)
 	}
 
-}
+} */

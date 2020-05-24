@@ -25,10 +25,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	tt "github.com/tricksterproxy/trickster/pkg/proxy/timeconv"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	"github.com/tricksterproxy/trickster/pkg/util/regexp/matching"
 )
 
 // Client Implements the Proxy Client Interface
@@ -87,38 +85,22 @@ func (c *Client) Router() http.Handler {
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
 func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
-
-	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
-	trq.TemplateURL = urls.Clone(r.URL)
-	qi := trq.TemplateURL.Query()
+	qi := r.URL.Query()
+	var rawQuery string
 	if p, ok := qi[upQuery]; ok {
-		trq.Statement = p[0]
+		rawQuery = p[0]
 	} else {
 		return nil, errors.MissingURLParam(upQuery)
 	}
 
-	mp := []string{"step", "timeField"}
-	found := matching.GetNamedMatches(reTimeFieldAndStep, trq.Statement, mp)
-	if len(found) == 2 {
-		trq.TimestampFieldName = found["timeField"]
-		trq.Step, _ = tt.ParseDuration(found["step"] + "s")
-	} else {
-		found = matching.GetNamedMatches(reTimeFuncAndStep, trq.Statement, mp)
-		if len(found) == 2 {
-			trq.TimestampFieldName = found["timeField"]
-			trq.Step, _ = tt.ParseDuration(timeFuncMap[found["step"]])
-		} else {
-			return nil, errors.ErrNotTimeRangeQuery
-		}
-	}
-
-	var err error
-	trq.Statement, trq.Extent, _, err = getQueryParts(trq.Statement, trq.TimestampFieldName)
-	if err != nil {
+	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
+	if err := parseRawQuery(rawQuery, trq); err != nil {
 		return nil, err
 	}
 
-	// Swap in the Tokenzed Query in the Url Params
+	trq.TemplateURL = urls.Clone(r.URL)
+
+	// Swap in the Tokenized Query in the Url Params
 	qi.Set(upQuery, trq.Statement)
 	trq.TemplateURL.RawQuery = qi.Encode()
 	return trq, nil

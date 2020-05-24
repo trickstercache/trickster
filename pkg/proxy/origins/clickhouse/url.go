@@ -39,7 +39,7 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 	q := t.Get(upQuery)
 
 	if q != "" {
-		p.Set(upQuery, interpolateTimeQuery(q, trq.TimestampFieldName, extent))
+		p.Set(upQuery, interpolateTimeQuery(q, extent))
 	}
 
 	r.URL.RawQuery = p.Encode()
