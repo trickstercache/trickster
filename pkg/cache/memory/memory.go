@@ -31,16 +31,15 @@ import (
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
-var lockPrefix string
-
 // Cache defines a a Memory Cache client that conforms to the Cache interface
 type Cache struct {
-	Name   string
-	client sync.Map
-	Config *options.Options
-	Index  *index.Index
-	Logger *tl.Logger
-	locker locks.NamedLocker
+	Name       string
+	client     sync.Map
+	Config     *options.Options
+	Index      *index.Index
+	Logger     *tl.Logger
+	locker     locks.NamedLocker
+	lockPrefix string
 }
 
 // Locker returns the cache's locker
@@ -62,7 +61,7 @@ func (c *Cache) Configuration() *options.Options {
 func (c *Cache) Connect() error {
 	c.Logger.Info("memorycache setup", tl.Pairs{"name": c.Name,
 		"maxSizeBytes": c.Config.Index.MaxSizeBytes, "maxSizeObjects": c.Config.Index.MaxSizeObjects})
-	lockPrefix = c.Name + ".memory."
+	c.lockPrefix = c.Name + ".memory."
 	c.client = sync.Map{}
 	c.Index = index.NewIndex(c.Name, c.Config.CacheType, nil, c.Config.Index, c.BulkRemove, nil, c.Logger)
 	return nil
@@ -96,7 +95,7 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 	}
 
 	if o1 != nil && o2 != nil {
-		nl, _ := c.locker.Acquire(lockPrefix + cacheKey)
+		nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
 		go c.Logger.Debug("memorycache cache store",
 			tl.Pairs{"cacheKey": cacheKey, "length": l, "ttl": ttl, "is_direct": isDirect})
 		c.client.Store(cacheKey, o1)
@@ -137,7 +136,7 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index.Object,
 	status.LookupStatus, error) {
 
-	nl, _ := c.locker.RAcquire(lockPrefix + cacheKey)
+	nl, _ := c.locker.RAcquire(c.lockPrefix + cacheKey)
 	record, ok := c.client.Load(cacheKey)
 	nl.RRelease()
 
@@ -171,7 +170,7 @@ func (c *Cache) Remove(cacheKey string) {
 }
 
 func (c *Cache) remove(cacheKey string, isBulk bool) {
-	nl, _ := c.locker.Acquire(lockPrefix + cacheKey)
+	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
 	c.client.Delete(cacheKey)
 	nl.Release()
 	if !isBulk {
