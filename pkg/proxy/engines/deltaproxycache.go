@@ -225,7 +225,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", cacheStatus.String()))
-	
+
 	var writeLock locks.NamedLock
 
 	if cacheStatus == status.LookupStatusHit {
