@@ -245,6 +245,7 @@ func initLogger(c *config.Config) *log.Logger {
 			"buildTime": applicationBuildTime,
 			"logLevel":  c.Logging.LogLevel,
 			"config":    c.ConfigFilePath(),
+			"pid":       os.Getpid(),
 		},
 	)
 	return log
@@ -298,7 +299,7 @@ func validateConfig(conf *config.Config) error {
 		return err
 	}
 
-	_, err = routing.RegisterProxyRoutes(conf, router, caches, tracers, log, false)
+	_, err = routing.RegisterProxyRoutes(conf, router, caches, tracers, log, true)
 	if err != nil {
 		return err
 	}
