@@ -61,8 +61,8 @@ type namedLock struct {
 	*sync.RWMutex
 	name           string
 	queueSize      int32
-	writeLockCount int
 	writeLockMode  int32
+	writeLockCount int
 	locker         *namedLocker
 }
 
