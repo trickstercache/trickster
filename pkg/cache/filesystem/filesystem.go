@@ -34,15 +34,14 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
-var lockPrefix string
-
 // Cache describes a Filesystem Cache
 type Cache struct {
-	Name   string
-	Config *options.Options
-	Index  *index.Index
-	Logger *log.Logger
-	locker locks.NamedLocker
+	Name       string
+	Config     *options.Options
+	Index      *index.Index
+	Logger     *log.Logger
+	locker     locks.NamedLocker
+	lockPrefix string
 }
 
 // Locker returns the cache's locker
@@ -67,7 +66,7 @@ func (c *Cache) Connect() error {
 	if err := makeDirectory(c.Config.Filesystem.CachePath); err != nil {
 		return err
 	}
-	lockPrefix = c.Name + ".file."
+	c.lockPrefix = c.Name + ".file."
 
 	// Load Index here and pass bytes as param2
 	indexData, _, _ := c.retrieve(index.IndexKey, false, false)
@@ -103,7 +102,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 
 	dataFile := c.getFileName(cacheKey)
 
-	nl, _ := c.locker.Acquire(lockPrefix + cacheKey)
+	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
 
 	o := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	err := ioutil.WriteFile(dataFile, o.ToBytes(), os.FileMode(0777))
@@ -129,7 +128,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 
 	dataFile := c.getFileName(cacheKey)
 
-	nl, _ := c.locker.RAcquire(lockPrefix + cacheKey)
+	nl, _ := c.locker.RAcquire(c.lockPrefix + cacheKey)
 	data, err := ioutil.ReadFile(dataFile)
 	nl.RRelease()
 
@@ -179,7 +178,7 @@ func (c *Cache) Remove(cacheKey string) {
 }
 
 func (c *Cache) remove(cacheKey string, isBulk bool) {
-	nl, _ := c.locker.Acquire(lockPrefix + cacheKey)
+	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
 	err := os.Remove(c.getFileName(cacheKey))
 	nl.Release()
 	if err == nil && !isBulk {
