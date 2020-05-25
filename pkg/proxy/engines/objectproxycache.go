@@ -418,7 +418,8 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	}
 
 	var err error
-	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges)
+	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err =
+		QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges)
 	if err == nil || err == cache.ErrKNF {
 		if f, ok := cacheResponseHandlers[pr.cacheStatus]; ok {
 			f(pr)
