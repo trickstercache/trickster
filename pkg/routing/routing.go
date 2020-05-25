@@ -171,8 +171,8 @@ func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 		return nil, fmt.Errorf("could not find cache named [%s]", o.CacheName)
 	}
 
-	log.Info("registering route paths",
-		tl.Pairs{"originName": k, "originType": o.OriginType, "upstreamHost": o.Host, "dryRun": dryRun})
+	log.Info("registering route paths", tl.Pairs{"originName": k,
+		"originType": o.OriginType, "upstreamHost": o.Host, "validationOnly": dryRun})
 
 	switch strings.ToLower(o.OriginType) {
 	case "prometheus", "":
