@@ -273,7 +273,9 @@ func (c *Config) setDefaults(metadata *toml.MetaData) error {
 
 	tracing.ProcessTracingOptions(c.TracingConfigs, metadata)
 
-	c.processCachingConfigs(metadata)
+	if err = c.processCachingConfigs(metadata); err != nil {
+		return err
+	}
 
 	if err = c.validateConfigMappings(); err != nil {
 		return err
@@ -563,7 +565,7 @@ func (c *Config) processOriginConfigs(metadata *toml.MetaData) error {
 	return nil
 }
 
-func (c *Config) processCachingConfigs(metadata *toml.MetaData) {
+func (c *Config) processCachingConfigs(metadata *toml.MetaData) error {
 
 	// setCachingDefaults assumes that processOriginConfigs was just ran
 
@@ -601,12 +603,20 @@ func (c *Config) processCachingConfigs(metadata *toml.MetaData) {
 			cc.Index.MaxSizeBackoffBytes = v.Index.MaxSizeBackoffBytes
 		}
 
+		if cc.Index.MaxSizeBytes > 0 && cc.Index.MaxSizeBackoffBytes > cc.Index.MaxSizeBytes {
+			return errors.New("MaxSizeBackoffBytes can't be larger than MaxSizeBytes")
+		}
+
 		if metadata.IsDefined("caches", k, "index", "max_size_objects") {
 			cc.Index.MaxSizeObjects = v.Index.MaxSizeObjects
 		}
 
 		if metadata.IsDefined("caches", k, "index", "max_size_backoff_objects") {
 			cc.Index.MaxSizeBackoffObjects = v.Index.MaxSizeBackoffObjects
+		}
+
+		if cc.Index.MaxSizeObjects > 0 && cc.Index.MaxSizeBackoffObjects > cc.Index.MaxSizeObjects {
+			return errors.New("MaxSizeBackoffObjects can't be larger than MaxSizeObjects")
 		}
 
 		if cc.CacheTypeID == types.CacheTypeRedis {
@@ -728,6 +738,7 @@ func (c *Config) processCachingConfigs(metadata *toml.MetaData) {
 
 		c.Caches[k] = cc
 	}
+	return nil
 }
 
 // Clone returns an exact copy of the subject *Config
