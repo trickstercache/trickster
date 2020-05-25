@@ -25,7 +25,6 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 
 	"go.opentelemetry.io/otel/api/kv"
-	"go.opentelemetry.io/otel/api/trace"
 )
 
 func TestNewChildSpan(t *testing.T) {
@@ -33,8 +32,9 @@ func TestNewChildSpan(t *testing.T) {
 	// test with nil context and tracer:
 	_, span := NewChildSpan(nil, nil, "test")
 
-	if _, ok := span.(trace.NoopSpan); !ok {
-		t.Error("expected NoopSpan")
+	if span != nil {
+		t.Error("expected nil span")
+
 	}
 
 	// test with nil context but non-nil tracer

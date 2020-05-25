@@ -124,10 +124,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 
 	coReq := GetRequestCachingPolicy(r.Header)
 	if coReq.NoCache {
-		span.AddEvent(
-			ctx,
-			"Not Caching",
-		)
+		if span != nil {
+			span.AddEvent(
+				ctx,
+				"Not Caching",
+			)
+		}
 		cacheStatus = status.LookupStatusPurge
 		go cache.Remove(key)
 		cts, doc, elapsed, err = fetchTimeseries(pr, trq, client)
