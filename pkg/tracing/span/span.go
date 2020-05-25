@@ -85,7 +85,7 @@ func NewChildSpan(ctx context.Context, tr *tracing.Tracer,
 	}
 
 	if tr == nil {
-		return ctx, trace.NoopSpan{}
+		return ctx, nil
 	}
 
 	ctx, span = tr.Start(
@@ -112,7 +112,8 @@ func SetAttributes(tr *tracing.Tracer, span trace.Span, kvs ...kv.KeyValue) {
 
 func filterAttributes(tr *tracing.Tracer, kvs []kv.KeyValue) []kv.KeyValue {
 	l := len(kvs)
-	if tr == nil || l == 0 || tr.Options == nil || len(tr.Options.OmitTagsList) == 0 {
+	if tr == nil || tr.Tracer == nil || l == 0 || tr.Options == nil ||
+		len(tr.Options.OmitTagsList) == 0 {
 		return kvs
 	}
 	approved := make([]kv.KeyValue, 0, l)
