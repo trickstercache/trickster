@@ -108,5 +108,4 @@ func TestFilterAttributes(t *testing.T) {
 	if len(kvs) != 1 {
 		t.Errorf("expected %d got %d", 1, len(kvs))
 	}
-
 }
