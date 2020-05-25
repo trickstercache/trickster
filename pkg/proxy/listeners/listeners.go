@@ -47,6 +47,19 @@ type Listener struct {
 	exitOnError  bool
 }
 
+type observedConnection struct {
+	net.Conn
+}
+
+func (o observedConnection) Close() error {
+	err := o.Conn.Close()
+
+	metrics.ProxyActiveConnections.Dec()
+	metrics.ProxyConnectionClosed.Inc()
+
+	return err
+}
+
 // Accept implements Listener.Accept
 func (l *Listener) Accept() (net.Conn, error) {
 
@@ -121,9 +134,7 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int,
 	}
 
 	if connectionsLimit > 0 {
-		listener = &connectionsLimitObProxy{
-			netutil.LimitListener(listener, connectionsLimit),
-		}
+		listener = netutil.LimitListener(listener, connectionsLimit)
 		metrics.ProxyMaxConnections.Set(float64(connectionsLimit))
 	}
 
