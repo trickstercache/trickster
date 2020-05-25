@@ -443,6 +443,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				} else {
 					cdata, err := client.MarshalTimeseries(cts)
 					if err != nil {
+						pr.Logger.Error("error marshaling timeseries", tl.Pairs{
+							"cacheKey": key,
+							"detail":   err.Error(),
+						})
 						return
 					}
 					doc.Body = cdata
