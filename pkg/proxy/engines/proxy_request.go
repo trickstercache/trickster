@@ -260,9 +260,6 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 		pr.originRequests = make([]*http.Request, 0, l)
 	}
 
-	// // TODO: This looks suspicious
-	// rsc.OriginConfig.DearticulateUpstreamRanges = true
-
 	// if we are articulating the origin range requests, break those out here
 	if pr.neededRanges != nil && len(pr.neededRanges) > 0 && rsc.OriginConfig.DearticulateUpstreamRanges {
 		for _, r := range pr.neededRanges {
