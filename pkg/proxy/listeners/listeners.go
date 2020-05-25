@@ -47,6 +47,23 @@ type Listener struct {
 	exitOnError  bool
 }
 
+// Accept implements Listener.Accept
+func (l *Listener) Accept() (net.Conn, error) {
+
+	metrics.ProxyConnectionRequested.Inc()
+
+	c, err := l.Listener.Accept()
+	if err != nil {
+		metrics.ProxyConnectionFailed.Inc()
+		return c, err
+	}
+
+	metrics.ProxyActiveConnections.Inc()
+	metrics.ProxyConnectionAccepted.Inc()
+
+	return observedConnection{c}, nil
+}
+
 // CertSwapper returns the CertSwapper reference from the Listener
 func (l *Listener) CertSwapper() *sw.CertSwapper {
 	return l.tlsSwapper
