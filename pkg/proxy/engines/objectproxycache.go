@@ -158,15 +158,17 @@ func handleCacheRevalidation(pr *proxyRequest) error {
 	rsc := request.GetResources(pr.Request)
 
 	ctx, span := tspan.NewChildSpan(pr.Request.Context(), rsc.Tracer, "CacheRevalidation")
-	defer func() {
-		reval := revalidationStatusValues[pr.revalidation]
-		span.AddEvent(
-			ctx,
-			"Complete",
-			kv.String("result", reval),
-		)
-		span.End()
-	}()
+	if span != nil {
+		defer func() {
+			reval := revalidationStatusValues[pr.revalidation]
+			span.AddEvent(
+				ctx,
+				"Complete",
+				kv.String("result", reval),
+			)
+			span.End()
+		}()
+	}
 
 	pr.revalidation = RevalStatusInProgress
 

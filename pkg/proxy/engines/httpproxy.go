@@ -165,12 +165,17 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	r.Close = false
 	r.RequestURI = ""
 
-	// Processing traces for proxies
-	// https://www.w3.org/TR/trace-context-1/#alternative-processing
-	ctx, r = othttptrace.W3C(ctx, r)
-	othttptrace.Inject(ctx, r)
+	if rsc.Tracer != nil {
+		// Processing traces for proxies
+		// https://www.w3.org/TR/trace-context-1/#alternative-processing
+		ctx, r = othttptrace.W3C(ctx, r)
+		othttptrace.Inject(ctx, r)
+	}
 
 	ctx, doSpan := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
+	if doSpan != nil {
+		defer doSpan.End()
+	}
 
 	// clear the Host header before proxying or it will be forwarded upstream
 	r.Host = ""
@@ -196,12 +201,8 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 				kv.Int("httpStatus", resp.StatusCode),
 			)
 			doSpan.SetStatus(tracing.HTTPToCode(resp.StatusCode), "")
-			doSpan.End()
 		}
 		return nil, resp, 0
-	}
-	if doSpan != nil {
-		doSpan.End()
 	}
 
 	originalLen := int64(-1)
