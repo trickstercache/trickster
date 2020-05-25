@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/cache"
 	bo "github.com/tricksterproxy/trickster/pkg/cache/bbolt/options"
 	io "github.com/tricksterproxy/trickster/pkg/cache/index/options"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
@@ -263,8 +264,8 @@ func TestBboltCache_StoreNoIndex(t *testing.T) {
 	if ls != status.LookupStatusKeyMiss {
 		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
 	}
-	if err.Error() != expected {
-		t.Errorf("expected error '%s' got '%s'", expected, err.Error())
+	if err != cache.ErrKNF {
+		t.Error("expected error for KNF")
 	}
 	if string(data) != "" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
@@ -517,8 +518,8 @@ func TestBboltCache_Retrieve(t *testing.T) {
 		t.Errorf("expected error for %s", expected1)
 		bc.Close()
 	}
-	if err.Error() != expected1 {
-		t.Errorf("expected error '%s' got '%s'", expected1, err.Error())
+	if err != cache.ErrKNF {
+		t.Error("expected error for KNF")
 	}
 	if string(data) != "" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)

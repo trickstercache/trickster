@@ -35,8 +35,6 @@ import (
 // IndexKey is the key under which the index will write itself to its associated cache
 const IndexKey = "cache.index"
 
-var indexLock = sync.Mutex{}
-
 // Index maintains metadata about a Cache when Retention enforcement is managed internally,
 // like memory or bbolt. It is not used for independently managed caches like Redis.
 type Index struct {
@@ -57,6 +55,8 @@ type Index struct {
 	isClosing     bool
 	flusherExited bool
 	reaperExited  bool
+
+	mtx sync.Mutex
 }
 
 // Close is called to signal the index to shut down any subroutines
@@ -146,28 +146,28 @@ func NewIndex(cacheName, cacheType string, indexData []byte, o *options.Options,
 
 // UpdateOptions updates the existing Index with a new Options reference
 func (idx *Index) UpdateOptions(o *options.Options) {
-	indexLock.Lock()
+	idx.mtx.Lock()
 	idx.options = o
-	indexLock.Unlock()
+	idx.mtx.Unlock()
 }
 
 // UpdateObjectAccessTime updates the LastAccess for the object with the provided key
 func (idx *Index) UpdateObjectAccessTime(key string) {
-	indexLock.Lock()
+	idx.mtx.Lock()
 	if _, ok := idx.Objects[key]; ok {
 		idx.Objects[key].LastAccess = time.Now()
 	}
-	indexLock.Unlock()
+	idx.mtx.Unlock()
 
 }
 
 // UpdateObjectTTL updates the Expiration for the object with the provided key
 func (idx *Index) UpdateObjectTTL(key string, ttl time.Duration) {
-	indexLock.Lock()
+	idx.mtx.Lock()
 	if _, ok := idx.Objects[key]; ok {
 		idx.Objects[key].Expiration = time.Now().Add(ttl)
 	}
-	indexLock.Unlock()
+	idx.mtx.Unlock()
 }
 
 // UpdateObject writes or updates the Index Metadata for the provided Object
@@ -178,7 +178,7 @@ func (idx *Index) UpdateObject(obj *Object) {
 		return
 	}
 
-	indexLock.Lock()
+	idx.mtx.Lock()
 
 	idx.lastWrite = time.Now()
 
@@ -201,12 +201,12 @@ func (idx *Index) UpdateObject(obj *Object) {
 	metrics.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
 
 	idx.Objects[key] = obj
-	indexLock.Unlock()
+	idx.mtx.Unlock()
 }
 
 // RemoveObject removes an Object's Metadata from the Index
 func (idx *Index) RemoveObject(key string) {
-	indexLock.Lock()
+	idx.mtx.Lock()
 	idx.lastWrite = time.Now()
 	if o, ok := idx.Objects[key]; ok {
 		atomic.AddInt64(&idx.CacheSize, -o.Size)
@@ -217,13 +217,13 @@ func (idx *Index) RemoveObject(key string) {
 		delete(idx.Objects, key)
 		metrics.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
 	}
-	indexLock.Unlock()
+	idx.mtx.Unlock()
 }
 
 // RemoveObjects removes a list of Objects' Metadata from the Index
 func (idx *Index) RemoveObjects(keys []string, noLock bool) {
 	if !noLock {
-		indexLock.Lock()
+		idx.mtx.Lock()
 	}
 	for _, key := range keys {
 		if o, ok := idx.Objects[key]; ok {
@@ -236,18 +236,18 @@ func (idx *Index) RemoveObjects(keys []string, noLock bool) {
 	}
 	idx.lastWrite = time.Now()
 	if !noLock {
-		indexLock.Unlock()
+		idx.mtx.Unlock()
 	}
 }
 
 // GetExpiration returns the cache index's expiration for the object of the given key
 func (idx *Index) GetExpiration(cacheKey string) time.Time {
-	indexLock.Lock()
+	idx.mtx.Lock()
 	if o, ok := idx.Objects[cacheKey]; ok {
-		indexLock.Unlock()
+		idx.mtx.Unlock()
 		return o.Expiration
 	}
-	indexLock.Unlock()
+	idx.mtx.Unlock()
 	return time.Time{}
 }
 
@@ -266,9 +266,9 @@ func (idx *Index) flusher(log *tl.Logger) {
 }
 
 func (idx *Index) flushOnce(log *tl.Logger) {
-	indexLock.Lock()
+	idx.mtx.Lock()
 	bytes, err := idx.MarshalMsg(nil)
-	indexLock.Unlock()
+	idx.mtx.Unlock()
 	if err != nil {
 		log.Warn("unable to serialize index for flushing",
 			tl.Pairs{"cacheName": idx.name, "detail": err.Error()})
@@ -292,8 +292,8 @@ type objectsAtime []*Object
 // and evict least-recently-accessed elements to maintain the Maximum allowed Cache Size
 func (idx *Index) reap(log *tl.Logger) {
 
-	indexLock.Lock()
-	defer indexLock.Unlock()
+	idx.mtx.Lock()
+	defer idx.mtx.Unlock()
 
 	removals := make([]string, 0)
 	remainders := make(objectsAtime, 0, idx.ObjectCount)

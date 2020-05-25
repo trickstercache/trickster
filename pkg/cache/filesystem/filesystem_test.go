@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/cache"
 	flo "github.com/tricksterproxy/trickster/pkg/cache/filesystem/options"
 	io "github.com/tricksterproxy/trickster/pkg/cache/index/options"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
@@ -189,8 +190,8 @@ func TestFilesystemCache_StoreNoIndex(t *testing.T) {
 		t.Errorf("expected error for %s", expected)
 		fc.Close()
 	}
-	if err.Error() != expected {
-		t.Errorf("expected error '%s' got '%s'", expected, err.Error())
+	if err != cache.ErrKNF {
+		t.Error("expected error for KNF")
 	}
 	if string(data) != "" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
@@ -378,8 +379,8 @@ func TestFilesystemCache_Retrieve(t *testing.T) {
 		t.Errorf("expected error for %s", expected1)
 		fc.Close()
 	}
-	if err.Error() != expected1 {
-		t.Errorf("expected error '%s' got '%s'", expected1, err.Error())
+	if err != cache.ErrKNF {
+		t.Error("expected error for KNF")
 	}
 	if string(data) != "" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)

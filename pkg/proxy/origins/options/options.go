@@ -40,8 +40,6 @@ type Options struct {
 	//
 	// Hosts identifies the frontend hostnames this origin should handle (virtual hosting)
 	Hosts []string `toml:"hosts"`
-	// IsDefault indicates if this is the d.Default origin for any request not matching a configured route
-	IsDefault bool `toml:"is_default"`
 	// OriginType describes the type of origin (e.g., 'prometheus')
 	OriginType string `toml:"origin_type"`
 	// OriginURL provides the base upstream URL for all proxied requests to this origin.
@@ -72,8 +70,6 @@ type Options struct {
 	// TimeseriesEvictionMethodName specifies which methodology ("oldest", "lru") is used to identify
 	//timeseries to evict from a full cache object
 	TimeseriesEvictionMethodName string `toml:"timeseries_eviction_method"`
-	// FastForwardDisable indicates whether the FastForward feature should be disabled for this origin
-	FastForwardDisable bool `toml:"fast_forward_disable"`
 	// BackfillToleranceSecs prevents values with timestamps newer than the provided
 	// number of seconds from being cached this allows propagation of upstream backfill operations
 	// that modify recently-served data
@@ -101,20 +97,24 @@ type Options struct {
 	// RuleName provides the name of the rule config to be used by this origin.
 	// This is only effective if the Origin Type is 'rule'
 	RuleName string `toml:"rule_name"`
-	// PathRoutingDisabled, when true, will bypass /originName/path route registrations
-	PathRoutingDisabled bool `toml:"path_routing_disabled"`
 	// ReqRewriterName is the name of a configured Rewriter that will modify the request prior to
 	// processing by the origin client
 	ReqRewriterName string `toml:"req_rewriter_name"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `toml:"tls"`
-	// RequireTLS, when true, indicates this Origin Config's paths must only be registered with the TLS Router
-	RequireTLS bool `toml:"require_tls"`
 
 	// ForwardedHeaders indicates the class of 'Forwarded' header to attach to upstream requests
 	ForwardedHeaders string `toml:"forwarded_headers"`
 
+	// IsDefault indicates if this is the d.Default origin for any request not matching a configured route
+	IsDefault bool `toml:"is_default"`
+	// FastForwardDisable indicates whether the FastForward feature should be disabled for this origin
+	FastForwardDisable bool `toml:"fast_forward_disable"`
+	// PathRoutingDisabled, when true, will bypass /originName/path route registrations
+	PathRoutingDisabled bool `toml:"path_routing_disabled"`
+	// RequireTLS, when true, indicates this Origin Config's paths must only be registered with the TLS Router
+	RequireTLS bool `toml:"require_tls"`
 	// MultipartRangesDisabled, when true, indicates that if a downstream client requests multiple ranges
 	// in a single request, Trickster will instead request and return a 200 OK with the full object body
 	MultipartRangesDisabled bool `toml:"multipart_ranges_disabled"`

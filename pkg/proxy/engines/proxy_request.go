@@ -60,32 +60,33 @@ type proxyRequest struct {
 	cacheBuffer   *bytes.Buffer
 	cacheLock     locks.NamedLock
 	mapLock       *sync.Mutex
-	hasWriteLock  bool
-	hasReadLock   bool
-	wasReran      bool
 
-	key          string
-	started      time.Time
-	elapsed      time.Duration
-	cacheStatus  status.LookupStatus
-	writeToCache bool
+	key         string
+	started     time.Time
+	elapsed     time.Duration
+	cacheStatus status.LookupStatus
 
-	wantsRanges  bool
 	wantedRanges byterange.Ranges
 	neededRanges byterange.Ranges
 	rangeParts   byterange.MultipartByteRanges
 
-	isPartialResponse bool
-	contentLength     int64
-	revalidation      RevalidationStatus
-	wasReconstituted  bool
-	trueContentType   string
+	contentLength int64
+	revalidation  RevalidationStatus
+
+	trueContentType string
 
 	collapsedForwarder ProgressiveCollapseForwarder
 	cachingPolicy      *CachingPolicy
 
-	Logger *tl.Logger
-	isPCF  bool
+	Logger            *tl.Logger
+	isPCF             bool
+	writeToCache      bool
+	hasWriteLock      bool
+	hasReadLock       bool
+	wasReran          bool
+	wantsRanges       bool
+	isPartialResponse bool
+	wasReconstituted  bool
 }
 
 // newProxyRequest accepts the original inbound HTTP Request and Response
@@ -259,9 +260,6 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 		}
 		pr.originRequests = make([]*http.Request, 0, l)
 	}
-
-	// // TODO: This looks suspicious
-	// rsc.OriginConfig.DearticulateUpstreamRanges = true
 
 	// if we are articulating the origin range requests, break those out here
 	if pr.neededRanges != nil && len(pr.neededRanges) > 0 && rsc.OriginConfig.DearticulateUpstreamRanges {

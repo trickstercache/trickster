@@ -47,6 +47,36 @@ type Listener struct {
 	exitOnError  bool
 }
 
+type observedConnection struct {
+	net.Conn
+}
+
+func (o observedConnection) Close() error {
+	err := o.Conn.Close()
+
+	metrics.ProxyActiveConnections.Dec()
+	metrics.ProxyConnectionClosed.Inc()
+
+	return err
+}
+
+// Accept implements Listener.Accept
+func (l *Listener) Accept() (net.Conn, error) {
+
+	metrics.ProxyConnectionRequested.Inc()
+
+	c, err := l.Listener.Accept()
+	if err != nil {
+		metrics.ProxyConnectionFailed.Inc()
+		return c, err
+	}
+
+	metrics.ProxyActiveConnections.Inc()
+	metrics.ProxyConnectionAccepted.Inc()
+
+	return observedConnection{c}, nil
+}
+
 // CertSwapper returns the CertSwapper reference from the Listener
 func (l *Listener) CertSwapper() *sw.CertSwapper {
 	return l.tlsSwapper
@@ -104,9 +134,7 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int,
 	}
 
 	if connectionsLimit > 0 {
-		listener = &connectionsLimitObProxy{
-			netutil.LimitListener(listener, connectionsLimit),
-		}
+		listener = netutil.LimitListener(listener, connectionsLimit)
 		metrics.ProxyMaxConnections.Set(float64(connectionsLimit))
 	}
 

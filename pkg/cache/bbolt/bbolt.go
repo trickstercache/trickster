@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/index"
 	"github.com/tricksterproxy/trickster/pkg/cache/metrics"
 	"github.com/tricksterproxy/trickster/pkg/cache/options"
@@ -145,8 +146,8 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool,
 		data = b.Get([]byte(cacheKey))
 		if data == nil {
 			c.Logger.Debug("bbolt cache miss", log.Pairs{"key": cacheKey})
-			_, cme := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
-			return cme
+			metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+			return cache.ErrKNF
 		}
 		return nil
 	})
@@ -180,8 +181,8 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool,
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
 	go c.remove(cacheKey, false)
-	b, err := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
-	return b, status.LookupStatusKeyMiss, err
+	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 }
 
 // SetTTL updates the TTL for the provided cache object

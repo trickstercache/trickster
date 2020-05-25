@@ -22,10 +22,9 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 )
 
-// ObserveCacheMiss returns a standard Cache Miss response
-func ObserveCacheMiss(cacheKey, cacheName, cacheType string) ([]byte, error) {
+// ObserveCacheMiss records a Cache Miss event
+func ObserveCacheMiss(cacheKey, cacheName, cacheType string) {
 	ObserveCacheOperation(cacheName, cacheType, "get", "miss", 0)
-	return nil, fmt.Errorf("value for key [%s] not in cache", cacheKey)
 }
 
 // ObserveCacheDel records a cache deletion event

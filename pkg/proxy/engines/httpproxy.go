@@ -45,7 +45,7 @@ import (
 )
 
 // Reqs is for Progressive Collapsed Forwarding
-var Reqs sync.Map
+var reqs sync.Map
 
 // HTTPBlockSize represents 32K of bytes
 const HTTPBlockSize = 32 * 1024
@@ -84,7 +84,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	} else {
 		pr := newProxyRequest(r, w)
 		key := oc.CacheKeyPrefix + "." + pr.DeriveCacheKey(nil, "")
-		result, ok := Reqs.Load(key)
+		result, ok := reqs.Load(key)
 		if !ok {
 			var contentLength int64
 			reader, resp, contentLength = PrepareFetchReader(r)
@@ -93,14 +93,14 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 			// Check if we know the content length and if it is less than our max object size.
 			if contentLength != 0 && contentLength < int64(oc.MaxObjectSizeBytes) {
 				pcf := NewPCF(resp, contentLength)
-				Reqs.Store(key, pcf)
+				reqs.Store(key, pcf)
 				// Blocks until server completes
 				grClose := reader != nil && closeResponse
 				closeResponse = false
 				go func() {
 					io.Copy(pcf, reader)
 					pcf.Close()
-					Reqs.Delete(key)
+					reqs.Delete(key)
 					if grClose {
 						reader.Close()
 					}

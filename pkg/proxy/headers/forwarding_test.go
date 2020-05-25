@@ -53,7 +53,7 @@ var testHops2 = &Hop{
 
 func TestForwardedString(t *testing.T) {
 
-	var hop = &*testHops1
+	var hop = testHops1
 	hop.Hops = []*Hop{testHops2}
 
 	s := hop.String()

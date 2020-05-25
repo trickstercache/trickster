@@ -34,14 +34,14 @@ type TimeRangeQuery struct {
 	Extent Extent
 	// Step indicates the amount of time in seconds between each datapoint in a TimeRangeQuery's resulting timeseries
 	Step time.Duration
-	// IsOffset is true if the query uses a relative offset modifier
-	IsOffset bool
 	// TimestampFieldName indicates the database field name for the timestamp field
 	TimestampFieldName string
-	// FastForwardDisable indicates whether the Time Range Query result should include fast forward data
-	FastForwardDisable bool
 	// TemplateURL is used by some Origin Types for templatization of url parameters containing timestamps
 	TemplateURL *url.URL
+	// FastForwardDisable indicates whether the Time Range Query result should include fast forward data
+	FastForwardDisable bool
+	// IsOffset is true if the query uses a relative offset modifier
+	IsOffset bool
 }
 
 // Clone returns an exact copy of a TimeRangeQuery
