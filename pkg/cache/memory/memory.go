@@ -155,8 +155,8 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index
 		// Cache Object has been expired but not reaped, go ahead and delete it
 		go c.remove(cacheKey, false)
 	}
-	_, err := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
-	return nil, status.LookupStatusKeyMiss, err
+	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 }
 
 // SetTTL updates the TTL for the provided cache object

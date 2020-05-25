@@ -17,7 +17,6 @@
 package metrics
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -30,11 +29,7 @@ func init() {
 }
 
 func TestObserveCacheMiss(t *testing.T) {
-	e1 := fmt.Errorf("value for key [%s] not in cache", testCacheKey)
-	_, err := ObserveCacheMiss(testCacheKey, testCacheName, testCacheType)
-	if err.Error() != e1.Error() {
-		t.Error(err)
-	}
+	ObserveCacheMiss(testCacheKey, testCacheName, testCacheType)
 }
 
 // ObserveCacheDel records a cache deletion event

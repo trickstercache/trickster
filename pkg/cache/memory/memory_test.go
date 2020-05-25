@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/cache"
 	io "github.com/tricksterproxy/trickster/pkg/cache/index/options"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
@@ -148,8 +149,6 @@ func BenchmarkCache_Store(b *testing.B) {
 
 func TestCache_Retrieve(t *testing.T) {
 
-	const expected1 = `value for key [cacheKey] not in cache`
-
 	cacheConfig := newCacheConfig(t)
 	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: testLocker}
 
@@ -186,12 +185,9 @@ func TestCache_Retrieve(t *testing.T) {
 
 	// this should now return error
 	data, ls, err = mc.Retrieve(cacheKey, false)
-	if err == nil {
-		t.Errorf("expected error for %s", expected1)
+	if err != cache.ErrKNF {
+		t.Error("expected error for KNF")
 		mc.Close()
-	}
-	if err.Error() != expected1 {
-		t.Errorf("expected error '%s' got '%s'", expected1, err.Error())
 	}
 	if string(data) != "" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
