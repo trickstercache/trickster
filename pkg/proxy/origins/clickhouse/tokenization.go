@@ -18,7 +18,7 @@ package clickhouse
 
 import (
 	"fmt"
-	tt "github.com/tricksterproxy/trickster/pkg/proxy/timeconv"
+	ttc "github.com/tricksterproxy/trickster/pkg/proxy/timeconv"
 	"github.com/tricksterproxy/trickster/pkg/util/regexp/matching"
 	"regexp"
 	"strconv"
@@ -43,9 +43,7 @@ const bSpace = byte(' ')
 const bOpen = byte('(')
 const bClose = byte(')')
 
-const divOperation = "intDiv(toInt32("
-
-var operators = map[byte]bool{
+var chOperators = map[byte]bool{
 	byte('*'): true,
 	byte('/'): true,
 	byte(','): true,
@@ -64,26 +62,16 @@ var timeFuncMap = map[string]string{
 	"toDate":                  "1d",
 }
 
-var reTimeFieldAndStep, reTimeFuncAndStep, reTimeClauseAlt *regexp.Regexp
+var reTimeFieldAndStep = regexp.MustCompile(`.*intDiv\(toUInt32\((?P<timeField>[a-zA-Z0-9._-]+)\),(?P<step>[0-9]+)\)*.+\)(?P<mult>.*)`)
 
-var srp = func(str, old, new string) string {
-	return strings.Replace(str, old, new, -1)
-}
 var srm = func(str, old string) string {
 	return strings.Replace(str, old, "", -1)
 }
-var sai = strconv.Atoi
+
 var sup = strings.ToUpper
 
-func init() {
-	reTimeFieldAndStep = regexp.MustCompile(`.*intDiv\(toUInt32\((?P<timeField>[a-zA-Z0-9._-]+)\),(?P<step>[0-9]+)\)*.+\)(?P<mult>.*)`)
-	reTimeClauseAlt = regexp.MustCompile(`(?i)\s+(?P<expression>(?P<operator>>=|>|=|between)\s+` +
-		`(?P<modifier>toDate(Time)?)\((?P<ts1>[0-9]+)\)(?P<timeExpr2>\s+and\s+toDate(Time)?\((?P<ts2>[0-9]+)\))?)`)
-	reTimeFuncAndStep = regexp.MustCompile(`(?i)select\s+touint32\s*\(toStartOf(?P<step>[^\s]+)\s+\(?P<timeField>*\)`)
-}
-
 func interpolateTimeQuery(template string, extent *timeseries.Extent, step time.Duration) string {
-	// If we end on the very beginning of a timeslice, extend the slice to capture up to the next boundary
+	// If we end on the very beginning of a time slice, extend the slice to capture up to the next boundary
 	ds := int(step.Seconds())
 	endTime := int(extent.End.Unix())
 	if endTime%ds == 0 {
@@ -93,15 +81,9 @@ func interpolateTimeQuery(template string, extent *timeseries.Extent, step time.
 		strconv.Itoa(int(extent.Start.Unix())), -1), tkTimestamp2, strconv.Itoa(endTime), -1)
 }
 
-var compiledRe = make(map[string]*regexp.Regexp)
-
-const timeClauseRe = `(?i)(?P<conjunction>where|and)\s+#TIME_FIELD#\s+(?P<timeExpr1>(?P<operator>>=|>|=|between)\s+` +
-	`(?P<modifier>toDate(Time)?)\((?P<ts1>[0-9]+)\))(?P<timeExpr2>\s+and\s+toDate(Time)?\((?P<ts2>[0-9]+)\))?`
-
 func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 	var duration string
 	var err error
-	//var timeField string
 	parts := findParts(query)
 	size := len(parts)
 	if size < 4 {
@@ -115,7 +97,7 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 	var startTime, endTime, qs, qe int
 	for i := 0; i < size; i++ {
 		p := parts[i]
-		if sup(p) == "SELECT" {
+		if sup(p) == "SELECT" && tsColumn == "" {
 			parts[i] = "SELECT"
 			i++
 			tsColumn = parts[i]
@@ -125,6 +107,7 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 				i += 2
 				tsAlias = strings.Split(parts[i], ",")[0]
 			}
+			// First look for a Grafana/division type time series query
 			m := matching.GetNamedMatches(reTimeFieldAndStep, tsColumn, nil)
 			if tf, ok := m["timeField"]; ok {
 				tsColumn = tf
@@ -133,6 +116,23 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 					return fmt.Errorf("invalid step from division operation")
 				}
 				duration = strStep + "s"
+				// Otherwise check for the use of built-in ClickHouse time grouping functions
+			} else {
+				for k, v := range timeFuncMap {
+					fi := strings.Index(tsColumn, k+"(")
+					if fi > -1 {
+						cp := strings.Index(tsColumn[fi+1:], ")")
+						if cp == -1 {
+							return fmt.Errorf("invalid time function syntax")
+						}
+						tsColumn = tsColumn[fi+len(k)+1 : fi+cp+1]
+						duration = v
+						break
+					}
+				}
+				if duration == "" {
+					return fmt.Errorf("unable to validate that first parameter is time grouping")
+				}
 			}
 			continue
 		}
@@ -156,7 +156,7 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 		return fmt.Errorf("no time range found")
 	}
 
-	trq.Step, err = tt.ParseDuration(duration)
+	trq.Step, err = ttc.ParseDuration(duration)
 	if err != nil {
 		return fmt.Errorf("invalid duration parsed")
 	}
@@ -166,6 +166,19 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 	trq.Extent.Start = time.Unix(int64(startTime), 0)
 	trq.Extent.End = time.Unix(int64(endTime), 0)
 	return nil
+}
+
+func parseTime(s string) (int, error) {
+	ts := srm(srm(srm(s, "toDateTime("), "toDate("), ")")
+	t, err := strconv.Atoi(ts)
+	if err == nil {
+		return t, nil
+	}
+	td, err := fromDateString(srm(ts, "'"))
+	if err == nil {
+		return int(td.Unix()), nil
+	}
+	return 0, err
 }
 
 func findRange(parts []string, column string, alias string) (int, int, int, string, error) {
@@ -178,8 +191,7 @@ func findRange(parts []string, column string, alias string) (int, int, int, stri
 			f := parts[i-1]
 			if f == column || f == alias {
 				i++
-				ts := srm(srm(srm(parts[i], "toDateTime("), "toDate("), ")")
-				st, err = strconv.Atoi(ts)
+				st, err = parseTime(parts[i])
 				if err != nil {
 					return st, et, 0, "", err
 				}
@@ -188,22 +200,28 @@ func findRange(parts []string, column string, alias string) (int, int, int, stri
 					return st, et, 0, "", fmt.Errorf("unrecognized between clause")
 				}
 				i++
-				ts = srm(srm(srm(parts[i], "toDateTime("), "toDate("), ")")
-				et, err = strconv.Atoi(ts)
+				et, err = parseTime(parts[i])
 				if err != nil {
 					return st, et, 0, "", err
 				}
 				return st, et, i, f, nil
 			}
 		}
-	}
-
-	/*for i := 0; i < size; i++ {
-		p := ss[i]
-		if strings.Index(p, column) > -1 {
-
+		tl := strings.Index(p, column+">")
+		if tl == -1 {
+			tl = strings.Index(p, alias+">")
+			if tl == -1 {
+				continue
+			}
 		}
-	}*/
+		if parts[tl+1] == "=" {
+			tl++
+		}
+		st, err = parseTime(p[tl:])
+		if err != nil {
+			return st, et, 0, "", err
+		}
+	}
 	return st, et, 0, "", nil
 }
 
@@ -232,7 +250,7 @@ func findParts(query string) []string {
 			}
 			for i++; i < size; i++ {
 				b = bytes[i]
-				if b == bClose || operators[b] {
+				if b == bClose || chOperators[b] {
 					break
 				}
 				if b != bSpace {
@@ -246,123 +264,8 @@ func findParts(query string) []string {
 		if b == bQuote {
 			inQuote = true
 		}
-		trimming = b == bOpen || operators[b]
+		trimming = b == bOpen || chOperators[b]
 		buf = append(buf, b)
 	}
 	return append(fields, string(buf[fieldStart:]))
 }
-
-/*func getQueryParts(query string, timeField string) (string, timeseries.Extent, bool, error) {
-
-
-
-
-	tcKey := timeField + "-tc"
-	trex, ok := compiledRe[tcKey]
-	if !ok {
-		trex = regexp.MustCompile(strings.Replace(timeClauseRe, "#TIME_FIELD#", timeField, -1))
-		compiledRe[tcKey] = trex
-	}
-
-	m := matching.GetNamedMatches(trex, query, nil)
-	if len(m) == 0 {
-		return "", timeseries.Extent{}, false, fmt.Errorf("unable to parse time from query: %s", query)
-	}
-
-	ext, isRelativeTime, err := parseQueryExtents(query, m)
-	if err != nil {
-		return "", timeseries.Extent{}, false, err
-	}
-
-	tq := tokenizeQuery(query, m)
-	return tq, ext, isRelativeTime, err
-}
-
-// tokenizeQuery will take a ClickHouse query and replace all time conditionals with a single <$TIME_TOKEN$>
-func tokenizeQuery(query string, timeParts map[string]string) string {
-	// First check the existence of timeExpr1, and if exists, tokenize
-	if expr, ok := timeParts["timeExpr1"]; ok {
-		if modifier, ok := timeParts["modifier"]; ok {
-			query = strings.Replace(query, expr, fmt.Sprintf("BETWEEN %s(%s) AND %s(%s)",
-				modifier, tkTimestamp1, modifier, tkTimestamp2), -1)
-			// Then check the existence of timeExpr2, and if exists, remove from tokenized version
-			if expr, ok := timeParts["timeExpr2"]; ok {
-				query = strings.Replace(query, expr, "", -1)
-			}
-		}
-	}
-
-	if ts1, ok := timeParts["ts1"]; ok {
-		if strings.Contains(query, "("+ts1+")") {
-			m := matching.GetNamedMatches(reTimeClauseAlt, query, nil)
-			if len(m) > 0 {
-				if modifier, ok := m["modifier"]; ok {
-					if expression, ok := m["expression"]; ok {
-						query = strings.Replace(query, expression, fmt.Sprintf("BETWEEN %s(%s) AND %s(%s)",
-							modifier, tkTimestamp1, modifier, tkTimestamp2), -1)
-					}
-				}
-			}
-		}
-	}
-
-	return query
-}
-
-func parseQueryExtents(query string, timeParts map[string]string) (timeseries.Extent, bool, error) {
-
-	var e timeseries.Extent
-
-	isRelativeTime := true
-
-	op, ok := timeParts["operator"]
-	if !ok {
-		return e, false, fmt.Errorf("failed to parse query: %s", "could not find operator")
-	}
-
-	if t, ok := timeParts["ts1"]; ok {
-		i, err := strconv.ParseInt(t, 10, 64)
-		if err != nil {
-			return e, false, fmt.Errorf("failed to parse query: %s", "could not find start time")
-		}
-		e.Start = time.Unix(i, 0)
-	}
-
-	if strings.ToLower(op) == "between" {
-		isRelativeTime = false
-		if t, ok := timeParts["ts2"]; ok {
-			i, err := strconv.ParseInt(t, 10, 64)
-			if err != nil {
-				return e, false, fmt.Errorf("failed to parse query: %s", "could not determine end time")
-			}
-			e.End = time.Unix(i, 0)
-		} else {
-			return e, false, fmt.Errorf("failed to parse query: %s", "could not find end time")
-		}
-	} else {
-		e.End = time.Now()
-	}
-
-	return e, isRelativeTime, nil
-}
-
-mp := []string{"step", "timeField"}
-found := matching.GetNamedMatches(reTimeFieldAndStep, trq.Statement, mp)
-if len(found) == 2 {
-trq.TimestampFieldName = found["timeField"]
-trq.Step, _ = tt.ParseDuration(found["step"] + "s")
-} else {
-found = matching.GetNamedMatches(reTimeFuncAndStep, trq.Statement, mp)
-if len(found) == 2 {
-trq.TimestampFieldName = found["timeField"]
-trq.Step, _ = tt.ParseDuration(timeFuncMap[found["step"]])
-} else {
-return nil, errors.ErrNotTimeRangeQuery
-}
-}
-
-var err error
-trq.Statement, trq.Extent, _, err = getQueryParts(trq.Statement, trq.TimestampFieldName)
-if err != nil {
-return nil, err
-} */

@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/sort/times"
@@ -30,8 +31,6 @@ const (
 	millisPerSecond     = int64(time.Second / time.Millisecond)
 	nanosPerMillisecond = int64(time.Millisecond / time.Nanosecond)
 )
-
-var year2100Seconds int64
 
 type FieldDefinition struct {
 	Name string `json:"name"`
@@ -65,14 +64,14 @@ type ResultsEnvelope struct {
 	isCounted  bool
 }
 
-type timeFunc func(interface{}) (time.Time, error)
+type fromTimeFunc func(interface{}) (time.Time, error)
+type toTimeFunc func(time.Time) interface{}
 
-var fromMs timeFunc = func(v interface{}) (time.Time, error) {
-	msInt := int64(v.(float64))
-	return time.Unix(msInt/millisPerSecond, (msInt%millisPerSecond)*nanosPerMillisecond), nil
+var toMsString toTimeFunc = func(t time.Time) interface{} {
+	return strconv.FormatInt(t.UnixNano()/nanosPerMillisecond, 10)
 }
 
-var fromMsString timeFunc = func(v interface{}) (time.Time, error) {
+var fromMsString fromTimeFunc = func(v interface{}) (time.Time, error) {
 	msInt, err := strconv.ParseInt(v.(string), 10, 64)
 	if err == nil {
 		return time.Unix(msInt/millisPerSecond, (msInt%millisPerSecond)*nanosPerMillisecond), nil
@@ -80,13 +79,21 @@ var fromMsString timeFunc = func(v interface{}) (time.Time, error) {
 	return time.Time{}, err
 }
 
-var fromSec timeFunc = func(v interface{}) (time.Time, error) {
+var fromSec fromTimeFunc = func(v interface{}) (time.Time, error) {
 	return time.Unix(int64(v.(float64)), 0), nil
 }
+var toSec toTimeFunc = func(t time.Time) interface{} {
+	return t.Unix()
+}
 
-func init() {
-	utcLoc, _ := time.LoadLocation("UTC")
-	year2100Seconds = time.Date(2100, time.January, 1, 0, 0, 0, 0, utcLoc).Unix()
+const chLayout = "2006-01-02 15:04:05"
+
+var fromDateString fromTimeFunc = func(v interface{}) (time.Time, error) {
+	return time.Parse(chLayout, v.(string))
+}
+
+var toDateString toTimeFunc = func(t time.Time) interface{} {
+	return t.Format(chLayout)
 }
 
 // Converts a Timeseries into a JSON blob
@@ -106,13 +113,24 @@ func (re ResultsEnvelope) MarshalJSON() ([]byte, error) {
 		return nil, fmt.Errorf("no metadata in ResultsEnvelope")
 	}
 	tsField := re.Meta[0].Name
+	tsType := re.Meta[0].Type
+	var ttf toTimeFunc
+	if strings.HasPrefix(tsType, "DateTime") {
+		ttf = toDateString
+	} else if strings.HasSuffix(tsType, "t64") {
+		ttf = toMsString
+	} else if strings.HasSuffix(tsType, "t32") {
+		ttf = toSec
+	} else {
+		return nil, fmt.Errorf("unrecognized timestamp type")
+	}
 	rsp := &Response{
 		Meta:    re.Meta,
 		RawData: make([]ResponseValue, 0, len(re.Data)),
 		Rows:    re.ValueCount(),
 	}
 	for _, p := range re.Data {
-		rv := ResponseValue{tsField: strconv.FormatInt(p.Timestamp.UnixNano()/nanosPerMillisecond, 10)}
+		rv := ResponseValue{tsField: ttf(p.Timestamp)}
 		for k, v := range p.Values {
 			rv[k] = v
 		}
@@ -138,20 +156,16 @@ func (re *ResultsEnvelope) UnmarshalJSON(b []byte) error {
 	}
 
 	tsField := response.Meta[0].Name
-	// Determine time format based on first value
-	var tf timeFunc
-	fv := response.RawData[0][tsField]
-	switch fv.(type) {
-	case float64:
-		tvInt64 := int64(fv.(float64))
-		if tvInt64 > year2100Seconds {
-			tf = fromMs
-		} else {
-			tf = fromSec
-		}
-	case string:
-		tf = fromMsString
-	default:
+	tsType := response.Meta[0].Type
+
+	var ftf fromTimeFunc
+	if strings.HasPrefix(tsType, "DateTime") {
+		ftf = fromDateString
+	} else if strings.HasSuffix(tsType, "t64") {
+		ftf = fromMsString
+	} else if strings.HasSuffix(tsType, "t32") {
+		ftf = fromSec
+	} else {
 		return fmt.Errorf("timestamp field not of recognized type")
 	}
 
@@ -160,7 +174,7 @@ func (re *ResultsEnvelope) UnmarshalJSON(b []byte) error {
 		if !ok {
 			return fmt.Errorf("missing timestamp field in response data")
 		}
-		ts, err := tf(tv)
+		ts, err := ftf(tv)
 		if err != nil {
 			return fmt.Errorf("timestamp field does not parse to date")
 		}
