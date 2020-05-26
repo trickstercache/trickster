@@ -55,6 +55,8 @@ type TimeseriesClient interface {
 	HTTPClient() *http.Client
 	// SetCache sets the Cache object the client will use when caching origin content
 	SetCache(cache.Cache)
+	// Cache returns a handle to hte Cache object used by the client
+	Cache() cache.Cache
 	// Router returns a Router that handles HTTP Requests for this client
 	Router() http.Handler
 }
