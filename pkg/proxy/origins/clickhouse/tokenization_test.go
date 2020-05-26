@@ -17,6 +17,7 @@
 package clickhouse
 
 import (
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"testing"
 )
 
@@ -32,6 +33,17 @@ func TestFindParts(t *testing.T) {
 		t.Errorf("Find parts return incorrect number of parts")
 	}
 
+}
+
+func TestGoodQuery(t *testing.T) {
+	query := `SELECT (  intDiv(toUInt32(datetime), 300) * 300) * 1000 AS t,` +
+		` count() as cnt FROM comcast_ott_maple.atsec_chi WHERE datetime between 1589904000 AND 1589997600` +
+		` GROUP BY t ORDER BY  t DESC FORMAT JSON`
+	trq := &timeseries.TimeRangeQuery{}
+	err := parseRawQuery(query, trq)
+	if err != nil {
+		t.Error(err)
+	}
 }
 
 /*func TestGetQueryPartsFailure(t *testing.T) {
