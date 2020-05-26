@@ -37,11 +37,11 @@ const (
 	tkTimestamp2 = "<$TIMESTAMP2$>"
 )
 
-const quote = byte('\'')
-const bs = byte('\\')
-const space = byte(' ')
-const open = byte('(')
-const close = byte(')')
+const bQuote = byte('\'')
+const bBS = byte('\\')
+const bSpace = byte(' ')
+const bOpen = byte('(')
+const bClose = byte(')')
 
 const divOperation = "intDiv(toInt32("
 
@@ -76,16 +76,21 @@ var sai = strconv.Atoi
 var sup = strings.ToUpper
 
 func init() {
-
-	reTimeFieldAndStep = regexp.MustCompile(`.*intDiv\(toUInt32\((?P<timeField>[a-zA-Z0-9\._-]+)\),(?P<step>[0-9]+)\)*.+\)(?P<mult>.*)`)
+	reTimeFieldAndStep = regexp.MustCompile(`.*intDiv\(toUInt32\((?P<timeField>[a-zA-Z0-9._-]+)\),(?P<step>[0-9]+)\)*.+\)(?P<mult>.*)`)
 	reTimeClauseAlt = regexp.MustCompile(`(?i)\s+(?P<expression>(?P<operator>>=|>|=|between)\s+` +
 		`(?P<modifier>toDate(Time)?)\((?P<ts1>[0-9]+)\)(?P<timeExpr2>\s+and\s+toDate(Time)?\((?P<ts2>[0-9]+)\))?)`)
 	reTimeFuncAndStep = regexp.MustCompile(`(?i)select\s+touint32\s*\(toStartOf(?P<step>[^\s]+)\s+\(?P<timeField>*\)`)
 }
 
-func interpolateTimeQuery(template string, extent *timeseries.Extent) string {
+func interpolateTimeQuery(template string, extent *timeseries.Extent, step time.Duration) string {
+	// If we end on the very beginning of a timeslice, extend the slice to capture up to the next boundary
+	ds := int(step.Seconds())
+	endTime := int(extent.End.Unix())
+	if endTime%ds == 0 {
+		endTime += ds
+	}
 	return strings.Replace(strings.Replace(template, tkTimestamp1,
-		strconv.Itoa(int(extent.Start.Unix())), -1), tkTimestamp2, strconv.Itoa(int(extent.End.Unix())), -1)
+		strconv.Itoa(int(extent.Start.Unix())), -1), tkTimestamp2, strconv.Itoa(endTime), -1)
 }
 
 var compiledRe = make(map[string]*regexp.Regexp)
@@ -156,9 +161,10 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 		return fmt.Errorf("invalid duration parsed")
 	}
 
-	tr := " (" + tsColumn + " >= " + tkTimestamp1 + " AND " + tsColumn + " < " + tkTimestamp1 + ") "
+	tr := " (" + tsColumn + " >= " + tkTimestamp1 + " AND " + tsColumn + " < " + tkTimestamp2 + ") "
 	trq.Statement = strings.Join(parts[:qs+1], " ") + tr + strings.Join(parts[qe:], " ")
-	trq.Extent.Start = time.Unix(int64(startTime), int64(endTime))
+	trq.Extent.Start = time.Unix(int64(startTime), 0)
+	trq.Extent.End = time.Unix(int64(endTime), 0)
 	return nil
 }
 
@@ -213,34 +219,34 @@ func findParts(query string) []string {
 	for i := 0; i < size; i++ {
 		b := bytes[i]
 		if inQuote {
-			if b == quote && !escaped {
+			if b == bQuote && !escaped {
 				inQuote = false
 			}
-			escaped = !escaped && b == bs
+			escaped = !escaped && b == bBS
 			buf = append(buf, b)
 			continue
 		}
-		if b == space {
+		if b == bSpace {
 			if trimming {
 				continue
 			}
 			for i++; i < size; i++ {
 				b = bytes[i]
-				if b == close || operators[b] {
+				if b == bClose || operators[b] {
 					break
 				}
-				if b != space {
+				if b != bSpace {
 					fields = append(fields, string(buf[fieldStart:]))
-					buf = append(buf, space)
+					buf = append(buf, bSpace)
 					fieldStart = len(buf)
 					break
 				}
 			}
 		}
-		if b == quote {
+		if b == bQuote {
 			inQuote = true
 		}
-		trimming = b == open || operators[b]
+		trimming = b == bOpen || operators[b]
 		buf = append(buf, b)
 	}
 	return append(fields, string(buf[fieldStart:]))

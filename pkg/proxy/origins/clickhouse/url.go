@@ -35,11 +35,10 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 	}
 
 	p := r.URL.Query()
-	t := trq.TemplateURL.Query()
-	q := t.Get(upQuery)
+	q := trq.TemplateURL.Query().Get(upQuery)
 
 	if q != "" {
-		p.Set(upQuery, interpolateTimeQuery(q, extent))
+		p.Set(upQuery, interpolateTimeQuery(q, extent, trq.Step))
 	}
 
 	r.URL.RawQuery = p.Encode()
