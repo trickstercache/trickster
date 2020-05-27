@@ -40,4 +40,6 @@ type Client interface {
 	SetCache(cache.Cache)
 	// Router returns a Router that handles HTTP Requests for this client
 	Router() http.Handler
+	// Cache returns a handle to the Cache instance used by the Client
+	Cache() cache.Cache
 }

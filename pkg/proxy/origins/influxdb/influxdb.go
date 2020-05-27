@@ -23,9 +23,12 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
+
+var _ origins.Client = (*Client)(nil)
 
 // Client Implements the Proxy Client Interface
 type Client struct {
@@ -44,7 +47,7 @@ type Client struct {
 
 // NewClient returns a new Client Instance
 func NewClient(name string, oc *oo.Options, router http.Handler,
-	cache cache.Cache) (*Client, error) {
+	cache cache.Cache) (origins.Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
 	bur := urls.FromParts(oc.Scheme, oc.Host, oc.PathPrefix, "", "")
 	return &Client{name: name, config: oc, router: router, cache: cache,
@@ -61,7 +64,7 @@ func (c *Client) HTTPClient() *http.Client {
 	return c.webClient
 }
 
-// Cache returns and handle to the Cache instance used by the Client
+// Cache returns a handle to the Cache instance used by the Client
 func (c *Client) Cache() cache.Cache {
 	return c.cache
 }
