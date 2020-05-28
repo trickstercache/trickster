@@ -41,7 +41,7 @@ type ResponseValue map[string]interface{}
 
 type Point struct {
 	Timestamp time.Time
-	Values    ResponseValue
+	Values    []ResponseValue
 }
 
 // Response is the JSON response document structure for ClickHouse query results
@@ -72,11 +72,23 @@ var toMsString toTimeFunc = func(t time.Time) interface{} {
 }
 
 var fromMsString fromTimeFunc = func(v interface{}) (time.Time, error) {
-	msInt, err := strconv.ParseInt(v.(string), 10, 64)
-	if err == nil {
-		return time.Unix(msInt/millisPerSecond, (msInt%millisPerSecond)*nanosPerMillisecond), nil
+	var msInt int64
+	var err error
+	s, ok := v.(string)
+	if ok {
+		msInt, err = strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return time.Time{}, err
+		}
+	} else {
+		f, ok := v.(float64)
+		if !ok {
+			return time.Time{}, fmt.Errorf("unrecognized JSON type for timestamp")
+		}
+		msInt = int64(f)
 	}
-	return time.Time{}, err
+	return time.Unix(msInt/millisPerSecond, (msInt%millisPerSecond)*nanosPerMillisecond), nil
+
 }
 
 var fromSec fromTimeFunc = func(v interface{}) (time.Time, error) {
@@ -127,15 +139,19 @@ func (re ResultsEnvelope) MarshalJSON() ([]byte, error) {
 	rsp := &Response{
 		Meta:    re.Meta,
 		RawData: make([]ResponseValue, 0, len(re.Data)),
-		Rows:    re.ValueCount(),
 	}
+	rows := 0
 	for _, p := range re.Data {
-		rv := ResponseValue{tsField: ttf(p.Timestamp)}
-		for k, v := range p.Values {
-			rv[k] = v
+		rows += len(p.Values)
+		for _, sp := range p.Values {
+			rv := ResponseValue{tsField: ttf(p.Timestamp)}
+			for k, v := range sp {
+				rv[k] = v
+			}
+			rsp.RawData = append(rsp.RawData, rv)
 		}
-		rsp.RawData = append(rsp.RawData, rv)
 	}
+	rsp.Rows = rows
 	return json.Marshal(rsp)
 }
 
@@ -169,6 +185,7 @@ func (re *ResultsEnvelope) UnmarshalJSON(b []byte) error {
 		return fmt.Errorf("timestamp field not of recognized type")
 	}
 
+	pMap := make(map[int64]*Point)
 	for _, v := range response.RawData {
 		tv, ok := v[tsField]
 		if !ok {
@@ -179,7 +196,16 @@ func (re *ResultsEnvelope) UnmarshalJSON(b []byte) error {
 			return fmt.Errorf("timestamp field does not parse to date")
 		}
 		delete(v, tsField)
-		re.Data = append(re.Data, Point{Timestamp: ts, Values: v})
+		pk := ts.Unix()
+		p, ok := pMap[pk]
+		if !ok {
+			p = &Point{Timestamp: ts}
+			pMap[pk] = p
+		}
+		p.Values = append(p.Values, v)
+	}
+	for _, p := range pMap {
+		re.Data = append(re.Data, *p)
 	}
 	re.Sort()
 	return nil

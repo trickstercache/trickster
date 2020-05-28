@@ -29,8 +29,8 @@ func TestFindParts(t *testing.T) {
 		` count() as cnt FROM comcast_ott_maple.atsec_chi WHERE datetime >= 1589904000 AND datetime < 1589997600)` +
 		` GROUP BY t ORDER BY  t DESC FORMAT JSON`
 	parts := findParts(query)
-	if len(parts) != 30 {
-		t.Errorf("Find parts return incorrect number of parts")
+	if len(parts) != 27 {
+		t.Errorf("Find parts returned %d, expected %d incorrect number of parts", len(parts), 30)
 	}
 
 }

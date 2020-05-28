@@ -40,7 +40,7 @@ func (re *ResultsEnvelope) addPoint(ts int, values ...interface{}) *ResultsEnvel
 	for i := 0; i < len(re.Meta)-1; i++ {
 		v[re.Meta[i+1].Name] = values[i]
 	}
-	re.Data = append(re.Data, Point{Timestamp: time.Unix(int64(ts), 0), Values: v})
+	re.Data = append(re.Data, Point{Timestamp: time.Unix(int64(ts), 0), Values: []ResponseValue{v}})
 	return re
 }
 
@@ -77,7 +77,7 @@ var testJSONInt32 = `{"meta":[{"name":"t","type":"UInt32"},{"name":"cnt","type":
 	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":1557766680},` +
 	`{"cnt":"1","meta1":206,"meta2":"value3","t":1557767280}],"rows":3}`
 
-var testJSONInt64 = `{"meta":[{"name":"t","type":"UInt32"},{"name":"cnt","type":"UInt64"},` +
+var testJSONInt64 = `{"meta":[{"name":"t","type":"UInt64"},{"name":"cnt","type":"UInt64"},` +
 	`{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],` +
 	`"data":[{"cnt":"12648509","meta1":200,"meta2":"value2","t":1557766080000},` +
 	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":1557766680000},` +
@@ -176,30 +176,35 @@ func TestUnmarshalValidJSON(t *testing.T) {
 		t.Errorf(`expected 3. got %d`, len(re.Data))
 		return
 	}
-	if re.Data[0].Values["cnt"] != "12648509" {
-		t.Errorf(`expected 1 got %s`, re.Data[0].Values["cnt"])
+	if re.Data[0].Values[0]["cnt"] != "12648509" {
+		t.Errorf(`expected 1 got %s`, re.Data[0].Values[0]["cnt"])
 		return
 	}
 
 	err = re.UnmarshalJSON([]byte(testJSONInt32))
 	if err != nil {
 		t.Error(err)
+		return
 	}
 	if re.Data[0].Timestamp != time.Unix(1557766080, 0) {
 		t.Errorf("incorrect timestamp for point %v", re.Data[0])
+		return
 	}
 
 	err = re.UnmarshalJSON([]byte(testJSONInt64))
 	if err != nil {
 		t.Error(err)
+		return
 	}
 	if re.Data[1].Timestamp != time.Unix(1557766680, 0) {
 		t.Errorf("incorrect timestamp for point %v", re.Data[1])
+		return
 	}
 
 	err = re.UnmarshalJSON([]byte(testEmptyJSON))
 	if err != nil {
 		t.Error(err)
+		return
 	}
 }
 
@@ -228,7 +233,7 @@ func TestUnmarshallBadJSON(t *testing.T) {
 		})
 	}
 	test("no json data", "", "unexpected end of JSON input")
-	test("missing timestamp field", testMissingTimestampJSON, "missing timestamp field in response data")
+	test("missing timestamp field", testMissingTimestampJSON, "timestamp field not of recognized type")
 	test("bad type timestamp field", testNullTimestampJSON, "timestamp field not of recognized type")
-	test("invalid timestamp field", testInvalidTimestampJSON, "timestamp field does not parse to date")
+	test("invalid timestamp field", testInvalidTimestampJSON, "timestamp field not of recognized type")
 }

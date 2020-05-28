@@ -86,9 +86,13 @@ func (re *ResultsEnvelope) Clone() timeseries.Timeseries {
 	if re.Data != nil {
 		re2.Data = make([]Point, 0)
 		for _, p1 := range re.Data {
-			p2 := Point{Timestamp: p1.Timestamp, Values: make(map[string]interface{})}
-			for l, v := range p1.Values {
-				p2.Values[l] = v
+			p2 := Point{Timestamp: p1.Timestamp}
+			for _, rv := range p1.Values {
+				pm := ResponseValue{}
+				for k, v := range rv {
+					pm[k] = v
+				}
+				p2.Values = append(p2.Values, pm)
 			}
 			re2.Data = append(re2.Data, p2)
 		}
@@ -297,8 +301,10 @@ func (re *ResultsEnvelope) Size() int {
 
 	for _, p := range re.Data {
 		size += 8 // Timestamp guess
-		for k := range p.Values {
-			size += len(k) + 16 // Key length + values guess
+		for _, rv := range p.Values {
+			for k2 := range rv {
+				size += len(k2) + 16 // Key length + values guess
+			}
 		}
 	}
 

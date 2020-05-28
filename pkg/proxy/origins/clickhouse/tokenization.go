@@ -62,7 +62,7 @@ var timeFuncMap = map[string]string{
 	"toDate":                  "1d",
 }
 
-var reTimeFieldAndStep = regexp.MustCompile(`.*intDiv\(toUInt32\((?P<timeField>[a-zA-Z0-9._-]+)\),(?P<step>[0-9]+)\)*.+\)(?P<mult>.*)`)
+var reTimeFieldAndStep = regexp.MustCompile(`.*intDiv\(toU?Int32\((?P<timeField>[a-zA-Z0-9._-]+)\),(?P<step>[0-9]+)\)`)
 
 var srm = func(str, old string) string {
 	return strings.Replace(str, old, "", -1)
@@ -71,12 +71,7 @@ var srm = func(str, old string) string {
 var sup = strings.ToUpper
 
 func interpolateTimeQuery(template string, extent *timeseries.Extent, step time.Duration) string {
-	// If we end on the very beginning of a time slice, extend the slice to capture up to the next boundary
-	ds := int(step.Seconds())
-	endTime := int(extent.End.Unix())
-	if endTime%ds == 0 {
-		endTime += ds
-	}
+	endTime := int(extent.End.Unix()) + int(step.Seconds()) // Add step to normalized end time
 	return strings.Replace(strings.Replace(template, tkTimestamp1,
 		strconv.Itoa(int(extent.Start.Unix())), -1), tkTimestamp2, strconv.Itoa(endTime), -1)
 }
@@ -94,7 +89,8 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 	}
 
 	var tsColumn, tsAlias string
-	var startTime, endTime, qs, qe int
+	var startTime, endTime, whereStart int
+	var whereClause []string
 	for i := 0; i < size; i++ {
 		p := parts[i]
 		if sup(p) == "SELECT" && tsColumn == "" {
@@ -137,13 +133,12 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 			continue
 		}
 		if tsColumn != "" && (sup(parts[i]) == "PREWHERE" || sup(parts[i]) == "WHERE") {
-			startTime, endTime, qe, tsColumn, err = findRange(parts[i+1:], tsColumn, tsAlias)
+			startTime, endTime, whereClause, tsColumn, err = findRange(parts[i+1:], tsColumn, tsAlias)
 			if err != nil {
 				return err
 			}
 			if startTime > 0 {
-				qs = i
-				qe += i + 2
+				whereStart = i
 				break
 			}
 		}
@@ -160,15 +155,29 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 	if err != nil {
 		return fmt.Errorf("invalid duration parsed")
 	}
-
-	tr := " (" + tsColumn + " >= " + tkTimestamp1 + " AND " + tsColumn + " < " + tkTimestamp2 + ") "
-	trq.Statement = strings.Join(parts[:qs+1], " ") + tr + strings.Join(parts[qe:], " ")
+	trq.Statement = strings.Join(parts[:whereStart+1], " ") + " " + strings.Join(whereClause, " ")
 	trq.Extent.Start = time.Unix(int64(startTime), 0)
+	trq.TimestampFieldName = tsColumn
+
+	now := int(time.Now().Unix())
+	if endTime == 0 {
+		endTime = now
+	}
+
+	// Pad out endTime if we are in the "now" bucket so the last extent is not truncated
+	step := int(trq.Step.Seconds())
+	norm := now / step * step
+	if endTime > norm {
+		endTime = norm + step
+	}
 	trq.Extent.End = time.Unix(int64(endTime), 0)
 	return nil
 }
 
 func parseTime(s string) (int, error) {
+	if s == "now()" {
+		return int(time.Now().Unix()), nil
+	}
 	ts := srm(srm(srm(s, "toDateTime("), "toDate("), ")")
 	t, err := strconv.Atoi(ts)
 	if err == nil {
@@ -181,48 +190,76 @@ func parseTime(s string) (int, error) {
 	return 0, err
 }
 
-func findRange(parts []string, column string, alias string) (int, int, int, string, error) {
+func findRange(parts []string, column string, alias string) (int, int, []string, string, error) {
 	var err error
 	var st, et int
+	var actColumn string
 	size := len(parts)
-	for i := 1; i < size; i++ {
+	var wc = make([]string, 0, size)
+	for i := 0; i < size; i++ {
 		p := parts[i]
 		if strings.ToUpper(p) == "BETWEEN" {
 			f := parts[i-1]
 			if f == column || f == alias {
+				actColumn = f
 				i++
 				st, err = parseTime(parts[i])
 				if err != nil {
-					return st, et, 0, "", err
+					return st, et, nil, "", err
 				}
 				i++
 				if sup(parts[i]) != "AND" {
-					return st, et, 0, "", fmt.Errorf("unrecognized between clause")
+					return st, et, nil, "", fmt.Errorf("unrecognized between clause")
 				}
 				i++
 				et, err = parseTime(parts[i])
 				if err != nil {
-					return st, et, 0, "", err
+					return st, et, nil, "", err
 				}
-				return st, et, i, f, nil
+				wc = append(wc, "("+actColumn+" >= "+tkTimestamp1+" AND "+actColumn+" < "+tkTimestamp2+") ")
+				wc = append(wc, parts[i+1:]...)
+				return st, et, wc, actColumn, nil
 			}
 		}
-		tl := strings.Index(p, column+">")
+		pSize := len(p)
+		tl := strings.Index(p, column)
 		if tl == -1 {
-			tl = strings.Index(p, alias+">")
+			tl = strings.Index(p, alias)
 			if tl == -1 {
+				wc = append(wc, p)
 				continue
+			} else {
+				tl += len(alias)
+				actColumn = alias
 			}
+		} else {
+			tl += len(column)
+			actColumn = column
 		}
-		if parts[tl+1] == "=" {
-			tl++
-		}
-		st, err = parseTime(p[tl:])
-		if err != nil {
-			return st, et, 0, "", err
+
+		if tl < pSize && p[tl] == '>' {
+			if tl < pSize+1 && p[tl+1] == '=' {
+				tl++
+			}
+			st, err = parseTime(p[tl+1:])
+			if err != nil {
+				return st, et, nil, "", err
+			}
+			wc = append(wc, actColumn+" >= "+tkTimestamp1)
+		} else if tl < pSize && p[tl] == '<' {
+			if tl < pSize+1 && p[tl+1] == '=' {
+				tl++
+			}
+			et, err = parseTime(p[tl+1:])
+			if err != nil {
+				return st, et, nil, "", err
+			}
+			wc = append(wc, actColumn+" < "+tkTimestamp2)
+		} else {
+			wc = append(wc, p)
 		}
 	}
-	return st, et, 0, "", nil
+	return st, et, wc, actColumn, nil
 }
 
 func findParts(query string) []string {

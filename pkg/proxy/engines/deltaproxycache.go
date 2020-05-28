@@ -81,6 +81,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	// this is used to ensure the head of the cache respects the BackFill Tolerance
 	bf := timeseries.Extent{Start: time.Unix(0, 0), End: trq.Extent.End}
 
+	if !trq.IsOffset && oc.BackfillTolerance < 0 {
+		bf.End = bf.End.Add(-trq.Step + oc.BackfillTolerance + 1)
+	}
 	if !trq.IsOffset && oc.BackfillTolerance > 0 {
 		bf.End = bf.End.Add(-oc.BackfillTolerance)
 	}
