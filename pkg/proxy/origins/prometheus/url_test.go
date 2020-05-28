@@ -100,7 +100,7 @@ func TestFastForwardURL(t *testing.T) {
 	b := bytes.NewBufferString(expected)
 	r, _ = http.NewRequest(http.MethodPost, u2.String(), b)
 
-	u2, err = client.FastForwardURL(r)
+	_, err = client.FastForwardURL(r)
 	if err != nil {
 		t.Error(err)
 	}

@@ -39,14 +39,14 @@ const (
 type Flags struct {
 	PrintVersion      bool
 	ValidateConfig    bool
-	ConfigPath        string
 	customPath        bool
-	Origin            string
-	OriginType        string
 	ProxyListenPort   int
 	MetricsListenPort int
-	LogLevel          string
 	InstanceID        int
+	ConfigPath        string
+	Origin            string
+	OriginType        string
+	LogLevel          string
 }
 
 func parseFlags(applicationName string, arguments []string) (*Flags, error) {

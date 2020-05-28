@@ -119,5 +119,5 @@ func GetTracer(options *options.Options, log *tl.Logger, isDryRun bool) (*tracin
 		return zipkin.NewTracer(options)
 	}
 
-	return noop.NewTracer(options)
+	return nil, nil
 }

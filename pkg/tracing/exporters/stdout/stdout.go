@@ -24,6 +24,7 @@ import (
 
 	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/exporters/trace/stdout"
+	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
@@ -79,7 +80,7 @@ func NewTracer(opts *options.Options) (*tracing.Tracer, error) {
 
 	tp, err := sdktrace.NewProvider(sdktrace.WithSyncer(exp),
 		sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sampler}),
-		sdktrace.WithResourceAttributes(tags...),
+		sdktrace.WithResource(resource.New(tags...)),
 	)
 	if err != nil {
 		return nil, err

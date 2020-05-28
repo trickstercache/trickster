@@ -158,15 +158,17 @@ func handleCacheRevalidation(pr *proxyRequest) error {
 	rsc := request.GetResources(pr.Request)
 
 	ctx, span := tspan.NewChildSpan(pr.Request.Context(), rsc.Tracer, "CacheRevalidation")
-	defer func() {
-		reval := revalidationStatusValues[pr.revalidation]
-		span.AddEvent(
-			ctx,
-			"Complete",
-			kv.String("result", reval),
-		)
-		span.End()
-	}()
+	if span != nil {
+		defer func() {
+			reval := revalidationStatusValues[pr.revalidation]
+			span.AddEvent(
+				ctx,
+				"Complete",
+				kv.String("result", reval),
+			)
+			span.End()
+		}()
+	}
 
 	pr.revalidation = RevalStatusInProgress
 
@@ -228,10 +230,8 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 		pr.cacheStatus = status.LookupStatusNegativeCacheHit
 	}
 
-	d.headerLock.Lock()
 	pr.upstreamResponse = &http.Response{StatusCode: d.StatusCode, Request: pr.Request,
-		Header: http.Header(d.Headers).Clone()}
-	d.headerLock.Unlock()
+		Header: d.SafeHeaderClone()}
 	if pr.wantsRanges {
 		h, b := d.RangeParts.ExtractResponseRange(pr.wantedRanges, d.ContentLength, d.ContentType, d.Body)
 		headers.Merge(pr.upstreamResponse.Header, h)
@@ -282,7 +282,7 @@ func handlePCF(pr *proxyRequest) error {
 	oc := rsc.OriginConfig
 
 	pr.isPCF = true
-	pcfResult, pcfExists := Reqs.Load(pr.key)
+	pcfResult, pcfExists := reqs.Load(pr.key)
 	// a PCF session is in progress for this URL, join this client to it.
 	if pcfExists {
 		pr.cacheLock.Release()
@@ -310,7 +310,7 @@ func handlePCF(pr *proxyRequest) error {
 	// Check if we know the content length and if it is less than our max object size.
 	if contentLength > 0 && contentLength < int64(oc.MaxObjectSizeBytes) {
 		pcf := NewPCF(resp, contentLength)
-		Reqs.Store(pr.key, pcf)
+		reqs.Store(pr.key, pcf)
 		// Blocks until server completes
 
 		pr.cachingPolicy.Merge(GetResponseCachingPolicy(pr.upstreamResponse.StatusCode,
@@ -325,7 +325,7 @@ func handlePCF(pr *proxyRequest) error {
 			}
 			io.Copy(dest, reader)
 			pcf.Close()
-			Reqs.Delete(pr.key)
+			reqs.Delete(pr.key)
 		}()
 
 		pcf.AddClient(pr.responseWriter)
@@ -395,7 +395,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	pr.key = oc.CacheKeyPrefix + ".opc." + pr.DeriveCacheKey(nil, "")
 
 	// if a PCF entry exists, or the client requested no-cache for this object, proxy out to it
-	pcfResult, pcfExists := Reqs.Load(pr.key)
+	pcfResult, pcfExists := reqs.Load(pr.key)
 	pr.isPCF = methods.IsCacheable(pr.Method) && pcfExists && !pr.wantsRanges
 
 	if pr.isPCF || pr.cachingPolicy.NoCache {
@@ -418,7 +418,8 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	}
 
 	var err error
-	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges)
+	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err =
+		QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges)
 	if err == nil || err == cache.ErrKNF {
 		if f, ok := cacheResponseHandlers[pr.cacheStatus]; ok {
 			f(pr)

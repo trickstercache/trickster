@@ -93,21 +93,6 @@ func (z *CachingPolicy) DecodeMsg(dc *msgp.Reader) (err error) {
 			if err != nil {
 				return
 			}
-		case "if_none_match_value":
-			z.IfNoneMatchValue, err = dc.ReadString()
-			if err != nil {
-				return
-			}
-		case "if_modified_since_time":
-			z.IfModifiedSinceTime, err = dc.ReadTime()
-			if err != nil {
-				return
-			}
-		case "if_unmodified_since_time":
-			z.IfUnmodifiedSinceTime, err = dc.ReadTime()
-			if err != nil {
-				return
-			}
 		case "is_negative_cache":
 			z.IsNegativeCache, err = dc.ReadBool()
 			if err != nil {
@@ -125,9 +110,9 @@ func (z *CachingPolicy) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 15
+	// map header, size 12
 	// write "is_fresh"
-	err = en.Append(0x8f, 0xa8, 0x69, 0x73, 0x5f, 0x66, 0x72, 0x65, 0x73, 0x68)
+	err = en.Append(0x8c, 0xa8, 0x69, 0x73, 0x5f, 0x66, 0x72, 0x65, 0x73, 0x68)
 	if err != nil {
 		return
 	}
@@ -225,33 +210,6 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	// write "if_none_match_value"
-	err = en.Append(0xb3, 0x69, 0x66, 0x5f, 0x6e, 0x6f, 0x6e, 0x65, 0x5f, 0x6d, 0x61, 0x74, 0x63, 0x68, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
-	if err != nil {
-		return
-	}
-	err = en.WriteString(z.IfNoneMatchValue)
-	if err != nil {
-		return
-	}
-	// write "if_modified_since_time"
-	err = en.Append(0xb6, 0x69, 0x66, 0x5f, 0x6d, 0x6f, 0x64, 0x69, 0x66, 0x69, 0x65, 0x64, 0x5f, 0x73, 0x69, 0x6e, 0x63, 0x65, 0x5f, 0x74, 0x69, 0x6d, 0x65)
-	if err != nil {
-		return
-	}
-	err = en.WriteTime(z.IfModifiedSinceTime)
-	if err != nil {
-		return
-	}
-	// write "if_unmodified_since_time"
-	err = en.Append(0xb8, 0x69, 0x66, 0x5f, 0x75, 0x6e, 0x6d, 0x6f, 0x64, 0x69, 0x66, 0x69, 0x65, 0x64, 0x5f, 0x73, 0x69, 0x6e, 0x63, 0x65, 0x5f, 0x74, 0x69, 0x6d, 0x65)
-	if err != nil {
-		return
-	}
-	err = en.WriteTime(z.IfUnmodifiedSinceTime)
-	if err != nil {
-		return
-	}
 	// write "is_negative_cache"
 	err = en.Append(0xb1, 0x69, 0x73, 0x5f, 0x6e, 0x65, 0x67, 0x61, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x63, 0x61, 0x63, 0x68, 0x65)
 	if err != nil {
@@ -267,9 +225,9 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 // MarshalMsg implements msgp.Marshaler
 func (z *CachingPolicy) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 15
+	// map header, size 12
 	// string "is_fresh"
-	o = append(o, 0x8f, 0xa8, 0x69, 0x73, 0x5f, 0x66, 0x72, 0x65, 0x73, 0x68)
+	o = append(o, 0x8c, 0xa8, 0x69, 0x73, 0x5f, 0x66, 0x72, 0x65, 0x73, 0x68)
 	o = msgp.AppendBool(o, z.IsFresh)
 	// string "nocache"
 	o = append(o, 0xa7, 0x6e, 0x6f, 0x63, 0x61, 0x63, 0x68, 0x65)
@@ -301,15 +259,6 @@ func (z *CachingPolicy) MarshalMsg(b []byte) (o []byte, err error) {
 	// string "etag"
 	o = append(o, 0xa4, 0x65, 0x74, 0x61, 0x67)
 	o = msgp.AppendString(o, z.ETag)
-	// string "if_none_match_value"
-	o = append(o, 0xb3, 0x69, 0x66, 0x5f, 0x6e, 0x6f, 0x6e, 0x65, 0x5f, 0x6d, 0x61, 0x74, 0x63, 0x68, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
-	o = msgp.AppendString(o, z.IfNoneMatchValue)
-	// string "if_modified_since_time"
-	o = append(o, 0xb6, 0x69, 0x66, 0x5f, 0x6d, 0x6f, 0x64, 0x69, 0x66, 0x69, 0x65, 0x64, 0x5f, 0x73, 0x69, 0x6e, 0x63, 0x65, 0x5f, 0x74, 0x69, 0x6d, 0x65)
-	o = msgp.AppendTime(o, z.IfModifiedSinceTime)
-	// string "if_unmodified_since_time"
-	o = append(o, 0xb8, 0x69, 0x66, 0x5f, 0x75, 0x6e, 0x6d, 0x6f, 0x64, 0x69, 0x66, 0x69, 0x65, 0x64, 0x5f, 0x73, 0x69, 0x6e, 0x63, 0x65, 0x5f, 0x74, 0x69, 0x6d, 0x65)
-	o = msgp.AppendTime(o, z.IfUnmodifiedSinceTime)
 	// string "is_negative_cache"
 	o = append(o, 0xb1, 0x69, 0x73, 0x5f, 0x6e, 0x65, 0x67, 0x61, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x63, 0x61, 0x63, 0x68, 0x65)
 	o = msgp.AppendBool(o, z.IsNegativeCache)
@@ -387,21 +336,6 @@ func (z *CachingPolicy) UnmarshalMsg(bts []byte) (o []byte, err error) {
 			if err != nil {
 				return
 			}
-		case "if_none_match_value":
-			z.IfNoneMatchValue, bts, err = msgp.ReadStringBytes(bts)
-			if err != nil {
-				return
-			}
-		case "if_modified_since_time":
-			z.IfModifiedSinceTime, bts, err = msgp.ReadTimeBytes(bts)
-			if err != nil {
-				return
-			}
-		case "if_unmodified_since_time":
-			z.IfUnmodifiedSinceTime, bts, err = msgp.ReadTimeBytes(bts)
-			if err != nil {
-				return
-			}
 		case "is_negative_cache":
 			z.IsNegativeCache, bts, err = msgp.ReadBoolBytes(bts)
 			if err != nil {
@@ -420,6 +354,6 @@ func (z *CachingPolicy) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *CachingPolicy) Msgsize() (s int) {
-	s = 1 + 9 + msgp.BoolSize + 8 + msgp.BoolSize + 12 + msgp.BoolSize + 19 + msgp.IntSize + 15 + msgp.BoolSize + 16 + msgp.BoolSize + 14 + msgp.TimeSize + 8 + msgp.TimeSize + 5 + msgp.TimeSize + 11 + msgp.TimeSize + 5 + msgp.StringPrefixSize + len(z.ETag) + 20 + msgp.StringPrefixSize + len(z.IfNoneMatchValue) + 23 + msgp.TimeSize + 25 + msgp.TimeSize + 18 + msgp.BoolSize
+	s = 1 + 9 + msgp.BoolSize + 8 + msgp.BoolSize + 12 + msgp.BoolSize + 19 + msgp.IntSize + 15 + msgp.BoolSize + 16 + msgp.BoolSize + 14 + msgp.TimeSize + 8 + msgp.TimeSize + 5 + msgp.TimeSize + 11 + msgp.TimeSize + 5 + msgp.StringPrefixSize + len(z.ETag) + 18 + msgp.BoolSize
 	return
 }

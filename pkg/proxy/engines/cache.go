@@ -56,10 +56,6 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		mc := c.(cache.MemoryCache)
 		var ifc interface{}
 		ifc, lookupStatus, err = mc.RetrieveReference(key, true)
-		// normalize any cache miss errors to cache.ErrKNF.
-		if err != nil && err != cache.ErrKNF && strings.HasSuffix(err.Error(), "not in cache") {
-			err = cache.ErrKNF
-		}
 
 		if err != nil || (lookupStatus != status.LookupStatusHit) {
 			var nr byterange.Ranges
@@ -115,6 +111,10 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 		_, err = d.UnmarshalMsg(bytes)
 		if err != nil {
+			rsc.Logger.Error("error unmarshaling cache document", tl.Pairs{
+				"cacheKey": key,
+				"detail":   err.Error(),
+			})
 			tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", status.LookupStatusKeyMiss.String()))
 			return d, status.LookupStatusKeyMiss, ranges, err
 		}
@@ -170,24 +170,26 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		defer span.End()
 	}
 
+	d.headerLock.Lock()
 	h := http.Header(d.Headers)
 	h.Del(headers.NameDate)
 	h.Del(headers.NameTransferEncoding)
 	h.Del(headers.NameContentRange)
 	h.Del(headers.NameTricksterResult)
+	ce := h.Get(headers.NameContentEncoding)
+	d.headerLock.Unlock()
 
 	var bytes []byte
-
+	var err error
 	var compress bool
 
-	if ce := http.Header(d.Headers).Get(headers.NameContentEncoding); (ce == "" || ce == "identity") &&
+	if (ce == "" || ce == "identity") &&
 		(d.CachingPolicy == nil || !d.CachingPolicy.NoTransform) {
 		if mt, _, err := mime.ParseMediaType(d.ContentType); err == nil {
 			if _, ok := compressTypes[mt]; ok {
 				compress = true
 			}
 		}
-
 	}
 
 	// for memory cache, don't serialize the document, since we can retrieve it by reference.
@@ -210,7 +212,13 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 	}
 
 	// for non-memory, we have to seralize the document to a byte slice to store
-	bytes, _ = d.MarshalMsg(nil)
+	bytes, err = d.MarshalMsg(nil)
+	if err != nil {
+		rsc.Logger.Error("error marshaling cache document", tl.Pairs{
+			"cacheKey": key,
+			"detail":   err.Error(),
+		})
+	}
 
 	if compress {
 		rsc.Logger.Debug("compressing cache data", tl.Pairs{"cacheKey": key})
@@ -219,7 +227,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		bytes = append([]byte{0}, bytes...)
 	}
 
-	err := c.Store(key, bytes, ttl)
+	err = c.Store(key, bytes, ttl)
 	if err != nil {
 		if span != nil {
 			span.AddEvent(
@@ -250,10 +258,14 @@ func DocumentFromHTTPResponse(resp *http.Response, body []byte, cp *CachingPolic
 	d.ContentLength = resp.ContentLength
 
 	if resp.Header != nil {
+		d.headerLock.Lock()
 		d.Headers = resp.Header.Clone()
+		d.headerLock.Unlock()
 	}
 
+	d.headerLock.Lock()
 	ct := http.Header(d.Headers).Get(headers.NameContentType)
+	d.headerLock.Unlock()
 	if !strings.HasPrefix(ct, headers.ValueMultipartByteRanges) {
 		d.ContentType = ct
 	}

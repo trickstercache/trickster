@@ -56,21 +56,14 @@ type Options struct {
 	ResponseCode int `toml:"response_code"`
 	// ResponseBody sets a custom response body to be sent to the donstream client for this path.
 	ResponseBody string `toml:"response_body"`
-	// NoMetrics, when set to true, disables metrics decoration for the path
-	NoMetrics bool `toml:"no_metrics"`
 	// CollapsedForwardingName indicates 'basic' or 'progressive' Collapsed Forwarding to be used by this path.
 	CollapsedForwardingName string `toml:"collapsed_forwarding"`
 	// ReqRewriterName is the name of a configured Rewriter that will modify the request prior to
 	// processing by the origin client
 	ReqRewriterName string `toml:"req_rewriter_name"`
 
-	// Synthesized Options Values
-	//
 	// Handler is the HTTP Handler represented by the Path's HandlerName
 	Handler http.Handler `toml:"-"`
-	// HasCustomResponseBody is a boolean indicating if the response body is custom
-	// this flag allows an empty string response to be configured as a return value
-	HasCustomResponseBody bool `toml:"-"`
 	// ResponseBodyBytes provides a byte slice version of the ResponseBody value
 	ResponseBodyBytes []byte `toml:"-"`
 	// MatchType is the PathMatchType representation of MatchTypeName
@@ -85,6 +78,12 @@ type Options struct {
 	Custom []string `toml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
 	ReqRewriter rewriter.RewriteInstructions
+
+	// NoMetrics, when set to true, disables metrics decoration for the path
+	NoMetrics bool `toml:"no_metrics"`
+	// HasCustomResponseBody is a boolean indicating if the response body is custom
+	// this flag allows an empty string response to be configured as a return value
+	HasCustomResponseBody bool `toml:"-"`
 }
 
 // NewOptions returns a newly-instantiated *Options

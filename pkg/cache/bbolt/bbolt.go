@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/index"
 	"github.com/tricksterproxy/trickster/pkg/cache/metrics"
 	"github.com/tricksterproxy/trickster/pkg/cache/options"
@@ -32,15 +33,14 @@ import (
 	"github.com/coreos/bbolt"
 )
 
-var lockPrefix string
-
 // Cache describes a BBolt Cache
 type Cache struct {
-	Name   string
-	Config *options.Options
-	Logger *log.Logger
-	Index  *index.Index
-	locker locks.NamedLocker
+	Name       string
+	Config     *options.Options
+	Logger     *log.Logger
+	Index      *index.Index
+	locker     locks.NamedLocker
+	lockPrefix string
 
 	dbh *bbolt.DB
 }
@@ -64,7 +64,7 @@ func (c *Cache) Configuration() *options.Options {
 func (c *Cache) Connect() error {
 	c.Logger.Info("bbolt cache setup", log.Pairs{"name": c.Name, "cacheFile": c.Config.BBolt.Filename})
 
-	lockPrefix = c.Name + ".bbolt."
+	c.lockPrefix = c.Name + ".bbolt."
 
 	var err error
 	c.dbh, err = bbolt.Open(c.Config.BBolt.Filename, 0644, &bbolt.Options{Timeout: 1 * time.Second})
@@ -109,7 +109,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 	metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
 
 	o := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
-	nl, _ := c.locker.Acquire(lockPrefix + cacheKey)
+	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
 	err := writeToBBolt(c.dbh, c.Config.BBolt.Bucket, cacheKey, o.ToBytes())
 	nl.Release()
 	if err != nil {
@@ -139,15 +139,15 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 func (c *Cache) retrieve(cacheKey string, allowExpired bool,
 	atime bool) ([]byte, status.LookupStatus, error) {
 
-	nl, _ := c.locker.RAcquire(lockPrefix + cacheKey)
+	nl, _ := c.locker.RAcquire(c.lockPrefix + cacheKey)
 	var data []byte
 	err := c.dbh.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
 		data = b.Get([]byte(cacheKey))
 		if data == nil {
 			c.Logger.Debug("bbolt cache miss", log.Pairs{"key": cacheKey})
-			_, cme := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
-			return cme
+			metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+			return cache.ErrKNF
 		}
 		return nil
 	})
@@ -181,8 +181,8 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool,
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
 	go c.remove(cacheKey, false)
-	b, err := metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
-	return b, status.LookupStatusKeyMiss, err
+	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 }
 
 // SetTTL updates the TTL for the provided cache object
@@ -196,7 +196,7 @@ func (c *Cache) Remove(cacheKey string) {
 }
 
 func (c *Cache) remove(cacheKey string, isBulk bool) error {
-	nl, _ := c.locker.Acquire(lockPrefix + cacheKey)
+	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
 	err := c.dbh.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
 		return b.Delete([]byte(cacheKey))

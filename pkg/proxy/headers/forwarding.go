@@ -275,8 +275,8 @@ const v6LB = `["`
 const v6RB = `"]`
 
 func normalizeAddress(input string) string {
-	strings.TrimPrefix(input, v6LB)
-	strings.TrimSuffix(input, v6RB)
+	input = strings.TrimPrefix(input, v6LB)
+	input = strings.TrimSuffix(input, v6RB)
 	return input
 }
 

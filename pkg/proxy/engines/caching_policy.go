@@ -31,31 +31,31 @@ import (
 
 // CachingPolicy defines the attributes for determining the cachability of an HTTP object
 type CachingPolicy struct {
-	IsFresh           bool      `msg:"is_fresh"`
-	NoCache           bool      `msg:"nocache"`
-	NoTransform       bool      `msg:"notransform"`
-	FreshnessLifetime int       `msg:"freshness_lifetime"`
-	CanRevalidate     bool      `msg:"can_revalidate"`
-	MustRevalidate    bool      `msg:"must_revalidate"`
-	LastModified      time.Time `msg:"last_modified"`
-	Expires           time.Time `msg:"expires"`
-	Date              time.Time `msg:"date"`
-	LocalDate         time.Time `msg:"local_date"`
-	ETag              string    `msg:"etag"`
-
-	IsNegativeCache bool `msg:"is_negative_cache"`
-
-	IfNoneMatchValue      string    `msg:"-"`
-	IfModifiedSinceTime   time.Time `msg:"-"`
-	IfUnmodifiedSinceTime time.Time `msg:"-"`
-
+	IsFresh              bool `msg:"is_fresh"`
+	NoCache              bool `msg:"nocache"`
+	NoTransform          bool `msg:"notransform"`
+	CanRevalidate        bool `msg:"can_revalidate"`
+	MustRevalidate       bool `msg:"must_revalidate"`
+	IsNegativeCache      bool `msg:"is_negative_cache"`
 	IsClientConditional  bool `msg:"-"`
 	IsClientFresh        bool `msg:"-"`
 	HasIfModifiedSince   bool `msg:"-"`
 	HasIfUnmodifiedSince bool `msg:"-"`
 	HasIfNoneMatch       bool `msg:"-"`
+	IfNoneMatchResult    bool `msg:"-"`
 
-	IfNoneMatchResult bool `msg:"-"`
+	FreshnessLifetime int `msg:"freshness_lifetime"`
+
+	LastModified time.Time `msg:"last_modified"`
+	Expires      time.Time `msg:"expires"`
+	Date         time.Time `msg:"date"`
+	LocalDate    time.Time `msg:"local_date"`
+
+	ETag string `msg:"etag"`
+
+	IfNoneMatchValue      string    `msg:"-"`
+	IfModifiedSinceTime   time.Time `msg:"-"`
+	IfUnmodifiedSinceTime time.Time `msg:"-"`
 }
 
 // Clone returns an exact copy of the Caching Policy

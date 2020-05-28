@@ -52,3 +52,7 @@ func (c *TestClient) Router() http.Handler {
 }
 
 func (c *TestClient) SetCache(cc cache.Cache) {}
+
+func (c *TestClient) Cache() cache.Cache {
+	return nil
+}

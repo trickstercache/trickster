@@ -272,7 +272,8 @@ func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
 
 func TestDeriveCacheKeyNilURL(t *testing.T) {
 
-	_, w, r, _, _ := tu.NewTestInstance("", nil, 0, "", nil, "rpc", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", "INFO")
+	_, w, r, _, _ := tu.NewTestInstance("", nil, 0, "", nil, "rpc",
+		"http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", "INFO")
 
 	pr := newProxyRequest(r, w)
 	pr.upstreamRequest.URL = nil

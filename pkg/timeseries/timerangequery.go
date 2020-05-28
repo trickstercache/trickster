@@ -19,6 +19,7 @@ package timeseries
 import (
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,14 +34,14 @@ type TimeRangeQuery struct {
 	Extent Extent
 	// Step indicates the amount of time in seconds between each datapoint in a TimeRangeQuery's resulting timeseries
 	Step time.Duration
-	// IsOffset is true if the query uses a relative offset modifier
-	IsOffset bool
 	// TimestampFieldName indicates the database field name for the timestamp field
 	TimestampFieldName string
-	// FastForwardDisable indicates whether the Time Range Query result should include fast forward data
-	FastForwardDisable bool
 	// TemplateURL is used by some Origin Types for templatization of url parameters containing timestamps
 	TemplateURL *url.URL
+	// FastForwardDisable indicates whether the Time Range Query result should include fast forward data
+	FastForwardDisable bool
+	// IsOffset is true if the query uses a relative offset modifier
+	IsOffset bool
 }
 
 // Clone returns an exact copy of a TimeRangeQuery
@@ -118,4 +119,22 @@ func (trq *TimeRangeQuery) CalculateDeltas(have ExtentList) ExtentList {
 func (trq *TimeRangeQuery) String() string {
 	return fmt.Sprintf(`{ "statement": "%s", "step": "%s", "extent": "%s" }`,
 		strings.Replace(trq.Statement, `"`, `\"`, -1), trq.Step.String(), trq.Extent.String())
+}
+
+// GetBackfillTolerance will return the backfill tolerance for the query based on the provided
+// default, and any query-specific tolerance directives included in the query comments
+func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration) time.Duration {
+	if x := strings.Index(trq.Statement, "trickster-backfill-tolerance:"); x > 1 {
+		x += 29
+		y := x
+		for ; y < len(trq.Statement); y++ {
+			if trq.Statement[y] < 48 || trq.Statement[y] > 57 {
+				break
+			}
+		}
+		if i, err := strconv.Atoi(trq.Statement[x:y]); err == nil {
+			return time.Second * time.Duration(i)
+		}
+	}
+	return def
 }
