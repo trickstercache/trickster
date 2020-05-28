@@ -18,6 +18,7 @@
 package clickhouse
 
 import (
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"net/http"
 	"net/url"
 
@@ -96,13 +97,13 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		return nil, errors.MissingURLParam(upQuery)
 	}
 
-	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
+	bf := request.GetResources(r).OriginConfig.BackfillTolerance
+	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}, BackfillTolerance: bf}
 	if err := parseRawQuery(rawQuery, trq); err != nil {
 		return nil, err
 	}
 
 	trq.TemplateURL = urls.Clone(r.URL)
-
 	// Swap in the Tokenized Query in the Url Params
 	qi.Set(upQuery, trq.Statement)
 	trq.TemplateURL.RawQuery = qi.Encode()

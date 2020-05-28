@@ -169,14 +169,30 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 	norm := now / step * step
 	if endTime > norm {
 		endTime = norm + step
+		sbf := time.Duration(now-norm) * time.Second
+		if sbf > trq.BackfillTolerance {
+			trq.BackfillTolerance = sbf
+		}
 	}
 	trq.Extent.End = time.Unix(int64(endTime), 0)
 	return nil
 }
 
 func parseTime(s string) (int, error) {
-	if s == "now()" {
-		return int(time.Now().Unix()), nil
+	if strings.HasPrefix(s, "now()") {
+		now := int(time.Now().Unix())
+		if len(s) > 7 && s[5] == '-' {
+			sub := 1
+			for _, ms := range strings.Split(s[6:], "*") {
+				m, err := strconv.Atoi(ms)
+				if err != nil {
+					return 0, err
+				}
+				sub *= m
+			}
+			return now - sub, nil
+		}
+		return now, nil
 	}
 	ts := srm(srm(srm(s, "toDateTime("), "toDate("), ")")
 	t, err := strconv.Atoi(ts)
