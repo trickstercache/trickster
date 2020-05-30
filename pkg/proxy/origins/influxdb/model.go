@@ -18,6 +18,7 @@ package influxdb
 
 import (
 	"encoding/json"
+	"sync"
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/sort/times"
@@ -37,6 +38,8 @@ type SeriesEnvelope struct {
 	tslist     times.Times
 	isSorted   bool // tracks if the matrix data is currently sorted
 	isCounted  bool // tracks if timestamps slice is up-to-date
+
+	updateLock sync.Mutex
 }
 
 // Result represents a Result returned from the InfluxDB HTTP API
