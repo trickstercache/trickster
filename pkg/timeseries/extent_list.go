@@ -32,14 +32,15 @@ func (el ExtentList) String() string {
 	if len(el) == 0 {
 		return ""
 	}
-	lines := make([]string, 0, len(el))
-	for _, e := range el {
-		lines = append(lines, fmt.Sprintf("%d-%d", e.Start.Unix(), e.End.Unix()))
+	lines := make([]string, len(el))
+	for i, e := range el {
+		lines[i] = fmt.Sprintf("%d-%d", e.Start.Unix(), e.End.Unix())
 	}
 	return strings.Join(lines, ";")
 }
 
-// InsideOf ...
+// InsideOf returns true if the provided extent is contained
+// completely within boundaries of the subject ExtentList
 func (el ExtentList) InsideOf(e Extent) bool {
 	x := len(el)
 	if x == 0 {
@@ -53,7 +54,8 @@ func (el ExtentList) InsideOf(e Extent) bool {
 
 }
 
-// OutsideOf ...
+// OutsideOf returns true if the provided extent falls completely
+// outside of the boundaries of the subject extent list
 func (el ExtentList) OutsideOf(e Extent) bool {
 	x := len(el)
 	if x == 0 {
@@ -62,7 +64,7 @@ func (el ExtentList) OutsideOf(e Extent) bool {
 	return e.After(el[x-1].End) || el[0].After(e.End)
 }
 
-// Crop ...
+// Crop reduces the ExtentList to the boundaries defined by the provided Extent
 func (el ExtentList) Crop(e Extent) ExtentList {
 	var startIndex = -1
 	var endIndex = -1
@@ -94,7 +96,9 @@ func (el ExtentList) Crop(e Extent) ExtentList {
 		}
 		endIndex++
 		if endIndex >= startIndex {
-			return el[startIndex:endIndex]
+			cropped := make(ExtentList, len(el[startIndex:endIndex]))
+			copy(cropped, el[startIndex:endIndex])
+			return cropped
 		}
 	}
 	return make(ExtentList, 0)
