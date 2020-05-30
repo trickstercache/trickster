@@ -252,6 +252,7 @@ func findRange(parts []string, column string, alias string) (int, int, []string,
 			}
 		}
 
+		tl = len(actColumn)
 		if tl < tfSize && tf[tl] == '>' {
 			if tl < tfSize+1 && tf[tl+1] == '=' {
 				tl++

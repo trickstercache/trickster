@@ -37,6 +37,8 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 	p := r.URL.Query()
 	q := trq.TemplateURL.Query().Get(upQuery)
 
+	// Force ClickHouse http compression but avoid using Brotli, which is broken on CH 20.3
+	// See https://github.com/ClickHouse/ClickHouse/issues/9969
 	p.Set("enable_http_compression", "1")
 	r.Header.Set("Accept-Encoding", "gzip, deflate")
 

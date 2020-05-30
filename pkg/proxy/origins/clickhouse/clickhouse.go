@@ -100,6 +100,10 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	bf := request.GetResources(r).OriginConfig.BackfillTolerance
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}, BackfillTolerance: bf}
 	if err := parseRawQuery(rawQuery, trq); err != nil {
+		// Force ClickHouse http compression but avoid using Brotli, which is broken on CH 20.3
+		// See https://github.com/ClickHouse/ClickHouse/issues/9969
+		qi.Set("enable_http_compression", "1")
+		r.Header.Set("Accept-Encoding", "gzip, deflate")
 		return nil, err
 	}
 
