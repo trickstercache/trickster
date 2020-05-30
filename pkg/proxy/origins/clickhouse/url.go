@@ -37,6 +37,9 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 	p := r.URL.Query()
 	q := trq.TemplateURL.Query().Get(upQuery)
 
+	p.Set("enable_http_compression", "1")
+	r.Header.Set("Accept-Encoding", "gzip, deflate")
+
 	if q != "" {
 		p.Set(upQuery, interpolateTimeQuery(q, extent, trq.Step))
 	}

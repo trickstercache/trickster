@@ -178,12 +178,12 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 	return nil
 }
 
-func parseTime(s string) (int, error) {
-	if strings.HasPrefix(s, "now()") {
+func parseTime(ts string) (int, error) {
+	if strings.HasPrefix(ts, "now(") {
 		now := int(time.Now().Unix())
-		if len(s) > 7 && s[5] == '-' {
+		if len(ts) > 6 && ts[4] == '-' {
 			sub := 1
-			for _, ms := range strings.Split(s[6:], "*") {
+			for _, ms := range strings.Split(ts[5:], "*") {
 				m, err := strconv.Atoi(ms)
 				if err != nil {
 					return 0, err
@@ -194,7 +194,6 @@ func parseTime(s string) (int, error) {
 		}
 		return now, nil
 	}
-	ts := srm(srm(srm(s, "toDateTime("), "toDate("), ")")
 	t, err := strconv.Atoi(ts)
 	if err == nil {
 		return t, nil
@@ -237,36 +236,36 @@ func findRange(parts []string, column string, alias string) (int, int, []string,
 				return st, et, wc, actColumn, nil
 			}
 		}
-		pSize := len(p)
-		tl := strings.Index(p, column)
-		if tl == -1 {
-			tl = strings.Index(p, alias)
-			if tl == -1 {
+
+		tf := srm(srm(srm(p, "toDateTime("), "toDate("), ")")
+		tfSize := len(tf)
+		tl := strings.Index(tf, column)
+		if tl == 0 {
+			actColumn = column
+		} else {
+			tl = strings.Index(tf, alias)
+			if tl == 0 {
+				actColumn = alias
+			} else {
 				wc = append(wc, p)
 				continue
-			} else {
-				tl += len(alias)
-				actColumn = alias
 			}
-		} else {
-			tl += len(column)
-			actColumn = column
 		}
 
-		if tl < pSize && p[tl] == '>' {
-			if tl < pSize+1 && p[tl+1] == '=' {
+		if tl < tfSize && tf[tl] == '>' {
+			if tl < tfSize+1 && tf[tl+1] == '=' {
 				tl++
 			}
-			st, err = parseTime(p[tl+1:])
+			st, err = parseTime(tf[tl+1:])
 			if err != nil {
 				return st, et, nil, "", err
 			}
 			wc = append(wc, actColumn+" >= "+tkTimestamp1)
-		} else if tl < pSize && p[tl] == '<' {
-			if tl < pSize+1 && p[tl+1] == '=' {
+		} else if tl < tfSize && tf[tl] == '<' {
+			if tl < tfSize+1 && tf[tl+1] == '=' {
 				tl++
 			}
-			et, err = parseTime(p[tl+1:])
+			et, err = parseTime(tf[tl+1:])
 			if err != nil {
 				return st, et, nil, "", err
 			}
