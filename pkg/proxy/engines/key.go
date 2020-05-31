@@ -29,11 +29,10 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/util/md5"
 )
-
-var methodsWithBody = map[string]bool{http.MethodPut: true, http.MethodPost: true, http.MethodPatch: true}
 
 // DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
 func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) string {
@@ -57,13 +56,13 @@ func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) strin
 	}
 
 	var b []byte
-	if r.Method == http.MethodPost {
+	if templateURL != nil {
+		params = templateURL.Query()
+	} else if r.Method == http.MethodPost {
 		b, _ = ioutil.ReadAll(r.Body)
 		r.ParseForm()
 		params = r.PostForm
 		r.Body = ioutil.NopCloser(bytes.NewReader(b))
-	} else if templateURL != nil {
-		params = templateURL.Query()
 	} else if r.URL != nil {
 		params = r.URL.Query()
 	}
@@ -101,7 +100,7 @@ func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) strin
 		}
 	}
 
-	if _, ok := methodsWithBody[r.Method]; ok && pc.CacheKeyFormFields != nil && len(pc.CacheKeyFormFields) > 0 {
+	if methods.HasBody(r.Method) && pc.CacheKeyFormFields != nil && len(pc.CacheKeyFormFields) > 0 {
 		ct := r.Header.Get(headers.NameContentType)
 		if ct == headers.ValueXFormURLEncoded ||
 			strings.HasPrefix(ct, headers.ValueMultipartFormData) || ct == headers.ValueApplicationJSON {
