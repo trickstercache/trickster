@@ -31,7 +31,7 @@ Trickster can insert several spans to the traces that it captures, depending upo
 | ProxyRequest           | communicating with an Origin server to fulfill a client request |
 | PrepareFetchReader     | preparing a client response from a cached or Origin response |
 | CacheRevalidation      | revalidating a stale cache object against its Origin |
-| FetchObject            | retreiving a non-time-series object from an Origin |
+| FetchObject            | retrieving a non-time-series object from an Origin |
 
 ## Tags / Attributes
 
