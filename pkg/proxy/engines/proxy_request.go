@@ -172,11 +172,8 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
 
-	ll := pr.Logger.Level()
-	if ll == "trace" || ll == "debug" {
-		go logUpstreamRequest(pr.Logger, oc.Name, oc.OriginType, handlerName,
-			pr.Method, pr.URL.String(), pr.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
-	}
+	go logUpstreamRequest(pr.Logger, oc.Name, oc.OriginType, handlerName,
+		pr.Method, pr.URL.String(), pr.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
 
 	return body, resp, elapsed
 }
