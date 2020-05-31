@@ -63,6 +63,7 @@ func setupTestHarnessOPCByType(
 	r.RequestURI = ""
 	rsc := request.GetResources(r)
 	rsc.OriginClient = client
+	rsc.Tracer = tu.NewTestTracer()
 	pc := rsc.PathConfig
 
 	if pc == nil {
@@ -94,6 +95,8 @@ func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]
 
 	rsc := request.GetResources(r)
 	rsc.OriginClient = client
+	rsc.Tracer = tu.NewTestTracer()
+
 	pc := rsc.PathConfig
 
 	if pc == nil {

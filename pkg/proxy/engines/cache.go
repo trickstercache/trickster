@@ -78,10 +78,6 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	} else {
 
 		bytes, lookupStatus, err = c.Retrieve(key, true)
-		// normalize any cache miss errors to cache.ErrKNF.
-		if err != nil && err != cache.ErrKNF && strings.HasSuffix(err.Error(), "not in cache") {
-			err = cache.ErrKNF
-		}
 
 		if err != nil || (lookupStatus != status.LookupStatusHit) {
 			var nr byterange.Ranges

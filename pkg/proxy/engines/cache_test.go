@@ -38,6 +38,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 )
 
 const testRangeBody = "This is a test file, to see how the byte range requests work.\n"
@@ -79,7 +80,7 @@ func TestMultiPartByteRange(t *testing.T) {
 	d := DocumentFromHTTPResponse(resp2, []byte("This is a t"), nil, testLogger)
 
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"], Tracer: tu.NewTestTracer()})
 
 	ranges := make(byterange.Ranges, 1)
 	ranges[0] = byterange.Range{Start: 5, End: 10}
@@ -108,7 +109,7 @@ func TestCacheHitRangeRequest(t *testing.T) {
 	resp2.StatusCode = 200
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody), nil, testLogger)
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"], Tracer: tu.NewTestTracer()})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
@@ -152,7 +153,7 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 	resp2.StatusCode = 206
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"], Tracer: tu.NewTestTracer()})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
@@ -195,7 +196,7 @@ func TestCacheHitRangeRequest3(t *testing.T) {
 	resp2.StatusCode = 206
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"], Tracer: tu.NewTestTracer()})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
@@ -236,7 +237,7 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
 
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"], Tracer: tu.NewTestTracer()})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
@@ -280,7 +281,7 @@ func TestFullCacheMissRangeRequest(t *testing.T) {
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
 
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"], Tracer: tu.NewTestTracer()})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {
@@ -332,7 +333,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"]})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"], Tracer: tu.NewTestTracer()})
 
 	d := DocumentFromHTTPResponse(resp, bytes, nil, testLogger)
 	err = WriteCache(ctx, cache, "testKey2", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
@@ -384,7 +385,7 @@ func TestQueryCache(t *testing.T) {
 	d.ContentType = "text/plain"
 
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"], Logger: testLogger})
+	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: conf.Origins["default"], Tracer: tu.NewTestTracer(), Logger: testLogger})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
 	if err != nil {

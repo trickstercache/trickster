@@ -312,10 +312,12 @@ data:
 
         ## dearticulate_upstream_ranges, when true, instructs Trickster to make multiple parallel requests to the origin for each
         ## range needed to fulfill the client request, rather than making a multipart range request. default is false
+        ## This setting applies only to object request byte ranges and not time series requests (they are always dearticulated)
         # dearticulate_upstream_ranges = false
 
         ## multipart_ranges_disabled, when true, instructs Trickster to return the full object when the client provides
-        ## a multipart range request. The default is false.
+        ## a multipart range request. This setting applies only to object request byte ranges and not time series requests.
+        ## The default is false.
         # multipart_ranges_disabled = false
 
         ## compressable_types defines the Content Types that will be compressed when stored in the Trickster cache
@@ -333,6 +335,19 @@ data:
         ## max_idle_conns set the maximum concurrent keep-alive connections Trickster may have opened to this origin
         ## additional requests will be queued. Default: 20
         # max_idle_conns = 20
+
+        ## max_ttl_secs defines the maximum allowed TTL for any object cached for this origin. default is 86400
+        # max_ttl_secs = 86400
+
+        ## revalidation_factor is the multiplier for object lifetime expiration to determine cache object TTL; default is 2
+        ## for example, if a revalidatable object has Cache-Control: max-age=300, we will cache for 10 minutes (300s * 2)
+        ## so there is an opportunity to revalidate
+        # revalidation_factor = 2
+
+        ## max_object_size_bytes defines the largest byte size an object may be before it is uncacheable due to size. default is 524288 (512k)
+        # max_object_size_bytes = 524288
+
+        ## These next 6 settings only apply to Time Series origins
 
         ## backfill_tolerance_secs prevents new datapoints that fall within the tolerance window (relative to time.Now) from being cached
         ## Think of it as "never cache the newest N seconds of real-time data, because it may be preliminary and subject to updates"
@@ -354,17 +369,6 @@ data:
 
         ## fastforward_ttl_secs defines the relative expiration of cached fast forward data. default is 15s
         # fastforward_ttl_secs = 15
-
-        ## max_ttl_secs defines the maximum allowed TTL for any object cached for this origin. default is 86400
-        # max_ttl_secs = 86400
-
-        ## revalidation_factor is the multiplier for object lifetime expiration to determine cache object TTL; default is 2
-        ## for example, if a revalidatable object has Cache-Control: max-age=300, we will cache for 10 minutes (300s * 2)
-        ## so there is an opportunity to revalidate
-        # revalidation_factor = 2
-
-        ## max_object_size_bytes defines the largest byte size an object may be before it is uncacheable due to size. default is 524288 (512k)
-        # max_object_size_bytes = 524288
 
         ##
         ## Each origin type implements their own defaults for health_check_upstream_url, health_check_verb and health_check_query,

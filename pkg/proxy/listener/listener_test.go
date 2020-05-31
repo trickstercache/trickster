@@ -92,7 +92,16 @@ func TestListeners(t *testing.T) {
 	if err == nil {
 		t.Error("expected invalid port error")
 	}
+}
 
+func TestUpdateRouter(t *testing.T) {
+	testLG := NewListenerGroup()
+	testLG.members["test"] = &Listener{routeSwapper: &ph.SwitchHandler{}}
+	r := http.NewServeMux()
+	testLG.UpdateRouter("test", r)
+	if testLG.members["test"].routeSwapper.Handler() != r {
+		t.Error("router mismatch")
+	}
 }
 
 func TestNewListenerErr(t *testing.T) {
