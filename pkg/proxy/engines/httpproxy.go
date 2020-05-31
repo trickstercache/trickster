@@ -40,7 +40,6 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
 	"go.opentelemetry.io/otel/api/kv"
-	"go.opentelemetry.io/otel/api/trace"
 	othttptrace "go.opentelemetry.io/otel/plugin/httptrace"
 )
 
@@ -58,12 +57,9 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 
 	start := time.Now()
 
-	var span trace.Span
-	if !strings.HasPrefix(r.URL.Path, "/trickster/health") {
-		_, span = tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
-		if span != nil {
-			defer span.End()
-		}
+	_, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
+	if span != nil {
+		defer span.End()
 	}
 
 	pc := rsc.PathConfig
