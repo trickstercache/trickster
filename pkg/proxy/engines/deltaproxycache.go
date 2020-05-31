@@ -321,6 +321,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 						tl.Pairs{"body": string(body)})
 					return
 				}
+				doc.headerLock.Lock()
+				headers.Merge(doc.Headers, resp.Header)
+				doc.headerLock.Unlock()
 				uncachedValueCount += nts.ValueCount()
 				nts.SetStep(trq.Step)
 				nts.SetExtents([]timeseries.Extent{*e})
