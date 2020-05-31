@@ -17,11 +17,8 @@
 package engines
 
 import (
-	"bytes"
 	"context"
-	"io/ioutil"
 	"net/http"
-	"net/url"
 	"sync"
 	"time"
 
@@ -265,15 +262,18 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ffStatus := "off"
-
-	var ffURL *url.URL
+	var ffReq *http.Request
 	// if the step resolution <= Fast Forward TTL, then no need to even try Fast Forward
 	if !trq.FastForwardDisable {
 		if trq.Step > oc.FastForwardTTL {
-			ffURL, err = client.FastForwardURL(r)
-			if err != nil || ffURL == nil {
+			ffReq, err = client.FastForwardRequest(r)
+			if err != nil || ffReq == nil || ffReq.URL == nil || ffReq.URL.Scheme == "" {
 				ffStatus = "err"
 				trq.FastForwardDisable = true
+			} else {
+				rs := request.NewResources(oc, oc.FastForwardPath, cc, cache, client, rsc.Tracer, pr.Logger)
+				rs.AlternateCacheTTL = oc.FastForwardTTL
+				ffReq = ffReq.WithContext(tctx.WithResources(ffReq.Context(), rs))
 			}
 		} else {
 			trq.FastForwardDisable = true
@@ -336,32 +336,16 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Only fast forward if configured and the user request is for the absolute latest datapoint
 	if (!trq.FastForwardDisable) &&
-		(trq.Extent.End.Equal(normalizedNow.Extent.End)) && ffURL.Scheme != "" {
+		(trq.Extent.End.Equal(normalizedNow.Extent.End)) {
 		wg.Add(1)
-		rs := request.NewResources(oc, oc.FastForwardPath, cc, cache, client, rsc.Tracer, pr.Logger)
-		rs.AlternateCacheTTL = oc.FastForwardTTL
-		req := r.Clone(tctx.WithResources(context.Background(), rs))
 		go func() {
 			defer wg.Done()
 			_, span := tspan.NewChildSpan(ctx, rsc.Tracer, "FetchFastForward")
 			if span != nil {
-				req = req.WithContext(trace.ContextWithSpan(req.Context(), span))
+				ffReq = ffReq.WithContext(trace.ContextWithSpan(ffReq.Context(), span))
 				defer span.End()
 			}
-
-			// create a new context that uses the fast forward path
-			// config instead of the time series path config
-			req.URL = ffURL
-
-			// the FastForwardURL function returns a *URL with the QueryString on it.
-			// we currently have to convert that into a new request body for POST
-			if req.Method == http.MethodPost {
-				req.Body = ioutil.NopCloser(bytes.NewBufferString(ffURL.RawQuery))
-				req.ContentLength = int64(len(ffURL.RawQuery))
-				ffURL.RawQuery = ""
-			}
-
-			body, resp, isHit := FetchViaObjectProxyCache(req)
+			body, resp, isHit := FetchViaObjectProxyCache(ffReq)
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				ffts, err = client.UnmarshalInstantaneous(body)
 				if err != nil {

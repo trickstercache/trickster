@@ -17,6 +17,7 @@
 package engines
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -33,8 +34,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tt "github.com/tricksterproxy/trickster/pkg/proxy/timeconv"
-	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/sort/times"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 
@@ -349,17 +350,17 @@ func (c *TestClient) BuildUpstreamURL(r *http.Request) *url.URL {
 
 // SetExtent will change the upstream request query to use the provided Extent
 func (c *TestClient) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
-	params := r.URL.Query()
-	params.Set(upStart, strconv.FormatInt(extent.Start.Unix(), 10))
-	params.Set(upEnd, strconv.FormatInt(extent.End.Unix(), 10))
-	r.URL.RawQuery = params.Encode()
+	v, _, _ := request.GetRequestValues(r)
+	v.Set(upStart, strconv.FormatInt(extent.Start.Unix(), 10))
+	v.Set(upEnd, strconv.FormatInt(extent.End.Unix(), 10))
+	request.SetRequestValues(r, v)
 }
 
-// FastForwardURL returns the url to fetch the Fast Forward value based on a timerange url
-func (c *TestClient) FastForwardURL(r *http.Request) (*url.URL, error) {
-
-	u := urls.Clone(r.URL)
-
+// FastForwardRequest returns an *http.Request crafted to collect Fast Forward
+// data from the Origin, based on the provided HTTP Request
+func (c *TestClient) FastForwardRequest(r *http.Request) (*http.Request, error) {
+	nr := r.Clone(context.Background())
+	u := nr.URL
 	if strings.HasSuffix(u.Path, "/query_range") {
 		u.Path = u.Path[0 : len(u.Path)-6]
 	}
@@ -369,19 +370,21 @@ func (c *TestClient) FastForwardURL(r *http.Request) (*url.URL, error) {
 		return nil, fmt.Errorf("This is an intentional test error: %s", ":)")
 	}
 
-	p := u.Query()
-	p.Del(upStart)
-	p.Del(upEnd)
-	p.Del(upStep)
+	if strings.HasSuffix(nr.URL.Path, "/query_range") {
+		nr.URL.Path = nr.URL.Path[0 : len(nr.URL.Path)-6]
+	}
+	v, _, _ := request.GetRequestValues(nr)
+	v.Del(upStart)
+	v.Del(upEnd)
+	v.Del(upStep)
 
 	if c.fftime.IsZero() {
 		c.fftime = time.Now()
 	}
-	p.Set("time", strconv.FormatInt(c.fftime.Unix(), 10))
+	v.Set("time", strconv.FormatInt(c.fftime.Unix(), 10))
 
-	u.RawQuery = p.Encode()
-
-	return u, nil
+	request.SetRequestValues(nr, v)
+	return nr, nil
 }
 
 // VectorEnvelope represents a Vector response object from the Prometheus HTTP API

@@ -23,11 +23,10 @@ import (
 func TestFastForwardURL(t *testing.T) {
 
 	client := &Client{}
-	u, err := client.FastForwardURL(nil)
-	if u != nil {
-		t.Errorf("Expected nil url, got %s", u)
+	r, err := client.FastForwardRequest(nil)
+	if r != nil {
+		t.Errorf("Expected nil url, got %v", r)
 	}
-
 	if err != nil {
 		t.Errorf("Expected nil err, got %s", err)
 	}

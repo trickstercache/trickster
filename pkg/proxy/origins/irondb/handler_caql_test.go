@@ -181,7 +181,7 @@ func TestCaqlHandlerParseTimeRangeQuery(t *testing.T) {
 
 }
 
-func TestCaqlHandlerFastForwardURLError(t *testing.T) {
+func TestCaqlHandlerFastForwardRequestError(t *testing.T) {
 
 	client := &Client{name: "test"}
 	_, _, r, _, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}",
@@ -189,7 +189,7 @@ func TestCaqlHandlerFastForwardURLError(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = client.caqlHandlerFastForwardURL(r)
+	_, err = client.caqlHandlerFastForwardRequest(r)
 	if err == nil {
 		t.Errorf("expected error: %s", "invalid parameters")
 	}

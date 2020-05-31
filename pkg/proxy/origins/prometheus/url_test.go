@@ -87,20 +87,20 @@ func TestFastForwardURL(t *testing.T) {
 	u := &url.URL{Path: "/query_range", RawQuery: "q=up&start=1&end=1&step=1"}
 	r, _ := http.NewRequest(http.MethodGet, u.String(), nil)
 
-	u2, err := client.FastForwardURL(r)
+	r2, err := client.FastForwardRequest(r)
 	if err != nil {
 		t.Error(err)
 	}
 
-	if expected != u2.RawQuery {
-		t.Errorf("\nexpected [%s]\ngot [%s]", expected, u2.RawQuery)
+	if expected != r2.URL.RawQuery {
+		t.Errorf("\nexpected [%s]\ngot [%s]", expected, r2.URL.RawQuery)
 	}
 
-	u2.RawQuery = ""
+	r2.URL.RawQuery = ""
 	b := bytes.NewBufferString(expected)
-	r, _ = http.NewRequest(http.MethodPost, u2.String(), b)
+	r, _ = http.NewRequest(http.MethodPost, r2.URL.String(), b)
 
-	_, err = client.FastForwardURL(r)
+	r2, err = client.FastForwardRequest(r)
 	if err != nil {
 		t.Error(err)
 	}

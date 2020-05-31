@@ -17,12 +17,9 @@
 package influxdb
 
 import (
-	"bytes"
-	"io/ioutil"
 	"net/http"
-	"net/url"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
@@ -39,26 +36,11 @@ const (
 
 // SetExtent will change the upstream request query to use the provided Extent
 func (c Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
-	var qp url.Values
-	useBody := methods.HasBody(r.Method)
-	if useBody {
-		r.ParseForm()
-		qp = r.PostForm
-	} else {
-		qp = r.URL.Query()
-	}
-
+	v, _, _ := request.GetRequestValues(r)
 	t := trq.TemplateURL.Query()
 	q := t.Get(upQuery)
 	if q != "" {
-		qp.Set(upQuery, interpolateTimeQuery(q, extent))
+		v.Set(upQuery, interpolateTimeQuery(q, extent))
 	}
-
-	s := qp.Encode()
-	if useBody {
-		r.ContentLength = int64(len(s))
-		r.Body = ioutil.NopCloser(bytes.NewBufferString(s))
-	} else {
-		r.URL.RawQuery = s
-	}
+	request.SetRequestValues(r, v)
 }
