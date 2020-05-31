@@ -62,7 +62,7 @@ func TestDoProxy(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(oc, pc, nil, nil, nil, nil, testLogger)))
+		request.NewResources(oc, pc, nil, nil, nil, tu.NewTestTracer(), testLogger)))
 
 	DoProxy(w, r, true)
 	resp := w.Result()
@@ -111,7 +111,7 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", badUpstream, br)
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(oc, pc, nil, nil, nil, nil, testLogger)))
+		request.NewResources(oc, pc, nil, nil, nil, tu.NewTestTracer(), testLogger)))
 
 	DoProxy(w, r, true)
 	resp := w.Result()
@@ -153,7 +153,7 @@ func TestClockOffsetWarning(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", s.URL, nil)
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(oc, pc, nil, nil, nil, nil, testLogger)))
+		request.NewResources(oc, pc, nil, nil, nil, tu.NewTestTracer(), testLogger)))
 
 	if testLogger.HasWarnedOnce("clockoffset.default") {
 		t.Errorf("expected %t got %t", false, true)
@@ -201,7 +201,7 @@ func TestDoProxyWithPCF(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(oc, pc, nil, nil, nil, nil, testLogger)))
+		request.NewResources(oc, pc, nil, nil, nil, tu.NewTestTracer(), testLogger)))
 
 	// get URL
 	DoProxy(w, r, true)
@@ -256,7 +256,7 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(oc, pc, nil, nil, nil, nil, testLogger)))
+		request.NewResources(oc, pc, nil, nil, nil, tu.NewTestTracer(), testLogger)))
 
 	// get URL
 	DoProxy(w, r, true)
@@ -296,7 +296,7 @@ func TestPrepareFetchReaderErr(t *testing.T) {
 
 	r := httptest.NewRequest("GET", "http://example.com/", nil)
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(oc, nil, nil, nil, nil, nil, testLogger)))
+		request.NewResources(oc, nil, nil, nil, nil, tu.NewTestTracer(), testLogger)))
 	r.Method = "\t"
 	_, _, i := PrepareFetchReader(r)
 	if i != 0 {

@@ -158,3 +158,46 @@ func TestTLSCertConfig(t *testing.T) {
 	}
 
 }
+
+func TestOptionsChanged(t *testing.T) {
+
+	c1 := config.NewConfig()
+	c2 := config.NewConfig()
+
+	c1.Origins["default"].TLS.ServeTLS = true
+	c2.Origins["default"].TLS.ServeTLS = true
+
+	b := OptionsChanged(nil, nil)
+	if b {
+		t.Errorf("expected false")
+	}
+
+	b = OptionsChanged(c1, nil)
+	if !b {
+		t.Errorf("expected true")
+	}
+
+	b = OptionsChanged(c1, c2)
+	if b {
+		t.Errorf("expected false")
+	}
+
+	c2.Origins["test"] = c2.Origins["default"].Clone()
+	c2.Origins["test"].TLS.ClientCertPath = "test"
+
+	b = OptionsChanged(c1, c2)
+	if !b {
+		t.Errorf("expected true")
+	}
+
+	delete(c2.Origins, "test")
+
+	c1.Origins["test1"] = c1.Origins["default"].Clone()
+	c1.Origins["test1"].TLS.ClientCertPath = "test1"
+
+	b = OptionsChanged(c1, c2)
+	if !b {
+		t.Errorf("expected true")
+	}
+
+}

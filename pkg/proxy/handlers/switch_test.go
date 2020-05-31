@@ -46,3 +46,20 @@ func TestUpdate(t *testing.T) {
 	sh := NewSwitchHandler(router)
 	sh.Update(router)
 }
+
+func TestHandler(t *testing.T) {
+
+	router := http.NewServeMux()
+	sh := NewSwitchHandler(router)
+
+	x := sh.Handler()
+	if x != router {
+		t.Error("router mismatch")
+	}
+
+	sh.reloading = 1
+	x = sh.Handler()
+	if x != router {
+		t.Error("router mismatch")
+	}
+}

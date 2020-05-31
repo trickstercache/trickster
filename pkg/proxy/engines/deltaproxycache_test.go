@@ -52,6 +52,7 @@ func setupTestHarnessDPC() (*httptest.Server, *httptest.ResponseRecorder, *http.
 
 	rsc := request.GetResources(r)
 	rsc.OriginClient = client
+	rsc.Tracer = tu.NewTestTracer()
 	pc := rsc.PathConfig
 
 	if pc == nil {

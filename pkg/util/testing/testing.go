@@ -34,6 +34,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/runtime"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
+	to "github.com/tricksterproxy/trickster/pkg/tracing/options"
 	tr "github.com/tricksterproxy/trickster/pkg/tracing/registration"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 
@@ -123,11 +124,12 @@ func NewTestInstance(
 	var tracer *tracing.Tracer
 
 	logger := tl.ConsoleLogger("error")
-
 	if oc.TracingConfigName != "" {
 		if tc, ok := conf.TracingConfigs[oc.TracingConfigName]; ok {
 			tracer, _ = tr.GetTracer(tc, logger, true)
 		}
+	} else {
+		tracer = NewTestTracer()
 	}
 
 	if !isBasicTestServer && respHeaders != nil {
@@ -165,4 +167,13 @@ func NewTestPathConfig(
 	}
 
 	return p
+}
+
+// NewTestTracer returns a standard out tracer for testing purposes
+func NewTestTracer() *tracing.Tracer {
+	tc := to.NewOptions()
+	tc.Name = "test"
+	tc.TracerType = "stdout"
+	tracer, _ := tr.GetTracer(tc, tl.ConsoleLogger("warn"), true)
+	return tracer
 }
