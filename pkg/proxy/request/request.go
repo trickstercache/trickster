@@ -51,7 +51,7 @@ func GetRequestValues(r *http.Request) (url.Values, string, bool) {
 // regardless of method
 func SetRequestValues(r *http.Request, v url.Values) {
 	s := v.Encode()
-	if methods.HasBody(r.Method) {
+	if !methods.HasBody(r.Method) {
 		r.URL.RawQuery = s
 	} else {
 		// reset the body
