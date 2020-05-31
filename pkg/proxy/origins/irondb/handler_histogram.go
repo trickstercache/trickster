@@ -17,6 +17,7 @@
 package irondb
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/url"
@@ -137,14 +138,15 @@ func (c Client) histogramHandlerDeriveCacheKey(path string, params url.Values,
 
 // histogramHandlerFastForwardURL returns the url to fetch the Fast Forward value
 // based on a timerange URL.
-func (c *Client) histogramHandlerFastForwardURL(
-	r *http.Request) (*url.URL, error) {
+func (c *Client) histogramHandlerFastForwardRequest(
+	r *http.Request) (*http.Request, error) {
 
 	rsc := request.GetResources(r)
+	trq := rsc.TimeRangeQuery
 
 	var err error
-	u := urls.Clone(r.URL)
-	trq := rsc.TimeRangeQuery
+	nr := r.Clone(context.Background())
+	u := nr.URL
 	if trq == nil {
 		trq, err = c.ParseTimeRangeQuery(r)
 		if err != nil {
@@ -170,5 +172,6 @@ func (c *Client) histogramHandlerFastForwardURL(
 	sb.WriteString("/" + strconv.FormatInt(time.Unix(end, 0).Unix(), 10))
 	sb.WriteString("/" + strings.Join(ps[3:], "/"))
 	u.Path = sb.String()
-	return u, nil
+
+	return nr, nil
 }

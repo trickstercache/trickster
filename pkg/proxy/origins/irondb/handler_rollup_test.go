@@ -168,7 +168,7 @@ func TestRollupHandlerParseTimeRangeQuery(t *testing.T) {
 
 }
 
-func TestRollupHandlerFastForwardURLError(t *testing.T) {
+func TestRollupHandlerFastForwardRequestError(t *testing.T) {
 
 	client := &Client{name: "test"}
 	_, _, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs,
@@ -182,7 +182,7 @@ func TestRollupHandlerFastForwardURLError(t *testing.T) {
 	client.config = rsc.OriginConfig
 	rsc.OriginClient = client
 
-	_, err = client.rollupHandlerFastForwardURL(r)
+	_, err = client.rollupHandlerFastForwardRequest(r)
 	if err == nil {
 		t.Errorf("expected error: %s", "invalid parameters")
 	}

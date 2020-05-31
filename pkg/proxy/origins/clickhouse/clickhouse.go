@@ -54,6 +54,8 @@ func NewClient(name string, oc *oo.Options, router http.Handler,
 	cache cache.Cache) (origins.Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
 	bur := urls.FromParts(oc.Scheme, oc.Host, oc.PathPrefix, "", "")
+	// explicitly disable Fast Forward for this client
+	oc.FastForwardDisable = true
 	return &Client{name: name, config: oc, router: router, cache: cache,
 		baseUpstreamURL: bur, webClient: c}, err
 }

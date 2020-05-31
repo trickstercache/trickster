@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
@@ -58,13 +57,10 @@ func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) strin
 	var b []byte
 	if templateURL != nil {
 		params = templateURL.Query()
-	} else if r.Method == http.MethodPost {
-		b, _ = ioutil.ReadAll(r.Body)
-		r.ParseForm()
-		params = r.PostForm
-		r.Body = ioutil.NopCloser(bytes.NewReader(b))
-	} else if r.URL != nil {
-		params = r.URL.Query()
+	} else {
+		var s string
+		params, s, _ = request.GetRequestValues(r)
+		b = []byte(s)
 	}
 
 	if pc.KeyHasher != nil && len(pc.KeyHasher) == 1 {

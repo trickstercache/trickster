@@ -203,7 +203,7 @@ func TestHistogramHandlerSetExtent(t *testing.T) {
 
 }
 
-func TestHistogramHandlerFastForwardURLError(t *testing.T) {
+func TestHistogramHandlerFastForwardRequestError(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
 	hc := tu.NewTestWebClient()
@@ -220,14 +220,14 @@ func TestHistogramHandlerFastForwardURLError(t *testing.T) {
 	r = request.SetResources(r, rsc)
 
 	r.URL.Path = "/histogram/x/900/300/00112233-4455-6677-8899-aabbccddeeff/metric"
-	_, err = client.histogramHandlerFastForwardURL(r)
+	_, err = client.histogramHandlerFastForwardRequest(r)
 	if err == nil {
 		t.Errorf("expected error: %s", "invalid parameters")
 	}
 
 	r.URL.Path = "/a/900/900/300/00112233-4455-6677-8899-aabbccddeeff/metric"
 	rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{Step: 300 * time.Second}
-	_, err = client.histogramHandlerFastForwardURL(r)
+	_, err = client.histogramHandlerFastForwardRequest(r)
 	if err == nil {
 		t.Errorf("expected error: %s", "invalid parameters")
 	}
