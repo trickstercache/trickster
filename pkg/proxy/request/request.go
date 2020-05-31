@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 )
 
@@ -36,6 +37,12 @@ func GetRequestValues(r *http.Request) (url.Values, string, bool) {
 	if !methods.HasBody(r.Method) {
 		v = r.URL.Query()
 		s = r.URL.RawQuery
+	} else if r.Header.Get(headers.NameContentType) == headers.ValueApplicationJSON {
+		v = url.Values{}
+		b, _ := ioutil.ReadAll(r.Body)
+		r.Body = ioutil.NopCloser(bytes.NewBuffer(b))
+		s = string(b)
+		isBody = true
 	} else {
 		r.ParseForm()
 		v = r.PostForm

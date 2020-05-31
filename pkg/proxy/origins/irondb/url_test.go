@@ -18,6 +18,7 @@ package irondb
 
 import (
 	"bytes"
+	"context"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -210,7 +211,7 @@ func TestFastForwardURL(t *testing.T) {
 	oc := conf.Origins["default"]
 	client := &Client{config: oc}
 
-	_, err = client.FastForwardURL(nil)
+	_, err = client.FastForwardRequest(nil)
 	if err == nil {
 		t.Error("expected error")
 	}
@@ -285,9 +286,10 @@ func TestFastForwardURL(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 
 			r, _ := http.NewRequest(http.MethodGet, c.u.String(), nil)
+			r = r.WithContext(context.Background())
 			rsc.PathConfig = c.p
-			r = request.SetResources(r, rsc)
-			u, err := client.FastForwardURL(r)
+			nr := request.SetResources(r, rsc)
+			fr, err := client.FastForwardRequest(nr)
 			if c.handler != "ProxyHandler" && err != nil {
 				t.Error(err)
 			}
@@ -296,9 +298,9 @@ func TestFastForwardURL(t *testing.T) {
 				t.Errorf("expected error: %s", "unknown handler name")
 			}
 
-			if u != nil {
-				if u.String() != c.exp {
-					t.Errorf("Expected URL: %v, got: %v", c.exp, u.String())
+			if fr != nil && fr.URL != nil {
+				if fr.URL.String() != c.exp {
+					t.Errorf("Expected URL: %v, got: %v", c.exp, fr.URL.String())
 				}
 			}
 		})

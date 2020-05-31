@@ -18,7 +18,6 @@ package origins
 
 import (
 	"net/http"
-	"net/url"
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
@@ -38,9 +37,11 @@ type TimeseriesClient interface {
 	Configuration() *oo.Options
 	// Name returns the name of the origin the Proxy Client is handling
 	Name() string
-	// FastForwardURL returns the URL to the origin to collect Fast Forward
-	// data points based on the provided HTTP Request
-	FastForwardURL(*http.Request) (*url.URL, error)
+	// FastForwardRequest returns an *http.Request crafted to collect Fast Forward
+	// data from the Origin, based on the provided HTTP Request
+	// If the inbound request is POST/PUT/PATCH, a non-nil body must be set with the query parameters,
+	// in lieu of updated url query values, in the returned request
+	FastForwardRequest(*http.Request) (*http.Request, error)
 	// SetExtent will update an upstream request's timerange
 	// parameters based on the provided timeseries.Extent
 	SetExtent(*http.Request, *timeseries.TimeRangeQuery, *timeseries.Extent)

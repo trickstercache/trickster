@@ -17,8 +17,8 @@
 package irondb
 
 import (
+	"context"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -117,15 +117,15 @@ func (c *Client) caqlHandlerParseTimeRangeQuery(
 
 // caqlHandlerFastForwardURL returns the url to fetch the Fast Forward value
 // based on a timerange URL.
-func (c *Client) caqlHandlerFastForwardURL(
-	r *http.Request) (*url.URL, error) {
+func (c *Client) caqlHandlerFastForwardRequest(
+	r *http.Request) (*http.Request, error) {
 
 	rsc := request.GetResources(r)
 	trq := rsc.TimeRangeQuery
 
+	nr := r.Clone(context.Background())
+	v, _, _ := request.GetRequestValues(nr)
 	var err error
-	u := urls.Clone(r.URL)
-	q := u.Query()
 
 	if trq == nil {
 		trq, err = c.ParseTimeRangeQuery(r)
@@ -137,8 +137,9 @@ func (c *Client) caqlHandlerFastForwardURL(
 	now := time.Now().Unix()
 	start := now - (now % int64(trq.Step.Seconds()))
 	end := start + int64(trq.Step.Seconds())
-	q.Set(upCAQLStart, formatTimestamp(time.Unix(start, 0), false))
-	q.Set(upCAQLEnd, formatTimestamp(time.Unix(end, 0), false))
-	u.RawQuery = q.Encode()
-	return u, nil
+	v.Set(upCAQLStart, formatTimestamp(time.Unix(start, 0), false))
+	v.Set(upCAQLEnd, formatTimestamp(time.Unix(end, 0), false))
+	request.SetRequestValues(nr, v)
+
+	return nr, nil
 }

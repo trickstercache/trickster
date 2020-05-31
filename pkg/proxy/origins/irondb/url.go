@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -43,9 +42,9 @@ func (c Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exten
 	}
 }
 
-// FastForwardURL returns the url to fetch the Fast Forward value based on a
-// timerange URL.
-func (c *Client) FastForwardURL(r *http.Request) (*url.URL, error) {
+// FastForwardRequest returns an *http.Request crafted to collect Fast Forward
+// data from the Origin, based on the provided HTTP Request
+func (c *Client) FastForwardRequest(r *http.Request) (*http.Request, error) {
 
 	rsc := request.GetResources(r)
 	if rsc == nil || rsc.PathConfig == nil {
@@ -54,11 +53,11 @@ func (c *Client) FastForwardURL(r *http.Request) (*url.URL, error) {
 
 	switch rsc.PathConfig.HandlerName {
 	case "RollupHandler":
-		return c.rollupHandlerFastForwardURL(r)
+		return c.rollupHandlerFastForwardRequest(r)
 	case "HistogramHandler":
-		return c.histogramHandlerFastForwardURL(r)
+		return c.histogramHandlerFastForwardRequest(r)
 	case "CAQLHandler":
-		return c.caqlHandlerFastForwardURL(r)
+		return c.caqlHandlerFastForwardRequest(r)
 	}
 
 	return nil, fmt.Errorf("unknown handler name: %s", rsc.PathConfig.HandlerName)
@@ -121,7 +120,7 @@ func (c *Client) ParseTimeRangeQuery(
 	r *http.Request) (*timeseries.TimeRangeQuery, error) {
 
 	rsc := request.GetResources(r)
-	if rsc.PathConfig == nil {
+	if rsc == nil || rsc.PathConfig == nil {
 		return nil, errors.New("missing path config")
 	}
 
