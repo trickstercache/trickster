@@ -33,12 +33,12 @@ func (e *Extent) Includes(t time.Time) bool {
 	return !t.Before(e.Start) && !t.After(e.End)
 }
 
-// StartsAt returns true if the t is equal to the Extent's start time
+// StartsAt returns true if t is equal to the Extent's start time
 func (e *Extent) StartsAt(t time.Time) bool {
 	return t.Equal(e.Start)
 }
 
-// EndsAt returns true if the t is equal to the Extent's end time
+// EndsAt returns true if t is equal to the Extent's end time
 func (e *Extent) EndsAt(t time.Time) bool {
 	return t.Equal(e.End)
 }

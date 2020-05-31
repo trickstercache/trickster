@@ -33,8 +33,9 @@ import (
 
 // SetExtents overwrites a Timeseries's known extents with the provided extent list
 func (se *SeriesEnvelope) SetExtents(extents timeseries.ExtentList) {
-	se.ExtentList = make(timeseries.ExtentList, len(extents))
-	copy(se.ExtentList, extents)
+	el := make(timeseries.ExtentList, len(extents))
+	copy(el, extents)
+	se.ExtentList = el
 	se.isCounted = false
 }
 
@@ -113,11 +114,17 @@ type seriesKey struct {
 type tags map[string]string
 
 func (t tags) String() string {
-	var pairs string
-	for k, v := range t {
-		pairs += fmt.Sprintf("%s=%s;", k, v)
+	if len(t) == 0 {
+		return ""
 	}
-	return pairs
+	pairs := make(sort.StringSlice, len(t))
+	var i int
+	for k, v := range t {
+		pairs[i] = fmt.Sprintf("%s=%s", k, v)
+		i++
+	}
+	sort.Sort(pairs)
+	return strings.Join(pairs, ";")
 }
 
 // Merge merges the provided Timeseries list into the base Timeseries
@@ -126,6 +133,9 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 
 	mtx := sync.Mutex{}
 	wg := sync.WaitGroup{}
+
+	se.updateLock.Lock()
+	defer se.updateLock.Unlock()
 
 	series := make(map[seriesKey]*models.Row)
 	for i, r := range se.Results {
@@ -190,43 +200,50 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 
 // Clone returns a perfect copy of the base Timeseries
 func (se *SeriesEnvelope) Clone() timeseries.Timeseries {
-	resultSe := &SeriesEnvelope{
+	se.updateLock.Lock()
+	defer se.updateLock.Unlock()
+	clone := &SeriesEnvelope{
 		Err:          se.Err,
 		Results:      make([]Result, len(se.Results)),
 		StepDuration: se.StepDuration,
 		ExtentList:   make(timeseries.ExtentList, len(se.ExtentList)),
+		timestamps:   make(map[time.Time]bool),
+		tslist:       make(times.Times, len(se.tslist)),
+		isCounted:    se.isCounted,
+		isSorted:     se.isSorted,
 	}
-	copy(resultSe.ExtentList, se.ExtentList)
-	for index := range se.Results {
-		resResult := se.Results[index]
-		resResult.Err = se.Results[index].Err
-		resResult.StatementID = se.Results[index].StatementID
-		for seriesIndex := range se.Results[index].Series {
-			serResult := se.Results[index].Series[seriesIndex]
-			serResult.Name = se.Results[index].Series[seriesIndex].Name
-			serResult.Partial = se.Results[index].Series[seriesIndex].Partial
-
-			serResult.Columns = make([]string, len(se.Results[index].Series[seriesIndex].Columns))
-			copy(serResult.Columns, se.Results[index].Series[seriesIndex].Columns)
-
-			serResult.Tags = make(map[string]string)
-
-			// Copy from the original map to the target map
-			for key, value := range se.Results[index].Series[seriesIndex].Tags {
-				serResult.Tags[key] = value
-			}
-
-			serResult.Values = make([][]interface{}, len(se.Results[index].Series[seriesIndex].Values))
-			for i := range se.Results[index].Series[seriesIndex].Values {
-				serResult.Values[i] = make([]interface{}, len(se.Results[index].Series[seriesIndex].Values[i]))
-				copy(serResult.Values[i], se.Results[index].Series[seriesIndex].Values[i])
-			}
-
-			resResult.Series[seriesIndex] = serResult
+	copy(clone.ExtentList, se.ExtentList)
+	for k, v := range se.timestamps {
+		clone.timestamps[k] = v
+	}
+	copy(clone.tslist, se.tslist)
+	for i, r := range se.Results {
+		nres := Result{
+			Series: make([]models.Row, len(r.Series)),
 		}
-		resultSe.Results[index] = resResult
+		nres.Err = r.Err
+		nres.StatementID = r.StatementID
+		for l, row := range r.Series {
+			nrow := models.Row{
+				Name:    row.Name,
+				Partial: row.Partial,
+				Columns: make([]string, len(row.Columns)),
+				Tags:    make(map[string]string),
+				Values:  make([][]interface{}, len(row.Values)),
+			}
+			copy(nrow.Columns, row.Columns)
+			for k, v := range row.Tags {
+				nrow.Tags[k] = v
+			}
+			for j := range row.Values {
+				nrow.Values[j] = make([]interface{}, len(row.Values[j]))
+				copy(nrow.Values[j], row.Values[j])
+			}
+			nres.Series[l] = nrow
+		}
+		clone.Results[i] = nres
 	}
-	return resultSe
+	return clone
 }
 
 // CropToSize reduces the number of elements in the Timeseries to the provided count, by evicting elements
@@ -403,12 +420,12 @@ func (se *SeriesEnvelope) CropToRange(e timeseries.Extent) {
 // Sort sorts all Values in each Series chronologically by their timestamp
 func (se *SeriesEnvelope) Sort() {
 
-	wg := sync.WaitGroup{}
-	mtx := sync.Mutex{}
-
 	if se.isSorted || len(se.Results) == 0 || len(se.Results[0].Series) == 0 {
 		return
 	}
+
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
 
 	var hasWarned bool
 	tsm := map[time.Time]bool{}

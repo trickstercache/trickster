@@ -48,3 +48,8 @@ func UncacheableHTTPMethods() []string {
 func IsCacheable(method string) bool {
 	return method == http.MethodGet || method == http.MethodHead
 }
+
+// HasBody returns true if the method is POST, PUT or PATCH
+func HasBody(method string) bool {
+	return method == http.MethodPost || method == http.MethodPatch || method == http.MethodPut
+}

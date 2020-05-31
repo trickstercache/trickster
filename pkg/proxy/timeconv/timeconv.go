@@ -36,16 +36,14 @@ func ParseDuration(input string) (time.Duration, error) {
 			break
 		}
 		if i > 0 {
-			units, ok := UnitMap[input[i:]]
-			if !ok {
+			if _, ok := UnitMap[input[i:]]; !ok {
 				return errors.ParseDuration(input)
 			}
 			v, err := strconv.ParseInt(input[0:i], 10, 64)
 			if err != nil {
 				return errors.ParseDuration(input)
 			}
-			v *= units
-			return time.Duration(v), nil
+			return ParseDurationParts(v, input[i:])
 		}
 	}
 	return errors.ParseDuration(input)
@@ -56,20 +54,23 @@ func ParseDurationParts(value int64, units string) (time.Duration, error) {
 	if _, ok := UnitMap[units]; !ok {
 		return errors.ParseDuration(fmt.Sprintf("%d%s", value, units))
 	}
-	return time.Duration(value * UnitMap[units]), nil
+	return time.Duration(value) * UnitMap[units], nil
 }
 
-// UnitMap provides a map of common time unit indicators to nanoseconds of duration per unit
-var UnitMap = map[string]int64{
-	"ns": int64(time.Nanosecond),
-	"us": int64(time.Microsecond),
-	"µs": int64(time.Microsecond), // U+00B5 = micro symbol
-	"μs": int64(time.Microsecond), // U+03BC = Greek letter mu
-	"ms": int64(time.Millisecond),
-	"s":  int64(time.Second),
-	"m":  int64(time.Minute),
-	"h":  int64(time.Hour),
-	"d":  int64(24 * time.Hour),
-	"w":  int64(24 * 7 * time.Hour),
-	"y":  int64(24 * 365 * time.Hour),
+// UnitMap provides a map of common time unit abbreviations to their respective time.Durations
+var UnitMap = map[string]time.Duration{
+	"ns": time.Nanosecond,
+	"u":  time.Microsecond,
+	"µ":  time.Microsecond, // U+00B5 = micro symbol
+	"μ":  time.Microsecond, // U+03BC = Greek letter mu
+	"us": time.Microsecond,
+	"µs": time.Microsecond, // U+00B5 = micro symbol
+	"μs": time.Microsecond, // U+03BC = Greek letter mu
+	"ms": time.Millisecond,
+	"s":  time.Second,
+	"m":  time.Minute,
+	"h":  time.Hour,
+	"d":  24 * time.Hour,
+	"w":  24 * 7 * time.Hour,
+	"y":  24 * 365 * time.Hour,
 }

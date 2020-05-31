@@ -73,7 +73,6 @@ func (nl *namedLock) Release() error {
 		return errInvalidLockName(nl.name)
 	}
 
-	atomic.StoreInt32(&nl.writeLockMode, 0)
 	qs := atomic.AddInt32(&nl.queueSize, -1)
 	if qs == 0 {
 		nl.locker.mapLock.Lock()
@@ -81,6 +80,7 @@ func (nl *namedLock) Release() error {
 		nl.locker.mapLock.Unlock()
 	}
 
+	atomic.AddInt32(&nl.writeLockMode, -1)
 	nl.Unlock()
 	return nil
 }
@@ -112,7 +112,7 @@ func (nl *namedLock) WriteLockCounter() int {
 
 // WriteLockMode returns true if a caller is waiting for a write lock
 func (nl *namedLock) WriteLockMode() bool {
-	return atomic.LoadInt32(&nl.writeLockMode) == 1
+	return atomic.LoadInt32(&nl.writeLockMode) > 0
 }
 
 // Upgrade will upgrade the current read-lock to a write lock without losing the reference to the
@@ -128,7 +128,7 @@ func (nl *namedLock) Upgrade() (NamedLock, error) {
 	go func() {
 		atomic.AddInt32(&nl.queueSize, 1)
 		ch <- true
-		atomic.StoreInt32(&nl.writeLockMode, 1)
+		atomic.AddInt32(&nl.writeLockMode, 1)
 		nl.Lock()
 		nl.writeLockCount++
 		wg.Done()
@@ -159,7 +159,7 @@ func (lk *namedLocker) Acquire(lockName string) (NamedLock, error) {
 	}
 	atomic.AddInt32(&nl.queueSize, 1)
 	lk.mapLock.Unlock()
-	atomic.StoreInt32(&nl.writeLockMode, 1)
+	atomic.AddInt32(&nl.writeLockMode, 1)
 
 	nl.Lock()
 

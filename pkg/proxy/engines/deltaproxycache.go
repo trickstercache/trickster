@@ -396,36 +396,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	// cts is the cacheable time series, rts is the user's response timeseries
 	rts := cts.Clone()
 
-	// if it was a cache key miss, there is no need to undergo Crop since the extents are identical
-	if cacheStatus != status.LookupStatusKeyMiss {
-		rts.CropToRange(trq.Extent)
-	}
-	cachedValueCount := rts.ValueCount() - uncachedValueCount
-
-	if uncachedValueCount > 0 {
-		metrics.ProxyRequestElements.WithLabelValues(oc.Name,
-			oc.OriginType, "uncached", r.URL.Path).Add(float64(uncachedValueCount))
-	}
-
-	if cachedValueCount > 0 {
-		metrics.ProxyRequestElements.WithLabelValues(oc.Name,
-			oc.OriginType, "cached", r.URL.Path).Add(float64(cachedValueCount))
-	}
-
-	// Merge Fast Forward data if present. This must be done after the Downstream Crop since
-	// the cropped extent was normalized to stepboundaries and would remove fast forward data
-	// If the fast forward data point is older (e.g. cached) than the last datapoint in the
-	// returned time series, it will not be merged
-	if hasFastForwardData && len(ffts.Extents()) == 1 &&
-		ffts.Extents()[0].Start.Truncate(time.Second).After(normalizedNow.Extent.End) {
-		rts.Merge(false, ffts)
-	}
-	rts.SetExtents(nil) // so they are not included in the client response json
-	rts.SetStep(0)
-	rdata, err := client.MarshalTimeseries(rts)
-	rh := doc.SafeHeaderClone()
-	sc := doc.StatusCode
-
 	if writeLock != nil {
 		// if the mutex is still locked, it means we need to write the time series to cache
 		go func() {
@@ -467,6 +437,36 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 			writeLock.Release()
 		}()
 	}
+
+	// if it was a cache key miss, there is no need to undergo Crop since the extents are identical
+	if cacheStatus != status.LookupStatusKeyMiss {
+		rts.CropToRange(trq.Extent)
+	}
+	cachedValueCount := rts.ValueCount() - uncachedValueCount
+
+	if uncachedValueCount > 0 {
+		metrics.ProxyRequestElements.WithLabelValues(oc.Name,
+			oc.OriginType, "uncached", r.URL.Path).Add(float64(uncachedValueCount))
+	}
+
+	if cachedValueCount > 0 {
+		metrics.ProxyRequestElements.WithLabelValues(oc.Name,
+			oc.OriginType, "cached", r.URL.Path).Add(float64(cachedValueCount))
+	}
+
+	// Merge Fast Forward data if present. This must be done after the Downstream Crop since
+	// the cropped extent was normalized to stepboundaries and would remove fast forward data
+	// If the fast forward data point is older (e.g. cached) than the last datapoint in the
+	// returned time series, it will not be merged
+	if hasFastForwardData && len(ffts.Extents()) == 1 &&
+		ffts.Extents()[0].Start.Truncate(time.Second).After(normalizedNow.Extent.End) {
+		rts.Merge(false, ffts)
+	}
+	rts.SetExtents(nil) // so they are not included in the client response json
+	rts.SetStep(0)
+	rdata, err := client.MarshalTimeseries(rts)
+	rh := doc.SafeHeaderClone()
+	sc := doc.StatusCode
 
 	// Respond to the user. Using the response headers from a Delta Response,
 	// so as to not map conflict with cacheData on WriteCache

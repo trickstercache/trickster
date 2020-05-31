@@ -17,13 +17,16 @@
 package influxdb
 
 import (
+	"bytes"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"testing"
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
@@ -44,7 +47,9 @@ func TestSetExtent(t *testing.T) {
 	oc := conf.Origins["default"]
 	client := Client{config: oc}
 
-	tu := &url.URL{RawQuery: "q=select * where <$TIME_TOKEN$> group by time(1m)"}
+	const tokenized = "q=select * where <$TIME_TOKEN$> group by time(1m)"
+
+	tu := &url.URL{RawQuery: tokenized}
 
 	r, _ := http.NewRequest(http.MethodGet, tu.String(), nil)
 	trq := &timeseries.TimeRangeQuery{TemplateURL: tu}
@@ -54,4 +59,13 @@ func TestSetExtent(t *testing.T) {
 	if expected != r.URL.RawQuery {
 		t.Errorf("\nexpected [%s]\ngot    [%s]", expected, r.URL.RawQuery)
 	}
+
+	r.Method = http.MethodPost
+	r.Body = ioutil.NopCloser(bytes.NewBufferString(tokenized))
+	client.SetExtent(r, trq, e)
+	_, s, _ := request.GetRequestValues(r)
+	if expected != s {
+		t.Errorf("\nexpected [%s]\ngot    [%s]", expected, s)
+	}
+
 }

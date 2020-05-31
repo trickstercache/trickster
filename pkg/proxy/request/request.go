@@ -17,3 +17,45 @@
 // Package request provides functionality for handling HTTP Requests
 // including the insertion of configuration options into the request
 package request
+
+import (
+	"bytes"
+	"io/ioutil"
+	"net/http"
+	"net/url"
+
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
+)
+
+// GetRequestValues returns the Query Parameters for the request
+// regardless of method
+func GetRequestValues(r *http.Request) (url.Values, string, bool) {
+	var v url.Values
+	var s string
+	var isBody bool
+	if !methods.HasBody(r.Method) {
+		v = r.URL.Query()
+		s = r.URL.RawQuery
+	} else {
+		r.ParseForm()
+		v = r.PostForm
+		s = v.Encode()
+		isBody = true
+		r.ContentLength = int64(len(s))
+		r.Body = ioutil.NopCloser(bytes.NewBufferString(s))
+	}
+	return v, s, isBody
+}
+
+// SetRequestValues Values sets the Query Parameters for the request
+// regardless of method
+func SetRequestValues(r *http.Request, v url.Values) {
+	s := v.Encode()
+	if methods.HasBody(r.Method) {
+		r.URL.RawQuery = s
+	} else {
+		// reset the body
+		r.ContentLength = int64(len(s))
+		r.Body = ioutil.NopCloser(bytes.NewBufferString(s))
+	}
+}
