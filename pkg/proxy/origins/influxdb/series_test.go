@@ -88,6 +88,7 @@ func TestClone(t *testing.T) {
 				},
 			},
 		},
+		timestamps: map[time.Time]bool{{}: true},
 	}
 
 	sec := se.Clone().(*SeriesEnvelope)
@@ -1579,4 +1580,11 @@ func TestSize(t *testing.T) {
 		t.Errorf("expected %d got %d", expected, i)
 	}
 
+}
+
+func TestTags(t *testing.T) {
+	tags := make(tags)
+	if tags.String() != "" {
+		t.Error("expected empty string")
+	}
 }
