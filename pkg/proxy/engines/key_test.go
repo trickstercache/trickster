@@ -152,7 +152,7 @@ func TestDeriveCacheKey(t *testing.T) {
 		t.Errorf("expected %s got %s", "407aba34f02c87f6898a6d80b01f38a4", ck)
 	}
 
-	const expected = "1cbe3eb3b2a3c2cb5b445c80c98e76ee"
+	const expected = "cb84ad010abb4d0f864470540a46f137"
 
 	tr = httptest.NewRequest(http.MethodPost, "http://127.0.0.1/", bytes.NewReader([]byte("field1=value1")))
 	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
