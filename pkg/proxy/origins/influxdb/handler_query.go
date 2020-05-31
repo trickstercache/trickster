@@ -18,10 +18,12 @@ package influxdb
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/proxy/timeconv"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -31,9 +33,11 @@ import (
 // QueryHandler handles timeseries requests for InfluxDB and processes them through the delta proxy cache
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
-	rqlc := strings.Replace(strings.ToLower(r.URL.RawQuery), "%20", "+", -1)
+	_, s, _ := request.GetRequestValues(r)
+
+	s = strings.Replace(strings.ToLower(s), "%20", "+", -1)
 	// if it's not a select statement, just proxy it instead
-	if (!strings.HasPrefix(rqlc, "q=select+")) && (!(strings.Index(rqlc, "&q=select+") > 0)) {
+	if (!strings.HasPrefix(s, "q=select+")) && (!(strings.Index(s, "&q=select+") > 0)) {
 		c.ProxyHandler(w, r)
 		return
 	}
@@ -46,12 +50,10 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
-	trq.TemplateURL = urls.Clone(r.URL)
 
-	qi := trq.TemplateURL.Query()
-	if p, ok := qi[upQuery]; ok {
-		trq.Statement = p[0]
-	} else {
+	v, _, _ := request.GetRequestValues(r)
+	trq.Statement = v.Get(upQuery)
+	if trq.Statement == "" {
 		return nil, errors.MissingURLParam(upQuery)
 	}
 
@@ -60,18 +62,19 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	if !found {
 		return nil, errors.ErrStepParse
 	}
-
 	stepDuration, err := timeconv.ParseDuration(step)
 	if err != nil {
 		return nil, errors.ErrStepParse
 	}
 	trq.Step = stepDuration
-
 	trq.Statement, trq.Extent = getQueryParts(trq.Statement)
+	trq.TemplateURL = urls.Clone(r.URL)
 
+	qt := url.Values(http.Header(v).Clone())
+	qt.Set(upQuery, trq.Statement)
 	// Swap in the Tokenzed Query in the Url Params
-	qi.Set(upQuery, trq.Statement)
-	trq.TemplateURL.RawQuery = qi.Encode()
+	trq.TemplateURL.RawQuery = qt.Encode()
+
 	return trq, nil
 
 }

@@ -17,9 +17,12 @@
 package influxdb
 
 import (
+	"bytes"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strconv"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
@@ -29,17 +32,36 @@ import (
 	"github.com/influxdata/influxdb/pkg/testing/assert"
 )
 
+var testVals = url.Values(map[string][]string{"q": {
+	`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h ` +
+		`GROUP BY time(15s), "cluster" fill(null)`}, "epoch": {"ms"}})
+var testRawQuery = testVals.Encode()
+
 func TestParseTimeRangeQuery(t *testing.T) {
-	req := &http.Request{URL: &url.URL{
-		Scheme: "https",
-		Host:   "blah.com",
-		Path:   "/",
-		RawQuery: url.Values(map[string][]string{"q": {
-			`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h ` +
-				`GROUP BY time(15s), "cluster" fill(null)`}, "epoch": {"ms"}}).Encode(),
-	}}
+
+	req := &http.Request{
+		Method: http.MethodGet,
+		URL: &url.URL{
+			Scheme:   "https",
+			Host:     "blah.com",
+			Path:     "/",
+			RawQuery: testRawQuery,
+		}}
 	client := &Client{}
 	res, err := client.ParseTimeRangeQuery(req)
+	if err != nil {
+		t.Error(err)
+	} else {
+		assert.Equal(t, int(res.Step.Seconds()), 15)
+		assert.Equal(t, int(res.Extent.End.Sub(res.Extent.Start).Hours()), 6)
+	}
+
+	req, _ = http.NewRequest(http.MethodPost, "http://blah.com/",
+		io.Reader(bytes.NewBufferString(testRawQuery)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Content-Length", strconv.Itoa(len(testRawQuery)))
+
+	res, err = client.ParseTimeRangeQuery(req)
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -143,16 +165,18 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 
 	expected := errors.ErrStepParse
 
-	req := &http.Request{URL: &url.URL{
-		Scheme: "https",
-		Host:   "blah.com",
-		Path:   "/",
-		RawQuery: url.Values(map[string][]string{
-			"q": {`SELECT mean("value") FROM "monthly"."rollup.1min" ` +
-				`WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY times(15s), "cluster" fill(null)`},
-			"epoch": {"ms"},
-		}).Encode(),
-	}}
+	req := &http.Request{
+		Method: http.MethodGet,
+		URL: &url.URL{
+			Scheme: "https",
+			Host:   "blah.com",
+			Path:   "/",
+			RawQuery: url.Values(map[string][]string{
+				"q": {`SELECT mean("value") FROM "monthly"."rollup.1min" ` +
+					`WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY times(15s), "cluster" fill(null)`},
+				"epoch": {"ms"},
+			}).Encode(),
+		}}
 	client := &Client{}
 	_, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
@@ -162,4 +186,5 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 	if err != expected {
 		t.Errorf(`Expected "%s", got "%s"`, expected.Error(), err.Error())
 	}
+
 }
