@@ -23,7 +23,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/config"
 	ph "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
-	"github.com/tricksterproxy/trickster/pkg/proxy/listeners"
+	"github.com/tricksterproxy/trickster/pkg/proxy/listener"
 	ttls "github.com/tricksterproxy/trickster/pkg/proxy/tls"
 	"github.com/tricksterproxy/trickster/pkg/routing"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
@@ -32,7 +32,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 )
 
-var lg = listeners.NewListenerGroup()
+var lg = listener.NewListenerGroup()
 
 func applyListenerConfigs(conf, oldConf *config.Config,
 	router, reloadHandler http.Handler, log *log.Logger,

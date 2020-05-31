@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package listeners
+package listener
 
 import (
 	"crypto/tls"
