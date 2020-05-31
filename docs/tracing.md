@@ -31,9 +31,31 @@ Trickster can insert several spans to the traces that it captures, depending upo
 | ProxyRequest           | communicating with an Origin server to fulfill a client request |
 | PrepareFetchReader     | preparing a client response from a cached or Origin response |
 | CacheRevalidation      | revalidating a stale cache object against its Origin |
+| FetchObject            | retrieving a non-time-series object from an Origin |
 
 ## Tags / Attributes
 
-Trickster supports adding custom tags to every span via the configuration. See the example.conf.
+Trickster supports adding custom tags to every span via the configuration. Depending upon your preferred tracing backend, these may be referred to as attributes. See the [example config](../cmd/trickster/conf/example.conf) for examples of adding custom attributes.
 
-Trickster also supports omitting any tags that Trickster inserts by default. For example on the "request" span, an `http.url` tag is attached with the current full URL. In deployments where that tag may introduce too much cardinality in your backend trace storage system, you may wish to omit that tag and rely on the more concise `path` tag. Each tracer config can be provided a string list of tags to omit from traces.
+Trickster also supports omitting any tags that Trickster inserts by default. The list of default tags are below. For example on the "request" span, an `http.url` tag is attached with the current full URL. In deployments where that tag may introduce too much cardinality in your backend trace storage system, you may wish to omit that tag and rely on the more concise `path` tag. Each tracer config can be provided a string list of tags to omit from traces.
+
+### Attributes added to top level (request) span
+
+- `http.url` - the full HTTP request URL
+- `origin.name`
+- `origin.type`
+- `cache.name`
+- `cache.type`
+- `router.path` - request path trimmed to the route match path for the request (e.g., `/api/v1/query`), good for aggregating when there are large variations in the full URL path
+
+### Attributes added to QueryCache span
+
+- `cache.status` - the lookup status of cache query. See the [cache status reference](./caches.md#cache-status) for a description of the attribute values.
+
+### Attributes added to the FetchRevalidation span
+
+- `isRange` - is true if the client request includes an HTTP `Range` header
+
+### Attributes added to the FetchObject span
+
+- `isPCF` - is true if the origin is configured for [Progressive Collapsed Forwarding](./collapsed-forwarding.md#progressive-collapsed-forwarding)
