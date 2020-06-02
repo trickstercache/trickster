@@ -2,7 +2,7 @@
 
 ## Pre-release
 
-Trickster 1.1 is currently in Public Beta. We anticipate a short beta cycle with an expected GA release in mid-May 2020. This document may be updated with new information as the cycle progresses.
+Trickster 1.1 is currently in Public Beta. We anticipate a short beta cycle with an expected GA release the first week of June 2020. This document may be updated with new information as the cycle progresses.
 
 ## What's Improved
 
@@ -21,14 +21,14 @@ Trickster 1.1 is currently in Public Beta. We anticipate a short beta cycle with
 - In-process config reloading via HUP or optional http listener endpoint
 - Added `-validate-config` command line flag
 - Customizable pprof debugging server configurations
-- Updated to OpenTelemetry 0.5.0, streamlined Tracing configs, added Zipkin exporter support
+- Updated to OpenTelemetry 0.6.0, streamlined Tracing configs, added Zipkin exporter support
 - Updated Named Locks package to support RWMutex for concurrent cached object reads
 - New Rules Engine for custom request handling and rewriting
 - HTTP 2.0 Support
 - systemd service file (`trickster.service`) is relocated from `./cmd/trickster/conf/` to `./deploy/systemd/`
 - `rangesim` package has been rebranded as `mockster`, and moved to [its own project](https://github.com/tricksterproxy/mockster), with its own docker image using port `8482`
-- Fully support acceleration of HTTP POST requests to Prometheus `query` and `query_range` endpoints
-- Updated dependencies to Go 1.14.2, Alpine 3.11.5, InfluxDB 1.8.0
+- Fully support acceleration of HTTP POST requests to Prometheus and InfluxDB endpoints
+- Updated dependencies to Go 1.14.3, Alpine 3.12, InfluxDB 1.8.0
 
 ## Installing
 
