@@ -1,9 +1,5 @@
 # Trickster 1.1
 
-## Pre-release
-
-Trickster 1.1 is currently in Public Beta. We anticipate a short beta cycle with an expected GA release the first week of June 2020. This document may be updated with new information as the cycle progresses.
-
 ## What's Improved
 
 1.1 continues to improve the Trickster project, with a ton of new features, bug fixes, and optimizations. Here's the quick rundown of what's new and improved:
@@ -44,8 +40,8 @@ If you rely on default settings in your deployment, rather than setting explicit
 
 The `[tracing]` section of the Trickster TOML config specification has changed slightly, and is incompatible with a v1.0 config. If you use the tracing feature, be sure to check the [example.conf](../cmd/trickster/conf/example.conf) and adjust yours accordingly.
 
-## Known Issues w/ v1.1 Beta
+## Known Issues
 
 ### Zipkin
 
-- Zipkin implementation currently works with the OpenZipkin but not Jaeger Collector's Zipkin-compatible endpoints
+- Zipkin implementation currently works with the OpenZipkin Collector, but not Jaeger Collector's Zipkin-compatible endpoints
