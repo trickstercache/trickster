@@ -19,7 +19,22 @@ package clickhouse
 import (
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"testing"
+	"time"
 )
+
+func testNow() int {
+	t, _ := time.Parse(chLayout, "2020-06-01 12:00:00")
+	return int(t.Unix())
+}
+
+func testDate(ts string) time.Time {
+	t, _ := time.Parse(chLayout, "2020-06-01 "+ts)
+	return t
+}
+
+/*func chDateDisplay(time.Time) string {
+	return time.
+}*/
 
 func TestFindParts(t *testing.T) {
 	/*query := "WITH  3600  as  x  SELECT (  intDiv(toUInt32(datetime), x) * x) * 1000 AS t," +
@@ -35,15 +50,45 @@ func TestFindParts(t *testing.T) {
 
 }
 
-func TestGoodQuery(t *testing.T) {
+func TestGoodQueries(t *testing.T) {
 	query := `SELECT (  intDiv(toUInt32(datetime), 300) * 300) * 1000 AS t,` +
-		` count() as cnt FROM comcast_ott_maple.atsec_chi WHERE datetime between 1589904000 AND 1589997600` +
+		` count() as cnt FROM test_db.test_table WHERE datetime between 1589904000 AND 1589997600` +
 		` GROUP BY t ORDER BY  t DESC FORMAT JSON`
 	trq := &timeseries.TimeRangeQuery{}
 	err := parseRawQuery(query, trq)
 	if err != nil {
 		t.Error(err)
 	}
+	if trq.Step != 300*time.Second {
+		t.Errorf("Step of %d did not match 300 seconds", trq.Step)
+	}
+
+	if trq.Extent.Start != time.Unix(int64(1589904000), 0) {
+		t.Errorf("Expected start time of 1589904000, got %d", trq.Extent.Start.Unix())
+	}
+	trq = &timeseries.TimeRangeQuery{}
+	query = `SELECT toStartOfFiveMinute(datetime) AS t, count() as cnt FROM test_db.test_table WHERE t > ` +
+		`'2020-05-30 11:00:00' AND t < now() - 300 FORMAT JSON`
+	err = parseRawQuery(query, trq)
+	if err != nil {
+		t.Error(err)
+	}
+	if trq.Step != 300*time.Second {
+		t.Errorf("Step of %d did not match 300 seconds", trq.Step)
+	}
+
+}
+
+func TestBackfillTolerance(t *testing.T) {
+	parsingNowProvider = testNow
+	query := `select intDiv(toInt32(datetime), 20) * 20 as t, sum(cnt) FROM testTable WHERE datetime >= '2020-06-01 11:00:00' ` +
+		` and datetime < '2020-06-01 12:00:00' FORMAT JSON`
+	trq := &timeseries.TimeRangeQuery{BackfillTolerance: 180 * time.Second}
+	_ = parseRawQuery(query, trq)
+	if trq.BackfillTolerance != time.Second*180 {
+		t.Errorf("Expected bft of 180, got %d", trq.BackfillTolerance)
+	}
+
 }
 
 /*func TestGetQueryPartsFailure(t *testing.T) {

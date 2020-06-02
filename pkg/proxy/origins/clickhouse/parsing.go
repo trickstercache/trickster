@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Comcast Cable Communications Management, LLC
+ * Copyright 2020 Comcast Cable Communications Management, LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,6 +60,10 @@ var timeFuncMap = map[string]string{
 	"toStartOfFifteenMinutes": "15m",
 	"toStartOfHour":           "1h",
 	"toDate":                  "1d",
+}
+
+var parsingNowProvider = func() int {
+	return int(time.Now().Unix())
 }
 
 var reTimeFieldAndStep = regexp.MustCompile(`.*intDiv\(toU?Int32\((?P<timeField>[a-zA-Z0-9._-]+)\),(?P<step>[0-9]+)\)`)
@@ -157,26 +161,28 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 
 	bf := trq.BackfillTolerance
 
-	now := int(time.Now().Unix())
+	now := parsingNowProvider()
 	if endTime == 0 {
 		endTime = now
 	}
 
 	step := int(trq.Step.Seconds())
 
-	// Reduce backfill tolerance to nothing if we're well outside the window
-	bt := time.Duration(step-(now-endTime)) * time.Second
-	if bt < bf {
-		bf = bt
-	}
-
-	// Pad out endTime if we are in the "now" bucket so the last extent is not truncated
 	norm := now / step * step
 	if endTime > norm {
+		// Pad out endTime if we are in the "now" bucket so the last extent is not truncated
 		endTime = norm + step
 		bft := time.Duration(now-norm) * time.Second
 		if bft > bf {
 			bf = bft
+		}
+	} else {
+		// Reduce backfill tolerance to nothing if we're well outside the window
+		etNorm := endTime / step * step
+		diff := time.Duration(now-etNorm) * time.Second
+		nbf := bf - diff
+		if nbf < bf {
+			bf = nbf
 		}
 	}
 
@@ -187,7 +193,7 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 
 func parseTime(ts string) (int, error) {
 	if strings.HasPrefix(ts, "now(") {
-		now := int(time.Now().Unix())
+		now := parsingNowProvider()
 		if len(ts) > 6 && ts[4] == '-' {
 			sub := 1
 			for _, ms := range strings.Split(ts[5:], "*") {
