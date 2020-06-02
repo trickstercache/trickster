@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
@@ -69,11 +70,15 @@ const (
 
 // Client Implements Proxy Client Interface
 type TestClient struct {
-	name      string
-	config    *oo.Options
-	cache     cache.Cache
-	webClient *http.Client
-	router    http.Handler
+	name            string
+	config          *oo.Options
+	cache           cache.Cache
+	webClient       *http.Client
+	baseUpstreamURL *url.URL
+	healthURL       *url.URL
+	healthHeaders   http.Header
+	healthMethod    string
+	router          http.Handler
 
 	fftime          time.Time
 	InstantCacheKey string
@@ -320,6 +325,10 @@ func (c *TestClient) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRange
 		trq.FastForwardDisable = true
 	}
 
+	if strings.Contains(trq.Statement, timeseries.FastForwardUserDisableFlag) {
+		trq.FastForwardDisable = true
+	}
+
 	return trq, nil
 }
 
@@ -477,21 +486,41 @@ func (me *MatrixEnvelope) SetStep(step time.Duration) {
 // (in the order provided) and optionally sorts the merged Timeseries
 func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) {
 	meMetrics := make(map[string]*model.SampleStream)
+
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
 	for _, s := range me.Data.Result {
-		meMetrics[s.Metric.String()] = s
+		wg.Add(1)
+		go func(t *model.SampleStream) {
+			mtx.Lock()
+			meMetrics[t.Metric.String()] = t
+			mtx.Unlock()
+			wg.Done()
+		}(s)
 	}
+	wg.Wait()
+
 	for _, ts := range collection {
 		if ts != nil {
 			me2 := ts.(*MatrixEnvelope)
 			for _, s := range me2.Data.Result {
-				name := s.Metric.String()
-				if _, ok := meMetrics[name]; !ok {
-					meMetrics[name] = s
-					me.Data.Result = append(me.Data.Result, s)
-					continue
-				}
-				meMetrics[name].Values = append(meMetrics[name].Values, s.Values...)
+				wg.Add(1)
+				go func(t *model.SampleStream) {
+					mtx.Lock()
+					name := t.Metric.String()
+					if _, ok := meMetrics[name]; !ok {
+						meMetrics[name] = t
+						me.Data.Result = append(me.Data.Result, t)
+						mtx.Unlock()
+						wg.Done()
+						return
+					}
+					meMetrics[name].Values = append(meMetrics[name].Values, t.Values...)
+					mtx.Unlock()
+					wg.Done()
+				}(s)
 			}
+			wg.Wait()
 			me.ExtentList = append(me.ExtentList, me2.ExtentList...)
 		}
 	}
@@ -521,9 +550,18 @@ func (me *MatrixEnvelope) Clone() timeseries.Timeseries {
 	copy(resMe.ExtentList, me.ExtentList)
 	copy(resMe.tslist, me.tslist)
 
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
 	for k, v := range me.timestamps {
-		resMe.timestamps[k] = v
+		wg.Add(1)
+		go func(t time.Time, b bool) {
+			mtx.Lock()
+			resMe.timestamps[t] = b
+			mtx.Unlock()
+			wg.Done()
+		}(k, v)
 	}
+	wg.Wait()
 
 	for _, ss := range me.Data.Result {
 		newSS := &model.SampleStream{Metric: ss.Metric}
@@ -577,19 +615,29 @@ func (me *MatrixEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 		}
 	}
 
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
+
 	for _, s := range me.Data.Result {
 		tmp := s.Values[:0]
 		for _, r := range s.Values {
-			t = r.Timestamp.Time()
-			if _, ok := removals[t]; !ok {
-				tmp = append(tmp, r)
-			}
+			wg.Add(1)
+			go func(p model.SamplePair) {
+				mtx.Lock()
+				if _, ok := removals[p.Timestamp.Time()]; !ok {
+					tmp = append(tmp, p)
+				}
+				mtx.Unlock()
+				wg.Done()
+			}(r)
 		}
+		wg.Wait()
 		s.Values = tmp
 	}
 
 	tl := times.FromMap(removals)
 	sort.Sort(tl)
+
 	for _, t := range tl {
 		for i, e := range el {
 			if e.StartsAt(t) {
@@ -597,6 +645,7 @@ func (me *MatrixEnvelope) CropToSize(sz int, t time.Time, lur timeseries.Extent)
 			}
 		}
 	}
+	wg.Wait()
 
 	me.ExtentList = timeseries.ExtentList(el).Compress(me.StepDuration)
 	me.Sort()
@@ -686,23 +735,34 @@ func (me *MatrixEnvelope) CropToRange(e timeseries.Extent) {
 // Sort sorts all Values in each Series chronologically by their timestamp
 func (me *MatrixEnvelope) Sort() {
 
-	if me.isSorted {
+	if me.isSorted || len(me.Data.Result) == 0 {
 		return
 	}
 
 	tsm := map[time.Time]bool{}
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
 
 	for i, s := range me.Data.Result { // []SampleStream
 		m := make(map[time.Time]model.SamplePair)
-		for _, v := range s.Values { // []SamplePair
-			t := v.Timestamp.Time()
-			tsm[t] = true
-			m[t] = v
-		}
 		keys := make(times.Times, 0, len(m))
-		for key := range m {
-			keys = append(keys, key)
+
+		for _, v := range s.Values { // []SamplePair
+			wg.Add(1)
+			go func(sp model.SamplePair) {
+				t := sp.Timestamp.Time()
+				mtx.Lock()
+				if _, ok := m[t]; !ok {
+					keys = append(keys, t)
+					m[t] = sp
+				}
+				tsm[t] = true
+				m[t] = sp
+				mtx.Unlock()
+				wg.Done()
+			}(v)
 		}
+		wg.Wait()
 		sort.Sort(keys)
 		sm := make([]model.SamplePair, 0, len(keys))
 		for _, key := range keys {
@@ -720,16 +780,25 @@ func (me *MatrixEnvelope) Sort() {
 }
 
 func (me *MatrixEnvelope) updateTimestamps() {
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
+
 	if me.isCounted {
 		return
 	}
 	m := make(map[time.Time]bool)
 	for _, s := range me.Data.Result { // []SampleStream
 		for _, v := range s.Values { // []SamplePair
-			t := v.Timestamp.Time()
-			m[t] = true
+			wg.Add(1)
+			go func(t time.Time) {
+				mtx.Lock()
+				m[t] = true
+				mtx.Unlock()
+				wg.Done()
+			}(v.Timestamp.Time())
 		}
 	}
+	wg.Wait()
 	me.timestamps = m
 	me.tslist = times.FromMap(m)
 	me.isCounted = true
@@ -760,9 +829,18 @@ func (me *MatrixEnvelope) SeriesCount() int {
 // ValueCount returns the count of all values across all Series in the Timeseries object
 func (me *MatrixEnvelope) ValueCount() int {
 	c := 0
+	wg := sync.WaitGroup{}
+	mtx := sync.Mutex{}
 	for i := range me.Data.Result {
-		c += len(me.Data.Result[i].Values)
+		wg.Add(1)
+		go func(j int) {
+			mtx.Lock()
+			c += j
+			mtx.Unlock()
+			wg.Done()
+		}(len(me.Data.Result[i].Values))
 	}
+	wg.Wait()
 	return c
 }
 
@@ -833,19 +911,21 @@ func testStringMatch(have, expected string) error {
 
 // Size returns the approximate memory utilization in bytes of the timeseries
 func (me *MatrixEnvelope) Size() int {
-
-	c := 0
 	wg := sync.WaitGroup{}
-	mtx := sync.Mutex{}
+	c := uint64(len(me.Status) +
+		me.ExtentList.Size() +
+		24 + // me.StepDuration
+		(25 * len(me.timestamps)) +
+		(24 * len(me.tslist)) +
+		2 + // isSorted + isCounted
+		len(me.Data.ResultType))
 	for i := range me.Data.Result {
 		wg.Add(1)
 		go func(s *model.SampleStream) {
-			mtx.Lock()
-			c += (len(s.Values) * 16) + len(s.Metric.String())
-			mtx.Unlock()
+			atomic.AddUint64(&c, uint64((len(s.Values)*32)+len(s.Metric.String())))
 			wg.Done()
 		}(me.Data.Result[i])
 	}
 	wg.Wait()
-	return c
+	return int(c)
 }
