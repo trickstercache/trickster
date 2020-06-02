@@ -93,44 +93,40 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 	var whereClause []string
 	for i := 0; i < size; i++ {
 		p := parts[i]
-		if sup(p) == "SELECT" && tsColumn == "" {
-			parts[i] = "SELECT"
+		if tsColumn == "" && srm(sup(p), "(") == "SELECT" {
 			i++
-			tsColumn = parts[i]
-			if strings.HasSuffix(tsColumn, ",") {
-				tsColumn = tsColumn[:len(tsColumn)-1]
+			testCol, testAlias := parts[i], ""
+			cl := strings.Index(testCol, ",")
+			if cl > 0 && strings.Index(testCol[cl:], ")") == -1 {
+				testCol = testCol[:cl]
 			} else if strings.ToUpper(parts[i+1]) == "AS" {
 				i += 2
-				tsAlias = strings.Split(parts[i], ",")[0]
+				testAlias = strings.Split(parts[i], ",")[0]
 			}
 			// First look for a Grafana/division type time series query
-			m := matching.GetNamedMatches(reTimeFieldAndStep, tsColumn, nil)
+			m := matching.GetNamedMatches(reTimeFieldAndStep, testCol, nil)
 			if tf, ok := m["timeField"]; ok {
-				tsColumn = tf
+				tsColumn, tsAlias = tf, testAlias
 				strStep, ok := m["step"]
 				if !ok {
 					return fmt.Errorf("invalid step from division operation")
 				}
 				duration = strStep + "s"
-				// Otherwise check for the use of built-in ClickHouse time grouping functions
 			} else {
+				// Otherwise check for the use of built-in ClickHouse time grouping functions
 				for k, v := range timeFuncMap {
-					fi := strings.Index(tsColumn, k+"(")
+					fi := strings.Index(testCol, k+"(")
 					if fi > -1 {
-						cp := strings.Index(tsColumn[fi+1:], ")")
+						cp := strings.Index(testCol[fi+1:], ")")
 						if cp == -1 {
 							return fmt.Errorf("invalid time function syntax")
 						}
-						tsColumn = tsColumn[fi+len(k)+1 : fi+cp+1]
+						tsColumn, tsAlias = testCol[fi+len(k)+1:fi+cp+1], testAlias
 						duration = v
 						break
 					}
 				}
-				if duration == "" {
-					return fmt.Errorf("unable to validate that first parameter is time grouping")
-				}
 			}
-			continue
 		}
 		if tsColumn != "" && (sup(parts[i]) == "PREWHERE" || sup(parts[i]) == "WHERE") {
 			startTime, endTime, whereClause, tsColumn, err = findRange(parts[i+1:], tsColumn, tsAlias)
@@ -159,21 +155,32 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 	trq.Extent.Start = time.Unix(int64(startTime), 0)
 	trq.TimestampFieldName = tsColumn
 
+	bf := trq.BackfillTolerance
+
 	now := int(time.Now().Unix())
 	if endTime == 0 {
 		endTime = now
 	}
 
-	// Pad out endTime if we are in the "now" bucket so the last extent is not truncated
 	step := int(trq.Step.Seconds())
+
+	// Reduce backfill tolerance to nothing if we're well outside the window
+	bt := time.Duration(step-(now-endTime)) * time.Second
+	if bt < bf {
+		bf = bt
+	}
+
+	// Pad out endTime if we are in the "now" bucket so the last extent is not truncated
 	norm := now / step * step
 	if endTime > norm {
 		endTime = norm + step
-		sbf := time.Duration(now-norm) * time.Second
-		if sbf > trq.BackfillTolerance {
-			trq.BackfillTolerance = sbf
+		bft := time.Duration(now-norm) * time.Second
+		if bft > bf {
+			bf = bft
 		}
 	}
+
+	trq.BackfillTolerance = bf
 	trq.Extent.End = time.Unix(int64(endTime), 0)
 	return nil
 }
@@ -218,7 +225,8 @@ func findRange(parts []string, column string, alias string) (int, int, []string,
 			if f == column || f == alias {
 				actColumn = f
 				i++
-				st, err = parseTime(parts[i])
+				ts := srm(srm(srm(parts[i], "toDateTime("), "toDate("), ")")
+				st, err = parseTime(ts)
 				if err != nil {
 					return st, et, nil, "", err
 				}
@@ -227,10 +235,12 @@ func findRange(parts []string, column string, alias string) (int, int, []string,
 					return st, et, nil, "", fmt.Errorf("unrecognized between clause")
 				}
 				i++
-				et, err = parseTime(parts[i])
+				ts = srm(srm(srm(parts[i], "toDateTime("), "toDate("), ")")
+				et, err = parseTime(ts)
 				if err != nil {
 					return st, et, nil, "", err
 				}
+				wc = wc[:len(wc)-1] // Remove column name before BETWEEN
 				wc = append(wc, "("+actColumn+" >= "+tkTimestamp1+" AND "+actColumn+" < "+tkTimestamp2+") ")
 				wc = append(wc, parts[i+1:]...)
 				return st, et, wc, actColumn, nil

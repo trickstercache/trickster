@@ -164,6 +164,8 @@ func (re *ResultsEnvelope) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &response); err != nil {
 		return err
 	}
+	re.isSorted = false
+	re.isCounted = false
 	re.Meta = response.Meta
 	re.Data = make([]Point, 0, len(response.RawData))
 
