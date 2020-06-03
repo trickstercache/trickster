@@ -63,6 +63,35 @@ func TestGoodQueries(t *testing.T) {
 	if trq.Step != 300*time.Second {
 		t.Errorf("Step of %d did not match 300 seconds", trq.Step)
 	}
+
+	trq = &timeseries.TimeRangeQuery{}
+	query = `WITH dictGetString('test_cache', server, xxHash64(server)) as server_name ` +
+		`SELECT toStartOfFiveMinute(datetime) AS t, count() as cnt FROM test_db.test_table WHERE t > ` +
+		`'2020-05-30 11:00:00' AND t < now() - 300 FORMAT JSON`
+	err = parseRawQuery(query, trq)
+	if err != nil {
+		t.Error(err)
+	}
+	if trq.Step != 300*time.Second {
+		t.Errorf("Step of %d did not match 300 seconds", trq.Step)
+	}
+	if trq.Statement != `WITH dictGetString('test_cache',server,xxHash64(server)) as server_name `+
+		`SELECT toStartOfFiveMinute(datetime) AS t,count() as cnt `+
+		`FROM test_db.test_table WHERE t >= <$TIMESTAMP1$> AND t < <$TIMESTAMP2$> FORMAT JSON` {
+		t.Errorf("Tokenized statement did not match query")
+	}
+
+	trq = &timeseries.TimeRangeQuery{}
+	query = `SELECT toInt32(toStartOfFiveMinute(datetime)) AS t, count() as cnt FROM test_db.test_table WHERE datetime > ` +
+		`'2020-05-30 11:00:00' AND datetime < now() - 300 FORMAT JSON`
+	err = parseRawQuery(query, trq)
+	if err != nil {
+		t.Error(err)
+	}
+	if trq.Step != 300*time.Second {
+		t.Errorf("Step of %d did not match 300 seconds", trq.Step)
+	}
+
 }
 
 func TestBadQueries(t *testing.T) {

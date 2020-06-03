@@ -92,7 +92,11 @@ var fromMsString fromTimeFunc = func(v interface{}) (time.Time, error) {
 }
 
 var fromSec fromTimeFunc = func(v interface{}) (time.Time, error) {
-	return time.Unix(int64(v.(float64)), 0), nil
+	fv, ok := v.(float64)
+	if !ok {
+		return time.Time{}, fmt.Errorf("json time value incorrect type")
+	}
+	return time.Unix(int64(fv), 0), nil
 }
 var toSec toTimeFunc = func(t time.Time) interface{} {
 	return t.Unix()
@@ -131,10 +135,8 @@ func (re ResultsEnvelope) MarshalJSON() ([]byte, error) {
 		ttf = toDateString
 	} else if strings.HasSuffix(tsType, "t64") {
 		ttf = toMsString
-	} else if strings.HasSuffix(tsType, "t32") {
-		ttf = toSec
 	} else {
-		return nil, fmt.Errorf("unrecognized timestamp type")
+		ttf = toSec
 	}
 	rsp := &Response{
 		Meta:    re.Meta,
