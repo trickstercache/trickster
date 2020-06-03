@@ -19,7 +19,6 @@ package influxdb
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"net/http"
 	"net/url"
 
@@ -43,8 +42,6 @@ func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Health Check URL not Configured for origin: " + c.config.Name))
 		return
 	}
-
-	fmt.Println(c.healthURL.String())
 
 	req, _ := http.NewRequest(c.healthMethod, c.healthURL.String(), c.healthBody)
 	rsc := request.GetResources(r)
