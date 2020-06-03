@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
+	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
@@ -29,24 +30,23 @@ import (
 func (c *Client) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 
 	u := urls.BuildUpstreamURL(r, c.baseUpstreamURL)
-
-	params := u.Query()
+	qp, _, _ := params.GetRequestValues(r)
 
 	// Round Start and End times down to top of most recent minute for cacheability
-	if p := params.Get(upStart); p != "" {
+	if p := qp.Get(upStart); p != "" {
 		if i, err := strconv.ParseInt(p, 10, 64); err == nil {
-			params.Set(upStart, strconv.FormatInt(time.Unix(i, 0).Truncate(time.Second*time.Duration(60)).Unix(), 10))
+			qp.Set(upStart, strconv.FormatInt(time.Unix(i, 0).Truncate(time.Second*time.Duration(60)).Unix(), 10))
 		}
 	}
 
-	if p := params.Get(upEnd); p != "" {
+	if p := qp.Get(upEnd); p != "" {
 		if i, err := strconv.ParseInt(p, 10, 64); err == nil {
-			params.Set(upEnd, strconv.FormatInt(time.Unix(i, 0).Truncate(time.Second*time.Duration(60)).Unix(), 10))
+			qp.Set(upEnd, strconv.FormatInt(time.Unix(i, 0).Truncate(time.Second*time.Duration(60)).Unix(), 10))
 		}
 	}
 
 	r.URL = u
-	r.URL.RawQuery = params.Encode()
+	params.SetRequestValues(r, qp)
 
 	engines.ObjectProxyCacheRequest(w, r)
 }

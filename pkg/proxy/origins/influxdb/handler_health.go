@@ -17,13 +17,16 @@
 package influxdb
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
@@ -41,11 +44,18 @@ func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req, _ := http.NewRequest(c.healthMethod, c.healthURL.String(), nil)
+	fmt.Println(c.healthURL.String())
+
+	req, _ := http.NewRequest(c.healthMethod, c.healthURL.String(), c.healthBody)
 	rsc := request.GetResources(r)
 	req = req.WithContext(tctx.WithHealthCheckFlag(tctx.WithResources(context.Background(), rsc), true))
 
-	req.Header = c.healthHeaders
+	if c.healthHeaders != nil {
+		c.healthHeaderLock.Lock()
+		req.Header = c.healthHeaders.Clone()
+		c.healthHeaderLock.Unlock()
+	}
+
 	engines.DoProxy(w, req, true)
 }
 
@@ -64,13 +74,23 @@ func (c *Client) populateHeathCheckRequestValues() {
 		oc.HealthCheckQuery = q.Encode()
 	}
 
-	c.healthURL = urls.Clone(c.baseUpstreamURL)
-	c.healthURL.Path += oc.HealthCheckUpstreamPath
-	c.healthURL.RawQuery = oc.HealthCheckQuery
 	c.healthMethod = oc.HealthCheckVerb
 
-	if oc.HealthCheckHeaders != nil {
+	c.healthURL = urls.Clone(c.baseUpstreamURL)
+	c.healthURL.Path += oc.HealthCheckUpstreamPath
+
+	if methods.HasBody(oc.HealthCheckVerb) && oc.HealthCheckQuery != "" {
 		c.healthHeaders = http.Header{}
+		c.healthHeaders.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
+		c.healthBody = bytes.NewReader([]byte(oc.HealthCheckQuery))
+	} else {
+		c.healthURL.RawQuery = oc.HealthCheckQuery
+	}
+
+	if oc.HealthCheckHeaders != nil {
+		if c.healthHeaders == nil {
+			c.healthHeaders = http.Header{}
+		}
 		headers.UpdateHeaders(c.healthHeaders, oc.HealthCheckHeaders)
 	}
 }

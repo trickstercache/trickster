@@ -22,16 +22,16 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 // SetExtent will change the upstream request query to use the provided Extent
 func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
-	v, _, _ := request.GetRequestValues(r)
+	v, _, _ := params.GetRequestValues(r)
 	v.Set(upStart, strconv.FormatInt(extent.Start.Unix(), 10))
 	v.Set(upEnd, strconv.FormatInt(extent.End.Unix(), 10))
-	request.SetRequestValues(r, v)
+	params.SetRequestValues(r, v)
 }
 
 // FastForwardRequest returns an *http.Request crafted to collect Fast Forward
@@ -41,10 +41,10 @@ func (c *Client) FastForwardRequest(r *http.Request) (*http.Request, error) {
 	if strings.HasSuffix(nr.URL.Path, "/query_range") {
 		nr.URL.Path = nr.URL.Path[0 : len(nr.URL.Path)-6]
 	}
-	v, _, _ := request.GetRequestValues(nr)
+	v, _, _ := params.GetRequestValues(nr)
 	v.Del(upStart)
 	v.Del(upEnd)
 	v.Del(upStep)
-	request.SetRequestValues(nr, v)
+	params.SetRequestValues(nr, v)
 	return nr, nil
 }

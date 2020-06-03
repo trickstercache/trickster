@@ -29,6 +29,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/locks"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
@@ -504,7 +505,7 @@ func (pr *proxyRequest) prepareResponse() {
 	if pr.cachingPolicy.IsClientFresh {
 		// 304 on an If-None-Match only applies to GET/HEAD requests
 		// this bit will convert an INM-based 304 to a 412 on non-GET/HEAD
-		if (pr.Method != http.MethodGet && pr.Method != http.MethodHead) &&
+		if !methods.IsCacheable(pr.Method) &&
 			pr.cachingPolicy.HasIfNoneMatch && !pr.cachingPolicy.IfNoneMatchResult {
 			pr.upstreamResponse.StatusCode = http.StatusPreconditionFailed
 		} else {

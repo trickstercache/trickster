@@ -155,7 +155,9 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	if pc != nil {
 		headers.UpdateHeaders(r.Header, pc.RequestHeaders)
-		params.UpdateParams(r.URL.Query(), pc.RequestParams)
+		qp, _, _ := params.GetRequestValues(r)
+		params.UpdateParams(qp, pc.RequestParams)
+		params.SetRequestValues(r, qp)
 	}
 
 	r.Close = false

@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
@@ -63,7 +63,7 @@ func TestSetExtent(t *testing.T) {
 	r.Method = http.MethodPost
 	r.Body = ioutil.NopCloser(bytes.NewBufferString(tokenized))
 	client.SetExtent(r, trq, e)
-	_, s, _ := request.GetRequestValues(r)
+	_, s, _ := params.GetRequestValues(r)
 	if expected != s {
 		t.Errorf("\nexpected [%s]\ngot    [%s]", expected, s)
 	}

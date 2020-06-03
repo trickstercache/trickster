@@ -29,6 +29,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
+	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/util/md5"
 )
@@ -43,29 +44,29 @@ func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) strin
 		return md5.Checksum(pr.URL.Path + extra)
 	}
 
-	var params url.Values
+	var qp url.Values
 	r := pr.Request
 
 	if pr.upstreamRequest != nil {
 		r = pr.upstreamRequest
 		if r.URL == nil {
 			r.URL = pr.URL
-			params = pr.URL.Query()
+			qp = pr.URL.Query()
 		}
 	}
 
 	var b []byte
 	if templateURL != nil {
-		params = templateURL.Query()
+		qp = templateURL.Query()
 	} else {
 		var s string
-		params, s, _ = request.GetRequestValues(r)
+		qp, s, _ = params.GetRequestValues(r)
 		b = []byte(s)
 	}
 
 	if pc.KeyHasher != nil && len(pc.KeyHasher) == 1 {
 		var k string
-		k, r.Body = pc.KeyHasher[0](r.URL.Path, params, r.Header, r.Body, extra)
+		k, r.Body = pc.KeyHasher[0](r.URL.Path, qp, r.Header, r.Body, extra)
 		return k
 	}
 
@@ -79,12 +80,12 @@ func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) strin
 	vals = append(vals, fmt.Sprintf("%s.%s.", "method", r.Method))
 
 	if len(pc.CacheKeyParams) == 1 && pc.CacheKeyParams[0] == "*" {
-		for p := range params {
-			vals = append(vals, fmt.Sprintf("%s.%s.", p, params.Get(p)))
+		for p := range qp {
+			vals = append(vals, fmt.Sprintf("%s.%s.", p, qp.Get(p)))
 		}
 	} else {
 		for _, p := range pc.CacheKeyParams {
-			if v := params.Get(p); v != "" {
+			if v := qp.Get(p); v != "" {
 				vals = append(vals, fmt.Sprintf("%s.%s.", p, v))
 			}
 		}
