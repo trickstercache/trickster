@@ -52,6 +52,9 @@ func TestIsCacheable(t *testing.T) {
 	if IsCacheable(http.MethodPut) {
 		t.Error("expected false")
 	}
+	if IsCacheable("invalid_method") {
+		t.Error("expected false")
+	}
 }
 
 func TestHasBody(t *testing.T) {
@@ -60,5 +63,14 @@ func TestHasBody(t *testing.T) {
 	}
 	if !HasBody(http.MethodPut) {
 		t.Error("expected true")
+	}
+	if HasBody("invalid_method") {
+		t.Error("expected false")
+	}
+}
+
+func TestMethodMask(t *testing.T) {
+	if v := MethodMask(http.MethodGet); v != 1 {
+		t.Errorf("expected 1 got %d", v)
 	}
 }
