@@ -549,7 +549,7 @@ func (pr *proxyRequest) prepareResponse() {
 		pr.trueContentType = d.ContentType
 		h, pr.responseBody = d.RangeParts.ExtractResponseRange(pr.wantedRanges, d.ContentLength, d.ContentType, d.Body)
 		headers.Merge(resp.Header, h)
-		pr.upstreamReader = bytes.NewBuffer(pr.responseBody)
+		pr.upstreamReader = bytes.NewReader(pr.responseBody)
 	} else if !pr.wantsRanges {
 		if resp.StatusCode == http.StatusPartialContent {
 			resp.StatusCode = http.StatusOK
@@ -704,19 +704,19 @@ func (pr *proxyRequest) reconstituteResponses() {
 			if bodyFromParts = len(parts.Ranges) > 1; !bodyFromParts {
 				err := parts.FulfillContentBody()
 				if bodyFromParts = err != nil; !bodyFromParts {
-					pr.upstreamReader = bytes.NewBuffer(parts.Body)
+					pr.upstreamReader = bytes.NewReader(parts.Body)
 					resp.StatusCode = http.StatusOK
 					pr.cacheBuffer = bytes.NewBuffer(parts.Body)
 				}
 			}
 		} else {
-			pr.upstreamReader = bytes.NewBuffer(parts.Body)
+			pr.upstreamReader = bytes.NewReader(parts.Body)
 		}
 
 		if bodyFromParts {
 			h, b := parts.RangeParts.Body(parts.ContentLength, parts.ContentType)
 			headers.Merge(resp.Header, h)
-			pr.upstreamReader = bytes.NewBuffer(b)
+			pr.upstreamReader = bytes.NewReader(b)
 		}
 	}
 
