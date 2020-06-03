@@ -21,11 +21,15 @@ import (
 	"testing"
 )
 
-func getSwapper(id string, t *testing.T) (*CertSwapper, *tls.Config) {
+func getSwapper(t *testing.T) (*CertSwapper, *tls.Config, func()) {
 
-	var err error
-
-	options := tlsConfig(id)
+	options, closer, err := tlsConfig("")
+	if closer != nil {
+		defer closer()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	tlscfg1 := &tls.Config{NextProtos: []string{"h2"}}
 	tlscfg1.Certificates = make([]tls.Certificate, 1)
@@ -35,20 +39,26 @@ func getSwapper(id string, t *testing.T) (*CertSwapper, *tls.Config) {
 		t.Fatal(err)
 	}
 
-	return NewSwapper(tlscfg1.Certificates), tlscfg1
+	return NewSwapper(tlscfg1.Certificates), tlscfg1, closer
 
 }
 
 func TestGetSetCert(t *testing.T) {
 
 	chi := &tls.ClientHelloInfo{}
-	sw, cfg := getSwapper("01", t)
+	sw, cfg, closer := getSwapper(t)
+	if closer != nil {
+		defer closer()
+	}
 	_, err := sw.GetCert(chi)
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, cfg2 := getSwapper("02", t)
+	_, cfg2, closer2 := getSwapper(t)
+	if closer2 != nil {
+		defer closer2()
+	}
 	sw.Certificates = append(sw.Certificates, cfg2.Certificates...)
 	_, err = sw.GetCert(chi)
 	if err != nil {

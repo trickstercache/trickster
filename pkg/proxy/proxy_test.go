@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
 )
 
 func TestNewHTTPClient(t *testing.T) {
@@ -33,8 +34,15 @@ func TestNewHTTPClient(t *testing.T) {
 		t.Error(err)
 	}
 
-	const caFile = "../../testdata/test.rootca.pem"
-	const caFileInvalid1 = caFile + ".invalid"
+	_, caFile, closer, err := tlstest.GetTestKeyAndCertFiles("ca")
+	if closer != nil {
+		defer closer()
+	}
+	if err != nil {
+		t.Error(err)
+	}
+
+	caFileInvalid1 := caFile + ".invalid"
 	const caFileInvalid2 = "../../testdata/test.06.cert.pem"
 
 	// test good originconfig, no CA
@@ -66,8 +74,17 @@ func TestNewHTTPClient(t *testing.T) {
 	}
 
 	oc.TLS.CertificateAuthorityPaths = []string{}
-	oc.TLS.ClientCertPath = "../../testdata/test.01.cert.pem"
-	oc.TLS.ClientKeyPath = "../../testdata/test.01.key.pem"
+
+	kf, cf, closer, err := tlstest.GetTestKeyAndCertFiles("")
+	if err != nil {
+		t.Error(err)
+	}
+	if closer != nil {
+		defer closer()
+	}
+
+	oc.TLS.ClientCertPath = cf
+	oc.TLS.ClientKeyPath = kf
 	_, err = NewHTTPClient(oc)
 	if err != nil {
 		t.Error(err)

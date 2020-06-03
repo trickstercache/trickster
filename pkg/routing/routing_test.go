@@ -17,7 +17,9 @@
 package routing
 
 import (
+	"io/ioutil"
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
@@ -31,6 +33,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/zipkin"
 	to "github.com/tricksterproxy/trickster/pkg/tracing/options"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
 
 	"github.com/gorilla/mux"
 )
@@ -248,6 +251,23 @@ func TestRegisterProxyRoutesMultipleDefaults(t *testing.T) {
 
 func TestRegisterProxyRoutesInvalidCert(t *testing.T) {
 	expected := "tls: failed to find any PEM data in certificate input"
+
+	kb, _, _ := tlstest.GetTestKeyAndCert(false)
+	const certfile = "../../testdata/test.06.cert.pem"
+	const keyfile = "../../testdata/test.06.key.pem"
+	err := ioutil.WriteFile(certfile, []byte{}, 0600)
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer os.Remove(certfile)
+	}
+	err = ioutil.WriteFile(keyfile, kb, 0600)
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer os.Remove(keyfile)
+	}
+
 	a := []string{"-config", "../../testdata/test.bad_tls_cert.routes.conf"}
 	conf, _, err := config.Load("trickster", "test", a)
 	if err != nil {

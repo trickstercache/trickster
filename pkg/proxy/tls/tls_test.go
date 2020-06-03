@@ -17,10 +17,13 @@
 package tls
 
 import (
+	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
 	"github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
+	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
 )
 
 func TestDefaultTLSConfig(t *testing.T) {
@@ -40,25 +43,43 @@ func TestDefaultTLSConfig(t *testing.T) {
 
 }
 
-func tlsConfig(id string) *options.Options {
-	return &options.Options{
-		FullChainCertPath: "../../../testdata/test." + id + ".cert.pem",
-		PrivateKeyPath:    "../../../testdata/test." + id + ".key.pem",
-		ServeTLS:          true,
+func tlsConfig(condition string) (*options.Options, func(), error) {
+
+	kf, cf, closer, err := tlstest.GetTestKeyAndCertFiles(condition)
+	if err != nil {
+		return nil, nil, err
 	}
+
+	return &options.Options{
+		FullChainCertPath: cf,
+		PrivateKeyPath:    kf,
+		ServeTLS:          true,
+	}, closer, nil
 }
 
 func TestVerifyTLSConfigs(t *testing.T) {
 
-	tls01 := tlsConfig("01")
+	tls01, closer, err := tlsConfig("")
+	if err != nil {
+		t.Error(err)
+	}
+	if closer != nil {
+		defer closer()
+	}
 
-	_, err := tls01.Validate()
+	_, err = tls01.Validate()
 	if err != nil {
 		t.Error(err)
 	}
 
 	// test for error when cert file can't be read
-	tls04 := tlsConfig("04")
+	tls04, closer2, err2 := tlsConfig("")
+	if err2 != nil {
+		t.Error(err2)
+	}
+	if closer2 != nil {
+		defer closer2()
+	}
 	originalFile := tls04.FullChainCertPath
 	badFile := originalFile + ".nonexistent"
 	tls04.FullChainCertPath = badFile
@@ -79,8 +100,16 @@ func TestVerifyTLSConfigs(t *testing.T) {
 		t.Error("expected no such file or directory error")
 	}
 
+	_, caFile, closer, err := tlstest.GetTestKeyAndCertFiles("ca")
+	if closer != nil {
+		defer closer()
+	}
+	if err != nil {
+		t.Error(err)
+	}
+
 	tls04.PrivateKeyPath = originalFile
-	originalFile = "../../../testdata/test.rootca.pem"
+	originalFile = caFile
 	badFile = originalFile + ".nonexistent"
 	// test for more RootCA's to add
 	tls04.CertificateAuthorityPaths = []string{originalFile}
@@ -98,8 +127,33 @@ func TestVerifyTLSConfigs(t *testing.T) {
 
 func TestProcessTLSConfigs(t *testing.T) {
 
+	_, ca, _ := tlstest.GetTestKeyAndCert(true)
+	const caFile = "../../../testdata/test.rootca.01.pem"
+	err := ioutil.WriteFile(caFile, ca, 0600)
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer os.Remove(caFile)
+	}
+
+	k, c, _ := tlstest.GetTestKeyAndCert(false)
+	const certFile = "../../../testdata/test.01.cert.pem"
+	const keyfile = "../../../testdata/test.01.key.pem"
+	err = ioutil.WriteFile(certFile, c, 0600)
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer os.Remove(certFile)
+	}
+	err = ioutil.WriteFile(keyfile, k, 0600)
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer os.Remove(keyfile)
+	}
+
 	a := []string{"-config", "../../../testdata/test.full.tls.conf"}
-	_, _, err := config.Load("trickster-test", "0", a)
+	_, _, err = config.Load("trickster-test", "0", a)
 	if err != nil {
 		t.Error(err)
 	}
@@ -129,7 +183,13 @@ func TestTLSCertConfig(t *testing.T) {
 		t.Error(err)
 	}
 
-	tls01 := tlsConfig("01")
+	tls01, closer, err := tlsConfig("")
+	if closer != nil {
+		defer closer()
+	}
+	if err != nil {
+		t.Error(err)
+	}
 	config.Frontend.ServeTLS = true
 
 	// test good config
@@ -141,7 +201,13 @@ func TestTLSCertConfig(t *testing.T) {
 
 	// test config with key file that has invalid key data
 	expectedErr := "tls: failed to find any PEM data in key input"
-	tls05 := tlsConfig("05")
+	tls05, closer5, err5 := tlsConfig("invalid-key")
+	if closer5 != nil {
+		defer closer5()
+	}
+	if err5 != nil {
+		t.Error(err5)
+	}
 	config.Origins["default"].TLS = tls05
 	_, err = config.TLSCertConfig()
 	if err == nil {
@@ -150,7 +216,13 @@ func TestTLSCertConfig(t *testing.T) {
 
 	// test config with cert file that has invalid key data
 	expectedErr = "tls: failed to find any PEM data in certificate input"
-	tls06 := tlsConfig("06")
+	tls06, closer6, err6 := tlsConfig("invalid-cert")
+	if closer6 != nil {
+		defer closer6()
+	}
+	if err6 != nil {
+		t.Error(err6)
+	}
 	config.Origins["default"].TLS = tls06
 	_, err = config.TLSCertConfig()
 	if err == nil {

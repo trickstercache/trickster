@@ -17,6 +17,8 @@
 package config
 
 import (
+	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -24,6 +26,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
+	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
 )
 
 func TestLoadConfiguration(t *testing.T) {
@@ -103,7 +106,24 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 }
 
 func TestFullLoadConfiguration(t *testing.T) {
-	a := []string{"-config", "../../testdata/test.full.conf"}
+
+	kb, cb, _ := tlstest.GetTestKeyAndCert(false)
+	const certfile = "../../testdata/test.02.cert.pem"
+	const keyfile = "../../testdata/test.02.key.pem"
+	err := ioutil.WriteFile(certfile, cb, 0600)
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer os.Remove(certfile)
+	}
+	err = ioutil.WriteFile(keyfile, kb, 0600)
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer os.Remove(keyfile)
+	}
+
+	a := []string{"-config", "../../testdata/test.full.02.conf"}
 	// it should not error if config path is not set
 	conf, _, err := Load("trickster-test", "0", a)
 	if err != nil {
@@ -223,12 +243,12 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected true got %t", o.TLS.InsecureSkipVerify)
 	}
 
-	if o.TLS.FullChainCertPath != "../../testdata/test.01.cert.pem" {
-		t.Errorf("expected ../../testdata/test.01.cert.pem got %s", o.TLS.FullChainCertPath)
+	if o.TLS.FullChainCertPath != "../../testdata/test.02.cert.pem" {
+		t.Errorf("expected ../../testdata/test.02.cert.pem got %s", o.TLS.FullChainCertPath)
 	}
 
-	if o.TLS.PrivateKeyPath != "../../testdata/test.01.key.pem" {
-		t.Errorf("expected ../../testdata/test.01.key.pem got %s", o.TLS.PrivateKeyPath)
+	if o.TLS.PrivateKeyPath != "../../testdata/test.02.key.pem" {
+		t.Errorf("expected ../../testdata/test.02.key.pem got %s", o.TLS.PrivateKeyPath)
 	}
 
 	if o.TLS.ClientCertPath != "test_client_cert" {

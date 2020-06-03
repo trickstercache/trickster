@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
+	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
 )
 
 func TestTLSCertConfig(t *testing.T) {
@@ -45,7 +46,13 @@ func TestTLSCertConfig(t *testing.T) {
 		t.Error(err)
 	}
 
-	tls01 := tlsConfig("01")
+	tls01, closer01, err01 := tlsConfig("")
+	if closer01 != nil {
+		defer closer01()
+	}
+	if err01 != nil {
+		t.Error(err01)
+	}
 	config.Frontend.ServeTLS = true
 
 	// test good config
@@ -57,16 +64,28 @@ func TestTLSCertConfig(t *testing.T) {
 
 	// test config with key file that has invalid key data
 	expectedErr := "tls: failed to find any PEM data in key input"
-	tls05 := tlsConfig("05")
+	tls05, closer05, err05 := tlsConfig("invalid-key")
+	if closer05 != nil {
+		defer closer05()
+	}
+	if err05 != nil {
+		t.Error(err05)
+	}
 	config.Origins["default"].TLS = tls05
 	_, err = config.TLSCertConfig()
 	if err == nil {
 		t.Errorf("expected error: %s", expectedErr)
 	}
 
-	// test config with cert file that has invalid key data
+	// test config with cert file that has invalid cert data
 	expectedErr = "tls: failed to find any PEM data in certificate input"
-	tls06 := tlsConfig("06")
+	tls06, closer06, err06 := tlsConfig("invalid-cert")
+	if closer06 != nil {
+		defer closer06()
+	}
+	if err06 != nil {
+		t.Error(err06)
+	}
 	config.Origins["default"].TLS = tls06
 	_, err = config.TLSCertConfig()
 	if err == nil {
@@ -75,10 +94,16 @@ func TestTLSCertConfig(t *testing.T) {
 
 }
 
-func tlsConfig(id string) *options.Options {
-	return &options.Options{
-		FullChainCertPath: "../../testdata/test." + id + ".cert.pem",
-		PrivateKeyPath:    "../../testdata/test." + id + ".key.pem",
-		ServeTLS:          true,
+func tlsConfig(condition string) (*options.Options, func(), error) {
+
+	kf, cf, closer, err := tlstest.GetTestKeyAndCertFiles(condition)
+	if err != nil {
+		return nil, nil, err
 	}
+
+	return &options.Options{
+		FullChainCertPath: cf,
+		PrivateKeyPath:    kf,
+		ServeTLS:          true,
+	}, closer, nil
 }
