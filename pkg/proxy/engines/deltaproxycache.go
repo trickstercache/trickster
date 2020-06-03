@@ -349,7 +349,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 				defer span.End()
 			}
 			body, resp, isHit := FetchViaObjectProxyCache(ffReq)
-			if resp.StatusCode == http.StatusOK && len(body) > 0 {
+			if resp != nil && resp.StatusCode == http.StatusOK && len(body) > 0 {
 				ffts, err = client.UnmarshalInstantaneous(body)
 				if err != nil {
 					ffStatus = "err"
@@ -386,6 +386,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	if writeLock != nil {
 		// if the mutex is still locked, it means we need to write the time series to cache
 		go func() {
+			defer writeLock.Release()
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the
 			// Backfill Tolerance before storing to cache
 			switch oc.TimeseriesEvictionMethod {
@@ -421,7 +422,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 					)
 				}
 			}
-			writeLock.Release()
 		}()
 	}
 
