@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
@@ -28,7 +29,7 @@ import (
 
 func TestHealthHandler(t *testing.T) {
 
-	client := &Client{name: "test"}
+	client := &Client{name: "test", healthHeaderLock: &sync.Mutex{}}
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/health", "debug")
 
 	rsc := request.GetResources(r)
@@ -72,7 +73,7 @@ func TestHealthHandler(t *testing.T) {
 
 func TestHealthHandlerCustomPath(t *testing.T) {
 
-	client := &Client{name: "test"}
+	client := &Client{name: "test", healthHeaderLock: &sync.Mutex{}}
 	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "", nil, "influxdb", "/health", "debug")
 	if err != nil {
 		t.Error(err)
@@ -86,6 +87,45 @@ func TestHealthHandlerCustomPath(t *testing.T) {
 	client.config.HealthCheckUpstreamPath = "-"
 	client.config.HealthCheckVerb = "-"
 	client.config.HealthCheckQuery = "-"
+	client.baseUpstreamURL, _ = url.Parse(ts.URL)
+	client.webClient = hc
+	client.config.HTTPClient = hc
+
+	client.HealthHandler(w, r)
+	resp := w.Result()
+
+	// it should return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != "" {
+		t.Errorf("expected '' got %s.", bodyBytes)
+	}
+
+}
+
+func TestHealthHandlerPost(t *testing.T) {
+
+	client := &Client{name: "test", healthHeaderLock: &sync.Mutex{}}
+	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "", nil, "influxdb", "/health", "debug")
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer ts.Close()
+	}
+
+	rsc := request.GetResources(r)
+	client.config = rsc.OriginConfig
+
+	client.config.HealthCheckUpstreamPath = "-"
+	client.config.HealthCheckVerb = "POST"
+	client.config.HealthCheckQuery = "testParam1=testValue1"
 	client.baseUpstreamURL, _ = url.Parse(ts.URL)
 	client.webClient = hc
 	client.config.HTTPClient = hc

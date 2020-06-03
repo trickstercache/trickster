@@ -29,6 +29,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/locks"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
@@ -504,7 +505,7 @@ func (pr *proxyRequest) prepareResponse() {
 	if pr.cachingPolicy.IsClientFresh {
 		// 304 on an If-None-Match only applies to GET/HEAD requests
 		// this bit will convert an INM-based 304 to a 412 on non-GET/HEAD
-		if (pr.Method != http.MethodGet && pr.Method != http.MethodHead) &&
+		if !methods.IsCacheable(pr.Method) &&
 			pr.cachingPolicy.HasIfNoneMatch && !pr.cachingPolicy.IfNoneMatchResult {
 			pr.upstreamResponse.StatusCode = http.StatusPreconditionFailed
 		} else {
@@ -548,7 +549,7 @@ func (pr *proxyRequest) prepareResponse() {
 		pr.trueContentType = d.ContentType
 		h, pr.responseBody = d.RangeParts.ExtractResponseRange(pr.wantedRanges, d.ContentLength, d.ContentType, d.Body)
 		headers.Merge(resp.Header, h)
-		pr.upstreamReader = bytes.NewBuffer(pr.responseBody)
+		pr.upstreamReader = bytes.NewReader(pr.responseBody)
 	} else if !pr.wantsRanges {
 		if resp.StatusCode == http.StatusPartialContent {
 			resp.StatusCode = http.StatusOK
@@ -703,19 +704,19 @@ func (pr *proxyRequest) reconstituteResponses() {
 			if bodyFromParts = len(parts.Ranges) > 1; !bodyFromParts {
 				err := parts.FulfillContentBody()
 				if bodyFromParts = err != nil; !bodyFromParts {
-					pr.upstreamReader = bytes.NewBuffer(parts.Body)
+					pr.upstreamReader = bytes.NewReader(parts.Body)
 					resp.StatusCode = http.StatusOK
 					pr.cacheBuffer = bytes.NewBuffer(parts.Body)
 				}
 			}
 		} else {
-			pr.upstreamReader = bytes.NewBuffer(parts.Body)
+			pr.upstreamReader = bytes.NewReader(parts.Body)
 		}
 
 		if bodyFromParts {
 			h, b := parts.RangeParts.Body(parts.ContentLength, parts.ContentType)
 			headers.Merge(resp.Header, h)
-			pr.upstreamReader = bytes.NewBuffer(b)
+			pr.upstreamReader = bytes.NewReader(b)
 		}
 	}
 

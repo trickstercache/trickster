@@ -98,14 +98,14 @@ func handleCachePartialHit(pr *proxyRequest) error {
 		err := d.FulfillContentBody()
 
 		if err == nil {
-			pr.upstreamResponse.Body = ioutil.NopCloser(bytes.NewBuffer(d.Body))
+			pr.upstreamResponse.Body = ioutil.NopCloser(bytes.NewReader(d.Body))
 			pr.upstreamResponse.Header.Set(headers.NameContentType, d.ContentType)
 			pr.upstreamReader = pr.upstreamResponse.Body
 		} else {
 			h, b := d.RangeParts.ExtractResponseRange(pr.wantedRanges, d.ContentLength, d.ContentType, nil)
 
 			headers.Merge(pr.upstreamResponse.Header, h)
-			pr.upstreamReader = ioutil.NopCloser(bytes.NewBuffer(b))
+			pr.upstreamReader = ioutil.NopCloser(bytes.NewReader(b))
 		}
 
 	} else if d != nil {
@@ -210,7 +210,7 @@ func handleCacheRevalidationResponse(pr *proxyRequest) error {
 		pr.upstreamResponse.StatusCode = pr.cacheDocument.StatusCode
 		pr.writeToCache = true
 		pr.store()
-		pr.upstreamReader = bytes.NewBuffer(pr.cacheDocument.Body)
+		pr.upstreamReader = bytes.NewReader(pr.cacheDocument.Body)
 		return handleTrueCacheHit(pr)
 	}
 
@@ -235,9 +235,9 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 	if pr.wantsRanges {
 		h, b := d.RangeParts.ExtractResponseRange(pr.wantedRanges, d.ContentLength, d.ContentType, d.Body)
 		headers.Merge(pr.upstreamResponse.Header, h)
-		pr.upstreamReader = bytes.NewBuffer(b)
+		pr.upstreamReader = bytes.NewReader(b)
 	} else {
-		pr.upstreamReader = bytes.NewBuffer(d.Body)
+		pr.upstreamReader = bytes.NewReader(d.Body)
 	}
 
 	return handleResponse(pr)

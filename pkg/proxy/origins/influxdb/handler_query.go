@@ -23,7 +23,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/proxy/timeconv"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -33,7 +33,7 @@ import (
 // QueryHandler handles timeseries requests for InfluxDB and processes them through the delta proxy cache
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
-	_, s, _ := request.GetRequestValues(r)
+	_, s, _ := params.GetRequestValues(r)
 
 	s = strings.Replace(strings.ToLower(s), "%20", "+", -1)
 	// if it's not a select statement, just proxy it instead
@@ -51,7 +51,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 
-	v, _, _ := request.GetRequestValues(r)
+	v, _, _ := params.GetRequestValues(r)
 	trq.Statement = v.Get(upQuery)
 	if trq.Statement == "" {
 		return nil, errors.MissingURLParam(upQuery)

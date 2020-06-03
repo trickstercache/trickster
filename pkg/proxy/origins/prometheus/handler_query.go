@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
+	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
@@ -29,17 +30,15 @@ import (
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
 	u := urls.BuildUpstreamURL(r, c.baseUpstreamURL)
-	params := u.Query()
-
+	qp, _, _ := params.GetRequestValues(r)
 	// Round time param down to the nearest 15 seconds if it exists
-	if p := params.Get(upTime); p != "" {
+	if p := qp.Get(upTime); p != "" {
 		if i, err := strconv.ParseInt(p, 10, 64); err == nil {
-			params.Set(upTime, strconv.FormatInt(time.Unix(i, 0).Truncate(time.Second*time.Duration(15)).Unix(), 10))
+			qp.Set(upTime, strconv.FormatInt(time.Unix(i, 0).Truncate(time.Second*time.Duration(15)).Unix(), 10))
 		}
 	}
-
 	r.URL = u
-	r.URL.RawQuery = params.Encode()
+	params.SetRequestValues(r, qp)
 
 	engines.ObjectProxyCacheRequest(w, r)
 }

@@ -24,6 +24,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -124,7 +125,7 @@ func (c *Client) caqlHandlerFastForwardRequest(
 	trq := rsc.TimeRangeQuery
 
 	nr := r.Clone(context.Background())
-	v, _, _ := request.GetRequestValues(nr)
+	v, _, _ := params.GetRequestValues(nr)
 	var err error
 
 	if trq == nil {
@@ -139,7 +140,7 @@ func (c *Client) caqlHandlerFastForwardRequest(
 	end := start + int64(trq.Step.Seconds())
 	v.Set(upCAQLStart, formatTimestamp(time.Unix(start, 0), false))
 	v.Set(upCAQLEnd, formatTimestamp(time.Unix(end, 0), false))
-	request.SetRequestValues(nr, v)
+	params.SetRequestValues(nr, v)
 
 	return nr, nil
 }

@@ -155,7 +155,9 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	if pc != nil {
 		headers.UpdateHeaders(r.Header, pc.RequestHeaders)
-		params.UpdateParams(r.URL.Query(), pc.RequestParams)
+		qp, _, _ := params.GetRequestValues(r)
+		params.UpdateParams(qp, pc.RequestParams)
+		params.SetRequestValues(r, qp)
 	}
 
 	r.Close = false
@@ -238,7 +240,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	if hasCustomResponseBody {
 		// Since we are not responding with the actual upstream response body, close it here
 		resp.Body.Close()
-		rc = ioutil.NopCloser(bytes.NewBuffer(pc.ResponseBodyBytes))
+		rc = ioutil.NopCloser(bytes.NewReader(pc.ResponseBodyBytes))
 	} else {
 		rc = resp.Body
 	}
