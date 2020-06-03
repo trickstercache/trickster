@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Comcast Cable Communications Management, LLC
+ * Copyright 2020 Comcast Cable Communications Management, LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,23 +23,11 @@ import (
 )
 
 func testNow() int {
-	t, _ := time.Parse(chLayout, "2020-06-01 12:00:00")
+	t, _ := time.Parse(chLayout, "2020-06-01 12:02:00")
 	return int(t.Unix())
 }
 
-func testDate(ts string) time.Time {
-	t, _ := time.Parse(chLayout, "2020-06-01 "+ts)
-	return t
-}
-
-/*func chDateDisplay(time.Time) string {
-	return time.
-}*/
-
 func TestFindParts(t *testing.T) {
-	/*query := "WITH  3600  as  x  SELECT (  intDiv(toUInt32(datetime), x) * x) * 1000 AS t," +
-	" count() as cnt FROM comcast_ott_maple.atsec_chi WHERE datetime BETWEEN toDateTime(1589904000) AND toDateTime(1589997600)" +
-	" GROUP BY t ORDER BY  t DESC FORMAT JSON"*/
 	query := `WITH  'igor * 31 + \' dks( k )'  as  igor, 3600 as x  SELECT (  intDiv(toUInt32(datetime), x) * x) * 1000 AS t,` +
 		` count() as cnt FROM comcast_ott_maple.atsec_chi WHERE datetime >= 1589904000 AND datetime < 1589997600)` +
 		` GROUP BY t ORDER BY  t DESC FORMAT JSON`
@@ -47,7 +35,6 @@ func TestFindParts(t *testing.T) {
 	if len(parts) != 27 {
 		t.Errorf("Find parts returned %d, expected %d incorrect number of parts", len(parts), 30)
 	}
-
 }
 
 func TestGoodQueries(t *testing.T) {
@@ -76,55 +63,72 @@ func TestGoodQueries(t *testing.T) {
 	if trq.Step != 300*time.Second {
 		t.Errorf("Step of %d did not match 300 seconds", trq.Step)
 	}
+}
 
+func TestBadQueries(t *testing.T) {
+	test := func(run string, query string, es string) {
+		t.Run(run, func(t *testing.T) {
+			trq := &timeseries.TimeRangeQuery{}
+			err := parseRawQuery(query, trq)
+			if err == nil {
+				t.Errorf("Expected err parsing time query")
+			} else if err.Error() != es {
+				t.Errorf("Expected error \"%s\", got \"%s\"", es, err.Error())
+			}
+		})
+	}
+
+	test("Query too short", "SELECT too short", "unrecognized query format")
+	test("Query not JSON format", "SELECT toStartOfMinute(datetime), cnt FROM test_table FORMAT TSV",
+		"non JSON formats not supported")
+	test("Bad time function", "WITH 300 as t SELECT toStartOfTenMinutes(datetime, cnt FROM "+
+		"test_table FORMAT JSON", "invalid time function syntax")
+	test("Not valid time series", "SELECT a, b FROM test_table FORMAT JSON", "no matching time value column found")
+	test("No range on time column", "SELECT toDate(datetime) t, cnt FROM test_table WHERE cnt > 100 FORMAT JSON",
+		"no time range found")
+	test("Weird between clause", "SELECT toDate(datetime) as t, cnt FROM test_table WHERE t BETWEEN 15002 15003 FORMAT JSON",
+		"unrecognized between clause")
+	test("Invalid start time", "SELECT toDate(datetime), cnt FROM test_table WHERE datetime BETWEEN November AND December FORMAT JSON",
+		`parsing time "November" as "2006-01-02 15:04:05": cannot parse "November" as "2006"`)
+	test("Invalid end time", "SELECT toDate(datetime), cnt FROM test_table WHERE datetime BETWEEN now() AND December FORMAT JSON",
+		`parsing time "December" as "2006-01-02 15:04:05": cannot parse "December" as "2006"`)
+	test("Invalid start time", "SELECT toDate(datetime), cnt FROM test_table WHERE datetime>='November' AND datetime <=now() FORMAT JSON",
+		`parsing time "November" as "2006-01-02 15:04:05": cannot parse "November" as "2006"`)
+	test("Invalid end time", "SELECT toDate(datetime), cnt FROM test_table WHERE datetime > '2020-10-15 00:22:00' AND datetime <'December' FORMAT JSON",
+		`parsing time "December" as "2006-01-02 15:04:05": cannot parse "December" as "2006"`)
+	test("Weird now expression", "SELECT toDate(datetime), cnt FROM test_table WHERE datetime > '2020-10-15 00:22:00' AND datetime <now()-2tt FORMAT JSON",
+		`strconv.Atoi: parsing "2tt": invalid syntax`)
 }
 
 func TestBackfillTolerance(t *testing.T) {
+	var query string
 	parsingNowProvider = testNow
-	query := `select intDiv(toInt32(datetime), 20) * 20 as t, sum(cnt) FROM testTable WHERE datetime >= '2020-06-01 11:00:00' ` +
-		` and datetime < '2020-06-01 12:00:00' FORMAT JSON`
-	trq := &timeseries.TimeRangeQuery{BackfillTolerance: 180 * time.Second}
-	_ = parseRawQuery(query, trq)
-	if trq.BackfillTolerance != time.Second*180 {
-		t.Errorf("Expected bft of 180, got %d", trq.BackfillTolerance)
+
+	test := func(run string, bf int, query string, exp int) {
+		t.Run(run, func(t *testing.T) {
+			trq := &timeseries.TimeRangeQuery{}
+			trq.BackfillTolerance = time.Duration(bf) * time.Second
+			err := parseRawQuery(query, trq)
+			if err != nil {
+				t.Error(err)
+			}
+			actual := int(trq.BackfillTolerance.Seconds())
+			if actual != exp {
+				t.Errorf("Expected backfill tolerance of %d, got %d", exp, actual)
+			}
+		})
 	}
 
+	query = `select intDiv(toInt32(datetime), 20) * 20 * 1000 as t, sum(cnt) FROM test_table WHERE datetime >= '2020-06-01 11:00:00'` +
+		" FORMAT JSON"
+	test("Backfill from now should be at least configured value", 180, query, 180)
+	query = `select intDiv(toInt32(datetime), 300) * 300 as t, sum(cnt) FROM testTable WHERE datetime >= '2020-06-01 11:00:00' ` +
+		` and datetime <= '2020-06-01 12:02:00' FORMAT JSON`
+	test("Backfill from now bucket should be at least to prior bucket value", 60, query, 120)
+	query = `select intDiv(toInt32(datetime), 20) * 20 as t, sum(cnt) FROM testTable WHERE datetime >= '2020-06-01 11:00:00' ` +
+		` and datetime <= '2020-06-01 12:01:00' FORMAT JSON`
+	test("Backfill should be at least now - configured value value", 180, query, 120)
+	query = `select intDiv(toInt32(datetime), 20) * 20 as t, sum(cnt) FROM testTable WHERE datetime >= '2020-06-01 11:00:00' ` +
+		` and datetime <= '2020-06-01 11:50:00' FORMAT JSON`
+	test("Backfill should be negative/ignored if too far back", 180, query, -540)
 }
-
-/*func TestGetQueryPartsFailure(t *testing.T) {
-	query := "this should fail to parse"
-	_, _, _, err := getQueryParts(query, "")
-	if err == nil {
-		t.Errorf("should have produced error")
-	}
-
-}
-
-func TestParseQueryExtents(t *testing.T) {
-
-	_, _, err := parseQueryExtents("", map[string]string{})
-	if err == nil {
-		t.Errorf("expected error: %s", `failed to parse query: could not find operator`)
-	}
-
-	_, _, err = parseQueryExtents("", map[string]string{"operator": "", "ts1": "a"})
-	if err == nil {
-		t.Errorf("expected error: %s", `failed to parse query: could not find start time`)
-	}
-
-	_, _, err = parseQueryExtents("", map[string]string{"operator": "between", "ts1": "1", "ts2": "a"})
-	if err == nil {
-		t.Errorf("expected error: %s", `failed to parse query: could not determine end time`)
-	}
-
-	_, _, err = parseQueryExtents("", map[string]string{"operator": "between", "ts1": "1"})
-	if err == nil {
-		t.Errorf("expected error: %s", `failed to parse query: could not find end time`)
-	}
-
-	_, _, err = parseQueryExtents("", map[string]string{"operator": "x", "ts1": "1"})
-	if err != nil {
-		t.Error(err)
-	}
-
-} */

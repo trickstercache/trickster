@@ -57,6 +57,7 @@ var chOperators = map[byte]bool{
 var timeFuncMap = map[string]string{
 	"toStartOfMinute":         "1m",
 	"toStartOfFiveMinute":     "5m",
+	"toStartOfTenMinutes":     "10m",
 	"toStartOfFifteenMinutes": "15m",
 	"toStartOfHour":           "1h",
 	"toDate":                  "1d",
@@ -85,8 +86,10 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 	var err error
 	parts := findParts(query)
 	size := len(parts)
+	// We take advantage of the fact we always have slop at the end of valid queries to avoid checking for
+	// index out of bounds errors
 	if size < 4 {
-		return fmt.Errorf("unrecognized query Format")
+		return fmt.Errorf("unrecognized query format")
 	}
 	if sup(parts[size-2]+" "+parts[size-1]) != "FORMAT JSON" {
 		return fmt.Errorf("non JSON formats not supported")
@@ -106,16 +109,15 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 			} else if strings.ToUpper(parts[i+1]) == "AS" {
 				i += 2
 				testAlias = strings.Split(parts[i], ",")[0]
+			} else {
+				i++
+				testAlias = strings.Split(parts[i], ",")[0]
 			}
 			// First look for a Grafana/division type time series query
 			m := matching.GetNamedMatches(reTimeFieldAndStep, testCol, nil)
 			if tf, ok := m["timeField"]; ok {
 				tsColumn, tsAlias = tf, testAlias
-				strStep, ok := m["step"]
-				if !ok {
-					return fmt.Errorf("invalid step from division operation")
-				}
-				duration = strStep + "s"
+				duration = m["step"] + "s"
 			} else {
 				// Otherwise check for the use of built-in ClickHouse time grouping functions
 				for k, v := range timeFuncMap {
@@ -151,10 +153,7 @@ func parseRawQuery(query string, trq *timeseries.TimeRangeQuery) error {
 		return fmt.Errorf("no time range found")
 	}
 
-	trq.Step, err = ttc.ParseDuration(duration)
-	if err != nil {
-		return fmt.Errorf("invalid duration parsed")
-	}
+	trq.Step, _ = ttc.ParseDuration(duration)
 	trq.Statement = strings.Join(parts[:whereStart+1], " ") + " " + strings.Join(whereClause, " ")
 	trq.Extent.Start = time.Unix(int64(startTime), 0)
 	trq.TimestampFieldName = tsColumn
@@ -234,17 +233,17 @@ func findRange(parts []string, column string, alias string) (int, int, []string,
 				ts := srm(srm(srm(parts[i], "toDateTime("), "toDate("), ")")
 				st, err = parseTime(ts)
 				if err != nil {
-					return st, et, nil, "", err
+					return st, et, nil, column, err
 				}
 				i++
 				if sup(parts[i]) != "AND" {
-					return st, et, nil, "", fmt.Errorf("unrecognized between clause")
+					return st, et, nil, column, fmt.Errorf("unrecognized between clause")
 				}
 				i++
 				ts = srm(srm(srm(parts[i], "toDateTime("), "toDate("), ")")
 				et, err = parseTime(ts)
 				if err != nil {
-					return st, et, nil, "", err
+					return st, et, nil, column, err
 				}
 				wc = wc[:len(wc)-1] // Remove column name before BETWEEN
 				wc = append(wc, "("+actColumn+" >= "+tkTimestamp1+" AND "+actColumn+" < "+tkTimestamp2+") ")
@@ -275,7 +274,7 @@ func findRange(parts []string, column string, alias string) (int, int, []string,
 			}
 			st, err = parseTime(tf[tl+1:])
 			if err != nil {
-				return st, et, nil, "", err
+				return st, et, nil, column, err
 			}
 			wc = append(wc, actColumn+" >= "+tkTimestamp1)
 		} else if tl < tfSize && tf[tl] == '<' {
@@ -284,12 +283,15 @@ func findRange(parts []string, column string, alias string) (int, int, []string,
 			}
 			et, err = parseTime(tf[tl+1:])
 			if err != nil {
-				return st, et, nil, "", err
+				return st, et, nil, column, err
 			}
 			wc = append(wc, actColumn+" < "+tkTimestamp2)
 		} else {
 			wc = append(wc, p)
 		}
+	}
+	if st == 0 {
+		return 0, 0, nil, column, nil
 	}
 	return st, et, wc, actColumn, nil
 }
