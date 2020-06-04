@@ -48,15 +48,13 @@ type Listener struct {
 }
 
 type observedConnection struct {
-	net.Conn
+	*net.TCPConn
 }
 
-func (o observedConnection) Close() error {
-	err := o.Conn.Close()
-
+func (o *observedConnection) Close() error {
+	err := o.TCPConn.Close()
 	metrics.ProxyActiveConnections.Dec()
 	metrics.ProxyConnectionClosed.Inc()
-
 	return err
 }
 
@@ -74,7 +72,12 @@ func (l *Listener) Accept() (net.Conn, error) {
 	metrics.ProxyActiveConnections.Inc()
 	metrics.ProxyConnectionAccepted.Inc()
 
-	return observedConnection{c}, nil
+	// this is necessary for HTTP/2 to work
+	if t, ok := c.(*net.TCPConn); ok {
+		return &observedConnection{t}, nil
+	}
+
+	return c, nil
 }
 
 // CertSwapper returns the CertSwapper reference from the Listener
