@@ -95,7 +95,7 @@ var testJSONInt64 = `{"meta":[{"name":"t","type":"UInt64"},{"name":"cnt","type":
 	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":1557766680000},` +
 	`{"cnt":"1","meta1":206,"meta2":"value3","t":1557767280000}],"rows":3}`
 
-var testJSONDateTime = `{"meta":[{"name":"t","type":"DateTime('Etc\/UTC')"},{"name":"cnt","type":"UInt64"},` +
+var testJSONDateTime = `{"meta":[{"name":"t","type":"DateTime('Etc/UTC')"},{"name":"cnt","type":"UInt64"},` +
 	`{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],` +
 	`"data":[{"cnt":"12648509","meta1":200,"meta2":"value2","t":"2019-05-13 16:48:00"},` +
 	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":"2019-05-13 16:58:00"},` +
@@ -106,7 +106,7 @@ var testRE = newRe().addMeta("t", "UInt64", "cnt", "UInt64", "meta1", "UInt16", 
 	addPoint(1557766680, "10260032", 200, "value3").
 	addPoint(1557767280, "1", 206, "value3")
 
-var testREStringDate = newRe().addMeta("t", `DateTime('Etc/UTC')`, "cnt", "UInt64", "meta1", "UInt16", "meta2", "String").
+var testREStringDate = newRe().addMeta("t", "DateTime('Etc/UTC')", "cnt", "UInt64", "meta1", "UInt16", "meta2", "String").
 	addPoint(1557766080, "12648509", 200, "value2").
 	addPoint(1557766680, "10260032", 200, "value3").
 	addPoint(1557767280, "1", 206, "value3")
