@@ -50,7 +50,7 @@ WHERE t >= "2020-10-15 12:00:00" and t < now() - 60 * 60
 WHERE datetime BETWEEN 1574686300 AND 1574689900
 ```
 
-Note that these values can be wrapped in the ClickHouse toDateTime function, but ClickHouse will make that conversion implicitly and it is not required.
+Note that these values can be wrapped in the ClickHouse toDateTime function, but ClickHouse will make that conversion implicitly and it is not required.   All string times are assumed to be UTC.
 
 ### Normalization and "Fast Forwarding"
 

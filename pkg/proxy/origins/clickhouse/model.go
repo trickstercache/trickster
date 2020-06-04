@@ -102,14 +102,20 @@ var toSec toTimeFunc = func(t time.Time) interface{} {
 	return t.Unix()
 }
 
+var utcLoc *time.Location
+
+func init() {
+	utcLoc, _ = time.LoadLocation("UTC")
+}
+
 const chLayout = "2006-01-02 15:04:05"
 
 var fromDateString fromTimeFunc = func(v interface{}) (time.Time, error) {
-	return time.Parse(chLayout, v.(string))
+	return time.ParseInLocation(chLayout, v.(string), utcLoc)
 }
 
 var toDateString toTimeFunc = func(t time.Time) interface{} {
-	return t.Format(chLayout)
+	return t.In(utcLoc).Format(chLayout)
 }
 
 // Converts a Timeseries into a JSON blob

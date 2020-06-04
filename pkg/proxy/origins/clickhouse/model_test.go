@@ -69,9 +69,9 @@ var testJSON1 = `{"meta":[{"name":"t","type":"UInt64"},{"name":"cnt","type":"UIn
 
 var testJSONStringDate = `{"meta":[{"name":"t","type":"DateTime('Etc/UTC')"},{"name":"cnt","type":"UInt64"},` +
 	`{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],` +
-	`"data":[{"cnt":"12648509","meta1":200,"meta2":"value2","t":"2019-05-13 10:48:00"},` +
-	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":"2019-05-13 10:58:00"},` +
-	`{"cnt":"1","meta1":206,"meta2":"value3","t":"2019-05-13 11:08:00"}],"rows":3}`
+	`"data":[{"cnt":"12648509","meta1":200,"meta2":"value2","t":"2019-05-13 16:48:00"},` +
+	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":"2019-05-13 16:58:00"},` +
+	`{"cnt":"1","meta1":206,"meta2":"value3","t":"2019-05-13 17:08:00"}],"rows":3}`
 
 var testJSONUInt32Date = `{"meta":[{"name":"t","type":"UInt32"},{"name":"cnt","type":"UInt64"},` +
 	`{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],` +
@@ -95,7 +95,7 @@ var testJSONInt64 = `{"meta":[{"name":"t","type":"UInt64"},{"name":"cnt","type":
 	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":1557766680000},` +
 	`{"cnt":"1","meta1":206,"meta2":"value3","t":1557767280000}],"rows":3}`
 
-var testJSONDateTime = `{"meta":[{"name":"t","type":"DateTime('Etc/UTC')"},{"name":"cnt","type":"UInt64"},` +
+var testJSONDateTime = `{"meta":[{"name":"t","type":"DateTime('Etc\/UTC')"},{"name":"cnt","type":"UInt64"},` +
 	`{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],` +
 	`"data":[{"cnt":"12648509","meta1":200,"meta2":"value2","t":"2019-05-13 16:48:00"},` +
 	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":"2019-05-13 16:58:00"},` +
