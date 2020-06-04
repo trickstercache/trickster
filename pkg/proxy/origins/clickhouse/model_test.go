@@ -188,8 +188,8 @@ func TestMarshalTimeseries(t *testing.T) {
 		return
 	}
 
-	if !reflect.DeepEqual([]byte(testJSONStringDate), bytes) {
-		t.Errorf("got %s", string(bytes))
+	if string(bytes) != testJSONStringDate {
+		t.Errorf("Expected %s got %s", testJSONStringDate, string(bytes))
 	}
 
 	bytes, err = client.MarshalTimeseries(testREUInt32Date)
