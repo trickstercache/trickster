@@ -34,8 +34,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tt "github.com/tricksterproxy/trickster/pkg/proxy/timeconv"
 	"github.com/tricksterproxy/trickster/pkg/sort/times"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -283,7 +283,7 @@ func parseDuration(input string) (time.Duration, error) {
 func (c *TestClient) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
-	qp := r.URL.Query()
+	qp, _, _ := params.GetRequestValues(r)
 
 	trq.Statement = qp.Get(upQuery)
 	if trq.Statement == "" {
@@ -359,10 +359,10 @@ func (c *TestClient) BuildUpstreamURL(r *http.Request) *url.URL {
 
 // SetExtent will change the upstream request query to use the provided Extent
 func (c *TestClient) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
-	v, _, _ := request.GetRequestValues(r)
+	v, _, _ := params.GetRequestValues(r)
 	v.Set(upStart, strconv.FormatInt(extent.Start.Unix(), 10))
 	v.Set(upEnd, strconv.FormatInt(extent.End.Unix(), 10))
-	request.SetRequestValues(r, v)
+	params.SetRequestValues(r, v)
 }
 
 // FastForwardRequest returns an *http.Request crafted to collect Fast Forward
@@ -382,7 +382,7 @@ func (c *TestClient) FastForwardRequest(r *http.Request) (*http.Request, error) 
 	if strings.HasSuffix(nr.URL.Path, "/query_range") {
 		nr.URL.Path = nr.URL.Path[0 : len(nr.URL.Path)-6]
 	}
-	v, _, _ := request.GetRequestValues(nr)
+	v, _, _ := params.GetRequestValues(nr)
 	v.Del(upStart)
 	v.Del(upEnd)
 	v.Del(upStep)
@@ -392,7 +392,7 @@ func (c *TestClient) FastForwardRequest(r *http.Request) (*http.Request, error) 
 	}
 	v.Set("time", strconv.FormatInt(c.fftime.Unix(), 10))
 
-	request.SetRequestValues(nr, v)
+	params.SetRequestValues(nr, v)
 	return nr, nil
 }
 

@@ -31,6 +31,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	tt "github.com/tricksterproxy/trickster/pkg/proxy/timeconv"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -148,13 +149,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 
-	var qp url.Values
-	if r.Method == http.MethodPost {
-		r.ParseForm()
-		qp = r.PostForm
-	} else {
-		qp = r.URL.Query()
-	}
+	qp, _, _ := params.GetRequestValues(r)
 
 	trq.Statement = qp.Get(upQuery)
 	if trq.Statement == "" {

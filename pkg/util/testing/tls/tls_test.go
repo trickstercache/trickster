@@ -14,6 +14,38 @@
  * limitations under the License.
  */
 
-// Package request provides functionality for handling HTTP Requests
-// including the insertion of configuration options into the request
-package request
+// Package tls provides functionality for use when conducting tests with TLS
+package tls
+
+import (
+	"testing"
+)
+
+func TestGetTestKeyAndCert(t *testing.T) {
+
+	_, _, err := GetTestKeyAndCert(true)
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestGetTestKeyAndCertFiles(t *testing.T) {
+
+	_, _, closer, err := GetTestKeyAndCertFiles("invalid-key")
+	if closer != nil {
+		defer closer()
+	}
+	if err != nil {
+		t.Error(err)
+	}
+
+	_, _, closer2, err2 := GetTestKeyAndCertFiles("invalid-cert")
+	if closer2 != nil {
+		defer closer2()
+	}
+	if err2 != nil {
+		t.Error(err2)
+	}
+
+}

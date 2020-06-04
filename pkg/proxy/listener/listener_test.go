@@ -37,6 +37,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/stdout"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
 )
 
 func testListener() net.Listener {
@@ -121,8 +122,17 @@ func TestNewListenerTLS(t *testing.T) {
 
 	tc := oc.TLS
 	oc.TLS.ServeTLS = true
-	tc.FullChainCertPath = "../../../testdata/test.01.cert.pem"
-	tc.PrivateKeyPath = "../../../testdata/test.01.key.pem"
+
+	kf, cf, closer, err := tlstest.GetTestKeyAndCertFiles("")
+	if err != nil {
+		t.Error(err)
+	}
+	if closer != nil {
+		defer closer()
+	}
+
+	tc.FullChainCertPath = cf
+	tc.PrivateKeyPath = kf
 
 	tlsConfig, err := c.TLSCertConfig()
 	if err != nil {

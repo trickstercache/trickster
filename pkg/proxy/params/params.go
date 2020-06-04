@@ -17,7 +17,15 @@
 // Package params provides support for handling URL Parameters
 package params
 
-import "net/url"
+import (
+	"bytes"
+	"io/ioutil"
+	"net/http"
+	"net/url"
+
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
+)
 
 // UpdateParams updates the provided query parameters collection with the provided updates
 func UpdateParams(params url.Values, updates map[string]string) {
@@ -39,5 +47,45 @@ func UpdateParams(params url.Values, updates map[string]string) {
 			continue
 		}
 		params.Set(k, v)
+	}
+}
+
+// GetRequestValues returns the Query Parameters for the request
+// regardless of method
+func GetRequestValues(r *http.Request) (url.Values, string, bool) {
+	var v url.Values
+	var s string
+	var isBody bool
+	if !methods.HasBody(r.Method) {
+		v = r.URL.Query()
+		s = r.URL.RawQuery
+	} else if r.Header.Get(headers.NameContentType) == headers.ValueApplicationJSON {
+		v = url.Values{}
+		b, _ := ioutil.ReadAll(r.Body)
+		r.Body.Close()
+		r.Body = ioutil.NopCloser(bytes.NewReader(b))
+		s = string(b)
+		isBody = true
+	} else {
+		r.ParseForm()
+		v = r.PostForm
+		s = v.Encode()
+		isBody = true
+		r.ContentLength = int64(len(s))
+		r.Body = ioutil.NopCloser(bytes.NewReader([]byte(s)))
+	}
+	return v, s, isBody
+}
+
+// SetRequestValues Values sets the Query Parameters for the request
+// regardless of method
+func SetRequestValues(r *http.Request, v url.Values) {
+	s := v.Encode()
+	if !methods.HasBody(r.Method) {
+		r.URL.RawQuery = s
+	} else {
+		// reset the body
+		r.ContentLength = int64(len(s))
+		r.Body = ioutil.NopCloser(bytes.NewReader([]byte(s)))
 	}
 }

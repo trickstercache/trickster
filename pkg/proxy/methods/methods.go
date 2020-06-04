@@ -20,12 +20,44 @@ package methods
 import "net/http"
 
 const (
+	get uint16 = 1 << iota
+	head
+	post
+	put
+	patch
+	delete
+	options
+	connect
+	trace
+	purge
+)
 
+const (
+	cacheableMethods   = get + head
+	bodyMethods        = post + put + patch
+	uncacheableMethods = bodyMethods + delete + options + connect + trace + purge
+	allMethods         = cacheableMethods + uncacheableMethods
+)
+
+const (
 	// Methods not currently in the base golang http package
 
 	// MethodPurge is the PURGE HTTP Method
 	MethodPurge = "PURGE"
 )
+
+var methodsMap = map[string]uint16{
+	http.MethodGet:     get,
+	http.MethodHead:    head,
+	http.MethodPost:    post,
+	http.MethodPut:     put,
+	http.MethodPatch:   patch,
+	http.MethodDelete:  delete,
+	http.MethodOptions: options,
+	http.MethodConnect: connect,
+	http.MethodTrace:   trace,
+	MethodPurge:        purge,
+}
 
 // AllHTTPMethods returns a list of all known HTTP methods
 func AllHTTPMethods() []string {
@@ -46,10 +78,28 @@ func UncacheableHTTPMethods() []string {
 
 // IsCacheable returns true if the method is HEAD or GET
 func IsCacheable(method string) bool {
-	return method == http.MethodGet || method == http.MethodHead
+	if m, ok := methodsMap[method]; ok {
+		return (cacheableMethods&m != 0)
+	}
+	return false
 }
 
 // HasBody returns true if the method is POST, PUT or PATCH
 func HasBody(method string) bool {
-	return method == http.MethodPost || method == http.MethodPatch || method == http.MethodPut
+	if m, ok := methodsMap[method]; ok {
+		return (bodyMethods&m != 0)
+	}
+	return false
+}
+
+// MethodMask returns the integer representation of the collection of methods
+// based on the iota bitmask defined above
+func MethodMask(methods ...string) uint16 {
+	var i uint16
+	for _, ms := range methods {
+		if m, ok := methodsMap[ms]; ok {
+			i ^= m
+		}
+	}
+	return i
 }

@@ -18,8 +18,10 @@
 package influxdb
 
 import (
+	"io"
 	"net/http"
 	"net/url"
+	"sync"
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy"
@@ -39,10 +41,13 @@ type Client struct {
 	handlers           map[string]http.Handler
 	handlersRegistered bool
 	baseUpstreamURL    *url.URL
-	healthURL          *url.URL
-	healthHeaders      http.Header
-	healthMethod       string
 	router             http.Handler
+
+	healthURL        *url.URL
+	healthHeaders    http.Header
+	healthMethod     string
+	healthBody       io.Reader
+	healthHeaderLock *sync.Mutex
 }
 
 // NewClient returns a new Client Instance
@@ -53,7 +58,7 @@ func NewClient(name string, oc *oo.Options, router http.Handler,
 	// explicitly disable Fast Forward for this client
 	oc.FastForwardDisable = true
 	return &Client{name: name, config: oc, router: router, cache: cache,
-		webClient: c, baseUpstreamURL: bur}, err
+		webClient: c, baseUpstreamURL: bur, healthHeaderLock: &sync.Mutex{}}, err
 }
 
 // Configuration returns the upstream Configuration for this Client

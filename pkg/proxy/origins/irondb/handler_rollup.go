@@ -23,6 +23,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -110,7 +111,7 @@ func (c *Client) rollupHandlerFastForwardRequest(
 	trq := rsc.TimeRangeQuery
 
 	nr := r.Clone(context.Background())
-	v, _, _ := request.GetRequestValues(nr)
+	v, _, _ := params.GetRequestValues(nr)
 	var err error
 
 	if trq == nil {
@@ -125,6 +126,6 @@ func (c *Client) rollupHandlerFastForwardRequest(
 	end := start + int64(trq.Step.Seconds())
 	v.Set(upStart, formatTimestamp(time.Unix(start, 0), true))
 	v.Set(upEnd, formatTimestamp(time.Unix(end, 0), true))
-	request.SetRequestValues(nr, v)
+	params.SetRequestValues(nr, v)
 	return nr, nil
 }

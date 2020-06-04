@@ -63,7 +63,7 @@ func (c Client) fetchHandlerSetExtent(r *http.Request,
 	}
 
 	fetchReq := map[string]interface{}{}
-	if err = json.NewDecoder(bytes.NewBuffer(b)).Decode(&fetchReq); err != nil {
+	if err = json.NewDecoder(bytes.NewReader(b)).Decode(&fetchReq); err != nil {
 		return
 	}
 
@@ -96,9 +96,9 @@ func (c *Client) fetchHandlerParseTimeRangeQuery(
 		return nil, errors.ParseRequestBody(err)
 	}
 
-	r.Body = ioutil.NopCloser(bytes.NewBuffer(b))
+	r.Body = ioutil.NopCloser(bytes.NewReader(b))
 	fetchReq := map[string]interface{}{}
-	if err = json.NewDecoder(bytes.NewBuffer(b)).Decode(&fetchReq); err != nil {
+	if err = json.NewDecoder(bytes.NewReader(b)).Decode(&fetchReq); err != nil {
 		return nil, errors.ParseRequestBody(err)
 	}
 
@@ -130,9 +130,9 @@ func (c Client) fetchHandlerDeriveCacheKey(path string, params url.Values,
 	sb.WriteString(path)
 	newBody := &bytes.Buffer{}
 	if b, err := ioutil.ReadAll(body); err == nil {
-		body = ioutil.NopCloser(bytes.NewBuffer(b))
+		body = ioutil.NopCloser(bytes.NewReader(b))
 		fetchReq := map[string]interface{}{}
-		err := json.NewDecoder(bytes.NewBuffer(b)).Decode(&fetchReq)
+		err := json.NewDecoder(bytes.NewReader(b)).Decode(&fetchReq)
 		if err == nil {
 			delete(fetchReq, "start")
 			delete(fetchReq, "end")

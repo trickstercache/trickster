@@ -25,11 +25,9 @@ import (
 
 // Inflate returns the inflated version of a gzip-deflated byte slice
 func Inflate(in []byte) ([]byte, error) {
-	gr, err := gzip.NewReader(bytes.NewBuffer(in))
+	gr, err := gzip.NewReader(bytes.NewReader(in))
 	if err != nil {
 		return []byte{}, err
 	}
-
-	out, err := ioutil.ReadAll(gr)
-	return out, err
+	return ioutil.ReadAll(gr)
 }
