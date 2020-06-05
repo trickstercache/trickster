@@ -344,11 +344,11 @@ data:
         ## this is the default value for prometheus:
         # health_check_upstream_url = '/api/v1/query'
 
-        ## health_check_verb is the HTTP Method Trickster will when peforming an upstream health check for this origin
+        ## health_check_verb is the HTTP Method Trickster will when performing an upstream health check for this origin
         ## default is 'GET' for all origin types unless overridden per-origin here.
         # health_check_verb = 'GET'
 
-        ## health_check_query is the query string Trickster will append the when peforming an upstream health check for this origin
+        ## health_check_query is the query string Trickster will append the when performing an upstream health check for this origin
         ## This value is the default for prometheus (again, see /docs/health.md)
         # health_check_query = 'query=up'
 

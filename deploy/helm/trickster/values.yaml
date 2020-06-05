@@ -123,11 +123,11 @@ origins:
 #     # this is the default value for prometheus:
 #     hcUpstreamURL: /api/v1/query
 
-#     # hcVerb is the HTTP Method Trickster will when peforming an upstream health check for this origin
+#     # hcVerb is the HTTP Method Trickster will when performing an upstream health check for this origin
 #     # default is 'GET' for all origin types unless overridden per-origin here.
 #     hcVerb: GET
 
-#     # hcQuery is the query string Trickster will append to the URL the when peforming an upstream health check for this origin
+#     # hcQuery is the query string Trickster will append to the URL the when performing an upstream health check for this origin
 #     # This value is the default for prometheus (again, see /docs/health.md)
 #     hcQuery: query=up
 
