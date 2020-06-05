@@ -41,6 +41,3 @@ cacheKey.expiration
 
 #log testing
 out.log
-
-vendor
-trickster

@@ -406,7 +406,6 @@ func (se *SeriesEnvelope) Sort() {
 
 	var hasWarned bool
 	tsm := map[time.Time]bool{}
-	m := make(map[int64][]interface{})
 	if ti := str.IndexOfString(se.Results[0].Series[0].Columns, "time"); ti != -1 {
 		for ri := range se.Results {
 			for si := range se.Results[ri].Series {
