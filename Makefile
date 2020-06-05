@@ -104,7 +104,7 @@ style:
 	! gofmt -d $$(find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
 .PHONY: test
-test:
+test: go-mod-vendor
 	@go test -v -coverprofile=.coverprofile ./... 
 
 .PHONY: bench
