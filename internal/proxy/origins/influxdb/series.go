@@ -410,6 +410,7 @@ func (se *SeriesEnvelope) Sort() {
 	if ti := str.IndexOfString(se.Results[0].Series[0].Columns, "time"); ti != -1 {
 		for ri := range se.Results {
 			for si := range se.Results[ri].Series {
+				m := make(map[int64][]interface{})
 				keys := make([]int64, 0, len(m))
 				for _, v := range se.Results[ri].Series[si].Values {
 					wg.Add(1)
