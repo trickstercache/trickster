@@ -1545,6 +1545,144 @@ func TestSort(t *testing.T) {
 	if se.isCounted {
 		t.Errorf("got %t expected %t", se.isCounted, false)
 	}
+
+	tests := []struct {
+		before, after *SeriesEnvelope
+	}{
+		// case 0
+		{
+			before: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(15000), 1.5},
+									{float64(5000), 1.5},
+									{float64(10000), 1.5},
+								},
+							},
+							{
+								Name:    "b",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(15000), 1.5},
+									{float64(5000), 1.5},
+									{float64(10000), 1.5},
+								},
+							},
+						},
+					},
+					{
+						Series: []models.Row{
+							{
+								Name:    "c",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(15000), 1.5},
+									{float64(5000), 1.5},
+									{float64(10000), 1.5},
+								},
+							},
+							{
+								Name:    "d",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(15000), 1.5},
+									{float64(5000), 1.5},
+									{float64(10000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(15, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
+				timestamps:   map[time.Time]bool{time.Unix(5, 0): true, time.Unix(10, 0): true, time.Unix(15, 0): true},
+				tslist:       times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
+				isSorted:     false,
+				isCounted:    false,
+			},
+			after: &SeriesEnvelope{
+				Results: []Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "a",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(5000), 1.5},
+									{float64(10000), 1.5},
+									{float64(15000), 1.5},
+								},
+							},
+							{
+								Name:    "b",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(5000), 1.5},
+									{float64(10000), 1.5},
+									{float64(15000), 1.5},
+								},
+							},
+						},
+					},
+					{
+						Series: []models.Row{
+							{
+								Name:    "c",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(5000), 1.5},
+									{float64(10000), 1.5},
+									{float64(15000), 1.5},
+								},
+							},
+							{
+								Name:    "d",
+								Columns: []string{"time", "units"},
+								Tags:    map[string]string{"tagName1": "tagValue1"},
+								Values: [][]interface{}{
+									{float64(5000), 1.5},
+									{float64(10000), 1.5},
+									{float64(15000), 1.5},
+								},
+							},
+						},
+					},
+				},
+				ExtentList: timeseries.ExtentList{
+					timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(15, 0)},
+				},
+				StepDuration: time.Duration(5) * time.Second,
+				timestamps:   map[time.Time]bool{time.Unix(5, 0): true, time.Unix(10, 0): true, time.Unix(15, 0): true},
+				tslist:       times.Times{time.Unix(5, 0), time.Unix(10, 0), time.Unix(15, 0)},
+				isSorted:     true,
+				isCounted:    true,
+			},
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			test.before.Sort()
+			if !reflect.DeepEqual(test.before, test.after) {
+				t.Errorf("mismatch\nexpected=%v\ngot     =%v", test.after, test.before)
+			}
+		})
+	}
+
 }
 
 func TestSize(t *testing.T) {
