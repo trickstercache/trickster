@@ -42,6 +42,8 @@ type TimeRangeQuery struct {
 	FastForwardDisable bool
 	// IsOffset is true if the query uses a relative offset modifier
 	IsOffset bool
+	// BackfillTolerance can be updated to override the overall backfill tolerance per query
+	BackfillTolerance time.Duration
 }
 
 // Clone returns an exact copy of a TimeRangeQuery
@@ -124,6 +126,12 @@ func (trq *TimeRangeQuery) String() string {
 // GetBackfillTolerance will return the backfill tolerance for the query based on the provided
 // default, and any query-specific tolerance directives included in the query comments
 func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration) time.Duration {
+	if trq.BackfillTolerance > 0 {
+		return trq.BackfillTolerance
+	}
+	if trq.BackfillTolerance < 0 {
+		return 0
+	}
 	if x := strings.Index(trq.Statement, "trickster-backfill-tolerance:"); x > 1 {
 		x += 29
 		y := x

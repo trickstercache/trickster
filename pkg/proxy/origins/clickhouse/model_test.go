@@ -17,166 +17,110 @@
 package clickhouse
 
 import (
-	"encoding/json"
+	tt "github.com/tricksterproxy/trickster/pkg/proxy/timeconv"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"reflect"
-	"sort"
 	"testing"
 	"time"
-
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
-func TestParts(t *testing.T) {
-
-	rv1 := ResponseValue{
-		"t":     "1557766080000",
-		"cnt":   "27",
-		"meta1": 200,
-		"meta2": "value3",
-	}
-
-	metric, ts, val, _ := rv1.Parts("t", "cnt")
-
-	expectedTs := time.Unix(1557766080, 0)
-	expectedMetric := "{meta1=200;meta2=value3}"
-	var expectedValue float64 = 27
-
-	if ts != expectedTs {
-		t.Errorf("expected %d got %d", expectedTs.Unix(), ts.Unix())
-	}
-
-	if metric != expectedMetric {
-		t.Errorf("expected %s got %s", expectedMetric, metric)
-	}
-
-	if val != expectedValue {
-		t.Errorf("expected %f got %f", expectedValue, val)
-	}
-
-	rv2 := ResponseValue{
-		"t":   "1557766080000",
-		"cnt": "27",
-	}
-
-	metric, _, _, _ = rv2.Parts("t", "cnt")
-	if metric != "{}" {
-		t.Errorf("expected '{}' got %s", metric)
-	}
-
-	rv3 := ResponseValue{
-		"t":     "A557766080000",
-		"cnt":   "27",
-		"meta1": 200,
-	}
-
-	metric, _, _, _ = rv3.Parts("t", "cnt")
-	if metric != "{}" {
-		t.Errorf("expected '{}' got %s", metric)
-	}
-
-	rv4 := ResponseValue{
-		"t":     "1557766080000",
-		"cnt":   "2a7",
-		"meta1": 200,
-	}
-
-	metric, _, _, _ = rv4.Parts("t", "cnt")
-	if metric != "{}" {
-		t.Errorf("expected '{}' got %s", metric)
-	}
-
-	rv5 := ResponseValue{
-		"t":     "1557766080000",
-		"cnt":   27.5,
-		"meta1": 200,
-	}
-
-	metric, _, _, _ = rv5.Parts("t", "cnt")
-	if metric != "{meta1=200}" {
-		t.Errorf("expected '{meta1=200}' got %s", metric)
-	}
-
+func newRe() *ResultsEnvelope {
+	return &ResultsEnvelope{ExtentList: timeseries.ExtentList{}, Data: make([]Point, 0)}
 }
 
-var testJSON1 = []byte(`{"meta":[{"name":"t","type":"UInt64"},{"name":"cnt","type":"UInt64"},` +
+func (re *ResultsEnvelope) addMeta(values ...string) *ResultsEnvelope {
+	for i := 0; i < len(values); i += 2 {
+		re.Meta = append(re.Meta, FieldDefinition{Name: values[i], Type: values[i+1]})
+	}
+	return re
+}
+
+func (re *ResultsEnvelope) addPoint(ts int, values ...interface{}) *ResultsEnvelope {
+	v := ResponseValue{}
+	for i := 0; i < len(re.Meta)-1; i++ {
+		v[re.Meta[i+1].Name] = values[i]
+	}
+	re.Data = append(re.Data, Point{Timestamp: time.Unix(int64(ts), 0), Values: []ResponseValue{v}})
+	return re
+}
+
+func (re *ResultsEnvelope) addExtent(e int64) *ResultsEnvelope {
+	re.ExtentList = append(re.ExtentList, timeseries.Extent{Start: time.Unix(e, 0), End: time.Unix(e, 0)})
+	return re
+}
+
+func (re *ResultsEnvelope) addExtents(e ...int64) *ResultsEnvelope {
+	for i := 0; i < len(e); i += 2 {
+		re.ExtentList = append(re.ExtentList, timeseries.Extent{Start: time.Unix(e[i], 0), End: time.Unix(e[i+1], 0)})
+	}
+	return re
+}
+
+func (re *ResultsEnvelope) setStep(s string) *ResultsEnvelope {
+	re.StepDuration, _ = tt.ParseDuration(s)
+	return re
+}
+
+var testJSON1 = `{"meta":[{"name":"t","type":"UInt64"},{"name":"cnt","type":"UInt64"},` +
 	`{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],` +
-	`"data":[{"t":"1557766080000","cnt":"12648509","meta1":200,"meta2":"value2"},` +
-	`{"t":"1557766080000","cnt":"10260032","meta1":200,"meta2":"value3"},` +
-	`{"t":"1557766080000","cnt":"1","meta1":206,"meta2":"value3"}],"rows":3}`,
-)
-var testJSON2 = []byte(`{"meta":[{"name":"t"}],"data":[{"t":"1557766080000","cnt":"12648509",` +
-	`"meta1":200,"meta2":"value2"},{"t":"1557766080000","cnt":"10260032","meta1":200,"meta2":"value3"},` +
-	`{"t":"1557766080000","cnt":"1","meta1":206,"meta2":"value3"}],"rows":3}`,
-) // should generate error
+	`"data":[{"cnt":"12648509","meta1":200,"meta2":"value2","t":"1557766080000"},` +
+	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":"1557766680000"},` +
+	`{"cnt":"1","meta1":206,"meta2":"value3","t":"1557767280000"}],"rows":3}`
 
-var testRE1 = &ResultsEnvelope{
-	Meta: []FieldDefinition{
-		{
-			Name: "t",
-			Type: "UInt64",
-		},
-		{
-			Name: "cnt",
-			Type: "UInt64",
-		},
-		{
-			Name: "meta1",
-			Type: "UInt16",
-		},
-		{
-			Name: "meta2",
-			Type: "String",
-		},
-	},
+var testJSONStringDate = `{"meta":[{"name":"t","type":"DateTime('Etc/UTC')"},{"name":"cnt","type":"UInt64"},` +
+	`{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],` +
+	`"data":[{"cnt":"12648509","meta1":200,"meta2":"value2","t":"2019-05-13 16:48:00"},` +
+	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":"2019-05-13 16:58:00"},` +
+	`{"cnt":"1","meta1":206,"meta2":"value3","t":"2019-05-13 17:08:00"}],"rows":3}`
 
-	SeriesOrder: []string{"1", "2", "3"},
+var testJSONUInt32Date = `{"meta":[{"name":"t","type":"UInt32"},{"name":"cnt","type":"UInt64"},` +
+	`{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],` +
+	`"data":[{"cnt":"12648509","meta1":200,"meta2":"value2","t":1557766080},` +
+	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":1557766680},` +
+	`{"cnt":"1","meta1":206,"meta2":"value3","t":1557767280}],"rows":3}`
 
-	Data: map[string]*DataSet{
-		"1": {
-			Metric: map[string]interface{}{
-				"meta1": 200,
-				"meta2": "value2",
-			},
-			Points: []Point{
-				{
-					Timestamp: time.Unix(1557766080, 0),
-					Value:     12648509,
-				},
-			},
-		},
-		"2": {
-			Metric: map[string]interface{}{
-				"meta1": 200,
-				"meta2": "value3",
-			},
-			Points: []Point{
-				{
-					Timestamp: time.Unix(1557766080, 0),
-					Value:     10260032,
-				},
-			},
-		},
-		"3": {
-			Metric: map[string]interface{}{
-				"meta1": 206,
-				"meta2": "value3",
-			},
-			Points: []Point{
-				{
-					Timestamp: time.Unix(1557766080, 0),
-					Value:     1,
-				},
-			},
-		},
-	},
-}
+var testEmptyJSON = `{"meta":[{"name":"t","type":"UInt64"},{"name":"cnt","type":"UInt64"},` +
+	`{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],` +
+	`"data":[],"rows": 0}`
+
+var testJSONInt32 = `{"meta":[{"name":"t","type":"UInt32"},{"name":"cnt","type":"UInt64"},` +
+	`{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],` +
+	`"data":[{"cnt":"12648509","meta1":200,"meta2":"value2","t":1557766080},` +
+	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":1557766680},` +
+	`{"cnt":"1","meta1":206,"meta2":"value3","t":1557767280}],"rows":3}`
+
+var testJSONInt64 = `{"meta":[{"name":"t","type":"UInt64"},{"name":"cnt","type":"UInt64"},` +
+	`{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],` +
+	`"data":[{"cnt":"12648509","meta1":200,"meta2":"value2","t":1557766080000},` +
+	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":1557766680000},` +
+	`{"cnt":"1","meta1":206,"meta2":"value3","t":1557767280000}],"rows":3}`
+
+var testJSONDateTime = `{"meta":[{"name":"t","type":"DateTime('Etc\/UTC')"},{"name":"cnt","type":"UInt64"},` +
+	`{"name":"meta1","type":"UInt16"},{"name":"meta2","type":"String"}],` +
+	`"data":[{"cnt":"12648509","meta1":200,"meta2":"value2","t":"2019-05-13 16:48:00"},` +
+	`{"cnt":"10260032","meta1":200,"meta2":"value3","t":"2019-05-13 16:58:00"},` +
+	`{"cnt":"1","meta1":206,"meta2":"value3","t":"2019-05-13 17:08:00"}],"rows":3}`
+
+var testRE = newRe().addMeta("t", "UInt64", "cnt", "UInt64", "meta1", "UInt16", "meta2", "String").
+	addPoint(1557766080, "12648509", 200, "value2").
+	addPoint(1557766680, "10260032", 200, "value3").
+	addPoint(1557767280, "1", 206, "value3")
+
+var testREStringDate = newRe().addMeta("t", "DateTime('Etc/UTC')", "cnt", "UInt64", "meta1", "UInt16", "meta2", "String").
+	addPoint(1557766080, "12648509", 200, "value2").
+	addPoint(1557766680, "10260032", 200, "value3").
+	addPoint(1557767280, "1", 206, "value3")
+
+var testREUInt32Date = newRe().addMeta("t", "UInt32", "cnt", "UInt64", "meta1", "UInt16", "meta2", "String").
+	addPoint(1557766080, "12648509", 200, "value2").
+	addPoint(1557766680, "10260032", 200, "value3").
+	addPoint(1557767280, "1", 206, "value3")
 
 func TestREMarshalJSON(t *testing.T) {
-
 	expectedLen := len(testJSON1)
 
 	re := ResultsEnvelope{}
-	err := re.UnmarshalJSON(testJSON1)
+	err := re.UnmarshalJSON([]byte(testJSON1))
 	if err != nil {
 		t.Error(err)
 	}
@@ -193,38 +137,14 @@ func TestREMarshalJSON(t *testing.T) {
 	re.Meta = re.Meta[:0]
 	_, err = re.MarshalJSON()
 	if err == nil {
-		t.Errorf("expected error: %s", `Must have at least two fields; only have 0`)
-	}
-
-}
-
-func TestRSPMarshalJSON(t *testing.T) {
-
-	rsp := &Response{ExtentList: timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(5, 0)}}}
-
-	bytes, err := rsp.MarshalJSON()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	rsp1 := &Response{}
-	json.Unmarshal(bytes, rsp1)
-
-	if rsp.ExtentList[0].Start.Unix() != rsp1.ExtentList[0].Start.Unix() {
-		t.Errorf("expected %d got %d", rsp.ExtentList[0].Start.Unix(), rsp.ExtentList[0].Start.Unix())
-	}
-
-	if rsp.ExtentList[0].End.Unix() != rsp1.ExtentList[0].End.Unix() {
-		t.Errorf("expected %d got %d", rsp.ExtentList[0].End.Unix(), rsp.ExtentList[0].End.Unix())
+		t.Errorf("expected error: %s", `no Meta in ResultsEnvelope`)
 	}
 
 }
 
 func TestUnmarshalTimeseries(t *testing.T) {
-
 	client := &Client{}
-	ts, err := client.UnmarshalTimeseries(testJSON1)
+	ts, err := client.UnmarshalTimeseries([]byte(testJSON1))
 	if err != nil {
 		t.Error(err)
 		return
@@ -248,31 +168,44 @@ func TestUnmarshalTimeseries(t *testing.T) {
 		return
 	}
 
-	_, err = client.UnmarshalTimeseries(testJSON2)
-	if err == nil {
-		t.Errorf("expected error: %s", `Must have at least two fields; only have 1`)
-		return
-	}
-
 }
 
 func TestMarshalTimeseries(t *testing.T) {
 	expectedLen := len(testJSON1)
 	client := &Client{}
-	bytes, err := client.MarshalTimeseries(testRE1)
+	bytes, err := client.MarshalTimeseries(testRE)
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if !reflect.DeepEqual(testJSON1, bytes) {
+	if !reflect.DeepEqual([]byte(testJSON1), bytes) {
 		t.Errorf("expected %d got %d", expectedLen, len(bytes))
+	}
+
+	bytes, err = client.MarshalTimeseries(testREStringDate)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if string(bytes) != testJSONStringDate {
+		t.Errorf("Expected %s got %s", testJSONStringDate, string(bytes))
+	}
+
+	bytes, err = client.MarshalTimeseries(testREUInt32Date)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if !reflect.DeepEqual([]byte(testJSONUInt32Date), bytes) {
+		t.Errorf("got %s", string(bytes))
 	}
 }
 
-func TestUnmarshalJSON(t *testing.T) {
-
+func TestUnmarshalValidJSON(t *testing.T) {
 	re := ResultsEnvelope{}
-	err := re.UnmarshalJSON(testJSON1)
+	err := re.UnmarshalJSON([]byte(testJSON1))
 	if err != nil {
 		t.Error(err)
 		return
@@ -282,64 +215,99 @@ func TestUnmarshalJSON(t *testing.T) {
 		t.Errorf(`expected 4. got %d`, len(re.Meta))
 		return
 	}
-
 	m := re.Meta[2]
 	if m.Name != "meta1" {
 		t.Errorf(`expected meta1 found %s`, m.Name)
 		return
 	}
-
 	if len(re.Data) != 3 {
 		t.Errorf(`expected 3. got %d`, len(re.Data))
 		return
 	}
-
-	key := "{meta1=206;meta2=value3}"
-	v, ok := re.Data[key]
-	if !ok {
-		t.Errorf(`expected to find key %s`, key)
+	if re.Data[0].Values[0]["cnt"] != "12648509" {
+		t.Errorf(`expected 1 got %s`, re.Data[0].Values[0]["cnt"])
 		return
 	}
 
-	if len(v.Points) != 1 {
-		t.Errorf(`expected 1 got %d`, len(v.Points))
+	err = re.UnmarshalJSON([]byte(testJSONInt32))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if re.Data[0].Timestamp != time.Unix(1557766080, 0) {
+		t.Errorf("incorrect timestamp for point %v", re.Data[0])
 		return
 	}
 
-	if v.Points[0].Value != 1 {
-		t.Errorf(`expected 1 got %f`, v.Points[0].Value)
+	err = re.UnmarshalJSON([]byte(testJSONInt64))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if re.Data[1].Timestamp.Unix() != time.Unix(1557766680, 0).Unix() {
+		t.Errorf("incorrect timestamp for point %v", re.Data[1])
 		return
 	}
 
-	err = re.UnmarshalJSON(nil)
-	if err == nil {
-		t.Errorf("expected error: %s", `unexpected end of JSON input`)
+	re = ResultsEnvelope{}
+	err = re.UnmarshalJSON([]byte(testJSONDateTime))
+	if err != nil {
+		t.Error(err)
+	}
+
+	if re.Data[1].Timestamp.Unix() != time.Unix(1557766680, 0).Unix() {
+		t.Errorf("incorrect timestamp for point %v", re.Data[1])
 		return
 	}
 
-	err = re.UnmarshalJSON(testJSON2)
-	if err == nil {
-		t.Errorf("expected error: %s", `Must have at least two fields; only have 1`)
+	err = re.UnmarshalJSON([]byte(testEmptyJSON))
+	if err != nil {
+		t.Error(err)
 		return
 	}
-
 }
 
-func TestMSToTime(t *testing.T) {
-	_, err := msToTime("bad")
-	if err == nil {
-		t.Errorf("expected error for invalid syntax")
+var testUnknownTimestampJSON = `{"meta":[{"name":"t", "type":"String"},{"name":"cnt", "type":"UInt64"}],` +
+	`"data":[{"t":"1557766080000","cnt":"12648509","meta1":200,"meta2":"value2"},` +
+	`{"t":"1557766080000","cnt":"10260032","meta1":200,"meta2":"value3"},` +
+	`{"t":"1557766080000","cnt":"1","meta1":206,"meta2":"value3"}],"rows":3}`
+
+var testUnexpectedTimestamp = `{"meta":[{"name":"t", "type":"UInt64"},{"name":"cnt", "type":"UInt64"}],` +
+	`"data":[{"t":"15577660800000","cnt":"12648509","meta1":200,"meta2":"value2"},` +
+	`{"t":"1557766080000","cnt":"10260032","meta1":200,"meta2":"value3"},` +
+	`{"t":true,"cnt":"1","meta1":206,"meta2":"value3"}],"rows":3}`
+
+var testMissingTimestampJSON = `{"meta":[{"name":"t", "type":"UInt64"},{"name":"cnt", "type":"UInt64"}],` +
+	`"data":[{"t":"1557766080000","cnt":"12648509","meta1":200,"meta2":"value2"},` +
+	`{"bad":"1557766080000","cnt":"10260032","meta1":200,"meta2":"value3"},` +
+	`{"bad":"1557766080000","cnt":"1","meta1":206,"meta2":"value3"}],"rows":3}`
+
+var testNullTimestampJSON = `{"meta":[{"name":"t", "type":"UInt32"},{"name":"cnt", "type":"UInt64"}],` +
+	`"data":[{"t":null,"cnt":"12648509","meta1":200,"meta2":"value2"},` +
+	`{"t":"1557766080000","cnt":"10260032","meta1":200,"meta2":"value3"},` +
+	`{"t":"1557766080000","cnt":"1","meta1":206,"meta2":"value3"}],"rows":3}`
+
+var testInvalidTimestampJSON = `{"meta":[{"name":"t","type":"UInt64"},{"name":"cnt", "type":"UInt64"}],` +
+	`"data":[{"t":"1557766080000","cnt":"12648509","meta1":200,"meta2":"value2"},` +
+	`{"t":"1557766080000bad","cnt":"10260032","meta1":200,"meta2":"value3"},` +
+	`{"t":"1557766080000","cnt":"1","meta1":206,"meta2":"value3"}],"rows":3}`
+
+func TestUnmarshallBadJSON(t *testing.T) {
+	test := func(run string, json string, error string) {
+		t.Run(run, func(t *testing.T) {
+			re := &ResultsEnvelope{}
+			err := re.UnmarshalJSON([]byte(json))
+			if err == nil {
+				t.Errorf("Expected error parsing JSON")
+			} else if err.Error() != error {
+				t.Errorf("expected error: %s, got: %s", error, err.Error())
+			}
+		})
 	}
-}
-
-func TestSortPoints(t *testing.T) {
-
-	p := Points{{Timestamp: time.Unix(1, 0), Value: 12},
-		{Timestamp: time.Unix(0, 0), Value: 13}, {Timestamp: time.Unix(2, 0), Value: 22}}
-	sort.Sort(p)
-
-	if p[0].Timestamp.Unix() != 0 {
-		t.Errorf("expected %d got %d", 0, p[0].Timestamp.Unix())
-	}
-
+	test("no json data", "", "unexpected end of JSON input")
+	test("bad timestamp type", testUnknownTimestampJSON, "timestamp field not of recognized type")
+	test("unexpected timestamp field type", testUnexpectedTimestamp, "timestamp field does not parse to date")
+	test("null timestamp field", testNullTimestampJSON, "timestamp field does not parse to date")
+	test("invalid timestamp field", testInvalidTimestampJSON, "timestamp field does not parse to date")
+	test("missing timestamp field", testMissingTimestampJSON, "missing timestamp field in response data")
 }

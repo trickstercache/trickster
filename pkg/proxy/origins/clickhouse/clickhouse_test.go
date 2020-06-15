@@ -157,17 +157,17 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		Host:     "blah.com",
 		Path:     "/",
 		RawQuery: testRawQuery(),
-	}}
+	},
+		Header: http.Header{},
+	}
 	client := &Client{}
 	res, err := client.ParseTimeRangeQuery(req)
 	if err != nil {
 		t.Error(err)
 	} else {
-
 		if res.Step.Seconds() != 60 {
 			t.Errorf("expected 60 got %f", res.Step.Seconds())
 		}
-
 		if res.Extent.End.Sub(res.Extent.Start).Hours() != 6 {
 			t.Errorf("expected 6 got %f", res.Extent.End.Sub(res.Extent.Start).Hours())
 		}

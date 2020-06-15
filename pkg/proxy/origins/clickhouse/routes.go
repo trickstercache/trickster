@@ -27,7 +27,7 @@ import (
 func (c *Client) registerHandlers() {
 	c.handlersRegistered = true
 	c.handlers = make(map[string]http.Handler)
-	// This is the registry of handlers that Trickster supports for InfluxDB,
+	// This is the registry of handlers that Trickster supports for ClickHouse,
 	// and are able to be referenced by name (map key) in Config Files
 	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
 	c.handlers["query"] = http.HandlerFunc(c.QueryHandler)

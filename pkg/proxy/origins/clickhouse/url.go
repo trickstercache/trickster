@@ -35,11 +35,14 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 	}
 
 	p := r.URL.Query()
-	t := trq.TemplateURL.Query()
-	q := t.Get(upQuery)
+	q := trq.TemplateURL.Query().Get(upQuery)
+
+	// Force gzip compression since Brotli is broken on CH 20.3
+	// See https://github.com/ClickHouse/ClickHouse/issues/9969
+	r.Header.Set("Accept-Encoding", "gzip")
 
 	if q != "" {
-		p.Set(upQuery, interpolateTimeQuery(q, trq.TimestampFieldName, extent))
+		p.Set(upQuery, interpolateTimeQuery(q, extent, trq.Step))
 	}
 
 	r.URL.RawQuery = p.Encode()

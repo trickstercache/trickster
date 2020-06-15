@@ -37,8 +37,7 @@ func testRawQuery() string {
 }
 
 func testNonSelectQuery() string {
-	return url.Values(map[string][]string{"query": {
-		`UPDATE (intDiv(toUInt32(time_column), 60) * 60) * 1000 AS t`}}).Encode()
+	return url.Values(map[string][]string{"enable_http_compression": {"1"}}).Encode()
 	// not a real query, just something to trigger a non-select proxy-only request
 }
 
