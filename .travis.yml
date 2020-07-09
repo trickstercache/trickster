@@ -5,8 +5,26 @@ matrix:
     - pip install codespell
     script:
     - codespell --skip="vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz" --ignore-words="./testdata/ignore_words.txt"
+  - language: python
+    arch: arm64
+    install:
+    - pip install codespell
+    script:
+    - codespell --skip="vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz" --ignore-words="./testdata/ignore_words.txt"
 
   - language: go
+    go:
+    - "1.14.x"
+    - master
+    before_install:
+    - go get github.com/mattn/goveralls
+    - go mod vendor
+    script:
+    - make style test build
+    - sed -i -e '/^.*_gen\.go:.*$/d' .coverprofile
+    - $GOPATH/bin/goveralls  -coverprofile=.coverprofile -service=travis-ci
+  - language: go
+    arch: arm64
     go:
     - "1.14.x"
     - master
