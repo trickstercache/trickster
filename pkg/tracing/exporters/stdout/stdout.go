@@ -23,7 +23,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 
 	"go.opentelemetry.io/otel/api/kv"
-	"go.opentelemetry.io/otel/exporters/trace/stdout"
+	"go.opentelemetry.io/otel/exporters/stdout"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -34,7 +34,7 @@ func NewTracer(opts *options.Options) (*tracing.Tracer, error) {
 	var exp *stdout.Exporter
 	var err error
 
-	o := stdout.Options{PrettyPrint: false}
+	o := []stdout.Option{}
 
 	if opts == nil {
 		opts = &options.Options{
@@ -45,11 +45,13 @@ func NewTracer(opts *options.Options) (*tracing.Tracer, error) {
 	}
 
 	if opts != nil && opts.StdOutOptions != nil {
-		o.PrettyPrint = opts.StdOutOptions.PrettyPrint
+		if opts.StdOutOptions.PrettyPrint {
+			o = append(o, stdout.WithPrettyPrint())
+		}
 	}
 
 	// Create Basic Stdout Exporter
-	exp, err = stdout.NewExporter(o)
+	exp, err = stdout.NewExporter(o...)
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,8 @@ github.com/AndreasBriese/bbloom
 # github.com/BurntSushi/toml v0.3.1
 ## explicit
 github.com/BurntSushi/toml
+# github.com/DataDog/sketches-go v0.0.1
+github.com/DataDog/sketches-go/ddsketch
 # github.com/alicebob/gopher-json v0.0.0-20180125190556-5a6b3ba71ee6
 ## explicit
 github.com/alicebob/gopher-json
@@ -51,7 +53,7 @@ github.com/go-redis/redis/internal/util
 # github.com/go-stack/stack v1.8.0
 ## explicit
 github.com/go-stack/stack
-# github.com/golang/protobuf v1.3.5
+# github.com/golang/protobuf v1.4.2
 github.com/golang/protobuf/proto
 github.com/golang/protobuf/ptypes
 github.com/golang/protobuf/ptypes/any
@@ -70,7 +72,7 @@ github.com/gorilla/handlers
 # github.com/gorilla/mux v1.7.4
 ## explicit
 github.com/gorilla/mux
-# github.com/influxdata/influxdb v1.8.0
+# github.com/influxdata/influxdb v1.8.1
 ## explicit
 github.com/influxdata/influxdb/models
 github.com/influxdata/influxdb/pkg/escape
@@ -103,8 +105,6 @@ github.com/prometheus/common/model
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/stretchr/testify v1.5.1
-## explicit
 # github.com/tinylib/msgp v1.1.1
 ## explicit
 github.com/tinylib/msgp/msgp
@@ -122,36 +122,56 @@ github.com/yuin/gopher-lua/parse
 github.com/yuin/gopher-lua/pm
 # go.etcd.io/bbolt v1.3.2
 ## explicit
-# go.opentelemetry.io/otel v0.6.0
+# go.opentelemetry.io/otel v0.10.0
 ## explicit
 go.opentelemetry.io/otel/api/correlation
 go.opentelemetry.io/otel/api/global
 go.opentelemetry.io/otel/api/global/internal
 go.opentelemetry.io/otel/api/internal
 go.opentelemetry.io/otel/api/kv
-go.opentelemetry.io/otel/api/kv/value
 go.opentelemetry.io/otel/api/label
 go.opentelemetry.io/otel/api/metric
 go.opentelemetry.io/otel/api/metric/registry
+go.opentelemetry.io/otel/api/oterror
 go.opentelemetry.io/otel/api/propagation
+go.opentelemetry.io/otel/api/standard
 go.opentelemetry.io/otel/api/trace
 go.opentelemetry.io/otel/api/unit
-go.opentelemetry.io/otel/exporters/trace/stdout
+go.opentelemetry.io/otel/instrumentation/httptrace
+go.opentelemetry.io/otel/internal/metric
 go.opentelemetry.io/otel/internal/trace/parent
-go.opentelemetry.io/otel/plugin/httptrace
-go.opentelemetry.io/otel/sdk
-go.opentelemetry.io/otel/sdk/export/trace
-go.opentelemetry.io/otel/sdk/internal
-go.opentelemetry.io/otel/sdk/resource
-go.opentelemetry.io/otel/sdk/trace
-go.opentelemetry.io/otel/sdk/trace/internal
-# go.opentelemetry.io/otel/exporters/trace/jaeger v0.6.0
+# go.opentelemetry.io/otel/exporters/stdout v0.10.0
+## explicit
+go.opentelemetry.io/otel/exporters/stdout
+# go.opentelemetry.io/otel/exporters/trace/jaeger v0.10.0
 ## explicit
 go.opentelemetry.io/otel/exporters/trace/jaeger
 go.opentelemetry.io/otel/exporters/trace/jaeger/internal/gen-go/jaeger
-# go.opentelemetry.io/otel/exporters/trace/zipkin v0.6.0
+# go.opentelemetry.io/otel/exporters/trace/zipkin v0.10.0
 ## explicit
 go.opentelemetry.io/otel/exporters/trace/zipkin
+# go.opentelemetry.io/otel/sdk v0.10.0
+## explicit
+go.opentelemetry.io/otel/sdk
+go.opentelemetry.io/otel/sdk/export/metric
+go.opentelemetry.io/otel/sdk/export/metric/aggregation
+go.opentelemetry.io/otel/sdk/export/trace
+go.opentelemetry.io/otel/sdk/instrumentation
+go.opentelemetry.io/otel/sdk/internal
+go.opentelemetry.io/otel/sdk/metric
+go.opentelemetry.io/otel/sdk/metric/aggregator
+go.opentelemetry.io/otel/sdk/metric/aggregator/array
+go.opentelemetry.io/otel/sdk/metric/aggregator/ddsketch
+go.opentelemetry.io/otel/sdk/metric/aggregator/histogram
+go.opentelemetry.io/otel/sdk/metric/aggregator/minmaxsumcount
+go.opentelemetry.io/otel/sdk/metric/aggregator/sum
+go.opentelemetry.io/otel/sdk/metric/controller/push
+go.opentelemetry.io/otel/sdk/metric/controller/time
+go.opentelemetry.io/otel/sdk/metric/processor/basic
+go.opentelemetry.io/otel/sdk/metric/selector/simple
+go.opentelemetry.io/otel/sdk/resource
+go.opentelemetry.io/otel/sdk/trace
+go.opentelemetry.io/otel/sdk/trace/internal
 # golang.org/x/net v0.0.0-20200324143707-d3edc9973b7e
 ## explicit
 golang.org/x/net/internal/timeseries
@@ -159,15 +179,46 @@ golang.org/x/net/netutil
 golang.org/x/net/trace
 # golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a
 golang.org/x/sync/semaphore
-# golang.org/x/sys v0.0.0-20200331124033-c3d80250170d
+# golang.org/x/sys v0.0.0-20200615200032-f1bc736245b1
+golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# google.golang.org/api v0.24.0
-## explicit
+# google.golang.org/api v0.29.0
 google.golang.org/api/support/bundler
-# google.golang.org/grpc v1.29.1
+# google.golang.org/grpc v1.30.0
 ## explicit
 google.golang.org/grpc/codes
+# google.golang.org/protobuf v1.23.0
+google.golang.org/protobuf/encoding/prototext
+google.golang.org/protobuf/encoding/protowire
+google.golang.org/protobuf/internal/descfmt
+google.golang.org/protobuf/internal/descopts
+google.golang.org/protobuf/internal/detrand
+google.golang.org/protobuf/internal/encoding/defval
+google.golang.org/protobuf/internal/encoding/messageset
+google.golang.org/protobuf/internal/encoding/tag
+google.golang.org/protobuf/internal/encoding/text
+google.golang.org/protobuf/internal/errors
+google.golang.org/protobuf/internal/fieldnum
+google.golang.org/protobuf/internal/fieldsort
+google.golang.org/protobuf/internal/filedesc
+google.golang.org/protobuf/internal/filetype
+google.golang.org/protobuf/internal/flags
+google.golang.org/protobuf/internal/genname
+google.golang.org/protobuf/internal/impl
+google.golang.org/protobuf/internal/mapsort
+google.golang.org/protobuf/internal/pragma
+google.golang.org/protobuf/internal/set
+google.golang.org/protobuf/internal/strs
+google.golang.org/protobuf/internal/version
+google.golang.org/protobuf/proto
+google.golang.org/protobuf/reflect/protoreflect
+google.golang.org/protobuf/reflect/protoregistry
+google.golang.org/protobuf/runtime/protoiface
+google.golang.org/protobuf/runtime/protoimpl
+google.golang.org/protobuf/types/known/anypb
+google.golang.org/protobuf/types/known/durationpb
+google.golang.org/protobuf/types/known/timestamppb
 # gopkg.in/natefinch/lumberjack.v2 v2.0.0
 ## explicit
 gopkg.in/natefinch/lumberjack.v2
