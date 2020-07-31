@@ -134,8 +134,10 @@ go.opentelemetry.io/otel/api/metric
 go.opentelemetry.io/otel/api/metric/registry
 go.opentelemetry.io/otel/api/oterror
 go.opentelemetry.io/otel/api/propagation
+go.opentelemetry.io/otel/api/standard
 go.opentelemetry.io/otel/api/trace
 go.opentelemetry.io/otel/api/unit
+go.opentelemetry.io/otel/instrumentation/httptrace
 go.opentelemetry.io/otel/internal/metric
 go.opentelemetry.io/otel/internal/trace/parent
 # go.opentelemetry.io/otel/exporters/stdout v0.10.0
