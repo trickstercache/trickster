@@ -7,9 +7,7 @@ The roadmap for Trickster in 2020 focuses on delivering incremental enhancements
 ### Q1 2020
 
 - [x] Trickster 1.0 GA Release
-- [ ] Register Official Docker Hub Repositories
 - [x] Submit Helm charts to Helm Hub
-- [ ] Submit Trickster for CNCF Sandbox Consideration
 - [x] Trickster v1.1 Release
   - [x] Relocate project to `tricksterproxy` organization
   - [x] Release Binaries for Windows
@@ -24,25 +22,27 @@ The roadmap for Trickster in 2020 focuses on delivering incremental enhancements
   - [x] Relocate Helm charts to a [separate repo](https://github.com/tricksterproxy/helm-charts)
   - [x] Automate Helm chart releases via GitHub Workflows
 
-### Q2 2020
+### Q3 2020
 
 - [ ] Kubernetes Ingress Controller
-- [ ] Trickster v1.2 Release
-  - [ ] Common Time Series Format
-  - [ ] Importable Golang Handler Package
-  - [ ] Graphite Acceleration Support
-
-### Q3 2020
-- [ ] Trickster v1.3 Release
-  - [ ] Origin Pools w/ health checking for high availability
-  - [ ] Round robin, hash, random, etc L7 load balancing schemes
-  - [ ] Parallel requests to multiple origins, with ability merge all or forward first response
-- [ ] [Benchster](https://github.com/tricksterproxy/benchster) - RFC Compliance and Benchmarking Suite for Proxies
+- [ ] Submit Trickster for CNCF Sandbox Consideration
+- [ ] Register Official Docker Hub Repositories
+- [ ] Trickster v2.0 Beta Release
 
 ### Q4 2020
-- [ ] Trickster v1.4 Release
-  - [ ] Support additional Tracing implmementations as exposed by OpenTelemetry
-  - [ ] Additional features as requested and contributed
+
+- [ ] Trickster v2.0 GA Release
+  - [ ] Common Time Series Format
+  - [ ] Importable Golang Handler Package
+  - [ ] Origin Pools w/ health checking for high availability and timeseries merge
+  - [ ] L7 Load balancing: round robin, hash, latency, lru, fewest # conns
+  - [ ] HA Request Spray: serve first repsonse, or HA merge of time series responses
+  - [ ] YAML config support
+  - [ ] Support for InfluxDB 2.0 and Flux syntax
+  - [ ] Extended support for ClickHouse
+  - [ ] Purge object from cache by path or key
+  - [ ] Short-term caching of non-timeseries read-only queries (e.g., SELECT statements)
+- [ ] [Benchster](https://github.com/tricksterproxy/benchster) - RFC Compliance and Benchmarking Suite for Proxies
 
 ## How to Help
 
