@@ -15,22 +15,21 @@ require (
 	github.com/gomodule/redigo v2.0.0+incompatible // indirect
 	github.com/gorilla/handlers v1.4.2
 	github.com/gorilla/mux v1.7.4
-	github.com/influxdata/influxdb v1.8.0
+	github.com/influxdata/influxdb v1.8.1
 	github.com/onsi/ginkgo v1.10.1 // indirect
 	github.com/onsi/gomega v1.7.0 // indirect
 	github.com/prometheus/client_golang v1.5.0
 	github.com/prometheus/common v0.9.1
-	github.com/stretchr/testify v1.5.1 // indirect
 	github.com/tinylib/msgp v1.1.1
 	github.com/tricksterproxy/mockster v1.1.1
 	github.com/yuin/gopher-lua v0.0.0-20190514113301-1cd887cd7036 // indirect
 	go.etcd.io/bbolt v1.3.2 // indirect
-	go.opentelemetry.io/otel v0.6.0
-	go.opentelemetry.io/otel/exporters/trace/jaeger v0.6.0
-	go.opentelemetry.io/otel/exporters/trace/zipkin v0.6.0
+	go.opentelemetry.io/otel v0.10.0
+	go.opentelemetry.io/otel/exporters/trace/jaeger v0.10.0
+	go.opentelemetry.io/otel/exporters/trace/zipkin v0.10.0
+	go.opentelemetry.io/otel/sdk v0.10.0
 	golang.org/x/net v0.0.0-20200324143707-d3edc9973b7e
-	google.golang.org/api v0.24.0 // indirect
-	google.golang.org/grpc v1.29.1
+	google.golang.org/grpc v1.30.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
