@@ -25,6 +25,7 @@ require (
 	github.com/yuin/gopher-lua v0.0.0-20190514113301-1cd887cd7036 // indirect
 	go.etcd.io/bbolt v1.3.2 // indirect
 	go.opentelemetry.io/otel v0.10.0
+	go.opentelemetry.io/otel/exporters/stdout v0.10.0
 	go.opentelemetry.io/otel/exporters/trace/jaeger v0.10.0
 	go.opentelemetry.io/otel/exporters/trace/zipkin v0.10.0
 	go.opentelemetry.io/otel/sdk v0.10.0

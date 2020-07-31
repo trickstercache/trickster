@@ -3,6 +3,8 @@ github.com/AndreasBriese/bbloom
 # github.com/BurntSushi/toml v0.3.1
 ## explicit
 github.com/BurntSushi/toml
+# github.com/DataDog/sketches-go v0.0.1
+github.com/DataDog/sketches-go/ddsketch
 # github.com/alicebob/gopher-json v0.0.0-20180125190556-5a6b3ba71ee6
 ## explicit
 github.com/alicebob/gopher-json
@@ -134,7 +136,11 @@ go.opentelemetry.io/otel/api/oterror
 go.opentelemetry.io/otel/api/propagation
 go.opentelemetry.io/otel/api/trace
 go.opentelemetry.io/otel/api/unit
+go.opentelemetry.io/otel/internal/metric
 go.opentelemetry.io/otel/internal/trace/parent
+# go.opentelemetry.io/otel/exporters/stdout v0.10.0
+## explicit
+go.opentelemetry.io/otel/exporters/stdout
 # go.opentelemetry.io/otel/exporters/trace/jaeger v0.10.0
 ## explicit
 go.opentelemetry.io/otel/exporters/trace/jaeger
@@ -145,9 +151,22 @@ go.opentelemetry.io/otel/exporters/trace/zipkin
 # go.opentelemetry.io/otel/sdk v0.10.0
 ## explicit
 go.opentelemetry.io/otel/sdk
+go.opentelemetry.io/otel/sdk/export/metric
+go.opentelemetry.io/otel/sdk/export/metric/aggregation
 go.opentelemetry.io/otel/sdk/export/trace
 go.opentelemetry.io/otel/sdk/instrumentation
 go.opentelemetry.io/otel/sdk/internal
+go.opentelemetry.io/otel/sdk/metric
+go.opentelemetry.io/otel/sdk/metric/aggregator
+go.opentelemetry.io/otel/sdk/metric/aggregator/array
+go.opentelemetry.io/otel/sdk/metric/aggregator/ddsketch
+go.opentelemetry.io/otel/sdk/metric/aggregator/histogram
+go.opentelemetry.io/otel/sdk/metric/aggregator/minmaxsumcount
+go.opentelemetry.io/otel/sdk/metric/aggregator/sum
+go.opentelemetry.io/otel/sdk/metric/controller/push
+go.opentelemetry.io/otel/sdk/metric/controller/time
+go.opentelemetry.io/otel/sdk/metric/processor/basic
+go.opentelemetry.io/otel/sdk/metric/selector/simple
 go.opentelemetry.io/otel/sdk/resource
 go.opentelemetry.io/otel/sdk/trace
 go.opentelemetry.io/otel/sdk/trace/internal
