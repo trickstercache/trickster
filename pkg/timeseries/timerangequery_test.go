@@ -157,19 +157,39 @@ func TestStringTRQ(t *testing.T) {
 }
 
 func TestGetBackfillTolerance(t *testing.T) {
-
 	expected := time.Second * 5
-
 	trq := &TimeRangeQuery{Statement: "1234"}
 	i := trq.GetBackfillTolerance(expected)
 	if i != expected {
 		t.Errorf("expected %s got %s", expected, i)
 	}
-
 	trq.Statement += " trickster-backfill-tolerance:30, next-directive:"
 	i = trq.GetBackfillTolerance(expected)
 	if i == expected {
 		t.Errorf("expected %s got %s", time.Second*30, i)
 	}
+	trq.BackfillTolerance = expected
+	i = trq.GetBackfillTolerance(0)
+	if i != expected {
+		t.Errorf("expected %s got %s", expected, i)
+	}
+	trq.BackfillTolerance = -1
+	i = trq.GetBackfillTolerance(0)
+	if i != 0 {
+		t.Errorf("expected %d got %s", 0, i)
+	}
+}
 
+func TestExtractBackfillTolerance(t *testing.T) {
+	trq := &TimeRangeQuery{}
+	trq.ExtractBackfillTolerance("query here // trickster-backfill-tolerance:$")
+	expected := time.Second * 0
+	if trq.BackfillTolerance != expected {
+		t.Errorf("expected %s got %s", expected, trq.BackfillTolerance)
+	}
+	trq.ExtractBackfillTolerance("query here // trickster-backfill-tolerance:60")
+	expected = time.Second * 60
+	if trq.BackfillTolerance != expected {
+		t.Errorf("expected %s got %s", expected, trq.BackfillTolerance)
+	}
 }
