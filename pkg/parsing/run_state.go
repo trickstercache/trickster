@@ -129,7 +129,7 @@ func (rs *RunState) Peek() *token.Token {
 	if rs.curr != nil && rs.curr.Typ == token.EOF {
 		return rs.curr
 	}
-	// this filters nil tokens so the parser is guaranteed to never enounter them
+	// this filters nil tokens so the parser is guaranteed to never encounter them
 	for ; rs.next == nil; rs.next = <-rs.tokens {
 	}
 	return rs.next
@@ -140,7 +140,7 @@ func (rs *RunState) IsPeeked() bool {
 	return rs.next != nil
 }
 
-// Next retreives the next location by peeking and then advancing
+// Next retrieves the next location by peeking and then advancing
 // the state
 func (rs *RunState) Next() *token.Token {
 	rs.Peek()
