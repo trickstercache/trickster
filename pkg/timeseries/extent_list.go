@@ -191,6 +191,19 @@ func (el ExtentListLRU) Swap(i, j int) {
 	el[i], el[j] = el[j], el[i]
 }
 
+// TimestampCount returns the calculated number of timestamps based on the extents
+// in the list and the provided duration
+func (el ExtentList) TimestampCount(d time.Duration) int64 {
+	var c int64
+	for i := range el {
+		if el[i].Start.IsZero() || el[i].End.IsZero() {
+			continue
+		}
+		c += ((el[i].End.UnixNano() - el[i].Start.UnixNano()) / d.Nanoseconds()) + 1
+	}
+	return c
+}
+
 // Clone returns a true copy of the ExtentListLRU
 func (el ExtentListLRU) Clone() ExtentListLRU {
 	c := make(ExtentListLRU, len(el))

@@ -20,6 +20,9 @@ package timeseries
 
 import "time"
 
+// Second is 1B, because 1B Nanoseconds == 1 Second
+const Second = 1000000000
+
 // FastForwardUserDisableFlag is a string that is checked to determine if Fast Forward
 // should be selectively disabled for the provided query
 const FastForwardUserDisableFlag = "trickster-fast-forward:off"

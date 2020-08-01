@@ -32,11 +32,11 @@ The roadmap for Trickster in 2020 focuses on delivering incremental enhancements
 ### Q4 2020
 
 - [ ] Trickster v2.0 GA Release
-  - [ ] Common Time Series Format
+  - [ ] Common Time Series Format used internally for all TSDBs
   - [ ] Importable Golang Handler Package
   - [ ] Origin Pools w/ health checking for high availability and timeseries merge
   - [ ] L7 Load balancing: round robin, hash, latency, lru, fewest # conns
-  - [ ] HA Request Spray: serve first repsonse, or HA merge of time series responses
+  - [ ] HA Request Spray: serve first response, or HA merge of time series responses
   - [ ] YAML config support
   - [ ] Support for InfluxDB 2.0 and Flux syntax
   - [ ] Extended support for ClickHouse
