@@ -14,34 +14,23 @@
  * limitations under the License.
  */
 
-// Package main is the main package for the Trickster application
-package main
+package lex
 
-import (
-	"os"
-	"sync"
+import "testing"
 
-	"github.com/tricksterproxy/trickster/pkg/runtime"
-)
+func TestSpaceFuncs(t *testing.T) {
+	b := IsWhiteSpace(' ')
+	if !b {
+		t.Error("expected true")
+	}
 
-var (
-	applicationGitCommitID string
-	applicationBuildTime   string
-	applicationGoVersion   string
-	applicationGoArch      string
-)
+	b = IsSpace(' ')
+	if !b {
+		t.Error("expected true")
+	}
 
-const (
-	applicationName    = "trickster"
-	applicationVersion = "2.0.0-beta0"
-)
-
-var fatalStartupErrors = true
-var wg = &sync.WaitGroup{}
-
-func main() {
-	runtime.ApplicationName = applicationName
-	runtime.ApplicationVersion = applicationVersion
-	runConfig(nil, wg, nil, nil, os.Args[1:], fatalStartupErrors)
-	wg.Wait()
+	b = IsEndOfLine('\r')
+	if !b {
+		t.Error("expected true")
+	}
 }

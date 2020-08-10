@@ -20,6 +20,19 @@ package timeseries
 
 import "time"
 
+type timeSeriesCtxVal int
+
+const (
+	// TimeRangeQueryCtx is a unique Context identifier for Time Range Query information
+	TimeRangeQueryCtx timeSeriesCtxVal = iota
+	// RequestOptionsCtx is a unique Context identifier for Request Options information
+	RequestOptionsCtx
+)
+
+// BackfillToleranceFlag is a string that is checked to determine if Backfill Tolerance
+// should be adjusted for the provided query
+const BackfillToleranceFlag = "trickster-backfill-tolerance:"
+
 // FastForwardUserDisableFlag is a string that is checked to determine if Fast Forward
 // should be selectively disabled for the provided query
 const FastForwardUserDisableFlag = "trickster-fast-forward:off"

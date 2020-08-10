@@ -14,34 +14,17 @@
  * limitations under the License.
  */
 
-// Package main is the main package for the Trickster application
-package main
+package lex
 
-import (
-	"os"
-	"sync"
+import "errors"
 
-	"github.com/tricksterproxy/trickster/pkg/runtime"
-)
+// ErrContinue prompts the loop to immediately continue to the next iteration
+// and is not an actual fatal error (think EOF)
+var ErrContinue = errors.New("continue")
 
-var (
-	applicationGitCommitID string
-	applicationBuildTime   string
-	applicationGoVersion   string
-	applicationGoArch      string
-)
+// ErrBreak prompts the loop to break immediately, but return a nil error to the caller
+// and is not an actual fatal error (think EOF)
+var ErrBreak = errors.New("break")
 
-const (
-	applicationName    = "trickster"
-	applicationVersion = "2.0.0-beta0"
-)
-
-var fatalStartupErrors = true
-var wg = &sync.WaitGroup{}
-
-func main() {
-	runtime.ApplicationName = applicationName
-	runtime.ApplicationVersion = applicationVersion
-	runConfig(nil, wg, nil, nil, os.Args[1:], fatalStartupErrors)
-	wg.Wait()
-}
+// ErrMissingRequiredKeyword indicates that the input's was missing a required keyword
+var ErrMissingRequiredKeyword = errors.New("missing required keyword")

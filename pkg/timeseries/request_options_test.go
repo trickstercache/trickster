@@ -14,34 +14,18 @@
  * limitations under the License.
  */
 
-// Package main is the main package for the Trickster application
-package main
+package timeseries
 
-import (
-	"os"
-	"sync"
+import "testing"
 
-	"github.com/tricksterproxy/trickster/pkg/runtime"
-)
-
-var (
-	applicationGitCommitID string
-	applicationBuildTime   string
-	applicationGoVersion   string
-	applicationGoArch      string
-)
-
-const (
-	applicationName    = "trickster"
-	applicationVersion = "2.0.0-beta0"
-)
-
-var fatalStartupErrors = true
-var wg = &sync.WaitGroup{}
-
-func main() {
-	runtime.ApplicationName = applicationName
-	runtime.ApplicationVersion = applicationVersion
-	runConfig(nil, wg, nil, nil, os.Args[1:], fatalStartupErrors)
-	wg.Wait()
+func TestExtractFastForwardDisabled(t *testing.T) {
+	ro := &RequestOptions{}
+	ro.ExtractFastForwardDisabled("my query // trickster-fast-forward:off")
+	if !ro.FastForwardDisable {
+		t.Error("expected true")
+	}
+	ro.ExtractFastForwardDisabled("my query // trickster-fast-forward:invalid")
+	if ro.FastForwardDisable {
+		t.Error("expected false")
+	}
 }

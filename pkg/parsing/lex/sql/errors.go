@@ -14,34 +14,12 @@
  * limitations under the License.
  */
 
-// Package main is the main package for the Trickster application
-package main
+package sql
 
-import (
-	"os"
-	"sync"
+import "errors"
 
-	"github.com/tricksterproxy/trickster/pkg/runtime"
-)
+// ErrInvalidGroupByClause indicates the GROUP BY clause of the query is not properly formatted
+var ErrInvalidGroupByClause = errors.New("invalid GROUP BY expression list")
 
-var (
-	applicationGitCommitID string
-	applicationBuildTime   string
-	applicationGoVersion   string
-	applicationGoArch      string
-)
-
-const (
-	applicationName    = "trickster"
-	applicationVersion = "2.0.0-beta0"
-)
-
-var fatalStartupErrors = true
-var wg = &sync.WaitGroup{}
-
-func main() {
-	runtime.ApplicationName = applicationName
-	runtime.ApplicationVersion = applicationVersion
-	runConfig(nil, wg, nil, nil, os.Args[1:], fatalStartupErrors)
-	wg.Wait()
-}
+// ErrInvalidInputLength indicates the input length was invalid
+var ErrInvalidInputLength = errors.New("invalid input length")
