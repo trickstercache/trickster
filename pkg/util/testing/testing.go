@@ -18,6 +18,7 @@
 package testing
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -40,6 +41,15 @@ import (
 
 	"github.com/tricksterproxy/mockster/pkg/testutil"
 )
+
+// Epoch2020 is the epoch value representing 1 January 2020 00:00:00 UTC
+const Epoch2020 int64 = 1577836800
+
+// Time2020 is the Time.Time representing 1 January 2020 00:00:00 UTC
+var Time2020 = time.Unix(Epoch2020, 0)
+
+// ErrTest is a Test Error
+var ErrTest = errors.New("test error")
 
 // this actively sets the ApplicationName for testing purposes
 // do not import this package from main or any of its recursive imports

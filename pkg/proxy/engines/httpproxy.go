@@ -40,7 +40,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
 	"go.opentelemetry.io/otel/api/kv"
-	othttptrace "go.opentelemetry.io/otel/plugin/httptrace"
+	othttptrace "go.opentelemetry.io/otel/instrumentation/httptrace"
 )
 
 // Reqs is for Progressive Collapsed Forwarding

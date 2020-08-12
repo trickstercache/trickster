@@ -17,15 +17,13 @@ package jaeger
 import (
 	"context"
 	"encoding/binary"
-	"log"
-
-	"go.opentelemetry.io/otel/api/kv/value"
 
 	"google.golang.org/api/support/bundler"
 	"google.golang.org/grpc/codes"
 
 	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/kv"
+	apitrace "go.opentelemetry.io/otel/api/trace"
 	gen "go.opentelemetry.io/otel/exporters/trace/jaeger/internal/gen-go/jaeger"
 	export "go.opentelemetry.io/otel/sdk/export/trace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -37,31 +35,18 @@ type Option func(*options)
 
 // options are the options to be used when initializing a Jaeger export.
 type options struct {
-	// OnError is the hook to be called when there is
-	// an error occurred when uploading the span data.
-	// If no custom hook is set, errors are logged.
-	OnError func(err error)
-
 	// Process contains the information about the exporting process.
 	Process Process
 
-	//BufferMaxCount defines the total number of traces that can be buffered in memory
+	// BufferMaxCount defines the total number of traces that can be buffered in memory
 	BufferMaxCount int
+
+	// BatchMaxCount defines the maximum number of spans sent in one batch
+	BatchMaxCount int
 
 	Config *sdktrace.Config
 
-	// RegisterGlobal is set to true if the trace provider of the new pipeline should be
-	// registered as Global Trace Provider
-	RegisterGlobal bool
-}
-
-// WithOnError sets the hook to be called when there is
-// an error occurred when uploading the span data.
-// If no custom hook is set, errors are logged.
-func WithOnError(onError func(err error)) Option {
-	return func(o *options) {
-		o.OnError = onError
-	}
+	Disabled bool
 }
 
 // WithProcess sets the process with the information about the exporting process.
@@ -71,10 +56,17 @@ func WithProcess(process Process) Option {
 	}
 }
 
-//WithBufferMaxCount defines the total number of traces that can be buffered in memory
+// WithBufferMaxCount defines the total number of traces that can be buffered in memory
 func WithBufferMaxCount(bufferMaxCount int) Option {
 	return func(o *options) {
 		o.BufferMaxCount = bufferMaxCount
+	}
+}
+
+// WithBatchMaxCount defines the maximum number of spans in one batch
+func WithBatchMaxCount(batchMaxCount int) Option {
+	return func(o *options) {
+		o.BatchMaxCount = batchMaxCount
 	}
 }
 
@@ -85,16 +77,18 @@ func WithSDK(config *sdktrace.Config) Option {
 	}
 }
 
-// RegisterAsGlobal enables the registration of the trace provider of the new pipeline
-// as Global Trace Provider.
-func RegisterAsGlobal() Option {
+// WithDisabled option will cause pipeline methods to use
+// a no-op provider
+func WithDisabled(disabled bool) Option {
 	return func(o *options) {
-		o.RegisterGlobal = true
+		o.Disabled = disabled
 	}
 }
 
 // NewRawExporter returns a trace.Exporter implementation that exports
 // the collected spans to Jaeger.
+//
+// It will IGNORE Disabled option.
 func NewRawExporter(endpointOption EndpointOption, opts ...Option) (*Exporter, error) {
 	uploader, err := endpointOption()
 	if err != nil {
@@ -102,17 +96,11 @@ func NewRawExporter(endpointOption EndpointOption, opts ...Option) (*Exporter, e
 	}
 
 	o := options{}
+	opts = append(opts, WithProcessFromEnv())
 	for _, opt := range opts {
 		opt(&o)
 	}
 
-	onError := func(err error) {
-		if o.OnError != nil {
-			o.OnError(err)
-			return
-		}
-		log.Printf("Error when uploading spans to Jaeger: %v", err)
-	}
 	service := o.Process.ServiceName
 	if service == "" {
 		service = defaultServiceName
@@ -134,7 +122,7 @@ func NewRawExporter(endpointOption EndpointOption, opts ...Option) (*Exporter, e
 	}
 	bundler := bundler.NewBundler((*gen.Span)(nil), func(bundle interface{}) {
 		if err := e.upload(bundle.([]*gen.Span)); err != nil {
-			onError(err)
+			global.Handle(err)
 		}
 	})
 
@@ -145,13 +133,27 @@ func NewRawExporter(endpointOption EndpointOption, opts ...Option) (*Exporter, e
 		bundler.BufferedByteLimit = o.BufferMaxCount
 	}
 
+	// The default value bundler uses is 10, increase to send larger batches
+	if o.BatchMaxCount != 0 {
+		bundler.BundleCountThreshold = o.BatchMaxCount
+	}
+
 	e.bundler = bundler
 	return e, nil
 }
 
 // NewExportPipeline sets up a complete export pipeline
 // with the recommended setup for trace provider
-func NewExportPipeline(endpointOption EndpointOption, opts ...Option) (*sdktrace.Provider, func(), error) {
+func NewExportPipeline(endpointOption EndpointOption, opts ...Option) (apitrace.Provider, func(), error) {
+	o := options{}
+	opts = append(opts, WithDisabledFromEnv())
+	for _, opt := range opts {
+		opt(&o)
+	}
+	if o.Disabled {
+		return &apitrace.NoopProvider{}, func() {}, nil
+	}
+
 	exporter, err := NewRawExporter(endpointOption, opts...)
 	if err != nil {
 		return nil, nil, err
@@ -164,11 +166,20 @@ func NewExportPipeline(endpointOption EndpointOption, opts ...Option) (*sdktrace
 	if exporter.o.Config != nil {
 		tp.ApplyConfig(*exporter.o.Config)
 	}
-	if exporter.o.RegisterGlobal {
-		global.SetTraceProvider(tp)
-	}
 
 	return tp, exporter.Flush, nil
+}
+
+// InstallNewPipeline instantiates a NewExportPipeline with the
+// recommended configuration and registers it globally.
+func InstallNewPipeline(endpointOption EndpointOption, opts ...Option) (func(), error) {
+	tp, flushFn, err := NewExportPipeline(endpointOption, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	global.SetTraceProvider(tp)
+	return flushFn, nil
 }
 
 // Process contains the information exported to jaeger about the source
@@ -215,6 +226,13 @@ func spanDataToThrift(data *export.SpanData) *gen.Span {
 			if tag := keyValueToTag(iter.Attribute()); tag != nil {
 				tags = append(tags, tag)
 			}
+		}
+	}
+
+	if il := data.InstrumentationLibrary; il.Name != "" {
+		tags = append(tags, getStringTag("instrumentation.name", il.Name))
+		if il.Version != "" {
+			tags = append(tags, getStringTag("instrumentation.version", il.Name))
 		}
 	}
 
@@ -276,42 +294,58 @@ func spanDataToThrift(data *export.SpanData) *gen.Span {
 func keyValueToTag(keyValue kv.KeyValue) *gen.Tag {
 	var tag *gen.Tag
 	switch keyValue.Value.Type() {
-	case value.STRING:
+	case kv.STRING:
 		s := keyValue.Value.AsString()
 		tag = &gen.Tag{
 			Key:   string(keyValue.Key),
 			VStr:  &s,
 			VType: gen.TagType_STRING,
 		}
-	case value.BOOL:
+	case kv.BOOL:
 		b := keyValue.Value.AsBool()
 		tag = &gen.Tag{
 			Key:   string(keyValue.Key),
 			VBool: &b,
 			VType: gen.TagType_BOOL,
 		}
-	case value.INT32:
+	case kv.INT32:
 		i := int64(keyValue.Value.AsInt32())
 		tag = &gen.Tag{
 			Key:   string(keyValue.Key),
 			VLong: &i,
 			VType: gen.TagType_LONG,
 		}
-	case value.INT64:
+	case kv.INT64:
 		i := keyValue.Value.AsInt64()
 		tag = &gen.Tag{
 			Key:   string(keyValue.Key),
 			VLong: &i,
 			VType: gen.TagType_LONG,
 		}
-	case value.FLOAT32:
+	case kv.UINT32:
+		i := int64(keyValue.Value.AsUint32())
+		tag = &gen.Tag{
+			Key:   string(keyValue.Key),
+			VLong: &i,
+			VType: gen.TagType_LONG,
+		}
+	case kv.UINT64:
+		// we'll ignore the value if it overflows
+		if i := int64(keyValue.Value.AsUint64()); i >= 0 {
+			tag = &gen.Tag{
+				Key:   string(keyValue.Key),
+				VLong: &i,
+				VType: gen.TagType_LONG,
+			}
+		}
+	case kv.FLOAT32:
 		f := float64(keyValue.Value.AsFloat32())
 		tag = &gen.Tag{
 			Key:     string(keyValue.Key),
 			VDouble: &f,
 			VType:   gen.TagType_DOUBLE,
 		}
-	case value.FLOAT64:
+	case kv.FLOAT64:
 		f := keyValue.Value.AsFloat64()
 		tag = &gen.Tag{
 			Key:     string(keyValue.Key),

@@ -14,10 +14,6 @@
 
 package kv
 
-import (
-	"go.opentelemetry.io/otel/api/kv/value"
-)
-
 // Key represents the key part in key-value pairs. It's a string. The
 // allowed character set in the key depends on the use of the key.
 type Key string
@@ -31,7 +27,7 @@ type Key string
 func (k Key) Bool(v bool) KeyValue {
 	return KeyValue{
 		Key:   k,
-		Value: value.Bool(v),
+		Value: BoolValue(v),
 	}
 }
 
@@ -44,7 +40,7 @@ func (k Key) Bool(v bool) KeyValue {
 func (k Key) Int64(v int64) KeyValue {
 	return KeyValue{
 		Key:   k,
-		Value: value.Int64(v),
+		Value: Int64Value(v),
 	}
 }
 
@@ -57,7 +53,7 @@ func (k Key) Int64(v int64) KeyValue {
 func (k Key) Uint64(v uint64) KeyValue {
 	return KeyValue{
 		Key:   k,
-		Value: value.Uint64(v),
+		Value: Uint64Value(v),
 	}
 }
 
@@ -70,7 +66,7 @@ func (k Key) Uint64(v uint64) KeyValue {
 func (k Key) Float64(v float64) KeyValue {
 	return KeyValue{
 		Key:   k,
-		Value: value.Float64(v),
+		Value: Float64Value(v),
 	}
 }
 
@@ -83,7 +79,7 @@ func (k Key) Float64(v float64) KeyValue {
 func (k Key) Int32(v int32) KeyValue {
 	return KeyValue{
 		Key:   k,
-		Value: value.Int32(v),
+		Value: Int32Value(v),
 	}
 }
 
@@ -96,7 +92,7 @@ func (k Key) Int32(v int32) KeyValue {
 func (k Key) Uint32(v uint32) KeyValue {
 	return KeyValue{
 		Key:   k,
-		Value: value.Uint32(v),
+		Value: Uint32Value(v),
 	}
 }
 
@@ -109,7 +105,7 @@ func (k Key) Uint32(v uint32) KeyValue {
 func (k Key) Float32(v float32) KeyValue {
 	return KeyValue{
 		Key:   k,
-		Value: value.Float32(v),
+		Value: Float32Value(v),
 	}
 }
 
@@ -122,7 +118,7 @@ func (k Key) Float32(v float32) KeyValue {
 func (k Key) String(v string) KeyValue {
 	return KeyValue{
 		Key:   k,
-		Value: value.String(v),
+		Value: StringValue(v),
 	}
 }
 
@@ -136,7 +132,7 @@ func (k Key) String(v string) KeyValue {
 func (k Key) Int(v int) KeyValue {
 	return KeyValue{
 		Key:   k,
-		Value: value.Int(v),
+		Value: IntValue(v),
 	}
 }
 
@@ -150,11 +146,24 @@ func (k Key) Int(v int) KeyValue {
 func (k Key) Uint(v uint) KeyValue {
 	return KeyValue{
 		Key:   k,
-		Value: value.Uint(v),
+		Value: UintValue(v),
 	}
 }
 
 // Defined returns true for non-empty keys.
 func (k Key) Defined() bool {
 	return len(k) != 0
+}
+
+// Array creates a KeyValue instance with a ARRAY Value.
+//
+// If creating both key and a array value at the same time, then
+// instead of calling kv.Key(name).String(value) consider using a
+// convenience function provided by the api/key package -
+// key.Array(name, value).
+func (k Key) Array(v interface{}) KeyValue {
+	return KeyValue{
+		Key:   k,
+		Value: ArrayValue(v),
+	}
 }

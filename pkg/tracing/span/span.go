@@ -26,7 +26,7 @@ import (
 	"go.opentelemetry.io/otel/api/correlation"
 	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/trace"
-	"go.opentelemetry.io/otel/plugin/httptrace"
+	"go.opentelemetry.io/otel/instrumentation/httptrace"
 )
 
 // PrepareRequest extracts trace information from the headers of the incoming request.
@@ -44,7 +44,6 @@ func PrepareRequest(r *http.Request, tr *tracing.Tracer) (*http.Request, trace.S
 	}
 
 	attrs, entries, spanCtx := httptrace.Extract(r.Context(), r)
-
 	attrs = filterAttributes(tr, attrs)
 
 	r = r.WithContext(correlation.ContextWithMap(r.Context(),

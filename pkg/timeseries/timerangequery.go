@@ -152,3 +152,20 @@ func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration) time.Duration
 	}
 	return def
 }
+
+// ExtractBackfillTolerance will look for the BackfillToleranceFlag in the provided string
+// and return the BackfillTolerance value if present
+func (trq *TimeRangeQuery) ExtractBackfillTolerance(input string) {
+	if x := strings.Index(input, BackfillToleranceFlag); x > 1 {
+		x += 29
+		y := x
+		for ; y < len(input); y++ {
+			if input[y] < 48 || input[y] > 57 {
+				break
+			}
+		}
+		if i, err := strconv.Atoi(input[x:y]); err == nil {
+			trq.BackfillTolerance = time.Second * time.Duration(i)
+		}
+	}
+}
