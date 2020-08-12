@@ -21,18 +21,18 @@ package timeseries
 import "time"
 
 const (
-  // Second is 1B, because 1B Nanoseconds == 1 Second
-  Second = 1000000000
-  // TimeRangeQueryCtx is a unique Context identifier for Time Range Query information
+	// Second is 1B, because 1B Nanoseconds == 1 Second
+	Second = 1000000000
+	// TimeRangeQueryCtx is a unique Context identifier for Time Range Query information
 	TimeRangeQueryCtx timeSeriesCtxVal = iota
 	// RequestOptionsCtx is a unique Context identifier for Request Options information
 	RequestOptionsCtx
-  // BackfillToleranceFlag is a string that is checked to determine if Backfill Tolerance
-  // should be adjusted for the provided query
-  BackfillToleranceFlag = "trickster-backfill-tolerance:"
-  // FastForwardUserDisableFlag is a string that is checked to determine if Fast Forward
-  // should be selectively disabled for the provided query
-  FastForwardUserDisableFlag = "trickster-fast-forward:off"
+	// BackfillToleranceFlag is a string that is checked to determine if Backfill Tolerance
+	// should be adjusted for the provided query
+	BackfillToleranceFlag = "trickster-backfill-tolerance:"
+	// FastForwardUserDisableFlag is a string that is checked to determine if Fast Forward
+	// should be selectively disabled for the provided query
+	FastForwardUserDisableFlag = "trickster-fast-forward:off"
 )
 
 type timeSeriesCtxVal int
