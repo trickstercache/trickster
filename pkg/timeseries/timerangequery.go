@@ -44,6 +44,12 @@ type TimeRangeQuery struct {
 	IsOffset bool
 	// BackfillTolerance can be updated to override the overall backfill tolerance per query
 	BackfillTolerance time.Duration
+	// StepNS is the nanosecond representation for Step
+	StepNS int64 `msg:"step"`
+	// BackfillToleranceNS is the nanosecond representation for BackfillTolerance
+	BackfillToleranceNS int64 `msg:"bft"`
+	// TimestampDefinition sets the definition for the Timestamp column in the in the timeseries based on the query
+	TimestampDefinition FieldDefinition `msg:"tsdef"`
 }
 
 // Clone returns an exact copy of a TimeRangeQuery
