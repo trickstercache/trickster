@@ -3,7 +3,6 @@ package json
 import (
 	"encoding/json"
 	"errors"
-	"strconv"
 
 	"github.com/yuin/gopher-lua"
 )
@@ -64,12 +63,16 @@ func apiEncode(L *lua.LState) int {
 }
 
 var (
-	errFunction = errors.New("cannot encode function to JSON")
-	errChannel  = errors.New("cannot encode channel to JSON")
-	errState    = errors.New("cannot encode state to JSON")
-	errUserData = errors.New("cannot encode userdata to JSON")
-	errNested   = errors.New("cannot encode recursively nested tables to JSON")
+	errNested      = errors.New("cannot encode recursively nested tables to JSON")
+	errSparseArray = errors.New("cannot encode sparse array")
+	errInvalidKeys = errors.New("cannot encode mixed or invalid key types")
 )
+
+type invalidTypeError lua.LValueType
+
+func (i invalidTypeError) Error() string {
+	return `cannot encode ` + lua.LValueType(i).String() + ` to JSON`
+}
 
 // Encode returns the JSON encoding of value.
 func Encode(value lua.LValue) ([]byte, error) {
@@ -87,60 +90,57 @@ type jsonValue struct {
 func (j jsonValue) MarshalJSON() (data []byte, err error) {
 	switch converted := j.LValue.(type) {
 	case lua.LBool:
-		data, err = json.Marshal(converted)
-	case lua.LChannel:
-		err = errChannel
+		data, err = json.Marshal(bool(converted))
 	case lua.LNumber:
-		data, err = json.Marshal(converted)
-	case *lua.LFunction:
-		err = errFunction
+		data, err = json.Marshal(float64(converted))
 	case *lua.LNilType:
-		data, err = json.Marshal(converted)
-	case *lua.LState:
-		err = errState
+		data = []byte(`null`)
 	case lua.LString:
-		data, err = json.Marshal(converted)
+		data, err = json.Marshal(string(converted))
 	case *lua.LTable:
-		var arr []jsonValue
-		var obj map[string]jsonValue
-
 		if j.visited[converted] {
-			panic(errNested)
+			return nil, errNested
 		}
 		j.visited[converted] = true
 
-		converted.ForEach(func(k lua.LValue, v lua.LValue) {
-			i, numberKey := k.(lua.LNumber)
-			if numberKey && obj == nil {
-				index := int(i) - 1
-				if index != len(arr) {
-					// map out of order; convert to map
-					obj = make(map[string]jsonValue)
-					for i, value := range arr {
-						obj[strconv.Itoa(i+1)] = value
-					}
-					obj[strconv.Itoa(index+1)] = jsonValue{v, j.visited}
+		key, value := converted.Next(lua.LNil)
+
+		switch key.Type() {
+		case lua.LTNil: // empty table
+			data = []byte(`[]`)
+		case lua.LTNumber:
+			arr := make([]jsonValue, 0, converted.Len())
+			expectedKey := lua.LNumber(1)
+			for key != lua.LNil {
+				if key.Type() != lua.LTNumber {
+					err = errInvalidKeys
 					return
 				}
-				arr = append(arr, jsonValue{v, j.visited})
-				return
-			}
-			if obj == nil {
-				obj = make(map[string]jsonValue)
-				for i, value := range arr {
-					obj[strconv.Itoa(i+1)] = value
+				if expectedKey != key {
+					err = errSparseArray
+					return
 				}
+				arr = append(arr, jsonValue{value, j.visited})
+				expectedKey++
+				key, value = converted.Next(key)
 			}
-			obj[k.String()] = jsonValue{v, j.visited}
-		})
-		if obj != nil {
-			data, err = json.Marshal(obj)
-		} else {
 			data, err = json.Marshal(arr)
+		case lua.LTString:
+			obj := make(map[string]jsonValue)
+			for key != lua.LNil {
+				if key.Type() != lua.LTString {
+					err = errInvalidKeys
+					return
+				}
+				obj[key.String()] = jsonValue{value, j.visited}
+				key, value = converted.Next(key)
+			}
+			data, err = json.Marshal(obj)
+		default:
+			err = errInvalidKeys
 		}
-	case *lua.LUserData:
-		// TODO: call metatable __tostring?
-		err = errUserData
+	default:
+		err = invalidTypeError(j.LValue.Type())
 	}
 	return
 }
@@ -152,10 +152,14 @@ func Decode(L *lua.LState, data []byte) (lua.LValue, error) {
 	if err != nil {
 		return nil, err
 	}
-	return decode(L, value), nil
+	return DecodeValue(L, value), nil
 }
 
-func decode(L *lua.LState, value interface{}) lua.LValue {
+// DecodeValue converts the value to a Lua value.
+//
+// This function only converts values that the encoding/json package decodes to.
+// All other values will return lua.LNil.
+func DecodeValue(L *lua.LState, value interface{}) lua.LValue {
 	switch converted := value.(type) {
 	case bool:
 		return lua.LBool(converted)
@@ -163,18 +167,23 @@ func decode(L *lua.LState, value interface{}) lua.LValue {
 		return lua.LNumber(converted)
 	case string:
 		return lua.LString(converted)
+	case json.Number:
+		return lua.LString(converted)
 	case []interface{}:
 		arr := L.CreateTable(len(converted), 0)
 		for _, item := range converted {
-			arr.Append(decode(L, item))
+			arr.Append(DecodeValue(L, item))
 		}
 		return arr
 	case map[string]interface{}:
 		tbl := L.CreateTable(0, len(converted))
 		for key, item := range converted {
-			tbl.RawSetH(lua.LString(key), decode(L, item))
+			tbl.RawSetH(lua.LString(key), DecodeValue(L, item))
 		}
 		return tbl
+	case nil:
+		return lua.LNil
 	}
+
 	return lua.LNil
 }
