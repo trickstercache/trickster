@@ -30,8 +30,12 @@ import (
 const (
 	// Common HTTP Header Values
 
+	// ValueApplicationCSV represents the HTTP Header Value of "application/csv"
+	ValueApplicationCSV = "application/csv"
 	// ValueApplicationJSON represents the HTTP Header Value of "application/json"
 	ValueApplicationJSON = "application/json"
+	// ValueChunked represents the HTTP Header Value of "chunked"
+	ValueChunked = "chunked"
 	// ValueMaxAge represents the HTTP Header Value of "max-age"
 	ValueMaxAge = "max-age"
 	// ValueMultipartFormData represents the HTTP Header Value of "multipart/form-data"
@@ -62,6 +66,8 @@ const (
 
 	// Common HTTP Header Names
 
+	// NameAccept represents the HTTP Header Name of "Accept"
+	NameAccept = "Accept"
 	// NameCacheControl represents the HTTP Header Name of "Cache-Control"
 	NameCacheControl = "Cache-Control"
 	// NameAllowOrigin represents the HTTP Header Name of "Access-Control-Allow-Origin"
@@ -123,6 +129,27 @@ const (
 	// NameUpgrade represents the HTTP Header Name of "Upgrade"
 	NameUpgrade = "Upgrade"
 )
+
+// Lookup represents a simple lookup for internal header manipulation
+type Lookup map[string]string
+
+// ToHeader returns an http.Header version of a simple header Lookup
+func (l Lookup) ToHeader() http.Header {
+	h := make(http.Header)
+	for k, v := range l {
+		h.Set(k, v)
+	}
+	return h
+}
+
+// Clone returns an exact copy of the subject Lookup
+func (l Lookup) Clone() Lookup {
+	l2 := make(Lookup)
+	for k, v := range l {
+		l2[k] = v
+	}
+	return l2
+}
 
 // Merge merges the source http.Header map into destination map.
 // If a key exists in both maps, the source value wins.
