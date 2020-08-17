@@ -31,6 +31,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/clickhouse"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/influxdb"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/irondb"
+	modeliron "github.com/tricksterproxy/trickster/pkg/proxy/origins/irondb/model"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/prometheus"
 	modelprom "github.com/tricksterproxy/trickster/pkg/proxy/origins/prometheus/model"
@@ -183,7 +184,7 @@ func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 	case "influxdb":
 		client, err = influxdb.NewClient(k, o, mux.NewRouter(), c)
 	case "irondb":
-		client, err = irondb.NewClient(k, o, mux.NewRouter(), c)
+		client, err = irondb.NewClient(k, o, mux.NewRouter(), c, modeliron.NewModeler())
 	case "clickhouse":
 		client, err = clickhouse.NewClient(k, o, mux.NewRouter(), c)
 	case "rpc", "reverseproxycache":

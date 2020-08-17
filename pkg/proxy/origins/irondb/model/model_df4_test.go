@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package irondb
+package model
 
 import (
 	"strings"
@@ -91,10 +91,11 @@ const testDF4Response2 = `{
 }
 `
 
-func TestDF4SeriesEnvelopeSetStep(t *testing.T) {
+func TestDF4SeriesEnvelopeSetTimeRangeQuery(t *testing.T) {
 	se := DF4SeriesEnvelope{}
 	const step = time.Duration(300) * time.Minute
-	se.SetStep(step)
+	trq := &timeseries.TimeRangeQuery{Step: step}
+	se.SetTimeRangeQuery(trq)
 	if se.Step() != step {
 		t.Errorf("Expected step: %v, got: %v", step, se.Step())
 	}
@@ -115,8 +116,7 @@ func TestDF4SeriesEnvelopeSetExtents(t *testing.T) {
 }
 
 func TestDF4SeriesEnvelopeSeriesCount(t *testing.T) {
-	client := &Client{}
-	ts, err := client.UnmarshalTimeseries([]byte(testDF4Response))
+	ts, err := UnmarshalTimeseries([]byte(testDF4Response), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -129,8 +129,7 @@ func TestDF4SeriesEnvelopeSeriesCount(t *testing.T) {
 }
 
 func TestDF4SeriesEnvelopeValueCount(t *testing.T) {
-	client := &Client{}
-	ts, err := client.UnmarshalTimeseries([]byte(testDF4Response))
+	ts, err := UnmarshalTimeseries([]byte(testDF4Response), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -143,8 +142,7 @@ func TestDF4SeriesEnvelopeValueCount(t *testing.T) {
 }
 
 func TestDF4SeriesEnvelopeTimestampCount(t *testing.T) {
-	client := &Client{}
-	ts, err := client.UnmarshalTimeseries([]byte(testDF4Response2))
+	ts, err := UnmarshalTimeseries([]byte(testDF4Response2), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -157,15 +155,14 @@ func TestDF4SeriesEnvelopeTimestampCount(t *testing.T) {
 }
 
 func TestDF4SeriesEnvelopeMerge(t *testing.T) {
-	client := &Client{}
-	ts1, err := client.UnmarshalTimeseries([]byte(testDF4Response))
+	ts1, err := UnmarshalTimeseries([]byte(testDF4Response), nil)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	se1 := ts1.(*DF4SeriesEnvelope)
-	ts2, err := client.UnmarshalTimeseries([]byte(testDF4Response2))
+	ts2, err := UnmarshalTimeseries([]byte(testDF4Response2), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -193,8 +190,7 @@ func TestDF4SeriesEnvelopeMerge(t *testing.T) {
 }
 
 func TestDF4SeriesEnvelopeClone(t *testing.T) {
-	client := &Client{}
-	ts1, err := client.UnmarshalTimeseries([]byte(testDF4Response))
+	ts1, err := UnmarshalTimeseries([]byte(testDF4Response), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -203,13 +199,13 @@ func TestDF4SeriesEnvelopeClone(t *testing.T) {
 	se := ts1.(*DF4SeriesEnvelope)
 	se2 := se.Clone()
 
-	s1, err := client.MarshalTimeseries(se)
+	s1, err := MarshalTimeseries(se, nil)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	s2, err := client.MarshalTimeseries(se2)
+	s2, err := MarshalTimeseries(se2, nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -221,8 +217,7 @@ func TestDF4SeriesEnvelopeClone(t *testing.T) {
 }
 
 func TestDF4SeriesEnvelopeCropToRange(t *testing.T) {
-	client := &Client{}
-	ts1, err := client.UnmarshalTimeseries([]byte(testDF4Response))
+	ts1, err := UnmarshalTimeseries([]byte(testDF4Response), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -239,7 +234,7 @@ func TestDF4SeriesEnvelopeCropToRange(t *testing.T) {
 		End:   time.Unix(500, 0),
 	})
 
-	b, err := client.MarshalTimeseries(se1)
+	b, err := MarshalTimeseries(se1, nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -261,7 +256,7 @@ func TestDF4SeriesEnvelopeCropToRange(t *testing.T) {
 		End:   time.Unix(1200, 0),
 	})
 
-	b, err = client.MarshalTimeseries(se1)
+	b, err = MarshalTimeseries(se1, nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -275,8 +270,7 @@ func TestDF4SeriesEnvelopeCropToRange(t *testing.T) {
 }
 
 func TestDF4SeriesEnvelopeCropToSize(t *testing.T) {
-	client := &Client{}
-	ts1, err := client.UnmarshalTimeseries([]byte(testDF4Response))
+	ts1, err := UnmarshalTimeseries([]byte(testDF4Response), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -293,7 +287,7 @@ func TestDF4SeriesEnvelopeCropToSize(t *testing.T) {
 		End:   time.Unix(600, 0),
 	})
 
-	b, err := client.MarshalTimeseries(se1)
+	b, err := MarshalTimeseries(se1, nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -340,8 +334,7 @@ func TestMarshalDF4Timeseries(t *testing.T) {
 		},
 	}
 
-	client := &Client{}
-	bytes, err := client.MarshalTimeseries(se)
+	bytes, err := MarshalTimeseries(se, nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -357,8 +350,7 @@ func TestMarshalDF4Timeseries(t *testing.T) {
 
 func TestUnmarshalDF4Timeseries(t *testing.T) {
 	bytes := []byte(testDF4Response2)
-	client := &Client{}
-	ts, err := client.UnmarshalTimeseries(bytes)
+	ts, err := UnmarshalTimeseries(bytes, nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -388,12 +380,10 @@ func TestUnmarshalDF4Timeseries(t *testing.T) {
 
 func TestSize(t *testing.T) {
 
-	client := &Client{}
-	s, _ := client.UnmarshalTimeseries([]byte(testDF4Response))
-	expected := 136
+	s, _ := UnmarshalTimeseries([]byte(testDF4Response), nil)
 
-	if s.Size() != expected {
-		t.Errorf("expected %d got %d", expected, s.Size())
+	if s.Size() != 136 {
+		t.Errorf("expected %d got %d", 136, s.Size())
 	}
 
 }

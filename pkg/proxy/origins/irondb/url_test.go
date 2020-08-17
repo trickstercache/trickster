@@ -28,6 +28,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/config"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins/irondb/common"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -77,10 +78,10 @@ func TestSetExtent(t *testing.T) {
 					"%22metric%22)&start=0&end=900&period=300",
 			},
 			expPath: "/extension/lua/caql_v1",
-			expQuery: "end=" + formatTimestamp(etFl, false) +
+			expQuery: "end=" + common.FormatTimestamp(etFl, false) +
 				"&period=300&query=metric%3Aaverage%28%22" +
 				"00112233-4455-6677-8899-aabbccddeeff%22%2C%22metric%22%29" +
-				"&start=" + formatTimestamp(stFl, false),
+				"&start=" + common.FormatTimestamp(stFl, false),
 			p: pcs["/extension/lua/caql_v1"],
 		},
 		{ // case 1
@@ -90,8 +91,8 @@ func TestSetExtent(t *testing.T) {
 					"00112233-4455-6677-8899-aabbccddeeff/metric",
 				RawQuery: "",
 			},
-			expPath: "/histogram/" + formatTimestamp(stFl, false) +
-				"/" + formatTimestamp(etFl, false) + "/300" +
+			expPath: "/histogram/" + common.FormatTimestamp(stFl, false) +
+				"/" + common.FormatTimestamp(etFl, false) + "/300" +
 				"/00112233-4455-6677-8899-aabbccddeeff/metric",
 			expQuery: "",
 			p:        pcs["/histogram/"],
@@ -103,8 +104,8 @@ func TestSetExtent(t *testing.T) {
 				RawQuery: "start_ts=1560902400.000&end_ts=1561055856.000",
 			},
 			expPath: "/raw/e312a0cb-dbe9-445d-8346-13b0ae6a3382/requests",
-			expQuery: "end_ts=" + formatTimestamp(end, true) +
-				"&start_ts=" + formatTimestamp(start, true),
+			expQuery: "end_ts=" + common.FormatTimestamp(end, true) +
+				"&start_ts=" + common.FormatTimestamp(start, true),
 			p: pcs["/raw/"],
 		},
 		{ // case 3
@@ -115,9 +116,9 @@ func TestSetExtent(t *testing.T) {
 					"&rollup_span=300s&type=count",
 			},
 			expPath: "/rollup/e312a0cb-dbe9-445d-8346-13b0ae6a3382/requests",
-			expQuery: "end_ts=" + formatTimestamp(etFl, true) +
+			expQuery: "end_ts=" + common.FormatTimestamp(etFl, true) +
 				"&rollup_span=300s" + "&start_ts=" +
-				formatTimestamp(stFl, true) + "&type=count",
+				common.FormatTimestamp(stFl, true) + "&type=count",
 			p: pcs["/rollup/"],
 		},
 		{ // case 4
@@ -155,8 +156,8 @@ func TestSetExtent(t *testing.T) {
 					"/metric",
 				RawQuery: "",
 			},
-			expPath: "/read/" + formatTimestamp(start, false) +
-				"/" + formatTimestamp(end, false) +
+			expPath: "/read/" + common.FormatTimestamp(start, false) +
+				"/" + common.FormatTimestamp(end, false) +
 				"/00112233-4455-6677-8899-aabbccddeeff/metric",
 			expQuery: "",
 			p:        pcs["/read/"],
@@ -238,10 +239,10 @@ func TestFastForwardURL(t *testing.T) {
 					"%22metric%22)&start=0&end=900&period=300",
 			},
 			exp: "/extension/lua/caql_v1" +
-				"?end=" + formatTimestamp(time.Unix(end, 0), false) +
+				"?end=" + common.FormatTimestamp(time.Unix(end, 0), false) +
 				"&period=300&query=metric%3Aaverage%28%22" +
 				"00112233-4455-6677-8899-aabbccddeeff%22%2C%22metric%22%29" +
-				"&start=" + formatTimestamp(time.Unix(start, 0), false),
+				"&start=" + common.FormatTimestamp(time.Unix(start, 0), false),
 			p: pcs["/extension/lua/caql_v1"],
 		},
 		{ // case 1
@@ -251,8 +252,8 @@ func TestFastForwardURL(t *testing.T) {
 					"00112233-4455-6677-8899-aabbccddeeff/metric",
 				RawQuery: "",
 			},
-			exp: "/histogram/" + formatTimestamp(time.Unix(start, 0), false) +
-				"/" + formatTimestamp(time.Unix(end, 0), false) +
+			exp: "/histogram/" + common.FormatTimestamp(time.Unix(start, 0), false) +
+				"/" + common.FormatTimestamp(time.Unix(end, 0), false) +
 				"/300" +
 				"/00112233-4455-6677-8899-aabbccddeeff/metric",
 			p: pcs["/histogram/"],
@@ -265,9 +266,9 @@ func TestFastForwardURL(t *testing.T) {
 					"&rollup_span=300s&type=count",
 			},
 			exp: "/rollup/e312a0cb-dbe9-445d-8346-13b0ae6a3382/requests" +
-				"?end_ts=" + formatTimestamp(time.Unix(end, 0), true) +
+				"?end_ts=" + common.FormatTimestamp(time.Unix(end, 0), true) +
 				"&rollup_span=300s" +
-				"&start_ts=" + formatTimestamp(time.Unix(start, 0), true) +
+				"&start_ts=" + common.FormatTimestamp(time.Unix(start, 0), true) +
 				"&type=count",
 			p: pcs["/rollup/"],
 		},
@@ -307,42 +308,6 @@ func TestFastForwardURL(t *testing.T) {
 	}
 }
 
-func TestFormatTimestamp(t *testing.T) {
-	tm := time.Unix(123456789, int64(time.Millisecond))
-	exp := "123456789.001"
-	res := formatTimestamp(tm, true)
-	if res != exp {
-		t.Errorf("Expected string: %v, got: %v", exp, res)
-	}
-
-	tm = time.Unix(123456789, int64(time.Millisecond))
-	exp = "123456789"
-	res = formatTimestamp(tm, false)
-	if res != exp {
-		t.Errorf("Expected string: %v, got: %v", exp, res)
-	}
-}
-
-func TestParseTimestamp(t *testing.T) {
-	v := "123456789.001"
-	res, err := parseTimestamp(v)
-	if err != nil {
-		t.Fatalf("Error parsing %s: %v", v, err.Error())
-	}
-
-	exp := time.Unix(123456789, int64(time.Millisecond))
-	if !res.Equal(exp) {
-		t.Errorf("Expected time: %v, got: %v", exp, res)
-	}
-
-	v = "1.a"
-	_, err = parseTimestamp(v)
-	if err == nil {
-		t.Fatalf("expected error: %s", "parse timestamp")
-	}
-
-}
-
 func TestParseTimerangeQuery(t *testing.T) {
 	expected := errors.ErrNotTimeRangeQuery
 	client := &Client{name: "test"}
@@ -351,7 +316,7 @@ func TestParseTimerangeQuery(t *testing.T) {
 	r = request.SetResources(r, request.NewResources(client.config, &po.Options{},
 		nil, nil, client, nil, tl.ConsoleLogger("error")))
 
-	_, err := client.ParseTimeRangeQuery(r)
+	_, _, _, err := client.ParseTimeRangeQuery(r)
 	if err == nil || err != expected {
 		t.Errorf("expected %s got %v", expected.Error(), err.Error())
 	}

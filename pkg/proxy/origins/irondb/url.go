@@ -20,9 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
-	"strings"
-	"time"
 
 	terr "github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
@@ -30,7 +27,7 @@ import (
 )
 
 // SetExtent will change the upstream request query to use the provided Extent.
-func (c Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
+func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
 
 	rsc := request.GetResources(r)
 	if rsc == nil || rsc.PathConfig == nil {
@@ -63,65 +60,15 @@ func (c *Client) FastForwardRequest(r *http.Request) (*http.Request, error) {
 	return nil, fmt.Errorf("unknown handler name: %s", rsc.PathConfig.HandlerName)
 }
 
-// formatTimestamp returns a string containing a timestamp in the format used
-// by the IRONdb API.
-func formatTimestamp(t time.Time, milli bool) string {
-	if milli {
-		return fmt.Sprintf("%d.%03d", t.Unix(), t.Nanosecond()/1000000)
-	}
-
-	return fmt.Sprintf("%d", t.Unix())
-}
-
-// parseTimestamp attempts to parse an IRONdb API timestamp string into a valid
-// time value.
-func parseTimestamp(s string) (time.Time, error) {
-	sp := strings.Split(s, ".")
-	sec, nsec := int64(0), int64(0)
-	var err error
-	if len(sp) > 0 {
-		if sec, err = strconv.ParseInt(sp[0], 10, 64); err != nil {
-			return time.Time{}, fmt.Errorf("unable to parse timestamp %s: %s",
-				s, err.Error())
-		}
-	}
-
-	if len(sp) > 1 {
-		if nsec, err = strconv.ParseInt(sp[1], 10, 64); err != nil {
-			return time.Time{}, fmt.Errorf("unable to parse timestamp %s: %s",
-				s, err.Error())
-		}
-
-		nsec *= 1000000
-	}
-
-	return time.Unix(sec, nsec), nil
-}
-
-// parseDuration attempts to parse an IRONdb API duration string into a valid
-// duration value.
-func parseDuration(s string) (time.Duration, error) {
-	if !strings.HasSuffix(s, "s") {
-		s += "s"
-	}
-
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		return 0, fmt.Errorf("unable to parse duration %s: %s",
-			s, err.Error())
-	}
-
-	return d, nil
-}
-
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the
 // inbound HTTP Request.
 func (c *Client) ParseTimeRangeQuery(
-	r *http.Request) (*timeseries.TimeRangeQuery, error) {
+	r *http.Request) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions,
+	bool, error) {
 
 	rsc := request.GetResources(r)
 	if rsc == nil || rsc.PathConfig == nil {
-		return nil, errors.New("missing path config")
+		return nil, nil, false, errors.New("missing path config")
 	}
 
 	var trq *timeseries.TimeRangeQuery
@@ -134,5 +81,5 @@ func (c *Client) ParseTimeRangeQuery(
 		err = terr.ErrNotTimeRangeQuery
 	}
 	rsc.TimeRangeQuery = trq
-	return trq, err
+	return trq, nil, true, err
 }

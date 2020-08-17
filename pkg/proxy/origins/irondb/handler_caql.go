@@ -24,6 +24,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins/irondb/common"
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
@@ -34,12 +35,12 @@ import (
 // through the delta proxy cache.
 func (c *Client) CAQLHandler(w http.ResponseWriter, r *http.Request) {
 	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
-	engines.DeltaProxyCacheRequest(w, r)
+	engines.DeltaProxyCacheRequest(w, r, c.modeler)
 }
 
 // caqlHandlerSetExtent will change the upstream request query to use the
 // provided Extent.
-func (c Client) caqlHandlerSetExtent(r *http.Request,
+func (c *Client) caqlHandlerSetExtent(r *http.Request,
 	trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent) {
 
@@ -49,7 +50,7 @@ func (c Client) caqlHandlerSetExtent(r *http.Request,
 
 	var err error
 	if trq == nil {
-		if trq, err = c.ParseTimeRangeQuery(r); err != nil {
+		if trq, _, _, err = c.ParseTimeRangeQuery(r); err != nil {
 			return
 		}
 	}
@@ -61,8 +62,8 @@ func (c Client) caqlHandlerSetExtent(r *http.Request,
 	}
 
 	q := r.URL.Query()
-	q.Set(upCAQLStart, formatTimestamp(time.Unix(0, st), false))
-	q.Set(upCAQLEnd, formatTimestamp(time.Unix(0, et), false))
+	q.Set(upCAQLStart, common.FormatTimestamp(time.Unix(0, st), false))
+	q.Set(upCAQLEnd, common.FormatTimestamp(time.Unix(0, et), false))
 	r.URL.RawQuery = q.Encode()
 }
 
@@ -89,7 +90,7 @@ func (c *Client) caqlHandlerParseTimeRangeQuery(
 		return nil, errors.MissingURLParam(upCAQLStart)
 	}
 
-	if trq.Extent.Start, err = parseTimestamp(p); err != nil {
+	if trq.Extent.Start, err = common.ParseTimestamp(p); err != nil {
 		return nil, err
 	}
 
@@ -97,7 +98,7 @@ func (c *Client) caqlHandlerParseTimeRangeQuery(
 		return nil, errors.MissingURLParam(upCAQLEnd)
 	}
 
-	if trq.Extent.End, err = parseTimestamp(p); err != nil {
+	if trq.Extent.End, err = common.ParseTimestamp(p); err != nil {
 		return nil, err
 	}
 
@@ -109,7 +110,7 @@ func (c *Client) caqlHandlerParseTimeRangeQuery(
 		p += "s"
 	}
 
-	if trq.Step, err = parseDuration(p); err != nil {
+	if trq.Step, err = common.ParseDuration(p); err != nil {
 		return nil, err
 	}
 
@@ -129,7 +130,7 @@ func (c *Client) caqlHandlerFastForwardRequest(
 	var err error
 
 	if trq == nil {
-		trq, err = c.ParseTimeRangeQuery(r)
+		trq, _, _, err = c.ParseTimeRangeQuery(r)
 		if err != nil {
 			return nil, err
 		}
@@ -138,8 +139,8 @@ func (c *Client) caqlHandlerFastForwardRequest(
 	now := time.Now().Unix()
 	start := now - (now % int64(trq.Step.Seconds()))
 	end := start + int64(trq.Step.Seconds())
-	v.Set(upCAQLStart, formatTimestamp(time.Unix(start, 0), false))
-	v.Set(upCAQLEnd, formatTimestamp(time.Unix(end, 0), false))
+	v.Set(upCAQLStart, common.FormatTimestamp(time.Unix(start, 0), false))
+	v.Set(upCAQLEnd, common.FormatTimestamp(time.Unix(end, 0), false))
 	params.SetRequestValues(nr, v)
 
 	return nr, nil

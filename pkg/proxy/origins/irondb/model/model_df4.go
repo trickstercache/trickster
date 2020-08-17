@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package irondb
+package model
 
 import (
 	"sync"
@@ -27,12 +27,13 @@ import (
 // DF4SeriesEnvelope values represent DF4 format time series data from the
 // IRONdb API.
 type DF4SeriesEnvelope struct {
-	Data         [][]interface{}          `json:"data"`
-	Meta         []map[string]interface{} `json:"meta,omitempty"`
-	Ver          string                   `json:"version,omitempty"`
-	Head         DF4Info                  `json:"head"`
-	StepDuration time.Duration            `json:"step,omitempty"`
-	ExtentList   timeseries.ExtentList    `json:"extents,omitempty"`
+	Data           [][]interface{}          `json:"data"`
+	Meta           []map[string]interface{} `json:"meta,omitempty"`
+	Ver            string                   `json:"version,omitempty"`
+	Head           DF4Info                  `json:"head"`
+	StepDuration   time.Duration            `json:"step,omitempty"`
+	ExtentList     timeseries.ExtentList    `json:"extents,omitempty"`
+	timeRangeQuery *timeseries.TimeRangeQuery
 }
 
 // DF4Info values contain information about the timestamps of the data elements
@@ -48,9 +49,13 @@ func (se *DF4SeriesEnvelope) Step() time.Duration {
 	return se.StepDuration
 }
 
-// SetStep sets the step for the Timeseries.
-func (se *DF4SeriesEnvelope) SetStep(step time.Duration) {
-	se.StepDuration = step
+// SetTimeRangeQuery sets the trq for the Timeseries.
+func (se *DF4SeriesEnvelope) SetTimeRangeQuery(trq *timeseries.TimeRangeQuery) {
+	if trq == nil {
+		return
+	}
+	se.StepDuration = trq.Step
+	se.timeRangeQuery = trq
 }
 
 // Extents returns the Timeseries's extent list.
@@ -71,24 +76,32 @@ func (se *DF4SeriesEnvelope) SeriesCount() int {
 
 // ValueCount returns the count of all data values across all Series in the
 // Timeseries value.
-func (se *DF4SeriesEnvelope) ValueCount() int {
-	n := 0
+func (se *DF4SeriesEnvelope) ValueCount() int64 {
+	var n int64
 	for _, v := range se.Data {
-		n += len(v)
+		n += int64(len(v))
 	}
 
 	return n
 }
 
 // TimestampCount returns the number of unique timestamps across the timeseries.
-func (se *DF4SeriesEnvelope) TimestampCount() int {
-	return int(se.Head.Count)
+func (se *DF4SeriesEnvelope) TimestampCount() int64 {
+	return se.Head.Count
 }
 
 type metricData struct {
 	name string
 	meta map[string]interface{}
 	data map[int64]interface{}
+}
+
+// CroppedClone returns a perfect copy of the base Timeseries cropped to the provided extent
+// this implementation is temporary until we move IRONdb to the common format
+func (se *DF4SeriesEnvelope) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
+	se2 := se.Clone()
+	se2.CropToRange(e)
+	return se2
 }
 
 // Merge merges the provided Timeseries list into the base Timeseries (in the
@@ -300,11 +313,11 @@ func (se *DF4SeriesEnvelope) CropToSize(sz int, t time.Time,
 	}
 
 	tc := se.TimestampCount()
-	if len(se.Data) == 0 || tc <= sz {
+	if len(se.Data) == 0 || tc <= int64(sz) {
 		return
 	}
 
-	rc := tc - sz // removal count
+	rc := tc - int64(sz) // removal count
 	newData := [][]interface{}{}
 	for _, data := range se.Data {
 		newData = append(newData, data[rc:])
@@ -325,9 +338,9 @@ func (se *DF4SeriesEnvelope) Sort() {
 }
 
 // Size returns the approximate memory utilization in bytes of the timeseries
-func (se *DF4SeriesEnvelope) Size() int {
+func (se *DF4SeriesEnvelope) Size() int64 {
 	wg := sync.WaitGroup{}
-	c := uint64(len(se.Ver) +
+	c := int64(len(se.Ver) +
 		24 + // .Head
 		24 + // .StepDuration
 		se.ExtentList.Size(),
@@ -336,7 +349,7 @@ func (se *DF4SeriesEnvelope) Size() int {
 		wg.Add(1)
 		go func(j int) {
 			for k := range se.Meta[j] {
-				atomic.AddUint64(&c, uint64(len(k)+8)) // + approximate Meta Value size (8)
+				atomic.AddInt64(&c, int64(len(k)+8)) // + approximate Meta Value size (8)
 			}
 			wg.Done()
 		}(i)
@@ -344,10 +357,10 @@ func (se *DF4SeriesEnvelope) Size() int {
 	for i := range se.Data {
 		wg.Add(1)
 		go func(s []interface{}) {
-			atomic.AddUint64(&c, uint64(len(s)*16)) // + approximate data value size
+			atomic.AddInt64(&c, int64(len(s)*16)) // + approximate data value size
 			wg.Done()
 		}(se.Data[i])
 	}
 	wg.Wait()
-	return int(c)
+	return c
 }

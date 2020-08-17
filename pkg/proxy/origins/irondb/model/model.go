@@ -14,25 +14,30 @@
  * limitations under the License.
  */
 
-package irondb
+package model
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins/irondb/common"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 // SeriesEnvelope values represent a time series data response from the
 // IRONdb API.
 type SeriesEnvelope struct {
-	Data         DataPoints            `json:"data"`
-	ExtentList   timeseries.ExtentList `json:"extents,omitempty"`
-	StepDuration time.Duration         `json:"step,omitempty"`
+	Data           DataPoints            `json:"data"`
+	ExtentList     timeseries.ExtentList `json:"extents,omitempty"`
+	StepDuration   time.Duration         `json:"step,omitempty"`
+	timeRangeQuery *timeseries.TimeRangeQuery
 }
 
 // MarshalJSON encodes a series envelope value into a JSON byte slice.
@@ -56,6 +61,14 @@ func (se *SeriesEnvelope) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(se2)
+}
+
+// CroppedClone returns a perfect copy of the base Timeseries cropped to the provided extent
+// this implementation is temporary until we move IRONdb to the common format
+func (se *SeriesEnvelope) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
+	se2 := se.Clone()
+	se2.CropToRange(e)
+	return se2
 }
 
 // UnmarshalJSON decodes a JSON byte slice into this data point value.
@@ -100,7 +113,7 @@ type DataPoint struct {
 func (dp *DataPoint) MarshalJSON() ([]byte, error) {
 	v := []interface{}{}
 	tn := float64(0)
-	fv, err := strconv.ParseFloat(formatTimestamp(dp.Time, true), 64)
+	fv, err := strconv.ParseFloat(common.FormatTimestamp(dp.Time, true), 64)
 	if err == nil {
 		tn = fv
 	}
@@ -128,7 +141,7 @@ func (dp *DataPoint) UnmarshalJSON(b []byte) error {
 	}
 
 	if fv, ok := v[0].(float64); ok {
-		tv, err := parseTimestamp(strconv.FormatFloat(fv, 'f', 3, 64))
+		tv, err := common.ParseTimestamp(strconv.FormatFloat(fv, 'f', 3, 64))
 		if err != nil {
 			return err
 		}
@@ -170,9 +183,13 @@ func (se *SeriesEnvelope) Step() time.Duration {
 	return se.StepDuration
 }
 
-// SetStep sets the step for the Timeseries.
-func (se *SeriesEnvelope) SetStep(step time.Duration) {
-	se.StepDuration = step
+// SetTimeRangeQuery sets the trq for the Timeseries.
+func (se *SeriesEnvelope) SetTimeRangeQuery(trq *timeseries.TimeRangeQuery) {
+	if trq == nil {
+		return
+	}
+	se.StepDuration = trq.Step
+	se.timeRangeQuery = trq
 }
 
 // SetExtents overwrites a Timeseries's known extents with the provided extent
@@ -193,18 +210,17 @@ func (se *SeriesEnvelope) SeriesCount() int {
 
 // ValueCount returns the count of all data values across all Series in the
 // Timeseries value.
-func (se *SeriesEnvelope) ValueCount() int {
-	return len(se.Data)
+func (se *SeriesEnvelope) ValueCount() int64 {
+	return int64(len(se.Data))
 }
 
 // TimestampCount returns the number of unique timestamps across the timeseries.
-func (se *SeriesEnvelope) TimestampCount() int {
+func (se *SeriesEnvelope) TimestampCount() int64 {
 	ts := map[int64]struct{}{}
 	for _, dp := range se.Data {
 		ts[dp.Time.Unix()] = struct{}{}
 	}
-
-	return len(ts)
+	return int64(len(ts))
 }
 
 // Merge merges the provided Timeseries list into the base Timeseries (in the
@@ -330,37 +346,73 @@ func (se *SeriesEnvelope) Sort() {
 	sort.Sort(se.Data)
 }
 
-// MarshalTimeseries converts a Timeseries into a JSON blob for cache storage.
-func (c *Client) MarshalTimeseries(ts timeseries.Timeseries) ([]byte, error) {
-	return json.Marshal(ts)
+// NewModeler returns a collection of modeling functions for influxdb interoperability
+func NewModeler() *timeseries.Modeler {
+	return &timeseries.Modeler{
+		WireUnmarshalerReader: UnmarshalTimeseriesReader,
+		WireMarshaler:         MarshalTimeseries,
+		WireMarshalWriter:     MarshalTimeseriesWriter,
+		WireUnmarshaler:       UnmarshalTimeseries,
+		CacheMarshaler:        MarshalTimeseries,
+		CacheUnmarshaler:      UnmarshalTimeseries,
+	}
+}
+
+// MarshalTimeseries converts a Timeseries into a JSON blob
+func MarshalTimeseries(ts timeseries.Timeseries, rlo *timeseries.RequestOptions) ([]byte, error) {
+	buf := bytes.NewBuffer(nil)
+	err := MarshalTimeseriesWriter(ts, rlo, buf)
+	return buf.Bytes(), err
+}
+
+// MarshalTimeseriesWriter converts a Timeseries into a JSON blob via an io.Writer
+func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, w io.Writer) error {
+	b, err := json.Marshal(ts)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(w, bytes.NewReader(b))
+	return err
+}
+
+// UnmarshalTimeseriesReader converts a JSON blob into a Timeseries via io.Reader
+func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+	b, _ := ioutil.ReadAll(reader)
+	return UnmarshalTimeseries(b, trq)
 }
 
 // UnmarshalTimeseries converts a JSON blob into a Timeseries value.
-func (c *Client) UnmarshalTimeseries(data []byte) (timeseries.Timeseries,
+func UnmarshalTimeseries(data []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries,
 	error) {
 	if strings.Contains(strings.Replace(string(data), " ", "", -1),
 		`"version":"DF4"`) {
-		se := &DF4SeriesEnvelope{}
+		se := &DF4SeriesEnvelope{timeRangeQuery: trq}
+		if trq != nil {
+			se.ExtentList = timeseries.ExtentList{trq.Extent}
+		}
 		err := json.Unmarshal(data, &se)
 		return se, err
 	}
 
-	se := &SeriesEnvelope{}
+	se := &SeriesEnvelope{timeRangeQuery: trq}
+	if trq != nil {
+		se.ExtentList = timeseries.ExtentList{trq.Extent}
+	}
 	err := json.Unmarshal(data, &se)
 	return se, err
 }
 
 // UnmarshalInstantaneous is not used for IRONdb origins and is here to conform
 // to the Client interface.
-func (c Client) UnmarshalInstantaneous(
+func UnmarshalInstantaneous(
 	data []byte) (timeseries.Timeseries, error) {
-	return c.UnmarshalTimeseries(data)
+	return UnmarshalTimeseries(data, nil) // TODO fix Instantaneous prototype
 }
 
 // Size returns the approximate memory utilization in bytes of the timeseries
-func (se *SeriesEnvelope) Size() int {
-	c := len(se.Data)*36 + // time.Time (24) + Step (4) + Value (8)
-		(len(se.ExtentList) * 72) + // time.Time (24) * 3
+func (se *SeriesEnvelope) Size() int64 {
+	c := int64(len(se.Data)*36) + // time.Time (24) + Step (4) + Value (8)
+		int64(len(se.ExtentList)*72) + // time.Time (24) * 3
 		24 // .StepDuration
 	return c
 }

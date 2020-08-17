@@ -23,6 +23,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins/irondb/common"
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
@@ -33,12 +34,12 @@ import (
 // spans and processes them through the delta proxy cache.
 func (c *Client) RollupHandler(w http.ResponseWriter, r *http.Request) {
 	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
-	engines.DeltaProxyCacheRequest(w, r)
+	engines.DeltaProxyCacheRequest(w, r, c.modeler)
 }
 
 // rollupHandlerSetExtent will change the upstream request query to use the
 // provided Extent.
-func (c Client) rollupHandlerSetExtent(r *http.Request,
+func (c *Client) rollupHandlerSetExtent(r *http.Request,
 	trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent) {
 
@@ -48,7 +49,7 @@ func (c Client) rollupHandlerSetExtent(r *http.Request,
 
 	var err error
 	if trq == nil {
-		if trq, err = c.ParseTimeRangeQuery(r); err != nil {
+		if trq, _, _, err = c.ParseTimeRangeQuery(r); err != nil {
 			return
 		}
 	}
@@ -60,8 +61,8 @@ func (c Client) rollupHandlerSetExtent(r *http.Request,
 	}
 
 	q := r.URL.Query()
-	q.Set(upStart, formatTimestamp(time.Unix(0, st), true))
-	q.Set(upEnd, formatTimestamp(time.Unix(0, et), true))
+	q.Set(upStart, common.FormatTimestamp(time.Unix(0, st), true))
+	q.Set(upEnd, common.FormatTimestamp(time.Unix(0, et), true))
 	r.URL.RawQuery = q.Encode()
 }
 
@@ -79,7 +80,7 @@ func (c *Client) rollupHandlerParseTimeRangeQuery(
 		return nil, errors.MissingURLParam(upStart)
 	}
 
-	if trq.Extent.Start, err = parseTimestamp(p); err != nil {
+	if trq.Extent.Start, err = common.ParseTimestamp(p); err != nil {
 		return nil, err
 	}
 
@@ -87,7 +88,7 @@ func (c *Client) rollupHandlerParseTimeRangeQuery(
 		return nil, errors.MissingURLParam(upEnd)
 	}
 
-	if trq.Extent.End, err = parseTimestamp(p); err != nil {
+	if trq.Extent.End, err = common.ParseTimestamp(p); err != nil {
 		return nil, err
 	}
 
@@ -95,7 +96,7 @@ func (c *Client) rollupHandlerParseTimeRangeQuery(
 		return nil, errors.MissingURLParam(upSpan)
 	}
 
-	if trq.Step, err = parseDuration(p); err != nil {
+	if trq.Step, err = common.ParseDuration(p); err != nil {
 		return nil, err
 	}
 
@@ -115,7 +116,7 @@ func (c *Client) rollupHandlerFastForwardRequest(
 	var err error
 
 	if trq == nil {
-		trq, err = c.ParseTimeRangeQuery(r)
+		trq, _, _, err = c.ParseTimeRangeQuery(r)
 		if err != nil {
 			return nil, err
 		}
@@ -124,8 +125,8 @@ func (c *Client) rollupHandlerFastForwardRequest(
 	now := time.Now().Unix()
 	start := now - (now % int64(trq.Step.Seconds()))
 	end := start + int64(trq.Step.Seconds())
-	v.Set(upStart, formatTimestamp(time.Unix(start, 0), true))
-	v.Set(upEnd, formatTimestamp(time.Unix(end, 0), true))
+	v.Set(upStart, common.FormatTimestamp(time.Unix(start, 0), true))
+	v.Set(upEnd, common.FormatTimestamp(time.Unix(end, 0), true))
 	params.SetRequestValues(nr, v)
 	return nr, nil
 }

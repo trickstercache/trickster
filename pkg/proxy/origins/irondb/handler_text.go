@@ -25,6 +25,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins/irondb/common"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"github.com/tricksterproxy/trickster/pkg/util/md5"
@@ -34,12 +35,12 @@ import (
 // through the delta proxy cache.
 func (c *Client) TextHandler(w http.ResponseWriter, r *http.Request) {
 	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
-	engines.DeltaProxyCacheRequest(w, r)
+	engines.DeltaProxyCacheRequest(w, r, c.modeler)
 }
 
 // textHandlerSetExtent will change the upstream request query to use the
 // provided Extent.
-func (c Client) textHandlerSetExtent(r *http.Request,
+func (c *Client) textHandlerSetExtent(r *http.Request,
 	trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent) {
 	ps := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 5)
@@ -72,11 +73,11 @@ func (c *Client) textHandlerParseTimeRangeQuery(
 	trq.Statement = "/read/" + strings.Join(ps[3:], "/")
 
 	var err error
-	if trq.Extent.Start, err = parseTimestamp(ps[1]); err != nil {
+	if trq.Extent.Start, err = common.ParseTimestamp(ps[1]); err != nil {
 		return nil, err
 	}
 
-	if trq.Extent.End, err = parseTimestamp(ps[2]); err != nil {
+	if trq.Extent.End, err = common.ParseTimestamp(ps[2]); err != nil {
 		return nil, err
 	}
 
@@ -85,7 +86,7 @@ func (c *Client) textHandlerParseTimeRangeQuery(
 
 // textHandlerDeriveCacheKey calculates a query-specific keyname based on the
 // user request.
-func (c Client) textHandlerDeriveCacheKey(path string, params url.Values,
+func (c *Client) textHandlerDeriveCacheKey(path string, params url.Values,
 	headers http.Header, body io.ReadCloser, extra string) (string, io.ReadCloser) {
 	var sb strings.Builder
 	sb.WriteString(path)
