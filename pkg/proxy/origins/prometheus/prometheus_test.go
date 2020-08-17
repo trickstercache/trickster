@@ -30,9 +30,12 @@ import (
 	pe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins/prometheus/model"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
+
+var testModeler = model.NewModeler()
 
 func TestPrometheusClientInterfacing(t *testing.T) {
 
@@ -67,7 +70,7 @@ func TestNewClient(t *testing.T) {
 	}
 
 	oc := &oo.Options{OriginType: "TEST_CLIENT"}
-	c, err := NewClient("default", oc, nil, cache)
+	c, err := NewClient("default", oc, nil, cache, testModeler)
 	if err != nil {
 		t.Error(err)
 	}
@@ -127,7 +130,7 @@ func TestConfiguration(t *testing.T) {
 func TestHTTPClient(t *testing.T) {
 	oc := &oo.Options{OriginType: "TEST"}
 
-	client, err := NewClient("test", oc, nil, nil)
+	client, err := NewClient("test", oc, nil, nil, testModeler)
 	if err != nil {
 		t.Error(err)
 	}
@@ -187,7 +190,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 
 	req := &http.Request{URL: u}
 	client := &Client{}
-	res, err := client.ParseTimeRangeQuery(req)
+	res, _, _, err := client.ParseTimeRangeQuery(req)
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -204,7 +207,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	u.RawQuery = ""
 	req, _ = http.NewRequest(http.MethodPost, u.String(), b)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	_, err = client.ParseTimeRangeQuery(req)
+	_, _, _, err = client.ParseTimeRangeQuery(req)
 	if err != nil {
 		t.Error(err)
 	}
@@ -223,7 +226,7 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 			"step":   {"15"}}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(req)
+	_, _, _, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
@@ -247,7 +250,7 @@ func TestParseTimeRangeBadStartTime(t *testing.T) {
 			"step":  {"15"}}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(req)
+	_, _, _, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
@@ -271,7 +274,7 @@ func TestParseTimeRangeBadEndTime(t *testing.T) {
 			"step":  {"15"}}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(req)
+	_, _, _, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
@@ -296,7 +299,7 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 			"step":  {"x"}}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(req)
+	_, _, _, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
@@ -320,7 +323,7 @@ func TestParseTimeRangeQueryNoStart(t *testing.T) {
 			"step":  {"x"}}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(req)
+	_, _, _, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
@@ -344,7 +347,7 @@ func TestParseTimeRangeQueryNoEnd(t *testing.T) {
 			"step":  {"x"}}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(req)
+	_, _, _, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
@@ -369,7 +372,7 @@ func TestParseTimeRangeQueryNoStep(t *testing.T) {
 		).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(req)
+	_, _, _, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`expected "%s", got NO ERROR`, expected)
 		return
@@ -392,7 +395,7 @@ func TestParseTimeRangeQueryWithOffset(t *testing.T) {
 		}).Encode(),
 	}}
 	client := &Client{}
-	res, err := client.ParseTimeRangeQuery(req)
+	res, _, _, err := client.ParseTimeRangeQuery(req)
 	if err != nil {
 		t.Error(err)
 		return
@@ -405,7 +408,7 @@ func TestParseTimeRangeQueryWithOffset(t *testing.T) {
 }
 
 func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.NewOptions(), nil, nil, testModeler)
 	if err != nil {
 		t.Error(err)
 	}
@@ -416,7 +419,7 @@ func TestSetCache(t *testing.T) {
 }
 
 func TestRouter(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.NewOptions(), nil, nil, testModeler)
 	if err != nil {
 		t.Error(err)
 	}

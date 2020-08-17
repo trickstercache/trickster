@@ -16,7 +16,7 @@ require (
 	github.com/influxdata/influxdb v1.8.2
 	github.com/onsi/ginkgo v1.14.0 // indirect
 	github.com/prometheus/client_golang v1.7.1
-	github.com/prometheus/common v0.12.0
+	github.com/prometheus/common v0.12.0 // indirect
 	github.com/tinylib/msgp v1.1.2
 	github.com/tricksterproxy/mockster v1.1.1
 	github.com/yuin/gopher-lua v0.0.0-20200807101526-d70801a73ebe // indirect

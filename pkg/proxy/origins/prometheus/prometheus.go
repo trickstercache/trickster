@@ -32,9 +32,9 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
-	tt "github.com/tricksterproxy/trickster/pkg/proxy/timeconv"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	tt "github.com/tricksterproxy/trickster/pkg/util/timeconv"
 )
 
 var _ origins.Client = (*Client)(nil)
@@ -78,15 +78,16 @@ type Client struct {
 	healthHeaders      http.Header
 	healthMethod       string
 	router             http.Handler
+	modeler            *timeseries.Modeler
 }
 
 // NewClient returns a new Client Instance
 func NewClient(name string, oc *oo.Options, router http.Handler,
-	cache cache.Cache) (origins.Client, error) {
+	cache cache.Cache, modeler *timeseries.Modeler) (origins.Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
 	bur := urls.FromParts(oc.Scheme, oc.Host, oc.PathPrefix, "", "")
 	return &Client{name: name, config: oc, router: router, cache: cache,
-		webClient: c, baseUpstreamURL: bur}, err
+		webClient: c, baseUpstreamURL: bur, modeler: modeler}, err
 }
 
 // SetCache sets the Cache object the client will use for caching origin content
@@ -145,55 +146,69 @@ func parseDuration(input string) (time.Duration, error) {
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
-func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
+func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
+	*timeseries.RequestOptions, bool, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
+	rlo := &timeseries.RequestOptions{}
 
 	qp, _, _ := params.GetRequestValues(r)
 
 	trq.Statement = qp.Get(upQuery)
 	if trq.Statement == "" {
-		return nil, errors.MissingURLParam(upQuery)
+		return nil, nil, false, errors.MissingURLParam(upQuery)
 	}
 
 	if p := qp.Get(upStart); p != "" {
 		t, err := parseTime(p)
 		if err != nil {
-			return nil, err
+			return nil, nil, false, err
 		}
 		trq.Extent.Start = t
 	} else {
-		return nil, errors.MissingURLParam(upStart)
+		return nil, nil, false, errors.MissingURLParam(upStart)
 	}
 
 	if p := qp.Get(upEnd); p != "" {
 		t, err := parseTime(p)
 		if err != nil {
-			return nil, err
+			return nil, nil, false, err
 		}
 		trq.Extent.End = t
 	} else {
-		return nil, errors.MissingURLParam(upEnd)
+		return nil, nil, false, errors.MissingURLParam(upEnd)
 	}
 
 	if p := qp.Get(upStep); p != "" {
 		step, err := parseDuration(p)
 		if err != nil {
-			return nil, err
+			return nil, nil, false, err
 		}
 		trq.Step = step
 	} else {
-		return nil, errors.MissingURLParam(upStep)
+		return nil, nil, false, errors.MissingURLParam(upStep)
 	}
 
 	if strings.Contains(trq.Statement, " offset ") {
 		trq.IsOffset = true
-		trq.FastForwardDisable = true
+		rlo.FastForwardDisable = true
 	}
 
-	if strings.Contains(trq.Statement, timeseries.FastForwardUserDisableFlag) {
-		trq.FastForwardDisable = true
+	rlo.ExtractFastForwardDisabled(trq.Statement)
+	trq.ExtractBackfillTolerance(trq.Statement)
+
+	if x := strings.Index(trq.Statement, timeseries.BackfillToleranceFlag); x > 1 {
+		x += 29
+		y := x
+		for ; y < len(trq.Statement); y++ {
+			if trq.Statement[y] < 48 || trq.Statement[y] > 57 {
+				break
+			}
+		}
+		if i, err := strconv.Atoi(trq.Statement[x:y]); err == nil {
+			trq.BackfillTolerance = time.Second * time.Duration(i)
+		}
 	}
 
-	return trq, nil
+	return trq, rlo, true, nil
 }

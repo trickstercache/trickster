@@ -33,6 +33,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/irondb"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/prometheus"
+	modelprom "github.com/tricksterproxy/trickster/pkg/proxy/origins/prometheus/model"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/reverseproxycache"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/rule"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/types"
@@ -178,7 +179,7 @@ func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 
 	switch strings.ToLower(o.OriginType) {
 	case "prometheus", "":
-		client, err = prometheus.NewClient(k, o, mux.NewRouter(), c)
+		client, err = prometheus.NewClient(k, o, mux.NewRouter(), c, modelprom.NewModeler())
 	case "influxdb":
 		client, err = influxdb.NewClient(k, o, mux.NewRouter(), c)
 	case "irondb":
