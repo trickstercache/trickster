@@ -24,66 +24,6 @@ import (
 	"time"
 )
 
-func TestCalculateDeltas(t *testing.T) {
-
-	// test when start is after end
-	trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(20, 0),
-		End: time.Unix(10, 0)}, Step: time.Duration(10) * time.Second}
-	trq.CalculateDeltas(ExtentList{Extent{}})
-
-	tests := []struct {
-		have                 []Extent
-		expected             []Extent
-		start, end, stepSecs int64
-	}{
-		{
-			[]Extent{},
-			[]Extent{{Start: time.Unix(1, 0), End: time.Unix(100, 0)}},
-			1, 100, 1,
-		},
-		{
-			[]Extent{{Start: time.Unix(50, 0), End: time.Unix(100, 0)}},
-			[]Extent{{Start: time.Unix(1, 0), End: time.Unix(49, 0)}},
-			1, 100, 1,
-		},
-		{
-			[]Extent{{Start: time.Unix(50, 0), End: time.Unix(100, 0)}},
-			[]Extent{{Start: time.Unix(1, 0), End: time.Unix(49, 0)},
-				{Start: time.Unix(101, 0), End: time.Unix(101, 0)}},
-			1, 101, 1,
-		},
-		{
-			[]Extent{{Start: time.Unix(1, 0), End: time.Unix(100, 0)}},
-			[]Extent{{Start: time.Unix(101, 0), End: time.Unix(101, 0)}},
-			1, 101, 1,
-		},
-	}
-
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-
-			trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(test.start, 0),
-				End: time.Unix(test.end, 0)}, Step: time.Duration(test.stepSecs) * time.Second}
-			trq.NormalizeExtent()
-			d := trq.CalculateDeltas(test.have)
-
-			if len(d) != len(test.expected) {
-				t.Errorf("expected %v got %v", test.expected, d)
-				return
-			}
-
-			for i := range d {
-				if d[i].Start != test.expected[i].Start {
-					t.Errorf("expected %d got %d", test.expected[i].Start.Unix(), d[i].Start.Unix())
-				}
-				if d[i].End != test.expected[i].End {
-					t.Errorf("expected %d got %d", test.expected[i].End.Unix(), d[i].End.Unix())
-				}
-			}
-		})
-	}
-}
-
 func TestNormalizeExtent(t *testing.T) {
 
 	tmrw := time.Now().Add(time.Duration(24) * time.Hour).Unix()
@@ -143,53 +83,30 @@ func TestClone(t *testing.T) {
 }
 
 func TestStringTRQ(t *testing.T) {
-
 	const expected = `{ "statement": "1234", "step": "5s", "extent": "5-10" }`
-
 	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{Start: time.Unix(5, 0),
 		End: time.Unix(10, 0)}, Step: time.Duration(5) * time.Second}
 	s := trq.String()
 
 	if s != expected {
-		t.Errorf("%s", s)
+		t.Errorf("%s\n%s", s, expected)
 	}
-
 }
 
 func TestGetBackfillTolerance(t *testing.T) {
+
 	expected := time.Second * 5
+
 	trq := &TimeRangeQuery{Statement: "1234"}
 	i := trq.GetBackfillTolerance(expected)
 	if i != expected {
 		t.Errorf("expected %s got %s", expected, i)
 	}
-	trq.Statement += " trickster-backfill-tolerance:30, next-directive:"
+
+	trq.BackfillTolerance = time.Second * 30
 	i = trq.GetBackfillTolerance(expected)
 	if i == expected {
 		t.Errorf("expected %s got %s", time.Second*30, i)
 	}
-	trq.BackfillTolerance = expected
-	i = trq.GetBackfillTolerance(0)
-	if i != expected {
-		t.Errorf("expected %s got %s", expected, i)
-	}
-	trq.BackfillTolerance = -1
-	i = trq.GetBackfillTolerance(0)
-	if i != 0 {
-		t.Errorf("expected %d got %s", 0, i)
-	}
-}
 
-func TestExtractBackfillTolerance(t *testing.T) {
-	trq := &TimeRangeQuery{}
-	trq.ExtractBackfillTolerance("query here // trickster-backfill-tolerance:$")
-	expected := time.Second * 0
-	if trq.BackfillTolerance != expected {
-		t.Errorf("expected %s got %s", expected, trq.BackfillTolerance)
-	}
-	trq.ExtractBackfillTolerance("query here // trickster-backfill-tolerance:60")
-	expected = time.Second * 60
-	if trq.BackfillTolerance != expected {
-		t.Errorf("expected %s got %s", expected, trq.BackfillTolerance)
-	}
 }
