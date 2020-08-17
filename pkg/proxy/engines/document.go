@@ -80,7 +80,7 @@ func (d *HTTPDocument) Size() int {
 		i += d.CachingPolicy.Msgsize()
 	}
 	if d.timeseries != nil {
-		i += d.timeseries.Size()
+		i += int(d.timeseries.Size())
 	}
 	return i
 }
