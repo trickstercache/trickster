@@ -278,7 +278,8 @@ func parseDuration(input string) (time.Duration, error) {
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
-func (c *TestClient) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions, error) {
+func (c *TestClient) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
+	*timeseries.RequestOptions, bool, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	rlo := &timeseries.RequestOptions{}
@@ -286,37 +287,37 @@ func (c *TestClient) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRange
 
 	trq.Statement = qp.Get(upQuery)
 	if trq.Statement == "" {
-		return nil, nil, errors.MissingURLParam(upQuery)
+		return nil, nil, false, errors.MissingURLParam(upQuery)
 	}
 
 	if p := qp.Get(upStart); p != "" {
 		t, err := parseTime(p)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, false, err
 		}
 		trq.Extent.Start = t
 	} else {
-		return nil, nil, errors.MissingURLParam(upStart)
+		return nil, nil, false, errors.MissingURLParam(upStart)
 	}
 
 	if p := qp.Get(upEnd); p != "" {
 		t, err := parseTime(p)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, false, err
 		}
 		trq.Extent.End = t
 	} else {
-		return nil, nil, errors.MissingURLParam(upEnd)
+		return nil, nil, false, errors.MissingURLParam(upEnd)
 	}
 
 	if p := qp.Get(upStep); p != "" {
 		step, err := parseDuration(p)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, false, err
 		}
 		trq.Step = step
 	} else {
-		return nil, nil, errors.MissingURLParam(upStep)
+		return nil, nil, false, errors.MissingURLParam(upStep)
 	}
 
 	if strings.Contains(trq.Statement, " offset ") {
@@ -328,7 +329,7 @@ func (c *TestClient) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRange
 		rlo.FastForwardDisable = true
 	}
 
-	return trq, rlo, nil
+	return trq, rlo, true, nil
 }
 
 // BaseURL returns a URL in the form of scheme://host/path based on the proxy configuration
