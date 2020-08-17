@@ -28,13 +28,13 @@ import (
 // Series (timeseries.Timeseries Interface) stub funcs
 
 // FastForwardRequest is not used for InfluxDB and is here to conform to the Proxy Client interface
-func (c Client) FastForwardRequest(r *http.Request) (*http.Request, error) {
+func (c *Client) FastForwardRequest(r *http.Request) (*http.Request, error) {
 	return nil, nil
 }
 
 // InfluxDb Client (proxy.Client Interface) stub funcs
 
 // UnmarshalInstantaneous is not used for InfluxDB and is here to conform to the Proxy Client interface
-func (c Client) UnmarshalInstantaneous(data []byte) (timeseries.Timeseries, error) {
+func (c *Client) UnmarshalInstantaneous(data []byte) (timeseries.Timeseries, error) {
 	return nil, nil
 }

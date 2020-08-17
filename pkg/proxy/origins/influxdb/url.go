@@ -19,6 +19,7 @@ package influxdb
 import (
 	"net/http"
 
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
@@ -30,12 +31,15 @@ const (
 
 // Common URL Parameter Names
 const (
-	upQuery = "q"
-	upDB    = "db"
+	upQuery   = "q"
+	upDB      = "db"
+	upEpoch   = "epoch"
+	upPretty  = "pretty"
+	upChunked = "chunked"
 )
 
 // SetExtent will change the upstream request query to use the provided Extent
-func (c Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
+func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
 	v, _, _ := params.GetRequestValues(r)
 	// the TemplateURL in the TimeRangeQuery will always have URL Query Params, even for POSTs
 	// For POST, ParseTimeRangeQuery extracts the params from the original request body and
@@ -46,5 +50,9 @@ func (c Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exten
 	if q != "" {
 		v.Set(upQuery, interpolateTimeQuery(q, extent))
 	}
+	v.Set(upEpoch, "ns") // request nanosecond epoch timestamp format from server
+	v.Del(upChunked)     // we do not support chunked output or handling chunked server responses
+	v.Del(upPretty)
+	r.Header.Set(headers.NameAccept, headers.ValueApplicationJSON)
 	params.SetRequestValues(r, v)
 }

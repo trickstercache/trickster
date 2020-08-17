@@ -28,6 +28,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 var _ origins.Client = (*Client)(nil)
@@ -48,17 +49,19 @@ type Client struct {
 	healthMethod     string
 	healthBody       io.Reader
 	healthHeaderLock *sync.Mutex
+	modeler          *timeseries.Modeler
 }
 
 // NewClient returns a new Client Instance
 func NewClient(name string, oc *oo.Options, router http.Handler,
-	cache cache.Cache) (origins.Client, error) {
+	cache cache.Cache, modeler *timeseries.Modeler) (origins.Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
 	bur := urls.FromParts(oc.Scheme, oc.Host, oc.PathPrefix, "", "")
 	// explicitly disable Fast Forward for this client
 	oc.FastForwardDisable = true
 	return &Client{name: name, config: oc, router: router, cache: cache,
-		webClient: c, baseUpstreamURL: bur, healthHeaderLock: &sync.Mutex{}}, err
+		webClient: c, baseUpstreamURL: bur, healthHeaderLock: &sync.Mutex{},
+		modeler: modeler}, err
 }
 
 // Configuration returns the upstream Configuration for this Client
