@@ -51,7 +51,6 @@ func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) strin
 		r = pr.upstreamRequest
 		if r.URL == nil {
 			r.URL = pr.URL
-			qp = pr.URL.Query()
 		}
 	}
 
