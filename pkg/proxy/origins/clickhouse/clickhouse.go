@@ -18,7 +18,6 @@
 package clickhouse
 
 import (
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"net/http"
 	"net/url"
 	"time"
@@ -28,6 +27,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
@@ -47,17 +47,18 @@ type Client struct {
 	healthMethod       string
 	healthHeaders      http.Header
 	router             http.Handler
+	modeler            *timeseries.Modeler
 }
 
 // NewClient returns a new Client Instance
 func NewClient(name string, oc *oo.Options, router http.Handler,
-	cache cache.Cache) (origins.Client, error) {
+	cache cache.Cache, modeler *timeseries.Modeler) (origins.Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
 	bur := urls.FromParts(oc.Scheme, oc.Host, oc.PathPrefix, "", "")
 	// explicitly disable Fast Forward for this client
 	oc.FastForwardDisable = true
 	return &Client{name: name, config: oc, router: router, cache: cache,
-		baseUpstreamURL: bur, webClient: c}, err
+		baseUpstreamURL: bur, webClient: c, modeler: modeler}, err
 }
 
 // Configuration returns the upstream Configuration for this Client
@@ -91,21 +92,13 @@ func (c *Client) Router() http.Handler {
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
-func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
+func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions, bool, error) {
 	qi := r.URL.Query()
 	var rawQuery string
 	if p, ok := qi[upQuery]; ok {
 		rawQuery = p[0]
 	} else {
-		return nil, errors.MissingURLParam(upQuery)
-	}
-
-	var bf time.Duration
-	res := request.GetResources(r)
-	if res == nil {
-		bf = 60 * time.Second
-	} else {
-		bf = res.OriginConfig.BackfillTolerance
+		return nil, nil, false, errors.MissingURLParam(upQuery)
 	}
 
 	// Force gzip compression since Brotli is broken on CH 20.3
@@ -113,14 +106,33 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	// Clients that don't understand gzip are going to break, but oh well
 	r.Header.Set("Accept-Encoding", "gzip")
 
-	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}, BackfillTolerance: bf}
-	if err := parseRawQuery(rawQuery, trq); err != nil {
-		return nil, err
+	trq, ro, canOPC, err := parse(rawQuery)
+	if err != nil {
+		return nil, nil, canOPC, err
 	}
+
+	var bf time.Duration
+	res := request.GetResources(r)
+	if res == nil {
+		// 60-second default backfill tolerance for ClickHouse
+		bf = 60 * time.Second
+	} else {
+		bf = res.OriginConfig.BackfillTolerance
+	}
+
+	if trq.BackfillTolerance == 0 {
+		trq.BackfillTolerance = bf
+	}
+	trq.BackfillToleranceNS = bf.Nanoseconds()
+
+	// Force gzip compression since Brotli is broken on CH 20.3
+	// See https://github.com/ClickHouse/ClickHouse/issues/9969
+	// Clients that don't understand gzip are going to break, but oh well
+	r.Header.Set("Accept-Encoding", "gzip")
 
 	trq.TemplateURL = urls.Clone(r.URL)
 	// Swap in the Tokenized Query in the Url Params
 	qi.Set(upQuery, trq.Statement)
 	trq.TemplateURL.RawQuery = qi.Encode()
-	return trq, nil
+	return trq, ro, canOPC, nil
 }

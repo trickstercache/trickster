@@ -24,9 +24,12 @@ import (
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins/clickhouse/model"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
+
+var testModeler = model.NewModeler()
 
 func TestClickhouseClientInterfacing(t *testing.T) {
 
@@ -61,7 +64,7 @@ func TestNewClient(t *testing.T) {
 	}
 
 	oc := &oo.Options{OriginType: "TEST_CLIENT"}
-	c, err := NewClient("default", oc, nil, cache)
+	c, err := NewClient("default", oc, nil, cache, testModeler)
 	if err != nil {
 		t.Error(err)
 	}
@@ -130,7 +133,7 @@ func TestRouter(t *testing.T) {
 func TestHTTPClient(t *testing.T) {
 	oc := &oo.Options{OriginType: "TEST"}
 
-	client, err := NewClient("test", oc, nil, nil)
+	client, err := NewClient("test", oc, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -141,7 +144,7 @@ func TestHTTPClient(t *testing.T) {
 }
 
 func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.NewOptions(), nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -161,7 +164,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		Header: http.Header{},
 	}
 	client := &Client{}
-	res, err := client.ParseTimeRangeQuery(req)
+	res, _, _, err := client.ParseTimeRangeQuery(req)
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -174,7 +177,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	}
 
 	req.URL.RawQuery = ""
-	_, err = client.ParseTimeRangeQuery(req)
+	_, _, _, err = client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf("expected error for: %s", "missing URL parameter: [query]")
 	}
@@ -184,7 +187,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 			`FROM testdb.test_table WHERE abc BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
 			`AND date_column >= toDate(1516665600) AND toDate(1516687200) ` +
 			`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`}}).Encode()
-	_, err = client.ParseTimeRangeQuery(req)
+	_, _, _, err = client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf("expected error for: %s", "not a time range query")
 	}
@@ -194,7 +197,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 			`FROM testdb.test_table WHERE 0^^^ BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
 			`AND date_column >= toDate(1516665600) AND toDate(1516687200) ` +
 			`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`}}).Encode()
-	_, err = client.ParseTimeRangeQuery(req)
+	_, _, _, err = client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf("expected error for: %s", "not a time range query")
 	}
