@@ -37,8 +37,8 @@ type Options struct {
 	RateLimitSecs int `toml:"rate_limit_secs"`
 }
 
-// NewOptions returns a new Options references with Default Values set
-func NewOptions() *Options {
+// New returns a new Options references with Default Values set
+func New() *Options {
 	return &Options{
 		ListenAddress:    defaults.DefaultReloadAddress,
 		ListenPort:       defaults.DefaultReloadPort,

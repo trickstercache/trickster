@@ -181,7 +181,7 @@ func NewTestPathConfig(
 
 // NewTestTracer returns a standard out tracer for testing purposes
 func NewTestTracer() *tracing.Tracer {
-	tc := to.NewOptions()
+	tc := to.New()
 	tc.Name = "test"
 	tc.TracerType = "stdout"
 	tracer, _ := tr.GetTracer(tc, tl.ConsoleLogger("warn"), true)

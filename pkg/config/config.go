@@ -169,7 +169,7 @@ func NewConfig() *Config {
 	hn, _ := os.Hostname()
 	return &Config{
 		Caches: map[string]*cache.Options{
-			"default": cache.NewOptions(),
+			"default": cache.New(),
 		},
 		Logging: &LoggingConfig{
 			LogFile:  d.DefaultLogFile,
@@ -187,7 +187,7 @@ func NewConfig() *Config {
 			ListenPort: d.DefaultMetricsListenPort,
 		},
 		Origins: map[string]*origins.Options{
-			"default": origins.NewOptions(),
+			"default": origins.New(),
 		},
 		Frontend: &FrontendConfig{
 			ListenPort:       d.DefaultProxyListenPort,
@@ -199,9 +199,9 @@ func NewConfig() *Config {
 			"default": NewNegativeCacheConfig(),
 		},
 		TracingConfigs: map[string]*tracing.Options{
-			"default": tracing.NewOptions(),
+			"default": tracing.New(),
 		},
-		ReloadConfig:   reload.NewOptions(),
+		ReloadConfig:   reload.New(),
 		LoaderWarnings: make([]string, 0),
 		Resources: &Resources{
 			QuitChan: make(chan bool, 1),
@@ -357,7 +357,7 @@ func (c *Config) processOriginConfigs(metadata *toml.MetaData) error {
 
 	for k, v := range c.Origins {
 
-		oc := origins.NewOptions()
+		oc := origins.New()
 		oc.Name = k
 
 		if metadata.IsDefined("origins", k, "req_rewriter_name") && v.ReqRewriterName != "" {
@@ -577,7 +577,7 @@ func (c *Config) processCachingConfigs(metadata *toml.MetaData) error {
 			continue
 		}
 
-		cc := cache.NewOptions()
+		cc := cache.New()
 		cc.Name = k
 
 		if metadata.IsDefined("caches", k, "cache_type") {
@@ -822,7 +822,7 @@ func (c *Config) IsStale() bool {
 	}
 
 	if c.ReloadConfig == nil {
-		c.ReloadConfig = reload.NewOptions()
+		c.ReloadConfig = reload.New()
 	}
 
 	c.Main.configRateLimitTime =

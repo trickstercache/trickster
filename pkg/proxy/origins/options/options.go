@@ -170,8 +170,8 @@ type Options struct {
 	ReqRewriter rewriter.RewriteInstructions
 }
 
-// NewOptions will return a pointer to an OriginConfig with the default configuration settings
-func NewOptions() *Options {
+// New will return a pointer to an origins.Options reference, with the default configuration settings
+func New() *Options {
 	return &Options{
 		BackfillTolerance:            d.DefaultBackfillToleranceSecs,
 		BackfillToleranceSecs:        d.DefaultBackfillToleranceSecs,

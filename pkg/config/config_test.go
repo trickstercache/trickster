@@ -54,7 +54,7 @@ func TestClone(t *testing.T) {
 	oc.CompressableTypes = map[string]bool{"text/plain": true}
 	oc.NegativeCacheName = "default"
 	oc.NegativeCache = map[int]time.Duration{404: time.Duration(10) * time.Second}
-	oc.FastForwardPath = po.NewOptions()
+	oc.FastForwardPath = po.New()
 	oc.TLS = &to.Options{CertificateAuthorityPaths: []string{"foo"}}
 	oc.HealthCheckHeaders = map[string]string{headers.NameAuthorization: expected}
 
@@ -101,7 +101,7 @@ func TestHideAuthorizationCredentials(t *testing.T) {
 
 func TestCloneOriginConfig(t *testing.T) {
 
-	oc := oo.NewOptions()
+	oc := oo.New()
 	oc.Hosts = []string{"test"}
 
 	oc2 := oc.Clone()

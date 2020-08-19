@@ -28,7 +28,7 @@ type Options struct {
 	ValueDirectory string `toml:"value_directory"`
 }
 
-// NewOptions returns a reference to a new Badger Options
-func NewOptions() *Options {
+// New returns a reference to a new Badger Options
+func New() *Options {
 	return &Options{Directory: d.DefaultCachePath, ValueDirectory: d.DefaultCachePath}
 }

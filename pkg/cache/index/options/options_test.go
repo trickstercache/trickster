@@ -18,8 +18,8 @@ package options
 
 import "testing"
 
-func TestNewOptions(t *testing.T) {
-	o := NewOptions()
+func TestNew(t *testing.T) {
+	o := New()
 	if o == nil {
 		t.Error("expected non-nil options")
 	}
@@ -27,7 +27,7 @@ func TestNewOptions(t *testing.T) {
 
 func TestEqual(t *testing.T) {
 
-	o := NewOptions()
+	o := New()
 
 	if o.Equal(nil) {
 		t.Error("expected false")

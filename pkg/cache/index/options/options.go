@@ -45,8 +45,8 @@ type Options struct {
 	FlushInterval time.Duration `toml:"-"`
 }
 
-// NewOptions returns a new Cache Index Options Reference with default values set
-func NewOptions() *Options {
+// New returns a new Cache Index Options Reference with default values set
+func New() *Options {
 	return &Options{
 		ReapIntervalSecs:      d.DefaultCacheIndexReap,
 		FlushIntervalSecs:     d.DefaultCacheIndexFlush,

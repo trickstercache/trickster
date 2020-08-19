@@ -24,7 +24,7 @@ import (
 
 func TestOptions(t *testing.T) {
 
-	o := NewOptions(nil, nil, nil)
+	o := New(nil, nil, nil)
 	if o == nil {
 		t.Error("expected non-nil options")
 	}

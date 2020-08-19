@@ -24,9 +24,9 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 )
 
-func TestNewOptions(t *testing.T) {
+func TestNew(t *testing.T) {
 
-	pc := NewOptions()
+	pc := New()
 
 	if pc == nil {
 		t.Errorf("expected non-nil value you for %s", "PathConfig")
@@ -40,7 +40,7 @@ func TestNewOptions(t *testing.T) {
 
 func TestPathClone(t *testing.T) {
 
-	pc := NewOptions()
+	pc := New()
 	pc2 := pc.Clone()
 
 	if pc2 == nil {
@@ -55,7 +55,7 @@ func TestPathClone(t *testing.T) {
 
 func TestPathMerge(t *testing.T) {
 
-	pc := NewOptions()
+	pc := New()
 	pc2 := pc.Clone()
 
 	pc2.Custom = []string{"path", "match_type", "handler", "methods",

@@ -796,7 +796,7 @@ func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
 	}
 	defer ts.Close()
 
-	pc := po.NewOptions()
+	pc := po.New()
 	cfg := rsc.OriginConfig
 	cfg.Paths = map[string]*po.Options{
 		"/": pc,

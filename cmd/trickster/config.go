@@ -97,7 +97,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logg
 	runtime.Server = conf.Main.ServerName
 
 	if conf.ReloadConfig == nil {
-		conf.ReloadConfig = ro.NewOptions()
+		conf.ReloadConfig = ro.New()
 	}
 
 	log = applyLoggingConfig(conf, oldConf, log)
@@ -148,7 +148,7 @@ func applyLoggingConfig(c, oc *config.Config, oldLog *log.Logger) *log.Logger {
 	}
 
 	if c.ReloadConfig == nil {
-		c.ReloadConfig = ro.NewOptions()
+		c.ReloadConfig = ro.New()
 	}
 
 	if oc != nil && oc.Logging != nil {

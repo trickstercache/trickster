@@ -25,7 +25,7 @@ import (
 
 func TestNewTracer(t *testing.T) {
 
-	o := options.NewOptions()
+	o := options.New()
 	_, err := NewTracer(o)
 	if err != nil {
 		t.Error(err)

@@ -44,8 +44,8 @@ type Options struct {
 	attachTagsToSpan bool
 }
 
-// NewOptions returns a new *Options with the default values
-func NewOptions() *Options {
+// New returns a new *Options with the default values
+func New() *Options {
 	return &Options{
 		TracerType:    defaults.DefaultTracerType,
 		ServiceName:   defaults.DefaultTracerServiceName,

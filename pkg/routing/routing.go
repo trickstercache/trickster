@@ -283,7 +283,7 @@ func registerPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 				p2.Merge(p)
 				continue
 			}
-			p3 := po.NewOptions()
+			p3 := po.New()
 			p3.Merge(p)
 			pathsWithVerbs[k] = p3
 		}

@@ -408,7 +408,7 @@ func TestParseTimeRangeQueryWithOffset(t *testing.T) {
 }
 
 func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil, testModeler)
+	c, err := NewClient("test", oo.New(), nil, nil, testModeler)
 	if err != nil {
 		t.Error(err)
 	}
@@ -419,7 +419,7 @@ func TestSetCache(t *testing.T) {
 }
 
 func TestRouter(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil, testModeler)
+	c, err := NewClient("test", oo.New(), nil, nil, testModeler)
 	if err != nil {
 		t.Error(err)
 	}

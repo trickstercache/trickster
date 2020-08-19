@@ -85,8 +85,8 @@ type Options struct {
 	HasCustomResponseBody bool `toml:"-"`
 }
 
-// NewOptions returns a newly-instantiated *Options
-func NewOptions() *Options {
+// New returns a newly-instantiated path *Options
+func New() *Options {
 	return &Options{
 		Path:                    "/",
 		Methods:                 methods.CacheableHTTPMethods(),

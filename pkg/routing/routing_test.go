@@ -82,11 +82,11 @@ func TestRegisterProxyRoutes(t *testing.T) {
 		t.Errorf("expected %d got %d", 1, 0)
 	}
 
-	conf.Origins["default"] = oo.NewOptions()
+	conf.Origins["default"] = oo.New()
 
 	// Test Too Many Defaults
 	o1 := conf.Origins["default"]
-	o2 := oo.NewOptions()
+	o2 := oo.New()
 
 	o1.IsDefault = true
 	o2.IsDefault = true
@@ -214,7 +214,7 @@ func TestRegisterProxyRoutesWithReqRewriters(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	tpo := po.NewOptions()
+	tpo := po.New()
 	tpo.ReqRewriterName = "path"
 	conf.Origins["test"].Paths["test"] = tpo
 

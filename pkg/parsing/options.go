@@ -29,8 +29,8 @@ type Options struct {
 	Decisions map[string]DecisionSet
 }
 
-// NewOptions returns a new Options with the provided parameters
-func NewOptions(
+// New returns a new Options with the provided parameters
+func New(
 	entryFunc StateFn,
 	lexer lex.Lexer,
 	lo *lex.Options,

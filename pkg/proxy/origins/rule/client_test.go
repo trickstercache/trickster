@@ -25,7 +25,7 @@ import (
 )
 
 func TestNewNewClient(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -35,7 +35,7 @@ func TestNewNewClient(t *testing.T) {
 }
 
 func TestHTTPClient(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -45,7 +45,7 @@ func TestHTTPClient(t *testing.T) {
 }
 
 func TestGetCache(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -55,7 +55,7 @@ func TestGetCache(t *testing.T) {
 }
 
 func TestClientName(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -65,7 +65,7 @@ func TestClientName(t *testing.T) {
 }
 
 func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -76,7 +76,7 @@ func TestSetCache(t *testing.T) {
 }
 
 func TestConfiguration(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -86,7 +86,7 @@ func TestConfiguration(t *testing.T) {
 }
 
 func TestRouter(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}

@@ -49,7 +49,7 @@ func TestParser(t *testing.T) {
 		t.Error("expected non-nil options")
 	}
 
-	po := parsing.NewOptions(FindVerb, nil, nil)
+	po := parsing.New(FindVerb, nil, nil)
 	po.Decisions = map[string]parsing.DecisionSet{
 		"FindVerb":            map[token.Typ]parsing.StateFn{token.Space: parsing.Noop, token.Bool: nil},
 		"SelectQueryKeywords": map[token.Typ]parsing.StateFn{token.Space: parsing.Noop, token.Bool: nil}}
@@ -64,7 +64,7 @@ func TestParser(t *testing.T) {
 
 	lo := &lex.Options{}
 	lexer := lsql.NewLexer(lo)
-	po = parsing.NewOptions(FindVerb, lexer, lo)
+	po = parsing.New(FindVerb, lexer, lo)
 	sp = New(po).(*Parser)
 	if sp == nil {
 		t.Error("expected non-nil parser")

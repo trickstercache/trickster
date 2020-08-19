@@ -24,16 +24,16 @@ import (
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 )
 
-func TestNewOptions(t *testing.T) {
-	o := NewOptions()
+func TestNew(t *testing.T) {
+	o := New()
 	if o == nil {
 		t.Error("expected non-nil options")
 	}
 }
 
 func TestClone(t *testing.T) {
-	p := po.NewOptions()
-	o := NewOptions()
+	p := po.New()
+	o := New()
 	o.Hosts = []string{"test"}
 	o.CacheName = "test"
 	o.CompressableTypes = map[string]bool{"test": true}

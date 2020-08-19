@@ -53,24 +53,24 @@ type Options struct {
 	CacheTypeID types.CacheType `toml:"-"`
 }
 
-// NewOptions will return a pointer to an OriginConfig with the default configuration settings
-func NewOptions() *Options {
+// New will return a pointer to an OriginConfig with the default configuration settings
+func New() *Options {
 
 	return &Options{
 		CacheType:   d.DefaultCacheType,
 		CacheTypeID: d.DefaultCacheTypeID,
-		Redis:       redis.NewOptions(),
-		Filesystem:  filesystem.NewOptions(),
-		BBolt:       bbolt.NewOptions(),
-		Badger:      badger.NewOptions(),
-		Index:       index.NewOptions(),
+		Redis:       redis.New(),
+		Filesystem:  filesystem.New(),
+		BBolt:       bbolt.New(),
+		Badger:      badger.New(),
+		Index:       index.New(),
 	}
 }
 
 // Clone returns an exact copy of a *CachingConfig
 func (cc *Options) Clone() *Options {
 
-	c := NewOptions()
+	c := New()
 	c.Name = cc.Name
 	c.CacheType = cc.CacheType
 	c.CacheTypeID = cc.CacheTypeID

@@ -70,7 +70,7 @@ func TestCaqlHandlerSetExtent(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
 	client := &Client{name: "test"}
-	cfg := oo.NewOptions()
+	cfg := oo.New()
 	cfg.HTTPClient = tu.NewTestWebClient()
 	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0/extension/lua/caql_v1", nil)
@@ -97,7 +97,7 @@ func TestCaqlHandlerParseTimeRangeQuery(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
 	client := &Client{name: "test"}
-	cfg := oo.NewOptions()
+	cfg := oo.New()
 	cfg.HTTPClient = tu.NewTestWebClient()
 	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0/extension/lua/caql_v1", nil)
