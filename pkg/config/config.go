@@ -22,27 +22,20 @@ package config
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"io/ioutil"
-	"net/http"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
+	"github.com/tricksterproxy/trickster/pkg/cache/negative"
 	cache "github.com/tricksterproxy/trickster/pkg/cache/options"
-	"github.com/tricksterproxy/trickster/pkg/cache/types"
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 	reload "github.com/tricksterproxy/trickster/pkg/config/reload/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	origins "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	rule "github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	rewriter "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	rwopts "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
-	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
 	tracing "github.com/tricksterproxy/trickster/pkg/tracing/options"
 
 	"github.com/BurntSushi/toml"
@@ -65,7 +58,7 @@ type Config struct {
 	// TracingConfigs provides the distributed tracing configuration
 	TracingConfigs map[string]*tracing.Options `toml:"tracing"`
 	// NegativeCacheConfigs is a map of NegativeCacheConfigs
-	NegativeCacheConfigs map[string]NegativeCacheConfig `toml:"negative_caches"`
+	NegativeCacheConfigs map[string]negative.Config `toml:"negative_caches"`
 	// Rules is a map of the Rules
 	Rules map[string]*rule.Options `toml:"rules"`
 	// RequestRewriters is a map of the Rewriters
@@ -152,18 +145,6 @@ type Resources struct {
 	metadata *toml.MetaData
 }
 
-// NegativeCacheConfig is a collection of response codes and their TTLs
-type NegativeCacheConfig map[string]int
-
-// Clone returns an exact copy of a NegativeCacheConfig
-func (nc NegativeCacheConfig) Clone() NegativeCacheConfig {
-	nc2 := make(NegativeCacheConfig)
-	for k, v := range nc {
-		nc2[k] = v
-	}
-	return nc2
-}
-
 // NewConfig returns a Config initialized with default values.
 func NewConfig() *Config {
 	hn, _ := os.Hostname()
@@ -195,8 +176,8 @@ func NewConfig() *Config {
 			TLSListenPort:    d.DefaultTLSProxyListenPort,
 			TLSListenAddress: d.DefaultTLSProxyListenAddress,
 		},
-		NegativeCacheConfigs: map[string]NegativeCacheConfig{
-			"default": NewNegativeCacheConfig(),
+		NegativeCacheConfigs: map[string]negative.Config{
+			"default": negative.New(),
 		},
 		TracingConfigs: map[string]*tracing.Options{
 			"default": tracing.New(),
@@ -207,11 +188,6 @@ func NewConfig() *Config {
 			QuitChan: make(chan bool, 1),
 		},
 	}
-}
-
-// NewNegativeCacheConfig returns an empty NegativeCacheConfig
-func NewNegativeCacheConfig() NegativeCacheConfig {
-	return NegativeCacheConfig{}
 }
 
 // loadFile loads application configuration from a TOML-formatted file.
@@ -267,24 +243,37 @@ func (c *Config) setDefaults(metadata *toml.MetaData) error {
 		}
 	}
 
-	if err = c.processOriginConfigs(metadata); err != nil {
-		return err
+	c.activeCaches = make(map[string]bool)
+	for k, v := range c.Origins {
+		w, err := origins.ProcessTOML(k, v, metadata, c.CompiledRewriters, c.Origins, c.activeCaches)
+		if err != nil {
+			return err
+		}
+		c.Origins[k] = w
 	}
 
 	tracing.ProcessTracingOptions(c.TracingConfigs, metadata)
 
-	if err = c.processCachingConfigs(metadata); err != nil {
+	var lw []string
+	if lw, err = cache.Lookup(c.Caches).ProcessTOML(metadata, c.activeCaches); err != nil {
+		return err
+	}
+	for _, v := range lw {
+		c.LoaderWarnings = append(c.LoaderWarnings, v)
+	}
+
+	ol := origins.Lookup(c.Origins)
+	if err = ol.ValidateConfigMappings(c.Rules, c.Caches); err != nil {
 		return err
 	}
 
-	if err = c.validateConfigMappings(); err != nil {
+	serveTLS, err := ol.ValidateTLSConfigs()
+	if err != nil {
 		return err
 	}
-
-	if err = c.validateTLSConfigs(); err != nil {
-		return err
+	if serveTLS {
+		c.Frontend.ServeTLS = true
 	}
-
 	return nil
 }
 
@@ -300,445 +289,6 @@ func (c *Config) processPprofConfig() error {
 		return nil
 	}
 	return ErrInvalidPprofServerName
-}
-
-func (c *Config) validateTLSConfigs() error {
-	for _, oc := range c.Origins {
-		if oc.TLS != nil {
-			b, err := oc.TLS.Validate()
-			if err != nil {
-				return err
-			}
-			if b {
-				c.Frontend.ServeTLS = true
-			}
-		}
-	}
-	return nil
-}
-
-var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params",
-	"cache_key_headers", "default_ttl_secs", "request_headers", "response_headers",
-	"response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding",
-	"req_rewriter_name",
-}
-
-func (c *Config) validateConfigMappings() error {
-	for k, oc := range c.Origins {
-
-		if err := origins.ValidateOriginName(k); err != nil {
-			return err
-		}
-
-		if oc.OriginType == "rule" {
-			// Rule Type Validations
-			r, ok := c.Rules[oc.RuleName]
-			if !ok {
-				return fmt.Errorf("invalid rule name [%s] provided in origin config [%s]", oc.RuleName, k)
-			}
-			r.Name = oc.RuleName
-			oc.RuleOptions = r
-		} else // non-Rule Type Validations
-		if _, ok := c.Caches[oc.CacheName]; !ok {
-			return fmt.Errorf("invalid cache name [%s] provided in origin config [%s]", oc.CacheName, k)
-		}
-
-	}
-	return nil
-}
-
-func (c *Config) processOriginConfigs(metadata *toml.MetaData) error {
-
-	if metadata == nil {
-		return errors.New("invalid config metadata")
-	}
-
-	c.activeCaches = make(map[string]bool)
-
-	for k, v := range c.Origins {
-
-		oc := origins.New()
-		oc.Name = k
-
-		if metadata.IsDefined("origins", k, "req_rewriter_name") && v.ReqRewriterName != "" {
-			oc.ReqRewriterName = v.ReqRewriterName
-			ri, ok := c.CompiledRewriters[oc.ReqRewriterName]
-			if !ok {
-				return fmt.Errorf("invalid rewriter name %s in origin config %s",
-					oc.ReqRewriterName, k)
-			}
-			oc.ReqRewriter = ri
-		}
-
-		if metadata.IsDefined("origins", k, "origin_type") {
-			oc.OriginType = v.OriginType
-		}
-
-		if metadata.IsDefined("origins", k, "rule_name") {
-			oc.RuleName = v.RuleName
-		}
-
-		if metadata.IsDefined("origins", k, "path_routing_disabled") {
-			oc.PathRoutingDisabled = v.PathRoutingDisabled
-		}
-
-		if metadata.IsDefined("origins", k, "hosts") && v != nil {
-			oc.Hosts = make([]string, len(v.Hosts))
-			copy(oc.Hosts, v.Hosts)
-		}
-
-		if metadata.IsDefined("origins", k, "is_default") {
-			oc.IsDefault = v.IsDefault
-		}
-		// If there is only one origin and is_default is not explicitly false, make it true
-		if len(c.Origins) == 1 && (!metadata.IsDefined("origins", k, "is_default")) {
-			oc.IsDefault = true
-		}
-
-		if metadata.IsDefined("origins", k, "forwarded_headers") {
-			oc.ForwardedHeaders = v.ForwardedHeaders
-		}
-
-		if metadata.IsDefined("origins", k, "require_tls") {
-			oc.RequireTLS = v.RequireTLS
-		}
-
-		if metadata.IsDefined("origins", k, "cache_name") {
-			oc.CacheName = v.CacheName
-		}
-		c.activeCaches[oc.CacheName] = true
-
-		if metadata.IsDefined("origins", k, "cache_key_prefix") {
-			oc.CacheKeyPrefix = v.CacheKeyPrefix
-		}
-
-		if metadata.IsDefined("origins", k, "origin_url") {
-			oc.OriginURL = v.OriginURL
-		}
-
-		if metadata.IsDefined("origins", k, "compressable_types") {
-			oc.CompressableTypeList = v.CompressableTypeList
-		}
-
-		if metadata.IsDefined("origins", k, "timeout_secs") {
-			oc.TimeoutSecs = v.TimeoutSecs
-		}
-
-		if metadata.IsDefined("origins", k, "max_idle_conns") {
-			oc.MaxIdleConns = v.MaxIdleConns
-		}
-
-		if metadata.IsDefined("origins", k, "keep_alive_timeout_secs") {
-			oc.KeepAliveTimeoutSecs = v.KeepAliveTimeoutSecs
-		}
-
-		if metadata.IsDefined("origins", k, "timeseries_retention_factor") {
-			oc.TimeseriesRetentionFactor = v.TimeseriesRetentionFactor
-		}
-
-		if metadata.IsDefined("origins", k, "timeseries_eviction_method") {
-			oc.TimeseriesEvictionMethodName = strings.ToLower(v.TimeseriesEvictionMethodName)
-			if p, ok := evictionmethods.Names[oc.TimeseriesEvictionMethodName]; ok {
-				oc.TimeseriesEvictionMethod = p
-			}
-		}
-
-		if metadata.IsDefined("origins", k, "timeseries_ttl_secs") {
-			oc.TimeseriesTTLSecs = v.TimeseriesTTLSecs
-		}
-
-		if metadata.IsDefined("origins", k, "max_ttl_secs") {
-			oc.MaxTTLSecs = v.MaxTTLSecs
-		}
-
-		if metadata.IsDefined("origins", k, "fastforward_ttl_secs") {
-			oc.FastForwardTTLSecs = v.FastForwardTTLSecs
-		}
-
-		if metadata.IsDefined("origins", k, "fast_forward_disable") {
-			oc.FastForwardDisable = v.FastForwardDisable
-		}
-
-		if metadata.IsDefined("origins", k, "backfill_tolerance_secs") {
-			oc.BackfillToleranceSecs = v.BackfillToleranceSecs
-		}
-
-		if metadata.IsDefined("origins", k, "paths") {
-			var j = 0
-			for l, p := range v.Paths {
-				if metadata.IsDefined("origins", k, "paths", l, "req_rewriter_name") &&
-					p.ReqRewriterName != "" {
-					ri, ok := c.CompiledRewriters[p.ReqRewriterName]
-					if !ok {
-						return fmt.Errorf("invalid rewriter name %s in path %s of origin config %s",
-							p.ReqRewriterName, l, k)
-					}
-					p.ReqRewriter = ri
-				}
-				if len(p.Methods) == 0 {
-					p.Methods = []string{http.MethodGet, http.MethodHead}
-				}
-				p.Custom = make([]string, 0)
-				for _, pm := range pathMembers {
-					if metadata.IsDefined("origins", k, "paths", l, pm) {
-						p.Custom = append(p.Custom, pm)
-					}
-				}
-				if metadata.IsDefined("origins", k, "paths", l, "response_body") {
-					p.ResponseBodyBytes = []byte(p.ResponseBody)
-					p.HasCustomResponseBody = true
-				}
-				if metadata.IsDefined("origins", k, "paths", l, "collapsed_forwarding") {
-					if _, ok := forwarding.CollapsedForwardingTypeNames[p.CollapsedForwardingName]; !ok {
-						return fmt.Errorf("invalid collapsed_forwarding name: %s", p.CollapsedForwardingName)
-					}
-					p.CollapsedForwardingType =
-						forwarding.GetCollapsedForwardingType(p.CollapsedForwardingName)
-				} else {
-					p.CollapsedForwardingType = forwarding.CFTypeBasic
-				}
-				if mt, ok := matching.Names[strings.ToLower(p.MatchTypeName)]; ok {
-					p.MatchType = mt
-					p.MatchTypeName = p.MatchType.String()
-				} else {
-					p.MatchType = matching.PathMatchTypeExact
-					p.MatchTypeName = p.MatchType.String()
-				}
-				oc.Paths[p.Path+"-"+strings.Join(p.Methods, "-")] = p
-				j++
-			}
-		}
-
-		if metadata.IsDefined("origins", k, "negative_cache_name") {
-			oc.NegativeCacheName = v.NegativeCacheName
-		}
-
-		if metadata.IsDefined("origins", k, "tracing_name") {
-			oc.TracingConfigName = v.TracingConfigName
-		}
-
-		if metadata.IsDefined("origins", k, "health_check_upstream_path") {
-			oc.HealthCheckUpstreamPath = v.HealthCheckUpstreamPath
-		}
-
-		if metadata.IsDefined("origins", k, "health_check_verb") {
-			oc.HealthCheckVerb = v.HealthCheckVerb
-		}
-
-		if metadata.IsDefined("origins", k, "health_check_query") {
-			oc.HealthCheckQuery = v.HealthCheckQuery
-		}
-
-		if metadata.IsDefined("origins", k, "health_check_headers") {
-			oc.HealthCheckHeaders = v.HealthCheckHeaders
-		}
-
-		if metadata.IsDefined("origins", k, "max_object_size_bytes") {
-			oc.MaxObjectSizeBytes = v.MaxObjectSizeBytes
-		}
-
-		if metadata.IsDefined("origins", k, "revalidation_factor") {
-			oc.RevalidationFactor = v.RevalidationFactor
-		}
-
-		if metadata.IsDefined("origins", k, "multipart_ranges_disabled") {
-			oc.MultipartRangesDisabled = v.MultipartRangesDisabled
-		}
-
-		if metadata.IsDefined("origins", k, "dearticulate_upstream_ranges") {
-			oc.DearticulateUpstreamRanges = v.DearticulateUpstreamRanges
-		}
-
-		if metadata.IsDefined("origins", k, "tls") {
-			oc.TLS = &to.Options{
-				InsecureSkipVerify:        v.TLS.InsecureSkipVerify,
-				CertificateAuthorityPaths: v.TLS.CertificateAuthorityPaths,
-				PrivateKeyPath:            v.TLS.PrivateKeyPath,
-				FullChainCertPath:         v.TLS.FullChainCertPath,
-				ClientCertPath:            v.TLS.ClientCertPath,
-				ClientKeyPath:             v.TLS.ClientKeyPath,
-			}
-		}
-
-		c.Origins[k] = oc
-	}
-	return nil
-}
-
-func (c *Config) processCachingConfigs(metadata *toml.MetaData) error {
-
-	// setCachingDefaults assumes that processOriginConfigs was just ran
-
-	for k, v := range c.Caches {
-
-		if _, ok := c.activeCaches[k]; !ok {
-			// a configured cache was not used by any origin. don't even instantiate it
-			delete(c.Caches, k)
-			continue
-		}
-
-		cc := cache.New()
-		cc.Name = k
-
-		if metadata.IsDefined("caches", k, "cache_type") {
-			cc.CacheType = strings.ToLower(v.CacheType)
-			if n, ok := types.Names[cc.CacheType]; ok {
-				cc.CacheTypeID = n
-			}
-		}
-
-		if metadata.IsDefined("caches", k, "index", "reap_interval_secs") {
-			cc.Index.ReapIntervalSecs = v.Index.ReapIntervalSecs
-		}
-
-		if metadata.IsDefined("caches", k, "index", "flush_interval_secs") {
-			cc.Index.FlushIntervalSecs = v.Index.FlushIntervalSecs
-		}
-
-		if metadata.IsDefined("caches", k, "index", "max_size_bytes") {
-			cc.Index.MaxSizeBytes = v.Index.MaxSizeBytes
-		}
-
-		if metadata.IsDefined("caches", k, "index", "max_size_backoff_bytes") {
-			cc.Index.MaxSizeBackoffBytes = v.Index.MaxSizeBackoffBytes
-		}
-
-		if cc.Index.MaxSizeBytes > 0 && cc.Index.MaxSizeBackoffBytes > cc.Index.MaxSizeBytes {
-			return errors.New("MaxSizeBackoffBytes can't be larger than MaxSizeBytes")
-		}
-
-		if metadata.IsDefined("caches", k, "index", "max_size_objects") {
-			cc.Index.MaxSizeObjects = v.Index.MaxSizeObjects
-		}
-
-		if metadata.IsDefined("caches", k, "index", "max_size_backoff_objects") {
-			cc.Index.MaxSizeBackoffObjects = v.Index.MaxSizeBackoffObjects
-		}
-
-		if cc.Index.MaxSizeObjects > 0 && cc.Index.MaxSizeBackoffObjects > cc.Index.MaxSizeObjects {
-			return errors.New("MaxSizeBackoffObjects can't be larger than MaxSizeObjects")
-		}
-
-		if cc.CacheTypeID == types.CacheTypeRedis {
-
-			var hasEndpoint, hasEndpoints bool
-
-			ct := strings.ToLower(v.Redis.ClientType)
-			if metadata.IsDefined("caches", k, "redis", "client_type") {
-				cc.Redis.ClientType = ct
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "protocol") {
-				cc.Redis.Protocol = v.Redis.Protocol
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "endpoint") {
-				cc.Redis.Endpoint = v.Redis.Endpoint
-				hasEndpoint = true
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "endpoints") {
-				cc.Redis.Endpoints = v.Redis.Endpoints
-				hasEndpoints = true
-			}
-
-			if cc.Redis.ClientType == "standard" {
-				if hasEndpoints && !hasEndpoint {
-					c.LoaderWarnings = append(c.LoaderWarnings,
-						"'standard' redis type configured, but 'endpoints' value is provided instead of 'endpoint'")
-				}
-			} else {
-				if hasEndpoint && !hasEndpoints {
-					c.LoaderWarnings = append(c.LoaderWarnings, fmt.Sprintf(
-						"'%s' redis type configured, but 'endpoint' value is provided instead of 'endpoints'",
-						cc.Redis.ClientType))
-				}
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "sentinel_master") {
-				cc.Redis.SentinelMaster = v.Redis.SentinelMaster
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "password") {
-				cc.Redis.Password = v.Redis.Password
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "db") {
-				cc.Redis.DB = v.Redis.DB
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "max_retries") {
-				cc.Redis.MaxRetries = v.Redis.MaxRetries
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "min_retry_backoff_ms") {
-				cc.Redis.MinRetryBackoffMS = v.Redis.MinRetryBackoffMS
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "max_retry_backoff_ms") {
-				cc.Redis.MaxRetryBackoffMS = v.Redis.MaxRetryBackoffMS
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "dial_timeout_ms") {
-				cc.Redis.DialTimeoutMS = v.Redis.DialTimeoutMS
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "read_timeout_ms") {
-				cc.Redis.ReadTimeoutMS = v.Redis.ReadTimeoutMS
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "write_timeout_ms") {
-				cc.Redis.WriteTimeoutMS = v.Redis.WriteTimeoutMS
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "pool_size") {
-				cc.Redis.PoolSize = v.Redis.PoolSize
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "min_idle_conns") {
-				cc.Redis.MinIdleConns = v.Redis.MinIdleConns
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "max_conn_age_ms") {
-				cc.Redis.MaxConnAgeMS = v.Redis.MaxConnAgeMS
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "pool_timeout_ms") {
-				cc.Redis.PoolTimeoutMS = v.Redis.PoolTimeoutMS
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "idle_timeout_ms") {
-				cc.Redis.IdleTimeoutMS = v.Redis.IdleTimeoutMS
-			}
-
-			if metadata.IsDefined("caches", k, "redis", "idle_check_frequency_ms") {
-				cc.Redis.IdleCheckFrequencyMS = v.Redis.IdleCheckFrequencyMS
-			}
-		}
-
-		if metadata.IsDefined("caches", k, "filesystem", "cache_path") {
-			cc.Filesystem.CachePath = v.Filesystem.CachePath
-		}
-
-		if metadata.IsDefined("caches", k, "bbolt", "filename") {
-			cc.BBolt.Filename = v.BBolt.Filename
-		}
-
-		if metadata.IsDefined("caches", k, "bbolt", "bucket") {
-			cc.BBolt.Bucket = v.BBolt.Bucket
-		}
-
-		if metadata.IsDefined("caches", k, "badger", "directory") {
-			cc.Badger.Directory = v.Badger.Directory
-		}
-
-		if metadata.IsDefined("caches", k, "badger", "value_directory") {
-			cc.Badger.ValueDirectory = v.Badger.ValueDirectory
-		}
-
-		c.Caches[k] = cc
-	}
-	return nil
 }
 
 // Clone returns an exact copy of the subject *Config

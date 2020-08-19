@@ -17,8 +17,12 @@
 package options
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 
+	"github.com/BurntSushi/toml"
 	"github.com/tricksterproxy/trickster/pkg/cache/key"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
@@ -84,6 +88,9 @@ type Options struct {
 	// this flag allows an empty string response to be configured as a return value
 	HasCustomResponseBody bool `toml:"-"`
 }
+
+// Lookup is a map of Options
+type Lookup map[string]*Options
 
 // New returns a newly-instantiated path *Options
 func New() *Options {
@@ -196,47 +203,55 @@ var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_ke
 	"req_rewriter_name",
 }
 
-// func ProcessTOML() {
-// 	for l, p := range options.Paths {
-// 		if metadata.IsDefined("origins", name, "paths", l, "req_rewriter_name") &&
-// 			p.ReqRewriterName != "" {
-// 			ri, ok := crw[p.ReqRewriterName]
-// 			if !ok {
-// 				return nil, fmt.Errorf("invalid rewriter name %s in path %s of origin config %s",
-// 					p.ReqRewriterName, l, name)
-// 			}
-// 			p.ReqRewriter = ri
-// 		}
-// 		if len(p.Methods) == 0 {
-// 			p.Methods = []string{http.MethodGet, http.MethodHead}
-// 		}
-// 		p.Custom = make([]string, 0)
-// 		for _, pm := range pathMembers {
-// 			if metadata.IsDefined("origins", name, "paths", l, pm) {
-// 				p.Custom = append(p.Custom, pm)
-// 			}
-// 		}
-// 		if metadata.IsDefined("origins", name, "paths", l, "response_body") {
-// 			p.ResponseBodyBytes = []byte(p.ResponseBody)
-// 			p.HasCustomResponseBody = true
-// 		}
-// 		if metadata.IsDefined("origins", name, "paths", l, "collapsed_forwarding") {
-// 			if _, ok := forwarding.CollapsedForwardingTypeNames[p.CollapsedForwardingName]; !ok {
-// 				return nil, fmt.Errorf("invalid collapsed_forwarding name: %s", p.CollapsedForwardingName)
-// 			}
-// 			p.CollapsedForwardingType =
-// 				forwarding.GetCollapsedForwardingType(p.CollapsedForwardingName)
-// 		} else {
-// 			p.CollapsedForwardingType = forwarding.CFTypeBasic
-// 		}
-// 		if mt, ok := matching.Names[strings.ToLower(p.MatchTypeName)]; ok {
-// 			p.MatchType = mt
-// 			p.MatchTypeName = p.MatchType.String()
-// 		} else {
-// 			p.MatchType = matching.PathMatchTypeExact
-// 			p.MatchTypeName = p.MatchType.String()
-// 		}
-// 		oc.Paths[p.Path+"-"+strings.Join(p.Methods, "-")] = p
-// 		j++
-// 	}
-// }
+func ProcessTOML(
+	originName string,
+	metadata *toml.MetaData,
+	paths Lookup,
+	crw map[string]rewriter.RewriteInstructions,
+) error {
+	if metadata == nil {
+		return errors.New("invalid config metadata")
+	}
+	for k, p := range paths {
+		if metadata.IsDefined("origins", originName, "paths", k, "req_rewriter_name") &&
+			p.ReqRewriterName != "" {
+			ri, ok := crw[p.ReqRewriterName]
+			if !ok {
+				return fmt.Errorf("invalid rewriter name %s in path %s of origin config %s",
+					p.ReqRewriterName, k, originName)
+			}
+			p.ReqRewriter = ri
+		}
+		if len(p.Methods) == 0 {
+			p.Methods = []string{http.MethodGet, http.MethodHead}
+		}
+		p.Custom = make([]string, 0)
+		for _, pm := range pathMembers {
+			if metadata.IsDefined("origins", originName, "paths", k, pm) {
+				p.Custom = append(p.Custom, pm)
+			}
+		}
+		if metadata.IsDefined("origins", originName, "paths", k, "response_body") {
+			p.ResponseBodyBytes = []byte(p.ResponseBody)
+			p.HasCustomResponseBody = true
+		}
+		if metadata.IsDefined("origins", originName, "paths", k, "collapsed_forwarding") {
+			if _, ok := forwarding.CollapsedForwardingTypeNames[p.CollapsedForwardingName]; !ok {
+				return fmt.Errorf("invalid collapsed_forwarding name: %s", p.CollapsedForwardingName)
+			}
+			p.CollapsedForwardingType =
+				forwarding.GetCollapsedForwardingType(p.CollapsedForwardingName)
+		} else {
+			p.CollapsedForwardingType = forwarding.CFTypeBasic
+		}
+		if mt, ok := matching.Names[strings.ToLower(p.MatchTypeName)]; ok {
+			p.MatchType = mt
+			p.MatchTypeName = p.MatchType.String()
+		} else {
+			p.MatchType = matching.PathMatchTypeExact
+			p.MatchTypeName = p.MatchType.String()
+		}
+		paths[p.Path+"-"+strings.Join(p.Methods, "-")] = p
+	}
+	return nil
+}

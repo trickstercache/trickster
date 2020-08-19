@@ -18,12 +18,19 @@ package options
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
+	"github.com/tricksterproxy/trickster/pkg/cache/negative"
+	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
-	rule "github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	ro "github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
@@ -32,6 +39,9 @@ import (
 )
 
 var restrictedOriginNames = map[string]bool{"frontend": true}
+
+// Lookup is a map of Options
+type Lookup map[string]*Options
 
 // Options is a collection of configurations for Origins proxied by Trickster
 type Options struct {
@@ -146,7 +156,7 @@ type Options struct {
 	// request url, derived from OriginURL
 	PathPrefix string `toml:"-"`
 	// NegativeCache provides a map for the negative cache, with TTLs converted to time.Durations
-	NegativeCache map[int]time.Duration `toml:"-"`
+	NegativeCache negative.Lookup `toml:"-"`
 	// TimeseriesRetention when subtracted from time.Now() represents the oldest allowable timestamp in a
 	// timeseries when EvictionMethod is 'oldest'
 	TimeseriesRetention time.Duration `toml:"-"`
@@ -165,12 +175,12 @@ type Options struct {
 	// CompressableTypes is the map version of CompressableTypeList for fast lookup
 	CompressableTypes map[string]bool `toml:"-"`
 	// RuleOptions is the reference to the Rule Options as indicated by RuleName
-	RuleOptions *rule.Options `toml:"-"`
+	RuleOptions *ro.Options `toml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
 	ReqRewriter rewriter.RewriteInstructions
 }
 
-// New will return a pointer to an origins.Options reference, with the default configuration settings
+// New will return a pointer to an OriginConfig with the default configuration settings
 func New() *Options {
 	return &Options{
 		BackfillTolerance:            d.DefaultBackfillToleranceSecs,
@@ -273,9 +283,8 @@ func (oc *Options) Clone() *Options {
 		}
 	}
 
-	o.HealthCheckHeaders = make(map[string]string)
-	for k, v := range oc.HealthCheckHeaders {
-		o.HealthCheckHeaders[k] = v
+	if oc.HealthCheckHeaders != nil {
+		o.HealthCheckHeaders = headers.Lookup(oc.HealthCheckHeaders).Clone()
 	}
 
 	o.Paths = make(map[string]*po.Options)
@@ -308,6 +317,63 @@ func (oc *Options) Clone() *Options {
 	return o
 }
 
+// Validate validates the Lookup collection of Origin Options
+func (l Lookup) Validate(ncl negative.Lookups) error {
+	for k, o := range l {
+		if o.OriginType == "" {
+			return fmt.Errorf(`missing origin-type for origin "%s"`, k)
+		}
+		if (o.OriginType != "rule" && o.OriginType != "alb") && o.OriginURL == "" {
+			return fmt.Errorf(`missing origin-url for origin "%s"`, k)
+		}
+		url, err := url.Parse(o.OriginURL)
+		if err != nil {
+			return err
+		}
+		if strings.HasSuffix(url.Path, "/") {
+			url.Path = url.Path[0 : len(url.Path)-1]
+		}
+		o.Name = k
+		o.Scheme = url.Scheme
+		o.Host = url.Host
+		o.PathPrefix = url.Path
+		o.Timeout = time.Duration(o.TimeoutSecs) * time.Second
+		o.BackfillTolerance = time.Duration(o.BackfillToleranceSecs) * time.Second
+		o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
+		o.TimeseriesTTL = time.Duration(o.TimeseriesTTLSecs) * time.Second
+		o.FastForwardTTL = time.Duration(o.FastForwardTTLSecs) * time.Second
+		o.MaxTTL = time.Duration(o.MaxTTLSecs) * time.Second
+		if o.CompressableTypeList != nil {
+			o.CompressableTypes = make(map[string]bool)
+			for _, v := range o.CompressableTypeList {
+				o.CompressableTypes[v] = true
+			}
+		}
+		if o.CacheKeyPrefix == "" {
+			o.CacheKeyPrefix = o.Host
+		}
+
+		nc := ncl.Get(o.NegativeCacheName)
+		if nc == nil {
+			return fmt.Errorf(`invalid negative cache name: %s`, o.NegativeCacheName)
+		}
+		o.NegativeCache = nc
+
+		// enforce MaxTTL
+		if o.TimeseriesTTLSecs > o.MaxTTLSecs {
+			o.TimeseriesTTLSecs = o.MaxTTLSecs
+			o.TimeseriesTTL = o.MaxTTL
+		}
+
+		// unlikely but why not spend a few nanoseconds to check it at startup
+		if o.FastForwardTTLSecs > o.MaxTTLSecs {
+			o.FastForwardTTLSecs = o.MaxTTLSecs
+			o.FastForwardTTL = o.MaxTTL
+		}
+	}
+	return nil
+}
+
 // ValidateOriginName ensures the origin name is permitted against the dictionary of
 // restricted words
 func ValidateOriginName(name string) error {
@@ -315,4 +381,228 @@ func ValidateOriginName(name string) error {
 		return errors.New("invalid origin name:" + name)
 	}
 	return nil
+}
+
+// ValidateConfigMappings ensures that named config mappings from within orign configs
+// (e.g., origins.cache_name) are valid
+func (l Lookup) ValidateConfigMappings(rules ro.Lookup, caches co.Lookup) error {
+	for k, oc := range l {
+		if err := ValidateOriginName(k); err != nil {
+			return err
+		}
+		switch oc.OriginType {
+		case "rule":
+			// Rule Type Validations
+			r, ok := rules[oc.RuleName]
+			if !ok {
+				return fmt.Errorf("invalid rule name [%s] provided in origin config [%s]", oc.RuleName, k)
+			}
+			r.Name = oc.RuleName
+			oc.RuleOptions = r
+		case "alb":
+		default:
+			if _, ok := caches[oc.CacheName]; !ok {
+				return fmt.Errorf("invalid cache name [%s] provided in origin config [%s]", oc.CacheName, k)
+			}
+		}
+	}
+	return nil
+}
+
+// ValidateTLSConfigs iterates the map and validates any Options that use TLS
+func (l Lookup) ValidateTLSConfigs() (bool, error) {
+	var serveTLS bool
+	for _, oc := range l {
+		if oc.TLS != nil {
+			b, err := oc.TLS.Validate()
+			if err != nil {
+				return false, err
+			}
+			if b {
+				serveTLS = true
+			}
+		}
+	}
+	return serveTLS, nil
+}
+
+// ProcessTOML iterates a TOML Config
+func ProcessTOML(
+	name string,
+	options *Options,
+	metadata *toml.MetaData,
+	crw map[string]rewriter.RewriteInstructions,
+	origins Lookup,
+	activeCaches map[string]bool,
+) (*Options, error) {
+
+	if metadata == nil {
+		return nil, errors.New("invalid config metadata")
+	}
+
+	oc := New()
+	oc.Name = name
+
+	if metadata.IsDefined("origins", name, "req_rewriter_name") && options.ReqRewriterName != "" {
+		oc.ReqRewriterName = options.ReqRewriterName
+		ri, ok := crw[oc.ReqRewriterName]
+		if !ok {
+			return nil, fmt.Errorf("invalid rewriter name %s in origin config %s",
+				oc.ReqRewriterName, name)
+		}
+		oc.ReqRewriter = ri
+	}
+
+	if metadata.IsDefined("origins", name, "origin_type") {
+		oc.OriginType = options.OriginType
+	}
+
+	if metadata.IsDefined("origins", name, "rule_name") {
+		oc.RuleName = options.RuleName
+	}
+
+	if metadata.IsDefined("origins", name, "path_routing_disabled") {
+		oc.PathRoutingDisabled = options.PathRoutingDisabled
+	}
+
+	if metadata.IsDefined("origins", name, "hosts") && options != nil {
+		oc.Hosts = make([]string, len(options.Hosts))
+		copy(oc.Hosts, options.Hosts)
+	}
+
+	if metadata.IsDefined("origins", name, "is_default") {
+		oc.IsDefault = options.IsDefault
+	}
+	// If there is only one origin and is_default is not explicitly false, make it true
+	if len(origins) == 1 && (!metadata.IsDefined("origins", name, "is_default")) {
+		oc.IsDefault = true
+	}
+
+	if metadata.IsDefined("origins", name, "forwarded_headers") {
+		oc.ForwardedHeaders = options.ForwardedHeaders
+	}
+
+	if metadata.IsDefined("origins", name, "require_tls") {
+		oc.RequireTLS = options.RequireTLS
+	}
+
+	if metadata.IsDefined("origins", name, "cache_name") {
+		oc.CacheName = options.CacheName
+	}
+	activeCaches[oc.CacheName] = true
+
+	if metadata.IsDefined("origins", name, "cache_key_prefix") {
+		oc.CacheKeyPrefix = options.CacheKeyPrefix
+	}
+
+	if metadata.IsDefined("origins", name, "origin_url") {
+		oc.OriginURL = options.OriginURL
+	}
+
+	if metadata.IsDefined("origins", name, "compressable_types") {
+		oc.CompressableTypeList = options.CompressableTypeList
+	}
+
+	if metadata.IsDefined("origins", name, "timeout_secs") {
+		oc.TimeoutSecs = options.TimeoutSecs
+	}
+
+	if metadata.IsDefined("origins", name, "max_idle_conns") {
+		oc.MaxIdleConns = options.MaxIdleConns
+	}
+
+	if metadata.IsDefined("origins", name, "keep_alive_timeout_secs") {
+		oc.KeepAliveTimeoutSecs = options.KeepAliveTimeoutSecs
+	}
+
+	if metadata.IsDefined("origins", name, "timeseries_retention_factor") {
+		oc.TimeseriesRetentionFactor = options.TimeseriesRetentionFactor
+	}
+
+	if metadata.IsDefined("origins", name, "timeseries_eviction_method") {
+		oc.TimeseriesEvictionMethodName = strings.ToLower(options.TimeseriesEvictionMethodName)
+		if p, ok := evictionmethods.Names[oc.TimeseriesEvictionMethodName]; ok {
+			oc.TimeseriesEvictionMethod = p
+		}
+	}
+
+	if metadata.IsDefined("origins", name, "timeseries_ttl_secs") {
+		oc.TimeseriesTTLSecs = options.TimeseriesTTLSecs
+	}
+
+	if metadata.IsDefined("origins", name, "max_ttl_secs") {
+		oc.MaxTTLSecs = options.MaxTTLSecs
+	}
+
+	if metadata.IsDefined("origins", name, "fastforward_ttl_secs") {
+		oc.FastForwardTTLSecs = options.FastForwardTTLSecs
+	}
+
+	if metadata.IsDefined("origins", name, "fast_forward_disable") {
+		oc.FastForwardDisable = options.FastForwardDisable
+	}
+
+	if metadata.IsDefined("origins", name, "backfill_tolerance_secs") {
+		oc.BackfillToleranceSecs = options.BackfillToleranceSecs
+	}
+
+	if metadata.IsDefined("origins", name, "paths") {
+		err := po.ProcessTOML(name, metadata, options.Paths, crw)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if metadata.IsDefined("origins", name, "negative_cache_name") {
+		oc.NegativeCacheName = options.NegativeCacheName
+	}
+
+	if metadata.IsDefined("origins", name, "tracing_name") {
+		oc.TracingConfigName = options.TracingConfigName
+	}
+
+	if metadata.IsDefined("origins", name, "health_check_upstream_path") {
+		oc.HealthCheckUpstreamPath = options.HealthCheckUpstreamPath
+	}
+
+	if metadata.IsDefined("origins", name, "health_check_verb") {
+		oc.HealthCheckVerb = options.HealthCheckVerb
+	}
+
+	if metadata.IsDefined("origins", name, "health_check_query") {
+		oc.HealthCheckQuery = options.HealthCheckQuery
+	}
+
+	if metadata.IsDefined("origins", name, "health_check_headers") {
+		oc.HealthCheckHeaders = options.HealthCheckHeaders
+	}
+
+	if metadata.IsDefined("origins", name, "max_object_size_bytes") {
+		oc.MaxObjectSizeBytes = options.MaxObjectSizeBytes
+	}
+
+	if metadata.IsDefined("origins", name, "revalidation_factor") {
+		oc.RevalidationFactor = options.RevalidationFactor
+	}
+
+	if metadata.IsDefined("origins", name, "multipart_ranges_disabled") {
+		oc.MultipartRangesDisabled = options.MultipartRangesDisabled
+	}
+
+	if metadata.IsDefined("origins", name, "dearticulate_upstream_ranges") {
+		oc.DearticulateUpstreamRanges = options.DearticulateUpstreamRanges
+	}
+
+	if metadata.IsDefined("origins", name, "tls") {
+		oc.TLS = &to.Options{
+			InsecureSkipVerify:        options.TLS.InsecureSkipVerify,
+			CertificateAuthorityPaths: options.TLS.CertificateAuthorityPaths,
+			PrivateKeyPath:            options.TLS.PrivateKeyPath,
+			FullChainCertPath:         options.TLS.FullChainCertPath,
+			ClientCertPath:            options.TLS.ClientCertPath,
+			ClientKeyPath:             options.TLS.ClientKeyPath,
+		}
+	}
+
+	return oc, nil
 }
