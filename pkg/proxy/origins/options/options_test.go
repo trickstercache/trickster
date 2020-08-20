@@ -17,9 +17,11 @@
 package options
 
 import (
+	"io/ioutil"
 	"testing"
 	"time"
 
+	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	ro "github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 )
@@ -60,5 +62,51 @@ func TestValidateOriginName(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for invalid origin name")
 	}
+
+}
+
+func testConfig() (Lookup, string) {
+	//_, toml := testutil.EmptyTestConfig()
+	n := New()
+	n.Name = "test"
+	n.OriginType = "test"
+	n.OriginURL = "http://1"
+	ol := Lookup{"test": n}
+
+	b, err := ioutil.ReadFile("../../../../testdata/test.empty.conf")
+	if err != nil {
+		panic(err)
+	}
+	// tml, err := toml.Decode(string(b), nil)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	return ol, string(b)
+}
+
+func TestValidateConfigMappings(t *testing.T) {
+
+	ol, _ := testConfig()
+	oc := ol["test"]
+	ol["frontend"] = oc
+	err := ol.ValidateConfigMappings(ro.Lookup{}, co.Lookup{})
+	if err == nil {
+		t.Error("expected error for invalid origin name")
+	}
+
+	// delete(oc, "frontend")
+	// oc.OriginType = "rule"
+	// oc.RuleName = "invalid"
+	// err = c.validateConfigMappings()
+	// if err == nil {
+	// 	t.Error("expected error for invalid rule name")
+	// }
+
+	// toml = strings.Replace(
+	// 	toml+testRule,
+	// 	"    origin_type = 'test'",
+	// 	"    origin_type = 'rule'\n    rule_name = 'example'",
+	// 	-1,
+	// )
 
 }
