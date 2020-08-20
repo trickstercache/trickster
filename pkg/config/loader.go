@@ -23,6 +23,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/tricksterproxy/trickster/pkg/cache/negative"
 )
 
 // Load returns the Application Configuration, starting with a default config,
@@ -75,16 +77,9 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		return nil, flags, errors.New("no valid origins configured")
 	}
 
-	for k, n := range c.NegativeCacheConfigs {
-		for c := range n {
-			ci, err := strconv.Atoi(c)
-			if err != nil {
-				return nil, flags, fmt.Errorf(`invalid negative cache config in %s: %s is not a valid status code`, k, c)
-			}
-			if ci < 400 || ci >= 600 {
-				return nil, flags, fmt.Errorf(`invalid negative cache config in %s: %s is not a valid status code`, k, c)
-			}
-		}
+	_, err = negative.ConfigLookup(c.NegativeCacheConfigs).Validate()
+	if err != nil {
+		return nil, flags, err
 	}
 
 	for k, o := range c.Origins {

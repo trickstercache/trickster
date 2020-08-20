@@ -79,7 +79,7 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 		},
 		{ // Case 5
 			"../../testdata/test.invalid-negative-cache-2.conf",
-			`invalid negative cache config in default: 1212 is not a valid status code`,
+			`invalid negative cache config in default: 1212 is not >= 400 and < 600`,
 		},
 		{ // Case 6
 			"../../testdata/test.invalid-negative-cache-3.conf",
