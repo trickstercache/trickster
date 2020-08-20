@@ -52,7 +52,7 @@ func TestReloadHandleFunc(t *testing.T) {
 	defer os.Remove(testFile)
 
 	cfg, _, _ := config.Load("testing", "testing", []string{"-config", testFile})
-	cfg.ReloadConfig.RateLimitSecs = 0
+	cfg.ReloadConfig.RateLimitMS = 0
 	log := tl.ConsoleLogger("info")
 	w := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "/", nil)

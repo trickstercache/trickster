@@ -55,10 +55,10 @@ type Options struct {
 	// OriginURL provides the base upstream URL for all proxied requests to this origin.
 	// it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
 	OriginURL string `toml:"origin_url"`
-	// TimeoutSecs defines how long the HTTP request will wait for a response before timing out
-	TimeoutSecs int64 `toml:"timeout_secs"`
-	// KeepAliveTimeoutSecs defines how long an open keep-alive HTTP connection remains idle before closing
-	KeepAliveTimeoutSecs int64 `toml:"keep_alive_timeout_secs"`
+	// TimeoutMS defines how long the HTTP request will wait for a response before timing out
+	TimeoutMS int64 `toml:"timeout_ms"`
+	// KeepAliveTimeoutMS defines how long an open keep-alive HTTP connection remains idle before closing
+	KeepAliveTimeoutMS int64 `toml:"keep_alive_timeout_ms"`
 	// MaxIdleConns defines maximum number of open keep-alive connections to maintain
 	MaxIdleConns int `toml:"max_idle_conns"`
 	// CacheName provides the name of the configured cache where the origin client will store it's cache data
@@ -80,20 +80,20 @@ type Options struct {
 	// TimeseriesEvictionMethodName specifies which methodology ("oldest", "lru") is used to identify
 	//timeseries to evict from a full cache object
 	TimeseriesEvictionMethodName string `toml:"timeseries_eviction_method"`
-	// BackfillToleranceSecs prevents values with timestamps newer than the provided
+	// BackfillToleranceMS prevents values with timestamps newer than the provided
 	// number of seconds from being cached this allows propagation of upstream backfill operations
 	// that modify recently-served data
-	BackfillToleranceSecs int64 `toml:"backfill_tolerance_secs"`
+	BackfillToleranceMS int64 `toml:"backfill_tolerance_ms"`
 	// PathList is a list of Path Options that control the behavior of the given paths when requested
 	Paths map[string]*po.Options `toml:"paths"`
 	// NegativeCacheName provides the name of the Negative Cache Config to be used by this Origin
 	NegativeCacheName string `toml:"negative_cache_name"`
-	// TimeseriesTTLSecs specifies the cache TTL of timeseries objects
-	TimeseriesTTLSecs int `toml:"timeseries_ttl_secs"`
-	// TimeseriesTTLSecs specifies the cache TTL of fast forward data
-	FastForwardTTLSecs int `toml:"fastforward_ttl_secs"`
-	// MaxTTLSecs specifies the maximum allowed TTL for any cache object
-	MaxTTLSecs int `toml:"max_ttl_secs"`
+	// TimeseriesTTLMS specifies the cache TTL of timeseries objects
+	TimeseriesTTLMS int `toml:"timeseries_ttl_ms"`
+	// TimeseriesTTLMS specifies the cache TTL of fast forward data
+	FastForwardTTLMS int `toml:"fastforward_ttl_ms"`
+	// MaxTTLMS specifies the maximum allowed TTL for any cache object
+	MaxTTLMS int `toml:"max_ttl_ms"`
 	// RevalidationFactor specifies how many times to multiply the object freshness lifetime
 	// by to calculate an absolute cache TTL
 	RevalidationFactor float64 `toml:"revalidation_factor"`
@@ -141,9 +141,9 @@ type Options struct {
 	Name string `toml:"-"`
 	// Router is a mux.Router containing this origin's Path Routes; it is set during route registration
 	Router *mux.Router `toml:"-"`
-	// Timeout is the time.Duration representation of TimeoutSecs
+	// Timeout is the time.Duration representation of TimeoutMS
 	Timeout time.Duration `toml:"-"`
-	// BackfillTolerance is the time.Duration representation of BackfillToleranceSecs
+	// BackfillTolerance is the time.Duration representation of BackfillToleranceMS
 	BackfillTolerance time.Duration `toml:"-"`
 	// ValueRetention is the time.Duration representation of ValueRetentionSecs
 	ValueRetention time.Duration `toml:"-"`
@@ -162,13 +162,13 @@ type Options struct {
 	TimeseriesRetention time.Duration `toml:"-"`
 	// TimeseriesEvictionMethod is the parsed value of TimeseriesEvictionMethodName
 	TimeseriesEvictionMethod evictionmethods.TimeseriesEvictionMethod `toml:"-"`
-	// TimeseriesTTL is the parsed value of TimeseriesTTLSecs
+	// TimeseriesTTL is the parsed value of TimeseriesTTLMS
 	TimeseriesTTL time.Duration `toml:"-"`
 	// FastForwardTTL is the parsed value of FastForwardTTL
 	FastForwardTTL time.Duration `toml:"-"`
 	// FastForwardPath is the paths.Options to use for upstream Fast Forward Requests
 	FastForwardPath *po.Options `toml:"-"`
-	// MaxTTL is the parsed value of MaxTTLSecs
+	// MaxTTL is the parsed value of MaxTTLMS
 	MaxTTL time.Duration `toml:"-"`
 	// HTTPClient is the Client used by trickster to communicate with this origin
 	HTTPClient *http.Client `toml:"-"`
@@ -183,36 +183,36 @@ type Options struct {
 // New will return a pointer to an OriginConfig with the default configuration settings
 func New() *Options {
 	return &Options{
-		BackfillTolerance:            d.DefaultBackfillToleranceSecs,
-		BackfillToleranceSecs:        d.DefaultBackfillToleranceSecs,
+		BackfillTolerance:            d.DefaultBackfillToleranceMS,
+		BackfillToleranceMS:          d.DefaultBackfillToleranceMS,
 		CacheKeyPrefix:               "",
 		CacheName:                    d.DefaultOriginCacheName,
 		CompressableTypeList:         d.DefaultCompressableTypes(),
-		FastForwardTTL:               d.DefaultFastForwardTTLSecs * time.Second,
-		FastForwardTTLSecs:           d.DefaultFastForwardTTLSecs,
+		FastForwardTTL:               d.DefaultFastForwardTTLMS * time.Millisecond,
+		FastForwardTTLMS:             d.DefaultFastForwardTTLMS,
 		ForwardedHeaders:             d.DefaultForwardedHeaders,
 		HealthCheckHeaders:           make(map[string]string),
 		HealthCheckQuery:             d.DefaultHealthCheckQuery,
 		HealthCheckUpstreamPath:      d.DefaultHealthCheckPath,
 		HealthCheckVerb:              d.DefaultHealthCheckVerb,
-		KeepAliveTimeoutSecs:         d.DefaultKeepAliveTimeoutSecs,
+		KeepAliveTimeoutMS:           d.DefaultKeepAliveTimeoutMS,
 		MaxIdleConns:                 d.DefaultMaxIdleConns,
 		MaxObjectSizeBytes:           d.DefaultMaxObjectSizeBytes,
-		MaxTTL:                       d.DefaultMaxTTLSecs * time.Second,
-		MaxTTLSecs:                   d.DefaultMaxTTLSecs,
+		MaxTTL:                       d.DefaultMaxTTLMS * time.Millisecond,
+		MaxTTLMS:                     d.DefaultMaxTTLMS,
 		NegativeCache:                make(map[int]time.Duration),
 		NegativeCacheName:            d.DefaultOriginNegativeCacheName,
 		Paths:                        make(map[string]*po.Options),
 		RevalidationFactor:           d.DefaultRevalidationFactor,
 		TLS:                          &to.Options{},
-		Timeout:                      time.Second * d.DefaultOriginTimeoutSecs,
-		TimeoutSecs:                  d.DefaultOriginTimeoutSecs,
+		Timeout:                      time.Millisecond * d.DefaultOriginTimeoutMS,
+		TimeoutMS:                    d.DefaultOriginTimeoutMS,
 		TimeseriesEvictionMethod:     d.DefaultOriginTEM,
 		TimeseriesEvictionMethodName: d.DefaultOriginTEMName,
 		TimeseriesRetention:          d.DefaultOriginTRF,
 		TimeseriesRetentionFactor:    d.DefaultOriginTRF,
-		TimeseriesTTL:                d.DefaultTimeseriesTTLSecs * time.Second,
-		TimeseriesTTLSecs:            d.DefaultTimeseriesTTLSecs,
+		TimeseriesTTL:                d.DefaultTimeseriesTTLMS * time.Millisecond,
+		TimeseriesTTLMS:              d.DefaultTimeseriesTTLMS,
 		TracingConfigName:            d.DefaultTracingConfigName,
 	}
 }
@@ -223,12 +223,12 @@ func (oc *Options) Clone() *Options {
 	o := &Options{}
 	o.DearticulateUpstreamRanges = oc.DearticulateUpstreamRanges
 	o.BackfillTolerance = oc.BackfillTolerance
-	o.BackfillToleranceSecs = oc.BackfillToleranceSecs
+	o.BackfillToleranceMS = oc.BackfillToleranceMS
 	o.CacheName = oc.CacheName
 	o.CacheKeyPrefix = oc.CacheKeyPrefix
 	o.FastForwardDisable = oc.FastForwardDisable
 	o.FastForwardTTL = oc.FastForwardTTL
-	o.FastForwardTTLSecs = oc.FastForwardTTLSecs
+	o.FastForwardTTLMS = oc.FastForwardTTLMS
 	o.ForwardedHeaders = oc.ForwardedHeaders
 	o.HealthCheckUpstreamPath = oc.HealthCheckUpstreamPath
 	o.HealthCheckVerb = oc.HealthCheckVerb
@@ -236,9 +236,9 @@ func (oc *Options) Clone() *Options {
 	o.Host = oc.Host
 	o.Name = oc.Name
 	o.IsDefault = oc.IsDefault
-	o.KeepAliveTimeoutSecs = oc.KeepAliveTimeoutSecs
+	o.KeepAliveTimeoutMS = oc.KeepAliveTimeoutMS
 	o.MaxIdleConns = oc.MaxIdleConns
-	o.MaxTTLSecs = oc.MaxTTLSecs
+	o.MaxTTLMS = oc.MaxTTLMS
 	o.MaxTTL = oc.MaxTTL
 	o.MaxObjectSizeBytes = oc.MaxObjectSizeBytes
 	o.MultipartRangesDisabled = oc.MultipartRangesDisabled
@@ -250,13 +250,13 @@ func (oc *Options) Clone() *Options {
 	o.RuleName = oc.RuleName
 	o.Scheme = oc.Scheme
 	o.Timeout = oc.Timeout
-	o.TimeoutSecs = oc.TimeoutSecs
+	o.TimeoutMS = oc.TimeoutMS
 	o.TimeseriesRetention = oc.TimeseriesRetention
 	o.TimeseriesRetentionFactor = oc.TimeseriesRetentionFactor
 	o.TimeseriesEvictionMethodName = oc.TimeseriesEvictionMethodName
 	o.TimeseriesEvictionMethod = oc.TimeseriesEvictionMethod
 	o.TimeseriesTTL = oc.TimeseriesTTL
-	o.TimeseriesTTLSecs = oc.TimeseriesTTLSecs
+	o.TimeseriesTTLMS = oc.TimeseriesTTLMS
 	o.ValueRetention = oc.ValueRetention
 
 	o.TracingConfigName = oc.TracingConfigName
@@ -337,12 +337,12 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 		o.Scheme = url.Scheme
 		o.Host = url.Host
 		o.PathPrefix = url.Path
-		o.Timeout = time.Duration(o.TimeoutSecs) * time.Second
-		o.BackfillTolerance = time.Duration(o.BackfillToleranceSecs) * time.Second
+		o.Timeout = time.Duration(o.TimeoutMS) * time.Millisecond
+		o.BackfillTolerance = time.Duration(o.BackfillToleranceMS) * time.Millisecond
 		o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
-		o.TimeseriesTTL = time.Duration(o.TimeseriesTTLSecs) * time.Second
-		o.FastForwardTTL = time.Duration(o.FastForwardTTLSecs) * time.Second
-		o.MaxTTL = time.Duration(o.MaxTTLSecs) * time.Second
+		o.TimeseriesTTL = time.Duration(o.TimeseriesTTLMS) * time.Millisecond
+		o.FastForwardTTL = time.Duration(o.FastForwardTTLMS) * time.Millisecond
+		o.MaxTTL = time.Duration(o.MaxTTLMS) * time.Millisecond
 		if o.CompressableTypeList != nil {
 			o.CompressableTypes = make(map[string]bool)
 			for _, v := range o.CompressableTypeList {
@@ -360,14 +360,14 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 		o.NegativeCache = nc
 
 		// enforce MaxTTL
-		if o.TimeseriesTTLSecs > o.MaxTTLSecs {
-			o.TimeseriesTTLSecs = o.MaxTTLSecs
+		if o.TimeseriesTTLMS > o.MaxTTLMS {
+			o.TimeseriesTTLMS = o.MaxTTLMS
 			o.TimeseriesTTL = o.MaxTTL
 		}
 
 		// unlikely but why not spend a few nanoseconds to check it at startup
-		if o.FastForwardTTLSecs > o.MaxTTLSecs {
-			o.FastForwardTTLSecs = o.MaxTTLSecs
+		if o.FastForwardTTLMS > o.MaxTTLMS {
+			o.FastForwardTTLMS = o.MaxTTLMS
 			o.FastForwardTTL = o.MaxTTL
 		}
 	}
@@ -503,16 +503,16 @@ func ProcessTOML(
 		oc.CompressableTypeList = options.CompressableTypeList
 	}
 
-	if metadata.IsDefined("origins", name, "timeout_secs") {
-		oc.TimeoutSecs = options.TimeoutSecs
+	if metadata.IsDefined("origins", name, "timeout_ms") {
+		oc.TimeoutMS = options.TimeoutMS
 	}
 
 	if metadata.IsDefined("origins", name, "max_idle_conns") {
 		oc.MaxIdleConns = options.MaxIdleConns
 	}
 
-	if metadata.IsDefined("origins", name, "keep_alive_timeout_secs") {
-		oc.KeepAliveTimeoutSecs = options.KeepAliveTimeoutSecs
+	if metadata.IsDefined("origins", name, "keep_alive_timeout_ms") {
+		oc.KeepAliveTimeoutMS = options.KeepAliveTimeoutMS
 	}
 
 	if metadata.IsDefined("origins", name, "timeseries_retention_factor") {
@@ -526,24 +526,24 @@ func ProcessTOML(
 		}
 	}
 
-	if metadata.IsDefined("origins", name, "timeseries_ttl_secs") {
-		oc.TimeseriesTTLSecs = options.TimeseriesTTLSecs
+	if metadata.IsDefined("origins", name, "timeseries_ttl_ms") {
+		oc.TimeseriesTTLMS = options.TimeseriesTTLMS
 	}
 
-	if metadata.IsDefined("origins", name, "max_ttl_secs") {
-		oc.MaxTTLSecs = options.MaxTTLSecs
+	if metadata.IsDefined("origins", name, "max_ttl_ms") {
+		oc.MaxTTLMS = options.MaxTTLMS
 	}
 
-	if metadata.IsDefined("origins", name, "fastforward_ttl_secs") {
-		oc.FastForwardTTLSecs = options.FastForwardTTLSecs
+	if metadata.IsDefined("origins", name, "fastforward_ttl_ms") {
+		oc.FastForwardTTLMS = options.FastForwardTTLMS
 	}
 
 	if metadata.IsDefined("origins", name, "fast_forward_disable") {
 		oc.FastForwardDisable = options.FastForwardDisable
 	}
 
-	if metadata.IsDefined("origins", name, "backfill_tolerance_secs") {
-		oc.BackfillToleranceSecs = options.BackfillToleranceSecs
+	if metadata.IsDefined("origins", name, "backfill_tolerance_ms") {
+		oc.BackfillToleranceMS = options.BackfillToleranceMS
 	}
 
 	if metadata.IsDefined("origins", name, "paths") {

@@ -24,10 +24,10 @@ import (
 
 // Options defines the operation of the Cache Indexer
 type Options struct {
-	// ReapIntervalSecs defines how long the Cache Index reaper sleeps between reap cycles
-	ReapIntervalSecs int `toml:"reap_interval_secs"`
-	// FlushIntervalSecs sets how often the Cache Index saves its metadata to the cache from application memory
-	FlushIntervalSecs int `toml:"flush_interval_secs"`
+	// ReapIntervalMS defines how long the Cache Index reaper sleeps between reap cycles
+	ReapIntervalMS int `toml:"reap_interval_ms"`
+	// FlushIntervalMS sets how often the Cache Index saves its metadata to the cache from application memory
+	FlushIntervalMS int `toml:"flush_interval_ms"`
 	// MaxSizeBytes indicates how large the cache can grow in bytes before the Index evicts
 	// least-recently-accessed items.
 	MaxSizeBytes int64 `toml:"max_size_bytes"`
@@ -48,8 +48,8 @@ type Options struct {
 // New returns a new Cache Index Options Reference with default values set
 func New() *Options {
 	return &Options{
-		ReapIntervalSecs:      d.DefaultCacheIndexReap,
-		FlushIntervalSecs:     d.DefaultCacheIndexFlush,
+		ReapIntervalMS:        d.DefaultCacheIndexReap,
+		FlushIntervalMS:       d.DefaultCacheIndexFlush,
 		MaxSizeBytes:          d.DefaultCacheMaxSizeBytes,
 		MaxSizeBackoffBytes:   d.DefaultMaxSizeBackoffBytes,
 		MaxSizeObjects:        d.DefaultMaxSizeObjects,
@@ -65,8 +65,8 @@ func (o *Options) Equal(o2 *Options) bool {
 		return false
 	}
 
-	return o.ReapIntervalSecs == o2.ReapIntervalSecs &&
-		o.FlushIntervalSecs == o2.FlushIntervalSecs &&
+	return o.ReapIntervalMS == o2.ReapIntervalMS &&
+		o.FlushIntervalMS == o2.FlushIntervalMS &&
 		o.MaxSizeBytes == o2.MaxSizeBytes &&
 		o.MaxSizeBackoffBytes == o2.MaxSizeBackoffBytes &&
 		o.MaxSizeObjects == o2.MaxSizeObjects &&

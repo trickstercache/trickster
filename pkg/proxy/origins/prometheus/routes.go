@@ -67,7 +67,7 @@ func (c *Client) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
 	var rhts map[string]string
 	if oc != nil {
 		rhts = map[string]string{
-			headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, oc.TimeseriesTTLSecs)}
+			headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, oc.TimeseriesTTLMS/1000)}
 	}
 	rhinst := map[string]string{
 		headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 30)}

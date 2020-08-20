@@ -131,8 +131,8 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 	r.Header.Add(headers.NameRange, "bytes=0-3")
 
 	oc := rsc.OriginConfig
-	oc.MaxTTLSecs = 15
-	oc.MaxTTL = time.Duration(oc.MaxTTLSecs) * time.Second
+	oc.MaxTTLMS = 15000
+	oc.MaxTTL = time.Duration(oc.MaxTTLMS) * time.Millisecond
 
 	_, e := testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "kmiss"})
 	for _, err = range e {
@@ -573,8 +573,8 @@ func TestObjectProxyCacheRequestWithPCF(t *testing.T) {
 	defer ts.Close()
 
 	oc := rsc.OriginConfig
-	oc.MaxTTLSecs = 15
-	oc.MaxTTL = time.Duration(oc.MaxTTLSecs) * time.Second
+	oc.MaxTTLMS = 15000
+	oc.MaxTTL = time.Duration(oc.MaxTTLMS) * time.Millisecond
 
 	r.Header.Set("testHeaderName", "testHeaderValue")
 

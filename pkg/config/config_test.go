@@ -287,7 +287,7 @@ func TestIsStale(t *testing.T) {
 	defer os.Remove(testFile)
 
 	c, _, _ := Load("testing", "testing", []string{"-config", testFile})
-	c.ReloadConfig.RateLimitSecs = 0
+	c.ReloadConfig.RateLimitMS = 0
 
 	if c.IsStale() {
 		t.Error("expected non-stale config")

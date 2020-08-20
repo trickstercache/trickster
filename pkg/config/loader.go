@@ -110,12 +110,12 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		o.Scheme = url.Scheme
 		o.Host = url.Host
 		o.PathPrefix = url.Path
-		o.Timeout = time.Duration(o.TimeoutSecs) * time.Second
-		o.BackfillTolerance = time.Duration(o.BackfillToleranceSecs) * time.Second
+		o.Timeout = time.Duration(o.TimeoutMS) * time.Millisecond
+		o.BackfillTolerance = time.Duration(o.BackfillToleranceMS) * time.Millisecond
 		o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
-		o.TimeseriesTTL = time.Duration(o.TimeseriesTTLSecs) * time.Second
-		o.FastForwardTTL = time.Duration(o.FastForwardTTLSecs) * time.Second
-		o.MaxTTL = time.Duration(o.MaxTTLSecs) * time.Second
+		o.TimeseriesTTL = time.Duration(o.TimeseriesTTLMS) * time.Millisecond
+		o.FastForwardTTL = time.Duration(o.FastForwardTTLMS) * time.Millisecond
+		o.MaxTTL = time.Duration(o.MaxTTLMS) * time.Millisecond
 
 		if o.CompressableTypeList != nil {
 			o.CompressableTypes = make(map[string]bool)
@@ -141,21 +141,21 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		o.NegativeCache = nc2
 
 		// enforce MaxTTL
-		if o.TimeseriesTTLSecs > o.MaxTTLSecs {
-			o.TimeseriesTTLSecs = o.MaxTTLSecs
+		if o.TimeseriesTTLMS > o.MaxTTLMS {
+			o.TimeseriesTTLMS = o.MaxTTLMS
 			o.TimeseriesTTL = o.MaxTTL
 		}
 
 		// unlikely but why not spend a few nanoseconds to check it at startup
-		if o.FastForwardTTLSecs > o.MaxTTLSecs {
-			o.FastForwardTTLSecs = o.MaxTTLSecs
+		if o.FastForwardTTLMS > o.MaxTTLMS {
+			o.FastForwardTTLMS = o.MaxTTLMS
 			o.FastForwardTTL = o.MaxTTL
 		}
 	}
 
 	for _, c := range c.Caches {
-		c.Index.FlushInterval = time.Duration(c.Index.FlushIntervalSecs) * time.Second
-		c.Index.ReapInterval = time.Duration(c.Index.ReapIntervalSecs) * time.Second
+		c.Index.FlushInterval = time.Duration(c.Index.FlushIntervalMS) * time.Millisecond
+		c.Index.ReapInterval = time.Duration(c.Index.ReapIntervalMS) * time.Millisecond
 	}
 
 	return c, flags, nil

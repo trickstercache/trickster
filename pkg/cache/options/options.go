@@ -81,13 +81,13 @@ func (cc *Options) Clone() *Options {
 	c.CacheTypeID = cc.CacheTypeID
 
 	c.Index.FlushInterval = cc.Index.FlushInterval
-	c.Index.FlushIntervalSecs = cc.Index.FlushIntervalSecs
+	c.Index.FlushIntervalMS = cc.Index.FlushIntervalMS
 	c.Index.MaxSizeBackoffBytes = cc.Index.MaxSizeBackoffBytes
 	c.Index.MaxSizeBackoffObjects = cc.Index.MaxSizeBackoffObjects
 	c.Index.MaxSizeBytes = cc.Index.MaxSizeBytes
 	c.Index.MaxSizeObjects = cc.Index.MaxSizeObjects
 	c.Index.ReapInterval = cc.Index.ReapInterval
-	c.Index.ReapIntervalSecs = cc.Index.ReapIntervalSecs
+	c.Index.ReapIntervalMS = cc.Index.ReapIntervalMS
 
 	c.Badger.Directory = cc.Badger.Directory
 	c.Badger.ValueDirectory = cc.Badger.ValueDirectory
@@ -159,12 +159,12 @@ func (l Lookup) ProcessTOML(metadata *toml.MetaData, activeCaches map[string]boo
 			}
 		}
 
-		if metadata.IsDefined("caches", k, "index", "reap_interval_secs") {
-			cc.Index.ReapIntervalSecs = v.Index.ReapIntervalSecs
+		if metadata.IsDefined("caches", k, "index", "reap_interval_ms") {
+			cc.Index.ReapIntervalMS = v.Index.ReapIntervalMS
 		}
 
-		if metadata.IsDefined("caches", k, "index", "flush_interval_secs") {
-			cc.Index.FlushIntervalSecs = v.Index.FlushIntervalSecs
+		if metadata.IsDefined("caches", k, "index", "flush_interval_ms") {
+			cc.Index.FlushIntervalMS = v.Index.FlushIntervalMS
 		}
 
 		if metadata.IsDefined("caches", k, "index", "max_size_bytes") {

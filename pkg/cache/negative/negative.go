@@ -1,5 +1,5 @@
 // Package negative defines the Negative Cache
-// which is a simple lookup map of httpStatus to TTL in secs
+// which is a simple lookup map of httpStatus to TTL in milliseconds
 package negative
 
 import (
@@ -16,7 +16,7 @@ func New() Config {
 	return Config{}
 }
 
-// Config is a collection of response codes and their TTLs
+// Config is a collection of response codes and their TTLs in milliseconds
 type Config map[string]int
 
 // Lookup is a collection of response codes and their TTLs as Durations
@@ -58,7 +58,7 @@ func (l ConfigLookup) Validate() (Lookups, error) {
 			if ci < 400 || ci >= 600 {
 				return nil, fmt.Errorf(`invalid negative cache config in %s: %s is not >= 400 and < 600`, k, c)
 			}
-			lk[ci] = time.Duration(t) * time.Second
+			lk[ci] = time.Duration(t) * time.Millisecond
 		}
 		if len(lk) > 0 {
 			ml[k] = lk
