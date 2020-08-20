@@ -133,32 +133,12 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 		}
 	}
 
-	err = validateRuleClients(clients, conf.CompiledRewriters)
+	err = rule.ValidateOptions(clients, conf.CompiledRewriters)
 	if err != nil {
 		return nil, err
 	}
 
 	return clients, nil
-}
-
-// This ensures that rule clients are fully loaded, which can't be done
-// until all origins are processed, so the rule's destination origin names
-// can be mapped to their respective clients
-func validateRuleClients(clients origins.Origins,
-	rwi map[string]rewriter.RewriteInstructions) error {
-
-	ruleClients := make(rule.Clients, 0, len(clients))
-	for _, c := range clients {
-		if rc, ok := c.(*rule.Client); ok {
-			ruleClients = append(ruleClients, rc)
-		}
-	}
-	if len(ruleClients) > 0 {
-		if err := ruleClients.Validate(rwi); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
