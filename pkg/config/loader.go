@@ -18,13 +18,11 @@ package config
 
 import (
 	"errors"
-	"fmt"
 	"net/url"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/cache/negative"
+	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 )
 
 // Load returns the Application Configuration, starting with a default config,
@@ -77,76 +75,12 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		return nil, flags, errors.New("no valid origins configured")
 	}
 
-	_, err = negative.ConfigLookup(c.NegativeCacheConfigs).Validate()
+	ncl, err := negative.ConfigLookup(c.NegativeCacheConfigs).Validate()
 	if err != nil {
 		return nil, flags, err
 	}
 
-	for k, o := range c.Origins {
-
-		if o.OriginType == "" {
-			return nil, flags, fmt.Errorf(`missing origin-type for origin "%s"`, k)
-		}
-
-		if o.OriginType != "rule" && o.OriginURL == "" {
-			return nil, flags, fmt.Errorf(`missing origin-url for origin "%s"`, k)
-		}
-
-		url, err := url.Parse(o.OriginURL)
-		if err != nil {
-			return nil, flags, err
-		}
-
-		if strings.HasSuffix(url.Path, "/") {
-			url.Path = url.Path[0 : len(url.Path)-1]
-		}
-
-		o.Name = k
-		o.Scheme = url.Scheme
-		o.Host = url.Host
-		o.PathPrefix = url.Path
-		o.Timeout = time.Duration(o.TimeoutMS) * time.Millisecond
-		o.BackfillTolerance = time.Duration(o.BackfillToleranceMS) * time.Millisecond
-		o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
-		o.TimeseriesTTL = time.Duration(o.TimeseriesTTLMS) * time.Millisecond
-		o.FastForwardTTL = time.Duration(o.FastForwardTTLMS) * time.Millisecond
-		o.MaxTTL = time.Duration(o.MaxTTLMS) * time.Millisecond
-
-		if o.CompressableTypeList != nil {
-			o.CompressableTypes = make(map[string]bool)
-			for _, v := range o.CompressableTypeList {
-				o.CompressableTypes[v] = true
-			}
-		}
-
-		if o.CacheKeyPrefix == "" {
-			o.CacheKeyPrefix = o.Host
-		}
-
-		nc, ok := c.NegativeCacheConfigs[o.NegativeCacheName]
-		if !ok {
-			return nil, flags, fmt.Errorf(`invalid negative cache name: %s`, o.NegativeCacheName)
-		}
-
-		nc2 := map[int]time.Duration{}
-		for c, s := range nc {
-			ci, _ := strconv.Atoi(c)
-			nc2[ci] = time.Duration(s) * time.Second
-		}
-		o.NegativeCache = nc2
-
-		// enforce MaxTTL
-		if o.TimeseriesTTLMS > o.MaxTTLMS {
-			o.TimeseriesTTLMS = o.MaxTTLMS
-			o.TimeseriesTTL = o.MaxTTL
-		}
-
-		// unlikely but why not spend a few nanoseconds to check it at startup
-		if o.FastForwardTTLMS > o.MaxTTLMS {
-			o.FastForwardTTLMS = o.MaxTTLMS
-			o.FastForwardTTL = o.MaxTTL
-		}
-	}
+	err = oo.Lookup(c.Origins).Validate(ncl)
 
 	for _, c := range c.Caches {
 		c.Index.FlushInterval = time.Duration(c.Index.FlushIntervalMS) * time.Millisecond
