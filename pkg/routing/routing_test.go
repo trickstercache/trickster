@@ -27,6 +27,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/reverseproxycache"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins/rule"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/zipkin"
@@ -357,5 +358,29 @@ func TestRegisterPathRoutes(t *testing.T) {
 	dpc := rpc.DefaultPathConfigs(oo)
 	dpc["/-GET-HEAD"].Methods = nil
 	registerPathRoutes(nil, nil, rpc, oo, nil, dpc, nil, "", tl.ConsoleLogger("INFO"))
+
+}
+
+func TestValidateRuleClients(t *testing.T) {
+
+	var cl = origins.Origins{"test": &rule.Client{}}
+	rule.ValidateOptions(cl, nil)
+
+	conf, _, err := config.Load("trickster", "test",
+		[]string{"-log-level", "debug", "-origin-url", "http://1", "-origin-type", "rpc"})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
+	defer registration.CloseCaches(caches)
+
+	oc := conf.Origins["default"]
+	oc.OriginType = "rule"
+
+	_, err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, nil, tl.ConsoleLogger("info"), false)
+	if err == nil {
+		t.Error("expected error")
+	}
 
 }

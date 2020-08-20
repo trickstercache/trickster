@@ -80,13 +80,11 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 
 	// This iteration will ensure default origins are handled properly
 	for k, o := range conf.Origins {
-
 		if !types.IsValidOriginType(o.OriginType) {
 			return nil,
 				fmt.Errorf(`unknown origin type in origin config. originName: %s, originType: %s`,
 					k, o.OriginType)
 		}
-
 		// Ensure only one default origin exists
 		if o.IsDefault {
 			if cdo != nil {
@@ -99,40 +97,35 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 			cdo = o
 			continue
 		}
-
 		// handle origin named "default" last as it needs special
 		// handling based on a full pass over the range
 		if k == "default" {
 			ndo = o
 			continue
 		}
-
-		_, err = registerOriginRoutes(router, conf, k, o, clients, caches, tracers, log, dryRun)
+		err = registerOriginRoutes(router, conf, k, o, clients, caches, tracers, log, dryRun)
 		if err != nil {
 			return nil, err
 		}
 	}
-
 	if ndo != nil {
 		if cdo == nil {
 			ndo.IsDefault = true
 			cdo = ndo
 			defaultOrigin = "default"
 		} else {
-			_, err = registerOriginRoutes(router, conf, "default", ndo, clients, caches, tracers, log, dryRun)
+			err = registerOriginRoutes(router, conf, "default", ndo, clients, caches, tracers, log, dryRun)
 			if err != nil {
 				return nil, err
 			}
 		}
 	}
-
 	if cdo != nil {
-		clients, err = registerOriginRoutes(router, conf, defaultOrigin, cdo, clients, caches, tracers, log, dryRun)
+		err = registerOriginRoutes(router, conf, defaultOrigin, cdo, clients, caches, tracers, log, dryRun)
 		if err != nil {
 			return nil, err
 		}
 	}
-
 	err = rule.ValidateOptions(clients, conf.CompiledRewriters)
 	if err != nil {
 		return nil, err
@@ -143,7 +136,7 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 
 func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 	o *oo.Options, clients origins.Origins, caches map[string]cache.Cache,
-	tracers tracing.Tracers, log *tl.Logger, dryRun bool) (origins.Origins, error) {
+	tracers tracing.Tracers, log *tl.Logger, dryRun bool) error {
 
 	var client origins.Client
 	var c cache.Cache
@@ -152,7 +145,7 @@ func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 
 	c, ok = caches[o.CacheName]
 	if !ok {
-		return nil, fmt.Errorf("could not find cache named [%s]", o.CacheName)
+		return fmt.Errorf("could not find cache named [%s]", o.CacheName)
 	}
 
 	if !dryRun {
@@ -161,7 +154,7 @@ func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 	}
 
 	switch strings.ToLower(o.OriginType) {
-	case "prometheus", "":
+	case "prometheus":
 		client, err = prometheus.NewClient(k, o, mux.NewRouter(), c, modelprom.NewModeler())
 	case "influxdb":
 		client, err = influxdb.NewClient(k, o, mux.NewRouter(), c, modelflux.NewModeler())
@@ -175,7 +168,7 @@ func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 		client, err = rule.NewClient(k, o, mux.NewRouter(), clients)
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if client != nil && !dryRun {
@@ -185,7 +178,7 @@ func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 		registerPathRoutes(router, client.Handlers(), client, o, c, defaultPaths,
 			tracers, conf.Main.HealthHandlerPath, log)
 	}
-	return clients, nil
+	return nil
 }
 
 // registerPathRoutes will take the provided default paths map,
