@@ -38,7 +38,10 @@ const emptyFilePath = "../../testdata/test.empty.conf"
 // EmptyTestConfig returns an empty config based on the testdata empty conf
 func emptyTestConfig() (*Config, string) {
 	const path = emptyFilePath
-	c, _, _ := Load("testing", "testing", []string{"-config", path})
+	c, _, err := Load("testing", "testing", []string{"-config", path})
+	if err != nil {
+		panic("could not load empty test config: " + err.Error())
+	}
 	s, _ := ioutil.ReadFile(path)
 	return c, string(s)
 }

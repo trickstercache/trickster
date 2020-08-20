@@ -60,9 +60,7 @@ func (l ConfigLookup) Validate() (Lookups, error) {
 			}
 			lk[ci] = time.Duration(t) * time.Millisecond
 		}
-		if len(lk) > 0 {
-			ml[k] = lk
-		}
+		ml[k] = lk
 	}
 	return ml, nil
 }

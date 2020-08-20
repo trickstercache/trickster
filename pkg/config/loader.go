@@ -81,6 +81,9 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	}
 
 	err = oo.Lookup(c.Origins).Validate(ncl)
+	if err != nil {
+		return nil, flags, err
+	}
 
 	for _, c := range c.Caches {
 		c.Index.FlushInterval = time.Duration(c.Index.FlushIntervalMS) * time.Millisecond
