@@ -17,7 +17,6 @@
 package prometheus
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -29,9 +28,6 @@ import (
 
 // QueryHandler handles calls to /query (for instantaneous values)
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
-
-	fmt.Println("Waaaaat", c.baseUpstreamURL)
-
 	u := urls.BuildUpstreamURL(r, c.baseUpstreamURL)
 	qp, _, _ := params.GetRequestValues(r)
 	// Round time param down to the nearest 15 seconds if it exists

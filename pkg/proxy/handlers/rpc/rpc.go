@@ -13,8 +13,13 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// New returns a new Reverse Proxy Cache. only baseURL is required
-func New(baseURL string, o *oo.Options, c *co.Options) (http.Handler, error) {
+// New returns a new Reverse Proxy Cache
+func New(baseURL string) (http.Handler, error) {
+	return NewWithOptions(baseURL, nil, nil)
+}
+
+// NewWithOptions returns a new Reverse Proxy Cache. only baseURL is required
+func NewWithOptions(baseURL string, o *oo.Options, c *co.Options) (http.Handler, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, err
@@ -38,7 +43,7 @@ func New(baseURL string, o *oo.Options, c *co.Options) (http.Handler, error) {
 	o.Host = u.Host
 	o.PathPrefix = u.Path
 	r := mux.NewRouter()
-	cl, err := rpc.NewClient("default", o, mux.NewRouter(), cache)
+	cl, err := rpc.NewClient("default", o, r, cache)
 	if err != nil {
 		return nil, err
 	}

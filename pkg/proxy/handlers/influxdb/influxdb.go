@@ -14,8 +14,13 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// NewAccelerator returns a new ClickHouse Accelerator. only baseURL is required
-func NewAccelerator(baseURL string, o *oo.Options, c *co.Options) (http.Handler, error) {
+// NewAccelerator returns a new InfluxDB Accelerator. only baseURL is required
+func NewAccelerator(baseURL string) (http.Handler, error) {
+	return NewAcceleratorWithOptions(baseURL, nil, nil)
+}
+
+// NewAcceleratorWithOptions returns a new InfluxDB Accelerator. only baseURL is required
+func NewAcceleratorWithOptions(baseURL string, o *oo.Options, c *co.Options) (http.Handler, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, err

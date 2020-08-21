@@ -15,7 +15,12 @@ import (
 )
 
 // NewAccelerator returns a new Prometheus Accelerator. only baseURL is required
-func NewAccelerator(baseURL string, o *oo.Options, c *co.Options) (http.Handler, error) {
+func NewAccelerator(baseURL string) (http.Handler, error) {
+	return NewAcceleratorWithOptions(baseURL, nil, nil)
+}
+
+// NewAcceleratorWithOptions returns a new Prometheus Accelerator. only baseURL is required
+func NewAcceleratorWithOptions(baseURL string, o *oo.Options, c *co.Options) (http.Handler, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, err
