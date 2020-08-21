@@ -38,7 +38,7 @@ func New(baseURL string, o *oo.Options, c *co.Options) (http.Handler, error) {
 	o.Host = u.Host
 	o.PathPrefix = u.Path
 	r := mux.NewRouter()
-	cl, err := rpc.NewClient("default", oo.New(), mux.NewRouter(), cache)
+	cl, err := rpc.NewClient("default", o, mux.NewRouter(), cache)
 	if err != nil {
 		return nil, err
 	}

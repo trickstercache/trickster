@@ -7,7 +7,7 @@ import (
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/clickhouse"
-	chmodel "github.com/tricksterproxy/trickster/pkg/proxy/origins/clickhouse/model"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins/clickhouse/model"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	"github.com/tricksterproxy/trickster/pkg/routing"
 
@@ -39,7 +39,7 @@ func NewAccelerator(baseURL string, o *oo.Options, c *co.Options) (http.Handler,
 	o.Host = u.Host
 	o.PathPrefix = u.Path
 	r := mux.NewRouter()
-	cl, err := clickhouse.NewClient("default", oo.New(), mux.NewRouter(), cache, chmodel.NewModeler())
+	cl, err := clickhouse.NewClient("default", o, mux.NewRouter(), cache, model.NewModeler())
 	if err != nil {
 		return nil, err
 	}

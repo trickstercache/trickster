@@ -313,8 +313,10 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 					// Path Routing
 					router.PathPrefix(handledPath).Handler(middleware.StripPathPrefix(pathPrefix, decorate(p))).Methods(p.Methods...)
 				}
+				fmt.Println("{{{{{{{", p.Path)
 				or.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...)
 			default:
+				fmt.Println(`\\\\\\`, p.Path)
 				// default to exact match
 				// Host Header Routing
 				for _, h := range oo.Hosts {
