@@ -26,7 +26,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/index/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/metrics"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	gm "github.com/tricksterproxy/trickster/pkg/util/metrics"
 )
 
@@ -107,7 +107,7 @@ func ObjectFromBytes(data []byte) (*Object, error) {
 // NewIndex returns a new Index based on the provided inputs
 func NewIndex(cacheName, cacheType string, indexData []byte, o *options.Options,
 	bulkRemoveFunc func([]string), flushFunc func(cacheKey string, data []byte),
-	log *tl.Logger) *Index {
+	logger interface{}) *Index {
 	i := &Index{}
 
 	if len(indexData) > 0 {
@@ -124,17 +124,17 @@ func NewIndex(cacheName, cacheType string, indexData []byte, o *options.Options,
 
 	if flushFunc != nil {
 		if o.FlushInterval > 0 {
-			go i.flusher(log)
+			go i.flusher(logger)
 		} else {
-			log.Warn("cache index flusher did not start",
+			tl.Warn(logger, "cache index flusher did not start",
 				tl.Pairs{"cacheName": i.name, "flushInterval": o.FlushInterval})
 		}
 	}
 
 	if o.ReapInterval > 0 {
-		go i.reaper(log)
+		go i.reaper(logger)
 	} else {
-		log.Warn("cache reaper did not start",
+		tl.Warn(logger, "cache reaper did not start",
 			tl.Pairs{"cacheName": i.name, "reapInterval": o.ReapInterval})
 	}
 
@@ -252,25 +252,25 @@ func (idx *Index) GetExpiration(cacheKey string) time.Time {
 }
 
 // flusher periodically calls the cache's index flush func that writes the cache index to disk
-func (idx *Index) flusher(log *tl.Logger) {
+func (idx *Index) flusher(logger interface{}) {
 	var lastFlush time.Time
 	for !idx.isClosing {
 		time.Sleep(idx.options.FlushInterval)
 		if idx.lastWrite.Before(lastFlush) {
 			continue
 		}
-		idx.flushOnce(log)
+		idx.flushOnce(logger)
 		lastFlush = time.Now()
 	}
 	idx.flusherExited = true
 }
 
-func (idx *Index) flushOnce(log *tl.Logger) {
+func (idx *Index) flushOnce(logger interface{}) {
 	idx.mtx.Lock()
 	bytes, err := idx.MarshalMsg(nil)
 	idx.mtx.Unlock()
 	if err != nil {
-		log.Warn("unable to serialize index for flushing",
+		tl.Warn(logger, "unable to serialize index for flushing",
 			tl.Pairs{"cacheName": idx.name, "detail": err.Error()})
 		return
 	}
@@ -278,9 +278,9 @@ func (idx *Index) flushOnce(log *tl.Logger) {
 }
 
 // reaper continually iterates through the cache to find expired elements and removes them
-func (idx *Index) reaper(log *tl.Logger) {
+func (idx *Index) reaper(logger interface{}) {
 	for !idx.isClosing {
-		idx.reap(log)
+		idx.reap(logger)
 		time.Sleep(idx.options.ReapInterval)
 	}
 	idx.reaperExited = true
@@ -290,7 +290,7 @@ type objectsAtime []*Object
 
 // reap makes a single iteration through the cache index to to find and remove expired elements
 // and evict least-recently-accessed elements to maintain the Maximum allowed Cache Size
-func (idx *Index) reap(log *tl.Logger) {
+func (idx *Index) reap(logger interface{}) {
 
 	idx.mtx.Lock()
 	defer idx.mtx.Unlock()
@@ -333,7 +333,7 @@ func (idx *Index) reap(log *tl.Logger) {
 			return
 		}
 
-		log.Debug("max cache size reached. evicting least-recently-accessed records",
+		tl.Debug(logger, "max cache size reached. evicting least-recently-accessed records",
 			tl.Pairs{
 				"reason":         evictionType,
 				"cacheSizeBytes": idx.CacheSize, "maxSizeBytes": idx.options.MaxSizeBytes,
@@ -379,7 +379,7 @@ func (idx *Index) reap(log *tl.Logger) {
 			cacheChanged = true
 		}
 
-		log.Debug("size-based cache eviction exercise completed",
+		tl.Debug(logger, "size-based cache eviction exercise completed",
 			tl.Pairs{
 				"reason":         evictionType,
 				"cacheSizeBytes": idx.CacheSize, "maxSizeBytes": idx.options.MaxSizeBytes,

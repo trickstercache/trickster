@@ -24,7 +24,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/config"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 )
 
 var hups = make(chan os.Signal, 1)
@@ -45,7 +45,7 @@ func startHupMonitor(conf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
 			case <-hups:
 				conf.Main.ReloaderLock.Lock()
 				if conf.IsStale() {
-					log.Warn("configuration reload starting now", tl.Pairs{"source": "sighup"})
+					tl.Warn(log, "configuration reload starting now", tl.Pairs{"source": "sighup"})
 					err := runConfig(conf, wg, log, caches, args, false)
 					if err == nil {
 						conf.Main.ReloaderLock.Unlock()
@@ -53,7 +53,7 @@ func startHupMonitor(conf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
 					}
 				}
 				conf.Main.ReloaderLock.Unlock()
-				log.Warn("configuration NOT reloaded", tl.Pairs{})
+				tl.Warn(log, "configuration NOT reloaded", tl.Pairs{})
 			case <-conf.Resources.QuitChan:
 				return
 			}

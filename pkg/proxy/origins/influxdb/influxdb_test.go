@@ -21,10 +21,10 @@ import (
 
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/config"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/influxdb/model"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 var testModeler = model.NewModeler()

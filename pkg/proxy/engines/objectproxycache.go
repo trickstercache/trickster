@@ -25,13 +25,13 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
-	"github.com/tricksterproxy/trickster/pkg/util/log"
 
 	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/trace"
@@ -424,11 +424,11 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		if f, ok := cacheResponseHandlers[pr.cacheStatus]; ok {
 			f(pr)
 		} else {
-			pr.Logger.Warn("unhandled cache lookup response", log.Pairs{"lookupStatus": pr.cacheStatus})
+			tl.Warn(pr.Logger, "unhandled cache lookup response", tl.Pairs{"lookupStatus": pr.cacheStatus})
 			return nil, status.LookupStatusProxyOnly
 		}
 	} else {
-		pr.Logger.Error("cache lookup error", log.Pairs{"detail": err.Error()})
+		tl.Error(pr.Logger, "cache lookup error", tl.Pairs{"detail": err.Error()})
 		pr.cacheDocument = nil
 		pr.cacheStatus = status.LookupStatusKeyMiss
 		handleCacheKeyMiss(pr)

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package log
+package logging
 
 import (
 	"os"
@@ -65,7 +65,7 @@ func TestNewLogger_LogFile(t *testing.T) {
 	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "info"}
 	log := New(conf)
 	defer log.Close()
-	log.Info("test entry", Pairs{"testKey": "testVal"})
+	Info(log, "test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(instanceFileName); err != nil {
 		t.Errorf(err.Error())
 	}

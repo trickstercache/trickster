@@ -25,12 +25,12 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 
 	"github.com/golang/snappy"
 	"go.opentelemetry.io/otel/api/kv"
@@ -99,7 +99,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 
 		if inflate {
-			rsc.Logger.Debug("decompressing cached data", tl.Pairs{"cacheKey": key})
+			tl.Debug(rsc.Logger, "decompressing cached data", tl.Pairs{"cacheKey": key})
 			b, err := snappy.Decode(nil, bytes)
 			if err == nil {
 				bytes = b
@@ -107,7 +107,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 		_, err = d.UnmarshalMsg(bytes)
 		if err != nil {
-			rsc.Logger.Error("error unmarshaling cache document", tl.Pairs{
+			tl.Error(rsc.Logger, "error unmarshaling cache document", tl.Pairs{
 				"cacheKey": key,
 				"detail":   err.Error(),
 			})
@@ -210,14 +210,14 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 	// for non-memory, we have to seralize the document to a byte slice to store
 	bytes, err = d.MarshalMsg(nil)
 	if err != nil {
-		rsc.Logger.Error("error marshaling cache document", tl.Pairs{
+		tl.Error(rsc.Logger, "error marshaling cache document", tl.Pairs{
 			"cacheKey": key,
 			"detail":   err.Error(),
 		})
 	}
 
 	if compress {
-		rsc.Logger.Debug("compressing cache data", tl.Pairs{"cacheKey": key})
+		tl.Debug(rsc.Logger, "compressing cache data", tl.Pairs{"cacheKey": key})
 		bytes = append([]byte{1}, snappy.Encode(nil, bytes)...)
 	} else {
 		bytes = append([]byte{0}, bytes...)
@@ -246,7 +246,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 }
 
 // DocumentFromHTTPResponse returns an HTTPDocument from the provided HTTP Response and Body
-func DocumentFromHTTPResponse(resp *http.Response, body []byte, cp *CachingPolicy, log *tl.Logger) *HTTPDocument {
+func DocumentFromHTTPResponse(resp *http.Response, body []byte, cp *CachingPolicy, logger interface{}) *HTTPDocument {
 	d := &HTTPDocument{}
 	d.StatusCode = resp.StatusCode
 	d.Status = resp.Status
@@ -267,7 +267,7 @@ func DocumentFromHTTPResponse(resp *http.Response, body []byte, cp *CachingPolic
 	}
 
 	if d.StatusCode == http.StatusPartialContent && body != nil && len(body) > 0 {
-		d.ParsePartialContentBody(resp, body, log)
+		d.ParsePartialContentBody(resp, body, logger)
 		d.FulfillContentBody()
 	} else {
 		d.SetBody(body)

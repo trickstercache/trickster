@@ -60,7 +60,6 @@ type Options struct {
 
 // New will return a pointer to an OriginConfig with the default configuration settings
 func New() *Options {
-
 	return &Options{
 		CacheType:   d.DefaultCacheType,
 		CacheTypeID: d.DefaultCacheTypeID,

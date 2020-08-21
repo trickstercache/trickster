@@ -25,12 +25,12 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 )
 

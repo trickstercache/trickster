@@ -27,13 +27,13 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/locks"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 
 	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/trace"
@@ -79,7 +79,7 @@ type proxyRequest struct {
 	collapsedForwarder ProgressiveCollapseForwarder
 	cachingPolicy      *CachingPolicy
 
-	Logger            *tl.Logger
+	Logger            interface{}
 	isPCF             bool
 	writeToCache      bool
 	hasWriteLock      bool
@@ -166,7 +166,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 		resp.Body.Close()
 	}
 	if err != nil {
-		pr.Logger.Error("error reading body from http response",
+		tl.Error(pr.Logger, "error reading body from http response",
 			tl.Pairs{"url": pr.URL.String(), "detail": err.Error()})
 		return []byte{}, resp, 0
 	}

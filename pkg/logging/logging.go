@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-// Package log provides logging functionality to Trickster
-package log
+// Package logging provides logging functionality to Trickster
+package logging
 
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -27,7 +28,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/config"
 
-	"github.com/go-kit/kit/log"
+	gkl "github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/go-stack/stack"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
@@ -35,8 +36,8 @@ import (
 
 // Logger is a container for the underlying log provider
 type Logger struct {
-	baseLogger log.Logger // the logger prior to leveling, used to relevel in config reload
-	logger     log.Logger // the logger after leveling, which is used by importing packages
+	baseLogger gkl.Logger // the logger prior to leveling, used to relevel in config reload
+	logger     gkl.Logger // the logger after leveling, which is used by importing packages
 	closer     io.Closer
 	level      string
 
@@ -44,24 +45,118 @@ type Logger struct {
 	onceRanEntries map[string]bool
 }
 
-func mapToArray(event string, detail Pairs) []interface{} {
-	a := make([]interface{}, (len(detail)*2)+2)
-	var i int
+func Debug(logger interface{}, event string, detail Pairs) {
+	if logger == nil {
+		return
+	}
+	go func() {
+		switch logger.(type) {
+		case *Logger:
+			logger.(*Logger).Debug(event, detail)
+		case *log.Logger:
+			logger.(*log.Logger).Print("")
+		case gkl.Logger:
+			level.Debug(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+		}
+	}()
+}
 
+func Info(logger interface{}, event string, detail Pairs) {
+	if logger == nil {
+		return
+	}
+	go func() {
+		switch logger.(type) {
+		case *Logger:
+			logger.(*Logger).Info(event, detail)
+		case *log.Logger:
+			logger.(*log.Logger).Print("")
+		case gkl.Logger:
+			level.Info(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+		}
+	}()
+}
+
+func Warn(logger interface{}, event string, detail Pairs) {
+	if logger == nil {
+		return
+	}
+	go func() {
+		switch logger.(type) {
+		case *Logger:
+			logger.(*Logger).Warn(event, detail)
+		case *log.Logger:
+			logger.(*log.Logger).Print("")
+		case gkl.Logger:
+			level.Warn(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+		}
+	}()
+}
+
+func WarnOnce(logger interface{}, key string, event string, detail Pairs) {
+	if logger == nil {
+		return
+	}
+	go func() {
+		switch logger.(type) {
+		case *Logger:
+			logger.(*Logger).WarnOnce(key, event, detail)
+		case *log.Logger:
+			logger.(*log.Logger).Print("")
+		case gkl.Logger:
+			level.Warn(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+		}
+	}()
+}
+
+func Error(logger interface{}, event string, detail Pairs) {
+	if logger == nil {
+		return
+	}
+	go func() {
+		switch logger.(type) {
+		case *Logger:
+			logger.(*Logger).Error(event, detail)
+		case *log.Logger:
+			logger.(*log.Logger).Print("")
+		case gkl.Logger:
+			level.Error(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+		}
+	}()
+}
+
+// Fatal sends a "FATAL" event to the Logger and exits the program with the provided exit code
+func Fatal(logger interface{}, code int, event string, detail Pairs) {
+	// go-kit/log/level does not support Fatal, so implemented separately here
+	detail["level"] = "fatal"
+	switch logger.(type) {
+	case *Logger:
+		logger.(*Logger).Fatal(code, event, detail)
+	case *log.Logger:
+		logger.(*log.Logger).Print("")
+	case gkl.Logger:
+		level.Error(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+	}
+	if code >= 0 {
+		os.Exit(code)
+	}
+}
+
+func (p Pairs) ToList(event string) []interface{} {
+	a := make([]interface{}, (len(p)*2)+2)
+	var i int
 	// Ensure the log level is the first Pair in the output order (after prefixes)
-	if level, ok := detail["level"]; ok {
+	if level, ok := p["level"]; ok {
 		a[0] = "level"
 		a[1] = level
-		delete(detail, "level")
+		delete(p, "level")
 		i += 2
 	}
-
 	// Ensure the event description is the second Pair in the output order (after prefixes)
 	a[i] = "event"
 	a[i+1] = event
 	i += 2
-
-	for k, v := range detail {
+	for k, v := range p {
 		a[i] = k
 		a[i+1] = v
 		i += 2
@@ -86,11 +181,11 @@ func ConsoleLogger(logLevel string) *Logger {
 
 	l := noopLogger()
 	wr := os.Stdout
-	l.baseLogger = log.NewLogfmtLogger(log.NewSyncWriter(wr))
-	l.baseLogger = log.With(l.baseLogger,
-		"time", log.DefaultTimestampUTC,
+	l.baseLogger = gkl.NewLogfmtLogger(gkl.NewSyncWriter(wr))
+	l.baseLogger = gkl.With(l.baseLogger,
+		"time", gkl.DefaultTimestampUTC,
 		"app", "trickster",
-		"caller", log.Valuer(func() interface{} {
+		"caller", gkl.Valuer(func() interface{} {
 			return pkgCaller{stack.Caller(6)}
 		}),
 	)
@@ -145,11 +240,11 @@ func New(conf *config.Config) *Logger {
 		}
 	}
 
-	l.baseLogger = log.NewLogfmtLogger(log.NewSyncWriter(wr))
-	l.baseLogger = log.With(l.baseLogger,
-		"time", log.DefaultTimestampUTC,
+	l.baseLogger = gkl.NewLogfmtLogger(gkl.NewSyncWriter(wr))
+	l.baseLogger = gkl.With(l.baseLogger,
+		"time", gkl.DefaultTimestampUTC,
 		"app", "trickster",
-		"caller", log.Valuer(func() interface{} {
+		"caller", gkl.Valuer(func() interface{} {
 			return pkgCaller{stack.Caller(6)}
 		}),
 	)
@@ -168,7 +263,7 @@ type Pairs map[string]interface{}
 
 // Info sends an "INFO" event to the Logger
 func (tl *Logger) Info(event string, detail Pairs) {
-	level.Info(tl.logger).Log(mapToArray(event, detail)...)
+	level.Info(tl.logger).Log(detail.ToList(event)...)
 }
 
 // InfoOnce sends a "INFO" event to the Logger only once per key.
@@ -187,7 +282,7 @@ func (tl *Logger) InfoOnce(key string, event string, detail Pairs) bool {
 
 // Warn sends an "WARN" event to the Logger
 func (tl *Logger) Warn(event string, detail Pairs) {
-	level.Warn(tl.logger).Log(mapToArray(event, detail)...)
+	level.Warn(tl.logger).Log(detail.ToList(event)...)
 }
 
 // WarnOnce sends a "WARN" event to the Logger only once per key.
@@ -215,7 +310,7 @@ func (tl *Logger) HasWarnedOnce(key string) bool {
 
 // Error sends an "ERROR" event to the Logger
 func (tl *Logger) Error(event string, detail Pairs) {
-	level.Error(tl.logger).Log(mapToArray(event, detail)...)
+	level.Error(tl.logger).Log(detail.ToList(event)...)
 }
 
 // ErrorOnce sends an "ERROR" event to the Logger only once per key
@@ -234,7 +329,7 @@ func (tl *Logger) ErrorOnce(key string, event string, detail Pairs) bool {
 
 // Debug sends an "DEBUG" event to the Logger
 func (tl *Logger) Debug(event string, detail Pairs) {
-	level.Debug(tl.logger).Log(mapToArray(event, detail)...)
+	level.Debug(tl.logger).Log(detail.ToList(event)...)
 }
 
 // Trace sends a "TRACE" event to the Logger
@@ -242,7 +337,7 @@ func (tl *Logger) Trace(event string, detail Pairs) {
 	// go-kit/log/level does not support Trace, so implemented separately here
 	if tl.level == "trace" {
 		detail["level"] = "trace"
-		tl.logger.Log(mapToArray(event, detail)...)
+		tl.logger.Log(detail.ToList(event)...)
 	}
 }
 
@@ -250,7 +345,7 @@ func (tl *Logger) Trace(event string, detail Pairs) {
 func (tl *Logger) Fatal(code int, event string, detail Pairs) {
 	// go-kit/log/level does not support Fatal, so implemented separately here
 	detail["level"] = "fatal"
-	tl.logger.Log(mapToArray(event, detail)...)
+	tl.logger.Log(detail.ToList(event)...)
 	if code >= 0 {
 		os.Exit(code)
 	}

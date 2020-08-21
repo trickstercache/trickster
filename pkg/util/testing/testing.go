@@ -28,6 +28,7 @@ import (
 
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/config"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	th "github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
@@ -37,7 +38,6 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 	to "github.com/tricksterproxy/trickster/pkg/tracing/options"
 	tr "github.com/tricksterproxy/trickster/pkg/tracing/registration"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 
 	"github.com/tricksterproxy/mockster/pkg/testutil"
 )
