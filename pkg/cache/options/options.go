@@ -58,7 +58,7 @@ type Options struct {
 	CacheTypeID types.CacheType `toml:"-"`
 }
 
-// New will return a pointer to an OriginConfig with the default configuration settings
+// New will return a pointer to a cache Options with the default configuration settings
 func New() *Options {
 	return &Options{
 		CacheType:   d.DefaultCacheType,
