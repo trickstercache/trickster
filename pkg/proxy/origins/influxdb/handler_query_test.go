@@ -48,7 +48,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 			RawQuery: testRawQuery,
 		}}
 	client := &Client{}
-	res, err := client.ParseTimeRangeQuery(req)
+	res, _, _, err := client.ParseTimeRangeQuery(req)
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -61,7 +61,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Content-Length", strconv.Itoa(len(testRawQuery)))
 
-	res, err = client.ParseTimeRangeQuery(req)
+	res, _, _, err = client.ParseTimeRangeQuery(req)
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -151,7 +151,7 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 		}).Encode(),
 	}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(req)
+	_, _, _, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`Expected "%s", got NO ERROR`, expected)
 		return
@@ -178,7 +178,7 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 			}).Encode(),
 		}}
 	client := &Client{}
-	_, err := client.ParseTimeRangeQuery(req)
+	_, _, _, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf(`Expected "%s", got NO ERROR`, expected)
 		return

@@ -88,11 +88,6 @@ func (ds *DataSet) String() string {
 	return sb.String()
 }
 
-func (ds *DataSet) SetStep(step time.Duration) {
-	ds.TimeRangeQuery.Step = step
-	ds.TimeRangeQuery.StepNS = step.Nanoseconds()
-}
-
 // CroppedClone returns a new, perfect copy of the DataSet, efficiently
 // cropped to the provided Extent. CroppedClone assumes the DataSet is sorted.
 func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
@@ -424,8 +419,8 @@ func (ds *DataSet) SeriesCount() int {
 }
 
 // ValueCount returns the count of all values across all Series in the DataSet
-func (ds *DataSet) ValueCount() int {
-	var cnt int
+func (ds *DataSet) ValueCount() int64 {
+	var cnt int64
 	for i := range ds.Results {
 		if len(ds.Results[i].SeriesList) == 0 {
 			continue
@@ -434,20 +429,20 @@ func (ds *DataSet) ValueCount() int {
 			if s == nil {
 				continue
 			}
-			cnt += len(s.Points)
+			cnt += int64(len(s.Points))
 		}
 	}
 	return cnt
 }
 
 // Size returns the memory utilization in bytes of the DataSet
-func (ds *DataSet) Size() int {
-	c := len(ds.Status) +
+func (ds *DataSet) Size() int64 {
+	c := int64(len(ds.Status) +
 		49 + // StepDuration=8 Mutex=8 OutputFormat=1 4xFuncs=32
 		(len(ds.ExtentList) * 72) +
-		len(ds.Error)
+		len(ds.Error))
 	for i := range ds.Results {
-		c += int(ds.Results[i].Size())
+		c += int64(ds.Results[i].Size())
 	}
 	return c
 }
@@ -466,8 +461,8 @@ func (ds *DataSet) Step() time.Duration {
 }
 
 // TimestampCount returns the count of unique timestamps across all series in the DataSet
-func (ds *DataSet) TimestampCount() int {
-	return int(ds.ExtentList.TimestampCount(ds.Step()))
+func (ds *DataSet) TimestampCount() int64 {
+	return ds.ExtentList.TimestampCount(ds.Step())
 }
 
 // Extents returns the DataSet's ExentList

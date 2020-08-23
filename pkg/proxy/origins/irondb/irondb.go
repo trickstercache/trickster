@@ -84,15 +84,16 @@ type Client struct {
 	trqParsers         map[string]trqParser
 	extentSetters      map[string]extentSetter
 	router             http.Handler
+	modeler            *timeseries.Modeler
 }
 
 // NewClient returns a new Client Instance
 func NewClient(name string, oc *oo.Options, router http.Handler,
-	cache cache.Cache) (origins.Client, error) {
+	cache cache.Cache, modeler *timeseries.Modeler) (origins.Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
 	bur := urls.FromParts(oc.Scheme, oc.Host, oc.PathPrefix, "", "")
 	client := &Client{name: name, config: oc, router: router, cache: cache,
-		baseUpstreamURL: bur, webClient: c}
+		baseUpstreamURL: bur, webClient: c, modeler: modeler}
 	client.makeTrqParsers()
 	client.makeExtentSetters()
 	return client, err

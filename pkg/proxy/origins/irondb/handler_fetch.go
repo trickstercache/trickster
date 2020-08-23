@@ -37,12 +37,12 @@ import (
 // spans and processes them through the delta proxy cache.
 func (c *Client) FetchHandler(w http.ResponseWriter, r *http.Request) {
 	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
-	engines.DeltaProxyCacheRequest(w, r)
+	engines.DeltaProxyCacheRequest(w, r, c.modeler)
 }
 
 // fetchHandlerSetExtent will change the upstream request query to use the
 // provided Extent.
-func (c Client) fetchHandlerSetExtent(r *http.Request,
+func (c *Client) fetchHandlerSetExtent(r *http.Request,
 	trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent) {
 
@@ -52,7 +52,7 @@ func (c Client) fetchHandlerSetExtent(r *http.Request,
 
 	var err error
 	if trq == nil {
-		if trq, err = c.ParseTimeRangeQuery(r); err != nil {
+		if trq, _, _, err = c.ParseTimeRangeQuery(r); err != nil {
 			return
 		}
 	}
@@ -124,7 +124,7 @@ func (c *Client) fetchHandlerParseTimeRangeQuery(
 
 // fetchHandlerDeriveCacheKey calculates a query-specific keyname based on the
 // user request.
-func (c Client) fetchHandlerDeriveCacheKey(path string, params url.Values,
+func (c *Client) fetchHandlerDeriveCacheKey(path string, params url.Values,
 	headers http.Header, body io.ReadCloser, extra string) (string, io.ReadCloser) {
 	var sb strings.Builder
 	sb.WriteString(path)

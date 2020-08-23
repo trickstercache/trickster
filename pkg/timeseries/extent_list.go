@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+//go:generate msgp
+
 package timeseries
 
 import (
@@ -46,12 +48,10 @@ func (el ExtentList) InsideOf(e Extent) bool {
 	if x == 0 {
 		return false
 	}
-
 	return ((!el[0].Start.Before(e.Start)) &&
 		(!el[0].Start.After(e.End)) &&
 		(!el[x-1].End.Before(e.Start)) &&
 		(!el[x-1].End.After(e.End)))
-
 }
 
 // OutsideOf returns true if the provided extent falls completely
@@ -168,6 +168,62 @@ func (el ExtentList) Clone() ExtentList {
 	return c
 }
 
+// TimestampCount returns the calculated number of timestamps based on the extents
+// in the list and the provided duration
+func (el ExtentList) TimestampCount(d time.Duration) int64 {
+	var c int64
+	for i := range el {
+		if el[i].Start.IsZero() || el[i].End.IsZero() {
+			continue
+		}
+		c += ((el[i].End.UnixNano() - el[i].Start.UnixNano()) / d.Nanoseconds()) + 1
+	}
+	return c
+}
+
+// CalculateDeltas provides a list of extents that are not in a cached timeseries,
+// when provided a list of extents that are cached.
+func (el ExtentList) CalculateDeltas(want Extent, step time.Duration) ExtentList {
+	if len(el) == 0 {
+		return ExtentList{want}
+	}
+	misCap := want.End.Sub(want.Start) / step
+	if misCap < 0 {
+		misCap = 0
+	}
+	misses := make([]time.Time, 0, misCap)
+	for i := want.Start; !want.End.Before(i); i = i.Add(step) {
+		found := false
+		for j := range el {
+			if j == 0 && i.Before(el[j].Start) {
+				// our earliest datapoint in cache is after the first point the user wants
+				break
+			}
+			if i.Equal(el[j].Start) || i.Equal(el[j].End) || (i.After(el[j].Start) && el[j].End.After(i)) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			misses = append(misses, i)
+		}
+	}
+	// Find the fill and gap ranges
+	ins := ExtentList{}
+	var inStart = time.Time{}
+	l := len(misses)
+	for i := range misses {
+		if inStart.IsZero() {
+			inStart = misses[i]
+		}
+		if i+1 == l || !misses[i+1].Equal(misses[i].Add(step)) {
+			ins = append(ins, Extent{Start: inStart, End: misses[i]})
+			inStart = time.Time{}
+		}
+	}
+	return ins
+}
+
 // Size returns the approximate memory utilization in bytes of the timeseries
 func (el ExtentList) Size() int {
 	return len(el) * 72
@@ -189,19 +245,6 @@ func (el ExtentListLRU) Less(i, j int) bool {
 // Swap modifies an ExtentListLRU by swapping the values in indexes i and j
 func (el ExtentListLRU) Swap(i, j int) {
 	el[i], el[j] = el[j], el[i]
-}
-
-// TimestampCount returns the calculated number of timestamps based on the extents
-// in the list and the provided duration
-func (el ExtentList) TimestampCount(d time.Duration) int64 {
-	var c int64
-	for i := range el {
-		if el[i].Start.IsZero() || el[i].End.IsZero() {
-			continue
-		}
-		c += ((el[i].End.UnixNano() - el[i].Start.UnixNano()) / d.Nanoseconds()) + 1
-	}
-	return c
 }
 
 // Clone returns a true copy of the ExtentListLRU

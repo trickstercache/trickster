@@ -248,7 +248,7 @@ func (lg *ListenerGroup) StartListenerRouter(listenerName, address string, port 
 // DrainAndClose drains and closes the named listener
 func (lg *ListenerGroup) DrainAndClose(listenerName string, drainWait time.Duration) error {
 	lg.listenersLock.Lock()
-	if l, ok := lg.members[listenerName]; ok {
+	if l, ok := lg.members[listenerName]; ok && l != nil {
 		l.exitOnError = false
 		delete(lg.members, listenerName)
 		lg.listenersLock.Unlock()

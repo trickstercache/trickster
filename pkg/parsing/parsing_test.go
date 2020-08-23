@@ -17,7 +17,6 @@
 package parsing
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/parsing/token"
@@ -40,18 +39,4 @@ func TestParserError(t *testing.T) {
 	if err == nil {
 		t.Error("expected non-nil err")
 	}
-
-	if !errors.Is(err, &parsingError{}) {
-		t.Error("expected true")
-	}
-
-	if err.(*parsingError).Is(nil) {
-		t.Error("expected false")
-	}
-
-	expected := "parser error='test error', position=0, token='', type=0"
-	if err.Error() != expected {
-		t.Errorf("expected %s got %s", expected, err.Error())
-	}
-
 }

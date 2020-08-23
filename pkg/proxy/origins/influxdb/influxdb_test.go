@@ -22,9 +22,12 @@ import (
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins/influxdb/model"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
+
+var testModeler = model.NewModeler()
 
 func TestInfluxDBClientInterfacing(t *testing.T) {
 
@@ -59,7 +62,7 @@ func TestNewClient(t *testing.T) {
 	}
 
 	oc := &oo.Options{OriginType: "TEST_CLIENT"}
-	c, err := NewClient("default", oc, nil, cache)
+	c, err := NewClient("default", oc, nil, cache, testModeler)
 	if err != nil {
 		t.Error(err)
 	}
@@ -129,7 +132,7 @@ func TestRouter(t *testing.T) {
 func TestHTTPClient(t *testing.T) {
 	oc := &oo.Options{OriginType: "TEST"}
 
-	c, err := NewClient("test", oc, nil, nil)
+	c, err := NewClient("test", oc, nil, nil, testModeler)
 	if err != nil {
 		t.Error(err)
 	}
@@ -140,7 +143,7 @@ func TestHTTPClient(t *testing.T) {
 }
 
 func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.NewOptions(), nil, nil, testModeler)
 	if err != nil {
 		t.Error(err)
 	}

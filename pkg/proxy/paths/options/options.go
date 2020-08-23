@@ -24,8 +24,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
-	"github.com/tricksterproxy/trickster/pkg/util/strings"
-	ts "github.com/tricksterproxy/trickster/pkg/util/strings"
+	strutil "github.com/tricksterproxy/trickster/pkg/util/strings"
 )
 
 // Options defines a URL Path that is associated with an HTTP Handler
@@ -116,11 +115,11 @@ func (o *Options) Clone() *Options {
 		MatchType:               o.MatchType,
 		HandlerName:             o.HandlerName,
 		Handler:                 o.Handler,
-		RequestHeaders:          ts.CloneMap(o.RequestHeaders),
-		RequestParams:           ts.CloneMap(o.RequestParams),
+		RequestHeaders:          strutil.CloneMap(o.RequestHeaders),
+		RequestParams:           strutil.CloneMap(o.RequestParams),
 		ReqRewriter:             o.ReqRewriter,
 		ReqRewriterName:         o.ReqRewriterName,
-		ResponseHeaders:         ts.CloneMap(o.ResponseHeaders),
+		ResponseHeaders:         strutil.CloneMap(o.ResponseHeaders),
 		ResponseBody:            o.ResponseBody,
 		ResponseBodyBytes:       o.ResponseBodyBytes,
 		CollapsedForwardingName: o.CollapsedForwardingName,
@@ -188,5 +187,56 @@ func (o *Options) Merge(o2 *Options) {
 			o.ReqRewriter = o2.ReqRewriter
 		}
 	}
-	o.Custom = strings.Unique(o.Custom)
+	o.Custom = strutil.Unique(o.Custom)
 }
+
+var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params",
+	"cache_key_headers", "default_ttl_secs", "request_headers", "response_headers",
+	"response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding",
+	"req_rewriter_name",
+}
+
+// func ProcessTOML() {
+// 	for l, p := range options.Paths {
+// 		if metadata.IsDefined("origins", name, "paths", l, "req_rewriter_name") &&
+// 			p.ReqRewriterName != "" {
+// 			ri, ok := crw[p.ReqRewriterName]
+// 			if !ok {
+// 				return nil, fmt.Errorf("invalid rewriter name %s in path %s of origin config %s",
+// 					p.ReqRewriterName, l, name)
+// 			}
+// 			p.ReqRewriter = ri
+// 		}
+// 		if len(p.Methods) == 0 {
+// 			p.Methods = []string{http.MethodGet, http.MethodHead}
+// 		}
+// 		p.Custom = make([]string, 0)
+// 		for _, pm := range pathMembers {
+// 			if metadata.IsDefined("origins", name, "paths", l, pm) {
+// 				p.Custom = append(p.Custom, pm)
+// 			}
+// 		}
+// 		if metadata.IsDefined("origins", name, "paths", l, "response_body") {
+// 			p.ResponseBodyBytes = []byte(p.ResponseBody)
+// 			p.HasCustomResponseBody = true
+// 		}
+// 		if metadata.IsDefined("origins", name, "paths", l, "collapsed_forwarding") {
+// 			if _, ok := forwarding.CollapsedForwardingTypeNames[p.CollapsedForwardingName]; !ok {
+// 				return nil, fmt.Errorf("invalid collapsed_forwarding name: %s", p.CollapsedForwardingName)
+// 			}
+// 			p.CollapsedForwardingType =
+// 				forwarding.GetCollapsedForwardingType(p.CollapsedForwardingName)
+// 		} else {
+// 			p.CollapsedForwardingType = forwarding.CFTypeBasic
+// 		}
+// 		if mt, ok := matching.Names[strings.ToLower(p.MatchTypeName)]; ok {
+// 			p.MatchType = mt
+// 			p.MatchTypeName = p.MatchType.String()
+// 		} else {
+// 			p.MatchType = matching.PathMatchTypeExact
+// 			p.MatchTypeName = p.MatchType.String()
+// 		}
+// 		oc.Paths[p.Path+"-"+strings.Join(p.Methods, "-")] = p
+// 		j++
+// 	}
+// }

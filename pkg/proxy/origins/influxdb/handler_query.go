@@ -23,11 +23,12 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
-	"github.com/tricksterproxy/trickster/pkg/proxy/timeconv"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"github.com/tricksterproxy/trickster/pkg/util/regexp/matching"
+	"github.com/tricksterproxy/trickster/pkg/util/timeconv"
 )
 
 // QueryHandler handles timeseries requests for InfluxDB and processes them through the delta proxy cache
@@ -43,28 +44,49 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
-	engines.DeltaProxyCacheRequest(w, r)
+	engines.DeltaProxyCacheRequest(w, r, c.modeler)
+}
+
+var epochToFlag = map[string]byte{
+	"ns": 1,
+	"u":  2, "µ": 2,
+	"ms": 3,
+	"s":  4,
+	"m":  5,
+	"h":  6,
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
-func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
+func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
+	*timeseries.RequestOptions, bool, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
+	rlo := &timeseries.RequestOptions{}
 
 	v, _, _ := params.GetRequestValues(r)
-	trq.Statement = v.Get(upQuery)
-	if trq.Statement == "" {
-		return nil, errors.MissingURLParam(upQuery)
+	if trq.Statement = v.Get(upQuery); trq.Statement == "" {
+		return nil, nil, false, errors.MissingURLParam(upQuery)
+	}
+
+	if b, ok := epochToFlag[v.Get(upEpoch)]; ok {
+		rlo.TimeFormat = b
+	}
+
+	if v.Get(upPretty) == "true" {
+		rlo.OutputFormat = 1
+	} else if r != nil && r.Header != nil &&
+		r.Header.Get(headers.NameAccept) == headers.ValueApplicationCSV {
+		rlo.OutputFormat = 2
 	}
 
 	// if the Step wasn't found in the query (e.g., "group by time(1m)"), just proxy it instead
 	step, found := matching.GetNamedMatch("step", reStep, trq.Statement)
 	if !found {
-		return nil, errors.ErrStepParse
+		return nil, nil, false, errors.ErrStepParse
 	}
 	stepDuration, err := timeconv.ParseDuration(step)
 	if err != nil {
-		return nil, errors.ErrStepParse
+		return nil, nil, false, errors.ErrStepParse
 	}
 	trq.Step = stepDuration
 	trq.Statement, trq.Extent = getQueryParts(trq.Statement)
@@ -72,9 +94,10 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	qt := url.Values(http.Header(v).Clone())
 	qt.Set(upQuery, trq.Statement)
+
 	// Swap in the Tokenzed Query in the Url Params
 	trq.TemplateURL.RawQuery = qt.Encode()
 
-	return trq, nil
+	return trq, rlo, false, nil
 
 }

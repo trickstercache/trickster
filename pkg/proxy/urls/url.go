@@ -59,3 +59,12 @@ func BuildUpstreamURL(r *http.Request, u *url.URL) *url.URL {
 	u2.User = r.URL.User
 	return u2
 }
+
+// Size returns the memory utilization in bytes of the URL
+func Size(u *url.URL) int {
+	if u == nil {
+		return 0
+	}
+	return len(u.Fragment) + len(u.Host) + len(u.Opaque) + len(u.Path) +
+		len(u.RawPath) + len(u.RawQuery) + len(u.Scheme) + 1 // ForceQuery=1
+}

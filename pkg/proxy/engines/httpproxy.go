@@ -249,9 +249,11 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 }
 
 // Respond sends an HTTP Response down to the requesting client
-func Respond(w io.Writer, code int, header http.Header, body []byte) {
+func Respond(w io.Writer, code int, header http.Header, body io.Reader) {
 	PrepareResponseWriter(w, code, header)
-	w.Write(body)
+	if body != nil {
+		io.Copy(w, body)
+	}
 }
 
 func setStatusHeader(httpStatus int, header http.Header) status.LookupStatus {

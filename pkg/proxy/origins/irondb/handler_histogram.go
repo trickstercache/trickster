@@ -27,6 +27,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins/irondb/common"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -37,17 +38,17 @@ import (
 // them through the delta proxy cache.
 func (c *Client) HistogramHandler(w http.ResponseWriter, r *http.Request) {
 	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
-	engines.DeltaProxyCacheRequest(w, r)
+	engines.DeltaProxyCacheRequest(w, r, c.modeler)
 }
 
 // histogramHandlerSetExtent will change the upstream request query to use the
 // provided Extent.
-func (c Client) histogramHandlerSetExtent(r *http.Request,
+func (c *Client) histogramHandlerSetExtent(r *http.Request,
 	trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent) {
 	var err error
 	if trq == nil {
-		if trq, err = c.ParseTimeRangeQuery(r); err != nil {
+		if trq, _, _, err = c.ParseTimeRangeQuery(r); err != nil {
 			return
 		}
 	}
@@ -75,7 +76,7 @@ func (c Client) histogramHandlerSetExtent(r *http.Request,
 	r.URL.Path = sb.String()
 }
 
-// histogramHandlerParseTimeRangeQuery parses the key parts of a TimeRangeQuery
+// histogramHandlerParseTimeRangeQuerycommon.Parses the key parts of a TimeRangeQuery
 // from the inbound HTTP Request.
 func (c *Client) histogramHandlerParseTimeRangeQuery(
 	r *http.Request) (*timeseries.TimeRangeQuery, error) {
@@ -97,15 +98,15 @@ func (c *Client) histogramHandlerParseTimeRangeQuery(
 	trq.Statement = "/histogram/" + strings.Join(ps[4:], "/")
 
 	var err error
-	if trq.Extent.Start, err = parseTimestamp(ps[1]); err != nil {
+	if trq.Extent.Start, err = common.ParseTimestamp(ps[1]); err != nil {
 		return nil, err
 	}
 
-	if trq.Extent.End, err = parseTimestamp(ps[2]); err != nil {
+	if trq.Extent.End, err = common.ParseTimestamp(ps[2]); err != nil {
 		return nil, err
 	}
 
-	if trq.Step, err = parseDuration(ps[3]); err != nil {
+	if trq.Step, err = common.ParseDuration(ps[3]); err != nil {
 		return nil, err
 	}
 
@@ -114,7 +115,7 @@ func (c *Client) histogramHandlerParseTimeRangeQuery(
 
 // histogramHandlerDeriveCacheKey calculates a query-specific keyname based on
 // the user request.
-func (c Client) histogramHandlerDeriveCacheKey(path string, params url.Values,
+func (c *Client) histogramHandlerDeriveCacheKey(path string, params url.Values,
 	headers http.Header, body io.ReadCloser, extra string) (string, io.ReadCloser) {
 	var sb strings.Builder
 	sb.WriteString(path)
@@ -148,7 +149,7 @@ func (c *Client) histogramHandlerFastForwardRequest(
 	nr := r.Clone(context.Background())
 	u := nr.URL
 	if trq == nil {
-		trq, err = c.ParseTimeRangeQuery(r)
+		trq, _, _, err = c.ParseTimeRangeQuery(r)
 		if err != nil {
 			return nil, err
 		}

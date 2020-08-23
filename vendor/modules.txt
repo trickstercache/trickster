@@ -74,8 +74,6 @@ github.com/gorilla/handlers
 github.com/gorilla/mux
 # github.com/influxdata/influxdb v1.8.2
 ## explicit
-github.com/influxdata/influxdb/models
-github.com/influxdata/influxdb/pkg/escape
 github.com/influxdata/influxdb/pkg/testing/assert
 # github.com/matttproud/golang_protobuf_extensions v1.0.1
 github.com/matttproud/golang_protobuf_extensions/pbutil
@@ -112,7 +110,7 @@ github.com/tricksterproxy/mockster/pkg/mocks/byterange
 github.com/tricksterproxy/mockster/pkg/mocks/prometheus
 github.com/tricksterproxy/mockster/pkg/routes
 github.com/tricksterproxy/mockster/pkg/testutil
-# github.com/yuin/gopher-lua v0.0.0-20200807101526-d70801a73ebe
+# github.com/yuin/gopher-lua v0.0.0-20200816102855-ee81675732da
 ## explicit
 github.com/yuin/gopher-lua
 github.com/yuin/gopher-lua/ast

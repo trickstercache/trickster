@@ -99,6 +99,9 @@ type CaseOptions struct {
 	RedirectURL string `toml:"redirect_url"`
 }
 
+// Lookup is a map of Options
+type Lookup map[string]*Options
+
 // Clone returns a perfect copy of the subject *Options
 func (o *Options) Clone() *Options {
 	return &Options{

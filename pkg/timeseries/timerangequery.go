@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+//go:generate msgp
+
 package timeseries
 
 import (
@@ -29,38 +31,40 @@ import (
 // TimeRangeQuery represents a timeseries database query parsed from an inbound HTTP request
 type TimeRangeQuery struct {
 	// Statement is the timeseries database query (with tokenized timeranges where present) requested by the user
-	Statement string
+	Statement string `msg:"stmt"`
 	// Extent provides the start and end times for the request from a timeseries database
-	Extent Extent
+	Extent Extent `msg:"ex"`
 	// Step indicates the amount of time in seconds between each datapoint in a TimeRangeQuery's resulting timeseries
-	Step time.Duration
-	// TimestampFieldName indicates the database field name for the timestamp field
-	TimestampFieldName string
+	Step time.Duration `msg:"-"`
 	// TemplateURL is used by some Origin Types for templatization of url parameters containing timestamps
-	TemplateURL *url.URL
-	// FastForwardDisable indicates whether the Time Range Query result should include fast forward data
-	FastForwardDisable bool
+	TemplateURL *url.URL `msg:"-"`
 	// IsOffset is true if the query uses a relative offset modifier
-	IsOffset bool
-	// BackfillTolerance can be updated to override the overall backfill tolerance per query
-	BackfillTolerance time.Duration
+	IsOffset bool `msg:"-"`
 	// StepNS is the nanosecond representation for Step
 	StepNS int64 `msg:"step"`
+	// BackfillTolerance can be updated to override the overall backfill tolerance per query
+	BackfillTolerance time.Duration `msg:"-"`
 	// BackfillToleranceNS is the nanosecond representation for BackfillTolerance
 	BackfillToleranceNS int64 `msg:"bft"`
+	// RecordLimit is the LIMIT value of the query
+	RecordLimit int `msg:"rl"`
 	// TimestampDefinition sets the definition for the Timestamp column in the in the timeseries based on the query
 	TimestampDefinition FieldDefinition `msg:"tsdef"`
+	// TagFieldDefinitions contains the definitions for Tag columns in the timeseries, based on the query
+	TagFieldDefintions []FieldDefinition `msg:"tfdefs"`
+	// ValueFieldDefinitions contains the definitions for Value columns in the timeseries, based on the query
+	ValueFieldDefinitions []FieldDefinition `msg:"vfdefs"`
 }
 
 // Clone returns an exact copy of a TimeRangeQuery
 func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 	t := &TimeRangeQuery{
-		Statement:          trq.Statement,
-		Step:               trq.Step,
-		Extent:             Extent{Start: trq.Extent.Start, End: trq.Extent.End},
-		IsOffset:           trq.IsOffset,
-		TimestampFieldName: trq.TimestampFieldName,
-		FastForwardDisable: trq.FastForwardDisable,
+		Statement:           trq.Statement,
+		Step:                trq.Step,
+		StepNS:              trq.StepNS,
+		Extent:              Extent{Start: trq.Extent.Start, End: trq.Extent.End},
+		IsOffset:            trq.IsOffset,
+		TimestampDefinition: trq.TimestampDefinition.Clone(),
 	}
 
 	if trq.TemplateURL != nil {
@@ -81,52 +85,10 @@ func (trq *TimeRangeQuery) NormalizeExtent() {
 	}
 }
 
-// CalculateDeltas provides a list of extents that are not in a cached timeseries,
-// when provided a list of extents that are cached.
-func (trq *TimeRangeQuery) CalculateDeltas(have ExtentList) ExtentList {
-	if len(have) == 0 {
-		return ExtentList{trq.Extent}
-	}
-	misCap := trq.Extent.End.Sub(trq.Extent.Start) / trq.Step
-	if misCap < 0 {
-		misCap = 0
-	}
-	misses := make([]time.Time, 0, misCap)
-	for i := trq.Extent.Start; !trq.Extent.End.Before(i); i = i.Add(trq.Step) {
-		found := false
-		for j := range have {
-			if j == 0 && i.Before(have[j].Start) {
-				// our earliest datapoint in cache is after the first point the user wants
-				break
-			}
-			if i.Equal(have[j].Start) || i.Equal(have[j].End) || (i.After(have[j].Start) && have[j].End.After(i)) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			misses = append(misses, i)
-		}
-	}
-	// Find the fill and gap ranges
-	ins := ExtentList{}
-	var inStart = time.Time{}
-	l := len(misses)
-	for i := range misses {
-		if inStart.IsZero() {
-			inStart = misses[i]
-		}
-		if i+1 == l || !misses[i+1].Equal(misses[i].Add(trq.Step)) {
-			ins = append(ins, Extent{Start: inStart, End: misses[i]})
-			inStart = time.Time{}
-		}
-	}
-	return ins
-}
-
 func (trq *TimeRangeQuery) String() string {
 	return fmt.Sprintf(`{ "statement": "%s", "step": "%s", "extent": "%s" }`,
-		strings.Replace(trq.Statement, `"`, `\"`, -1), trq.Step.String(), trq.Extent.String())
+		strings.Replace(trq.Statement, `"`, `\"`, -1), trq.Step.String(),
+		trq.Extent.String())
 }
 
 // GetBackfillTolerance will return the backfill tolerance for the query based on the provided
@@ -138,19 +100,13 @@ func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration) time.Duration
 	if trq.BackfillTolerance < 0 {
 		return 0
 	}
-	if x := strings.Index(trq.Statement, "trickster-backfill-tolerance:"); x > 1 {
-		x += 29
-		y := x
-		for ; y < len(trq.Statement); y++ {
-			if trq.Statement[y] < 48 || trq.Statement[y] > 57 {
-				break
-			}
-		}
-		if i, err := strconv.Atoi(trq.Statement[x:y]); err == nil {
-			return time.Second * time.Duration(i)
-		}
-	}
 	return def
+}
+
+// Size returns the memory usage in bytes of the TimeRangeQuery
+func (trq *TimeRangeQuery) Size() int {
+	return len(trq.Statement) + 24 + 8 + trq.TimestampDefinition.Size() + // Extent=24 + Step=8
+		urls.Size(trq.TemplateURL) + 11 // FFwDisable=1 IsOffset=1 StepNS=8 CustomData=1
 }
 
 // ExtractBackfillTolerance will look for the BackfillToleranceFlag in the provided string

@@ -21,6 +21,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins/irondb/common"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
@@ -29,21 +30,21 @@ import (
 // them through the delta proxy cache.
 func (c *Client) RawHandler(w http.ResponseWriter, r *http.Request) {
 	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
-	engines.DeltaProxyCacheRequest(w, r)
+	engines.DeltaProxyCacheRequest(w, r, c.modeler)
 }
 
 // rawHandlerSetExtent will change the upstream request query to use the
 // provided Extent.
-func (c Client) rawHandlerSetExtent(r *http.Request,
+func (c *Client) rawHandlerSetExtent(r *http.Request,
 	trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent) {
 	q := r.URL.Query()
-	q.Set(upStart, formatTimestamp(extent.Start, true))
-	q.Set(upEnd, formatTimestamp(extent.End, true))
+	q.Set(upStart, common.FormatTimestamp(extent.Start, true))
+	q.Set(upEnd, common.FormatTimestamp(extent.End, true))
 	r.URL.RawQuery = q.Encode()
 }
 
-// rawHandlerParseTimeRangeQuery parses the key parts of a TimeRangeQuery
+// rawHandlerParseTimeRangeQuerycommon.Parses the key parts of a TimeRangeQuery
 // from the inbound HTTP Request.
 func (c *Client) rawHandlerParseTimeRangeQuery(
 	r *http.Request) (*timeseries.TimeRangeQuery, error) {
@@ -57,7 +58,7 @@ func (c *Client) rawHandlerParseTimeRangeQuery(
 		return nil, errors.MissingURLParam(upStart)
 	}
 
-	if trq.Extent.Start, err = parseTimestamp(p); err != nil {
+	if trq.Extent.Start, err = common.ParseTimestamp(p); err != nil {
 		return nil, err
 	}
 
@@ -65,7 +66,7 @@ func (c *Client) rawHandlerParseTimeRangeQuery(
 		return nil, errors.MissingURLParam(upEnd)
 	}
 
-	if trq.Extent.End, err = parseTimestamp(p); err != nil {
+	if trq.Extent.End, err = common.ParseTimestamp(p); err != nil {
 		return nil, err
 	}
 

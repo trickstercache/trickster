@@ -26,6 +26,9 @@ import (
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 )
 
+// Lookup is a map of Options
+type Lookup map[string]*Options
+
 // Options is a collection of defining the Trickster Caching Behavior
 type Options struct {
 	// Name is the Name of the cache, taken from the Key in the Caches map[string]*CacheConfig

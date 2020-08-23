@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package irondb
+package model
 
 import (
 	"testing"
@@ -94,21 +94,13 @@ func TestDataPointMarshalJSON(t *testing.T) {
 
 }
 
-func TestSeriesEnvelopeSetStep(t *testing.T) {
+func TestSeriesEnvelopeSetTimeRangeQuery(t *testing.T) {
 	se := SeriesEnvelope{}
 	const step = time.Duration(300) * time.Minute
-	se.SetStep(step)
-	if se.StepDuration != step {
-		t.Errorf("Expected step: %v, got: %v", step, se.StepDuration)
-	}
-}
-
-func TestSeriesEnvelopeStep(t *testing.T) {
-	se := SeriesEnvelope{}
-	const step = time.Duration(300) * time.Minute
-	se.SetStep(step)
+	trq := &timeseries.TimeRangeQuery{Step: step}
+	se.SetTimeRangeQuery(trq)
 	if se.Step() != step {
-		t.Errorf("Expected step: %v, got: %v", step, se.Step())
+		t.Errorf("Expected step: %v, got: %v", step, se.StepDuration)
 	}
 }
 
@@ -140,8 +132,7 @@ func TestSeriesEnvelopeExtents(t *testing.T) {
 }
 
 func TestSeriesEnvelopeSeriesCount(t *testing.T) {
-	client := &Client{}
-	ts, err := client.UnmarshalTimeseries([]byte(testResponse))
+	ts, err := UnmarshalTimeseries([]byte(testResponse), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -154,8 +145,7 @@ func TestSeriesEnvelopeSeriesCount(t *testing.T) {
 }
 
 func TestSeriesEnvelopeValueCount(t *testing.T) {
-	client := &Client{}
-	ts, err := client.UnmarshalTimeseries([]byte(testResponse))
+	ts, err := UnmarshalTimeseries([]byte(testResponse), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -168,8 +158,7 @@ func TestSeriesEnvelopeValueCount(t *testing.T) {
 }
 
 func TestSeriesEnvelopeTimestampCount(t *testing.T) {
-	client := &Client{}
-	ts, err := client.UnmarshalTimeseries([]byte(testResponse2))
+	ts, err := UnmarshalTimeseries([]byte(testResponse2), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -182,15 +171,14 @@ func TestSeriesEnvelopeTimestampCount(t *testing.T) {
 }
 
 func TestSeriesEnvelopeMerge(t *testing.T) {
-	client := &Client{}
-	ts1, err := client.UnmarshalTimeseries([]byte(testResponse))
+	ts1, err := UnmarshalTimeseries([]byte(testResponse), nil)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	se1 := ts1.(*SeriesEnvelope)
-	ts2, err := client.UnmarshalTimeseries([]byte(testResponse2))
+	ts2, err := UnmarshalTimeseries([]byte(testResponse2), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -212,8 +200,7 @@ func TestSeriesEnvelopeMerge(t *testing.T) {
 }
 
 func TestSeriesEnvelopeSort(t *testing.T) {
-	client := &Client{}
-	ts1, err := client.UnmarshalTimeseries([]byte(testResponse))
+	ts1, err := UnmarshalTimeseries([]byte(testResponse), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -235,8 +222,7 @@ func TestSeriesEnvelopeSort(t *testing.T) {
 }
 
 func TestSeriesEnvelopeClone(t *testing.T) {
-	client := &Client{}
-	ts1, err := client.UnmarshalTimeseries([]byte(testResponse))
+	ts1, err := UnmarshalTimeseries([]byte(testResponse), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -245,13 +231,13 @@ func TestSeriesEnvelopeClone(t *testing.T) {
 	se := ts1.(*SeriesEnvelope)
 	se2 := se.Clone()
 
-	s1, err := client.MarshalTimeseries(se)
+	s1, err := MarshalTimeseries(se, nil)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	s2, err := client.MarshalTimeseries(se2)
+	s2, err := MarshalTimeseries(se2, nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -263,8 +249,7 @@ func TestSeriesEnvelopeClone(t *testing.T) {
 }
 
 func TestSeriesEnvelopeCropToRange(t *testing.T) {
-	client := &Client{}
-	ts1, err := client.UnmarshalTimeseries([]byte(testResponse))
+	ts1, err := UnmarshalTimeseries([]byte(testResponse), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -276,7 +261,7 @@ func TestSeriesEnvelopeCropToRange(t *testing.T) {
 		End:   time.Unix(600, 0),
 	}})
 
-	ts2, err := client.UnmarshalTimeseries([]byte(testResponse2))
+	ts2, err := UnmarshalTimeseries([]byte(testResponse2), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -294,7 +279,7 @@ func TestSeriesEnvelopeCropToRange(t *testing.T) {
 		End:   time.Unix(300, 0),
 	})
 
-	s1, err := client.MarshalTimeseries(se1)
+	s1, err := MarshalTimeseries(se1, nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -309,8 +294,7 @@ func TestSeriesEnvelopeCropToRange(t *testing.T) {
 }
 
 func TestSeriesEnvelopeCropToSize(t *testing.T) {
-	client := &Client{}
-	ts1, err := client.UnmarshalTimeseries([]byte(testResponse))
+	ts1, err := UnmarshalTimeseries([]byte(testResponse), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -322,7 +306,7 @@ func TestSeriesEnvelopeCropToSize(t *testing.T) {
 		End:   time.Unix(300, 0),
 	}})
 
-	ts2, err := client.UnmarshalTimeseries([]byte(testResponse2))
+	ts2, err := UnmarshalTimeseries([]byte(testResponse2), nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -340,7 +324,7 @@ func TestSeriesEnvelopeCropToSize(t *testing.T) {
 		End:   time.Unix(900, 0),
 	})
 
-	s1, err := client.MarshalTimeseries(se1)
+	s1, err := MarshalTimeseries(se1, nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -378,8 +362,7 @@ func TestMarshalTimeseries(t *testing.T) {
 		},
 	}
 
-	client := &Client{}
-	bytes, err := client.MarshalTimeseries(se)
+	bytes, err := MarshalTimeseries(se, nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -394,8 +377,7 @@ func TestMarshalTimeseries(t *testing.T) {
 
 func TestUnmarshalTimeseries(t *testing.T) {
 	bytes := []byte(`[[99000,1.5],[99000.500,1.5]]`)
-	client := &Client{}
-	ts, err := client.UnmarshalTimeseries(bytes)
+	ts, err := UnmarshalTimeseries(bytes, nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -424,7 +406,7 @@ func TestUnmarshalTimeseries(t *testing.T) {
 	}
 
 	bytes = []byte(`{"data":[[99000,1.5],[99000.500,1.5]],"step":"300s"}`)
-	ts, err = client.UnmarshalTimeseries(bytes)
+	ts, err = UnmarshalTimeseries(bytes, nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -460,8 +442,7 @@ func TestUnmarshalTimeseries(t *testing.T) {
 
 func TestUnmarshalInstantaneous(t *testing.T) {
 	bytes := []byte(`[[99000,1.5],[99000.500,1.5]]`)
-	client := &Client{}
-	ts, err := client.UnmarshalInstantaneous(bytes)
+	ts, err := UnmarshalInstantaneous(bytes)
 	if err != nil {
 		t.Error(err)
 		return
@@ -493,15 +474,13 @@ func TestUnmarshalInstantaneous(t *testing.T) {
 func TestTSSize(t *testing.T) {
 
 	bytes := []byte(`[[99000,1.5],[99000.500,1.5]]`)
-	client := &Client{}
 
-	s, _ := client.UnmarshalTimeseries(bytes)
+	s, _ := UnmarshalTimeseries(bytes, nil)
 
-	expected := 96
 	size := s.Size()
 
-	if size != expected {
-		t.Errorf("expected %d got %d", expected, size)
+	if size != 96 {
+		t.Errorf("expected %d got %d", 96, size)
 	}
 
 }

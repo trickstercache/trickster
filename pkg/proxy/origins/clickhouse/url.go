@@ -17,7 +17,11 @@
 package clickhouse
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
@@ -42,8 +46,14 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 	r.Header.Set("Accept-Encoding", "gzip")
 
 	if q != "" {
-		p.Set(upQuery, interpolateTimeQuery(q, extent, trq.Step))
+		p.Set(upQuery, interpolateTimeQuery(q, trq.TimestampDefinition.Name, extent, trq.Step))
 	}
 
 	r.URL.RawQuery = p.Encode()
+}
+
+func interpolateTimeQuery(template string, tsFieldName string, extent *timeseries.Extent, step time.Duration) string {
+	rangeCondition := fmt.Sprintf("%s BETWEEN %d AND %d", tsFieldName, extent.Start.Unix(), extent.End.Unix())
+	return strings.Replace(strings.Replace(strings.Replace(template, tkRange, rangeCondition, -1),
+		tkTS1, strconv.FormatInt(extent.Start.Unix(), 10), -1), tkTS2, strconv.FormatInt(extent.End.Unix(), 10), -1)
 }

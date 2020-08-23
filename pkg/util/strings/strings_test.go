@@ -25,12 +25,12 @@ func TestIndexOfString(t *testing.T) {
 
 	arr := []string{"string0", "string1", "string2"}
 
-	i := IndexOfString(arr, "string0")
+	i := IndexInSlice(arr, "string0")
 	if i != 0 {
 		t.Errorf(`expected 0. got %d`, i)
 	}
 
-	i = IndexOfString(arr, "string3")
+	i = IndexInSlice(arr, "string3")
 	if i != -1 {
 		t.Errorf(`expected -1. got %d`, i)
 	}

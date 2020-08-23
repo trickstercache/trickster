@@ -29,10 +29,14 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/clickhouse"
+	modelch "github.com/tricksterproxy/trickster/pkg/proxy/origins/clickhouse/model"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/influxdb"
+	modelflux "github.com/tricksterproxy/trickster/pkg/proxy/origins/influxdb/model"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/irondb"
+	modeliron "github.com/tricksterproxy/trickster/pkg/proxy/origins/irondb/model"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/prometheus"
+	modelprom "github.com/tricksterproxy/trickster/pkg/proxy/origins/prometheus/model"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/reverseproxycache"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/rule"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/types"
@@ -178,13 +182,13 @@ func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 
 	switch strings.ToLower(o.OriginType) {
 	case "prometheus", "":
-		client, err = prometheus.NewClient(k, o, mux.NewRouter(), c)
+		client, err = prometheus.NewClient(k, o, mux.NewRouter(), c, modelprom.NewModeler())
 	case "influxdb":
-		client, err = influxdb.NewClient(k, o, mux.NewRouter(), c)
+		client, err = influxdb.NewClient(k, o, mux.NewRouter(), c, modelflux.NewModeler())
 	case "irondb":
-		client, err = irondb.NewClient(k, o, mux.NewRouter(), c)
+		client, err = irondb.NewClient(k, o, mux.NewRouter(), c, modeliron.NewModeler())
 	case "clickhouse":
-		client, err = clickhouse.NewClient(k, o, mux.NewRouter(), c)
+		client, err = clickhouse.NewClient(k, o, mux.NewRouter(), c, modelch.NewModeler())
 	case "rpc", "reverseproxycache":
 		client, err = reverseproxycache.NewClient(k, o, mux.NewRouter(), c)
 	case "rule":
