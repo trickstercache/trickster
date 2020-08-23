@@ -40,7 +40,7 @@ var lexOpts = LexerOptions()
 var lexer = lsql.NewLexer(lexOpts)
 var parser = &chParser{
 	Parser: sqlparser.New(
-		parsing.NewOptions(nil, lexer, lexOpts).
+		parsing.New(nil, lexer, lexOpts).
 			WithDecisions("FindVerb",
 				parsing.DecisionSet{
 					lsql.TokenWith: atWith,

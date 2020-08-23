@@ -46,7 +46,7 @@ func TestRegisterAll(t *testing.T) {
 
 	// test bad implementation
 	cfg := config.NewConfig()
-	tc := options.NewOptions()
+	tc := options.New()
 
 	cfg.TracingConfigs = make(map[string]*options.Options)
 	cfg.TracingConfigs["test"] = tc

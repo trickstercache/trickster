@@ -91,7 +91,7 @@ func TestTextHandlerParseTimeRangeQuery(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
 	hc := tu.NewTestWebClient()
-	cfg := oo.NewOptions()
+	cfg := oo.New()
 	client := &Client{name: "test", webClient: hc, config: cfg}
 	cfg.Paths = client.DefaultPathConfigs(cfg)
 
@@ -132,7 +132,7 @@ func TestTextHandlerSetExtent(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
 	hc := tu.NewTestWebClient()
-	cfg := oo.NewOptions()
+	cfg := oo.New()
 	client := &Client{name: "test", webClient: hc, config: cfg}
 	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0/test", nil)

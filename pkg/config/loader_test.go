@@ -79,7 +79,7 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 		},
 		{ // Case 5
 			"../../testdata/test.invalid-negative-cache-2.conf",
-			`invalid negative cache config in default: 1212 is not a valid status code`,
+			`invalid negative cache config in default: 1212 is not >= 400 and < 600`,
 		},
 		{ // Case 6
 			"../../testdata/test.invalid-negative-cache-3.conf",
@@ -205,12 +205,12 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected fast_forward_disable true, got %t", o.FastForwardDisable)
 	}
 
-	if o.BackfillToleranceSecs != 301 {
-		t.Errorf("expected 301, got %d", o.BackfillToleranceSecs)
+	if o.BackfillToleranceMS != 301000 {
+		t.Errorf("expected 301000, got %d", o.BackfillToleranceMS)
 	}
 
-	if o.TimeoutSecs != 37 {
-		t.Errorf("expected 37, got %d", o.TimeoutSecs)
+	if o.TimeoutMS != 37000 {
+		t.Errorf("expected 37000, got %d", o.TimeoutMS)
 	}
 
 	if o.IsDefault != true {
@@ -221,18 +221,18 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %d got %d", 23, o.MaxIdleConns)
 	}
 
-	if o.KeepAliveTimeoutSecs != 7 {
-		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeoutSecs)
+	if o.KeepAliveTimeoutMS != 7000 {
+		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeoutMS)
 	}
 
-	// MaxTTLSecs is 300, thus should override TimeseriesTTLSecs = 8666
-	if o.TimeseriesTTLSecs != 300 {
-		t.Errorf("expected 300, got %d", o.TimeseriesTTLSecs)
+	// MaxTTLMS is 300, thus should override TimeseriesTTLMS = 8666
+	if o.TimeseriesTTLMS != 300000 {
+		t.Errorf("expected 300000, got %d", o.TimeseriesTTLMS)
 	}
 
-	// MaxTTLSecs is 300, thus should override FastForwardTTLSecs = 382
-	if o.FastForwardTTLSecs != 300 {
-		t.Errorf("expected 300, got %d", o.FastForwardTTLSecs)
+	// MaxTTLMS is 300, thus should override FastForwardTTLMS = 382
+	if o.FastForwardTTLMS != 300000 {
+		t.Errorf("expected 300000, got %d", o.FastForwardTTLMS)
 	}
 
 	if o.TLS == nil {
@@ -271,12 +271,12 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected redis, got %s", c.CacheType)
 	}
 
-	if c.Index.ReapIntervalSecs != 4 {
-		t.Errorf("expected 4, got %d", c.Index.ReapIntervalSecs)
+	if c.Index.ReapIntervalMS != 4000 {
+		t.Errorf("expected 4000, got %d", c.Index.ReapIntervalMS)
 	}
 
-	if c.Index.FlushIntervalSecs != 6 {
-		t.Errorf("expected 6, got %d", c.Index.FlushIntervalSecs)
+	if c.Index.FlushIntervalMS != 6000 {
+		t.Errorf("expected 6000, got %d", c.Index.FlushIntervalMS)
 	}
 
 	if c.Index.MaxSizeBytes != 536870913 {
@@ -295,8 +295,8 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 20, got %d", c.Index.MaxSizeBackoffObjects)
 	}
 
-	if c.Index.ReapIntervalSecs != 4 {
-		t.Errorf("expected 4, got %d", c.Index.ReapIntervalSecs)
+	if c.Index.ReapIntervalMS != 4000 {
+		t.Errorf("expected 4000, got %d", c.Index.ReapIntervalMS)
 	}
 
 	if c.Redis.ClientType != "test_redis_type" {
@@ -469,20 +469,20 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected fast_forward_disable false, got %t", o.FastForwardDisable)
 	}
 
-	if o.BackfillToleranceSecs != d.DefaultBackfillToleranceSecs {
-		t.Errorf("expected %d, got %d", d.DefaultBackfillToleranceSecs, o.BackfillToleranceSecs)
+	if o.BackfillToleranceMS != d.DefaultBackfillToleranceMS {
+		t.Errorf("expected %d, got %d", d.DefaultBackfillToleranceMS, o.BackfillToleranceMS)
 	}
 
-	if o.TimeoutSecs != d.DefaultOriginTimeoutSecs {
-		t.Errorf("expected %d, got %d", d.DefaultOriginTimeoutSecs, o.TimeoutSecs)
+	if o.TimeoutMS != d.DefaultOriginTimeoutMS {
+		t.Errorf("expected %d, got %d", d.DefaultOriginTimeoutMS, o.TimeoutMS)
 	}
 
-	if o.TimeseriesTTLSecs != d.DefaultTimeseriesTTLSecs {
-		t.Errorf("expected %d, got %d", d.DefaultTimeseriesTTLSecs, o.TimeseriesTTLSecs)
+	if o.TimeseriesTTLMS != d.DefaultTimeseriesTTLMS {
+		t.Errorf("expected %d, got %d", d.DefaultTimeseriesTTLMS, o.TimeseriesTTLMS)
 	}
 
-	if o.FastForwardTTLSecs != d.DefaultFastForwardTTLSecs {
-		t.Errorf("expected %d, got %d", d.DefaultFastForwardTTLSecs, o.FastForwardTTLSecs)
+	if o.FastForwardTTLMS != d.DefaultFastForwardTTLMS {
+		t.Errorf("expected %d, got %d", d.DefaultFastForwardTTLMS, o.FastForwardTTLMS)
 	}
 
 	c, ok := conf.Caches["default"]
@@ -495,12 +495,12 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %s, got %s", d.DefaultCacheType, c.CacheType)
 	}
 
-	if c.Index.ReapIntervalSecs != d.DefaultCacheIndexReap {
-		t.Errorf("expected %d, got %d", d.DefaultCacheIndexReap, c.Index.ReapIntervalSecs)
+	if c.Index.ReapIntervalMS != d.DefaultCacheIndexReap {
+		t.Errorf("expected %d, got %d", d.DefaultCacheIndexReap, c.Index.ReapIntervalMS)
 	}
 
-	if c.Index.FlushIntervalSecs != d.DefaultCacheIndexFlush {
-		t.Errorf("expected %d, got %d", d.DefaultCacheIndexFlush, c.Index.FlushIntervalSecs)
+	if c.Index.FlushIntervalMS != d.DefaultCacheIndexFlush {
+		t.Errorf("expected %d, got %d", d.DefaultCacheIndexFlush, c.Index.FlushIntervalMS)
 	}
 
 	if c.Index.MaxSizeBytes != d.DefaultCacheMaxSizeBytes {
@@ -519,8 +519,8 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %d, got %d", d.DefaultMaxSizeBackoffObjects, c.Index.MaxSizeBackoffObjects)
 	}
 
-	if c.Index.ReapIntervalSecs != 3 {
-		t.Errorf("expected 3, got %d", c.Index.ReapIntervalSecs)
+	if c.Index.ReapIntervalMS != 3000 {
+		t.Errorf("expected 3000, got %d", c.Index.ReapIntervalMS)
 	}
 
 	if c.Redis.ClientType != d.DefaultRedisClientType {

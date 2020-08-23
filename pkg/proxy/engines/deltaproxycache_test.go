@@ -166,8 +166,8 @@ func TestDeltaProxyCacheRequestAllItemsTooNew(t *testing.T) {
 	rsc.CacheConfig.CacheType = "test"
 
 	oc.FastForwardDisable = true
-	oc.BackfillToleranceSecs = 600
-	oc.BackfillTolerance = time.Second * time.Duration(oc.BackfillToleranceSecs)
+	oc.BackfillToleranceMS = 600000
+	oc.BackfillTolerance = time.Millisecond * time.Duration(oc.BackfillToleranceMS)
 
 	step := time.Duration(300) * time.Second
 	end := time.Now()

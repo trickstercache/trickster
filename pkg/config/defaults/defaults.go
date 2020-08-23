@@ -49,11 +49,11 @@ const (
 	DefaultReloadPort = 8484
 	// DefaultReloadAddress is the default address that the Reload endpoint will listen on
 	DefaultReloadAddress = "127.0.0.1"
-	// DefaultDrainTimeoutSecs is the default time that is allowed for an old configuration's requests to drain
+	// DefaultDrainTimeoutMS is the default time that is allowed for an old configuration's requests to drain
 	// before its resources are closed
-	DefaultDrainTimeoutSecs = 30
-	// DefaultRateLimitSecs is the default Rate Limit time for Config Reloads
-	DefaultRateLimitSecs = 3
+	DefaultDrainTimeoutMS = 30000
+	// DefaultRateLimitMS is the default Rate Limit time for Config Reloads
+	DefaultRateLimitMS = 3000
 
 	// DefaultTracerType is the default distributed tracer exporter implementation
 	DefaultTracerType = "none"
@@ -67,12 +67,12 @@ const (
 	// and should align with DefaultCacheType
 	DefaultCacheTypeID = types.CacheTypeMemory
 
-	// DefaultTimeseriesTTLSecs is the default Cache TTL for Time Series Objects
-	DefaultTimeseriesTTLSecs = 21600
-	// DefaultFastForwardTTLSecs is the default Cache TTL for Time Series Fast Forward Objects
-	DefaultFastForwardTTLSecs = 15
-	// DefaultMaxTTLSecs is the default Maximum TTL of any cache object
-	DefaultMaxTTLSecs = 86400
+	// DefaultTimeseriesTTLMS is the default Cache TTL for Time Series Objects
+	DefaultTimeseriesTTLMS = 21600000
+	// DefaultFastForwardTTLMS is the default Cache TTL for Time Series Fast Forward Objects
+	DefaultFastForwardTTLMS = 15000
+	// DefaultMaxTTLMS is the default Maximum TTL of any cache object
+	DefaultMaxTTLMS = 86400000
 	// DefaultRevalidationFactor is the default Cache Object Freshness Lifetime to TTL multiplier
 	DefaultRevalidationFactor = 2
 	// DefaultRedisClientType is the default Redis Client Type
@@ -85,10 +85,10 @@ const (
 	DefaultBBoltFile = "trickster.db"
 	// DefaultBBoltBucket is the default bbolt Cache bucket name
 	DefaultBBoltBucket = "trickster"
-	// DefaultCacheIndexReap is the default Cache Index Reap interval (in seconds)
-	DefaultCacheIndexReap = 3
-	// DefaultCacheIndexFlush is the default Cache Index Flush interval (in seconds)
-	DefaultCacheIndexFlush = 5
+	// DefaultCacheIndexReap is the default Cache Index Reap interval (in milliseconds)
+	DefaultCacheIndexReap = 3000
+	// DefaultCacheIndexFlush is the default Cache Index Flush interval (in milliseconds)
+	DefaultCacheIndexFlush = 5000
 	// DefaultCacheMaxSizeBytes is the default Max Cache Size in Bytes
 	DefaultCacheMaxSizeBytes = 536870912
 	// DefaultMaxSizeBackoffBytes is the default Max Cache Backoff Size in Bytes
@@ -105,18 +105,18 @@ const (
 	DefaultOriginTEM = evictionmethods.EvictionMethodOldest
 	// DefaultOriginTEMName is the default Timeseries Eviction Method name for Time Series-based Origins
 	DefaultOriginTEMName = "oldest"
-	// DefaultOriginTimeoutSecs is the default Upstream Request Timeout for Origins
-	DefaultOriginTimeoutSecs = 180
+	// DefaultOriginTimeoutMS is the default Upstream Request Timeout for Origins
+	DefaultOriginTimeoutMS = 180000
 	// DefaultOriginCacheName is the default Cache Name for Origins
 	DefaultOriginCacheName = "default"
 	// DefaultOriginNegativeCacheName is the default Negative Cache Name for Origins
 	DefaultOriginNegativeCacheName = "default"
 	// DefaultTracingConfigName is the default Tracing Config Name for Origins
 	DefaultTracingConfigName = "default"
-	// DefaultBackfillToleranceSecs is the default Backfill Tolerance setting for Origins
-	DefaultBackfillToleranceSecs = 0
-	// DefaultKeepAliveTimeoutSecs is the default Keep Alive Timeout for Origins' upstream client pools
-	DefaultKeepAliveTimeoutSecs = 300
+	// DefaultBackfillToleranceMS is the default Backfill Tolerance setting for Origins
+	DefaultBackfillToleranceMS = 0
+	// DefaultKeepAliveTimeoutMS is the default Keep Alive Timeout for Origins' upstream client pools
+	DefaultKeepAliveTimeoutMS = 300000
 	// DefaultMaxIdleConns is the default number of Idle Connections in Origins' upstream client pools
 	DefaultMaxIdleConns = 20
 	// DefaultHealthCheckPath is the default value (noop) for Origins' Health Check Path

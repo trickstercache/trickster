@@ -71,7 +71,7 @@ func TestRollupHandlerSetExtent(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
 	hc := tu.NewTestWebClient()
-	cfg := oo.NewOptions()
+	cfg := oo.New()
 	client := &Client{name: "test", webClient: hc, config: cfg}
 	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0//rollup/00112233-4455-6677-8899-aabbccddeeff/metric", nil)
@@ -98,7 +98,7 @@ func TestRollupHandlerParseTimeRangeQuery(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
 	hc := tu.NewTestWebClient()
-	cfg := oo.NewOptions()
+	cfg := oo.New()
 	client := &Client{name: "test", webClient: hc, config: cfg}
 	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0/rollup/00112233-4455-6677-8899-aabbccddeeff/metric", nil)

@@ -135,7 +135,7 @@ func newTestCaseOpts() map[string]*ro.CaseOptions {
 
 func newTestRules() ([]*rule, error) {
 
-	oopts := oo.NewOptions()
+	oopts := oo.New()
 
 	rwi := newTestRewriterInstructions()
 
@@ -171,7 +171,7 @@ func newTestRules() ([]*rule, error) {
 
 func newTestClient() (*Client, error) {
 
-	oopts := oo.NewOptions()
+	oopts := oo.New()
 
 	rwi, err := rewriter.ProcessConfigs(newTestRewriterOpts())
 	if err != nil {

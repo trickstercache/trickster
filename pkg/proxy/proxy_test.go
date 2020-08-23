@@ -46,7 +46,7 @@ func TestNewHTTPClient(t *testing.T) {
 	const caFileInvalid2 = "../../testdata/test.06.cert.pem"
 
 	// test good originconfig, no CA
-	oc := oo.NewOptions()
+	oc := oo.New()
 	_, err = NewHTTPClient(oc)
 	if err != nil {
 		t.Error(err)

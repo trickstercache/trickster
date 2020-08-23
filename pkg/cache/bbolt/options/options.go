@@ -28,7 +28,7 @@ type Options struct {
 	Bucket string `toml:"bucket"`
 }
 
-// NewOptions returns a reference to a new bbolt Options
-func NewOptions() *Options {
+// New returns a reference to a new bbolt Options
+func New() *Options {
 	return &Options{Filename: d.DefaultBBoltFile, Bucket: d.DefaultBBoltBucket}
 }

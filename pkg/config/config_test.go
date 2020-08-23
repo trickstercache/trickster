@@ -35,9 +35,13 @@ import (
 
 const emptyFilePath = "../../testdata/test.empty.conf"
 
+// EmptyTestConfig returns an empty config based on the testdata empty conf
 func emptyTestConfig() (*Config, string) {
 	const path = emptyFilePath
-	c, _, _ := Load("testing", "testing", []string{"-config", path})
+	c, _, err := Load("testing", "testing", []string{"-config", path})
+	if err != nil {
+		panic("could not load empty test config: " + err.Error())
+	}
 	s, _ := ioutil.ReadFile(path)
 	return c, string(s)
 }
@@ -54,7 +58,7 @@ func TestClone(t *testing.T) {
 	oc.CompressableTypes = map[string]bool{"text/plain": true}
 	oc.NegativeCacheName = "default"
 	oc.NegativeCache = map[int]time.Duration{404: time.Duration(10) * time.Second}
-	oc.FastForwardPath = po.NewOptions()
+	oc.FastForwardPath = po.New()
 	oc.TLS = &to.Options{CertificateAuthorityPaths: []string{"foo"}}
 	oc.HealthCheckHeaders = map[string]string{headers.NameAuthorization: expected}
 
@@ -101,7 +105,7 @@ func TestHideAuthorizationCredentials(t *testing.T) {
 
 func TestCloneOriginConfig(t *testing.T) {
 
-	oc := oo.NewOptions()
+	oc := oo.New()
 	oc.Hosts = []string{"test"}
 
 	oc2 := oc.Clone()
@@ -172,72 +176,38 @@ func TestSetDefaults(t *testing.T) {
 	}
 }
 
-func TestValidateConfigMappings(t *testing.T) {
-
-	c, toml := emptyTestConfig()
-	oc := c.Origins["test"]
-
-	c.Origins["frontend"] = oc
-	err := c.validateConfigMappings()
-	if err == nil {
-		t.Error("expected error for invalid origin name")
-	}
-
-	delete(c.Origins, "frontend")
-	oc.OriginType = "rule"
-	oc.RuleName = "invalid"
-	err = c.validateConfigMappings()
-	if err == nil {
-		t.Error("expected error for invalid rule name")
-	}
-
-	toml = strings.Replace(
-		toml+testRule,
-		"    origin_type = 'test'",
-		"    origin_type = 'rule'\n    rule_name = 'example'",
-		-1,
-	)
-
-	c.loadTOMLConfig(toml, &Flags{})
-	err = c.validateConfigMappings()
-	if err != nil {
-		t.Error(err)
-	}
-
-}
-
 const testRule = `
-[rules]
-  [rules.example]
-  input_source = 'path'
-  input_type = 'string'
-  operation = 'prefix'
-  next_route = 'test'
-	[rules.example.cases]
-		[rules.example.cases.1]
-		matches = ['trickster']
-		next_route = 'test'
-`
+ [rules]
+   [rules.example]
+   input_source = 'path'
+   input_type = 'string'
+   operation = 'prefix'
+   next_route = 'test'
+	 [rules.example.cases]
+		 [rules.example.cases.1]
+		 matches = ['trickster']
+		 next_route = 'test'
+ `
 
 const testRewriter = `
-[request_rewriters]
-  [request_rewriters.example]
-    instructions = [
-      ['path', 'set', '/api/v1/query'],
-      ['param', 'delete', 'start'],
-      ['param', 'delete', 'end'],
-      ['param', 'delete', 'step']
-	]
-`
+ [request_rewriters]
+   [request_rewriters.example]
+	 instructions = [
+	   ['path', 'set', '/api/v1/query'],
+	   ['param', 'delete', 'start'],
+	   ['param', 'delete', 'end'],
+	   ['param', 'delete', 'step']
+	 ]
+ `
 
 const testPaths = `
-	[origins.test.paths]
-	  [origins.test.paths.root]
-	  path = '/'
-	  match_type = 'prefix'
-	  handler = 'proxycache'
-	  req_rewriter_name = 'example'
-`
+	 [origins.test.paths]
+	   [origins.test.paths.root]
+	   path = '/'
+	   match_type = 'prefix'
+	   handler = 'proxycache'
+	   req_rewriter_name = 'example'
+ `
 
 func TestProcessOriginConfigs(t *testing.T) {
 
@@ -281,14 +251,14 @@ func TestProcessOriginConfigs(t *testing.T) {
 
 	toml = strings.Replace(
 		toml,
-		`	  req_rewriter_name = 'example'`,
-		`	  req_rewriter_name = 'invalid'`,
+		` req_rewriter_name = 'example'`,
+		` req_rewriter_name = 'invalid'`,
 		-1,
 	)
 
 	err = c.loadTOMLConfig(toml, &Flags{})
 	if err == nil || !strings.Contains(err.Error(), "invalid rewriter name") {
-		t.Error("expected toml parsing error")
+		t.Error("expected toml parsing error", err)
 	}
 
 }
@@ -320,7 +290,7 @@ func TestIsStale(t *testing.T) {
 	defer os.Remove(testFile)
 
 	c, _, _ := Load("testing", "testing", []string{"-config", testFile})
-	c.ReloadConfig.RateLimitSecs = 0
+	c.ReloadConfig.RateLimitMS = 0
 
 	if c.IsStale() {
 		t.Error("expected non-stale config")

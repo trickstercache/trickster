@@ -144,7 +144,7 @@ func TestHTTPClient(t *testing.T) {
 }
 
 func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil, nil)
+	c, err := NewClient("test", oo.New(), nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}

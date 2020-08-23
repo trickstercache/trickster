@@ -312,7 +312,7 @@ func TestUpdateOptions(t *testing.T) {
 			FlushInterval: time.Second * time.Duration(10)}}
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, testLogger)
 
-	options := io.NewOptions()
+	options := io.New()
 	options.MaxSizeBytes = 5
 	idx.UpdateOptions(options)
 

@@ -17,15 +17,16 @@
 package rule
 
 import (
+	"testing"
+
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
-
-	"testing"
 )
 
 func TestNewNewClient(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -35,7 +36,7 @@ func TestNewNewClient(t *testing.T) {
 }
 
 func TestHTTPClient(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -45,7 +46,7 @@ func TestHTTPClient(t *testing.T) {
 }
 
 func TestGetCache(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -55,7 +56,7 @@ func TestGetCache(t *testing.T) {
 }
 
 func TestClientName(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -65,7 +66,7 @@ func TestClientName(t *testing.T) {
 }
 
 func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -76,7 +77,7 @@ func TestSetCache(t *testing.T) {
 }
 
 func TestConfiguration(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -86,7 +87,7 @@ func TestConfiguration(t *testing.T) {
 }
 
 func TestRouter(t *testing.T) {
-	c, err := NewClient("test", oo.NewOptions(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -122,19 +123,27 @@ func TestHandlers(t *testing.T) {
 func TestValidate(t *testing.T) {
 	c := Clients{&Client{options: &oo.Options{
 		RuleOptions: &options.Options{InputType: "header"}}}}
-	err := c.Validate(nil)
+	err := c.validate(nil)
 	if err == nil {
 		t.Error("expected error")
 	}
 	c = Clients{&Client{}}
-	err = c.Validate(nil)
+	err = c.validate(nil)
 	if err != errors.ErrInvalidRuleOptions {
 		t.Error("expected error for invalid rule options")
 	}
 
 	c = Clients{}
-	err = c.Validate(nil)
+	err = c.validate(nil)
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+func TestValidateOptions(t *testing.T) {
+	var cl = origins.Origins{"test": &Client{}}
+	err := ValidateOptions(cl, nil)
+	if err != errors.ErrInvalidRuleOptions {
+		t.Error("expected invalid rule options, got", err)
 	}
 }

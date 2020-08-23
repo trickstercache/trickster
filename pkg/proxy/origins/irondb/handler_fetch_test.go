@@ -90,7 +90,7 @@ func TestFetchHandlerSetExtent(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
 	hc := tu.NewTestWebClient()
-	cfg := oo.NewOptions()
+	cfg := oo.New()
 	client := &Client{name: "test", config: cfg, webClient: hc}
 	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0/", nil)
@@ -119,7 +119,7 @@ func TestFetchHandlerParseTimeRangeQuery(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
 	hc := tu.NewTestWebClient()
-	cfg := oo.NewOptions()
+	cfg := oo.New()
 	client := &Client{name: "test", config: cfg, webClient: hc}
 
 	r, err := http.NewRequest(http.MethodGet, "http://0/", nil)

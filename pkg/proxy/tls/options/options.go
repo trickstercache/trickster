@@ -44,8 +44,8 @@ type Options struct {
 	ClientKeyPath string `toml:"client_key_path"`
 }
 
-// NewOptions will return a *Options with the default settings
-func NewOptions() *Options {
+// New will return a *Options with the default settings
+func New() *Options {
 	return &Options{
 		FullChainCertPath: "",
 		PrivateKeyPath:    "",

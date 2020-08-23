@@ -28,7 +28,7 @@ import (
 
 func TestDefaultTLSConfig(t *testing.T) {
 
-	dc := options.NewOptions()
+	dc := options.New()
 	if dc == nil {
 		t.Errorf("expected config named %s", "default")
 	}

@@ -83,7 +83,7 @@ func NewHTTPClient(oc *oo.Options) (*http.Client, error) {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
-			Dial:                (&net.Dialer{KeepAlive: time.Duration(oc.KeepAliveTimeoutSecs) * time.Second}).Dial,
+			Dial:                (&net.Dialer{KeepAlive: time.Duration(oc.KeepAliveTimeoutMS) * time.Millisecond}).Dial,
 			MaxIdleConns:        oc.MaxIdleConns,
 			MaxIdleConnsPerHost: oc.MaxIdleConns,
 			TLSClientConfig:     TLSConfig,

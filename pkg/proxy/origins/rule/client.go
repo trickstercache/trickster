@@ -60,9 +60,28 @@ func NewClient(name string, options *oo.Options, router http.Handler,
 // Clients is a list of *rule.Client
 type Clients []*Client
 
+// ValidateOptions ensures that rule clients are fully loaded, which can't be done
+// until all origins are processed, so the rule's destination origin names
+// can be mapped to their respective clients
+func ValidateOptions(clients origins.Origins,
+	rwi map[string]rewriter.RewriteInstructions) error {
+	ruleClients := make(Clients, 0, len(clients))
+	for _, c := range clients {
+		if rc, ok := c.(*Client); ok {
+			ruleClients = append(ruleClients, rc)
+		}
+	}
+	if len(ruleClients) > 0 {
+		if err := ruleClients.validate(rwi); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Validate will fully load the Clients from their options and return an error if the options
 // could not be validated
-func (rc Clients) Validate(rwi map[string]rewriter.RewriteInstructions) error {
+func (rc Clients) validate(rwi map[string]rewriter.RewriteInstructions) error {
 	for _, c := range rc {
 		if c != nil && c.options != nil {
 			if err := c.parseOptions(c.options.RuleOptions, rwi); err != nil {

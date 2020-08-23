@@ -17,6 +17,11 @@
 package options
 
 import (
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/BurntSushi/toml"
 	badger "github.com/tricksterproxy/trickster/pkg/cache/badger/options"
 	bbolt "github.com/tricksterproxy/trickster/pkg/cache/bbolt/options"
 	filesystem "github.com/tricksterproxy/trickster/pkg/cache/filesystem/options"
@@ -53,36 +58,36 @@ type Options struct {
 	CacheTypeID types.CacheType `toml:"-"`
 }
 
-// NewOptions will return a pointer to an OriginConfig with the default configuration settings
-func NewOptions() *Options {
+// New will return a pointer to an OriginConfig with the default configuration settings
+func New() *Options {
 
 	return &Options{
 		CacheType:   d.DefaultCacheType,
 		CacheTypeID: d.DefaultCacheTypeID,
-		Redis:       redis.NewOptions(),
-		Filesystem:  filesystem.NewOptions(),
-		BBolt:       bbolt.NewOptions(),
-		Badger:      badger.NewOptions(),
-		Index:       index.NewOptions(),
+		Redis:       redis.New(),
+		Filesystem:  filesystem.New(),
+		BBolt:       bbolt.New(),
+		Badger:      badger.New(),
+		Index:       index.New(),
 	}
 }
 
 // Clone returns an exact copy of a *CachingConfig
 func (cc *Options) Clone() *Options {
 
-	c := NewOptions()
+	c := New()
 	c.Name = cc.Name
 	c.CacheType = cc.CacheType
 	c.CacheTypeID = cc.CacheTypeID
 
 	c.Index.FlushInterval = cc.Index.FlushInterval
-	c.Index.FlushIntervalSecs = cc.Index.FlushIntervalSecs
+	c.Index.FlushIntervalMS = cc.Index.FlushIntervalMS
 	c.Index.MaxSizeBackoffBytes = cc.Index.MaxSizeBackoffBytes
 	c.Index.MaxSizeBackoffObjects = cc.Index.MaxSizeBackoffObjects
 	c.Index.MaxSizeBytes = cc.Index.MaxSizeBytes
 	c.Index.MaxSizeObjects = cc.Index.MaxSizeObjects
 	c.Index.ReapInterval = cc.Index.ReapInterval
-	c.Index.ReapIntervalSecs = cc.Index.ReapIntervalSecs
+	c.Index.ReapIntervalMS = cc.Index.ReapIntervalMS
 
 	c.Badger.Directory = cc.Badger.Directory
 	c.Badger.ValueDirectory = cc.Badger.ValueDirectory
@@ -128,4 +133,182 @@ func (cc *Options) Equal(cc2 *Options) bool {
 		cc.CacheType == cc2.CacheType &&
 		cc.CacheTypeID == cc2.CacheTypeID
 
+}
+
+func (l Lookup) ProcessTOML(metadata *toml.MetaData, activeCaches map[string]bool) ([]string, error) {
+
+	// setCachingDefaults assumes that processOriginConfigs was just ran
+
+	lw := make([]string, 0)
+
+	for k, v := range l {
+
+		if _, ok := activeCaches[k]; !ok {
+			// a configured cache was not used by any origin. don't even instantiate it
+			delete(l, k)
+			continue
+		}
+
+		cc := New()
+		cc.Name = k
+
+		if metadata.IsDefined("caches", k, "cache_type") {
+			cc.CacheType = strings.ToLower(v.CacheType)
+			if n, ok := types.Names[cc.CacheType]; ok {
+				cc.CacheTypeID = n
+			}
+		}
+
+		if metadata.IsDefined("caches", k, "index", "reap_interval_ms") {
+			cc.Index.ReapIntervalMS = v.Index.ReapIntervalMS
+		}
+
+		if metadata.IsDefined("caches", k, "index", "flush_interval_ms") {
+			cc.Index.FlushIntervalMS = v.Index.FlushIntervalMS
+		}
+
+		if metadata.IsDefined("caches", k, "index", "max_size_bytes") {
+			cc.Index.MaxSizeBytes = v.Index.MaxSizeBytes
+		}
+
+		if metadata.IsDefined("caches", k, "index", "max_size_backoff_bytes") {
+			cc.Index.MaxSizeBackoffBytes = v.Index.MaxSizeBackoffBytes
+		}
+
+		if cc.Index.MaxSizeBytes > 0 && cc.Index.MaxSizeBackoffBytes > cc.Index.MaxSizeBytes {
+			return nil, errors.New("MaxSizeBackoffBytes can't be larger than MaxSizeBytes")
+		}
+
+		if metadata.IsDefined("caches", k, "index", "max_size_objects") {
+			cc.Index.MaxSizeObjects = v.Index.MaxSizeObjects
+		}
+
+		if metadata.IsDefined("caches", k, "index", "max_size_backoff_objects") {
+			cc.Index.MaxSizeBackoffObjects = v.Index.MaxSizeBackoffObjects
+		}
+
+		if cc.Index.MaxSizeObjects > 0 && cc.Index.MaxSizeBackoffObjects > cc.Index.MaxSizeObjects {
+			return nil, errors.New("MaxSizeBackoffObjects can't be larger than MaxSizeObjects")
+		}
+
+		if cc.CacheTypeID == types.CacheTypeRedis {
+
+			var hasEndpoint, hasEndpoints bool
+
+			ct := strings.ToLower(v.Redis.ClientType)
+			if metadata.IsDefined("caches", k, "redis", "client_type") {
+				cc.Redis.ClientType = ct
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "protocol") {
+				cc.Redis.Protocol = v.Redis.Protocol
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "endpoint") {
+				cc.Redis.Endpoint = v.Redis.Endpoint
+				hasEndpoint = true
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "endpoints") {
+				cc.Redis.Endpoints = v.Redis.Endpoints
+				hasEndpoints = true
+			}
+
+			if cc.Redis.ClientType == "standard" {
+				if hasEndpoints && !hasEndpoint {
+					lw = append(lw,
+						"'standard' redis type configured, but 'endpoints' value is provided instead of 'endpoint'")
+				}
+			} else {
+				if hasEndpoint && !hasEndpoints {
+					lw = append(lw, fmt.Sprintf(
+						"'%s' redis type configured, but 'endpoint' value is provided instead of 'endpoints'",
+						cc.Redis.ClientType))
+				}
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "sentinel_master") {
+				cc.Redis.SentinelMaster = v.Redis.SentinelMaster
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "password") {
+				cc.Redis.Password = v.Redis.Password
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "db") {
+				cc.Redis.DB = v.Redis.DB
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "max_retries") {
+				cc.Redis.MaxRetries = v.Redis.MaxRetries
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "min_retry_backoff_ms") {
+				cc.Redis.MinRetryBackoffMS = v.Redis.MinRetryBackoffMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "max_retry_backoff_ms") {
+				cc.Redis.MaxRetryBackoffMS = v.Redis.MaxRetryBackoffMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "dial_timeout_ms") {
+				cc.Redis.DialTimeoutMS = v.Redis.DialTimeoutMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "read_timeout_ms") {
+				cc.Redis.ReadTimeoutMS = v.Redis.ReadTimeoutMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "write_timeout_ms") {
+				cc.Redis.WriteTimeoutMS = v.Redis.WriteTimeoutMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "pool_size") {
+				cc.Redis.PoolSize = v.Redis.PoolSize
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "min_idle_conns") {
+				cc.Redis.MinIdleConns = v.Redis.MinIdleConns
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "max_conn_age_ms") {
+				cc.Redis.MaxConnAgeMS = v.Redis.MaxConnAgeMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "pool_timeout_ms") {
+				cc.Redis.PoolTimeoutMS = v.Redis.PoolTimeoutMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "idle_timeout_ms") {
+				cc.Redis.IdleTimeoutMS = v.Redis.IdleTimeoutMS
+			}
+
+			if metadata.IsDefined("caches", k, "redis", "idle_check_frequency_ms") {
+				cc.Redis.IdleCheckFrequencyMS = v.Redis.IdleCheckFrequencyMS
+			}
+		}
+
+		if metadata.IsDefined("caches", k, "filesystem", "cache_path") {
+			cc.Filesystem.CachePath = v.Filesystem.CachePath
+		}
+
+		if metadata.IsDefined("caches", k, "bbolt", "filename") {
+			cc.BBolt.Filename = v.BBolt.Filename
+		}
+
+		if metadata.IsDefined("caches", k, "bbolt", "bucket") {
+			cc.BBolt.Bucket = v.BBolt.Bucket
+		}
+
+		if metadata.IsDefined("caches", k, "badger", "directory") {
+			cc.Badger.Directory = v.Badger.Directory
+		}
+
+		if metadata.IsDefined("caches", k, "badger", "value_directory") {
+			cc.Badger.ValueDirectory = v.Badger.ValueDirectory
+		}
+
+		l[k] = cc
+	}
+	return lw, nil
 }
