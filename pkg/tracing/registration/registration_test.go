@@ -20,8 +20,8 @@ import (
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 func TestRegisterAll(t *testing.T) {

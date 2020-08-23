@@ -26,13 +26,12 @@ import (
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 // WithResourcesContext ...
 func WithResourcesContext(client origins.Client, oc *oo.Options,
 	c cache.Cache, p *po.Options, t *tracing.Tracer,
-	l *tl.Logger, next http.Handler) http.Handler {
+	l interface{}, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var resources *request.Resources
 		if c == nil {

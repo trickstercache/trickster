@@ -29,12 +29,12 @@ import (
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/cache/key"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	ct "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 )
 

@@ -22,20 +22,19 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	ph "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/listener"
 	ttls "github.com/tricksterproxy/trickster/pkg/proxy/tls"
 	"github.com/tricksterproxy/trickster/pkg/routing"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
-	"github.com/tricksterproxy/trickster/pkg/util/log"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 )
 
 var lg = listener.NewListenerGroup()
 
 func applyListenerConfigs(conf, oldConf *config.Config,
-	router, reloadHandler http.Handler, log *log.Logger,
+	router, reloadHandler http.Handler, log *tl.Logger,
 	tracers tracing.Tracers) {
 
 	var err error
@@ -65,7 +64,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	}
 
 	if oldConf != nil && oldConf.Frontend.ConnectionsLimit != conf.Frontend.ConnectionsLimit {
-		log.Warn("connections limit change requires a process restart. listeners not updated.",
+		tl.Warn(log, "connections limit change requires a process restart. listeners not updated.",
 			tl.Pairs{"oldLimit": oldConf.Frontend.ConnectionsLimit,
 				"newLimit": conf.Frontend.ConnectionsLimit})
 		return
@@ -86,7 +85,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		lg.DrainAndClose("tlsListener", drainTimeout)
 		tlsConfig, err = conf.TLSCertConfig()
 		if err != nil {
-			log.Error("unable to start tls listener due to certificate error", tl.Pairs{"detail": err})
+			tl.Error(log, "unable to start tls listener due to certificate error", tl.Pairs{"detail": err})
 		} else {
 			wg.Add(1)
 			tracerFlusherSet = true
@@ -102,7 +101,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	} else if conf.Frontend.ServeTLS && ttls.OptionsChanged(conf, oldConf) {
 		tlsConfig, _ = conf.TLSCertConfig()
 		if err != nil {
-			log.Error("unable to update tls config to certificate error", tl.Pairs{"detail": err})
+			tl.Error(log, "unable to update tls config to certificate error", tl.Pairs{"detail": err})
 			return
 		}
 		l := lg.Get("tlsListener")

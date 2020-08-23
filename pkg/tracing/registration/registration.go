@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/jaeger"
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/noop"
@@ -29,13 +30,12 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/zipkin"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 	"github.com/tricksterproxy/trickster/pkg/tracing/types"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/strings"
 )
 
 // RegisterAll registers all Tracers in the provided configuration, and returns
 // their Flushers
-func RegisterAll(cfg *config.Config, log *tl.Logger, isDryRun bool) (tracing.Tracers, error) {
+func RegisterAll(cfg *config.Config, logger interface{}, isDryRun bool) (tracing.Tracers, error) {
 	if cfg == nil {
 		return nil, errors.New("no config provided")
 	}
@@ -73,7 +73,7 @@ func RegisterAll(cfg *config.Config, log *tl.Logger, isDryRun bool) (tracing.Tra
 			return nil, fmt.Errorf("invalid tracer type [%s] for tracing config [%s]",
 				tc.TracerType, k)
 		}
-		tracer, err := GetTracer(tc, log, isDryRun)
+		tracer, err := GetTracer(tc, logger, isDryRun)
 		if err != nil {
 			return nil, err
 		}
@@ -83,10 +83,10 @@ func RegisterAll(cfg *config.Config, log *tl.Logger, isDryRun bool) (tracing.Tra
 }
 
 // GetTracer returns a *Tracer based on the provided options
-func GetTracer(options *options.Options, log *tl.Logger, isDryRun bool) (*tracing.Tracer, error) {
+func GetTracer(options *options.Options, logger interface{}, isDryRun bool) (*tracing.Tracer, error) {
 
 	if options == nil {
-		log.Info("nil tracing config, using noop tracer", nil)
+		tl.Info(logger, "nil tracing config, using noop tracer", nil)
 		return noop.NewTracer(options)
 	}
 
@@ -94,7 +94,7 @@ func GetTracer(options *options.Options, log *tl.Logger, isDryRun bool) (*tracin
 		if isDryRun {
 			return
 		}
-		log.Info(
+		tl.Info(logger,
 			"tracer registration",
 			tl.Pairs{
 				"name":         options.Name,

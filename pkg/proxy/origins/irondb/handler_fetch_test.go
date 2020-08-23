@@ -24,10 +24,10 @@ import (
 	"testing"
 	"time"
 
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 )
 

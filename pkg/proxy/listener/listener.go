@@ -26,11 +26,11 @@ import (
 	"sync"
 	"time"
 
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	ph "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	sw "github.com/tricksterproxy/trickster/pkg/proxy/tls"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 	"golang.org/x/net/netutil"
 
@@ -118,7 +118,7 @@ func NewListenerGroup() *ListenerGroup {
 // connections (with operates with sampling through scrapes), and a set of
 // counter metrics for connections accepted, rejected and closed.
 func NewListener(listenAddress string, listenPort, connectionsLimit int,
-	tlsConfig *tls.Config, drainTimeout time.Duration, log *tl.Logger) (net.Listener, error) {
+	tlsConfig *tls.Config, drainTimeout time.Duration, logger interface{}) (net.Listener, error) {
 
 	var listener net.Listener
 	var err error
@@ -141,7 +141,7 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int,
 		metrics.ProxyMaxConnections.Set(float64(connectionsLimit))
 	}
 
-	log.Debug("starting proxy listener", tl.Pairs{
+	tl.Debug(logger, "starting proxy listener", tl.Pairs{
 		"connectionsLimit": connectionsLimit,
 		"scheme":           listenerType,
 		"address":          listenAddress,
@@ -166,7 +166,7 @@ func (lg *ListenerGroup) Get(name string) *Listener {
 // StartListener starts a new HTTP listener and adds it to the listener group
 func (lg *ListenerGroup) StartListener(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, router http.Handler, wg *sync.WaitGroup, tracers tracing.Tracers,
-	exitOnError bool, drainTimeout time.Duration, log *tl.Logger) error {
+	exitOnError bool, drainTimeout time.Duration, logger interface{}) error {
 	if wg != nil {
 		defer wg.Done()
 	}
@@ -181,15 +181,15 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 	}
 
 	var err error
-	l.Listener, err = NewListener(address, port, connectionsLimit, tlsConfig, drainTimeout, log)
+	l.Listener, err = NewListener(address, port, connectionsLimit, tlsConfig, drainTimeout, logger)
 	if err != nil {
-		log.Error("http listener startup failed", tl.Pairs{"name": listenerName, "detail": err})
+		tl.Error(logger, "http listener startup failed", tl.Pairs{"name": listenerName, "detail": err})
 		if exitOnError {
 			os.Exit(1)
 		}
 		return err
 	}
-	log.Info("http listener starting",
+	tl.Info(logger, "http listener starting",
 		tl.Pairs{"name": listenerName, "port": port, "address": address})
 
 	lg.listenersLock.Lock()
@@ -213,7 +213,7 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 		l.server = svr
 		err = svr.Serve(l)
 		if err != nil {
-			log.Error("https listener stopping", tl.Pairs{"name": listenerName, "detail": err})
+			tl.Error(logger, "https listener stopping", tl.Pairs{"name": listenerName, "detail": err})
 			if l.exitOnError {
 				os.Exit(1)
 			}
@@ -227,7 +227,7 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 	l.server = svr
 	err = svr.Serve(l)
 	if err != nil {
-		log.Error("http listener stopping", tl.Pairs{"name": listenerName, "detail": err})
+		tl.Error(logger, "http listener stopping", tl.Pairs{"name": listenerName, "detail": err})
 		if l.exitOnError {
 			os.Exit(1)
 		}
@@ -238,11 +238,11 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 // StartListenerRouter starts a new HTTP listener with a new router, and adds it to the listener group
 func (lg *ListenerGroup) StartListenerRouter(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, path string, handler http.Handler, wg *sync.WaitGroup,
-	tracers tracing.Tracers, exitOnError bool, drainTimeout time.Duration, log *tl.Logger) error {
+	tracers tracing.Tracers, exitOnError bool, drainTimeout time.Duration, logger interface{}) error {
 	router := http.NewServeMux()
 	router.Handle(path, handler)
 	return lg.StartListener(listenerName, address, port, connectionsLimit,
-		tlsConfig, router, wg, tracers, exitOnError, drainTimeout, log)
+		tlsConfig, router, wg, tracers, exitOnError, drainTimeout, logger)
 }
 
 // DrainAndClose drains and closes the named listener

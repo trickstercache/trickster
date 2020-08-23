@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 func TestNewAndCloneResources(t *testing.T) {
