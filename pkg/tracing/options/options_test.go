@@ -61,7 +61,7 @@ func TestGenerateOmitTags(t *testing.T) {
 
 func TestAttachTagsToSpan(t *testing.T) {
 
-	o := &Options{TracerType: "zipkin", Tags: map[string]string{"test": "test"}}
+	o := &Options{Provider: "zipkin", Tags: map[string]string{"test": "test"}}
 	if o.AttachTagsToSpan() {
 		t.Error("expected false")
 	}

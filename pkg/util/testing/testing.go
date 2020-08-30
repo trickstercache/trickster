@@ -183,7 +183,7 @@ func NewTestPathConfig(
 func NewTestTracer() *tracing.Tracer {
 	tc := to.New()
 	tc.Name = "test"
-	tc.TracerType = "stdout"
+	tc.Provider = "stdout"
 	tracer, _ := tr.GetTracer(tc, tl.ConsoleLogger("warn"), true)
 	return tracer
 }

@@ -22,9 +22,9 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 
-	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/trace"
-	"google.golang.org/grpc/codes"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/label"
 )
 
 // FlusherFunc defines a function used to Flush a Tracer
@@ -72,7 +72,7 @@ func (t Tags) Merge(t2 Tags) {
 }
 
 // MergeAttr merges the provided attributes into the Tags map
-func (t Tags) MergeAttr(attr []kv.KeyValue) {
+func (t Tags) MergeAttr(attr []label.KeyValue) {
 	if len(attr) == 0 {
 		return
 	}
@@ -82,11 +82,11 @@ func (t Tags) MergeAttr(attr []kv.KeyValue) {
 }
 
 // ToAttr returns the Tags map as an Attributes List
-func (t Tags) ToAttr() []kv.KeyValue {
-	attr := make([]kv.KeyValue, len(t))
+func (t Tags) ToAttr() []label.KeyValue {
+	attr := make([]label.KeyValue, len(t))
 	i := 0
 	for k, v := range t {
-		attr[i] = kv.String(k, v)
+		attr[i] = label.String(k, v)
 		i++
 	}
 	return attr

@@ -22,9 +22,9 @@ import (
 	errs "github.com/tricksterproxy/trickster/pkg/tracing/errors"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 
-	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/exporters/trace/jaeger"
+	"go.opentelemetry.io/otel/label"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
@@ -49,11 +49,11 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 		sampler = sdktrace.ProbabilitySampler(options.SampleRate)
 	}
 
-	var tags []kv.KeyValue
+	var tags []label.KeyValue
 	if options.Tags != nil && len(options.Tags) > 0 {
-		tags = make([]kv.KeyValue, len(options.Tags))
+		tags = make([]label.KeyValue, len(options.Tags))
 		for k, v := range options.Tags {
-			tags = append(tags, kv.String(k, v))
+			tags = append(tags, label.String(k, v))
 		}
 	}
 
