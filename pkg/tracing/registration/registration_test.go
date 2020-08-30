@@ -58,40 +58,40 @@ func TestRegisterAll(t *testing.T) {
 		t.Error(err)
 	}
 
-	tc.TracerType = "jaeger"
+	tc.Provider = "jaeger"
 	tc.CollectorURL = "http://example.com"
 	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), false)
 	if err != nil {
 		t.Error(err)
 	}
 
-	tc.TracerType = "stdout"
+	tc.Provider = "stdout"
 	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if err != nil {
 		t.Error(err)
 	}
 
-	tc.TracerType = "zipkin"
+	tc.Provider = "zipkin"
 	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if err != nil {
 		t.Error(err)
 	}
 
-	tc.TracerType = "foo"
+	tc.Provider = "foo"
 
 	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if err == nil {
-		t.Error("expected error for invalid tracer type")
+		t.Error("expected error for invalid provider")
 	}
 
 	// test empty implementation
-	tc.TracerType = ""
+	tc.Provider = ""
 	f, _ = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if len(f) > 0 {
 		t.Errorf("expected %d got %d", 0, len(f))
 	}
 
-	tc.TracerType = "none"
+	tc.Provider = "none"
 	cfg.Origins["default"].TracingConfigName = "test2"
 	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if err == nil {

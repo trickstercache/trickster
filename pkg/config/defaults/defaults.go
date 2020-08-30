@@ -55,8 +55,8 @@ const (
 	// DefaultRateLimitMS is the default Rate Limit time for Config Reloads
 	DefaultRateLimitMS = 3000
 
-	// DefaultTracerType is the default distributed tracer exporter implementation
-	DefaultTracerType = "none"
+	// DefaultTracerProvider is the default distributed tracer exporter implementation
+	DefaultTracerProvider = "none"
 
 	// DefaultTracerServiceName is the default service name under which traces are registered
 	DefaultTracerServiceName = "trickster"

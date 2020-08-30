@@ -42,7 +42,7 @@ func TestNewChildSpan(t *testing.T) {
 	tr.Options.Tags = map[string]string{"testTagName": "testTagValue"}
 
 	// force coverage of tags attachment
-	tr.Options.TracerType = "zipkin"
+	tr.Options.Provider = "zipkin"
 	options.ProcessTracingOptions(map[string]*options.Options{"default": tr.Options}, nil)
 
 	ctx, span := NewChildSpan(nil, tr, "test")
@@ -85,7 +85,7 @@ func TestPrepareRequest(t *testing.T) {
 		t.Error("expected non-nill span")
 	}
 
-	tr.Options.TracerType = "zipkin"
+	tr.Options.Provider = "zipkin"
 	options.ProcessTracingOptions(map[string]*options.Options{"default": tr.Options}, nil)
 
 	_, sp = PrepareRequest(r, tr)

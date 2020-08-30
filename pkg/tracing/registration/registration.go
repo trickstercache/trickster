@@ -29,7 +29,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/stdout"
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/zipkin"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
-	"github.com/tricksterproxy/trickster/pkg/tracing/types"
+	"github.com/tricksterproxy/trickster/pkg/tracing/providers"
 	"github.com/tricksterproxy/trickster/pkg/util/strings"
 )
 
@@ -69,9 +69,9 @@ func RegisterAll(cfg *config.Config, logger interface{}, isDryRun bool) (tracing
 		}
 
 		tc.Name = k
-		if _, ok := types.Names[tc.TracerType]; !ok {
+		if _, ok := providers.Names[tc.Provider]; !ok {
 			return nil, fmt.Errorf("invalid tracer type [%s] for tracing config [%s]",
-				tc.TracerType, k)
+				tc.Provider, k)
 		}
 		tracer, err := GetTracer(tc, logger, isDryRun)
 		if err != nil {
@@ -98,7 +98,7 @@ func GetTracer(options *options.Options, logger interface{}, isDryRun bool) (*tr
 			"tracer registration",
 			tl.Pairs{
 				"name":         options.Name,
-				"tracerType":   options.TracerType,
+				"provider":     options.Provider,
 				"serviceName":  options.ServiceName,
 				"collectorURL": options.CollectorURL,
 				"sampleRate":   options.SampleRate,
@@ -107,14 +107,14 @@ func GetTracer(options *options.Options, logger interface{}, isDryRun bool) (*tr
 		)
 	}
 
-	switch options.TracerType {
-	case types.TracerTypeStdout.String():
+	switch options.Provider {
+	case providers.Stdout.String():
 		logTracerRegistration()
 		return stdout.NewTracer(options)
-	case types.TracerTypeJaeger.String():
+	case providers.Jaeger.String():
 		logTracerRegistration()
 		return jaeger.NewTracer(options)
-	case types.TracerTypeZipkin.String():
+	case providers.Zipkin.String():
 		logTracerRegistration()
 		return zipkin.NewTracer(options)
 	}

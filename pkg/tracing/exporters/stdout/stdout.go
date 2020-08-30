@@ -40,7 +40,7 @@ func NewTracer(opts *options.Options) (*tracing.Tracer, error) {
 		opts = &options.Options{
 			SampleRate:  1,
 			ServiceName: d.DefaultTracerServiceName,
-			TracerType:  "stdout",
+			Provider:    "stdout",
 		}
 	}
 

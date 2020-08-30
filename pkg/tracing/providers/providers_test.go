@@ -14,17 +14,17 @@
  * limitations under the License.
  */
 
-package types
+package providers
 
 import (
 	"testing"
 )
 
-func TestTracerTypeString(t *testing.T) {
+func TestString(t *testing.T) {
 
-	t1 := TracerTypeNone
-	t2 := TracerTypeZipkin
-	var t3 TracerType = 13
+	t1 := None
+	t2 := Zipkin
+	var t3 Provider = 13
 
 	if t1.String() != "none" {
 		t.Errorf("expected %s got %s", "none", t1.String())

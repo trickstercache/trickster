@@ -14,34 +14,34 @@
  * limitations under the License.
  */
 
-package types
+package providers
 
 import "strconv"
 
-// TracerType enumerates the methodologies for maintaining time series cache data
-type TracerType int
+// Provider enumerates the methodologies for maintaining time series cache data
+type Provider int
 
 const (
-	// TracerTypeNone indicates a No-op tracer
-	TracerTypeNone = TracerType(iota)
-	// TracerTypeStdout indicates the stdout tracing
-	TracerTypeStdout
-	// TracerTypeJaeger indicates Jaeger tracing
-	TracerTypeJaeger
-	// TracerTypeZipkin indicates Zipkin tracing
-	TracerTypeZipkin
+	// None indicates a No-op tracer
+	None = Provider(iota)
+	// Stdout indicates the stdout tracing
+	Stdout
+	// Jaeger indicates Jaeger tracing
+	Jaeger
+	// Zipkin indicates Zipkin tracing
+	Zipkin
 )
 
 // Names is a map of cache types keyed by name
-var Names = map[string]TracerType{
-	"none":   TracerTypeNone,
-	"stdout": TracerTypeStdout,
-	"jaeger": TracerTypeJaeger,
-	"zipkin": TracerTypeZipkin,
+var Names = map[string]Provider{
+	"none":   None,
+	"stdout": Stdout,
+	"jaeger": Jaeger,
+	"zipkin": Zipkin,
 }
 
 // Values is a map of cache types keyed by internal id
-var Values = make(map[TracerType]string)
+var Values = make(map[Provider]string)
 
 func init() {
 	for k, v := range Names {
@@ -49,9 +49,9 @@ func init() {
 	}
 }
 
-func (t TracerType) String() string {
-	if v, ok := Values[t]; ok {
+func (p Provider) String() string {
+	if v, ok := Values[p]; ok {
 		return v
 	}
-	return strconv.Itoa(int(t))
+	return strconv.Itoa(int(p))
 }
