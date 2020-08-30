@@ -85,7 +85,7 @@ func (c *Cache) Connect() error {
 
 	// Load Index here and pass bytes as param2
 	indexData, _, _ := c.retrieve(index.IndexKey, false, false)
-	c.Index = index.NewIndex(c.Name, c.Config.CacheType, indexData,
+	c.Index = index.NewIndex(c.Name, c.Config.Provider, indexData,
 		c.Config.Index, c.BulkRemove, c.storeNoIndex, c.Logger)
 	return nil
 }
@@ -99,14 +99,14 @@ func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 	err := c.store(cacheKey, data, 31536000*time.Second, false)
 	if err != nil {
 		tl.Error(c.Logger, "cache failed to write non-indexed object",
-			tl.Pairs{"cacheName": c.Name, "cacheType": "bbolt",
+			tl.Pairs{"cacheName": c.Name, "cacheProvider": "bbolt",
 				"cacheKey": cacheKey, "objectSize": len(data)})
 	}
 }
 
 func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateIndex bool) error {
 
-	metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
+	metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "set", "none", float64(len(data)))
 
 	o := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
 	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
@@ -146,7 +146,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool,
 		data = b.Get([]byte(cacheKey))
 		if data == nil {
 			tl.Debug(c.Logger, "bbolt cache miss", tl.Pairs{"key": cacheKey})
-			metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+			metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
 			return cache.ErrKNF
 		}
 		return nil
@@ -158,7 +158,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool,
 
 	o, err := index.ObjectFromBytes(data)
 	if err != nil {
-		_, err = metrics.CacheError(cacheKey, c.Name, c.Config.CacheType,
+		_, err = metrics.CacheError(cacheKey, c.Name, c.Config.Provider,
 			"value for key [%s] could not be deserialized from cache")
 		return nil, status.LookupStatusError, err
 	}
@@ -176,12 +176,12 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool,
 		if atime {
 			go c.Index.UpdateObjectAccessTime(cacheKey)
 		}
-		metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
+		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "get", "hit", float64(len(data)))
 		return o.Value, status.LookupStatusHit, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
 	go c.remove(cacheKey, false)
-	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
 	return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 }
 
@@ -210,7 +210,7 @@ func (c *Cache) remove(cacheKey string, isBulk bool) error {
 	if !isBulk {
 		go c.Index.RemoveObject(cacheKey)
 	}
-	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
+	metrics.ObserveCacheDel(c.Name, c.Config.Provider, 0)
 	tl.Debug(c.Logger, "bbolt cache key delete", tl.Pairs{"key": cacheKey})
 	return nil
 }

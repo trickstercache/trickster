@@ -63,7 +63,7 @@ func (c *Cache) Connect() error {
 		"maxSizeBytes": c.Config.Index.MaxSizeBytes, "maxSizeObjects": c.Config.Index.MaxSizeObjects})
 	c.lockPrefix = c.Name + ".memory."
 	c.client = sync.Map{}
-	c.Index = index.NewIndex(c.Name, c.Config.CacheType, nil, c.Config.Index, c.BulkRemove, nil, c.Logger)
+	c.Index = index.NewIndex(c.Name, c.Config.Provider, nil, c.Config.Index, c.BulkRemove, nil, c.Logger)
 	return nil
 }
 
@@ -85,11 +85,11 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 	isDirect := byteData == nil && refData != nil
 	if byteData != nil {
 		l = len(byteData)
-		metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(l))
+		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "set", "none", float64(l))
 		o1 = &index.Object{Key: cacheKey, Value: byteData, Expiration: time.Now().Add(ttl)}
 		o2 = &index.Object{Key: cacheKey, Value: byteData, Expiration: time.Now().Add(ttl)}
 	} else if refData != nil {
-		metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "setDirect", "none", 0)
+		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "setDirect", "none", 0)
 		o1 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: time.Now().Add(ttl)}
 		o2 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: time.Now().Add(ttl)}
 	}
@@ -149,13 +149,13 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index
 			if atime {
 				go c.Index.UpdateObjectAccessTime(cacheKey)
 			}
-			metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(o.Value)))
+			metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "get", "hit", float64(len(o.Value)))
 			return o, status.LookupStatusHit, nil
 		}
 		// Cache Object has been expired but not reaped, go ahead and delete it
 		go c.remove(cacheKey, false)
 	}
-	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
 	return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 }
 
@@ -176,7 +176,7 @@ func (c *Cache) remove(cacheKey string, isBulk bool) {
 	if !isBulk {
 		go c.Index.RemoveObject(cacheKey)
 	}
-	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
+	metrics.ObserveCacheDel(c.Name, c.Config.Provider, 0)
 }
 
 // BulkRemove removes a list of objects from the cache

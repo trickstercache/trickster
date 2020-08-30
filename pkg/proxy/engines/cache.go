@@ -52,7 +52,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	var bytes []byte
 	var err error
 
-	if c.Configuration().CacheType == "memory" {
+	if c.Configuration().Provider == "memory" {
 		mc := c.(cache.MemoryCache)
 		var ifc interface{}
 		ifc, lookupStatus, err = mc.RetrieveReference(key, true)
@@ -189,7 +189,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 	}
 
 	// for memory cache, don't serialize the document, since we can retrieve it by reference.
-	if c.Configuration().CacheType == "memory" {
+	if c.Configuration().Provider == "memory" {
 		mc := c.(cache.MemoryCache)
 
 		if d != nil {

@@ -18,29 +18,32 @@ package providers
 
 import "strconv"
 
-// Provider enumerates the distributed tracing providers
+// Provider enumerates the cache providers
 type Provider int
 
 const (
-	// None indicates a No-op tracer
-	None = Provider(iota)
-	// Stdout indicates the stdout tracing
-	Stdout
-	// Jaeger indicates Jaeger tracing
-	Jaeger
-	// Zipkin indicates Zipkin tracing
-	Zipkin
+	// Memory indicates a memory cache
+	Memory = Provider(iota)
+	// Filesystem indicates a filesystem cache
+	Filesystem
+	// Redis indicates a Redis cache
+	Redis
+	// Bbolt indicates a Bbolt cache
+	Bbolt
+	// BadgerDB indicates a BadgerDB cache
+	BadgerDB
 )
 
-// Names is a map of tracing providers keyed by name
+// Names is a map of cache providers keyed by name
 var Names = map[string]Provider{
-	"none":   None,
-	"stdout": Stdout,
-	"jaeger": Jaeger,
-	"zipkin": Zipkin,
+	"memory":     Memory,
+	"filesystem": Filesystem,
+	"redis":      Redis,
+	"bbolt":      Bbolt,
+	"badger":     BadgerDB,
 }
 
-// Values is a map of tracing providers keyed by internal id
+// Values is a map of cache providers keyed by internal id
 var Values = make(map[Provider]string)
 
 func init() {

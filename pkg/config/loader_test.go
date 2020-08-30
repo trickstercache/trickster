@@ -267,8 +267,8 @@ func TestFullLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if c.CacheType != "redis" {
-		t.Errorf("expected redis, got %s", c.CacheType)
+	if c.Provider != "redis" {
+		t.Errorf("expected redis, got %s", c.Provider)
 	}
 
 	if c.Index.ReapIntervalMS != 4000 {
@@ -491,8 +491,8 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if c.CacheType != d.DefaultCacheType {
-		t.Errorf("expected %s, got %s", d.DefaultCacheType, c.CacheType)
+	if c.Provider != d.DefaultCacheProvider {
+		t.Errorf("expected %s, got %s", d.DefaultCacheProvider, c.Provider)
 	}
 
 	if c.Index.ReapIntervalMS != d.DefaultCacheIndexReap {

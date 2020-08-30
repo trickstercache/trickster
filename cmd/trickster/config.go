@@ -27,8 +27,8 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/memory"
+	"github.com/tricksterproxy/trickster/pkg/cache/providers"
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
-	"github.com/tricksterproxy/trickster/pkg/cache/types"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	ro "github.com/tricksterproxy/trickster/pkg/config/reload/options"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
@@ -209,8 +209,8 @@ func applyCachingConfig(c, oc *config.Config, logger *tl.Logger,
 			// the cache should be preserved between reconfigurations, but only if the Index
 			// is the only change. In this case, we'll apply the new index configuration,
 			// then add the old cache with the new index config to the new cache map
-			if ocfg.CacheTypeID == v.CacheTypeID &&
-				ocfg.CacheTypeID == types.CacheTypeMemory {
+			if ocfg.ProviderID == v.ProviderID &&
+				ocfg.ProviderID == providers.Memory {
 				if v.Index != nil {
 					mc := w.(*memory.Cache)
 					mc.Index.UpdateOptions(v.Index)

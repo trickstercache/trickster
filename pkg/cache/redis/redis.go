@@ -96,7 +96,7 @@ func (c *Cache) Connect() error {
 
 // Store places the the data into the Redis Cache using the provided Key and TTL
 func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
-	metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
+	metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "set", "none", float64(len(data)))
 	tl.Debug(c.Logger, "redis cache store", tl.Pairs{"key": cacheKey})
 	return c.client.Set(cacheKey, data, ttl).Err()
 }
@@ -109,18 +109,18 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 	if err == nil {
 		data := []byte(res)
 		tl.Debug(c.Logger, "redis cache retrieve", tl.Pairs{"key": cacheKey})
-		metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
+		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "get", "hit", float64(len(data)))
 		return data, status.LookupStatusHit, nil
 	}
 
 	if err == redis.Nil {
 		tl.Debug(c.Logger, "redis cache miss", tl.Pairs{"key": cacheKey})
-		metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+		metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
 		return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 	}
 
 	tl.Debug(c.Logger, "redis cache retrieve failed", tl.Pairs{"key": cacheKey, "reason": err.Error()})
-	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
 	return nil, status.LookupStatusError, err
 }
 
@@ -128,7 +128,7 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 func (c *Cache) Remove(cacheKey string) {
 	tl.Debug(c.Logger, "redis cache remove", tl.Pairs{"key": cacheKey})
 	c.client.Del(cacheKey)
-	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
+	metrics.ObserveCacheDel(c.Name, c.Config.Provider, 0)
 }
 
 // SetTTL updates the TTL for the provided cache object
@@ -140,7 +140,7 @@ func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
 func (c *Cache) BulkRemove(cacheKeys []string) {
 	tl.Debug(c.Logger, "redis cache bulk remove", tl.Pairs{})
 	c.client.Del(cacheKeys...)
-	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, float64(len(cacheKeys)))
+	metrics.ObserveCacheDel(c.Name, c.Config.Provider, float64(len(cacheKeys)))
 }
 
 // Close disconnects from the Redis Cache

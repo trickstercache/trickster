@@ -412,7 +412,7 @@ func TestQueryCache(t *testing.T) {
 
 	// test marshaling route by making our cache not appear to be a memory cache
 	cache.Remove("testKey")
-	cache.Configuration().CacheType = "test"
+	cache.Configuration().Provider = "test"
 
 	_, _, _, err = QueryCache(ctx, cache, "testKey", byterange.Ranges{{Start: 0, End: 1}})
 	if err == nil {

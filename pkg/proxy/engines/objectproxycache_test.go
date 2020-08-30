@@ -1165,7 +1165,7 @@ func TestFetchViaObjectProxyCacheRequestErroringCache(t *testing.T) {
 
 	tc := &testCache{configuration: rsc.CacheConfig, locker: locks.NewNamedLocker()}
 	rsc.CacheClient = tc
-	tc.configuration.CacheType = "test"
+	tc.configuration.Provider = "test"
 
 	_, _, b := FetchViaObjectProxyCache(r)
 	if b {

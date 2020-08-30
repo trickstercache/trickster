@@ -37,8 +37,8 @@ import (
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
-	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/api/trace"
+	"go.opentelemetry.io/otel/label"
 )
 
 // DeltaProxyCache is used for Time Series Acceleration, but not for normal HTTP Object Caching
@@ -162,7 +162,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			if doc == nil {
 				err = tpe.ErrEmptyDocumentBody
 			} else {
-				if cc.CacheType == "memory" {
+				if cc.Provider == "memory" {
 					cts = doc.timeseries
 				} else {
 					cts, err = modeler.CacheUnmarshaler(doc.Body, trq)
@@ -409,7 +409,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			// Don't cache datasets with empty extents
 			// (everything was cropped so there is nothing to cache)
 			if len(cts.Extents()) > 0 {
-				if cc.CacheType == "memory" {
+				if cc.Provider == "memory" {
 					doc.timeseries = cts
 				} else {
 					cdata, err := modeler.CacheMarshaler(cts, nil)

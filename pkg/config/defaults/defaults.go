@@ -18,7 +18,7 @@ package defaults
 
 import (
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
-	"github.com/tricksterproxy/trickster/pkg/cache/types"
+	"github.com/tricksterproxy/trickster/pkg/cache/providers"
 )
 
 const (
@@ -61,11 +61,11 @@ const (
 	// DefaultTracerServiceName is the default service name under which traces are registered
 	DefaultTracerServiceName = "trickster"
 
-	// DefaultCacheType is the default cache type for any defined cache
-	DefaultCacheType = "memory"
-	// DefaultCacheTypeID is the default cache type ID for any defined cache
-	// and should align with DefaultCacheType
-	DefaultCacheTypeID = types.CacheTypeMemory
+	// DefaultCacheProvider is the default cache providers for any defined cache
+	DefaultCacheProvider = "memory"
+	// DefaultCacheProviderID is the default cache providers ID for any defined cache
+	// and should align with DefaultCacheProvider
+	DefaultCacheProviderID = providers.Memory
 
 	// DefaultTimeseriesTTLMS is the default Cache TTL for Time Series Objects
 	DefaultTimeseriesTTLMS = 21600000

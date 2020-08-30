@@ -256,7 +256,7 @@ func init() {
 			Name:      "operation_objects_total",
 			Help:      "Count (in # of objects) of operations performed on a Trickster cache.",
 		},
-		[]string{"cache_name", "cache_type", "operation", "status"},
+		[]string{"cache_name", "provider", "operation", "status"},
 	)
 
 	CacheByteOperations = prometheus.NewCounterVec(
@@ -266,7 +266,7 @@ func init() {
 			Name:      "operation_bytes_total",
 			Help:      "Count (in bytes) of operations performed on a Trickster cache.",
 		},
-		[]string{"cache_name", "cache_type", "operation", "status"},
+		[]string{"cache_name", "provider", "operation", "status"},
 	)
 
 	CacheEvents = prometheus.NewCounterVec(
@@ -276,7 +276,7 @@ func init() {
 			Name:      "events_total",
 			Help:      "Count of events performed on a Trickster cache.",
 		},
-		[]string{"cache_name", "cache_type", "event", "reason"},
+		[]string{"cache_name", "provider", "event", "reason"},
 	)
 
 	CacheObjects = prometheus.NewGaugeVec(
@@ -286,7 +286,7 @@ func init() {
 			Name:      "usage_objects",
 			Help:      "Number of objects in a Trickster cache.",
 		},
-		[]string{"cache_name", "cache_type"},
+		[]string{"cache_name", "provider"},
 	)
 
 	CacheBytes = prometheus.NewGaugeVec(
@@ -296,7 +296,7 @@ func init() {
 			Name:      "usage_bytes",
 			Help:      "Number of bytes in a Trickster cache.",
 		},
-		[]string{"cache_name", "cache_type"},
+		[]string{"cache_name", "provider"},
 	)
 
 	CacheMaxObjects = prometheus.NewGaugeVec(
@@ -306,7 +306,7 @@ func init() {
 			Name:      "max_usage_objects",
 			Help:      "Trickster cache's Max Object Threshold for triggering an eviction exercise.",
 		},
-		[]string{"cache_name", "cache_type"},
+		[]string{"cache_name", "provider"},
 	)
 
 	CacheMaxBytes = prometheus.NewGaugeVec(
@@ -316,7 +316,7 @@ func init() {
 			Name:      "max_usage_bytes",
 			Help:      "Trickster cache's Max Byte Threshold for triggering an eviction exercise.",
 		},
-		[]string{"cache_name", "cache_type"},
+		[]string{"cache_name", "provider"},
 	)
 
 	// Register Metrics
