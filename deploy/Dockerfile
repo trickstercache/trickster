@@ -1,6 +1,8 @@
+# This docker file is for local dev, the official Dockerfile is at
+# https://github.com/tricksterproxy/trickster-docker-images/
 ARG IMAGE_ARCH=amd64
 
-FROM golang:1.14.3 as builder
+FROM golang:1.15 as builder
 COPY . /go/src/github.com/tricksterproxy/trickster
 WORKDIR /go/src/github.com/tricksterproxy/trickster
 
