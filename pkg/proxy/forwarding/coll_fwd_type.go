@@ -18,7 +18,7 @@ package forwarding
 
 import "strconv"
 
-// CollapsedForwardingType enumerates the methodologies for maintaining time series cache data
+// CollapsedForwardingType enumerates the forwarding types
 type CollapsedForwardingType int
 
 const (
@@ -28,13 +28,13 @@ const (
 	CFTypeProgressive
 )
 
-// CollapsedForwardingTypeNames is a map of cache types keyed by name
+// CollapsedForwardingTypeNames is a map of forwarding types keyed by name
 var CollapsedForwardingTypeNames = map[string]CollapsedForwardingType{
 	"basic":       CFTypeBasic,
 	"progressive": CFTypeProgressive,
 }
 
-// CollapsedForwardingTypeValues is a map of cache types keyed by internal id
+// CollapsedForwardingTypeValues is a map of forwarding types keyed by internal id
 var CollapsedForwardingTypeValues = make(map[CollapsedForwardingType]string)
 
 func init() {

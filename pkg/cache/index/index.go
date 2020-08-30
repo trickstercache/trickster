@@ -46,7 +46,7 @@ type Index struct {
 	Objects map[string]*Object `msg:"objects"`
 
 	name           string                             `msg:"-"`
-	cacheType      string                             `msg:"-"`
+	cacheProvider      string                             `msg:"-"`
 	options        *options.Options                   `msg:"-"`
 	bulkRemoveFunc func([]string)                     `msg:"-"`
 	flushFunc      func(cacheKey string, data []byte) `msg:"-"`
@@ -105,7 +105,7 @@ func ObjectFromBytes(data []byte) (*Object, error) {
 }
 
 // NewIndex returns a new Index based on the provided inputs
-func NewIndex(cacheName, cacheType string, indexData []byte, o *options.Options,
+func NewIndex(cacheName, cacheProvider string, indexData []byte, o *options.Options,
 	bulkRemoveFunc func([]string), flushFunc func(cacheKey string, data []byte),
 	logger interface{}) *Index {
 	i := &Index{}
@@ -117,7 +117,7 @@ func NewIndex(cacheName, cacheType string, indexData []byte, o *options.Options,
 	}
 
 	i.name = cacheName
-	i.cacheType = cacheType
+	i.cacheProvider = cacheProvider
 	i.flushFunc = flushFunc
 	i.bulkRemoveFunc = bulkRemoveFunc
 	i.options = o
@@ -138,8 +138,8 @@ func NewIndex(cacheName, cacheType string, indexData []byte, o *options.Options,
 			tl.Pairs{"cacheName": i.name, "reapInterval": o.ReapInterval})
 	}
 
-	gm.CacheMaxObjects.WithLabelValues(cacheName, cacheType).Set(float64(o.MaxSizeObjects))
-	gm.CacheMaxBytes.WithLabelValues(cacheName, cacheType).Set(float64(o.MaxSizeBytes))
+	gm.CacheMaxObjects.WithLabelValues(cacheName, cacheProvider).Set(float64(o.MaxSizeObjects))
+	gm.CacheMaxBytes.WithLabelValues(cacheName, cacheProvider).Set(float64(o.MaxSizeBytes))
 
 	return i
 }
@@ -198,7 +198,7 @@ func (idx *Index) UpdateObject(obj *Object) {
 		atomic.AddInt64(&idx.ObjectCount, 1)
 	}
 
-	metrics.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
+	metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, idx.CacheSize, idx.ObjectCount)
 
 	idx.Objects[key] = obj
 	idx.mtx.Unlock()
@@ -212,10 +212,10 @@ func (idx *Index) RemoveObject(key string) {
 		atomic.AddInt64(&idx.CacheSize, -o.Size)
 		atomic.AddInt64(&idx.ObjectCount, -1)
 
-		metrics.ObserveCacheOperation(idx.name, idx.cacheType, "del", "none", float64(o.Size))
+		metrics.ObserveCacheOperation(idx.name, idx.cacheProvider, "del", "none", float64(o.Size))
 
 		delete(idx.Objects, key)
-		metrics.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
+		metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, idx.CacheSize, idx.ObjectCount)
 	}
 	idx.mtx.Unlock()
 }
@@ -229,9 +229,9 @@ func (idx *Index) RemoveObjects(keys []string, noLock bool) {
 		if o, ok := idx.Objects[key]; ok {
 			atomic.AddInt64(&idx.CacheSize, -o.Size)
 			atomic.AddInt64(&idx.ObjectCount, -1)
-			metrics.ObserveCacheOperation(idx.name, idx.cacheType, "del", "none", float64(o.Size))
+			metrics.ObserveCacheOperation(idx.name, idx.cacheProvider, "del", "none", float64(o.Size))
 			delete(idx.Objects, key)
-			metrics.ObserveCacheSizeChange(idx.name, idx.cacheType, idx.CacheSize, idx.ObjectCount)
+			metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, idx.CacheSize, idx.ObjectCount)
 		}
 	}
 	idx.lastWrite = time.Now()
@@ -314,7 +314,7 @@ func (idx *Index) reap(logger interface{}) {
 	}
 
 	if len(removals) > 0 {
-		metrics.ObserveCacheEvent(idx.name, idx.cacheType, "eviction", "ttl")
+		metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", "ttl")
 		go idx.bulkRemoveFunc(removals)
 		idx.RemoveObjects(removals, true)
 		cacheChanged = true
@@ -373,7 +373,7 @@ func (idx *Index) reap(logger interface{}) {
 		}
 
 		if len(removals) > 0 {
-			metrics.ObserveCacheEvent(idx.name, idx.cacheType, "eviction", evictionType)
+			metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", evictionType)
 			go idx.bulkRemoveFunc(removals)
 			idx.RemoveObjects(removals, true)
 			cacheChanged = true

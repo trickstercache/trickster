@@ -26,8 +26,8 @@ import (
 	bbolt "github.com/tricksterproxy/trickster/pkg/cache/bbolt/options"
 	filesystem "github.com/tricksterproxy/trickster/pkg/cache/filesystem/options"
 	index "github.com/tricksterproxy/trickster/pkg/cache/index/options"
+	"github.com/tricksterproxy/trickster/pkg/cache/providers"
 	redis "github.com/tricksterproxy/trickster/pkg/cache/redis/options"
-	"github.com/tricksterproxy/trickster/pkg/cache/types"
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 )
 
@@ -39,7 +39,7 @@ type Options struct {
 	// Name is the Name of the cache, taken from the Key in the Caches map[string]*CacheConfig
 	Name string `toml:"-"`
 	// Type represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
-	CacheType string `toml:"cache_type"`
+	Provider string `toml:"provider"`
 	// Index provides options for the Cache Index
 	Index *index.Options `toml:"index"`
 	// Redis provides options for Redis caching
@@ -53,21 +53,21 @@ type Options struct {
 
 	//  Synthetic Values
 
-	// CacheTypeID represents the internal constant for the provided CacheType string
+	// ID represents the internal constant for the provided  string
 	// and is automatically populated at startup
-	CacheTypeID types.CacheType `toml:"-"`
+	ProviderID providers.Provider `toml:"-"`
 }
 
 // New will return a pointer to a cache Options with the default configuration settings
 func New() *Options {
 	return &Options{
-		CacheType:   d.DefaultCacheType,
-		CacheTypeID: d.DefaultCacheTypeID,
-		Redis:       redis.New(),
-		Filesystem:  filesystem.New(),
-		BBolt:       bbolt.New(),
-		Badger:      badger.New(),
-		Index:       index.New(),
+		Provider:   d.DefaultCacheProvider,
+		ProviderID: d.DefaultCacheProviderID,
+		Redis:      redis.New(),
+		Filesystem: filesystem.New(),
+		BBolt:      bbolt.New(),
+		Badger:     badger.New(),
+		Index:      index.New(),
 	}
 }
 
@@ -76,8 +76,8 @@ func (cc *Options) Clone() *Options {
 
 	c := New()
 	c.Name = cc.Name
-	c.CacheType = cc.CacheType
-	c.CacheTypeID = cc.CacheTypeID
+	c.Provider = cc.Provider
+	c.ProviderID = cc.ProviderID
 
 	c.Index.FlushInterval = cc.Index.FlushInterval
 	c.Index.FlushIntervalMS = cc.Index.FlushIntervalMS
@@ -129,11 +129,12 @@ func (cc *Options) Equal(cc2 *Options) bool {
 	}
 
 	return cc.Name == cc2.Name &&
-		cc.CacheType == cc2.CacheType &&
-		cc.CacheTypeID == cc2.CacheTypeID
+		cc.Provider == cc2.Provider &&
+		cc.ProviderID == cc2.ProviderID
 
 }
 
+// ProcessTOML processes the provided TOML
 func (l Lookup) ProcessTOML(metadata *toml.MetaData, activeCaches map[string]bool) ([]string, error) {
 
 	// setCachingDefaults assumes that processOriginConfigs was just ran
@@ -151,10 +152,10 @@ func (l Lookup) ProcessTOML(metadata *toml.MetaData, activeCaches map[string]boo
 		cc := New()
 		cc.Name = k
 
-		if metadata.IsDefined("caches", k, "cache_type") {
-			cc.CacheType = strings.ToLower(v.CacheType)
-			if n, ok := types.Names[cc.CacheType]; ok {
-				cc.CacheTypeID = n
+		if metadata.IsDefined("caches", k, "provider") {
+			cc.Provider = strings.ToLower(v.Provider)
+			if n, ok := providers.Names[cc.Provider]; ok {
+				cc.ProviderID = n
 			}
 		}
 
@@ -190,7 +191,7 @@ func (l Lookup) ProcessTOML(metadata *toml.MetaData, activeCaches map[string]boo
 			return nil, errors.New("MaxSizeBackoffObjects can't be larger than MaxSizeObjects")
 		}
 
-		if cc.CacheTypeID == types.CacheTypeRedis {
+		if cc.ProviderID == providers.Redis {
 
 			var hasEndpoint, hasEndpoints bool
 

@@ -71,8 +71,8 @@ func TestNewClient(t *testing.T) {
 		t.Errorf("expected %s got %s", "default", c.Name())
 	}
 
-	if c.Cache().Configuration().CacheType != "memory" {
-		t.Errorf("expected %s got %s", "memory", c.Cache().Configuration().CacheType)
+	if c.Cache().Configuration().Provider != "memory" {
+		t.Errorf("expected %s got %s", "memory", c.Cache().Configuration().Provider)
 	}
 
 	if c.Configuration().OriginType != "TEST_CLIENT" {
@@ -105,8 +105,8 @@ func TestCache(t *testing.T) {
 	client := Client{cache: cache}
 	c := client.Cache()
 
-	if c.Configuration().CacheType != "memory" {
-		t.Errorf("expected %s got %s", "memory", c.Configuration().CacheType)
+	if c.Configuration().Provider != "memory" {
+		t.Errorf("expected %s got %s", "memory", c.Configuration().Provider)
 	}
 }
 

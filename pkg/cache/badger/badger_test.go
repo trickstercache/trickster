@@ -29,15 +29,15 @@ import (
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 )
 
-const cacheType = "badger"
+const provider = "badger"
 const cacheKey = "cacheKey"
 
 func newCacheConfig(t *testing.T) *co.Options {
-	dir, err := ioutil.TempDir("/tmp", cacheType)
+	dir, err := ioutil.TempDir("/tmp", provider)
 	if err != nil {
 		t.Fatalf("could not create temp directory (%s): %s", dir, err)
 	}
-	return &co.Options{CacheType: cacheType, Badger: &bo.Options{Directory: dir, ValueDirectory: dir}}
+	return &co.Options{Provider: provider, Badger: &bo.Options{Directory: dir, ValueDirectory: dir}}
 }
 
 func TestConfiguration(t *testing.T) {
@@ -46,8 +46,8 @@ func TestConfiguration(t *testing.T) {
 	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	cfg := bc.Configuration()
-	if cfg.CacheType != cacheType {
-		t.Fatalf("expected %s got %s", cacheType, cfg.CacheType)
+	if cfg.Provider != provider {
+		t.Fatalf("expected %s got %s", provider, cfg.Provider)
 	}
 }
 
@@ -256,13 +256,13 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 }
 
 func TestBadgerCache_Close(t *testing.T) {
-	dir, err := ioutil.TempDir("/tmp", cacheType)
+	dir, err := ioutil.TempDir("/tmp", provider)
 	if err != nil {
 		t.Fatalf("could not create temp directory (%s): %s", dir, err)
 	}
 	defer os.RemoveAll(dir)
 
-	cacheConfig := &co.Options{CacheType: cacheType, Badger: &bo.Options{Directory: dir, ValueDirectory: dir}}
+	cacheConfig := &co.Options{Provider: provider, Badger: &bo.Options{Directory: dir, ValueDirectory: dir}}
 	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	if err := bc.Connect(); err != nil {

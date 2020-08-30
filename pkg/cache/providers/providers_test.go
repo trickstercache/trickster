@@ -14,17 +14,17 @@
  * limitations under the License.
  */
 
-package types
+package providers
 
 import (
 	"testing"
 )
 
-func TestCacheTypeString(t *testing.T) {
+func TestProviderIDString(t *testing.T) {
 
-	t1 := CacheTypeMemory
-	t2 := CacheTypeFilesystem
-	var t3 CacheType = 13
+	t1 := Memory
+	t2 := Filesystem
+	var t3 Provider = 13
 
 	if t1.String() != "memory" {
 		t.Errorf("expected %s got %s", "memory", t1.String())

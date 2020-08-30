@@ -26,8 +26,8 @@ import (
 	flo "github.com/tricksterproxy/trickster/pkg/cache/filesystem/options"
 	io "github.com/tricksterproxy/trickster/pkg/cache/index/options"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
+	"github.com/tricksterproxy/trickster/pkg/cache/providers"
 	ro "github.com/tricksterproxy/trickster/pkg/cache/redis/options"
-	"github.com/tricksterproxy/trickster/pkg/cache/types"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 )
@@ -40,15 +40,15 @@ func TestLoadCachesFromConfig(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	for key, v := range types.Names {
+	for key, v := range providers.Names {
 		cfg := newCacheConfig(t, key)
 		conf.Caches[key] = cfg
 		switch v {
-		case types.CacheTypeBbolt:
+		case providers.Bbolt:
 			defer os.RemoveAll(cfg.BBolt.Filename)
-		case types.CacheTypeFilesystem:
+		case providers.Filesystem:
 			defer os.RemoveAll(cfg.Filesystem.CachePath)
-		case types.CacheTypeBadgerDB:
+		case providers.BadgerDB:
 			defer os.RemoveAll(cfg.Badger.Directory)
 		}
 	}
@@ -60,7 +60,7 @@ func TestLoadCachesFromConfig(t *testing.T) {
 		t.Errorf("Could not find default configuration")
 	}
 
-	for key := range types.Names {
+	for key := range providers.Names {
 		_, ok := caches[key]
 		if !ok {
 			t.Errorf("Could not find the configuration for %q", key)
@@ -74,33 +74,33 @@ func TestLoadCachesFromConfig(t *testing.T) {
 
 }
 
-func newCacheConfig(t *testing.T, cacheType string) *co.Options {
+func newCacheConfig(t *testing.T, cacheProvider string) *co.Options {
 
 	bd := "."
 	fd := "."
 	var err error
 
-	ctid, ok := types.Names[cacheType]
+	ctid, ok := providers.Names[cacheProvider]
 	if !ok {
-		ctid = types.CacheTypeMemory
+		ctid = providers.Memory
 	}
 
 	switch ctid {
-	case types.CacheTypeBadgerDB:
-		bd, err = ioutil.TempDir("/tmp", cacheType)
+	case providers.BadgerDB:
+		bd, err = ioutil.TempDir("/tmp", cacheProvider)
 		if err != nil {
 			t.Error(err)
 		}
 
-	case types.CacheTypeFilesystem:
-		fd, err = ioutil.TempDir("/tmp", cacheType)
+	case providers.Filesystem:
+		fd, err = ioutil.TempDir("/tmp", cacheProvider)
 		if err != nil {
 			t.Error(err)
 		}
 	}
 
 	return &co.Options{
-		CacheType:  cacheType,
+		Provider:   cacheProvider,
 		Redis:      &ro.Options{Protocol: "tcp", Endpoint: "redis:6379", Endpoints: []string{"redis:6379"}},
 		Filesystem: &flo.Options{CachePath: fd},
 		BBolt:      &bbo.Options{Filename: "/tmp/test.db", Bucket: "trickster_test"},

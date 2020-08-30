@@ -74,7 +74,7 @@ func NewCache(cacheName string, cfg *options.Options, logger interface{}) cache.
 
 	var c cache.Cache
 
-	switch cfg.CacheType {
+	switch cfg.Provider {
 	case ctFilesystem:
 		c = &filesystem.Cache{Name: cacheName, Config: cfg, Logger: logger}
 	case ctRedis:

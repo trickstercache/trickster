@@ -65,7 +65,7 @@ func setupRedisCache(ct clientType) (*Cache, func()) {
 	close := func() {
 		s.Close()
 	}
-	cacheConfig := &co.Options{CacheType: "redis", Redis: rcfg}
+	cacheConfig := &co.Options{Provider: "redis", Redis: rcfg}
 	conf.Caches = map[string]*co.Options{"default": cacheConfig}
 
 	return &Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}, close

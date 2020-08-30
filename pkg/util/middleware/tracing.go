@@ -45,7 +45,7 @@ func Trace(tr *tracing.Tracer, next http.Handler) http.Handler {
 						label.String("origin.type", rsc.OriginConfig.OriginType),
 						label.String("router.path", rsc.PathConfig.Path),
 						label.String("cache.name", rsc.CacheConfig.Name),
-						label.String("cache.type", rsc.CacheConfig.CacheType),
+						label.String("cache.provider", rsc.CacheConfig.Provider),
 					}...,
 				)
 			}

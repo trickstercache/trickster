@@ -20,39 +20,39 @@ import (
 	"testing"
 )
 
-var testCacheKey, testCacheName, testCacheType string
+var testCacheKey, testCacheName, testCacheProvider string
 
 func init() {
 	testCacheKey = "test-key"
 	testCacheName = "test-cache"
-	testCacheType = "test"
+	testCacheProvider = "test"
 }
 
 func TestObserveCacheMiss(t *testing.T) {
-	ObserveCacheMiss(testCacheKey, testCacheName, testCacheType)
+	ObserveCacheMiss(testCacheKey, testCacheName, testCacheProvider)
 }
 
 // ObserveCacheDel records a cache deletion event
 func TestObserveCacheDel(t *testing.T) {
-	ObserveCacheDel(testCacheName, testCacheType, 0)
+	ObserveCacheDel(testCacheName, testCacheProvider, 0)
 }
 
 func TestCacheError(t *testing.T) {
-	_, err := CacheError(testCacheKey, testCacheName, testCacheType, "%s")
+	_, err := CacheError(testCacheKey, testCacheName, testCacheProvider, "%s")
 	if err.Error() != testCacheKey {
 		t.Errorf("expected %s got %s", testCacheKey, err.Error())
 	}
 }
 
 func TestObserveCacheOperation(t *testing.T) {
-	ObserveCacheOperation(testCacheName, testCacheType, "set", "ok", 0)
-	ObserveCacheOperation(testCacheName, testCacheType, "set", "ok", 1)
+	ObserveCacheOperation(testCacheName, testCacheProvider, "set", "ok", 0)
+	ObserveCacheOperation(testCacheName, testCacheProvider, "set", "ok", 1)
 }
 
 func TestObserveCacheEvent(t *testing.T) {
-	ObserveCacheEvent(testCacheName, testCacheType, "test", "test")
+	ObserveCacheEvent(testCacheName, testCacheProvider, "test", "test")
 }
 
 func TestObserveCacheSizeChange(t *testing.T) {
-	ObserveCacheSizeChange(testCacheName, testCacheType, 0, 0)
+	ObserveCacheSizeChange(testCacheName, testCacheProvider, 0, 0)
 }

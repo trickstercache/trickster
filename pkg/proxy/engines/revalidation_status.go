@@ -18,7 +18,7 @@ package engines
 
 import "strconv"
 
-// RevalidationStatus enumerates the methodologies for maintaining time series cache data
+// RevalidationStatus enumerates the possible statuses for cache revalidation
 type RevalidationStatus int
 
 const (
