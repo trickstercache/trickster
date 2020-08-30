@@ -148,7 +148,7 @@ func (pr *proxyRequest) Clone() *proxyRequest {
 func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 
 	rsc := request.GetResources(pr.upstreamRequest)
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 	pc := rsc.PathConfig
 
 	var handlerName string
@@ -173,7 +173,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
 
-	go logUpstreamRequest(pr.Logger, oc.Name, oc.OriginType, handlerName,
+	go logUpstreamRequest(pr.Logger, oc.Name, oc.Provider, handlerName,
 		pr.Method, pr.URL.String(), pr.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
 
 	return body, resp, elapsed
@@ -212,7 +212,7 @@ func (pr *proxyRequest) prepareRevalidationRequest() {
 
 		revalRanges := wr.CalculateDelta(pr.neededRanges, cl)
 		l := len(revalRanges)
-		if (l > 1 && rsc.OriginConfig.DearticulateUpstreamRanges) && len(pr.cacheDocument.Ranges) == 1 {
+		if (l > 1 && rsc.BackendOptions.DearticulateUpstreamRanges) && len(pr.cacheDocument.Ranges) == 1 {
 			rh = pr.cacheDocument.Ranges.String()
 		} else if l == 1 {
 			rh = revalRanges.String()
@@ -260,7 +260,7 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 	}
 
 	// if we are articulating the origin range requests, break those out here
-	if pr.neededRanges != nil && len(pr.neededRanges) > 0 && rsc.OriginConfig.DearticulateUpstreamRanges {
+	if pr.neededRanges != nil && len(pr.neededRanges) > 0 && rsc.BackendOptions.DearticulateUpstreamRanges {
 		for _, r := range pr.neededRanges {
 			req := request.SetResources(pr.upstreamRequest.Clone(context.Background()), rsc)
 			req.Header.Set(headers.NameRange, "bytes="+r.String())
@@ -344,7 +344,7 @@ func (pr *proxyRequest) parseRequestRanges() bool {
 
 	// if the client shouldn't support multipart ranges, force a full range
 	rsc := request.GetResources(pr.Request)
-	if rsc.OriginConfig.MultipartRangesDisabled && len(pr.wantedRanges) > 1 {
+	if rsc.BackendOptions.MultipartRangesDisabled && len(pr.wantedRanges) > 1 {
 		pr.upstreamRequest.Header.Del(headers.NameRange)
 		pr.wantsRanges = false
 		pr.wantedRanges = nil
@@ -463,7 +463,7 @@ func (pr *proxyRequest) store() error {
 	}
 
 	rsc := request.GetResources(pr.Request)
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 
 	rf := oc.RevalidationFactor
 	if rsc.AlternateCacheTTL > 0 {
@@ -726,7 +726,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 	if pr.upstreamResponse.StatusCode != http.StatusNotModified {
 		rsc := request.GetResources(pr.Request)
 		pr.cachingPolicy.Merge(GetResponseCachingPolicy(pr.upstreamResponse.StatusCode,
-			rsc.OriginConfig.NegativeCache, pr.upstreamResponse.Header))
+			rsc.BackendOptions.NegativeCache, pr.upstreamResponse.Header))
 
 	}
 

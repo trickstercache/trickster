@@ -30,19 +30,19 @@ import (
 )
 
 func TestLoadConfiguration(t *testing.T) {
-	a := []string{"-origin-type", "testing", "-origin-url", "http://prometheus:9090/test/path"}
+	a := []string{"-provider", "testing", "-origin-url", "http://prometheus:9090/test/path"}
 	// it should not error if config path is not set
 	conf, _, err := Load("trickster-test", "0", a)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if conf.Origins["default"].TimeseriesRetention != 1024 {
-		t.Errorf("expected 1024, got %d", conf.Origins["default"].TimeseriesRetention)
+	if conf.Backends["default"].TimeseriesRetention != 1024 {
+		t.Errorf("expected 1024, got %d", conf.Backends["default"].TimeseriesRetention)
 	}
 
-	if conf.Origins["default"].FastForwardTTL != time.Duration(15)*time.Second {
-		t.Errorf("expected 15, got %s", conf.Origins["default"].FastForwardTTL)
+	if conf.Backends["default"].FastForwardTTL != time.Duration(15)*time.Second {
+		t.Errorf("expected 15, got %s", conf.Backends["default"].FastForwardTTL)
 	}
 
 	if conf.Caches["default"].Index.ReapInterval != time.Duration(3)*time.Second {
@@ -59,19 +59,19 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 	}{
 		{ // Case 0
 			"../../testdata/test.missing-origin-url.conf",
-			`missing origin-url for origin "2"`,
+			`missing origin-url for backend "2"`,
 		},
 		{ // Case 1
 			"../../testdata/test.bad_origin_url.conf",
 			"first path segment in URL cannot contain colon",
 		},
 		{ // Case 2
-			"../../testdata/test.missing_origin_type.conf",
-			`missing origin-type for origin "test"`,
+			"../../testdata/test.missing_backend_provider.conf",
+			`missing provider for backend "test"`,
 		},
 		{ // Case 3
 			"../../testdata/test.bad-cache-name.conf",
-			`invalid cache name [test_fail] provided in origin config [test]`,
+			`invalid cache name [test_fail] provided in backend options [test]`,
 		},
 		{ // Case 4
 			"../../testdata/test.invalid-negative-cache-1.conf",
@@ -165,16 +165,16 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected test_file, got %s", conf.Logging.LogFile)
 	}
 
-	// Test Origins
+	// Test Backends
 
-	o, ok := conf.Origins["test"]
+	o, ok := conf.Backends["test"]
 	if !ok {
-		t.Errorf("unable to find origin config: %s", "test")
+		t.Errorf("unable to find backend options: %s", "test")
 		return
 	}
 
-	if o.OriginType != "test_type" {
-		t.Errorf("expected test_type, got %s", o.OriginType)
+	if o.Provider != "test_type" {
+		t.Errorf("expected test_type, got %s", o.Provider)
 	}
 
 	if o.CacheName != "test" {
@@ -236,7 +236,7 @@ func TestFullLoadConfiguration(t *testing.T) {
 	}
 
 	if o.TLS == nil {
-		t.Errorf("expected tls config for origin %s, got nil", "test")
+		t.Errorf("expected tls config for backend %s, got nil", "test")
 	}
 
 	if !o.TLS.InsecureSkipVerify {
@@ -400,10 +400,10 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(conf.Origins) != 1 {
-		// we define a "test" cache, but never reference it by an origin,
+	if len(conf.Backends) != 1 {
+		// we define a "test" cache, but never reference it by a backend,
 		// so it should not make it into the running config
-		t.Errorf("expected %d, got %d", 1, len(conf.Origins))
+		t.Errorf("expected %d, got %d", 1, len(conf.Backends))
 	}
 
 	// Test Proxy Server
@@ -433,20 +433,20 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected '%s', got '%s'", d.DefaultLogFile, conf.Logging.LogFile)
 	}
 
-	// Test Origins
+	// Test Backends
 
-	o, ok := conf.Origins["test"]
+	o, ok := conf.Backends["test"]
 	if !ok {
-		t.Errorf("unable to find origin config: %s", "test")
+		t.Errorf("unable to find backend options: %s", "test")
 		return
 	}
 
-	if o.OriginType != "test" {
-		t.Errorf("expected %s origin type, got %s", "test", o.OriginType)
+	if o.Provider != "test" {
+		t.Errorf("expected %s backend provider, got %s", "test", o.Provider)
 	}
 
-	if o.CacheName != d.DefaultOriginCacheName {
-		t.Errorf("expected %s, got %s", d.DefaultOriginCacheName, o.CacheName)
+	if o.CacheName != d.DefaultBackendCacheName {
+		t.Errorf("expected %s, got %s", d.DefaultBackendCacheName, o.CacheName)
 	}
 
 	if o.Scheme != "http" {
@@ -461,8 +461,8 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected '%s', got '%s'", "", o.PathPrefix)
 	}
 
-	if o.TimeseriesRetentionFactor != d.DefaultOriginTRF {
-		t.Errorf("expected %d, got %d", d.DefaultOriginTRF, o.TimeseriesRetentionFactor)
+	if o.TimeseriesRetentionFactor != d.DefaultBackendTRF {
+		t.Errorf("expected %d, got %d", d.DefaultBackendTRF, o.TimeseriesRetentionFactor)
 	}
 
 	if o.FastForwardDisable {
@@ -473,8 +473,8 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %d, got %d", d.DefaultBackfillToleranceMS, o.BackfillToleranceMS)
 	}
 
-	if o.TimeoutMS != d.DefaultOriginTimeoutMS {
-		t.Errorf("expected %d, got %d", d.DefaultOriginTimeoutMS, o.TimeoutMS)
+	if o.TimeoutMS != d.DefaultBackendTimeoutMS {
+		t.Errorf("expected %d, got %d", d.DefaultBackendTimeoutMS, o.TimeoutMS)
 	}
 
 	if o.TimeseriesTTLMS != d.DefaultTimeseriesTTLMS {
@@ -651,7 +651,7 @@ func TestLoadConfigurationBadUrl(t *testing.T) {
 
 func TestLoadConfigurationBadArg(t *testing.T) {
 	const url = "http://0.0.0.0"
-	a := []string{"-origin-url", url, "-origin-type", "rpc", "-unknown-flag"}
+	a := []string{"-origin-url", url, "-provider", "rpc", "-unknown-flag"}
 	_, _, err := Load("trickster-test", "0", a)
 	if err == nil {
 		t.Error("expected error: flag provided but not defined: -unknown-flag")
@@ -698,6 +698,6 @@ func TestLoadEmptyArgs(t *testing.T) {
 	a := []string{}
 	_, _, err := Load("trickster-test", "0", a)
 	if err == nil {
-		t.Error("expected error: no valid origins configured")
+		t.Error("expected error: no valid backends configured")
 	}
 }

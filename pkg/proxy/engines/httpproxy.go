@@ -53,7 +53,7 @@ const HTTPBlockSize = 32 * 1024
 func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 
 	rsc := request.GetResources(r)
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 
 	start := time.Now()
 
@@ -140,7 +140,7 @@ func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer 
 func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) {
 
 	rsc := request.GetResources(r)
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 
 	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "PrepareFetchReader")
 	if span != nil {
@@ -220,7 +220,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 				tl.WarnOnce(rsc.Logger, "clockoffset."+oc.Name,
 					"clock offset between trickster host and origin is high and may cause data anomalies",
 					tl.Pairs{
-						"originName":    oc.Name,
+						"backendName":    oc.Name,
 						"tricksterTime": strconv.FormatInt(d.Add(offset).Unix(), 10),
 						"originTime":    strconv.FormatInt(d.Unix(), 10),
 						"offset":        strconv.FormatInt(int64(offset.Seconds()), 10) + "s",
@@ -270,15 +270,15 @@ func recordResults(r *http.Request, engine string, cacheStatus status.LookupStat
 
 	rsc := request.GetResources(r)
 	pc := rsc.PathConfig
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 
 	status := cacheStatus.String()
 
 	if pc != nil && !pc.NoMetrics {
 		httpStatus := strconv.Itoa(statusCode)
-		metrics.ProxyRequestStatus.WithLabelValues(oc.Name, oc.OriginType, r.Method, status, httpStatus, path).Inc()
+		metrics.ProxyRequestStatus.WithLabelValues(oc.Name, oc.Provider, r.Method, status, httpStatus, path).Inc()
 		if elapsed > 0 {
-			metrics.ProxyRequestDuration.WithLabelValues(oc.Name, oc.OriginType,
+			metrics.ProxyRequestDuration.WithLabelValues(oc.Name, oc.Provider,
 				r.Method, status, httpStatus, path).Observe(elapsed)
 		}
 	}

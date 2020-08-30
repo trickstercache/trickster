@@ -20,7 +20,7 @@ import (
 	"context"
 )
 
-// WithResources returns a copy of the provided context that also includes the OriginConfig,
+// WithResources returns a copy of the provided context that also includes the BackendOptions,
 // CachingConfig and PathConfig for the request
 func WithResources(ctx context.Context, r interface{}) context.Context {
 	if r != nil {

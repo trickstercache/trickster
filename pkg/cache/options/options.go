@@ -137,14 +137,14 @@ func (cc *Options) Equal(cc2 *Options) bool {
 // ProcessTOML processes the provided TOML
 func (l Lookup) ProcessTOML(metadata *toml.MetaData, activeCaches map[string]bool) ([]string, error) {
 
-	// setCachingDefaults assumes that processOriginConfigs was just ran
+	// setCachingDefaults assumes that processBackendOptionss was just ran
 
 	lw := make([]string, 0)
 
 	for k, v := range l {
 
 		if _, ok := activeCaches[k]; !ok {
-			// a configured cache was not used by any origin. don't even instantiate it
+			// a configured cache was not used by any backend. don't even instantiate it
 			delete(l, k)
 			continue
 		}

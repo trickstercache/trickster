@@ -30,7 +30,7 @@ const (
 	cfLogLevel    = "log-level"
 	cfInstanceID  = "instance-id"
 	cfOrigin      = "origin-url"
-	cfOriginType  = "origin-type"
+	cfProvider  = "provider"
 	cfProxyPort   = "proxy-port"
 	cfMetricsPort = "metrics-port"
 )
@@ -45,7 +45,7 @@ type Flags struct {
 	InstanceID        int
 	ConfigPath        string
 	Origin            string
-	OriginType        string
+	Provider        string
 	LogLevel          string
 }
 
@@ -67,7 +67,7 @@ func parseFlags(applicationName string, arguments []string) (*Flags, error) {
 			" from the same config while logging to their own files")
 	flagSet.StringVar(&flags.Origin, cfOrigin, "",
 		"URL to the Origin. Enter it like you would in grafana, e.g., http://prometheus:9090")
-	flagSet.StringVar(&flags.OriginType, cfOriginType, "",
+	flagSet.StringVar(&flags.Provider, cfProvider, "",
 		"Type of origin (prometheus, influxdb)")
 	flagSet.IntVar(&flags.ProxyListenPort, cfProxyPort, 0,
 		"Port that the primary Proxy server will listen on")
@@ -91,8 +91,8 @@ func (c *Config) loadFlags(flags *Flags) {
 	if len(flags.Origin) > 0 {
 		c.providedOriginURL = flags.Origin
 	}
-	if len(flags.OriginType) > 0 {
-		c.providedOriginType = flags.OriginType
+	if len(flags.Provider) > 0 {
+		c.providedProvider = flags.Provider
 	}
 	if flags.ProxyListenPort > 0 {
 		c.Frontend.ListenPort = flags.ProxyListenPort

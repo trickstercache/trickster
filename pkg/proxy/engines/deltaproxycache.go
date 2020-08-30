@@ -31,7 +31,7 @@ import (
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	tpe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
+	"github.com/tricksterproxy/trickster/pkg/backends"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
@@ -49,7 +49,7 @@ import (
 func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *timeseries.Modeler) {
 
 	rsc := request.GetResources(r)
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 
 	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "DeltaProxyCacheRequest")
 	if span != nil {
@@ -62,7 +62,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	cc := rsc.CacheConfig
 	locker := cache.Locker()
 
-	client := rsc.OriginClient.(origins.TimeseriesClient)
+	client := rsc.BackendClient.(backends.TimeseriesClient)
 
 	trq, rlo, canOPC, err := client.ParseTimeRangeQuery(r)
 	if err != nil {
@@ -170,7 +170,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			}
 			if err != nil {
 				tl.Error(pr.Logger, "cache object unmarshaling failed",
-					tl.Pairs{"key": key, "originName": client.Name(), "detail": err.Error()})
+					tl.Pairs{"key": key, "backendName": client.Name(), "detail": err.Error()})
 				go cache.Remove(key)
 				cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
 				if err != nil {
@@ -425,7 +425,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				if err := WriteCache(ctx, cache, key, doc, oc.TimeseriesTTL, oc.CompressableTypes); err != nil {
 					tl.Error(pr.Logger, "error writing object to cache",
 						tl.Pairs{
-							"originName": oc.Name,
+							"backendName": oc.Name,
 							"cacheName":  cache.Configuration().Name,
 							"cacheKey":   key,
 							"detail":     err.Error(),
@@ -440,12 +440,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 
 	if uncachedValueCount > 0 {
 		metrics.ProxyRequestElements.WithLabelValues(oc.Name,
-			oc.OriginType, "uncached", r.URL.Path).Add(float64(uncachedValueCount))
+			oc.Provider, "uncached", r.URL.Path).Add(float64(uncachedValueCount))
 	}
 
 	if cachedValueCount > 0 {
 		metrics.ProxyRequestElements.WithLabelValues(oc.Name,
-			oc.OriginType, "cached", r.URL.Path).Add(float64(cachedValueCount))
+			oc.Provider, "cached", r.URL.Path).Add(float64(cachedValueCount))
 	}
 
 	// Merge Fast Forward data if present. This must be done after the Downstream Crop since
@@ -472,10 +472,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 func logDeltaRoutine(logger interface{}, p tl.Pairs) { tl.Debug(logger, "delta routine completed", p) }
 
 func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
-	client origins.TimeseriesClient, modeler *timeseries.Modeler) (timeseries.Timeseries, *HTTPDocument, time.Duration, error) {
+	client backends.TimeseriesClient, modeler *timeseries.Modeler) (timeseries.Timeseries, *HTTPDocument, time.Duration, error) {
 
 	rsc := request.GetResources(pr.Request)
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 	pc := rsc.PathConfig
 
 	var handlerName string
@@ -521,7 +521,7 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	}
 
 	elapsed := time.Since(start)
-	go logUpstreamRequest(pr.Logger, oc.Name, oc.OriginType, handlerName,
+	go logUpstreamRequest(pr.Logger, oc.Name, oc.Provider, handlerName,
 		pr.Method, pr.URL.String(), pr.UserAgent(), resp.StatusCode, 0, elapsed.Seconds())
 
 	return ts, d, elapsed, nil

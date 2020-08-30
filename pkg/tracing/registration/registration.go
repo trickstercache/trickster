@@ -39,21 +39,21 @@ func RegisterAll(cfg *config.Config, logger interface{}, isDryRun bool) (tracing
 	if cfg == nil {
 		return nil, errors.New("no config provided")
 	}
-	if cfg.Origins == nil {
-		return nil, errors.New("no origins provided")
+	if cfg.Backends == nil {
+		return nil, errors.New("no backends provided")
 	}
 	if cfg.TracingConfigs == nil {
 		return nil, errors.New("no tracers provided")
 	}
 
-	// remove any tracers that are configured but not used by an origin, we don't want
+	// remove any tracers that are configured but not used by a backend, we don't want
 	// to use resources to instantiate them
 	mappedTracers := make(map[string]bool)
 
-	for k, v := range cfg.Origins {
+	for k, v := range cfg.Backends {
 		if v != nil && v.TracingConfigName != "" {
 			if _, ok := cfg.TracingConfigs[v.TracingConfigName]; !ok {
-				return nil, fmt.Errorf("origin %s provided invalid tracing config name %s",
+				return nil, fmt.Errorf("backend %s provided invalid tracing config name %s",
 					k, v.TracingConfigName)
 			}
 			mappedTracers[v.TracingConfigName] = true
@@ -63,7 +63,7 @@ func RegisterAll(cfg *config.Config, logger interface{}, isDryRun bool) (tracing
 	tracers := make(tracing.Tracers)
 	for k, tc := range cfg.TracingConfigs {
 		if _, ok := mappedTracers[k]; !ok {
-			// tracer is configured, but not mapped by any origin,
+			// tracer is configured, but not mapped by any backend,
 			// so we won't instantiate it
 			continue
 		}

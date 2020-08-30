@@ -27,13 +27,13 @@ import (
 	"sync"
 	"time"
 
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	rule "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/negative"
 	cache "github.com/tricksterproxy/trickster/pkg/cache/options"
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 	reload "github.com/tricksterproxy/trickster/pkg/config/reload/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	origins "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	rule "github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
 	rewriter "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	rwopts "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 	tracing "github.com/tricksterproxy/trickster/pkg/tracing/options"
@@ -45,8 +45,8 @@ import (
 type Config struct {
 	// Main is the primary MainConfig section
 	Main *MainConfig `toml:"main"`
-	// Origins is a map of OriginConfigs
-	Origins map[string]*origins.Options `toml:"origins"`
+	// Backends is a map of BackendOptionss
+	Backends map[string]*bo.Options `toml:"backends"`
 	// Caches is a map of CacheConfigs
 	Caches map[string]*cache.Options `toml:"caches"`
 	// ProxyServer is provides configurations about the Proxy Front End
@@ -69,10 +69,10 @@ type Config struct {
 	// Resources holds runtime resources uses by the Config
 	Resources *Resources `toml:"-"`
 
-	CompiledRewriters  map[string]rewriter.RewriteInstructions `toml:"-"`
-	activeCaches       map[string]bool
-	providedOriginURL  string
-	providedOriginType string
+	CompiledRewriters map[string]rewriter.RewriteInstructions `toml:"-"`
+	activeCaches      map[string]bool
+	providedOriginURL string
+	providedProvider  string
 
 	LoaderWarnings []string `toml:"-"`
 }
@@ -119,7 +119,7 @@ type FrontendConfig struct {
 	ConnectionsLimit int `toml:"connections_limit"`
 
 	// ServeTLS indicates whether to listen and serve on the TLS port, meaning
-	// at least one origin configuration has a valid certificate and key file configured.
+	// at least one backend configuration has a valid certificate and key file configured.
 	ServeTLS bool `toml:"-"`
 }
 
@@ -167,8 +167,8 @@ func NewConfig() *Config {
 		Metrics: &MetricsConfig{
 			ListenPort: d.DefaultMetricsListenPort,
 		},
-		Origins: map[string]*origins.Options{
-			"default": origins.New(),
+		Backends: map[string]*bo.Options{
+			"default": bo.New(),
 		},
 		Frontend: &FrontendConfig{
 			ListenPort:       d.DefaultProxyListenPort,
@@ -244,12 +244,12 @@ func (c *Config) setDefaults(metadata *toml.MetaData) error {
 	}
 
 	c.activeCaches = make(map[string]bool)
-	for k, v := range c.Origins {
-		w, err := origins.ProcessTOML(k, v, metadata, c.CompiledRewriters, c.Origins, c.activeCaches)
+	for k, v := range c.Backends {
+		w, err := bo.ProcessTOML(k, v, metadata, c.CompiledRewriters, c.Backends, c.activeCaches)
 		if err != nil {
 			return err
 		}
-		c.Origins[k] = w
+		c.Backends[k] = w
 	}
 
 	tracing.ProcessTracingOptions(c.TracingConfigs, metadata)
@@ -262,7 +262,7 @@ func (c *Config) setDefaults(metadata *toml.MetaData) error {
 		c.LoaderWarnings = append(c.LoaderWarnings, v)
 	}
 
-	ol := origins.Lookup(c.Origins)
+	ol := bo.Lookup(c.Backends)
 	if err = ol.ValidateConfigMappings(c.Rules, c.Caches); err != nil {
 		return err
 	}
@@ -296,7 +296,7 @@ func (c *Config) Clone() *Config {
 
 	nc := NewConfig()
 	delete(nc.Caches, "default")
-	delete(nc.Origins, "default")
+	delete(nc.Backends, "default")
 
 	nc.Main.ConfigHandlerPath = c.Main.ConfigHandlerPath
 	nc.Main.InstanceID = c.Main.InstanceID
@@ -327,8 +327,8 @@ func (c *Config) Clone() *Config {
 		QuitChan: make(chan bool, 1),
 	}
 
-	for k, v := range c.Origins {
-		nc.Origins[k] = v.Clone()
+	for k, v := range c.Backends {
+		nc.Backends[k] = v.Clone()
 	}
 
 	for k, v := range c.Caches {
@@ -390,8 +390,8 @@ func (c *Config) String() string {
 	// the toml library will panic if the Handler is assigned,
 	// even though this field is annotated as skip ("-") in the prototype
 	// so we'll iterate the paths and set to nil the Handler (in our local copy only)
-	if cp.Origins != nil {
-		for _, v := range cp.Origins {
+	if cp.Backends != nil {
+		for _, v := range cp.Backends {
 			if v != nil {
 				for _, w := range v.Paths {
 					w.Handler = nil

@@ -279,7 +279,7 @@ func handleUpstreamTransactions(pr *proxyRequest) error {
 func handlePCF(pr *proxyRequest) error {
 
 	rsc := request.GetResources(pr.Request)
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 
 	pr.isPCF = true
 	pcfResult, pcfExists := reqs.Load(pr.key)
@@ -314,7 +314,7 @@ func handlePCF(pr *proxyRequest) error {
 		// Blocks until server completes
 
 		pr.cachingPolicy.Merge(GetResponseCachingPolicy(pr.upstreamResponse.StatusCode,
-			rsc.OriginConfig.NegativeCache, pr.upstreamResponse.Header))
+			rsc.BackendOptions.NegativeCache, pr.upstreamResponse.Header))
 		pr.determineCacheability()
 
 		go func() {
@@ -377,7 +377,7 @@ func init() {
 func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, status.LookupStatus) {
 
 	rsc := request.GetResources(r)
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 	cc := rsc.CacheClient
 
 	pr := newProxyRequest(r, w)

@@ -74,7 +74,7 @@ func setupRedisCache(ct clientType) (*Cache, func()) {
 func TestClientSelectionSentinel(t *testing.T) {
 	const expected1 = "ERR unknown command `sentinel`"
 	args := []string{"-config", "../../../testdata/test.redis-sentinel.conf",
-		"-origin-url", "http://0.0.0.0", "-origin-type", "rpc", "-log-level", "info"}
+		"-origin-url", "http://0.0.0.0", "-provider", "rpc", "-log-level", "info"}
 	conf, _, err := config.Load("trickster", "test", args)
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +152,7 @@ func TestClientOpts(t *testing.T) {
 func TestClientSelectionCluster(t *testing.T) {
 	expected1 := "invalid endpoint"
 	args := []string{"-config", "../../../testdata/test.redis-cluster.conf",
-		"-origin-url", "http://0.0.0.0", "-origin-type", "rpc", "-log-level", "info"}
+		"-origin-url", "http://0.0.0.0", "-provider", "rpc", "-log-level", "info"}
 	conf, _, err := config.Load("trickster", "test", args)
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +175,7 @@ func TestClientSelectionCluster(t *testing.T) {
 func TestClientSelectionStandard(t *testing.T) {
 	expected1 := "invalid endpoint"
 	args := []string{"-config", "../../../testdata/test.redis-standard.conf",
-		"-origin-url", "http://0.0.0.0", "-origin-type", "rpc", "-log-level", "info"}
+		"-origin-url", "http://0.0.0.0", "-provider", "rpc", "-log-level", "info"}
 	conf, _, err := config.Load("trickster", "test", args)
 	if err != nil {
 		t.Fatal(err)

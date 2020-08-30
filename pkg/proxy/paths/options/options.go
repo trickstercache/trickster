@@ -62,7 +62,7 @@ type Options struct {
 	// CollapsedForwardingName indicates 'basic' or 'progressive' Collapsed Forwarding to be used by this path.
 	CollapsedForwardingName string `toml:"collapsed_forwarding"`
 	// ReqRewriterName is the name of a configured Rewriter that will modify the request prior to
-	// processing by the origin client
+	// processing by the backend client
 	ReqRewriterName string `toml:"req_rewriter_name"`
 
 	// Handler is the HTTP Handler represented by the Path's HandlerName
@@ -74,7 +74,7 @@ type Options struct {
 	// CollapsedForwardingType is the typed representation of CollapsedForwardingName
 	CollapsedForwardingType forwarding.CollapsedForwardingType `toml:"-"`
 	// KeyHasher points to an optional function that hashes the cacheKey with a custom algorithm
-	// NOTE: This is used by some origins like IronDB, but is not configurable by end users.
+	// NOTE: This is used by some backends like IronDB, but is not configurable by end users.
 	// Due to a bug in the vendored toml package, this must be a slice to avoid panic
 	KeyHasher []key.HasherFunc `toml:"-"`
 	// Custom is a compiled list of any custom settings for this path from the config file
@@ -117,7 +117,7 @@ func New() *Options {
 func (o *Options) Clone() *Options {
 	c := &Options{
 		Path: o.Path,
-		//		OriginConfig:            o.OriginConfig,
+		//		BackendOptions:            o.BackendOptions,
 		MatchTypeName:           o.MatchTypeName,
 		MatchType:               o.MatchType,
 		HandlerName:             o.HandlerName,
@@ -204,7 +204,7 @@ var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_ke
 }
 
 func ProcessTOML(
-	originName string,
+	backendName string,
 	metadata *toml.MetaData,
 	paths Lookup,
 	crw map[string]rewriter.RewriteInstructions,
@@ -213,12 +213,12 @@ func ProcessTOML(
 		return errors.New("invalid config metadata")
 	}
 	for k, p := range paths {
-		if metadata.IsDefined("origins", originName, "paths", k, "req_rewriter_name") &&
+		if metadata.IsDefined("backends", backendName, "paths", k, "req_rewriter_name") &&
 			p.ReqRewriterName != "" {
 			ri, ok := crw[p.ReqRewriterName]
 			if !ok {
-				return fmt.Errorf("invalid rewriter name %s in path %s of origin config %s",
-					p.ReqRewriterName, k, originName)
+				return fmt.Errorf("invalid rewriter name %s in path %s of backend config %s",
+					p.ReqRewriterName, k, backendName)
 			}
 			p.ReqRewriter = ri
 		}
@@ -227,15 +227,15 @@ func ProcessTOML(
 		}
 		p.Custom = make([]string, 0)
 		for _, pm := range pathMembers {
-			if metadata.IsDefined("origins", originName, "paths", k, pm) {
+			if metadata.IsDefined("backends", backendName, "paths", k, pm) {
 				p.Custom = append(p.Custom, pm)
 			}
 		}
-		if metadata.IsDefined("origins", originName, "paths", k, "response_body") {
+		if metadata.IsDefined("backends", backendName, "paths", k, "response_body") {
 			p.ResponseBodyBytes = []byte(p.ResponseBody)
 			p.HasCustomResponseBody = true
 		}
-		if metadata.IsDefined("origins", originName, "paths", k, "collapsed_forwarding") {
+		if metadata.IsDefined("backends", backendName, "paths", k, "collapsed_forwarding") {
 			if _, ok := forwarding.CollapsedForwardingTypeNames[p.CollapsedForwardingName]; !ok {
 				return fmt.Errorf("invalid collapsed_forwarding name: %s", p.CollapsedForwardingName)
 			}

@@ -6,8 +6,8 @@ import (
 
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	rpc "github.com/tricksterproxy/trickster/pkg/proxy/origins/reverseproxycache"
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	rpc "github.com/tricksterproxy/trickster/pkg/backends/reverseproxycache"
 	"github.com/tricksterproxy/trickster/pkg/routing"
 
 	"github.com/gorilla/mux"
@@ -37,7 +37,7 @@ func NewWithOptions(baseURL string, o *oo.Options, c *co.Options) (http.Handler,
 		o = oo.New()
 		o.Name = "default"
 	}
-	o.OriginType = "rpc"
+	o.Provider = "rpc"
 	o.CacheName = c.Name
 	o.Scheme = u.Scheme
 	o.Host = u.Host
