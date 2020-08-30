@@ -29,7 +29,7 @@ func TestLoadFlags(t *testing.T) {
 		"9091",
 		"-metrics-port",
 		"9092",
-		"-origin-type",
+		"-provider",
 		"prometheus",
 		"-log-level",
 		"info",
@@ -47,8 +47,8 @@ func TestLoadFlags(t *testing.T) {
 	if c.providedOriginURL != a[1] {
 		t.Errorf("wanted \"%s\". got \"%s\".", a[1], c.providedOriginURL)
 	}
-	if c.providedOriginType != a[7] {
-		t.Errorf("wanted \"%s\". got \"%s\".", a[1], c.providedOriginType)
+	if c.providedProvider != a[7] {
+		t.Errorf("wanted \"%s\". got \"%s\".", a[1], c.providedProvider)
 	}
 	if c.Frontend.ListenPort != 9091 {
 		t.Errorf("wanted \"%d\". got \"%d\".", 9091, c.Frontend.ListenPort)

@@ -26,7 +26,7 @@ import (
 	"net/http"
 	"time"
 
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 )
 
 // NewHTTPClient returns an HTTP client configured to the specifications of the

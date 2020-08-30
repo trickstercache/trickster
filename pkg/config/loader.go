@@ -21,8 +21,8 @@ import (
 	"net/url"
 	"time"
 
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/negative"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 )
 
 // Load returns the Application Configuration, starting with a default config,
@@ -46,33 +46,33 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	c.loadFlags(flags) // load parsed flags to override file and envs
 
 	// set the default origin url from the flags
-	if d, ok := c.Origins["default"]; ok {
+	if d, ok := c.Backends["default"]; ok {
 		if c.providedOriginURL != "" {
 			url, err := url.Parse(c.providedOriginURL)
 			if err != nil {
 				return nil, flags, err
 			}
-			if c.providedOriginType != "" {
-				d.OriginType = c.providedOriginType
+			if c.providedProvider != "" {
+				d.Provider = c.providedProvider
 			}
 			d.OriginURL = c.providedOriginURL
 			d.Scheme = url.Scheme
 			d.Host = url.Host
 			d.PathPrefix = url.Path
 		}
-		// If the user has configured their own origins, and one of them is not "default"
-		// then Trickster will not use the auto-created default origin
+		// If the user has configured their own backends, and one of them is not "default"
+		// then Trickster will not use the auto-created default default
 		if d.OriginURL == "" {
-			delete(c.Origins, "default")
+			delete(c.Backends, "default")
 		}
 
-		if c.providedOriginType != "" {
-			d.OriginType = c.providedOriginType
+		if c.providedProvider != "" {
+			d.Provider = c.providedProvider
 		}
 	}
 
-	if len(c.Origins) == 0 {
-		return nil, flags, errors.New("no valid origins configured")
+	if len(c.Backends) == 0 {
+		return nil, flags, errors.New("no valid backends configured")
 	}
 
 	ncl, err := negative.ConfigLookup(c.NegativeCacheConfigs).Validate()
@@ -80,7 +80,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		return nil, flags, err
 	}
 
-	err = oo.Lookup(c.Origins).Validate(ncl)
+	err = oo.Lookup(c.Backends).Validate(ncl)
 	if err != nil {
 		return nil, flags, err
 	}

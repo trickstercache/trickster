@@ -31,7 +31,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -107,7 +107,7 @@ func (c *TestClient) Handlers() map[string]http.Handler {
 	return c.handlers
 }
 
-// DefaultPathConfigs returns the default PathConfigs for the given OriginType
+// DefaultPathConfigs returns the default PathConfigs for the given Provider
 func (c *TestClient) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
 
 	paths := map[string]*po.Options{
@@ -232,7 +232,7 @@ func (c *TestClient) SetCache(cc cache.Cache) {
 	c.cache = cc
 }
 
-// HTTPClient returns the HTTP Client for this origin
+// HTTPClient returns the HTTP Client for this Backend
 func (c *TestClient) HTTPClient() *http.Client {
 	return c.webClient
 }

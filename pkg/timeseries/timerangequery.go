@@ -36,7 +36,7 @@ type TimeRangeQuery struct {
 	Extent Extent `msg:"ex"`
 	// Step indicates the amount of time in seconds between each datapoint in a TimeRangeQuery's resulting timeseries
 	Step time.Duration `msg:"-"`
-	// TemplateURL is used by some Origin Types for templatization of url parameters containing timestamps
+	// TemplateURL is used by some Backend providers for templatization of url parameters containing timestamps
 	TemplateURL *url.URL `msg:"-"`
 	// IsOffset is true if the query uses a relative offset modifier
 	IsOffset bool `msg:"-"`

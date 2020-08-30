@@ -24,23 +24,23 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/tricksterproxy/trickster/pkg/backends"
+	"github.com/tricksterproxy/trickster/pkg/backends/clickhouse"
+	modelch "github.com/tricksterproxy/trickster/pkg/backends/clickhouse/model"
+	"github.com/tricksterproxy/trickster/pkg/backends/influxdb"
+	modelflux "github.com/tricksterproxy/trickster/pkg/backends/influxdb/model"
+	"github.com/tricksterproxy/trickster/pkg/backends/irondb"
+	modeliron "github.com/tricksterproxy/trickster/pkg/backends/irondb/model"
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	"github.com/tricksterproxy/trickster/pkg/backends/prometheus"
+	modelprom "github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
+	"github.com/tricksterproxy/trickster/pkg/backends/reverseproxycache"
+	"github.com/tricksterproxy/trickster/pkg/backends/rule"
+	"github.com/tricksterproxy/trickster/pkg/backends/types"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins/clickhouse"
-	modelch "github.com/tricksterproxy/trickster/pkg/proxy/origins/clickhouse/model"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins/influxdb"
-	modelflux "github.com/tricksterproxy/trickster/pkg/proxy/origins/influxdb/model"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins/irondb"
-	modeliron "github.com/tricksterproxy/trickster/pkg/proxy/origins/irondb/model"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins/prometheus"
-	modelprom "github.com/tricksterproxy/trickster/pkg/proxy/origins/prometheus/model"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins/reverseproxycache"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins/rule"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins/types"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
@@ -61,49 +61,49 @@ func RegisterPprofRoutes(routerName string, h *http.ServeMux, logger interface{}
 }
 
 // RegisterProxyRoutes iterates the Trickster Configuration and
-// registers the routes for the configured origins
+// registers the routes for the configured backends
 func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 	caches map[string]cache.Cache, tracers tracing.Tracers,
-	logger interface{}, dryRun bool) (origins.Origins, error) {
+	logger interface{}, dryRun bool) (backends.Backends, error) {
 
-	// a fake "top-level" origin representing the main frontend, so rules can route
+	// a fake "top-level" backend representing the main frontend, so rules can route
 	// to it via the clients map
 	tlo, _ := reverseproxycache.NewClient("frontend", &oo.Options{}, router, nil)
 
 	// proxyClients maintains a list of proxy clients configured for use by Trickster
-	var clients = origins.Origins{"frontend": tlo}
+	var clients = backends.Backends{"frontend": tlo}
 	var err error
 
-	defaultOrigin := ""
-	var ndo *oo.Options // points to the origin config named "default"
-	var cdo *oo.Options // points to the origin config with IsDefault set to true
+	defaultBackend := ""
+	var ndo *oo.Options // points to the backend options named "default"
+	var cdo *oo.Options // points to the backend options with IsDefault set to true
 
-	// This iteration will ensure default origins are handled properly
-	for k, o := range conf.Origins {
-		if !types.IsValidOriginType(o.OriginType) {
+	// This iteration will ensure default backends are handled properly
+	for k, o := range conf.Backends {
+		if !types.IsValidProvider(o.Provider) {
 			return nil,
-				fmt.Errorf(`unknown origin type in origin config. originName: %s, originType: %s`,
-					k, o.OriginType)
+				fmt.Errorf(`unknown backend provider in backend options. backendName: %s, backendProvider: %s`,
+					k, o.Provider)
 		}
-		// Ensure only one default origin exists
+		// Ensure only one default backend exists
 		if o.IsDefault {
 			if cdo != nil {
 				return nil,
-					fmt.Errorf("only one origin can be marked as default. Found both %s and %s",
-						defaultOrigin, k)
+					fmt.Errorf("only one backend can be marked as default. Found both %s and %s",
+						defaultBackend, k)
 			}
-			tl.Debug(logger, "default origin identified", tl.Pairs{"name": k})
-			defaultOrigin = k
+			tl.Debug(logger, "default backend identified", tl.Pairs{"name": k})
+			defaultBackend = k
 			cdo = o
 			continue
 		}
-		// handle origin named "default" last as it needs special
+		// handle backend named "default" last as it needs special
 		// handling based on a full pass over the range
 		if k == "default" {
 			ndo = o
 			continue
 		}
-		err = registerOriginRoutes(router, conf, k, o, clients, caches, tracers, logger, dryRun)
+		err = registerBackendRoutes(router, conf, k, o, clients, caches, tracers, logger, dryRun)
 		if err != nil {
 			return nil, err
 		}
@@ -112,16 +112,16 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 		if cdo == nil {
 			ndo.IsDefault = true
 			cdo = ndo
-			defaultOrigin = "default"
+			defaultBackend = "default"
 		} else {
-			err = registerOriginRoutes(router, conf, "default", ndo, clients, caches, tracers, logger, dryRun)
+			err = registerBackendRoutes(router, conf, "default", ndo, clients, caches, tracers, logger, dryRun)
 			if err != nil {
 				return nil, err
 			}
 		}
 	}
 	if cdo != nil {
-		err = registerOriginRoutes(router, conf, defaultOrigin, cdo, clients, caches, tracers, logger, dryRun)
+		err = registerBackendRoutes(router, conf, defaultBackend, cdo, clients, caches, tracers, logger, dryRun)
 		if err != nil {
 			return nil, err
 		}
@@ -134,11 +134,11 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 	return clients, nil
 }
 
-func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
-	o *oo.Options, clients origins.Origins, caches map[string]cache.Cache,
+func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
+	o *oo.Options, clients backends.Backends, caches map[string]cache.Cache,
 	tracers tracing.Tracers, logger interface{}, dryRun bool) error {
 
-	var client origins.Client
+	var client backends.Client
 	var c cache.Cache
 	var ok bool
 	var err error
@@ -149,11 +149,11 @@ func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 	}
 
 	if !dryRun {
-		tl.Info(logger, "registering route paths", tl.Pairs{"originName": k,
-			"originType": o.OriginType, "upstreamHost": o.Host})
+		tl.Info(logger, "registering route paths", tl.Pairs{"backendName": k,
+			"backendProvider": o.Provider, "upstreamHost": o.Host})
 	}
 
-	switch strings.ToLower(o.OriginType) {
+	switch strings.ToLower(o.Provider) {
 	case "prometheus":
 		client, err = prometheus.NewClient(k, o, mux.NewRouter(), c, modelprom.NewModeler())
 	case "influxdb":
@@ -182,10 +182,10 @@ func registerOriginRoutes(router *mux.Router, conf *config.Config, k string,
 }
 
 // RegisterPathRoutes will take the provided default paths map,
-// merge it with any path data in the provided originconfig, and then register
+// merge it with any path data in the provided backend options, and then register
 // the path routes to the appropriate handler from the provided handlers map
 func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
-	client origins.Client, oo *oo.Options, c cache.Cache,
+	client backends.Client, oo *oo.Options, c cache.Cache,
 	defaultPaths map[string]*po.Options, tracers tracing.Tracers,
 	healthHandlerPath string, logger interface{}) {
 
@@ -219,7 +219,7 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		}
 		// decorate frontend prometheus metrics
 		if !po.NoMetrics {
-			h = middleware.Decorate(oo.Name, oo.OriginType, po.Path, h)
+			h = middleware.Decorate(oo.Name, oo.Provider, po.Path, h)
 		}
 		return h
 	}
@@ -229,7 +229,7 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		oo.HealthCheckUpstreamPath != "" && oo.HealthCheckVerb != "" && healthHandlerPath != "" {
 		hp := strings.Replace(healthHandlerPath+"/"+oo.Name, "//", "/", -1)
 		tl.Debug(logger, "registering health handler path",
-			tl.Pairs{"path": hp, "originName": oo.Name,
+			tl.Pairs{"path": hp, "backendName": oo.Name,
 				"upstreamPath": oo.HealthCheckUpstreamPath,
 				"upstreamVerb": oo.HealthCheckVerb})
 		router.PathPrefix(hp).
@@ -249,8 +249,8 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 	}
 
 	// now we will iterate through the configured paths, and overlay them on those default paths.
-	// for a rule origin type, only the default paths are used with no overlay or importable config
-	if oo.OriginType != "rule" {
+	// for a rule backend provider, only the default paths are used with no overlay or importable config
+	if oo.Provider != "rule" {
 		for k, p := range oo.Paths {
 			if p2, ok := pathsWithVerbs[k]; ok {
 				p2.Merge(p)
@@ -292,8 +292,8 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		pathPrefix := "/" + oo.Name
 		handledPath := pathPrefix + p.Path
 
-		tl.Debug(logger, "registering origin handler path",
-			tl.Pairs{"originName": oo.Name, "path": v, "handlerName": p.HandlerName,
+		tl.Debug(logger, "registering backend handler path",
+			tl.Pairs{"backendName": oo.Name, "path": v, "handlerName": p.HandlerName,
 				"originHost": oo.Host, "handledPath": handledPath, "matchType": p.MatchType,
 				"frontendHosts": strings.Join(oo.Hosts, ",")})
 		if p.Handler != nil && len(p.Methods) > 0 {
@@ -330,12 +330,12 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 	}
 
 	if oo.IsDefault {
-		tl.Info(logger, "registering default origin handler paths", tl.Pairs{"originName": oo.Name})
+		tl.Info(logger, "registering default backend handler paths", tl.Pairs{"backendName": oo.Name})
 		for _, v := range plist {
 			p := pathsWithVerbs[v]
 			if p.Handler != nil && len(p.Methods) > 0 {
-				tl.Debug(logger, "registering default origin handler paths",
-					tl.Pairs{"originName": oo.Name, "path": p.Path, "handlerName": p.HandlerName,
+				tl.Debug(logger, "registering default backend handler paths",
+					tl.Pairs{"backendName": oo.Name, "path": p.Path, "handlerName": p.HandlerName,
 						"matchType": p.MatchType})
 				switch p.MatchType {
 				case matching.PathMatchTypePrefix:

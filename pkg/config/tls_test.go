@@ -36,7 +36,7 @@ func TestTLSCertConfig(t *testing.T) {
 		t.Error(err)
 	}
 
-	// test empty config condition 2 (ServeTLS is true, but there are 0 origins configured)
+	// test empty config condition 2 (ServeTLS is true, but there are 0 backends configured)
 	config.Frontend.ServeTLS = true
 	n, err = config.TLSCertConfig()
 	if n != nil {
@@ -56,7 +56,7 @@ func TestTLSCertConfig(t *testing.T) {
 	config.Frontend.ServeTLS = true
 
 	// test good config
-	config.Origins["default"].TLS = tls01
+	config.Backends["default"].TLS = tls01
 	_, err = config.TLSCertConfig()
 	if err != nil {
 		t.Error(err)
@@ -71,7 +71,7 @@ func TestTLSCertConfig(t *testing.T) {
 	if err05 != nil {
 		t.Error(err05)
 	}
-	config.Origins["default"].TLS = tls05
+	config.Backends["default"].TLS = tls05
 	_, err = config.TLSCertConfig()
 	if err == nil {
 		t.Errorf("expected error: %s", expectedErr)
@@ -86,7 +86,7 @@ func TestTLSCertConfig(t *testing.T) {
 	if err06 != nil {
 		t.Error(err06)
 	}
-	config.Origins["default"].TLS = tls06
+	config.Backends["default"].TLS = tls06
 	_, err = config.TLSCertConfig()
 	if err == nil {
 		t.Errorf("expected error: %s", expectedErr)

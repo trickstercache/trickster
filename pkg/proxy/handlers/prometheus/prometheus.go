@@ -6,9 +6,9 @@ import (
 
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins/prometheus"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins/prometheus/model"
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	"github.com/tricksterproxy/trickster/pkg/backends/prometheus"
+	"github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
 	"github.com/tricksterproxy/trickster/pkg/routing"
 
 	"github.com/gorilla/mux"
@@ -38,7 +38,7 @@ func NewAcceleratorWithOptions(baseURL string, o *oo.Options, c *co.Options) (ht
 		o = oo.New()
 		o.Name = "default"
 	}
-	o.OriginType = "prometheus"
+	o.Provider = "prometheus"
 	o.CacheName = c.Name
 	o.Scheme = u.Scheme
 	o.Host = u.Host

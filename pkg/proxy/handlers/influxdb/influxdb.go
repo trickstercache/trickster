@@ -6,9 +6,9 @@ import (
 
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins/influxdb"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins/influxdb/model"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	"github.com/tricksterproxy/trickster/pkg/backends/influxdb"
+	"github.com/tricksterproxy/trickster/pkg/backends/influxdb/model"
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/routing"
 
 	"github.com/gorilla/mux"
@@ -38,7 +38,7 @@ func NewAcceleratorWithOptions(baseURL string, o *oo.Options, c *co.Options) (ht
 		o = oo.New()
 		o.Name = "default"
 	}
-	o.OriginType = "influxdb"
+	o.Provider = "influxdb"
 	o.CacheName = c.Name
 	o.Scheme = u.Scheme
 	o.Host = u.Host

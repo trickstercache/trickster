@@ -24,10 +24,10 @@ import (
 	"testing"
 	"time"
 
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	rule "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	rule "github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	rwo "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
@@ -49,7 +49,7 @@ func emptyTestConfig() (*Config, string) {
 func TestClone(t *testing.T) {
 	c1 := NewConfig()
 
-	oc := c1.Origins["default"]
+	oc := c1.Backends["default"]
 	c1.NegativeCacheConfigs["default"]["404"] = 10
 
 	const expected = "trickster"
@@ -67,15 +67,15 @@ func TestClone(t *testing.T) {
 	}
 
 	c2 := c1.Clone()
-	x := c2.Origins["default"].HealthCheckHeaders[headers.NameAuthorization]
+	x := c2.Backends["default"].HealthCheckHeaders[headers.NameAuthorization]
 	if x != expected {
 		t.Errorf("clone mismatch")
 	}
 }
 
-func TestOriginConfigClone(t *testing.T) {
+func TestBackendOptionsClone(t *testing.T) {
 	c := NewConfig()
-	oc1 := c.Origins["default"]
+	oc1 := c.Backends["default"]
 	oc2 := oc1.Clone()
 	if oc2.Paths == nil {
 		t.Error("expected non-nil cloned config")
@@ -85,7 +85,7 @@ func TestOriginConfigClone(t *testing.T) {
 func TestString(t *testing.T) {
 	c1 := NewConfig()
 
-	c1.Origins["default"].Paths["test"] = &po.Options{}
+	c1.Backends["default"].Paths["test"] = &po.Options{}
 
 	c1.Caches["default"].Redis.Password = "plaintext-password"
 
@@ -103,7 +103,7 @@ func TestHideAuthorizationCredentials(t *testing.T) {
 	}
 }
 
-func TestCloneOriginConfig(t *testing.T) {
+func TestCloneBackendOptions(t *testing.T) {
 
 	oc := oo.New()
 	oc.Hosts = []string{"test"}
@@ -201,18 +201,18 @@ const testRewriter = `
  `
 
 const testPaths = `
-	 [origins.test.paths]
-	   [origins.test.paths.root]
+	 [backends.test.paths]
+	   [backends.test.paths.root]
 	   path = '/'
 	   match_type = 'prefix'
 	   handler = 'proxycache'
 	   req_rewriter_name = 'example'
  `
 
-func TestProcessOriginConfigs(t *testing.T) {
+func TestProcessBackendOptionss(t *testing.T) {
 
 	c, _ := emptyTestConfig()
-	c.Origins["test"].ReqRewriterName = "invalid"
+	c.Backends["test"].ReqRewriterName = "invalid"
 	toml := c.String() + testRewriter
 	err := c.loadTOMLConfig(toml, &Flags{})
 	if err == nil {
@@ -239,7 +239,7 @@ func TestProcessOriginConfigs(t *testing.T) {
 
 	toml = strings.Replace(
 		c.String(),
-		"[origins.test.paths]",
+		"[backends.test.paths]",
 		testPaths,
 		-1,
 	)

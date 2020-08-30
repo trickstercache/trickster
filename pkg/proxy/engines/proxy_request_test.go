@@ -28,7 +28,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/config"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 )
@@ -124,7 +124,7 @@ func TestWriteResponseBody(t *testing.T) {
 func TestDetermineCacheability(t *testing.T) {
 
 	conf, _, err := config.Load("trickster", "test",
-		[]string{"-origin-url", "http://1", "-origin-type", "test"})
+		[]string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}

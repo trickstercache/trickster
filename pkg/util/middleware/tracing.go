@@ -36,13 +36,13 @@ func Trace(tr *tracing.Tracer, next http.Handler) http.Handler {
 
 			rsc := request.GetResources(r)
 			if rsc != nil &&
-				rsc.OriginConfig != nil &&
+				rsc.BackendOptions != nil &&
 				rsc.PathConfig != nil &&
 				rsc.CacheConfig != nil {
 				tspan.SetAttributes(tr, span,
 					[]label.KeyValue{
-						label.String("origin.name", rsc.OriginConfig.Name),
-						label.String("origin.type", rsc.OriginConfig.OriginType),
+						label.String("origin.name", rsc.BackendOptions.Name),
+						label.String("origin.type", rsc.BackendOptions.Provider),
 						label.String("router.path", rsc.PathConfig.Path),
 						label.String("cache.name", rsc.CacheConfig.Name),
 						label.String("cache.provider", rsc.CacheConfig.Provider),

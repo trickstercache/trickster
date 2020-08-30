@@ -99,31 +99,31 @@ const (
 	DefaultMaxSizeBackoffObjects = 100
 	// DefaultMaxObjectSizeBytes is the default Max Size of any Cache Object
 	DefaultMaxObjectSizeBytes = 524288
-	// DefaultOriginTRF is the default Timeseries Retention Factor for Time Series-based Origins
-	DefaultOriginTRF = 1024
-	// DefaultOriginTEM is the default Timeseries Eviction Method for Time Series-based Origins
-	DefaultOriginTEM = evictionmethods.EvictionMethodOldest
-	// DefaultOriginTEMName is the default Timeseries Eviction Method name for Time Series-based Origins
-	DefaultOriginTEMName = "oldest"
-	// DefaultOriginTimeoutMS is the default Upstream Request Timeout for Origins
-	DefaultOriginTimeoutMS = 180000
-	// DefaultOriginCacheName is the default Cache Name for Origins
-	DefaultOriginCacheName = "default"
-	// DefaultOriginNegativeCacheName is the default Negative Cache Name for Origins
-	DefaultOriginNegativeCacheName = "default"
-	// DefaultTracingConfigName is the default Tracing Config Name for Origins
+	// DefaultBackendTRF is the default Timeseries Retention Factor for Time Series-based Backends
+	DefaultBackendTRF = 1024
+	// DefaultBackendTEM is the default Timeseries Eviction Method for Time Series-based Backends
+	DefaultBackendTEM = evictionmethods.EvictionMethodOldest
+	// DefaultBackendTEMName is the default Timeseries Eviction Method name for Time Series-based Backends
+	DefaultBackendTEMName = "oldest"
+	// DefaultBackendTimeoutMS is the default Upstream Request Timeout for Backends
+	DefaultBackendTimeoutMS = 180000
+	// DefaultBackendCacheName is the default Cache Name for Backends
+	DefaultBackendCacheName = "default"
+	// DefaultBackendNegativeCacheName is the default Negative Cache Name for Backends
+	DefaultBackendNegativeCacheName = "default"
+	// DefaultTracingConfigName is the default Tracing Config Name for Backends
 	DefaultTracingConfigName = "default"
-	// DefaultBackfillToleranceMS is the default Backfill Tolerance setting for Origins
+	// DefaultBackfillToleranceMS is the default Backfill Tolerance setting for Backends
 	DefaultBackfillToleranceMS = 0
-	// DefaultKeepAliveTimeoutMS is the default Keep Alive Timeout for Origins' upstream client pools
+	// DefaultKeepAliveTimeoutMS is the default Keep Alive Timeout for Backends' upstream client pools
 	DefaultKeepAliveTimeoutMS = 300000
-	// DefaultMaxIdleConns is the default number of Idle Connections in Origins' upstream client pools
+	// DefaultMaxIdleConns is the default number of Idle Connections in Backends' upstream client pools
 	DefaultMaxIdleConns = 20
-	// DefaultHealthCheckPath is the default value (noop) for Origins' Health Check Path
+	// DefaultHealthCheckPath is the default value (noop) for Backends' Health Check Path
 	DefaultHealthCheckPath = "-"
-	// DefaultHealthCheckQuery is the default value (noop) for Origins' Health Check Query Parameters
+	// DefaultHealthCheckQuery is the default value (noop) for Backends' Health Check Query Parameters
 	DefaultHealthCheckQuery = "-"
-	// DefaultHealthCheckVerb is the default value (noop) for Origins' Health Check Verb
+	// DefaultHealthCheckVerb is the default value (noop) for Backends' Health Check Verb
 	DefaultHealthCheckVerb = "-"
 	// DefaultConfigHandlerPath is the default value for the Trickster Config Printout Handler path
 	DefaultConfigHandlerPath = "/trickster/config"

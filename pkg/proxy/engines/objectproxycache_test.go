@@ -62,7 +62,7 @@ func setupTestHarnessOPCByType(
 	}
 	r.RequestURI = ""
 	rsc := request.GetResources(r)
-	rsc.OriginClient = client
+	rsc.BackendClient = client
 	rsc.Tracer = tu.NewTestTracer()
 	pc := rsc.PathConfig
 
@@ -70,7 +70,7 @@ func setupTestHarnessOPCByType(
 		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/")
 	}
 
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 	cc := rsc.CacheClient
 	oc.HTTPClient = hc
 
@@ -94,7 +94,7 @@ func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]
 	}
 
 	rsc := request.GetResources(r)
-	rsc.OriginClient = client
+	rsc.BackendClient = client
 	rsc.Tracer = tu.NewTestTracer()
 
 	pc := rsc.PathConfig
@@ -106,7 +106,7 @@ func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]
 	pc.CollapsedForwardingName = "progressive"
 	pc.CollapsedForwardingType = forwarding.CFTypeProgressive
 
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 	cc := rsc.CacheClient
 
 	oc.HTTPClient = hc
@@ -130,7 +130,7 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 
 	r.Header.Add(headers.NameRange, "bytes=0-3")
 
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 	oc.MaxTTLMS = 15000
 	oc.MaxTTL = time.Duration(oc.MaxTTLMS) * time.Millisecond
 
@@ -221,7 +221,7 @@ func TestObjectProxyCachePartialHit(t *testing.T) {
 	}
 
 	// Test Articulated Upstream
-	rsc.OriginConfig.DearticulateUpstreamRanges = true
+	rsc.BackendOptions.DearticulateUpstreamRanges = true
 	r.Header.Set(headers.NameRange, "bytes=10-20,50-55,60-65,69-75")
 	r.URL.Path = "/byterange/new/test/path"
 	expectedBody, err = getExpectedRangeBody(r, "d5a5acd7eb4d3f622c62947a9904b89b")
@@ -243,8 +243,8 @@ func TestFullArticuation(t *testing.T) {
 	defer ts.Close()
 
 	// Test Articulated Upstream
-	rsc.OriginConfig.DearticulateUpstreamRanges = true
-	rsc.OriginConfig.RevalidationFactor = 2
+	rsc.BackendOptions.DearticulateUpstreamRanges = true
+	rsc.BackendOptions.RevalidationFactor = 2
 	r.Header.Set(headers.NameRange, "bytes=10-20,50-55,60-65,69-75")
 	r.URL.Path = "/byterange/new/test/path"
 	r.URL.RawQuery = "max-age=1"
@@ -398,10 +398,10 @@ func TestObjectProxyCachePartialHitNotFresh(t *testing.T) {
 	}
 	defer ts.Close()
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: rsc.OriginConfig})
+	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: rsc.BackendOptions})
 
 	pr := newProxyRequest(r, w)
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 	cc := rsc.CacheClient
 	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
 	pr.key = oc.Host + "." + pr.DeriveCacheKey(nil, "")
@@ -433,10 +433,10 @@ func TestObjectProxyCachePartialHitFullResponse(t *testing.T) {
 	}
 	defer ts.Close()
 	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{OriginConfig: rsc.OriginConfig})
+	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: rsc.BackendOptions})
 
 	pr := newProxyRequest(r, w)
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 	cc := rsc.CacheClient
 	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
 	pr.key = oc.Host + "." + pr.DeriveCacheKey(nil, "")
@@ -486,7 +486,7 @@ func TestObjectProxyCacheRevalidation(t *testing.T) {
 	}
 	defer ts.Close()
 
-	rsc.OriginConfig.RevalidationFactor = 2
+	rsc.BackendOptions.RevalidationFactor = 2
 
 	r.Header.Set(headers.NameRange, "bytes=0-10")
 	if rsc.PathConfig == nil {
@@ -572,7 +572,7 @@ func TestObjectProxyCacheRequestWithPCF(t *testing.T) {
 	}
 	defer ts.Close()
 
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 	oc.MaxTTLMS = 15000
 	oc.MaxTTL = time.Duration(oc.MaxTTLMS) * time.Millisecond
 
@@ -655,7 +655,7 @@ func TestObjectProxyCacheIMS(t *testing.T) {
 	}
 	defer ts.Close()
 
-	rsc.OriginConfig.RevalidationFactor = 2
+	rsc.BackendOptions.RevalidationFactor = 2
 
 	_, e := testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "kmiss"})
 	for _, err = range e {
@@ -745,7 +745,7 @@ func TestObjectProxyCacheCanRevalidate(t *testing.T) {
 
 	p := rsc.PathConfig
 	p.ResponseHeaders = headers
-	rsc.OriginConfig.RevalidationFactor = 2
+	rsc.BackendOptions.RevalidationFactor = 2
 
 	_, e := testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "kmiss"})
 	for _, err = range e {
@@ -797,12 +797,12 @@ func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
 	defer ts.Close()
 
 	pc := po.New()
-	cfg := rsc.OriginConfig
+	cfg := rsc.BackendOptions
 	cfg.Paths = map[string]*po.Options{
 		"/": pc,
 	}
 	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig,
-		rsc.CacheClient, rsc.OriginClient, nil, rsc.Logger)))
+		rsc.CacheClient, rsc.BackendClient, nil, rsc.Logger)))
 
 	_, e := testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "kmiss"})
 	for _, err = range e {
@@ -867,8 +867,8 @@ func TestRangesExhaustive(t *testing.T) {
 	}
 	defer ts.Close()
 
-	rsc.OriginConfig.RevalidationFactor = 2
-	rsc.OriginConfig.DearticulateUpstreamRanges = true
+	rsc.BackendOptions.RevalidationFactor = 2
+	rsc.BackendOptions.DearticulateUpstreamRanges = true
 
 	r.URL.Path = "/byterange/test/1"
 	r.Header.Set(headers.NameRange, "bytes=0-6,25-32")

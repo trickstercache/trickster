@@ -26,12 +26,12 @@ import (
 	"strings"
 	"time"
 
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	th "github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/runtime"
@@ -88,24 +88,24 @@ func NewTestInstance(
 	configFile string,
 	defaultPathConfigs func(*oo.Options) map[string]*po.Options,
 	respCode int, respBody string, respHeaders map[string]string,
-	originType, urlPath, logLevel string,
+	backendProvider, urlPath, logLevel string,
 ) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *http.Client, error) {
 
 	isBasicTestServer := false
 
 	var ts *httptest.Server
-	if originType == "promsim" {
+	if backendProvider == "promsim" {
 		ts = testutil.NewTestServer()
-		originType = "prometheus"
-	} else if originType == "rangesim" {
+		backendProvider = "prometheus"
+	} else if backendProvider == "rangesim" {
 		ts = testutil.NewTestServer()
-		originType = "rpc"
+		backendProvider = "rpc"
 	} else {
 		isBasicTestServer = true
 		ts = NewTestServer(respCode, respBody, respHeaders)
 	}
 
-	args := []string{"-origin-url", ts.URL, "-origin-type", originType, "-log-level", logLevel}
+	args := []string{"-origin-url", ts.URL, "-provider", backendProvider, "-log-level", logLevel}
 	if configFile != "" {
 		args = append(args, []string{"-config", configFile}...)
 	}
@@ -128,7 +128,7 @@ func NewTestInstance(
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", ts.URL+urlPath, nil)
 
-	oc := conf.Origins["default"]
+	oc := conf.Backends["default"]
 	p := NewTestPathConfig(oc, defaultPathConfigs, urlPath)
 
 	var tracer *tracing.Tracer

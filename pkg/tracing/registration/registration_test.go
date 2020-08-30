@@ -51,7 +51,7 @@ func TestRegisterAll(t *testing.T) {
 	cfg.TracingConfigs = make(map[string]*options.Options)
 	cfg.TracingConfigs["test"] = tc
 	cfg.TracingConfigs["test3"] = tc
-	cfg.Origins["default"].TracingConfigName = "test"
+	cfg.Backends["default"].TracingConfigName = "test"
 
 	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if err != nil {
@@ -92,12 +92,12 @@ func TestRegisterAll(t *testing.T) {
 	}
 
 	tc.Provider = "none"
-	cfg.Origins["default"].TracingConfigName = "test2"
+	cfg.Backends["default"].TracingConfigName = "test2"
 	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if err == nil {
 		t.Error("expected error for invalid tracing config name")
 	}
-	cfg.Origins["default"].TracingConfigName = "test"
+	cfg.Backends["default"].TracingConfigName = "test"
 
 	temp := cfg.TracingConfigs
 	cfg.TracingConfigs = nil
@@ -108,8 +108,8 @@ func TestRegisterAll(t *testing.T) {
 	}
 	cfg.TracingConfigs = temp
 
-	// test nil origin config
-	cfg.Origins = nil
+	// test nil backend config
+	cfg.Backends = nil
 	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if err == nil {
 		t.Error("expected error for invalid tracing implementation")

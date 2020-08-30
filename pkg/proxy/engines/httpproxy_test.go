@@ -42,12 +42,12 @@ func TestDoProxy(t *testing.T) {
 	defer es.Close()
 
 	conf, _, err := config.Load("trickster", "test",
-		[]string{"-origin-url", es.URL, "-origin-type", "test", "-log-level", "debug"})
+		[]string{"-origin-url", es.URL, "-provider", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := conf.Origins["default"]
+	oc := conf.Backends["default"]
 	pc := &po.Options{
 		Path:                  "/",
 		RequestHeaders:        map[string]string{},
@@ -94,12 +94,12 @@ func TestProxyRequestBadGateway(t *testing.T) {
 
 	// assume nothing listens on badUpstream, so this should force the proxy to generate a 502 Bad Gateway
 	conf, _, err := config.Load("trickster", "test", []string{"-origin-url",
-		badUpstream, "-origin-type", "test", "-log-level", "debug"})
+		badUpstream, "-provider", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := conf.Origins["default"]
+	oc := conf.Backends["default"]
 	pc := &po.Options{
 		Path:            "/",
 		RequestHeaders:  map[string]string{},
@@ -137,12 +137,12 @@ func TestClockOffsetWarning(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(handler))
 
 	conf, _, err := config.Load("trickster", "test", []string{"-origin-url",
-		s.URL, "-origin-type", "test", "-log-level", "debug"})
+		s.URL, "-provider", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := conf.Origins["default"]
+	oc := conf.Backends["default"]
 	pc := &po.Options{
 		Path:            "/",
 		RequestHeaders:  map[string]string{},
@@ -179,12 +179,12 @@ func TestDoProxyWithPCF(t *testing.T) {
 	defer es.Close()
 
 	conf, _, err := config.Load("trickster", "test",
-		[]string{"-origin-url", es.URL, "-origin-type", "test", "-log-level", "debug"})
+		[]string{"-origin-url", es.URL, "-provider", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := conf.Origins["default"]
+	oc := conf.Backends["default"]
 	pc := &po.Options{
 		Path:                    "/",
 		RequestHeaders:          map[string]string{},
@@ -234,12 +234,12 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 	defer es.Close()
 
 	conf, _, err := config.Load("trickster", "test", []string{"-origin-url",
-		es.URL, "-origin-type", "test", "-log-level", "debug"})
+		es.URL, "-provider", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := conf.Origins["default"]
+	oc := conf.Backends["default"]
 	pc := &po.Options{
 		Path:                    "/",
 		RequestHeaders:          map[string]string{},
@@ -286,12 +286,12 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 func TestPrepareFetchReaderErr(t *testing.T) {
 
 	conf, _, err := config.Load("trickster", "test",
-		[]string{"-origin-url", "http://example.com/", "-origin-type", "test", "-log-level", "debug"})
+		[]string{"-origin-url", "http://example.com/", "-provider", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := conf.Origins["default"]
+	oc := conf.Backends["default"]
 	oc.HTTPClient = http.DefaultClient
 
 	r := httptest.NewRequest("GET", "http://example.com/", nil)
