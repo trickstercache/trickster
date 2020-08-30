@@ -11,23 +11,23 @@ require (
 	github.com/go-stack/stack v1.8.0
 	github.com/golang/snappy v0.0.1
 	github.com/gomodule/redigo v2.0.0+incompatible // indirect
-	github.com/gorilla/handlers v1.4.2
-	github.com/gorilla/mux v1.7.4
+	github.com/gorilla/handlers v1.5.0
+	github.com/gorilla/mux v1.8.0
 	github.com/influxdata/influxdb v1.8.2
 	github.com/onsi/ginkgo v1.14.0 // indirect
 	github.com/prometheus/client_golang v1.7.1
-	github.com/prometheus/common v0.12.0 // indirect
+	github.com/prometheus/common v0.13.0 // indirect
 	github.com/tinylib/msgp v1.1.2
 	github.com/tricksterproxy/mockster v1.1.1
 	github.com/yuin/gopher-lua v0.0.0-20200816102855-ee81675732da // indirect
 	go.etcd.io/bbolt v1.3.5
-	go.opentelemetry.io/otel v0.10.0
-	go.opentelemetry.io/otel/exporters/stdout v0.10.0
-	go.opentelemetry.io/otel/exporters/trace/jaeger v0.10.0
-	go.opentelemetry.io/otel/exporters/trace/zipkin v0.10.0
-	go.opentelemetry.io/otel/sdk v0.10.0
-	golang.org/x/net v0.0.0-20200813134508-3edf25e44fcc
-	google.golang.org/grpc v1.31.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace v0.11.0
+	go.opentelemetry.io/otel v0.11.0
+	go.opentelemetry.io/otel/exporters/stdout v0.11.0
+	go.opentelemetry.io/otel/exporters/trace/jaeger v0.11.0
+	go.opentelemetry.io/otel/exporters/trace/zipkin v0.11.0
+	go.opentelemetry.io/otel/sdk v0.11.0
+	golang.org/x/net v0.0.0-20200822124328-c89045814202
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 

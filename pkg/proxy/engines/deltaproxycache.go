@@ -37,7 +37,7 @@ import (
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
-	"go.opentelemetry.io/otel/api/kv"
+	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/api/trace"
 )
 
@@ -229,7 +229,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		cacheStatus = status.LookupStatusRangeMiss
 	}
 
-	tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", cacheStatus.String()))
+	tspan.SetAttributes(rsc.Tracer, span, label.String("cache.status", cacheStatus.String()))
 
 	var writeLock locks.NamedLock
 

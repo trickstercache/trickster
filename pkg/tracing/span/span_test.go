@@ -24,7 +24,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/stdout"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 
-	"go.opentelemetry.io/otel/api/kv"
+	"go.opentelemetry.io/otel/label"
 )
 
 func TestNewChildSpan(t *testing.T) {
@@ -99,7 +99,7 @@ func TestFilterAttributes(t *testing.T) {
 	tr, _ := stdout.NewTracer(nil)
 	r, _ := http.NewRequest("GET", "http://example.com", nil)
 	_, sp := PrepareRequest(r, tr)
-	kvs := []kv.KeyValue{kv.String("testKey", "testValue")}
+	kvs := []label.KeyValue{label.String("testKey", "testValue")}
 	tr.Options.OmitTagsList = []string{"testKey2"}
 	tr.Options.OmitTags = map[string]bool{"testKey2": true}
 	SetAttributes(tr, sp, kvs...)
