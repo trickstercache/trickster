@@ -424,7 +424,6 @@ func (se *SeriesEnvelope) Sort() {
 		return
 	}
 
-	wg := sync.WaitGroup{}
 	mtx := sync.Mutex{}
 
 	var hasWarned bool
@@ -434,6 +433,7 @@ func (se *SeriesEnvelope) Sort() {
 			seriesWG := sync.WaitGroup{}
 			for si := range se.Results[ri].Series {
 				seriesWG.Add(1)
+				wg := sync.WaitGroup{}
 				go func(j int) {
 					tsLookup := make(map[int64][]interface{})
 					timestamps := make([]int64, 0, len(se.Results[ri].Series[j].Values))
