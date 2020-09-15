@@ -8,7 +8,7 @@ matrix:
 
   - language: go
     go:
-    - "1.14.x"
+    - "1.15.x"
     - master
     before_install:
     - go get github.com/mattn/goveralls
