@@ -80,7 +80,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	bf := timeseries.Extent{Start: time.Unix(0, 0), End: trq.Extent.End}
 	bt := trq.GetBackfillTolerance(oc.BackfillTolerance)
 
-	if !trq.IsOffset && bt > 0 {
+	if !trq.IsOffset && bt > 0 && !time.Now().Add(-bt).After(bf.End) {
 		bf.End = bf.End.Add(-bt)
 	}
 
