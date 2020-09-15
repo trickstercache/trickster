@@ -138,16 +138,17 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 	defer se.updateLock.Unlock()
 
 	series := make(map[seriesKey]*models.Row)
-	for i, r := range se.Results {
+	for i := range se.Results {
 		for j := range se.Results[i].Series {
 			wg.Add(1)
-			go func(s *models.Row) {
+			go func(l, m int) {
 				mtx.Lock()
-				series[seriesKey{ResultID: i, StatementID: r.StatementID, Name: s.Name,
+				s := &se.Results[l].Series[m]
+				series[seriesKey{ResultID: l, StatementID: se.Results[l].StatementID, Name: s.Name,
 					Tags: tags(s.Tags).String(), Columns: strings.Join(s.Columns, ",")}] = s
 				mtx.Unlock()
 				wg.Done()
-			}(&se.Results[i].Series[j])
+			}(i, j)
 		}
 	}
 	wg.Wait()
@@ -156,23 +157,22 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 		if ts != nil {
 			se2 := ts.(*SeriesEnvelope)
 			for g, r := range se2.Results {
-
 				if g >= len(se.Results) {
 					mtx.Lock()
 					se.Results = append(se.Results, se2.Results[g:]...)
 					mtx.Unlock()
 					break
 				}
-
 				for i := range r.Series {
 					wg.Add(1)
-					go func(s *models.Row, resultID int) {
+					go func(l, m int) {
 						mtx.Lock()
-						sk := seriesKey{ResultID: g, StatementID: r.StatementID, Name: s.Name,
+						s := &se2.Results[l].Series[m]
+						sk := seriesKey{ResultID: l, StatementID: se.Results[l].StatementID, Name: s.Name,
 							Tags: tags(s.Tags).String(), Columns: strings.Join(s.Columns, ",")}
 						if _, ok := series[sk]; !ok {
 							series[sk] = s
-							se.Results[resultID].Series = append(se.Results[resultID].Series, *s)
+							se.Results[l].Series = append(se.Results[l].Series, *s)
 							mtx.Unlock()
 							wg.Done()
 							return
@@ -180,7 +180,7 @@ func (se *SeriesEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 						series[sk].Values = append(series[sk].Values, s.Values...)
 						mtx.Unlock()
 						wg.Done()
-					}(&r.Series[i], g)
+					}(g, i)
 				}
 			}
 			wg.Wait()
