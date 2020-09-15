@@ -428,51 +428,52 @@ func (se *SeriesEnvelope) Sort() {
 
 	var hasWarned bool
 	tsm := map[time.Time]bool{}
-	if ti := str.IndexOfString(se.Results[0].Series[0].Columns, "time"); ti != -1 {
-		for ri := range se.Results {
-			seriesWG := sync.WaitGroup{}
-			for si := range se.Results[ri].Series {
-				seriesWG.Add(1)
+	for ri := range se.Results {
+		seriesWG := sync.WaitGroup{}
+		for si := range se.Results[ri].Series {
+			seriesWG.Add(1)
+			go func(j int) {
 				wg := sync.WaitGroup{}
-				go func(j int) {
-					tsLookup := make(map[int64][]interface{})
-					timestamps := make([]int64, 0, len(se.Results[ri].Series[j].Values))
-					for _, v := range se.Results[ri].Series[j].Values {
-						wg.Add(1)
-						go func(s []interface{}) {
-							if tf, ok := s[ti].(float64); ok {
-								t := int64(tf)
-								mtx.Lock()
-								if _, ok := tsLookup[t]; !ok {
-									timestamps = append(timestamps, t)
-									tsLookup[t] = s
-								}
-								tsm[time.Unix(t/1000, 0)] = true
-								mtx.Unlock()
-							} else if !hasWarned {
-								hasWarned = true
-								// this makeshift warning is temporary during the beta cycle to help
-								// troubleshoot #433
-								fmt.Println("WARN", "could not convert influxdb time to a float64:",
-									s[ti], "resultSet:", se)
+				tsLookup := make(map[int64][]interface{})
+				timestamps := make([]int64, 0, len(se.Results[ri].Series[j].Values))
+				for _, v := range se.Results[ri].Series[j].Values {
+					wg.Add(1)
+					go func(s []interface{}) {
+						defer wg.Done()
+						if len(s) == 0 {
+							return
+						}
+						if tf, ok := s[0].(float64); ok {
+							t := int64(tf)
+							mtx.Lock()
+							if _, ok := tsLookup[t]; !ok {
+								timestamps = append(timestamps, t)
+								tsLookup[t] = s
 							}
-							wg.Done()
-						}(v)
-					}
-					wg.Wait()
-					sort.Slice(timestamps, func(i, j int) bool {
-						return timestamps[i] < timestamps[j]
-					})
-					sm := make([][]interface{}, len(timestamps))
-					for i, key := range timestamps {
-						sm[i] = tsLookup[key]
-					}
-					se.Results[ri].Series[j].Values = sm
-					seriesWG.Done()
-				}(si)
-			}
-			seriesWG.Wait()
+							tsm[time.Unix(t/1000, 0)] = true
+							mtx.Unlock()
+						} else if !hasWarned {
+							hasWarned = true
+							// this makeshift warning is temporary during the beta cycle to help
+							// troubleshoot #433
+							fmt.Println("WARN", "could not convert influxdb time to a float64:",
+								s[0], "resultSet:", se)
+						}
+					}(v)
+				}
+				wg.Wait()
+				sort.Slice(timestamps, func(i, j int) bool {
+					return timestamps[i] < timestamps[j]
+				})
+				sm := make([][]interface{}, len(timestamps))
+				for i, key := range timestamps {
+					sm[i] = tsLookup[key]
+				}
+				se.Results[ri].Series[j].Values = sm
+				seriesWG.Done()
+			}(si)
 		}
+		seriesWG.Wait()
 	}
 
 	sort.Sort(se.ExtentList)
