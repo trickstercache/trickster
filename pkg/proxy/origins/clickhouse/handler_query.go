@@ -30,7 +30,7 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	rqlc := strings.Replace(strings.ToLower(r.URL.RawQuery), "%20", "+", -1)
 	// if it's not a select statement, just proxy it instead
 	if (!strings.HasPrefix(rqlc, "query=select+")) && (!(strings.Index(rqlc, "&query=select+") > 0)) &&
-		(!strings.HasSuffix(rqlc, "format+json")) {
+		(!strings.Contains(rqlc, "+format+json")) {
 		c.ProxyHandler(w, r)
 		return
 	}
