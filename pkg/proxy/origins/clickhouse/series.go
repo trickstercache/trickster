@@ -40,12 +40,12 @@ func (re *ResultsEnvelope) SetStep(step time.Duration) {
 // and optionally sorts the merged Timeseries
 func (re *ResultsEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) {
 
-	wg := sync.WaitGroup{}
 	mtx := sync.Mutex{}
 
 	for _, ts := range collection {
 		if ts != nil {
 			re2 := ts.(*ResultsEnvelope)
+			wg := sync.WaitGroup{}
 			for k, s := range re2.Data {
 				wg.Add(1)
 				go func(l string, d *DataSet) {
@@ -359,24 +359,24 @@ func (re *ResultsEnvelope) Sort() {
 	}
 
 	tsm := map[time.Time]bool{}
-	wg := sync.WaitGroup{}
 	mtx := sync.Mutex{}
 
 	for i, s := range re.Data {
 		m := make(map[time.Time]Point)
 		keys := make(times.Times, 0, len(s.Points))
+		wg := sync.WaitGroup{}
 		for _, v := range s.Points {
 			wg.Add(1)
-			go func(sp Point) {
+			go func(sp Point, l map[time.Time]Point) {
 				mtx.Lock()
-				if _, ok := m[sp.Timestamp]; !ok {
+				if _, ok := l[sp.Timestamp]; !ok {
 					keys = append(keys, sp.Timestamp)
-					m[sp.Timestamp] = sp
+					l[sp.Timestamp] = sp
 				}
 				tsm[sp.Timestamp] = true
 				mtx.Unlock()
 				wg.Done()
-			}(v)
+			}(v, m)
 		}
 		wg.Wait()
 		sort.Sort(keys)

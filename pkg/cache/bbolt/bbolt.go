@@ -30,7 +30,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/locks"
 	"github.com/tricksterproxy/trickster/pkg/util/log"
 
-	"github.com/coreos/bbolt"
+	"go.etcd.io/bbolt"
 )
 
 // Cache describes a BBolt Cache

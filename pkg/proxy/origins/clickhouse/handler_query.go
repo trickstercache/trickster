@@ -21,16 +21,18 @@ import (
 	"strings"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
+	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
 // QueryHandler handles timeseries requests for ClickHouse and processes them through the delta proxy cache
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
-	rqlc := strings.Replace(strings.ToLower(r.URL.RawQuery), "%20", "+", -1)
+	qp, _, isBody := params.GetRequestValues(r)
+	q := strings.ToLower(qp.Get(upQuery))
 	// if it's not a select statement, just proxy it instead
-	if (!strings.HasPrefix(rqlc, "query=select+")) && (!(strings.Index(rqlc, "&query=select+") > 0)) &&
-		(!strings.HasSuffix(rqlc, "format+json")) {
+	if isBody || (!strings.Contains(q, "select ") &&
+		(!strings.HasSuffix(q, " format json"))) {
 		c.ProxyHandler(w, r)
 		return
 	}

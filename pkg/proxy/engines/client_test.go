@@ -503,24 +503,24 @@ func (me *MatrixEnvelope) Merge(sort bool, collection ...timeseries.Timeseries) 
 	for _, ts := range collection {
 		if ts != nil {
 			me2 := ts.(*MatrixEnvelope)
+			wg2 := sync.WaitGroup{}
 			for _, s := range me2.Data.Result {
-				wg.Add(1)
+				wg2.Add(1)
 				go func(t *model.SampleStream) {
+					defer wg2.Done()
 					mtx.Lock()
 					name := t.Metric.String()
 					if _, ok := meMetrics[name]; !ok {
 						meMetrics[name] = t
 						me.Data.Result = append(me.Data.Result, t)
 						mtx.Unlock()
-						wg.Done()
 						return
 					}
 					meMetrics[name].Values = append(meMetrics[name].Values, t.Values...)
 					mtx.Unlock()
-					wg.Done()
 				}(s)
 			}
-			wg.Wait()
+			wg2.Wait()
 			me.ExtentList = append(me.ExtentList, me2.ExtentList...)
 		}
 	}
@@ -740,13 +740,12 @@ func (me *MatrixEnvelope) Sort() {
 	}
 
 	tsm := map[time.Time]bool{}
-	wg := sync.WaitGroup{}
 	mtx := sync.Mutex{}
 
 	for i, s := range me.Data.Result { // []SampleStream
 		m := make(map[time.Time]model.SamplePair)
 		keys := make(times.Times, 0, len(m))
-
+		wg := sync.WaitGroup{}
 		for _, v := range s.Values { // []SamplePair
 			wg.Add(1)
 			go func(sp model.SamplePair) {
