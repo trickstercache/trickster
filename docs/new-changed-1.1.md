@@ -28,7 +28,7 @@
 
 ## Installing
 
-You can build the 1.1 binary from the `master` branch, download binaries from the Releases page, or use the `tricksterproxy/trickster:1.1` Docker image tag in containerized environments. Helm Charts version `1.5.0` is the chart release associated with Trickster v1.1.
+You can build the 1.1 binary from the `main` branch, download binaries from the Releases page, or use the `tricksterproxy/trickster:1.1` Docker image tag in containerized environments. Helm Charts version `1.5.0` is the chart release associated with Trickster v1.1.
 
 ## Breaking Changes from 1.0
 
