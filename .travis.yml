@@ -15,7 +15,7 @@ matrix:
   - language: go
     go:
     - "1.15.x"
-    - master
+    - main
     before_install:
     - go get github.com/mattn/goveralls
     - go mod vendor
@@ -27,7 +27,7 @@ matrix:
     arch: arm64
     go:
     - "1.15.x"
-    - master
+    - main
     before_install:
     - go get github.com/mattn/goveralls
     - go mod vendor
