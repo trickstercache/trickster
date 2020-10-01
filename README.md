@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/github/license/tricksterproxy/trickster)](/LICENSE)
 [![Coverage Status](https://coveralls.io/repos/github/tricksterproxy/trickster/badge.svg)](https://coveralls.io/github/tricksterproxy/trickster)
-[![Build Status](https://travis-ci.org/tricksterproxy/trickster.svg?branch=master)](https://travis-ci.org/tricksterproxy/trickster/)
+[![Build Status](https://travis-ci.org/tricksterproxy/trickster.svg?branch=main)](https://travis-ci.org/tricksterproxy/trickster/)
 [![Go Report Card](https://goreportcard.com/badge/github.com/tricksterproxy/trickster)](https://goreportcard.com/report/github.com/tricksterproxy/trickster)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/2518/badge)](https://bestpractices.coreinfrastructure.org/en/projects/2518)
 [![GoDoc](https://godoc.org/github.com/tricksterproxy/trickster?status.svg)](https://godoc.org/github.com/tricksterproxy/trickster)
