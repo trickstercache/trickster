@@ -24,7 +24,7 @@ import (
 const (
 	// Environment variables
 	evOriginURL   = "TRK_ORIGIN_URL"
-	evProvider  = "TRK_ORIGIN_TYPE"
+	evProvider    = "TRK_ORIGIN_TYPE"
 	evProxyPort   = "TRK_PROXY_PORT"
 	evMetricsPort = "TRK_METRICS_PORT"
 	evLogLevel    = "TRK_LOG_LEVEL"

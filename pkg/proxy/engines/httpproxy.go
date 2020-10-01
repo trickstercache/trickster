@@ -220,7 +220,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 				tl.WarnOnce(rsc.Logger, "clockoffset."+oc.Name,
 					"clock offset between trickster host and origin is high and may cause data anomalies",
 					tl.Pairs{
-						"backendName":    oc.Name,
+						"backendName":   oc.Name,
 						"tricksterTime": strconv.FormatInt(d.Add(offset).Unix(), 10),
 						"originTime":    strconv.FormatInt(d.Unix(), 10),
 						"offset":        strconv.FormatInt(int64(offset.Seconds()), 10) + "s",

@@ -30,7 +30,7 @@ const (
 	cfLogLevel    = "log-level"
 	cfInstanceID  = "instance-id"
 	cfOrigin      = "origin-url"
-	cfProvider  = "provider"
+	cfProvider    = "provider"
 	cfProxyPort   = "proxy-port"
 	cfMetricsPort = "metrics-port"
 )
@@ -45,7 +45,7 @@ type Flags struct {
 	InstanceID        int
 	ConfigPath        string
 	Origin            string
-	Provider        string
+	Provider          string
 	LogLevel          string
 }
 

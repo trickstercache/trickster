@@ -19,8 +19,8 @@ package backends
 import (
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/cache"
 	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	"github.com/tricksterproxy/trickster/pkg/cache"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 )
 

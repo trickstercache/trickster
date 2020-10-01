@@ -20,11 +20,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/backends"
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/context"
-	"github.com/tricksterproxy/trickster/pkg/backends"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
@@ -33,12 +33,12 @@ import (
 // Resources is a collection of resources a Trickster request would need to fulfill the client request
 // This is stored in the client request's context for use by request handers.
 type Resources struct {
-	BackendOptions      *oo.Options
+	BackendOptions    *oo.Options
 	PathConfig        *po.Options
 	CacheConfig       *co.Options
 	NoLock            bool
 	CacheClient       cache.Cache
-	BackendClient      backends.Client
+	BackendClient     backends.Client
 	AlternateCacheTTL time.Duration
 	TimeRangeQuery    *timeseries.TimeRangeQuery
 	Tracer            *tracing.Tracer
@@ -48,12 +48,12 @@ type Resources struct {
 // Clone returns an exact copy of the subject Resources collection
 func (r Resources) Clone() *Resources {
 	return &Resources{
-		BackendOptions:      r.BackendOptions,
+		BackendOptions:    r.BackendOptions,
 		PathConfig:        r.PathConfig,
 		CacheConfig:       r.CacheConfig,
 		NoLock:            r.NoLock,
 		CacheClient:       r.CacheClient,
-		BackendClient:      r.BackendClient,
+		BackendClient:     r.BackendClient,
 		AlternateCacheTTL: r.AlternateCacheTTL,
 		TimeRangeQuery:    r.TimeRangeQuery,
 		Tracer:            r.Tracer,
@@ -67,12 +67,12 @@ func NewResources(oo *oo.Options, po *po.Options, co *co.Options,
 	logger interface{}) *Resources {
 	return &Resources{
 		BackendOptions: oo,
-		PathConfig:   po,
-		CacheConfig:  co,
-		CacheClient:  c,
-		BackendClient: client,
-		Logger:       logger,
-		Tracer:       t,
+		PathConfig:     po,
+		CacheConfig:    co,
+		CacheClient:    c,
+		BackendClient:  client,
+		Logger:         logger,
+		Tracer:         t,
 	}
 }
 

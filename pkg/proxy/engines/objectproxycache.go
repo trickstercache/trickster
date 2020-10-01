@@ -33,8 +33,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 
-	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/api/trace"
+	"go.opentelemetry.io/otel/label"
 )
 
 func handleCacheKeyHit(pr *proxyRequest) error {

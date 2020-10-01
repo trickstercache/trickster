@@ -46,7 +46,7 @@ type Index struct {
 	Objects map[string]*Object `msg:"objects"`
 
 	name           string                             `msg:"-"`
-	cacheProvider      string                             `msg:"-"`
+	cacheProvider  string                             `msg:"-"`
 	options        *options.Options                   `msg:"-"`
 	bulkRemoveFunc func([]string)                     `msg:"-"`
 	flushFunc      func(cacheKey string, data []byte) `msg:"-"`

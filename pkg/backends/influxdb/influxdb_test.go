@@ -19,12 +19,12 @@ package influxdb
 import (
 	"testing"
 
-	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
-	"github.com/tricksterproxy/trickster/pkg/config"
-	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	"github.com/tricksterproxy/trickster/pkg/backends/influxdb/model"
 	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
+	"github.com/tricksterproxy/trickster/pkg/config"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 )
 
 var testModeler = model.NewModeler()

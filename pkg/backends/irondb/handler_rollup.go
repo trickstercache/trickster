@@ -21,9 +21,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/backends/irondb/common"
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	"github.com/tricksterproxy/trickster/pkg/backends/irondb/common"
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"

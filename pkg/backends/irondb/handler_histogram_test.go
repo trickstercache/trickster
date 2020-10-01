@@ -24,9 +24,9 @@ import (
 	"testing"
 	"time"
 
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	tu "github.com/tricksterproxy/trickster/pkg/util/testing"

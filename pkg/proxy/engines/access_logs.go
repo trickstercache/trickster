@@ -26,15 +26,15 @@ func logUpstreamRequest(logger interface{}, backendName, backendProvider, handle
 	path, userAgent string, responseCode, size int, requestDuration float64) {
 	tl.Debug(logger, "upstream request",
 		tl.Pairs{
-			"backendName":  backendName,
-			"backendProvider":  backendProvider,
-			"handlerName": handlerName,
-			"method":      method,
-			"uri":         path,
-			"userAgent":   userAgent,
-			"code":        responseCode,
-			"size":        size,
-			"durationMS":  int(requestDuration * 1000),
+			"backendName":     backendName,
+			"backendProvider": backendProvider,
+			"handlerName":     handlerName,
+			"method":          method,
+			"uri":             path,
+			"userAgent":       userAgent,
+			"code":            responseCode,
+			"size":            size,
+			"durationMS":      int(requestDuration * 1000),
 		})
 }
 

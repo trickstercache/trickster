@@ -28,11 +28,11 @@ import (
 	"strconv"
 	"testing"
 
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/key"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	ct "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tu "github.com/tricksterproxy/trickster/pkg/util/testing"

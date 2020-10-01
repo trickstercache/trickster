@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/backends"
 	tc "github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
@@ -31,7 +32,6 @@ import (
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	tpe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	"github.com/tricksterproxy/trickster/pkg/backends"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
@@ -426,9 +426,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 					tl.Error(pr.Logger, "error writing object to cache",
 						tl.Pairs{
 							"backendName": oc.Name,
-							"cacheName":  cache.Configuration().Name,
-							"cacheKey":   key,
-							"detail":     err.Error(),
+							"cacheName":   cache.Configuration().Name,
+							"cacheKey":    key,
+							"detail":      err.Error(),
 						},
 					)
 				}
