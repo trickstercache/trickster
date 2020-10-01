@@ -395,14 +395,14 @@ func (l Lookup) ValidateConfigMappings(rules ro.Lookup, caches co.Lookup) error 
 			// Rule Type Validations
 			r, ok := rules[oc.RuleName]
 			if !ok {
-				return fmt.Errorf("invalid rule name [%s] provided in backend config [%s]", oc.RuleName, k)
+				return fmt.Errorf("invalid rule name [%s] provided in backend options [%s]", oc.RuleName, k)
 			}
 			r.Name = oc.RuleName
 			oc.RuleOptions = r
 		case "alb":
 		default:
 			if _, ok := caches[oc.CacheName]; !ok {
-				return fmt.Errorf("invalid cache name [%s] provided in backend config [%s]", oc.CacheName, k)
+				return fmt.Errorf("invalid cache name [%s] provided in backend options [%s]", oc.CacheName, k)
 			}
 		}
 	}
@@ -453,7 +453,7 @@ func ProcessTOML(
 		oc.ReqRewriter = ri
 	}
 
-	if metadata.IsDefined("backends", name, "origin_type") {
+	if metadata.IsDefined("backends", name, "provider") {
 		oc.Provider = options.Provider
 	}
 

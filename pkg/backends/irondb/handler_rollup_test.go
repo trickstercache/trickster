@@ -161,7 +161,7 @@ func TestRollupHandlerParseTimeRangeQuery(t *testing.T) {
 	// unparsable rollup_span param
 	r.URL.RawQuery = "start_ts=9012&end_ts=3456&rollup_span=pqrs"
 	_, err = client.rollupHandlerParseTimeRangeQuery(r)
-	expectedS = `unable to parse duration pqrs: time: invalid duration pqrs`
+	expectedS = `unable to parse duration pqrs: time: invalid duration "pqrs"`
 	if err.Error() != expectedS {
 		t.Errorf("expected %s got %s", expectedS, err.Error())
 	}

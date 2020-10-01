@@ -163,7 +163,7 @@ func TestHistogramHandlerParseTimeRangeQuery(t *testing.T) {
 
 	// case where the period can't be parsed
 	r.URL.Path = "/histogram/0/900/z/00112233-4455-6677-8899-aabbccddeeff/metric"
-	expected2 = `unable to parse duration zs: time: invalid duration zs`
+	expected2 = `unable to parse duration zs: time: invalid duration "zs"`
 	_, err = client.histogramHandlerParseTimeRangeQuery(r)
 	if err == nil || err.Error() != expected2 {
 		t.Errorf("expected %s got %s", expected2, err.Error())
