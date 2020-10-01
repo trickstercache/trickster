@@ -383,7 +383,7 @@ func ValidateBackendName(name string) error {
 	return nil
 }
 
-// ValidateConfigMappings ensures that named config mappings from within orign configs
+// ValidateConfigMappings ensures that named config mappings from within origin configs
 // (e.g., backends.cache_name) are valid
 func (l Lookup) ValidateConfigMappings(rules ro.Lookup, caches co.Lookup) error {
 	for k, oc := range l {
