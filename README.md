@@ -16,7 +16,7 @@ Note: Trickster v1.1 is the production release, sourced from the [v1.1.x](https:
 
 Learn more below, and check out our [roadmap](./docs/roadmap.md) to find out what else is in the works.
 
-Note for Developers: Active work is being made on our 2.0 release, using the `v2.0.x` branch.
+Note: Trickster v1.1 is the production release, sourced from the [v1.1.x](https://github.com/tricksterproxy/trickster/tree/v1.1.x) branch. The `main` branch sources Trickster 2.0, which is currently in beta.
 
 ## HTTP Reverse Proxy Cache
 
