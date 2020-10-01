@@ -22,38 +22,38 @@ import (
 	"fmt"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/jaeger"
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/noop"
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/stdout"
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/zipkin"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
-	"github.com/tricksterproxy/trickster/pkg/tracing/types"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	"github.com/tricksterproxy/trickster/pkg/tracing/providers"
 	"github.com/tricksterproxy/trickster/pkg/util/strings"
 )
 
 // RegisterAll registers all Tracers in the provided configuration, and returns
 // their Flushers
-func RegisterAll(cfg *config.Config, log *tl.Logger, isDryRun bool) (tracing.Tracers, error) {
+func RegisterAll(cfg *config.Config, logger interface{}, isDryRun bool) (tracing.Tracers, error) {
 	if cfg == nil {
 		return nil, errors.New("no config provided")
 	}
-	if cfg.Origins == nil {
-		return nil, errors.New("no origins provided")
+	if cfg.Backends == nil {
+		return nil, errors.New("no backends provided")
 	}
 	if cfg.TracingConfigs == nil {
 		return nil, errors.New("no tracers provided")
 	}
 
-	// remove any tracers that are configured but not used by an origin, we don't want
+	// remove any tracers that are configured but not used by a backend, we don't want
 	// to use resources to instantiate them
 	mappedTracers := make(map[string]bool)
 
-	for k, v := range cfg.Origins {
+	for k, v := range cfg.Backends {
 		if v != nil && v.TracingConfigName != "" {
 			if _, ok := cfg.TracingConfigs[v.TracingConfigName]; !ok {
-				return nil, fmt.Errorf("origin %s provided invalid tracing config name %s",
+				return nil, fmt.Errorf("backend %s provided invalid tracing config name %s",
 					k, v.TracingConfigName)
 			}
 			mappedTracers[v.TracingConfigName] = true
@@ -63,17 +63,17 @@ func RegisterAll(cfg *config.Config, log *tl.Logger, isDryRun bool) (tracing.Tra
 	tracers := make(tracing.Tracers)
 	for k, tc := range cfg.TracingConfigs {
 		if _, ok := mappedTracers[k]; !ok {
-			// tracer is configured, but not mapped by any origin,
+			// tracer is configured, but not mapped by any backend,
 			// so we won't instantiate it
 			continue
 		}
 
 		tc.Name = k
-		if _, ok := types.Names[tc.TracerType]; !ok {
+		if _, ok := providers.Names[tc.Provider]; !ok {
 			return nil, fmt.Errorf("invalid tracer type [%s] for tracing config [%s]",
-				tc.TracerType, k)
+				tc.Provider, k)
 		}
-		tracer, err := GetTracer(tc, log, isDryRun)
+		tracer, err := GetTracer(tc, logger, isDryRun)
 		if err != nil {
 			return nil, err
 		}
@@ -83,10 +83,10 @@ func RegisterAll(cfg *config.Config, log *tl.Logger, isDryRun bool) (tracing.Tra
 }
 
 // GetTracer returns a *Tracer based on the provided options
-func GetTracer(options *options.Options, log *tl.Logger, isDryRun bool) (*tracing.Tracer, error) {
+func GetTracer(options *options.Options, logger interface{}, isDryRun bool) (*tracing.Tracer, error) {
 
 	if options == nil {
-		log.Info("nil tracing config, using noop tracer", nil)
+		tl.Info(logger, "nil tracing config, using noop tracer", nil)
 		return noop.NewTracer(options)
 	}
 
@@ -94,11 +94,11 @@ func GetTracer(options *options.Options, log *tl.Logger, isDryRun bool) (*tracin
 		if isDryRun {
 			return
 		}
-		log.Info(
+		tl.Info(logger,
 			"tracer registration",
 			tl.Pairs{
 				"name":         options.Name,
-				"tracerType":   options.TracerType,
+				"provider":     options.Provider,
 				"serviceName":  options.ServiceName,
 				"collectorURL": options.CollectorURL,
 				"sampleRate":   options.SampleRate,
@@ -107,14 +107,14 @@ func GetTracer(options *options.Options, log *tl.Logger, isDryRun bool) (*tracin
 		)
 	}
 
-	switch options.TracerType {
-	case types.TracerTypeStdout.String():
+	switch options.Provider {
+	case providers.Stdout.String():
 		logTracerRegistration()
 		return stdout.NewTracer(options)
-	case types.TracerTypeJaeger.String():
+	case providers.Jaeger.String():
 		logTracerRegistration()
 		return jaeger.NewTracer(options)
-	case types.TracerTypeZipkin.String():
+	case providers.Zipkin.String():
 		logTracerRegistration()
 		return zipkin.NewTracer(options)
 	}

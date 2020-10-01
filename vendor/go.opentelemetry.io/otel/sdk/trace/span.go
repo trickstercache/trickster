@@ -16,22 +16,23 @@ package trace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
 	"time"
 
-	"google.golang.org/grpc/codes"
-
-	"go.opentelemetry.io/otel/api/kv"
+	"go.opentelemetry.io/otel/api/global"
 	apitrace "go.opentelemetry.io/otel/api/trace"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/label"
 	export "go.opentelemetry.io/otel/sdk/export/trace"
 	"go.opentelemetry.io/otel/sdk/internal"
 )
 
 const (
-	errorTypeKey    = kv.Key("error.type")
-	errorMessageKey = kv.Key("error.message")
+	errorTypeKey    = label.Key("error.type")
+	errorMessageKey = label.Key("error.message")
 	errorEventName  = "error"
 )
 
@@ -88,12 +89,12 @@ func (s *span) SetStatus(code codes.Code, msg string) {
 		return
 	}
 	s.mu.Lock()
-	s.data.StatusCode = code
+	s.data.StatusCode = internal.ConvertCode(code)
 	s.data.StatusMessage = msg
 	s.mu.Unlock()
 }
 
-func (s *span) SetAttributes(attributes ...kv.KeyValue) {
+func (s *span) SetAttributes(attributes ...label.KeyValue) {
 	if !s.IsRecording() {
 		return
 	}
@@ -101,12 +102,27 @@ func (s *span) SetAttributes(attributes ...kv.KeyValue) {
 }
 
 func (s *span) SetAttribute(k string, v interface{}) {
-	s.SetAttributes(kv.Infer(k, v))
+	attr := label.Any(k, v)
+	if attr.Value.Type() != label.INVALID {
+		s.SetAttributes(attr)
+	}
 }
 
+// End ends the span adding an error event if it was called while panicking.
 func (s *span) End(options ...apitrace.EndOption) {
 	if s == nil {
 		return
+	}
+
+	if recovered := recover(); recovered != nil {
+		// Record but don't stop the panic.
+		defer panic(recovered)
+		s.addEventWithTimestamp(
+			time.Now(),
+			errorEventName,
+			errorTypeKey.String(typeStr(recovered)),
+			errorMessageKey.String(fmt.Sprint(recovered)),
+		)
 	}
 
 	if s.executionTracerTaskEnd != nil {
@@ -159,38 +175,40 @@ func (s *span) RecordError(ctx context.Context, err error, opts ...apitrace.Erro
 		s.SetStatus(cfg.StatusCode, "")
 	}
 
-	errType := reflect.TypeOf(err)
-	errTypeString := fmt.Sprintf("%s.%s", errType.PkgPath(), errType.Name())
-	if errTypeString == "." {
-		// PkgPath() and Name() may be empty for builtin Types
-		errTypeString = errType.String()
-	}
-
 	s.AddEventWithTimestamp(ctx, cfg.Timestamp, errorEventName,
-		errorTypeKey.String(errTypeString),
+		errorTypeKey.String(typeStr(err)),
 		errorMessageKey.String(err.Error()),
 	)
+}
+
+func typeStr(i interface{}) string {
+	t := reflect.TypeOf(i)
+	if t.PkgPath() == "" && t.Name() == "" {
+		// Likely a builtin type.
+		return t.String()
+	}
+	return fmt.Sprintf("%s.%s", t.PkgPath(), t.Name())
 }
 
 func (s *span) Tracer() apitrace.Tracer {
 	return s.tracer
 }
 
-func (s *span) AddEvent(ctx context.Context, name string, attrs ...kv.KeyValue) {
+func (s *span) AddEvent(ctx context.Context, name string, attrs ...label.KeyValue) {
 	if !s.IsRecording() {
 		return
 	}
 	s.addEventWithTimestamp(time.Now(), name, attrs...)
 }
 
-func (s *span) AddEventWithTimestamp(ctx context.Context, timestamp time.Time, name string, attrs ...kv.KeyValue) {
+func (s *span) AddEventWithTimestamp(ctx context.Context, timestamp time.Time, name string, attrs ...label.KeyValue) {
 	if !s.IsRecording() {
 		return
 	}
 	s.addEventWithTimestamp(timestamp, name, attrs...)
 }
 
-func (s *span) addEventWithTimestamp(timestamp time.Time, name string, attrs ...kv.KeyValue) {
+func (s *span) addEventWithTimestamp(timestamp time.Time, name string, attrs ...label.KeyValue) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messageEvents.add(export.Event{
@@ -200,12 +218,14 @@ func (s *span) addEventWithTimestamp(timestamp time.Time, name string, attrs ...
 	})
 }
 
+var errUninitializedSpan = errors.New("failed to set name on uninitialized span")
+
 func (s *span) SetName(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.data == nil {
-		// TODO: now what?
+		global.Handle(errUninitializedSpan)
 		return
 	}
 	s.data.Name = name
@@ -285,11 +305,13 @@ func (s *span) interfaceArrayToMessageEventArray() []export.Event {
 	return messageEventArr
 }
 
-func (s *span) copyToCappedAttributes(attributes ...kv.KeyValue) {
+func (s *span) copyToCappedAttributes(attributes ...label.KeyValue) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, a := range attributes {
-		s.attributes.add(a)
+		if a.Value.Type() != label.INVALID {
+			s.attributes.add(a)
+		}
 	}
 }
 
@@ -338,12 +360,13 @@ func startSpanInternal(tr *tracer, name string, parent apitrace.SpanContext, rem
 		startTime = time.Now()
 	}
 	span.data = &export.SpanData{
-		SpanContext:     span.spanContext,
-		StartTime:       startTime,
-		SpanKind:        apitrace.ValidateSpanKind(o.SpanKind),
-		Name:            name,
-		HasRemoteParent: remoteParent,
-		Resource:        cfg.Resource,
+		SpanContext:            span.spanContext,
+		StartTime:              startTime,
+		SpanKind:               apitrace.ValidateSpanKind(o.SpanKind),
+		Name:                   name,
+		HasRemoteParent:        remoteParent,
+		Resource:               cfg.Resource,
+		InstrumentationLibrary: tr.instrumentationLibrary,
 	}
 	span.attributes = newAttributesMap(cfg.MaxAttributesPerSpan)
 	span.messageEvents = newEvictedQueue(cfg.MaxEventsPerSpan)
@@ -373,7 +396,7 @@ type samplingData struct {
 	name         string
 	cfg          *Config
 	span         *span
-	attributes   []kv.KeyValue
+	attributes   []label.KeyValue
 	links        []apitrace.Link
 	kind         apitrace.SpanKind
 }
@@ -394,7 +417,6 @@ func makeSamplingDecision(data samplingData) SamplingResult {
 		sampled := sampler.ShouldSample(SamplingParameters{
 			ParentContext:   data.parent,
 			TraceID:         spanContext.TraceID,
-			SpanID:          spanContext.SpanID,
 			Name:            data.name,
 			HasRemoteParent: data.remoteParent,
 			Kind:            data.kind,

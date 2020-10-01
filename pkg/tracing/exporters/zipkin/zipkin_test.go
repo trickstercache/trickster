@@ -31,7 +31,7 @@ func TestNewTracer(t *testing.T) {
 		t.Error("expected error for no tracer options")
 	}
 
-	opt := options.NewOptions()
+	opt := options.New()
 	opt.Tags = map[string]string{"test": "test"}
 	opt.CollectorURL = "http://1.2.3.4:8000"
 

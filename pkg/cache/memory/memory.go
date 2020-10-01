@@ -28,7 +28,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/locks"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 )
 
 // Cache defines a a Memory Cache client that conforms to the Cache interface
@@ -37,7 +37,7 @@ type Cache struct {
 	client     sync.Map
 	Config     *options.Options
 	Index      *index.Index
-	Logger     *tl.Logger
+	Logger     interface{}
 	locker     locks.NamedLocker
 	lockPrefix string
 }
@@ -59,11 +59,11 @@ func (c *Cache) Configuration() *options.Options {
 
 // Connect initializes the Cache
 func (c *Cache) Connect() error {
-	c.Logger.Info("memorycache setup", tl.Pairs{"name": c.Name,
+	tl.Info(c.Logger, "memorycache setup", tl.Pairs{"name": c.Name,
 		"maxSizeBytes": c.Config.Index.MaxSizeBytes, "maxSizeObjects": c.Config.Index.MaxSizeObjects})
 	c.lockPrefix = c.Name + ".memory."
 	c.client = sync.Map{}
-	c.Index = index.NewIndex(c.Name, c.Config.CacheType, nil, c.Config.Index, c.BulkRemove, nil, c.Logger)
+	c.Index = index.NewIndex(c.Name, c.Config.Provider, nil, c.Config.Index, c.BulkRemove, nil, c.Logger)
 	return nil
 }
 
@@ -85,18 +85,18 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 	isDirect := byteData == nil && refData != nil
 	if byteData != nil {
 		l = len(byteData)
-		metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(l))
+		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "set", "none", float64(l))
 		o1 = &index.Object{Key: cacheKey, Value: byteData, Expiration: time.Now().Add(ttl)}
 		o2 = &index.Object{Key: cacheKey, Value: byteData, Expiration: time.Now().Add(ttl)}
 	} else if refData != nil {
-		metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "setDirect", "none", 0)
+		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "setDirect", "none", 0)
 		o1 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: time.Now().Add(ttl)}
 		o2 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: time.Now().Add(ttl)}
 	}
 
 	if o1 != nil && o2 != nil {
 		nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
-		go c.Logger.Debug("memorycache cache store",
+		tl.Debug(c.Logger, "memorycache cache store",
 			tl.Pairs{"cacheKey": cacheKey, "length": l, "ttl": ttl, "is_direct": isDirect})
 		c.client.Store(cacheKey, o1)
 		if updateIndex {
@@ -145,17 +145,17 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index
 		o.Expiration = c.Index.GetExpiration(cacheKey)
 
 		if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
-			c.Logger.Debug("memory cache retrieve", tl.Pairs{"cacheKey": cacheKey})
+			tl.Debug(c.Logger, "memory cache retrieve", tl.Pairs{"cacheKey": cacheKey})
 			if atime {
 				go c.Index.UpdateObjectAccessTime(cacheKey)
 			}
-			metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(o.Value)))
+			metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "get", "hit", float64(len(o.Value)))
 			return o, status.LookupStatusHit, nil
 		}
 		// Cache Object has been expired but not reaped, go ahead and delete it
 		go c.remove(cacheKey, false)
 	}
-	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
 	return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 }
 
@@ -176,7 +176,7 @@ func (c *Cache) remove(cacheKey string, isBulk bool) {
 	if !isBulk {
 		go c.Index.RemoveObject(cacheKey)
 	}
-	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
+	metrics.ObserveCacheDel(c.Name, c.Config.Provider, 0)
 }
 
 // BulkRemove removes a list of objects from the cache

@@ -18,8 +18,11 @@ import (
 	"context"
 	"errors"
 
-	"go.opentelemetry.io/otel/api/kv"
+	"go.opentelemetry.io/otel/label"
 )
+
+// ErrSDKReturnedNilImpl is returned when a new `MeterImpl` returns nil.
+var ErrSDKReturnedNilImpl = errors.New("SDK returned a nil implementation")
 
 // Measurement is used for reporting a synchronous batch of metric
 // values. Instances of this type should be created by synchronous
@@ -44,10 +47,6 @@ type syncBoundInstrument struct {
 type asyncInstrument struct {
 	instrument AsyncImpl
 }
-
-// ErrSDKReturnedNilImpl is used when one of the `MeterImpl` New
-// methods returns nil.
-var ErrSDKReturnedNilImpl = errors.New("SDK returned a nil implementation")
 
 // SyncImpl returns the instrument that created this measurement.
 // This returns an implementation-level object for use by the SDK,
@@ -83,7 +82,7 @@ func (s syncInstrument) SyncImpl() SyncImpl {
 	return s.instrument
 }
 
-func (s syncInstrument) bind(labels []kv.KeyValue) syncBoundInstrument {
+func (s syncInstrument) bind(labels []label.KeyValue) syncBoundInstrument {
 	return newSyncBoundInstrument(s.instrument.Bind(labels))
 }
 
@@ -95,7 +94,7 @@ func (s syncInstrument) int64Measurement(value int64) Measurement {
 	return newMeasurement(s.instrument, NewInt64Number(value))
 }
 
-func (s syncInstrument) directRecord(ctx context.Context, number Number, labels []kv.KeyValue) {
+func (s syncInstrument) directRecord(ctx context.Context, number Number, labels []label.KeyValue) {
 	s.instrument.RecordOne(ctx, number, labels)
 }
 

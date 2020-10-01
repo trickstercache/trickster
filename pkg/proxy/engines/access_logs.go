@@ -19,15 +19,15 @@ package engines
 import (
 	"net/http"
 
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 )
 
-func logUpstreamRequest(log *tl.Logger, originName, originType, handlerName, method,
+func logUpstreamRequest(logger interface{}, backendName, backendProvider, handlerName, method,
 	path, userAgent string, responseCode, size int, requestDuration float64) {
-	log.Debug("upstream request",
+	tl.Debug(logger, "upstream request",
 		tl.Pairs{
-			"originName":  originName,
-			"originType":  originType,
+			"backendName":  backendName,
+			"backendProvider":  backendProvider,
 			"handlerName": handlerName,
 			"method":      method,
 			"uri":         path,
@@ -38,8 +38,8 @@ func logUpstreamRequest(log *tl.Logger, originName, originType, handlerName, met
 		})
 }
 
-func logDownstreamRequest(log *tl.Logger, r *http.Request) {
-	log.Debug("downtream request",
+func logDownstreamRequest(logger interface{}, r *http.Request) {
+	tl.Debug(logger, "downtream request",
 		tl.Pairs{
 			"uri":       r.RequestURI,
 			"method":    r.Method,

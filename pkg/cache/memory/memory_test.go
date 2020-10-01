@@ -27,10 +27,10 @@ import (
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/locks"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 )
 
-const cacheType = "memory"
+const provider = "memory"
 const cacheKey = "cacheKey"
 
 type testReferenceObject struct {
@@ -43,7 +43,7 @@ func (r *testReferenceObject) Size() int {
 }
 
 func storeBenchmark(b *testing.B) *Cache {
-	cacheConfig := co.Options{CacheType: cacheType, Index: &io.Options{ReapInterval: 0}}
+	cacheConfig := co.Options{Provider: provider, Index: &io.Options{ReapInterval: 0}}
 	mc := &Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: testLocker}
 
 	err := mc.Connect()
@@ -61,19 +61,19 @@ func storeBenchmark(b *testing.B) *Cache {
 }
 
 func newCacheConfig(t *testing.T) co.Options {
-	dir, err := ioutil.TempDir("/tmp", cacheType)
+	dir, err := ioutil.TempDir("/tmp", provider)
 	if err != nil {
 		t.Fatalf("could not create temp directory (%s): %s", dir, err)
 	}
-	return co.Options{CacheType: cacheType, Index: &io.Options{ReapInterval: 0}}
+	return co.Options{Provider: provider, Index: &io.Options{ReapInterval: 0}}
 }
 
 func TestConfiguration(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
 	mc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error")}
 	cfg := mc.Configuration()
-	if cfg.CacheType != cacheType {
-		t.Fatalf("expected %s got %s", cacheType, cfg.CacheType)
+	if cfg.Provider != provider {
+		t.Fatalf("expected %s got %s", provider, cfg.Provider)
 	}
 }
 

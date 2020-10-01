@@ -19,7 +19,7 @@ package tls
 
 import "github.com/tricksterproxy/trickster/pkg/config"
 
-// OptionsChanged will return true if the TLS options for any origin
+// OptionsChanged will return true if the TLS options for any backend
 // is different between configs
 func OptionsChanged(conf, oldConf *config.Config) bool {
 
@@ -30,9 +30,9 @@ func OptionsChanged(conf, oldConf *config.Config) bool {
 		return true
 	}
 
-	for k, v := range oldConf.Origins {
+	for k, v := range oldConf.Backends {
 		if v.TLS != nil && v.TLS.ServeTLS {
-			if o, ok := conf.Origins[k]; !ok ||
+			if o, ok := conf.Backends[k]; !ok ||
 				o.TLS == nil || !o.TLS.ServeTLS ||
 				!o.TLS.Equal(v.TLS) {
 				return true
@@ -40,9 +40,9 @@ func OptionsChanged(conf, oldConf *config.Config) bool {
 		}
 	}
 
-	for k, v := range conf.Origins {
+	for k, v := range conf.Backends {
 		if v.TLS != nil && v.TLS.ServeTLS {
-			if o, ok := oldConf.Origins[k]; !ok ||
+			if o, ok := oldConf.Backends[k]; !ok ||
 				o.TLS == nil || !o.TLS.ServeTLS ||
 				!o.TLS.Equal(v.TLS) {
 				return true

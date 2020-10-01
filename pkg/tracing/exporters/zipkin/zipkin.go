@@ -46,7 +46,7 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 		sampler = sdktrace.ProbabilitySampler(options.SampleRate)
 	}
 
-	exporter, err := zipkin.NewExporter(
+	exporter, err := zipkin.NewRawExporter(
 		options.CollectorURL,
 		options.ServiceName,
 	)

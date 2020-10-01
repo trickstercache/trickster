@@ -22,8 +22,8 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-func TestNewOptions(t *testing.T) {
-	o := NewOptions()
+func TestNew(t *testing.T) {
+	o := New()
 	o.CollectorUser = "trickster"
 	o2 := o.Clone()
 	if o2.CollectorUser != "trickster" {
@@ -35,7 +35,7 @@ func TestProcessTracingConfigs(t *testing.T) {
 
 	ProcessTracingOptions(nil, nil)
 
-	o := NewOptions()
+	o := New()
 	o.SampleRate = 0
 
 	mo := map[string]*Options{
@@ -61,7 +61,7 @@ func TestGenerateOmitTags(t *testing.T) {
 
 func TestAttachTagsToSpan(t *testing.T) {
 
-	o := &Options{TracerType: "zipkin", Tags: map[string]string{"test": "test"}}
+	o := &Options{Provider: "zipkin", Tags: map[string]string{"test": "test"}}
 	if o.AttachTagsToSpan() {
 		t.Error("expected false")
 	}

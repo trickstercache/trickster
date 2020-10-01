@@ -18,7 +18,7 @@ package evictionmethods
 
 import "strconv"
 
-// TimeseriesEvictionMethod enumerates the methodologies for maintaining time series cache data
+// TimeseriesEvictionMethod enumerates the methodologies for evicting time series cache data
 type TimeseriesEvictionMethod int
 
 const (

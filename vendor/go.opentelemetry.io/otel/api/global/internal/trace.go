@@ -75,7 +75,7 @@ func (p *traceProvider) setDelegate(provider trace.Provider) {
 }
 
 // Tracer implements trace.Provider.
-func (p *traceProvider) Tracer(name string) trace.Tracer {
+func (p *traceProvider) Tracer(name string, opts ...trace.TracerOption) trace.Tracer {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
@@ -83,7 +83,7 @@ func (p *traceProvider) Tracer(name string) trace.Tracer {
 		return p.delegate.Tracer(name)
 	}
 
-	t := &tracer{name: name}
+	t := &tracer{name: name, opts: opts}
 	p.tracers = append(p.tracers, t)
 	return t
 }
@@ -95,6 +95,7 @@ func (p *traceProvider) Tracer(name string) trace.Tracer {
 type tracer struct {
 	once sync.Once
 	name string
+	opts []trace.TracerOption
 
 	delegate trace.Tracer
 }
@@ -110,16 +111,7 @@ var _ trace.Tracer = &tracer{}
 // Delegation only happens on the first call to this method. All subsequent
 // calls result in no delegation changes.
 func (t *tracer) setDelegate(provider trace.Provider) {
-	t.once.Do(func() { t.delegate = provider.Tracer(t.name) })
-}
-
-// WithSpan implements trace.Tracer by forwarding the call to t.delegate if
-// set, otherwise it forwards the call to a NoopTracer.
-func (t *tracer) WithSpan(ctx context.Context, name string, body func(context.Context) error, opts ...trace.StartOption) error {
-	if t.delegate != nil {
-		return t.delegate.WithSpan(ctx, name, body, opts...)
-	}
-	return trace.NoopTracer{}.WithSpan(ctx, name, body, opts...)
+	t.once.Do(func() { t.delegate = provider.Tracer(t.name, t.opts...) })
 }
 
 // Start implements trace.Tracer by forwarding the call to t.delegate if

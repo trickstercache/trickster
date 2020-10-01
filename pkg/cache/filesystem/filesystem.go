@@ -32,7 +32,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/locks"
-	"github.com/tricksterproxy/trickster/pkg/util/log"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 )
 
 // Cache describes a Filesystem Cache
@@ -40,7 +40,7 @@ type Cache struct {
 	Name       string
 	Config     *options.Options
 	Index      *index.Index
-	Logger     *log.Logger
+	Logger     interface{}
 	locker     locks.NamedLocker
 	lockPrefix string
 }
@@ -62,7 +62,7 @@ func (c *Cache) Configuration() *options.Options {
 
 // Connect instantiates the Cache mutex map and starts the Expired Entry Reaper goroutine
 func (c *Cache) Connect() error {
-	c.Logger.Info("filesystem cache setup", log.Pairs{"name": c.Name,
+	tl.Info(c.Logger, "filesystem cache setup", tl.Pairs{"name": c.Name,
 		"cachePath": c.Config.Filesystem.CachePath})
 	if err := makeDirectory(c.Config.Filesystem.CachePath); err != nil {
 		return err
@@ -71,7 +71,7 @@ func (c *Cache) Connect() error {
 
 	// Load Index here and pass bytes as param2
 	indexData, _, _ := c.retrieve(index.IndexKey, false, false)
-	c.Index = index.NewIndex(c.Name, c.Config.CacheType, indexData,
+	c.Index = index.NewIndex(c.Name, c.Config.Provider, indexData,
 		c.Config.Index, c.BulkRemove, c.storeNoIndex, c.Logger)
 	return nil
 }
@@ -84,8 +84,8 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 	err := c.store(cacheKey, data, 31536000*time.Second, false)
 	if err != nil {
-		c.Logger.Error("cache failed to write non-indexed object", log.Pairs{"cacheName": c.Name,
-			"cacheType": "filesystem", "cacheKey": cacheKey, "objectSize": len(data)})
+		tl.Error(c.Logger, "cache failed to write non-indexed object", tl.Pairs{"cacheName": c.Name,
+			"cacheProvider": "filesystem", "cacheKey": cacheKey, "objectSize": len(data)})
 	}
 }
 
@@ -99,7 +99,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 		return fmt.Errorf("cacheKey required")
 	}
 
-	metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "set", "none", float64(len(data)))
+	metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "set", "none", float64(len(data)))
 
 	dataFile := c.getFileName(cacheKey)
 
@@ -111,8 +111,8 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 		nl.Release()
 		return err
 	}
-	c.Logger.Debug("filesystem cache store",
-		log.Pairs{"key": cacheKey, "dataFile": dataFile, "indexed": updateIndex})
+	tl.Debug(c.Logger, "filesystem cache store",
+		tl.Pairs{"key": cacheKey, "dataFile": dataFile, "indexed": updateIndex})
 	if updateIndex {
 		c.Index.UpdateObject(o)
 	}
@@ -134,15 +134,15 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	nl.RRelease()
 
 	if err != nil {
-		c.Logger.Debug("filesystem cache miss", log.Pairs{"key": cacheKey, "dataFile": dataFile})
-		metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+		tl.Debug(c.Logger, "filesystem cache miss", tl.Pairs{"key": cacheKey, "dataFile": dataFile})
+		metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
 		return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 	}
 
 	o, err := index.ObjectFromBytes(data)
 	if err != nil {
 
-		_, err2 := metrics.CacheError(cacheKey, c.Name, c.Config.CacheType,
+		_, err2 := metrics.CacheError(cacheKey, c.Name, c.Config.Provider,
 			"value for key [%s] could not be deserialized from cache")
 		return nil, status.LookupStatusError, err2
 	}
@@ -155,16 +155,16 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 
 	o.Expiration = c.Index.GetExpiration(cacheKey)
 	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
-		c.Logger.Debug("filesystem cache retrieve", log.Pairs{"key": cacheKey, "dataFile": dataFile})
+		tl.Debug(c.Logger, "filesystem cache retrieve", tl.Pairs{"key": cacheKey, "dataFile": dataFile})
 		if atime {
 			go c.Index.UpdateObjectAccessTime(cacheKey)
 		}
-		metrics.ObserveCacheOperation(c.Name, c.Config.CacheType, "get", "hit", float64(len(data)))
+		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "get", "hit", float64(len(data)))
 		return o.Value, status.LookupStatusHit, nil
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
 	go c.remove(cacheKey, false)
-	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.CacheType)
+	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
 	return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 }
 
@@ -185,7 +185,7 @@ func (c *Cache) remove(cacheKey string, isBulk bool) {
 	if err == nil && !isBulk {
 		go c.Index.RemoveObject(cacheKey)
 	}
-	metrics.ObserveCacheDel(c.Name, c.Config.CacheType, 0)
+	metrics.ObserveCacheDel(c.Name, c.Config.Provider, 0)
 }
 
 // BulkRemove removes a list of objects from the cache

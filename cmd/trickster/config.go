@@ -27,23 +27,22 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/memory"
+	"github.com/tricksterproxy/trickster/pkg/cache/providers"
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
-	"github.com/tricksterproxy/trickster/pkg/cache/types"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	ro "github.com/tricksterproxy/trickster/pkg/config/reload/options"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	th "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	"github.com/tricksterproxy/trickster/pkg/routing"
 	"github.com/tricksterproxy/trickster/pkg/runtime"
 	tr "github.com/tricksterproxy/trickster/pkg/tracing/registration"
-	"github.com/tricksterproxy/trickster/pkg/util/log"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 )
 
 var cfgLock = &sync.Mutex{}
 
-func runConfig(oldConf *config.Config, wg *sync.WaitGroup, log *log.Logger,
+func runConfig(oldConf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
 	oldCaches map[string]cache.Cache, args []string, errorsFatal bool) error {
 
 	metrics.BuildInfo.WithLabelValues(applicationGoVersion,
@@ -84,7 +83,7 @@ func runConfig(oldConf *config.Config, wg *sync.WaitGroup, log *log.Logger,
 
 }
 
-func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logger,
+func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
 	oldCaches map[string]cache.Cache, args []string, errorsFatal bool) error {
 
 	if conf == nil {
@@ -97,13 +96,13 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logg
 	runtime.Server = conf.Main.ServerName
 
 	if conf.ReloadConfig == nil {
-		conf.ReloadConfig = ro.NewOptions()
+		conf.ReloadConfig = ro.New()
 	}
 
 	log = applyLoggingConfig(conf, oldConf, log)
 
 	for _, w := range conf.LoaderWarnings {
-		log.Warn(w, tl.Pairs{})
+		tl.Warn(log, w, tl.Pairs{})
 	}
 
 	//Register Tracing Configurations
@@ -141,14 +140,14 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logg
 	return nil
 }
 
-func applyLoggingConfig(c, oc *config.Config, oldLog *log.Logger) *log.Logger {
+func applyLoggingConfig(c, oc *config.Config, oldLog *tl.Logger) *tl.Logger {
 
 	if c == nil || c.Logging == nil {
 		return oldLog
 	}
 
 	if c.ReloadConfig == nil {
-		c.ReloadConfig = ro.NewOptions()
+		c.ReloadConfig = ro.New()
 	}
 
 	if oc != nil && oc.Logging != nil {
@@ -163,7 +162,7 @@ func applyLoggingConfig(c, oc *config.Config, oldLog *log.Logger) *log.Logger {
 				// if we're changing from file1 -> console or file1 -> file2, close file1 handle
 				// the extra 1s allows HTTP listeners to close first and finish their log writes
 				go delayedLogCloser(oldLog,
-					time.Duration(c.ReloadConfig.DrainTimeoutSecs+1)*time.Second)
+					time.Duration(c.ReloadConfig.DrainTimeoutMS+1000)*time.Millisecond)
 			}
 			return initLogger(c)
 		}
@@ -177,7 +176,7 @@ func applyLoggingConfig(c, oc *config.Config, oldLog *log.Logger) *log.Logger {
 	return initLogger(c)
 }
 
-func applyCachingConfig(c, oc *config.Config, logger *log.Logger,
+func applyCachingConfig(c, oc *config.Config, logger *tl.Logger,
 	oldCaches map[string]cache.Cache) map[string]cache.Cache {
 
 	if c == nil {
@@ -210,8 +209,8 @@ func applyCachingConfig(c, oc *config.Config, logger *log.Logger,
 			// the cache should be preserved between reconfigurations, but only if the Index
 			// is the only change. In this case, we'll apply the new index configuration,
 			// then add the old cache with the new index config to the new cache map
-			if ocfg.CacheTypeID == v.CacheTypeID &&
-				ocfg.CacheTypeID == types.CacheTypeMemory {
+			if ocfg.ProviderID == v.ProviderID &&
+				ocfg.ProviderID == providers.Memory {
 				if v.Index != nil {
 					mc := w.(*memory.Cache)
 					mc.Index.UpdateOptions(v.Index)
@@ -222,7 +221,7 @@ func applyCachingConfig(c, oc *config.Config, logger *log.Logger,
 
 			// if we got to this point, the cache won't be used, so lets close it
 			go func() {
-				time.Sleep(time.Second * time.Duration(c.ReloadConfig.DrainTimeoutSecs))
+				time.Sleep(time.Millisecond * time.Duration(c.ReloadConfig.DrainTimeoutMS))
 				w.Close()
 			}()
 		}
@@ -233,9 +232,9 @@ func applyCachingConfig(c, oc *config.Config, logger *log.Logger,
 	return caches
 }
 
-func initLogger(c *config.Config) *log.Logger {
+func initLogger(c *config.Config) *tl.Logger {
 	log := tl.New(c)
-	log.Info("application loaded from configuration",
+	tl.Info(log, "application loaded from configuration",
 		tl.Pairs{
 			"name":      runtime.ApplicationName,
 			"version":   runtime.ApplicationVersion,
@@ -251,7 +250,7 @@ func initLogger(c *config.Config) *log.Logger {
 	return log
 }
 
-func delayedLogCloser(log *log.Logger, delay time.Duration) {
+func delayedLogCloser(log *tl.Logger, delay time.Duration) {
 	// we can't immediately close the log, because some outstanding
 	// http requests might still be on the old reference, so this will
 	// allow time for those connections to drain
@@ -262,15 +261,15 @@ func delayedLogCloser(log *log.Logger, delay time.Duration) {
 	log.Close()
 }
 
-func handleStartupIssue(event string, detail log.Pairs, logger *log.Logger, exitFatal bool) {
+func handleStartupIssue(event string, detail tl.Pairs, logger *tl.Logger, exitFatal bool) {
 	metrics.LastReloadSuccessful.Set(0)
 	if event != "" {
 		if logger != nil {
 			if exitFatal {
-				logger.Fatal(1, event, detail)
+				tl.Fatal(logger, 1, event, detail)
 				return
 			}
-			logger.Error(event, detail)
+			tl.Warn(logger, event, detail)
 			return
 		}
 		fmt.Println(event)
@@ -292,7 +291,7 @@ func validateConfig(conf *config.Config) error {
 	}
 
 	router := mux.NewRouter()
-	log := log.ConsoleLogger(conf.Logging.LogLevel)
+	log := tl.ConsoleLogger(conf.Logging.LogLevel)
 
 	tracers, err := tr.RegisterAll(conf, log, true)
 	if err != nil {

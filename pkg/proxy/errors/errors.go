@@ -66,6 +66,9 @@ var ErrDrainTimeout = errors.New("timed out draining")
 // ErrPCFContentLength indicates that a response's content length does not permit PCF
 var ErrPCFContentLength = errors.New("content length does not permit PCF")
 
+// ErrUnsupportedEncoding indicates that the client requested an encoding that is not supported by Trickster
+var ErrUnsupportedEncoding = errors.New("unsupported ecoding format requested")
+
 // MissingURLParam returns a Formatted Error
 func MissingURLParam(param string) error {
 	return fmt.Errorf("missing URL parameter: [%s]", param)

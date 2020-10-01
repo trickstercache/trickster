@@ -24,7 +24,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/stdout"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 
-	"go.opentelemetry.io/otel/api/kv"
+	"go.opentelemetry.io/otel/label"
 )
 
 func TestNewChildSpan(t *testing.T) {
@@ -42,7 +42,7 @@ func TestNewChildSpan(t *testing.T) {
 	tr.Options.Tags = map[string]string{"testTagName": "testTagValue"}
 
 	// force coverage of tags attachment
-	tr.Options.TracerType = "zipkin"
+	tr.Options.Provider = "zipkin"
 	options.ProcessTracingOptions(map[string]*options.Options{"default": tr.Options}, nil)
 
 	ctx, span := NewChildSpan(nil, tr, "test")
@@ -85,7 +85,7 @@ func TestPrepareRequest(t *testing.T) {
 		t.Error("expected non-nill span")
 	}
 
-	tr.Options.TracerType = "zipkin"
+	tr.Options.Provider = "zipkin"
 	options.ProcessTracingOptions(map[string]*options.Options{"default": tr.Options}, nil)
 
 	_, sp = PrepareRequest(r, tr)
@@ -99,7 +99,7 @@ func TestFilterAttributes(t *testing.T) {
 	tr, _ := stdout.NewTracer(nil)
 	r, _ := http.NewRequest("GET", "http://example.com", nil)
 	_, sp := PrepareRequest(r, tr)
-	kvs := []kv.KeyValue{kv.String("testKey", "testValue")}
+	kvs := []label.KeyValue{label.String("testKey", "testValue")}
 	tr.Options.OmitTagsList = []string{"testKey2"}
 	tr.Options.OmitTags = map[string]bool{"testKey2": true}
 	SetAttributes(tr, sp, kvs...)

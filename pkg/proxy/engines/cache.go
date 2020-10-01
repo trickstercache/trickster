@@ -25,15 +25,15 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 
 	"github.com/golang/snappy"
-	"go.opentelemetry.io/otel/api/kv"
+	"go.opentelemetry.io/otel/label"
 )
 
 // QueryCache queries the cache for an HTTPDocument and returns it
@@ -52,7 +52,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	var bytes []byte
 	var err error
 
-	if c.Configuration().CacheType == "memory" {
+	if c.Configuration().Provider == "memory" {
 		mc := c.(cache.MemoryCache)
 		var ifc interface{}
 		ifc, lookupStatus, err = mc.RetrieveReference(key, true)
@@ -63,7 +63,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				nr = ranges
 			}
 
-			tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", lookupStatus.String()))
+			tspan.SetAttributes(rsc.Tracer, span, label.String("cache.status", lookupStatus.String()))
 
 			return d, lookupStatus, nr, err
 		}
@@ -71,7 +71,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		if ifc != nil {
 			d, _ = ifc.(*HTTPDocument)
 		} else {
-			tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", status.LookupStatusKeyMiss.String()))
+			tspan.SetAttributes(rsc.Tracer, span, label.String("cache.status", status.LookupStatusKeyMiss.String()))
 			return d, status.LookupStatusKeyMiss, ranges, err
 		}
 
@@ -85,7 +85,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				nr = ranges
 
 			}
-			tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", lookupStatus.String()))
+			tspan.SetAttributes(rsc.Tracer, span, label.String("cache.status", lookupStatus.String()))
 			return d, lookupStatus, nr, err
 		}
 
@@ -99,7 +99,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 
 		if inflate {
-			rsc.Logger.Debug("decompressing cached data", tl.Pairs{"cacheKey": key})
+			tl.Debug(rsc.Logger, "decompressing cached data", tl.Pairs{"cacheKey": key})
 			b, err := snappy.Decode(nil, bytes)
 			if err == nil {
 				bytes = b
@@ -107,11 +107,11 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 		_, err = d.UnmarshalMsg(bytes)
 		if err != nil {
-			rsc.Logger.Error("error unmarshaling cache document", tl.Pairs{
+			tl.Error(rsc.Logger, "error unmarshaling cache document", tl.Pairs{
 				"cacheKey": key,
 				"detail":   err.Error(),
 			})
-			tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", status.LookupStatusKeyMiss.String()))
+			tspan.SetAttributes(rsc.Tracer, span, label.String("cache.status", status.LookupStatusKeyMiss.String()))
 			return d, status.LookupStatusKeyMiss, ranges, err
 		}
 
@@ -144,7 +144,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 
 	}
-	tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", lookupStatus.String()))
+	tspan.SetAttributes(rsc.Tracer, span, label.String("cache.status", lookupStatus.String()))
 	return d, lookupStatus, delta, nil
 }
 
@@ -189,7 +189,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 	}
 
 	// for memory cache, don't serialize the document, since we can retrieve it by reference.
-	if c.Configuration().CacheType == "memory" {
+	if c.Configuration().Provider == "memory" {
 		mc := c.(cache.MemoryCache)
 
 		if d != nil {
@@ -210,14 +210,14 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 	// for non-memory, we have to seralize the document to a byte slice to store
 	bytes, err = d.MarshalMsg(nil)
 	if err != nil {
-		rsc.Logger.Error("error marshaling cache document", tl.Pairs{
+		tl.Error(rsc.Logger, "error marshaling cache document", tl.Pairs{
 			"cacheKey": key,
 			"detail":   err.Error(),
 		})
 	}
 
 	if compress {
-		rsc.Logger.Debug("compressing cache data", tl.Pairs{"cacheKey": key})
+		tl.Debug(rsc.Logger, "compressing cache data", tl.Pairs{"cacheKey": key})
 		bytes = append([]byte{1}, snappy.Encode(nil, bytes)...)
 	} else {
 		bytes = append([]byte{0}, bytes...)
@@ -229,7 +229,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 			span.AddEvent(
 				ctx,
 				"Cache Write Failure",
-				kv.String("Error", err.Error()),
+				label.String("Error", err.Error()),
 			)
 		}
 		return err
@@ -238,7 +238,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		span.AddEvent(
 			ctx,
 			"Cache Write",
-			kv.Int("bytesWritten", len(bytes)),
+			label.Int("bytesWritten", len(bytes)),
 		)
 	}
 	return nil
@@ -246,7 +246,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 }
 
 // DocumentFromHTTPResponse returns an HTTPDocument from the provided HTTP Response and Body
-func DocumentFromHTTPResponse(resp *http.Response, body []byte, cp *CachingPolicy, log *tl.Logger) *HTTPDocument {
+func DocumentFromHTTPResponse(resp *http.Response, body []byte, cp *CachingPolicy, logger interface{}) *HTTPDocument {
 	d := &HTTPDocument{}
 	d.StatusCode = resp.StatusCode
 	d.Status = resp.Status
@@ -267,7 +267,7 @@ func DocumentFromHTTPResponse(resp *http.Response, body []byte, cp *CachingPolic
 	}
 
 	if d.StatusCode == http.StatusPartialContent && body != nil && len(body) > 0 {
-		d.ParsePartialContentBody(resp, body, log)
+		d.ParsePartialContentBody(resp, body, logger)
 		d.FulfillContentBody()
 	} else {
 		d.SetBody(body)

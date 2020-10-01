@@ -30,19 +30,19 @@ import (
 )
 
 func TestLoadConfiguration(t *testing.T) {
-	a := []string{"-origin-type", "testing", "-origin-url", "http://prometheus:9090/test/path"}
+	a := []string{"-provider", "testing", "-origin-url", "http://prometheus:9090/test/path"}
 	// it should not error if config path is not set
 	conf, _, err := Load("trickster-test", "0", a)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if conf.Origins["default"].TimeseriesRetention != 1024 {
-		t.Errorf("expected 1024, got %d", conf.Origins["default"].TimeseriesRetention)
+	if conf.Backends["default"].TimeseriesRetention != 1024 {
+		t.Errorf("expected 1024, got %d", conf.Backends["default"].TimeseriesRetention)
 	}
 
-	if conf.Origins["default"].FastForwardTTL != time.Duration(15)*time.Second {
-		t.Errorf("expected 15, got %s", conf.Origins["default"].FastForwardTTL)
+	if conf.Backends["default"].FastForwardTTL != time.Duration(15)*time.Second {
+		t.Errorf("expected 15, got %s", conf.Backends["default"].FastForwardTTL)
 	}
 
 	if conf.Caches["default"].Index.ReapInterval != time.Duration(3)*time.Second {
@@ -59,19 +59,19 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 	}{
 		{ // Case 0
 			"../../testdata/test.missing-origin-url.conf",
-			`missing origin-url for origin "2"`,
+			`missing origin-url for backend "2"`,
 		},
 		{ // Case 1
 			"../../testdata/test.bad_origin_url.conf",
 			"first path segment in URL cannot contain colon",
 		},
 		{ // Case 2
-			"../../testdata/test.missing_origin_type.conf",
-			`missing origin-type for origin "test"`,
+			"../../testdata/test.missing_backend_provider.conf",
+			`missing provider for backend "test"`,
 		},
 		{ // Case 3
 			"../../testdata/test.bad-cache-name.conf",
-			`invalid cache name [test_fail] provided in origin config [test]`,
+			`invalid cache name [test_fail] provided in backend options [test]`,
 		},
 		{ // Case 4
 			"../../testdata/test.invalid-negative-cache-1.conf",
@@ -79,7 +79,7 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 		},
 		{ // Case 5
 			"../../testdata/test.invalid-negative-cache-2.conf",
-			`invalid negative cache config in default: 1212 is not a valid status code`,
+			`invalid negative cache config in default: 1212 is not >= 400 and < 600`,
 		},
 		{ // Case 6
 			"../../testdata/test.invalid-negative-cache-3.conf",
@@ -165,16 +165,16 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected test_file, got %s", conf.Logging.LogFile)
 	}
 
-	// Test Origins
+	// Test Backends
 
-	o, ok := conf.Origins["test"]
+	o, ok := conf.Backends["test"]
 	if !ok {
-		t.Errorf("unable to find origin config: %s", "test")
+		t.Errorf("unable to find backend options: %s", "test")
 		return
 	}
 
-	if o.OriginType != "test_type" {
-		t.Errorf("expected test_type, got %s", o.OriginType)
+	if o.Provider != "test_type" {
+		t.Errorf("expected test_type, got %s", o.Provider)
 	}
 
 	if o.CacheName != "test" {
@@ -205,12 +205,12 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected fast_forward_disable true, got %t", o.FastForwardDisable)
 	}
 
-	if o.BackfillToleranceSecs != 301 {
-		t.Errorf("expected 301, got %d", o.BackfillToleranceSecs)
+	if o.BackfillToleranceMS != 301000 {
+		t.Errorf("expected 301000, got %d", o.BackfillToleranceMS)
 	}
 
-	if o.TimeoutSecs != 37 {
-		t.Errorf("expected 37, got %d", o.TimeoutSecs)
+	if o.TimeoutMS != 37000 {
+		t.Errorf("expected 37000, got %d", o.TimeoutMS)
 	}
 
 	if o.IsDefault != true {
@@ -221,22 +221,22 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %d got %d", 23, o.MaxIdleConns)
 	}
 
-	if o.KeepAliveTimeoutSecs != 7 {
-		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeoutSecs)
+	if o.KeepAliveTimeoutMS != 7000 {
+		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeoutMS)
 	}
 
-	// MaxTTLSecs is 300, thus should override TimeseriesTTLSecs = 8666
-	if o.TimeseriesTTLSecs != 300 {
-		t.Errorf("expected 300, got %d", o.TimeseriesTTLSecs)
+	// MaxTTLMS is 300, thus should override TimeseriesTTLMS = 8666
+	if o.TimeseriesTTLMS != 300000 {
+		t.Errorf("expected 300000, got %d", o.TimeseriesTTLMS)
 	}
 
-	// MaxTTLSecs is 300, thus should override FastForwardTTLSecs = 382
-	if o.FastForwardTTLSecs != 300 {
-		t.Errorf("expected 300, got %d", o.FastForwardTTLSecs)
+	// MaxTTLMS is 300, thus should override FastForwardTTLMS = 382
+	if o.FastForwardTTLMS != 300000 {
+		t.Errorf("expected 300000, got %d", o.FastForwardTTLMS)
 	}
 
 	if o.TLS == nil {
-		t.Errorf("expected tls config for origin %s, got nil", "test")
+		t.Errorf("expected tls config for backend %s, got nil", "test")
 	}
 
 	if !o.TLS.InsecureSkipVerify {
@@ -267,16 +267,16 @@ func TestFullLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if c.CacheType != "redis" {
-		t.Errorf("expected redis, got %s", c.CacheType)
+	if c.Provider != "redis" {
+		t.Errorf("expected redis, got %s", c.Provider)
 	}
 
-	if c.Index.ReapIntervalSecs != 4 {
-		t.Errorf("expected 4, got %d", c.Index.ReapIntervalSecs)
+	if c.Index.ReapIntervalMS != 4000 {
+		t.Errorf("expected 4000, got %d", c.Index.ReapIntervalMS)
 	}
 
-	if c.Index.FlushIntervalSecs != 6 {
-		t.Errorf("expected 6, got %d", c.Index.FlushIntervalSecs)
+	if c.Index.FlushIntervalMS != 6000 {
+		t.Errorf("expected 6000, got %d", c.Index.FlushIntervalMS)
 	}
 
 	if c.Index.MaxSizeBytes != 536870913 {
@@ -295,8 +295,8 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 20, got %d", c.Index.MaxSizeBackoffObjects)
 	}
 
-	if c.Index.ReapIntervalSecs != 4 {
-		t.Errorf("expected 4, got %d", c.Index.ReapIntervalSecs)
+	if c.Index.ReapIntervalMS != 4000 {
+		t.Errorf("expected 4000, got %d", c.Index.ReapIntervalMS)
 	}
 
 	if c.Redis.ClientType != "test_redis_type" {
@@ -400,10 +400,10 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(conf.Origins) != 1 {
-		// we define a "test" cache, but never reference it by an origin,
+	if len(conf.Backends) != 1 {
+		// we define a "test" cache, but never reference it by a backend,
 		// so it should not make it into the running config
-		t.Errorf("expected %d, got %d", 1, len(conf.Origins))
+		t.Errorf("expected %d, got %d", 1, len(conf.Backends))
 	}
 
 	// Test Proxy Server
@@ -433,20 +433,20 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected '%s', got '%s'", d.DefaultLogFile, conf.Logging.LogFile)
 	}
 
-	// Test Origins
+	// Test Backends
 
-	o, ok := conf.Origins["test"]
+	o, ok := conf.Backends["test"]
 	if !ok {
-		t.Errorf("unable to find origin config: %s", "test")
+		t.Errorf("unable to find backend options: %s", "test")
 		return
 	}
 
-	if o.OriginType != "test" {
-		t.Errorf("expected %s origin type, got %s", "test", o.OriginType)
+	if o.Provider != "test" {
+		t.Errorf("expected %s backend provider, got %s", "test", o.Provider)
 	}
 
-	if o.CacheName != d.DefaultOriginCacheName {
-		t.Errorf("expected %s, got %s", d.DefaultOriginCacheName, o.CacheName)
+	if o.CacheName != d.DefaultBackendCacheName {
+		t.Errorf("expected %s, got %s", d.DefaultBackendCacheName, o.CacheName)
 	}
 
 	if o.Scheme != "http" {
@@ -461,28 +461,28 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected '%s', got '%s'", "", o.PathPrefix)
 	}
 
-	if o.TimeseriesRetentionFactor != d.DefaultOriginTRF {
-		t.Errorf("expected %d, got %d", d.DefaultOriginTRF, o.TimeseriesRetentionFactor)
+	if o.TimeseriesRetentionFactor != d.DefaultBackendTRF {
+		t.Errorf("expected %d, got %d", d.DefaultBackendTRF, o.TimeseriesRetentionFactor)
 	}
 
 	if o.FastForwardDisable {
 		t.Errorf("expected fast_forward_disable false, got %t", o.FastForwardDisable)
 	}
 
-	if o.BackfillToleranceSecs != d.DefaultBackfillToleranceSecs {
-		t.Errorf("expected %d, got %d", d.DefaultBackfillToleranceSecs, o.BackfillToleranceSecs)
+	if o.BackfillToleranceMS != d.DefaultBackfillToleranceMS {
+		t.Errorf("expected %d, got %d", d.DefaultBackfillToleranceMS, o.BackfillToleranceMS)
 	}
 
-	if o.TimeoutSecs != d.DefaultOriginTimeoutSecs {
-		t.Errorf("expected %d, got %d", d.DefaultOriginTimeoutSecs, o.TimeoutSecs)
+	if o.TimeoutMS != d.DefaultBackendTimeoutMS {
+		t.Errorf("expected %d, got %d", d.DefaultBackendTimeoutMS, o.TimeoutMS)
 	}
 
-	if o.TimeseriesTTLSecs != d.DefaultTimeseriesTTLSecs {
-		t.Errorf("expected %d, got %d", d.DefaultTimeseriesTTLSecs, o.TimeseriesTTLSecs)
+	if o.TimeseriesTTLMS != d.DefaultTimeseriesTTLMS {
+		t.Errorf("expected %d, got %d", d.DefaultTimeseriesTTLMS, o.TimeseriesTTLMS)
 	}
 
-	if o.FastForwardTTLSecs != d.DefaultFastForwardTTLSecs {
-		t.Errorf("expected %d, got %d", d.DefaultFastForwardTTLSecs, o.FastForwardTTLSecs)
+	if o.FastForwardTTLMS != d.DefaultFastForwardTTLMS {
+		t.Errorf("expected %d, got %d", d.DefaultFastForwardTTLMS, o.FastForwardTTLMS)
 	}
 
 	c, ok := conf.Caches["default"]
@@ -491,16 +491,16 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if c.CacheType != d.DefaultCacheType {
-		t.Errorf("expected %s, got %s", d.DefaultCacheType, c.CacheType)
+	if c.Provider != d.DefaultCacheProvider {
+		t.Errorf("expected %s, got %s", d.DefaultCacheProvider, c.Provider)
 	}
 
-	if c.Index.ReapIntervalSecs != d.DefaultCacheIndexReap {
-		t.Errorf("expected %d, got %d", d.DefaultCacheIndexReap, c.Index.ReapIntervalSecs)
+	if c.Index.ReapIntervalMS != d.DefaultCacheIndexReap {
+		t.Errorf("expected %d, got %d", d.DefaultCacheIndexReap, c.Index.ReapIntervalMS)
 	}
 
-	if c.Index.FlushIntervalSecs != d.DefaultCacheIndexFlush {
-		t.Errorf("expected %d, got %d", d.DefaultCacheIndexFlush, c.Index.FlushIntervalSecs)
+	if c.Index.FlushIntervalMS != d.DefaultCacheIndexFlush {
+		t.Errorf("expected %d, got %d", d.DefaultCacheIndexFlush, c.Index.FlushIntervalMS)
 	}
 
 	if c.Index.MaxSizeBytes != d.DefaultCacheMaxSizeBytes {
@@ -519,8 +519,8 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %d, got %d", d.DefaultMaxSizeBackoffObjects, c.Index.MaxSizeBackoffObjects)
 	}
 
-	if c.Index.ReapIntervalSecs != 3 {
-		t.Errorf("expected 3, got %d", c.Index.ReapIntervalSecs)
+	if c.Index.ReapIntervalMS != 3000 {
+		t.Errorf("expected 3000, got %d", c.Index.ReapIntervalMS)
 	}
 
 	if c.Redis.ClientType != d.DefaultRedisClientType {
@@ -651,7 +651,7 @@ func TestLoadConfigurationBadUrl(t *testing.T) {
 
 func TestLoadConfigurationBadArg(t *testing.T) {
 	const url = "http://0.0.0.0"
-	a := []string{"-origin-url", url, "-origin-type", "rpc", "-unknown-flag"}
+	a := []string{"-origin-url", url, "-provider", "rpc", "-unknown-flag"}
 	_, _, err := Load("trickster-test", "0", a)
 	if err == nil {
 		t.Error("expected error: flag provided but not defined: -unknown-flag")
@@ -698,6 +698,6 @@ func TestLoadEmptyArgs(t *testing.T) {
 	a := []string{}
 	_, _, err := Load("trickster-test", "0", a)
 	if err == nil {
-		t.Error("expected error: no valid origins configured")
+		t.Error("expected error: no valid backends configured")
 	}
 }

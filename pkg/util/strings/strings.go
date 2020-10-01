@@ -18,12 +18,14 @@
 package strings
 
 import (
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
-// IndexOfString returns the index of a string element in a given slice
-func IndexOfString(arr []string, val string) int {
+// IndexInSlice returns the index of a string element in a given slice
+func IndexInSlice(arr []string, val string) int {
 	for i, v := range arr {
 		if v == val {
 			return i
@@ -69,7 +71,10 @@ func CloneList(in []string) []string {
 
 // Equal returns true if the slices contain identical values in the identical order
 func Equal(s1, s2 []string) bool {
-	if len(s1) != len(s2) {
+	if s1 == nil && s2 == nil {
+		return true
+	}
+	if s1 == nil || s2 == nil || len(s1) != len(s2) {
 		return false
 	}
 	for i, v := range s1 {
@@ -98,6 +103,9 @@ func Unique(in []string) []string {
 	return out
 }
 
+// ErrKeyNotInMap represents an error for key not found in map
+var ErrKeyNotInMap = errors.New("key not found in map")
+
 // StringMap represents a map[string]string
 type StringMap map[string]string
 
@@ -111,4 +119,18 @@ func (m StringMap) String() string {
 	}
 	sb.WriteString("}")
 	return sb.String()
+}
+
+// GetInt returns an integer value from the map, if convertible
+// If not, an error is returned with a value of 0
+func (m StringMap) GetInt(key string) (int, error) {
+	value, ok := m[key]
+	if !ok {
+		return 0, ErrKeyNotInMap
+	}
+	i, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, err
+	}
+	return i, nil
 }

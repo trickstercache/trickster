@@ -18,8 +18,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"go.opentelemetry.io/otel/api/kv"
 	api "go.opentelemetry.io/otel/api/trace"
+	"go.opentelemetry.io/otel/label"
 )
 
 // Sampler decides whether a trace should be sampled and exported.
@@ -32,11 +32,10 @@ type Sampler interface {
 type SamplingParameters struct {
 	ParentContext   api.SpanContext
 	TraceID         api.ID
-	SpanID          api.SpanID
 	Name            string
 	HasRemoteParent bool
 	Kind            api.SpanKind
-	Attributes      []kv.KeyValue
+	Attributes      []label.KeyValue
 	Links           []api.Link
 }
 
@@ -53,7 +52,7 @@ const (
 // SamplingResult conveys a SamplingDecision and a set of Attributes.
 type SamplingResult struct {
 	Decision   SamplingDecision
-	Attributes []kv.KeyValue
+	Attributes []label.KeyValue
 }
 
 type probabilitySampler struct {
@@ -129,13 +128,29 @@ func NeverSample() Sampler {
 	return alwaysOffSampler{}
 }
 
-// AlwaysParentSample returns a Sampler that samples a trace only
-// if the parent span is sampled.
-// This Sampler is a passthrough to the ProbabilitySampler with
-// a fraction of value 0.
-func AlwaysParentSample() Sampler {
-	return &probabilitySampler{
-		traceIDUpperBound: 0,
-		description:       "AlwaysParentSampler",
+// ParentSample returns a Sampler that samples a trace only
+// if the the span has a parent span and it is sampled. If the span has
+// parent span but it is not sampled, neither will this span. If the span
+// does not have a parent the fallback Sampler is used to determine if the
+// span should be sampled.
+func ParentSample(fallback Sampler) Sampler {
+	return parentSampler{fallback}
+}
+
+type parentSampler struct {
+	fallback Sampler
+}
+
+func (ps parentSampler) ShouldSample(p SamplingParameters) SamplingResult {
+	if p.ParentContext.IsValid() {
+		if p.ParentContext.IsSampled() {
+			return SamplingResult{Decision: RecordAndSampled}
+		}
+		return SamplingResult{Decision: NotRecord}
 	}
+	return ps.fallback.ShouldSample(p)
+}
+
+func (ps parentSampler) Description() string {
+	return fmt.Sprintf("ParentOrElse{%s}", ps.fallback.Description())
 }

@@ -30,15 +30,15 @@ import (
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/locks"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 )
 
-const cacheType = "filesystem"
+const cacheProvider = "filesystem"
 const cacheKey = "cacheKey"
 
 func storeBenchmark(b *testing.B) Cache {
-	dir, _ := ioutil.TempDir("/tmp", cacheType)
-	cacheConfig := co.Options{CacheType: cacheType,
+	dir, _ := ioutil.TempDir("/tmp", cacheProvider)
+	cacheConfig := co.Options{Provider: cacheProvider,
 		Filesystem: &flo.Options{CachePath: dir}, Index: &io.Options{ReapInterval: time.Second}}
 	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
@@ -60,11 +60,11 @@ func storeBenchmark(b *testing.B) Cache {
 }
 
 func newCacheConfig(t *testing.T) co.Options {
-	dir, err := ioutil.TempDir("/tmp", cacheType)
+	dir, err := ioutil.TempDir("/tmp", cacheProvider)
 	if err != nil {
 		t.Fatalf("could not create temp directory (%s): %s", dir, err)
 	}
-	return co.Options{CacheType: cacheType, Filesystem: &flo.Options{CachePath: dir},
+	return co.Options{Provider: cacheProvider, Filesystem: &flo.Options{CachePath: dir},
 		Index: &io.Options{ReapInterval: time.Second}}
 }
 
@@ -73,8 +73,8 @@ func TestConfiguration(t *testing.T) {
 	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
 	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	cfg := fc.Configuration()
-	if cfg.CacheType != cacheType {
-		t.Fatalf("expected %s got %s", cacheType, cfg.CacheType)
+	if cfg.Provider != cacheProvider {
+		t.Fatalf("expected %s got %s", cacheProvider, cfg.Provider)
 	}
 }
 

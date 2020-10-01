@@ -19,7 +19,7 @@ package options
 import (
 	"io/ioutil"
 
-	"github.com/tricksterproxy/trickster/pkg/util/strings"
+	strutil "github.com/tricksterproxy/trickster/pkg/util/strings"
 )
 
 // Options is a collection of TLS-related client and server configurations
@@ -44,8 +44,8 @@ type Options struct {
 	ClientKeyPath string `toml:"client_key_path"`
 }
 
-// NewOptions will return a *Options with the default settings
-func NewOptions() *Options {
+// New will return a *Options with the default settings
+func New() *Options {
 	return &Options{
 		FullChainCertPath: "",
 		PrivateKeyPath:    "",
@@ -77,7 +77,7 @@ func (o *Options) Equal(o2 *Options) bool {
 	return o.FullChainCertPath == o2.FullChainCertPath &&
 		o.PrivateKeyPath == o2.PrivateKeyPath &&
 		o.InsecureSkipVerify == o2.InsecureSkipVerify &&
-		strings.Equal(o.CertificateAuthorityPaths, o2.CertificateAuthorityPaths) &&
+		strutil.Equal(o.CertificateAuthorityPaths, o2.CertificateAuthorityPaths) &&
 		o.ClientCertPath == o2.ClientCertPath &&
 		o.ClientKeyPath == o2.ClientKeyPath
 }

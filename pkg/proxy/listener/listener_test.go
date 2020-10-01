@@ -31,12 +31,12 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/tricksterproxy/trickster/pkg/config"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	ph "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/stdout"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
 )
 
@@ -117,7 +117,7 @@ func TestNewListenerErr(t *testing.T) {
 func TestNewListenerTLS(t *testing.T) {
 
 	c := config.NewConfig()
-	oc := c.Origins["default"]
+	oc := c.Backends["default"]
 	c.Frontend.ServeTLS = true
 
 	tc := oc.TLS
@@ -157,7 +157,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 	es := httptest.NewServer(http.HandlerFunc(handler))
 	defer es.Close()
 
-	_, _, err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-origin-type", "prometheus"})
+	_, _, err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-provider", "prometheus"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

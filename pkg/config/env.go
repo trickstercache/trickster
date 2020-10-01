@@ -24,7 +24,7 @@ import (
 const (
 	// Environment variables
 	evOriginURL   = "TRK_ORIGIN_URL"
-	evOriginType  = "TRK_ORIGIN_TYPE"
+	evProvider  = "TRK_ORIGIN_TYPE"
 	evProxyPort   = "TRK_PROXY_PORT"
 	evMetricsPort = "TRK_METRICS_PORT"
 	evLogLevel    = "TRK_LOG_LEVEL"
@@ -36,8 +36,8 @@ func (c *Config) loadEnvVars() {
 		c.providedOriginURL = x
 	}
 
-	if x := os.Getenv(evOriginType); x != "" {
-		c.providedOriginType = x
+	if x := os.Getenv(evProvider); x != "" {
+		c.providedProvider = x
 	}
 
 	// Proxy Port

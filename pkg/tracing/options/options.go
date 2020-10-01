@@ -27,7 +27,7 @@ import (
 // Options is a Tracing Options collection
 type Options struct {
 	Name          string            `toml:"-"`
-	TracerType    string            `toml:"tracer_type"`
+	Provider      string            `toml:"provider"`
 	ServiceName   string            `toml:"service_name"`
 	CollectorURL  string            `toml:"collector_url"`
 	CollectorUser string            `toml:"collector_user"`
@@ -44,10 +44,10 @@ type Options struct {
 	attachTagsToSpan bool
 }
 
-// NewOptions returns a new *Options with the default values
-func NewOptions() *Options {
+// New returns a new *Options with the default values
+func New() *Options {
 	return &Options{
-		TracerType:    defaults.DefaultTracerType,
+		Provider:      defaults.DefaultTracerProvider,
 		ServiceName:   defaults.DefaultTracerServiceName,
 		StdOutOptions: &stdoutopts.Options{},
 		JaegerOptions: &jaegeropts.Options{},
@@ -66,7 +66,7 @@ func (o *Options) Clone() *Options {
 	}
 	return &Options{
 		Name:             o.Name,
-		TracerType:       o.TracerType,
+		Provider:         o.Provider,
 		ServiceName:      o.ServiceName,
 		CollectorURL:     o.CollectorURL,
 		CollectorUser:    o.CollectorUser,
@@ -94,8 +94,8 @@ func ProcessTracingOptions(mo map[string]*Options, metadata *toml.MetaData) {
 			if !metadata.IsDefined("tracing", k, "service_name") {
 				v.ServiceName = defaults.DefaultTracerServiceName
 			}
-			if !metadata.IsDefined("tracing", k, "tracer_type") {
-				v.TracerType = defaults.DefaultTracerType
+			if !metadata.IsDefined("tracing", k, "provider") {
+				v.Provider = defaults.DefaultTracerProvider
 			}
 		}
 		v.generateOmitTags()
@@ -119,7 +119,7 @@ func (o *Options) AttachTagsToSpan() bool {
 }
 
 func (o *Options) setAttachTags() {
-	if o.TracerType == "zipkin" && o.Tags != nil && len(o.Tags) > 0 {
+	if o.Provider == "zipkin" && o.Tags != nil && len(o.Tags) > 0 {
 		o.attachTagsToSpan = true
 	}
 }

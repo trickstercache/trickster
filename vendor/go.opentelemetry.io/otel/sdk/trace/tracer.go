@@ -19,11 +19,12 @@ import (
 
 	apitrace "go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/internal/trace/parent"
+	"go.opentelemetry.io/otel/sdk/instrumentation"
 )
 
 type tracer struct {
-	provider *Provider
-	name     string
+	provider               *Provider
+	instrumentationLibrary instrumentation.Library
 }
 
 var _ apitrace.Tracer = &tracer{}
@@ -64,15 +65,4 @@ func (tr *tracer) Start(ctx context.Context, name string, o ...apitrace.StartOpt
 	ctx, end := startExecutionTracerTask(ctx, name)
 	span.executionTracerTaskEnd = end
 	return apitrace.ContextWithSpan(ctx, span), span
-}
-
-func (tr *tracer) WithSpan(ctx context.Context, name string, body func(ctx context.Context) error, opts ...apitrace.StartOption) error {
-	ctx, span := tr.Start(ctx, name, opts...)
-	defer span.End()
-
-	if err := body(ctx); err != nil {
-		// TODO: set event with boolean attribute for error.
-		return err
-	}
-	return nil
 }

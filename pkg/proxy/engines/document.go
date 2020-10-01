@@ -25,11 +25,11 @@ import (
 	"strings"
 	"sync"
 
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	txe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 //go:generate msgp
@@ -80,7 +80,7 @@ func (d *HTTPDocument) Size() int {
 		i += d.CachingPolicy.Msgsize()
 	}
 	if d.timeseries != nil {
-		i += d.timeseries.Size()
+		i += int(d.timeseries.Size())
 	}
 	return i
 }
@@ -122,7 +122,7 @@ func (d *HTTPDocument) LoadRangeParts() {
 }
 
 // ParsePartialContentBody parses a Partial Content response body into 0 or more discrete parts
-func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte, log *tl.Logger) {
+func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte, logger interface{}) {
 
 	ct := resp.Header.Get(headers.NameContentType)
 	if cr := resp.Header.Get(headers.NameContentRange); cr != "" {
@@ -165,7 +165,7 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte,
 			d.RangeParts.Compress()
 			d.Ranges = d.RangeParts.Ranges()
 		} else {
-			log.Error("unable to parse multipart range response body", tl.Pairs{"detail": err.Error})
+			tl.Error(logger, "unable to parse multipart range response body", tl.Pairs{"detail": err.Error})
 		}
 	} else {
 		if !strings.HasPrefix(ct, headers.ValueMultipartByteRanges) {

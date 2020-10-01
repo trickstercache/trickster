@@ -19,13 +19,13 @@ package proxy
 import (
 	"testing"
 
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
 )
 
 func TestNewHTTPClient(t *testing.T) {
 
-	// test invalid origin config
+	// test invalid backend options
 	c, err := NewHTTPClient(nil)
 	if c != nil {
 		t.Errorf("expected nil client, got %v", c)
@@ -45,28 +45,28 @@ func TestNewHTTPClient(t *testing.T) {
 	caFileInvalid1 := caFile + ".invalid"
 	const caFileInvalid2 = "../../testdata/test.06.cert.pem"
 
-	// test good originconfig, no CA
-	oc := oo.NewOptions()
+	// test good backend config, no CA
+	oc := oo.New()
 	_, err = NewHTTPClient(oc)
 	if err != nil {
 		t.Error(err)
 	}
 
-	// test good originconfig, 1 good CA
+	// test good backend config, 1 good CA
 	oc.TLS.CertificateAuthorityPaths = []string{caFile}
 	_, err = NewHTTPClient(oc)
 	if err != nil {
 		t.Error(err)
 	}
 
-	// test good originconfig, 1 bad CA (file not found)
+	// test good backend config, 1 bad CA (file not found)
 	oc.TLS.CertificateAuthorityPaths = []string{caFileInvalid1}
 	_, err = NewHTTPClient(oc)
 	if err == nil {
 		t.Errorf("expected error for no such file or directory on %s", caFileInvalid1)
 	}
 
-	// test good originconfig, 1 bad CA (junk content)
+	// test good backend config, 1 bad CA (junk content)
 	oc.TLS.CertificateAuthorityPaths = []string{caFileInvalid2}
 	_, err = NewHTTPClient(oc)
 	if err == nil {

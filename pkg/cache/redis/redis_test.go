@@ -26,7 +26,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	"github.com/tricksterproxy/trickster/pkg/locks"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 
 	"github.com/alicebob/miniredis"
 )
@@ -65,7 +65,7 @@ func setupRedisCache(ct clientType) (*Cache, func()) {
 	close := func() {
 		s.Close()
 	}
-	cacheConfig := &co.Options{CacheType: "redis", Redis: rcfg}
+	cacheConfig := &co.Options{Provider: "redis", Redis: rcfg}
 	conf.Caches = map[string]*co.Options{"default": cacheConfig}
 
 	return &Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}, close
@@ -74,7 +74,7 @@ func setupRedisCache(ct clientType) (*Cache, func()) {
 func TestClientSelectionSentinel(t *testing.T) {
 	const expected1 = "ERR unknown command `sentinel`"
 	args := []string{"-config", "../../../testdata/test.redis-sentinel.conf",
-		"-origin-url", "http://0.0.0.0", "-origin-type", "rpc", "-log-level", "info"}
+		"-origin-url", "http://0.0.0.0", "-provider", "rpc", "-log-level", "info"}
 	conf, _, err := config.Load("trickster", "test", args)
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +152,7 @@ func TestClientOpts(t *testing.T) {
 func TestClientSelectionCluster(t *testing.T) {
 	expected1 := "invalid endpoint"
 	args := []string{"-config", "../../../testdata/test.redis-cluster.conf",
-		"-origin-url", "http://0.0.0.0", "-origin-type", "rpc", "-log-level", "info"}
+		"-origin-url", "http://0.0.0.0", "-provider", "rpc", "-log-level", "info"}
 	conf, _, err := config.Load("trickster", "test", args)
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +175,7 @@ func TestClientSelectionCluster(t *testing.T) {
 func TestClientSelectionStandard(t *testing.T) {
 	expected1 := "invalid endpoint"
 	args := []string{"-config", "../../../testdata/test.redis-standard.conf",
-		"-origin-url", "http://0.0.0.0", "-origin-type", "rpc", "-log-level", "info"}
+		"-origin-url", "http://0.0.0.0", "-provider", "rpc", "-log-level", "info"}
 	conf, _, err := config.Load("trickster", "test", args)
 	if err != nil {
 		t.Fatal(err)

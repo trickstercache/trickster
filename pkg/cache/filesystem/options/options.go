@@ -26,7 +26,7 @@ type Options struct {
 	CachePath string `toml:"cache_path"`
 }
 
-// NewOptions returns a new Filesystem Options Reference with default values set
-func NewOptions() *Options {
+// New returns a new Filesystem Options Reference with default values set
+func New() *Options {
 	return &Options{CachePath: d.DefaultCachePath}
 }

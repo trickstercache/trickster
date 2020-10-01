@@ -29,16 +29,16 @@ import (
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/locks"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 )
 
-const cacheType = "bbolt"
+const cacheProvider = "bbolt"
 const cacheKey = "cacheKey"
 
 func newCacheConfig() co.Options {
 	const testDbPath = "/tmp/test.db"
 	os.Remove(testDbPath)
-	return co.Options{CacheType: cacheType, BBolt: &bo.Options{
+	return co.Options{Provider: cacheProvider, BBolt: &bo.Options{
 		Filename: testDbPath, Bucket: "trickster_test"}, Index: &io.Options{ReapInterval: time.Second}}
 }
 
@@ -46,9 +46,9 @@ func storeBenchmark(b *testing.B) Cache {
 	testDbPath := "/tmp/test.db"
 	os.Remove(testDbPath)
 	cacheConfig := co.Options{
-		CacheType: cacheType,
-		BBolt:     &bo.Options{Filename: testDbPath, Bucket: "trickster_test"},
-		Index:     &io.Options{ReapInterval: time.Second},
+		Provider: cacheProvider,
+		BBolt:    &bo.Options{Filename: testDbPath, Bucket: "trickster_test"},
+		Index:    &io.Options{ReapInterval: time.Second},
 	}
 	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	defer os.RemoveAll(cacheConfig.BBolt.Filename)
@@ -72,8 +72,8 @@ func TestConfiguration(t *testing.T) {
 	cacheConfig := newCacheConfig()
 	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	cfg := bc.Configuration()
-	if cfg.CacheType != cacheType {
-		t.Errorf("expected %s got %s", cacheType, cfg.CacheType)
+	if cfg.Provider != cacheProvider {
+		t.Errorf("expected %s got %s", cacheProvider, cfg.Provider)
 	}
 }
 

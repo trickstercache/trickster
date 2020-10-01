@@ -25,15 +25,15 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
-	"github.com/tricksterproxy/trickster/pkg/util/log"
 
-	"go.opentelemetry.io/otel/api/kv"
+	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/api/trace"
 )
 
@@ -164,7 +164,7 @@ func handleCacheRevalidation(pr *proxyRequest) error {
 			span.AddEvent(
 				ctx,
 				"Complete",
-				kv.String("result", reval),
+				label.String("result", reval),
 			)
 			span.End()
 		}()
@@ -279,7 +279,7 @@ func handleUpstreamTransactions(pr *proxyRequest) error {
 func handlePCF(pr *proxyRequest) error {
 
 	rsc := request.GetResources(pr.Request)
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 
 	pr.isPCF = true
 	pcfResult, pcfExists := reqs.Load(pr.key)
@@ -297,7 +297,7 @@ func handlePCF(pr *proxyRequest) error {
 
 	ctx, span := tspan.NewChildSpan(pr.upstreamRequest.Context(), rsc.Tracer, "FetchObject")
 	if span != nil {
-		span.SetAttributes(kv.Bool("isPCF", true))
+		span.SetAttributes(label.Bool("isPCF", true))
 		defer span.End()
 	}
 	pr.upstreamRequest = pr.upstreamRequest.WithContext(ctx)
@@ -314,7 +314,7 @@ func handlePCF(pr *proxyRequest) error {
 		// Blocks until server completes
 
 		pr.cachingPolicy.Merge(GetResponseCachingPolicy(pr.upstreamResponse.StatusCode,
-			rsc.OriginConfig.NegativeCache, pr.upstreamResponse.Header))
+			rsc.BackendOptions.NegativeCache, pr.upstreamResponse.Header))
 		pr.determineCacheability()
 
 		go func() {
@@ -377,7 +377,7 @@ func init() {
 func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, status.LookupStatus) {
 
 	rsc := request.GetResources(r)
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 	cc := rsc.CacheClient
 
 	pr := newProxyRequest(r, w)
@@ -424,11 +424,11 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		if f, ok := cacheResponseHandlers[pr.cacheStatus]; ok {
 			f(pr)
 		} else {
-			pr.Logger.Warn("unhandled cache lookup response", log.Pairs{"lookupStatus": pr.cacheStatus})
+			tl.Warn(pr.Logger, "unhandled cache lookup response", tl.Pairs{"lookupStatus": pr.cacheStatus})
 			return nil, status.LookupStatusProxyOnly
 		}
 	} else {
-		pr.Logger.Error("cache lookup error", log.Pairs{"detail": err.Error()})
+		tl.Error(pr.Logger, "cache lookup error", tl.Pairs{"detail": err.Error()})
 		pr.cacheDocument = nil
 		pr.cacheStatus = status.LookupStatusKeyMiss
 		handleCacheKeyMiss(pr)

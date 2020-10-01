@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
@@ -36,11 +37,10 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
-	"github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
-	"go.opentelemetry.io/otel/api/kv"
-	othttptrace "go.opentelemetry.io/otel/plugin/httptrace"
+	othttptrace "go.opentelemetry.io/contrib/instrumentation/net/http/httptrace"
+	"go.opentelemetry.io/otel/label"
 )
 
 // Reqs is for Progressive Collapsed Forwarding
@@ -53,7 +53,7 @@ const HTTPBlockSize = 32 * 1024
 func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 
 	rsc := request.GetResources(r)
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 
 	start := time.Now()
 
@@ -140,7 +140,7 @@ func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer 
 func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) {
 
 	rsc := request.GetResources(r)
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 
 	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "PrepareFetchReader")
 	if span != nil {
@@ -180,7 +180,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	resp, err := oc.HTTPClient.Do(r)
 	if err != nil {
-		rsc.Logger.Error("error downloading url", log.Pairs{"url": r.URL.String(), "detail": err.Error()})
+		tl.Error(rsc.Logger, "error downloading url", tl.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		// if there is an err and the response is nil, the server could not be reached
 		// so make a 502 for the downstream response
 		if resp == nil {
@@ -195,8 +195,8 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 			doSpan.AddEvent(
 				ctx,
 				"Failure",
-				kv.String("error", err.Error()),
-				kv.Int("httpStatus", resp.StatusCode),
+				label.String("error", err.Error()),
+				label.Int("httpStatus", resp.StatusCode),
 			)
 			doSpan.SetStatus(tracing.HTTPToCode(resp.StatusCode), "")
 		}
@@ -217,10 +217,10 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		d, err := http.ParseTime(date)
 		if err == nil {
 			if offset := time.Since(d); time.Duration(math.Abs(float64(offset))) > time.Minute {
-				rsc.Logger.WarnOnce("clockoffset."+oc.Name,
+				tl.WarnOnce(rsc.Logger, "clockoffset."+oc.Name,
 					"clock offset between trickster host and origin is high and may cause data anomalies",
-					log.Pairs{
-						"originName":    oc.Name,
+					tl.Pairs{
+						"backendName":    oc.Name,
 						"tricksterTime": strconv.FormatInt(d.Add(offset).Unix(), 10),
 						"originTime":    strconv.FormatInt(d.Unix(), 10),
 						"offset":        strconv.FormatInt(int64(offset.Seconds()), 10) + "s",
@@ -249,9 +249,11 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 }
 
 // Respond sends an HTTP Response down to the requesting client
-func Respond(w io.Writer, code int, header http.Header, body []byte) {
+func Respond(w io.Writer, code int, header http.Header, body io.Reader) {
 	PrepareResponseWriter(w, code, header)
-	w.Write(body)
+	if body != nil {
+		io.Copy(w, body)
+	}
 }
 
 func setStatusHeader(httpStatus int, header http.Header) status.LookupStatus {
@@ -268,15 +270,15 @@ func recordResults(r *http.Request, engine string, cacheStatus status.LookupStat
 
 	rsc := request.GetResources(r)
 	pc := rsc.PathConfig
-	oc := rsc.OriginConfig
+	oc := rsc.BackendOptions
 
 	status := cacheStatus.String()
 
 	if pc != nil && !pc.NoMetrics {
 		httpStatus := strconv.Itoa(statusCode)
-		metrics.ProxyRequestStatus.WithLabelValues(oc.Name, oc.OriginType, r.Method, status, httpStatus, path).Inc()
+		metrics.ProxyRequestStatus.WithLabelValues(oc.Name, oc.Provider, r.Method, status, httpStatus, path).Inc()
 		if elapsed > 0 {
-			metrics.ProxyRequestDuration.WithLabelValues(oc.Name, oc.OriginType,
+			metrics.ProxyRequestDuration.WithLabelValues(oc.Name, oc.Provider,
 				r.Method, status, httpStatus, path).Observe(elapsed)
 		}
 	}

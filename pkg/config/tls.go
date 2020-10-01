@@ -19,7 +19,7 @@ package config
 import (
 	"crypto/tls"
 
-	origins "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 )
 
 // TLSCertConfig returns the crypto/tls configuration object with a list of name-bound
@@ -29,8 +29,8 @@ func (c *Config) TLSCertConfig() (*tls.Config, error) {
 	if !c.Frontend.ServeTLS {
 		return nil, nil
 	}
-	to := []*origins.Options{}
-	for _, oc := range c.Origins {
+	to := []*bo.Options{}
+	for _, oc := range c.Backends {
 		if oc.TLS.ServeTLS {
 			to = append(to, oc)
 		}

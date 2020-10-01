@@ -28,7 +28,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/config"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 )
 
 func TestReloadHandleFunc(t *testing.T) {
@@ -52,7 +52,7 @@ func TestReloadHandleFunc(t *testing.T) {
 	defer os.Remove(testFile)
 
 	cfg, _, _ := config.Load("testing", "testing", []string{"-config", testFile})
-	cfg.ReloadConfig.RateLimitSecs = 0
+	cfg.ReloadConfig.RateLimitMS = 0
 	log := tl.ConsoleLogger("info")
 	w := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "/", nil)

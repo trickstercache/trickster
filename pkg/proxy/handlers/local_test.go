@@ -22,17 +22,17 @@ import (
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 func TestHandleLocalResponse(t *testing.T) {
 
 	_, _, err := config.Load("trickster-test", "test",
-		[]string{"-origin-url", "http://1.2.3.4", "-origin-type", "prometheus"})
+		[]string{"-origin-url", "http://1.2.3.4", "-provider", "prometheus"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -80,7 +80,7 @@ func TestHandleLocalResponse(t *testing.T) {
 func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 
 	_, _, err := config.Load("trickster-test", "test",
-		[]string{"-origin-url", "http://1.2.3.4", "-origin-type", "prometheus"})
+		[]string{"-origin-url", "http://1.2.3.4", "-provider", "prometheus"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -128,7 +128,7 @@ func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 func TestHandleLocalResponseNoPathConfig(t *testing.T) {
 
 	_, _, err := config.Load("trickster-test", "test",
-		[]string{"-origin-url", "http://1.2.3.4", "-origin-type", "prometheus"})
+		[]string{"-origin-url", "http://1.2.3.4", "-provider", "prometheus"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

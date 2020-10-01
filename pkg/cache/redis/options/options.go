@@ -66,8 +66,8 @@ type Options struct {
 	IdleCheckFrequencyMS int `toml:"idle_check_frequency_ms"`
 }
 
-// NewOptions returns a new Redis Options Reference with default values set
-func NewOptions() *Options {
+// New returns a new Redis Options Reference with default values set
+func New() *Options {
 	return &Options{
 		ClientType: d.DefaultRedisClientType,
 		Protocol:   d.DefaultRedisProtocol,

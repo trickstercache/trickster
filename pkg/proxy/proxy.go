@@ -26,7 +26,7 @@ import (
 	"net/http"
 	"time"
 
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 )
 
 // NewHTTPClient returns an HTTP client configured to the specifications of the
@@ -83,7 +83,7 @@ func NewHTTPClient(oc *oo.Options) (*http.Client, error) {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
-			Dial:                (&net.Dialer{KeepAlive: time.Duration(oc.KeepAliveTimeoutSecs) * time.Second}).Dial,
+			Dial:                (&net.Dialer{KeepAlive: time.Duration(oc.KeepAliveTimeoutMS) * time.Millisecond}).Dial,
 			MaxIdleConns:        oc.MaxIdleConns,
 			MaxIdleConnsPerHost: oc.MaxIdleConns,
 			TLSClientConfig:     TLSConfig,

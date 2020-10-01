@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"testing"
 
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 )
 

@@ -31,7 +31,7 @@ import (
 var ErrKNF = errors.New("key not found in cache")
 
 // Cache is the interface for the supported caching fabrics
-// When making new cache types, Retrieve() must return an error on cache miss
+// When making new cache providers, Retrieve() must return an error on cache miss
 type Cache interface {
 	Connect() error
 	Store(cacheKey string, data []byte, ttl time.Duration) error

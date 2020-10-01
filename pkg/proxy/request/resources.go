@@ -23,38 +23,37 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/context"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	"github.com/tricksterproxy/trickster/pkg/backends"
+	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 )
 
 // Resources is a collection of resources a Trickster request would need to fulfill the client request
 // This is stored in the client request's context for use by request handers.
 type Resources struct {
-	OriginConfig      *oo.Options
+	BackendOptions      *oo.Options
 	PathConfig        *po.Options
 	CacheConfig       *co.Options
 	NoLock            bool
 	CacheClient       cache.Cache
-	OriginClient      origins.Client
+	BackendClient      backends.Client
 	AlternateCacheTTL time.Duration
 	TimeRangeQuery    *timeseries.TimeRangeQuery
 	Tracer            *tracing.Tracer
-	Logger            *tl.Logger
+	Logger            interface{}
 }
 
 // Clone returns an exact copy of the subject Resources collection
 func (r Resources) Clone() *Resources {
 	return &Resources{
-		OriginConfig:      r.OriginConfig,
+		BackendOptions:      r.BackendOptions,
 		PathConfig:        r.PathConfig,
 		CacheConfig:       r.CacheConfig,
 		NoLock:            r.NoLock,
 		CacheClient:       r.CacheClient,
-		OriginClient:      r.OriginClient,
+		BackendClient:      r.BackendClient,
 		AlternateCacheTTL: r.AlternateCacheTTL,
 		TimeRangeQuery:    r.TimeRangeQuery,
 		Tracer:            r.Tracer,
@@ -64,14 +63,14 @@ func (r Resources) Clone() *Resources {
 
 // NewResources returns a new Resources collection based on the provided inputs
 func NewResources(oo *oo.Options, po *po.Options, co *co.Options,
-	c cache.Cache, client origins.Client, t *tracing.Tracer,
-	logger *tl.Logger) *Resources {
+	c cache.Cache, client backends.Client, t *tracing.Tracer,
+	logger interface{}) *Resources {
 	return &Resources{
-		OriginConfig: oo,
+		BackendOptions: oo,
 		PathConfig:   po,
 		CacheConfig:  co,
 		CacheClient:  c,
-		OriginClient: client,
+		BackendClient: client,
 		Logger:       logger,
 		Tracer:       t,
 	}

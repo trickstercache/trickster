@@ -20,9 +20,25 @@ package timeseries
 
 import "time"
 
+// Second is 1B, because 1B Nanoseconds == 1 Second
+const Second = 1000000000
+
 // FastForwardUserDisableFlag is a string that is checked to determine if Fast Forward
 // should be selectively disabled for the provided query
 const FastForwardUserDisableFlag = "trickster-fast-forward:off"
+
+// BackfillToleranceFlag is a string that is checked to determine if Backfill Tolerance
+// should be adjusted for the provided query
+const BackfillToleranceFlag = "trickster-backfill-tolerance:"
+
+type timeSeriesCtxVal int
+
+const (
+	// TimeRangeQueryCtx is a unique Context identifier for Time Range Query information
+	TimeRangeQueryCtx timeSeriesCtxVal = iota
+	// RequestOptionsCtx is a unique Context identifier for Request Options information
+	RequestOptionsCtx
+)
 
 // Timeseries represents a Response Object from a Timeseries Database
 type Timeseries interface {
@@ -31,17 +47,18 @@ type Timeseries interface {
 	// Extents should return the list of time Extents having data present in the Timeseries
 	Extents() ExtentList
 	// TimeStampCount should return the number of unique timestamps across the timeseries
-	TimestampCount() int
+	TimestampCount() int64
 	// Step should return the Step Interval of the Timeseries
 	Step() time.Duration
-	// SetStep should update the Step Interval of the Timeseries
-	SetStep(time.Duration)
 	// Merge should merge the Timeseries collection into the source Timeseries
 	Merge(bool, ...Timeseries)
 	// Sort should uniqueify and sort all series by Timestamp
 	Sort()
-	// Clone should returns an exact duplicate source the Timeseries
+	// Clone should return an exact duplicate source the Timeseries
 	Clone() Timeseries
+	// CroppedClone should return an exact duplicate source the Timeseries, excluding any
+	// timestamps from the source Timeseries that fall outside of the provided extent
+	CroppedClone(Extent) Timeseries
 	// CropToRange should reduce time range of the Timeseries to the provided Extent
 	CropToRange(Extent)
 	// CropToSize should reduce time range of the Timeseries to the provided element size using
@@ -51,7 +68,9 @@ type Timeseries interface {
 	// SeriesCount returns the number of individual Series in the Timeseries object
 	SeriesCount() int
 	// ValueCount returns the count of all values across all Series in the Timeseries object
-	ValueCount() int
+	ValueCount() int64
 	// Size returns the approximate memory byte size of the timeseries object
-	Size() int
+	Size() int64
+	// SetTimeRangeQuery sets the TimeRangeQuery associated with the Timeseries
+	SetTimeRangeQuery(*TimeRangeQuery)
 }

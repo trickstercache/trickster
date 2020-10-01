@@ -18,7 +18,7 @@ package redis
 
 import "strconv"
 
-// clientType enumerates the methodologies for maintaining time series cache data
+// clientType enumerates the supported Redis client types
 type clientType int
 
 const (

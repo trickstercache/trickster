@@ -30,11 +30,12 @@ func TestNewTracer(t *testing.T) {
 		t.Error(err)
 	}
 
-	opt := options.NewOptions()
+	opt := options.New()
 	opt.Tags = map[string]string{"test": "test"}
 	opt.CollectorURL = "1.2.3.4:8000"
 	opt.CollectorUser = "abc"
 	opt.CollectorPass = "123"
+	opt.StdOutOptions.PrettyPrint = true
 
 	_, err = NewTracer(opt)
 	if err != nil {

@@ -22,8 +22,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 
-	"go.opentelemetry.io/otel/api/kv"
-	"go.opentelemetry.io/otel/exporters/trace/stdout"
+	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/exporters/stdout"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -34,22 +34,24 @@ func NewTracer(opts *options.Options) (*tracing.Tracer, error) {
 	var exp *stdout.Exporter
 	var err error
 
-	o := stdout.Options{PrettyPrint: false}
+	o := []stdout.Option{}
 
 	if opts == nil {
 		opts = &options.Options{
 			SampleRate:  1,
 			ServiceName: d.DefaultTracerServiceName,
-			TracerType:  "stdout",
+			Provider:    "stdout",
 		}
 	}
 
 	if opts != nil && opts.StdOutOptions != nil {
-		o.PrettyPrint = opts.StdOutOptions.PrettyPrint
+		if opts.StdOutOptions.PrettyPrint {
+			o = append(o, stdout.WithPrettyPrint())
+		}
 	}
 
 	// Create Basic Stdout Exporter
-	exp, err = stdout.NewExporter(o)
+	exp, err = stdout.NewExporter(o...)
 	if err != nil {
 		return nil, err
 	}
@@ -65,17 +67,17 @@ func NewTracer(opts *options.Options) (*tracing.Tracer, error) {
 		sampler = sdktrace.ProbabilitySampler(opts.SampleRate)
 	}
 
-	serviceKey := kv.String("service.name", opts.ServiceName)
+	serviceKey := label.String("service.name", opts.ServiceName)
 
-	var tags []kv.KeyValue
+	var tags []label.KeyValue
 	if opts.Tags != nil && len(opts.Tags) > 0 {
-		tags = make([]kv.KeyValue, 1, len(opts.Tags)+1)
+		tags = make([]label.KeyValue, 1, len(opts.Tags)+1)
 		tags[0] = serviceKey
 		for k, v := range opts.Tags {
-			tags = append(tags, kv.String(k, v))
+			tags = append(tags, label.String(k, v))
 		}
 	} else {
-		tags = []kv.KeyValue{serviceKey}
+		tags = []label.KeyValue{serviceKey}
 	}
 
 	tp, err := sdktrace.NewProvider(sdktrace.WithSyncer(exp),

@@ -17,15 +17,18 @@
 package options
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 
+	"github.com/BurntSushi/toml"
 	"github.com/tricksterproxy/trickster/pkg/cache/key"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
-	"github.com/tricksterproxy/trickster/pkg/util/strings"
-	ts "github.com/tricksterproxy/trickster/pkg/util/strings"
+	strutil "github.com/tricksterproxy/trickster/pkg/util/strings"
 )
 
 // Options defines a URL Path that is associated with an HTTP Handler
@@ -59,7 +62,7 @@ type Options struct {
 	// CollapsedForwardingName indicates 'basic' or 'progressive' Collapsed Forwarding to be used by this path.
 	CollapsedForwardingName string `toml:"collapsed_forwarding"`
 	// ReqRewriterName is the name of a configured Rewriter that will modify the request prior to
-	// processing by the origin client
+	// processing by the backend client
 	ReqRewriterName string `toml:"req_rewriter_name"`
 
 	// Handler is the HTTP Handler represented by the Path's HandlerName
@@ -71,7 +74,7 @@ type Options struct {
 	// CollapsedForwardingType is the typed representation of CollapsedForwardingName
 	CollapsedForwardingType forwarding.CollapsedForwardingType `toml:"-"`
 	// KeyHasher points to an optional function that hashes the cacheKey with a custom algorithm
-	// NOTE: This is used by some origins like IronDB, but is not configurable by end users.
+	// NOTE: This is used by some backends like IronDB, but is not configurable by end users.
 	// Due to a bug in the vendored toml package, this must be a slice to avoid panic
 	KeyHasher []key.HasherFunc `toml:"-"`
 	// Custom is a compiled list of any custom settings for this path from the config file
@@ -86,8 +89,11 @@ type Options struct {
 	HasCustomResponseBody bool `toml:"-"`
 }
 
-// NewOptions returns a newly-instantiated *Options
-func NewOptions() *Options {
+// Lookup is a map of Options
+type Lookup map[string]*Options
+
+// New returns a newly-instantiated path *Options
+func New() *Options {
 	return &Options{
 		Path:                    "/",
 		Methods:                 methods.CacheableHTTPMethods(),
@@ -111,16 +117,16 @@ func NewOptions() *Options {
 func (o *Options) Clone() *Options {
 	c := &Options{
 		Path: o.Path,
-		//		OriginConfig:            o.OriginConfig,
+		//		BackendOptions:            o.BackendOptions,
 		MatchTypeName:           o.MatchTypeName,
 		MatchType:               o.MatchType,
 		HandlerName:             o.HandlerName,
 		Handler:                 o.Handler,
-		RequestHeaders:          ts.CloneMap(o.RequestHeaders),
-		RequestParams:           ts.CloneMap(o.RequestParams),
+		RequestHeaders:          strutil.CloneMap(o.RequestHeaders),
+		RequestParams:           strutil.CloneMap(o.RequestParams),
 		ReqRewriter:             o.ReqRewriter,
 		ReqRewriterName:         o.ReqRewriterName,
-		ResponseHeaders:         ts.CloneMap(o.ResponseHeaders),
+		ResponseHeaders:         strutil.CloneMap(o.ResponseHeaders),
 		ResponseBody:            o.ResponseBody,
 		ResponseBodyBytes:       o.ResponseBodyBytes,
 		CollapsedForwardingName: o.CollapsedForwardingName,
@@ -188,5 +194,64 @@ func (o *Options) Merge(o2 *Options) {
 			o.ReqRewriter = o2.ReqRewriter
 		}
 	}
-	o.Custom = strings.Unique(o.Custom)
+	o.Custom = strutil.Unique(o.Custom)
+}
+
+var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params",
+	"cache_key_headers", "default_ttl_ms", "request_headers", "response_headers",
+	"response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding",
+	"req_rewriter_name",
+}
+
+func ProcessTOML(
+	backendName string,
+	metadata *toml.MetaData,
+	paths Lookup,
+	crw map[string]rewriter.RewriteInstructions,
+) error {
+	if metadata == nil {
+		return errors.New("invalid config metadata")
+	}
+	for k, p := range paths {
+		if metadata.IsDefined("backends", backendName, "paths", k, "req_rewriter_name") &&
+			p.ReqRewriterName != "" {
+			ri, ok := crw[p.ReqRewriterName]
+			if !ok {
+				return fmt.Errorf("invalid rewriter name %s in path %s of backend config %s",
+					p.ReqRewriterName, k, backendName)
+			}
+			p.ReqRewriter = ri
+		}
+		if len(p.Methods) == 0 {
+			p.Methods = []string{http.MethodGet, http.MethodHead}
+		}
+		p.Custom = make([]string, 0)
+		for _, pm := range pathMembers {
+			if metadata.IsDefined("backends", backendName, "paths", k, pm) {
+				p.Custom = append(p.Custom, pm)
+			}
+		}
+		if metadata.IsDefined("backends", backendName, "paths", k, "response_body") {
+			p.ResponseBodyBytes = []byte(p.ResponseBody)
+			p.HasCustomResponseBody = true
+		}
+		if metadata.IsDefined("backends", backendName, "paths", k, "collapsed_forwarding") {
+			if _, ok := forwarding.CollapsedForwardingTypeNames[p.CollapsedForwardingName]; !ok {
+				return fmt.Errorf("invalid collapsed_forwarding name: %s", p.CollapsedForwardingName)
+			}
+			p.CollapsedForwardingType =
+				forwarding.GetCollapsedForwardingType(p.CollapsedForwardingName)
+		} else {
+			p.CollapsedForwardingType = forwarding.CFTypeBasic
+		}
+		if mt, ok := matching.Names[strings.ToLower(p.MatchTypeName)]; ok {
+			p.MatchType = mt
+			p.MatchTypeName = p.MatchType.String()
+		} else {
+			p.MatchType = matching.PathMatchTypeExact
+			p.MatchTypeName = p.MatchType.String()
+		}
+		paths[p.Path+"-"+strings.Join(p.Methods, "-")] = p
+	}
+	return nil
 }
