@@ -16,6 +16,8 @@ Note: Trickster v1.1 is the production release, sourced from the [v1.1.x](https:
 
 Learn more below, and check out our [roadmap](./docs/roadmap.md) to find out what else is in the works.
 
+Note for Developers: Active work is being made on our 2.0 release, using the `v2.0.x` branch.
+
 ## HTTP Reverse Proxy Cache
 
 Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications like static file servers and web API's.
