@@ -1,4 +1,4 @@
-# github.com/AndreasBriese/bbloom v0.0.0-20190306092124-e2d15f34fcf9
+# github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96
 github.com/AndreasBriese/bbloom
 # github.com/BurntSushi/toml v0.3.1
 ## explicit
@@ -20,7 +20,7 @@ github.com/beorn7/perks/quantile
 github.com/cespare/xxhash
 # github.com/cespare/xxhash/v2 v2.1.1
 github.com/cespare/xxhash/v2
-# github.com/dgraph-io/badger v1.6.1
+# github.com/dgraph-io/badger v1.6.2
 ## explicit
 github.com/dgraph-io/badger
 github.com/dgraph-io/badger/options
@@ -61,25 +61,25 @@ github.com/golang/protobuf/ptypes
 github.com/golang/protobuf/ptypes/any
 github.com/golang/protobuf/ptypes/duration
 github.com/golang/protobuf/ptypes/timestamp
-# github.com/golang/snappy v0.0.1
+# github.com/golang/snappy v0.0.2
 ## explicit
 github.com/golang/snappy
 # github.com/gomodule/redigo v2.0.0+incompatible
 ## explicit
 github.com/gomodule/redigo/internal
 github.com/gomodule/redigo/redis
-# github.com/gorilla/handlers v1.5.0
+# github.com/gorilla/handlers v1.5.1
 ## explicit
 github.com/gorilla/handlers
 # github.com/gorilla/mux v1.8.0
 ## explicit
 github.com/gorilla/mux
-# github.com/influxdata/influxdb v1.8.2
+# github.com/influxdata/influxdb v1.8.3
 ## explicit
 github.com/influxdata/influxdb/pkg/testing/assert
 # github.com/matttproud/golang_protobuf_extensions v1.0.1
 github.com/matttproud/golang_protobuf_extensions/pbutil
-# github.com/onsi/ginkgo v1.14.0
+# github.com/onsi/ginkgo v1.14.1
 ## explicit
 # github.com/openzipkin/zipkin-go v0.2.3
 github.com/openzipkin/zipkin-go/model
@@ -94,7 +94,7 @@ github.com/prometheus/client_golang/prometheus/internal
 github.com/prometheus/client_golang/prometheus/promhttp
 # github.com/prometheus/client_model v0.2.0
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.13.0
+# github.com/prometheus/common v0.14.0
 ## explicit
 github.com/prometheus/common/expfmt
 github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg
@@ -173,7 +173,7 @@ go.opentelemetry.io/otel/sdk/metric/selector/simple
 go.opentelemetry.io/otel/sdk/resource
 go.opentelemetry.io/otel/sdk/trace
 go.opentelemetry.io/otel/sdk/trace/internal
-# golang.org/x/net v0.0.0-20200822124328-c89045814202
+# golang.org/x/net v0.0.0-20200930145003-4acb6c075d10
 ## explicit
 golang.org/x/net/internal/timeseries
 golang.org/x/net/netutil
