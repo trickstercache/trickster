@@ -10,8 +10,6 @@
 
 Trickster is an HTTP reverse proxy/cache for http applications and a dashboard query accelerator for time series databases.
 
-Note: Trickster v1.1 is the production release, sourced from the [v1.1.x](https://github.com/tricksterproxy/trickster/tree/v1.1.x) branch. The `main` branch sources Trickster 2.0, which is currently in beta.
-
 <img src="./docs/images/high-level-1.png" width=512/>
 
 Learn more below, and check out our [roadmap](./docs/roadmap.md) to find out what else is in the works.
