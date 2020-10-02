@@ -45,15 +45,14 @@ func TestConsoleLogger(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
-
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &config.LoggingConfig{LogLevel: "info"}
 	log := New(conf)
-	defer log.Close()
 	if log.level != "info" {
 		t.Errorf("expected %s got %s", "info", log.level)
 	}
+	log.Close()
 }
 
 func TestNewLogger_LogFile(t *testing.T) {
@@ -63,8 +62,7 @@ func TestNewLogger_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 1}
 	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "info"}
-	log := New(conf)
-	defer log.Close()
+	log := &SyncLogger{Logger: New(conf)}
 	Info(log, "test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(instanceFileName); err != nil {
 		t.Errorf(err.Error())
@@ -79,8 +77,7 @@ func TestNewLoggerDebug_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "debug"}
-	log := New(conf)
-	defer log.Close()
+	log := &SyncLogger{Logger: New(conf)}
 	log.Debug("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
@@ -95,8 +92,7 @@ func TestNewLoggerWarn_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "warn"}
-	log := New(conf)
-	defer log.Close()
+	log := &SyncLogger{Logger: New(conf)}
 	log.Warn("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
@@ -111,8 +107,7 @@ func TestNewLoggerWarnOnce_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "x"}
-	log := New(conf)
-	defer log.Close()
+	log := &SyncLogger{Logger: New(conf)}
 
 	key := "warnonce-test-key"
 
@@ -151,8 +146,7 @@ func TestNewLoggerError_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "error"}
-	log := New(conf)
-	defer log.Close()
+	log := &SyncLogger{Logger: New(conf)}
 	log.Error("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
@@ -167,8 +161,7 @@ func TestNewLoggerErrorOnce_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "x"}
-	log := New(conf)
-	defer log.Close()
+	log := &SyncLogger{Logger: New(conf)}
 
 	ok := log.ErrorOnce("erroroonce-test-key", "test entry", Pairs{"testKey": "testVal"})
 	if !ok {
@@ -193,8 +186,7 @@ func TestNewLoggerTrace_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "trace"}
-	log := New(conf)
-	defer log.Close()
+	log := &SyncLogger{Logger: New(conf)}
 	log.Trace("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
@@ -209,8 +201,7 @@ func TestNewLoggerDefault_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "x"}
-	log := New(conf)
-	defer log.Close()
+	log := &SyncLogger{Logger: New(conf)}
 	log.Info("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
@@ -225,8 +216,7 @@ func TestNewLoggerInfoOnce_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "info"}
-	log := New(conf)
-	defer log.Close()
+	log := &SyncLogger{Logger: New(conf)}
 	ok := log.InfoOnce("infoonce-test-key", "test entry", Pairs{"testKey": "testVal"})
 	if !ok {
 		t.Errorf("expected %t got %t", true, ok)
@@ -251,8 +241,7 @@ func TestNewLoggerFatal_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "debug"}
-	log := New(conf)
-	defer log.Close()
+	log := &SyncLogger{Logger: New(conf)}
 	log.Fatal(-1, "test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
