@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/pkg/logging"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 )
 
@@ -31,7 +32,7 @@ func TestLogUpstreamRequest(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "debug"}
-	log := tl.New(conf)
+	log := &logging.SyncLogger{Logger: tl.New(conf)}
 	logUpstreamRequest(log, "testOrigin", "testType", "testHandler", "testMethod",
 		"testPath", "testUserAgent", 200, 0, 1.0)
 	if _, err := os.Stat(fileName); err != nil {
@@ -47,7 +48,7 @@ func TestLogDownstreamRequest(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "debug"}
-	log := tl.New(conf)
+	log := &logging.SyncLogger{Logger: tl.New(conf)}
 	r, err := http.NewRequest("get", "http://testOrigin", nil)
 	if err != nil {
 		t.Error(err)

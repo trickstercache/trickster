@@ -45,84 +45,89 @@ type Logger struct {
 	onceRanEntries map[string]bool
 }
 
+// SyncLogger is a Logger that writes synchronously
+type SyncLogger struct {
+	*Logger
+}
+
 func Debug(logger interface{}, event string, detail Pairs) {
 	if logger == nil {
 		return
 	}
-	go func() {
-		switch logger.(type) {
-		case *Logger:
-			logger.(*Logger).Debug(event, detail)
-		case *log.Logger:
-			logger.(*log.Logger).Print("")
-		case gkl.Logger:
-			level.Debug(logger.(gkl.Logger)).Log(detail.ToList(event)...)
-		}
-	}()
+	switch logger.(type) {
+	case *Logger:
+		go logger.(*Logger).Debug(event, detail)
+	case *SyncLogger:
+		logger.(*SyncLogger).Debug(event, detail)
+	case *log.Logger:
+		go logger.(*log.Logger).Print("")
+	case gkl.Logger:
+		go level.Debug(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+	}
 }
 
 func Info(logger interface{}, event string, detail Pairs) {
 	if logger == nil {
 		return
 	}
-	go func() {
-		switch logger.(type) {
-		case *Logger:
-			logger.(*Logger).Info(event, detail)
-		case *log.Logger:
-			logger.(*log.Logger).Print("")
-		case gkl.Logger:
-			level.Info(logger.(gkl.Logger)).Log(detail.ToList(event)...)
-		}
-	}()
+	switch logger.(type) {
+	case *Logger:
+		go logger.(*Logger).Info(event, detail)
+	case *SyncLogger:
+		logger.(*SyncLogger).Info(event, detail)
+	case *log.Logger:
+		go logger.(*log.Logger).Print("")
+	case gkl.Logger:
+		go level.Info(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+	}
 }
 
 func Warn(logger interface{}, event string, detail Pairs) {
 	if logger == nil {
 		return
 	}
-	go func() {
-		switch logger.(type) {
-		case *Logger:
-			logger.(*Logger).Warn(event, detail)
-		case *log.Logger:
-			logger.(*log.Logger).Print("")
-		case gkl.Logger:
-			level.Warn(logger.(gkl.Logger)).Log(detail.ToList(event)...)
-		}
-	}()
+	switch logger.(type) {
+	case *Logger:
+		go logger.(*Logger).Warn(event, detail)
+	case *SyncLogger:
+		logger.(*SyncLogger).Warn(event, detail)
+	case *log.Logger:
+		go logger.(*log.Logger).Print("")
+	case gkl.Logger:
+		go level.Warn(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+	}
 }
 
 func WarnOnce(logger interface{}, key string, event string, detail Pairs) {
 	if logger == nil {
 		return
 	}
-	go func() {
-		switch logger.(type) {
-		case *Logger:
-			logger.(*Logger).WarnOnce(key, event, detail)
-		case *log.Logger:
-			logger.(*log.Logger).Print("")
-		case gkl.Logger:
-			level.Warn(logger.(gkl.Logger)).Log(detail.ToList(event)...)
-		}
-	}()
+	switch logger.(type) {
+	case *Logger: // must  be Synchronous to avoid double writes
+		logger.(*Logger).WarnOnce(key, event, detail)
+	case *SyncLogger: // must  be Synchronous to avoid double writes
+		logger.(*SyncLogger).WarnOnce(key, event, detail)
+	case *log.Logger:
+		go logger.(*log.Logger).Print("")
+	case gkl.Logger:
+		go level.Warn(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+	}
 }
 
 func Error(logger interface{}, event string, detail Pairs) {
 	if logger == nil {
 		return
 	}
-	go func() {
-		switch logger.(type) {
-		case *Logger:
-			logger.(*Logger).Error(event, detail)
-		case *log.Logger:
-			logger.(*log.Logger).Print("")
-		case gkl.Logger:
-			level.Error(logger.(gkl.Logger)).Log(detail.ToList(event)...)
-		}
-	}()
+	switch logger.(type) {
+	case *Logger:
+		go logger.(*Logger).Error(event, detail)
+	case *SyncLogger:
+		logger.(*SyncLogger).Error(event, detail)
+	case *log.Logger:
+		go logger.(*log.Logger).Print("")
+	case gkl.Logger:
+		go level.Error(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+	}
 }
 
 // Fatal sends a "FATAL" event to the Logger and exits the program with the provided exit code
@@ -132,6 +137,8 @@ func Fatal(logger interface{}, code int, event string, detail Pairs) {
 	switch logger.(type) {
 	case *Logger:
 		logger.(*Logger).Fatal(code, event, detail)
+	case *SyncLogger:
+		logger.(*SyncLogger).Fatal(code, event, detail)
 	case *log.Logger:
 		logger.(*log.Logger).Print("")
 	case gkl.Logger:
