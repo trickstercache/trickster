@@ -35,11 +35,6 @@ jobs:
         run: pip install codespell
       - name: running codespell
         run: codespell --skip="vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz" --ignore-words="./testdata/ignore_words.txt"
-      
-#       - uses: actions/checkout@v2
-#       - uses: shogo82148/actions-goveralls@v1
-#         with:
-#           path-to-profile: profile.cov
           
       - uses: actions/setup-go@v1
         with:
