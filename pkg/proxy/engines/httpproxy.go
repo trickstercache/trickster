@@ -39,7 +39,7 @@ import (
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
-	othttptrace "go.opentelemetry.io/contrib/instrumentation/net/http/httptrace"
+	othttptrace "go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 	"go.opentelemetry.io/otel/label"
 )
 

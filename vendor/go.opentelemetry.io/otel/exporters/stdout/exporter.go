@@ -31,19 +31,18 @@ type Exporter struct {
 }
 
 var (
-	_ metric.Exporter   = &Exporter{}
-	_ trace.SpanSyncer  = &Exporter{}
-	_ trace.SpanBatcher = &Exporter{}
+	_ metric.Exporter    = &Exporter{}
+	_ trace.SpanExporter = &Exporter{}
 )
 
 // NewExporter creates an Exporter with the passed options.
 func NewExporter(options ...Option) (*Exporter, error) {
-	config, err := Configure(options...)
+	config, err := NewConfig(options...)
 	if err != nil {
 		return nil, err
 	}
 	return &Exporter{
-		traceExporter:  traceExporter{config},
+		traceExporter:  traceExporter{config: config},
 		metricExporter: metricExporter{config},
 	}, nil
 }
@@ -51,17 +50,13 @@ func NewExporter(options ...Option) (*Exporter, error) {
 // NewExportPipeline creates a complete export pipeline with the default
 // selectors, processors, and trace registration. It is the responsibility
 // of the caller to stop the returned push Controller.
-func NewExportPipeline(exportOpts []Option, pushOpts []push.Option) (apitrace.Provider, *push.Controller, error) {
+func NewExportPipeline(exportOpts []Option, pushOpts []push.Option) (apitrace.TracerProvider, *push.Controller, error) {
 	exporter, err := NewExporter(exportOpts...)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	tp, err := sdktrace.NewProvider(sdktrace.WithSyncer(exporter))
-	if err != nil {
-		return nil, nil, err
-	}
-
+	tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter))
 	pusher := push.New(
 		basic.New(
 			simple.NewWithExactDistribution(),
@@ -88,11 +83,11 @@ func NewExportPipeline(exportOpts []Option, pushOpts []push.Option) (apitrace.Pr
 // 	defer pipeline.Stop()
 // 	... Done
 func InstallNewPipeline(exportOpts []Option, pushOpts []push.Option) (*push.Controller, error) {
-	traceProvider, controller, err := NewExportPipeline(exportOpts, pushOpts)
+	tracerProvider, controller, err := NewExportPipeline(exportOpts, pushOpts)
 	if err != nil {
 		return controller, err
 	}
-	global.SetTraceProvider(traceProvider)
-	global.SetMeterProvider(controller.Provider())
+	global.SetTracerProvider(tracerProvider)
+	global.SetMeterProvider(controller.MeterProvider())
 	return controller, err
 }

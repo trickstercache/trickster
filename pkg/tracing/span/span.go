@@ -23,8 +23,8 @@ import (
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 
-	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace"
-	"go.opentelemetry.io/otel/api/correlation"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
+	"go.opentelemetry.io/otel/api/baggage"
 	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/label"
 )
@@ -43,11 +43,11 @@ func PrepareRequest(r *http.Request, tr *tracing.Tracer) (*http.Request, trace.S
 		return r, nil
 	}
 
-	attrs, entries, spanCtx := httptrace.Extract(r.Context(), r)
+	attrs, entries, spanCtx := otelhttptrace.Extract(r.Context(), r)
 	attrs = filterAttributes(tr, attrs)
 
-	r = r.WithContext(correlation.ContextWithMap(r.Context(),
-		correlation.NewMap(correlation.MapUpdate{
+	r = r.WithContext(baggage.ContextWithMap(r.Context(),
+		baggage.NewMap(baggage.MapUpdate{
 			MultiKV: entries,
 		})))
 

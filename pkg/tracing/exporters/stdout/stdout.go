@@ -64,7 +64,7 @@ func NewTracer(opts *options.Options) (*tracing.Tracer, error) {
 	case 1:
 		sampler = sdktrace.AlwaysSample()
 	default:
-		sampler = sdktrace.ProbabilitySampler(opts.SampleRate)
+		sampler = sdktrace.TraceIDRatioBased(opts.SampleRate)
 	}
 
 	serviceKey := label.String("service.name", opts.ServiceName)
@@ -80,13 +80,10 @@ func NewTracer(opts *options.Options) (*tracing.Tracer, error) {
 		tags = []label.KeyValue{serviceKey}
 	}
 
-	tp, err := sdktrace.NewProvider(sdktrace.WithSyncer(exp),
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp),
 		sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sampler}),
 		sdktrace.WithResource(resource.New(tags...)),
 	)
-	if err != nil {
-		return nil, err
-	}
 
 	tracer := tp.Tracer(opts.Name)
 

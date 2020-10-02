@@ -17,6 +17,8 @@ package jaeger
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
+	"sync"
 
 	"google.golang.org/api/support/bundler"
 	"google.golang.org/grpc/codes"
@@ -29,7 +31,12 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-const defaultServiceName = "OpenTelemetry"
+const (
+	defaultServiceName = "OpenTelemetry"
+
+	keyInstrumentationLibraryName    = "otel.instrumentation_library.name"
+	keyInstrumentationLibraryVersion = "otel.instrumentation_library.version"
+)
 
 type Option func(*options)
 
@@ -144,29 +151,26 @@ func NewRawExporter(endpointOption EndpointOption, opts ...Option) (*Exporter, e
 
 // NewExportPipeline sets up a complete export pipeline
 // with the recommended setup for trace provider
-func NewExportPipeline(endpointOption EndpointOption, opts ...Option) (apitrace.Provider, func(), error) {
+func NewExportPipeline(endpointOption EndpointOption, opts ...Option) (apitrace.TracerProvider, func(), error) {
 	o := options{}
 	opts = append(opts, WithDisabledFromEnv())
 	for _, opt := range opts {
 		opt(&o)
 	}
 	if o.Disabled {
-		return &apitrace.NoopProvider{}, func() {}, nil
+		return apitrace.NoopTracerProvider(), func() {}, nil
 	}
 
 	exporter, err := NewRawExporter(endpointOption, opts...)
 	if err != nil {
 		return nil, nil, err
 	}
-	syncer := sdktrace.WithSyncer(exporter)
-	tp, err := sdktrace.NewProvider(syncer)
-	if err != nil {
-		return nil, nil, err
-	}
-	if exporter.o.Config != nil {
-		tp.ApplyConfig(*exporter.o.Config)
-	}
 
+	pOpts := []sdktrace.TracerProviderOption{sdktrace.WithSyncer(exporter)}
+	if exporter.o.Config != nil {
+		pOpts = append(pOpts, sdktrace.WithConfig(*exporter.o.Config))
+	}
+	tp := sdktrace.NewTracerProvider(pOpts...)
 	return tp, exporter.Flush, nil
 }
 
@@ -178,7 +182,7 @@ func InstallNewPipeline(endpointOption EndpointOption, opts ...Option) (func(), 
 		return nil, err
 	}
 
-	global.SetTraceProvider(tp)
+	global.SetTracerProvider(tp)
 	return flushFn, nil
 }
 
@@ -198,14 +202,61 @@ type Exporter struct {
 	bundler  *bundler.Bundler
 	uploader batchUploader
 	o        options
+
+	stoppedMu sync.RWMutex
+	stopped   bool
 }
 
-var _ export.SpanSyncer = (*Exporter)(nil)
+var _ export.SpanExporter = (*Exporter)(nil)
 
-// ExportSpan exports a SpanData to Jaeger.
-func (e *Exporter) ExportSpan(ctx context.Context, d *export.SpanData) {
-	_ = e.bundler.Add(spanDataToThrift(d), 1)
-	// TODO(jbd): Handle oversized bundlers.
+// ExportSpans exports SpanData to Jaeger.
+func (e *Exporter) ExportSpans(ctx context.Context, spans []*export.SpanData) error {
+	e.stoppedMu.RLock()
+	stopped := e.stopped
+	e.stoppedMu.RUnlock()
+	if stopped {
+		return nil
+	}
+
+	for _, span := range spans {
+		// TODO(jbd): Handle oversized bundlers.
+		err := e.bundler.Add(spanDataToThrift(span), 1)
+		if err != nil {
+			return fmt.Errorf("failed to bundle %q: %w", span.Name, err)
+		}
+	}
+	return nil
+}
+
+// flush is used to wrap the bundler's Flush method for testing.
+var flush = func(e *Exporter) {
+	e.bundler.Flush()
+}
+
+// Shutdown stops the exporter flushing any pending exports.
+func (e *Exporter) Shutdown(ctx context.Context) error {
+	e.stoppedMu.Lock()
+	e.stopped = true
+	e.stoppedMu.Unlock()
+
+	done := make(chan struct{}, 1)
+	// Shadow so if the goroutine is leaked in testing it doesn't cause a race
+	// condition when the file level var is reset.
+	go func(FlushFunc func(*Exporter)) {
+		// The OpenTelemetry specification is explicit in not having this
+		// method block so the preference here is to orphan this goroutine if
+		// the context is canceled or times out while this flushing is
+		// occurring. This is a consequence of the bundler Flush method not
+		// supporting a context.
+		FlushFunc(e)
+		done <- struct{}{}
+	}(flush)
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+	}
+	return nil
 }
 
 func spanDataToThrift(data *export.SpanData) *gen.Span {
@@ -228,11 +279,10 @@ func spanDataToThrift(data *export.SpanData) *gen.Span {
 			}
 		}
 	}
-
 	if il := data.InstrumentationLibrary; il.Name != "" {
-		tags = append(tags, getStringTag("instrumentation.name", il.Name))
+		tags = append(tags, getStringTag(keyInstrumentationLibraryName, il.Name))
 		if il.Version != "" {
-			tags = append(tags, getStringTag("instrumentation.version", il.Version))
+			tags = append(tags, getStringTag(keyInstrumentationLibraryVersion, il.Version))
 		}
 	}
 
@@ -384,7 +434,7 @@ func getBoolTag(k string, b bool) *gen.Tag {
 //
 // This is useful if your program is ending and you do not want to lose recent spans.
 func (e *Exporter) Flush() {
-	e.bundler.Flush()
+	flush(e)
 }
 
 func (e *Exporter) upload(spans []*gen.Span) error {

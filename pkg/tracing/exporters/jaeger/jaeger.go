@@ -31,7 +31,7 @@ import (
 // NewTracer returns a new Jaeger Tracer based on the provided options
 func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 
-	var tp trace.Provider
+	var tp trace.TracerProvider
 	var err error
 	var flusher func()
 
@@ -46,7 +46,7 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 	case 1:
 		sampler = sdktrace.AlwaysSample()
 	default:
-		sampler = sdktrace.ProbabilitySampler(options.SampleRate)
+		sampler = sdktrace.TraceIDRatioBased(options.SampleRate)
 	}
 
 	var tags []label.KeyValue

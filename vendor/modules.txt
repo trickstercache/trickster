@@ -81,7 +81,7 @@ github.com/influxdata/influxdb/pkg/testing/assert
 github.com/matttproud/golang_protobuf_extensions/pbutil
 # github.com/onsi/ginkgo v1.14.1
 ## explicit
-# github.com/openzipkin/zipkin-go v0.2.3
+# github.com/openzipkin/zipkin-go v0.2.4
 github.com/openzipkin/zipkin-go/model
 # github.com/philhofer/fwd v1.0.0
 github.com/philhofer/fwd
@@ -121,37 +121,39 @@ github.com/yuin/gopher-lua/pm
 # go.etcd.io/bbolt v1.3.5
 ## explicit
 go.etcd.io/bbolt
-# go.opentelemetry.io/contrib/instrumentation/net/http/httptrace v0.11.0
+# go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.12.0
 ## explicit
-go.opentelemetry.io/contrib/instrumentation/net/http/httptrace
-# go.opentelemetry.io/otel v0.11.0
+go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace
+# go.opentelemetry.io/otel v0.12.0
 ## explicit
 go.opentelemetry.io/otel
-go.opentelemetry.io/otel/api/correlation
+go.opentelemetry.io/otel/api/baggage
 go.opentelemetry.io/otel/api/global
 go.opentelemetry.io/otel/api/global/internal
 go.opentelemetry.io/otel/api/metric
+go.opentelemetry.io/otel/api/metric/metrictest
 go.opentelemetry.io/otel/api/metric/registry
 go.opentelemetry.io/otel/api/propagation
 go.opentelemetry.io/otel/api/trace
-go.opentelemetry.io/otel/api/unit
 go.opentelemetry.io/otel/codes
 go.opentelemetry.io/otel/internal
-go.opentelemetry.io/otel/internal/metric
+go.opentelemetry.io/otel/internal/trace/noop
 go.opentelemetry.io/otel/internal/trace/parent
 go.opentelemetry.io/otel/label
+go.opentelemetry.io/otel/propagators
 go.opentelemetry.io/otel/semconv
-# go.opentelemetry.io/otel/exporters/stdout v0.11.0
+go.opentelemetry.io/otel/unit
+# go.opentelemetry.io/otel/exporters/stdout v0.12.0
 ## explicit
 go.opentelemetry.io/otel/exporters/stdout
-# go.opentelemetry.io/otel/exporters/trace/jaeger v0.11.0
+# go.opentelemetry.io/otel/exporters/trace/jaeger v0.12.0
 ## explicit
 go.opentelemetry.io/otel/exporters/trace/jaeger
 go.opentelemetry.io/otel/exporters/trace/jaeger/internal/gen-go/jaeger
-# go.opentelemetry.io/otel/exporters/trace/zipkin v0.11.0
+# go.opentelemetry.io/otel/exporters/trace/zipkin v0.12.0
 ## explicit
 go.opentelemetry.io/otel/exporters/trace/zipkin
-# go.opentelemetry.io/otel/sdk v0.11.0
+# go.opentelemetry.io/otel/sdk v0.12.0
 ## explicit
 go.opentelemetry.io/otel/sdk
 go.opentelemetry.io/otel/sdk/export/metric
@@ -164,6 +166,7 @@ go.opentelemetry.io/otel/sdk/metric/aggregator
 go.opentelemetry.io/otel/sdk/metric/aggregator/array
 go.opentelemetry.io/otel/sdk/metric/aggregator/ddsketch
 go.opentelemetry.io/otel/sdk/metric/aggregator/histogram
+go.opentelemetry.io/otel/sdk/metric/aggregator/lastvalue
 go.opentelemetry.io/otel/sdk/metric/aggregator/minmaxsumcount
 go.opentelemetry.io/otel/sdk/metric/aggregator/sum
 go.opentelemetry.io/otel/sdk/metric/controller/push
@@ -180,13 +183,13 @@ golang.org/x/net/netutil
 golang.org/x/net/trace
 # golang.org/x/sync v0.0.0-20200625203802-6e8e738ad208
 golang.org/x/sync/semaphore
-# golang.org/x/sys v0.0.0-20200803210538-64077c9b5642
+# golang.org/x/sys v0.0.0-20200905004654-be1d3432aa8f
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# google.golang.org/api v0.30.0
+# google.golang.org/api v0.32.0
 google.golang.org/api/support/bundler
-# google.golang.org/grpc v1.31.0
+# google.golang.org/grpc v1.32.0
 google.golang.org/grpc/codes
 # google.golang.org/protobuf v1.25.0
 google.golang.org/protobuf/encoding/prototext
