@@ -1,13 +1,19 @@
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - v1.0.x
+      - v1.1.x
     tags:
       - 'v[0-9]+\.[0-9]+\.[0-9]+'
     
     
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
+      - v1.0.x
+      - v1.1.x
     tags:
     - 'v[0-9]+\.[0-9]+\.[0-9]+'
 
