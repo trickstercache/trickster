@@ -94,15 +94,15 @@ Optional Case Parts
 [origins]
 
   [origins.example]
-  origin_type = 'rule'
+  provider = 'rule'
   rule_name = 'example-user-router'
 
   [origins.example-reader-cluster]
-  origin_type = 'rpc'
+  provider = 'rpc'
   origin_url = 'http://reader-cluster.example.com'
 
   [origins.example-writer-cluster]
-  origin_type = 'rpc'
+  provider = 'rpc'
   origin_url = 'http://writer-cluster.example.com'
   path_routing_disabled = true  # restrict routing to this origin via rule only
                                 # users cannot directly access via /example-writer-cluster/

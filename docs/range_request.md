@@ -13,7 +13,7 @@ In the event that an upstream origin supports serving a single Range, but does n
 ```toml
 [origins]
     [origins.default]
-    origin_type = 'reverseproxycache'
+    provider = 'reverseproxycache'
     origin_url = 'http://example.com/'
     dearticulate_upstream_ranges = true
 ```
@@ -33,7 +33,7 @@ There may, however, be cases where you do not want to enable Multipart Range sup
 ```toml
 [origins]
     [origins.default]
-    origin_type = 'reverseproxycache'
+    provider = 'reverseproxycache'
     origin_url = 'http://example.com/'
     dearticulate_upstream_ranges = true
     multipart_ranges_disabled = true

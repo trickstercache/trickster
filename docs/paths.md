@@ -46,7 +46,7 @@ You can configure paths send inbound requests through a request rewriter that ca
 [origins]
 
     [origins.default]
-    origin_type = 'rpc'
+    provider = 'rpc'
     origin_url = 'http://example.com'
 
         [origins.default.paths]
@@ -118,7 +118,7 @@ To include the `requestType`, `table`, `fields`, and `filter` fields from this d
 [origins]
 
     [origins.default]
-    origin_type = 'rpc'
+    provider = 'rpc'
 
         [origins.default.paths]
 
@@ -218,7 +218,7 @@ Examples of customizing Path Configs for Origin Types with Pre-Definitions:
 [origins]
 
     [origins.default]
-    origin_type = 'prometheus'
+    provider = 'prometheus'
 
         [origins.default.paths]
 

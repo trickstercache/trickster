@@ -35,20 +35,20 @@ Example Path-based Multi-Origin Configuration:
     # origin1 origin
     [origins.origin1]
         origin_url = 'http://prometheus.example.com:9090'
-        origin_type = 'prometheus'
+        provider = 'prometheus'
         cache_name = 'default'
         is_default = true
 
     # "foo" origin
     [origins.foo]
         origin_url = 'http://influxdb-foo.example.com:9090'
-        origin_type = 'influxdb'
+        provider = 'influxdb'
         cache_name = 'default'
 
     # "bar" origin
     [origins.bar]
         origin_url = 'http://prometheus-bar.example.com:9090'
-        origin_type = 'prometheus'
+        provider = 'prometheus'
         cache_name = 'default'
 ```
 
@@ -85,7 +85,7 @@ Example DNS-based Origin Configuration:
     [origins.origin1]
         hosts = [ '1.example.com', '2.example.com' ] # users can route to this origin via these FQDNs, or via `/origin1`
         origin_url = 'http://prometheus.example.com:9090'
-        origin_type = 'prometheus'
+        provider = 'prometheus'
         cache_name = 'default'
         is_default = true
 
@@ -93,14 +93,14 @@ Example DNS-based Origin Configuration:
     [origins.foo]
         hosts = [ 'trickster-foo.example.com' ] # users can route to this origin via these FQDNs, or via `/foo`
         origin_url = 'http://prometheus-foo.example.com:9090'
-        origin_type = 'prometheus'
+        provider = 'prometheus'
         cache_name = 'default'
 
     # "bar" origin
     [origins.bar]
         hosts = [ 'trickster-bar.example.com' ] # users can route to this origin via these FQDNs, or via `/bar`
         origin_url = 'http://prometheus-bar.example.com:9090'
-        origin_type = 'prometheus'
+        provider = 'prometheus'
         cache_name = 'default'
 
 ```
@@ -128,7 +128,7 @@ You may wish for an origin to be inaccessible via the `/origin_name/` path, and 
     [origins.origin1]
         hosts = [ '1.example.com', '2.example.com' ]
         origin_url = 'http://prometheus.example.com:9090'
-        origin_type = 'prometheus'
+        provider = 'prometheus'
         cache_name = 'default'
         is_default = false
         path_routing_disabled = true

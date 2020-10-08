@@ -142,7 +142,7 @@ func init() {
 			Name:      "requests_total",
 			Help:      "Count of front end requests handled by Trickster",
 		},
-		[]string{"origin_name", "origin_type", "method", "path", "http_status"},
+		[]string{"origin_name", "provider", "method", "path", "http_status"},
 	)
 
 	FrontendRequestDuration = prometheus.NewHistogramVec(
@@ -153,7 +153,7 @@ func init() {
 			Help:      "Histogram of front end request durations handled by Trickster",
 			Buckets:   defaultBuckets,
 		},
-		[]string{"origin_name", "origin_type", "method", "path", "http_status"},
+		[]string{"origin_name", "provider", "method", "path", "http_status"},
 	)
 
 	FrontendRequestWrittenBytes = prometheus.NewCounterVec(
@@ -163,7 +163,7 @@ func init() {
 			Name:      "written_bytes_total",
 			Help:      "Count of bytes written in front end requests handled by Trickster",
 		},
-		[]string{"origin_name", "origin_type", "method", "path", "http_status"})
+		[]string{"origin_name", "provider", "method", "path", "http_status"})
 
 	ProxyRequestStatus = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -172,7 +172,7 @@ func init() {
 			Name:      "requests_total",
 			Help:      "Count of downstream client requests handled by Trickster",
 		},
-		[]string{"origin_name", "origin_type", "method", "cache_status", "http_status", "path"},
+		[]string{"origin_name", "provider", "method", "cache_status", "http_status", "path"},
 	)
 
 	ProxyRequestElements = prometheus.NewCounterVec(
@@ -182,7 +182,7 @@ func init() {
 			Name:      "points_total",
 			Help:      "Count of data points in the timeseries returned to the requesting client.",
 		},
-		[]string{"origin_name", "origin_type", "cache_status", "path"},
+		[]string{"origin_name", "provider", "cache_status", "path"},
 	)
 
 	ProxyRequestDuration = prometheus.NewHistogramVec(
@@ -193,7 +193,7 @@ func init() {
 			Help:      "Time required in seconds to proxy a given Prometheus query.",
 			Buckets:   defaultBuckets,
 		},
-		[]string{"origin_name", "origin_type", "method", "status", "http_status", "path"},
+		[]string{"origin_name", "provider", "method", "status", "http_status", "path"},
 	)
 
 	ProxyMaxConnections = prometheus.NewGauge(
