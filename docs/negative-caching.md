@@ -25,10 +25,10 @@ You can define multiple negative cache configurations, and reference them by nam
 
 [origins]
     [origins.default]
-    origin_type = 'rpc'
+    provider = 'rpc'
     # by default will assume negative_cache_name = 'default'
     
     [origins.another]
-    origin_type = 'rpc'
+    provider = 'rpc'
     negative_cache_name = 'foo'
 ```
