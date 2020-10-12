@@ -36,7 +36,7 @@ func (el ExtentList) String() string {
 	}
 	lines := make([]string, len(el))
 	for i, e := range el {
-		lines[i] = fmt.Sprintf("%d-%d", e.Start.Unix(), e.End.Unix())
+		lines[i] = e.String()
 	}
 	return strings.Join(lines, ";")
 }

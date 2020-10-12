@@ -52,5 +52,5 @@ func (e *Extent) After(t time.Time) bool {
 
 // After returns true if the range of the Extent is completely after the provided time
 func (e Extent) String() string {
-	return fmt.Sprintf("%d-%d", e.Start.Unix(), e.End.Unix())
+	return fmt.Sprintf("%d-%d", e.Start.UnixNano()/1000000, e.End.UnixNano()/1000000)
 }
