@@ -134,7 +134,7 @@ func TestSetResultsHeader(t *testing.T) {
 	h := http.Header{}
 	SetResultsHeader(h, "test-engine", "test-status", "test-ffstatus",
 		timeseries.ExtentList{timeseries.Extent{Start: time.Unix(1, 0), End: time.Unix(2, 0)}})
-	const expected = "engine=test-engine; status=test-status; fetched=[1:2]; ffstatus=test-ffstatus"
+	const expected = "engine=test-engine; status=test-status; fetched=[1000-2000]; ffstatus=test-ffstatus"
 	if h.Get(NameTricksterResult) != expected {
 		t.Errorf("expected %s got %s", expected, h.Get(NameTricksterResult))
 	}
