@@ -35,7 +35,7 @@ import (
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
 	qp, _, _ := params.GetRequestValues(r)
-	q := strings.Trim(gs.ToLower(qp.Get(upQuery)))
+	q := strings.Trim(strings.ToLower(qp.Get(upQuery)), " \t\n")
 	if q == "" {
 		c.ProxyHandler(w, r)
 		return
