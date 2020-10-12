@@ -40,7 +40,13 @@ type Hash uint64
 type Hashes []Hash
 
 // SeriesLookup is a map of Series searchable by Series Header Hash
-type SeriesLookup map[Hash]*Series
+type SeriesLookup map[SeriesLookupKey]*Series
+
+// SeriesLookupKey is the key for a SeriesLookup, consisting of a Result.StatementID and a Series.Hash
+type SeriesLookupKey struct {
+	StatementID int
+	Hash        Hash
+}
 
 // Size returns the memory utilization of the Series in bytes
 func (s Series) Size() int64 {

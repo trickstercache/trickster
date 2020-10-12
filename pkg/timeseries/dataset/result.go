@@ -23,6 +23,9 @@ import (
 	"strings"
 )
 
+// ResultsLookup is a map of Results searchable by the Statement ID
+type ResultsLookup map[int]*Result
+
 // Result represents the results of a single query statement in the DataSet
 type Result struct {
 	// StatementID represents the ID of the statement for this result. This field may not be
@@ -35,7 +38,7 @@ type Result struct {
 }
 
 // Size returns the size of the Result in bytes
-func (r Result) Size() int64 {
+func (r *Result) Size() int64 {
 	c := int64(8+(8*len(r.SeriesList))+len(r.Error)+16) + 12
 	for _, s := range r.SeriesList {
 		if s != nil {
@@ -46,7 +49,7 @@ func (r Result) Size() int64 {
 }
 
 // Hashes returns the ordered list of Hashes for the SeriesList in the Result
-func (r Result) Hashes() Hashes {
+func (r *Result) Hashes() Hashes {
 	if len(r.SeriesList) == 0 {
 		return nil
 	}
@@ -58,8 +61,8 @@ func (r Result) Hashes() Hashes {
 }
 
 // Clone returns an exact copy of the Result
-func (r Result) Clone() Result {
-	clone := Result{
+func (r *Result) Clone() *Result {
+	clone := &Result{
 		StatementID: r.StatementID,
 		Error:       r.Error,
 		SeriesList:  make([]*Series, len(r.SeriesList)),
@@ -73,7 +76,7 @@ func (r Result) Clone() Result {
 	return clone
 }
 
-func (r Result) String() string {
+func (r *Result) String() string {
 	sb := strings.Builder{}
 	sb.WriteByte('{')
 	if r.Error != "" {

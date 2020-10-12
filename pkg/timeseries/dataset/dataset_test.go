@@ -25,7 +25,7 @@ import (
 
 func testDataSet() *DataSet {
 	ds := &DataSet{
-		Results:        []Result{testResult()},
+		Results:        []*Result{testResult()},
 		ExtentList:     timeseries.ExtentList{timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(10, 0)}},
 		TimeRangeQuery: &timeseries.TimeRangeQuery{Step: time.Duration(5 * timeseries.Second)},
 	}
@@ -92,14 +92,14 @@ func testDataSet2() *DataSet {
 	s := newPoints().Size()
 
 	// r1 s1
-	r1 := Result{
+	r1 := &Result{
 		StatementID: 0,
 		SeriesList: []*Series{
 			{sh1, newPoints(), s},
 		},
 	}
 
-	r2 := Result{
+	r2 := &Result{
 		StatementID: 1,
 		SeriesList: []*Series{
 			{sh2, newPoints(), s},
@@ -110,7 +110,7 @@ func testDataSet2() *DataSet {
 
 	ds := &DataSet{
 		TimeRangeQuery: &timeseries.TimeRangeQuery{Step: time.Duration(5 * timeseries.Second)},
-		Results:        []Result{r1, r2},
+		Results:        []*Result{r1, r2},
 		ExtentList:     timeseries.ExtentList{timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(30, 0)}},
 	}
 
@@ -180,7 +180,7 @@ func TestValueCount(t *testing.T) {
 	if ds.ValueCount() != 2 {
 		t.Errorf("expected 2 got %d", ds.ValueCount())
 	}
-	ds.Results[0] = Result{}
+	ds.Results[0] = &Result{}
 	if ds.ValueCount() != 0 {
 		t.Errorf("expected 0 got %d", ds.ValueCount())
 	}
@@ -191,7 +191,7 @@ func TestSeriesCount(t *testing.T) {
 	if ds.SeriesCount() != 1 {
 		t.Errorf("expected 1 got %d", ds.ValueCount())
 	}
-	ds.Results[0] = Result{}
+	ds.Results[0] = &Result{}
 	if ds.SeriesCount() != 0 {
 		t.Errorf("expected 0 got %d", ds.ValueCount())
 	}
