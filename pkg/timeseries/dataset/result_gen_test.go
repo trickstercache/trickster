@@ -90,7 +90,7 @@ func TestEncodeDecodeResult(t *testing.T) {
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Logf("WARNING: Msgsize() for %v is inaccurate", v)
+		t.Log("WARNING: TestEncodeDecodeResult Msgsize() is inaccurate")
 	}
 
 	vn := Result{}

@@ -28,6 +28,7 @@ func (z *Epoch) DecodeMsg(dc *msgp.Reader) (err error) {
 		var zb0001 uint64
 		zb0001, err = dc.ReadUint64()
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		(*z) = Epoch(zb0001)
@@ -39,6 +40,7 @@ func (z *Epoch) DecodeMsg(dc *msgp.Reader) (err error) {
 func (z Epoch) EncodeMsg(en *msgp.Writer) (err error) {
 	err = en.WriteUint64(uint64(z))
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	return
@@ -57,6 +59,7 @@ func (z *Epoch) UnmarshalMsg(bts []byte) (o []byte, err error) {
 		var zb0001 uint64
 		zb0001, bts, err = msgp.ReadUint64Bytes(bts)
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		(*z) = Epoch(zb0001)
@@ -76,6 +79,7 @@ func (z *Epochs) DecodeMsg(dc *msgp.Reader) (err error) {
 	var zb0002 uint32
 	zb0002, err = dc.ReadArrayHeader()
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	if cap((*z)) >= int(zb0002) {
@@ -88,6 +92,7 @@ func (z *Epochs) DecodeMsg(dc *msgp.Reader) (err error) {
 			var zb0003 uint64
 			zb0003, err = dc.ReadUint64()
 			if err != nil {
+				err = msgp.WrapError(err, zb0001)
 				return
 			}
 			(*z)[zb0001] = Epoch(zb0003)
@@ -100,11 +105,13 @@ func (z *Epochs) DecodeMsg(dc *msgp.Reader) (err error) {
 func (z Epochs) EncodeMsg(en *msgp.Writer) (err error) {
 	err = en.WriteArrayHeader(uint32(len(z)))
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0004 := range z {
 		err = en.WriteUint64(uint64(z[zb0004]))
 		if err != nil {
+			err = msgp.WrapError(err, zb0004)
 			return
 		}
 	}
@@ -126,6 +133,7 @@ func (z *Epochs) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	var zb0002 uint32
 	zb0002, bts, err = msgp.ReadArrayHeaderBytes(bts)
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	if cap((*z)) >= int(zb0002) {
@@ -138,6 +146,7 @@ func (z *Epochs) UnmarshalMsg(bts []byte) (o []byte, err error) {
 			var zb0003 uint64
 			zb0003, bts, err = msgp.ReadUint64Bytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, zb0001)
 				return
 			}
 			(*z)[zb0001] = Epoch(zb0003)
@@ -160,12 +169,14 @@ func (z *Point) DecodeMsg(dc *msgp.Reader) (err error) {
 	var zb0001 uint32
 	zb0001, err = dc.ReadMapHeader()
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0001 > 0 {
 		zb0001--
 		field, err = dc.ReadMapKeyPtr()
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		switch msgp.UnsafeString(field) {
@@ -174,6 +185,7 @@ func (z *Point) DecodeMsg(dc *msgp.Reader) (err error) {
 				var zb0002 uint64
 				zb0002, err = dc.ReadUint64()
 				if err != nil {
+					err = msgp.WrapError(err, "Epoch")
 					return
 				}
 				z.Epoch = Epoch(zb0002)
@@ -181,12 +193,14 @@ func (z *Point) DecodeMsg(dc *msgp.Reader) (err error) {
 		case "size":
 			z.Size, err = dc.ReadInt()
 			if err != nil {
+				err = msgp.WrapError(err, "Size")
 				return
 			}
 		case "values":
 			var zb0003 uint32
 			zb0003, err = dc.ReadArrayHeader()
 			if err != nil {
+				err = msgp.WrapError(err, "Values")
 				return
 			}
 			if cap(z.Values) >= int(zb0003) {
@@ -197,12 +211,14 @@ func (z *Point) DecodeMsg(dc *msgp.Reader) (err error) {
 			for za0001 := range z.Values {
 				z.Values[za0001], err = dc.ReadIntf()
 				if err != nil {
+					err = msgp.WrapError(err, "Values", za0001)
 					return
 				}
 			}
 		default:
 			err = dc.Skip()
 			if err != nil {
+				err = msgp.WrapError(err)
 				return
 			}
 		}
@@ -220,6 +236,7 @@ func (z *Point) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteUint64(uint64(z.Epoch))
 	if err != nil {
+		err = msgp.WrapError(err, "Epoch")
 		return
 	}
 	// write "size"
@@ -229,6 +246,7 @@ func (z *Point) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteInt(z.Size)
 	if err != nil {
+		err = msgp.WrapError(err, "Size")
 		return
 	}
 	// write "values"
@@ -238,11 +256,13 @@ func (z *Point) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteArrayHeader(uint32(len(z.Values)))
 	if err != nil {
+		err = msgp.WrapError(err, "Values")
 		return
 	}
 	for za0001 := range z.Values {
 		err = en.WriteIntf(z.Values[za0001])
 		if err != nil {
+			err = msgp.WrapError(err, "Values", za0001)
 			return
 		}
 	}
@@ -265,6 +285,7 @@ func (z *Point) MarshalMsg(b []byte) (o []byte, err error) {
 	for za0001 := range z.Values {
 		o, err = msgp.AppendIntf(o, z.Values[za0001])
 		if err != nil {
+			err = msgp.WrapError(err, "Values", za0001)
 			return
 		}
 	}
@@ -278,12 +299,14 @@ func (z *Point) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	var zb0001 uint32
 	zb0001, bts, err = msgp.ReadMapHeaderBytes(bts)
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0001 > 0 {
 		zb0001--
 		field, bts, err = msgp.ReadMapKeyZC(bts)
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		switch msgp.UnsafeString(field) {
@@ -292,6 +315,7 @@ func (z *Point) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				var zb0002 uint64
 				zb0002, bts, err = msgp.ReadUint64Bytes(bts)
 				if err != nil {
+					err = msgp.WrapError(err, "Epoch")
 					return
 				}
 				z.Epoch = Epoch(zb0002)
@@ -299,12 +323,14 @@ func (z *Point) UnmarshalMsg(bts []byte) (o []byte, err error) {
 		case "size":
 			z.Size, bts, err = msgp.ReadIntBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "Size")
 				return
 			}
 		case "values":
 			var zb0003 uint32
 			zb0003, bts, err = msgp.ReadArrayHeaderBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "Values")
 				return
 			}
 			if cap(z.Values) >= int(zb0003) {
@@ -315,12 +341,14 @@ func (z *Point) UnmarshalMsg(bts []byte) (o []byte, err error) {
 			for za0001 := range z.Values {
 				z.Values[za0001], bts, err = msgp.ReadIntfBytes(bts)
 				if err != nil {
+					err = msgp.WrapError(err, "Values", za0001)
 					return
 				}
 			}
 		default:
 			bts, err = msgp.Skip(bts)
 			if err != nil {
+				err = msgp.WrapError(err)
 				return
 			}
 		}
@@ -343,6 +371,7 @@ func (z *Points) DecodeMsg(dc *msgp.Reader) (err error) {
 	var zb0002 uint32
 	zb0002, err = dc.ReadArrayHeader()
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	if cap((*z)) >= int(zb0002) {
@@ -353,6 +382,7 @@ func (z *Points) DecodeMsg(dc *msgp.Reader) (err error) {
 	for zb0001 := range *z {
 		err = (*z)[zb0001].DecodeMsg(dc)
 		if err != nil {
+			err = msgp.WrapError(err, zb0001)
 			return
 		}
 	}
@@ -363,11 +393,13 @@ func (z *Points) DecodeMsg(dc *msgp.Reader) (err error) {
 func (z Points) EncodeMsg(en *msgp.Writer) (err error) {
 	err = en.WriteArrayHeader(uint32(len(z)))
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0003 := range z {
 		err = z[zb0003].EncodeMsg(en)
 		if err != nil {
+			err = msgp.WrapError(err, zb0003)
 			return
 		}
 	}
@@ -381,6 +413,7 @@ func (z Points) MarshalMsg(b []byte) (o []byte, err error) {
 	for zb0003 := range z {
 		o, err = z[zb0003].MarshalMsg(o)
 		if err != nil {
+			err = msgp.WrapError(err, zb0003)
 			return
 		}
 	}
@@ -392,6 +425,7 @@ func (z *Points) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	var zb0002 uint32
 	zb0002, bts, err = msgp.ReadArrayHeaderBytes(bts)
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	if cap((*z)) >= int(zb0002) {
@@ -402,6 +436,7 @@ func (z *Points) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	for zb0001 := range *z {
 		bts, err = (*z)[zb0001].UnmarshalMsg(bts)
 		if err != nil {
+			err = msgp.WrapError(err, zb0001)
 			return
 		}
 	}

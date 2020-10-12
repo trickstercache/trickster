@@ -90,7 +90,7 @@ func TestEncodeDecodeDataSet(t *testing.T) {
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Logf("WARNING: Msgsize() for %v is inaccurate", v)
+		t.Log("WARNING: TestEncodeDecodeDataSet Msgsize() is inaccurate")
 	}
 
 	vn := DataSet{}

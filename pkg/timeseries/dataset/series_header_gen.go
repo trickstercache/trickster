@@ -30,29 +30,34 @@ func (z *SeriesHeader) DecodeMsg(dc *msgp.Reader) (err error) {
 	var zb0001 uint32
 	zb0001, err = dc.ReadMapHeader()
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0001 > 0 {
 		zb0001--
 		field, err = dc.ReadMapKeyPtr()
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		switch msgp.UnsafeString(field) {
 		case "name":
 			z.Name, err = dc.ReadString()
 			if err != nil {
+				err = msgp.WrapError(err, "Name")
 				return
 			}
 		case "tags":
 			err = z.Tags.DecodeMsg(dc)
 			if err != nil {
+				err = msgp.WrapError(err, "Tags")
 				return
 			}
 		case "fields":
 			var zb0002 uint32
 			zb0002, err = dc.ReadArrayHeader()
 			if err != nil {
+				err = msgp.WrapError(err, "FieldsList")
 				return
 			}
 			if cap(z.FieldsList) >= int(zb0002) {
@@ -63,27 +68,32 @@ func (z *SeriesHeader) DecodeMsg(dc *msgp.Reader) (err error) {
 			for za0001 := range z.FieldsList {
 				err = z.FieldsList[za0001].DecodeMsg(dc)
 				if err != nil {
+					err = msgp.WrapError(err, "FieldsList", za0001)
 					return
 				}
 			}
 		case "ti":
 			z.TimestampIndex, err = dc.ReadInt()
 			if err != nil {
+				err = msgp.WrapError(err, "TimestampIndex")
 				return
 			}
 		case "query":
 			z.QueryStatement, err = dc.ReadString()
 			if err != nil {
+				err = msgp.WrapError(err, "QueryStatement")
 				return
 			}
 		case "size":
 			z.Size, err = dc.ReadInt()
 			if err != nil {
+				err = msgp.WrapError(err, "Size")
 				return
 			}
 		default:
 			err = dc.Skip()
 			if err != nil {
+				err = msgp.WrapError(err)
 				return
 			}
 		}
@@ -101,6 +111,7 @@ func (z *SeriesHeader) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteString(z.Name)
 	if err != nil {
+		err = msgp.WrapError(err, "Name")
 		return
 	}
 	// write "tags"
@@ -110,6 +121,7 @@ func (z *SeriesHeader) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = z.Tags.EncodeMsg(en)
 	if err != nil {
+		err = msgp.WrapError(err, "Tags")
 		return
 	}
 	// write "fields"
@@ -119,11 +131,13 @@ func (z *SeriesHeader) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteArrayHeader(uint32(len(z.FieldsList)))
 	if err != nil {
+		err = msgp.WrapError(err, "FieldsList")
 		return
 	}
 	for za0001 := range z.FieldsList {
 		err = z.FieldsList[za0001].EncodeMsg(en)
 		if err != nil {
+			err = msgp.WrapError(err, "FieldsList", za0001)
 			return
 		}
 	}
@@ -134,6 +148,7 @@ func (z *SeriesHeader) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteInt(z.TimestampIndex)
 	if err != nil {
+		err = msgp.WrapError(err, "TimestampIndex")
 		return
 	}
 	// write "query"
@@ -143,6 +158,7 @@ func (z *SeriesHeader) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteString(z.QueryStatement)
 	if err != nil {
+		err = msgp.WrapError(err, "QueryStatement")
 		return
 	}
 	// write "size"
@@ -152,6 +168,7 @@ func (z *SeriesHeader) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteInt(z.Size)
 	if err != nil {
+		err = msgp.WrapError(err, "Size")
 		return
 	}
 	return
@@ -168,6 +185,7 @@ func (z *SeriesHeader) MarshalMsg(b []byte) (o []byte, err error) {
 	o = append(o, 0xa4, 0x74, 0x61, 0x67, 0x73)
 	o, err = z.Tags.MarshalMsg(o)
 	if err != nil {
+		err = msgp.WrapError(err, "Tags")
 		return
 	}
 	// string "fields"
@@ -176,6 +194,7 @@ func (z *SeriesHeader) MarshalMsg(b []byte) (o []byte, err error) {
 	for za0001 := range z.FieldsList {
 		o, err = z.FieldsList[za0001].MarshalMsg(o)
 		if err != nil {
+			err = msgp.WrapError(err, "FieldsList", za0001)
 			return
 		}
 	}
@@ -198,29 +217,34 @@ func (z *SeriesHeader) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	var zb0001 uint32
 	zb0001, bts, err = msgp.ReadMapHeaderBytes(bts)
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0001 > 0 {
 		zb0001--
 		field, bts, err = msgp.ReadMapKeyZC(bts)
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		switch msgp.UnsafeString(field) {
 		case "name":
 			z.Name, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "Name")
 				return
 			}
 		case "tags":
 			bts, err = z.Tags.UnmarshalMsg(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "Tags")
 				return
 			}
 		case "fields":
 			var zb0002 uint32
 			zb0002, bts, err = msgp.ReadArrayHeaderBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "FieldsList")
 				return
 			}
 			if cap(z.FieldsList) >= int(zb0002) {
@@ -231,27 +255,32 @@ func (z *SeriesHeader) UnmarshalMsg(bts []byte) (o []byte, err error) {
 			for za0001 := range z.FieldsList {
 				bts, err = z.FieldsList[za0001].UnmarshalMsg(bts)
 				if err != nil {
+					err = msgp.WrapError(err, "FieldsList", za0001)
 					return
 				}
 			}
 		case "ti":
 			z.TimestampIndex, bts, err = msgp.ReadIntBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "TimestampIndex")
 				return
 			}
 		case "query":
 			z.QueryStatement, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "QueryStatement")
 				return
 			}
 		case "size":
 			z.Size, bts, err = msgp.ReadIntBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "Size")
 				return
 			}
 		default:
 			bts, err = msgp.Skip(bts)
 			if err != nil {
+				err = msgp.WrapError(err)
 				return
 			}
 		}

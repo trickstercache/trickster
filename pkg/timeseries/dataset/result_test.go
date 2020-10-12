@@ -18,9 +18,9 @@ package dataset
 
 import "testing"
 
-func testResult() Result {
+func testResult() *Result {
 	s := testSeries()
-	r := Result{
+	r := &Result{
 		StatementID: 42,
 		SeriesList:  []*Series{s},
 	}
@@ -28,7 +28,7 @@ func testResult() Result {
 }
 
 func TestResultHashes(t *testing.T) {
-	r := Result{}
+	r := &Result{}
 	if r.Hashes() != nil {
 		t.Error("expected nil hashes list")
 	}

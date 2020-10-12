@@ -90,7 +90,7 @@ func TestEncodeDecodeSeriesHeader(t *testing.T) {
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Logf("WARNING: Msgsize() for %v is inaccurate", v)
+		t.Log("WARNING: TestEncodeDecodeSeriesHeader Msgsize() is inaccurate")
 	}
 
 	vn := SeriesHeader{}

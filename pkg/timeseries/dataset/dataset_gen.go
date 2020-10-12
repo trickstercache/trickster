@@ -30,51 +30,71 @@ func (z *DataSet) DecodeMsg(dc *msgp.Reader) (err error) {
 	var zb0001 uint32
 	zb0001, err = dc.ReadMapHeader()
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0001 > 0 {
 		zb0001--
 		field, err = dc.ReadMapKeyPtr()
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		switch msgp.UnsafeString(field) {
 		case "status":
 			z.Status, err = dc.ReadString()
 			if err != nil {
+				err = msgp.WrapError(err, "Status")
 				return
 			}
 		case "extent_list":
 			err = z.ExtentList.DecodeMsg(dc)
 			if err != nil {
+				err = msgp.WrapError(err, "ExtentList")
 				return
 			}
 		case "results":
 			var zb0002 uint32
 			zb0002, err = dc.ReadArrayHeader()
 			if err != nil {
+				err = msgp.WrapError(err, "Results")
 				return
 			}
 			if cap(z.Results) >= int(zb0002) {
 				z.Results = (z.Results)[:zb0002]
 			} else {
-				z.Results = make([]Result, zb0002)
+				z.Results = make([]*Result, zb0002)
 			}
 			for za0001 := range z.Results {
-				err = z.Results[za0001].DecodeMsg(dc)
-				if err != nil {
-					return
+				if dc.IsNil() {
+					err = dc.ReadNil()
+					if err != nil {
+						err = msgp.WrapError(err, "Results", za0001)
+						return
+					}
+					z.Results[za0001] = nil
+				} else {
+					if z.Results[za0001] == nil {
+						z.Results[za0001] = new(Result)
+					}
+					err = z.Results[za0001].DecodeMsg(dc)
+					if err != nil {
+						err = msgp.WrapError(err, "Results", za0001)
+						return
+					}
 				}
 			}
 		case "error":
 			z.Error, err = dc.ReadString()
 			if err != nil {
+				err = msgp.WrapError(err, "Error")
 				return
 			}
 		case "trq":
 			if dc.IsNil() {
 				err = dc.ReadNil()
 				if err != nil {
+					err = msgp.WrapError(err, "TimeRangeQuery")
 					return
 				}
 				z.TimeRangeQuery = nil
@@ -84,12 +104,14 @@ func (z *DataSet) DecodeMsg(dc *msgp.Reader) (err error) {
 				}
 				err = z.TimeRangeQuery.DecodeMsg(dc)
 				if err != nil {
+					err = msgp.WrapError(err, "TimeRangeQuery")
 					return
 				}
 			}
 		default:
 			err = dc.Skip()
 			if err != nil {
+				err = msgp.WrapError(err)
 				return
 			}
 		}
@@ -107,6 +129,7 @@ func (z *DataSet) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteString(z.Status)
 	if err != nil {
+		err = msgp.WrapError(err, "Status")
 		return
 	}
 	// write "extent_list"
@@ -116,6 +139,7 @@ func (z *DataSet) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = z.ExtentList.EncodeMsg(en)
 	if err != nil {
+		err = msgp.WrapError(err, "ExtentList")
 		return
 	}
 	// write "results"
@@ -125,12 +149,21 @@ func (z *DataSet) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteArrayHeader(uint32(len(z.Results)))
 	if err != nil {
+		err = msgp.WrapError(err, "Results")
 		return
 	}
 	for za0001 := range z.Results {
-		err = z.Results[za0001].EncodeMsg(en)
-		if err != nil {
-			return
+		if z.Results[za0001] == nil {
+			err = en.WriteNil()
+			if err != nil {
+				return
+			}
+		} else {
+			err = z.Results[za0001].EncodeMsg(en)
+			if err != nil {
+				err = msgp.WrapError(err, "Results", za0001)
+				return
+			}
 		}
 	}
 	// write "error"
@@ -140,6 +173,7 @@ func (z *DataSet) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteString(z.Error)
 	if err != nil {
+		err = msgp.WrapError(err, "Error")
 		return
 	}
 	// write "trq"
@@ -155,6 +189,7 @@ func (z *DataSet) EncodeMsg(en *msgp.Writer) (err error) {
 	} else {
 		err = z.TimeRangeQuery.EncodeMsg(en)
 		if err != nil {
+			err = msgp.WrapError(err, "TimeRangeQuery")
 			return
 		}
 	}
@@ -172,15 +207,21 @@ func (z *DataSet) MarshalMsg(b []byte) (o []byte, err error) {
 	o = append(o, 0xab, 0x65, 0x78, 0x74, 0x65, 0x6e, 0x74, 0x5f, 0x6c, 0x69, 0x73, 0x74)
 	o, err = z.ExtentList.MarshalMsg(o)
 	if err != nil {
+		err = msgp.WrapError(err, "ExtentList")
 		return
 	}
 	// string "results"
 	o = append(o, 0xa7, 0x72, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x73)
 	o = msgp.AppendArrayHeader(o, uint32(len(z.Results)))
 	for za0001 := range z.Results {
-		o, err = z.Results[za0001].MarshalMsg(o)
-		if err != nil {
-			return
+		if z.Results[za0001] == nil {
+			o = msgp.AppendNil(o)
+		} else {
+			o, err = z.Results[za0001].MarshalMsg(o)
+			if err != nil {
+				err = msgp.WrapError(err, "Results", za0001)
+				return
+			}
 		}
 	}
 	// string "error"
@@ -193,6 +234,7 @@ func (z *DataSet) MarshalMsg(b []byte) (o []byte, err error) {
 	} else {
 		o, err = z.TimeRangeQuery.MarshalMsg(o)
 		if err != nil {
+			err = msgp.WrapError(err, "TimeRangeQuery")
 			return
 		}
 	}
@@ -206,45 +248,63 @@ func (z *DataSet) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	var zb0001 uint32
 	zb0001, bts, err = msgp.ReadMapHeaderBytes(bts)
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0001 > 0 {
 		zb0001--
 		field, bts, err = msgp.ReadMapKeyZC(bts)
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		switch msgp.UnsafeString(field) {
 		case "status":
 			z.Status, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "Status")
 				return
 			}
 		case "extent_list":
 			bts, err = z.ExtentList.UnmarshalMsg(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "ExtentList")
 				return
 			}
 		case "results":
 			var zb0002 uint32
 			zb0002, bts, err = msgp.ReadArrayHeaderBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "Results")
 				return
 			}
 			if cap(z.Results) >= int(zb0002) {
 				z.Results = (z.Results)[:zb0002]
 			} else {
-				z.Results = make([]Result, zb0002)
+				z.Results = make([]*Result, zb0002)
 			}
 			for za0001 := range z.Results {
-				bts, err = z.Results[za0001].UnmarshalMsg(bts)
-				if err != nil {
-					return
+				if msgp.IsNil(bts) {
+					bts, err = msgp.ReadNilBytes(bts)
+					if err != nil {
+						return
+					}
+					z.Results[za0001] = nil
+				} else {
+					if z.Results[za0001] == nil {
+						z.Results[za0001] = new(Result)
+					}
+					bts, err = z.Results[za0001].UnmarshalMsg(bts)
+					if err != nil {
+						err = msgp.WrapError(err, "Results", za0001)
+						return
+					}
 				}
 			}
 		case "error":
 			z.Error, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "Error")
 				return
 			}
 		case "trq":
@@ -260,12 +320,14 @@ func (z *DataSet) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				}
 				bts, err = z.TimeRangeQuery.UnmarshalMsg(bts)
 				if err != nil {
+					err = msgp.WrapError(err, "TimeRangeQuery")
 					return
 				}
 			}
 		default:
 			bts, err = msgp.Skip(bts)
 			if err != nil {
+				err = msgp.WrapError(err)
 				return
 			}
 		}
@@ -278,7 +340,11 @@ func (z *DataSet) UnmarshalMsg(bts []byte) (o []byte, err error) {
 func (z *DataSet) Msgsize() (s int) {
 	s = 1 + 7 + msgp.StringPrefixSize + len(z.Status) + 12 + z.ExtentList.Msgsize() + 8 + msgp.ArrayHeaderSize
 	for za0001 := range z.Results {
-		s += z.Results[za0001].Msgsize()
+		if z.Results[za0001] == nil {
+			s += msgp.NilSize
+		} else {
+			s += z.Results[za0001].Msgsize()
+		}
 	}
 	s += 6 + msgp.StringPrefixSize + len(z.Error) + 4
 	if z.TimeRangeQuery == nil {
