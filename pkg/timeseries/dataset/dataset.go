@@ -65,7 +65,7 @@ type Marshaler func(*DataSet, *timeseries.RequestOptions, io.Writer) error
 
 // String is a debugging function to print a string representation of the DataSet
 func (ds *DataSet) String() string {
-	sb := strings.Builder{}
+	var sb strings.Builder
 	sb.WriteByte('{')
 	if ds.Status != "" {
 		sb.WriteString(fmt.Sprintf(`"status":"%s",`, ds.Status))
@@ -262,7 +262,7 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 				continue
 			}
 			rmtx.RLock()
-			_, ok := rl[r.StatementID]
+			r1, ok := rl[r.StatementID]
 			rmtx.RUnlock()
 			if !ok {
 				rmtx.Lock()
@@ -281,7 +281,7 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 			}
 
 			rwg.Add(1)
-			go func(gr *Result) {
+			go func(gr1, gr *Result) {
 				var wg sync.WaitGroup
 				var slmtx sync.RWMutex
 
@@ -292,20 +292,18 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 						continue
 					}
 					wg.Add(1)
-					go func(gs *Series, ggr *Result) {
+					go func(gs *Series, ggr1 *Result) {
 						defer wg.Done()
 						var es *Series
+						key := SeriesLookupKey{StatementID: ggr1.StatementID, Hash: gs.Header.CalculateHash()}
 						slmtx.RLock()
-						es, ok = sl[SeriesLookupKey{StatementID: ggr.StatementID, Hash: gs.Header.CalculateHash()}]
+						es, ok = sl[key]
 						slmtx.RUnlock()
-						if !ok {
+						if !ok || es == nil {
 							slmtx.Lock()
-							ggr.SeriesList = append(ggr.SeriesList, gs)
-							sl[SeriesLookupKey{StatementID: ggr.StatementID, Hash: gs.Header.CalculateHash()}] = gs
+							ggr1.SeriesList = append(ggr1.SeriesList, gs)
+							sl[key] = gs
 							slmtx.Unlock()
-							return
-						}
-						if es == nil {
 							return
 						}
 						// otherwise, we append points
@@ -329,10 +327,10 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 							}
 						}
 						es.PointSize = es.Points.Size()
-					}(s, gr)
+					}(s, gr1)
 				}
 				wg.Wait()
-			}(r)
+			}(r1, r)
 			rwg.Wait()
 			//ds.Results[ri].SeriesList = SeriesList(ds.Results[ri].SeriesList).merge(ds2.Results[ri].SeriesList)
 			ds.ExtentList = append(ds.ExtentList, ds2.ExtentList...)
