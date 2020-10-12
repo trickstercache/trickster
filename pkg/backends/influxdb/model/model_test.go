@@ -16,7 +16,26 @@
 
 package model
 
-// func TestMarshalTimeseries(t *testing.T) {
+import (
+	"testing"
+
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
+)
+
+func TestUnmarshalTimeseries(t *testing.T) {
+
+	const testVal = `{"results":[{"statement_id":0},{"statement_id":1}]}`
+
+	trq := &timeseries.TimeRangeQuery{
+		Statement: "hello",
+	}
+
+	_, err := UnmarshalTimeseries([]byte(testVal), trq)
+	if err != nil {
+		t.Error(err)
+	}
+
+}
 
 // 	se := &SeriesEnvelope{
 // 		Results: []Result{
