@@ -205,7 +205,7 @@ func SetResultsHeader(headers http.Header, engine, status, ffstatus string, fetc
 	if fetched != nil && len(fetched) > 0 {
 		fp := make([]string, 0, len(fetched))
 		for _, v := range fetched {
-			fp = append(fp, fmt.Sprintf("%d:%d", v.Start.Unix(), v.End.Unix()))
+			fp = append(fp, v.String())
 		}
 		parts = append(parts, fmt.Sprintf("fetched=[%s]", strings.Join(fp, ",")))
 	}

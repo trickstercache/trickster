@@ -34,11 +34,21 @@ import (
 // QueryHandler handles timeseries requests for InfluxDB and processes them through the delta proxy cache
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
-	_, s, _ := params.GetRequestValues(r)
-
-	s = strings.Replace(strings.ToLower(s), "%20", "+", -1)
+	qp, _, _ := params.GetRequestValues(r)
+	q := strings.Trim(strings.ToLower(qp.Get(upQuery)), " \t\n")
+	if q == "" {
+		c.ProxyHandler(w, r)
+		return
+	}
+	// move past any semicolons
+	for {
+		if q[0] != ';' {
+			break
+		}
+		q = q[1:]
+	}
 	// if it's not a select statement, just proxy it instead
-	if (!strings.HasPrefix(s, "q=select+")) && (!(strings.Index(s, "&q=select+") > 0)) {
+	if !strings.HasPrefix(q, "select ") {
 		c.ProxyHandler(w, r)
 		return
 	}

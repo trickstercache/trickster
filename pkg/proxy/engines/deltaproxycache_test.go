@@ -477,7 +477,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
 	extn.End = normalizeTime(extr.End, step)
 
-	expectedFetched := fmt.Sprintf("[%d:%d]", phitStart.Unix(), extn.End.Unix())
+	expectedFetched := "[" + timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
 	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
@@ -521,7 +521,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	extr.Start = extr.Start.Add(time.Duration(-1) * time.Hour)
 	extn.Start = normalizeTime(extr.Start, step)
 
-	expectedFetched = fmt.Sprintf("[%d:%d]", extn.Start.Unix(), phitEnd.Unix())
+	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + "]"
 	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
@@ -569,8 +569,8 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
 	extn.End = normalizeTime(extr.End, step)
 
-	expectedFetched = fmt.Sprintf("[%d:%d,%d:%d]",
-		extn.Start.Unix(), phitEnd.Unix(), phitStart.Unix(), extn.End.Unix())
+	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + "," +
+		timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
 
 	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
@@ -764,7 +764,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	extr.End = extr.Start.Add(time.Duration(1) * time.Hour)
 	extn.End = extr.End.Truncate(step)
 
-	expectedFetched := fmt.Sprintf("[%d:%d]", extn.Start.Unix(), extn.End.Unix())
+	expectedFetched := fmt.Sprintf("[%s]", extn.String())
 	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
 		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
@@ -811,7 +811,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	extr.End = now.Add(time.Duration(-8) * time.Hour)
 	extn.End = extr.End.Truncate(step)
 
-	expectedFetched = fmt.Sprintf("[%d:%d", extn.Start.Unix(), extn.End.Unix())
+	expectedFetched = fmt.Sprintf("[%s]", extn.String())
 	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
 		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
@@ -1462,7 +1462,7 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 	xn := timeseries.Extent{Start: now.Add(-time.Duration(6) * time.Hour).Truncate(step), End: now.Truncate(step)}
 
 	// We can predict what slice will need to be fetched and ensure that is only what is requested upstream
-	expectedFetched := fmt.Sprintf("[%d:%d]", xn.End.Unix(), xn.End.Unix())
+	expectedFetched := fmt.Sprintf("[%s]", timeseries.Extent{Start: xn.End, End: xn.End})
 	expected, _, _ := mockprom.GetTimeSeriesData(query, xn.Start, xn.End, step)
 
 	u := r.URL

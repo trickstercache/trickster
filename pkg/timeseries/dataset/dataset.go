@@ -43,7 +43,7 @@ type DataSet struct {
 	// Timestamps map[Epoch]bool `msg:"timestamps"`
 	// Results is the list of type Result. Each Result represents information about a
 	// different statement in the source query for this DataSet
-	Results []Result `msg:"results"`
+	Results []*Result `msg:"results"`
 	// UpdateLock is used to synchronize updates to the DataSet
 	UpdateLock sync.Mutex `msg:"-"`
 	// Error is a container for any DataSet-level Errors
@@ -65,7 +65,7 @@ type Marshaler func(*DataSet, *timeseries.RequestOptions, io.Writer) error
 
 // String is a debugging function to print a string representation of the DataSet
 func (ds *DataSet) String() string {
-	sb := strings.Builder{}
+	var sb strings.Builder
 	sb.WriteByte('{')
 	if ds.Status != "" {
 		sb.WriteString(fmt.Sprintf(`"status":"%s",`, ds.Status))
@@ -109,7 +109,7 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 		Merger:       ds.Merger,
 		SizeCropper:  ds.SizeCropper,
 		RangeCropper: ds.RangeCropper,
-		Results:      make([]Result, len(ds.Results)),
+		Results:      make([]*Result, len(ds.Results)),
 	}
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
@@ -133,8 +133,13 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 	endNS := Epoch(e.End.UnixNano())
 
 	for i := range ds.Results {
-		clone.Results[i].StatementID = ds.Results[i].StatementID
-		clone.Results[i].Error = ds.Results[i].Error
+		if ds.Results[i] == nil {
+			continue
+		}
+		clone.Results[i] = &Result{
+			StatementID: ds.Results[i].StatementID,
+			Error:       ds.Results[i].Error,
+		}
 		clone.Results[i].SeriesList = make([]*Series, len(ds.Results[i].SeriesList))
 		var wg sync.WaitGroup
 		var skips bool
@@ -198,7 +203,7 @@ func (ds *DataSet) Clone() timeseries.Timeseries {
 		SizeCropper:  ds.SizeCropper,
 		RangeCropper: ds.RangeCropper,
 		ExtentList:   make(timeseries.ExtentList, len(ds.ExtentList)),
-		Results:      make([]Result, len(ds.Results)),
+		Results:      make([]*Result, len(ds.Results)),
 	}
 	if ds.TimeRangeQuery != nil {
 		clone.TimeRangeQuery = ds.TimeRangeQuery.Clone()
@@ -223,19 +228,22 @@ func (ds *DataSet) Merge(sortSeries bool, collection ...timeseries.Timeseries) {
 
 // DefaultMerger is the default Merger function
 func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Timeseries) {
-	mtx := sync.Mutex{}
-	wg := sync.WaitGroup{}
 
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
 
 	sl := make(SeriesLookup)
-	for i := range ds.Results {
-		for _, s := range ds.Results[i].SeriesList {
+	rl := make(ResultsLookup)
+	for _, r := range ds.Results {
+		if r == nil {
+			continue
+		}
+		rl[r.StatementID] = r
+		for _, s := range r.SeriesList {
 			if s == nil {
 				continue
 			}
-			sl[s.Header.CalculateHash()] = s
+			sl[SeriesLookupKey{StatementID: r.StatementID, Hash: s.Header.CalculateHash()}] = s
 		}
 	}
 
@@ -247,59 +255,96 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 		if !ok {
 			continue
 		}
-		for ri := range ds2.Results {
-			if ri >= len(ds.Results) {
-				mtx.Lock()
-				ds.Results = append(ds.Results, ds2.Results[ri:]...)
-				mtx.Unlock()
-				break
+		var rmtx sync.RWMutex
+		var rwg sync.WaitGroup
+		for _, r := range ds2.Results {
+			if r == nil {
+				continue
 			}
-			for i := range ds2.Results[ri].SeriesList {
-				if ds2.Results[ri].SeriesList[i] == nil {
-					continue
-				}
-				wg.Add(1)
-				go func(s *Series, rj int) {
-					mtx.Lock()
-					var es *Series
-					h := s.Header.CalculateHash()
-					if es, ok = sl[h]; !ok || es == nil {
-						mtx.Unlock()
-						wg.Done()
-						return
-					}
-					mtx.Unlock()
-					es.Points = append(es.Points, s.Points...)
-					// This will sort and dupe kill the list of points, keeping the newest version
-					if sortSeries {
-						sort.Sort(es.Points)
-						n := len(es.Points)
-						if n <= 1 {
-							x := make(Points, n)
-							copy(x, es.Points[0:n])
-							es.Points = x
-						} else {
-							// this will uniqueify the now-sorted list
-							// TODO: verify this retains the newest/highest index point
-							// for a timestamp and not the oldest / lowest index
-							j := 1
-							for i := 1; i < n; i++ {
-								if es.Points[i].Epoch != es.Points[i-1].Epoch {
-									es.Points[j] = es.Points[i]
-									j++
-								}
-							}
-							x := make(Points, len(es.Points[0:j]))
-							copy(x, es.Points[0:j])
-							es.Points = x
+			rmtx.RLock()
+			r1, ok := rl[r.StatementID]
+			rmtx.RUnlock()
+			if !ok {
+				rmtx.Lock()
+				if _, ok = rl[r.StatementID]; !ok {
+					rl[r.StatementID] = r
+					ds.Results = append(ds.Results, r)
+					for _, s := range r.SeriesList {
+						if s == nil {
+							continue
 						}
+						sl[SeriesLookupKey{StatementID: r.StatementID, Hash: s.Header.CalculateHash()}] = s
 					}
-					es.PointSize = es.Points.Size()
-					wg.Done()
-				}(ds2.Results[ri].SeriesList[i], ri)
+				}
+				rmtx.Unlock()
+				continue
 			}
-			wg.Wait()
-			ds.Results[ri].SeriesList = SeriesList(ds.Results[ri].SeriesList).merge(ds2.Results[ri].SeriesList)
+
+			rwg.Add(1)
+			var slmtx sync.RWMutex
+
+			// this iterates the new result and appends any new datapoints to pre-existing series
+			go func(gr1, gr *Result) {
+				var wg sync.WaitGroup
+
+				defer rwg.Done()
+
+				for _, s := range gr.SeriesList {
+					if s == nil || len(s.Points) == 0 {
+						continue
+					}
+					wg.Add(1)
+					// this checks each series for new entries, and adds them to the main lookup if non-existing
+					// or appends new points, if any, to the pre-existing series.
+					go func(gs *Series, ggr1 *Result) {
+						defer wg.Done()
+						var es *Series
+						key := SeriesLookupKey{StatementID: ggr1.StatementID, Hash: gs.Header.CalculateHash()}
+						slmtx.RLock()
+						es, ok = sl[key]
+						slmtx.RUnlock()
+						if !ok && gs != nil {
+							slmtx.Lock()
+							sl[key] = gs
+							slmtx.Unlock()
+							return
+						}
+						if gs == nil {
+							return
+						}
+						// otherwise, we append points
+						es.Points = append(es.Points, gs.Points...)
+						// This will sort and dupe kill the list of points, keeping the newest version
+						if sortSeries {
+							n := len(es.Points)
+							sort.Sort(es.Points)
+							if n <= 1 {
+								// extra 10 capacity prevents an extra copy/expand of the whole
+								// slice for small incremental merges on the next load
+								x := make(Points, n, n+10)
+								copy(x, es.Points[0:n])
+								es.Points = x
+							} else {
+								x := make(Points, 0, len(es.Points)+10)
+								for k := 0; k < n; k++ {
+									if k+1 == n || es.Points[k].Epoch != es.Points[k+1].Epoch {
+										x = append(x, es.Points[k])
+									}
+								}
+								es.Points = x
+							}
+						}
+						es.PointSize = es.Points.Size()
+					}(s, gr1)
+				}
+				wg.Wait()
+			}(r1, r)
+			rwg.Wait()
+			if len(r.SeriesList) > 0 {
+				// if we ended up having any new series, this will actually merge them into
+				// the existing result set in the best guess as to the correct location
+				r1.SeriesList = SeriesList(r1.SeriesList).merge(r.SeriesList)
+			}
 			ds.ExtentList = append(ds.ExtentList, ds2.ExtentList...)
 		}
 	}

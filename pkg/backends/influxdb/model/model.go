@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -202,7 +203,7 @@ func marshalTimeseriesJSON(ds *dataset.DataSet, rlo *timeseries.RequestOptions, 
 			lp := len(s.Points) - 1
 			for j := range s.Points {
 				w.Write([]byte("["))
-				lv := len(s.Points[j].Values) - 1
+				lv := len(s.Points[j].Values)
 				for n, v := range s.Points[j].Values {
 					if n == s.Header.TimestampIndex {
 						dw(w, s.Points[j].Epoch, multiplier)
@@ -226,12 +227,12 @@ func marshalTimeseriesJSON(ds *dataset.DataSet, rlo *timeseries.RequestOptions, 
 				w.Write([]byte(","))
 			}
 		}
-		w.Write([]byte("]"))
+		w.Write([]byte("]}"))
 		if i < lr-1 {
 			w.Write([]byte(","))
 		}
 	}
-	w.Write([]byte("}]}"))
+	w.Write([]byte("]}"))
 	return nil
 }
 
@@ -437,12 +438,14 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 	if wfd.Results == nil {
 		return nil, timeseries.ErrInvalidBody
 	}
-	ds.Results = make([]dataset.Result, len(wfd.Results))
+	ds.Results = make([]*dataset.Result, len(wfd.Results))
 	for i := range wfd.Results {
-		ds.Results[i].StatementID = wfd.Results[i].StatementID
-		ds.Results[i].Error = wfd.Results[i].Err
+		ds.Results[i] = &dataset.Result{
+			StatementID: wfd.Results[i].StatementID,
+			Error:       wfd.Results[i].Err,
+		}
 		if wfd.Results[i].SeriesList == nil {
-			return nil, timeseries.ErrInvalidBody
+			continue
 		}
 		ds.Results[i].SeriesList = make([]*dataset.Series, len(wfd.Results[i].SeriesList))
 		for j := range wfd.Results[i].SeriesList {
@@ -479,9 +482,6 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			var wg sync.WaitGroup
 			var ume error
 			for vi, v := range wfd.Results[i].SeriesList[j].Values {
-				if len(v) != cl {
-					return nil, timeseries.ErrInvalidBody
-				}
 				wg.Add(1)
 				go func(vals []interface{}, idx int) {
 					pt, cols, err := pointFromValues(vals, sh.TimestampIndex)
@@ -509,6 +509,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 				}
 			}
 			wg.Wait()
+			sort.Sort(pts)
 			if ume != nil {
 				return nil, err
 			}

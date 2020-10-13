@@ -29,29 +29,34 @@ func (z *Result) DecodeMsg(dc *msgp.Reader) (err error) {
 	var zb0001 uint32
 	zb0001, err = dc.ReadMapHeader()
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0001 > 0 {
 		zb0001--
 		field, err = dc.ReadMapKeyPtr()
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		switch msgp.UnsafeString(field) {
 		case "statement_id":
 			z.StatementID, err = dc.ReadInt()
 			if err != nil {
+				err = msgp.WrapError(err, "StatementID")
 				return
 			}
 		case "error":
 			z.Error, err = dc.ReadString()
 			if err != nil {
+				err = msgp.WrapError(err, "Error")
 				return
 			}
 		case "series":
 			var zb0002 uint32
 			zb0002, err = dc.ReadArrayHeader()
 			if err != nil {
+				err = msgp.WrapError(err, "SeriesList")
 				return
 			}
 			if cap(z.SeriesList) >= int(zb0002) {
@@ -63,6 +68,7 @@ func (z *Result) DecodeMsg(dc *msgp.Reader) (err error) {
 				if dc.IsNil() {
 					err = dc.ReadNil()
 					if err != nil {
+						err = msgp.WrapError(err, "SeriesList", za0001)
 						return
 					}
 					z.SeriesList[za0001] = nil
@@ -72,6 +78,7 @@ func (z *Result) DecodeMsg(dc *msgp.Reader) (err error) {
 					}
 					err = z.SeriesList[za0001].DecodeMsg(dc)
 					if err != nil {
+						err = msgp.WrapError(err, "SeriesList", za0001)
 						return
 					}
 				}
@@ -79,6 +86,7 @@ func (z *Result) DecodeMsg(dc *msgp.Reader) (err error) {
 		default:
 			err = dc.Skip()
 			if err != nil {
+				err = msgp.WrapError(err)
 				return
 			}
 		}
@@ -96,6 +104,7 @@ func (z *Result) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteInt(z.StatementID)
 	if err != nil {
+		err = msgp.WrapError(err, "StatementID")
 		return
 	}
 	// write "error"
@@ -105,6 +114,7 @@ func (z *Result) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteString(z.Error)
 	if err != nil {
+		err = msgp.WrapError(err, "Error")
 		return
 	}
 	// write "series"
@@ -114,6 +124,7 @@ func (z *Result) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteArrayHeader(uint32(len(z.SeriesList)))
 	if err != nil {
+		err = msgp.WrapError(err, "SeriesList")
 		return
 	}
 	for za0001 := range z.SeriesList {
@@ -125,6 +136,7 @@ func (z *Result) EncodeMsg(en *msgp.Writer) (err error) {
 		} else {
 			err = z.SeriesList[za0001].EncodeMsg(en)
 			if err != nil {
+				err = msgp.WrapError(err, "SeriesList", za0001)
 				return
 			}
 		}
@@ -151,6 +163,7 @@ func (z *Result) MarshalMsg(b []byte) (o []byte, err error) {
 		} else {
 			o, err = z.SeriesList[za0001].MarshalMsg(o)
 			if err != nil {
+				err = msgp.WrapError(err, "SeriesList", za0001)
 				return
 			}
 		}
@@ -165,29 +178,34 @@ func (z *Result) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	var zb0001 uint32
 	zb0001, bts, err = msgp.ReadMapHeaderBytes(bts)
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0001 > 0 {
 		zb0001--
 		field, bts, err = msgp.ReadMapKeyZC(bts)
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		switch msgp.UnsafeString(field) {
 		case "statement_id":
 			z.StatementID, bts, err = msgp.ReadIntBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "StatementID")
 				return
 			}
 		case "error":
 			z.Error, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "Error")
 				return
 			}
 		case "series":
 			var zb0002 uint32
 			zb0002, bts, err = msgp.ReadArrayHeaderBytes(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "SeriesList")
 				return
 			}
 			if cap(z.SeriesList) >= int(zb0002) {
@@ -208,6 +226,7 @@ func (z *Result) UnmarshalMsg(bts []byte) (o []byte, err error) {
 					}
 					bts, err = z.SeriesList[za0001].UnmarshalMsg(bts)
 					if err != nil {
+						err = msgp.WrapError(err, "SeriesList", za0001)
 						return
 					}
 				}
@@ -215,6 +234,7 @@ func (z *Result) UnmarshalMsg(bts []byte) (o []byte, err error) {
 		default:
 			bts, err = msgp.Skip(bts)
 			if err != nil {
+				err = msgp.WrapError(err)
 				return
 			}
 		}

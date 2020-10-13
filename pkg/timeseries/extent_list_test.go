@@ -214,7 +214,7 @@ func TestString(t *testing.T) {
 				Extent{Start: t600, End: t900},
 				Extent{Start: t1100, End: t1300},
 			},
-			"100-200;600-900;1100-1300",
+			"100000-200000;600000-900000;1100000-1300000",
 		},
 
 		{
@@ -226,7 +226,7 @@ func TestString(t *testing.T) {
 			ExtentList{
 				Extent{Start: t100, End: t200},
 			},
-			"100-200",
+			"100000-200000",
 		},
 	}
 

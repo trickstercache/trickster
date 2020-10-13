@@ -27,6 +27,7 @@ func (z *Tags) DecodeMsg(dc *msgp.Reader) (err error) {
 	var zb0003 uint32
 	zb0003, err = dc.ReadMapHeader()
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	if (*z) == nil {
@@ -42,10 +43,12 @@ func (z *Tags) DecodeMsg(dc *msgp.Reader) (err error) {
 		var zb0002 string
 		zb0001, err = dc.ReadString()
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		zb0002, err = dc.ReadString()
 		if err != nil {
+			err = msgp.WrapError(err, zb0001)
 			return
 		}
 		(*z)[zb0001] = zb0002
@@ -57,15 +60,18 @@ func (z *Tags) DecodeMsg(dc *msgp.Reader) (err error) {
 func (z Tags) EncodeMsg(en *msgp.Writer) (err error) {
 	err = en.WriteMapHeader(uint32(len(z)))
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0004, zb0005 := range z {
 		err = en.WriteString(zb0004)
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		err = en.WriteString(zb0005)
 		if err != nil {
+			err = msgp.WrapError(err, zb0004)
 			return
 		}
 	}
@@ -88,6 +94,7 @@ func (z *Tags) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	var zb0003 uint32
 	zb0003, bts, err = msgp.ReadMapHeaderBytes(bts)
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	if (*z) == nil {
@@ -103,10 +110,12 @@ func (z *Tags) UnmarshalMsg(bts []byte) (o []byte, err error) {
 		zb0003--
 		zb0001, bts, err = msgp.ReadStringBytes(bts)
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		zb0002, bts, err = msgp.ReadStringBytes(bts)
 		if err != nil {
+			err = msgp.WrapError(err, zb0001)
 			return
 		}
 		(*z)[zb0001] = zb0002

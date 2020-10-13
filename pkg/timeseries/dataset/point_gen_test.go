@@ -90,7 +90,7 @@ func TestEncodeDecodeEpochs(t *testing.T) {
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Logf("WARNING: Msgsize() for %v is inaccurate", v)
+		t.Log("WARNING: TestEncodeDecodeEpochs Msgsize() is inaccurate")
 	}
 
 	vn := Epochs{}
@@ -203,7 +203,7 @@ func TestEncodeDecodePoint(t *testing.T) {
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Logf("WARNING: Msgsize() for %v is inaccurate", v)
+		t.Log("WARNING: TestEncodeDecodePoint Msgsize() is inaccurate")
 	}
 
 	vn := Point{}
@@ -316,7 +316,7 @@ func TestEncodeDecodePoints(t *testing.T) {
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Logf("WARNING: Msgsize() for %v is inaccurate", v)
+		t.Log("WARNING: TestEncodeDecodePoints Msgsize() is inaccurate")
 	}
 
 	vn := Points{}

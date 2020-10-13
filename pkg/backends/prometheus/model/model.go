@@ -80,7 +80,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 	}
 	ds := &dataset.DataSet{
 		Status:         wfd.Status,
-		Results:        []dataset.Result{{}},
+		Results:        []*dataset.Result{{}},
 		TimeRangeQuery: trq,
 		ExtentList:     timeseries.ExtentList{trq.Extent},
 	}
