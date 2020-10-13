@@ -281,9 +281,11 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 			}
 
 			rwg.Add(1)
+			var slmtx sync.RWMutex
+
+			// this iterates the new result and appends any new datapoints to pre-existing series
 			go func(gr1, gr *Result) {
 				var wg sync.WaitGroup
-				var slmtx sync.RWMutex
 
 				defer rwg.Done()
 
@@ -292,6 +294,8 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 						continue
 					}
 					wg.Add(1)
+					// this checks each series for new entries, and adds them to the main lookup if non-existing
+					// or appends new points, if any, to the pre-existing series.
 					go func(gs *Series, ggr1 *Result) {
 						defer wg.Done()
 						var es *Series
@@ -299,11 +303,13 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 						slmtx.RLock()
 						es, ok = sl[key]
 						slmtx.RUnlock()
-						if !ok || es == nil {
+						if !ok && gs != nil {
 							slmtx.Lock()
-							ggr1.SeriesList = append(ggr1.SeriesList, gs)
 							sl[key] = gs
 							slmtx.Unlock()
+							return
+						}
+						if gs == nil {
 							return
 						}
 						// otherwise, we append points
@@ -313,11 +319,13 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 							n := len(es.Points)
 							sort.Sort(es.Points)
 							if n <= 1 {
-								x := make(Points, n, n+10) // extra 10 capacity prevents an extra copy/expand of the whole slice for small incremental merges
+								// extra 10 capacity prevents an extra copy/expand of the whole
+								// slice for small incremental merges on the next load
+								x := make(Points, n, n+10)
 								copy(x, es.Points[0:n])
 								es.Points = x
 							} else {
-								x := make(Points, 0, len(es.Points))
+								x := make(Points, 0, len(es.Points)+10)
 								for k := 0; k < n; k++ {
 									if k+1 == n || es.Points[k].Epoch != es.Points[k+1].Epoch {
 										x = append(x, es.Points[k])
@@ -332,7 +340,11 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 				wg.Wait()
 			}(r1, r)
 			rwg.Wait()
-			//ds.Results[ri].SeriesList = SeriesList(ds.Results[ri].SeriesList).merge(ds2.Results[ri].SeriesList)
+			if len(r.SeriesList) > 0 {
+				// if we ended up having any new series, this will actually merge them into
+				// the existing result set in the best guess as to the correct location
+				r1.SeriesList = SeriesList(r1.SeriesList).merge(r.SeriesList)
+			}
 			ds.ExtentList = append(ds.ExtentList, ds2.ExtentList...)
 		}
 	}
