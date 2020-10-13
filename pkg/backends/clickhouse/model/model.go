@@ -33,7 +33,7 @@ var marshalers = map[byte]dataset.Marshaler{
 	5: marshalTimeseriesTSVWithNamesAndTypes,
 }
 
-// NewModeler returns a collection of modeling functions for influxdb interoperability
+// NewModeler returns a collection of modeling functions for clickhouse interoperability
 func NewModeler() *timeseries.Modeler {
 	return &timeseries.Modeler{
 		WireUnmarshalerReader: UnmarshalTimeseriesReader,

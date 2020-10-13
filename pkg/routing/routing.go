@@ -34,9 +34,9 @@ import (
 	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/backends/prometheus"
 	modelprom "github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
+	"github.com/tricksterproxy/trickster/pkg/backends/providers"
 	"github.com/tricksterproxy/trickster/pkg/backends/reverseproxycache"
 	"github.com/tricksterproxy/trickster/pkg/backends/rule"
-	"github.com/tricksterproxy/trickster/pkg/backends/types"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
@@ -80,7 +80,7 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 
 	// This iteration will ensure default backends are handled properly
 	for k, o := range conf.Backends {
-		if !types.IsValidProvider(o.Provider) {
+		if !providers.IsValidProvider(o.Provider) {
 			return nil,
 				fmt.Errorf(`unknown backend provider in backend options. backendName: %s, backendProvider: %s`,
 					k, o.Provider)

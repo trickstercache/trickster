@@ -162,7 +162,7 @@ func (dp *DataPoint) UnmarshalJSON(b []byte) error {
 // DataPoints values represent sortable slices of data point values.
 type DataPoints []DataPoint
 
-// Len returns the length of an array of Prometheus model.Times
+// Len returns the number of elements in the subject slice
 func (dps DataPoints) Len() int {
 	return len(dps)
 }
@@ -172,8 +172,7 @@ func (dps DataPoints) Less(i, j int) bool {
 	return dps[i].Time.Before(dps[j].Time)
 }
 
-// Swap modifies a slice of data tuples by swapping the values in indexes
-// i and j.
+// Swap modifies the subject slice by swapping the values in indexes i and j
 func (dps DataPoints) Swap(i, j int) {
 	dps[i], dps[j] = dps[j], dps[i]
 }
@@ -346,7 +345,7 @@ func (se *SeriesEnvelope) Sort() {
 	sort.Sort(se.Data)
 }
 
-// NewModeler returns a collection of modeling functions for influxdb interoperability
+// NewModeler returns a collection of modeling functions for irondb interoperability
 func NewModeler() *timeseries.Modeler {
 	return &timeseries.Modeler{
 		WireUnmarshalerReader: UnmarshalTimeseriesReader,

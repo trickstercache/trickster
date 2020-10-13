@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package types
+package providers
 
 import (
 	"strconv"

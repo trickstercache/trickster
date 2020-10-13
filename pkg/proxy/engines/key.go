@@ -34,7 +34,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/util/md5"
 )
 
-// DeriveCacheKey calculates a query-specific keyname based on the prometheus query in the user request
+// DeriveCacheKey calculates a query-specific keyname based on the user request
 func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) string {
 
 	rsc := request.GetResources(pr.Request)
