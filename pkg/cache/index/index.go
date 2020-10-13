@@ -392,7 +392,7 @@ func (idx *Index) reap(logger interface{}) {
 	}
 }
 
-// Len returns the length of an array of Prometheus model.Times
+// Len returns the number of elements in the subject slice
 func (o objectsAtime) Len() int {
 	return len(o)
 }
@@ -402,7 +402,7 @@ func (o objectsAtime) Less(i, j int) bool {
 	return o[i].LastAccess.Before(o[j].LastAccess)
 }
 
-// Swap modifies an array by of Prometheus model.Times swapping the values in indexes i and j
+// Swap modifies the subject slice by swapping the values in indexes i and j
 func (o objectsAtime) Swap(i, j int) {
 	o[i], o[j] = o[j], o[i]
 }

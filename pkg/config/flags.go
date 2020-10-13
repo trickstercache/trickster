@@ -68,7 +68,7 @@ func parseFlags(applicationName string, arguments []string) (*Flags, error) {
 	flagSet.StringVar(&flags.Origin, cfOrigin, "",
 		"URL to the Origin. Enter it like you would in grafana, e.g., http://prometheus:9090")
 	flagSet.StringVar(&flags.Provider, cfProvider, "",
-		"Type of origin (prometheus, influxdb)")
+		"Name of the backend provider (prometheus, influxdb, clickhouse, rpc, etc.)")
 	flagSet.IntVar(&flags.ProxyListenPort, cfProxyPort, 0,
 		"Port that the primary Proxy server will listen on")
 	flagSet.IntVar(&flags.MetricsListenPort, cfMetricsPort, 0,
