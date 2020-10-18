@@ -39,7 +39,6 @@ import (
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
-	"github.com/go-stack/stack"
 	othttptrace "go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 	"go.opentelemetry.io/otel/label"
 )
@@ -181,7 +180,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	resp, err := oc.HTTPClient.Do(r)
 	if err != nil {
-		tl.Error(rsc.Logger, stack.Caller(0),
+		tl.Error(rsc.Logger,
 			"error downloading url", tl.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		// if there is an err and the response is nil, the server could not be reached
 		// so make a 502 for the downstream response
@@ -219,7 +218,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		d, err := http.ParseTime(date)
 		if err == nil {
 			if offset := time.Since(d); time.Duration(math.Abs(float64(offset))) > time.Minute {
-				tl.WarnOnce(rsc.Logger, stack.Caller(0), "clockoffset."+oc.Name,
+				tl.WarnOnce(rsc.Logger, "clockoffset."+oc.Name,
 					"clock offset between trickster host and origin is high and may cause data anomalies",
 					tl.Pairs{
 						"backendName":   oc.Name,

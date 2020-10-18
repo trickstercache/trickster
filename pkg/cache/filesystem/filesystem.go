@@ -33,8 +33,6 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/locks"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
-
-	"github.com/go-stack/stack"
 )
 
 // Cache describes a Filesystem Cache
@@ -64,7 +62,7 @@ func (c *Cache) Configuration() *options.Options {
 
 // Connect instantiates the Cache mutex map and starts the Expired Entry Reaper goroutine
 func (c *Cache) Connect() error {
-	tl.Info(c.Logger, stack.Caller(0), "filesystem cache setup", tl.Pairs{"name": c.Name,
+	tl.Info(c.Logger, "filesystem cache setup", tl.Pairs{"name": c.Name,
 		"cachePath": c.Config.Filesystem.CachePath})
 	if err := makeDirectory(c.Config.Filesystem.CachePath); err != nil {
 		return err
@@ -86,7 +84,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 	err := c.store(cacheKey, data, 31536000*time.Second, false)
 	if err != nil {
-		tl.Error(c.Logger, stack.Caller(0),
+		tl.Error(c.Logger,
 			"cache failed to write non-indexed object", tl.Pairs{"cacheName": c.Name,
 				"cacheProvider": "filesystem", "cacheKey": cacheKey, "objectSize": len(data)})
 	}
@@ -114,7 +112,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 		nl.Release()
 		return err
 	}
-	tl.Debug(c.Logger, stack.Caller(0), "filesystem cache store",
+	tl.Debug(c.Logger, "filesystem cache store",
 		tl.Pairs{"key": cacheKey, "dataFile": dataFile, "indexed": updateIndex})
 	if updateIndex {
 		c.Index.UpdateObject(o)
@@ -137,7 +135,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	nl.RRelease()
 
 	if err != nil {
-		tl.Debug(c.Logger, stack.Caller(0), "filesystem cache miss", tl.Pairs{"key": cacheKey, "dataFile": dataFile})
+		tl.Debug(c.Logger, "filesystem cache miss", tl.Pairs{"key": cacheKey, "dataFile": dataFile})
 		metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
 		return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 	}
@@ -158,7 +156,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 
 	o.Expiration = c.Index.GetExpiration(cacheKey)
 	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
-		tl.Debug(c.Logger, stack.Caller(0), "filesystem cache retrieve", tl.Pairs{"key": cacheKey, "dataFile": dataFile})
+		tl.Debug(c.Logger, "filesystem cache retrieve", tl.Pairs{"key": cacheKey, "dataFile": dataFile})
 		if atime {
 			go c.Index.UpdateObjectAccessTime(cacheKey)
 		}

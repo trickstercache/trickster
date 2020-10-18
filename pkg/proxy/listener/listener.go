@@ -26,15 +26,15 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/netutil"
+
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	ph "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	sw "github.com/tricksterproxy/trickster/pkg/proxy/tls"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
-	"golang.org/x/net/netutil"
 
-	"github.com/go-stack/stack"
 	"github.com/gorilla/handlers"
 )
 
@@ -142,7 +142,7 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int,
 		metrics.ProxyMaxConnections.Set(float64(connectionsLimit))
 	}
 
-	tl.Debug(logger, stack.Caller(0), "starting proxy listener", tl.Pairs{
+	tl.Debug(logger, "starting proxy listener", tl.Pairs{
 		"connectionsLimit": connectionsLimit,
 		"scheme":           listenerType,
 		"address":          listenAddress,
@@ -184,14 +184,14 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 	var err error
 	l.Listener, err = NewListener(address, port, connectionsLimit, tlsConfig, drainTimeout, logger)
 	if err != nil {
-		tl.Error(logger, stack.Caller(0),
+		tl.Error(logger,
 			"http listener startup failed", tl.Pairs{"name": listenerName, "detail": err})
 		if exitOnError {
 			os.Exit(1)
 		}
 		return err
 	}
-	tl.Info(logger, stack.Caller(0), "http listener starting",
+	tl.Info(logger, "http listener starting",
 		tl.Pairs{"name": listenerName, "port": port, "address": address})
 
 	lg.listenersLock.Lock()
@@ -215,7 +215,7 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 		l.server = svr
 		err = svr.Serve(l)
 		if err != nil {
-			tl.Error(logger, stack.Caller(0),
+			tl.Error(logger,
 				"https listener stopping", tl.Pairs{"name": listenerName, "detail": err})
 			if l.exitOnError {
 				os.Exit(1)
@@ -230,7 +230,7 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 	l.server = svr
 	err = svr.Serve(l)
 	if err != nil {
-		tl.Error(logger, stack.Caller(0),
+		tl.Error(logger,
 			"http listener stopping", tl.Pairs{"name": listenerName, "detail": err})
 		if l.exitOnError {
 			os.Exit(1)
