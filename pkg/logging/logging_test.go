@@ -21,8 +21,6 @@ import (
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
-
-	"github.com/go-stack/stack"
 )
 
 func TestConsoleLogger(t *testing.T) {
@@ -65,7 +63,7 @@ func TestNewLogger_LogFile(t *testing.T) {
 	conf.Main = &config.MainConfig{InstanceID: 1}
 	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "info"}
 	log := &SyncLogger{Logger: New(conf)}
-	Info(log, stack.Caller(0), "test entry", Pairs{"testKey": "testVal"})
+	Info(log, "test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(instanceFileName); err != nil {
 		t.Errorf(err.Error())
 	}

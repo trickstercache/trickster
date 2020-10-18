@@ -25,8 +25,6 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/config/reload"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-
-	"github.com/go-stack/stack"
 )
 
 // ReloadHandleFunc will reload the running configuration if it has changed
@@ -38,7 +36,7 @@ func ReloadHandleFunc(f reload.ReloaderFunc, conf *config.Config, wg *sync.WaitG
 			conf.Main.ReloaderLock.Lock()
 			defer conf.Main.ReloaderLock.Unlock()
 			if conf.IsStale() {
-				tl.Warn(log, stack.Caller(0),
+				tl.Warn(log,
 					"configuration reload starting now", tl.Pairs{"source": "reloadEndpoint"})
 				err := f(conf, wg, log, caches, args, false)
 				if err == nil {

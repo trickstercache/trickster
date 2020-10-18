@@ -20,13 +20,11 @@ import (
 	"net/http"
 
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
-
-	"github.com/go-stack/stack"
 )
 
 func logUpstreamRequest(logger interface{}, backendName, backendProvider, handlerName, method,
 	path, userAgent string, responseCode, size int, requestDuration float64) {
-	tl.Debug(logger, stack.Caller(0), "upstream request",
+	tl.Debug(logger, "upstream request",
 		tl.Pairs{
 			"backendName":     backendName,
 			"backendProvider": backendProvider,
@@ -41,7 +39,7 @@ func logUpstreamRequest(logger interface{}, backendName, backendProvider, handle
 }
 
 func logDownstreamRequest(logger interface{}, r *http.Request) {
-	tl.Debug(logger, stack.Caller(0), "downtream request",
+	tl.Debug(logger, "downtream request",
 		tl.Pairs{
 			"uri":       r.RequestURI,
 			"method":    r.Method,

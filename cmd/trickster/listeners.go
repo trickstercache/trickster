@@ -29,8 +29,6 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/routing"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
-
-	"github.com/go-stack/stack"
 )
 
 var lg = listener.NewListenerGroup()
@@ -66,7 +64,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	}
 
 	if oldConf != nil && oldConf.Frontend.ConnectionsLimit != conf.Frontend.ConnectionsLimit {
-		tl.Warn(log, stack.Caller(0), "connections limit change requires a process restart. listeners not updated.",
+		tl.Warn(log, "connections limit change requires a process restart. listeners not updated.",
 			tl.Pairs{"oldLimit": oldConf.Frontend.ConnectionsLimit,
 				"newLimit": conf.Frontend.ConnectionsLimit})
 		return
@@ -87,7 +85,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		lg.DrainAndClose("tlsListener", drainTimeout)
 		tlsConfig, err = conf.TLSCertConfig()
 		if err != nil {
-			tl.Error(log, stack.Caller(0), "unable to start tls listener due to certificate error", tl.Pairs{"detail": err})
+			tl.Error(log, "unable to start tls listener due to certificate error", tl.Pairs{"detail": err})
 		} else {
 			wg.Add(1)
 			tracerFlusherSet = true
@@ -103,7 +101,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	} else if conf.Frontend.ServeTLS && ttls.OptionsChanged(conf, oldConf) {
 		tlsConfig, _ = conf.TLSCertConfig()
 		if err != nil {
-			tl.Error(log, stack.Caller(0), "unable to update tls config to certificate error", tl.Pairs{"detail": err})
+			tl.Error(log, "unable to update tls config to certificate error", tl.Pairs{"detail": err})
 			return
 		}
 		l := lg.Get("tlsListener")

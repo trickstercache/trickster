@@ -31,8 +31,6 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 	"github.com/tricksterproxy/trickster/pkg/tracing/providers"
 	"github.com/tricksterproxy/trickster/pkg/util/strings"
-
-	"github.com/go-stack/stack"
 )
 
 // RegisterAll registers all Tracers in the provided configuration, and returns
@@ -88,7 +86,7 @@ func RegisterAll(cfg *config.Config, logger interface{}, isDryRun bool) (tracing
 func GetTracer(options *options.Options, logger interface{}, isDryRun bool) (*tracing.Tracer, error) {
 
 	if options == nil {
-		tl.Info(logger, stack.Caller(0), "nil tracing config, using noop tracer", tl.Pairs{})
+		tl.Info(logger, "nil tracing config, using noop tracer", tl.Pairs{})
 		return noop.NewTracer(options)
 	}
 
@@ -96,7 +94,7 @@ func GetTracer(options *options.Options, logger interface{}, isDryRun bool) (*tr
 		if isDryRun {
 			return
 		}
-		tl.Info(logger, stack.Caller(0),
+		tl.Info(logger,
 			"tracer registration",
 			tl.Pairs{
 				"name":         options.Name,
