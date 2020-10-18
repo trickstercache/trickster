@@ -33,6 +33,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 
+	"github.com/go-stack/stack"
 	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/label"
 )
@@ -424,11 +425,12 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		if f, ok := cacheResponseHandlers[pr.cacheStatus]; ok {
 			f(pr)
 		} else {
-			tl.Warn(pr.Logger, "unhandled cache lookup response", tl.Pairs{"lookupStatus": pr.cacheStatus})
+			tl.Warn(pr.Logger, stack.Caller(0),
+				"unhandled cache lookup response", tl.Pairs{"lookupStatus": pr.cacheStatus})
 			return nil, status.LookupStatusProxyOnly
 		}
 	} else {
-		tl.Error(pr.Logger, "cache lookup error", tl.Pairs{"detail": err.Error()})
+		tl.Error(pr.Logger, stack.Caller(0), "cache lookup error", tl.Pairs{"detail": err.Error()})
 		pr.cacheDocument = nil
 		pr.cacheStatus = status.LookupStatusKeyMiss
 		handleCacheKeyMiss(pr)

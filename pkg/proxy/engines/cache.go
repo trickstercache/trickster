@@ -32,6 +32,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 
+	"github.com/go-stack/stack"
 	"github.com/golang/snappy"
 	"go.opentelemetry.io/otel/label"
 )
@@ -99,7 +100,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 
 		if inflate {
-			tl.Debug(rsc.Logger, "decompressing cached data", tl.Pairs{"cacheKey": key})
+			tl.Debug(rsc.Logger, stack.Caller(0), "decompressing cached data", tl.Pairs{"cacheKey": key})
 			b, err := snappy.Decode(nil, bytes)
 			if err == nil {
 				bytes = b
@@ -107,7 +108,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 		_, err = d.UnmarshalMsg(bytes)
 		if err != nil {
-			tl.Error(rsc.Logger, "error unmarshaling cache document", tl.Pairs{
+			tl.Error(rsc.Logger, stack.Caller(0), "error unmarshaling cache document", tl.Pairs{
 				"cacheKey": key,
 				"detail":   err.Error(),
 			})
@@ -210,14 +211,14 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 	// for non-memory, we have to seralize the document to a byte slice to store
 	bytes, err = d.MarshalMsg(nil)
 	if err != nil {
-		tl.Error(rsc.Logger, "error marshaling cache document", tl.Pairs{
+		tl.Error(rsc.Logger, stack.Caller(0), "error marshaling cache document", tl.Pairs{
 			"cacheKey": key,
 			"detail":   err.Error(),
 		})
 	}
 
 	if compress {
-		tl.Debug(rsc.Logger, "compressing cache data", tl.Pairs{"cacheKey": key})
+		tl.Debug(rsc.Logger, stack.Caller(0), "compressing cache data", tl.Pairs{"cacheKey": key})
 		bytes = append([]byte{1}, snappy.Encode(nil, bytes)...)
 	} else {
 		bytes = append([]byte{0}, bytes...)

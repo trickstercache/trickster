@@ -35,6 +35,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 
+	"github.com/go-stack/stack"
 	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/label"
 )
@@ -166,7 +167,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 		resp.Body.Close()
 	}
 	if err != nil {
-		tl.Error(pr.Logger, "error reading body from http response",
+		tl.Error(pr.Logger, stack.Caller(0), "error reading body from http response",
 			tl.Pairs{"url": pr.URL.String(), "detail": err.Error()})
 		return []byte{}, resp, 0
 	}
