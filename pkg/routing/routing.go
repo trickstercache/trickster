@@ -47,12 +47,14 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 	"github.com/tricksterproxy/trickster/pkg/util/middleware"
 
+	"github.com/go-stack/stack"
 	"github.com/gorilla/mux"
 )
 
 // RegisterPprofRoutes will register the Pprof Debugging endpoints to the provided router
 func RegisterPprofRoutes(routerName string, h *http.ServeMux, logger interface{}) {
-	tl.Info(logger, "registering pprof /debug routes", tl.Pairs{"routerName": routerName})
+	tl.Info(logger, stack.Caller(0),
+		"registering pprof /debug routes", tl.Pairs{"routerName": routerName})
 	h.HandleFunc("/debug/pprof/", pprof.Index)
 	h.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	h.HandleFunc("/debug/pprof/profile", pprof.Profile)
@@ -92,7 +94,7 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 					fmt.Errorf("only one backend can be marked as default. Found both %s and %s",
 						defaultBackend, k)
 			}
-			tl.Debug(logger, "default backend identified", tl.Pairs{"name": k})
+			tl.Debug(logger, stack.Caller(0), "default backend identified", tl.Pairs{"name": k})
 			defaultBackend = k
 			cdo = o
 			continue
@@ -149,7 +151,7 @@ func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
 	}
 
 	if !dryRun {
-		tl.Info(logger, "registering route paths", tl.Pairs{"backendName": k,
+		tl.Info(logger, stack.Caller(0), "registering route paths", tl.Pairs{"backendName": k,
 			"backendProvider": o.Provider, "upstreamHost": o.Host})
 	}
 
@@ -228,7 +230,7 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 	if h, ok := handlers["health"]; ok &&
 		oo.HealthCheckUpstreamPath != "" && oo.HealthCheckVerb != "" && healthHandlerPath != "" {
 		hp := strings.Replace(healthHandlerPath+"/"+oo.Name, "//", "/", -1)
-		tl.Debug(logger, "registering health handler path",
+		tl.Debug(logger, stack.Caller(0), "registering health handler path",
 			tl.Pairs{"path": hp, "backendName": oo.Name,
 				"upstreamPath": oo.HealthCheckUpstreamPath,
 				"upstreamVerb": oo.HealthCheckVerb})
@@ -269,7 +271,7 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 			p.Handler = h
 			plist = append(plist, k)
 		} else {
-			tl.Info(logger, "invalid handler name for path",
+			tl.Info(logger, stack.Caller(0), "invalid handler name for path",
 				tl.Pairs{"path": p.Path, "handlerName": p.HandlerName})
 			deletes = append(deletes, p.Path)
 		}
@@ -292,7 +294,7 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		pathPrefix := "/" + oo.Name
 		handledPath := pathPrefix + p.Path
 
-		tl.Debug(logger, "registering backend handler path",
+		tl.Debug(logger, stack.Caller(0), "registering backend handler path",
 			tl.Pairs{"backendName": oo.Name, "path": v, "handlerName": p.HandlerName,
 				"originHost": oo.Host, "handledPath": handledPath, "matchType": p.MatchType,
 				"frontendHosts": strings.Join(oo.Hosts, ",")})
@@ -311,7 +313,8 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 				}
 				if !oo.PathRoutingDisabled {
 					// Path Routing
-					router.PathPrefix(handledPath).Handler(middleware.StripPathPrefix(pathPrefix, decorate(p))).Methods(p.Methods...)
+					router.PathPrefix(handledPath).Handler(middleware.StripPathPrefix(pathPrefix,
+						decorate(p))).Methods(p.Methods...)
 				}
 				or.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...)
 			default:
@@ -322,7 +325,8 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 				}
 				if !oo.PathRoutingDisabled {
 					// Path Routing
-					router.Handle(handledPath, middleware.StripPathPrefix(pathPrefix, decorate(p))).Methods(p.Methods...)
+					router.Handle(handledPath, middleware.StripPathPrefix(pathPrefix,
+						decorate(p))).Methods(p.Methods...)
 				}
 				or.Handle(p.Path, decorate(p)).Methods(p.Methods...)
 			}
@@ -330,11 +334,12 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 	}
 
 	if oo.IsDefault {
-		tl.Info(logger, "registering default backend handler paths", tl.Pairs{"backendName": oo.Name})
+		tl.Info(logger, stack.Caller(0),
+			"registering default backend handler paths", tl.Pairs{"backendName": oo.Name})
 		for _, v := range plist {
 			p := pathsWithVerbs[v]
 			if p.Handler != nil && len(p.Methods) > 0 {
-				tl.Debug(logger, "registering default backend handler paths",
+				tl.Debug(logger, stack.Caller(0), "registering default backend handler paths",
 					tl.Pairs{"backendName": oo.Name, "path": p.Path, "handlerName": p.HandlerName,
 						"matchType": p.MatchType})
 				switch p.MatchType {

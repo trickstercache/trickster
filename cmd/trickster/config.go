@@ -38,6 +38,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/runtime"
 	tr "github.com/tricksterproxy/trickster/pkg/tracing/registration"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
+
+	"github.com/go-stack/stack"
 )
 
 var cfgLock = &sync.Mutex{}
@@ -102,7 +104,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *tl.Logge
 	log = applyLoggingConfig(conf, oldConf, log)
 
 	for _, w := range conf.LoaderWarnings {
-		tl.Warn(log, w, tl.Pairs{})
+		tl.Warn(log, stack.Caller(0), w, tl.Pairs{})
 	}
 
 	//Register Tracing Configurations
@@ -234,7 +236,7 @@ func applyCachingConfig(c, oc *config.Config, logger *tl.Logger,
 
 func initLogger(c *config.Config) *tl.Logger {
 	log := tl.New(c)
-	tl.Info(log, "application loaded from configuration",
+	tl.Info(log, stack.Caller(0), "application loaded from configuration",
 		tl.Pairs{
 			"name":      runtime.ApplicationName,
 			"version":   runtime.ApplicationVersion,
@@ -266,10 +268,10 @@ func handleStartupIssue(event string, detail tl.Pairs, logger *tl.Logger, exitFa
 	if event != "" {
 		if logger != nil {
 			if exitFatal {
-				tl.Fatal(logger, 1, event, detail)
+				tl.Fatal(logger, stack.Caller(0), 1, event, detail)
 				return
 			}
-			tl.Warn(logger, event, detail)
+			tl.Warn(logger, stack.Caller(0), event, detail)
 			return
 		}
 		fmt.Println(event)

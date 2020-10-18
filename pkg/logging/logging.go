@@ -50,10 +50,11 @@ type SyncLogger struct {
 	*Logger
 }
 
-func Debug(logger interface{}, event string, detail Pairs) {
+func Debug(logger interface{}, caller stack.Call, event string, detail Pairs) {
 	if logger == nil {
 		return
 	}
+	detail["caller"] = pkgCaller{caller}
 	switch logger.(type) {
 	case *Logger:
 		go logger.(*Logger).Debug(event, detail)
@@ -66,10 +67,11 @@ func Debug(logger interface{}, event string, detail Pairs) {
 	}
 }
 
-func Info(logger interface{}, event string, detail Pairs) {
+func Info(logger interface{}, caller stack.Call, event string, detail Pairs) {
 	if logger == nil {
 		return
 	}
+	detail["caller"] = pkgCaller{caller}
 	switch logger.(type) {
 	case *Logger:
 		go logger.(*Logger).Info(event, detail)
@@ -82,10 +84,11 @@ func Info(logger interface{}, event string, detail Pairs) {
 	}
 }
 
-func Warn(logger interface{}, event string, detail Pairs) {
+func Warn(logger interface{}, caller stack.Call, event string, detail Pairs) {
 	if logger == nil {
 		return
 	}
+	detail["caller"] = pkgCaller{caller}
 	switch logger.(type) {
 	case *Logger:
 		go logger.(*Logger).Warn(event, detail)
@@ -98,10 +101,11 @@ func Warn(logger interface{}, event string, detail Pairs) {
 	}
 }
 
-func WarnOnce(logger interface{}, key string, event string, detail Pairs) {
+func WarnOnce(logger interface{}, caller stack.Call, key string, event string, detail Pairs) {
 	if logger == nil {
 		return
 	}
+	detail["caller"] = pkgCaller{caller}
 	switch logger.(type) {
 	case *Logger: // must  be Synchronous to avoid double writes
 		logger.(*Logger).WarnOnce(key, event, detail)
@@ -114,10 +118,11 @@ func WarnOnce(logger interface{}, key string, event string, detail Pairs) {
 	}
 }
 
-func Error(logger interface{}, event string, detail Pairs) {
+func Error(logger interface{}, caller stack.Call, event string, detail Pairs) {
 	if logger == nil {
 		return
 	}
+	detail["caller"] = pkgCaller{caller}
 	switch logger.(type) {
 	case *Logger:
 		go logger.(*Logger).Error(event, detail)
@@ -131,9 +136,10 @@ func Error(logger interface{}, event string, detail Pairs) {
 }
 
 // Fatal sends a "FATAL" event to the Logger and exits the program with the provided exit code
-func Fatal(logger interface{}, code int, event string, detail Pairs) {
+func Fatal(logger interface{}, caller stack.Call, code int, event string, detail Pairs) {
 	// go-kit/log/level does not support Fatal, so implemented separately here
 	detail["level"] = "fatal"
+	detail["caller"] = pkgCaller{caller}
 	switch logger.(type) {
 	case *Logger:
 		logger.(*Logger).Fatal(code, event, detail)
@@ -192,9 +198,6 @@ func ConsoleLogger(logLevel string) *Logger {
 	l.baseLogger = gkl.With(l.baseLogger,
 		"time", gkl.DefaultTimestampUTC,
 		"app", "trickster",
-		"caller", gkl.Valuer(func() interface{} {
-			return pkgCaller{stack.Caller(6)}
-		}),
 	)
 	l.SetLogLevel(logLevel)
 	return l
@@ -251,9 +254,6 @@ func New(conf *config.Config) *Logger {
 	l.baseLogger = gkl.With(l.baseLogger,
 		"time", gkl.DefaultTimestampUTC,
 		"app", "trickster",
-		"caller", gkl.Valuer(func() interface{} {
-			return pkgCaller{stack.Caller(6)}
-		}),
 	)
 
 	l.SetLogLevel(conf.Logging.LogLevel)
