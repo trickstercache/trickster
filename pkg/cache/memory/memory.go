@@ -29,8 +29,6 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/locks"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
-
-	"github.com/go-stack/stack"
 )
 
 // Cache defines a a Memory Cache client that conforms to the Cache interface
@@ -61,7 +59,7 @@ func (c *Cache) Configuration() *options.Options {
 
 // Connect initializes the Cache
 func (c *Cache) Connect() error {
-	tl.Info(c.Logger, stack.Caller(0), "memorycache setup", tl.Pairs{"name": c.Name,
+	tl.Info(c.Logger, "memorycache setup", tl.Pairs{"name": c.Name,
 		"maxSizeBytes": c.Config.Index.MaxSizeBytes, "maxSizeObjects": c.Config.Index.MaxSizeObjects})
 	c.lockPrefix = c.Name + ".memory."
 	c.client = sync.Map{}
@@ -98,7 +96,7 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 
 	if o1 != nil && o2 != nil {
 		nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
-		tl.Debug(c.Logger, stack.Caller(0), "memorycache cache store",
+		tl.Debug(c.Logger, "memorycache cache store",
 			tl.Pairs{"cacheKey": cacheKey, "length": l, "ttl": ttl, "is_direct": isDirect})
 		c.client.Store(cacheKey, o1)
 		if updateIndex {
@@ -147,7 +145,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index
 		o.Expiration = c.Index.GetExpiration(cacheKey)
 
 		if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
-			tl.Debug(c.Logger, stack.Caller(0), "memory cache retrieve", tl.Pairs{"cacheKey": cacheKey})
+			tl.Debug(c.Logger, "memory cache retrieve", tl.Pairs{"cacheKey": cacheKey})
 			if atime {
 				go c.Index.UpdateObjectAccessTime(cacheKey)
 			}

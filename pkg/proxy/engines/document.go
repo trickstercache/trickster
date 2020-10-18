@@ -30,8 +30,6 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
-
-	"github.com/go-stack/stack"
 )
 
 //go:generate msgp
@@ -167,7 +165,7 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte,
 			d.RangeParts.Compress()
 			d.Ranges = d.RangeParts.Ranges()
 		} else {
-			tl.Error(logger, stack.Caller(0), "unable to parse multipart range response body", tl.Pairs{"detail": err.Error})
+			tl.Error(logger, "unable to parse multipart range response body", tl.Pairs{"detail": err.Error})
 		}
 	} else {
 		if !strings.HasPrefix(ct, headers.ValueMultipartByteRanges) {
