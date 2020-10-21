@@ -27,6 +27,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -93,20 +94,22 @@ func (c *Client) Router() http.Handler {
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
 func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions, bool, error) {
-	qi := r.URL.Query()
-	var rawQuery string
-	if p, ok := qi[upQuery]; ok {
-		rawQuery = p[0]
+
+	var sqlQuery string
+	var qi url.Values
+	isBody := methods.HasBody(r.Method)
+	if isBody {
+		sqlQuery = string(request.GetBody(r))
 	} else {
-		return nil, nil, false, errors.MissingURLParam(upQuery)
+		qi = r.URL.Query()
+		if p, ok := qi[upQuery]; ok {
+			sqlQuery = p[0]
+		} else {
+			return nil, nil, false, errors.MissingURLParam(upQuery)
+		}
 	}
 
-	// Force gzip compression since Brotli is broken on CH 20.3
-	// See https://github.com/ClickHouse/ClickHouse/issues/9969
-	// Clients that don't understand gzip are going to break, but oh well
-	r.Header.Set("Accept-Encoding", "gzip")
-
-	trq, ro, canOPC, err := parse(rawQuery)
+	trq, ro, canOPC, err := parse(sqlQuery)
 	if err != nil {
 		return nil, nil, canOPC, err
 	}
@@ -125,14 +128,15 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	}
 	trq.BackfillToleranceNS = bf.Nanoseconds()
 
-	// Force gzip compression since Brotli is broken on CH 20.3
-	// See https://github.com/ClickHouse/ClickHouse/issues/9969
-	// Clients that don't understand gzip are going to break, but oh well
-	r.Header.Set("Accept-Encoding", "gzip")
-
 	trq.TemplateURL = urls.Clone(r.URL)
-	// Swap in the Tokenized Query in the Url Params
-	qi.Set(upQuery, trq.Statement)
-	trq.TemplateURL.RawQuery = qi.Encode()
+
+	if isBody {
+		r = request.SetBody(r, []byte(trq.Statement))
+	} else {
+		// Swap in the Tokenized Query in the Url Params
+		qi.Set(upQuery, trq.Statement)
+		trq.TemplateURL.RawQuery = qi.Encode()
+	}
+
 	return trq, ro, canOPC, nil
 }

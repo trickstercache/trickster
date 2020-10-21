@@ -120,15 +120,15 @@ var tokenDurations = map[token.Typ]time.Duration{
 }
 
 var supportedFormats = map[string]byte{
-	"json":                          1,
-	"csv":                           2,
-	"csvwithnames":                  3,
-	"tabseparated":                  4,
-	"tsv":                           4,
-	"tabseparatedwithnames":         5,
-	"tsvwithnames":                  5,
-	"tabseparatedwithnamesandtypes": 6,
-	"tsvwithnamesandtypes":          6,
+	"json":                          0,
+	"csv":                           1,
+	"csvwithnames":                  2,
+	"tabseparated":                  3,
+	"tsv":                           3,
+	"tabseparatedwithnames":         4,
+	"tsvwithnames":                  4,
+	"tabseparatedwithnamesandtypes": 5,
+	"tsvwithnamesandtypes":          5,
 }
 
 var timeFormats = map[int]byte{
@@ -355,6 +355,7 @@ func parseSelectTokens(results map[string]interface{},
 							return t, ErrUnsupportedOutputFormat
 						}
 						ro.TimeFormat = b
+						trq.TimestampDefinition.ProviderData1 = int(b)
 						checkMultiplier = false
 					}
 				}
@@ -593,11 +594,13 @@ func parseWhereTokens(results map[string]interface{},
 					v -= int64(trq.Step.Seconds())
 				}
 				if atLowerBound {
-					e.Start = time.Unix(v, 0)
+					//e.Start = time.Unix(v, 0)
+					e.Start, _, _ = lsql.TokenToTime(t)
 					tsr1 = t.Val
 					atLowerBound = false
 				} else {
-					e.End = time.Unix(v, 0)
+					//e.End = time.Unix(v, 0)
+					e.End, _, _ = lsql.TokenToTime(t)
 					tsr2 = t.Val
 				}
 				if s1 == 0 {
@@ -664,9 +667,12 @@ func parseWhereTokens(results map[string]interface{},
 }
 
 func parseTimeField(t *token.Token) (int64, error) {
-	ts, err := lsql.TokenToTime(t)
+	ts, format, err := lsql.TokenToTime(t)
 	if err != nil {
 		return -1, err
+	}
+	if format == 1 {
+		return ts.UnixNano() / 1000000, nil
 	}
 	return ts.Unix(), nil
 }
