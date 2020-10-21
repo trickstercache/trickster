@@ -900,7 +900,7 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	}
 
 	em.SetExtents(nil)
-	b, err := modeler.WireMarshaler(em, nil)
+	b, err := modeler.WireMarshaler(em, nil, 200)
 	if err != nil {
 		t.Error(err)
 	}

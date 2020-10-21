@@ -24,7 +24,7 @@ import (
 	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/context"
+	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
@@ -81,7 +81,7 @@ func GetResources(r *http.Request) *Resources {
 	if r == nil {
 		return nil
 	}
-	v := context.Resources(r.Context())
+	v := tctx.Resources(r.Context())
 	rsc, ok := v.(*Resources)
 	if ok {
 		return rsc
@@ -94,5 +94,5 @@ func SetResources(r *http.Request, rsc *Resources) *http.Request {
 	if rsc == nil {
 		return r
 	}
-	return r.WithContext(context.WithResources(r.Context(), rsc))
+	return r.WithContext(tctx.WithResources(r.Context(), rsc))
 }

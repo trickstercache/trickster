@@ -19,6 +19,7 @@ package engines
 import (
 	"bytes"
 	"context"
+	"io/ioutil"
 	"net/http"
 	"sync"
 	"time"
@@ -67,7 +68,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	trq, rlo, canOPC, err := client.ParseTimeRangeQuery(r)
 	if err != nil {
 		if canOPC {
-			// TODO - custom TTL ?
+			tl.Debug(rsc.Logger, "could not parse time range query, using object proxy cache", tl.Pairs{"error": err.Error()})
+			rsc.AlternateCacheTTL = time.Second * 30 // TODO: make configurable
 			ObjectProxyCacheRequest(w, r)
 			return
 		}
@@ -412,7 +414,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				if cc.Provider == "memory" {
 					doc.timeseries = cts
 				} else {
-					cdata, err := modeler.CacheMarshaler(cts, nil)
+					cdata, err := modeler.CacheMarshaler(cts, nil, 0)
 					if err != nil {
 						tl.Error(pr.Logger, "error marshaling timeseries", tl.Pairs{
 							"cacheKey": key,
@@ -465,8 +467,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	// so as to not map conflict with cacheData on WriteCache
 	logDeltaRoutine(pr.Logger, dpStatus)
 	recordDPCResult(r, cacheStatus, sc, r.URL.Path, ffStatus, elapsed.Seconds(), missRanges, rh)
-	Respond(w, sc, rh, nil)
-	modeler.WireMarshalWriter(rts, rlo, w)
+	PrepareResponseWriter(w, 0, rh)
+	modeler.WireMarshalWriter(rts, rlo, sc, w)
 }
 
 func logDeltaRoutine(logger interface{}, p tl.Pairs) {
@@ -501,6 +503,13 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	}
 
 	if resp.StatusCode != 200 {
+		var b []byte
+		if resp.Body != nil {
+			b, _ := ioutil.ReadAll(resp.Body)
+			if len(b) > 128 {
+				b = b[:128]
+			}
+		}
 		tl.Error(pr.Logger, "unexpected upstream response",
 			tl.Pairs{
 				"statusCode":              resp.StatusCode,
@@ -511,6 +520,7 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 				"upstreamRequestMethod":   pr.upstreamRequest.Method,
 				"upstreamRequestHeaders":  headers.LogString(pr.upstreamRequest.Header),
 				"upstreamResponseHeaders": headers.LogString(resp.Header),
+				"upstreamResponseBody":    string(b),
 			},
 		)
 		return nil, d, time.Duration(0), tpe.ErrUnexpectedUpstreamResponse
