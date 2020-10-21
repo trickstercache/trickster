@@ -132,8 +132,8 @@ func init() {
 		lex.RuneSlash:       handleSlash,
 		lex.RuneSpace:       lexSpace,
 		lex.RuneTab:         lexSpace,
-		lex.RuneCR:          lexText,
-		lex.RuneLF:          lexText,
+		lex.RuneCR:          lexNewline,
+		lex.RuneLF:          lexNewline,
 		lex.RuneAsterisk:    emitAsterisk,
 		lex.RuneExclamation: handleExclamation,
 		lex.RuneGreaterThan: handleGreaterThan,
@@ -293,6 +293,22 @@ func lexText(li lex.Lexer, rs *lex.RunState) lex.StateFn {
 		return lexText
 	}
 	return rs.EmitToken(rs.Errorf("unrecognized character in action: %#U", r))
+}
+
+// lexNewline scans a run of newline characters.
+// We have not consumed the first space, which is known to be present.
+// Take care if there is a trim-marked right delimiter, which starts with a space.
+func lexNewline(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+	var r rune
+	for {
+		r = rs.Peek()
+		if !lex.IsWhiteSpace(r) {
+			break
+		}
+		rs.Next()
+	}
+	rs.Emit(token.Space)
+	return lexText
 }
 
 // lexSpace scans a run of space characters.
