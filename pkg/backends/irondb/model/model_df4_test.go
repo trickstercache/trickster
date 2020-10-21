@@ -199,13 +199,13 @@ func TestDF4SeriesEnvelopeClone(t *testing.T) {
 	se := ts1.(*DF4SeriesEnvelope)
 	se2 := se.Clone()
 
-	s1, err := MarshalTimeseries(se, nil)
+	s1, err := MarshalTimeseries(se, nil, 200)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	s2, err := MarshalTimeseries(se2, nil)
+	s2, err := MarshalTimeseries(se2, nil, 200)
 	if err != nil {
 		t.Error(err)
 		return
@@ -234,7 +234,7 @@ func TestDF4SeriesEnvelopeCropToRange(t *testing.T) {
 		End:   time.Unix(500, 0),
 	})
 
-	b, err := MarshalTimeseries(se1, nil)
+	b, err := MarshalTimeseries(se1, nil, 200)
 	if err != nil {
 		t.Error(err)
 		return
@@ -256,7 +256,7 @@ func TestDF4SeriesEnvelopeCropToRange(t *testing.T) {
 		End:   time.Unix(1200, 0),
 	})
 
-	b, err = MarshalTimeseries(se1, nil)
+	b, err = MarshalTimeseries(se1, nil, 200)
 	if err != nil {
 		t.Error(err)
 		return
@@ -287,7 +287,7 @@ func TestDF4SeriesEnvelopeCropToSize(t *testing.T) {
 		End:   time.Unix(600, 0),
 	})
 
-	b, err := MarshalTimeseries(se1, nil)
+	b, err := MarshalTimeseries(se1, nil, 200)
 	if err != nil {
 		t.Error(err)
 		return
@@ -334,7 +334,7 @@ func TestMarshalDF4Timeseries(t *testing.T) {
 		},
 	}
 
-	bytes, err := MarshalTimeseries(se, nil)
+	bytes, err := MarshalTimeseries(se, nil, 200)
 	if err != nil {
 		t.Error(err)
 		return

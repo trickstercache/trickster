@@ -37,10 +37,10 @@ type UnmarshalerFunc func([]byte, *TimeRangeQuery) (Timeseries, error)
 type UnmarshalerReaderFunc func(io.Reader, *TimeRangeQuery) (Timeseries, error)
 
 // MarshalerFunc describes a function that marshals a Timeseries
-type MarshalerFunc func(Timeseries, *RequestOptions) ([]byte, error)
+type MarshalerFunc func(Timeseries, *RequestOptions, int) ([]byte, error)
 
 // MarshalWriterFunc describes a function that marshals a Timeseries to an io.Writer
-type MarshalWriterFunc func(Timeseries, *RequestOptions, io.Writer) error
+type MarshalWriterFunc func(Timeseries, *RequestOptions, int, io.Writer) error
 
 // NewModeler factories a modeler with the provided modeling functions
 func NewModeler(

@@ -21,13 +21,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"sort"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"github.com/tricksterproxy/trickster/pkg/timeseries/dataset"
+	"github.com/tricksterproxy/trickster/pkg/timeseries/epoch"
 )
 
 // WFDocument the Wire Format Document for the timeseries
@@ -153,21 +156,21 @@ func pointFromValues(v []interface{}) (dataset.Point, error) {
 		return dataset.Point{}, timeseries.ErrInvalidBody
 	}
 	return dataset.Point{
-		Epoch:  dataset.Epoch(f1) * 1000000000,
+		Epoch:  epoch.Epoch(f1) * 1000000000,
 		Size:   len(s) + 32, // 8 bytes for epoch, 8 bytes for size, 16 bytes for s stringHeader
 		Values: []interface{}{s},
 	}, nil
 }
 
 // MarshalTimeseries converts a Timeseries into a JSON blob
-func MarshalTimeseries(ts timeseries.Timeseries, rlo *timeseries.RequestOptions) ([]byte, error) {
+func MarshalTimeseries(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int) ([]byte, error) {
 	buf := bytes.NewBuffer(nil)
-	err := MarshalTimeseriesWriter(ts, rlo, buf)
+	err := MarshalTimeseriesWriter(ts, rlo, status, buf)
 	return buf.Bytes(), err
 }
 
 // MarshalTimeseriesWriter converts a Timeseries into a JSON blob via an io.Writer
-func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, w io.Writer) error {
+func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int, w io.Writer) error {
 
 	ds, ok := ts.(*dataset.DataSet)
 	if !ok {
@@ -176,6 +179,11 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOp
 	// With Prometheus we presume only one Result per Dataset
 	if len(ds.Results) != 1 {
 		return timeseries.ErrUnknownFormat
+	}
+	if rw, ok := w.(http.ResponseWriter); ok {
+		h := rw.Header()
+		h.Set(headers.NameContentType, headers.ValueApplicationJSON+"; charset=UTF-8")
+		rw.WriteHeader(status)
 	}
 
 	w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[`)) // todo: always "success" ?

@@ -14,13 +14,43 @@
  * limitations under the License.
  */
 
-package context
+package model
 
-type contextKey int
+type DataType int
 
 const (
-	resourcesKey contextKey = iota
-	hopsKey
-	healthCheckKey
-	requestBodyKey
+	UInt8 = DataType(iota)
+	UInt16
+	UInt32
+	UInt64
+	UInt256
+	Int8
+	Int16
+	Int32
+	Int64
+	Int128
+	Int256
+
+	Float32
+	Float64
+
+	Decimal
+
+	Boolean
+
+	String
+	FixedString
+
+	UUID
+
+	Date
+	DateTime
+	DateTime64
+
+	Enum
+	LowCardinality
+	Array
+	AggregateFunction
+	Tuple
+	Nullable
 )

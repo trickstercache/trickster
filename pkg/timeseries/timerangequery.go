@@ -67,6 +67,20 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 		TimestampDefinition: trq.TimestampDefinition.Clone(),
 	}
 
+	if trq.TagFieldDefintions != nil {
+		t.TagFieldDefintions = make([]FieldDefinition, len(trq.TagFieldDefintions))
+		for i, fd := range trq.TagFieldDefintions {
+			t.TagFieldDefintions[i] = fd
+		}
+	}
+
+	if trq.ValueFieldDefinitions != nil {
+		t.ValueFieldDefinitions = make([]FieldDefinition, len(trq.ValueFieldDefinitions))
+		for i, fd := range trq.ValueFieldDefinitions {
+			t.ValueFieldDefinitions[i] = fd
+		}
+	}
+
 	if trq.TemplateURL != nil {
 		t.TemplateURL = urls.Clone(trq.TemplateURL)
 	}
@@ -86,9 +100,10 @@ func (trq *TimeRangeQuery) NormalizeExtent() {
 }
 
 func (trq *TimeRangeQuery) String() string {
-	return fmt.Sprintf(`{ "statement": "%s", "step": "%s", "extent": "%s" }`,
+	return fmt.Sprintf(`{ "statement": "%s", "step": "%s", "extent": "%s", "tsd": "%s", "td": %s, "vd": %s }`,
 		strings.Replace(trq.Statement, `"`, `\"`, -1), trq.Step.String(),
-		trq.Extent.String())
+		trq.Extent.String(), trq.TimestampDefinition.String(),
+		FieldDefinitions(trq.TagFieldDefintions).String(), FieldDefinitions(trq.ValueFieldDefinitions))
 }
 
 // GetBackfillTolerance will return the backfill tolerance for the query based on the provided

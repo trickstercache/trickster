@@ -17,22 +17,45 @@
 package clickhouse
 
 import (
+	"io/ioutil"
 	"net/http"
 	"strings"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
+	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
 // QueryHandler handles timeseries requests for ClickHouse and processes them through the delta proxy cache
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
-	rqlc := strings.Replace(strings.ToLower(r.URL.RawQuery), "%20", "+", -1)
-	if (!strings.HasPrefix(rqlc, "query=")) && (!(strings.Index(rqlc, "&query=") > 0)) || r.Method != http.MethodGet {
+	q := r.URL.Query()
+	sqlQuery := q.Get(upQuery)
+	if methods.HasBody(r.Method) {
+		b, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			handlers.HandleBadRequestResponse(w, r)
+			return
+		}
+		var body []byte
+		if sqlQuery != "" {
+			body = make([]byte, 0, len(sqlQuery)+len(b))
+			body = append([]byte(sqlQuery), b...)
+			q.Del(upQuery)
+			r.URL.RawQuery = q.Encode()
+		} else {
+			body = b
+		}
+		sqlQuery = string(body)
+		r = request.SetBody(r, body)
+	}
+	sqlQuery = strings.ToLower(sqlQuery)
+	if (!strings.HasPrefix(sqlQuery, "select ")) && (!(strings.Index(sqlQuery, " select ") > 0)) {
 		c.ProxyHandler(w, r)
 		return
 	}
-
 	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
 	engines.DeltaProxyCacheRequest(w, r, c.modeler)
 }

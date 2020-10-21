@@ -18,6 +18,11 @@
 
 package timeseries
 
+import (
+	"fmt"
+	"strings"
+)
+
 // Field Data Types
 const (
 	Unknown FieldDataType = iota
@@ -38,7 +43,12 @@ type FieldDefinition struct {
 	Name           string        `msg:"name"`
 	DataType       FieldDataType `msg:"type"`
 	OutputPosition int           `msg:"pos"`
+	SDataType      string        `msg:"stype"`
+	ProviderData1  int           `msg:"provider1"`
 }
+
+// FieldDefinitions represents a list type FieldDefinition
+type FieldDefinitions []FieldDefinition
 
 // Clone returns a perfect, new copy of the FieldDefinition
 func (fd FieldDefinition) Clone() FieldDefinition {
@@ -46,10 +56,30 @@ func (fd FieldDefinition) Clone() FieldDefinition {
 		Name:           fd.Name,
 		DataType:       fd.DataType,
 		OutputPosition: fd.OutputPosition,
+		SDataType:      fd.SDataType,
+		ProviderData1:  fd.ProviderData1,
 	}
 }
 
 // Size returns the size of the FieldDefintions in bytes
 func (fd FieldDefinition) Size() int {
-	return 16 + len(fd.Name) + 1 + 8 // string header size, string size, byte size, int size
+	return 32 + len(fd.Name) + len(fd.SDataType) + 1 + 24 // string header size, string size, byte size, int size
+}
+
+func (fd FieldDefinition) String() string {
+	return fmt.Sprintf(`{"name":"%s","type":%d,"pos":%d,"stype":"%s","provider1":%d}`,
+		fd.Name, fd.DataType, fd.OutputPosition, fd.SDataType, fd.ProviderData1)
+}
+
+func (fds FieldDefinitions) String() string {
+	l := len(fds)
+	if l == 0 {
+		return "[]"
+	}
+	s := make([]string, l)
+	for i, fd := range fds {
+		s[i] = fd.String()
+	}
+	return "[" + strings.Join(s, ", ") + "]"
+
 }

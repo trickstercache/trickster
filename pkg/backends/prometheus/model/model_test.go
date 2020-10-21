@@ -42,7 +42,7 @@ func TestUnmarshalTimeseries(t *testing.T) {
 		t.Error(timeseries.ErrUnknownFormat)
 	}
 
-	b, err = MarshalTimeseries(ds, nil)
+	b, err = MarshalTimeseries(ds, nil, 200)
 	if err != nil {
 		t.Error(err)
 	}

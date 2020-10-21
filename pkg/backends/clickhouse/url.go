@@ -23,6 +23,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
@@ -38,22 +40,35 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 		return
 	}
 
-	p := r.URL.Query()
-	q := trq.TemplateURL.Query().Get(upQuery)
+	qi := r.URL.Query()
+	isBody := methods.HasBody(r.Method)
 
-	// Force gzip compression since Brotli is broken on CH 20.3
-	// See https://github.com/ClickHouse/ClickHouse/issues/9969
-	r.Header.Set("Accept-Encoding", "gzip")
-
-	if q != "" {
-		p.Set(upQuery, interpolateTimeQuery(q, trq.TimestampDefinition.Name, extent, trq.Step))
+	sqlQuery := interpolateTimeQuery(trq.Statement, trq.TimestampDefinition.Name, trq.TimestampDefinition.ProviderData1, extent, trq.Step)
+	if isBody {
+		r = request.SetBody(r, []byte(sqlQuery))
+	} else {
+		qi.Set(upQuery, sqlQuery)
+		r.URL.RawQuery = qi.Encode()
 	}
 
-	r.URL.RawQuery = p.Encode()
 }
 
-func interpolateTimeQuery(template string, tsFieldName string, extent *timeseries.Extent, step time.Duration) string {
-	rangeCondition := fmt.Sprintf("%s BETWEEN %d AND %d", tsFieldName, extent.Start.Unix(), extent.End.Unix())
-	return strings.Replace(strings.Replace(strings.Replace(template, tkRange, rangeCondition, -1),
-		tkTS1, strconv.FormatInt(extent.Start.Unix(), 10), -1), tkTS2, strconv.FormatInt(extent.End.Unix(), 10), -1)
+func interpolateTimeQuery(template string, tsFieldName string, timeFormat int, extent *timeseries.Extent, step time.Duration) string {
+
+	var start, end int64
+
+	switch timeFormat {
+	case 1:
+		start = extent.Start.UnixNano() / 1000000
+		end = extent.End.UnixNano() / 1000000
+	default:
+		start = extent.Start.Unix()
+		end = extent.End.Unix()
+	}
+
+	rangeCondition := fmt.Sprintf("%s BETWEEN %d AND %d", tsFieldName, start, end)
+	x := strings.Replace(strings.Replace(strings.Replace(strings.Replace(template,
+		tkRange, rangeCondition, -1), tkTS1, strconv.FormatInt(start, 10), -1), tkTS2,
+		strconv.FormatInt(end, 10), -1), "<$FORMAT$>", "TSVWithNamesAndTypes", -1)
+	return x
 }

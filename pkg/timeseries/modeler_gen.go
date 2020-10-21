@@ -23,7 +23,7 @@ import (
 )
 
 // DecodeMsg implements msgp.Decodable
-func (z *Extent) DecodeMsg(dc *msgp.Reader) (err error) {
+func (z *Modeler) DecodeMsg(dc *msgp.Reader) (err error) {
 	var field []byte
 	_ = field
 	var zb0001 uint32
@@ -40,24 +40,6 @@ func (z *Extent) DecodeMsg(dc *msgp.Reader) (err error) {
 			return
 		}
 		switch msgp.UnsafeString(field) {
-		case "start":
-			z.Start, err = dc.ReadTime()
-			if err != nil {
-				err = msgp.WrapError(err, "Start")
-				return
-			}
-		case "end":
-			z.End, err = dc.ReadTime()
-			if err != nil {
-				err = msgp.WrapError(err, "End")
-				return
-			}
-		case "lu":
-			z.LastUsed, err = dc.ReadTime()
-			if err != nil {
-				err = msgp.WrapError(err, "LastUsed")
-				return
-			}
 		default:
 			err = dc.Skip()
 			if err != nil {
@@ -70,59 +52,25 @@ func (z *Extent) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
-func (z Extent) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 3
-	// write "start"
-	err = en.Append(0x83, 0xa5, 0x73, 0x74, 0x61, 0x72, 0x74)
+func (z Modeler) EncodeMsg(en *msgp.Writer) (err error) {
+	// map header, size 0
+	err = en.Append(0x80)
 	if err != nil {
-		return
-	}
-	err = en.WriteTime(z.Start)
-	if err != nil {
-		err = msgp.WrapError(err, "Start")
-		return
-	}
-	// write "end"
-	err = en.Append(0xa3, 0x65, 0x6e, 0x64)
-	if err != nil {
-		return
-	}
-	err = en.WriteTime(z.End)
-	if err != nil {
-		err = msgp.WrapError(err, "End")
-		return
-	}
-	// write "lu"
-	err = en.Append(0xa2, 0x6c, 0x75)
-	if err != nil {
-		return
-	}
-	err = en.WriteTime(z.LastUsed)
-	if err != nil {
-		err = msgp.WrapError(err, "LastUsed")
 		return
 	}
 	return
 }
 
 // MarshalMsg implements msgp.Marshaler
-func (z Extent) MarshalMsg(b []byte) (o []byte, err error) {
+func (z Modeler) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 3
-	// string "start"
-	o = append(o, 0x83, 0xa5, 0x73, 0x74, 0x61, 0x72, 0x74)
-	o = msgp.AppendTime(o, z.Start)
-	// string "end"
-	o = append(o, 0xa3, 0x65, 0x6e, 0x64)
-	o = msgp.AppendTime(o, z.End)
-	// string "lu"
-	o = append(o, 0xa2, 0x6c, 0x75)
-	o = msgp.AppendTime(o, z.LastUsed)
+	// map header, size 0
+	o = append(o, 0x80)
 	return
 }
 
 // UnmarshalMsg implements msgp.Unmarshaler
-func (z *Extent) UnmarshalMsg(bts []byte) (o []byte, err error) {
+func (z *Modeler) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	var field []byte
 	_ = field
 	var zb0001 uint32
@@ -139,24 +87,6 @@ func (z *Extent) UnmarshalMsg(bts []byte) (o []byte, err error) {
 			return
 		}
 		switch msgp.UnsafeString(field) {
-		case "start":
-			z.Start, bts, err = msgp.ReadTimeBytes(bts)
-			if err != nil {
-				err = msgp.WrapError(err, "Start")
-				return
-			}
-		case "end":
-			z.End, bts, err = msgp.ReadTimeBytes(bts)
-			if err != nil {
-				err = msgp.WrapError(err, "End")
-				return
-			}
-		case "lu":
-			z.LastUsed, bts, err = msgp.ReadTimeBytes(bts)
-			if err != nil {
-				err = msgp.WrapError(err, "LastUsed")
-				return
-			}
 		default:
 			bts, err = msgp.Skip(bts)
 			if err != nil {
@@ -170,7 +100,7 @@ func (z *Extent) UnmarshalMsg(bts []byte) (o []byte, err error) {
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
-func (z Extent) Msgsize() (s int) {
-	s = 1 + 6 + msgp.TimeSize + 4 + msgp.TimeSize + 3 + msgp.TimeSize
+func (z Modeler) Msgsize() (s int) {
+	s = 1
 	return
 }

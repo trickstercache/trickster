@@ -90,7 +90,7 @@ func TestEncodeDecodeTimeRangeQuery(t *testing.T) {
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Logf("WARNING: Msgsize() for %v is inaccurate", v)
+		t.Log("WARNING: TestEncodeDecodeTimeRangeQuery Msgsize() is inaccurate")
 	}
 
 	vn := TimeRangeQuery{}

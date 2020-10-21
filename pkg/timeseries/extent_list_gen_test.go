@@ -90,7 +90,7 @@ func TestEncodeDecodeExtentList(t *testing.T) {
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Logf("WARNING: Msgsize() for %v is inaccurate", v)
+		t.Log("WARNING: TestEncodeDecodeExtentList Msgsize() is inaccurate")
 	}
 
 	vn := ExtentList{}
@@ -203,7 +203,7 @@ func TestEncodeDecodeExtentListLRU(t *testing.T) {
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Logf("WARNING: Msgsize() for %v is inaccurate", v)
+		t.Log("WARNING: TestEncodeDecodeExtentListLRU Msgsize() is inaccurate")
 	}
 
 	vn := ExtentListLRU{}

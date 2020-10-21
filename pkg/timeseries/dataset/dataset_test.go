@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/timeseries/epoch"
 )
 
 func testDataSet() *DataSet {
@@ -57,32 +58,32 @@ func testDataSet2() *DataSet {
 	newPoints := func() Points {
 		return Points{
 			Point{
-				Epoch:  Epoch(5 * timeseries.Second),
+				Epoch:  epoch.Epoch(5 * timeseries.Second),
 				Size:   16,
 				Values: []interface{}{1},
 			},
 			Point{
-				Epoch:  Epoch(10 * timeseries.Second),
+				Epoch:  epoch.Epoch(10 * timeseries.Second),
 				Size:   16,
 				Values: []interface{}{1},
 			},
 			Point{
-				Epoch:  Epoch(15 * timeseries.Second),
+				Epoch:  epoch.Epoch(15 * timeseries.Second),
 				Size:   16,
 				Values: []interface{}{1},
 			},
 			Point{
-				Epoch:  Epoch(20 * timeseries.Second),
+				Epoch:  epoch.Epoch(20 * timeseries.Second),
 				Size:   16,
 				Values: []interface{}{1},
 			},
 			Point{
-				Epoch:  Epoch(25 * timeseries.Second),
+				Epoch:  epoch.Epoch(25 * timeseries.Second),
 				Size:   16,
 				Values: []interface{}{1},
 			},
 			Point{
-				Epoch:  Epoch(30 * timeseries.Second),
+				Epoch:  epoch.Epoch(30 * timeseries.Second),
 				Size:   16,
 				Values: []interface{}{1},
 			},

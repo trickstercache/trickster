@@ -16,11 +16,23 @@
 
 package context
 
-type contextKey int
-
-const (
-	resourcesKey contextKey = iota
-	hopsKey
-	healthCheckKey
-	requestBodyKey
+import (
+	"context"
 )
+
+// WithRequestBody returns a copy of the provided context that also includes
+// the provided request body reference
+func WithRequestBody(ctx context.Context, body []byte) context.Context {
+	return context.WithValue(ctx, requestBodyKey, body)
+}
+
+// RequestBody returns the request body associated with the request
+func RequestBody(ctx context.Context) []byte {
+	v := ctx.Value(requestBodyKey)
+	if v != nil {
+		if b, ok := v.([]byte); ok {
+			return b
+		}
+	}
+	return nil
+}

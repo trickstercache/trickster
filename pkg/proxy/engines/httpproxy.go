@@ -128,7 +128,9 @@ func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer 
 		h := rw.Header()
 		headers.Merge(h, header)
 		headers.AddResponseHeaders(h)
-		rw.WriteHeader(code)
+		if code > 0 {
+			rw.WriteHeader(code)
+		}
 		return rw
 	}
 	return w
@@ -153,7 +155,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	headers.AddForwardingHeaders(r, oc.ForwardedHeaders)
 
-	if pc != nil {
+	if pc != nil && len(pc.RequestParams) > 0 {
 		headers.UpdateHeaders(r.Header, pc.RequestHeaders)
 		qp, _, _ := params.GetRequestValues(r)
 		params.UpdateParams(qp, pc.RequestParams)

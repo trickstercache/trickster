@@ -70,7 +70,7 @@ func (t *Token) Int64() (int64, error) {
 	if t.Typ != Number {
 		return 0, ErrParsingInt
 	}
-	n, err := strconv.ParseInt(t.Val, 10, 32)
+	n, err := strconv.ParseInt(t.Val, 10, 64)
 	if err != nil {
 		return 0, err
 	}

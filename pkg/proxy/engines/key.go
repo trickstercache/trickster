@@ -17,10 +17,8 @@
 package engines
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"sort"
 	"strconv"
@@ -117,7 +115,7 @@ func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) strin
 					}
 				}
 			}
-			pr.Body = ioutil.NopCloser(bytes.NewReader(b))
+			r = request.SetBody(r, b)
 		}
 
 		for _, f := range pc.CacheKeyFormFields {

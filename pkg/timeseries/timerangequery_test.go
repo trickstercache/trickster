@@ -83,7 +83,7 @@ func TestClone(t *testing.T) {
 }
 
 func TestStringTRQ(t *testing.T) {
-	const expected = `{ "statement": "1234", "step": "5s", "extent": "5000-10000" }`
+	const expected = `{ "statement": "1234", "step": "5s", "extent": "5000-10000", "tsd": "{"name":"","type":0,"pos":0,"stype":"","provider1":0}", "td": [], "vd": [] }`
 	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{Start: time.Unix(5, 0),
 		End: time.Unix(10, 0)}, Step: time.Duration(5) * time.Second}
 	s := trq.String()

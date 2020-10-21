@@ -231,13 +231,13 @@ func TestSeriesEnvelopeClone(t *testing.T) {
 	se := ts1.(*SeriesEnvelope)
 	se2 := se.Clone()
 
-	s1, err := MarshalTimeseries(se, nil)
+	s1, err := MarshalTimeseries(se, nil, 200)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	s2, err := MarshalTimeseries(se2, nil)
+	s2, err := MarshalTimeseries(se2, nil, 200)
 	if err != nil {
 		t.Error(err)
 		return
@@ -279,7 +279,7 @@ func TestSeriesEnvelopeCropToRange(t *testing.T) {
 		End:   time.Unix(300, 0),
 	})
 
-	s1, err := MarshalTimeseries(se1, nil)
+	s1, err := MarshalTimeseries(se1, nil, 200)
 	if err != nil {
 		t.Error(err)
 		return
@@ -324,7 +324,7 @@ func TestSeriesEnvelopeCropToSize(t *testing.T) {
 		End:   time.Unix(900, 0),
 	})
 
-	s1, err := MarshalTimeseries(se1, nil)
+	s1, err := MarshalTimeseries(se1, nil, 200)
 	if err != nil {
 		t.Error(err)
 		return
@@ -362,7 +362,7 @@ func TestMarshalTimeseries(t *testing.T) {
 		},
 	}
 
-	bytes, err := MarshalTimeseries(se, nil)
+	bytes, err := MarshalTimeseries(se, nil, 200)
 	if err != nil {
 		t.Error(err)
 		return
