@@ -180,23 +180,27 @@ func IsVerb(t token.Typ) bool {
 }
 
 // TokenToTime returns a time value derived from the token
-func TokenToTime(i *token.Token) (time.Time, error) {
+func TokenToTime(i *token.Token) (time.Time, byte, error) {
 	var t time.Time
 	var err error
 	switch i.Typ {
 	case token.String:
 		t, err = ParseBasicDateTime(UnQuote(i.Val))
 		if err != nil {
-			return t, err
+			return t, 0, err
 		}
 	case token.Number:
 		n, err := i.Int64()
 		if err != nil {
-			return t, err
+			return t, 0, err
 		}
-		t = time.Unix(n, 0)
+		if n > 9999999999 {
+			return time.Unix(n/1000, (n%1000)*1000000), 1, nil
+		}
+		return time.Unix(n, 0), 0, nil
+
 	default:
 		t = time.Now()
 	}
-	return t, err
+	return t, 0, err
 }
