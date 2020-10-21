@@ -27,6 +27,7 @@ func (z *ExtentList) DecodeMsg(dc *msgp.Reader) (err error) {
 	var zb0002 uint32
 	zb0002, err = dc.ReadArrayHeader()
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	if cap((*z)) >= int(zb0002) {
@@ -37,6 +38,7 @@ func (z *ExtentList) DecodeMsg(dc *msgp.Reader) (err error) {
 	for zb0001 := range *z {
 		err = (*z)[zb0001].DecodeMsg(dc)
 		if err != nil {
+			err = msgp.WrapError(err, zb0001)
 			return
 		}
 	}
@@ -47,11 +49,13 @@ func (z *ExtentList) DecodeMsg(dc *msgp.Reader) (err error) {
 func (z ExtentList) EncodeMsg(en *msgp.Writer) (err error) {
 	err = en.WriteArrayHeader(uint32(len(z)))
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0003 := range z {
 		err = z[zb0003].EncodeMsg(en)
 		if err != nil {
+			err = msgp.WrapError(err, zb0003)
 			return
 		}
 	}
@@ -65,6 +69,7 @@ func (z ExtentList) MarshalMsg(b []byte) (o []byte, err error) {
 	for zb0003 := range z {
 		o, err = z[zb0003].MarshalMsg(o)
 		if err != nil {
+			err = msgp.WrapError(err, zb0003)
 			return
 		}
 	}
@@ -76,6 +81,7 @@ func (z *ExtentList) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	var zb0002 uint32
 	zb0002, bts, err = msgp.ReadArrayHeaderBytes(bts)
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	if cap((*z)) >= int(zb0002) {
@@ -86,6 +92,7 @@ func (z *ExtentList) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	for zb0001 := range *z {
 		bts, err = (*z)[zb0001].UnmarshalMsg(bts)
 		if err != nil {
+			err = msgp.WrapError(err, zb0001)
 			return
 		}
 	}
@@ -107,6 +114,7 @@ func (z *ExtentListLRU) DecodeMsg(dc *msgp.Reader) (err error) {
 	var zb0002 uint32
 	zb0002, err = dc.ReadArrayHeader()
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	if cap((*z)) >= int(zb0002) {
@@ -117,6 +125,7 @@ func (z *ExtentListLRU) DecodeMsg(dc *msgp.Reader) (err error) {
 	for zb0001 := range *z {
 		err = (*z)[zb0001].DecodeMsg(dc)
 		if err != nil {
+			err = msgp.WrapError(err, zb0001)
 			return
 		}
 	}
@@ -127,11 +136,13 @@ func (z *ExtentListLRU) DecodeMsg(dc *msgp.Reader) (err error) {
 func (z ExtentListLRU) EncodeMsg(en *msgp.Writer) (err error) {
 	err = en.WriteArrayHeader(uint32(len(z)))
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0003 := range z {
 		err = z[zb0003].EncodeMsg(en)
 		if err != nil {
+			err = msgp.WrapError(err, zb0003)
 			return
 		}
 	}
@@ -145,6 +156,7 @@ func (z ExtentListLRU) MarshalMsg(b []byte) (o []byte, err error) {
 	for zb0003 := range z {
 		o, err = z[zb0003].MarshalMsg(o)
 		if err != nil {
+			err = msgp.WrapError(err, zb0003)
 			return
 		}
 	}
@@ -156,6 +168,7 @@ func (z *ExtentListLRU) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	var zb0002 uint32
 	zb0002, bts, err = msgp.ReadArrayHeaderBytes(bts)
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	if cap((*z)) >= int(zb0002) {
@@ -166,6 +179,7 @@ func (z *ExtentListLRU) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	for zb0001 := range *z {
 		bts, err = (*z)[zb0001].UnmarshalMsg(bts)
 		if err != nil {
+			err = msgp.WrapError(err, zb0001)
 			return
 		}
 	}

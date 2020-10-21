@@ -25,8 +25,8 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
-func TestMarshalUnmarshalExtent(t *testing.T) {
-	v := Extent{}
+func TestMarshalUnmarshalModeler(t *testing.T) {
+	v := Modeler{}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -48,8 +48,8 @@ func TestMarshalUnmarshalExtent(t *testing.T) {
 	}
 }
 
-func BenchmarkMarshalMsgExtent(b *testing.B) {
-	v := Extent{}
+func BenchmarkMarshalMsgModeler(b *testing.B) {
+	v := Modeler{}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -57,8 +57,8 @@ func BenchmarkMarshalMsgExtent(b *testing.B) {
 	}
 }
 
-func BenchmarkAppendMsgExtent(b *testing.B) {
-	v := Extent{}
+func BenchmarkAppendMsgModeler(b *testing.B) {
+	v := Modeler{}
 	bts := make([]byte, 0, v.Msgsize())
 	bts, _ = v.MarshalMsg(bts[0:0])
 	b.SetBytes(int64(len(bts)))
@@ -69,8 +69,8 @@ func BenchmarkAppendMsgExtent(b *testing.B) {
 	}
 }
 
-func BenchmarkUnmarshalExtent(b *testing.B) {
-	v := Extent{}
+func BenchmarkUnmarshalModeler(b *testing.B) {
+	v := Modeler{}
 	bts, _ := v.MarshalMsg(nil)
 	b.ReportAllocs()
 	b.SetBytes(int64(len(bts)))
@@ -83,17 +83,17 @@ func BenchmarkUnmarshalExtent(b *testing.B) {
 	}
 }
 
-func TestEncodeDecodeExtent(t *testing.T) {
-	v := Extent{}
+func TestEncodeDecodeModeler(t *testing.T) {
+	v := Modeler{}
 	var buf bytes.Buffer
 	msgp.Encode(&buf, &v)
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Log("WARNING: TestEncodeDecodeExtent Msgsize() is inaccurate")
+		t.Log("WARNING: TestEncodeDecodeModeler Msgsize() is inaccurate")
 	}
 
-	vn := Extent{}
+	vn := Modeler{}
 	err := msgp.Decode(&buf, &vn)
 	if err != nil {
 		t.Error(err)
@@ -107,8 +107,8 @@ func TestEncodeDecodeExtent(t *testing.T) {
 	}
 }
 
-func BenchmarkEncodeExtent(b *testing.B) {
-	v := Extent{}
+func BenchmarkEncodeModeler(b *testing.B) {
+	v := Modeler{}
 	var buf bytes.Buffer
 	msgp.Encode(&buf, &v)
 	b.SetBytes(int64(buf.Len()))
@@ -121,8 +121,8 @@ func BenchmarkEncodeExtent(b *testing.B) {
 	en.Flush()
 }
 
-func BenchmarkDecodeExtent(b *testing.B) {
-	v := Extent{}
+func BenchmarkDecodeModeler(b *testing.B) {
+	v := Modeler{}
 	var buf bytes.Buffer
 	msgp.Encode(&buf, &v)
 	b.SetBytes(int64(buf.Len()))
