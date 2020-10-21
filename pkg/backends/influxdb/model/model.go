@@ -21,12 +21,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"github.com/tricksterproxy/trickster/pkg/timeseries/dataset"
 	"github.com/tricksterproxy/trickster/pkg/timeseries/epoch"
@@ -82,14 +84,14 @@ func NewModeler() *timeseries.Modeler {
 }
 
 // MarshalTimeseries converts a Timeseries into a JSON blob
-func MarshalTimeseries(ts timeseries.Timeseries, rlo *timeseries.RequestOptions) ([]byte, error) {
+func MarshalTimeseries(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int) ([]byte, error) {
 	buf := bytes.NewBuffer(nil)
-	err := MarshalTimeseriesWriter(ts, rlo, buf)
+	err := MarshalTimeseriesWriter(ts, rlo, status, buf)
 	return buf.Bytes(), err
 }
 
 // MarshalTimeseriesWriter converts a Timeseries into a JSON blob via an io.Writer
-func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, w io.Writer) error {
+func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int, w io.Writer) error {
 	if ts == nil {
 		return timeseries.ErrUnknownFormat
 	}
@@ -105,7 +107,7 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOp
 	if !ok {
 		return timeseries.ErrUnknownFormat
 	}
-	return marshaler(ds, rlo, w)
+	return marshaler(ds, rlo, status, w)
 }
 
 func writeRFC3339Time(w io.Writer, epoch epoch.Epoch, m int64) {
@@ -162,11 +164,15 @@ func writeCSVValue(w io.Writer, v interface{}, nilVal string) {
 	}
 }
 
-func marshalTimeseriesJSON(ds *dataset.DataSet, rlo *timeseries.RequestOptions, w io.Writer) error {
+func marshalTimeseriesJSON(ds *dataset.DataSet, rlo *timeseries.RequestOptions, status int, w io.Writer) error {
 	if ds == nil {
 		return nil
 	}
-
+	if rw, ok := w.(http.ResponseWriter); ok {
+		h := rw.Header()
+		h.Set(headers.NameContentType, headers.ValueApplicationJSON+"; charset=UTF-8")
+		rw.WriteHeader(status)
+	}
 	dw, multiplier := getDateWriter(rlo)
 
 	w.Write([]byte(`{"results":[`))
@@ -237,12 +243,16 @@ func marshalTimeseriesJSON(ds *dataset.DataSet, rlo *timeseries.RequestOptions, 
 	return nil
 }
 
-func marshalTimeseriesJSONPretty(ds *dataset.DataSet, rlo *timeseries.RequestOptions, w io.Writer) error {
+func marshalTimeseriesJSONPretty(ds *dataset.DataSet, rlo *timeseries.RequestOptions, status int, w io.Writer) error {
 
 	if ds == nil {
 		return nil
 	}
-
+	if rw, ok := w.(http.ResponseWriter); ok {
+		h := rw.Header()
+		h.Set(headers.NameContentType, headers.ValueApplicationJSON+"; charset=UTF-8")
+		rw.WriteHeader(status)
+	}
 	dw, multiplier := getDateWriter(rlo)
 
 	w.Write([]byte("{\n    \"results\": [\n"))
@@ -344,11 +354,16 @@ func marshalTimeseriesJSONPretty(ds *dataset.DataSet, rlo *timeseries.RequestOpt
 	return nil
 }
 
-func marshalTimeseriesCSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions, w io.Writer) error {
+func marshalTimeseriesCSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions, status int, w io.Writer) error {
 	var headerWritten bool
 	dw, multiplier := getDateWriter(rlo)
 	if ds == nil {
 		return nil
+	}
+	if rw, ok := w.(http.ResponseWriter); ok {
+		h := rw.Header()
+		h.Set(headers.NameContentType, headers.ValueApplicationCSV+"; charset=UTF-8")
+		rw.WriteHeader(status)
 	}
 	for _, s := range ds.Results[0].SeriesList {
 		if s == nil {

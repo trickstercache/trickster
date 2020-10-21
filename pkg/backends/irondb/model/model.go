@@ -22,12 +22,14 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/backends/irondb/common"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
@@ -358,14 +360,19 @@ func NewModeler() *timeseries.Modeler {
 }
 
 // MarshalTimeseries converts a Timeseries into a JSON blob
-func MarshalTimeseries(ts timeseries.Timeseries, rlo *timeseries.RequestOptions) ([]byte, error) {
+func MarshalTimeseries(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int) ([]byte, error) {
 	buf := bytes.NewBuffer(nil)
-	err := MarshalTimeseriesWriter(ts, rlo, buf)
+	err := MarshalTimeseriesWriter(ts, rlo, 200, buf)
 	return buf.Bytes(), err
 }
 
 // MarshalTimeseriesWriter converts a Timeseries into a JSON blob via an io.Writer
-func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, w io.Writer) error {
+func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int, w io.Writer) error {
+	if rw, ok := w.(http.ResponseWriter); ok {
+		h := rw.Header()
+		h.Set(headers.NameContentType, headers.ValueApplicationJSON+"; charset=UTF-8")
+		rw.WriteHeader(status)
+	}
 	b, err := json.Marshal(ts)
 	if err != nil {
 		return err

@@ -476,11 +476,11 @@ func (c *TestClient) marshalTimeseriesWriter(ts timeseries.Timeseries, w io.Writ
 func (c *TestClient) testModeler() *timeseries.Modeler {
 	m := tst.Modeler()
 	mw := m.WireMarshalWriter
-	m.WireMarshalWriter = func(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, w io.Writer) error {
+	m.WireMarshalWriter = func(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int, w io.Writer) error {
 		if c.RangeCacheKey == "failkey" {
 			return fmt.Errorf("generic failure for testing purposes (key: %s)", c.RangeCacheKey)
 		}
-		return mw(ts, rlo, w)
+		return mw(ts, rlo, status, w)
 	}
 	return m
 }

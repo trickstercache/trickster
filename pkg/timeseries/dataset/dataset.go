@@ -60,7 +60,7 @@ type DataSet struct {
 }
 
 // Marshaler is a function that serializes the provided DataSet into a byte slice
-type Marshaler func(*DataSet, *timeseries.RequestOptions, io.Writer) error
+type Marshaler func(*DataSet, *timeseries.RequestOptions, int, io.Writer) error
 
 // String is a debugging function to print a string representation of the DataSet
 func (ds *DataSet) String() string {
@@ -546,7 +546,7 @@ func UnmarshalDataSet(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Time
 }
 
 // MarshalDataSet marshals the dataset into a msgpack-formatted byte slice
-func MarshalDataSet(ts timeseries.Timeseries, rlo *timeseries.RequestOptions) ([]byte, error) {
+func MarshalDataSet(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int) ([]byte, error) {
 	ds, ok := ts.(*DataSet)
 	if !ok {
 		return nil, timeseries.ErrUnknownFormat
