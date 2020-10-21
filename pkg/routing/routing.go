@@ -35,6 +35,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/backends/prometheus"
 	modelprom "github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
 	"github.com/tricksterproxy/trickster/pkg/backends/providers"
+	"github.com/tricksterproxy/trickster/pkg/backends/reverseproxy"
 	"github.com/tricksterproxy/trickster/pkg/backends/reverseproxycache"
 	"github.com/tricksterproxy/trickster/pkg/backends/rule"
 	"github.com/tricksterproxy/trickster/pkg/cache"
@@ -165,6 +166,8 @@ func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
 		client, err = clickhouse.NewClient(k, o, mux.NewRouter(), c, modelch.NewModeler())
 	case "rpc", "reverseproxycache":
 		client, err = reverseproxycache.NewClient(k, o, mux.NewRouter(), c)
+	case "rp", "reverseproxy", "proxy":
+		client, err = reverseproxy.NewClient(k, o, mux.NewRouter(), c)
 	case "rule":
 		client, err = rule.NewClient(k, o, mux.NewRouter(), clients)
 	}
