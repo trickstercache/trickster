@@ -17,12 +17,14 @@
 package sqlparser
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/parsing"
 	lsql "github.com/tricksterproxy/trickster/pkg/parsing/lex/sql"
 	"github.com/tricksterproxy/trickster/pkg/parsing/token"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/timeseries/epoch"
 )
 
 func TestNew(t *testing.T) {
@@ -70,6 +72,94 @@ func TestParseComment(t *testing.T) {
 	ParseFVComment(nil, nil, rs)
 	if rs.Current().Typ != lsql.TokenComment {
 		t.Error("token parsing error")
+	}
+
+}
+
+func TestParseEpoch(t *testing.T) {
+
+	tests := []struct {
+		input string
+		exp1  epoch.Epoch
+		exp2  byte
+		exp3  error
+	}{
+		{
+			input: "1577836800",
+			exp1:  epoch.Epoch(1577836800) * billion,
+			exp2:  0,
+		},
+		{
+			input: "1577836800000",
+			exp1:  epoch.Epoch(1577836800000) * million,
+			exp2:  1,
+		},
+		{
+			input: "2020-01-01",
+			exp1:  epoch.Epoch(1577836800000) * million,
+			exp2:  3,
+		},
+		{
+			input: "2020-01-01 00:00:00",
+			exp1:  epoch.Epoch(1577836800000) * million,
+			exp2:  2,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			out, typ, err := ParseEpoch(test.input)
+			if err != test.exp3 {
+				t.Error(err)
+			}
+			if typ != test.exp2 {
+				t.Errorf("got %d expected %d", typ, test.exp2)
+			}
+			if out != test.exp1 {
+				t.Errorf("got %d expected %d", out, test.exp1)
+			}
+		})
+	}
+
+}
+
+func TestFormatOutputTime(t *testing.T) {
+
+	tests := []struct {
+		input epoch.Epoch
+		exp1  string
+		typ   byte
+		exp3  error
+	}{
+		{
+			input: epoch.Epoch(1577836800) * billion,
+			exp1:  "1577836800",
+			typ:   0,
+		},
+		{
+			input: epoch.Epoch(1577836800000) * million,
+			exp1:  "1577836800000",
+			typ:   1,
+		},
+		{
+			input: epoch.Epoch(1577836800000) * million,
+			exp1:  "2020-01-01",
+			typ:   3,
+		},
+		{
+			input: epoch.Epoch(1577836800000) * million,
+			exp1:  "2020-01-01 00:00:00",
+			typ:   2,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			out := FormatOutputTime(test.input, test.typ)
+			if out != test.exp1 {
+				t.Errorf("got %s expected %s", out, test.exp1)
+			}
+		})
 	}
 
 }

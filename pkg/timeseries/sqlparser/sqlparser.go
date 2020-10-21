@@ -20,11 +20,14 @@ package sqlparser
 
 import (
 	"context"
+	"strconv"
+	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/parsing"
 	lsql "github.com/tricksterproxy/trickster/pkg/parsing/lex/sql"
 	"github.com/tricksterproxy/trickster/pkg/parsing/sql"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/timeseries/epoch"
 )
 
 // Parser is a basic, extendable SQL Parser
@@ -82,4 +85,91 @@ func ParseComment(rs *parsing.RunState) {
 func ParseFVComment(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	ParseComment(rs)
 	return rs.GetReturnFunc(sql.FindVerb, nil, true)
+}
+
+const billion epoch.Epoch = 1000000000
+const million epoch.Epoch = 1000000
+
+// ParseEpoch accepts the following formats, and returns an epoch.Epoch (NS since 1-1-1970):
+// typ 0 - 10-digit epoch in seconds:     "1577836800"
+// typ 1 - 13-digit epoch in millisecons: "1577836800000"
+// typ 2 - SQL DateTime:                   "2020-01-01 00:00:00"
+// typ 3 - SQL Date:                       "2020-01-01"
+func ParseEpoch(input string) (epoch.Epoch, byte, error) {
+	var ts epoch.Epoch
+	var i int64
+	li := len(input)
+	if isAllDigits(input) {
+		i, _ = strconv.ParseInt(input, 10, 64)
+		switch li {
+		case 10:
+			return billion * epoch.Epoch(i), 0, nil
+		case 13:
+			return million * epoch.Epoch(i), 1, nil
+		}
+	}
+	if (li == 10 || li == 19) && (input[4] == '-' && input[7] == '-') {
+		var typ byte = 3
+		year, err := strconv.Atoi(input[0:4])
+		if err != nil {
+			return 0, 0, err
+		}
+		month, err := strconv.Atoi(input[5:7])
+		if err != nil {
+			return 0, 0, err
+		}
+		day, err := strconv.Atoi(input[8:10])
+		if err != nil {
+			return 0, 0, err
+		}
+		var hour, min, sec int
+		if (li == 19) && (input[13] == ':' && input[16] == ':') {
+			typ = 2
+			hour, err = strconv.Atoi(input[11:13])
+			if err != nil {
+				return 0, 0, err
+			}
+			min, err = strconv.Atoi(input[14:16])
+			if err != nil {
+				return 0, 0, err
+			}
+			sec, err = strconv.Atoi(input[17:19])
+			if err != nil {
+				return 0, 0, err
+			}
+		}
+		t := time.Date(year, time.Month(month), day, hour, min, sec, 0, time.UTC)
+		return epoch.Epoch(t.UnixNano()), typ, nil
+	}
+	return ts, 0, timeseries.ErrInvalidTimeFormat
+}
+
+func isAllDigits(input string) bool {
+	for _, c := range input {
+		if c < 48 || c > 57 {
+			return false
+		}
+	}
+	return true
+}
+
+// FormatOutputTime returns a string representing the provided epoch
+// in the format indicated
+// Formats:
+// 0 - seconds since epoch
+// 1 - milliseconds since epoch
+// 2 - SQL DateTime
+// 3 - SQL Date
+func FormatOutputTime(ts epoch.Epoch, format byte) string {
+	switch format {
+	case 0:
+		return strconv.FormatInt(int64(ts/billion), 10)
+	case 1:
+		return strconv.FormatInt(int64(ts/million), 10)
+	case 2:
+		return time.Unix(0, int64(ts)).UTC().Format("2006-01-02 15:04:05")
+	case 3:
+		return time.Unix(0, int64(ts)).UTC().Format("2006-01-02")
+	}
+	return "0"
 }
