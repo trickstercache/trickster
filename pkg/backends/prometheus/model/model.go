@@ -28,6 +28,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"github.com/tricksterproxy/trickster/pkg/timeseries/dataset"
+	"github.com/tricksterproxy/trickster/pkg/timeseries/epoch"
 )
 
 // WFDocument the Wire Format Document for the timeseries
@@ -153,7 +154,7 @@ func pointFromValues(v []interface{}) (dataset.Point, error) {
 		return dataset.Point{}, timeseries.ErrInvalidBody
 	}
 	return dataset.Point{
-		Epoch:  dataset.Epoch(f1) * 1000000000,
+		Epoch:  epoch.Epoch(f1) * 1000000000,
 		Size:   len(s) + 32, // 8 bytes for epoch, 8 bytes for size, 16 bytes for s stringHeader
 		Values: []interface{}{s},
 	}, nil

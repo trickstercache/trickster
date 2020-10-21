@@ -29,6 +29,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"github.com/tricksterproxy/trickster/pkg/timeseries/dataset"
+	"github.com/tricksterproxy/trickster/pkg/timeseries/epoch"
 )
 
 // WFDocument the Wire Format Document for the timeseries
@@ -107,12 +108,12 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOp
 	return marshaler(ds, rlo, w)
 }
 
-func writeRFC3339Time(w io.Writer, epoch dataset.Epoch, m int64) {
+func writeRFC3339Time(w io.Writer, epoch epoch.Epoch, m int64) {
 	t := time.Unix(0, int64(epoch))
 	w.Write([]byte(`"` + t.Format(time.RFC3339Nano) + `"`))
 }
 
-func writeEpochTime(w io.Writer, epoch dataset.Epoch, m int64) {
+func writeEpochTime(w io.Writer, epoch epoch.Epoch, m int64) {
 	w.Write([]byte(strconv.FormatInt(int64(epoch)/m, 10)))
 }
 
@@ -390,7 +391,7 @@ func marshalTimeseriesCSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions, w
 	return nil
 }
 
-type dateWriter func(io.Writer, dataset.Epoch, int64)
+type dateWriter func(io.Writer, epoch.Epoch, int64)
 
 func getDateWriter(rlo *timeseries.RequestOptions) (dateWriter, int64) {
 	var dw dateWriter
@@ -537,7 +538,7 @@ func pointFromValues(v []interface{}, tsIndex int) (dataset.Point,
 		ns = int64(fns)
 	}
 	p.Values = append(v[:tsIndex], v[tsIndex+1:]...)
-	p.Epoch = dataset.Epoch(ns)
+	p.Epoch = epoch.Epoch(ns)
 	p.Size = 12
 	fdts := make([]timeseries.FieldDataType, len(p.Values))
 	for x := range p.Values {

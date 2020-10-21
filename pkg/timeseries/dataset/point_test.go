@@ -21,18 +21,19 @@ import (
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/timeseries/epoch"
 )
 
 func testPoints() Points {
 
 	return Points{
 		Point{
-			Epoch:  Epoch(5 * timeseries.Second),
+			Epoch:  epoch.Epoch(5 * timeseries.Second),
 			Size:   27,
 			Values: []interface{}{1},
 		},
 		Point{
-			Epoch:  Epoch(10 * timeseries.Second),
+			Epoch:  epoch.Epoch(10 * timeseries.Second),
 			Size:   27,
 			Values: []interface{}{1},
 		},
@@ -41,7 +42,7 @@ func testPoints() Points {
 
 func TestPointClone(t *testing.T) {
 	p := &Point{
-		Epoch:  Epoch(1),
+		Epoch:  epoch.Epoch(1),
 		Size:   27,
 		Values: []interface{}{1},
 	}

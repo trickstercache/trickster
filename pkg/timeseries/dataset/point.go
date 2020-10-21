@@ -21,18 +21,13 @@ package dataset
 import (
 	"sync"
 	"sync/atomic"
+
+	"github.com/tricksterproxy/trickster/pkg/timeseries/epoch"
 )
-
-// Epoch represents an Epoch timestamp in Nanoseconds and has possible values
-// between 1970/1/1 and 2262/4/12
-type Epoch uint64
-
-// Epochs is a slice of type Epoch
-type Epochs []Epoch
 
 // Point represents a timeseries data point
 type Point struct {
-	Epoch  Epoch         `msg:"epoch"`
+	Epoch  epoch.Epoch   `msg:"epoch"`
 	Size   int           `msg:"size"`
 	Values []interface{} `msg:"values"`
 }
@@ -96,7 +91,7 @@ func (p Points) Swap(i, j int) {
 // is not in p, the index of the first element whose value is greater than ts is returned.
 // onOrJustafter requires p to be sorted chronologically from earliest to latest epoch.
 // This is a variation of justGreater found @ https://stackoverflow.com/a/56815151
-func (p Points) onOrJustAfter(ts Epoch, s, e int) int {
+func (p Points) onOrJustAfter(ts epoch.Epoch, s, e int) int {
 	if s >= e {
 		if p[s].Epoch < ts {
 			return s + 1
@@ -114,7 +109,7 @@ func (p Points) onOrJustAfter(ts Epoch, s, e int) int {
 // is not in p, the index of the last element whose value is less than ts is returned.
 // onOrJustBefore requires p to be sorted chronologically from earliest to latest epoch.
 // This is a variation of justGreater found @ https://stackoverflow.com/a/56815151
-func (p Points) onOrJustBefore(ts Epoch, s, e int) int {
+func (p Points) onOrJustBefore(ts epoch.Epoch, s, e int) int {
 	if s >= e {
 		if p[s].Epoch > ts {
 			return s - 1

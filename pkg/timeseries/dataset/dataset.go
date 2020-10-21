@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/timeseries/epoch"
 )
 
 // DataSet is the Common Time Series Format that Trickster uses to
@@ -39,8 +40,6 @@ type DataSet struct {
 	Status string `msg:"status"`
 	// ExtentList is the list of Extents (time ranges) represented in the Results
 	ExtentList timeseries.ExtentList `msg:"extent_list"`
-	// // Timestamps is map of all timestamps in the DataSet
-	// Timestamps map[Epoch]bool `msg:"timestamps"`
 	// Results is the list of type Result. Each Result represents information about a
 	// different statement in the source query for this DataSet
 	Results []*Result `msg:"results"`
@@ -129,8 +128,8 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 	copy(clone.ExtentList, ds.ExtentList)
 	clone.ExtentList = clone.ExtentList.Crop(e)
 
-	startNS := Epoch(e.Start.UnixNano())
-	endNS := Epoch(e.End.UnixNano())
+	startNS := epoch.Epoch(e.Start.UnixNano())
+	endNS := epoch.Epoch(e.End.UnixNano())
 
 	for i := range ds.Results {
 		if ds.Results[i] == nil {
@@ -411,8 +410,8 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 		return
 	}
 
-	startNS := Epoch(e.Start.UnixNano())
-	endNS := Epoch(e.End.UnixNano())
+	startNS := epoch.Epoch(e.Start.UnixNano())
+	endNS := epoch.Epoch(e.End.UnixNano())
 
 	for i := range ds.Results {
 		var wg sync.WaitGroup

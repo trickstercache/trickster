@@ -23,146 +23,6 @@ import (
 )
 
 // DecodeMsg implements msgp.Decodable
-func (z *Epoch) DecodeMsg(dc *msgp.Reader) (err error) {
-	{
-		var zb0001 uint64
-		zb0001, err = dc.ReadUint64()
-		if err != nil {
-			err = msgp.WrapError(err)
-			return
-		}
-		(*z) = Epoch(zb0001)
-	}
-	return
-}
-
-// EncodeMsg implements msgp.Encodable
-func (z Epoch) EncodeMsg(en *msgp.Writer) (err error) {
-	err = en.WriteUint64(uint64(z))
-	if err != nil {
-		err = msgp.WrapError(err)
-		return
-	}
-	return
-}
-
-// MarshalMsg implements msgp.Marshaler
-func (z Epoch) MarshalMsg(b []byte) (o []byte, err error) {
-	o = msgp.Require(b, z.Msgsize())
-	o = msgp.AppendUint64(o, uint64(z))
-	return
-}
-
-// UnmarshalMsg implements msgp.Unmarshaler
-func (z *Epoch) UnmarshalMsg(bts []byte) (o []byte, err error) {
-	{
-		var zb0001 uint64
-		zb0001, bts, err = msgp.ReadUint64Bytes(bts)
-		if err != nil {
-			err = msgp.WrapError(err)
-			return
-		}
-		(*z) = Epoch(zb0001)
-	}
-	o = bts
-	return
-}
-
-// Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
-func (z Epoch) Msgsize() (s int) {
-	s = msgp.Uint64Size
-	return
-}
-
-// DecodeMsg implements msgp.Decodable
-func (z *Epochs) DecodeMsg(dc *msgp.Reader) (err error) {
-	var zb0002 uint32
-	zb0002, err = dc.ReadArrayHeader()
-	if err != nil {
-		err = msgp.WrapError(err)
-		return
-	}
-	if cap((*z)) >= int(zb0002) {
-		(*z) = (*z)[:zb0002]
-	} else {
-		(*z) = make(Epochs, zb0002)
-	}
-	for zb0001 := range *z {
-		{
-			var zb0003 uint64
-			zb0003, err = dc.ReadUint64()
-			if err != nil {
-				err = msgp.WrapError(err, zb0001)
-				return
-			}
-			(*z)[zb0001] = Epoch(zb0003)
-		}
-	}
-	return
-}
-
-// EncodeMsg implements msgp.Encodable
-func (z Epochs) EncodeMsg(en *msgp.Writer) (err error) {
-	err = en.WriteArrayHeader(uint32(len(z)))
-	if err != nil {
-		err = msgp.WrapError(err)
-		return
-	}
-	for zb0004 := range z {
-		err = en.WriteUint64(uint64(z[zb0004]))
-		if err != nil {
-			err = msgp.WrapError(err, zb0004)
-			return
-		}
-	}
-	return
-}
-
-// MarshalMsg implements msgp.Marshaler
-func (z Epochs) MarshalMsg(b []byte) (o []byte, err error) {
-	o = msgp.Require(b, z.Msgsize())
-	o = msgp.AppendArrayHeader(o, uint32(len(z)))
-	for zb0004 := range z {
-		o = msgp.AppendUint64(o, uint64(z[zb0004]))
-	}
-	return
-}
-
-// UnmarshalMsg implements msgp.Unmarshaler
-func (z *Epochs) UnmarshalMsg(bts []byte) (o []byte, err error) {
-	var zb0002 uint32
-	zb0002, bts, err = msgp.ReadArrayHeaderBytes(bts)
-	if err != nil {
-		err = msgp.WrapError(err)
-		return
-	}
-	if cap((*z)) >= int(zb0002) {
-		(*z) = (*z)[:zb0002]
-	} else {
-		(*z) = make(Epochs, zb0002)
-	}
-	for zb0001 := range *z {
-		{
-			var zb0003 uint64
-			zb0003, bts, err = msgp.ReadUint64Bytes(bts)
-			if err != nil {
-				err = msgp.WrapError(err, zb0001)
-				return
-			}
-			(*z)[zb0001] = Epoch(zb0003)
-		}
-	}
-	o = bts
-	return
-}
-
-// Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
-func (z Epochs) Msgsize() (s int) {
-	s = msgp.ArrayHeaderSize + (len(z) * (msgp.Uint64Size))
-	return
-}
-
-// DecodeMsg implements msgp.Decodable
 func (z *Point) DecodeMsg(dc *msgp.Reader) (err error) {
 	var field []byte
 	_ = field
@@ -181,14 +41,10 @@ func (z *Point) DecodeMsg(dc *msgp.Reader) (err error) {
 		}
 		switch msgp.UnsafeString(field) {
 		case "epoch":
-			{
-				var zb0002 uint64
-				zb0002, err = dc.ReadUint64()
-				if err != nil {
-					err = msgp.WrapError(err, "Epoch")
-					return
-				}
-				z.Epoch = Epoch(zb0002)
+			err = z.Epoch.DecodeMsg(dc)
+			if err != nil {
+				err = msgp.WrapError(err, "Epoch")
+				return
 			}
 		case "size":
 			z.Size, err = dc.ReadInt()
@@ -197,16 +53,16 @@ func (z *Point) DecodeMsg(dc *msgp.Reader) (err error) {
 				return
 			}
 		case "values":
-			var zb0003 uint32
-			zb0003, err = dc.ReadArrayHeader()
+			var zb0002 uint32
+			zb0002, err = dc.ReadArrayHeader()
 			if err != nil {
 				err = msgp.WrapError(err, "Values")
 				return
 			}
-			if cap(z.Values) >= int(zb0003) {
-				z.Values = (z.Values)[:zb0003]
+			if cap(z.Values) >= int(zb0002) {
+				z.Values = (z.Values)[:zb0002]
 			} else {
-				z.Values = make([]interface{}, zb0003)
+				z.Values = make([]interface{}, zb0002)
 			}
 			for za0001 := range z.Values {
 				z.Values[za0001], err = dc.ReadIntf()
@@ -234,7 +90,7 @@ func (z *Point) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	err = en.WriteUint64(uint64(z.Epoch))
+	err = z.Epoch.EncodeMsg(en)
 	if err != nil {
 		err = msgp.WrapError(err, "Epoch")
 		return
@@ -275,7 +131,11 @@ func (z *Point) MarshalMsg(b []byte) (o []byte, err error) {
 	// map header, size 3
 	// string "epoch"
 	o = append(o, 0x83, 0xa5, 0x65, 0x70, 0x6f, 0x63, 0x68)
-	o = msgp.AppendUint64(o, uint64(z.Epoch))
+	o, err = z.Epoch.MarshalMsg(o)
+	if err != nil {
+		err = msgp.WrapError(err, "Epoch")
+		return
+	}
 	// string "size"
 	o = append(o, 0xa4, 0x73, 0x69, 0x7a, 0x65)
 	o = msgp.AppendInt(o, z.Size)
@@ -311,14 +171,10 @@ func (z *Point) UnmarshalMsg(bts []byte) (o []byte, err error) {
 		}
 		switch msgp.UnsafeString(field) {
 		case "epoch":
-			{
-				var zb0002 uint64
-				zb0002, bts, err = msgp.ReadUint64Bytes(bts)
-				if err != nil {
-					err = msgp.WrapError(err, "Epoch")
-					return
-				}
-				z.Epoch = Epoch(zb0002)
+			bts, err = z.Epoch.UnmarshalMsg(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "Epoch")
+				return
 			}
 		case "size":
 			z.Size, bts, err = msgp.ReadIntBytes(bts)
@@ -327,16 +183,16 @@ func (z *Point) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				return
 			}
 		case "values":
-			var zb0003 uint32
-			zb0003, bts, err = msgp.ReadArrayHeaderBytes(bts)
+			var zb0002 uint32
+			zb0002, bts, err = msgp.ReadArrayHeaderBytes(bts)
 			if err != nil {
 				err = msgp.WrapError(err, "Values")
 				return
 			}
-			if cap(z.Values) >= int(zb0003) {
-				z.Values = (z.Values)[:zb0003]
+			if cap(z.Values) >= int(zb0002) {
+				z.Values = (z.Values)[:zb0002]
 			} else {
-				z.Values = make([]interface{}, zb0003)
+				z.Values = make([]interface{}, zb0002)
 			}
 			for za0001 := range z.Values {
 				z.Values[za0001], bts, err = msgp.ReadIntfBytes(bts)
@@ -359,7 +215,7 @@ func (z *Point) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *Point) Msgsize() (s int) {
-	s = 1 + 6 + msgp.Uint64Size + 5 + msgp.IntSize + 7 + msgp.ArrayHeaderSize
+	s = 1 + 6 + z.Epoch.Msgsize() + 5 + msgp.IntSize + 7 + msgp.ArrayHeaderSize
 	for za0001 := range z.Values {
 		s += msgp.GuessSize(z.Values[za0001])
 	}
