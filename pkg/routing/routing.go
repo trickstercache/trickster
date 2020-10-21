@@ -136,6 +136,13 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 	return clients, nil
 }
 
+var noCacheBackends = map[string]bool{
+	"rp":           true,
+	"reverseproxy": true,
+	"proxy":        true,
+	"rule":         true,
+}
+
 func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
 	o *oo.Options, clients backends.Backends, caches map[string]cache.Cache,
 	tracers tracing.Tracers, logger interface{}, dryRun bool) error {
@@ -145,9 +152,10 @@ func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
 	var ok bool
 	var err error
 
-	c, ok = caches[o.CacheName]
-	if !ok {
-		return fmt.Errorf("could not find cache named [%s]", o.CacheName)
+	if _, ok = noCacheBackends[o.Provider]; !ok {
+		if c, ok = caches[o.CacheName]; !ok {
+			return fmt.Errorf("could not find cache named [%s]", o.CacheName)
+		}
 	}
 
 	if !dryRun {
@@ -167,7 +175,7 @@ func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
 	case "rpc", "reverseproxycache":
 		client, err = reverseproxycache.NewClient(k, o, mux.NewRouter(), c)
 	case "rp", "reverseproxy", "proxy":
-		client, err = reverseproxy.NewClient(k, o, mux.NewRouter(), c)
+		client, err = reverseproxy.NewClient(k, o, mux.NewRouter())
 	case "rule":
 		client, err = rule.NewClient(k, o, mux.NewRouter(), clients)
 	}

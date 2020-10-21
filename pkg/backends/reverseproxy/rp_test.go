@@ -23,7 +23,7 @@ import (
 	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 )
 
-func TestReverseProxyCacheClientInterfacing(t *testing.T) {
+func TestReverseProxyClientInterfacing(t *testing.T) {
 
 	// this test ensures the client will properly conform to the
 	// Client interface
@@ -38,7 +38,7 @@ func TestReverseProxyCacheClientInterfacing(t *testing.T) {
 }
 
 func TestNewNewClient(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -48,7 +48,7 @@ func TestNewNewClient(t *testing.T) {
 }
 
 func TestHTTPClient(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -58,17 +58,17 @@ func TestHTTPClient(t *testing.T) {
 }
 
 func TestGetCache(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil)
 	if err != nil {
 		t.Error(err)
 	}
 	if c.Cache() != nil {
-		t.Errorf("expected nil Cache for RPC client named %s", "test")
+		t.Errorf("expected nil Cache for RP client named %s", "test")
 	}
 }
 
 func TestClientName(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -78,7 +78,7 @@ func TestClientName(t *testing.T) {
 }
 
 func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -89,7 +89,7 @@ func TestSetCache(t *testing.T) {
 }
 
 func TestConfiguration(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -99,7 +99,7 @@ func TestConfiguration(t *testing.T) {
 }
 
 func TestRouter(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil)
+	c, err := NewClient("test", oo.New(), nil)
 	if err != nil {
 		t.Error(err)
 	}

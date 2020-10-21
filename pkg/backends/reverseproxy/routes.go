@@ -30,7 +30,7 @@ import (
 func (c *Client) registerHandlers() {
 	c.handlersRegistered = true
 	c.handlers = make(map[string]http.Handler)
-	// This is the registry of handlers that Trickster supports for the Reverse Proxy Cache,
+	// This is the registry of handlers that Trickster supports for the Reverse Proxy,
 	// and are able to be referenced by name (map key) in Config Files
 	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
 	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)

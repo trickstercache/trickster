@@ -34,7 +34,6 @@ var _ backends.Client = (*Client)(nil)
 type Client struct {
 	name               string
 	config             *oo.Options
-	cache              cache.Cache
 	webClient          *http.Client
 	handlers           map[string]http.Handler
 	handlersRegistered bool
@@ -46,11 +45,10 @@ type Client struct {
 }
 
 // NewClient returns a new Client Instance
-func NewClient(name string, oc *oo.Options, router http.Handler,
-	cache cache.Cache) (backends.Client, error) {
+func NewClient(name string, oc *oo.Options, router http.Handler) (backends.Client, error) {
 	c, err := proxy.NewHTTPClient(oc)
 	bur := urls.FromParts(oc.Scheme, oc.Host, oc.PathPrefix, "", "")
-	return &Client{name: name, config: oc, router: router, cache: cache,
+	return &Client{name: name, config: oc, router: router,
 		webClient: c, baseUpstreamURL: bur}, err
 }
 
@@ -64,9 +62,9 @@ func (c *Client) HTTPClient() *http.Client {
 	return c.webClient
 }
 
-// Cache returns and handle to the Cache instance used by the Client
+// Cache is ineffectual for Reverse Proxies
 func (c *Client) Cache() cache.Cache {
-	return c.cache
+	return nil
 }
 
 // Name returns the name of the upstream Configuration proxied by the Client
@@ -74,10 +72,8 @@ func (c *Client) Name() string {
 	return c.name
 }
 
-// SetCache sets the Cache object the client will use when caching origin content
-func (c *Client) SetCache(cc cache.Cache) {
-	c.cache = cc
-}
+// SetCache is ineffectual for Reverse Proxies
+func (c *Client) SetCache(cc cache.Cache) {}
 
 // Router returns the http.Handler that handles request routing for this Client
 func (c *Client) Router() http.Handler {
