@@ -14,9 +14,8 @@ require (
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
 	github.com/influxdata/influxdb v1.8.3
-	github.com/onsi/ginkgo v1.14.1 // indirect
-	github.com/prometheus/client_golang v1.7.1
-	github.com/prometheus/common v0.14.0 // indirect
+	github.com/onsi/ginkgo v1.14.2 // indirect
+	github.com/prometheus/client_golang v1.8.0
 	github.com/tinylib/msgp v1.1.2
 	github.com/tricksterproxy/mockster v1.1.1
 	github.com/yuin/gopher-lua v0.0.0-20200816102855-ee81675732da // indirect
@@ -27,7 +26,7 @@ require (
 	go.opentelemetry.io/otel/exporters/trace/jaeger v0.12.0
 	go.opentelemetry.io/otel/exporters/trace/zipkin v0.12.0
 	go.opentelemetry.io/otel/sdk v0.12.0
-	golang.org/x/net v0.0.0-20200930145003-4acb6c075d10
+	golang.org/x/net v0.0.0-20201021035429-f5854403a974
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
