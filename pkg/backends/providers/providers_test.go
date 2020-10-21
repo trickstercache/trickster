@@ -23,8 +23,8 @@ import (
 
 func TestProviderString(t *testing.T) {
 
-	t1 := ProviderRPC
-	t2 := ProviderPrometheus
+	t1 := RPC
+	t2 := Prometheus
 	var t3 Provider = 13
 
 	if t1.String() != "rpc" {

@@ -22,29 +22,34 @@ import "strconv"
 type Provider int
 
 const (
-	// ProviderRPC represents thee Reverse Proxy Cache backend provider
-	ProviderRPC = Provider(iota)
-	// ProviderRule represents the Ruler backend provider
-	ProviderRule
-	// ProviderPrometheus represents the Prometheus backend provider
-	ProviderPrometheus
-	// ProviderInfluxDB represents the InfluxDB backend provider
-	ProviderInfluxDB
-	// ProviderIronDB represents the IRONdb backend provider
-	ProviderIronDB
-	// ProviderClickHouse represents the ClickHouse backend provider
-	ProviderClickHouse
+	// RPC represents the Reverse Proxy Cache backend provider
+	RPC = Provider(iota)
+	// RP represents the Reverse Proxy (no caching) backend provider
+	RP
+	// Rule represents the Ruler backend provider
+	Rule
+	// Prometheus represents the Prometheus backend provider
+	Prometheus
+	// InfluxDB represents the InfluxDB backend provider
+	InfluxDB
+	// IronDB represents the IRONdb backend provider
+	IronDB
+	// ClickHouse represents the ClickHouse backend provider
+	ClickHouse
 )
 
 // Names is a map of Providers keyed by string name
 var Names = map[string]Provider{
-	"rule":              ProviderRule,
-	"reverseproxycache": ProviderRPC,
-	"rpc":               ProviderRPC,
-	"prometheus":        ProviderPrometheus,
-	"influxdb":          ProviderInfluxDB,
-	"irondb":            ProviderIronDB,
-	"clickhouse":        ProviderClickHouse,
+	"rule":              Rule,
+	"reverseproxycache": RPC,
+	"rpc":               RPC,
+	"prometheus":        Prometheus,
+	"influxdb":          InfluxDB,
+	"irondb":            IronDB,
+	"clickhouse":        ClickHouse,
+	"proxy":             RP,
+	"reverseproxy":      RP,
+	"rp":                RP,
 }
 
 // Values is a map of Providers valued by string name
@@ -55,7 +60,9 @@ func init() {
 		Values[v] = k
 	}
 	// ensure consistent reverse mapping for reverseproxycache as rpc
-	Values[ProviderRPC] = "rpc"
+	// and "rp" for proxy
+	Values[RPC] = "rpc"
+	Values[RP] = "rp"
 }
 
 func (t Provider) String() string {
