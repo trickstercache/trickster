@@ -259,10 +259,11 @@ data:
         # access this origin via http[s]://trickster-fqdn/default/ unless path_routing_disabled is true
         [origins.default]
 
-        # provider identifies the origin type.
-        # Valid options are: 'prometheus', 'influxdb', 'clickhouse', 'irondb', 'reverseproxycache' (or just 'rpc')
-        # provider is a required configuration value
-        provider = 'prometheus'
+        # origin_type identifies the backend origin type.
+        # Valid options are: 'prometheus', 'influxdb', 'clickhouse', 'irondb', 'reverseproxycache' (or just 'rpc'),
+        # 'reverseproxy' (or just 'rp'), and 'rule'
+        # origin_type is a required configuration value
+        origin_type = 'prometheus'
 
         # origin_url provides the base upstream URL for all proxied requests to this origin.
         # it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
@@ -300,7 +301,7 @@ data:
         # path_routing_disabled = false
 
         ## rule_name provides the name of the rule config to be used by this origin.
-        ## This is only effective if the provider is 'rule'
+        ## This is only effective if the origin_type is 'rule'
         # rule_name = 'example-rule'
 
         ## req_rewriter_name is the name of a configured rewriter (in [request_rewriters]) that will modify the request prior to
@@ -462,7 +463,7 @@ data:
         ## use quotes around FQDNs for host-based routing (see /docs/multi-origin.md).
         # [origins.'foo.example.com']
         # is_default = false
-        # provider = 'influxdb'
+        # origin_type = 'influxdb'
         # origin_url = 'http://influx-origin:8086'
         # cache_name = 'bbolt_example'
         # negative_cache_name = 'general'
