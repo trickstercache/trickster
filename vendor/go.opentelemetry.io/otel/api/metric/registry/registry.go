@@ -19,16 +19,16 @@ import (
 	"fmt"
 	"sync"
 
-	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/metric"
+	"go.opentelemetry.io/otel/label"
 )
 
-// Provider is a standard metric.Provider for wrapping `MeterImpl`
-type Provider struct {
+// MeterProvider is a standard MeterProvider for wrapping `MeterImpl`
+type MeterProvider struct {
 	impl metric.MeterImpl
 }
 
-var _ metric.Provider = (*Provider)(nil)
+var _ metric.MeterProvider = (*MeterProvider)(nil)
 
 // uniqueInstrumentMeterImpl implements the metric.MeterImpl interface, adding
 // uniqueness checking for instrument descriptors.  Use NewUniqueInstrumentMeter
@@ -42,21 +42,22 @@ type uniqueInstrumentMeterImpl struct {
 var _ metric.MeterImpl = (*uniqueInstrumentMeterImpl)(nil)
 
 type key struct {
-	name        string
-	libraryName string
+	instrumentName         string
+	instrumentationName    string
+	InstrumentationVersion string
 }
 
-// NewProvider returns a new provider that implements instrument
+// NewMeterProvider returns a new provider that implements instrument
 // name-uniqueness checking.
-func NewProvider(impl metric.MeterImpl) *Provider {
-	return &Provider{
+func NewMeterProvider(impl metric.MeterImpl) *MeterProvider {
+	return &MeterProvider{
 		impl: NewUniqueInstrumentMeterImpl(impl),
 	}
 }
 
-// Meter implements metric.Provider.
-func (p *Provider) Meter(name string) metric.Meter {
-	return metric.WrapMeterImpl(p.impl, name)
+// Meter implements MeterProvider.
+func (p *MeterProvider) Meter(instrumentationName string, opts ...metric.MeterOption) metric.Meter {
+	return metric.WrapMeterImpl(p.impl, instrumentationName, opts...)
 }
 
 // ErrMetricKindMismatch is the standard error for mismatched metric
@@ -74,23 +75,25 @@ func NewUniqueInstrumentMeterImpl(impl metric.MeterImpl) metric.MeterImpl {
 }
 
 // RecordBatch implements metric.MeterImpl.
-func (u *uniqueInstrumentMeterImpl) RecordBatch(ctx context.Context, labels []kv.KeyValue, ms ...metric.Measurement) {
+func (u *uniqueInstrumentMeterImpl) RecordBatch(ctx context.Context, labels []label.KeyValue, ms ...metric.Measurement) {
 	u.impl.RecordBatch(ctx, labels, ms...)
 }
 
 func keyOf(descriptor metric.Descriptor) key {
 	return key{
 		descriptor.Name(),
-		descriptor.LibraryName(),
+		descriptor.InstrumentationName(),
+		descriptor.InstrumentationVersion(),
 	}
 }
 
 // NewMetricKindMismatchError formats an error that describes a
 // mismatched metric instrument definition.
 func NewMetricKindMismatchError(desc metric.Descriptor) error {
-	return fmt.Errorf("Metric was %s (%s) registered as a %s %s: %w",
+	return fmt.Errorf("Metric was %s (%s %s)registered as a %s %s: %w",
 		desc.Name(),
-		desc.LibraryName(),
+		desc.InstrumentationName(),
+		desc.InstrumentationVersion(),
 		desc.NumberKind(),
 		desc.MetricKind(),
 		ErrMetricKindMismatch)

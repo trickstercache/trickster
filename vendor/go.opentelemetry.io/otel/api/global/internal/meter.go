@@ -20,24 +20,24 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/metric"
 	"go.opentelemetry.io/otel/api/metric/registry"
+	"go.opentelemetry.io/otel/label"
 )
 
-// This file contains the forwarding implementation of metric.Provider
-// used as the default global instance.  Metric events using instruments
-// provided by this implementation are no-ops until the first Meter
-// implementation is set as the global provider.
+// This file contains the forwarding implementation of MeterProvider used as
+// the default global instance.  Metric events using instruments provided by
+// this implementation are no-ops until the first Meter implementation is set
+// as the global provider.
 //
-// The implementation here uses Mutexes to maintain a list of active
-// Meters in the Provider and Instruments in each Meter, under the
-// assumption that these interfaces are not performance-critical.
+// The implementation here uses Mutexes to maintain a list of active Meters in
+// the MeterProvider and Instruments in each Meter, under the assumption that
+// these interfaces are not performance-critical.
 //
-// We have the invariant that setDelegate() will be called before a
-// new metric.Provider implementation is registered as the global
-// provider.  Mutexes in the Provider and Meters ensure that each
-// instrument has a delegate before the global provider is set.
+// We have the invariant that setDelegate() will be called before a new
+// MeterProvider implementation is registered as the global provider.  Mutexes
+// in the MeterProvider and Meters ensure that each instrument has a delegate
+// before the global provider is set.
 //
 // Bound instrument operations are implemented by delegating to the
 // instrument after it is registered, with a sync.Once initializer to
@@ -46,15 +46,19 @@ import (
 // Metric uniqueness checking is implemented by calling the exported
 // methods of the api/metric/registry package.
 
+type meterKey struct {
+	Name, Version string
+}
+
 type meterProvider struct {
-	delegate metric.Provider
+	delegate metric.MeterProvider
 
 	// lock protects `delegate` and `meters`.
 	lock sync.Mutex
 
 	// meters maintains a unique entry for every named Meter
 	// that has been registered through the global instance.
-	meters map[string]*meterEntry
+	meters map[meterKey]*meterEntry
 }
 
 type meterImpl struct {
@@ -104,12 +108,12 @@ type syncHandle struct {
 	delegate unsafe.Pointer // (*metric.HandleImpl)
 
 	inst   *syncImpl
-	labels []kv.KeyValue
+	labels []label.KeyValue
 
 	initialize sync.Once
 }
 
-var _ metric.Provider = &meterProvider{}
+var _ metric.MeterProvider = &meterProvider{}
 var _ metric.MeterImpl = &meterImpl{}
 var _ metric.InstrumentImpl = &syncImpl{}
 var _ metric.BoundSyncImpl = &syncHandle{}
@@ -119,51 +123,55 @@ func (inst *instrument) Descriptor() metric.Descriptor {
 	return inst.descriptor
 }
 
-// Provider interface and delegation
+// MeterProvider interface and delegation
 
 func newMeterProvider() *meterProvider {
 	return &meterProvider{
-		meters: map[string]*meterEntry{},
+		meters: map[meterKey]*meterEntry{},
 	}
 }
 
-func (p *meterProvider) setDelegate(provider metric.Provider) {
+func (p *meterProvider) setDelegate(provider metric.MeterProvider) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
 	p.delegate = provider
-	for name, entry := range p.meters {
-		entry.impl.setDelegate(name, provider)
+	for key, entry := range p.meters {
+		entry.impl.setDelegate(key.Name, key.Version, provider)
 	}
 	p.meters = nil
 }
 
-func (p *meterProvider) Meter(name string) metric.Meter {
+func (p *meterProvider) Meter(instrumentationName string, opts ...metric.MeterOption) metric.Meter {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
 	if p.delegate != nil {
-		return p.delegate.Meter(name)
+		return p.delegate.Meter(instrumentationName, opts...)
 	}
 
-	entry, ok := p.meters[name]
+	key := meterKey{
+		Name:    instrumentationName,
+		Version: metric.NewMeterConfig(opts...).InstrumentationVersion,
+	}
+	entry, ok := p.meters[key]
 	if !ok {
 		entry = &meterEntry{}
 		entry.unique = registry.NewUniqueInstrumentMeterImpl(&entry.impl)
-		p.meters[name] = entry
+		p.meters[key] = entry
 
 	}
-	return metric.WrapMeterImpl(entry.unique, name)
+	return metric.WrapMeterImpl(entry.unique, key.Name, metric.WithInstrumentationVersion(key.Version))
 }
 
 // Meter interface and delegation
 
-func (m *meterImpl) setDelegate(name string, provider metric.Provider) {
+func (m *meterImpl) setDelegate(name, version string, provider metric.MeterProvider) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
 	d := new(metric.MeterImpl)
-	*d = provider.Meter(name).MeterImpl()
+	*d = provider.Meter(name, metric.WithInstrumentationVersion(version)).MeterImpl()
 	m.delegate = unsafe.Pointer(d)
 
 	for _, inst := range m.syncInsts {
@@ -219,7 +227,7 @@ func (inst *syncImpl) Implementation() interface{} {
 	return inst
 }
 
-func (inst *syncImpl) Bind(labels []kv.KeyValue) metric.BoundSyncImpl {
+func (inst *syncImpl) Bind(labels []label.KeyValue) metric.BoundSyncImpl {
 	if implPtr := (*metric.SyncImpl)(atomic.LoadPointer(&inst.delegate)); implPtr != nil {
 		return (*implPtr).Bind(labels)
 	}
@@ -291,13 +299,13 @@ func (obs *asyncImpl) setDelegate(d metric.MeterImpl) {
 
 // Metric updates
 
-func (m *meterImpl) RecordBatch(ctx context.Context, labels []kv.KeyValue, measurements ...metric.Measurement) {
+func (m *meterImpl) RecordBatch(ctx context.Context, labels []label.KeyValue, measurements ...metric.Measurement) {
 	if delegatePtr := (*metric.MeterImpl)(atomic.LoadPointer(&m.delegate)); delegatePtr != nil {
 		(*delegatePtr).RecordBatch(ctx, labels, measurements...)
 	}
 }
 
-func (inst *syncImpl) RecordOne(ctx context.Context, number metric.Number, labels []kv.KeyValue) {
+func (inst *syncImpl) RecordOne(ctx context.Context, number metric.Number, labels []label.KeyValue) {
 	if instPtr := (*metric.SyncImpl)(atomic.LoadPointer(&inst.delegate)); instPtr != nil {
 		(*instPtr).RecordOne(ctx, number, labels)
 	}

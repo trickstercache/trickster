@@ -19,23 +19,26 @@ import (
 
 	apitrace "go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/internal/trace/parent"
+	"go.opentelemetry.io/otel/sdk/instrumentation"
 )
 
 type tracer struct {
-	provider *Provider
-	name     string
+	provider               *TracerProvider
+	instrumentationLibrary instrumentation.Library
 }
 
 var _ apitrace.Tracer = &tracer{}
 
-func (tr *tracer) Start(ctx context.Context, name string, o ...apitrace.StartOption) (context.Context, apitrace.Span) {
-	var opts apitrace.StartConfig
+// Start starts a Span and returns it along with a context containing it.
+//
+// The Span is created with the provided name and as a child of any existing
+// span context found in the passed context. The created Span will be
+// configured appropriately by any SpanOption passed. Any Timestamp option
+// passed will be used as the start time of the Span's life-cycle.
+func (tr *tracer) Start(ctx context.Context, name string, options ...apitrace.SpanOption) (context.Context, apitrace.Span) {
+	config := apitrace.NewSpanConfig(options...)
 
-	for _, op := range o {
-		op(&opts)
-	}
-
-	parentSpanContext, remoteParent, links := parent.GetSpanContextAndLinks(ctx, opts.NewRoot)
+	parentSpanContext, remoteParent, links := parent.GetSpanContextAndLinks(ctx, config.NewRoot)
 
 	if p := apitrace.SpanFromContext(ctx); p != nil {
 		if sdkSpan, ok := p.(*span); ok {
@@ -43,36 +46,25 @@ func (tr *tracer) Start(ctx context.Context, name string, o ...apitrace.StartOpt
 		}
 	}
 
-	span := startSpanInternal(tr, name, parentSpanContext, remoteParent, opts)
+	span := startSpanInternal(tr, name, parentSpanContext, remoteParent, config)
 	for _, l := range links {
 		span.addLink(l)
 	}
-	for _, l := range opts.Links {
+	for _, l := range config.Links {
 		span.addLink(l)
 	}
-	span.SetAttributes(opts.Attributes...)
+	span.SetAttributes(config.Attributes...)
 
 	span.tracer = tr
 
 	if span.IsRecording() {
-		sps, _ := tr.provider.spanProcessors.Load().(spanProcessorMap)
-		for sp := range sps {
-			sp.OnStart(span.data)
+		sps, _ := tr.provider.spanProcessors.Load().(spanProcessorStates)
+		for _, sp := range sps {
+			sp.sp.OnStart(span.data)
 		}
 	}
 
 	ctx, end := startExecutionTracerTask(ctx, name)
 	span.executionTracerTaskEnd = end
 	return apitrace.ContextWithSpan(ctx, span), span
-}
-
-func (tr *tracer) WithSpan(ctx context.Context, name string, body func(ctx context.Context) error, opts ...apitrace.StartOption) error {
-	ctx, span := tr.Start(ctx, name, opts...)
-	defer span.End()
-
-	if err := body(ctx); err != nil {
-		// TODO: set event with boolean attribute for error.
-		return err
-	}
-	return nil
 }

@@ -20,7 +20,9 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
+	"time"
 
 	"github.com/apache/thrift/lib/go/thrift"
 
@@ -36,13 +38,24 @@ type EndpointOption func() (batchUploader, error)
 
 // WithAgentEndpoint instructs exporter to send spans to jaeger-agent at this address.
 // For example, localhost:6831.
-func WithAgentEndpoint(agentEndpoint string) EndpointOption {
+func WithAgentEndpoint(agentEndpoint string, options ...AgentEndpointOption) EndpointOption {
 	return func() (batchUploader, error) {
 		if agentEndpoint == "" {
 			return nil, errors.New("agentEndpoint must not be empty")
 		}
 
-		client, err := newAgentClientUDP(agentEndpoint, udpPacketMaxLength)
+		o := &AgentEndpointOptions{
+			agentClientUDPParams{
+				HostPort:            agentEndpoint,
+				AttemptReconnecting: true,
+			},
+		}
+
+		for _, opt := range options {
+			opt(o)
+		}
+
+		client, err := newAgentClientUDP(o.agentClientUDPParams)
 		if err != nil {
 			return nil, err
 		}
@@ -51,10 +64,42 @@ func WithAgentEndpoint(agentEndpoint string) EndpointOption {
 	}
 }
 
+type AgentEndpointOption func(o *AgentEndpointOptions)
+
+type AgentEndpointOptions struct {
+	agentClientUDPParams
+}
+
+// WithLogger sets a logger to be used by agent client.
+func WithLogger(logger *log.Logger) AgentEndpointOption {
+	return func(o *AgentEndpointOptions) {
+		o.Logger = logger
+	}
+}
+
+// WithDisableAttemptReconnecting sets option to disable reconnecting udp client.
+func WithDisableAttemptReconnecting() AgentEndpointOption {
+	return func(o *AgentEndpointOptions) {
+		o.AttemptReconnecting = false
+	}
+}
+
+// WithAttemptReconnectingInterval sets the interval between attempts to re resolve agent endpoint.
+func WithAttemptReconnectingInterval(interval time.Duration) AgentEndpointOption {
+	return func(o *AgentEndpointOptions) {
+		o.AttemptReconnectInterval = interval
+	}
+}
+
 // WithCollectorEndpoint defines the full url to the Jaeger HTTP Thrift collector.
 // For example, http://localhost:14268/api/traces
 func WithCollectorEndpoint(collectorEndpoint string, options ...CollectorEndpointOption) EndpointOption {
 	return func() (batchUploader, error) {
+		// Overwrite collector endpoint if environment variables are available.
+		if e := CollectorEndpointFromEnv(); e != "" {
+			collectorEndpoint = e
+		}
+
 		if collectorEndpoint == "" {
 			return nil, errors.New("collectorEndpoint must not be empty")
 		}
@@ -62,6 +107,8 @@ func WithCollectorEndpoint(collectorEndpoint string, options ...CollectorEndpoin
 		o := &CollectorEndpointOptions{
 			httpClient: http.DefaultClient,
 		}
+
+		options = append(options, WithCollectorEndpointOptionFromEnv())
 		for _, opt := range options {
 			opt(o)
 		}

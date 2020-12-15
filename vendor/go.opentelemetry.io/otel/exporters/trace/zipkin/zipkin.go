@@ -18,12 +18,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
+	"sync"
 
+	"go.opentelemetry.io/otel/api/global"
 	export "go.opentelemetry.io/otel/sdk/export/trace"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 // Exporter exports SpanData to the zipkin collector. It implements
@@ -34,87 +39,170 @@ type Exporter struct {
 	serviceName string
 	client      *http.Client
 	logger      *log.Logger
+	o           options
+
+	stoppedMu sync.RWMutex
+	stopped   bool
 }
 
 var (
-	_ export.SpanBatcher = &Exporter{}
+	_ export.SpanExporter = &Exporter{}
 )
 
 // Options contains configuration for the exporter.
-type Options struct {
+type options struct {
 	client *http.Client
 	logger *log.Logger
+	config *sdktrace.Config
 }
 
 // Option defines a function that configures the exporter.
-type Option func(*Options)
+type Option func(*options)
 
 // WithLogger configures the exporter to use the passed logger.
 func WithLogger(logger *log.Logger) Option {
-	return func(opts *Options) {
+	return func(opts *options) {
 		opts.logger = logger
 	}
 }
 
 // WithClient configures the exporter to use the passed HTTP client.
 func WithClient(client *http.Client) Option {
-	return func(opts *Options) {
+	return func(opts *options) {
 		opts.client = client
 	}
 }
 
-// NewExporter creates a new zipkin exporter.
-func NewExporter(collectorURL string, serviceName string, os ...Option) (*Exporter, error) {
-	if _, err := url.Parse(collectorURL); err != nil {
+// WithSDK sets the SDK config for the exporter pipeline.
+func WithSDK(config *sdktrace.Config) Option {
+	return func(o *options) {
+		o.config = config
+	}
+}
+
+// NewRawExporter creates a new Zipkin exporter.
+func NewRawExporter(collectorURL, serviceName string, opts ...Option) (*Exporter, error) {
+	if collectorURL == "" {
+		return nil, errors.New("collector URL cannot be empty")
+	}
+	u, err := url.Parse(collectorURL)
+	if err != nil {
 		return nil, fmt.Errorf("invalid collector URL: %v", err)
 	}
-	if serviceName == "" {
-		return nil, fmt.Errorf("service name must be non-empty string")
+	if u.Scheme == "" || u.Host == "" {
+		return nil, errors.New("invalid collector URL")
 	}
-	opts := Options{}
-	for _, o := range os {
-		o(&opts)
+
+	o := options{}
+	for _, opt := range opts {
+		opt(&o)
 	}
-	if opts.client == nil {
-		opts.client = http.DefaultClient
+	if o.client == nil {
+		o.client = http.DefaultClient
 	}
 	return &Exporter{
 		url:         collectorURL,
-		client:      opts.client,
-		logger:      opts.logger,
+		client:      o.client,
+		logger:      o.logger,
 		serviceName: serviceName,
+		o:           o,
 	}, nil
 }
 
-// ExportSpans is a part of an implementation of the SpanBatcher
-// interface.
-func (e *Exporter) ExportSpans(ctx context.Context, batch []*export.SpanData) {
+// NewExportPipeline sets up a complete export pipeline
+// with the recommended setup for trace provider
+func NewExportPipeline(collectorURL, serviceName string, opts ...Option) (*sdktrace.TracerProvider, error) {
+	exp, err := NewRawExporter(collectorURL, serviceName, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exp))
+	if exp.o.config != nil {
+		tp.ApplyConfig(*exp.o.config)
+	}
+
+	return tp, err
+}
+
+// InstallNewPipeline instantiates a NewExportPipeline with the
+// recommended configuration and registers it globally.
+func InstallNewPipeline(collectorURL, serviceName string, opts ...Option) error {
+	tp, err := NewExportPipeline(collectorURL, serviceName, opts...)
+	if err != nil {
+		return err
+	}
+
+	global.SetTracerProvider(tp)
+	return nil
+}
+
+// ExportSpans exports SpanData to a Zipkin receiver.
+func (e *Exporter) ExportSpans(ctx context.Context, batch []*export.SpanData) error {
+	e.stoppedMu.RLock()
+	stopped := e.stopped
+	e.stoppedMu.RUnlock()
+	if stopped {
+		e.logf("exporter stopped, not exporting span batch")
+		return nil
+	}
+
 	if len(batch) == 0 {
 		e.logf("no spans to export")
-		return
+		return nil
 	}
 	models := toZipkinSpanModels(batch, e.serviceName)
 	body, err := json.Marshal(models)
 	if err != nil {
-		e.logf("failed to serialize zipkin models to JSON: %v", err)
-		return
+		return e.errf("failed to serialize zipkin models to JSON: %v", err)
 	}
 	e.logf("about to send a POST request to %s with body %s", e.url, body)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.url, bytes.NewBuffer(body))
 	if err != nil {
-		e.logf("failed to create request to %s: %v", e.url, err)
-		return
+		return e.errf("failed to create request to %s: %v", e.url, err)
 	}
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := e.client.Do(req)
 	if err != nil {
-		e.logf("request to %s failed: %v", e.url, err)
-		return
+		return e.errf("request to %s failed: %v", e.url, err)
 	}
 	e.logf("zipkin responded with status %d", resp.StatusCode)
+
+	_, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		// Best effort to clean up here.
+		resp.Body.Close()
+		return e.errf("failed to read response body: %v", err)
+	}
+
+	err = resp.Body.Close()
+	if err != nil {
+		return e.errf("failed to close response body: %v", err)
+	}
+	return nil
+}
+
+// Shutdown stops the exporter flushing any pending exports.
+func (e *Exporter) Shutdown(ctx context.Context) error {
+	e.stoppedMu.Lock()
+	e.stopped = true
+	e.stoppedMu.Unlock()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	return nil
 }
 
 func (e *Exporter) logf(format string, args ...interface{}) {
 	if e.logger != nil {
 		e.logger.Printf(format, args...)
 	}
+}
+
+func (e *Exporter) errf(format string, args ...interface{}) error {
+	e.logf(format, args...)
+	return fmt.Errorf(format, args...)
 }

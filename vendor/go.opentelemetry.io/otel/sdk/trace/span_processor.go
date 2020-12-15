@@ -16,7 +16,6 @@ package trace
 
 import (
 	"sync"
-	"sync/atomic"
 
 	export "go.opentelemetry.io/otel/sdk/export/trace"
 )
@@ -36,46 +35,16 @@ type SpanProcessor interface {
 	// data. No calls to OnStart and OnEnd method is invoked after Shutdown call is
 	// made. It should not be blocked indefinitely.
 	Shutdown()
+
+	// ForceFlush exports all ended spans to the configured Exporter that have not yet
+	// been exported.  It should only be called when absolutely necessary, such as when
+	// using a FaaS provider that may suspend the process after an invocation, but before
+	// the Processor can export the completed spans.
+	ForceFlush()
 }
 
-type spanProcessorMap map[SpanProcessor]*sync.Once
-
-var (
-	mu             sync.Mutex
-	spanProcessors atomic.Value
-)
-
-// RegisterSpanProcessor adds to the list of SpanProcessors that will receive sampled
-// trace spans.
-func RegisterSpanProcessor(e SpanProcessor) {
-	mu.Lock()
-	defer mu.Unlock()
-	new := make(spanProcessorMap)
-	if old, ok := spanProcessors.Load().(spanProcessorMap); ok {
-		for k, v := range old {
-			new[k] = v
-		}
-	}
-	new[e] = &sync.Once{}
-	spanProcessors.Store(new)
+type spanProcessorState struct {
+	sp    SpanProcessor
+	state *sync.Once
 }
-
-// UnregisterSpanProcessor removes from the list of SpanProcessors the SpanProcessor that was
-// registered with the given name.
-func UnregisterSpanProcessor(s SpanProcessor) {
-	mu.Lock()
-	defer mu.Unlock()
-	new := make(spanProcessorMap)
-	if old, ok := spanProcessors.Load().(spanProcessorMap); ok {
-		for k, v := range old {
-			new[k] = v
-		}
-	}
-	if stopOnce, ok := new[s]; ok && stopOnce != nil {
-		stopOnce.Do(func() {
-			s.Shutdown()
-		})
-	}
-	delete(new, s)
-	spanProcessors.Store(new)
-}
+type spanProcessorStates []*spanProcessorState

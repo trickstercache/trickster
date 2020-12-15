@@ -16,12 +16,12 @@ package trace
 
 import (
 	"context"
-	"errors"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/otel/api/global"
 	export "go.opentelemetry.io/otel/sdk/export/trace"
 )
 
@@ -29,10 +29,6 @@ const (
 	DefaultMaxQueueSize       = 2048
 	DefaultBatchTimeout       = 5000 * time.Millisecond
 	DefaultMaxExportBatchSize = 512
-)
-
-var (
-	errNilExporter = errors.New("exporter is nil")
 )
 
 type BatchSpanProcessorOption func(o *BatchSpanProcessorOptions)
@@ -61,66 +57,69 @@ type BatchSpanProcessorOptions struct {
 	BlockOnQueueFull bool
 }
 
-// BatchSpanProcessor implements SpanProcessor interfaces. It is used by
-// exporters to receive export.SpanData asynchronously.
-// Use BatchSpanProcessorOptions to change the behavior of the processor.
+// BatchSpanProcessor is a SpanProcessor that batches asynchronously received
+// SpanData and sends it to a trace.Exporter when complete.
 type BatchSpanProcessor struct {
-	e export.SpanBatcher
+	e export.SpanExporter
 	o BatchSpanProcessorOptions
 
 	queue   chan *export.SpanData
 	dropped uint32
 
-	batch    []*export.SpanData
-	timer    *time.Timer
-	stopWait sync.WaitGroup
-	stopOnce sync.Once
-	stopCh   chan struct{}
+	batch      []*export.SpanData
+	batchMutex sync.Mutex
+	timer      *time.Timer
+	stopWait   sync.WaitGroup
+	stopOnce   sync.Once
+	stopCh     chan struct{}
 }
 
 var _ SpanProcessor = (*BatchSpanProcessor)(nil)
 
-// NewBatchSpanProcessor creates a new instance of BatchSpanProcessor
-// for a given export. It returns an error if exporter is nil.
-// The newly created BatchSpanProcessor should then be registered with sdk
-// using RegisterSpanProcessor.
-func NewBatchSpanProcessor(e export.SpanBatcher, opts ...BatchSpanProcessorOption) (*BatchSpanProcessor, error) {
-	if e == nil {
-		return nil, errNilExporter
-	}
-
+// NewBatchSpanProcessor creates a new BatchSpanProcessor that will send
+// SpanData batches to the exporters with the supplied options.
+//
+// The returned BatchSpanProcessor needs to be registered with the SDK using
+// the RegisterSpanProcessor method for it to process spans.
+//
+// If the exporter is nil, the span processor will preform no action.
+func NewBatchSpanProcessor(exporter export.SpanExporter, options ...BatchSpanProcessorOption) *BatchSpanProcessor {
 	o := BatchSpanProcessorOptions{
 		BatchTimeout:       DefaultBatchTimeout,
 		MaxQueueSize:       DefaultMaxQueueSize,
 		MaxExportBatchSize: DefaultMaxExportBatchSize,
 	}
-	for _, opt := range opts {
+	for _, opt := range options {
 		opt(&o)
 	}
 	bsp := &BatchSpanProcessor{
-		e:      e,
+		e:      exporter,
 		o:      o,
 		batch:  make([]*export.SpanData, 0, o.MaxExportBatchSize),
 		timer:  time.NewTimer(o.BatchTimeout),
 		queue:  make(chan *export.SpanData, o.MaxQueueSize),
 		stopCh: make(chan struct{}),
 	}
-	bsp.stopWait.Add(1)
 
+	bsp.stopWait.Add(1)
 	go func() {
+		defer bsp.stopWait.Done()
 		bsp.processQueue()
 		bsp.drainQueue()
 	}()
 
-	return bsp, nil
+	return bsp
 }
 
 // OnStart method does nothing.
-func (bsp *BatchSpanProcessor) OnStart(sd *export.SpanData) {
-}
+func (bsp *BatchSpanProcessor) OnStart(sd *export.SpanData) {}
 
 // OnEnd method enqueues export.SpanData for later processing.
 func (bsp *BatchSpanProcessor) OnEnd(sd *export.SpanData) {
+	// Do not enqueue spans if we are just going to drop them.
+	if bsp.e == nil {
+		return
+	}
 	bsp.enqueue(sd)
 }
 
@@ -130,9 +129,12 @@ func (bsp *BatchSpanProcessor) Shutdown() {
 	bsp.stopOnce.Do(func() {
 		close(bsp.stopCh)
 		bsp.stopWait.Wait()
-		close(bsp.queue)
-
 	})
+}
+
+// ForceFlush exports all ended spans that have not yet been exported.
+func (bsp *BatchSpanProcessor) ForceFlush() {
+	bsp.exportSpans()
 }
 
 func WithMaxQueueSize(size int) BatchSpanProcessorOption {
@@ -163,8 +165,13 @@ func WithBlocking() BatchSpanProcessorOption {
 func (bsp *BatchSpanProcessor) exportSpans() {
 	bsp.timer.Reset(bsp.o.BatchTimeout)
 
+	bsp.batchMutex.Lock()
+	defer bsp.batchMutex.Unlock()
+
 	if len(bsp.batch) > 0 {
-		bsp.e.ExportSpans(context.Background(), bsp.batch)
+		if err := bsp.e.ExportSpans(context.Background(), bsp.batch); err != nil {
+			global.Handle(err)
+		}
 		bsp.batch = bsp.batch[:0]
 	}
 }
@@ -173,7 +180,6 @@ func (bsp *BatchSpanProcessor) exportSpans() {
 // is shut down. It calls the exporter in batches of up to MaxExportBatchSize
 // waiting up to BatchTimeout to form a batch.
 func (bsp *BatchSpanProcessor) processQueue() {
-	defer bsp.stopWait.Done()
 	defer bsp.timer.Stop()
 
 	for {
@@ -183,8 +189,11 @@ func (bsp *BatchSpanProcessor) processQueue() {
 		case <-bsp.timer.C:
 			bsp.exportSpans()
 		case sd := <-bsp.queue:
+			bsp.batchMutex.Lock()
 			bsp.batch = append(bsp.batch, sd)
-			if len(bsp.batch) == bsp.o.MaxExportBatchSize {
+			shouldExport := len(bsp.batch) == bsp.o.MaxExportBatchSize
+			bsp.batchMutex.Unlock()
+			if shouldExport {
 				if !bsp.timer.Stop() {
 					<-bsp.timer.C
 				}
@@ -197,13 +206,26 @@ func (bsp *BatchSpanProcessor) processQueue() {
 // drainQueue awaits the any caller that had added to bsp.stopWait
 // to finish the enqueue, then exports the final batch.
 func (bsp *BatchSpanProcessor) drainQueue() {
-	for sd := range bsp.queue {
-		bsp.batch = append(bsp.batch, sd)
-		if len(bsp.batch) == bsp.o.MaxExportBatchSize {
-			bsp.exportSpans()
+	for {
+		select {
+		case sd := <-bsp.queue:
+			if sd == nil {
+				bsp.exportSpans()
+				return
+			}
+
+			bsp.batchMutex.Lock()
+			bsp.batch = append(bsp.batch, sd)
+			shouldExport := len(bsp.batch) == bsp.o.MaxExportBatchSize
+			bsp.batchMutex.Unlock()
+
+			if shouldExport {
+				bsp.exportSpans()
+			}
+		default:
+			close(bsp.queue)
 		}
 	}
-	bsp.exportSpans()
 }
 
 func (bsp *BatchSpanProcessor) enqueue(sd *export.SpanData) {
@@ -226,17 +248,19 @@ func (bsp *BatchSpanProcessor) enqueue(sd *export.SpanData) {
 		panic(x)
 	}()
 
+	select {
+	case <-bsp.stopCh:
+		return
+	default:
+	}
+
 	if bsp.o.BlockOnQueueFull {
-		select {
-		case bsp.queue <- sd:
-		case <-bsp.stopCh:
-		}
+		bsp.queue <- sd
 		return
 	}
 
 	select {
 	case bsp.queue <- sd:
-	case <-bsp.stopCh:
 	default:
 		atomic.AddUint32(&bsp.dropped, 1)
 	}
