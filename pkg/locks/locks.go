@@ -29,14 +29,13 @@ type NamedLocker interface {
 
 type namedLocker struct {
 	locks   map[string]*namedLock
-	mapLock *sync.Mutex
+	mapLock namedLock
 }
 
 // NewNamedLocker returns a new Named Locker
 func NewNamedLocker() NamedLocker {
 	return &namedLocker{
-		locks:   make(map[string]*namedLock),
-		mapLock: &sync.Mutex{},
+		locks: make(map[string]*namedLock),
 	}
 }
 
@@ -44,148 +43,103 @@ func NewNamedLocker() NamedLocker {
 type NamedLock interface {
 	Release() error
 	RRelease() error
-	Upgrade() (NamedLock, error)
-	WriteLockCounter() int
-	WriteLockMode() bool
+	Upgrade() bool
 }
 
 func newNamedLock(name string, locker *namedLocker) *namedLock {
 	return &namedLock{
-		name:    name,
-		RWMutex: &sync.RWMutex{},
-		locker:  locker,
+		name:   name,
+		locker: locker,
 	}
 }
 
 type namedLock struct {
-	*sync.RWMutex
-	name           string
-	queueSize      int32
-	writeLockMode  int32
-	writeLockCount int
-	locker         *namedLocker
+	sync.RWMutex
+	name             string
+	queueSize        int32
+	locker           *namedLocker
+	subsequentWriter bool
+}
+
+func (nl *namedLock) release(unlockFunc func()) {
+	qs := atomic.AddInt32(&nl.queueSize, -1)
+	if qs == 0 {
+		nl.locker.mapLock.Lock()
+		// recheck queue size after getting the lock since another client
+		// might have joined since the map lock was acquired
+		if nl.queueSize == 0 {
+			delete(nl.locker.locks, nl.name)
+		}
+		nl.locker.mapLock.Unlock()
+	}
+	unlockFunc()
 }
 
 // Release releases the write lock on the subject Named Lock
 func (nl *namedLock) Release() error {
-
-	if nl.name == "" {
-		return errInvalidLockName(nl.name)
-	}
-
-	qs := atomic.AddInt32(&nl.queueSize, -1)
-	if qs == 0 {
-		nl.locker.mapLock.Lock()
-		delete(nl.locker.locks, nl.name)
-		nl.locker.mapLock.Unlock()
-	}
-
-	atomic.AddInt32(&nl.writeLockMode, -1)
-	nl.Unlock()
+	nl.release(nl.Unlock)
 	return nil
 }
 
 // RRelease releases the read lock on the subject Named Lock
 func (nl *namedLock) RRelease() error {
-
-	if nl.name == "" {
-		return errInvalidLockName(nl.name)
-	}
-
-	qs := atomic.AddInt32(&nl.queueSize, -1)
-	if qs == 0 {
-		nl.locker.mapLock.Lock()
-		delete(nl.locker.locks, nl.name)
-		nl.locker.mapLock.Unlock()
-	}
-
-	nl.RUnlock()
+	nl.release(nl.RUnlock)
 	return nil
 }
 
-// WriteLockCounter returns the number of write locks acquired by the namedLock
-// This function should only be called by a goroutine actively holding a write lock,
-// as it is otherwise not atomic
-func (nl *namedLock) WriteLockCounter() int {
-	return nl.writeLockCount
+// Upgrade will upgrade the current read lock to a write lock. This method will
+// always succeed unless a read lock did not already exist, which panics like a
+// normal mutex. the return value indicates whether the requesting goroutine was
+// first to receive a lock, and will be false when multiple goroutines upgraded
+// concurrently and the caller was not the first in the queue to receive it.
+// This helps the caller know if any extra state checks are required
+// (e.g., re-querying a cache that might have changed) before proceeding.
+func (nl *namedLock) Upgrade() bool {
+	nl.RUnlock()
+	nl.Lock()
+	if nl.subsequentWriter {
+		return false
+	}
+	nl.subsequentWriter = true
+	return true
 }
 
-// WriteLockMode returns true if a caller is waiting for a write lock
-func (nl *namedLock) WriteLockMode() bool {
-	return atomic.LoadInt32(&nl.writeLockMode) > 0
-}
+func (lk *namedLocker) acquire(lockName string, isWrite bool) (NamedLock, error) {
+	if lockName == "" {
+		return nil, errInvalidLockName(lockName)
+	}
+	lk.mapLock.RLock()
+	nl, ok := lk.locks[lockName]
+	mapUnlockFunc := lk.mapLock.RUnlock
+	if !ok {
+		mapUnlockFunc = lk.mapLock.Unlock
+		lk.mapLock.Upgrade()
+		// check again in case we weren't the first to upgrade
+		nl, ok = lk.locks[lockName]
+		if !ok {
+			nl = newNamedLock(lockName, lk)
+		}
+		lk.locks[lockName] = nl
+	}
+	atomic.AddInt32(&nl.queueSize, 1)
+	mapUnlockFunc()
 
-// Upgrade will upgrade the current read-lock to a write lock without losing the reference to the
-// underlying sync map, enabling goroutines, after receiving a write lock, to know how many other
-// goroutines acquired a write lock (naturally or upgraded) during the time this routine released
-// it's read lock and got a write lock. This helps the receiver of the write lock know if any extra
-// state checks are required (e.g., re-querying a cache that might have changed) before proceeding.
-func (nl *namedLock) Upgrade() (NamedLock, error) {
-
-	ch := make(chan bool, 1)
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		atomic.AddInt32(&nl.queueSize, 1)
-		ch <- true
-		atomic.AddInt32(&nl.writeLockMode, 1)
+	if isWrite {
 		nl.Lock()
-		nl.writeLockCount++
-		wg.Done()
-	}()
-
-	// once we know the write lock queueSize is incremented, we can release our read lock
-	<-ch
-	close(ch)
-	nl.RRelease()
-
-	// wait until write mode is set, read lock is released, and write lock is acquired
-	wg.Wait()
-
+	} else {
+		nl.RLock()
+	}
 	return nl, nil
 }
 
 // Acquire locks the named lock for writing, and blocks until the wlock is acquired
 func (lk *namedLocker) Acquire(lockName string) (NamedLock, error) {
-	if lockName == "" {
-		return nil, errInvalidLockName(lockName)
-	}
-
-	lk.mapLock.Lock()
-	nl, ok := lk.locks[lockName]
-	if !ok {
-		nl = newNamedLock(lockName, lk)
-		lk.locks[lockName] = nl
-	}
-	atomic.AddInt32(&nl.queueSize, 1)
-	lk.mapLock.Unlock()
-	atomic.AddInt32(&nl.writeLockMode, 1)
-
-	nl.Lock()
-
-	nl.writeLockCount++
-	return nl, nil
+	return lk.acquire(lockName, true)
 }
 
 // RAcquire locks the named lock for reading, and blocks until the rlock is acquired
 func (lk *namedLocker) RAcquire(lockName string) (NamedLock, error) {
-	if lockName == "" {
-		return nil, errInvalidLockName(lockName)
-	}
-
-	lk.mapLock.Lock()
-	nl, ok := lk.locks[lockName]
-	if !ok {
-		nl = newNamedLock(lockName, lk)
-		lk.locks[lockName] = nl
-	}
-
-	atomic.AddInt32(&nl.queueSize, 1)
-	lk.mapLock.Unlock()
-	atomic.StoreInt32(&nl.writeLockMode, 0)
-
-	nl.RLock()
-	return nl, nil
+	return lk.acquire(lockName, false)
 }
 
 func errInvalidLockName(name string) error {

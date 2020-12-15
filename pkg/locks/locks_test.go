@@ -56,19 +56,6 @@ func TestLocks(t *testing.T) {
 		t.Errorf("got %s expected %s", err.Error(), expected)
 	}
 
-	nl3, _ := lk.Acquire("test1")
-	nl3.(*namedLock).name = ""
-	err = nl3.RRelease()
-	if err.Error() != expected {
-		t.Errorf("got %s expected %s", err.Error(), expected)
-	}
-
-	nl = &namedLock{}
-
-	err = nl.Release()
-	if err.Error() != expected {
-		t.Errorf("got %s expected %s", err.Error(), expected)
-	}
 }
 
 func TestLocksConcurrent(t *testing.T) {
@@ -82,8 +69,9 @@ func TestLocksConcurrent(t *testing.T) {
 
 	rand.Seed(time.Now().UnixNano())
 
+	wg.Add(size)
+
 	for i := 0; i < size; i++ {
-		wg.Add(1)
 		go func() {
 			nl, err := lk.Acquire(testKey)
 			if err != nil {
@@ -142,49 +130,26 @@ func TestLockReadAndWrite(t *testing.T) {
 		t.Error("expected error for invalid lock name")
 	}
 
-	nl, _ = lk.RAcquire("testKeyReadOnly")
-	nl.(*namedLock).name = ""
-
-	err = nl.Release()
-	if err == nil || !strings.HasPrefix(err.Error(), "invalid lock name:") {
-		t.Error("expected error for invalid lock name")
-	}
-}
-
-func TestWriteLockCounter(t *testing.T) {
-
-	const expected = 50
-	nl := newNamedLock("testKey", nil)
-	nl.writeLockCount = expected
-	v := nl.WriteLockCounter()
-	if v != expected {
-		t.Errorf("expected %d got %d", expected, v)
-	}
-
-}
-
-func TestWriteLockMode(t *testing.T) {
-
-	nl := newNamedLock("testKey", nil)
-	if nl.WriteLockMode() {
-		t.Error("expected false")
-	}
-	nl.writeLockMode = 1
-	if !nl.WriteLockMode() {
-		t.Error("expected true")
-	}
-
 }
 
 func TestUpgrade(t *testing.T) {
 
 	locker := NewNamedLocker()
 	nl, _ := locker.RAcquire("test")
-	if nl.WriteLockCounter() != 0 {
-		t.Errorf("expected 0 got %d", nl.WriteLockCounter())
+
+	b := nl.Upgrade()
+	nl.Release()
+	if !b {
+		t.Errorf("expected firstWrite to be true")
 	}
-	nl, _ = nl.Upgrade()
-	if nl.WriteLockCounter() != 1 {
-		t.Errorf("expected 1 got %d", nl.WriteLockCounter())
+
+	nl, _ = locker.RAcquire("test2")
+	nl1 := nl.(*namedLock)
+	nl1.subsequentWriter = true
+	b = nl.Upgrade()
+	nl.Release()
+	if b {
+		t.Errorf("expected firstWrite to be false")
 	}
+
 }
