@@ -33,7 +33,7 @@ import (
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 
 	"github.com/golang/snappy"
-	"go.opentelemetry.io/otel/api/kv"
+	"go.opentelemetry.io/otel/label"
 )
 
 // QueryCache queries the cache for an HTTPDocument and returns it
@@ -63,7 +63,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				nr = ranges
 			}
 
-			tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", lookupStatus.String()))
+			tspan.SetAttributes(rsc.Tracer, span, label.String("cache.status", lookupStatus.String()))
 
 			return d, lookupStatus, nr, err
 		}
@@ -71,7 +71,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		if ifc != nil {
 			d, _ = ifc.(*HTTPDocument)
 		} else {
-			tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", status.LookupStatusKeyMiss.String()))
+			tspan.SetAttributes(rsc.Tracer, span, label.String("cache.status", status.LookupStatusKeyMiss.String()))
 			return d, status.LookupStatusKeyMiss, ranges, err
 		}
 
@@ -85,7 +85,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				nr = ranges
 
 			}
-			tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", lookupStatus.String()))
+			tspan.SetAttributes(rsc.Tracer, span, label.String("cache.status", lookupStatus.String()))
 			return d, lookupStatus, nr, err
 		}
 
@@ -111,7 +111,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				"cacheKey": key,
 				"detail":   err.Error(),
 			})
-			tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", status.LookupStatusKeyMiss.String()))
+			tspan.SetAttributes(rsc.Tracer, span, label.String("cache.status", status.LookupStatusKeyMiss.String()))
 			return d, status.LookupStatusKeyMiss, ranges, err
 		}
 
@@ -144,7 +144,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 
 	}
-	tspan.SetAttributes(rsc.Tracer, span, kv.String("cache.status", lookupStatus.String()))
+	tspan.SetAttributes(rsc.Tracer, span, label.String("cache.status", lookupStatus.String()))
 	return d, lookupStatus, delta, nil
 }
 
@@ -229,7 +229,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 			span.AddEvent(
 				ctx,
 				"Cache Write Failure",
-				kv.String("Error", err.Error()),
+				label.String("Error", err.Error()),
 			)
 		}
 		return err
@@ -238,7 +238,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		span.AddEvent(
 			ctx,
 			"Cache Write",
-			kv.Int("bytesWritten", len(bytes)),
+			label.Int("bytesWritten", len(bytes)),
 		)
 	}
 	return nil
