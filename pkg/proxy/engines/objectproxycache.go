@@ -72,7 +72,7 @@ func handleCachePartialHit(pr *proxyRequest) error {
 	}
 
 	b1, b2 := upgradeLock(pr)
-	if b1 && !b2 {
+	if b1 && !b2 && pr.rerunCount < 3 {
 		rerunRequest(pr)
 		return nil
 	}
@@ -485,14 +485,13 @@ func recordOPCResult(pr *proxyRequest, cacheStatus status.LookupStatus, httpStat
 
 func upgradeLock(pr *proxyRequest) (bool, bool) {
 	if pr.hasReadLock && !pr.hasWriteLock {
-		cwc := pr.cacheLock.WriteLockCounter()
-		pr.cacheLock.Upgrade()
+		wasFirst := pr.cacheLock.Upgrade()
 		pr.hasReadLock = false
 		pr.hasWriteLock = true
-		if pr.cacheLock.WriteLockCounter()-cwc != 1 {
-			return true, false
+		if wasFirst {
+			return true, true
 		}
-		return true, true
+		return true, false
 	}
 	return false, false
 }
