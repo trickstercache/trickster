@@ -1,0 +1,75 @@
+
+on:
+  push:
+    branches:
+      - main
+      - v1.0.x
+      - v1.1.x
+    tags:
+      - 'v[0-9]+\.[0-9]+\.[0-9]+'
+    
+    
+  pull_request:
+    branches:
+      - main
+      - v1.0.x
+      - v1.1.x
+
+name: Continuous Integration and Build Tests
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: [1.15.x]
+
+    steps:
+      
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+      - name: Install python dependencies
+        run: python -m pip install --upgrade pip setuptools wheel
+      - name: installing codespell
+        run: pip install codespell
+      - name: running codespell
+        run: codespell --skip="vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz" --ignore-words="./testdata/ignore_words.txt"
+          
+      - uses: actions/setup-go@v1
+        with:
+          go-version: ${{ matrix.go }}
+      - uses: actions/checkout@v2
+      
+        name: Get dependencies
+      - run: |
+          go get -v -t -d ./...
+          if [ -f Gopkg.toml ]; then
+              curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+              dep ensure
+          fi
+      - run: go mod vendor
+      - run: go test -v -coverprofile=profile.cov ./...
+      - run: go build -o /dev/null ./cmd/trickster
+
+      - name: Send coverage
+        uses: shogo82148/actions-goveralls@v1
+        with:
+          path-to-profile: profile.cov
+          flag-name: Go-${{ matrix.go }}
+          parallel: true
+
+          name: tests results
+  finish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: shogo82148/actions-goveralls@v1
+        with:
+          parallel-finished: true
+
+
