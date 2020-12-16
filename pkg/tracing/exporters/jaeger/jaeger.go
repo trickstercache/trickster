@@ -22,10 +22,10 @@ import (
 	errs "github.com/tricksterproxy/trickster/pkg/tracing/errors"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 
-	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/exporters/trace/jaeger"
 	"go.opentelemetry.io/otel/label"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // NewTracer returns a new Jaeger Tracer based on the provided options

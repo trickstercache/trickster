@@ -36,8 +36,8 @@ import (
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
-	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // DeltaProxyCache is used for Time Series Acceleration, but not for normal HTTP Object Caching
@@ -125,7 +125,6 @@ checkCache:
 	if coReq.NoCache {
 		if span != nil {
 			span.AddEvent(
-				ctx,
 				"Not Caching",
 			)
 		}

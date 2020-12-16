@@ -35,8 +35,8 @@ import (
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	tl "github.com/tricksterproxy/trickster/pkg/util/log"
 
-	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type proxyRequest struct {
