@@ -24,9 +24,10 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
-	"go.opentelemetry.io/otel/api/baggage"
-	"go.opentelemetry.io/otel/api/trace"
+
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // PrepareRequest extracts trace information from the headers of the incoming request.
@@ -46,10 +47,7 @@ func PrepareRequest(r *http.Request, tr *tracing.Tracer) (*http.Request, trace.S
 	attrs, entries, spanCtx := otelhttptrace.Extract(r.Context(), r)
 	attrs = filterAttributes(tr, attrs)
 
-	r = r.WithContext(baggage.ContextWithMap(r.Context(),
-		baggage.NewMap(baggage.MapUpdate{
-			MultiKV: entries,
-		})))
+	r = r.WithContext(baggage.ContextWithValues(r.Context(), entries...))
 
 	// This will add any configured static tags to the span for Zipkin
 	// For Jaeger, they are automatically included in the Process section of the Trace

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package jaeger
+package jaeger // import "go.opentelemetry.io/otel/exporters/trace/jaeger"
 
 import (
 	"context"
@@ -21,14 +21,14 @@ import (
 	"sync"
 
 	"google.golang.org/api/support/bundler"
-	"google.golang.org/grpc/codes"
 
-	"go.opentelemetry.io/otel/api/global"
-	apitrace "go.opentelemetry.io/otel/api/trace"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 	gen "go.opentelemetry.io/otel/exporters/trace/jaeger/internal/gen-go/jaeger"
 	"go.opentelemetry.io/otel/label"
 	export "go.opentelemetry.io/otel/sdk/export/trace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -92,8 +92,8 @@ func WithDisabled(disabled bool) Option {
 	}
 }
 
-// NewRawExporter returns a trace.Exporter implementation that exports
-// the collected spans to Jaeger.
+// NewRawExporter returns an OTel Exporter implementation that exports the
+// collected spans to Jaeger.
 //
 // It will IGNORE Disabled option.
 func NewRawExporter(endpointOption EndpointOption, opts ...Option) (*Exporter, error) {
@@ -129,7 +129,7 @@ func NewRawExporter(endpointOption EndpointOption, opts ...Option) (*Exporter, e
 	}
 	bundler := bundler.NewBundler((*gen.Span)(nil), func(bundle interface{}) {
 		if err := e.upload(bundle.([]*gen.Span)); err != nil {
-			global.Handle(err)
+			otel.Handle(err)
 		}
 	})
 
@@ -151,14 +151,14 @@ func NewRawExporter(endpointOption EndpointOption, opts ...Option) (*Exporter, e
 
 // NewExportPipeline sets up a complete export pipeline
 // with the recommended setup for trace provider
-func NewExportPipeline(endpointOption EndpointOption, opts ...Option) (apitrace.TracerProvider, func(), error) {
+func NewExportPipeline(endpointOption EndpointOption, opts ...Option) (trace.TracerProvider, func(), error) {
 	o := options{}
 	opts = append(opts, WithDisabledFromEnv())
 	for _, opt := range opts {
 		opt(&o)
 	}
 	if o.Disabled {
-		return apitrace.NoopTracerProvider(), func() {}, nil
+		return trace.NewNoopTracerProvider(), func() {}, nil
 	}
 
 	exporter, err := NewRawExporter(endpointOption, opts...)
@@ -182,7 +182,7 @@ func InstallNewPipeline(endpointOption EndpointOption, opts ...Option) (func(), 
 		return nil, err
 	}
 
-	global.SetTracerProvider(tp)
+	otel.SetTracerProvider(tp)
 	return flushFn, nil
 }
 
@@ -196,7 +196,8 @@ type Process struct {
 	Tags []label.KeyValue
 }
 
-// Exporter is an implementation of trace.SpanSyncer that uploads spans to Jaeger.
+// Exporter is an implementation of an OTel SpanSyncer that uploads spans to
+// Jaeger.
 type Exporter struct {
 	process  *gen.Process
 	bundler  *bundler.Bundler
@@ -294,7 +295,7 @@ func spanDataToThrift(data *export.SpanData) *gen.Span {
 
 	// Ensure that if Status.Code is not OK, that we set the "error" tag on the Jaeger span.
 	// See Issue https://github.com/census-instrumentation/opencensus-go/issues/1041
-	if data.StatusCode != codes.OK {
+	if data.StatusCode != codes.Ok && data.StatusCode != codes.Unset {
 		tags = append(tags, getBoolTag("error", true))
 	}
 

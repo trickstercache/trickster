@@ -22,13 +22,12 @@ import (
 	"strings"
 	"sync"
 
-	"go.opentelemetry.io/otel/semconv"
-
+	"go.opentelemetry.io/contrib"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
-
-	"go.opentelemetry.io/otel/api/global"
-	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/semconv"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -69,7 +68,10 @@ func NewClientTrace(ctx context.Context) *httptrace.ClientTrace {
 		activeHooks: make(map[string]context.Context),
 	}
 
-	ct.tr = global.Tracer("go.opentelemetry.io/otel/instrumentation/httptrace")
+	ct.tr = otel.GetTracerProvider().Tracer(
+		"go.opentelemetry.io/otel/instrumentation/httptrace",
+		trace.WithInstrumentationVersion(contrib.SemVersion()),
+	)
 
 	return &httptrace.ClientTrace{
 		GetConn:              ct.getConn,
@@ -117,7 +119,7 @@ func (ct *clientTracer) end(hook string, err error, attrs ...label.KeyValue) {
 	if ctx, ok := ct.activeHooks[hook]; ok {
 		span := trace.SpanFromContext(ctx)
 		if err != nil {
-			span.SetStatus(codes.Unknown, err.Error())
+			span.SetStatus(codes.Error, err.Error())
 		}
 		span.SetAttributes(attrs...)
 		span.End()
@@ -128,7 +130,7 @@ func (ct *clientTracer) end(hook string, err error, attrs ...label.KeyValue) {
 		// Yes, it's backwards. v0v
 		ctx, span := ct.tr.Start(ct.getParentContext(hook), hook, trace.WithAttributes(attrs...), trace.WithSpanKind(trace.SpanKindClient))
 		if err != nil {
-			span.SetStatus(codes.Unknown, err.Error())
+			span.SetStatus(codes.Error, err.Error())
 		}
 		ct.activeHooks[hook] = ctx
 	}
@@ -211,24 +213,24 @@ func (ct *clientTracer) wroteHeaders() {
 
 func (ct *clientTracer) wroteRequest(info httptrace.WroteRequestInfo) {
 	if info.Err != nil {
-		ct.root.SetStatus(codes.Unknown, info.Err.Error())
+		ct.root.SetStatus(codes.Error, info.Err.Error())
 	}
 	ct.end("http.send", info.Err)
 }
 
 func (ct *clientTracer) got100Continue() {
-	ct.span("http.receive").AddEvent(ct.Context, "GOT 100 - Continue")
+	ct.span("http.receive").AddEvent("GOT 100 - Continue")
 }
 
 func (ct *clientTracer) wait100Continue() {
-	ct.span("http.receive").AddEvent(ct.Context, "GOT 100 - Wait")
+	ct.span("http.receive").AddEvent("GOT 100 - Wait")
 }
 
 func (ct *clientTracer) got1xxResponse(code int, header textproto.MIMEHeader) error {
-	ct.span("http.receive").AddEvent(ct.Context, "GOT 1xx",
+	ct.span("http.receive").AddEvent("GOT 1xx", trace.WithAttributes(
 		HTTPStatus.Int(code),
 		HTTPHeaderMIME.String(sm2s(header)),
-	)
+	))
 	return nil
 }
 

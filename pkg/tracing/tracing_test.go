@@ -32,19 +32,19 @@ func TestHTTPToCode(t *testing.T) {
 		expected codes.Code
 	}{
 		{
-			http.StatusMovedPermanently, codes.OK,
+			http.StatusMovedPermanently, codes.Ok,
 		},
 		{
-			http.StatusNotFound, codes.NotFound,
+			http.StatusNotFound, codes.Error,
 		},
 		{
-			http.StatusBadRequest, codes.InvalidArgument,
+			http.StatusBadRequest, codes.Error,
 		},
 		{
-			http.StatusServiceUnavailable, codes.Unavailable,
+			http.StatusServiceUnavailable, codes.Error,
 		},
 		{
-			http.StatusInternalServerError, codes.Internal,
+			http.StatusInternalServerError, codes.Error,
 		},
 	}
 

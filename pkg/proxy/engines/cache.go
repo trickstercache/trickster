@@ -34,6 +34,7 @@ import (
 
 	"github.com/golang/snappy"
 	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // QueryCache queries the cache for an HTTPDocument and returns it
@@ -125,10 +126,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 
 	if d.isFulfillment {
 		if span != nil {
-			span.AddEvent(
-				ctx,
-				"Cache Fulfillment",
-			)
+			span.AddEvent("Cache Fulfillment")
 		}
 		ranges = byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength - 1}}
 	}
@@ -227,18 +225,20 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 	if err != nil {
 		if span != nil {
 			span.AddEvent(
-				ctx,
 				"Cache Write Failure",
-				label.String("Error", err.Error()),
+				trace.EventOption(trace.WithAttributes(
+					label.String("Error", err.Error()),
+				)),
 			)
 		}
 		return err
 	}
 	if span != nil {
 		span.AddEvent(
-			ctx,
 			"Cache Write",
-			label.Int("bytesWritten", len(bytes)),
+			trace.EventOption(trace.WithAttributes(
+				label.Int("bytesWritten", len(bytes)),
+			)),
 		)
 	}
 	return nil

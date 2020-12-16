@@ -22,9 +22,9 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 
-	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // FlusherFunc defines a function used to Flush a Tracer
@@ -48,16 +48,9 @@ type Tags map[string]string
 func HTTPToCode(status int) codes.Code {
 	switch {
 	case status < http.StatusBadRequest:
-		return codes.OK
-	case status == http.StatusNotFound:
-		return codes.NotFound
-	case status < http.StatusInternalServerError:
-		// All other 4xx
-		return codes.InvalidArgument
-	case status == http.StatusServiceUnavailable:
-		return codes.Unavailable
-	default: // all remaining possiblitiies are values >= 500
-		return codes.Internal
+		return codes.Ok
+	default:
+		return codes.Error
 	}
 }
 

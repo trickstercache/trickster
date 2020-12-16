@@ -21,8 +21,9 @@ import (
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/otel/api/metric"
 	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/number"
 	"go.opentelemetry.io/otel/sdk/export/metric/aggregation"
 	"go.opentelemetry.io/otel/sdk/resource"
 )
@@ -152,7 +153,7 @@ type Aggregator interface {
 	//
 	// The Context argument comes from user-level code and could be
 	// inspected for a `correlation.Map` or `trace.SpanContext`.
-	Update(ctx context.Context, number metric.Number, descriptor *metric.Descriptor) error
+	Update(ctx context.Context, number number.Number, descriptor *metric.Descriptor) error
 
 	// SynchronizedMove is called during collection to finish one
 	// period of aggregation by atomically saving the
@@ -173,6 +174,9 @@ type Aggregator interface {
 	//
 	// This call has no Context argument because it is expected to
 	// perform only computation.
+	//
+	// When called with a nil `destination`, this Aggregator is reset
+	// and the current value is discarded.
 	SynchronizedMove(destination Aggregator, descriptor *metric.Descriptor) error
 
 	// Merge combines the checkpointed state from the argument
@@ -358,18 +362,13 @@ func (r Record) EndTime() time.Time {
 type ExportKind int
 
 const (
-	// CumulativeExporter indicates that the Exporter expects a
+	// CumulativeExportKind indicates that an Exporter expects a
 	// Cumulative Aggregation.
-	CumulativeExporter ExportKind = 1 // e.g., Prometheus
+	CumulativeExportKind ExportKind = 1
 
-	// DeltaExporter indicates that the Exporter expects a
+	// DeltaExportKind indicates that an Exporter expects a
 	// Delta Aggregation.
-	DeltaExporter ExportKind = 2 // e.g., StatsD
-
-	// PassThroughExporter indicates that the Exporter expects
-	// either a Cumulative or a Delta Aggregation, whichever does
-	// not require maintaining state for the given instrument.
-	PassThroughExporter ExportKind = 4 // e.g., OTLP
+	DeltaExportKind ExportKind = 2
 )
 
 // Includes tests whether `kind` includes a specific kind of
@@ -378,26 +377,69 @@ func (kind ExportKind) Includes(has ExportKind) bool {
 	return kind&has != 0
 }
 
-// ExportKindFor returns a constant, as an implementation of ExportKindSelector.
-func (kind ExportKind) ExportKindFor(_ *metric.Descriptor, _ aggregation.Kind) ExportKind {
-	return kind
-}
-
 // MemoryRequired returns whether an exporter of this kind requires
 // memory to export correctly.
-func (kind ExportKind) MemoryRequired(mkind metric.Kind) bool {
+func (kind ExportKind) MemoryRequired(mkind metric.InstrumentKind) bool {
 	switch mkind {
-	case metric.ValueRecorderKind, metric.ValueObserverKind,
-		metric.CounterKind, metric.UpDownCounterKind:
+	case metric.ValueRecorderInstrumentKind, metric.ValueObserverInstrumentKind,
+		metric.CounterInstrumentKind, metric.UpDownCounterInstrumentKind:
 		// Delta-oriented instruments:
-		return kind.Includes(CumulativeExporter)
+		return kind.Includes(CumulativeExportKind)
 
-	case metric.SumObserverKind, metric.UpDownSumObserverKind:
+	case metric.SumObserverInstrumentKind, metric.UpDownSumObserverInstrumentKind:
 		// Cumulative-oriented instruments:
-		return kind.Includes(DeltaExporter)
+		return kind.Includes(DeltaExportKind)
 	}
 	// Something unexpected is happening--we could panic.  This
 	// will become an error when the exporter tries to access a
 	// checkpoint, presumably, so let it be.
 	return false
+}
+
+type (
+	constantExportKindSelector  ExportKind
+	statelessExportKindSelector struct{}
+)
+
+var (
+	_ ExportKindSelector = constantExportKindSelector(0)
+	_ ExportKindSelector = statelessExportKindSelector{}
+)
+
+// ConstantExportKindSelector returns an ExportKindSelector that returns
+// a constant ExportKind, one that is either always cumulative or always delta.
+func ConstantExportKindSelector(kind ExportKind) ExportKindSelector {
+	return constantExportKindSelector(kind)
+}
+
+// CumulativeExportKindSelector returns an ExportKindSelector that
+// always returns CumulativeExportKind.
+func CumulativeExportKindSelector() ExportKindSelector {
+	return ConstantExportKindSelector(CumulativeExportKind)
+}
+
+// DeltaExportKindSelector returns an ExportKindSelector that
+// always returns DeltaExportKind.
+func DeltaExportKindSelector() ExportKindSelector {
+	return ConstantExportKindSelector(DeltaExportKind)
+}
+
+// StatelessExportKindSelector returns an ExportKindSelector that
+// always returns the ExportKind that avoids long-term memory
+// requirements.
+func StatelessExportKindSelector() ExportKindSelector {
+	return statelessExportKindSelector{}
+}
+
+// ExportKindFor implements ExportKindSelector.
+func (c constantExportKindSelector) ExportKindFor(_ *metric.Descriptor, _ aggregation.Kind) ExportKind {
+	return ExportKind(c)
+}
+
+// ExportKindFor implements ExportKindSelector.
+func (s statelessExportKindSelector) ExportKindFor(desc *metric.Descriptor, kind aggregation.Kind) ExportKind {
+	if kind == aggregation.SumKind && desc.InstrumentKind().PrecomputedSum() {
+		return CumulativeExportKind
+	}
+	return DeltaExportKind
 }

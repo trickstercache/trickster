@@ -12,18 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package trace
+package trace // import "go.opentelemetry.io/otel/sdk/trace"
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 
 	export "go.opentelemetry.io/otel/sdk/export/trace"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
 	"go.opentelemetry.io/otel/sdk/resource"
-
-	"go.opentelemetry.io/otel/api/trace"
-	apitrace "go.opentelemetry.io/otel/api/trace"
 )
 
 const (
@@ -48,7 +49,7 @@ type TracerProvider struct {
 	config         atomic.Value // access atomically
 }
 
-var _ apitrace.TracerProvider = &TracerProvider{}
+var _ trace.TracerProvider = &TracerProvider{}
 
 // NewTracerProvider creates an instance of trace provider. Optional
 // parameter configures the provider with common options applicable
@@ -65,7 +66,7 @@ func NewTracerProvider(opts ...TracerProviderOption) *TracerProvider {
 	}
 	tp.config.Store(&Config{
 		DefaultSampler:       ParentBased(AlwaysSample()),
-		IDGenerator:          defIDGenerator(),
+		IDGenerator:          defaultIDGenerator(),
 		MaxAttributesPerSpan: DefaultMaxAttributesPerSpan,
 		MaxEventsPerSpan:     DefaultMaxEventsPerSpan,
 		MaxLinksPerSpan:      DefaultMaxLinksPerSpan,
@@ -82,7 +83,7 @@ func NewTracerProvider(opts ...TracerProviderOption) *TracerProvider {
 
 // Tracer with the given name. If a tracer for the given name does not exist,
 // it is created first. If the name is empty, DefaultTracerName is used.
-func (p *TracerProvider) Tracer(name string, opts ...apitrace.TracerOption) apitrace.Tracer {
+func (p *TracerProvider) Tracer(name string, opts ...trace.TracerOption) trace.Tracer {
 	c := trace.NewTracerConfig(opts...)
 
 	p.mu.Lock()
@@ -143,7 +144,7 @@ func (p *TracerProvider) UnregisterSpanProcessor(s SpanProcessor) {
 	}
 	if stopOnce != nil {
 		stopOnce.state.Do(func() {
-			s.Shutdown()
+			otel.Handle(s.Shutdown(context.Background()))
 		})
 	}
 	if len(new) > 1 {
@@ -182,6 +183,21 @@ func (p *TracerProvider) ApplyConfig(cfg Config) {
 	p.config.Store(&c)
 }
 
+// Shutdown shuts down the span processors in the order they were registered
+func (p *TracerProvider) Shutdown(ctx context.Context) error {
+	spss, ok := p.spanProcessors.Load().(spanProcessorStates)
+	if !ok || len(spss) == 0 {
+		return nil
+	}
+
+	for _, sps := range spss {
+		sps.state.Do(func() {
+			otel.Handle(sps.sp.Shutdown(ctx))
+		})
+	}
+	return nil
+}
+
 // WithSyncer registers the exporter with the TracerProvider using a
 // SimpleSpanProcessor.
 func WithSyncer(e export.SpanExporter) TracerProviderOption {
@@ -213,5 +229,12 @@ func WithConfig(config Config) TracerProviderOption {
 func WithResource(r *resource.Resource) TracerProviderOption {
 	return func(opts *TracerProviderConfig) {
 		opts.config.Resource = r
+	}
+}
+
+// WithIDGenerator option registers an IDGenerator with the TracerProvider.
+func WithIDGenerator(g IDGenerator) TracerProviderOption {
+	return func(opts *TracerProviderConfig) {
+		opts.config.IDGenerator = g
 	}
 }

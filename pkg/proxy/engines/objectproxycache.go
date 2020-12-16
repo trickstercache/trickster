@@ -33,8 +33,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 
-	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func handleCacheKeyHit(pr *proxyRequest) error {
@@ -157,14 +157,13 @@ func handleCacheRevalidation(pr *proxyRequest) error {
 
 	rsc := request.GetResources(pr.Request)
 
-	ctx, span := tspan.NewChildSpan(pr.Request.Context(), rsc.Tracer, "CacheRevalidation")
+	_, span := tspan.NewChildSpan(pr.Request.Context(), rsc.Tracer, "CacheRevalidation")
 	if span != nil {
 		defer func() {
 			reval := revalidationStatusValues[pr.revalidation]
 			span.AddEvent(
-				ctx,
 				"Complete",
-				label.String("result", reval),
+				trace.EventOption(trace.WithAttributes(label.String("result", reval))),
 			)
 			span.End()
 		}()

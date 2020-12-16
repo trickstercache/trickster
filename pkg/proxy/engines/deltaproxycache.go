@@ -38,8 +38,8 @@ import (
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
-	"go.opentelemetry.io/otel/api/trace"
 	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // DeltaProxyCache is used for Time Series Acceleration, but not for normal HTTP Object Caching
@@ -131,10 +131,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	coReq := GetRequestCachingPolicy(r.Header)
 	if coReq.NoCache {
 		if span != nil {
-			span.AddEvent(
-				ctx,
-				"Not Caching",
-			)
+			span.AddEvent("Not Caching")
 		}
 		cacheStatus = status.LookupStatusPurge
 		go cache.Remove(key)
