@@ -33,7 +33,7 @@ var (
 
 const (
 	applicationName    = "trickster"
-	applicationVersion = "1.1.3"
+	applicationVersion = "1.1.4-rc1"
 )
 
 var fatalStartupErrors = true
