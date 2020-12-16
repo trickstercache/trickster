@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package trace
+package trace // import "go.opentelemetry.io/otel/sdk/trace"
 
 import (
 	"go.opentelemetry.io/otel/sdk/resource"
-	"go.opentelemetry.io/otel/sdk/trace/internal"
 )
 
 // Config represents the global tracing configuration.
@@ -25,7 +24,7 @@ type Config struct {
 	DefaultSampler Sampler
 
 	// IDGenerator is for internal use only.
-	IDGenerator internal.IDGenerator
+	IDGenerator IDGenerator
 
 	// MaxEventsPerSpan is max number of message events per span
 	MaxEventsPerSpan int
@@ -42,11 +41,11 @@ type Config struct {
 
 const (
 	// DefaultMaxEventsPerSpan is default max number of message events per span
-	DefaultMaxEventsPerSpan = 128
+	DefaultMaxEventsPerSpan = 1000
 
 	// DefaultMaxAttributesPerSpan is default max number of attributes per span
-	DefaultMaxAttributesPerSpan = 32
+	DefaultMaxAttributesPerSpan = 1000
 
 	// DefaultMaxLinksPerSpan is default max number of links per span
-	DefaultMaxLinksPerSpan = 32
+	DefaultMaxLinksPerSpan = 1000
 )

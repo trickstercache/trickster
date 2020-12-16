@@ -20,7 +20,8 @@ import (
 	"time"
 	"unsafe"
 
-	"go.opentelemetry.io/otel/api/metric"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/number"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
 	"go.opentelemetry.io/otel/sdk/export/metric/aggregation"
 	"go.opentelemetry.io/otel/sdk/metric/aggregator"
@@ -40,7 +41,7 @@ type (
 		// value is the int64- or float64-encoded Set() data
 		//
 		// value needs to be aligned for 64-bit atomic operations.
-		value metric.Number
+		value number.Number
 
 		// timestamp indicates when this record was submitted.
 		// this can be used to pick a winner when multiple
@@ -82,7 +83,7 @@ func (g *Aggregator) Kind() aggregation.Kind {
 // corresponding timestamp.  The error value aggregation.ErrNoData
 // will be returned if (due to a race condition) the checkpoint was
 // computed before the first value was set.
-func (g *Aggregator) LastValue() (metric.Number, time.Time, error) {
+func (g *Aggregator) LastValue() (number.Number, time.Time, error) {
 	gd := (*lastValueData)(g.value)
 	if gd == unsetLastValue {
 		return 0, time.Time{}, aggregation.ErrNoData
@@ -92,6 +93,10 @@ func (g *Aggregator) LastValue() (metric.Number, time.Time, error) {
 
 // SynchronizedMove atomically saves the current value.
 func (g *Aggregator) SynchronizedMove(oa export.Aggregator, _ *metric.Descriptor) error {
+	if oa == nil {
+		atomic.StorePointer(&g.value, unsafe.Pointer(unsetLastValue))
+		return nil
+	}
 	o, _ := oa.(*Aggregator)
 	if o == nil {
 		return aggregator.NewInconsistentAggregatorError(g, oa)
@@ -101,7 +106,7 @@ func (g *Aggregator) SynchronizedMove(oa export.Aggregator, _ *metric.Descriptor
 }
 
 // Update atomically sets the current "last" value.
-func (g *Aggregator) Update(_ context.Context, number metric.Number, desc *metric.Descriptor) error {
+func (g *Aggregator) Update(_ context.Context, number number.Number, desc *metric.Descriptor) error {
 	ngd := &lastValueData{
 		value:     number,
 		timestamp: time.Now(),

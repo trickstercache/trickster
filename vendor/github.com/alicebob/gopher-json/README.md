@@ -4,4 +4,4 @@ Package json is a simple JSON encoder/decoder for [gopher-lua](https://github.co
 
 ## License
 
-Public domain.
+Public domain

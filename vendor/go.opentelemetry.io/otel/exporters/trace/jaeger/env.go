@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package jaeger
+package jaeger // import "go.opentelemetry.io/otel/exporters/trace/jaeger"
 
 import (
 	"errors"
@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.opentelemetry.io/otel/api/global"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/label"
 )
 
@@ -81,7 +81,7 @@ func ProcessFromEnv() Process {
 	if e := os.Getenv(envTags); e != "" {
 		tags, err := parseTags(e)
 		if err != nil {
-			global.Handle(err)
+			otel.Handle(err)
 		} else {
 			p.Tags = tags
 		}
