@@ -35,6 +35,7 @@ func TestNewTracer(t *testing.T) {
 	opt.CollectorURL = "1.2.3.4:8000"
 	opt.CollectorUser = "abc"
 	opt.CollectorPass = "123"
+	opt.StdOutOptions.PrettyPrint = true
 
 	_, err = NewTracer(opt)
 	if err != nil {

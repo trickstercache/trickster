@@ -23,10 +23,12 @@ import (
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 
-	"go.opentelemetry.io/otel/api/correlation"
-	"go.opentelemetry.io/otel/api/kv"
-	"go.opentelemetry.io/otel/api/trace"
-	"go.opentelemetry.io/otel/plugin/httptrace"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
+	//"go.opentelemetry.io/otel/propagators"
+
+	"go.opentelemetry.io/otel/baggage"
+	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // PrepareRequest extracts trace information from the headers of the incoming request.
@@ -43,14 +45,10 @@ func PrepareRequest(r *http.Request, tr *tracing.Tracer) (*http.Request, trace.S
 		return r, nil
 	}
 
-	attrs, entries, spanCtx := httptrace.Extract(r.Context(), r)
-
+	attrs, entries, spanCtx := otelhttptrace.Extract(r.Context(), r)
 	attrs = filterAttributes(tr, attrs)
 
-	r = r.WithContext(correlation.ContextWithMap(r.Context(),
-		correlation.NewMap(correlation.MapUpdate{
-			MultiKV: entries,
-		})))
+	r = r.WithContext(baggage.ContextWithValues(r.Context(), entries...))
 
 	// This will add any configured static tags to the span for Zipkin
 	// For Jaeger, they are automatically included in the Process section of the Trace
@@ -102,7 +100,7 @@ func NewChildSpan(ctx context.Context, tr *tracing.Tracer,
 }
 
 // SetAttributes safely sets attributes on a span, unless they are in the omit list
-func SetAttributes(tr *tracing.Tracer, span trace.Span, kvs ...kv.KeyValue) {
+func SetAttributes(tr *tracing.Tracer, span trace.Span, kvs ...label.KeyValue) {
 	l := len(kvs)
 	if tr == nil || span == nil || l == 0 {
 		return
@@ -110,13 +108,13 @@ func SetAttributes(tr *tracing.Tracer, span trace.Span, kvs ...kv.KeyValue) {
 	span.SetAttributes(filterAttributes(tr, kvs)...)
 }
 
-func filterAttributes(tr *tracing.Tracer, kvs []kv.KeyValue) []kv.KeyValue {
+func filterAttributes(tr *tracing.Tracer, kvs []label.KeyValue) []label.KeyValue {
 	l := len(kvs)
 	if tr == nil || tr.Tracer == nil || l == 0 || tr.Options == nil ||
 		len(tr.Options.OmitTagsList) == 0 {
 		return kvs
 	}
-	approved := make([]kv.KeyValue, 0, l)
+	approved := make([]label.KeyValue, 0, l)
 	for _, kv := range kvs {
 		// if the key is not in the omit list, add it to the approved list
 		if _, ok := tr.Options.OmitTags[string(kv.Key)]; !ok {

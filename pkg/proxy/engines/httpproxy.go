@@ -39,8 +39,9 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/util/log"
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
-	"go.opentelemetry.io/otel/api/kv"
-	othttptrace "go.opentelemetry.io/otel/plugin/httptrace"
+	othttptrace "go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
+	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Reqs is for Progressive Collapsed Forwarding
@@ -193,10 +194,11 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 		if doSpan != nil {
 			doSpan.AddEvent(
-				ctx,
 				"Failure",
-				kv.String("error", err.Error()),
-				kv.Int("httpStatus", resp.StatusCode),
+				trace.EventOption(trace.WithAttributes(
+					label.String("error", err.Error()),
+					label.Int("httpStatus", resp.StatusCode),
+				)),
 			)
 			doSpan.SetStatus(tracing.HTTPToCode(resp.StatusCode), "")
 		}

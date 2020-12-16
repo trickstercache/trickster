@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package trace
+package trace // import "go.opentelemetry.io/otel/sdk/trace"
 
 import (
+	"context"
 	"sync"
-	"sync/atomic"
 
 	export "go.opentelemetry.io/otel/sdk/export/trace"
 )
@@ -26,56 +26,26 @@ type SpanProcessor interface {
 
 	// OnStart method is invoked when span is started. It is a synchronous call
 	// and hence should not block.
-	OnStart(sd *export.SpanData)
+	OnStart(parent context.Context, sd *export.SpanData)
 
 	// OnEnd method is invoked when span is finished. It is a synchronous call
 	// and hence should not block.
 	OnEnd(sd *export.SpanData)
 
-	// Shutdown is invoked when SDK shutsdown. Use this call to cleanup any processor
+	// Shutdown is invoked when SDK shuts down. Use this call to cleanup any processor
 	// data. No calls to OnStart and OnEnd method is invoked after Shutdown call is
 	// made. It should not be blocked indefinitely.
-	Shutdown()
+	Shutdown(ctx context.Context) error
+
+	// ForceFlush exports all ended spans to the configured Exporter that have not yet
+	// been exported.  It should only be called when absolutely necessary, such as when
+	// using a FaaS provider that may suspend the process after an invocation, but before
+	// the Processor can export the completed spans.
+	ForceFlush()
 }
 
-type spanProcessorMap map[SpanProcessor]*sync.Once
-
-var (
-	mu             sync.Mutex
-	spanProcessors atomic.Value
-)
-
-// RegisterSpanProcessor adds to the list of SpanProcessors that will receive sampled
-// trace spans.
-func RegisterSpanProcessor(e SpanProcessor) {
-	mu.Lock()
-	defer mu.Unlock()
-	new := make(spanProcessorMap)
-	if old, ok := spanProcessors.Load().(spanProcessorMap); ok {
-		for k, v := range old {
-			new[k] = v
-		}
-	}
-	new[e] = &sync.Once{}
-	spanProcessors.Store(new)
+type spanProcessorState struct {
+	sp    SpanProcessor
+	state *sync.Once
 }
-
-// UnregisterSpanProcessor removes from the list of SpanProcessors the SpanProcessor that was
-// registered with the given name.
-func UnregisterSpanProcessor(s SpanProcessor) {
-	mu.Lock()
-	defer mu.Unlock()
-	new := make(spanProcessorMap)
-	if old, ok := spanProcessors.Load().(spanProcessorMap); ok {
-		for k, v := range old {
-			new[k] = v
-		}
-	}
-	if stopOnce, ok := new[s]; ok && stopOnce != nil {
-		stopOnce.Do(func() {
-			s.Shutdown()
-		})
-	}
-	delete(new, s)
-	spanProcessors.Store(new)
-}
+type spanProcessorStates []*spanProcessorState
