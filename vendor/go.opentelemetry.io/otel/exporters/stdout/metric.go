@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package stdout
+package stdout // import "go.opentelemetry.io/otel/exporters/stdout"
 
 import (
 	"context"
@@ -21,9 +21,9 @@ import (
 	"strings"
 	"time"
 
-	apimetric "go.opentelemetry.io/otel/api/metric"
 	"go.opentelemetry.io/otel/label"
-	"go.opentelemetry.io/otel/sdk/export/metric"
+	"go.opentelemetry.io/otel/metric"
+	exportmetric "go.opentelemetry.io/otel/sdk/export/metric"
 	"go.opentelemetry.io/otel/sdk/export/metric/aggregation"
 )
 
@@ -31,7 +31,7 @@ type metricExporter struct {
 	config Config
 }
 
-var _ metric.Exporter = &metricExporter{}
+var _ exportmetric.Exporter = &metricExporter{}
 
 type line struct {
 	Name      string      `json:"Name"`
@@ -52,17 +52,17 @@ type quantile struct {
 	Value    interface{} `json:"Value"`
 }
 
-func (e *metricExporter) ExportKindFor(*apimetric.Descriptor, aggregation.Kind) metric.ExportKind {
-	return metric.PassThroughExporter
+func (e *metricExporter) ExportKindFor(desc *metric.Descriptor, kind aggregation.Kind) exportmetric.ExportKind {
+	return exportmetric.StatelessExportKindSelector().ExportKindFor(desc, kind)
 }
 
-func (e *metricExporter) Export(_ context.Context, checkpointSet metric.CheckpointSet) error {
+func (e *metricExporter) Export(_ context.Context, checkpointSet exportmetric.CheckpointSet) error {
 	if e.config.DisableMetricExport {
 		return nil
 	}
 	var aggError error
 	var batch []line
-	aggError = checkpointSet.ForEach(e, func(record metric.Record) error {
+	aggError = checkpointSet.ForEach(e, func(record exportmetric.Record) error {
 		desc := record.Descriptor()
 		agg := record.Aggregation()
 		kind := desc.NumberKind()

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package zipkin
+package zipkin // import "go.opentelemetry.io/otel/exporters/trace/zipkin"
 
 import (
 	"bytes"
@@ -20,13 +20,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"sync"
 
-	"go.opentelemetry.io/otel/api/global"
+	"go.opentelemetry.io/otel"
 	export "go.opentelemetry.io/otel/sdk/export/trace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -112,14 +113,14 @@ func NewRawExporter(collectorURL, serviceName string, opts ...Option) (*Exporter
 // NewExportPipeline sets up a complete export pipeline
 // with the recommended setup for trace provider
 func NewExportPipeline(collectorURL, serviceName string, opts ...Option) (*sdktrace.TracerProvider, error) {
-	exp, err := NewRawExporter(collectorURL, serviceName, opts...)
+	exporter, err := NewRawExporter(collectorURL, serviceName, opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exp))
-	if exp.o.config != nil {
-		tp.ApplyConfig(*exp.o.config)
+	tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter))
+	if exporter.o.config != nil {
+		tp.ApplyConfig(*exporter.o.config)
 	}
 
 	return tp, err
@@ -133,7 +134,7 @@ func InstallNewPipeline(collectorURL, serviceName string, opts ...Option) error 
 		return err
 	}
 
-	global.SetTracerProvider(tp)
+	otel.SetTracerProvider(tp)
 	return nil
 }
 
@@ -166,19 +167,21 @@ func (e *Exporter) ExportSpans(ctx context.Context, batch []*export.SpanData) er
 	if err != nil {
 		return e.errf("request to %s failed: %v", e.url, err)
 	}
-	e.logf("zipkin responded with status %d", resp.StatusCode)
+	defer resp.Body.Close()
 
-	_, err = ioutil.ReadAll(resp.Body)
+	// Zipkin API returns a 202 on success and the content of the body isn't interesting
+	// but it is still being read because according to https://golang.org/pkg/net/http/#Response
+	// > The default HTTP client's Transport may not reuse HTTP/1.x "keep-alive" TCP connections
+	// > if the Body is not read to completion and closed.
+	_, err = io.Copy(ioutil.Discard, resp.Body)
 	if err != nil {
-		// Best effort to clean up here.
-		resp.Body.Close()
 		return e.errf("failed to read response body: %v", err)
 	}
 
-	err = resp.Body.Close()
-	if err != nil {
-		return e.errf("failed to close response body: %v", err)
+	if resp.StatusCode != http.StatusAccepted {
+		return e.errf("failed to send spans to zipkin server with status %d", resp.StatusCode)
 	}
+
 	return nil
 }
 

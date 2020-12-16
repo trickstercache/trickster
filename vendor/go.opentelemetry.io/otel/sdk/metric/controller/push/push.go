@@ -19,9 +19,9 @@ import (
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/otel/api/global"
-	"go.opentelemetry.io/otel/api/metric"
-	"go.opentelemetry.io/otel/api/metric/registry"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/registry"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
 	sdk "go.opentelemetry.io/otel/sdk/metric"
 	controllerTime "go.opentelemetry.io/otel/sdk/metric/controller/time"
@@ -61,7 +61,7 @@ func New(checkpointer export.Checkpointer, exporter export.Exporter, opts ...Opt
 
 	impl := sdk.NewAccumulator(
 		checkpointer,
-		sdk.WithResource(c.Resource),
+		c.Resource,
 	)
 	return &Controller{
 		provider:     registry.NewMeterProvider(impl),
@@ -144,10 +144,10 @@ func (c *Controller) tick() {
 	c.checkpointer.StartCollection()
 	c.accumulator.Collect(ctx)
 	if err := c.checkpointer.FinishCollection(); err != nil {
-		global.Handle(err)
+		otel.Handle(err)
 	}
 
 	if err := c.exporter.Export(ctx, ckpt); err != nil {
-		global.Handle(err)
+		otel.Handle(err)
 	}
 }

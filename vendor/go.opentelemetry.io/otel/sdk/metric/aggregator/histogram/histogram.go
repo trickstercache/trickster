@@ -19,7 +19,8 @@ import (
 	"sort"
 	"sync"
 
-	"go.opentelemetry.io/otel/api/metric"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/number"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
 	"go.opentelemetry.io/otel/sdk/export/metric/aggregation"
 	"go.opentelemetry.io/otel/sdk/metric/aggregator"
@@ -36,7 +37,7 @@ type (
 	Aggregator struct {
 		lock       sync.Mutex
 		boundaries []float64
-		kind       metric.NumberKind
+		kind       number.Kind
 		state      state
 	}
 
@@ -45,7 +46,7 @@ type (
 	// the less than equal bucket count for the pre-determined boundaries.
 	state struct {
 		bucketCounts []float64
-		sum          metric.Number
+		sum          number.Number
 		count        int64
 	}
 )
@@ -94,7 +95,7 @@ func (c *Aggregator) Kind() aggregation.Kind {
 }
 
 // Sum returns the sum of all values in the checkpoint.
-func (c *Aggregator) Sum() (metric.Number, error) {
+func (c *Aggregator) Sum() (number.Number, error) {
 	return c.state.sum, nil
 }
 
@@ -117,13 +118,18 @@ func (c *Aggregator) Histogram() (aggregation.Buckets, error) {
 // other.
 func (c *Aggregator) SynchronizedMove(oa export.Aggregator, desc *metric.Descriptor) error {
 	o, _ := oa.(*Aggregator)
-	if o == nil {
+
+	if oa != nil && o == nil {
 		return aggregator.NewInconsistentAggregatorError(c, oa)
 	}
 
 	c.lock.Lock()
-	o.state, c.state = c.state, emptyState(c.boundaries)
+	if o != nil {
+		o.state = c.state
+	}
+	c.state = emptyState(c.boundaries)
 	c.lock.Unlock()
+
 	return nil
 }
 
@@ -134,7 +140,7 @@ func emptyState(boundaries []float64) state {
 }
 
 // Update adds the recorded measurement to the current data set.
-func (c *Aggregator) Update(_ context.Context, number metric.Number, desc *metric.Descriptor) error {
+func (c *Aggregator) Update(_ context.Context, number number.Number, desc *metric.Descriptor) error {
 	kind := desc.NumberKind()
 	asFloat := number.CoerceToFloat64(kind)
 
