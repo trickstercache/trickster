@@ -14,10 +14,8 @@ on:
       - main
       - v1.0.x
       - v1.1.x
-    tags:
-    - 'v[0-9]+\.[0-9]+\.[0-9]+'
 
-name: build
+name: Continuous Integration and Build Tests
 
 jobs:
 
@@ -56,6 +54,7 @@ jobs:
           fi
       - run: go mod vendor
       - run: go test -v -coverprofile=profile.cov ./...
+      - run: go build -o /dev/null ./cmd/trickster
 
       - name: Send coverage
         uses: shogo82148/actions-goveralls@v1
