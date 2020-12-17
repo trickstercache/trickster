@@ -137,3 +137,4 @@ As the Trickster community grows, we'd like to keep track of who is using it in 
 2. [Selfnet e.V.](https://www.selfnet.de/) [[@ThoreKr](https://github.com/ThoreKr)]
 3. [swarmstack](https://github.com/swarmstack) [[@mh720](https://github.com/mh720)]
 4. [Hostinger](https://www.hostinger.com/) [[@ton31337](https://github.com/ton31337)]
+5. [The Remote Company (MailerLite, MailerSend, MailerCheck, YCode)](https://www.remotecompany.com) [[@aorfanos]](https://github.com/aorfanos)
