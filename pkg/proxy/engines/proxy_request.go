@@ -57,6 +57,8 @@ type proxyRequest struct {
 	revalidationResponse *http.Response
 	revalidationReader   io.ReadCloser
 
+	rerunCount int
+
 	cacheDocument *HTTPDocument
 	cacheBuffer   *bytes.Buffer
 	cacheLock     locks.NamedLock

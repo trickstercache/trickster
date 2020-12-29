@@ -129,6 +129,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	var elapsed time.Duration
 
 	coReq := GetRequestCachingPolicy(r.Header)
+checkCache:
 	if coReq.NoCache {
 		if span != nil {
 			span.AddEvent("Not Caching")
@@ -241,27 +242,20 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		// which will have the same cacheStatus, from causing the same or similar HTTP requests
 		// to be made against the origin, since just one should do.
 
-		// to do this we can ask the lock object how many write locks have been acquired. since
-		// we have a read lock, this number can't be updated again until all reads are released.
-		cwc := pr.cacheLock.WriteLockCounter()
-		// acquire a write lock via the Upgrade method, which will swap your read lock for a
-		// write lock, ensuring that write lock counter state is intact during the upgrade
-		pr.cacheLock, _ = pr.cacheLock.Upgrade()
-		// now we have the write lock. so we can check if the write lock counter incremented by 1
-		// or more. If the difference is just 1, that means this request was the first to acquire
-		// a write lock following all of the read locks being released. That means it is good to
-		// proceed with upstream communications and caching. when the difference is > 1, it means
-		// another requests was first to acquire the mutex, and we have no idea what changed in
-		// the cache since between when we queried, and the other requests with the lock serviced
-		// so in that case, we will just send the request back through the DPC from the top in
-		// case the updated cache might benefit them.
+		// acquire a write lock via the Upgrade method, which will swap the read lock for a
+		// write lock, and return true if this client was the only one, or otherwise the first
+		// client in a concurrent read lock group to request an Upgrade.
+		wasFirst := pr.cacheLock.Upgrade()
 
-		// now check if we were the first request for this url to upgrade from a reader to writer
-		if pr.cacheLock.WriteLockCounter()-cwc != 1 {
+		// if this request was first, it is good to proceed with upstream communications and caching.
+		// when another requests was first to acquire the mutex, we will jump up to checkCache
+		// to get the refreshed version. after 3 reiterations, we'll proceed anyway to avoid long loops.
+		if !wasFirst && pr.rerunCount < 3 {
 			// we weren't first, so quickly drop our write lock, and re-run the request
 			pr.cacheLock.Release()
-			DeltaProxyCacheRequest(w, r, modeler)
-			return
+			pr.cacheLock, _ = locker.RAcquire(key)
+			pr.rerunCount++
+			goto checkCache
 		}
 		writeLock = pr.cacheLock
 	}
