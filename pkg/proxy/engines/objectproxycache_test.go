@@ -276,8 +276,6 @@ func TestFullArticuation(t *testing.T) {
 		t.Error(err)
 	}
 
-	time.Sleep(time.Millisecond * 1050)
-
 	r.Header.Set(headers.NameRange, "bytes=10-20, 25-30, 45-60")
 	expectedBody, err = getExpectedRangeBody(r, "a262725e1b8ae4967d369cff746e3924")
 	if err != nil {
@@ -289,20 +287,17 @@ func TestFullArticuation(t *testing.T) {
 		t.Error(err)
 	}
 
-	time.Sleep(time.Millisecond * 1050)
-
 	r.Header.Set(headers.NameRange, "bytes=9-20, 25-31, 42-65, 70-80")
 	expectedBody, err = getExpectedRangeBody(r, "34b73ea5c4c1ab5b9e34c9888119c58f")
 	if err != nil {
 		t.Error(err)
 	}
-	r.URL.RawQuery = "max-age=1&ims=206"
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
 	for _, err = range e {
 		t.Error(err)
 	}
 
-	time.Sleep(time.Millisecond * 1050)
+	time.Sleep(time.Millisecond * 3000)
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 90-95, 100-105")
 	expectedBody, err = getExpectedRangeBody(r, "01760208a2d6589fc9620627d561640d")
@@ -326,8 +321,6 @@ func TestFullArticuation(t *testing.T) {
 	for _, err = range e {
 		t.Error(err)
 	}
-
-	time.Sleep(time.Millisecond * 1050)
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 25-32, 41-65")
 	expectedBody, err = getExpectedRangeBody(r, "722af19813169c99d8bda37a2f244f39")

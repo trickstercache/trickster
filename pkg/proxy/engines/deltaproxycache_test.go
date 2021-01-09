@@ -17,57 +17,46 @@
 package engines
 
 import (
-	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/mockster/pkg/mocks/byterange"
-	"github.com/tricksterproxy/trickster/pkg/cache/status"
-	"github.com/tricksterproxy/trickster/pkg/locks"
-	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
-	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
+	mockprom "github.com/tricksterproxy/mockster/pkg/mocks/prometheus"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 )
 
-func setupTestHarnessOPC(file, body string, code int,
-	headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder,
-	*http.Request, *request.Resources, error) {
-	return setupTestHarnessOPCByType(file, "test", "/opc", body, code, headers)
-}
+// test queries
+const (
+	queryReturnsOKNoLatency = "some_query_here{latency_ms=0,range_latency_ms=0}"
+	queryReturnsBadPayload  = "some_query_here{invalid_response_body=1,latency_ms=0,range_latency_ms=0}"
+	queryReturnsBadRequest  = "some_query_here{status_code=400,latency_ms=0,range_latency_ms=0}"
+	queryReturnsBadGateway  = "some_query_here{status_code=502,latency_ms=0,range_latency_ms=0}"
+)
 
-func setupTestHarnessOPCRange(hdr map[string]string) (*httptest.Server,
-	*httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
-	s, rr, r, rsc, err := setupTestHarnessOPCByType("", "rangesim", "/byterange/opc", "", 0, hdr)
-	return s, rr, r, rsc, err
-}
+var testConfigFile string
 
-func setupTestHarnessOPCByType(
-	file, serverType, path, body string, code int, headers map[string]string,
-) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
+func setupTestHarnessDPC() (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
 
 	client := &TestClient{}
-	ts, w, r, hc, err := tu.NewTestInstance(file, client.DefaultPathConfigs,
-		code, body, headers, serverType, path, "debug")
+	ts, w, r, hc, err := tu.NewTestInstance(testConfigFile,
+		client.DefaultPathConfigs, 200, "", nil, "promsim", "/prometheus/api/v1/query_range", "debug")
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
-	r.RequestURI = ""
+
 	rsc := request.GetResources(r)
 	rsc.BackendClient = client
 	rsc.Tracer = tu.NewTestTracer()
 	pc := rsc.PathConfig
 
 	if pc == nil {
-		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/")
+		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/prometheus/api/v1/query_range")
 	}
 
 	oc := rsc.BackendOptions
@@ -78,1109 +67,1522 @@ func setupTestHarnessOPCByType(
 	client.webClient = hc
 	client.config = oc
 
-	pc.CacheKeyParams = []string{"rangeKey", "instantKey"}
+	pc.CacheKeyParams = []string{"rangeKey"}
+	pc.CacheKeyParams = []string{"instantKey"}
 
 	return ts, w, r, rsc, nil
 }
 
-func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]string) (*httptest.Server,
-	*httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
+func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 
-	client := &TestClient{}
-	ts, w, r, hc, err := tu.NewTestInstance(file, client.DefaultPathConfigs, code, body, headers,
-		"prometheus", "/prometheus/api/v1/query", "debug")
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
-	}
-
-	rsc := request.GetResources(r)
-	rsc.BackendClient = client
-	rsc.Tracer = tu.NewTestTracer()
-
-	pc := rsc.PathConfig
-
-	if pc == nil {
-		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/prometheus/api/v1/query")
-	}
-
-	pc.CollapsedForwardingName = "progressive"
-	pc.CollapsedForwardingType = forwarding.CFTypeProgressive
-
-	oc := rsc.BackendOptions
-	cc := rsc.CacheClient
-
-	oc.HTTPClient = hc
-	client.cache = cc
-	client.webClient = hc
-	client.config = oc
-
-	pc.CacheKeyParams = []string{"rangeKey", "instantKey"}
-
-	return ts, w, r, rsc, nil
-}
-
-func TestObjectProxyCacheRequest(t *testing.T) {
-
-	hdrs := map[string]string{"Cache-Control": "max-age=60"}
-	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusPartialContent, hdrs)
+	ts, w, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
 	defer ts.Close()
 
-	r.Header.Add(headers.NameRange, "bytes=0-3")
-
+	client := rsc.BackendClient.(*TestClient)
 	oc := rsc.BackendOptions
-	oc.MaxTTLMS = 15000
-	oc.MaxTTL = time.Duration(oc.MaxTTLMS) * time.Millisecond
 
-	_, e := testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "kmiss"})
-	for _, err = range e {
+	oc.FastForwardDisable = true
+	step := time.Duration(300) * time.Second
+
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Give time for the object to be written to cache in a separate goroutine from response
+	time.Sleep(time.Millisecond * 10)
+
+	// get cache hit coverage too by repeating:
+
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "hit"})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestDeltaProxyCacheRequestAllItemsTooNew(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	oc := rsc.BackendOptions
+	rsc.CacheConfig.Provider = "test"
+
+	oc.FastForwardDisable = true
+	oc.BackfillToleranceMS = 600000
+	oc.BackfillTolerance = time.Millisecond * time.Duration(oc.BackfillToleranceMS)
+
+	step := time.Duration(300) * time.Second
+	end := time.Now()
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(5) * time.Minute), End: end}
+
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extr.Start, extr.End, step)
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if resp.Header.Get("status") != "" {
+		t.Errorf("status header should not be present. Found with value %s", resp.Header.Get("stattus"))
+	}
+
+	// ensure the request was sent through the proxy instead of the DeltaProxyCache
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"engine": "HTTPProxy"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	oc := rsc.BackendOptions
+	rsc.CacheConfig.Provider = "test"
+
+	oc.FastForwardDisable = true
+
+	step := time.Duration(300) * time.Second
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
 		t.Error(err)
 	}
 
 	// get cache hit coverage too by repeating:
-	_, e = testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "hit"})
-	for _, err = range e {
-		t.Error(err)
-	}
 
-	// Remove Cache Hit from the Response Handler Map to test unknown handler error condition
-	delete(cacheResponseHandlers, status.LookupStatusHit)
+	oc.TimeseriesRetention = 10
 
-	_, e = testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "proxy-only"})
-	for _, err = range e {
-		t.Error(err)
-	}
+	extr = timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: now}
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	// add cache hit back
-	cacheResponseHandlers[status.LookupStatusHit] = handleCacheKeyHit
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
 
-}
-
-func TestObjectProxyCachePartialHit(t *testing.T) {
-
-	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	// Cache miss on range
-	r.Header.Set(headers.NameRange, "bytes=0-10")
-	expectedBody, err := getExpectedRangeBody(r, "")
+	_, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	// Partial Hit on an overlapping range
-	r.Header.Set(headers.NameRange, "bytes=5-15")
-
-	expectedBody, err = getExpectedRangeBody(r, "")
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
 	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	// Range Miss on an separate range
-	r.Header.Set(headers.NameRange, "bytes=60-70")
-
-	expectedBody, err = getExpectedRangeBody(r, "")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "rmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	// Partial Hit on an multiple ranges
-	r.Header.Set(headers.NameRange, "bytes=10-20,50-55,60-65,69-75")
-	expectedBody, err = getExpectedRangeBody(r, "d5a5acd7eb4d3f622c62947a9904b89b")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	// Fulfill the cache with the remaining parts
-	r.Header.Del(headers.NameRange)
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "phit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	// Test Articulated Upstream
-	rsc.BackendOptions.DearticulateUpstreamRanges = true
-	r.Header.Set(headers.NameRange, "bytes=10-20,50-55,60-65,69-75")
-	r.URL.Path = "/byterange/new/test/path"
-	expectedBody, err = getExpectedRangeBody(r, "d5a5acd7eb4d3f622c62947a9904b89b")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-}
-
-func TestFullArticuation(t *testing.T) {
-
-	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	// Test Articulated Upstream
-	rsc.BackendOptions.DearticulateUpstreamRanges = true
-	rsc.BackendOptions.RevalidationFactor = 2
-	r.Header.Set(headers.NameRange, "bytes=10-20,50-55,60-65,69-75")
-	r.URL.Path = "/byterange/new/test/path"
-	r.URL.RawQuery = "max-age=1"
-	expectedBody, err := getExpectedRangeBody(r, "d5a5acd7eb4d3f622c62947a9904b89b")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.URL.RawQuery = "max-age=1&status=200"
-	r.URL.Path = "/byterange/new/test/path/2"
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.URL.RawQuery = "max-age=1&ims=200"
-	r.URL.Path = "/byterange/new/test/path/3"
-	r.Header.Set(headers.NameRange, "bytes=10-20")
-	expectedBody, err = getExpectedRangeBody(r, "d5a5acd7eb4d3f622c62947a9904b89b")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameRange, "bytes=10-20, 25-30, 45-60")
-	expectedBody, err = getExpectedRangeBody(r, "a262725e1b8ae4967d369cff746e3924")
-	if err != nil {
-		t.Error(err)
-	}
-	r.URL.RawQuery = "max-age=1&ims=206"
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameRange, "bytes=9-20, 25-31, 42-65, 70-80")
-	expectedBody, err = getExpectedRangeBody(r, "34b73ea5c4c1ab5b9e34c9888119c58f")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	time.Sleep(time.Millisecond * 3000)
-
-	r.Header.Set(headers.NameRange, "bytes=9-20, 90-95, 100-105")
-	expectedBody, err = getExpectedRangeBody(r, "01760208a2d6589fc9620627d561640d")
-	if err != nil {
-		t.Error(err)
-	}
-	r.URL.RawQuery = "max-age=1&ims=206"
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameRange, "bytes=9-20, 90-95, 100-105")
-	expectedBody, err = getExpectedRangeBody(r, "01760208a2d6589fc9620627d561640d")
-	if err != nil {
-		t.Error(err)
-	}
-	r.URL.Path = "/byterange/new/test/path/20"
-	r.URL.RawQuery = "max-age=1"
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameRange, "bytes=9-20, 25-32, 41-65")
-	expectedBody, err = getExpectedRangeBody(r, "722af19813169c99d8bda37a2f244f39")
-	if err != nil {
-		t.Error(err)
-	}
-	r.URL.RawQuery = "max-age=1&ims=206&non-ims=206"
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	time.Sleep(time.Millisecond * 1050)
-
-	r.Header.Del(headers.NameRange)
-	r.URL.RawQuery = "max-age=1"
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "phit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameRange, "bytes=9-20, 21-22")
-	r.URL.Path = "/byterange/new/test/path/21"
-	expectedBody, err = getExpectedRangeBody(r, "368b9fbcef800068a48e70fa6e040289")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameRange, "bytes=0-1223")
-	r.URL.Path = "/byterange/new/test/path/22"
-	r.URL.RawQuery = ""
-	expectedBody, err = getExpectedRangeBody(r, "722af19813169c99d8bda37a2f244f39")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameRange, "bytes=0-1220,1221-1223")
-	expectedBody, err = getExpectedRangeBody(r, "f8813b96e6b06ea1d826bb921690f87b")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Del(headers.NameRange)
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "hit"})
-	for _, err = range e {
 		t.Error(err)
 	}
 
 }
 
-func TestObjectProxyCachePartialHitNotFresh(t *testing.T) {
+// Will understand why this test is failing, and if it's due to an application or test defect,
+// Will commit to test issue fix in v1.2.0 or app defect fix in the next release of v1.1.x
 
-	ts, w, r, rsc, err := setupTestHarnessOPCRange(nil)
+// func TestDeltaProxyCacheRequestRemoveStaleLRU(t *testing.T) {
+
+// 	testConfigFile = "../../../testdata/test.cache-lru.conf"
+// 	ts, w, r, rsc, err := setupTestHarnessDPC()
+// 	testConfigFile = ""
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
+// 	defer ts.Close()
+
+// 	client := rsc.BackendClient.(*TestClient)
+// 	oc := rsc.BackendOptions
+// 	rsc.CacheConfig.Provider = "test"
+
+// 	oc.FastForwardDisable = true
+
+// 	step := time.Duration(300) * time.Second
+// 	now := time.Now()
+// 	end := now.Add(-time.Duration(12) * time.Hour)
+
+// 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+// 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+
+// 	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+// 	u := r.URL
+// 	u.Path = "/prometheus/api/v1/query_range"
+// 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+// 		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+// 	client.QueryRangeHandler(w, r)
+// 	resp := w.Result()
+
+// 	bodyBytes, err := ioutil.ReadAll(resp.Body)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
+
+// 	err = testStringMatch(string(bodyBytes), expected)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
+
+// 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
+
+// 	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
+
+// 	// get cache hit coverage too by repeating:
+
+// 	oc.TimeseriesRetention = 10
+
+// 	extr = timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: now}
+// 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+// 		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+// 	w = httptest.NewRecorder()
+
+// 	client.QueryRangeHandler(w, r)
+// 	resp = w.Result()
+
+// 	_, err = ioutil.ReadAll(resp.Body)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
+
+// 	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
+
+// }
+
+func TestDeltaProxyCacheRequestMarshalFailure(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
 	defer ts.Close()
-	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: rsc.BackendOptions})
 
-	pr := newProxyRequest(r, w)
+	client := rsc.BackendClient.(*TestClient)
 	oc := rsc.BackendOptions
+
+	rsc.CacheConfig.Provider = "test"
+	oc.CacheKeyPrefix = "test"
+
 	cc := rsc.CacheClient
-	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
-	pr.key = oc.Host + "." + pr.DeriveCacheKey(nil, "")
-	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, _ = QueryCache(ctx, cc, pr.key, pr.wantedRanges)
-	handleCacheKeyMiss(pr)
+	cc.Store("test.409d551e3653f5ad5aa9acbdac8d4ac3", []byte("x"), time.Second*1)
 
-	pr.cachingPolicy.CanRevalidate = false
-	pr.cachingPolicy.IsFresh = false
-	pr.cachingPolicy.FreshnessLifetime = 0
+	oc.FastForwardDisable = true
 
-	pr.store()
+	step := time.Duration(300) * time.Second
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
 
-	handleCachePartialHit(pr)
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 
-	if pr.isPartialResponse {
-		t.Errorf("Expected full response, got %t", pr.isPartialResponse)
-	}
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	if pr.cacheStatus != status.LookupStatusKeyMiss {
-		t.Errorf("Expected %s, got %s", status.LookupStatusKeyMiss, pr.cacheStatus)
-	}
-}
-
-func TestObjectProxyCachePartialHitFullResponse(t *testing.T) {
-
-	ts, w, r, rsc, err := setupTestHarnessOPCRange(nil)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-	ctx := context.Background()
-	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: rsc.BackendOptions})
-
-	pr := newProxyRequest(r, w)
-	oc := rsc.BackendOptions
-	cc := rsc.CacheClient
-	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
-	pr.key = oc.Host + "." + pr.DeriveCacheKey(nil, "")
-	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, _ = QueryCache(ctx, cc, pr.key, pr.wantedRanges)
-	handleCacheKeyMiss(pr)
-	handleCachePartialHit(pr)
-
-	if pr.isPartialResponse {
-		t.Errorf("Expected full response, got %t", pr.isPartialResponse)
-	}
-}
-
-func TestObjectProxyCacheRangeMiss(t *testing.T) {
-
-	ts, _, r, _, err := setupTestHarnessOPCRange(nil)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	r.Header.Set(headers.NameRange, "bytes=0-10")
-	expectedBody, err := getExpectedRangeBody(r, "")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameRange, "bytes=15-20")
-	expectedBody, err = getExpectedRangeBody(r, "")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "rmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-}
-
-func TestObjectProxyCacheRevalidation(t *testing.T) {
-
-	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	rsc.BackendOptions.RevalidationFactor = 2
-
-	r.Header.Set(headers.NameRange, "bytes=0-10")
-	if rsc.PathConfig == nil {
-		t.Error("nil path config")
-	}
-
-	if rsc.PathConfig.ResponseHeaders == nil {
-		rsc.PathConfig.ResponseHeaders = make(map[string]string)
-	}
-	rsc.PathConfig.ResponseHeaders[headers.NameCacheControl] = "max-age=1"
-
-	expectedBody, err := getExpectedRangeBody(r, "")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	time.Sleep(time.Millisecond * 1010)
-
-	r.Header.Set(headers.NameRange, "bytes=0-10")
-	expectedBody, err = getExpectedRangeBody(r, "")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "rhit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	time.Sleep(time.Millisecond * 1010)
-	r.Header.Set(headers.NameRange, "bytes=0-15")
-	expectedBody, err = getExpectedRangeBody(r, "")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	// purge the cache
-	r.Header.Del(headers.NameRange)
-	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
-
-	expectedBody, err = getExpectedRangeBody(r, "")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusOK, expectedBody, map[string]string{"status": "proxy-only"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.URL.Path = "/byterange/test/10"
-
-	r.Header.Del(headers.NameCacheControl)
-
-	// now store it with an earlier last modified header
-	r.Header.Del(headers.NameCacheControl)
-	rsc.PathConfig.ResponseHeaders[headers.NameLastModified] = time.Unix(1577836799, 0).Format(time.RFC1123)
-	rsc.PathConfig.ResponseHeaders["-"+headers.NameCacheControl] = ""
-	rsc.PathConfig.ResponseHeaders[headers.NameExpires] = time.Now().Add(-1 * time.Minute).Format(time.RFC1123)
-
-	expectedBody, err = getExpectedRangeBody(r, "")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusOK, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-}
-
-func TestObjectProxyCacheRequestWithPCF(t *testing.T) {
-
-	headers := map[string]string{"Cache-Control": "max-age=60"}
-	ts, _, r, rsc, err := setupTestHarnessOPCWithPCF("", "test", http.StatusOK, headers)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	oc := rsc.BackendOptions
-	oc.MaxTTLMS = 15000
-	oc.MaxTTL = time.Duration(oc.MaxTTLMS) * time.Millisecond
-
-	r.Header.Set("testHeaderName", "testHeaderValue")
-
-	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-}
-
-func TestObjectProxyCacheTrueHitNoDocumentErr(t *testing.T) {
-
-	pr := &proxyRequest{}
-	err := handleTrueCacheHit(pr)
-	if err != errors.ErrNilCacheDocument {
-		t.Errorf("expected %s got %s", errors.ErrNilCacheDocument, err)
-	}
-}
-
-func TestObjectProxyCacheRequestClientNoCache(t *testing.T) {
-
-	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
-
-	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "proxy-only"})
-	for _, err = range e {
-		t.Error(err)
-	}
-}
-
-func TestFetchViaObjectProxyCacheRequestClientNoCache(t *testing.T) {
-
-	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
-
-	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "proxy-only"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	_, _, b := FetchViaObjectProxyCache(r)
-	if b {
-		t.Errorf("expected %t got %t", false, b)
-	}
-}
-
-func TestObjectProxyCacheRequestOriginNoCache(t *testing.T) {
-
-	headers := map[string]string{"Cache-Control": "no-cache"}
-	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-}
-
-func TestObjectProxyCacheIMS(t *testing.T) {
-
-	hdrs := map[string]string{"Cache-Control": "max-age=1"}
-	ts, _, r, rsc, err := setupTestHarnessOPCRange(hdrs)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	rsc.BackendOptions.RevalidationFactor = 2
-
-	_, e := testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameIfModifiedSince, "Wed, 01 Jan 2020 00:00:00 UTC")
-
-	_, e = testFetchOPC(r, http.StatusNotModified, "", map[string]string{"status": "hit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	time.Sleep(time.Millisecond * 1050)
-
-	r.URL.RawQuery = "status=200"
-
-	_, e = testFetchOPC(r, http.StatusNotModified, "", map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-}
-
-func TestObjectProxyCacheINM(t *testing.T) {
-
-	rh := map[string]string{headers.NameCacheControl: "max-age=60", headers.NameETag: "test"}
-	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, rh)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameIfNoneMatch, `"test"`)
-	_, e = testFetchOPC(r, http.StatusNotModified, "", map[string]string{"status": "hit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameIfNoneMatch, `W/"test2"`)
-	_, e = testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "hit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-}
-
-func TestObjectProxyCacheNoRevalidate(t *testing.T) {
-
-	headers := map[string]string{headers.NameCacheControl: headers.ValueMaxAge + "=1"}
-	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	p := rsc.PathConfig
-	p.ResponseHeaders = headers
-
-	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	time.Sleep(1010 * time.Millisecond)
-
-	_, e = testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-}
-
-func TestObjectProxyCacheCanRevalidate(t *testing.T) {
-
-	headers := map[string]string{
-		headers.NameCacheControl: headers.ValueMaxAge + "=1",
-		headers.NameETag:         "test-etag",
-	}
-	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	p := rsc.PathConfig
-	p.ResponseHeaders = headers
-	rsc.BackendOptions.RevalidationFactor = 2
-
-	_, e := testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	time.Sleep(1010 * time.Millisecond)
-
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "rhit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-}
-
-func TestObjectProxyCacheRevalidated(t *testing.T) {
-
-	const dt = "Sun, 16 Jun 2019 14:19:04 GMT"
-
-	hdr := map[string]string{
-		headers.NameCacheControl: headers.ValueMaxAge + "=2",
-		headers.NameLastModified: dt,
-	}
-	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, hdr)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	rsc.PathConfig.ResponseHeaders = hdr
-
-	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameIfModifiedSince, dt)
-	_, e = testFetchOPC(r, http.StatusNotModified, "", map[string]string{"status": "hit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-}
-
-func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
-
-	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusNotFound, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	pc := po.New()
-	cfg := rsc.BackendOptions
-	cfg.Paths = map[string]*po.Options{
-		"/": pc,
-	}
-	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig,
-		rsc.CacheClient, rsc.BackendClient, nil, rsc.Logger)))
-
-	_, e := testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	// request again, should still cache miss, but this time, Negative Cache 404's for 30s
-	cfg.NegativeCache[404] = time.Second * 30
-
-	_, e = testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	// request again, this time it should be a cache hit.
-	_, e = testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "nchit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-}
-
-func TestHandleCacheRevalidation(t *testing.T) {
-
-	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusNotFound, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	pr := newProxyRequest(r, nil)
-	pr.cacheStatus = status.LookupStatusRangeMiss
-	pr.cachingPolicy = &CachingPolicy{}
-
-	err = handleCacheRevalidation(pr)
-	if err != nil {
-		t.Error(err)
-	}
-}
-
-func getExpectedRangeBody(r *http.Request, boundary string) (string, error) {
-
-	client := &http.Client{}
-	resp, err := client.Do(r)
-	if err != nil {
-		return "", err
-	}
-	b, _ := ioutil.ReadAll(resp.Body)
-	expectedBody := string(b)
-
-	if boundary != "" {
-		expectedBody = strings.Replace(expectedBody, "TestRangeServerBoundary", boundary, -1)
-	}
-
-	return expectedBody, nil
-}
-
-func TestRangesExhaustive(t *testing.T) {
-
-	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	rsc.BackendOptions.RevalidationFactor = 2
-	rsc.BackendOptions.DearticulateUpstreamRanges = true
-
-	r.URL.Path = "/byterange/test/1"
-	r.Header.Set(headers.NameRange, "bytes=0-6,25-32")
-	req := r.Clone(context.Background())
-	expectedBodyA, err := getExpectedRangeBody(req, "563a7014513fc6f0cbb4e8632dd107fc")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBodyA, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameRange, "bytes=0-10,20-28")
-	req = r.Clone(context.Background())
-	expectedBody, err := getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameRange, "bytes=0-6")
-	req = r.Clone(context.Background())
-	expectedBody, err = getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
-	if err != nil {
-		t.Error(err)
-	}
-
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameRange, "bytes=5-7")
-	req = r.Clone(context.Background())
-	expectedBody, err = getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameRange, "bytes=29-29")
-	req = r.Clone(context.Background())
-	expectedBody, err = getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameRange, "bytes=9-22,28-60")
-	req = r.Clone(context.Background())
-	expectedBody, err = getExpectedRangeBody(req, "1fd80b6b357b4608027dd500ad3f3c21")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Del(headers.NameRange)
-	req = r.Clone(context.Background())
-	expectedBody, err = getExpectedRangeBody(req, "1fd80b6b357b4608027dd500ad3f3c21")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusOK, expectedBody, map[string]string{"status": "phit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameRange, "bytes=0-10,20-28")
-	req = r.Clone(context.Background())
-	expectedBody, err = getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.Header.Set(headers.NameRange, "bytes=0-6")
-	req = r.Clone(context.Background())
-	expectedBody, err = getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
-	if err != nil {
-		t.Error(err)
-	}
-
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	// Test Range Revalidiations
-
-	rsc.PathConfig.ResponseHeaders = map[string]string{headers.NameCacheControl: "max-age=1"}
-
-	r.URL.Path = "/byterange/test/2"
-	r.Header.Set(headers.NameRange, "bytes=0-6")
-	req = r.Clone(context.Background())
-	expectedBody1, err := getExpectedRangeBody(req, "")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody1, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.URL.Path = "/byterange/test/3"
-	r.Header.Set(headers.NameRange, "bytes=0-6, 8-10")
-	req = r.Clone(context.Background())
-	expectedBody2, err := getExpectedRangeBody(req, "1b4e59d25d723e317359c5e542d80f5c")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody2, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.URL.Path = "/byterange/test/4"
-	r.Header.Set(headers.NameRange, "bytes=0-6, 8-10")
-	req = r.Clone(context.Background())
-	expectedBody3, err := getExpectedRangeBody(req, "1b4e59d25d723e317359c5e542d80f5c")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody3, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.URL.Path = "/byterange/test/5"
-	r.Header.Set(headers.NameRange, "bytes=6-20")
-	req = r.Clone(context.Background())
-	expectedBody4, err := getExpectedRangeBody(req, "")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody4, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.URL.Path = "/byterange/test/6"
-	r.Header.Set(headers.NameRange, "bytes=6-20")
-	req = r.Clone(context.Background())
-	expectedBody5, err := getExpectedRangeBody(req, "")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody5, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.URL.Path = "/byterange/test/7"
-	r.Header.Set(headers.NameRange, "bytes=6-20")
-	req = r.Clone(context.Background())
-	expectedBody6, err := getExpectedRangeBody(req, "")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody6, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	// Now sleep to let them expire but not purge
-	time.Sleep(1050 * time.Millisecond)
-
-	// Now make more requests that require a revalidation first.
-
-	r.URL.Path = "/byterange/test/2"
-	r.Header.Set(headers.NameRange, "bytes=0-6")
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody1, map[string]string{"status": "rhit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.URL.Path = "/byterange/test/3"
-	r.Header.Set(headers.NameRange, "bytes=0-6, 8-10")
-	expectedBody2 = strings.Replace(expectedBody2, "TestRangeServerBoundary", "1b4e59d25d723e317359c5e542d80f5c", -1)
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody2, map[string]string{"status": "rhit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.URL.Path = "/byterange/test/4"
-	r.Header.Set(headers.NameRange, "bytes=5-9")
-	req = r.Clone(context.Background())
-	expectedBody3, err = getExpectedRangeBody(req, "1b4e59d25d723e317359c5e542d80f5c")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody3, map[string]string{"status": "phit"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.URL.Path = "/byterange/test/5"
-	r.Header.Set(headers.NameRange, "bytes=0-5")
-	req = r.Clone(context.Background())
-	expectedBody4, err = getExpectedRangeBody(req, "")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody4, map[string]string{"status": "rmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.URL.Path = "/byterange/test/6"
-	r.Header.Set(headers.NameRange, "bytes=0-5,21-30")
-	req = r.Clone(context.Background())
-	expectedBody5, err = getExpectedRangeBody(req, "d51d39834c9650e17cc486c4a52cf572")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody5, map[string]string{"status": "rmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	r.URL.Path = "/byterange/test/7"
-	r.Header.Set(headers.NameRange, "bytes=22-30,32-40")
-	req = r.Clone(context.Background())
-	expectedBody6, err = getExpectedRangeBody(req, "bab29463882afe6d6033e88dc74d2bdd")
-	if err != nil {
-		t.Error(err)
-	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody6, map[string]string{"status": "rmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
-}
-
-func testFetchOPC(r *http.Request, sc int, body string,
-	match map[string]string) (*httptest.ResponseRecorder, []error) {
-
-	e := make([]error, 0)
-
-	w := httptest.NewRecorder()
-
-	ObjectProxyCacheRequest(w, r)
+	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
-	err := testStatusCodeMatch(resp.StatusCode, sc)
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
 	if err != nil {
-		e = append(e, err)
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func normalizeTime(t time.Time, d time.Duration) time.Time {
+	return time.Unix((t.Unix()/int64(d.Seconds()))*int64(d.Seconds()), 0)
+	//return t.Truncate(d)
+}
+
+func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	oc := rsc.BackendOptions
+	rsc.CacheConfig.Provider = "test"
+
+	client.RangeCacheKey = "test-range-key-phit"
+	client.InstantCacheKey = "test-instant-key-phit"
+
+	oc.FastForwardDisable = true
+
+	step := time.Duration(300) * time.Second
+
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
+
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
+		extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency, client.RangeCacheKey, client.InstantCacheKey)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// test partial hit (needing an upper fragment)
+	phitStart := normalizeTime(extr.End.Add(step), step)
+	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
+	extn.End = normalizeTime(extr.End, step)
+
+	expectedFetched := "[" + timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
+	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
+		extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency, client.RangeCacheKey, client.InstantCacheKey)
+
+	r.URL = u
+
+	time.Sleep(time.Millisecond * 10)
+
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "phit"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// test partial hit (needing a lower fragment)
+	phitEnd := extn.Start.Add(-step)
+	extr.Start = extr.Start.Add(time.Duration(-1) * time.Hour)
+	extn.Start = normalizeTime(extr.Start, step)
+
+	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + "]"
+	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
+		extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency, client.RangeCacheKey, client.InstantCacheKey)
+
+	r.URL = u
+
+	time.Sleep(time.Millisecond * 10)
+
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "phit"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// test partial hit (needing both upper and lower fragments)
+	phitEnd = normalizeTime(extr.Start.Add(-step), step)
+	phitStart = normalizeTime(extr.End.Add(step), step)
+
+	extr.Start = extr.Start.Add(time.Duration(-1) * time.Hour)
+	extn.Start = normalizeTime(extr.Start, step)
+	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
+	extn.End = normalizeTime(extr.End, step)
+
+	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + "," +
+		timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
+
+	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
+		extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency, client.RangeCacheKey, client.InstantCacheKey)
+
+	time.Sleep(time.Millisecond * 10)
+
+	r.URL = u
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "phit"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	oc := rsc.BackendOptions
+	rsc.CacheConfig.Provider = "test"
+
+	client.RangeCacheKey = "testkey"
+	client.InstantCacheKey = "testInstantKey"
+
+	oc.FastForwardDisable = true
+
+	step := time.Duration(300) * time.Second
+
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
+
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// test partial hit (needing an upper fragment)
+	//phitStart := extr.End.Add(step)
+	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
+	extn.End = extr.End.Truncate(step)
+
+	//expectedFetched := fmt.Sprintf("[%d:%d]", phitStart.Truncate(step).Unix(), extn.End.Unix())
+	mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	client.InstantCacheKey = "foo1"
+	client.RangeCacheKey = "foo2"
+
+	// Switch to the failed query.
+	u.RawQuery = fmt.Sprintf("instantKey=foo1&step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadGateway)
+
+	r.URL = u
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadGateway)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "proxy-error"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
+	// if err != nil {
+	// 	t.Error(err)
+	// }
+
+}
+
+func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	oc := rsc.BackendOptions
+	rsc.CacheConfig.Provider = "test"
+
+	oc.FastForwardDisable = true
+
+	step := time.Duration(3600) * time.Second
+
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Give time for the object to be written to cache in a separate goroutine from response
+	time.Sleep(time.Millisecond * 10)
+
+	// Test Range Miss Low End
+
+	extr.Start = extr.Start.Add(time.Duration(-3) * time.Hour)
+	extn.Start = extr.Start.Truncate(step)
+	extr.End = extr.Start.Add(time.Duration(1) * time.Hour)
+	extn.End = extr.End.Truncate(step)
+
+	expectedFetched := fmt.Sprintf("[%s]", extn.String())
+	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	r.URL = u
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "rmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Test Range Miss High End
+
+	extr.Start = now.Add(time.Duration(-10) * time.Hour)
+	extn.Start = extr.Start.Truncate(step)
+	extr.End = now.Add(time.Duration(-8) * time.Hour)
+	extn.End = extr.End.Truncate(step)
+
+	expectedFetched = fmt.Sprintf("[%s]", extn.String())
+	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+	r.URL = u
+
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "rmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+	rsc.CacheConfig.Provider = "test"
+
+	client := rsc.BackendClient.(*TestClient)
+	oc := rsc.BackendOptions
+
+	client.InstantCacheKey = "test-dpc-ff-key-instant"
+	client.RangeCacheKey = "test-dpc-ff-key-range"
+
+	oc.FastForwardDisable = false
+
+	step := time.Duration(300) * time.Second
+
+	now := time.Now()
+	client.fftime = now.Truncate(oc.FastForwardTTL)
+
+	extr := timeseries.Extent{Start: now.Add(-time.Duration(12) * time.Hour), End: now}
+	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("instantKey=%s&rangeKey=%s&step=%d&start=%d&end=%d&query=%s",
+		client.InstantCacheKey, client.RangeCacheKey,
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	modeler := client.testModeler()
+	expectedMatrix, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	em, err := modeler.WireUnmarshaler([]byte(expectedMatrix), nil)
+	if err != nil {
+		t.Error(err)
+	}
+	em.SetExtents(timeseries.ExtentList{extn})
+
+	expectedVector, _, _ := mockprom.GetInstantData(queryReturnsOKNoLatency, client.fftime)
+	ev, err := modeler.WireUnmarshaler([]byte(expectedVector), nil)
+	if err != nil {
+		t.Error(err)
+	}
+	trq := &timeseries.TimeRangeQuery{Step: step}
+	ev.SetTimeRangeQuery(trq)
+
+	if len(ev.Extents()) == 1 && len(em.Extents()) > 0 &&
+		ev.Extents()[0].Start.Truncate(time.Second).After(em.Extents()[0].End) {
+		em.Merge(false, ev)
+	}
+
+	em.SetExtents(nil)
+	b, err := modeler.WireMarshaler(em, nil, 200)
+	if err != nil {
+		t.Error(err)
+	}
+
+	expected := string(b)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		e = append(e, err)
+		t.Error(err)
 	}
 
-	err = testStringMatch(string(bodyBytes), body)
+	err = testStringMatch(string(bodyBytes), expected)
 	if err != nil {
-		e = append(e, err)
+		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, match)
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
 	if err != nil {
-		e = append(e, err)
+		t.Error(err)
 	}
 
-	if len(e) == 0 {
-		e = nil
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"ffstatus": "miss"})
+	if err != nil {
+		t.Error(err)
 	}
 
-	return w, e
+	// Give time for the object to be written to cache in a separate goroutine from response
+	time.Sleep(time.Millisecond * 10)
 
+	// do it again and look for a cache hit on the timeseries and fast forward
+
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "hit"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"ffstatus": "hit"})
+	if err != nil {
+		t.Error(err)
+	}
 }
 
-func TestFetchViaObjectProxyCacheRequestErroringCache(t *testing.T) {
+func TestDeltaProxyCacheRequestFastForwardUrlError(t *testing.T) {
 
-	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
+	ts, w, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
 	defer ts.Close()
 
-	tc := &testCache{configuration: rsc.CacheConfig, locker: locks.NewNamedLocker()}
-	rsc.CacheClient = tc
-	tc.configuration.Provider = "test"
+	client := rsc.BackendClient.(*TestClient)
+	oc := rsc.BackendOptions
+	rsc.CacheConfig.Provider = "test"
 
-	_, _, b := FetchViaObjectProxyCache(r)
-	if b {
-		t.Errorf("expected %t got %t", false, b)
+	oc.FastForwardDisable = true
+
+	step := time.Duration(300) * time.Second
+
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("throw_ffurl_error=1&step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	oc.FastForwardDisable = false
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"ffstatus": "err"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestDeltaProxyCacheRequestWithRefresh(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	oc := rsc.BackendOptions
+	rsc.CacheConfig.Provider = "test"
+
+	oc.FastForwardDisable = true
+
+	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
+
+	step := time.Duration(300) * time.Second
+
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "purge"})
+	if err != nil {
+		t.Error(err)
 	}
 }
 
-func TestRerunRequest(t *testing.T) {
-	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
+func TestDeltaProxyCacheRequestWithRefreshError(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
-	} else {
-		defer ts.Close()
 	}
-	w := httptest.NewRecorder()
-	pr := newProxyRequest(r, w)
-	locker := locks.NewNamedLocker()
-	nl, _ := locker.Acquire("test")
-	pr.cacheLock = nl
-	pr.hasWriteLock = true
-	rerunRequest(pr)
-	if !pr.wasReran {
-		t.Error("expected true")
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	oc := rsc.BackendOptions
+	rsc.CacheConfig.Provider = "test"
+
+	oc.FastForwardDisable = true
+
+	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
+
+	step := time.Duration(300) * time.Second
+
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadRequest)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadRequest)
+	if err != nil {
+		t.Error(err)
 	}
+
+}
+
+func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	oc := rsc.BackendOptions
+	rsc.CacheConfig.Provider = "test" // disable direct-memory and force marshaling
+
+	client.RangeCacheKey = "testkey"
+
+	oc.FastForwardDisable = true
+
+	step := time.Duration(300) * time.Second
+
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Give time for the object to be written to cache in a separate goroutine from response
+	time.Sleep(time.Millisecond * 10)
+
+	key := oc.Host + ".dpc.61a603af5b94ea305dc3fa35af4eed98"
+
+	_, _, err = client.cache.Retrieve(key, false)
+	if err != nil {
+		t.Error(err)
+	}
+
+	client.cache.Store(key, []byte("foo"), time.Duration(30)*time.Second)
+
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Give time for the object to be written to cache in a separate goroutine from response
+	time.Sleep(time.Millisecond * 10)
+
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadRequest)
+	client.cache.Store(key, []byte("foo"), time.Duration(30)*time.Second)
+
+	r.URL = u
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadRequest)
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestDeltaProxyCacheRequest_BadParams(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	oc := rsc.BackendOptions
+	rsc.CacheConfig.Provider = "test"
+
+	oc.FastForwardDisable = true
+
+	const query = "some_query_here{}"
+	step := time.Duration(300) * time.Second
+	end := time.Now()
+	start := end.Add(-time.Duration(6) * time.Hour)
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	// Intentional typo &q instead of &query to force a proxied request due to ParseTimeRangeQuery() error
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&q=%s",
+		int(step.Seconds()), start.Unix(), end.Unix(), query)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadRequest)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// ensure the request was sent through the proxy instead of the DeltaProxyCache
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"engine": "HTTPProxy"})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestDeltaProxyCacheRequestCacheMissUnmarshalFailed(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	oc := rsc.BackendOptions
+	rsc.CacheConfig.Provider = "test" // disable direct-memory and force marshaling
+
+	oc.FastForwardDisable = true
+
+	step := time.Duration(300) * time.Second
+
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadRequest)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	_, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadRequest)
+	if err != nil {
+		t.Error(err)
+	}
+
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadPayload)
+	r.URL = u
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	modeler := client.testModeler()
+	_, err = modeler.WireUnmarshaler(body, nil)
+	if err == nil {
+		t.Errorf("expected unmarshaling error for %s", string(body))
+	}
+
+}
+
+func TestDeltaProxyCacheRequestOutOfWindow(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	oc := rsc.BackendOptions
+
+	oc.FastForwardDisable = true
+
+	query := "some_query_here{}"
+	step := time.Duration(300) * time.Second
+	// Times are out-of-window for being cacheable
+	start := time.Unix(0, 0)
+	end := time.Unix(1800, 0)
+
+	// we still expect the same results
+	expected, _, _ := mockprom.GetTimeSeriesData(query, start, end, step)
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), start.Unix(), end.Unix(), query)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Fully Out-of-Window Requests should be proxied and not cached
+	testResultHeaderPartMatch(resp.Header, map[string]string{"engine": "HTTPProxy"})
+
+	// do it again to ensure another cache miss
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Fully Out-of-Window Requests should be proxied and not cached
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"engine": "HTTPProxy"})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestDeltaProxyCacheRequestBadGateway(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	oc := rsc.BackendOptions
+	rsc.CacheConfig.Provider = "test"
+
+	oc.FastForwardDisable = true
+
+	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
+
+	step := time.Duration(300) * time.Second
+
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadGateway)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadGateway)
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	oc := rsc.BackendOptions
+
+	oc.BackfillTolerance = time.Duration(300) * time.Second
+	oc.FastForwardDisable = true
+
+	query := "some_query_here{}"
+	step := time.Duration(300) * time.Second
+
+	now := time.Now()
+	x := timeseries.Extent{Start: now.Add(-time.Duration(6) * time.Hour), End: now}
+	xn := timeseries.Extent{Start: now.Add(-time.Duration(6) * time.Hour).Truncate(step), End: now.Truncate(step)}
+
+	// We can predict what slice will need to be fetched and ensure that is only what is requested upstream
+	expectedFetched := fmt.Sprintf("[%s]", timeseries.Extent{Start: xn.End, End: xn.End})
+	expected, _, _ := mockprom.GetTimeSeriesData(query, xn.Start, xn.End, step)
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), x.Start.Unix(), x.End.Unix(), query)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Give time for the object to be written to cache in a separate goroutine from response
+	time.Sleep(time.Millisecond * 10)
+
+	// get cache partial hit coverage too by repeating:
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "phit"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
+
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	oc := rsc.BackendOptions
+
+	oc.FastForwardDisable = false
+
+	step := time.Duration(300) * time.Second
+	oc.FastForwardTTL = step + 1
+
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"ffstatus": "off"})
+	if err != nil {
+		t.Error(err)
+	}
+
 }
