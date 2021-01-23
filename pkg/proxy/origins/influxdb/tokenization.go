@@ -56,9 +56,9 @@ func init() {
 		`(?P<offset2>[0-9]+[mhsdwy]))))(\s+(?P<postOp2>and|or|group|order|limit)|$)`)
 }
 
-func interpolateTimeQuery(template string, extent *timeseries.Extent) string {
-	return strings.Replace(template, tkTime, fmt.Sprintf("time >= %dms AND time <= %dms",
-		extent.Start.Unix()*1000, extent.End.Unix()*1000), -1)
+func interpolateTimeQuery(template string, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) string {
+	return strings.Replace(template, tkTime, fmt.Sprintf("time >= %dms AND time < %dms",
+		extent.Start.Unix()*1000, extent.End.Add(trq.Step).Unix()*1000), -1)
 }
 
 func getQueryParts(query string) (string, timeseries.Extent) {

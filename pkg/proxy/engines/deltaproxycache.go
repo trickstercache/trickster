@@ -310,7 +310,7 @@ checkCache:
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				nts, err := client.UnmarshalTimeseries(body)
 				if err != nil {
-					pr.Logger.Error("proxy object unmarshaling failed",
+					pr.Logger.Error("proxy object unmarshalling failed",
 						tl.Pairs{"body": string(body)})
 					return
 				}
