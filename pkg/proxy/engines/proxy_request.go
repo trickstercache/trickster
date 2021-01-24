@@ -175,8 +175,8 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
 
-	go logUpstreamRequest(pr.Logger, oc.Name, oc.Provider, handlerName,
-		pr.Method, pr.URL.String(), pr.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
+	go logUpstreamRequest(pr.Logger, oc.Name, oc.Provider, handlerName, pr.upstreamRequest.Method,
+		pr.upstreamRequest.URL.String(), pr.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
 
 	return body, resp, elapsed
 }
