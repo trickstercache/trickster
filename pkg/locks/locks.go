@@ -130,7 +130,7 @@ func (lk *namedLocker) acquire(lockName string, isWrite bool) (NamedLock, error)
 		nl.RLock()
 		// if the Named Lock was previously a Write lock but is now a Read lock again,
 		// meaning RAcquires queued up while it was write-locked, this goes back to false
-		nl.subsequentWriter = isWrite && nl.subsequentWriter
+		nl.subsequentWriter = false
 	}
 	return nl, nil
 }
