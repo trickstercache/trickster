@@ -127,21 +127,21 @@ func TestGetResponseCachingPolicy(t *testing.T) {
 		},
 		{ // 11 - Expires in an hour
 			a: http.Header{
-				headers.NameDate:    []string{now.Format(time.RFC1123)},
-				headers.NameExpires: []string{now.Add(time.Hour * time.Duration(1)).Format(time.RFC1123)},
+				headers.NameDate:    []string{now.UTC().Format(time.RFC1123)},
+				headers.NameExpires: []string{now.Add(time.Hour * time.Duration(1)).UTC().Format(time.RFC1123)},
 			},
 			expectedTTL: 1 * time.Hour,
 		},
 		{ // 12 - Synthesized TTL from Last Modified
 			a: http.Header{
-				headers.NameDate:         []string{now.Format(time.RFC1123)},
-				headers.NameLastModified: []string{now.Add(-time.Hour * time.Duration(5)).Format(time.RFC1123)},
+				headers.NameDate:         []string{now.UTC().Format(time.RFC1123)},
+				headers.NameLastModified: []string{now.Add(-time.Hour * time.Duration(5)).UTC().Format(time.RFC1123)},
 			},
 			expectedTTL: 1 * time.Hour,
 		},
 		{ // 13 - No Cache Control Response Headers
 			a: http.Header{
-				headers.NameDate: []string{now.Format(time.RFC1123)},
+				headers.NameDate: []string{now.UTC().Format(time.RFC1123)},
 			},
 			expectedTTL: -1 * time.Second,
 		},

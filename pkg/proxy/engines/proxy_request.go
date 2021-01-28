@@ -233,7 +233,7 @@ func (pr *proxyRequest) prepareRevalidationRequest() {
 	}
 	if !pr.cachingPolicy.LastModified.IsZero() {
 		pr.revalidationRequest.Header.Set(headers.NameIfModifiedSince,
-			pr.cachingPolicy.LastModified.Format(time.RFC1123))
+			pr.cachingPolicy.LastModified.UTC().Format(time.RFC1123))
 	}
 
 }
