@@ -58,31 +58,177 @@ func TestLocks(t *testing.T) {
 
 }
 
-func TestLocksConcurrent(t *testing.T) {
-
-	const size = 10000000
+func TestLocksOrdering(t *testing.T) {
 
 	lk := NewNamedLocker()
 
+	var wg sync.WaitGroup
+
+	wg.Add(4)
+
+	go func() {
+		nl, _ := lk.RAcquire("testLock")
+
+		time.Sleep(500 * time.Millisecond)
+
+		b := nl.Upgrade()
+		if !b {
+			t.Error("expected true")
+		}
+
+		nl.Release()
+
+		wg.Done()
+	}()
+
+	go func() {
+
+		time.Sleep(300 * time.Millisecond)
+
+		nl, _ := lk.RAcquire("testLock")
+
+		time.Sleep(300 * time.Millisecond)
+
+		b := nl.Upgrade()
+		if b {
+			t.Error("expected false")
+		}
+
+		nl.Release()
+
+		wg.Done()
+	}()
+
+	go func() {
+
+		time.Sleep(300 * time.Millisecond)
+
+		nl, _ := lk.RAcquire("testLock")
+
+		time.Sleep(300 * time.Millisecond)
+
+		b := nl.Upgrade()
+		if b {
+			t.Error("expected false")
+		}
+
+		nl.Release()
+
+		wg.Done()
+	}()
+
+	go func() {
+
+		time.Sleep(200 * time.Millisecond)
+
+		nl, _ := lk.RAcquire("testLock")
+
+		time.Sleep(300 * time.Millisecond)
+
+		nl.RRelease()
+
+		wg.Done()
+	}()
+
+	wg.Wait()
+
+}
+
+func TestLocksUpgradePileup(t *testing.T) {
+
+	const size = 2500
+
+	lk := NewNamedLocker()
 	wg := &sync.WaitGroup{}
-	errs := make([]error, 0, size)
-
-	rand.Seed(time.Now().UnixNano())
-
 	wg.Add(size)
+
+	errs := make([]error, 0, size)
+	var errLock sync.Mutex
+	addErr := func(err error) {
+		errLock.Lock()
+		errs = append(errs, err)
+		errLock.Unlock()
+	}
 
 	for i := 0; i < size; i++ {
 		go func() {
-			nl, err := lk.Acquire(testKey)
+			nl, err := lk.RAcquire(testKey)
 			if err != nil {
-				errs = append(errs, err)
+				addErr(err)
 			}
-			err = nl.Release()
-			if err != nil {
-				errs = append(errs, err)
-			}
+			time.Sleep(time.Duration(rand.Int63()%5000000) * time.Nanosecond)
+			nl.Upgrade()
+			time.Sleep(time.Duration(rand.Int63()%5000000) * time.Nanosecond)
+			nl.Release()
 			wg.Done()
 		}()
+	}
+
+	wg.Wait()
+
+	for _, err := range errs {
+		t.Error(err)
+	}
+}
+
+func TestLocksConcurrent(t *testing.T) {
+
+	const size = 10000
+	rand.Seed(time.Now().UnixNano())
+
+	lk := NewNamedLocker()
+	wg := &sync.WaitGroup{}
+	wg.Add(size)
+
+	errs := make([]error, 0, size)
+	var errLock sync.Mutex
+	addErr := func(err error) {
+		errLock.Lock()
+		errs = append(errs, err)
+		errLock.Unlock()
+	}
+
+	for i := 0; i < size; i++ {
+		go func(j int) {
+			time.Sleep(time.Duration(rand.Int63()%5000000) * time.Nanosecond)
+			if j%3 == 0 {
+				// every third routine (group 0) acquires a Write Lock and releases it
+				// after a random sleep time between 0 and 5ms (measured in ns)
+				nl, err := lk.Acquire(testKey)
+				if err != nil {
+					addErr(err)
+				}
+				time.Sleep(time.Duration(rand.Int63()%5000000) * time.Nanosecond)
+				nl.Release()
+			} else if j%3 == 1 {
+				// every third routine (group 1) acquires a Read Lock,
+				// waits a random sleep time between 0 and 5ms (measured in ns),
+				// then upgrades to a Write Lock and releases it
+				// after a random sleep time between 0 and 5ms (measured in ns)
+				nl, err := lk.RAcquire(testKey)
+				if err != nil {
+					errLock.Lock()
+					errs = append(errs, err)
+					errLock.Unlock()
+				}
+				time.Sleep(time.Duration(rand.Int63()%5000000) * time.Nanosecond)
+				nl.Upgrade()
+				time.Sleep(time.Duration(rand.Int63()%5000000) * time.Nanosecond)
+				nl.Release()
+			} else {
+				// every third routine (group 2) acquires a Read Lock, and releases it
+				// after a random sleep time between 0 and 5ms (measured in ns)
+				nl, err := lk.RAcquire(testKey)
+				if err != nil {
+					errLock.Lock()
+					errs = append(errs, err)
+					errLock.Unlock()
+				}
+				time.Sleep(time.Duration(rand.Int63()%5000000) * time.Nanosecond)
+				nl.RRelease()
+			}
+			wg.Done()
+		}(i)
 	}
 
 	wg.Wait()
