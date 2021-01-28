@@ -44,7 +44,7 @@ func (c Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exten
 	t := trq.TemplateURL.Query()
 	q := t.Get(upQuery)
 	if q != "" {
-		v.Set(upQuery, interpolateTimeQuery(q, extent))
+		v.Set(upQuery, interpolateTimeQuery(q, trq, extent))
 	}
 	params.SetRequestValues(r, v)
 }
