@@ -542,9 +542,9 @@ func TestObjectProxyCacheRevalidation(t *testing.T) {
 
 	// now store it with an earlier last modified header
 	r.Header.Del(headers.NameCacheControl)
-	rsc.PathConfig.ResponseHeaders[headers.NameLastModified] = time.Unix(1577836799, 0).Format(time.RFC1123)
+	rsc.PathConfig.ResponseHeaders[headers.NameLastModified] = time.Unix(1577836799, 0).UTC().Format(time.RFC1123)
 	rsc.PathConfig.ResponseHeaders["-"+headers.NameCacheControl] = ""
-	rsc.PathConfig.ResponseHeaders[headers.NameExpires] = time.Now().Add(-1 * time.Minute).Format(time.RFC1123)
+	rsc.PathConfig.ResponseHeaders[headers.NameExpires] = time.Now().Add(-1 * time.Minute).UTC().Format(time.RFC1123)
 
 	expectedBody, err = getExpectedRangeBody(r, "")
 	if err != nil {

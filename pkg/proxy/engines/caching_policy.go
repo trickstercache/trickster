@@ -199,13 +199,13 @@ func GetResponseCachingPolicy(code int, negativeCache map[int]time.Duration, h h
 	if v := h.Get(headers.NameDate); v != "" {
 		if date, err := time.Parse(time.RFC1123, v); err != nil {
 			cp.Date = cp.LocalDate
-			h.Set(headers.NameDate, cp.Date.Format(time.RFC1123))
+			h.Set(headers.NameDate, cp.Date.UTC().Format(time.RFC1123))
 		} else {
 			cp.Date = date
 		}
 	} else {
 		cp.Date = cp.LocalDate
-		h.Set(headers.NameDate, cp.Date.Format(time.RFC1123))
+		h.Set(headers.NameDate, cp.Date.UTC().Format(time.RFC1123))
 	}
 
 	// no Max-Age provided yet, look for expires
