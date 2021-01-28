@@ -61,72 +61,49 @@ func TestLocks(t *testing.T) {
 func TestLocksOrdering(t *testing.T) {
 
 	lk := NewNamedLocker()
-
 	var wg sync.WaitGroup
-
 	wg.Add(4)
 
 	go func() {
 		nl, _ := lk.RAcquire("testLock")
-
 		time.Sleep(500 * time.Millisecond)
-
 		b := nl.Upgrade()
 		if !b {
 			t.Error("expected true")
 		}
-
 		nl.Release()
-
 		wg.Done()
 	}()
 
 	go func() {
-
 		time.Sleep(300 * time.Millisecond)
-
 		nl, _ := lk.RAcquire("testLock")
-
 		time.Sleep(300 * time.Millisecond)
-
 		b := nl.Upgrade()
 		if b {
 			t.Error("expected false")
 		}
-
 		nl.Release()
-
 		wg.Done()
 	}()
 
 	go func() {
-
 		time.Sleep(300 * time.Millisecond)
-
 		nl, _ := lk.RAcquire("testLock")
-
 		time.Sleep(300 * time.Millisecond)
-
 		b := nl.Upgrade()
 		if b {
 			t.Error("expected false")
 		}
-
 		nl.Release()
-
 		wg.Done()
 	}()
 
 	go func() {
-
 		time.Sleep(200 * time.Millisecond)
-
 		nl, _ := lk.RAcquire("testLock")
-
 		time.Sleep(300 * time.Millisecond)
-
 		nl.RRelease()
-
 		wg.Done()
 	}()
 
