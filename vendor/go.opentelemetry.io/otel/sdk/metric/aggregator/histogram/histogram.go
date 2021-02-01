@@ -38,16 +38,16 @@ type (
 		lock       sync.Mutex
 		boundaries []float64
 		kind       number.Kind
-		state      state
+		state      *state
 	}
 
 	// state represents the state of a histogram, consisting of
 	// the sum and counts for all observed values and
 	// the less than equal bucket count for the pre-determined boundaries.
 	state struct {
-		bucketCounts []float64
+		bucketCounts []uint64
 		sum          number.Number
-		count        int64
+		count        uint64
 	}
 )
 
@@ -78,8 +78,8 @@ func New(cnt int, desc *metric.Descriptor, boundaries []float64) []Aggregator {
 		aggs[i] = Aggregator{
 			kind:       desc.NumberKind(),
 			boundaries: sortedBoundaries,
-			state:      emptyState(sortedBoundaries),
 		}
+		aggs[i].state = aggs[i].newState()
 	}
 	return aggs
 }
@@ -100,7 +100,7 @@ func (c *Aggregator) Sum() (number.Number, error) {
 }
 
 // Count returns the number of values in the checkpoint.
-func (c *Aggregator) Count() (int64, error) {
+func (c *Aggregator) Count() (uint64, error) {
 	return c.state.count, nil
 }
 
@@ -123,20 +123,42 @@ func (c *Aggregator) SynchronizedMove(oa export.Aggregator, desc *metric.Descrip
 		return aggregator.NewInconsistentAggregatorError(c, oa)
 	}
 
+	if o != nil {
+		// Swap case: This is the ordinary case for a
+		// synchronous instrument, where the SDK allocates two
+		// Aggregators and lock contention is anticipated.
+		// Reset the target state before swapping it under the
+		// lock below.
+		o.clearState()
+	}
+
 	c.lock.Lock()
 	if o != nil {
-		o.state = c.state
+		c.state, o.state = o.state, c.state
+	} else {
+		// No swap case: This is the ordinary case for an
+		// asynchronous instrument, where the SDK allocates a
+		// single Aggregator and there is no anticipated lock
+		// contention.
+		c.clearState()
 	}
-	c.state = emptyState(c.boundaries)
 	c.lock.Unlock()
 
 	return nil
 }
 
-func emptyState(boundaries []float64) state {
-	return state{
-		bucketCounts: make([]float64, len(boundaries)+1),
+func (c *Aggregator) newState() *state {
+	return &state{
+		bucketCounts: make([]uint64, len(c.boundaries)+1),
 	}
+}
+
+func (c *Aggregator) clearState() {
+	for i := range c.state.bucketCounts {
+		c.state.bucketCounts[i] = 0
+	}
+	c.state.sum = 0
+	c.state.count = 0
 }
 
 // Update adds the recorded measurement to the current data set.
