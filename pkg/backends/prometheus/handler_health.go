@@ -45,7 +45,7 @@ func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	rsc := request.GetResources(r)
 	req = req.WithContext(tctx.WithHealthCheckFlag(tctx.WithResources(context.Background(), rsc), true))
 
-	req.Header = c.healthHeaders
+	req.Header = c.healthHeaders.Clone()
 	engines.DoProxy(w, req, true)
 }
 
