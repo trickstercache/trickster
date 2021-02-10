@@ -16,155 +16,146 @@
 
 package influxdb
 
-import (
-	"io/ioutil"
-	"net/http/httptest"
-	"testing"
+// func TestHealthHandler(t *testing.T) {
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
-)
+// 	backendClient, err := NewClient("test", nil, nil, nil, nil)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
+// 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/health", "debug")
+// 	if err != nil {
+// 		t.Error(err)
+// 	} else {
+// 		defer ts.Close()
+// 	}
+// 	rsc := request.GetResources(r)
+// 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
+// 	client := backendClient.(*Client)
+// 	rsc.BackendClient = client
+// 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-func TestHealthHandler(t *testing.T) {
+// 	client.HealthHandler(w, r)
+// 	resp := w.Result()
 
-	backendClient, err := NewClient("test", nil, nil, nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/health", "debug")
-	if err != nil {
-		t.Error(err)
-	} else {
-		defer ts.Close()
-	}
-	rsc := request.GetResources(r)
-	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	client := backendClient.(*Client)
-	rsc.BackendClient = client
-	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+// 	// it should return 200 OK
+// 	if resp.StatusCode != 200 {
+// 		t.Errorf("expected 200 got %d.", resp.StatusCode)
+// 	}
 
-	client.HealthHandler(w, r)
-	resp := w.Result()
+// 	bodyBytes, err := ioutil.ReadAll(resp.Body)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
 
-	// it should return 200 OK
-	if resp.StatusCode != 200 {
-		t.Errorf("expected 200 got %d.", resp.StatusCode)
-	}
+// 	if string(bodyBytes) != "{}" {
+// 		t.Errorf("expected '{}' got %s.", bodyBytes)
+// 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
+// 	client.healthMethod = "-"
 
-	if string(bodyBytes) != "{}" {
-		t.Errorf("expected '{}' got %s.", bodyBytes)
-	}
+// 	w = httptest.NewRecorder()
+// 	client.HealthHandler(w, r)
+// 	resp = w.Result()
+// 	if resp.StatusCode != 400 {
+// 		t.Errorf("Expected status: 400 got %d.", resp.StatusCode)
+// 	}
 
-	client.healthMethod = "-"
+// }
 
-	w = httptest.NewRecorder()
-	client.HealthHandler(w, r)
-	resp = w.Result()
-	if resp.StatusCode != 400 {
-		t.Errorf("Expected status: 400 got %d.", resp.StatusCode)
-	}
+// func TestHealthHandlerCustomPath(t *testing.T) {
 
-}
+// 	backendClient, err := NewClient("test", nil, nil, nil, nil)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
 
-func TestHealthHandlerCustomPath(t *testing.T) {
+// 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200, "", nil, "influxdb", "/health", "debug")
+// 	if err != nil {
+// 		t.Error(err)
+// 	} else {
+// 		defer ts.Close()
+// 	}
 
-	backendClient, err := NewClient("test", nil, nil, nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
+// 	rsc := request.GetResources(r)
 
-	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200, "", nil, "influxdb", "/health", "debug")
-	if err != nil {
-		t.Error(err)
-	} else {
-		defer ts.Close()
-	}
+// 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
 
-	rsc := request.GetResources(r)
+// 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+// 	client := backendClient.(*Client)
 
-	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
+// 	rsc.BackendOptions.HealthCheckUpstreamPath = "-"
+// 	rsc.BackendOptions.HealthCheckVerb = "-"
+// 	rsc.BackendOptions.HealthCheckQuery = "-"
 
-	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
-	client := backendClient.(*Client)
+// 	client.HealthHandler(w, r)
+// 	resp := w.Result()
 
-	rsc.BackendOptions.HealthCheckUpstreamPath = "-"
-	rsc.BackendOptions.HealthCheckVerb = "-"
-	rsc.BackendOptions.HealthCheckQuery = "-"
+// 	// it should return 200 OK
+// 	if resp.StatusCode != 200 {
+// 		t.Errorf("expected 200 got %d.", resp.StatusCode)
+// 	}
 
-	client.HealthHandler(w, r)
-	resp := w.Result()
+// 	bodyBytes, err := ioutil.ReadAll(resp.Body)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
 
-	// it should return 200 OK
-	if resp.StatusCode != 200 {
-		t.Errorf("expected 200 got %d.", resp.StatusCode)
-	}
+// 	if string(bodyBytes) != "" {
+// 		t.Errorf("expected '' got %s.", bodyBytes)
+// 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
+// }
 
-	if string(bodyBytes) != "" {
-		t.Errorf("expected '' got %s.", bodyBytes)
-	}
+// func TestHealthHandlerPost(t *testing.T) {
 
-}
+// 	backendClient, err := NewClient("test", nil, nil, nil, nil)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
 
-func TestHealthHandlerPost(t *testing.T) {
+// 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
+// 		200, "", nil, "influxdb", "/health", "debug")
+// 	if err != nil {
+// 		t.Error(err)
+// 	} else {
+// 		defer ts.Close()
+// 	}
 
-	backendClient, err := NewClient("test", nil, nil, nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
+// 	rsc := request.GetResources(r)
 
-	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
-		200, "", nil, "influxdb", "/health", "debug")
-	if err != nil {
-		t.Error(err)
-	} else {
-		defer ts.Close()
-	}
+// 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
 
-	rsc := request.GetResources(r)
+// 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+// 	rsc.BackendOptions.HealthCheckUpstreamPath = "-"
+// 	rsc.BackendOptions.HealthCheckVerb = "POST"
+// 	rsc.BackendOptions.HealthCheckQuery = "testParam1=testValue1"
 
-	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
+// 	client := backendClient.(*Client)
 
-	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
-	rsc.BackendOptions.HealthCheckUpstreamPath = "-"
-	rsc.BackendOptions.HealthCheckVerb = "POST"
-	rsc.BackendOptions.HealthCheckQuery = "testParam1=testValue1"
+// 	client.HealthHandler(w, r)
+// 	resp := w.Result()
 
-	client := backendClient.(*Client)
+// 	// it should return 200 OK
+// 	if resp.StatusCode != 200 {
+// 		t.Errorf("expected 200 got %d.", resp.StatusCode)
+// 	}
 
-	client.HealthHandler(w, r)
-	resp := w.Result()
+// 	bodyBytes, err := ioutil.ReadAll(resp.Body)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
 
-	// it should return 200 OK
-	if resp.StatusCode != 200 {
-		t.Errorf("expected 200 got %d.", resp.StatusCode)
-	}
+// 	if string(bodyBytes) != "" {
+// 		t.Errorf("expected '' got %s.", bodyBytes)
+// 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	if string(bodyBytes) != "" {
-		t.Errorf("expected '' got %s.", bodyBytes)
-	}
-
-}
+// }

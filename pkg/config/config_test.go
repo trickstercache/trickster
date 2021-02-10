@@ -60,14 +60,14 @@ func TestClone(t *testing.T) {
 	oc.NegativeCache = map[int]time.Duration{404: time.Duration(10) * time.Second}
 	oc.FastForwardPath = po.New()
 	oc.TLS = &to.Options{CertificateAuthorityPaths: []string{"foo"}}
-	oc.HealthCheckHeaders = map[string]string{headers.NameAuthorization: expected}
+	oc.HealthCheck.Headers = map[string]string{headers.NameAuthorization: expected}
 
 	c1.Rules = map[string]*rule.Options{
 		"test": {},
 	}
 
 	c2 := c1.Clone()
-	x := c2.Backends["default"].HealthCheckHeaders[headers.NameAuthorization]
+	x := c2.Backends["default"].HealthCheck.Headers[headers.NameAuthorization]
 	if x != expected {
 		t.Errorf("clone mismatch")
 	}
