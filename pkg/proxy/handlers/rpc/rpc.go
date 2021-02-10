@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"net/url"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	rpc "github.com/tricksterproxy/trickster/pkg/backends/reverseproxycache"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
@@ -35,7 +35,7 @@ func New(baseURL string) (http.Handler, error) {
 }
 
 // NewWithOptions returns a new Reverse Proxy Cache. only baseURL is required
-func NewWithOptions(baseURL string, o *oo.Options, c *co.Options) (http.Handler, error) {
+func NewWithOptions(baseURL string, o *bo.Options, c *co.Options) (http.Handler, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, err
@@ -50,7 +50,7 @@ func NewWithOptions(baseURL string, o *oo.Options, c *co.Options) (http.Handler,
 		return nil, err
 	}
 	if o == nil {
-		o = oo.New()
+		o = bo.New()
 		o.Name = "default"
 	}
 	o.Provider = "rpc"

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	mockprom "github.com/tricksterproxy/mockster/pkg/mocks/prometheus"
+	"github.com/tricksterproxy/trickster/pkg/backends"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -44,7 +45,7 @@ var testConfigFile string
 func setupTestHarnessDPC() (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
 
 	client := &TestClient{}
-	ts, w, r, hc, err := tu.NewTestInstance(testConfigFile,
+	ts, w, r, _, err := tu.NewTestInstance(testConfigFile,
 		client.DefaultPathConfigs, 200, "", nil, "promsim", "/prometheus/api/v1/query_range", "debug")
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
@@ -59,13 +60,14 @@ func setupTestHarnessDPC() (*httptest.Server, *httptest.ResponseRecorder, *http.
 		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/prometheus/api/v1/query_range")
 	}
 
-	oc := rsc.BackendOptions
+	bo := rsc.BackendOptions
 	cc := rsc.CacheClient
-	oc.HTTPClient = hc
+	// oc.HTTPClient = hc
 
-	client.cache = cc
-	client.webClient = hc
-	client.config = oc
+	b, _ := backends.NewTimeseriesBackend(bo.Name, bo, client.RegisterHandlers, nil, cc, nil)
+	client.TimeseriesBackend = b
+	rsc.BackendClient = client
+	rsc.BackendOptions.HTTPClient = client.HTTPClient()
 
 	pc.CacheKeyParams = []string{"rangeKey"}
 	pc.CacheKeyParams = []string{"instantKey"}
@@ -1177,12 +1179,14 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 
 	key := oc.Host + ".dpc.61a603af5b94ea305dc3fa35af4eed98"
 
-	_, _, err = client.cache.Retrieve(key, false)
+	cc := client.Cache()
+
+	_, _, err = cc.Retrieve(key, false)
 	if err != nil {
 		t.Error(err)
 	}
 
-	client.cache.Store(key, []byte("foo"), time.Duration(30)*time.Second)
+	cc.Store(key, []byte("foo"), time.Duration(30)*time.Second)
 
 	w = httptest.NewRecorder()
 	client.QueryRangeHandler(w, r)
@@ -1208,7 +1212,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
 		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadRequest)
-	client.cache.Store(key, []byte("foo"), time.Duration(30)*time.Second)
+	cc.Store(key, []byte("foo"), time.Duration(30)*time.Second)
 
 	r.URL = u
 	w = httptest.NewRecorder()

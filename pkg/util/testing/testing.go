@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
@@ -86,7 +86,7 @@ func NewTestWebClient() *http.Client {
 // NewTestInstance will start a trickster
 func NewTestInstance(
 	configFile string,
-	defaultPathConfigs func(*oo.Options) map[string]*po.Options,
+	defaultPathConfigs func(*bo.Options) map[string]*po.Options,
 	respCode int, respBody string, respHeaders map[string]string,
 	backendProvider, urlPath, logLevel string,
 ) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *http.Client, error) {
@@ -156,8 +156,8 @@ func NewTestInstance(
 
 // NewTestPathConfig returns a path config based on the provided parameters
 func NewTestPathConfig(
-	oc *oo.Options,
-	defaultPathConfigs func(*oo.Options) map[string]*po.Options,
+	oc *bo.Options,
+	defaultPathConfigs func(*bo.Options) map[string]*po.Options,
 	urlPath string,
 ) *po.Options {
 	var paths map[string]*po.Options

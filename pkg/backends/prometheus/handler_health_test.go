@@ -19,7 +19,6 @@ package prometheus
 import (
 	"io/ioutil"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
@@ -28,15 +27,20 @@ import (
 
 func TestHealthHandler(t *testing.T) {
 
-	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("",
-		client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
-
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	ts, w, r, _, err := tu.NewTestInstance("",
+		backendClient.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
 	rsc := request.GetResources(r)
-	client.config = rsc.BackendOptions
-	client.webClient = hc
-	client.config.HTTPClient = hc
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	client := backendClient.(*Client)
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
@@ -72,23 +76,28 @@ func TestHealthHandler(t *testing.T) {
 
 func TestHealthHandlerCustomPath(t *testing.T) {
 
-	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("",
-		client.DefaultPathConfigs, 200, "", nil, "prometheus", "/health", "debug")
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	ts, w, r, _, err := tu.NewTestInstance("",
+		backendClient.DefaultPathConfigs, 200, "", nil, "prometheus", "/health", "debug")
 	if err != nil {
 		t.Error(err)
 	} else {
 		defer ts.Close()
 	}
-
 	rsc := request.GetResources(r)
-	client.config = rsc.BackendOptions
-	client.config.HealthCheckUpstreamPath = "-"
-	client.config.HealthCheckVerb = "-"
-	client.config.HealthCheckQuery = "-"
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
-	client.webClient = hc
-	client.config.HTTPClient = hc
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
+	rsc.BackendClient = client
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+	rsc.BackendOptions.HealthCheckUpstreamPath = "-"
+	rsc.BackendOptions.HealthCheckVerb = "-"
+	rsc.BackendOptions.HealthCheckQuery = "-"
 
 	client.HealthHandler(w, r)
 	resp := w.Result()

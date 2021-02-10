@@ -45,7 +45,11 @@ func TestSetExtent(t *testing.T) {
 	}
 
 	oc := conf.Backends["default"]
-	client := Client{config: oc}
+
+	client, err := NewClient("default", oc, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
 
 	const tokenized = "q=select * where <$TIME_TOKEN$> group by time(1m)"
 

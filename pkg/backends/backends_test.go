@@ -18,11 +18,15 @@ package backends
 
 import (
 	"testing"
+
+	"github.com/gorilla/mux"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 )
 
 func TestBackends(t *testing.T) {
 
-	o := Backends{"test1": &TestClient{}}
+	cl, _ := New("test1", bo.New(), nil, mux.NewRouter(), nil)
+	o := Backends{"test1": cl}
 
 	c := o.Get("test1")
 	if c == nil {

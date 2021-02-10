@@ -45,8 +45,11 @@ func TestSetExtent(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := conf.Backends["default"]
-	client := Client{config: oc}
+	o := conf.Backends["default"]
+	client, err := NewClient("default", o, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
 
 	u := &url.URL{RawQuery: "q=up"}
 
@@ -81,8 +84,11 @@ func TestFastForwardURL(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := conf.Backends["default"]
-	client := Client{config: oc}
+	o := conf.Backends["default"]
+	client, err := NewClient("default", o, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
 
 	u := &url.URL{Path: "/query_range", RawQuery: "q=up&start=1&end=1&step=1"}
 	r, _ := http.NewRequest(http.MethodGet, u.String(), nil)

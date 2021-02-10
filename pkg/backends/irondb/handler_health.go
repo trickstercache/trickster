@@ -35,7 +35,7 @@ func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 
 	if c.healthMethod == "-" {
 		w.WriteHeader(400)
-		w.Write([]byte("Health Check URL not Configured for backend: " + c.config.Name))
+		w.Write([]byte("Health Check URL not Configured for backend: " + c.Name()))
 		return
 	}
 
@@ -50,7 +50,7 @@ func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 
 func (c *Client) populateHeathCheckRequestValues() {
 
-	oc := c.config
+	oc := c.Configuration()
 
 	if oc.HealthCheckUpstreamPath == "-" {
 		oc.HealthCheckUpstreamPath = "/" + mnState
@@ -62,7 +62,7 @@ func (c *Client) populateHeathCheckRequestValues() {
 		oc.HealthCheckQuery = ""
 	}
 
-	c.healthURL = urls.Clone(c.baseUpstreamURL)
+	c.healthURL = urls.Clone(c.BaseUpstreamURL())
 	c.healthURL.Path += oc.HealthCheckUpstreamPath
 	c.healthURL.RawQuery = oc.HealthCheckQuery
 	c.healthMethod = oc.HealthCheckVerb

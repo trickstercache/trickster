@@ -19,38 +19,31 @@ package irondb
 import (
 	"net/http"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/key"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 )
 
-func (c *Client) registerHandlers() {
-	c.handlersRegistered = true
-	c.handlers = make(map[string]http.Handler)
-	// This is the registry of handlers that Trickster supports for IRONdb,
-	// and are able to be referenced by name (map key) in Config Files
-	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
-	c.handlers[mnRaw] = http.HandlerFunc(c.RawHandler)
-	c.handlers[mnRollup] = http.HandlerFunc(c.RollupHandler)
-	c.handlers[mnFetch] = http.HandlerFunc(c.FetchHandler)
-	c.handlers[mnRead] = http.HandlerFunc(c.TextHandler)
-	c.handlers[mnHistogram] = http.HandlerFunc(c.HistogramHandler)
-	c.handlers[mnFind] = http.HandlerFunc(c.FindHandler)
-	c.handlers[mnState] = http.HandlerFunc(c.StateHandler)
-	c.handlers[mnCAQL] = http.HandlerFunc(c.CAQLHandler)
-	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
+func (c *Client) RegisterHandlers(map[string]http.Handler) {
+
+	c.TimeseriesBackend.RegisterHandlers(
+		map[string]http.Handler{
+			"health":    http.HandlerFunc(c.HealthHandler),
+			mnRaw:       http.HandlerFunc(c.RawHandler),
+			mnRollup:    http.HandlerFunc(c.RollupHandler),
+			mnFetch:     http.HandlerFunc(c.FetchHandler),
+			mnRead:      http.HandlerFunc(c.TextHandler),
+			mnHistogram: http.HandlerFunc(c.HistogramHandler),
+			mnFind:      http.HandlerFunc(c.FindHandler),
+			mnState:     http.HandlerFunc(c.StateHandler),
+			mnCAQL:      http.HandlerFunc(c.CAQLHandler),
+			"proxy":     http.HandlerFunc(c.ProxyHandler),
+		},
+	)
 }
 
-// Handlers returns a map of the HTTP Handlers the client has registered
-func (c *Client) Handlers() map[string]http.Handler {
-	if !c.handlersRegistered {
-		c.registerHandlers()
-	}
-	return c.handlers
-}
-
-func populateHeathCheckRequestValues(oc *oo.Options) {
+func populateHeathCheckRequestValues(oc *bo.Options) {
 	if oc.HealthCheckUpstreamPath == "-" {
 		oc.HealthCheckUpstreamPath = "/" + mnState
 	}
@@ -63,7 +56,7 @@ func populateHeathCheckRequestValues(oc *oo.Options) {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
+func (c *Client) DefaultPathConfigs(oc *bo.Options) map[string]*po.Options {
 
 	populateHeathCheckRequestValues(oc)
 

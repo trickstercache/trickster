@@ -23,9 +23,8 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache"
-	"github.com/tricksterproxy/trickster/pkg/proxy"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
@@ -33,63 +32,26 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
-var _ backends.Client = (*Client)(nil)
+var _ backends.TimeseriesBackend = (*Client)(nil)
 
 // Client Implements the Proxy Client Interface
 type Client struct {
-	name               string
-	config             *oo.Options
-	cache              cache.Cache
-	webClient          *http.Client
-	handlers           map[string]http.Handler
-	handlersRegistered bool
-	baseUpstreamURL    *url.URL
-	healthURL          *url.URL
-	healthMethod       string
-	healthHeaders      http.Header
-	router             http.Handler
-	modeler            *timeseries.Modeler
+	backends.TimeseriesBackend
+	healthURL     *url.URL
+	healthMethod  string
+	healthHeaders http.Header
 }
 
 // NewClient returns a new Client Instance
-func NewClient(name string, oc *oo.Options, router http.Handler,
-	cache cache.Cache, modeler *timeseries.Modeler) (backends.Client, error) {
-	c, err := proxy.NewHTTPClient(oc)
-	bur := urls.FromParts(oc.Scheme, oc.Host, oc.PathPrefix, "", "")
-	// explicitly disable Fast Forward for this client
-	oc.FastForwardDisable = true
-	return &Client{name: name, config: oc, router: router, cache: cache,
-		baseUpstreamURL: bur, webClient: c, modeler: modeler}, err
-}
-
-// Configuration returns the upstream Configuration for this Client
-func (c *Client) Configuration() *oo.Options {
-	return c.config
-}
-
-// HTTPClient returns the HTTP Transport the client is using
-func (c *Client) HTTPClient() *http.Client {
-	return c.webClient
-}
-
-// Cache returns and handle to the Cache instance used by the Client
-func (c *Client) Cache() cache.Cache {
-	return c.cache
-}
-
-// Name returns the name of the upstream Configuration proxied by the Client
-func (c *Client) Name() string {
-	return c.name
-}
-
-// SetCache sets the Cache object the client will use for caching origin content
-func (c *Client) SetCache(cc cache.Cache) {
-	c.cache = cc
-}
-
-// Router returns the http.Handler that handles request routing for this Client
-func (c *Client) Router() http.Handler {
-	return c.router
+func NewClient(name string, o *bo.Options, router http.Handler,
+	cache cache.Cache, modeler *timeseries.Modeler) (backends.TimeseriesBackend, error) {
+	if o != nil {
+		o.FastForwardDisable = true
+	}
+	c := &Client{}
+	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, modeler)
+	c.TimeseriesBackend = b
+	return c, err
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request

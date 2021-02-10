@@ -18,7 +18,6 @@ package irondb
 
 import (
 	"io/ioutil"
-	"net/url"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
@@ -26,21 +25,25 @@ import (
 )
 
 func TestProxyHandler(t *testing.T) {
-
-	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200,
-		"{}", nil, "irondb", "/histogram/0/900/300/00112233-4455-6677-8899-aabbccddeeff/"+
-			"metric", "debug")
-	rsc := request.GetResources(r)
-	rsc.BackendClient = client
-	client.config = rsc.BackendOptions
-	client.webClient = hc
-	client.config.HTTPClient = hc
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
-	defer ts.Close()
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
+	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200,
+		"{}", nil, "irondb", "/histogram/0/900/300/00112233-4455-6677-8899-aabbccddeeff/"+
+			"metric", "debug")
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer ts.Close()
+	}
+	rsc := request.GetResources(r)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
 	client.ProxyHandler(w, r)
 	resp := w.Result()

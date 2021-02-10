@@ -22,14 +22,12 @@ import (
 	"net/url"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache"
-	"github.com/tricksterproxy/trickster/pkg/proxy"
-	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
-var _ backends.Client = (*Client)(nil)
+var _ backends.Backend = (*Client)(nil)
 
 // IRONdb API path segments.
 const (
@@ -71,32 +69,24 @@ type extentSetter func(*http.Request, *timeseries.TimeRangeQuery, *timeseries.Ex
 // Client values provide access to IRONdb and implement the Trickster proxy
 // client interface.
 type Client struct {
-	name               string
-	config             *oo.Options
-	cache              cache.Cache
-	webClient          *http.Client
-	handlers           map[string]http.Handler
-	handlersRegistered bool
-	baseUpstreamURL    *url.URL
-	healthURL          *url.URL
-	healthHeaders      http.Header
-	healthMethod       string
-	trqParsers         map[string]trqParser
-	extentSetters      map[string]extentSetter
-	router             http.Handler
-	modeler            *timeseries.Modeler
+	backends.TimeseriesBackend
+
+	healthURL     *url.URL
+	healthHeaders http.Header
+	healthMethod  string
+	trqParsers    map[string]trqParser
+	extentSetters map[string]extentSetter
 }
 
 // NewClient returns a new Client Instance
-func NewClient(name string, oc *oo.Options, router http.Handler,
-	cache cache.Cache, modeler *timeseries.Modeler) (backends.Client, error) {
-	c, err := proxy.NewHTTPClient(oc)
-	bur := urls.FromParts(oc.Scheme, oc.Host, oc.PathPrefix, "", "")
-	client := &Client{name: name, config: oc, router: router, cache: cache,
-		baseUpstreamURL: bur, webClient: c, modeler: modeler}
-	client.makeTrqParsers()
-	client.makeExtentSetters()
-	return client, err
+func NewClient(name string, o *bo.Options, router http.Handler,
+	cache cache.Cache, modeler *timeseries.Modeler) (backends.TimeseriesBackend, error) {
+	c := &Client{}
+	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, modeler)
+	c.TimeseriesBackend = b
+	c.makeTrqParsers()
+	c.makeExtentSetters()
+	return c, err
 }
 
 func (c *Client) makeTrqParsers() {
@@ -119,34 +109,4 @@ func (c *Client) makeExtentSetters() {
 		"HistogramHandler": c.histogramHandlerSetExtent,
 		"CAQLHandler":      c.caqlHandlerSetExtent,
 	}
-}
-
-// Configuration returns the upstream Configuration for this Client.
-func (c *Client) Configuration() *oo.Options {
-	return c.config
-}
-
-// HTTPClient returns the HTTP Transport this client is using.
-func (c *Client) HTTPClient() *http.Client {
-	return c.webClient
-}
-
-// Cache returns a handle to the Cache instance used by this Client.
-func (c *Client) Cache() cache.Cache {
-	return c.cache
-}
-
-// Name returns the name of the origin Configuration proxied by the Client.
-func (c *Client) Name() string {
-	return c.name
-}
-
-// SetCache sets the Cache object the client will use for caching origin content
-func (c *Client) SetCache(cc cache.Cache) {
-	c.cache = cc
-}
-
-// Router returns the http.Handler that handles request routing for this Client
-func (c *Client) Router() http.Handler {
-	return c.router
 }

@@ -20,7 +20,7 @@ import (
 	"net/http"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy/context"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
@@ -29,7 +29,7 @@ import (
 )
 
 // WithResourcesContext ...
-func WithResourcesContext(client backends.Client, oc *oo.Options,
+func WithResourcesContext(client backends.Backend, oc *bo.Options,
 	c cache.Cache, p *po.Options, t *tracing.Tracer,
 	l interface{}, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

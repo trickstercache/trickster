@@ -49,16 +49,20 @@ func TestSetExtent(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := conf.Backends["default"]
-	client := &Client{config: oc}
+	o := conf.Backends["default"]
+	backendClient, err := NewClient("test", o, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
 
 	client.SetExtent(nil, nil, nil)
 
 	client.makeTrqParsers()
 	client.makeExtentSetters()
 
-	pcs := client.DefaultPathConfigs(oc)
-	rsc := request.NewResources(oc, nil, nil, nil, client, nil, tl.ConsoleLogger("error"))
+	pcs := client.DefaultPathConfigs(o)
+	rsc := request.NewResources(o, nil, nil, nil, client, nil, tl.ConsoleLogger("error"))
 
 	cases := []struct {
 		handler  string
@@ -209,8 +213,12 @@ func TestFastForwardURL(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := conf.Backends["default"]
-	client := &Client{config: oc}
+	o := conf.Backends["default"]
+	backendClient, err := NewClient("default", o, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
 
 	_, err = client.FastForwardRequest(nil)
 	if err == nil {
@@ -220,9 +228,9 @@ func TestFastForwardURL(t *testing.T) {
 	client.makeTrqParsers()
 	client.makeExtentSetters()
 
-	pcs := client.DefaultPathConfigs(oc)
+	pcs := client.DefaultPathConfigs(o)
 
-	rsc := request.NewResources(oc, nil, nil, nil, client, nil, tl.ConsoleLogger("error"))
+	rsc := request.NewResources(o, nil, nil, nil, client, nil, tl.ConsoleLogger("error"))
 
 	cases := []struct {
 		handler string
@@ -310,13 +318,18 @@ func TestFastForwardURL(t *testing.T) {
 
 func TestParseTimerangeQuery(t *testing.T) {
 	expected := errors.ErrNotTimeRangeQuery
-	client := &Client{name: "test"}
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
+
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 
-	r = request.SetResources(r, request.NewResources(client.config, &po.Options{},
+	r = request.SetResources(r, request.NewResources(client.Configuration(), &po.Options{},
 		nil, nil, client, nil, tl.ConsoleLogger("error")))
 
-	_, _, _, err := client.ParseTimeRangeQuery(r)
+	_, _, _, err = client.ParseTimeRangeQuery(r)
 	if err == nil || err != expected {
 		t.Errorf("expected %s got %v", expected.Error(), err.Error())
 	}

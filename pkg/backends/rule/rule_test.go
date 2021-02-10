@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	ro "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
@@ -135,20 +135,30 @@ func newTestCaseOpts() map[string]*ro.CaseOptions {
 
 func newTestRules() ([]*rule, error) {
 
-	oopts := oo.New()
+	oopts := bo.New()
 
 	rwi := newTestRewriterInstructions()
 
 	ropts := newTestRuleOpts()
 
-	clients := backends.Backends{"test-origin-1": &Client{router: testMux1},
-		"test-origin-2": &Client{router: testMux2}}
-
-	c, err := NewClient("test-client", oopts, nil, clients)
+	cl1, err := NewClient("test-origin-1", nil, testMux1, nil)
 	if err != nil {
 		return nil, err
 	}
 
+	cl2, err := NewClient("test-origin-2", nil, testMux2, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	clients := backends.Backends{"test-origin-1": cl1, "test-origin-2": cl2}
+
+	backendClient, err := NewClient("test-client", oopts, nil, clients)
+	if err != nil {
+		return nil, err
+	}
+
+	c := backendClient.(*Client)
 	rules := make([]*rule, 0, 2)
 
 	// This creates an OpArg test rule
@@ -171,7 +181,7 @@ func newTestRules() ([]*rule, error) {
 
 func newTestClient() (*Client, error) {
 
-	oopts := oo.New()
+	oopts := bo.New()
 
 	rwi, err := rewriter.ProcessConfigs(newTestRewriterOpts())
 	if err != nil {
@@ -180,14 +190,23 @@ func newTestClient() (*Client, error) {
 
 	ropts := newTestRuleOpts()
 
-	clients := backends.Backends{"test-origin-1": &Client{router: testMux1},
-		"test-origin-2": &Client{router: testMux2}}
-
-	c, err := NewClient("test-client", oopts, nil, clients)
+	cl1, err := NewClient("test-origin-1", nil, testMux1, nil)
 	if err != nil {
 		return nil, err
 	}
 
+	cl2, err := NewClient("test-origin-2", nil, testMux2, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	clients := backends.Backends{"test-origin-1": cl1, "test-origin-2": cl2}
+
+	backendClient, err := NewClient("test-client", oopts, nil, clients)
+	if err != nil {
+		return nil, err
+	}
+	c := backendClient.(*Client)
 	// This creates an OpArg test rule
 	err = c.parseOptions(ropts, rwi)
 	if err != nil {

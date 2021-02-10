@@ -25,6 +25,6 @@ import (
 
 // ProxyCacheHandler routes an HTTP Request through the Object Proxy Cache
 func (c *Client) ProxyCacheHandler(w http.ResponseWriter, r *http.Request) {
-	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
+	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 	engines.ObjectProxyCacheRequest(w, r)
 }

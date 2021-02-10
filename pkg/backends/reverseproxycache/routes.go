@@ -20,34 +20,26 @@ import (
 	"net/http"
 	"strings"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 )
 
-func (c *Client) registerHandlers() {
-	c.handlersRegistered = true
-	c.handlers = make(map[string]http.Handler)
-	// This is the registry of handlers that Trickster supports for the Reverse Proxy Cache,
-	// and are able to be referenced by name (map key) in Config Files
-	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
-	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
-	c.handlers["proxycache"] = http.HandlerFunc(c.ProxyCacheHandler)
-	c.handlers["localresponse"] = http.HandlerFunc(handlers.HandleLocalResponse)
-}
-
-// Handlers returns a map of the HTTP Handlers the client has registered
-func (c *Client) Handlers() map[string]http.Handler {
-	if !c.handlersRegistered {
-		c.registerHandlers()
-	}
-	return c.handlers
+func (c *Client) RegisterHandlers(map[string]http.Handler) {
+	c.Backend.RegisterHandlers(
+		map[string]http.Handler{
+			"health":        http.HandlerFunc(c.HealthHandler),
+			"proxy":         http.HandlerFunc(c.ProxyHandler),
+			"proxycache":    http.HandlerFunc(c.ProxyCacheHandler),
+			"localresponse": http.HandlerFunc(handlers.HandleLocalResponse),
+		},
+	)
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
+func (c *Client) DefaultPathConfigs(oc *bo.Options) map[string]*po.Options {
 
 	cm := methods.CacheableHTTPMethods()
 	um := methods.UncacheableHTTPMethods()

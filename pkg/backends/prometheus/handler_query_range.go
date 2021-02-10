@@ -26,6 +26,6 @@ import (
 // QueryRangeHandler handles timeseries requests for
 // Prometheus and processes them through the delta proxy cache
 func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
-	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
-	engines.DeltaProxyCacheRequest(w, r, c.modeler)
+	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
+	engines.DeltaProxyCacheRequest(w, r, c.Modeler())
 }

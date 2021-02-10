@@ -23,7 +23,7 @@ import (
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/backends/reverseproxycache"
 	"github.com/tricksterproxy/trickster/pkg/backends/rule"
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
@@ -82,11 +82,11 @@ func TestRegisterProxyRoutes(t *testing.T) {
 		t.Errorf("expected %d got %d", 1, 0)
 	}
 
-	conf.Backends["default"] = oo.New()
+	conf.Backends["default"] = bo.New()
 
 	// Test Too Many Defaults
 	o1 := conf.Backends["default"]
-	o2 := oo.New()
+	o2 := bo.New()
 
 	o1.IsDefault = true
 	o2.IsDefault = true
@@ -363,7 +363,12 @@ func TestRegisterPathRoutes(t *testing.T) {
 
 func TestValidateRuleClients(t *testing.T) {
 
-	var cl = backends.Backends{"test": &rule.Client{}}
+	c, err := rule.NewClient("test", nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	var cl = backends.Backends{"test": c}
 	rule.ValidateOptions(cl, nil)
 
 	conf, _, err := config.Load("trickster", "test",

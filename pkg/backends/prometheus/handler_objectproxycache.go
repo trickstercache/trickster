@@ -25,6 +25,6 @@ import (
 
 // ObjectProxyCacheHandler handles calls to /query (for instantaneous values)
 func (c *Client) ObjectProxyCacheHandler(w http.ResponseWriter, r *http.Request) {
-	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
+	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 	engines.ObjectProxyCacheRequest(w, r)
 }

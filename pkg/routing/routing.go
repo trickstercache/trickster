@@ -31,7 +31,7 @@ import (
 	modelflux "github.com/tricksterproxy/trickster/pkg/backends/influxdb/model"
 	"github.com/tricksterproxy/trickster/pkg/backends/irondb"
 	modeliron "github.com/tricksterproxy/trickster/pkg/backends/irondb/model"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/backends/prometheus"
 	modelprom "github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
 	"github.com/tricksterproxy/trickster/pkg/backends/providers"
@@ -70,15 +70,15 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 
 	// a fake "top-level" backend representing the main frontend, so rules can route
 	// to it via the clients map
-	tlo, _ := reverseproxycache.NewClient("frontend", &oo.Options{}, router, nil)
+	tlo, _ := reverseproxycache.NewClient("frontend", &bo.Options{}, router, nil)
 
 	// proxyClients maintains a list of proxy clients configured for use by Trickster
 	var clients = backends.Backends{"frontend": tlo}
 	var err error
 
 	defaultBackend := ""
-	var ndo *oo.Options // points to the backend options named "default"
-	var cdo *oo.Options // points to the backend options with IsDefault set to true
+	var ndo *bo.Options // points to the backend options named "default"
+	var cdo *bo.Options // points to the backend options with IsDefault set to true
 
 	// This iteration will ensure default backends are handled properly
 	for k, o := range conf.Backends {
@@ -144,10 +144,10 @@ var noCacheBackends = map[string]bool{
 }
 
 func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
-	o *oo.Options, clients backends.Backends, caches map[string]cache.Cache,
+	o *bo.Options, clients backends.Backends, caches map[string]cache.Cache,
 	tracers tracing.Tracers, logger interface{}, dryRun bool) error {
 
-	var client backends.Client
+	var client backends.Backend
 	var c cache.Cache
 	var ok bool
 	var err error
@@ -197,7 +197,7 @@ func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
 // merge it with any path data in the provided backend options, and then register
 // the path routes to the appropriate handler from the provided handlers map
 func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
-	client backends.Client, oo *oo.Options, c cache.Cache,
+	client backends.Backend, oo *bo.Options, c cache.Cache,
 	defaultPaths map[string]*po.Options, tracers tracing.Tracers,
 	healthHandlerPath string, logger interface{}) {
 

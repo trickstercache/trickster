@@ -14,44 +14,29 @@
  * limitations under the License.
  */
 
-package influxdb
+package backends
 
 import (
+	"net/http"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/backends"
-	"github.com/tricksterproxy/trickster/pkg/backends/influxdb/model"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 )
 
-var testModeler = model.NewModeler()
+func TestConfiguration(t *testing.T) {
 
-func TestInfluxDBClientInterfacing(t *testing.T) {
-
-	// this test ensures the client will properly conform to the
-	// Client and TimeseriesBackend interfaces
-
-	backendClient, err := backends.NewTimeseriesBackend("test", nil, nil, nil, nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
-
-	var oc backends.Backend = backendClient
-	var tc backends.TimeseriesBackend = backendClient
-
-	if oc.Name() != "test" {
-		t.Errorf("expected %s got %s", "test", oc.Name())
-	}
-
-	if tc.Name() != "test" {
-		t.Errorf("expected %s got %s", "test", tc.Name())
+	oc := &bo.Options{Provider: "TEST"}
+	client := &backend{config: oc}
+	c := client.Configuration()
+	if c.Provider != "TEST" {
+		t.Errorf("expected %s got %s", "TEST", c.Provider)
 	}
 }
 
-func TestNewClient(t *testing.T) {
+func TestCache(t *testing.T) {
 
 	conf, _, err := config.Load("trickster", "test", []string{"-provider", "influxdb", "-origin-url", "http://1"})
 	if err != nil {
@@ -64,22 +49,48 @@ func TestNewClient(t *testing.T) {
 	if !ok {
 		t.Errorf("Could not find default configuration")
 	}
+	client := &backend{cache: cache}
+	c := client.Cache()
 
-	oc := &bo.Options{Provider: "TEST_CLIENT"}
-	c, err := NewClient("default", oc, nil, cache, testModeler)
-	if err != nil {
-		t.Error(err)
+	if c.Configuration().Provider != "memory" {
+		t.Errorf("expected %s got %s", "memory", c.Configuration().Provider)
+	}
+}
+
+func TestName(t *testing.T) {
+
+	client := &backend{name: "TEST"}
+	c := client.Name()
+
+	if c != "TEST" {
+		t.Errorf("expected %s got %s", "TEST", c)
 	}
 
-	if c.Name() != "default" {
-		t.Errorf("expected %s got %s", "default", c.Name())
-	}
+}
 
-	if c.Cache().Configuration().Provider != "memory" {
-		t.Errorf("expected %s got %s", "memory", c.Cache().Configuration().Provider)
+func TestRouter(t *testing.T) {
+	client := &backend{name: "TEST"}
+	r := client.Router()
+	if r != nil {
+		t.Error("expected nil router")
 	}
+}
 
-	if c.Configuration().Provider != "TEST_CLIENT" {
-		t.Errorf("expected %s got %s", "TEST_CLIENT", c.Configuration().Provider)
+func TestHTTPClient(t *testing.T) {
+	o := &bo.Options{Provider: "TEST"}
+
+	c := &backend{name: "test", config: o, webClient: &http.Client{}}
+
+	if c.HTTPClient() == nil {
+		t.Errorf("missing http client")
+	}
+}
+
+func TestSetCache(t *testing.T) {
+
+	c := &backend{name: "test", config: bo.New()}
+	c.SetCache(nil)
+	if c.Cache() != nil {
+		t.Errorf("expected nil cache for client named %s", "test")
 	}
 }

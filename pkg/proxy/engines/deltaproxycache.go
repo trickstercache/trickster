@@ -63,7 +63,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	cc := rsc.CacheConfig
 	locker := cache.Locker()
 
-	client := rsc.BackendClient.(backends.TimeseriesClient)
+	client := rsc.BackendClient.(backends.TimeseriesBackend)
 
 	trq, rlo, canOPC, err := client.ParseTimeRangeQuery(r)
 	if err != nil {
@@ -467,7 +467,7 @@ func logDeltaRoutine(logger interface{}, p tl.Pairs) {
 }
 
 func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
-	client backends.TimeseriesClient, modeler *timeseries.Modeler) (timeseries.Timeseries, *HTTPDocument, time.Duration, error) {
+	client backends.TimeseriesBackend, modeler *timeseries.Modeler) (timeseries.Timeseries, *HTTPDocument, time.Duration, error) {
 
 	rsc := request.GetResources(pr.Request)
 	oc := rsc.BackendOptions

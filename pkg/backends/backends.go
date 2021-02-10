@@ -18,31 +18,33 @@
 package backends
 
 import (
+	"fmt"
 	"net/http"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 )
 
-// Backends represents a map of Backend Clients keyed by Client Name
-type Backends map[string]Client
+// Backends represents a map of Backends keyed by Name
+type Backends map[string]Backend
 
 // Get returns the named origin
-func (b Backends) Get(backendName string) Client {
+func (b Backends) Get(backendName string) Backend {
 	if c, ok := b[backendName]; ok {
 		return c
 	}
 	return nil
 }
 
-// GetConfig returns the named origin's Configuration Options
-func (b Backends) GetConfig(backendName string) *oo.Options {
+// GetConfig returns the named Backend's Configuration Options
+func (b Backends) GetConfig(backendName string) *bo.Options {
 	if c, ok := b[backendName]; ok {
+		fmt.Println("Yasss", backendName)
 		return c.Configuration()
 	}
 	return nil
 }
 
-// GetRouter returns the named origin's Request Router
+// GetRouter returns the named Backend's Request Router
 func (b Backends) GetRouter(backendName string) http.Handler {
 	if c, ok := b[backendName]; ok {
 		return c.Router()

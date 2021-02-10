@@ -19,8 +19,6 @@ package influxdb
 import (
 	"io/ioutil"
 	"net/http/httptest"
-	"net/url"
-	"sync"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
@@ -29,19 +27,24 @@ import (
 
 func TestHealthHandler(t *testing.T) {
 
-	client := &Client{name: "test", healthHeaderLock: &sync.Mutex{}}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/health", "debug")
-
-	rsc := request.GetResources(r)
-	client.config = rsc.BackendOptions
-	client.webClient = hc
-	client.config.HTTPClient = hc
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/health", "debug")
 	if err != nil {
 		t.Error(err)
 	} else {
 		defer ts.Close()
 	}
+	rsc := request.GetResources(r)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
+	rsc.BackendClient = client
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
 	client.HealthHandler(w, r)
 	resp := w.Result()
@@ -73,8 +76,12 @@ func TestHealthHandler(t *testing.T) {
 
 func TestHealthHandlerCustomPath(t *testing.T) {
 
-	client := &Client{name: "test", healthHeaderLock: &sync.Mutex{}}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "", nil, "influxdb", "/health", "debug")
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200, "", nil, "influxdb", "/health", "debug")
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -82,14 +89,18 @@ func TestHealthHandlerCustomPath(t *testing.T) {
 	}
 
 	rsc := request.GetResources(r)
-	client.config = rsc.BackendOptions
 
-	client.config.HealthCheckUpstreamPath = "-"
-	client.config.HealthCheckVerb = "-"
-	client.config.HealthCheckQuery = "-"
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
-	client.webClient = hc
-	client.config.HTTPClient = hc
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+	client := backendClient.(*Client)
+
+	rsc.BackendOptions.HealthCheckUpstreamPath = "-"
+	rsc.BackendOptions.HealthCheckVerb = "-"
+	rsc.BackendOptions.HealthCheckQuery = "-"
 
 	client.HealthHandler(w, r)
 	resp := w.Result()
@@ -112,8 +123,13 @@ func TestHealthHandlerCustomPath(t *testing.T) {
 
 func TestHealthHandlerPost(t *testing.T) {
 
-	client := &Client{name: "test", healthHeaderLock: &sync.Mutex{}}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "", nil, "influxdb", "/health", "debug")
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
+		200, "", nil, "influxdb", "/health", "debug")
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -121,14 +137,18 @@ func TestHealthHandlerPost(t *testing.T) {
 	}
 
 	rsc := request.GetResources(r)
-	client.config = rsc.BackendOptions
 
-	client.config.HealthCheckUpstreamPath = "-"
-	client.config.HealthCheckVerb = "POST"
-	client.config.HealthCheckQuery = "testParam1=testValue1"
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
-	client.webClient = hc
-	client.config.HTTPClient = hc
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+	rsc.BackendOptions.HealthCheckUpstreamPath = "-"
+	rsc.BackendOptions.HealthCheckVerb = "POST"
+	rsc.BackendOptions.HealthCheckQuery = "testParam1=testValue1"
+
+	client := backendClient.(*Client)
 
 	client.HealthHandler(w, r)
 	resp := w.Result()

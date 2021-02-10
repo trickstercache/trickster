@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	rule "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
@@ -105,7 +105,7 @@ func TestHideAuthorizationCredentials(t *testing.T) {
 
 func TestCloneBackendOptions(t *testing.T) {
 
-	oc := oo.New()
+	oc := bo.New()
 	oc.Hosts = []string{"test"}
 
 	oc2 := oc.Clone()

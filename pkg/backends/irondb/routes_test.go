@@ -24,41 +24,44 @@ import (
 )
 
 func TestRegisterHandlers(t *testing.T) {
-	c := &Client{}
-	c.registerHandlers()
-	if _, ok := c.handlers[mnCAQL]; !ok {
-		t.Errorf("expected to find handler named: %s", mnCAQL)
+	c, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
 	}
-}
-
-func TestHandlers(t *testing.T) {
-	c := &Client{}
-	m := c.Handlers()
-	if _, ok := m[mnCAQL]; !ok {
+	c.RegisterHandlers(nil)
+	if _, ok := c.Handlers()[mnCAQL]; !ok {
 		t.Errorf("expected to find handler named: %s", mnCAQL)
 	}
 }
 
 func TestDefaultPathConfigs(t *testing.T) {
 
-	client := &Client{name: "test"}
-	ts, _, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "irondb", "/health", "debug")
-	rsc := request.GetResources(r)
-	rsc.BackendClient = client
-	client.config = rsc.BackendOptions
-	client.webClient = hc
-	defer ts.Close()
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
-
-	if _, ok := client.config.Paths["/"]; !ok {
+	ts, _, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
+		200, "{}", nil, "irondb", "/health", "debug")
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer ts.Close()
+	}
+	rsc := request.GetResources(r)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
+	rsc.BackendClient = client
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+	if _, ok := rsc.BackendOptions.Paths["/"]; !ok {
 		t.Errorf("expected to find path named: %s", "/")
 	}
 
 	const expectedLen = 10
-	if len(client.config.Paths) != expectedLen {
-		t.Errorf("expected ordered length to be: %d got %d", expectedLen, len(client.config.Paths))
+	if len(rsc.BackendOptions.Paths) != expectedLen {
+		t.Errorf("expected ordered length to be: %d got %d", expectedLen, len(rsc.BackendOptions.Paths))
 	}
 
 }

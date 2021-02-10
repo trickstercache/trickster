@@ -33,8 +33,8 @@ import (
 // RollupHandler handles requests for numeric timeseries data with specified
 // spans and processes them through the delta proxy cache.
 func (c *Client) RollupHandler(w http.ResponseWriter, r *http.Request) {
-	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
-	engines.DeltaProxyCacheRequest(w, r, c.modeler)
+	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
+	engines.DeltaProxyCacheRequest(w, r, c.Modeler())
 }
 
 // rollupHandlerSetExtent will change the upstream request query to use the

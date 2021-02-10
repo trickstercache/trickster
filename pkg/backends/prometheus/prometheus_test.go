@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/config"
@@ -40,11 +40,14 @@ var testModeler = model.NewModeler()
 func TestPrometheusClientInterfacing(t *testing.T) {
 
 	// this test ensures the client will properly conform to the
-	// Client and TimeseriesClient interfaces
+	// Backend and TimeseriesBackend interfaces
 
-	c := &Client{name: "test"}
-	var oc backends.Client = c
-	var tc backends.TimeseriesClient = c
+	c, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	var oc backends.Backend = c
+	var tc backends.TimeseriesBackend = c
 
 	if oc.Name() != "test" {
 		t.Errorf("expected %s got %s", "test", oc.Name())
@@ -69,7 +72,7 @@ func TestNewClient(t *testing.T) {
 		t.Errorf("Could not find default configuration")
 	}
 
-	oc := &oo.Options{Provider: "TEST_CLIENT"}
+	oc := &bo.Options{Provider: "TEST_CLIENT"}
 	c, err := NewClient("default", oc, nil, cache, testModeler)
 	if err != nil {
 		t.Error(err)
@@ -116,60 +119,6 @@ func TestParseTimeFails(t *testing.T) {
 	if err == nil {
 		t.Errorf(`expected error 'cannot parse "a" to a valid timestamp'`)
 	}
-}
-
-func TestConfiguration(t *testing.T) {
-	oc := &oo.Options{Provider: "TEST"}
-	client := Client{config: oc}
-	c := client.Configuration()
-	if c.Provider != "TEST" {
-		t.Errorf("expected %s got %s", "TEST", c.Provider)
-	}
-}
-
-func TestHTTPClient(t *testing.T) {
-	oc := &oo.Options{Provider: "TEST"}
-
-	client, err := NewClient("test", oc, nil, nil, testModeler)
-	if err != nil {
-		t.Error(err)
-	}
-
-	if client.HTTPClient() == nil {
-		t.Errorf("missing http client")
-	}
-}
-
-func TestCache(t *testing.T) {
-
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
-	if err != nil {
-		t.Fatalf("Could not load configuration: %s", err.Error())
-	}
-
-	caches := cr.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
-	defer cr.CloseCaches(caches)
-	cache, ok := caches["default"]
-	if !ok {
-		t.Errorf("Could not find default configuration")
-	}
-	client := Client{cache: cache}
-	c := client.Cache()
-
-	if c.Configuration().Provider != "memory" {
-		t.Errorf("expected %s got %s", "memory", c.Configuration().Provider)
-	}
-}
-
-func TestName(t *testing.T) {
-
-	client := Client{name: "TEST"}
-	c := client.Name()
-
-	if c != "TEST" {
-		t.Errorf("expected %s got %s", "TEST", c)
-	}
-
 }
 
 func TestParseTimeRangeQuery(t *testing.T) {
@@ -405,25 +354,4 @@ func TestParseTimeRangeQueryWithOffset(t *testing.T) {
 		t.Errorf("expected true got %t", res.IsOffset)
 	}
 
-}
-
-func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil, testModeler)
-	if err != nil {
-		t.Error(err)
-	}
-	c.SetCache(nil)
-	if c.Cache() != nil {
-		t.Errorf("expected nil cache for client named %s", "test")
-	}
-}
-
-func TestRouter(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil, testModeler)
-	if err != nil {
-		t.Error(err)
-	}
-	if c.Router() != nil {
-		t.Error("expected nil router")
-	}
 }

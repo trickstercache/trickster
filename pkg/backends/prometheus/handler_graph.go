@@ -36,8 +36,7 @@ func (c *Client) GraphHandler(w http.ResponseWriter, r *http.Request) {
 	// // TODO: Account for host-based requests where c.name would generate a 404 on the upstream
 	// ajaxBaseURL += "://" + r.Host + "/" + c.name
 
-	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
-	// fmt.Println(r.URL)
+	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 
 	// writer := bytes.NewBuffer(nil)
 	engines.DoProxy(w, r, true)
