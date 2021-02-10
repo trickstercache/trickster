@@ -32,7 +32,7 @@ func TestObjectProxyCacheHandler(t *testing.T) {
 		client.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
 	rsc := request.GetResources(r)
 	rsc.BackendClient = client
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
+	client.BaseUpstreamURL, _ = url.Parse(ts.URL)
 	client.config = rsc.BackendOptions
 	client.webClient = hc
 	client.config.HTTPClient = hc

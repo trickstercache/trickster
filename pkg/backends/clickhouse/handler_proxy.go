@@ -26,6 +26,6 @@ import (
 // ProxyHandler sends a request through the basic reverse proxy to the origin,
 // and services non-cacheable ClickHouse API calls
 func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
+	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 	engines.DoProxy(w, r, true)
 }

@@ -21,8 +21,7 @@ import (
 	"strings"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	"github.com/tricksterproxy/trickster/pkg/cache"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
@@ -32,10 +31,7 @@ import (
 
 // Client Implements the Proxy Client Interface
 type Client struct {
-	name               string
-	options            *oo.Options
-	handlers           map[string]http.Handler
-	handlersRegistered bool
+	backends.Backend
 
 	// this exists so the rule can route the request to a destination by router name
 	clients backends.Backends
@@ -46,15 +42,17 @@ type Client struct {
 }
 
 // NewClient returns a new Rules Router client reference
-func NewClient(name string, options *oo.Options, router http.Handler,
+func NewClient(name string, o *bo.Options, router http.Handler,
 	clients backends.Backends) (*Client, error) {
-	return &Client{
-		name:       name,
-		options:    options,
+
+	c := &Client{
 		clients:    clients,
 		pathPrefix: "/" + name,
-		router:     router,
-	}, nil
+	}
+	b, err := backends.NewBackend(name, o, c.RegisterHandlers, router, nil)
+	c.Backend = b
+	return c, err
+
 }
 
 // Clients is a list of *rule.Client
@@ -83,8 +81,9 @@ func ValidateOptions(clients backends.Backends,
 // could not be validated
 func (rc Clients) validate(rwi map[string]rewriter.RewriteInstructions) error {
 	for _, c := range rc {
-		if c != nil && c.options != nil {
-			if err := c.parseOptions(c.options.RuleOptions, rwi); err != nil {
+		cfg := c.Configuration()
+		if c != nil && cfg != nil {
+			if err := c.parseOptions(cfg.RuleOptions, rwi); err != nil {
 				return err
 			}
 		} else {
@@ -94,13 +93,8 @@ func (rc Clients) validate(rwi map[string]rewriter.RewriteInstructions) error {
 	return nil
 }
 
-// Configuration returns the Client Configuration
-func (c *Client) Configuration() *oo.Options {
-	return c.options
-}
-
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
+func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 	m := methods.CacheableHTTPMethods()
 	paths := map[string]*po.Options{
 		"/" + strings.Join(m, "-"): {
@@ -114,41 +108,11 @@ func (c *Client) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
 	return paths
 }
 
-func (c *Client) registerHandlers() {
-	c.handlersRegistered = true
-	c.handlers = make(map[string]http.Handler)
-	// This is the registry of handlers that Trickster supports for the Reverse Proxy Cache,
-	// and are able to be referenced by name (map key) in Config Files
-	c.handlers["rule"] = http.HandlerFunc(c.Handler)
-}
+func (c *Client) RegisterHandlers(map[string]http.Handler) {
 
-// Handlers returns a map of the HTTP Handlers the client has registered
-func (c *Client) Handlers() map[string]http.Handler {
-	if !c.handlersRegistered {
-		c.registerHandlers()
-	}
-	return c.handlers
-}
-
-// HTTPClient is not used by the Rule, and is present to conform to the Client interface
-func (c *Client) HTTPClient() *http.Client {
-	return nil
-}
-
-// Cache is not used by the Rule, and is present to conform to the Client interface
-func (c *Client) Cache() cache.Cache {
-	return nil
-}
-
-// Name returns the name of the upstream Configuration proxied by the Client
-func (c *Client) Name() string {
-	return c.name
-}
-
-// SetCache is not used by the Rule, and is present to conform to the Client interface
-func (c *Client) SetCache(cc cache.Cache) {}
-
-// Router returns the http.Handler that handles request routing for this Client
-func (c *Client) Router() http.Handler {
-	return c.router
+	c.Backend.RegisterHandlers(
+		map[string]http.Handler{
+			"rule": http.HandlerFunc(c.Handler),
+		},
+	)
 }

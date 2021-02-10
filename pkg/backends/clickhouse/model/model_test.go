@@ -17,7 +17,6 @@
 package model
 
 import (
-	"fmt"
 	"io/ioutil"
 	"net/http/httptest"
 	"testing"
@@ -237,7 +236,6 @@ func TestMarshalCSV(t *testing.T) {
 	b, _ := ioutil.ReadAll(w.Result().Body)
 	if string(b) != testDataCSV {
 		t.Error()
-		fmt.Println(string(b))
 	}
 }
 
@@ -247,7 +245,6 @@ func TestMarshalCSVWithNames(t *testing.T) {
 	b, _ := ioutil.ReadAll(w.Result().Body)
 	if string(b) != testDataCSVWithNames {
 		t.Error()
-		fmt.Println(string(b))
 	}
 }
 
@@ -257,7 +254,6 @@ func TestMarshalTSV(t *testing.T) {
 	b, _ := ioutil.ReadAll(w.Result().Body)
 	if string(b) != testDataTSV {
 		t.Error()
-		fmt.Println(string(b))
 	}
 }
 
@@ -267,7 +263,6 @@ func TestMarshalTSVWithNames(t *testing.T) {
 	b, _ := ioutil.ReadAll(w.Result().Body)
 	if string(b) != testDataTSVWithNames {
 		t.Error()
-		fmt.Println(string(b))
 	}
 }
 
@@ -277,7 +272,6 @@ func TestMarshalTSVWithNamesAndTypes(t *testing.T) {
 	b, _ := ioutil.ReadAll(w.Result().Body)
 	if string(b) != testDataTSVWithNamesAndTypes {
 		t.Error()
-		fmt.Println(string(b))
 	}
 }
 

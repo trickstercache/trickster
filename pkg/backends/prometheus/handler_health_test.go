@@ -36,7 +36,7 @@ func TestHealthHandler(t *testing.T) {
 	client.config = rsc.BackendOptions
 	client.webClient = hc
 	client.config.HTTPClient = hc
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
+	client.BaseUpstreamURL, _ = url.Parse(ts.URL)
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
@@ -86,7 +86,7 @@ func TestHealthHandlerCustomPath(t *testing.T) {
 	client.config.HealthCheckUpstreamPath = "-"
 	client.config.HealthCheckVerb = "-"
 	client.config.HealthCheckQuery = "-"
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
+	client.BaseUpstreamURL, _ = url.Parse(ts.URL)
 	client.webClient = hc
 	client.config.HTTPClient = hc
 

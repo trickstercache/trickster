@@ -37,8 +37,8 @@ import (
 // HistogramHandler handles requests for historgam timeseries data and processes
 // them through the delta proxy cache.
 func (c *Client) HistogramHandler(w http.ResponseWriter, r *http.Request) {
-	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
-	engines.DeltaProxyCacheRequest(w, r, c.modeler)
+	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
+	engines.DeltaProxyCacheRequest(w, r, c.Modeler())
 }
 
 // histogramHandlerSetExtent will change the upstream request query to use the

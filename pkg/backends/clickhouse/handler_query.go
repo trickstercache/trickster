@@ -56,6 +56,6 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 		c.ProxyHandler(w, r)
 		return
 	}
-	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
-	engines.DeltaProxyCacheRequest(w, r, c.modeler)
+	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
+	engines.DeltaProxyCacheRequest(w, r, c.Modeler())
 }

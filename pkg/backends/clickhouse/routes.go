@@ -24,22 +24,17 @@ import (
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 )
 
-func (c *Client) registerHandlers() {
-	c.handlersRegistered = true
-	c.handlers = make(map[string]http.Handler)
-	// This is the registry of handlers that Trickster supports for ClickHouse,
-	// and are able to be referenced by name (map key) in Config Files
-	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
-	c.handlers["query"] = http.HandlerFunc(c.QueryHandler)
-	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
-}
+func (c *Client) RegisterHandlers(map[string]http.Handler) {
 
-// Handlers returns a map of the HTTP Handlers the client has registered
-func (c *Client) Handlers() map[string]http.Handler {
-	if !c.handlersRegistered {
-		c.registerHandlers()
-	}
-	return c.handlers
+	c.TimeseriesBackend.RegisterHandlers(
+		map[string]http.Handler{
+			// This is the registry of handlers that Trickster supports for ClickHouse,
+			// and are able to be referenced by name (map key) in Config Files
+			"health": http.HandlerFunc(c.HealthHandler),
+			"query":  http.HandlerFunc(c.QueryHandler),
+			"proxy":  http.HandlerFunc(c.ProxyHandler),
+		},
+	)
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider

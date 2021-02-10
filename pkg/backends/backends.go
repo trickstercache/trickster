@@ -23,11 +23,11 @@ import (
 	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
 )
 
-// Backends represents a map of Backend Clients keyed by Client Name
-type Backends map[string]Client
+// Backends represents a map of Backend Clients keyed by Name
+type Backends map[string]Backend
 
 // Get returns the named origin
-func (b Backends) Get(backendName string) Client {
+func (b Backends) Get(backendName string) Backend {
 	if c, ok := b[backendName]; ok {
 		return c
 	}

@@ -29,20 +29,22 @@ import (
 
 func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteInstructions) error {
 
+	name := c.Name()
+
 	if ro == nil {
-		return fmt.Errorf("rule client %s failed to parse nil options", c.name)
+		return fmt.Errorf("rule client %s failed to parse nil options", name)
 	}
 
 	if ro.InputSource == "" {
-		return fmt.Errorf("rule client %s options missing input_source", c.name)
+		return fmt.Errorf("rule client %s options missing input_source", name)
 	}
 
 	if ro.InputType == "" {
-		return fmt.Errorf("rule client %s options missing input_type", c.name)
+		return fmt.Errorf("rule client %s options missing input_type", name)
 	}
 
 	if ro.Operation == "" {
-		return fmt.Errorf("rule client %s options missing operation", c.name)
+		return fmt.Errorf("rule client %s options missing operation", name)
 	}
 
 	if ro.MaxRuleExecutions == 0 {

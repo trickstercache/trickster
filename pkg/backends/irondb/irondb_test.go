@@ -33,7 +33,7 @@ func TestIRONdbClientInterfacing(t *testing.T) {
 	// Client and TimeseriesClient interfaces
 
 	c := &Client{name: "test"}
-	var oc backends.Client = c
+	var oc backends.Backend = c
 	var tc backends.TimeseriesClient = c
 
 	if oc.Name() != "test" {

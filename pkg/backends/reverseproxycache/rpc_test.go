@@ -29,7 +29,7 @@ func TestReverseProxyCacheClientInterfacing(t *testing.T) {
 	// Client interface
 
 	c := &Client{name: "test"}
-	var oc backends.Client = c
+	var oc backends.Backend = c
 
 	if oc.Name() != "test" {
 		t.Errorf("expected %s got %s", "test", oc.Name())

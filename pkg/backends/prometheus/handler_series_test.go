@@ -37,7 +37,7 @@ func TestSeriesHandler(t *testing.T) {
 	client.config = rsc.BackendOptions
 	client.webClient = hc
 	client.config.HTTPClient = hc
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
+	client.BaseUpstreamURL, _ = url.Parse(ts.URL)
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)

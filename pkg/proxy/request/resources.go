@@ -38,7 +38,7 @@ type Resources struct {
 	CacheConfig       *co.Options
 	NoLock            bool
 	CacheClient       cache.Cache
-	BackendClient     backends.Client
+	BackendClient     backends.Backend
 	AlternateCacheTTL time.Duration
 	TimeRangeQuery    *timeseries.TimeRangeQuery
 	Tracer            *tracing.Tracer
@@ -63,7 +63,7 @@ func (r Resources) Clone() *Resources {
 
 // NewResources returns a new Resources collection based on the provided inputs
 func NewResources(oo *oo.Options, po *po.Options, co *co.Options,
-	c cache.Cache, client backends.Client, t *tracing.Tracer,
+	c cache.Cache, client backends.Backend, t *tracing.Tracer,
 	logger interface{}) *Resources {
 	return &Resources{
 		BackendOptions: oo,

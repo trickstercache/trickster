@@ -147,7 +147,7 @@ func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
 	o *oo.Options, clients backends.Backends, caches map[string]cache.Cache,
 	tracers tracing.Tracers, logger interface{}, dryRun bool) error {
 
-	var client backends.Client
+	var client backends.Backend
 	var c cache.Cache
 	var ok bool
 	var err error
@@ -197,7 +197,7 @@ func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
 // merge it with any path data in the provided backend options, and then register
 // the path routes to the appropriate handler from the provided handlers map
 func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
-	client backends.Client, oo *oo.Options, c cache.Cache,
+	client backends.Backend, oo *oo.Options, c cache.Cache,
 	defaultPaths map[string]*po.Options, tracers tracing.Tracers,
 	healthHandlerPath string, logger interface{}) {
 

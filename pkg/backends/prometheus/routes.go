@@ -26,25 +26,17 @@ import (
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 )
 
-func (c *Client) registerHandlers() {
-	c.handlersRegistered = true
-	c.handlers = make(map[string]http.Handler)
-	// This is the registry of handlers that Trickster supports for Prometheus,
-	// and are able to be referenced by name (map key) in Config Files
-	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
-	c.handlers["query_range"] = http.HandlerFunc(c.QueryRangeHandler)
-	c.handlers["query"] = http.HandlerFunc(c.QueryHandler)
-	c.handlers["series"] = http.HandlerFunc(c.SeriesHandler)
-	c.handlers["proxycache"] = http.HandlerFunc(c.ObjectProxyCacheHandler)
-	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
-}
-
-// Handlers returns a map of the HTTP Handlers the client has registered
-func (c *Client) Handlers() map[string]http.Handler {
-	if !c.handlersRegistered {
-		c.registerHandlers()
-	}
-	return c.handlers
+func (c *Client) RegisterHandlers(map[string]http.Handler) {
+	c.TimeseriesBackend.RegisterHandlers(
+		map[string]http.Handler{
+			"health":      http.HandlerFunc(c.HealthHandler),
+			"query_range": http.HandlerFunc(c.QueryRangeHandler),
+			"query":       http.HandlerFunc(c.QueryHandler),
+			"series":      http.HandlerFunc(c.SeriesHandler),
+			"proxycache":  http.HandlerFunc(c.ObjectProxyCacheHandler),
+			"proxy":       http.HandlerFunc(c.ProxyHandler),
+		},
+	)
 }
 
 func populateHeathCheckRequestValues(oc *oo.Options) {

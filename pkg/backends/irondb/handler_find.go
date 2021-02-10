@@ -26,6 +26,6 @@ import (
 // FindHandler handles requests to find metirc information and processes them
 // through the object proxy cache.
 func (c *Client) FindHandler(w http.ResponseWriter, r *http.Request) {
-	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
+	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 	engines.ObjectProxyCacheRequest(w, r)
 }

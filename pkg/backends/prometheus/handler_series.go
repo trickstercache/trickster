@@ -29,7 +29,7 @@ import (
 // SeriesHandler proxies requests for path /series to the origin by way of the object proxy cache
 func (c *Client) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 
-	u := urls.BuildUpstreamURL(r, c.baseUpstreamURL)
+	u := urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 	qp, _, _ := params.GetRequestValues(r)
 
 	// Round Start and End times down to top of most recent minute for cacheability

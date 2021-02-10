@@ -25,6 +25,6 @@ import (
 
 // ProxyHandler will proxy the inbound HTTP Request to the configured origin
 func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	r.URL = urls.BuildUpstreamURL(r, c.baseUpstreamURL)
+	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 	engines.DoProxy(w, r, true)
 }
