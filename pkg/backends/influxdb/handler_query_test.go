@@ -76,23 +76,21 @@ func TestQueryHandlerWithSelect(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200, "{}",
 		nil, "influxdb", "/query?q=select%20test", "debug")
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer ts.Close()
+	}
 	rsc := request.GetResources(r)
-
 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
-
 	client := backendClient.(*Client)
-	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 	rsc.BackendClient = client
-	defer ts.Close()
-	if err != nil {
-		t.Error(err)
-	}
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
 	client.QueryHandler(w, r)
 

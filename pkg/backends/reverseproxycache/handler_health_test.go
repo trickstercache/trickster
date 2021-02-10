@@ -32,26 +32,21 @@ func TestHealthHandler(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
 		200, "{}", nil, "rpc", "/health", "debug")
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer ts.Close()
+	}
 	rsc := request.GetResources(r)
 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil)
 	if err != nil {
 		t.Error(err)
-	} else {
-		defer ts.Close()
 	}
 	client := backendClient.(*Client)
-	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
-
 	rsc.BackendClient = client
-
-	if err != nil {
-		t.Error(err)
-	} else {
-		defer ts.Close()
-	}
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
 	client.healthURL = &url.URL{}
 	client.healthMethod = "-"

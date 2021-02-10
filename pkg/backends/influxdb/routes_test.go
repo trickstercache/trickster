@@ -40,22 +40,20 @@ func TestDefaultPathConfigs(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 	ts, _, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 204, "", nil, "influxdb", "/", "debug")
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer ts.Close()
+	}
 	rsc := request.GetResources(r)
-
 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
-
 	client := backendClient.(*Client)
 	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
-	defer ts.Close()
-	if err != nil {
-		t.Error(err)
-	}
 
 	if _, ok := rsc.BackendOptions.Paths["/"]; !ok {
 		t.Errorf("expected to find path named: %s", "/")

@@ -40,22 +40,21 @@ func TestDefaultPathConfigs(t *testing.T) {
 	if err != nil {
 		t.Error(nil)
 	}
-
 	ts, _, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 204, "",
 		nil, "clickhouse", "/", "debug")
-	rsc := request.GetResources(r)
-
-	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
 	if err != nil {
-		t.Error(nil)
+		t.Error(err)
+	} else {
+		defer ts.Close()
 	}
-
-	rsc.BackendClient = backendClient
-	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
-	defer ts.Close()
+	rsc := request.GetResources(r)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
+	client := backendClient.(*Client)
+	rsc.BackendClient = client
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
 	if _, ok := backendClient.Configuration().Paths["/"]; !ok {
 		t.Errorf("expected to find path named: %s", "/")

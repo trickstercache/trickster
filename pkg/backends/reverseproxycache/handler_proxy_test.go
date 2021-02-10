@@ -29,7 +29,6 @@ func TestProxyHandler(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
 		200, "{}", nil, "rpc", "/health", "debug")
 	if err != nil {
@@ -43,6 +42,7 @@ func TestProxyHandler(t *testing.T) {
 		t.Error(err)
 	}
 	client := backendClient.(*Client)
+	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
 	client.ProxyHandler(w, r)

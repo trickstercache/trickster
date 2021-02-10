@@ -31,12 +31,9 @@ func TestHealthHandler(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 	ts, w, r, _, err := tu.NewTestInstance("",
 		backendClient.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/health", "debug")
-
 	rsc := request.GetResources(r)
-
 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
@@ -83,7 +80,6 @@ func TestHealthHandlerCustomPath(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 	ts, w, r, _, err := tu.NewTestInstance("",
 		backendClient.DefaultPathConfigs, 200, "", nil, "prometheus", "/health", "debug")
 	if err != nil {
@@ -91,20 +87,18 @@ func TestHealthHandlerCustomPath(t *testing.T) {
 	} else {
 		defer ts.Close()
 	}
-
 	rsc := request.GetResources(r)
-
 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
-
+	client := backendClient.(*Client)
+	rsc.BackendClient = client
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 	rsc.BackendOptions.HealthCheckUpstreamPath = "-"
 	rsc.BackendOptions.HealthCheckVerb = "-"
 	rsc.BackendOptions.HealthCheckQuery = "-"
-	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-	client := backendClient.(*Client)
 	client.HealthHandler(w, r)
 	resp := w.Result()
 

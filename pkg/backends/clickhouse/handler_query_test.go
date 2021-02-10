@@ -47,28 +47,23 @@ func TestQueryHandler(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
 		200, "{}", nil, "clickhouse", "/?"+testRawQuery(), "debug")
 	ctx := r.Context()
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer ts.Close()
+	}
 	rsc := request.GetResources(r)
-
 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
-	rsc.BackendClient = backendClient
+	client := backendClient.(*Client)
+	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-	// client.webClient = hc
-	// client.config.HTTPClient = hc
-	// client.baseUpstreamURL, _ = url.Parse(ts.URL)
-	defer ts.Close()
-	if err != nil {
-		t.Error(err)
-	}
-
-	client := backendClient.(*Client)
 	_, ok := client.Configuration().Paths["/"]
 	if !ok {
 		t.Errorf("could not find path config named %s", "/")

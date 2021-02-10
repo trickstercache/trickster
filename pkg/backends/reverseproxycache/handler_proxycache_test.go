@@ -41,6 +41,7 @@ func TestProxyCacheHandler(t *testing.T) {
 		t.Error(err)
 	}
 	client := backendClient.(*Client)
+	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
 	client.ProxyCacheHandler(w, r)

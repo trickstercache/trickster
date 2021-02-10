@@ -29,22 +29,22 @@ func TestProxyHandler(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
 		200, "{}", nil, "rpc", "/health", "debug")
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer ts.Close()
+	}
 	rsc := request.GetResources(r)
 	backendClient, err = NewClient("test", rsc.BackendOptions, nil)
 	if err != nil {
 		t.Error(err)
 	}
 	client := backendClient.(*Client)
-	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 	rsc.BackendClient = client
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-	defer ts.Close()
-	if err != nil {
-		t.Error(err)
-	}
 	client.ProxyHandler(w, r)
 	resp := w.Result()
 	if resp.StatusCode != 200 {

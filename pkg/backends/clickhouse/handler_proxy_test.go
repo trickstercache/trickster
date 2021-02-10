@@ -30,28 +30,22 @@ func TestProxyHandler(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 	ts, w, r, _, err := tu.NewTestInstance("",
 		backendClient.DefaultPathConfigs, 200, "test", nil, "clickhouse", "/health", "debug")
-
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer ts.Close()
+	}
 	rsc := request.GetResources(r)
-
 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
-
+	client := backendClient.(*Client)
+	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-	// client.webClient = hc
-	// client.config.HTTPClient = hc
-	// client.baseUpstreamURL, _ = url.Parse(ts.URL)
-	defer ts.Close()
-	if err != nil {
-		t.Error(err)
-	}
-
-	client := backendClient.(*Client)
 	client.ProxyHandler(w, r)
 	resp := w.Result()
 

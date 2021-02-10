@@ -48,7 +48,13 @@ func TestDefaultPathConfigs(t *testing.T) {
 		defer ts.Close()
 	}
 	rsc := request.GetResources(r)
-
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
+	rsc.BackendClient = client
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 	if _, ok := rsc.BackendOptions.Paths["/"]; !ok {
 		t.Errorf("expected to find path named: %s", "/")
 	}

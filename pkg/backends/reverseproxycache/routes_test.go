@@ -54,6 +54,7 @@ func TestDefaultPathConfigs(t *testing.T) {
 		t.Error(err)
 	}
 	client := backendClient.(*Client)
+	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
 	dpc := client.DefaultPathConfigs(rsc.BackendOptions)
