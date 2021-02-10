@@ -83,12 +83,12 @@ func New(name string, o *bo.Options, registrar Registrar,
 
 }
 
-// Name returns the name of the upstream Configuration proxied by the Client
+// Name returns the name of the Backend
 func (b *backend) Name() string {
 	return b.name
 }
 
-// Configuration returns the upstream Configuration for this Client
+// Configuration returns the Backend's Configuration
 func (b *backend) Configuration() *bo.Options {
 	return b.config
 }
@@ -97,12 +97,12 @@ func (b *backend) BaseUpstreamURL() *url.URL {
 	return b.baseUpstreamURL
 }
 
-// SetCache sets the Cache object the client will use for caching origin content
+// SetCache sets the Cache object the Backend will use for caching origin content
 func (b *backend) SetCache(cc cache.Cache) {
 	b.cache = cc
 }
 
-// Cache returns and handle to the Cache instance used by the Client
+// Cache returns a handle to the Cache instance used by the Backend
 func (b *backend) Cache() cache.Cache {
 	return b.cache
 }
@@ -117,6 +117,7 @@ func (b *backend) HTTPClient() *http.Client {
 	return b.webClient
 }
 
+// Handlers returns the list of handlers used by this Backend
 func (b *backend) Handlers() map[string]http.Handler {
 	if !b.handlersRegistered {
 		if b.registrar != nil {
@@ -131,6 +132,7 @@ func (b *backend) Router() http.Handler {
 	return b.router
 }
 
+// RegisterHandlers registers the provided handlers with the backend
 func (b *backend) RegisterHandlers(h map[string]http.Handler) {
 	if !b.handlersRegistered {
 		b.handlersRegistered = true
