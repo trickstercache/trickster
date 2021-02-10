@@ -94,14 +94,3 @@ func TestSetCache(t *testing.T) {
 		t.Errorf("expected nil cache for client named %s", "test")
 	}
 }
-
-// func TestHandlers(t *testing.T) {
-// 	c, err := NewClient("test", nil, nil, nil, nil)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-// 	m := c.Handlers()
-// 	if _, ok := m["query"]; !ok {
-// 		t.Errorf("expected to find handler named: %s", "query")
-// 	}
-// }
