@@ -28,14 +28,22 @@ import (
 
 func TestHealthHandler(t *testing.T) {
 
-	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "rpc", "/health", "debug")
+	backendClient, err := NewClient("test", nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
+		200, "{}", nil, "rpc", "/health", "debug")
 	rsc := request.GetResources(r)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	client := backendClient.(*Client)
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 	rsc.BackendClient = client
-	client.config = rsc.BackendOptions
-	client.webClient = hc
-	client.config.HTTPClient = hc
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
 
 	if err != nil {
 		t.Error(err)
@@ -62,22 +70,28 @@ func TestHealthHandler(t *testing.T) {
 }
 
 func TestHealthHandlerCustomPath(t *testing.T) {
-	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("../../../testdata/test.custom_health.conf",
-		client.DefaultPathConfigs, 200, "{}", nil, "rpc", "/health", "debug")
+
+	backendClient, err := NewClient("test", nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	ts, w, r, _, err := tu.NewTestInstance("../../../testdata/test.custom_health.conf",
+		backendClient.DefaultPathConfigs, 200, "{}", nil, "rpc", "/health", "debug")
 	if err != nil {
 		t.Error(err)
 	} else {
 		defer ts.Close()
 	}
 
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
-
 	rsc := request.GetResources(r)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 	rsc.BackendClient = client
-	client.config = rsc.BackendOptions
-	client.webClient = hc
-	client.config.HTTPClient = hc
 
 	client.HealthHandler(w, r)
 	resp := w.Result()

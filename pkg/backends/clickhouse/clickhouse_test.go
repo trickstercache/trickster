@@ -23,7 +23,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	"github.com/tricksterproxy/trickster/pkg/backends/clickhouse/model"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
@@ -34,11 +34,15 @@ var testModeler = model.NewModeler()
 func TestClickhouseClientInterfacing(t *testing.T) {
 
 	// this test ensures the client will properly conform to the
-	// Client and TimeseriesClient interfaces
+	// Client and TimeseriesBackend interfaces
 
-	c := &Client{name: "test"}
+	c, err := backends.NewTimeseriesBackend("test", nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
 	var oc backends.Backend = c
-	var tc backends.TimeseriesClient = c
+	var tc backends.TimeseriesBackend = c
 
 	if oc.Name() != "test" {
 		t.Errorf("expected %s got %s", "test", oc.Name())
@@ -63,8 +67,8 @@ func TestNewClient(t *testing.T) {
 		t.Errorf("Could not find default configuration")
 	}
 
-	oc := &oo.Options{Provider: "TEST_CLIENT"}
-	c, err := NewClient("default", oc, nil, cache, testModeler)
+	o := &bo.Options{Provider: "TEST_CLIENT"}
+	c, err := NewClient("default", o, nil, cache, testModeler)
 	if err != nil {
 		t.Error(err)
 	}
@@ -79,78 +83,6 @@ func TestNewClient(t *testing.T) {
 
 	if c.Configuration().Provider != "TEST_CLIENT" {
 		t.Errorf("expected %s got %s", "TEST_CLIENT", c.Configuration().Provider)
-	}
-}
-
-func TestConfiguration(t *testing.T) {
-	oc := &oo.Options{Provider: "TEST"}
-	client := Client{config: oc}
-	c := client.Configuration()
-	if c.Provider != "TEST" {
-		t.Errorf("expected %s got %s", "TEST", c.Provider)
-	}
-}
-
-func TestCache(t *testing.T) {
-
-	conf, _, err := config.Load("trickster", "test", []string{"-provider", "clickhouse", "-origin-url", "http://1"})
-	if err != nil {
-		t.Fatalf("Could not load configuration: %s", err.Error())
-	}
-
-	caches := cr.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
-	defer cr.CloseCaches(caches)
-	cache, ok := caches["default"]
-	if !ok {
-		t.Errorf("Could not find default configuration")
-	}
-	client := Client{cache: cache}
-	c := client.Cache()
-
-	if c.Configuration().Provider != "memory" {
-		t.Errorf("expected %s got %s", "memory", c.Configuration().Provider)
-	}
-}
-
-func TestName(t *testing.T) {
-
-	client := Client{name: "TEST"}
-	c := client.Name()
-	if c != "TEST" {
-		t.Errorf("expected %s got %s", "TEST", c)
-	}
-
-}
-
-func TestRouter(t *testing.T) {
-	client := Client{name: "TEST"}
-	r := client.Router()
-	if r != nil {
-		t.Error("expected nil router")
-	}
-}
-
-func TestHTTPClient(t *testing.T) {
-	oc := &oo.Options{Provider: "TEST"}
-
-	client, err := NewClient("test", oc, nil, nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
-
-	if client.HTTPClient() == nil {
-		t.Errorf("missing http client")
-	}
-}
-
-func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	c.SetCache(nil)
-	if c.Cache() != nil {
-		t.Errorf("expected nil cache for client named %s", "test")
 	}
 }
 

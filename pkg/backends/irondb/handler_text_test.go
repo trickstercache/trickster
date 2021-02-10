@@ -19,7 +19,6 @@ package irondb
 import (
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"testing"
 	"time"
 
@@ -32,19 +31,25 @@ import (
 
 func TestTextHandler(t *testing.T) {
 
-	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200,
-		"{}", nil, "irondb", "/read/0/900/00112233-4455-6677-8899-aabbccddeeff/metric", "debug")
-	rsc := request.GetResources(r)
-	rsc.BackendClient = client
-	client.config = rsc.BackendOptions
-	client.webClient = hc
-	client.config.HTTPClient = hc
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
-	defer ts.Close()
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
+	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200,
+		"{}", nil, "irondb", "/read/0/900/00112233-4455-6677-8899-aabbccddeeff/metric", "debug")
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer ts.Close()
+	}
+	rsc := request.GetResources(r)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
+	rsc.BackendClient = client
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
 	client.TextHandler(w, r)
 	resp := w.Result()
@@ -66,7 +71,11 @@ func TestTextHandler(t *testing.T) {
 
 func TestTextHandlerDeriveCacheKey(t *testing.T) {
 
-	client := &Client{name: "test"}
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
 	path := "/read/0/900/00112233-4455-6677-8899-aabbccddeeff/metric"
 	_, _, r, _, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}", nil, "irondb", path, "debug")
 	if err != nil {
@@ -90,10 +99,14 @@ func TestTextHandlerParseTimeRangeQuery(t *testing.T) {
 	}
 
 	// provide bad URL with no TimeRange query params
-	hc := tu.NewTestWebClient()
-	cfg := oo.New()
-	client := &Client{name: "test", webClient: hc, config: cfg}
-	cfg.Paths = client.DefaultPathConfigs(cfg)
+	// hc := tu.NewTestWebClient()
+	o := oo.New()
+	backendClient, err := NewClient("test", o, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
+	o.Paths = client.DefaultPathConfigs(o)
 
 	//tr := model.NewRequest("RollupHandler", r.Method, r.URL, r.Header, cfg.Timeout, r, hc)
 
@@ -131,10 +144,14 @@ func TestTextHandlerParseTimeRangeQuery(t *testing.T) {
 func TestTextHandlerSetExtent(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
-	hc := tu.NewTestWebClient()
-	cfg := oo.New()
-	client := &Client{name: "test", webClient: hc, config: cfg}
-	cfg.Paths = client.DefaultPathConfigs(cfg)
+	// hc := tu.NewTestWebClient()
+	o := oo.New()
+	backendClient, err := NewClient("test", o, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
+	o.Paths = client.DefaultPathConfigs(o)
 	r, err := http.NewRequest(http.MethodGet, "http://0/test", nil)
 	if err != nil {
 		t.Error(err)

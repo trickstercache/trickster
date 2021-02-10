@@ -16,43 +16,35 @@
 
 package backends
 
-import (
-	"net/http"
+// type TestClient struct {
+// }
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
-)
+// func (c *TestClient) Configuration() *oo.Options {
+// 	return &oo.Options{}
+// }
 
-type TestClient struct {
-}
+// func (c *TestClient) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
+// 	return nil
+// }
 
-func (c *TestClient) Configuration() *oo.Options {
-	return &oo.Options{}
-}
+// func (c *TestClient) HTTPClient() *http.Client {
+// 	return nil
+// }
 
-func (c *TestClient) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
-	return nil
-}
+// func (c *TestClient) Handlers() map[string]http.Handler {
+// 	return nil
+// }
 
-func (c *TestClient) HTTPClient() *http.Client {
-	return nil
-}
+// func (c *TestClient) Name() string {
+// 	return "test"
+// }
 
-func (c *TestClient) Handlers() map[string]http.Handler {
-	return nil
-}
+// func (c *TestClient) Router() http.Handler {
+// 	return http.NewServeMux()
+// }
 
-func (c *TestClient) Name() string {
-	return "test"
-}
+// func (c *TestClient) SetCache(cc cache.Cache) {}
 
-func (c *TestClient) Router() http.Handler {
-	return http.NewServeMux()
-}
-
-func (c *TestClient) SetCache(cc cache.Cache) {}
-
-func (c *TestClient) Cache() cache.Cache {
-	return nil
-}
+// func (c *TestClient) Cache() cache.Cache {
+// 	return nil
+// }

@@ -28,7 +28,8 @@ import (
 	"strings"
 	"time"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	"github.com/tricksterproxy/trickster/pkg/backends"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
@@ -67,48 +68,42 @@ const (
 
 // Client Implements Proxy Client Interface
 type TestClient struct {
-	name            string
-	config          *oo.Options
-	cache           cache.Cache
-	webClient       *http.Client
-	baseUpstreamURL *url.URL
-	healthURL       *url.URL
-	healthHeaders   http.Header
-	healthMethod    string
-	router          http.Handler
+	backends.TimeseriesBackend
+	healthURL     *url.URL
+	healthHeaders http.Header
+	healthMethod  string
 
 	fftime          time.Time
 	InstantCacheKey string
 	RangeCacheKey   string
-
-	handlers           map[string]http.Handler
-	handlersRegistered bool
-	modeler            timeseries.Modeler
 }
 
-func (c *TestClient) registerHandlers() {
-	c.handlersRegistered = true
-	c.handlers = make(map[string]http.Handler)
-	// This is the registry of handlers that Trickster supports for Prometheus,
-	// and are able to be referenced by name (map key) in Config Files
-	c.handlers["health"] = http.HandlerFunc(c.HealthHandler)
-	c.handlers[mnQueryRange] = http.HandlerFunc(c.QueryRangeHandler)
-	c.handlers[mnQuery] = http.HandlerFunc(c.QueryHandler)
-	c.handlers[mnSeries] = http.HandlerFunc(c.SeriesHandler)
-	c.handlers["proxycache"] = http.HandlerFunc(c.QueryHandler)
-	c.handlers["proxy"] = http.HandlerFunc(c.ProxyHandler)
+func NewTestClient(name string, o *bo.Options, router http.Handler,
+	cache cache.Cache, modeler *timeseries.Modeler) (backends.TimeseriesBackend, error) {
+
+	c := &TestClient{}
+	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, modeler)
+	c.TimeseriesBackend = b
+	return c, err
 }
 
-// Handlers returns a map of the HTTP Handlers the client has registered
-func (c *TestClient) Handlers() map[string]http.Handler {
-	if !c.handlersRegistered {
-		c.registerHandlers()
-	}
-	return c.handlers
+func (c *TestClient) RegisterHandlers(map[string]http.Handler) {
+
+	c.TimeseriesBackend.RegisterHandlers(
+		map[string]http.Handler{
+			"health":     http.HandlerFunc(c.HealthHandler),
+			mnQueryRange: http.HandlerFunc(c.QueryRangeHandler),
+			mnQuery:      http.HandlerFunc(c.QueryHandler),
+			mnSeries:     http.HandlerFunc(c.SeriesHandler),
+			"proxycache": http.HandlerFunc(c.QueryHandler),
+			"proxy":      http.HandlerFunc(c.ProxyHandler),
+		},
+	)
+
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *TestClient) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
+func (c *TestClient) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 
 	paths := map[string]*po.Options{
 
@@ -215,41 +210,11 @@ func (c *TestClient) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
 		},
 	}
 
-	oc.Paths = paths
-	oc.FastForwardPath = paths[APIPath+mnQuery]
+	o.Paths = paths
+	o.FastForwardPath = paths[APIPath+mnQuery]
 
 	return paths
 
-}
-
-// Configuration returns the upstream Configuration for this Client
-func (c *TestClient) Configuration() *oo.Options {
-	return c.config
-}
-
-// SetCache sets the cache object the client will use for caching origin data
-func (c *TestClient) SetCache(cc cache.Cache) {
-	c.cache = cc
-}
-
-// HTTPClient returns the HTTP Client for this Backend
-func (c *TestClient) HTTPClient() *http.Client {
-	return c.webClient
-}
-
-// Name returns the name of the upstream Configuration proxied by the Client
-func (c *TestClient) Name() string {
-	return c.name
-}
-
-// Cache returns and handle to the Cache instance used by the Client
-func (c *TestClient) Cache() cache.Cache {
-	return c.cache
-}
-
-// Router returns the http.Handler that handles request routing for this Client
-func (c *TestClient) Router() http.Handler {
-	return c.router
 }
 
 // parseTime converts a query time URL parameter to time.Time.
@@ -334,10 +299,11 @@ func (c *TestClient) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRange
 
 // BaseURL returns a URL in the form of scheme://host/path based on the proxy configuration
 func (c *TestClient) BaseURL() *url.URL {
+	o := c.Configuration()
 	u := &url.URL{}
-	u.Scheme = c.config.Scheme
-	u.Host = c.config.Host
-	u.Path = c.config.PathPrefix
+	u.Scheme = o.Scheme
+	u.Host = o.Host
+	u.Path = o.PathPrefix
 	return u
 }
 
@@ -345,8 +311,8 @@ func (c *TestClient) BaseURL() *url.URL {
 func (c *TestClient) BuildUpstreamURL(r *http.Request) *url.URL {
 	u := c.BaseURL()
 
-	if strings.HasPrefix(r.URL.Path, "/"+c.name+"/") {
-		u.Path += strings.Replace(r.URL.Path, "/"+c.name+"/", "/", 1)
+	if strings.HasPrefix(r.URL.Path, "/"+c.Name()+"/") {
+		u.Path += strings.Replace(r.URL.Path, "/"+c.Name()+"/", "/", 1)
 	} else {
 		u.Path += r.URL.Path
 	}

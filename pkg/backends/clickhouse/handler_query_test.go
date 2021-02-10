@@ -43,22 +43,33 @@ func testNonSelectQuery() string {
 
 func TestQueryHandler(t *testing.T) {
 
-	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs,
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
 		200, "{}", nil, "clickhouse", "/?"+testRawQuery(), "debug")
 	ctx := r.Context()
 	rsc := request.GetResources(r)
-	rsc.BackendClient = client
-	client.config = rsc.BackendOptions
-	client.webClient = hc
-	client.config.HTTPClient = hc
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
+
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	rsc.BackendClient = backendClient
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+
+	// client.webClient = hc
+	// client.config.HTTPClient = hc
+	// client.baseUpstreamURL, _ = url.Parse(ts.URL)
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, ok := client.config.Paths["/"]
+	client := backendClient.(*Client)
+	_, ok := client.Configuration().Paths["/"]
 	if !ok {
 		t.Errorf("could not find path config named %s", "/")
 	}

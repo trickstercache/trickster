@@ -66,14 +66,18 @@ type backend struct {
 	registrar          func(map[string]http.Handler)
 }
 
+// Registrar defines a function that registers http.Handlers with a router
 type Registrar func(map[string]http.Handler)
 
-func NewBackend(name string, o *bo.Options, registrar Registrar,
+// New returns a new Backend
+func New(name string, o *bo.Options, registrar Registrar,
 	router http.Handler, cache cache.Cache) (Backend, error) {
 
 	c, err := proxy.NewHTTPClient(o)
-	bur := urls.FromParts(o.Scheme, o.Host, o.PathPrefix, "", "")
-
+	var bur *url.URL
+	if o != nil {
+		bur = urls.FromParts(o.Scheme, o.Host, o.PathPrefix, "", "")
+	}
 	return &backend{name: name, config: o, router: router, cache: cache,
 		webClient: c, baseUpstreamURL: bur, registrar: registrar}, err
 
@@ -114,13 +118,11 @@ func (b *backend) HTTPClient() *http.Client {
 }
 
 func (b *backend) Handlers() map[string]http.Handler {
-
 	if !b.handlersRegistered {
 		if b.registrar != nil {
 			b.registrar(nil)
 		}
 	}
-
 	return b.handlers
 }
 

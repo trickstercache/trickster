@@ -363,7 +363,12 @@ func TestRegisterPathRoutes(t *testing.T) {
 
 func TestValidateRuleClients(t *testing.T) {
 
-	var cl = backends.Backends{"test": &rule.Client{}}
+	c, err := rule.NewClient("test", nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	var cl = backends.Backends{"test": c}
 	rule.ValidateOptions(cl, nil)
 
 	conf, _, err := config.Load("trickster", "test",

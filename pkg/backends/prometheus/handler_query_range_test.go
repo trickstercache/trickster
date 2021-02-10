@@ -18,7 +18,6 @@ package prometheus
 
 import (
 	"io/ioutil"
-	"net/url"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
@@ -27,16 +26,20 @@ import (
 
 func TestQueryRangeHandler(t *testing.T) {
 
-	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("",
-		client.DefaultPathConfigs, 200, "{}", nil, "prometheus",
-		"/query_range?q=up&start=0&end=900&step=15", "debug")
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200, "{}",
+		nil, "prometheus", "/query_range?q=up&start=0&end=900&step=15", "debug")
 	rsc := request.GetResources(r)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 	rsc.BackendClient = client
-	client.config = rsc.BackendOptions
-	client.webClient = hc
-	client.config.HTTPClient = hc
-	client.BaseUpstreamURL, _ = url.Parse(ts.URL)
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)

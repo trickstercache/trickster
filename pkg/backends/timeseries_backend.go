@@ -72,7 +72,7 @@ type timeseriesBackend struct {
 // NewTimeseriesBackend returns a new BaseTimeseriesBackend Instance
 func NewTimeseriesBackend(name string, o *bo.Options, registrar Registrar, router http.Handler,
 	cache cache.Cache, modeler *timeseries.Modeler) (TimeseriesBackend, error) {
-	backend, err := NewBackend(name, o, registrar, router, cache)
+	backend, err := New(name, o, registrar, router, cache)
 	return &timeseriesBackend{Backend: backend, modeler: modeler}, err
 }
 

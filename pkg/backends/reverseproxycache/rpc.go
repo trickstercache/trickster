@@ -40,7 +40,7 @@ type Client struct {
 func NewClient(name string, o *bo.Options, router http.Handler,
 	cache cache.Cache) (backends.Backend, error) {
 	c := &Client{}
-	b, err := backends.NewBackend(name, o, c.RegisterHandlers, router, cache)
+	b, err := backends.New(name, o, c.RegisterHandlers, router, cache)
 	c.Backend = b
 	return c, err
 }

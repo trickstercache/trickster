@@ -18,7 +18,6 @@ package influxdb
 
 import (
 	"io/ioutil"
-	"net/url"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
@@ -27,18 +26,30 @@ import (
 
 func TestProxyHandler(t *testing.T) {
 
-	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "test", nil, "influxdb", "/", "debug")
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200, "test",
+		nil, "influxdb", "/", "debug")
+
 	rsc := request.GetResources(r)
-	client.config = rsc.BackendOptions
-	client.webClient = hc
-	client.config.HTTPClient = hc
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
+
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
 	}
 
+	client := backendClient.(*Client)
+	rsc.BackendClient = client
 	client.ProxyHandler(w, r)
 	resp := w.Result()
 

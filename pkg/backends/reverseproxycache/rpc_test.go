@@ -28,11 +28,14 @@ func TestReverseProxyCacheClientInterfacing(t *testing.T) {
 	// this test ensures the client will properly conform to the
 	// Client interface
 
-	c := &Client{name: "test"}
-	var oc backends.Backend = c
+	c, err := NewClient("test", nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	var o backends.Backend = c
 
-	if oc.Name() != "test" {
-		t.Errorf("expected %s got %s", "test", oc.Name())
+	if o.Name() != "test" {
+		t.Errorf("expected %s got %s", "test", o.Name())
 	}
 
 }
@@ -44,66 +47,5 @@ func TestNewNewClient(t *testing.T) {
 	}
 	if c == nil {
 		t.Errorf("expected client named %s", "test")
-	}
-}
-
-func TestHTTPClient(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	if c.HTTPClient() == nil {
-		t.Errorf("expected HTTPClient for RPC client named %s", "test")
-	}
-}
-
-func TestGetCache(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	if c.Cache() != nil {
-		t.Errorf("expected nil Cache for RPC client named %s", "test")
-	}
-}
-
-func TestClientName(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	if c.Name() != "test" {
-		t.Errorf("expected RPC client named %s", "test")
-	}
-}
-
-func TestSetCache(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	c.SetCache(nil)
-	if c.Cache() != nil {
-		t.Errorf("expected nil cache for client named %s", "test")
-	}
-}
-
-func TestConfiguration(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	if c.Configuration() == nil {
-		t.Error("expected non-nil config")
-	}
-}
-
-func TestRouter(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	if c.Router() != nil {
-		t.Error("expected nil router")
 	}
 }

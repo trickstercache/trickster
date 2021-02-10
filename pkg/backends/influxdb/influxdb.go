@@ -39,13 +39,15 @@ type Client struct {
 	healthHeaders    http.Header
 	healthMethod     string
 	healthBody       io.Reader
-	healthHeaderLock *sync.Mutex
+	healthHeaderLock sync.Mutex
 }
 
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
-	cache cache.Cache, modeler *timeseries.Modeler) (backends.Backend, error) {
-	o.FastForwardDisable = true
+	cache cache.Cache, modeler *timeseries.Modeler) (backends.TimeseriesBackend, error) {
+	if o != nil {
+		o.FastForwardDisable = true
+	}
 	c := &Client{}
 	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, modeler)
 	c.TimeseriesBackend = b

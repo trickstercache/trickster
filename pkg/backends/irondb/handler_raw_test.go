@@ -19,7 +19,6 @@ package irondb
 import (
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"testing"
 
 	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
@@ -29,20 +28,26 @@ import (
 
 func TestRawHandler(t *testing.T) {
 
-	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs,
-		200, "{}", nil, "irondb", "/raw/00112233-4455-6677-8899-aabbccddeeff/metric"+
-			"?start_ts=0&end_ts=900", "debug")
-	rsc := request.GetResources(r)
-	rsc.BackendClient = client
-	client.config = rsc.BackendOptions
-	client.webClient = hc
-	client.config.HTTPClient = hc
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
-	defer ts.Close()
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
+	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
+		200, "{}", nil, "irondb", "/raw/00112233-4455-6677-8899-aabbccddeeff/metric"+
+			"?start_ts=0&end_ts=900", "debug")
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer ts.Close()
+	}
+	rsc := request.GetResources(r)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
+	rsc.BackendClient = client
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
 	client.RawHandler(w, r)
 	resp := w.Result()
@@ -65,11 +70,15 @@ func TestRawHandler(t *testing.T) {
 func TestRawHandlerParseTimeRangeQuery(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
-	hc := tu.NewTestWebClient()
-	cfg := oo.New()
-	client := &Client{name: "test", webClient: hc, config: cfg}
+	//hc := tu.NewTestWebClient()
+	o := oo.New()
+	backendClient, err := NewClient("test", o, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
 
-	cfg.Paths = client.DefaultPathConfigs(cfg)
+	o.Paths = client.DefaultPathConfigs(o)
 	r, err := http.NewRequest(http.MethodGet, "http://0/raw/00112233-4455-6677-8899-aabbccddeeff/metric", nil)
 	if err != nil {
 		t.Error(err)

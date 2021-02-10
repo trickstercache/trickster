@@ -38,7 +38,7 @@ type Client struct {
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler) (backends.Backend, error) {
 	c := &Client{}
-	b, err := backends.NewBackend(name, o, c.RegisterHandlers, router, nil)
+	b, err := backends.New(name, o, c.RegisterHandlers, router, nil)
 	c.Backend = b
 	return c, err
 }

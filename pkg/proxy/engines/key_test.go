@@ -213,16 +213,17 @@ func exampleKeyHasher(path string, params url.Values, headers http.Header,
 
 func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 
-	client := &TestClient{
-		config: &oo.Options{
-			Paths: map[string]*po.Options{
-				"root": {
-					Path:            "/",
-					CacheKeyParams:  []string{"query", "step", "time"},
-					CacheKeyHeaders: []string{"X-Test-Header"},
-				},
+	client, err := NewTestClient("test", &oo.Options{
+		Paths: map[string]*po.Options{
+			"root": {
+				Path:            "/",
+				CacheKeyParams:  []string{"query", "step", "time"},
+				CacheKeyHeaders: []string{"X-Test-Header"},
 			},
 		},
+	}, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
 	}
 
 	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
@@ -245,16 +246,17 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 
 func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
 
-	client := &TestClient{
-		config: &oo.Options{
-			Paths: map[string]*po.Options{
-				"root": {
-					Path:            "/",
-					CacheKeyParams:  []string{"query", "step", "time"},
-					CacheKeyHeaders: []string{},
-				},
+	client, err := NewTestClient("test", &oo.Options{
+		Paths: map[string]*po.Options{
+			"root": {
+				Path:            "/",
+				CacheKeyParams:  []string{"query", "step", "time"},
+				CacheKeyHeaders: []string{},
 			},
 		},
+	}, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
 	}
 
 	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)

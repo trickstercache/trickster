@@ -43,13 +43,13 @@ type Client struct {
 
 // NewClient returns a new Rules Router client reference
 func NewClient(name string, o *bo.Options, router http.Handler,
-	clients backends.Backends) (*Client, error) {
+	clients backends.Backends) (backends.Backend, error) {
 
 	c := &Client{
 		clients:    clients,
 		pathPrefix: "/" + name,
 	}
-	b, err := backends.NewBackend(name, o, c.RegisterHandlers, router, nil)
+	b, err := backends.New(name, o, c.RegisterHandlers, router, nil)
 	c.Backend = b
 	return c, err
 
@@ -81,13 +81,16 @@ func ValidateOptions(clients backends.Backends,
 // could not be validated
 func (rc Clients) validate(rwi map[string]rewriter.RewriteInstructions) error {
 	for _, c := range rc {
+		if c == nil {
+			return errors.ErrInvalidRuleOptions
+		}
 		cfg := c.Configuration()
-		if c != nil && cfg != nil {
+		if cfg != nil {
 			if err := c.parseOptions(cfg.RuleOptions, rwi); err != nil {
 				return err
 			}
 		} else {
-			return errors.ErrInvalidRuleOptions
+
 		}
 	}
 	return nil

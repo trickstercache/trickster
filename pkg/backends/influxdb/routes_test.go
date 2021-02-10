@@ -24,39 +24,45 @@ import (
 )
 
 func TestRegisterHandlers(t *testing.T) {
-	c := &Client{}
-	c.registerHandlers()
-	if _, ok := c.handlers[mnQuery]; !ok {
-		t.Errorf("expected to find handler named: %s", mnQuery)
+	c, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
 	}
-}
-
-func TestHandlers(t *testing.T) {
-	c := &Client{}
-	m := c.Handlers()
-	if _, ok := m[mnQuery]; !ok {
+	c.RegisterHandlers(nil)
+	if _, ok := c.Handlers()[mnQuery]; !ok {
 		t.Errorf("expected to find handler named: %s", mnQuery)
 	}
 }
 
 func TestDefaultPathConfigs(t *testing.T) {
 
-	client := &Client{name: "test"}
-	ts, _, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 204, "", nil, "influxdb", "/", "debug")
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	ts, _, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 204, "", nil, "influxdb", "/", "debug")
 	rsc := request.GetResources(r)
-	client.config = rsc.BackendOptions
-	client.webClient = hc
+
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	client := backendClient.(*Client)
+	rsc.BackendClient = client
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 	defer ts.Close()
 	if err != nil {
 		t.Error(err)
 	}
 
-	if _, ok := client.config.Paths["/"]; !ok {
+	if _, ok := rsc.BackendOptions.Paths["/"]; !ok {
 		t.Errorf("expected to find path named: %s", "/")
 	}
 
 	const expectedLen = 2
-	if len(client.config.Paths) != expectedLen {
+	if len(rsc.BackendOptions.Paths) != expectedLen {
 		t.Errorf("expected ordered length to be: %d", expectedLen)
 	}
 

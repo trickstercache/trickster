@@ -19,7 +19,6 @@ package irondb
 import (
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"testing"
 	"time"
 
@@ -32,21 +31,27 @@ import (
 
 func TestCAQLHandler(t *testing.T) {
 
-	client := &Client{name: "test"}
-	ts, w, r, hc, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200,
-		"{}", nil, "irondb", "/extension/lua/caql_v1"+
-			"?query=metric:average(%2200112233-4455-6677-8899-aabbccddeeff%22,"+
-			"%22metric%22)&start=0&end=900&period=300", "debug")
-	rsc := request.GetResources(r)
-	rsc.BackendClient = client
-	client.config = rsc.BackendOptions
-	client.webClient = hc
-	client.config.HTTPClient = hc
-	client.baseUpstreamURL, _ = url.Parse(ts.URL)
-	defer ts.Close()
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
+	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
+		200, "{}", nil, "irondb", "/extension/lua/caql_v1"+
+			"?query=metric:average(%2200112233-4455-6677-8899-aabbccddeeff%22,"+
+			"%22metric%22)&start=0&end=900&period=300", "debug")
+	if err != nil {
+		t.Error(err)
+	} else {
+		defer ts.Close()
+	}
+	rsc := request.GetResources(r)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
+	rsc.BackendClient = client
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
 	client.CAQLHandler(w, r)
 	resp := w.Result()
@@ -68,8 +73,13 @@ func TestCAQLHandler(t *testing.T) {
 
 func TestCaqlHandlerSetExtent(t *testing.T) {
 
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
+
 	// provide bad URL with no TimeRange query params
-	client := &Client{name: "test"}
 	cfg := oo.New()
 	cfg.HTTPClient = tu.NewTestWebClient()
 	cfg.Paths = client.DefaultPathConfigs(cfg)
@@ -95,8 +105,12 @@ func TestCaqlHandlerSetExtent(t *testing.T) {
 
 func TestCaqlHandlerParseTimeRangeQuery(t *testing.T) {
 
-	// provide bad URL with no TimeRange query params
-	client := &Client{name: "test"}
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
+
 	cfg := oo.New()
 	cfg.HTTPClient = tu.NewTestWebClient()
 	cfg.Paths = client.DefaultPathConfigs(cfg)
@@ -183,7 +197,11 @@ func TestCaqlHandlerParseTimeRangeQuery(t *testing.T) {
 
 func TestCaqlHandlerFastForwardRequestError(t *testing.T) {
 
-	client := &Client{name: "test"}
+	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	client := backendClient.(*Client)
 	_, _, r, _, err := tu.NewTestInstance("", client.DefaultPathConfigs, 200, "{}",
 		nil, "irondb", "/extension/lua/caql_v1", "debug")
 	if err != nil {

@@ -54,14 +54,23 @@ func setupTestHarnessOPCByType(
 	file, serverType, path, body string, code int, headers map[string]string,
 ) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
 
-	client := &TestClient{}
-	ts, w, r, hc, err := tu.NewTestInstance(file, client.DefaultPathConfigs,
+	backendClient, err := NewTestClient("test", nil, nil, nil, nil)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
+	}
+	ts, w, r, _, err := tu.NewTestInstance(file, backendClient.DefaultPathConfigs,
 		code, body, headers, serverType, path, "debug")
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
 	r.RequestURI = ""
 	rsc := request.GetResources(r)
+	backendClient, err = NewTestClient("test", rsc.BackendOptions, nil, rsc.CacheClient, nil)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
+	}
+	client := backendClient.(*TestClient)
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 	rsc.BackendClient = client
 	rsc.Tracer = tu.NewTestTracer()
 	pc := rsc.PathConfig
@@ -69,14 +78,6 @@ func setupTestHarnessOPCByType(
 	if pc == nil {
 		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/")
 	}
-
-	oc := rsc.BackendOptions
-	cc := rsc.CacheClient
-	oc.HTTPClient = hc
-
-	client.cache = cc
-	client.webClient = hc
-	client.config = oc
 
 	pc.CacheKeyParams = []string{"rangeKey", "instantKey"}
 
@@ -86,14 +87,22 @@ func setupTestHarnessOPCByType(
 func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]string) (*httptest.Server,
 	*httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
 
-	client := &TestClient{}
-	ts, w, r, hc, err := tu.NewTestInstance(file, client.DefaultPathConfigs, code, body, headers,
+	backendClient, err := NewTestClient("test", nil, nil, nil, nil)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
+	}
+	ts, w, r, _, err := tu.NewTestInstance(file, backendClient.DefaultPathConfigs, code, body, headers,
 		"prometheus", "/prometheus/api/v1/query", "debug")
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
-
 	rsc := request.GetResources(r)
+	backendClient, err = NewTestClient("test", rsc.BackendOptions, nil, rsc.CacheClient, nil)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
+	}
+	client := backendClient.(*TestClient)
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 	rsc.BackendClient = client
 	rsc.Tracer = tu.NewTestTracer()
 
@@ -105,14 +114,6 @@ func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]
 
 	pc.CollapsedForwardingName = "progressive"
 	pc.CollapsedForwardingType = forwarding.CFTypeProgressive
-
-	oc := rsc.BackendOptions
-	cc := rsc.CacheClient
-
-	oc.HTTPClient = hc
-	client.cache = cc
-	client.webClient = hc
-	client.config = oc
 
 	pc.CacheKeyParams = []string{"rangeKey", "instantKey"}
 
