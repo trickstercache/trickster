@@ -19,7 +19,6 @@ package healthcheck
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -70,7 +69,7 @@ func newTarget(ctx context.Context,
 	logger interface{}) (*target, error) {
 
 	if o == nil {
-		return nil, errors.New("no health check options provided")
+		return nil, ho.ErrNoOptionsProvided
 	}
 	var rd io.Reader
 	if o.Body != "" {

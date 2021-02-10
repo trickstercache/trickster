@@ -123,34 +123,3 @@ func (hc *healthChecker) Probe(name string) *Status {
 func (hc *healthChecker) Statuses() StatusLookup {
 	return hc.statuses
 }
-
-// // Start validates the Health Check Options and starts checking any intervaled targets
-// func Start(ho *Options, logger interface{}) (StatusLookup, error) {
-// 	sl := make(StatusLookup)
-
-// 		method, u, h, body := v.HealthCheckRequestParts()
-// 		var eh http.Header
-// 		if len(oo.HealthCheckExpectedHeaders) > 0 {
-// 			eh = headers.Lookup(oo.HealthCheckExpectedHeaders).ToHeader()
-// 		}
-// 		d := time.Duration(oo.HealthCheckIntervalMS) * time.Millisecond
-// 		// if oo.HealthCheckHost == "" {
-// 		// 	oo.HealthCheckHost = oo.Host
-// 		// }
-// 		t := NewTarget(
-// 			context.Background(),
-// 			k, method, u,
-// 			body,
-// 			oo.HealthCheckExpectedBody, oo.HealthCheckExpectedCodes,
-// 			3, 3,
-// 			d, h, eh, oo.HTTPClient, logger,
-// 		)
-// 		// only start the health checker for this target if the user has indicated
-// 		// an interval > 0
-// 		if d > 0 {
-// 			t.Start()
-// 		}
-// 		sl[k] = t.status
-// 	}
-// 	return sl, nil
-// }

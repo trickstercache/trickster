@@ -34,7 +34,7 @@ func (b Backends) StartHealthChecks(logger interface{}) (healthcheck.HealthCheck
 	hc := healthcheck.New()
 	for k, c := range b {
 		bo := c.Configuration()
-		if IsVirtualBackend(bo.Provider) || k == "frontend" {
+		if IsVirtual(bo.Provider) || k == "frontend" {
 			continue
 		}
 		hco := bo.HealthCheck
@@ -42,11 +42,12 @@ func (b Backends) StartHealthChecks(logger interface{}) (healthcheck.HealthCheck
 			continue
 		}
 		bo.HealthCheck = c.DefaultHealthCheckConfig()
-		bo.HealthCheck.Overlay(k, hco)
-		st, err := hc.Register(k, bo.Provider, bo.HealthCheck, c.HTTPClient(), logger)
-		if err != nil {
-			return nil, err
+		if bo.HealthCheck == nil {
+			bo.HealthCheck = hco
+		} else {
+			bo.HealthCheck.Overlay(k, hco)
 		}
+		st, _ := hc.Register(k, bo.Provider, bo.HealthCheck, c.HTTPClient(), logger)
 		c.SetHealthCheckProbe(st.Prober())
 	}
 	return hc, nil
@@ -77,8 +78,8 @@ func (b Backends) GetRouter(backendName string) http.Handler {
 	return nil
 }
 
-// IsVirtualBackend returns true if the backend is a virtual type (e.g., ones that do not
+// IsVirtual returns true if the backend is a virtual type (e.g., ones that do not
 // make an outbound http request, but instead front to other backends)
-func IsVirtualBackend(provider string) bool {
+func IsVirtual(provider string) bool {
 	return provider == "alb" || provider == "rule"
 }

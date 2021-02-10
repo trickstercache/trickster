@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 )
 
@@ -57,4 +58,70 @@ func TestBackends(t *testing.T) {
 	if r != nil {
 		t.Error("expected nil router")
 	}
+}
+
+func TestIsVirtual(t *testing.T) {
+
+	if ok := IsVirtual("rule"); !ok {
+		t.Error("expected true")
+	}
+
+	if ok := IsVirtual("prometheus"); ok {
+		t.Error("expected false")
+	}
+
+}
+
+func TestStartHealthChecks(t *testing.T) {
+
+	// 1: rule / Virtual provider
+	o1 := bo.New()
+	o1.Provider = "rule"
+	c1, _ := New("test1", o1, nil, mux.NewRouter(), nil)
+
+	// 2: non-virtual provider with no health check options
+	o2 := bo.New()
+	c2, _ := New("test2", o2, nil, mux.NewRouter(), nil)
+
+	b := Backends{"test1": c1}
+	_, err := b.StartHealthChecks(nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	b = Backends{"test1": c1, "test2": c2}
+	_, err = b.StartHealthChecks(nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	o2.HealthCheck = nil
+	b = Backends{"test1": c1, "test2": c2}
+	_, err = b.StartHealthChecks(nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	o2.HealthCheck = ho.New()
+	b = Backends{"test1": c1, "test2": c2}
+	_, err = b.StartHealthChecks(nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	c2a := &testBackend{Backend: c2}
+	b = Backends{"test1": c1, "test2": c2a}
+	_, err = b.StartHealthChecks(nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+type testBackend struct {
+	Backend
+}
+
+func (tb *testBackend) DefaultHealthCheckConfig() *ho.Options {
+	return ho.New()
 }
