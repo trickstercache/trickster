@@ -37,9 +37,6 @@ var _ backends.TimeseriesBackend = (*Client)(nil)
 // Client Implements the Proxy Client Interface
 type Client struct {
 	backends.TimeseriesBackend
-	healthURL     *url.URL
-	healthMethod  string
-	healthHeaders http.Header
 }
 
 // NewClient returns a new Client Instance

@@ -21,11 +21,36 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 )
 
 // Backends represents a map of Backends keyed by Name
 type Backends map[string]Backend
+
+// StartHealthChecks iterates the backends to fully configure health checkers
+// and start up any intervaled health checks
+func (b Backends) StartHealthChecks(logger interface{}) (healthcheck.HealthChecker, error) {
+	hc := healthcheck.New()
+	for k, c := range b {
+		bo := c.Configuration()
+		if IsVirtualBackend(bo.Provider) || k == "frontend" {
+			continue
+		}
+		hco := bo.HealthCheck
+		if hco == nil {
+			continue
+		}
+		bo.HealthCheck = c.DefaultHealthCheckConfig()
+		bo.HealthCheck.Overlay(k, hco)
+		st, err := hc.Register(k, bo.Provider, bo.HealthCheck, c.HTTPClient(), logger)
+		if err != nil {
+			return nil, err
+		}
+		c.SetHealthCheckProbe(st.Prober())
+	}
+	return hc, nil
+}
 
 // Get returns the named origin
 func (b Backends) Get(backendName string) Backend {
@@ -50,4 +75,10 @@ func (b Backends) GetRouter(backendName string) http.Handler {
 		return c.Router()
 	}
 	return nil
+}
+
+// IsVirtualBackend returns true if the backend is a virtual type (e.g., ones that do not
+// make an outbound http request, but instead front to other backends)
+func IsVirtualBackend(provider string) bool {
+	return provider == "alb" || provider == "rule"
 }

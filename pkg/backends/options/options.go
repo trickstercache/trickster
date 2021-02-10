@@ -25,12 +25,12 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
 	ro "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	"github.com/tricksterproxy/trickster/pkg/cache/negative"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
@@ -65,14 +65,8 @@ type Options struct {
 	CacheName string `toml:"cache_name"`
 	// CacheKeyPrefix defines the cache key prefix the backend will use when writing objects to the cache
 	CacheKeyPrefix string `toml:"cache_key_prefix"`
-	// HealthCheckUpstreamPath provides the URL path for the upstream health check
-	HealthCheckUpstreamPath string `toml:"health_check_upstream_path"`
-	// HealthCheckVerb provides the HTTP verb to use when making an upstream health check
-	HealthCheckVerb string `toml:"health_check_verb"`
-	// HealthCheckQuery provides the HTTP query parameters to use when making an upstream health check
-	HealthCheckQuery string `toml:"health_check_query"`
-	// HealthCheckHeaders provides the HTTP Headers to apply when making an upstream health check
-	HealthCheckHeaders map[string]string `toml:"health_check_headers"`
+	// HealthCheck is the health check options reference for this backend
+	HealthCheck *ho.Options `toml:"healthcheck"`
 	// Object Proxy Cache and Delta Proxy Cache Configurations
 	// TimeseriesRetentionFactor limits the maximum the number of chronological
 	// timestamps worth of data to store in cache for each query
@@ -191,10 +185,7 @@ func New() *Options {
 		FastForwardTTL:               d.DefaultFastForwardTTLMS * time.Millisecond,
 		FastForwardTTLMS:             d.DefaultFastForwardTTLMS,
 		ForwardedHeaders:             d.DefaultForwardedHeaders,
-		HealthCheckHeaders:           make(map[string]string),
-		HealthCheckQuery:             d.DefaultHealthCheckQuery,
-		HealthCheckUpstreamPath:      d.DefaultHealthCheckPath,
-		HealthCheckVerb:              d.DefaultHealthCheckVerb,
+		HealthCheck:                  ho.New(),
 		KeepAliveTimeoutMS:           d.DefaultKeepAliveTimeoutMS,
 		MaxIdleConns:                 d.DefaultMaxIdleConns,
 		MaxObjectSizeBytes:           d.DefaultMaxObjectSizeBytes,
@@ -230,9 +221,6 @@ func (oc *Options) Clone() *Options {
 	o.FastForwardTTL = oc.FastForwardTTL
 	o.FastForwardTTLMS = oc.FastForwardTTLMS
 	o.ForwardedHeaders = oc.ForwardedHeaders
-	o.HealthCheckUpstreamPath = oc.HealthCheckUpstreamPath
-	o.HealthCheckVerb = oc.HealthCheckVerb
-	o.HealthCheckQuery = oc.HealthCheckQuery
 	o.Host = oc.Host
 	o.Name = oc.Name
 	o.IsDefault = oc.IsDefault
@@ -261,6 +249,10 @@ func (oc *Options) Clone() *Options {
 
 	o.TracingConfigName = oc.TracingConfigName
 
+	if oc.HealthCheck != nil {
+		o.HealthCheck = oc.HealthCheck.Clone()
+	}
+
 	if oc.Hosts != nil {
 		o.Hosts = make([]string, len(oc.Hosts))
 		copy(o.Hosts, oc.Hosts)
@@ -281,10 +273,6 @@ func (oc *Options) Clone() *Options {
 		for k := range oc.CompressableTypes {
 			o.CompressableTypes[k] = true
 		}
-	}
-
-	if oc.HealthCheckHeaders != nil {
-		o.HealthCheckHeaders = headers.Lookup(oc.HealthCheckHeaders).Clone()
 	}
 
 	o.Paths = make(map[string]*po.Options)
@@ -561,20 +549,13 @@ func ProcessTOML(
 		oc.TracingConfigName = options.TracingConfigName
 	}
 
-	if metadata.IsDefined("backends", name, "health_check_upstream_path") {
-		oc.HealthCheckUpstreamPath = options.HealthCheckUpstreamPath
-	}
-
-	if metadata.IsDefined("backends", name, "health_check_verb") {
-		oc.HealthCheckVerb = options.HealthCheckVerb
-	}
-
-	if metadata.IsDefined("backends", name, "health_check_query") {
-		oc.HealthCheckQuery = options.HealthCheckQuery
-	}
-
-	if metadata.IsDefined("backends", name, "health_check_headers") {
-		oc.HealthCheckHeaders = options.HealthCheckHeaders
+	if metadata.IsDefined("backends", name, "healthcheck") {
+		oc.HealthCheck = options.HealthCheck
+		// because each backend provider has different default health check options, these
+		// provided options will be overlaid onto the defaults during registration
+		if oc.HealthCheck != nil {
+			oc.HealthCheck.SetMetaData(metadata)
+		}
 	}
 
 	if metadata.IsDefined("backends", name, "max_object_size_bytes") {

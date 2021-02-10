@@ -121,12 +121,18 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *tl.Logge
 	var caches = applyCachingConfig(conf, oldConf, log, oldCaches)
 	rh := handlers.ReloadHandleFunc(runConfig, conf, wg, log, caches, args)
 
-	_, err = routing.RegisterProxyRoutes(conf, router, caches, tracers, log, false)
+	o, err := routing.RegisterProxyRoutes(conf, router, caches, tracers, log, false)
 	if err != nil {
 		handleStartupIssue("route registration failed", tl.Pairs{"detail": err.Error()},
 			log, errorsFatal)
 		return err
 	}
+
+	hc, err := o.StartHealthChecks(log)
+	if err != nil {
+		return err
+	}
+	routing.RegisterHealthHandler(router, conf.Main.HealthHandlerPath, hc)
 
 	applyListenerConfigs(conf, oldConf, router, http.HandlerFunc(rh), log, tracers)
 

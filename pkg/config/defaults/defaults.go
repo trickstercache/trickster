@@ -17,6 +17,8 @@
 package defaults
 
 import (
+	"net/http"
+
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	"github.com/tricksterproxy/trickster/pkg/cache/providers"
 )
@@ -120,11 +122,17 @@ const (
 	// DefaultMaxIdleConns is the default number of Idle Connections in Backends' upstream client pools
 	DefaultMaxIdleConns = 20
 	// DefaultHealthCheckPath is the default value (noop) for Backends' Health Check Path
-	DefaultHealthCheckPath = "-"
+	DefaultHealthCheckPath = "/"
 	// DefaultHealthCheckQuery is the default value (noop) for Backends' Health Check Query Parameters
-	DefaultHealthCheckQuery = "-"
+	DefaultHealthCheckQuery = ""
 	// DefaultHealthCheckVerb is the default value (noop) for Backends' Health Check Verb
-	DefaultHealthCheckVerb = "-"
+	DefaultHealthCheckVerb = http.MethodGet
+	// DefaultHealthCheckRecoveryThreshold defines the default number of successful health checks
+	// following failure to indicate true recovery
+	DefaultHealthCheckRecoveryThreshold = 3
+	// DefaultHealthCheckFailureThreshold defines the default number of failed health checks
+	// following recovery or initial healthy to indicate true recovery
+	DefaultHealthCheckFailureThreshold = 3
 	// DefaultConfigHandlerPath is the default value for the Trickster Config Printout Handler path
 	DefaultConfigHandlerPath = "/trickster/config"
 	// DefaultPingHandlerPath is the default value for the Trickster Config Ping Handler path

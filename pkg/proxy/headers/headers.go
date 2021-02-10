@@ -128,6 +128,11 @@ const (
 	NameTrailer = "Trailer"
 	// NameUpgrade represents the HTTP Header Name of "Upgrade"
 	NameUpgrade = "Upgrade"
+
+	// NameTrkHCStatus represents the HTTP Header Name of "Trk-HC-Status"
+	NameTrkHCStatus = "Trk-HC-Status"
+	// NameTrkHCDetail represents the HTTP Header Name of "Trk-HC-Detail"
+	NameTrkHCDetail = "Trk-HC-Detail"
 )
 
 // Lookup represents a simple lookup for internal header manipulation

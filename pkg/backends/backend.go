@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
+	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy"
@@ -49,6 +51,12 @@ type Backend interface {
 	Cache() cache.Cache
 	// BaseUpstreamURL returns the base URL for upstream requests
 	BaseUpstreamURL() *url.URL
+	// SetHealthCheckProbe sets the Health Check Status Prober for the Client
+	SetHealthCheckProbe(healthcheck.DemandProbe)
+	// HealthHandler executes a Health Check Probe when called
+	HealthHandler(http.ResponseWriter, *http.Request)
+	// DefaultHealthCheckConfig returns the default HealthCHeck Config for the given Provider
+	DefaultHealthCheckConfig() *ho.Options
 }
 
 type backend struct {
@@ -58,9 +66,7 @@ type backend struct {
 	webClient          *http.Client
 	handlers           map[string]http.Handler
 	handlersRegistered bool
-	healthURL          *url.URL
-	healthHeaders      http.Header
-	healthMethod       string
+	healthProbe        healthcheck.DemandProbe
 	router             http.Handler
 	baseUpstreamURL    *url.URL
 	registrar          func(map[string]http.Handler)
@@ -107,11 +113,6 @@ func (b *backend) Cache() cache.Cache {
 	return b.cache
 }
 
-// DELETE AFTER interface is otherwise implemented
-func (b *backend) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
-	return nil
-}
-
 // HTTPClient returns the HTTP Client for this Backend
 func (b *backend) HTTPClient() *http.Client {
 	return b.webClient
@@ -138,4 +139,26 @@ func (b *backend) RegisterHandlers(h map[string]http.Handler) {
 		b.handlersRegistered = true
 		b.handlers = h
 	}
+}
+
+// SetHealthCheckProbe sets the Health Check Status Prober for the Client
+func (b *backend) SetHealthCheckProbe(p healthcheck.DemandProbe) {
+	b.healthProbe = p
+}
+
+// HealthHandler is the Health Check Handler for the backend
+func (b *backend) HealthHandler(w http.ResponseWriter, r *http.Request) {
+	if b.healthProbe != nil {
+		b.healthProbe(w)
+	}
+}
+
+// DefaultPathConfigs is a stub function and should be overriden by Backend implementations
+func (b *backend) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
+	return nil
+}
+
+// DefaultHealthCheckConfig is a stub function and should be overriden by Backend implementations
+func (b *backend) DefaultHealthCheckConfig() *ho.Options {
+	return nil
 }

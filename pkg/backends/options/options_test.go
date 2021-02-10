@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
 	ro "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
@@ -39,9 +40,9 @@ func TestClone(t *testing.T) {
 	o.Hosts = []string{"test"}
 	o.CacheName = "test"
 	o.CompressableTypes = map[string]bool{"test": true}
-	o.HealthCheckHeaders = map[string]string{"test": "test"}
 	o.Paths = map[string]*po.Options{"test": p}
 	o.NegativeCache = map[int]time.Duration{1: 1}
+	o.HealthCheck = &ho.Options{}
 	o.FastForwardPath = p
 	o.RuleOptions = &ro.Options{}
 	o2 := o.Clone()
@@ -51,7 +52,7 @@ func TestClone(t *testing.T) {
 
 }
 
-func TestValidateOriginName(t *testing.T) {
+func TestValidateBackendName(t *testing.T) {
 
 	err := ValidateBackendName("test")
 	if err != nil {
@@ -93,20 +94,5 @@ func TestValidateConfigMappings(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for invalid backend name")
 	}
-
-	// delete(oc, "frontend")
-	// oc.Provider = "rule"
-	// oc.RuleName = "invalid"
-	// err = c.validateConfigMappings()
-	// if err == nil {
-	// 	t.Error("expected error for invalid rule name")
-	// }
-
-	// toml = strings.Replace(
-	// 	toml+testRule,
-	// 	"    provider = 'test'",
-	// 	"    provider = 'rule'\n    rule_name = 'example'",
-	// 	-1,
-	// )
 
 }
