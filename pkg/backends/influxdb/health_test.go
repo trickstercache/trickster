@@ -16,146 +16,24 @@
 
 package influxdb
 
-// func TestHealthHandler(t *testing.T) {
+import (
+	"strings"
+	"testing"
 
-// 	backendClient, err := NewClient("test", nil, nil, nil, nil)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-// 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/health", "debug")
-// 	if err != nil {
-// 		t.Error(err)
-// 	} else {
-// 		defer ts.Close()
-// 	}
-// 	rsc := request.GetResources(r)
-// 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-// 	client := backendClient.(*Client)
-// 	rsc.BackendClient = client
-// 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+)
 
-// 	client.HealthHandler(w, r)
-// 	resp := w.Result()
+func TestDefaultHealthCheckConfig(t *testing.T) {
 
-// 	// it should return 200 OK
-// 	if resp.StatusCode != 200 {
-// 		t.Errorf("expected 200 got %d.", resp.StatusCode)
-// 	}
+	c, _ := NewClient("test", bo.New(), nil, nil, nil)
 
-// 	bodyBytes, err := ioutil.ReadAll(resp.Body)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
+	dho := c.DefaultHealthCheckConfig()
+	if dho == nil {
+		t.Error("expected non-nil result")
+	}
 
-// 	if string(bodyBytes) != "{}" {
-// 		t.Errorf("expected '{}' got %s.", bodyBytes)
-// 	}
+	if !strings.HasSuffix(dho.Path, "/health") {
+		t.Error("expected path to end with /health", dho.Path)
+	}
 
-// 	client.healthMethod = "-"
-
-// 	w = httptest.NewRecorder()
-// 	client.HealthHandler(w, r)
-// 	resp = w.Result()
-// 	if resp.StatusCode != 400 {
-// 		t.Errorf("Expected status: 400 got %d.", resp.StatusCode)
-// 	}
-
-// }
-
-// func TestHealthHandlerCustomPath(t *testing.T) {
-
-// 	backendClient, err := NewClient("test", nil, nil, nil, nil)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-
-// 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200, "", nil, "influxdb", "/health", "debug")
-// 	if err != nil {
-// 		t.Error(err)
-// 	} else {
-// 		defer ts.Close()
-// 	}
-
-// 	rsc := request.GetResources(r)
-
-// 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-
-// 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
-// 	client := backendClient.(*Client)
-
-// 	rsc.BackendOptions.HealthCheckUpstreamPath = "-"
-// 	rsc.BackendOptions.HealthCheckVerb = "-"
-// 	rsc.BackendOptions.HealthCheckQuery = "-"
-
-// 	client.HealthHandler(w, r)
-// 	resp := w.Result()
-
-// 	// it should return 200 OK
-// 	if resp.StatusCode != 200 {
-// 		t.Errorf("expected 200 got %d.", resp.StatusCode)
-// 	}
-
-// 	bodyBytes, err := ioutil.ReadAll(resp.Body)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-
-// 	if string(bodyBytes) != "" {
-// 		t.Errorf("expected '' got %s.", bodyBytes)
-// 	}
-
-// }
-
-// func TestHealthHandlerPost(t *testing.T) {
-
-// 	backendClient, err := NewClient("test", nil, nil, nil, nil)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-
-// 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
-// 		200, "", nil, "influxdb", "/health", "debug")
-// 	if err != nil {
-// 		t.Error(err)
-// 	} else {
-// 		defer ts.Close()
-// 	}
-
-// 	rsc := request.GetResources(r)
-
-// 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-
-// 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
-// 	rsc.BackendOptions.HealthCheckUpstreamPath = "-"
-// 	rsc.BackendOptions.HealthCheckVerb = "POST"
-// 	rsc.BackendOptions.HealthCheckQuery = "testParam1=testValue1"
-
-// 	client := backendClient.(*Client)
-
-// 	client.HealthHandler(w, r)
-// 	resp := w.Result()
-
-// 	// it should return 200 OK
-// 	if resp.StatusCode != 200 {
-// 		t.Errorf("expected 200 got %d.", resp.StatusCode)
-// 	}
-
-// 	bodyBytes, err := ioutil.ReadAll(resp.Body)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-
-// 	if string(bodyBytes) != "" {
-// 		t.Errorf("expected '' got %s.", bodyBytes)
-// 	}
-
-// }
+}

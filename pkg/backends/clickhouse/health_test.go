@@ -16,47 +16,24 @@
 
 package clickhouse
 
-// func TestHealthHandler(t *testing.T) {
-// 	backendClient, err := NewClient("TEST", nil, nil, nil, nil)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-// 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
-// 		200, "{}", nil, "clickhouse", "/health", "debug")
-// 	if err != nil {
-// 		t.Error(err)
-// 	} else {
-// 		defer ts.Close()
-// 	}
-// 	rsc := request.GetResources(r)
-// 	backendClient, err = NewClient("TEST", rsc.BackendOptions, nil, nil, nil)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-// 	client := backendClient.(*Client)
-// 	rsc.BackendClient = client
-// 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
-// 	client.SetHealthCheckProbe(thc.DemandProbe)
-// 	defer ts.Close()
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
+import (
+	"strings"
+	"testing"
 
-// 	client.HealthHandler(w, r)
-// 	resp := w.Result()
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+)
 
-// 	// it should return 200 OK
-// 	if resp.StatusCode != 200 {
-// 		t.Errorf("expected 200 got %d.", resp.StatusCode)
-// 	}
+func TestDefaultHealthCheckConfig(t *testing.T) {
 
-// 	bodyBytes, err := ioutil.ReadAll(resp.Body)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
+	c, _ := NewClient("test", bo.New(), nil, nil, nil)
 
-// 	if string(bodyBytes) != "{}" {
-// 		t.Errorf("expected '{}' got %s.", bodyBytes)
-// 	}
+	dho := c.DefaultHealthCheckConfig()
+	if dho == nil {
+		t.Error("expected non-nil result")
+	}
 
-// }
+	if !strings.HasPrefix(dho.Query, "query=SELECT") {
+		t.Error("expected SELECT-based query string")
+	}
+
+}

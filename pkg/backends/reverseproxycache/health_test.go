@@ -16,81 +16,23 @@
 
 package reverseproxycache
 
-// func TestHealthHandler(t *testing.T) {
+import (
+	"testing"
 
-// 	backendClient, err := NewClient("test", nil, nil, nil)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-// 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
-// 		200, "{}", nil, "rpc", "/health", "debug")
-// 	if err != nil {
-// 		t.Error(err)
-// 	} else {
-// 		defer ts.Close()
-// 	}
-// 	rsc := request.GetResources(r)
-// 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-// 	client := backendClient.(*Client)
-// 	rsc.BackendClient = client
-// 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+)
 
-// 	client.healthURL = &url.URL{}
-// 	client.healthMethod = "-"
-// 	client.HealthHandler(w, r)
-// 	resp := w.Result()
-// 	if resp.StatusCode != 400 {
-// 		t.Errorf("Expected status: 400 got %d.", resp.StatusCode)
-// 	}
+func TestDefaultHealthCheckConfig(t *testing.T) {
 
-// 	client.healthURL = nil
-// 	client.HealthHandler(w, r)
-// 	w = httptest.NewRecorder()
-// 	resp = w.Result()
-// 	if resp.StatusCode != 200 {
-// 		t.Errorf("Expected status: 200 got %d.", resp.StatusCode)
-// 	}
+	c, _ := NewClient("test", bo.New(), nil, nil)
 
-// }
+	dho := c.DefaultHealthCheckConfig()
+	if dho == nil {
+		t.Error("expected non-nil result")
+	}
 
-// func TestHealthHandlerCustomPath(t *testing.T) {
-// 	backendClient, err := NewClient("test", nil, nil, nil)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-// 	ts, w, r, _, err := tu.NewTestInstance("../../../testdata/test.custom_health.conf",
-// 		backendClient.DefaultPathConfigs, 200, "{}", nil, "rpc", "/health", "debug")
-// 	if err != nil {
-// 		t.Error(err)
-// 	} else {
-// 		defer ts.Close()
-// 	}
-// 	rsc := request.GetResources(r)
-// 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-// 	client := backendClient.(*Client)
-// 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+	if dho.Path != "" {
+		t.Error("expected / for path", dho.Path)
+	}
 
-// 	client.HealthHandler(w, r)
-// 	resp := w.Result()
-
-// 	// it should return 200 OK
-// 	if resp.StatusCode != 200 {
-// 		t.Errorf("expected 200 got %d.", resp.StatusCode)
-// 	}
-
-// 	bodyBytes, err := ioutil.ReadAll(resp.Body)
-// 	if err != nil {
-// 		t.Error(err)
-// 	}
-
-// 	if string(bodyBytes) != "{}" {
-// 		t.Errorf("expected '{}' got %s.", bodyBytes)
-// 	}
-
-// }
+}
