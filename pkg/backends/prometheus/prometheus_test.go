@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/config"
@@ -72,7 +72,7 @@ func TestNewClient(t *testing.T) {
 		t.Errorf("Could not find default configuration")
 	}
 
-	oc := &oo.Options{Provider: "TEST_CLIENT"}
+	oc := &bo.Options{Provider: "TEST_CLIENT"}
 	c, err := NewClient("default", oc, nil, cache, testModeler)
 	if err != nil {
 		t.Error(err)

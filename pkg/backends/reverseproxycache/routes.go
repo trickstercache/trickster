@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"strings"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
@@ -39,7 +39,7 @@ func (c *Client) RegisterHandlers(map[string]http.Handler) {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
+func (c *Client) DefaultPathConfigs(oc *bo.Options) map[string]*po.Options {
 
 	cm := methods.CacheableHTTPMethods()
 	um := methods.UncacheableHTTPMethods()

@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 )
 
 func TestReverseProxyCacheClientInterfacing(t *testing.T) {
@@ -41,7 +41,7 @@ func TestReverseProxyCacheClientInterfacing(t *testing.T) {
 }
 
 func TestNewNewClient(t *testing.T) {
-	c, err := NewClient("test", oo.New(), nil, nil)
+	c, err := NewClient("test", bo.New(), nil, nil)
 	if err != nil {
 		t.Error(err)
 	}

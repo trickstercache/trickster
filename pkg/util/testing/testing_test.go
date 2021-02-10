@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"testing"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 )
 
@@ -78,7 +78,7 @@ func TestNewTestInstance(t *testing.T) {
 
 	// cover promsim conditional and path generation
 
-	f := func(*oo.Options) map[string]*po.Options {
+	f := func(*bo.Options) map[string]*po.Options {
 		return map[string]*po.Options{
 			"path1": {},
 			"path2": {},

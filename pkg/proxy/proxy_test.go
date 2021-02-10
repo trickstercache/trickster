@@ -19,7 +19,7 @@ package proxy
 import (
 	"testing"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
 )
 
@@ -46,7 +46,7 @@ func TestNewHTTPClient(t *testing.T) {
 	const caFileInvalid2 = "../../testdata/test.06.cert.pem"
 
 	// test good backend config, no CA
-	oc := oo.New()
+	oc := bo.New()
 	_, err = NewHTTPClient(oc)
 	if err != nil {
 		t.Error(err)

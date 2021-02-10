@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"net/url"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/backends/prometheus"
 	"github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
@@ -36,7 +36,7 @@ func NewAccelerator(baseURL string) (http.Handler, error) {
 }
 
 // NewAcceleratorWithOptions returns a new Prometheus Accelerator. only baseURL is required
-func NewAcceleratorWithOptions(baseURL string, o *oo.Options, c *co.Options) (http.Handler, error) {
+func NewAcceleratorWithOptions(baseURL string, o *bo.Options, c *co.Options) (http.Handler, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, err
@@ -51,7 +51,7 @@ func NewAcceleratorWithOptions(baseURL string, o *oo.Options, c *co.Options) (ht
 		return nil, err
 	}
 	if o == nil {
-		o = oo.New()
+		o = bo.New()
 		o.Name = "default"
 	}
 	o.Provider = "prometheus"

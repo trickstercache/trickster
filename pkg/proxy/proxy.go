@@ -26,12 +26,12 @@ import (
 	"net/http"
 	"time"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 )
 
 // NewHTTPClient returns an HTTP client configured to the specifications of the
 // running Trickster config.
-func NewHTTPClient(oc *oo.Options) (*http.Client, error) {
+func NewHTTPClient(oc *bo.Options) (*http.Client, error) {
 
 	if oc == nil {
 		return nil, nil

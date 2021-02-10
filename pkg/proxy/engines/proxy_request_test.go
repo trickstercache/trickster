@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/config"
@@ -48,7 +48,7 @@ func TestParseRequestRanges(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	r.Header.Set(headers.NameRange, "bytes=0-10")
 
-	oc := &oo.Options{MultipartRangesDisabled: true}
+	oc := &bo.Options{MultipartRangesDisabled: true}
 	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil, nil, tl.ConsoleLogger("error")))
 
 	pr := proxyRequest{
@@ -184,7 +184,7 @@ func TestPrepareResponse(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	r.Header.Set(headers.NameRange, "bytes=0-10")
 
-	oc := &oo.Options{}
+	oc := &bo.Options{}
 	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil, nil, tl.ConsoleLogger("error")))
 
 	pr := proxyRequest{
@@ -254,7 +254,7 @@ func TestPrepareRevalidationRequest(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	r.Header.Set(headers.NameRange, "bytes=0-10,12-20")
 
-	oc := &oo.Options{DearticulateUpstreamRanges: true}
+	oc := &bo.Options{DearticulateUpstreamRanges: true}
 	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil, nil, tl.ConsoleLogger("error")))
 
 	pr := proxyRequest{
@@ -282,7 +282,7 @@ func TestPrepareRevalidationRequestNoRange(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	r.Header.Set(headers.NameRange, "bytes=0-10,12-20")
 
-	oc := &oo.Options{DearticulateUpstreamRanges: true}
+	oc := &bo.Options{DearticulateUpstreamRanges: true}
 	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil, nil, tl.ConsoleLogger("error")))
 
 	pr := proxyRequest{
@@ -309,7 +309,7 @@ func TestPrepareUpstreamRequests(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	r.Header.Set(headers.NameRange, "bytes=0-10,12-20")
 
-	oc := &oo.Options{DearticulateUpstreamRanges: true}
+	oc := &bo.Options{DearticulateUpstreamRanges: true}
 	r = request.SetResources(r, request.NewResources(oc, nil, nil, nil, nil, nil, tl.ConsoleLogger("error")))
 
 	pr := proxyRequest{

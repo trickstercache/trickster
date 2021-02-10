@@ -22,7 +22,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/backends/clickhouse"
 	"github.com/tricksterproxy/trickster/pkg/backends/clickhouse/model"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/routing"
@@ -36,7 +36,7 @@ func NewAccelerator(baseURL string) (http.Handler, error) {
 }
 
 // NewAcceleratorWithOptions returns a new ClickHouse Accelerator. only baseURL is required
-func NewAcceleratorWithOptions(baseURL string, o *oo.Options, c *co.Options) (http.Handler, error) {
+func NewAcceleratorWithOptions(baseURL string, o *bo.Options, c *co.Options) (http.Handler, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, err
@@ -51,7 +51,7 @@ func NewAcceleratorWithOptions(baseURL string, o *oo.Options, c *co.Options) (ht
 		return nil, err
 	}
 	if o == nil {
-		o = oo.New()
+		o = bo.New()
 		o.Name = "default"
 	}
 	o.Provider = "clickhouse"

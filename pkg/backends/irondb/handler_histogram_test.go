@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
@@ -137,7 +137,7 @@ func TestHistogramHandlerParseTimeRangeQuery(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
 	// hc := tu.NewTestWebClient()
-	o := oo.New()
+	o := bo.New()
 
 	backendClient, err := NewClient("test", o, nil, nil, nil)
 	if err != nil {
@@ -191,7 +191,7 @@ func TestHistogramHandlerSetExtent(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
 	// hc := tu.NewTestWebClient()
-	o := oo.New()
+	o := bo.New()
 	backendClient, err := NewClient("test", o, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
@@ -228,7 +228,7 @@ func TestHistogramHandlerFastForwardRequestError(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
 	// hc := tu.NewTestWebClient()
-	o := oo.New()
+	o := bo.New()
 	backendClient, err := NewClient("test", o, nil, nil, nil)
 	if err != nil {
 		t.Error(err)

@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
@@ -33,7 +33,7 @@ import (
 // Resources is a collection of resources a Trickster request would need to fulfill the client request
 // This is stored in the client request's context for use by request handers.
 type Resources struct {
-	BackendOptions    *oo.Options
+	BackendOptions    *bo.Options
 	PathConfig        *po.Options
 	CacheConfig       *co.Options
 	NoLock            bool
@@ -62,7 +62,7 @@ func (r Resources) Clone() *Resources {
 }
 
 // NewResources returns a new Resources collection based on the provided inputs
-func NewResources(oo *oo.Options, po *po.Options, co *co.Options,
+func NewResources(oo *bo.Options, po *po.Options, co *co.Options,
 	c cache.Cache, client backends.Backend, t *tracing.Tracer,
 	logger interface{}) *Resources {
 	return &Resources{

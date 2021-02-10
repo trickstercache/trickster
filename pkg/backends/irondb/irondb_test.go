@@ -21,7 +21,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	"github.com/tricksterproxy/trickster/pkg/backends/irondb/model"
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
@@ -64,7 +64,7 @@ func TestNewClient(t *testing.T) {
 		t.Errorf("Could not find default configuration")
 	}
 
-	oc := &oo.Options{Provider: "TEST_CLIENT"}
+	oc := &bo.Options{Provider: "TEST_CLIENT"}
 	c, err := NewClient("default", oc, nil, cache, testModeler)
 	if err != nil {
 		t.Error(err)

@@ -19,7 +19,7 @@ package irondb
 import (
 	"net/http"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/key"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
@@ -43,7 +43,7 @@ func (c *Client) RegisterHandlers(map[string]http.Handler) {
 	)
 }
 
-func populateHeathCheckRequestValues(oc *oo.Options) {
+func populateHeathCheckRequestValues(oc *bo.Options) {
 	if oc.HealthCheckUpstreamPath == "-" {
 		oc.HealthCheckUpstreamPath = "/" + mnState
 	}
@@ -56,7 +56,7 @@ func populateHeathCheckRequestValues(oc *oo.Options) {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
+func (c *Client) DefaultPathConfigs(oc *bo.Options) map[string]*po.Options {
 
 	populateHeathCheckRequestValues(oc)
 

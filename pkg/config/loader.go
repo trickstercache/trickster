@@ -21,7 +21,7 @@ import (
 	"net/url"
 	"time"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/negative"
 )
 
@@ -80,7 +80,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		return nil, flags, err
 	}
 
-	err = oo.Lookup(c.Backends).Validate(ncl)
+	err = bo.Lookup(c.Backends).Validate(ncl)
 	if err != nil {
 		return nil, flags, err
 	}

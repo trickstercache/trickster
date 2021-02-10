@@ -21,7 +21,7 @@ import (
 	"net/http"
 	"testing"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 )
@@ -71,7 +71,7 @@ func TestRawHandlerParseTimeRangeQuery(t *testing.T) {
 
 	// provide bad URL with no TimeRange query params
 	//hc := tu.NewTestWebClient()
-	o := oo.New()
+	o := bo.New()
 	backendClient, err := NewClient("test", o, nil, nil, nil)
 	if err != nil {
 		t.Error(err)

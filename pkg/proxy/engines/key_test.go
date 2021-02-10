@@ -28,7 +28,7 @@ import (
 	"strconv"
 	"testing"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/key"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	ct "github.com/tricksterproxy/trickster/pkg/proxy/context"
@@ -124,7 +124,7 @@ func TestDeriveCacheKey(t *testing.T) {
 		CacheKeyFormFields: []string{"field1"},
 	}
 
-	cfg := &oo.Options{
+	cfg := &bo.Options{
 		Paths: map[string]*po.Options{
 			"root": rpath,
 		},
@@ -213,7 +213,7 @@ func exampleKeyHasher(path string, params url.Values, headers http.Header,
 
 func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 
-	client, err := NewTestClient("test", &oo.Options{
+	client, err := NewTestClient("test", &bo.Options{
 		Paths: map[string]*po.Options{
 			"root": {
 				Path:            "/",
@@ -246,7 +246,7 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 
 func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
 
-	client, err := NewTestClient("test", &oo.Options{
+	client, err := NewTestClient("test", &bo.Options{
 		Paths: map[string]*po.Options{
 			"root": {
 				Path:            "/",

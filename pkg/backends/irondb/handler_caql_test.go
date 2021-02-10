@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -80,7 +80,7 @@ func TestCaqlHandlerSetExtent(t *testing.T) {
 	client := backendClient.(*Client)
 
 	// provide bad URL with no TimeRange query params
-	cfg := oo.New()
+	cfg := bo.New()
 	cfg.HTTPClient = tu.NewTestWebClient()
 	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0/extension/lua/caql_v1", nil)
@@ -111,7 +111,7 @@ func TestCaqlHandlerParseTimeRangeQuery(t *testing.T) {
 	}
 	client := backendClient.(*Client)
 
-	cfg := oo.New()
+	cfg := bo.New()
 	cfg.HTTPClient = tu.NewTestWebClient()
 	cfg.Paths = client.DefaultPathConfigs(cfg)
 	r, err := http.NewRequest(http.MethodGet, "http://0/extension/lua/caql_v1", nil)

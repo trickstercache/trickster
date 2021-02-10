@@ -19,7 +19,7 @@ package clickhouse
 import (
 	"net/http"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 )
@@ -38,7 +38,7 @@ func (c *Client) RegisterHandlers(map[string]http.Handler) {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(oc *oo.Options) map[string]*po.Options {
+func (c *Client) DefaultPathConfigs(oc *bo.Options) map[string]*po.Options {
 	paths := map[string]*po.Options{
 		"/": {
 			Path:           "/",

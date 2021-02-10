@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"net/http"
 
-	oo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 )
 
 // Backends represents a map of Backend Clients keyed by Name
@@ -36,7 +36,7 @@ func (b Backends) Get(backendName string) Backend {
 }
 
 // GetConfig returns the named origin's Configuration Options
-func (b Backends) GetConfig(backendName string) *oo.Options {
+func (b Backends) GetConfig(backendName string) *bo.Options {
 	if c, ok := b[backendName]; ok {
 		fmt.Println("Yasss", backendName)
 		return c.Configuration()

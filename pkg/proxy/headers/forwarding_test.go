@@ -46,7 +46,7 @@ var testHops1 = &Hop{
 var testHops2 = &Hop{
 	RemoteAddr: "5.6.7.8",
 	Scheme:     "http",
-	Host:       "foo.com",
+	Host:       "fbo.com",
 	Server:     "fooServer",
 	Protocol:   "HTTP/1.1",
 }
@@ -57,7 +57,7 @@ func TestForwardedString(t *testing.T) {
 	hop.Hops = []*Hop{testHops2}
 
 	s := hop.String()
-	expected := "by=fooServer;for=5.6.7.8;host=foo.com;proto=http, by=barServer;for=1.2.3.4;host=bar.com;proto=https"
+	expected := "by=fooServer;for=5.6.7.8;host=fbo.com;proto=http, by=barServer;for=1.2.3.4;host=bar.com;proto=https"
 
 	if s != expected {
 		t.Errorf("expected %s got %s", expected, s)
