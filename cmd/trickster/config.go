@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/memory"
 	"github.com/tricksterproxy/trickster/pkg/cache/providers"
@@ -42,6 +43,7 @@ import (
 )
 
 var cfgLock = &sync.Mutex{}
+var hc healthcheck.HealthChecker
 
 func runConfig(oldConf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
 	oldCaches map[string]cache.Cache, args []string, errorsFatal bool) error {
@@ -128,7 +130,10 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *tl.Logge
 		return err
 	}
 
-	hc, err := o.StartHealthChecks(log)
+	if hc != nil {
+		hc.Shutdown()
+	}
+	hc, err = o.StartHealthChecks(log)
 	if err != nil {
 		return err
 	}

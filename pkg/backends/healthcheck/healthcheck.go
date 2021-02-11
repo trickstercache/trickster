@@ -57,6 +57,9 @@ func (hc *healthChecker) Subscribe(ch chan bool) {
 }
 
 func (hc *healthChecker) Shutdown() {
+	for _, t := range hc.targets {
+		t.Stop()
+	}
 	for _, ch := range hc.subscribers {
 		ch <- true
 	}
