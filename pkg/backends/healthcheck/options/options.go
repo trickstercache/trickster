@@ -169,3 +169,9 @@ func (o *Options) URL() *url.URL {
 func (o *Options) HasExpectedBody() bool {
 	return o.hasExpectedBody
 }
+
+// SetExpectedBody sets the expected body
+func (o *Options) SetExpectedBody(body string) {
+	o.hasExpectedBody = true
+	o.ExpectedBody = body
+}

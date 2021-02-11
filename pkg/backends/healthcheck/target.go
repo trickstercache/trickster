@@ -48,14 +48,15 @@ type target struct {
 	failConsecutiveCnt    int32
 	successConsecutiveCnt int32
 	ks                    int // used internally and is not thread safe, do not expose
-	mainCtx               context.Context
 	ctx                   context.Context
+	cancel                context.CancelFunc
 	wg                    sync.WaitGroup
 	ceb                   bool
 	eb                    string
 	eh                    http.Header
 	ec                    []int
 	logger                interface{}
+	isInLoop              bool
 }
 
 // DemandProbe defines a health check probe that makes an HTTP Request to the backend and writes the
@@ -98,7 +99,6 @@ func newTarget(ctx context.Context,
 		description:       description,
 		baseRequest:       r,
 		httpClient:        client,
-		mainCtx:           ctx,
 		failureThreshold:  o.FailureThreshold,
 		recoveryThreshold: o.RecoveryThreshold,
 		interval:          interval,
@@ -161,11 +161,11 @@ func (t *target) isGoodBody(r io.ReadCloser) bool {
 		t.status.detail = "error reading response body from target"
 		return false
 	}
-	b := string(x) == t.eb
-	if !b {
+	if !(string(x) == t.eb) {
 		t.status.detail = fmt.Sprintf("required response body mismatch expected [%s] got [%s]", t.eb, string(x))
+		return false
 	}
-	return b
+	return true
 }
 
 // Start begins health checking the target
@@ -173,8 +173,18 @@ func (t *target) Start() {
 	if t.ctx != nil {
 		t.Stop()
 	}
-	t.ctx = tctx.WithHealthCheckFlag(context.Background(), true)
+	t.ctx, t.cancel = context.WithCancel(tctx.WithHealthCheckFlag(context.Background(), true))
 	go t.probeLoop()
+}
+
+// Stop stops healthchecking the target
+func (t *target) Stop() {
+	if t.ctx == nil {
+		return
+	}
+	t.wg.Add(1)
+	t.cancel()
+	t.wg.Wait()
 }
 
 func (t *target) probeLoop() {
@@ -182,11 +192,12 @@ func (t *target) probeLoop() {
 		select {
 		case <-t.ctx.Done():
 			t.ctx = nil
+			t.isInLoop = false
 			t.wg.Done()
+			time.Sleep(1 * time.Second)
 			return // avoid leaking of this goroutine when ctx is done.
-		case <-t.mainCtx.Done():
-			t.ctx.Done()
 		default:
+			t.isInLoop = true
 			t.probe()
 			time.Sleep(t.interval)
 		}
@@ -257,13 +268,6 @@ func (t *target) demandProbe(w http.ResponseWriter) {
 	if resp.Body != nil {
 		io.Copy(w, resp.Body)
 	}
-}
-
-// Stop stops healthchecking the target
-func (t *target) Stop() {
-	t.wg.Add(1)
-	t.ctx.Done()
-	t.wg.Wait()
 }
 
 func newHTTPClient(timeout time.Duration) *http.Client {
