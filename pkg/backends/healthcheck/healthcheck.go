@@ -18,7 +18,6 @@ package healthcheck
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -69,7 +68,6 @@ func (hc *healthChecker) Register(name, description string, o *ho.Options,
 		return nil, ho.ErrNoOptionsProvided
 	}
 	if t2, ok := hc.targets[name]; ok && t2 != nil {
-		fmt.Println("stopping old target")
 		t2.Stop()
 	}
 	t, err := newTarget(
@@ -85,14 +83,11 @@ func (hc *healthChecker) Register(name, description string, o *ho.Options,
 	}
 	hc.targets[t.name] = t
 	if t.interval > 0 {
-		fmt.Println("Starting target")
 		t.Start()
 		// wait for the health check to be fully registered
 		for !t.isInLoop {
 			time.Sleep(1 * time.Millisecond)
-			fmt.Println(".......")
 		}
-		fmt.Println("========")
 	}
 	hc.statuses[t.name] = t.status
 	return t.status, nil

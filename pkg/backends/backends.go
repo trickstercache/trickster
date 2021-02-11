@@ -18,7 +18,6 @@
 package backends
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
@@ -64,7 +63,6 @@ func (b Backends) Get(backendName string) Backend {
 // GetConfig returns the named Backend's Configuration Options
 func (b Backends) GetConfig(backendName string) *bo.Options {
 	if c, ok := b[backendName]; ok {
-		fmt.Println("Yasss", backendName)
 		return c.Configuration()
 	}
 	return nil

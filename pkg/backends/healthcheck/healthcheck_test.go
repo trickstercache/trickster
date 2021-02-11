@@ -29,7 +29,6 @@ func TestNew(t *testing.T) {
 	if hc == nil {
 		t.Error("expected non-nil")
 	}
-
 }
 
 func TestSubscribe(t *testing.T) {
@@ -40,7 +39,6 @@ func TestSubscribe(t *testing.T) {
 	if len(hc.subscribers) != expected {
 		t.Errorf("expected %d got %d", expected, len(hc.subscribers))
 	}
-
 }
 
 func TestShutdown(t *testing.T) {
@@ -118,7 +116,6 @@ func TestStatus(t *testing.T) {
 	if s != nil {
 		t.Error("expected nil got ", s)
 	}
-
 }
 
 func TestStatuses(t *testing.T) {
@@ -155,5 +152,4 @@ func TestProbe(t *testing.T) {
 	if s != nil {
 		t.Error("expected nil got ", s)
 	}
-
 }

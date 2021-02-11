@@ -55,6 +55,7 @@ func (s *Status) String() string {
 	return sb.String()
 }
 
+// Headers returns a header set indicating the Status
 func (s *Status) Headers() http.Header {
 	h := http.Header{}
 	h.Set(headers.NameTrkHCStatus, strconv.Itoa(int(s.status)))

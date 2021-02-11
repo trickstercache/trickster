@@ -45,12 +45,10 @@ func TestHeaders(t *testing.T) {
 	const expectedStatus = -1
 	const expectedStatusStr = "-1"
 
-	ch := make(chan bool, 1)
-
 	status := &Status{
-		detail:      expectedDetail,
-		subscribers: []chan bool{ch},
+		detail: expectedDetail,
 	}
+	status.RegisterSubscriber(make(chan bool, 1))
 	status.Set(expectedStatus)
 
 	h := status.Headers()

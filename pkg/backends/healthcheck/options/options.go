@@ -119,7 +119,7 @@ func (o *Options) Clone() *Options {
 }
 
 func (o *Options) Overlay(name string, custom *Options) {
-	if custom.md == nil {
+	if custom == nil || custom.md == nil {
 		return
 	}
 	if custom.md.IsDefined("backends", name, "healthcheck", "upstream_path") {

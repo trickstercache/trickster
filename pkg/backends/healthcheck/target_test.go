@@ -193,3 +193,11 @@ func TestIsGoodBody(t *testing.T) {
 		})
 	}
 }
+
+func TestNewHTTPClient(t *testing.T) {
+
+	c := newHTTPClient(0)
+	if c.CheckRedirect(nil, nil) != http.ErrUseLastResponse {
+		t.Error("expected", http.ErrUseLastResponse)
+	}
+}
