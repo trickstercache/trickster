@@ -153,12 +153,12 @@ func (b *backend) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// DefaultPathConfigs is a stub function and should be overriden by Backend implementations
+// DefaultPathConfigs is a stub function and should be overridden by Backend implementations
 func (b *backend) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 	return nil
 }
 
-// DefaultHealthCheckConfig is a stub function and should be overriden by Backend implementations
+// DefaultHealthCheckConfig is a stub function and should be overridden by Backend implementations
 func (b *backend) DefaultHealthCheckConfig() *ho.Options {
 	return nil
 }
