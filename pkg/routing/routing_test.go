@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
+	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/backends/reverseproxycache"
 	"github.com/tricksterproxy/trickster/pkg/backends/rule"
@@ -46,6 +47,17 @@ func TestRegisterPprofRoutes(t *testing.T) {
 	_, p := router.Handler(r)
 	if p != "/debug/pprof/" {
 		t.Error("expected pprof route path")
+	}
+}
+
+func TestRegisterHealthHandler(t *testing.T) {
+	router := mux.NewRouter()
+	path := "/test"
+	hc := healthcheck.New()
+
+	route := RegisterHealthHandler(router, path, hc)
+	if route == nil {
+		t.Error("expected non-nil route")
 	}
 }
 
@@ -148,6 +160,26 @@ func TestRegisterProxyRoutes(t *testing.T) {
 func TestRegisterProxyRoutesInflux(t *testing.T) {
 	conf, _, err := config.Load("trickster", "test",
 		[]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "influxdb"})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
+	defer registration.CloseCaches(caches)
+	proxyClients, err := RegisterProxyRoutes(conf, mux.NewRouter(), caches, nil, tl.ConsoleLogger("info"), false)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(proxyClients) == 0 {
+		t.Errorf("expected %d got %d", 1, 0)
+	}
+
+}
+
+func TestRegisterProxyRoutesReverseProxy(t *testing.T) {
+	conf, _, err := config.Load("trickster", "test",
+		[]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "rp"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

@@ -146,8 +146,8 @@ var noCacheBackends = map[string]bool{
 }
 
 // RegisterHealthHandler registers the main health handler
-func RegisterHealthHandler(router *mux.Router, path string, hc healthcheck.HealthChecker) {
-	router.Path(path).Handler(health.StatusHandler(hc)).Methods(http.MethodGet, http.MethodHead)
+func RegisterHealthHandler(router *mux.Router, path string, hc healthcheck.HealthChecker) *mux.Route {
+	return router.Path(path).Handler(health.StatusHandler(hc)).Methods(http.MethodGet, http.MethodHead)
 }
 
 func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
