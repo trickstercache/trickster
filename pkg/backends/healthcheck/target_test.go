@@ -19,12 +19,15 @@ package healthcheck
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 
 	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 )
 
 func TestNewTarget(t *testing.T) {
@@ -47,6 +50,14 @@ func TestNewTarget(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+
+	expected := `net/http: invalid method "INVALID METHOD"`
+	o.Verb = "INVALID METHOD"
+	_, err = newTarget(ctx, "test", "test", o, nil, nil)
+	if err.Error() != expected {
+		t.Error("expected error for invalid method, got ", err)
+	}
+
 }
 
 func TestIsGoodHeader(t *testing.T) {
@@ -200,4 +211,83 @@ func TestNewHTTPClient(t *testing.T) {
 	if c.CheckRedirect(nil, nil) != http.ErrUseLastResponse {
 		t.Error("expected", http.ErrUseLastResponse)
 	}
+}
+
+func TestProbe(t *testing.T) {
+
+	ts := newTestServer(200, "OK", map[string]string{})
+
+	r, _ := http.NewRequest("GET", ts.URL+"/", nil)
+	target := &target{
+		status:      &Status{},
+		ctx:         context.Background(),
+		baseRequest: r,
+		httpClient:  ts.Client(),
+		ec:          []int{200},
+	}
+	target.probe()
+	if target.successConsecutiveCnt != 1 {
+		t.Error("expected 1 got ", target.successConsecutiveCnt)
+	}
+	target.ec[0] = 404
+	target.probe()
+	if target.successConsecutiveCnt != 0 {
+		t.Error("expected 0 got ", target.successConsecutiveCnt)
+	}
+	if target.failConsecutiveCnt != 1 {
+		t.Error("expected 1 got ", target.failConsecutiveCnt)
+	}
+
+}
+
+func TestDemandProbe(t *testing.T) {
+
+	ts := newTestServer(200, "OK", map[string]string{})
+
+	w := httptest.NewRecorder()
+
+	r, _ := http.NewRequest("GET", ts.URL+"/", nil)
+	target := &target{
+		status:      &Status{},
+		ctx:         context.Background(),
+		baseRequest: r,
+		httpClient:  ts.Client(),
+		ec:          []int{200},
+	}
+	target.demandProbe(w)
+
+	if w.Code != 200 {
+		t.Error("expected 200 got ", w.Code)
+	}
+
+	// simulate a failed probe (bad response)
+	w = httptest.NewRecorder()
+	target.status.status = -1
+	target.demandProbe(w)
+
+	if w.Code != 200 {
+		t.Error("expected 200 got ", w.Code)
+	}
+
+	// simulate a failed probe (unreachable)
+	ts.Close()
+	w = httptest.NewRecorder()
+	target.status.status = -1
+	target.demandProbe(w)
+
+	if w.Code != 500 {
+		t.Error("expected 500 got ", w.Code)
+	}
+
+}
+
+func newTestServer(responseCode int, responseBody string,
+	hdrs map[string]string) *httptest.Server {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		headers.UpdateHeaders(w.Header(), hdrs)
+		w.WriteHeader(responseCode)
+		fmt.Fprint(w, responseBody)
+	}
+	s := httptest.NewServer(http.HandlerFunc(handler))
+	return s
 }

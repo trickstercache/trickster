@@ -17,6 +17,7 @@
 package healthcheck
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
@@ -134,15 +135,22 @@ func TestStatuses(t *testing.T) {
 	}
 }
 
-func TestProbe(t *testing.T) {
+func TestHealthCheckerProbe(t *testing.T) {
 
 	hc := New().(*healthChecker)
 	o := ho.New()
-	o.IntervalMS = 500
+
+	ts := newTestServer(200, "OK", map[string]string{})
+	r, _ := http.NewRequest("GET", ts.URL+"/", nil)
+
 	_, err := hc.Register("test", "test", o, http.DefaultClient, nil)
 	if err != nil {
 		t.Error(err)
 	}
+
+	target := hc.targets["test"]
+	target.baseRequest = r
+	target.ctx = context.Background()
 
 	s := hc.Probe("")
 	if s != nil {
@@ -151,5 +159,9 @@ func TestProbe(t *testing.T) {
 	s = hc.Probe("test-missing")
 	if s != nil {
 		t.Error("expected nil got ", s)
+	}
+	s = hc.Probe("test")
+	if s == nil {
+		t.Error("expected non-nil")
 	}
 }
