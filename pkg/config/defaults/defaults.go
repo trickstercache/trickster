@@ -127,6 +127,8 @@ const (
 	DefaultHealthCheckQuery = ""
 	// DefaultHealthCheckVerb is the default value (noop) for Backends' Health Check Verb
 	DefaultHealthCheckVerb = http.MethodGet
+	// DefaultHealthCheckTimeoutMS is the default duration for health check probes to wait before timing out
+	DefaultHealthCheckTimeoutMS = 3000
 	// DefaultHealthCheckRecoveryThreshold defines the default number of successful health checks
 	// following failure to indicate true recovery
 	DefaultHealthCheckRecoveryThreshold = 3

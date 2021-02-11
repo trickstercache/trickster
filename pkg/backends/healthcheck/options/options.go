@@ -20,12 +20,20 @@ import (
 	"errors"
 	"net/url"
 	"strings"
+	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/config/defaults"
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 
 	"github.com/BurntSushi/toml"
 )
+
+// MaxProbeWaitMS is the maximum time a health check will wait before timing out
+const MaxProbeWaitMS = 30000
+
+// MinProbeWaitMS is the minimum time a health check will wait before timing out
+const MinProbeWaitMS = 100
 
 // ErrNoOptionsProvided returns an error for no health check options provided
 var ErrNoOptionsProvided = errors.New("no health check options provided")
@@ -57,7 +65,9 @@ type Options struct {
 	Headers map[string]string `toml:"headers"`
 	// Body provides a body to apply when making an upstream health check request
 	Body string `toml:"body"`
-
+	// TimeoutMS is the amount of time a health check probe should wait for a response
+	// before timing out
+	TimeoutMS int `toml:"timeout_ms"`
 	// Target Probe Response Options
 	// ExpectedCodes is the list of Status Codes that positively indicate a Healthy status
 	ExpectedCodes []int `toml:"expected_codes"`
@@ -174,4 +184,17 @@ func (o *Options) HasExpectedBody() bool {
 func (o *Options) SetExpectedBody(body string) {
 	o.hasExpectedBody = true
 	o.ExpectedBody = body
+}
+
+// CalibrateTimeout returns a time.Duration representing a calibrated
+// timeout value based on the milliseconds of duration provided
+func CalibrateTimeout(ms int) time.Duration {
+	if ms > MaxProbeWaitMS {
+		ms = MaxProbeWaitMS
+	} else if ms <= 0 {
+		ms = defaults.DefaultHealthCheckTimeoutMS
+	} else if ms < MinProbeWaitMS {
+		ms = MinProbeWaitMS
+	}
+	return time.Duration(ms) * time.Millisecond
 }

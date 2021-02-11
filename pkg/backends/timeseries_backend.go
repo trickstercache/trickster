@@ -68,6 +68,8 @@ type TimeseriesBackend interface {
 	SetHealthCheckProbe(healthcheck.DemandProbe)
 	// HealthHandler executes a Health Check Probe when called
 	HealthHandler(http.ResponseWriter, *http.Request)
+	// HealthCheckHTTPClient returns the HTTP Client used for Health Checking
+	HealthCheckHTTPClient() *http.Client
 }
 
 var _ TimeseriesBackend = (*timeseriesBackend)(nil)

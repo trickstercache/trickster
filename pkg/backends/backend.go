@@ -55,8 +55,10 @@ type Backend interface {
 	SetHealthCheckProbe(healthcheck.DemandProbe)
 	// HealthHandler executes a Health Check Probe when called
 	HealthHandler(http.ResponseWriter, *http.Request)
-	// DefaultHealthCheckConfig returns the default HealthCHeck Config for the given Provider
+	// DefaultHealthCheckConfig returns the default Health Check Config for the given Provider
 	DefaultHealthCheckConfig() *ho.Options
+	// HealthCheckHTTPClient returns the HTTP Client used for Health Checking
+	HealthCheckHTTPClient() *http.Client
 }
 
 type backend struct {
@@ -64,6 +66,7 @@ type backend struct {
 	config             *bo.Options
 	cache              cache.Cache
 	webClient          *http.Client
+	healthCheckClient  *http.Client
 	handlers           map[string]http.Handler
 	handlersRegistered bool
 	healthProbe        healthcheck.DemandProbe
@@ -80,12 +83,32 @@ func New(name string, o *bo.Options, registrar Registrar,
 	router http.Handler, cache cache.Cache) (Backend, error) {
 
 	c, err := proxy.NewHTTPClient(o)
+
+	// this section sets up the health check HTTP client with a reasonable timeout
+	hco := o
+	if hco == nil {
+		hco = bo.New()
+		hco.HealthCheck = ho.New()
+	}
+	hcc, err2 := proxy.NewHTTPClient(hco)
+	if err == nil {
+		err = err2
+	}
+
+	var tms int
+	if o != nil && o.HealthCheck != nil {
+		tms = o.HealthCheck.TimeoutMS
+	}
+	if hcc != nil {
+		hcc.Timeout = ho.CalibrateTimeout(tms)
+	}
+
 	var bur *url.URL
 	if o != nil {
 		bur = urls.FromParts(o.Scheme, o.Host, o.PathPrefix, "", "")
 	}
 	return &backend{name: name, config: o, router: router, cache: cache,
-		webClient: c, baseUpstreamURL: bur, registrar: registrar}, err
+		webClient: c, healthCheckClient: hcc, baseUpstreamURL: bur, registrar: registrar}, err
 
 }
 
@@ -161,4 +184,9 @@ func (b *backend) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 // DefaultHealthCheckConfig is a stub function and should be overridden by Backend implementations
 func (b *backend) DefaultHealthCheckConfig() *ho.Options {
 	return nil
+}
+
+// HealthCheckHTTPClient returns the HTTP Client used for Health Checking
+func (b *backend) HealthCheckHTTPClient() *http.Client {
+	return b.healthCheckClient
 }

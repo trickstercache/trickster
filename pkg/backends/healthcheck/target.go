@@ -85,7 +85,7 @@ func newTarget(ctx context.Context,
 	}
 	interval := time.Duration(o.IntervalMS) * time.Millisecond
 	if client == nil {
-		client = newHTTPClient(interval)
+		client = newHTTPClient(ho.CalibrateTimeout(o.TimeoutMS))
 	}
 	if o.FailureThreshold < 1 {
 		o.FailureThreshold = 3 // default to 3

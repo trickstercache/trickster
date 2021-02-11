@@ -17,9 +17,12 @@
 package options
 
 import (
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/tricksterproxy/trickster/pkg/config/defaults"
 )
 
 func TestNew(t *testing.T) {
@@ -124,3 +127,47 @@ const hcTOML = `
 	  [backends.test.healthcheck.expected_headers]
 	  TestHeader = 'test-header-val'
 `
+
+func TestCalibrateTimeout(t *testing.T) {
+
+	const defaultTimeout = time.Duration(defaults.DefaultHealthCheckTimeoutMS) * time.Millisecond
+	const maxTimeout = time.Duration(MaxProbeWaitMS) * time.Millisecond
+	const minTimeout = time.Duration(MinProbeWaitMS) * time.Millisecond
+
+	tests := []struct {
+		input    int
+		expected time.Duration
+	}{
+		{
+			-1, defaultTimeout,
+		},
+		{
+			0, defaultTimeout,
+		},
+		{
+			1, minTimeout,
+		},
+		{
+			MinProbeWaitMS, minTimeout,
+		},
+		{
+			MinProbeWaitMS + 5, time.Duration(MinProbeWaitMS+5) * time.Millisecond,
+		},
+		{
+			MaxProbeWaitMS, maxTimeout,
+		},
+		{
+			MaxProbeWaitMS + 5, maxTimeout,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i),
+			func(t *testing.T) {
+				out := CalibrateTimeout(test.input)
+				if out != test.expected {
+					t.Errorf("expected %v got %v", test.expected, out)
+				}
+			})
+	}
+}

@@ -46,7 +46,7 @@ func (b Backends) StartHealthChecks(logger interface{}) (healthcheck.HealthCheck
 		} else {
 			bo.HealthCheck.Overlay(k, hco)
 		}
-		st, _ := hc.Register(k, bo.Provider, bo.HealthCheck, c.HTTPClient(), logger)
+		st, _ := hc.Register(k, bo.Provider, bo.HealthCheck, c.HealthCheckHTTPClient(), logger)
 		c.SetHealthCheckProbe(st.Prober())
 	}
 	return hc, nil

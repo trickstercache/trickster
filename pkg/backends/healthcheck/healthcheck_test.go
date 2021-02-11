@@ -44,6 +44,7 @@ func TestSubscribe(t *testing.T) {
 
 func TestShutdown(t *testing.T) {
 	hc := New().(*healthChecker)
+	hc.targets = Lookup{"test": &target{}}
 	ch := make(chan bool, 1)
 	hc.Subscribe(ch)
 	hc.Shutdown()
