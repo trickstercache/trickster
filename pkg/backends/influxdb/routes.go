@@ -37,22 +37,8 @@ func (c *Client) RegisterHandlers(map[string]http.Handler) {
 	)
 }
 
-func populateHeathCheckRequestValues(oc *bo.Options) {
-	if oc.HealthCheckUpstreamPath == "-" {
-		oc.HealthCheckUpstreamPath = "/ping"
-	}
-	if oc.HealthCheckVerb == "-" {
-		oc.HealthCheckVerb = http.MethodGet
-	}
-	if oc.HealthCheckQuery == "-" {
-		oc.HealthCheckQuery = ""
-	}
-}
-
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
 func (c *Client) DefaultPathConfigs(oc *bo.Options) map[string]*po.Options {
-
-	populateHeathCheckRequestValues(oc)
 
 	paths := map[string]*po.Options{
 		"/" + mnQuery: {

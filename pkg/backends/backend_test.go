@@ -18,6 +18,7 @@ package backends
 
 import (
 	"net/http"
+	"net/url"
 	"testing"
 
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
@@ -92,5 +93,68 @@ func TestSetCache(t *testing.T) {
 	c.SetCache(nil)
 	if c.Cache() != nil {
 		t.Errorf("expected nil cache for client named %s", "test")
+	}
+}
+
+func TestBaseUpstreamURL(t *testing.T) {
+
+	u, _ := url.Parse("https://tricksterproxy.io/test")
+	b := &backend{name: "test", baseUpstreamURL: u}
+	u = b.BaseUpstreamURL()
+	if u.Host != "tricksterproxy.io" || u.Scheme != "https" || u.Path != "/test" {
+		t.Error("url mismatch")
+	}
+}
+
+func TestHandlers(t *testing.T) {
+
+	b := &backend{name: "test"}
+	testRegistrar := func(map[string]http.Handler) {
+		b.RegisterHandlers(map[string]http.Handler{"test": nil})
+	}
+
+	b.registrar = testRegistrar
+
+	h := b.Handlers()
+	if _, ok := h["test"]; !ok {
+		t.Error("expected true")
+	}
+
+}
+
+func TestSetHealthCheckProbe(t *testing.T) {
+	b := &backend{name: "test"}
+	b.SetHealthCheckProbe(nil)
+	if b.healthProbe != nil {
+		t.Error("expected nil")
+	}
+}
+
+func TestHealthHandler(t *testing.T) {
+
+	b := &backend{name: "test"}
+	testProber := func(w http.ResponseWriter) {
+		b.name = "trickster"
+	}
+	b.healthProbe = testProber
+	b.HealthHandler(nil, nil)
+	if b.name != "trickster" {
+		t.Error("health probe failed")
+	}
+}
+
+func TestDefaultPathConfigs(t *testing.T) {
+	b := &backend{name: "test"}
+	// should always return nil for the base Backend
+	if b.DefaultPathConfigs(nil) != nil {
+		t.Error("expected nil")
+	}
+}
+
+func TestDefaultHealthCheckConfig(t *testing.T) {
+	b := &backend{name: "test"}
+	// should always return nil for the base Backend
+	if b.DefaultHealthCheckConfig() != nil {
+		t.Error("expected nil")
 	}
 }

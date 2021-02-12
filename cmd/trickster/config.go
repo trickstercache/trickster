@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/memory"
 	"github.com/tricksterproxy/trickster/pkg/cache/providers"
@@ -42,6 +43,7 @@ import (
 )
 
 var cfgLock = &sync.Mutex{}
+var hc healthcheck.HealthChecker
 
 func runConfig(oldConf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
 	oldCaches map[string]cache.Cache, args []string, errorsFatal bool) error {
@@ -121,12 +123,21 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *tl.Logge
 	var caches = applyCachingConfig(conf, oldConf, log, oldCaches)
 	rh := handlers.ReloadHandleFunc(runConfig, conf, wg, log, caches, args)
 
-	_, err = routing.RegisterProxyRoutes(conf, router, caches, tracers, log, false)
+	o, err := routing.RegisterProxyRoutes(conf, router, caches, tracers, log, false)
 	if err != nil {
 		handleStartupIssue("route registration failed", tl.Pairs{"detail": err.Error()},
 			log, errorsFatal)
 		return err
 	}
+
+	if hc != nil {
+		hc.Shutdown()
+	}
+	hc, err = o.StartHealthChecks(log)
+	if err != nil {
+		return err
+	}
+	routing.RegisterHealthHandler(router, conf.Main.HealthHandlerPath, hc)
 
 	applyListenerConfigs(conf, oldConf, router, http.HandlerFunc(rh), log, tracers)
 

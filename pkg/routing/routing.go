@@ -27,6 +27,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	"github.com/tricksterproxy/trickster/pkg/backends/clickhouse"
 	modelch "github.com/tricksterproxy/trickster/pkg/backends/clickhouse/model"
+	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
 	"github.com/tricksterproxy/trickster/pkg/backends/influxdb"
 	modelflux "github.com/tricksterproxy/trickster/pkg/backends/influxdb/model"
 	"github.com/tricksterproxy/trickster/pkg/backends/irondb"
@@ -41,6 +42,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
+	"github.com/tricksterproxy/trickster/pkg/proxy/handlers/health"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
@@ -143,6 +145,11 @@ var noCacheBackends = map[string]bool{
 	"rule":         true,
 }
 
+// RegisterHealthHandler registers the main health handler
+func RegisterHealthHandler(router *mux.Router, path string, hc healthcheck.HealthChecker) *mux.Route {
+	return router.Path(path).Handler(health.StatusHandler(hc)).Methods(http.MethodGet, http.MethodHead)
+}
+
 func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
 	o *bo.Options, clients backends.Backends, caches map[string]cache.Cache,
 	tracers tracing.Tracers, logger interface{}, dryRun bool) error {
@@ -197,18 +204,18 @@ func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
 // merge it with any path data in the provided backend options, and then register
 // the path routes to the appropriate handler from the provided handlers map
 func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
-	client backends.Backend, oo *bo.Options, c cache.Cache,
+	client backends.Backend, o *bo.Options, c cache.Cache,
 	defaultPaths map[string]*po.Options, tracers tracing.Tracers,
 	healthHandlerPath string, logger interface{}) {
 
-	if oo == nil {
+	if o == nil {
 		return
 	}
 
 	// get the distributed tracer if configured
 	var tr *tracing.Tracer
-	if oo != nil {
-		if t, ok := tracers[oo.TracingConfigName]; ok {
+	if o != nil {
+		if t, ok := tracers[o.TracingConfigName]; ok {
 			tr = t
 		}
 	}
@@ -221,31 +228,31 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 			h = middleware.Trace(tr, h)
 		}
 		// add Origin, Cache, and Path Configs to the HTTP Request's context
-		h = middleware.WithResourcesContext(client, oo, c, po, tr, logger, h)
+		h = middleware.WithResourcesContext(client, o, c, po, tr, logger, h)
 		// attach any request rewriters
-		if len(oo.ReqRewriter) > 0 {
-			h = rewriter.Rewrite(oo.ReqRewriter, h)
+		if len(o.ReqRewriter) > 0 {
+			h = rewriter.Rewrite(o.ReqRewriter, h)
 		}
 		if len(po.ReqRewriter) > 0 {
 			h = rewriter.Rewrite(po.ReqRewriter, h)
 		}
 		// decorate frontend prometheus metrics
 		if !po.NoMetrics {
-			h = middleware.Decorate(oo.Name, oo.Provider, po.Path, h)
+			h = middleware.Decorate(o.Name, o.Provider, po.Path, h)
 		}
 		return h
 	}
 
 	// now we'll go ahead and register the health handler
-	if h, ok := handlers["health"]; ok &&
-		oo.HealthCheckUpstreamPath != "" && oo.HealthCheckVerb != "" && healthHandlerPath != "" {
-		hp := strings.Replace(healthHandlerPath+"/"+oo.Name, "//", "/", -1)
+	if h, ok := handlers["health"]; ok && (o.HealthCheck == nil ||
+		o.HealthCheck.Verb != "x") {
+		hp := strings.Replace(healthHandlerPath+"/"+o.Name, "//", "/", -1)
 		tl.Debug(logger, "registering health handler path",
-			tl.Pairs{"path": hp, "backendName": oo.Name,
-				"upstreamPath": oo.HealthCheckUpstreamPath,
-				"upstreamVerb": oo.HealthCheckVerb})
-		router.PathPrefix(hp).
-			Handler(middleware.WithResourcesContext(client, oo, nil, nil, tr, logger, h)).
+			tl.Pairs{"path": hp, "backendName": o.Name,
+				"upstreamPath": o.HealthCheck.Path,
+				"upstreamVerb": o.HealthCheck.Verb})
+		router.Path(hp).
+			Handler(middleware.WithResourcesContext(client, o, nil, nil, tr, logger, h)).
 			Methods(methods.CacheableHTTPMethods()...)
 	}
 
@@ -262,8 +269,8 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 
 	// now we will iterate through the configured paths, and overlay them on those default paths.
 	// for a rule backend provider, only the default paths are used with no overlay or importable config
-	if oo.Provider != "rule" {
-		for k, p := range oo.Paths {
+	if o.Provider != "rule" {
+		for k, p := range o.Paths {
 			if p2, ok := pathsWithVerbs[k]; ok {
 				p2.Merge(p)
 				continue
@@ -301,13 +308,13 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 	for _, v := range plist {
 		p := pathsWithVerbs[v]
 
-		pathPrefix := "/" + oo.Name
+		pathPrefix := "/" + o.Name
 		handledPath := pathPrefix + p.Path
 
 		tl.Debug(logger, "registering backend handler path",
-			tl.Pairs{"backendName": oo.Name, "path": v, "handlerName": p.HandlerName,
-				"originHost": oo.Host, "handledPath": handledPath, "matchType": p.MatchType,
-				"frontendHosts": strings.Join(oo.Hosts, ",")})
+			tl.Pairs{"backendName": o.Name, "path": v, "handlerName": p.HandlerName,
+				"originHost": o.Host, "handledPath": handledPath, "matchType": p.MatchType,
+				"frontendHosts": strings.Join(o.Hosts, ",")})
 		if p.Handler != nil && len(p.Methods) > 0 {
 
 			if p.Methods[0] == "*" {
@@ -318,10 +325,10 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 			case matching.PathMatchTypePrefix:
 				// Case where we path match by prefix
 				// Host Header Routing
-				for _, h := range oo.Hosts {
+				for _, h := range o.Hosts {
 					router.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...).Host(h)
 				}
-				if !oo.PathRoutingDisabled {
+				if !o.PathRoutingDisabled {
 					// Path Routing
 					router.PathPrefix(handledPath).Handler(middleware.StripPathPrefix(pathPrefix,
 						decorate(p))).Methods(p.Methods...)
@@ -330,10 +337,10 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 			default:
 				// default to exact match
 				// Host Header Routing
-				for _, h := range oo.Hosts {
+				for _, h := range o.Hosts {
 					router.Handle(p.Path, decorate(p)).Methods(p.Methods...).Host(h)
 				}
-				if !oo.PathRoutingDisabled {
+				if !o.PathRoutingDisabled {
 					// Path Routing
 					router.Handle(handledPath, middleware.StripPathPrefix(pathPrefix,
 						decorate(p))).Methods(p.Methods...)
@@ -343,14 +350,14 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		}
 	}
 
-	if oo.IsDefault {
+	if o.IsDefault {
 		tl.Info(logger,
-			"registering default backend handler paths", tl.Pairs{"backendName": oo.Name})
+			"registering default backend handler paths", tl.Pairs{"backendName": o.Name})
 		for _, v := range plist {
 			p := pathsWithVerbs[v]
 			if p.Handler != nil && len(p.Methods) > 0 {
 				tl.Debug(logger, "registering default backend handler paths",
-					tl.Pairs{"backendName": oo.Name, "path": p.Path, "handlerName": p.HandlerName,
+					tl.Pairs{"backendName": o.Name, "path": p.Path, "handlerName": p.HandlerName,
 						"matchType": p.MatchType})
 				switch p.MatchType {
 				case matching.PathMatchTypePrefix:
@@ -364,8 +371,8 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 			}
 		}
 	}
-	oo.Router = or
-	oo.Paths = pathsWithVerbs
+	o.Router = or
+	o.Paths = pathsWithVerbs
 }
 
 // ByLen allows sorting of a string slice by string length

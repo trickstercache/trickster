@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
+	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
@@ -60,6 +62,14 @@ type TimeseriesBackend interface {
 	BaseUpstreamURL() *url.URL
 	// Modeler returns the Modeler for converting between Datasets and wire documents
 	Modeler() *timeseries.Modeler
+	// DefaultHealthCheckConfig returns the default HealthCHeck Config for the given Provider
+	DefaultHealthCheckConfig() *ho.Options
+	// SetHealthCheckProbe sets the Health Check Status Prober for the Client
+	SetHealthCheckProbe(healthcheck.DemandProbe)
+	// HealthHandler executes a Health Check Probe when called
+	HealthHandler(http.ResponseWriter, *http.Request)
+	// HealthCheckHTTPClient returns the HTTP Client used for Health Checking
+	HealthCheckHTTPClient() *http.Client
 }
 
 var _ TimeseriesBackend = (*timeseriesBackend)(nil)

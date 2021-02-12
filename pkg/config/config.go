@@ -398,9 +398,10 @@ func (c *Config) String() string {
 					w.KeyHasher = nil
 				}
 			}
-			// also strip out potentially sensitive headers
-			hideAuthorizationCredentials(v.HealthCheckHeaders)
-
+			if v.HealthCheck != nil {
+				// also strip out potentially sensitive headers
+				hideAuthorizationCredentials(v.HealthCheck.Headers)
+			}
 			if v.Paths != nil {
 				for _, p := range v.Paths {
 					hideAuthorizationCredentials(p.RequestHeaders)

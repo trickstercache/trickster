@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
+	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy"
@@ -49,6 +51,14 @@ type Backend interface {
 	Cache() cache.Cache
 	// BaseUpstreamURL returns the base URL for upstream requests
 	BaseUpstreamURL() *url.URL
+	// SetHealthCheckProbe sets the Health Check Status Prober for the Client
+	SetHealthCheckProbe(healthcheck.DemandProbe)
+	// HealthHandler executes a Health Check Probe when called
+	HealthHandler(http.ResponseWriter, *http.Request)
+	// DefaultHealthCheckConfig returns the default Health Check Config for the given Provider
+	DefaultHealthCheckConfig() *ho.Options
+	// HealthCheckHTTPClient returns the HTTP Client used for Health Checking
+	HealthCheckHTTPClient() *http.Client
 }
 
 type backend struct {
@@ -56,11 +66,10 @@ type backend struct {
 	config             *bo.Options
 	cache              cache.Cache
 	webClient          *http.Client
+	healthCheckClient  *http.Client
 	handlers           map[string]http.Handler
 	handlersRegistered bool
-	healthURL          *url.URL
-	healthHeaders      http.Header
-	healthMethod       string
+	healthProbe        healthcheck.DemandProbe
 	router             http.Handler
 	baseUpstreamURL    *url.URL
 	registrar          func(map[string]http.Handler)
@@ -74,12 +83,32 @@ func New(name string, o *bo.Options, registrar Registrar,
 	router http.Handler, cache cache.Cache) (Backend, error) {
 
 	c, err := proxy.NewHTTPClient(o)
+
+	// this section sets up the health check HTTP client with a reasonable timeout
+	hco := o
+	if hco == nil {
+		hco = bo.New()
+		hco.HealthCheck = ho.New()
+	}
+	hcc, err2 := proxy.NewHTTPClient(hco)
+	if err == nil {
+		err = err2
+	}
+
+	var tms int
+	if o != nil && o.HealthCheck != nil {
+		tms = o.HealthCheck.TimeoutMS
+	}
+	if hcc != nil {
+		hcc.Timeout = ho.CalibrateTimeout(tms)
+	}
+
 	var bur *url.URL
 	if o != nil {
 		bur = urls.FromParts(o.Scheme, o.Host, o.PathPrefix, "", "")
 	}
 	return &backend{name: name, config: o, router: router, cache: cache,
-		webClient: c, baseUpstreamURL: bur, registrar: registrar}, err
+		webClient: c, healthCheckClient: hcc, baseUpstreamURL: bur, registrar: registrar}, err
 
 }
 
@@ -105,11 +134,6 @@ func (b *backend) SetCache(cc cache.Cache) {
 // Cache returns a handle to the Cache instance used by the Backend
 func (b *backend) Cache() cache.Cache {
 	return b.cache
-}
-
-// DELETE AFTER interface is otherwise implemented
-func (b *backend) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
-	return nil
 }
 
 // HTTPClient returns the HTTP Client for this Backend
@@ -138,4 +162,31 @@ func (b *backend) RegisterHandlers(h map[string]http.Handler) {
 		b.handlersRegistered = true
 		b.handlers = h
 	}
+}
+
+// SetHealthCheckProbe sets the Health Check Status Prober for the Client
+func (b *backend) SetHealthCheckProbe(p healthcheck.DemandProbe) {
+	b.healthProbe = p
+}
+
+// HealthHandler is the Health Check Handler for the backend
+func (b *backend) HealthHandler(w http.ResponseWriter, r *http.Request) {
+	if b.healthProbe != nil {
+		b.healthProbe(w)
+	}
+}
+
+// DefaultPathConfigs is a stub function and should be overridden by Backend implementations
+func (b *backend) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
+	return nil
+}
+
+// DefaultHealthCheckConfig is a stub function and should be overridden by Backend implementations
+func (b *backend) DefaultHealthCheckConfig() *ho.Options {
+	return nil
+}
+
+// HealthCheckHTTPClient returns the HTTP Client used for Health Checking
+func (b *backend) HealthCheckHTTPClient() *http.Client {
+	return b.healthCheckClient
 }
