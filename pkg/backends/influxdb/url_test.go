@@ -44,9 +44,9 @@ func TestSetExtent(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	oc := conf.Backends["default"]
+	o := conf.Backends["default"]
 
-	client, err := NewClient("default", oc, nil, nil, nil)
+	client, err := NewClient("default", o, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}

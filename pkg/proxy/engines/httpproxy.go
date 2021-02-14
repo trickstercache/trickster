@@ -54,7 +54,7 @@ const HTTPBlockSize = 32 * 1024
 func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 
 	rsc := request.GetResources(r)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 
 	start := time.Now()
 
@@ -80,7 +80,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 		}
 	} else {
 		pr := newProxyRequest(r, w)
-		key := oc.CacheKeyPrefix + "." + pr.DeriveCacheKey(nil, "")
+		key := o.CacheKeyPrefix + "." + pr.DeriveCacheKey(nil, "")
 		result, ok := reqs.Load(key)
 		if !ok {
 			var contentLength int64
@@ -88,7 +88,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 			cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 			// Check if we know the content length and if it is less than our max object size.
-			if contentLength != 0 && contentLength < int64(oc.MaxObjectSizeBytes) {
+			if contentLength != 0 && contentLength < int64(o.MaxObjectSizeBytes) {
 				pcf := NewPCF(resp, contentLength)
 				reqs.Store(key, pcf)
 				// Blocks until server completes
@@ -143,7 +143,7 @@ func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer 
 func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) {
 
 	rsc := request.GetResources(r)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 
 	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "PrepareFetchReader")
 	if span != nil {
@@ -154,7 +154,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	var rc io.ReadCloser
 
-	headers.AddForwardingHeaders(r, oc.ForwardedHeaders)
+	headers.AddForwardingHeaders(r, o.ForwardedHeaders)
 
 	if pc != nil && len(pc.RequestParams) > 0 {
 		headers.UpdateHeaders(r.Header, pc.RequestHeaders)
@@ -181,7 +181,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	// clear the Host header before proxying or it will be forwarded upstream
 	r.Host = ""
 
-	resp, err := oc.HTTPClient.Do(r)
+	resp, err := o.HTTPClient.Do(r)
 	if err != nil {
 		tl.Error(rsc.Logger,
 			"error downloading url", tl.Pairs{"url": r.URL.String(), "detail": err.Error()})
@@ -222,10 +222,10 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		d, err := http.ParseTime(date)
 		if err == nil {
 			if offset := time.Since(d); time.Duration(math.Abs(float64(offset))) > time.Minute {
-				tl.WarnOnce(rsc.Logger, "clockoffset."+oc.Name,
+				tl.WarnOnce(rsc.Logger, "clockoffset."+o.Name,
 					"clock offset between trickster host and origin is high and may cause data anomalies",
 					tl.Pairs{
-						"backendName":   oc.Name,
+						"backendName":   o.Name,
 						"tricksterTime": strconv.FormatInt(d.Add(offset).Unix(), 10),
 						"originTime":    strconv.FormatInt(d.Unix(), 10),
 						"offset":        strconv.FormatInt(int64(offset.Seconds()), 10) + "s",
@@ -275,15 +275,15 @@ func recordResults(r *http.Request, engine string, cacheStatus status.LookupStat
 
 	rsc := request.GetResources(r)
 	pc := rsc.PathConfig
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 
 	status := cacheStatus.String()
 
 	if pc != nil && !pc.NoMetrics {
 		httpStatus := strconv.Itoa(statusCode)
-		metrics.ProxyRequestStatus.WithLabelValues(oc.Name, oc.Provider, r.Method, status, httpStatus, path).Inc()
+		metrics.ProxyRequestStatus.WithLabelValues(o.Name, o.Provider, r.Method, status, httpStatus, path).Inc()
 		if elapsed > 0 {
-			metrics.ProxyRequestDuration.WithLabelValues(oc.Name, oc.Provider,
+			metrics.ProxyRequestDuration.WithLabelValues(o.Name, o.Provider,
 				r.Method, status, httpStatus, path).Observe(elapsed)
 		}
 	}

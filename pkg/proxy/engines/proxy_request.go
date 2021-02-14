@@ -150,7 +150,7 @@ func (pr *proxyRequest) Clone() *proxyRequest {
 func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 
 	rsc := request.GetResources(pr.upstreamRequest)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 	pc := rsc.PathConfig
 
 	var handlerName string
@@ -175,7 +175,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
 
-	go logUpstreamRequest(pr.Logger, oc.Name, oc.Provider, handlerName, pr.upstreamRequest.Method,
+	go logUpstreamRequest(pr.Logger, o.Name, o.Provider, handlerName, pr.upstreamRequest.Method,
 		pr.upstreamRequest.URL.String(), pr.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
 
 	return body, resp, elapsed
@@ -465,16 +465,16 @@ func (pr *proxyRequest) store() error {
 	}
 
 	rsc := request.GetResources(pr.Request)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 
-	rf := oc.RevalidationFactor
+	rf := o.RevalidationFactor
 	if rsc.AlternateCacheTTL > 0 {
 		rf = 1
 	}
 
 	d.CachingPolicy = pr.cachingPolicy
 	err := WriteCache(pr.upstreamRequest.Context(), rsc.CacheClient, pr.key, d,
-		pr.cachingPolicy.TTL(rf, oc.MaxTTL), oc.CompressableTypes)
+		pr.cachingPolicy.TTL(rf, o.MaxTTL), o.CompressableTypes)
 	if err != nil {
 		return err
 	}

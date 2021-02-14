@@ -29,8 +29,8 @@ import (
 
 func TestConfiguration(t *testing.T) {
 
-	oc := &bo.Options{Provider: "TEST"}
-	client := &backend{config: oc}
+	o := &bo.Options{Provider: "TEST"}
+	client := &backend{config: o}
 	c := client.Configuration()
 	if c.Provider != "TEST" {
 		t.Errorf("expected %s got %s", "TEST", c.Provider)

@@ -40,12 +40,12 @@ func (c *Client) RegisterHandlers(map[string]http.Handler) {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(oc *bo.Options) map[string]*po.Options {
+func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 
 	var rhts map[string]string
-	if oc != nil {
+	if o != nil {
 		rhts = map[string]string{
-			headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, oc.TimeseriesTTLMS/1000)}
+			headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, o.TimeseriesTTLMS/1000)}
 	}
 	rhinst := map[string]string{
 		headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 30)}
@@ -190,7 +190,7 @@ func (c *Client) DefaultPathConfigs(oc *bo.Options) map[string]*po.Options {
 		},
 	}
 
-	oc.FastForwardPath = paths[APIPath+mnQuery].Clone()
+	o.FastForwardPath = paths[APIPath+mnQuery].Clone()
 
 	return paths
 

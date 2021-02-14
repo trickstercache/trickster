@@ -82,10 +82,10 @@ func TestRegisterProxyRoutes(t *testing.T) {
 		t.Error(err)
 	}
 	tr := map[string]*tracing.Tracer{"test": z}
-	oc := conf.Backends["default"]
-	oc.TracingConfigName = "test"
+	o := conf.Backends["default"]
+	o.TracingConfigName = "test"
 
-	oc.Hosts = []string{"test", "test2"}
+	o.Hosts = []string{"test", "test2"}
 
 	registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	RegisterProxyRoutes(conf, mux.NewRouter(), caches, tr, log, false)
@@ -412,8 +412,8 @@ func TestValidateRuleClients(t *testing.T) {
 	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
 
-	oc := conf.Backends["default"]
-	oc.Provider = "rule"
+	o := conf.Backends["default"]
+	o.Provider = "rule"
 
 	_, err = RegisterProxyRoutes(conf, mux.NewRouter(), caches, nil, tl.ConsoleLogger("info"), false)
 	if err == nil {

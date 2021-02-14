@@ -30,9 +30,9 @@ func (c *Config) TLSCertConfig() (*tls.Config, error) {
 		return nil, nil
 	}
 	to := []*bo.Options{}
-	for _, oc := range c.Backends {
-		if oc.TLS.ServeTLS {
-			to = append(to, oc)
+	for _, o := range c.Backends {
+		if o.TLS.ServeTLS {
+			to = append(to, o)
 		}
 	}
 

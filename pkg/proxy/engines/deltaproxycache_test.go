@@ -62,7 +62,6 @@ func setupTestHarnessDPC() (*httptest.Server, *httptest.ResponseRecorder, *http.
 
 	bo := rsc.BackendOptions
 	cc := rsc.CacheClient
-	// oc.HTTPClient = hc
 
 	b, _ := backends.NewTimeseriesBackend(bo.Name, bo, client.RegisterHandlers, nil, cc, nil)
 	client.TimeseriesBackend = b
@@ -84,9 +83,9 @@ func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 
-	oc.FastForwardDisable = true
+	o.FastForwardDisable = true
 	step := time.Duration(300) * time.Second
 
 	now := time.Now()
@@ -164,12 +163,12 @@ func TestDeltaProxyCacheRequestAllItemsTooNew(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test"
 
-	oc.FastForwardDisable = true
-	oc.BackfillToleranceMS = 600000
-	oc.BackfillTolerance = time.Millisecond * time.Duration(oc.BackfillToleranceMS)
+	o.FastForwardDisable = true
+	o.BackfillToleranceMS = 600000
+	o.BackfillTolerance = time.Millisecond * time.Duration(o.BackfillToleranceMS)
 
 	step := time.Duration(300) * time.Second
 	end := time.Now()
@@ -222,10 +221,10 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test"
 
-	oc.FastForwardDisable = true
+	o.FastForwardDisable = true
 
 	step := time.Duration(300) * time.Second
 	now := time.Now()
@@ -266,7 +265,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 
 	// get cache hit coverage too by repeating:
 
-	oc.TimeseriesRetention = 10
+	o.TimeseriesRetention = 10
 
 	extr = timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: now}
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
@@ -302,10 +301,10 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 // 	defer ts.Close()
 
 // 	client := rsc.BackendClient.(*TestClient)
-// 	oc := rsc.BackendOptions
+// 	o := rsc.BackendOptions
 // 	rsc.CacheConfig.Provider = "test"
 
-// 	oc.FastForwardDisable = true
+// 	o.FastForwardDisable = true
 
 // 	step := time.Duration(300) * time.Second
 // 	now := time.Now()
@@ -346,7 +345,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 
 // 	// get cache hit coverage too by repeating:
 
-// 	oc.TimeseriesRetention = 10
+// 	o.TimeseriesRetention = 10
 
 // 	extr = timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: now}
 // 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
@@ -378,15 +377,15 @@ func TestDeltaProxyCacheRequestMarshalFailure(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 
 	rsc.CacheConfig.Provider = "test"
-	oc.CacheKeyPrefix = "test"
+	o.CacheKeyPrefix = "test"
 
 	cc := rsc.CacheClient
 	cc.Store("test.409d551e3653f5ad5aa9acbdac8d4ac3", []byte("x"), time.Second*1)
 
-	oc.FastForwardDisable = true
+	o.FastForwardDisable = true
 
 	step := time.Duration(300) * time.Second
 	now := time.Now()
@@ -428,13 +427,13 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test"
 
 	client.RangeCacheKey = "test-range-key-phit"
 	client.InstantCacheKey = "test-instant-key-phit"
 
-	oc.FastForwardDisable = true
+	o.FastForwardDisable = true
 
 	step := time.Duration(300) * time.Second
 
@@ -621,13 +620,13 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test"
 
 	client.RangeCacheKey = "testkey"
 	client.InstantCacheKey = "testInstantKey"
 
-	oc.FastForwardDisable = true
+	o.FastForwardDisable = true
 
 	step := time.Duration(300) * time.Second
 
@@ -713,10 +712,10 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test"
 
-	oc.FastForwardDisable = true
+	o.FastForwardDisable = true
 
 	step := time.Duration(3600) * time.Second
 
@@ -859,17 +858,17 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	rsc.CacheConfig.Provider = "test"
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 
 	client.InstantCacheKey = "test-dpc-ff-key-instant"
 	client.RangeCacheKey = "test-dpc-ff-key-range"
 
-	oc.FastForwardDisable = false
+	o.FastForwardDisable = false
 
 	step := time.Duration(300) * time.Second
 
 	now := time.Now()
-	client.fftime = now.Truncate(oc.FastForwardTTL)
+	client.fftime = now.Truncate(o.FastForwardTTL)
 
 	extr := timeseries.Extent{Start: now.Add(-time.Duration(12) * time.Hour), End: now}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
@@ -981,10 +980,10 @@ func TestDeltaProxyCacheRequestFastForwardUrlError(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test"
 
-	oc.FastForwardDisable = true
+	o.FastForwardDisable = true
 
 	step := time.Duration(300) * time.Second
 
@@ -1001,7 +1000,7 @@ func TestDeltaProxyCacheRequestFastForwardUrlError(t *testing.T) {
 	u.RawQuery = fmt.Sprintf("throw_ffurl_error=1&step=%d&start=%d&end=%d&query=%s",
 		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	oc.FastForwardDisable = false
+	o.FastForwardDisable = false
 	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
@@ -1041,10 +1040,10 @@ func TestDeltaProxyCacheRequestWithRefresh(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test"
 
-	oc.FastForwardDisable = true
+	o.FastForwardDisable = true
 
 	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
 
@@ -1096,10 +1095,10 @@ func TestDeltaProxyCacheRequestWithRefreshError(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test"
 
-	oc.FastForwardDisable = true
+	o.FastForwardDisable = true
 
 	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
 
@@ -1134,12 +1133,12 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test" // disable direct-memory and force marshaling
 
 	client.RangeCacheKey = "testkey"
 
-	oc.FastForwardDisable = true
+	o.FastForwardDisable = true
 
 	step := time.Duration(300) * time.Second
 
@@ -1177,7 +1176,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 	// Give time for the object to be written to cache in a separate goroutine from response
 	time.Sleep(time.Millisecond * 10)
 
-	key := oc.Host + ".dpc.61a603af5b94ea305dc3fa35af4eed98"
+	key := o.Host + ".dpc.61a603af5b94ea305dc3fa35af4eed98"
 
 	cc := client.Cache()
 
@@ -1235,10 +1234,10 @@ func TestDeltaProxyCacheRequest_BadParams(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test"
 
-	oc.FastForwardDisable = true
+	o.FastForwardDisable = true
 
 	const query = "some_query_here{}"
 	step := time.Duration(300) * time.Second
@@ -1276,10 +1275,10 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailed(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test" // disable direct-memory and force marshaling
 
-	oc.FastForwardDisable = true
+	o.FastForwardDisable = true
 
 	step := time.Duration(300) * time.Second
 
@@ -1340,9 +1339,9 @@ func TestDeltaProxyCacheRequestOutOfWindow(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 
-	oc.FastForwardDisable = true
+	o.FastForwardDisable = true
 
 	query := "some_query_here{}"
 	step := time.Duration(300) * time.Second
@@ -1415,10 +1414,10 @@ func TestDeltaProxyCacheRequestBadGateway(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test"
 
-	oc.FastForwardDisable = true
+	o.FastForwardDisable = true
 
 	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
 
@@ -1453,10 +1452,10 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 
-	oc.BackfillTolerance = time.Duration(300) * time.Second
-	oc.FastForwardDisable = true
+	o.BackfillTolerance = time.Duration(300) * time.Second
+	o.FastForwardDisable = true
 
 	query := "some_query_here{}"
 	step := time.Duration(300) * time.Second
@@ -1541,12 +1540,12 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
 	defer ts.Close()
 
 	client := rsc.BackendClient.(*TestClient)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 
-	oc.FastForwardDisable = false
+	o.FastForwardDisable = false
 
 	step := time.Duration(300) * time.Second
-	oc.FastForwardTTL = step + 1
+	o.FastForwardTTL = step + 1
 
 	now := time.Now()
 	end := now.Add(-time.Duration(12) * time.Hour)

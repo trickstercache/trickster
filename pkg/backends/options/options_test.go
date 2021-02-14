@@ -88,8 +88,8 @@ func testConfig() (Lookup, string) {
 func TestValidateConfigMappings(t *testing.T) {
 
 	ol, _ := testConfig()
-	oc := ol["test"]
-	ol["frontend"] = oc
+	o := ol["test"]
+	ol["frontend"] = o
 	err := ol.ValidateConfigMappings(ro.Lookup{}, co.Lookup{})
 	if err == nil {
 		t.Error("expected error for invalid backend name")

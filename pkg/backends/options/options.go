@@ -209,100 +209,100 @@ func New() *Options {
 }
 
 // Clone returns an exact copy of an *backends.Options
-func (oc *Options) Clone() *Options {
+func (o *Options) Clone() *Options {
 
-	o := &Options{}
-	o.DearticulateUpstreamRanges = oc.DearticulateUpstreamRanges
-	o.BackfillTolerance = oc.BackfillTolerance
-	o.BackfillToleranceMS = oc.BackfillToleranceMS
-	o.CacheName = oc.CacheName
-	o.CacheKeyPrefix = oc.CacheKeyPrefix
-	o.FastForwardDisable = oc.FastForwardDisable
-	o.FastForwardTTL = oc.FastForwardTTL
-	o.FastForwardTTLMS = oc.FastForwardTTLMS
-	o.ForwardedHeaders = oc.ForwardedHeaders
-	o.Host = oc.Host
-	o.Name = oc.Name
-	o.IsDefault = oc.IsDefault
-	o.KeepAliveTimeoutMS = oc.KeepAliveTimeoutMS
-	o.MaxIdleConns = oc.MaxIdleConns
-	o.MaxTTLMS = oc.MaxTTLMS
-	o.MaxTTL = oc.MaxTTL
-	o.MaxObjectSizeBytes = oc.MaxObjectSizeBytes
-	o.MultipartRangesDisabled = oc.MultipartRangesDisabled
-	o.Provider = oc.Provider
-	o.OriginURL = oc.OriginURL
-	o.PathPrefix = oc.PathPrefix
-	o.ReqRewriterName = oc.ReqRewriterName
-	o.RevalidationFactor = oc.RevalidationFactor
-	o.RuleName = oc.RuleName
-	o.Scheme = oc.Scheme
-	o.Timeout = oc.Timeout
-	o.TimeoutMS = oc.TimeoutMS
-	o.TimeseriesRetention = oc.TimeseriesRetention
-	o.TimeseriesRetentionFactor = oc.TimeseriesRetentionFactor
-	o.TimeseriesEvictionMethodName = oc.TimeseriesEvictionMethodName
-	o.TimeseriesEvictionMethod = oc.TimeseriesEvictionMethod
-	o.TimeseriesTTL = oc.TimeseriesTTL
-	o.TimeseriesTTLMS = oc.TimeseriesTTLMS
-	o.ValueRetention = oc.ValueRetention
+	no := &Options{}
+	no.DearticulateUpstreamRanges = o.DearticulateUpstreamRanges
+	no.BackfillTolerance = o.BackfillTolerance
+	no.BackfillToleranceMS = o.BackfillToleranceMS
+	no.CacheName = o.CacheName
+	no.CacheKeyPrefix = o.CacheKeyPrefix
+	no.FastForwardDisable = o.FastForwardDisable
+	no.FastForwardTTL = o.FastForwardTTL
+	no.FastForwardTTLMS = o.FastForwardTTLMS
+	no.ForwardedHeaders = o.ForwardedHeaders
+	no.Host = o.Host
+	no.Name = o.Name
+	no.IsDefault = o.IsDefault
+	no.KeepAliveTimeoutMS = o.KeepAliveTimeoutMS
+	no.MaxIdleConns = o.MaxIdleConns
+	no.MaxTTLMS = o.MaxTTLMS
+	no.MaxTTL = o.MaxTTL
+	no.MaxObjectSizeBytes = o.MaxObjectSizeBytes
+	no.MultipartRangesDisabled = o.MultipartRangesDisabled
+	no.Provider = o.Provider
+	no.OriginURL = o.OriginURL
+	no.PathPrefix = o.PathPrefix
+	no.ReqRewriterName = o.ReqRewriterName
+	no.RevalidationFactor = o.RevalidationFactor
+	no.RuleName = o.RuleName
+	no.Scheme = o.Scheme
+	no.Timeout = o.Timeout
+	no.TimeoutMS = o.TimeoutMS
+	no.TimeseriesRetention = o.TimeseriesRetention
+	no.TimeseriesRetentionFactor = o.TimeseriesRetentionFactor
+	no.TimeseriesEvictionMethodName = o.TimeseriesEvictionMethodName
+	no.TimeseriesEvictionMethod = o.TimeseriesEvictionMethod
+	no.TimeseriesTTL = o.TimeseriesTTL
+	no.TimeseriesTTLMS = o.TimeseriesTTLMS
+	no.ValueRetention = o.ValueRetention
 
-	o.TracingConfigName = oc.TracingConfigName
+	no.TracingConfigName = o.TracingConfigName
 
-	if oc.HealthCheck != nil {
-		o.HealthCheck = oc.HealthCheck.Clone()
+	if o.HealthCheck != nil {
+		no.HealthCheck = o.HealthCheck.Clone()
 	}
 
-	if oc.Hosts != nil {
-		o.Hosts = make([]string, len(oc.Hosts))
-		copy(o.Hosts, oc.Hosts)
+	if o.Hosts != nil {
+		no.Hosts = make([]string, len(o.Hosts))
+		copy(no.Hosts, o.Hosts)
 	}
 
-	if oc.Hosts != nil {
-		o.Hosts = make([]string, len(oc.Hosts))
-		copy(o.Hosts, oc.Hosts)
+	if o.Hosts != nil {
+		no.Hosts = make([]string, len(o.Hosts))
+		copy(no.Hosts, o.Hosts)
 	}
 
-	if oc.CompressableTypeList != nil {
-		o.CompressableTypeList = make([]string, len(oc.CompressableTypeList))
-		copy(o.CompressableTypeList, oc.CompressableTypeList)
+	if o.CompressableTypeList != nil {
+		no.CompressableTypeList = make([]string, len(o.CompressableTypeList))
+		copy(no.CompressableTypeList, o.CompressableTypeList)
 	}
 
-	if oc.CompressableTypes != nil {
-		o.CompressableTypes = make(map[string]bool)
-		for k := range oc.CompressableTypes {
-			o.CompressableTypes[k] = true
+	if o.CompressableTypes != nil {
+		no.CompressableTypes = make(map[string]bool)
+		for k := range o.CompressableTypes {
+			no.CompressableTypes[k] = true
 		}
 	}
 
-	o.Paths = make(map[string]*po.Options)
-	for l, p := range oc.Paths {
-		o.Paths[l] = p.Clone()
+	no.Paths = make(map[string]*po.Options)
+	for l, p := range o.Paths {
+		no.Paths[l] = p.Clone()
 	}
 
-	o.NegativeCacheName = oc.NegativeCacheName
-	if oc.NegativeCache != nil {
+	no.NegativeCacheName = o.NegativeCacheName
+	if o.NegativeCache != nil {
 		m := make(map[int]time.Duration)
-		for c, t := range oc.NegativeCache {
+		for c, t := range o.NegativeCache {
 			m[c] = t
 		}
-		o.NegativeCache = m
+		no.NegativeCache = m
 	}
 
-	if oc.TLS != nil {
-		o.TLS = oc.TLS.Clone()
+	if o.TLS != nil {
+		no.TLS = o.TLS.Clone()
 	}
-	o.RequireTLS = oc.RequireTLS
+	no.RequireTLS = o.RequireTLS
 
-	if oc.FastForwardPath != nil {
-		o.FastForwardPath = oc.FastForwardPath.Clone()
-	}
-
-	if oc.RuleOptions != nil {
-		o.RuleOptions = oc.RuleOptions.Clone()
+	if o.FastForwardPath != nil {
+		no.FastForwardPath = o.FastForwardPath.Clone()
 	}
 
-	return o
+	if o.RuleOptions != nil {
+		no.RuleOptions = o.RuleOptions.Clone()
+	}
+
+	return no
 }
 
 // Validate validates the Lookup collection of Backend Options
@@ -374,23 +374,23 @@ func ValidateBackendName(name string) error {
 // ValidateConfigMappings ensures that named config mappings from within origin configs
 // (e.g., backends.cache_name) are valid
 func (l Lookup) ValidateConfigMappings(rules ro.Lookup, caches co.Lookup) error {
-	for k, oc := range l {
+	for k, o := range l {
 		if err := ValidateBackendName(k); err != nil {
 			return err
 		}
-		switch oc.Provider {
+		switch o.Provider {
 		case "rule":
 			// Rule Type Validations
-			r, ok := rules[oc.RuleName]
+			r, ok := rules[o.RuleName]
 			if !ok {
-				return fmt.Errorf("invalid rule name [%s] provided in backend options [%s]", oc.RuleName, k)
+				return fmt.Errorf("invalid rule name [%s] provided in backend options [%s]", o.RuleName, k)
 			}
-			r.Name = oc.RuleName
-			oc.RuleOptions = r
+			r.Name = o.RuleName
+			o.RuleOptions = r
 		case "alb":
 		default:
-			if _, ok := caches[oc.CacheName]; !ok {
-				return fmt.Errorf("invalid cache name [%s] provided in backend options [%s]", oc.CacheName, k)
+			if _, ok := caches[o.CacheName]; !ok {
+				return fmt.Errorf("invalid cache name [%s] provided in backend options [%s]", o.CacheName, k)
 			}
 		}
 	}
@@ -400,9 +400,9 @@ func (l Lookup) ValidateConfigMappings(rules ro.Lookup, caches co.Lookup) error 
 // ValidateTLSConfigs iterates the map and validates any Options that use TLS
 func (l Lookup) ValidateTLSConfigs() (bool, error) {
 	var serveTLS bool
-	for _, oc := range l {
-		if oc.TLS != nil {
-			b, err := oc.TLS.Validate()
+	for _, o := range l {
+		if o.TLS != nil {
+			b, err := o.TLS.Validate()
 			if err != nil {
 				return false, err
 			}
@@ -417,7 +417,7 @@ func (l Lookup) ValidateTLSConfigs() (bool, error) {
 // ProcessTOML iterates a TOML Config
 func ProcessTOML(
 	name string,
-	options *Options,
+	o *Options,
 	metadata *toml.MetaData,
 	crw map[string]rewriter.RewriteInstructions,
 	backends Lookup,
@@ -428,162 +428,162 @@ func ProcessTOML(
 		return nil, errors.New("invalid config metadata")
 	}
 
-	oc := New()
-	oc.Name = name
+	no := New()
+	no.Name = name
 
-	if metadata.IsDefined("backends", name, "req_rewriter_name") && options.ReqRewriterName != "" {
-		oc.ReqRewriterName = options.ReqRewriterName
-		ri, ok := crw[oc.ReqRewriterName]
+	if metadata.IsDefined("backends", name, "req_rewriter_name") && o.ReqRewriterName != "" {
+		no.ReqRewriterName = o.ReqRewriterName
+		ri, ok := crw[no.ReqRewriterName]
 		if !ok {
 			return nil, fmt.Errorf("invalid rewriter name %s in backend options %s",
-				oc.ReqRewriterName, name)
+				no.ReqRewriterName, name)
 		}
-		oc.ReqRewriter = ri
+		no.ReqRewriter = ri
 	}
 
 	if metadata.IsDefined("backends", name, "provider") {
-		oc.Provider = options.Provider
+		no.Provider = o.Provider
 	}
 
 	if metadata.IsDefined("backends", name, "rule_name") {
-		oc.RuleName = options.RuleName
+		no.RuleName = o.RuleName
 	}
 
 	if metadata.IsDefined("backends", name, "path_routing_disabled") {
-		oc.PathRoutingDisabled = options.PathRoutingDisabled
+		no.PathRoutingDisabled = o.PathRoutingDisabled
 	}
 
-	if metadata.IsDefined("backends", name, "hosts") && options != nil {
-		oc.Hosts = make([]string, len(options.Hosts))
-		copy(oc.Hosts, options.Hosts)
+	if metadata.IsDefined("backends", name, "hosts") && o != nil {
+		no.Hosts = make([]string, len(o.Hosts))
+		copy(no.Hosts, o.Hosts)
 	}
 
 	if metadata.IsDefined("backends", name, "is_default") {
-		oc.IsDefault = options.IsDefault
+		no.IsDefault = o.IsDefault
 	}
 	// If there is only one backend and is_default is not explicitly false, make it true
 	if len(backends) == 1 && (!metadata.IsDefined("backends", name, "is_default")) {
-		oc.IsDefault = true
+		no.IsDefault = true
 	}
 
 	if metadata.IsDefined("backends", name, "forwarded_headers") {
-		oc.ForwardedHeaders = options.ForwardedHeaders
+		no.ForwardedHeaders = o.ForwardedHeaders
 	}
 
 	if metadata.IsDefined("backends", name, "require_tls") {
-		oc.RequireTLS = options.RequireTLS
+		no.RequireTLS = o.RequireTLS
 	}
 
 	if metadata.IsDefined("backends", name, "cache_name") {
-		oc.CacheName = options.CacheName
+		no.CacheName = o.CacheName
 	}
-	activeCaches[oc.CacheName] = true
+	activeCaches[no.CacheName] = true
 
 	if metadata.IsDefined("backends", name, "cache_key_prefix") {
-		oc.CacheKeyPrefix = options.CacheKeyPrefix
+		no.CacheKeyPrefix = o.CacheKeyPrefix
 	}
 
 	if metadata.IsDefined("backends", name, "origin_url") {
-		oc.OriginURL = options.OriginURL
+		no.OriginURL = o.OriginURL
 	}
 
 	if metadata.IsDefined("backends", name, "compressable_types") {
-		oc.CompressableTypeList = options.CompressableTypeList
+		no.CompressableTypeList = o.CompressableTypeList
 	}
 
 	if metadata.IsDefined("backends", name, "timeout_ms") {
-		oc.TimeoutMS = options.TimeoutMS
+		no.TimeoutMS = o.TimeoutMS
 	}
 
 	if metadata.IsDefined("backends", name, "max_idle_conns") {
-		oc.MaxIdleConns = options.MaxIdleConns
+		no.MaxIdleConns = o.MaxIdleConns
 	}
 
 	if metadata.IsDefined("backends", name, "keep_alive_timeout_ms") {
-		oc.KeepAliveTimeoutMS = options.KeepAliveTimeoutMS
+		no.KeepAliveTimeoutMS = o.KeepAliveTimeoutMS
 	}
 
 	if metadata.IsDefined("backends", name, "timeseries_retention_factor") {
-		oc.TimeseriesRetentionFactor = options.TimeseriesRetentionFactor
+		no.TimeseriesRetentionFactor = o.TimeseriesRetentionFactor
 	}
 
 	if metadata.IsDefined("backends", name, "timeseries_eviction_method") {
-		oc.TimeseriesEvictionMethodName = strings.ToLower(options.TimeseriesEvictionMethodName)
-		if p, ok := evictionmethods.Names[oc.TimeseriesEvictionMethodName]; ok {
-			oc.TimeseriesEvictionMethod = p
+		no.TimeseriesEvictionMethodName = strings.ToLower(o.TimeseriesEvictionMethodName)
+		if p, ok := evictionmethods.Names[no.TimeseriesEvictionMethodName]; ok {
+			no.TimeseriesEvictionMethod = p
 		}
 	}
 
 	if metadata.IsDefined("backends", name, "timeseries_ttl_ms") {
-		oc.TimeseriesTTLMS = options.TimeseriesTTLMS
+		no.TimeseriesTTLMS = o.TimeseriesTTLMS
 	}
 
 	if metadata.IsDefined("backends", name, "max_ttl_ms") {
-		oc.MaxTTLMS = options.MaxTTLMS
+		no.MaxTTLMS = o.MaxTTLMS
 	}
 
 	if metadata.IsDefined("backends", name, "fastforward_ttl_ms") {
-		oc.FastForwardTTLMS = options.FastForwardTTLMS
+		no.FastForwardTTLMS = o.FastForwardTTLMS
 	}
 
 	if metadata.IsDefined("backends", name, "fast_forward_disable") {
-		oc.FastForwardDisable = options.FastForwardDisable
+		no.FastForwardDisable = o.FastForwardDisable
 	}
 
 	if metadata.IsDefined("backends", name, "backfill_tolerance_ms") {
-		oc.BackfillToleranceMS = options.BackfillToleranceMS
+		no.BackfillToleranceMS = o.BackfillToleranceMS
 	}
 
 	if metadata.IsDefined("backends", name, "paths") {
-		err := po.ProcessTOML(name, metadata, options.Paths, crw)
+		err := po.ProcessTOML(name, metadata, o.Paths, crw)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if metadata.IsDefined("backends", name, "negative_cache_name") {
-		oc.NegativeCacheName = options.NegativeCacheName
+		no.NegativeCacheName = o.NegativeCacheName
 	}
 
 	if metadata.IsDefined("backends", name, "tracing_name") {
-		oc.TracingConfigName = options.TracingConfigName
+		no.TracingConfigName = o.TracingConfigName
 	}
 
 	if metadata.IsDefined("backends", name, "healthcheck") {
-		oc.HealthCheck = options.HealthCheck
+		no.HealthCheck = o.HealthCheck
 		// because each backend provider has different default health check options, these
 		// provided options will be overlaid onto the defaults during registration
-		if oc.HealthCheck != nil {
-			oc.HealthCheck.SetMetaData(metadata)
+		if no.HealthCheck != nil {
+			no.HealthCheck.SetMetaData(metadata)
 		}
 	}
 
 	if metadata.IsDefined("backends", name, "max_object_size_bytes") {
-		oc.MaxObjectSizeBytes = options.MaxObjectSizeBytes
+		no.MaxObjectSizeBytes = o.MaxObjectSizeBytes
 	}
 
 	if metadata.IsDefined("backends", name, "revalidation_factor") {
-		oc.RevalidationFactor = options.RevalidationFactor
+		no.RevalidationFactor = o.RevalidationFactor
 	}
 
 	if metadata.IsDefined("backends", name, "multipart_ranges_disabled") {
-		oc.MultipartRangesDisabled = options.MultipartRangesDisabled
+		no.MultipartRangesDisabled = o.MultipartRangesDisabled
 	}
 
 	if metadata.IsDefined("backends", name, "dearticulate_upstream_ranges") {
-		oc.DearticulateUpstreamRanges = options.DearticulateUpstreamRanges
+		no.DearticulateUpstreamRanges = o.DearticulateUpstreamRanges
 	}
 
 	if metadata.IsDefined("backends", name, "tls") {
-		oc.TLS = &to.Options{
-			InsecureSkipVerify:        options.TLS.InsecureSkipVerify,
-			CertificateAuthorityPaths: options.TLS.CertificateAuthorityPaths,
-			PrivateKeyPath:            options.TLS.PrivateKeyPath,
-			FullChainCertPath:         options.TLS.FullChainCertPath,
-			ClientCertPath:            options.TLS.ClientCertPath,
-			ClientKeyPath:             options.TLS.ClientKeyPath,
+		no.TLS = &to.Options{
+			InsecureSkipVerify:        o.TLS.InsecureSkipVerify,
+			CertificateAuthorityPaths: o.TLS.CertificateAuthorityPaths,
+			PrivateKeyPath:            o.TLS.PrivateKeyPath,
+			FullChainCertPath:         o.TLS.FullChainCertPath,
+			ClientCertPath:            o.TLS.ClientCertPath,
+			ClientKeyPath:             o.TLS.ClientKeyPath,
 		}
 	}
 
-	return oc, nil
+	return no, nil
 }
