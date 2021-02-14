@@ -117,11 +117,11 @@ func TestNewListenerErr(t *testing.T) {
 func TestNewListenerTLS(t *testing.T) {
 
 	c := config.NewConfig()
-	oc := c.Backends["default"]
+	o := c.Backends["default"]
 	c.Frontend.ServeTLS = true
 
-	tc := oc.TLS
-	oc.TLS.ServeTLS = true
+	tc := o.TLS
+	o.TLS.ServeTLS = true
 
 	kf, cf, closer, err := tlstest.GetTestKeyAndCertFiles("")
 	if err != nil {

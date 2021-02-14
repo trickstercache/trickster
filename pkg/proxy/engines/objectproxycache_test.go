@@ -131,9 +131,9 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 
 	r.Header.Add(headers.NameRange, "bytes=0-3")
 
-	oc := rsc.BackendOptions
-	oc.MaxTTLMS = 15000
-	oc.MaxTTL = time.Duration(oc.MaxTTLMS) * time.Millisecond
+	o := rsc.BackendOptions
+	o.MaxTTLMS = 15000
+	o.MaxTTL = time.Duration(o.MaxTTLMS) * time.Millisecond
 
 	_, e := testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "kmiss"})
 	for _, err = range e {
@@ -395,10 +395,10 @@ func TestObjectProxyCachePartialHitNotFresh(t *testing.T) {
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: rsc.BackendOptions})
 
 	pr := newProxyRequest(r, w)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 	cc := rsc.CacheClient
 	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
-	pr.key = oc.Host + "." + pr.DeriveCacheKey(nil, "")
+	pr.key = o.Host + "." + pr.DeriveCacheKey(nil, "")
 	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, _ = QueryCache(ctx, cc, pr.key, pr.wantedRanges)
 	handleCacheKeyMiss(pr)
 
@@ -430,10 +430,10 @@ func TestObjectProxyCachePartialHitFullResponse(t *testing.T) {
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: rsc.BackendOptions})
 
 	pr := newProxyRequest(r, w)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 	cc := rsc.CacheClient
 	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
-	pr.key = oc.Host + "." + pr.DeriveCacheKey(nil, "")
+	pr.key = o.Host + "." + pr.DeriveCacheKey(nil, "")
 	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, _ = QueryCache(ctx, cc, pr.key, pr.wantedRanges)
 	handleCacheKeyMiss(pr)
 	handleCachePartialHit(pr)
@@ -566,9 +566,9 @@ func TestObjectProxyCacheRequestWithPCF(t *testing.T) {
 	}
 	defer ts.Close()
 
-	oc := rsc.BackendOptions
-	oc.MaxTTLMS = 15000
-	oc.MaxTTL = time.Duration(oc.MaxTTLMS) * time.Millisecond
+	o := rsc.BackendOptions
+	o.MaxTTLMS = 15000
+	o.MaxTTL = time.Duration(o.MaxTTLMS) * time.Millisecond
 
 	r.Header.Set("testHeaderName", "testHeaderValue")
 

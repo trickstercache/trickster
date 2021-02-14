@@ -49,18 +49,18 @@ func emptyTestConfig() (*Config, string) {
 func TestClone(t *testing.T) {
 	c1 := NewConfig()
 
-	oc := c1.Backends["default"]
+	o := c1.Backends["default"]
 	c1.NegativeCacheConfigs["default"]["404"] = 10
 
 	const expected = "trickster"
 
-	oc.CompressableTypeList = []string{"text/plain"}
-	oc.CompressableTypes = map[string]bool{"text/plain": true}
-	oc.NegativeCacheName = "default"
-	oc.NegativeCache = map[int]time.Duration{404: time.Duration(10) * time.Second}
-	oc.FastForwardPath = po.New()
-	oc.TLS = &to.Options{CertificateAuthorityPaths: []string{"foo"}}
-	oc.HealthCheck.Headers = map[string]string{headers.NameAuthorization: expected}
+	o.CompressableTypeList = []string{"text/plain"}
+	o.CompressableTypes = map[string]bool{"text/plain": true}
+	o.NegativeCacheName = "default"
+	o.NegativeCache = map[int]time.Duration{404: time.Duration(10) * time.Second}
+	o.FastForwardPath = po.New()
+	o.TLS = &to.Options{CertificateAuthorityPaths: []string{"foo"}}
+	o.HealthCheck.Headers = map[string]string{headers.NameAuthorization: expected}
 
 	c1.Rules = map[string]*rule.Options{
 		"test": {},
@@ -105,10 +105,10 @@ func TestHideAuthorizationCredentials(t *testing.T) {
 
 func TestCloneBackendOptions(t *testing.T) {
 
-	oc := bo.New()
-	oc.Hosts = []string{"test"}
+	o := bo.New()
+	o.Hosts = []string{"test"}
 
-	oc2 := oc.Clone()
+	oc2 := o.Clone()
 
 	if len(oc2.Hosts) != 1 {
 		t.Errorf("expected %d got %d", 1, len(oc2.Hosts))

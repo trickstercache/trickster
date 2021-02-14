@@ -46,34 +46,34 @@ func TestNewHTTPClient(t *testing.T) {
 	const caFileInvalid2 = "../../testdata/test.06.cert.pem"
 
 	// test good backend config, no CA
-	oc := bo.New()
-	_, err = NewHTTPClient(oc)
+	o := bo.New()
+	_, err = NewHTTPClient(o)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// test good backend config, 1 good CA
-	oc.TLS.CertificateAuthorityPaths = []string{caFile}
-	_, err = NewHTTPClient(oc)
+	o.TLS.CertificateAuthorityPaths = []string{caFile}
+	_, err = NewHTTPClient(o)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// test good backend config, 1 bad CA (file not found)
-	oc.TLS.CertificateAuthorityPaths = []string{caFileInvalid1}
-	_, err = NewHTTPClient(oc)
+	o.TLS.CertificateAuthorityPaths = []string{caFileInvalid1}
+	_, err = NewHTTPClient(o)
 	if err == nil {
 		t.Errorf("expected error for no such file or directory on %s", caFileInvalid1)
 	}
 
 	// test good backend config, 1 bad CA (junk content)
-	oc.TLS.CertificateAuthorityPaths = []string{caFileInvalid2}
-	_, err = NewHTTPClient(oc)
+	o.TLS.CertificateAuthorityPaths = []string{caFileInvalid2}
+	_, err = NewHTTPClient(o)
 	if err == nil {
 		t.Errorf("expected error for unable to append to CA Certs from file %s", caFileInvalid2)
 	}
 
-	oc.TLS.CertificateAuthorityPaths = []string{}
+	o.TLS.CertificateAuthorityPaths = []string{}
 
 	kf, cf, closer, err := tlstest.GetTestKeyAndCertFiles("")
 	if err != nil {
@@ -83,18 +83,18 @@ func TestNewHTTPClient(t *testing.T) {
 		defer closer()
 	}
 
-	oc.TLS.ClientCertPath = cf
-	oc.TLS.ClientKeyPath = kf
-	_, err = NewHTTPClient(oc)
+	o.TLS.ClientCertPath = cf
+	o.TLS.ClientKeyPath = kf
+	_, err = NewHTTPClient(o)
 	if err != nil {
 		t.Error(err)
 	}
 
-	oc.TLS.ClientCertPath = "../../testdata/test.05.cert.pem"
-	oc.TLS.ClientKeyPath = "../../testdata/test.05.key.pem"
-	oc.TLS.CertificateAuthorityPaths = []string{}
-	_, err = NewHTTPClient(oc)
+	o.TLS.ClientCertPath = "../../testdata/test.05.cert.pem"
+	o.TLS.ClientKeyPath = "../../testdata/test.05.key.pem"
+	o.TLS.CertificateAuthorityPaths = []string{}
+	_, err = NewHTTPClient(o)
 	if err == nil {
-		t.Errorf("failed to find any PEM data in key input for file %s", oc.TLS.ClientKeyPath)
+		t.Errorf("failed to find any PEM data in key input for file %s", o.TLS.ClientKeyPath)
 	}
 }

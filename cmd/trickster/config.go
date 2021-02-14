@@ -152,7 +152,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *tl.Logge
 	return nil
 }
 
-func applyLoggingConfig(c, oc *config.Config, oldLog *tl.Logger) *tl.Logger {
+func applyLoggingConfig(c, o *config.Config, oldLog *tl.Logger) *tl.Logger {
 
 	if c == nil || c.Logging == nil {
 		return oldLog
@@ -162,15 +162,15 @@ func applyLoggingConfig(c, oc *config.Config, oldLog *tl.Logger) *tl.Logger {
 		c.ReloadConfig = ro.New()
 	}
 
-	if oc != nil && oc.Logging != nil {
-		if c.Logging.LogFile == oc.Logging.LogFile &&
-			c.Logging.LogLevel == oc.Logging.LogLevel {
+	if o != nil && o.Logging != nil {
+		if c.Logging.LogFile == o.Logging.LogFile &&
+			c.Logging.LogLevel == o.Logging.LogLevel {
 			// no changes in logging config,
 			// so we keep the old logger intact
 			return oldLog
 		}
-		if c.Logging.LogFile != oc.Logging.LogFile {
-			if oc.Logging.LogFile != "" {
+		if c.Logging.LogFile != o.Logging.LogFile {
+			if o.Logging.LogFile != "" {
 				// if we're changing from file1 -> console or file1 -> file2, close file1 handle
 				// the extra 1s allows HTTP listeners to close first and finish their log writes
 				go delayedLogCloser(oldLog,
@@ -178,7 +178,7 @@ func applyLoggingConfig(c, oc *config.Config, oldLog *tl.Logger) *tl.Logger {
 			}
 			return initLogger(c)
 		}
-		if c.Logging.LogLevel != oc.Logging.LogLevel {
+		if c.Logging.LogLevel != o.Logging.LogLevel {
 			// the only change is the log level, so update it and return the original logger
 			oldLog.SetLogLevel(c.Logging.LogLevel)
 			return oldLog

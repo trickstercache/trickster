@@ -31,27 +31,27 @@ import (
 
 // NewHTTPClient returns an HTTP client configured to the specifications of the
 // running Trickster config.
-func NewHTTPClient(oc *bo.Options) (*http.Client, error) {
+func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 
-	if oc == nil {
+	if o == nil {
 		return nil, nil
 	}
 
 	var TLSConfig *tls.Config
 
-	if oc.TLS != nil {
-		TLSConfig = &tls.Config{InsecureSkipVerify: oc.TLS.InsecureSkipVerify}
+	if o.TLS != nil {
+		TLSConfig = &tls.Config{InsecureSkipVerify: o.TLS.InsecureSkipVerify}
 
-		if oc.TLS.ClientCertPath != "" && oc.TLS.ClientKeyPath != "" {
+		if o.TLS.ClientCertPath != "" && o.TLS.ClientKeyPath != "" {
 			// load client cert
-			cert, err := tls.LoadX509KeyPair(oc.TLS.ClientCertPath, oc.TLS.ClientKeyPath)
+			cert, err := tls.LoadX509KeyPair(o.TLS.ClientCertPath, o.TLS.ClientKeyPath)
 			if err != nil {
 				return nil, err
 			}
 			TLSConfig.Certificates = []tls.Certificate{cert}
 		}
 
-		if oc.TLS.CertificateAuthorityPaths != nil && len(oc.TLS.CertificateAuthorityPaths) > 0 {
+		if o.TLS.CertificateAuthorityPaths != nil && len(o.TLS.CertificateAuthorityPaths) > 0 {
 
 			// credit snippet to https://forfuncsake.github.io/post/2017/08/trust-extra-ca-cert-in-go-app/
 			// Get the SystemCertPool, continue with an empty pool on error
@@ -60,7 +60,7 @@ func NewHTTPClient(oc *bo.Options) (*http.Client, error) {
 				rootCAs = x509.NewCertPool()
 			}
 
-			for _, path := range oc.TLS.CertificateAuthorityPaths {
+			for _, path := range o.TLS.CertificateAuthorityPaths {
 				// Read in the cert file
 				certs, err := ioutil.ReadFile(path)
 				if err != nil {
@@ -78,14 +78,14 @@ func NewHTTPClient(oc *bo.Options) (*http.Client, error) {
 	}
 
 	return &http.Client{
-		Timeout: oc.Timeout,
+		Timeout: o.Timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
-			Dial:                (&net.Dialer{KeepAlive: time.Duration(oc.KeepAliveTimeoutMS) * time.Millisecond}).Dial,
-			MaxIdleConns:        oc.MaxIdleConns,
-			MaxIdleConnsPerHost: oc.MaxIdleConns,
+			Dial:                (&net.Dialer{KeepAlive: time.Duration(o.KeepAliveTimeoutMS) * time.Millisecond}).Dial,
+			MaxIdleConns:        o.MaxIdleConns,
+			MaxIdleConnsPerHost: o.MaxIdleConns,
 			TLSClientConfig:     TLSConfig,
 		},
 	}, nil

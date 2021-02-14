@@ -50,7 +50,7 @@ import (
 func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *timeseries.Modeler) {
 
 	rsc := request.GetResources(r)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 
 	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "DeltaProxyCacheRequest")
 	if span != nil {
@@ -81,12 +81,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	var cacheStatus status.LookupStatus
 
 	pr := newProxyRequest(r, w)
-	rlo.FastForwardDisable = oc.FastForwardDisable || rlo.FastForwardDisable
+	rlo.FastForwardDisable = o.FastForwardDisable || rlo.FastForwardDisable
 	trq.NormalizeExtent()
 
 	// this is used to ensure the head of the cache respects the BackFill Tolerance
 	bf := timeseries.Extent{Start: time.Unix(0, 0), End: trq.Extent.End}
-	bt := trq.GetBackfillTolerance(oc.BackfillTolerance)
+	bt := trq.GetBackfillTolerance(o.BackfillTolerance)
 
 	if !trq.IsOffset && bt > 0 {
 		bf.End = bf.End.Add(-bt)
@@ -95,12 +95,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	now := time.Now()
 
 	OldestRetainedTimestamp := time.Time{}
-	if oc.TimeseriesEvictionMethod == evictionmethods.EvictionMethodOldest {
-		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * oc.TimeseriesRetention))
+	if o.TimeseriesEvictionMethod == evictionmethods.EvictionMethodOldest {
+		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * o.TimeseriesRetention))
 		if trq.Extent.End.Before(OldestRetainedTimestamp) {
 			tl.Debug(pr.Logger, "timerange end is too early to consider caching",
 				tl.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp,
-					"step": trq.Step, "retention": oc.TimeseriesRetention})
+					"step": trq.Step, "retention": o.TimeseriesRetention})
 			DoProxy(w, r, true)
 			return
 		}
@@ -114,7 +114,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	}
 
 	client.SetExtent(pr.upstreamRequest, trq, &trq.Extent)
-	key := oc.CacheKeyPrefix + ".dpc." + pr.DeriveCacheKey(trq.TemplateURL, "")
+	key := o.CacheKeyPrefix + ".dpc." + pr.DeriveCacheKey(trq.TemplateURL, "")
 	pr.cacheLock, _ = locker.RAcquire(key)
 
 	// this is used to determine if Fast Forward should be activated for this request
@@ -182,15 +182,15 @@ checkCache:
 					return // fetchTimeseries logs the error
 				}
 			} else {
-				if oc.TimeseriesEvictionMethod == evictionmethods.EvictionMethodLRU {
+				if o.TimeseriesEvictionMethod == evictionmethods.EvictionMethodLRU {
 					el := cts.Extents()
 					tsc := cts.TimestampCount()
 					if tsc > 0 &&
-						tsc >= int64(oc.TimeseriesRetentionFactor) {
+						tsc >= int64(o.TimeseriesRetentionFactor) {
 						if trq.Extent.End.Before(el[0].Start) {
 							pr.cacheLock.RRelease()
 							tl.Debug(pr.Logger, "timerange end is too early to consider caching",
-								tl.Pairs{"step": trq.Step, "retention": oc.TimeseriesRetention})
+								tl.Pairs{"step": trq.Step, "retention": o.TimeseriesRetention})
 							DoProxy(w, r, true)
 							return
 						}
@@ -240,7 +240,7 @@ checkCache:
 		// in this case, it's not a cache hit, so something is _likely_ going to be cached now.
 		// we write lock here, so as to prevent other concurrent client requests for the same url,
 		// which will have the same cacheStatus, from causing the same or similar HTTP requests
-		// to be made against the origin, since just one should do.
+		// to be made against the origin, since just one should doc.
 
 		// acquire a write lock via the Upgrade method, which will swap the read lock for a
 		// write lock, and return true if this client was the only one, or otherwise the first
@@ -264,14 +264,14 @@ checkCache:
 	var ffReq *http.Request
 	// if the step resolution <= Fast Forward TTL, then no need to even try Fast Forward
 	if !rlo.FastForwardDisable {
-		if trq.Step > oc.FastForwardTTL {
+		if trq.Step > o.FastForwardTTL {
 			ffReq, err = client.FastForwardRequest(r)
 			if err != nil || ffReq == nil || ffReq.URL == nil || ffReq.URL.Scheme == "" {
 				ffStatus = "err"
 				rlo.FastForwardDisable = true
 			} else {
-				rs := request.NewResources(oc, oc.FastForwardPath, cc, cache, client, rsc.Tracer, pr.Logger)
-				rs.AlternateCacheTTL = oc.FastForwardTTL
+				rs := request.NewResources(o, o.FastForwardPath, cc, cache, client, rsc.Tracer, pr.Logger)
+				rs.AlternateCacheTTL = o.FastForwardTTL
 				ffReq = ffReq.WithContext(tctx.WithResources(ffReq.Context(), rs))
 			}
 		} else {
@@ -303,7 +303,7 @@ checkCache:
 			defer wg.Done()
 			rq.upstreamRequest = rq.WithContext(tctx.WithResources(
 				trace.ContextWithSpan(context.Background(), span),
-				request.NewResources(oc, pc, cc, cache, client, rsc.Tracer, pr.Logger)))
+				request.NewResources(o, pc, cc, cache, client, rsc.Tracer, pr.Logger)))
 			client.SetExtent(rq.upstreamRequest, trq, e)
 
 			ctxMR, spanMR := tspan.NewChildSpan(rq.upstreamRequest.Context(), rsc.Tracer, "FetchRange")
@@ -393,9 +393,9 @@ checkCache:
 			defer writeLock.Release()
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the
 			// Backfill Tolerance before storing to cache
-			switch oc.TimeseriesEvictionMethod {
+			switch o.TimeseriesEvictionMethod {
 			case evictionmethods.EvictionMethodLRU:
-				cts.CropToSize(oc.TimeseriesRetentionFactor, bf.End, trq.Extent)
+				cts.CropToSize(o.TimeseriesRetentionFactor, bf.End, trq.Extent)
 			default:
 				cts.CropToRange(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
 			}
@@ -415,10 +415,10 @@ checkCache:
 					}
 					doc.Body = cdata
 				}
-				if err := WriteCache(ctx, cache, key, doc, oc.TimeseriesTTL, oc.CompressableTypes); err != nil {
+				if err := WriteCache(ctx, cache, key, doc, o.TimeseriesTTL, o.CompressableTypes); err != nil {
 					tl.Error(pr.Logger, "error writing object to cache",
 						tl.Pairs{
-							"backendName": oc.Name,
+							"backendName": o.Name,
 							"cacheName":   cache.Configuration().Name,
 							"cacheKey":    key,
 							"detail":      err.Error(),
@@ -432,13 +432,13 @@ checkCache:
 	cachedValueCount := rts.ValueCount() - uncachedValueCount
 
 	if uncachedValueCount > 0 {
-		metrics.ProxyRequestElements.WithLabelValues(oc.Name,
-			oc.Provider, "uncached", r.URL.Path).Add(float64(uncachedValueCount))
+		metrics.ProxyRequestElements.WithLabelValues(o.Name,
+			o.Provider, "uncached", r.URL.Path).Add(float64(uncachedValueCount))
 	}
 
 	if cachedValueCount > 0 {
-		metrics.ProxyRequestElements.WithLabelValues(oc.Name,
-			oc.Provider, "cached", r.URL.Path).Add(float64(cachedValueCount))
+		metrics.ProxyRequestElements.WithLabelValues(o.Name,
+			o.Provider, "cached", r.URL.Path).Add(float64(cachedValueCount))
 	}
 
 	// Merge Fast Forward data if present. This must be done after the Downstream Crop since
@@ -470,7 +470,7 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	client backends.TimeseriesBackend, modeler *timeseries.Modeler) (timeseries.Timeseries, *HTTPDocument, time.Duration, error) {
 
 	rsc := request.GetResources(pr.Request)
-	oc := rsc.BackendOptions
+	o := rsc.BackendOptions
 	pc := rsc.PathConfig
 
 	var handlerName string
@@ -525,7 +525,7 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	}
 
 	elapsed := time.Since(start)
-	go logUpstreamRequest(pr.Logger, oc.Name, oc.Provider, handlerName,
+	go logUpstreamRequest(pr.Logger, o.Name, o.Provider, handlerName,
 		pr.Method, pr.URL.String(), pr.UserAgent(), resp.StatusCode, 0, elapsed.Seconds())
 
 	return ts, d, elapsed, nil

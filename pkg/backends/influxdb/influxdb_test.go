@@ -65,8 +65,8 @@ func TestNewClient(t *testing.T) {
 		t.Errorf("Could not find default configuration")
 	}
 
-	oc := &bo.Options{Provider: "TEST_CLIENT"}
-	c, err := NewClient("default", oc, nil, cache, testModeler)
+	o := &bo.Options{Provider: "TEST_CLIENT"}
+	c, err := NewClient("default", o, nil, cache, testModeler)
 	if err != nil {
 		t.Error(err)
 	}

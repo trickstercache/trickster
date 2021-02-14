@@ -29,15 +29,15 @@ import (
 )
 
 // WithResourcesContext ...
-func WithResourcesContext(client backends.Backend, oc *bo.Options,
+func WithResourcesContext(client backends.Backend, o *bo.Options,
 	c cache.Cache, p *po.Options, t *tracing.Tracer,
 	l interface{}, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var resources *request.Resources
 		if c == nil {
-			resources = request.NewResources(oc, p, nil, nil, client, t, l)
+			resources = request.NewResources(o, p, nil, nil, client, t, l)
 		} else {
-			resources = request.NewResources(oc, p, c.Configuration(), c, client, t, l)
+			resources = request.NewResources(o, p, c.Configuration(), c, client, t, l)
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithResources(r.Context(), resources)))
 	})

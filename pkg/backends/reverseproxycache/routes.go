@@ -39,7 +39,7 @@ func (c *Client) RegisterHandlers(map[string]http.Handler) {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(oc *bo.Options) map[string]*po.Options {
+func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 
 	cm := methods.CacheableHTTPMethods()
 	um := methods.UncacheableHTTPMethods()

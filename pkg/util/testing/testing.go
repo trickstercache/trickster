@@ -128,14 +128,14 @@ func NewTestInstance(
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", ts.URL+urlPath, nil)
 
-	oc := conf.Backends["default"]
-	p := NewTestPathConfig(oc, defaultPathConfigs, urlPath)
+	o := conf.Backends["default"]
+	p := NewTestPathConfig(o, defaultPathConfigs, urlPath)
 
 	var tracer *tracing.Tracer
 
 	logger := tl.ConsoleLogger("error")
-	if oc.TracingConfigName != "" {
-		if tc, ok := conf.TracingConfigs[oc.TracingConfigName]; ok {
+	if o.TracingConfigName != "" {
+		if tc, ok := conf.TracingConfigs[o.TracingConfigName]; ok {
 			tracer, _ = tr.GetTracer(tc, logger, true)
 		}
 	} else {
@@ -146,7 +146,7 @@ func NewTestInstance(
 		p.ResponseHeaders = respHeaders
 	}
 
-	rsc := request.NewResources(oc, p, cache.Configuration(), cache, nil, tracer, logger)
+	rsc := request.NewResources(o, p, cache.Configuration(), cache, nil, tracer, logger)
 	r = r.WithContext(tc.WithResources(r.Context(), rsc))
 
 	c := NewTestWebClient()
@@ -156,16 +156,16 @@ func NewTestInstance(
 
 // NewTestPathConfig returns a path config based on the provided parameters
 func NewTestPathConfig(
-	oc *bo.Options,
+	o *bo.Options,
 	defaultPathConfigs func(*bo.Options) map[string]*po.Options,
 	urlPath string,
 ) *po.Options {
 	var paths map[string]*po.Options
 	if defaultPathConfigs != nil {
-		paths = defaultPathConfigs(oc)
+		paths = defaultPathConfigs(o)
 	}
 
-	oc.Paths = paths
+	o.Paths = paths
 
 	p := &po.Options{}
 	if len(paths) > 0 {
