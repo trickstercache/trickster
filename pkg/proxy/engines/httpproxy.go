@@ -86,7 +86,9 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 			var contentLength int64
 			reader, resp, contentLength = PrepareFetchReader(r)
 			cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
+			pr.mapLock.Lock()
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+			pr.mapLock.Unlock()
 			// Check if we know the content length and if it is less than our max object size.
 			if contentLength != 0 && contentLength < int64(o.MaxObjectSizeBytes) {
 				pcf := NewPCF(resp, contentLength)
@@ -107,7 +109,9 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 		} else {
 			pcf, _ := result.(ProgressiveCollapseForwarder)
 			resp = pcf.GetResp()
+			pr.mapLock.Lock()
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+			pr.mapLock.Lock()
 			pcf.AddClient(writer)
 		}
 	}
@@ -119,6 +123,11 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	elapsed = time.Since(start)
 	recordResults(r, "HTTPProxy", cacheStatusCode, resp.StatusCode,
 		r.URL.Path, "", elapsed.Seconds(), nil, resp.Header)
+
+	if rsc != nil && rsc.IsMergeMember {
+		rsc.Response = resp
+	}
+
 	return resp
 }
 

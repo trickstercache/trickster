@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
+	"github.com/tricksterproxy/trickster/pkg/backends/alb"
 	"github.com/tricksterproxy/trickster/pkg/backends/clickhouse"
 	modelch "github.com/tricksterproxy/trickster/pkg/backends/clickhouse/model"
 	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
@@ -135,6 +136,10 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 		return nil, err
 	}
 
+	err = alb.ValidatePools(clients)
+	if err != nil {
+		return nil, err
+	}
 	return clients, nil
 }
 
@@ -185,6 +190,12 @@ func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
 		client, err = reverseproxy.NewClient(k, o, mux.NewRouter())
 	case "rule":
 		client, err = rule.NewClient(k, o, mux.NewRouter(), clients)
+	case "alb":
+		if strings.HasPrefix(o.ALBOptions.MechanismName, "tsm") {
+			// for now assume prometheus but will need to revisit if more mergable providers are supported
+			o.ALBOptions.MergablePaths = prometheus.MergablePaths()
+		}
+		client, err = alb.NewClient(k, o, mux.NewRouter())
 	}
 	if err != nil {
 		return err
@@ -227,7 +238,7 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		if tr != nil {
 			h = middleware.Trace(tr, h)
 		}
-		// add Origin, Cache, and Path Configs to the HTTP Request's context
+		// add Backend, Cache, and Path Configs to the HTTP Request's context
 		h = middleware.WithResourcesContext(client, o, c, po, tr, logger, h)
 		// attach any request rewriters
 		if len(o.ReqRewriter) > 0 {
@@ -257,19 +268,20 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 	}
 
 	// This takes the default paths, named like '/api/v1/query' and morphs the name
-	// into what the router wants, with methods like '/api/v1/query-GET-HEAD', to help
-	// route sorting
+	// into what the router wants, with methods like '/api/v1/query-0000011001', to help
+	// route sorting. the bitmap provides unique names multiple path entries of the same
+	// path but with different methods, without impacting true path sorting
 	pathsWithVerbs := make(map[string]*po.Options)
 	for _, p := range defaultPaths {
 		if len(p.Methods) == 0 {
 			p.Methods = methods.CacheableHTTPMethods()
 		}
-		pathsWithVerbs[p.Path+"-"+strings.Join(p.Methods, "-")] = p
+		pathsWithVerbs[p.Path+"-"+fmt.Sprintf("%010b", methods.MethodMask(p.Methods...))] = p
 	}
 
 	// now we will iterate through the configured paths, and overlay them on those default paths.
-	// for a rule backend provider, only the default paths are used with no overlay or importable config
-	if o.Provider != "rule" {
+	// for rule & alb backend providers, only the default paths are used with no overlay or importable config
+	if !backends.IsVirtual(o.Provider) {
 		for k, p := range o.Paths {
 			if p2, ok := pathsWithVerbs[k]; ok {
 				p2.Merge(p)
@@ -313,7 +325,7 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 
 		tl.Debug(logger, "registering backend handler path",
 			tl.Pairs{"backendName": o.Name, "path": v, "handlerName": p.HandlerName,
-				"originHost": o.Host, "handledPath": handledPath, "matchType": p.MatchType,
+				"backendHost": o.Host, "handledPath": handledPath, "matchType": p.MatchType,
 				"frontendHosts": strings.Join(o.Hosts, ",")})
 		if p.Handler != nil && len(p.Methods) > 0 {
 

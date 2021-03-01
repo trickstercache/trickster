@@ -39,6 +39,13 @@ func WithResourcesContext(client backends.Backend, o *bo.Options,
 		} else {
 			resources = request.NewResources(o, p, c.Configuration(), c, client, t, l)
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithResources(r.Context(), resources)))
+		ctx := r.Context()
+		rsc, ok := context.Resources(ctx).(*request.Resources)
+		if !ok {
+			next.ServeHTTP(w, r.WithContext(context.WithResources(r.Context(), resources)))
+			return
+		}
+		rsc.Merge(resources)
+		next.ServeHTTP(w, r.WithContext(context.WithResources(r.Context(), rsc)))
 	})
 }
