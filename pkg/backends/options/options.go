@@ -26,7 +26,7 @@ import (
 	"github.com/BurntSushi/toml"
 	ao "github.com/tricksterproxy/trickster/pkg/backends/alb/options"
 	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
-	propt "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
+	prop "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
 	ro "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	"github.com/tricksterproxy/trickster/pkg/cache/negative"
@@ -111,7 +111,7 @@ type Options struct {
 	// ALBOptions holds the options for ALBs
 	ALBOptions *ao.Options `toml:"alb"`
 	// Prometheus holds options specific to prometheus backends
-	Prometheus *propt.Options `toml:"prometheus"`
+	Prometheus *prop.Options `toml:"prometheus"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `toml:"tls"`
@@ -318,7 +318,7 @@ func (o *Options) Clone() *Options {
 	}
 
 	if o.Prometheus != nil {
-		no.Prometheus = &propt.Options{}
+		no.Prometheus = &prop.Options{}
 		if o.Prometheus.Labels != nil {
 			no.Prometheus.Labels = dataset.Tags(o.Prometheus.Labels).Clone()
 		}

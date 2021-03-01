@@ -69,8 +69,8 @@ func TestDefaultPathConfigs(t *testing.T) {
 
 }
 
-func TestMergablePaths(t *testing.T) {
-	if len(MergablePaths()) != 6 {
-		t.Errorf("expected %d got %d", 6, len(MergablePaths()))
+func TestMergeablePaths(t *testing.T) {
+	if len(MergeablePaths()) != 6 {
+		t.Errorf("expected %d got %d", 6, len(MergeablePaths()))
 	}
 }

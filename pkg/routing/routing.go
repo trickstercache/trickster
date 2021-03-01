@@ -192,8 +192,8 @@ func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
 		client, err = rule.NewClient(k, o, mux.NewRouter(), clients)
 	case "alb":
 		if strings.HasPrefix(o.ALBOptions.MechanismName, "tsm") {
-			// for now assume prometheus but will need to revisit if more mergable providers are supported
-			o.ALBOptions.MergablePaths = prometheus.MergablePaths()
+			// for now assume prometheus but will need to revisit if more mergeable providers are supported
+			o.ALBOptions.MergeablePaths = prometheus.MergeablePaths()
 		}
 		client, err = alb.NewClient(k, o, mux.NewRouter())
 	}

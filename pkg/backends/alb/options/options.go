@@ -40,8 +40,8 @@ type Options struct {
 	// OutputFormat accompanies the tsmerge Mechanism to indicate the provider output format
 	// options include any valid time seres backend like prometheus, influxdb or clickhouse
 	OutputFormat string `toml:"output_format"`
-	// MergablePaths are ones that Trickster can merge multiple documents into a single response
-	MergablePaths []string `toml:"-"` // this is populated by backends that support tsmerge
+	// MergeablePaths are ones that Trickster can merge multiple documents into a single response
+	MergeablePaths []string `toml:"-"` // this is populated by backends that support tsmerge
 
 }
 
@@ -66,10 +66,10 @@ func (o *Options) Clone() *Options {
 		}
 	}
 
-	if o.MergablePaths != nil {
-		c.MergablePaths = make([]string, len(o.MergablePaths))
-		if len(o.MergablePaths) > 0 {
-			copy(c.MergablePaths, o.MergablePaths)
+	if o.MergeablePaths != nil {
+		c.MergeablePaths = make([]string, len(o.MergeablePaths))
+		if len(o.MergeablePaths) > 0 {
+			copy(c.MergeablePaths, o.MergeablePaths)
 		}
 	}
 

@@ -94,7 +94,7 @@ func GetResponseGates(w http.ResponseWriter, r *http.Request, hl []http.Handler)
 	return mgs
 }
 
-// SetStatusHeader inspects the X-Trickster-Result header value crafted for each mergable response
+// SetStatusHeader inspects the X-Trickster-Result header value crafted for each mergeable response
 // and aggregates into a single header value for the primary merged response
 func SetStatusHeader(w http.ResponseWriter, mgs merge.ResponseGates) {
 	statusHeader := ""

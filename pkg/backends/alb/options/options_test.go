@@ -63,7 +63,7 @@ func TestClone(t *testing.T) {
 
 	o := New()
 	o.Pool = []string{"test"}
-	o.MergablePaths = []string{"/test"}
+	o.MergeablePaths = []string{"/test"}
 	if o == nil {
 		t.Error("expected non-nil")
 	}
@@ -73,7 +73,7 @@ func TestClone(t *testing.T) {
 		t.Error("clone mismatch")
 	}
 
-	if len(co.MergablePaths) != 1 || co.MergablePaths[0] != "/test" {
+	if len(co.MergeablePaths) != 1 || co.MergeablePaths[0] != "/test" {
 		t.Error("clone mismatch")
 	}
 

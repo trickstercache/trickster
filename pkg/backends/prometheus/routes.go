@@ -43,9 +43,9 @@ func (c *Client) RegisterHandlers(map[string]http.Handler) {
 	)
 }
 
-// MergablePaths returns the list of Prometheus Paths for which Trickster supports
+// MergeablePaths returns the list of Prometheus Paths for which Trickster supports
 // merging multiple documents into a single response
-func MergablePaths() []string {
+func MergeablePaths() []string {
 	return []string{
 		"/api/v1/query_range",
 		"/api/v1/query",

@@ -289,7 +289,7 @@ func TestProcessTOML(t *testing.T) {
 	o.Paths["series"].ReqRewriterName = "invalid"
 	_, err = ProcessTOML("test", o, o.md, nil, backends, map[string]bool{})
 	if err == nil {
-		t.Error("expercted error for invalid rewriter name")
+		t.Error("expected error for invalid rewriter name")
 	}
 
 	o2, err = fromTestTOMLWithReqRewriter()
@@ -377,14 +377,14 @@ func TestCloneTOMLSafe(t *testing.T) {
 
 	p, ok := o.Paths["series"]
 	if !ok {
-		t.Error("exected 'series' path")
+		t.Error("expected 'series' path")
 	}
 	p.RequestHeaders = map[string]string{headers.NameAuthorization: "trickster"}
 
 	co := o.CloneTOMLSafe()
 	p, ok = co.Paths["series"]
 	if !ok {
-		t.Error("exected 'series' path")
+		t.Error("expected 'series' path")
 	}
 
 	if v, ok := p.RequestHeaders[headers.NameAuthorization]; !ok || v != "*****" {

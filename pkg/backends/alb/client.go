@@ -71,7 +71,7 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		case pool.TimeSeriesMerge.String():
 			c.handler = http.HandlerFunc(c.handleResponseMerge)
 			c.nonmergeHandler = http.HandlerFunc(c.handleRoundRobin)
-			c.mergePaths = o.ALBOptions.MergablePaths
+			c.mergePaths = o.ALBOptions.MergeablePaths
 		default:
 			c.handler = http.HandlerFunc(c.handleRoundRobin)
 		}
