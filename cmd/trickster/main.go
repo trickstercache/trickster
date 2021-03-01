@@ -36,12 +36,17 @@ const (
 	applicationVersion = "2.0.0-beta0"
 )
 
-var fatalStartupErrors = true
 var wg = &sync.WaitGroup{}
+
+var exitFunc func() = exitFatal
 
 func main() {
 	runtime.ApplicationName = applicationName
 	runtime.ApplicationVersion = applicationVersion
-	runConfig(nil, wg, nil, nil, os.Args[1:], fatalStartupErrors)
+	runConfig(nil, wg, nil, nil, os.Args[1:], exitFunc)
 	wg.Wait()
+}
+
+func exitFatal() {
+	os.Exit(1)
 }

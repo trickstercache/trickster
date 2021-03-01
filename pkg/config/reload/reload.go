@@ -28,4 +28,4 @@ import (
 // ReloaderFunc describes a function that loads and applies a Trickster config at startup,
 // or gracefully over an existing running Config
 type ReloaderFunc func(oldConf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
-	caches map[string]cache.Cache, args []string, errorsFatal bool) error
+	caches map[string]cache.Cache, args []string, errorFunc func()) error
