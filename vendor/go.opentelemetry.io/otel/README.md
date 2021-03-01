@@ -1,6 +1,6 @@
 # OpenTelemetry-Go
 
-[![Circle CI](https://circleci.com/gh/open-telemetry/opentelemetry-go.svg?style=svg)](https://circleci.com/gh/open-telemetry/opentelemetry-go)
+[![CI](https://github.com/open-telemetry/opentelemetry-go/workflows/ci/badge.svg)](https://github.com/open-telemetry/opentelemetry-go/actions?query=workflow%3Aci+branch%3Amain)
 [![PkgGoDev](https://pkg.go.dev/badge/go.opentelemetry.io/otel)](https://pkg.go.dev/go.opentelemetry.io/otel)
 [![Go Report Card](https://goreportcard.com/badge/go.opentelemetry.io/otel)](https://goreportcard.com/report/go.opentelemetry.io/otel)
 [![Gitter](https://badges.gitter.im/open-telemetry/opentelemetry-go.svg)](https://gitter.im/open-telemetry/opentelemetry-go?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
@@ -23,7 +23,12 @@ Progress and status specific to this repository is tracked in our local
 and
 [milestones](https://github.com/open-telemetry/opentelemetry-go/milestones).
 
+Project versioning information and stability guarantees can be found in the
+[versioning documentation](./VERSIONING.md).
+
 ## Getting Started
+
+You can find a getting started guide on [opentelemetry.io](https://opentelemetry.io/docs/go/getting-started/).
 
 OpenTelemetry's goal is to provide a single set of APIs to capture distributed
 traces and metrics from your application and send them to an observability
@@ -37,7 +42,7 @@ To start capturing distributed traces and metric events from your application
 it first needs to be instrumented. The easiest way to do this is by using an
 instrumentation library for your code. Be sure to check out [the officially
 supported instrumentation
-libraries](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/master/instrumentation).
+libraries](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/main/instrumentation).
 
 If you need to extend the telemetry an instrumentation library provides or want
 to build your own instrumentation for your application directly you will need
@@ -53,7 +58,7 @@ export pipeline to send that telemetry to an observability platform.
 
 You can find officially supported exporters [here](./exporters/) and in the
 companion [contrib
-repository](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/master/exporters/metric).
+repository](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/main/exporters/metric).
 Additionally, there are many vendor specific or 3rd party exporters for
 OpenTelemetry. These exporters are broken down by
 [trace](https://pkg.go.dev/go.opentelemetry.io/otel/sdk/export/trace?tab=importedby)
