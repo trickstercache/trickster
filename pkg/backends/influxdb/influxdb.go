@@ -18,10 +18,7 @@
 package influxdb
 
 import (
-	"io"
 	"net/http"
-	"net/url"
-	"sync"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
@@ -34,12 +31,6 @@ var _ backends.Backend = (*Client)(nil)
 // Client Implements the Proxy Client Interface
 type Client struct {
 	backends.TimeseriesBackend
-
-	healthURL        *url.URL
-	healthHeaders    http.Header
-	healthMethod     string
-	healthBody       io.Reader
-	healthHeaderLock sync.Mutex
 }
 
 // NewClient returns a new Client Instance

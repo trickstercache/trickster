@@ -26,8 +26,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/netutil"
-
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	ph "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
@@ -36,6 +34,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
 	"github.com/gorilla/handlers"
+	"golang.org/x/net/netutil"
 )
 
 // Listener is the Trickster net.Listener implmementation

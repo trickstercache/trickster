@@ -245,8 +245,10 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 
 }
 
-// DocumentFromHTTPResponse returns an HTTPDocument from the provided HTTP Response and Body
-func DocumentFromHTTPResponse(resp *http.Response, body []byte, cp *CachingPolicy, logger interface{}) *HTTPDocument {
+// DocumentFromHTTPResponse returns an HTTPDocument from the provided
+// HTTP Response and Body
+func DocumentFromHTTPResponse(resp *http.Response, body []byte,
+	cp *CachingPolicy, logger interface{}) *HTTPDocument {
 	d := &HTTPDocument{}
 	d.StatusCode = resp.StatusCode
 	d.Status = resp.Status

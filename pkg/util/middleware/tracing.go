@@ -41,8 +41,8 @@ func Trace(tr *tracing.Tracer, next http.Handler) http.Handler {
 				rsc.CacheConfig != nil {
 				tspan.SetAttributes(tr, span,
 					[]label.KeyValue{
-						label.String("origin.name", rsc.BackendOptions.Name),
-						label.String("origin.type", rsc.BackendOptions.Provider),
+						label.String("backend.name", rsc.BackendOptions.Name),
+						label.String("backend.provider", rsc.BackendOptions.Provider),
 						label.String("router.path", rsc.PathConfig.Path),
 						label.String("cache.name", rsc.CacheConfig.Name),
 						label.String("cache.provider", rsc.CacheConfig.Provider),

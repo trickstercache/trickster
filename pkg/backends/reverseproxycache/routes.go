@@ -44,7 +44,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 	cm := methods.CacheableHTTPMethods()
 	um := methods.UncacheableHTTPMethods()
 
-	paths := map[string]*po.Options{
+	paths := po.Lookup{
 		"/-" + strings.Join(cm, "-"): {
 			Path:          "/",
 			HandlerName:   "proxycache",
