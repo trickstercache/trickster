@@ -54,7 +54,7 @@ func TestUpdateLastUsed(t *testing.T) {
 			el:       ExtentListLRU{Extent{Start: t100, End: t1300, LastUsed: t1300}},
 			lu:       Extent{Start: t200, End: t600},
 			step:     time.Duration(100) * time.Second,
-			expected: fmt.Sprintf("100-100:1300;200-600:%d;700-1300:1300", now),
+			expected: fmt.Sprintf("100-100:1300,200-600:%d,700-1300:1300", now),
 		},
 
 		{
@@ -66,7 +66,7 @@ func TestUpdateLastUsed(t *testing.T) {
 			},
 			lu:       Extent{Start: t1100, End: t1400},
 			step:     time.Duration(100) * time.Second,
-			expected: fmt.Sprintf("100-200:200;600-900:900;1100-1400:%d", now),
+			expected: fmt.Sprintf("100-200:200,600-900:900,1100-1400:%d", now),
 		},
 
 		{
@@ -78,7 +78,7 @@ func TestUpdateLastUsed(t *testing.T) {
 			},
 			lu:       Extent{Start: t1200, End: t1400},
 			step:     time.Duration(100) * time.Second,
-			expected: fmt.Sprintf("100-200:200;600-900:900;1100-1100:900;1200-1400:%d", now),
+			expected: fmt.Sprintf("100-200:200,600-900:900,1100-1100:900,1200-1400:%d", now),
 		},
 
 		{
@@ -90,7 +90,7 @@ func TestUpdateLastUsed(t *testing.T) {
 			},
 			lu:       Extent{Start: t600, End: t900},
 			step:     time.Duration(100) * time.Second,
-			expected: fmt.Sprintf("100-200:200;600-900:%d;1100-1300:900;1400-1400:1400", now),
+			expected: fmt.Sprintf("100-200:200,600-900:%d,1100-1300:900,1400-1400:1400", now),
 		},
 
 		{
@@ -102,7 +102,7 @@ func TestUpdateLastUsed(t *testing.T) {
 			},
 			lu:       Extent{Start: t200, End: t1300},
 			step:     time.Duration(100) * time.Second,
-			expected: fmt.Sprintf("100-100:200;200-1300:%d;1400-1400:1400", now),
+			expected: fmt.Sprintf("100-100:200,200-1300:%d,1400-1400:1400", now),
 		},
 
 		{
@@ -208,21 +208,21 @@ func TestString(t *testing.T) {
 		el       ExtentList
 		expected string
 	}{
-		{
+		{ // 0
 			ExtentList{
 				Extent{Start: t100, End: t200},
 				Extent{Start: t600, End: t900},
 				Extent{Start: t1100, End: t1300},
 			},
-			"100000-200000;600000-900000;1100000-1300000",
+			"100000-200000,600000-900000,1100000-1300000",
 		},
 
-		{
+		{ // 1
 			ExtentList{},
 			"",
 		},
 
-		{
+		{ // 2
 			ExtentList{
 				Extent{Start: t100, End: t200},
 			},

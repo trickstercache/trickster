@@ -99,7 +99,6 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			DataType: timeseries.String,
 		}
 		sh.FieldsList = []timeseries.FieldDefinition{fd}
-		//sh.FieldsLookup = map[string]*timeseries.FieldDefinition{"value": fd}
 		sh.CalculateHash()
 		var pts dataset.Points
 		l := len(pr.Values)
@@ -108,7 +107,6 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			for _, v := range pr.Values {
 				pts = append(pts, pointFromValues(v))
 			}
-			// hello extentlist??? TODO
 		} else if wfd.Data.ResultType == "vector" && len(pr.Value) == 2 {
 			pts = make(dataset.Points, 1)
 			pt := pointFromValues(pr.Value)
