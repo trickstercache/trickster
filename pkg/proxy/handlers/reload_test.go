@@ -34,7 +34,7 @@ import (
 func TestReloadHandleFunc(t *testing.T) {
 
 	var emptyFunc = func(*config.Config, *sync.WaitGroup, *tl.Logger,
-		map[string]cache.Cache, []string, bool) error {
+		map[string]cache.Cache, []string, func()) error {
 		return nil
 	}
 

@@ -44,7 +44,7 @@ import (
 var cfgLock = &sync.Mutex{}
 
 func runConfig(oldConf *config.Config, wg *sync.WaitGroup, log *log.Logger,
-	oldCaches map[string]cache.Cache, args []string, errorsFatal bool) error {
+	oldCaches map[string]cache.Cache, args []string, exitFunc func()) error {
 
 	metrics.BuildInfo.WithLabelValues(applicationGoVersion,
 		applicationGitCommitID, applicationVersion).Set(1)
@@ -60,32 +60,32 @@ func runConfig(oldConf *config.Config, wg *sync.WaitGroup, log *log.Logger,
 		if flags != nil && !flags.ValidateConfig {
 			PrintUsage()
 		}
-		handleStartupIssue("", nil, nil, errorsFatal)
+		handleStartupIssue("", nil, nil, exitFunc)
 		return err
 	}
 
 	// if it's a -version command, print version and exit
 	if flags.PrintVersion {
 		PrintVersion()
-		os.Exit(0)
+		return nil
 	}
 
 	err = validateConfig(conf)
 	if err != nil {
 		handleStartupIssue("ERROR: Could not load configuration: "+err.Error(),
-			nil, nil, errorsFatal)
+			nil, nil, exitFunc)
 	}
 	if flags.ValidateConfig {
 		fmt.Println("Trickster configuration validation succeeded.")
-		os.Exit(0)
+		return nil
 	}
 
-	return applyConfig(conf, oldConf, wg, log, oldCaches, args, errorsFatal)
+	return applyConfig(conf, oldConf, wg, log, oldCaches, args, exitFunc)
 
 }
 
 func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logger,
-	oldCaches map[string]cache.Cache, args []string, errorsFatal bool) error {
+	oldCaches map[string]cache.Cache, args []string, exitFunc func()) error {
 
 	if conf == nil {
 		return nil
@@ -110,7 +110,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logg
 	tracers, err := tr.RegisterAll(conf, log, false)
 	if err != nil {
 		handleStartupIssue("tracing registration failed", tl.Pairs{"detail": err.Error()},
-			log, errorsFatal)
+			log, exitFunc)
 		return err
 	}
 
@@ -124,7 +124,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *log.Logg
 	_, err = routing.RegisterProxyRoutes(conf, router, caches, tracers, log, false)
 	if err != nil {
 		handleStartupIssue("route registration failed", tl.Pairs{"detail": err.Error()},
-			log, errorsFatal)
+			log, exitFunc)
 		return err
 	}
 
@@ -262,21 +262,20 @@ func delayedLogCloser(log *log.Logger, delay time.Duration) {
 	log.Close()
 }
 
-func handleStartupIssue(event string, detail log.Pairs, logger *log.Logger, exitFatal bool) {
+func handleStartupIssue(event string, detail log.Pairs, logger *log.Logger, exitFunc func()) {
 	metrics.LastReloadSuccessful.Set(0)
 	if event != "" {
 		if logger != nil {
-			if exitFatal {
-				logger.Fatal(1, event, detail)
-				return
-			}
 			logger.Error(event, detail)
+			if exitFunc != nil {
+				exitFunc()
+			}
 			return
 		}
 		fmt.Println(event)
 	}
-	if exitFatal {
-		os.Exit(1)
+	if exitFunc != nil {
+		exitFunc()
 	}
 }
 
