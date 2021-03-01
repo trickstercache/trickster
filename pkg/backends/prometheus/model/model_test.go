@@ -17,20 +17,21 @@
 package model
 
 import (
+	"net/http/httptest"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"github.com/tricksterproxy/trickster/pkg/timeseries/dataset"
 )
 
-const testDoc = `{"status":"success","data":{"resultType":"matrix","result":[{` +
+const testMatrix = `{"status":"success","data":{"resultType":"matrix","result":[{` +
 	`"metric":{"__name__":"up","instance":"localhost:9090","job":"prometheus"},"values"` +
 	`:[[1435781430,"1"],[1435781445,"1"],[1435781460,"1"]]},{"metric":` +
 	`{"__name__":"up","instance":"localhost:9091","job":"node"},"values":` +
 	`[[1435781430,"0"],[1435781445,"0"],[1435781460,"1"]]}]}}`
 
 func TestUnmarshalTimeseries(t *testing.T) {
-	b := []byte(testDoc)
+	b := []byte(testMatrix)
 	trq := &timeseries.TimeRangeQuery{}
 	ts, err := UnmarshalTimeseries(b, trq)
 	if err != nil {
@@ -47,7 +48,7 @@ func TestUnmarshalTimeseries(t *testing.T) {
 		t.Error(err)
 	}
 
-	if string(b) != testDoc {
+	if string(b) != testMatrix {
 		t.Error("marsahing error")
 	}
 
@@ -62,5 +63,19 @@ func TestUnmarshalInstantaneous(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 		return
+	}
+}
+
+func TestStartMarshal(t *testing.T) {
+	w := httptest.NewRecorder()
+	e := &Envelope{
+		Status:    "test status",
+		Error:     "test error",
+		ErrorType: "test type",
+		Warnings:  []string{"test_warning1", "test_warning2"},
+	}
+	e.StartMarshal(w, 400)
+	if w.Code != 400 {
+		t.Errorf("expected %d got %d", 400, w.Code)
 	}
 }
