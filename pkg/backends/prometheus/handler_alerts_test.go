@@ -23,25 +23,14 @@ import (
 	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 )
 
-func TestRegisterHandlers(t *testing.T) {
-	c, err := NewClient("test", nil, nil, nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	c.RegisterHandlers(nil)
-	if _, ok := c.Handlers()[mnQueryRange]; !ok {
-		t.Errorf("expected to find handler named: %s", mnQueryRange)
-	}
-}
-
-func TestDefaultPathConfigs(t *testing.T) {
+func TestAlertsHandler(t *testing.T) {
 
 	backendClient, err := NewClient("test", nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
-	ts, _, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
-		200, "{}", nil, "prometheus", "/health", "debug")
+	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200,
+		"{}", nil, "prometheus", "/health", "debug")
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -55,22 +44,12 @@ func TestDefaultPathConfigs(t *testing.T) {
 	client := backendClient.(*Client)
 	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+	rsc.IsMergeMember = true
 
-	dpc := client.DefaultPathConfigs(rsc.BackendOptions)
+	client.AlertsHandler(w, r)
 
-	if _, ok := dpc["/"]; !ok {
-		t.Errorf("expected to find path named: %s", "/")
+	if rsc.ResponseMergeFunc == nil {
+		t.Error("expected non-nil func value")
 	}
 
-	const expectedLen = 14
-	if len(dpc) != expectedLen {
-		t.Errorf("expected ordered length to be: %d got %d", expectedLen, len(dpc))
-	}
-
-}
-
-func TestMergablePaths(t *testing.T) {
-	if len(MergablePaths()) != 6 {
-		t.Errorf("expected %d got %d", 6, len(MergablePaths()))
-	}
 }

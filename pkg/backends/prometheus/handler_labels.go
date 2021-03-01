@@ -28,16 +28,16 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
-// SeriesHandler proxies requests for path /series to the origin by way of the object proxy cache
-func (c *Client) SeriesHandler(w http.ResponseWriter, r *http.Request) {
-
-	// if this request is part of a scatter/gather, provide a reconstitution function
-	rsc := request.GetResources(r)
-	if rsc.IsMergeMember {
-		rsc.ResponseMergeFunc = model.MergeAndWriteSeries
-	}
+// LabelsHandler proxies requests for path /label and /labels to the origin by way of the object proxy cache
+func (c *Client) LabelsHandler(w http.ResponseWriter, r *http.Request) {
 
 	u := urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
+
+	rsc := request.GetResources(r)
+	if rsc.IsMergeMember {
+		rsc.ResponseMergeFunc = model.MergeAndWriteLabelData
+	}
+
 	qp, _, _ := params.GetRequestValues(r)
 
 	// Round Start and End times down to top of most recent minute for cacheability

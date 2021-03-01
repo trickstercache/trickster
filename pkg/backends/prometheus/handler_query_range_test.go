@@ -45,6 +45,7 @@ func TestQueryRangeHandler(t *testing.T) {
 	client := backendClient.(*Client)
 	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+	rsc.IsMergeMember = true
 
 	client.QueryRangeHandler(w, r)
 

@@ -22,6 +22,7 @@ import (
 
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 )
@@ -35,8 +36,24 @@ func (c *Client) RegisterHandlers(map[string]http.Handler) {
 			"series":      http.HandlerFunc(c.SeriesHandler),
 			"proxycache":  http.HandlerFunc(c.ObjectProxyCacheHandler),
 			"proxy":       http.HandlerFunc(c.ProxyHandler),
+			"labels":      http.HandlerFunc(c.LabelsHandler),
+			"alerts":      http.HandlerFunc(c.AlertsHandler),
+			"admin":       http.HandlerFunc(c.UnsupportedHandler),
 		},
 	)
+}
+
+// MergablePaths returns the list of Prometheus Paths for which Trickster supports
+// merging multiple documents into a single response
+func MergablePaths() []string {
+	return []string{
+		"/api/v1/query_range",
+		"/api/v1/query",
+		"/api/v1/alerts",
+		"/api/v1/series",
+		"/api/v1/labels",
+		"/api/v1/label/",
+	}
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
@@ -50,12 +67,12 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 	rhinst := map[string]string{
 		headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 30)}
 
-	paths := map[string]*po.Options{
+	paths := po.Lookup{
 
 		APIPath + mnQueryRange: {
 			Path:            APIPath + mnQueryRange,
 			HandlerName:     mnQueryRange,
-			Methods:         []string{http.MethodGet, http.MethodPost},
+			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{upQuery, upStep},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhts,
@@ -66,7 +83,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 		APIPath + mnQuery: {
 			Path:            APIPath + mnQuery,
 			HandlerName:     mnQuery,
-			Methods:         []string{http.MethodGet, http.MethodPost},
+			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{upQuery, upTime},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
@@ -77,7 +94,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 		APIPath + mnSeries: {
 			Path:            APIPath + mnSeries,
 			HandlerName:     mnSeries,
-			Methods:         []string{http.MethodGet, http.MethodPost},
+			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{upMatch, upStart, upEnd},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
@@ -87,8 +104,8 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 
 		APIPath + mnLabels: {
 			Path:            APIPath + mnLabels,
-			HandlerName:     "proxycache",
-			Methods:         []string{http.MethodGet, http.MethodPost},
+			HandlerName:     "labels",
+			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
@@ -98,7 +115,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 
 		APIPath + mnLabel + "/": {
 			Path:            APIPath + mnLabel + "/",
-			HandlerName:     "proxycache",
+			HandlerName:     "labels",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
@@ -142,7 +159,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 
 		APIPath + mnAlerts: {
 			Path:            APIPath + mnAlerts,
-			HandlerName:     "proxycache",
+			HandlerName:     "alerts",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
@@ -173,10 +190,18 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 			ResponseHeaders: rhinst,
 		},
 
+		APIPath + "admin": {
+			Path:          APIPath + "admin",
+			HandlerName:   "admin",
+			Methods:       methods.AllHTTPMethods(),
+			MatchType:     matching.PathMatchTypePrefix,
+			MatchTypeName: "prefix",
+		},
+
 		APIPath: {
 			Path:          APIPath,
 			HandlerName:   "proxy",
-			Methods:       []string{http.MethodGet, http.MethodPost},
+			Methods:       methods.GetAndPost(),
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",
 		},
@@ -184,7 +209,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 		"/": {
 			Path:          "/",
 			HandlerName:   "proxy",
-			Methods:       []string{http.MethodGet, http.MethodPost},
+			Methods:       methods.GetAndPost(),
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",
 		},
