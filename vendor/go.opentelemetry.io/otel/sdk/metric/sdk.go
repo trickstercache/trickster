@@ -296,7 +296,7 @@ func (s *syncInstrument) RecordOne(ctx context.Context, num number.Number, kvs [
 // processor.  This Accumulator supports only a single processor.
 //
 // The Accumulator does not start any background process to collect itself
-// periodically, this responsbility lies with the processor, typically,
+// periodically, this responsibility lies with the processor, typically,
 // depending on the type of export.  For example, a pull-based
 // processor will call Collect() when it receives a request to scrape
 // current metric values.  A push-based processor should configure its
@@ -412,8 +412,7 @@ func (m *Accumulator) observeAsyncInstruments(ctx context.Context) int {
 
 	asyncCollected := 0
 
-	// TODO: change this to `ctx` (in a separate PR, with tests)
-	m.asyncInstruments.Run(context.Background(), m)
+	m.asyncInstruments.Run(ctx, m)
 
 	for _, inst := range m.asyncInstruments.Instruments() {
 		if a := m.fromAsync(inst); a != nil {

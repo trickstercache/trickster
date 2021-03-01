@@ -3,8 +3,6 @@ github.com/AndreasBriese/bbloom
 # github.com/BurntSushi/toml v0.3.1
 ## explicit
 github.com/BurntSushi/toml
-# github.com/DataDog/sketches-go v0.0.1
-github.com/DataDog/sketches-go/ddsketch
 # github.com/alicebob/gopher-json v0.0.0-20200520072559-a9ecdc9d1d3a
 ## explicit
 github.com/alicebob/gopher-json
@@ -29,7 +27,8 @@ github.com/dgraph-io/badger/skl
 github.com/dgraph-io/badger/table
 github.com/dgraph-io/badger/trie
 github.com/dgraph-io/badger/y
-# github.com/dgraph-io/ristretto v0.0.2
+# github.com/dgraph-io/ristretto v0.0.3
+## explicit
 github.com/dgraph-io/ristretto/z
 # github.com/dustin/go-humanize v1.0.0
 github.com/dustin/go-humanize
@@ -59,10 +58,10 @@ github.com/golang/protobuf/ptypes
 github.com/golang/protobuf/ptypes/any
 github.com/golang/protobuf/ptypes/duration
 github.com/golang/protobuf/ptypes/timestamp
-# github.com/golang/snappy v0.0.2
+# github.com/golang/snappy v0.0.3
 ## explicit
 github.com/golang/snappy
-# github.com/gomodule/redigo v1.8.3
+# github.com/gomodule/redigo v1.8.4
 ## explicit
 github.com/gomodule/redigo/redis
 # github.com/gorilla/handlers v1.5.1
@@ -71,7 +70,7 @@ github.com/gorilla/handlers
 # github.com/gorilla/mux v1.8.0
 ## explicit
 github.com/gorilla/mux
-# github.com/influxdata/influxdb v1.8.3
+# github.com/influxdata/influxdb v1.8.4
 ## explicit
 github.com/influxdata/influxdb/pkg/testing/assert
 # github.com/matttproud/golang_protobuf_extensions v1.0.1
@@ -82,14 +81,14 @@ github.com/openzipkin/zipkin-go/model
 github.com/philhofer/fwd
 # github.com/pkg/errors v0.9.1
 github.com/pkg/errors
-# github.com/prometheus/client_golang v1.8.0
+# github.com/prometheus/client_golang v1.9.0
 ## explicit
 github.com/prometheus/client_golang/prometheus
 github.com/prometheus/client_golang/prometheus/internal
 github.com/prometheus/client_golang/prometheus/promhttp
 # github.com/prometheus/client_model v0.2.0
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.14.0
+# github.com/prometheus/common v0.15.0
 github.com/prometheus/common/expfmt
 github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg
 github.com/prometheus/common/model
@@ -115,12 +114,12 @@ github.com/yuin/gopher-lua/pm
 # go.etcd.io/bbolt v1.3.5
 ## explicit
 go.etcd.io/bbolt
-# go.opentelemetry.io/contrib v0.15.1
+# go.opentelemetry.io/contrib v0.17.0
 go.opentelemetry.io/contrib
-# go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.15.1
+# go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.17.0
 ## explicit
 go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace
-# go.opentelemetry.io/otel v0.15.0
+# go.opentelemetry.io/otel v0.17.0
 ## explicit
 go.opentelemetry.io/otel
 go.opentelemetry.io/otel/baggage
@@ -132,56 +131,66 @@ go.opentelemetry.io/otel/internal/metric
 go.opentelemetry.io/otel/internal/trace/noop
 go.opentelemetry.io/otel/internal/trace/parent
 go.opentelemetry.io/otel/label
-go.opentelemetry.io/otel/metric
-go.opentelemetry.io/otel/metric/number
-go.opentelemetry.io/otel/metric/registry
 go.opentelemetry.io/otel/propagation
 go.opentelemetry.io/otel/semconv
-go.opentelemetry.io/otel/trace
 go.opentelemetry.io/otel/unit
-# go.opentelemetry.io/otel/exporters/stdout v0.15.0
+# go.opentelemetry.io/otel/exporters/stdout v0.17.0
 ## explicit
 go.opentelemetry.io/otel/exporters/stdout
-# go.opentelemetry.io/otel/exporters/trace/jaeger v0.15.0
+# go.opentelemetry.io/otel/exporters/trace/jaeger v0.16.0
 ## explicit
 go.opentelemetry.io/otel/exporters/trace/jaeger
 go.opentelemetry.io/otel/exporters/trace/jaeger/internal/gen-go/jaeger
-# go.opentelemetry.io/otel/exporters/trace/zipkin v0.15.0
+# go.opentelemetry.io/otel/exporters/trace/zipkin v0.17.0
 ## explicit
 go.opentelemetry.io/otel/exporters/trace/zipkin
-# go.opentelemetry.io/otel/sdk v0.15.0
+# go.opentelemetry.io/otel/metric v0.17.0
+go.opentelemetry.io/otel/metric
+go.opentelemetry.io/otel/metric/global
+go.opentelemetry.io/otel/metric/number
+go.opentelemetry.io/otel/metric/registry
+# go.opentelemetry.io/otel/sdk v0.17.0
 ## explicit
-go.opentelemetry.io/otel/sdk/export/metric
-go.opentelemetry.io/otel/sdk/export/metric/aggregation
 go.opentelemetry.io/otel/sdk/export/trace
 go.opentelemetry.io/otel/sdk/instrumentation
 go.opentelemetry.io/otel/sdk/internal
+go.opentelemetry.io/otel/sdk/resource
+go.opentelemetry.io/otel/sdk/trace
+# go.opentelemetry.io/otel/sdk/export/metric v0.17.0
+go.opentelemetry.io/otel/sdk/export/metric
+go.opentelemetry.io/otel/sdk/export/metric/aggregation
+# go.opentelemetry.io/otel/sdk/metric v0.17.0
 go.opentelemetry.io/otel/sdk/metric
 go.opentelemetry.io/otel/sdk/metric/aggregator
-go.opentelemetry.io/otel/sdk/metric/aggregator/array
-go.opentelemetry.io/otel/sdk/metric/aggregator/ddsketch
+go.opentelemetry.io/otel/sdk/metric/aggregator/exact
 go.opentelemetry.io/otel/sdk/metric/aggregator/histogram
 go.opentelemetry.io/otel/sdk/metric/aggregator/lastvalue
 go.opentelemetry.io/otel/sdk/metric/aggregator/minmaxsumcount
 go.opentelemetry.io/otel/sdk/metric/aggregator/sum
-go.opentelemetry.io/otel/sdk/metric/controller/push
+go.opentelemetry.io/otel/sdk/metric/controller/basic
 go.opentelemetry.io/otel/sdk/metric/controller/time
 go.opentelemetry.io/otel/sdk/metric/processor/basic
 go.opentelemetry.io/otel/sdk/metric/selector/simple
-go.opentelemetry.io/otel/sdk/resource
-go.opentelemetry.io/otel/sdk/trace
-# golang.org/x/net v0.0.0-20201216054612-986b41b23924
+# go.opentelemetry.io/otel/trace v0.17.0
+## explicit
+go.opentelemetry.io/otel/trace
+# golang.org/x/mod v0.4.1
+## explicit
+# golang.org/x/net v0.0.0-20210226172049-e18ecbb05110
 ## explicit
 golang.org/x/net/internal/timeseries
 golang.org/x/net/netutil
 golang.org/x/net/trace
 # golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 golang.org/x/sync/semaphore
-# golang.org/x/sys v0.0.0-20201119102817-f84b799fce68
+# golang.org/x/sys v0.0.0-20210301091718-77cc2087c03b
+## explicit
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# google.golang.org/api v0.32.0
+# golang.org/x/tools v0.1.0
+## explicit
+# google.golang.org/api v0.36.0
 google.golang.org/api/support/bundler
 # google.golang.org/protobuf v1.25.0
 google.golang.org/protobuf/encoding/prototext
