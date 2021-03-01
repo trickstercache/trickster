@@ -183,3 +183,18 @@ func TestFormatForwardedAddress(t *testing.T) {
 		t.Errorf("expected %s got %s", expected, s)
 	}
 }
+
+func TestStripMergeHeaders(t *testing.T) {
+
+	h := http.Header{NameContentLength: []string{"42"}, NameLocation: []string{"https://tricksterproxy.io/"}}
+	StripMergeHeaders(h)
+
+	if _, ok := h[NameContentLength]; ok {
+		t.Error("expected Content-Length Header to be missing")
+	}
+
+	if _, ok := h[NameLocation]; !ok {
+		t.Error("expected Location Header to remain present")
+	}
+
+}

@@ -21,10 +21,8 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/runtime"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 func TestExtractHeader(t *testing.T) {
@@ -130,25 +128,6 @@ func TestAddResponseHeaders(t *testing.T) {
 
 }
 
-func TestSetResultsHeader(t *testing.T) {
-	h := http.Header{}
-	SetResultsHeader(h, "test-engine", "test-status", "test-ffstatus",
-		timeseries.ExtentList{timeseries.Extent{Start: time.Unix(1, 0), End: time.Unix(2, 0)}})
-	const expected = "engine=test-engine; status=test-status; fetched=[1000-2000]; ffstatus=test-ffstatus"
-	if h.Get(NameTricksterResult) != expected {
-		t.Errorf("expected %s got %s", expected, h.Get(NameTricksterResult))
-	}
-}
-
-func TestSetResultsHeaderEmtpy(t *testing.T) {
-	h := http.Header{}
-	SetResultsHeader(h, "", "test-status", "test-ffstatus",
-		timeseries.ExtentList{timeseries.Extent{Start: time.Unix(1, 0), End: time.Unix(2, 0)}})
-	if len(h) > 0 {
-		t.Errorf("Expected header length of %d", 0)
-	}
-}
-
 func TestString(t *testing.T) {
 
 	expected := "test: test\n\n"
@@ -188,4 +167,17 @@ func TestLogString(t *testing.T) {
 		t.Errorf("expected %s got %s", expected, x)
 	}
 
+}
+
+func TestLookup(t *testing.T) {
+	const expected = "42"
+	l := Lookup{NameContentLength: expected}
+	l = l.Clone()
+	h := l.ToHeader()
+	_, ok := h[NameContentLength]
+	if !ok {
+		t.Error("expected content length to be present")
+	} else if val := h.Get(NameContentLength); val != expected {
+		t.Errorf("expected %s got %s", expected, val)
+	}
 }

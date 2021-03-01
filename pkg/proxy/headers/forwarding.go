@@ -88,6 +88,15 @@ var ForwardingHeaders = []string{
 	NameVia,
 }
 
+// MergeRemoveHeaders defines a list of headers that should be removed when Merging time series results
+var MergeRemoveHeaders = []string{
+	NameLastModified,
+	NameDate,
+	NameContentLength,
+	NameContentType,
+	NameTransferEncoding,
+}
+
 var forwardingFuncs = map[string]func(*http.Request, *Hop){
 	"standard": AddForwarded,
 	"x":        AddXForwarded,
@@ -328,4 +337,12 @@ func StripForwardingHeaders(h http.Header) {
 func isV6Address(input string) bool {
 	ip := net.ParseIP(input)
 	return ip != nil && strings.Contains(input, ":")
+}
+
+// StripMergeHeaders strips certain headers from the HTTP request to facililate acceleration when
+// merging HTTP responses from multiple origins
+func StripMergeHeaders(h http.Header) {
+	for _, k := range MergeRemoveHeaders {
+		h.Del(k)
+	}
 }
