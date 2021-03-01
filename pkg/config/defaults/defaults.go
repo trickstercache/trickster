@@ -127,14 +127,6 @@ const (
 	DefaultHealthCheckQuery = ""
 	// DefaultHealthCheckVerb is the default value (noop) for Backends' Health Check Verb
 	DefaultHealthCheckVerb = http.MethodGet
-	// DefaultHealthCheckTimeoutMS is the default duration for health check probes to wait before timing out
-	DefaultHealthCheckTimeoutMS = 3000
-	// DefaultHealthCheckRecoveryThreshold defines the default number of successful health checks
-	// following failure to indicate true recovery
-	DefaultHealthCheckRecoveryThreshold = 3
-	// DefaultHealthCheckFailureThreshold defines the default number of failed health checks
-	// following recovery or initial healthy to indicate true recovery
-	DefaultHealthCheckFailureThreshold = 3
 	// DefaultConfigHandlerPath is the default value for the Trickster Config Printout Handler path
 	DefaultConfigHandlerPath = "/trickster/config"
 	// DefaultPingHandlerPath is the default value for the Trickster Config Ping Handler path
@@ -149,6 +141,16 @@ const (
 	DefaultPprofServerName = "both"
 	// DefaultForwardedHeaders defines which class of 'Forwarded' headers are attached to upstream requests
 	DefaultForwardedHeaders = "standard"
+	// DefaullALBMechansimName defines the default ALB Mechanism Name
+	DefaullALBMechansimName = "rr" // round robin
+	// DefaultHealthCheckTimeoutMS is the default duration for health check probes to wait before timing out
+	DefaultHealthCheckTimeoutMS = 3000
+	// DefaultHealthCheckRecoveryThreshold defines the default number of successful health checks
+	// following failure to indicate true recovery
+	DefaultHealthCheckRecoveryThreshold = 3
+	// DefaultHealthCheckFailureThreshold defines the default number of failed health checks
+	// following recovery or initial healthy to indicate true recovery
+	DefaultHealthCheckFailureThreshold = 3
 )
 
 // DefaultCompressableTypes returns a list of types that Trickster should compress before caching

@@ -29,6 +29,9 @@ const (
 // See https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function.
 type InlineFNV64a uint64
 
+// List is a list type used to enable sorting
+type List []uint64
+
 // NewInlineFNV64a returns a new instance of InlineFNV64a.
 func NewInlineFNV64a() InlineFNV64a {
 	return offset64
@@ -48,4 +51,19 @@ func (s *InlineFNV64a) Write(data []byte) (int, error) {
 // Sum64 returns the uint64 of the current resulting hash.
 func (s *InlineFNV64a) Sum64() uint64 {
 	return uint64(*s)
+}
+
+// Len returns the length of a slice of type ExtentList
+func (l List) Len() int {
+	return len(l)
+}
+
+// Less returns true if element i in the ExtentList comes before j
+func (l List) Less(i, j int) bool {
+	return l[i] < l[j]
+}
+
+// Swap modifies an ExtentList by swapping the values in indexes i and j
+func (l List) Swap(i, j int) {
+	l[i], l[j] = l[j], l[i]
 }

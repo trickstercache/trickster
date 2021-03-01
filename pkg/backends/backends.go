@@ -46,7 +46,10 @@ func (b Backends) StartHealthChecks(logger interface{}) (healthcheck.HealthCheck
 		} else {
 			bo.HealthCheck.Overlay(k, hco)
 		}
-		st, _ := hc.Register(k, bo.Provider, bo.HealthCheck, c.HealthCheckHTTPClient(), logger)
+		st, err := hc.Register(k, bo.Provider, bo.HealthCheck, c.HealthCheckHTTPClient(), logger)
+		if err != nil {
+			return nil, err
+		}
 		c.SetHealthCheckProbe(st.Prober())
 	}
 	return hc, nil
@@ -80,4 +83,10 @@ func (b Backends) GetRouter(backendName string) http.Handler {
 // make an outbound http request, but instead front to other backends)
 func IsVirtual(provider string) bool {
 	return provider == "alb" || provider == "rule"
+}
+
+// UsesCache returns true if the backend uses a cache
+// (anything execpt Virtuals and ReverseProxy)
+func UsesCache(provider string) bool {
+	return !(IsVirtual(provider)) && !(provider == "rp") && !(provider == "reverseproxy")
 }
