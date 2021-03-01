@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/backends/alb"
 	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/memory"
@@ -45,7 +46,7 @@ import (
 var cfgLock = &sync.Mutex{}
 var hc healthcheck.HealthChecker
 
-func runConfig(oldConf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
+func runConfig(oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Logger,
 	oldCaches map[string]cache.Cache, args []string, errorFunc func()) error {
 
 	metrics.BuildInfo.WithLabelValues(applicationGoVersion,
@@ -82,11 +83,11 @@ func runConfig(oldConf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
 		return nil
 	}
 
-	return applyConfig(conf, oldConf, wg, log, oldCaches, args, errorFunc)
+	return applyConfig(conf, oldConf, wg, logger, oldCaches, args, errorFunc)
 
 }
 
-func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
+func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Logger,
 	oldCaches map[string]cache.Cache, args []string, errorFunc func()) error {
 
 	if conf == nil {
@@ -102,17 +103,17 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *tl.Logge
 		conf.ReloadConfig = ro.New()
 	}
 
-	log = applyLoggingConfig(conf, oldConf, log)
+	logger = applyLoggingConfig(conf, oldConf, logger)
 
 	for _, w := range conf.LoaderWarnings {
-		tl.Warn(log, w, tl.Pairs{})
+		tl.Warn(logger, w, tl.Pairs{})
 	}
 
 	//Register Tracing Configurations
-	tracers, err := tr.RegisterAll(conf, log, false)
+	tracers, err := tr.RegisterAll(conf, logger, false)
 	if err != nil {
 		handleStartupIssue("tracing registration failed", tl.Pairs{"detail": err.Error()},
-			log, errorFunc)
+			logger, errorFunc)
 		return err
 	}
 
@@ -120,26 +121,27 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *tl.Logge
 	router := mux.NewRouter()
 	router.HandleFunc(conf.Main.PingHandlerPath, th.PingHandleFunc(conf)).Methods(http.MethodGet)
 
-	var caches = applyCachingConfig(conf, oldConf, log, oldCaches)
-	rh := handlers.ReloadHandleFunc(runConfig, conf, wg, log, caches, args)
+	var caches = applyCachingConfig(conf, oldConf, logger, oldCaches)
+	rh := handlers.ReloadHandleFunc(runConfig, conf, wg, logger, caches, args)
 
-	o, err := routing.RegisterProxyRoutes(conf, router, caches, tracers, log, false)
+	o, err := routing.RegisterProxyRoutes(conf, router, caches, tracers, logger, false)
 	if err != nil {
 		handleStartupIssue("route registration failed", tl.Pairs{"detail": err.Error()},
-			log, errorFunc)
+			logger, errorFunc)
 		return err
 	}
 
 	if hc != nil {
 		hc.Shutdown()
 	}
-	hc, err = o.StartHealthChecks(log)
+	hc, err = o.StartHealthChecks(logger)
 	if err != nil {
 		return err
 	}
+	alb.StartALBPools(o, hc.Statuses())
 	routing.RegisterHealthHandler(router, conf.Main.HealthHandlerPath, hc)
 
-	applyListenerConfigs(conf, oldConf, router, http.HandlerFunc(rh), log, tracers)
+	applyListenerConfigs(conf, oldConf, router, http.HandlerFunc(rh), logger, tracers)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
@@ -147,7 +149,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, log *tl.Logge
 	if oldConf != nil && oldConf.Resources != nil {
 		oldConf.Resources.QuitChan <- true // this signals the old hup monitor goroutine to exit
 	}
-	startHupMonitor(conf, wg, log, caches, args)
+	startHupMonitor(conf, wg, logger, caches, args)
 
 	return nil
 }
@@ -245,8 +247,8 @@ func applyCachingConfig(c, oc *config.Config, logger *tl.Logger,
 }
 
 func initLogger(c *config.Config) *tl.Logger {
-	log := tl.New(c)
-	tl.Info(log, "application loaded from configuration",
+	logger := tl.New(c)
+	tl.Info(logger, "application loaded from configuration",
 		tl.Pairs{
 			"name":      runtime.ApplicationName,
 			"version":   runtime.ApplicationVersion,
@@ -259,18 +261,18 @@ func initLogger(c *config.Config) *tl.Logger {
 			"pid":       os.Getpid(),
 		},
 	)
-	return log
+	return logger
 }
 
-func delayedLogCloser(log *tl.Logger, delay time.Duration) {
-	// we can't immediately close the log, because some outstanding
+func delayedLogCloser(logger *tl.Logger, delay time.Duration) {
+	// we can't immediately close the logger, because some outstanding
 	// http requests might still be on the old reference, so this will
 	// allow time for those connections to drain
-	if log == nil {
+	if logger == nil {
 		return
 	}
 	time.Sleep(delay)
-	log.Close()
+	logger.Close()
 }
 
 func handleStartupIssue(event string, detail tl.Pairs, logger *tl.Logger, errorFunc func()) {
@@ -303,14 +305,14 @@ func validateConfig(conf *config.Config) error {
 	}
 
 	router := mux.NewRouter()
-	log := tl.ConsoleLogger(conf.Logging.LogLevel)
+	logger := tl.ConsoleLogger(conf.Logging.LogLevel)
 
-	tracers, err := tr.RegisterAll(conf, log, true)
+	tracers, err := tr.RegisterAll(conf, logger, true)
 	if err != nil {
 		return err
 	}
 
-	_, err = routing.RegisterProxyRoutes(conf, router, caches, tracers, log, true)
+	_, err = routing.RegisterProxyRoutes(conf, router, caches, tracers, logger, true)
 	if err != nil {
 		return err
 	}
