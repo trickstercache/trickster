@@ -56,8 +56,9 @@ func TestNew(t *testing.T) {
 }
 
 func TestNewLogger_LogFile(t *testing.T) {
-	fileName := "out.log"
-	instanceFileName := "out.1.log"
+	td := t.TempDir()
+	fileName := td + "/out.log"
+	instanceFileName := td + "/out.1.log"
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 1}
@@ -68,11 +69,10 @@ func TestNewLogger_LogFile(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 	log.Close()
-	os.Remove(instanceFileName)
 }
 
 func TestNewLoggerDebug_LogFile(t *testing.T) {
-	fileName := "out.debug.log"
+	fileName := t.TempDir() + "/out.debug.log"
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
@@ -83,11 +83,10 @@ func TestNewLoggerDebug_LogFile(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 	log.Close()
-	os.Remove(fileName)
 }
 
 func TestNewLoggerWarn_LogFile(t *testing.T) {
-	fileName := "out.warn.log"
+	fileName := t.TempDir() + "/out.warn.log"
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
@@ -98,11 +97,10 @@ func TestNewLoggerWarn_LogFile(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 	log.Close()
-	os.Remove(fileName)
 }
 
 func TestNewLoggerWarnOnce_LogFile(t *testing.T) {
-	fileName := "out.warnonce.log"
+	fileName := t.TempDir() + "/out.warnonce.log"
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
@@ -137,11 +135,10 @@ func TestNewLoggerWarnOnce_LogFile(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 	log.Close()
-	os.Remove(fileName)
 }
 
 func TestNewLoggerError_LogFile(t *testing.T) {
-	fileName := "out.error.log"
+	fileName := t.TempDir() + "/out.error.log"
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
@@ -152,11 +149,10 @@ func TestNewLoggerError_LogFile(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 	log.Close()
-	os.Remove(fileName)
 }
 
 func TestNewLoggerErrorOnce_LogFile(t *testing.T) {
-	fileName := "out.erroronce.log"
+	fileName := t.TempDir() + "/out.erroronce.log"
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
@@ -177,11 +173,10 @@ func TestNewLoggerErrorOnce_LogFile(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 	log.Close()
-	os.Remove(fileName)
 }
 
 func TestNewLoggerTrace_LogFile(t *testing.T) {
-	fileName := "out.trace.log"
+	fileName := t.TempDir() + "/out.trace.log"
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
@@ -192,11 +187,10 @@ func TestNewLoggerTrace_LogFile(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 	log.Close()
-	os.Remove(fileName)
 }
 
 func TestNewLoggerDefault_LogFile(t *testing.T) {
-	fileName := "out.info.log"
+	fileName := t.TempDir() + "/out.info.log"
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
@@ -207,11 +201,10 @@ func TestNewLoggerDefault_LogFile(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 	log.Close()
-	os.Remove(fileName)
 }
 
 func TestNewLoggerInfoOnce_LogFile(t *testing.T) {
-	fileName := "out.infoonce.log"
+	fileName := t.TempDir() + "/out.infoonce.log"
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
@@ -232,11 +225,10 @@ func TestNewLoggerInfoOnce_LogFile(t *testing.T) {
 	}
 
 	log.Close()
-	os.Remove(fileName)
 }
 
 func TestNewLoggerFatal_LogFile(t *testing.T) {
-	fileName := "out.fatal.log"
+	fileName := t.TempDir() + "/out.fatal.log"
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
@@ -247,7 +239,6 @@ func TestNewLoggerFatal_LogFile(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 	log.Close()
-	os.Remove(fileName)
 }
 
 func TestSetLogLevel(t *testing.T) {

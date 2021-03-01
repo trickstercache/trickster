@@ -38,7 +38,7 @@ func TestDefaultPathConfigs(t *testing.T) {
 
 	backendClient, err := NewClient("test", nil, nil, nil, nil)
 	if err != nil {
-		t.Error(nil)
+		t.Error(err)
 	}
 	ts, _, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 204, "",
 		nil, "clickhouse", "/", "debug")

@@ -22,17 +22,17 @@ import (
 )
 
 func TestMain(t *testing.T) {
-	exitFunc = nil
+	fatalStartupErrors = false
 	main()
 	// Successful test criteria is that the call to main returns without timing out on wg.Wait()
 }
 
 func TestRunConfig(t *testing.T) {
 	wg := &sync.WaitGroup{}
-	runConfig(nil, wg, nil, nil, []string{}, nil)
+	runConfig(nil, wg, nil, nil, []string{}, false)
 
-	runConfig(nil, wg, nil, nil, []string{"-version"}, nil)
+	runConfig(nil, wg, nil, nil, []string{"-version"}, false)
 
-	runConfig(nil, wg, nil, nil, []string{"-origin-type", "rpc", "-origin-url", "http://tricksterproxy.io"}, nil)
+	runConfig(nil, wg, nil, nil, []string{"-origin-type", "rpc", "-origin-url", "http://tricksterproxy.io"}, false)
 
 }

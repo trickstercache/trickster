@@ -102,7 +102,7 @@ func newTestRuleOpts() *ro.Options {
 		InputSource:            "header",
 		InputKey:               testRuleHeader,
 		Operation:              "eq",
-		NextRoute:              "test-origin-1",
+		NextRoute:              "test-backend-1",
 		IngressReqRewriterName: "test-rewriter-1",
 		EgressReqRewriterName:  "test-rewriter-2",
 		NoMatchReqRewriterName: "test-rewriter-3",
@@ -115,7 +115,7 @@ func newTestCaseOpts() map[string]*ro.CaseOptions {
 	return map[string]*ro.CaseOptions{
 		"1": {
 			Matches:   []string{"trickster"},
-			NextRoute: "test-origin-2",
+			NextRoute: "test-backend-2",
 		},
 		"2": {
 			Matches:         []string{"proxy"},
@@ -141,17 +141,17 @@ func newTestRules() ([]*rule, error) {
 
 	ropts := newTestRuleOpts()
 
-	cl1, err := NewClient("test-origin-1", nil, testMux1, nil)
+	cl1, err := NewClient("test-backend-1", nil, testMux1, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	cl2, err := NewClient("test-origin-2", nil, testMux2, nil)
+	cl2, err := NewClient("test-backend-2", nil, testMux2, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	clients := backends.Backends{"test-origin-1": cl1, "test-origin-2": cl2}
+	clients := backends.Backends{"test-backend-1": cl1, "test-backend-2": cl2}
 
 	backendClient, err := NewClient("test-client", oopts, nil, clients)
 	if err != nil {
@@ -190,17 +190,17 @@ func newTestClient() (*Client, error) {
 
 	ropts := newTestRuleOpts()
 
-	cl1, err := NewClient("test-origin-1", nil, testMux1, nil)
+	cl1, err := NewClient("test-backend-1", nil, testMux1, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	cl2, err := NewClient("test-origin-2", nil, testMux2, nil)
+	cl2, err := NewClient("test-backend-2", nil, testMux2, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	clients := backends.Backends{"test-origin-1": cl1, "test-origin-2": cl2}
+	clients := backends.Backends{"test-backend-1": cl1, "test-backend-2": cl2}
 
 	backendClient, err := NewClient("test-client", oopts, nil, clients)
 	if err != nil {

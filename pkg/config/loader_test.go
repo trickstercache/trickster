@@ -18,7 +18,6 @@ package config
 
 import (
 	"io/ioutil"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -71,7 +70,7 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 		},
 		{ // Case 3
 			"../../testdata/test.bad-cache-name.conf",
-			`invalid cache name [test_fail] provided in backend options [test]`,
+			`invalid cache name "test_fail" provided in backend options "test"`,
 		},
 		{ // Case 4
 			"../../testdata/test.invalid-negative-cache-1.conf",
@@ -107,23 +106,32 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 
 func TestFullLoadConfiguration(t *testing.T) {
 
+	td := t.TempDir()
+
 	kb, cb, _ := tlstest.GetTestKeyAndCert(false)
-	const certfile = "../../testdata/test.02.cert.pem"
-	const keyfile = "../../testdata/test.02.key.pem"
+	certfile := td + "/cert.pem"
+	keyfile := td + "/key.pem"
+	confFile := td + "/trickster_test_config.conf"
+
 	err := ioutil.WriteFile(certfile, cb, 0600)
 	if err != nil {
 		t.Error(err)
-	} else {
-		defer os.Remove(certfile)
 	}
+
 	err = ioutil.WriteFile(keyfile, kb, 0600)
 	if err != nil {
 		t.Error(err)
-	} else {
-		defer os.Remove(keyfile)
 	}
 
-	a := []string{"-config", "../../testdata/test.full.02.conf"}
+	b, err := ioutil.ReadFile("../../testdata/test.full.02.conf")
+	b = []byte(strings.ReplaceAll(string(b), `../../testdata/test.02.`, td+"/"))
+
+	err = ioutil.WriteFile(confFile, b, 0600)
+	if err != nil {
+		t.Error(err)
+	}
+
+	a := []string{"-config", confFile}
 	// it should not error if config path is not set
 	conf, _, err := Load("trickster-test", "0", a)
 	if err != nil {
@@ -243,11 +251,11 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected true got %t", o.TLS.InsecureSkipVerify)
 	}
 
-	if o.TLS.FullChainCertPath != "../../testdata/test.02.cert.pem" {
+	if o.TLS.FullChainCertPath != certfile {
 		t.Errorf("expected ../../testdata/test.02.cert.pem got %s", o.TLS.FullChainCertPath)
 	}
 
-	if o.TLS.PrivateKeyPath != "../../testdata/test.02.key.pem" {
+	if o.TLS.PrivateKeyPath != keyfile {
 		t.Errorf("expected ../../testdata/test.02.key.pem got %s", o.TLS.PrivateKeyPath)
 	}
 

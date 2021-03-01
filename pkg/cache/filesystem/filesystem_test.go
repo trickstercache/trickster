@@ -37,11 +37,10 @@ const cacheProvider = "filesystem"
 const cacheKey = "cacheKey"
 
 func storeBenchmark(b *testing.B) Cache {
-	dir, _ := ioutil.TempDir("/tmp", cacheProvider)
+	dir := b.TempDir() + "/cache/" + cacheProvider
 	cacheConfig := co.Options{Provider: cacheProvider,
 		Filesystem: &flo.Options{CachePath: dir}, Index: &io.Options{ReapInterval: time.Second}}
 	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
-	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := fc.Connect()
 	if err != nil {
@@ -60,17 +59,14 @@ func storeBenchmark(b *testing.B) Cache {
 }
 
 func newCacheConfig(t *testing.T) co.Options {
-	dir, err := ioutil.TempDir("/tmp", cacheProvider)
-	if err != nil {
-		t.Fatalf("could not create temp directory (%s): %s", dir, err)
-	}
+	dir := t.TempDir() + "/cache/" + cacheProvider
 	return co.Options{Provider: cacheProvider, Filesystem: &flo.Options{CachePath: dir},
 		Index: &io.Options{ReapInterval: time.Second}}
 }
 
 func TestConfiguration(t *testing.T) {
 	cacheConfig := newCacheConfig(t)
-	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
+	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
 	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	cfg := fc.Configuration()
 	if cfg.Provider != cacheProvider {
@@ -81,7 +77,7 @@ func TestConfiguration(t *testing.T) {
 func TestFilesystemCache_Connect(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
-	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
+	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
 	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 
 	// it should connect
@@ -113,7 +109,7 @@ func TestFilesystemCache_Store(t *testing.T) {
 	const expected2 = "open /root/noaccess.trickster.filesystem.cache/cacheKey.data:"
 
 	cacheConfig := newCacheConfig(t)
-	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
+	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
 	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 
 	err := fc.Connect()
@@ -158,7 +154,7 @@ func TestFilesystemCache_StoreNoIndex(t *testing.T) {
 	const expected = "value for key [] not in cache"
 
 	cacheConfig := newCacheConfig(t)
-	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
+	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
 	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 
 	err := fc.Connect()
@@ -243,8 +239,8 @@ func BenchmarkCache_StoreNoIndex(b *testing.B) {
 func TestFilesystemCache_SetTTL(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
+	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
 	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
-	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
 
 	err := fc.Connect()
 	if err != nil {
@@ -325,7 +321,7 @@ func TestFilesystemCache_Retrieve(t *testing.T) {
 	const expected2 = `value for key [cacheKey-invalid] could not be deserialized from cache`
 
 	cacheConfig := newCacheConfig(t)
-	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
+	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
 	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 
 	err := fc.Connect()
@@ -470,7 +466,7 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 func TestFilesystemCache_Remove(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
-	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
+	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
 	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 
 	err := fc.Connect()
@@ -551,7 +547,7 @@ func BenchmarkCache_Remove(b *testing.B) {
 func TestFilesystemCache_BulkRemove(t *testing.T) {
 
 	cacheConfig := newCacheConfig(t)
-	defer os.RemoveAll(cacheConfig.Filesystem.CachePath)
+	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
 	fc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 
 	err := fc.Connect()

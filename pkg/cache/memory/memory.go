@@ -97,7 +97,7 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 	if o1 != nil && o2 != nil {
 		nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
 		tl.Debug(c.Logger, "memorycache cache store",
-			tl.Pairs{"cacheKey": cacheKey, "length": l, "ttl": ttl, "is_direct": isDirect})
+			tl.Pairs{"cacheName": c.Name, "cacheKey": cacheKey, "length": l, "ttl": ttl, "is_direct": isDirect})
 		c.client.Store(cacheKey, o1)
 		if updateIndex {
 			c.Index.UpdateObject(o2)

@@ -17,8 +17,6 @@
 package registration
 
 import (
-	"io/ioutil"
-	"os"
 	"testing"
 
 	bao "github.com/tricksterproxy/trickster/pkg/cache/badger/options"
@@ -45,11 +43,11 @@ func TestLoadCachesFromConfig(t *testing.T) {
 		conf.Caches[key] = cfg
 		switch v {
 		case providers.Bbolt:
-			defer os.RemoveAll(cfg.BBolt.Filename)
+			cfg.BBolt.Filename = t.TempDir() + "/" + key + "-testcache.db"
 		case providers.Filesystem:
-			defer os.RemoveAll(cfg.Filesystem.CachePath)
+			cfg.BBolt.Filename = t.TempDir() + "/" + key + "-testcache"
 		case providers.BadgerDB:
-			defer os.RemoveAll(cfg.Badger.Directory)
+			cfg.BBolt.Filename = t.TempDir() + "/" + key + "-testcache"
 		}
 	}
 
@@ -78,7 +76,6 @@ func newCacheConfig(t *testing.T, cacheProvider string) *co.Options {
 
 	bd := "."
 	fd := "."
-	var err error
 
 	ctid, ok := providers.Names[cacheProvider]
 	if !ok {
@@ -87,16 +84,9 @@ func newCacheConfig(t *testing.T, cacheProvider string) *co.Options {
 
 	switch ctid {
 	case providers.BadgerDB:
-		bd, err = ioutil.TempDir("/tmp", cacheProvider)
-		if err != nil {
-			t.Error(err)
-		}
-
+		bd = t.TempDir() + "/" + cacheProvider
 	case providers.Filesystem:
-		fd, err = ioutil.TempDir("/tmp", cacheProvider)
-		if err != nil {
-			t.Error(err)
-		}
+		fd = t.TempDir() + "/" + cacheProvider
 	}
 
 	return &co.Options{

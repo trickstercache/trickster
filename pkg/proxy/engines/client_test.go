@@ -69,9 +69,6 @@ const (
 // Client Implements Proxy Client Interface
 type TestClient struct {
 	backends.TimeseriesBackend
-	healthURL     *url.URL
-	healthHeaders http.Header
-	healthMethod  string
 
 	fftime          time.Time
 	InstantCacheKey string
@@ -88,7 +85,6 @@ func NewTestClient(name string, o *bo.Options, router http.Handler,
 }
 
 func (c *TestClient) RegisterHandlers(map[string]http.Handler) {
-
 	c.TimeseriesBackend.RegisterHandlers(
 		map[string]http.Handler{
 			"health":     http.HandlerFunc(c.HealthHandler),
@@ -99,7 +95,6 @@ func (c *TestClient) RegisterHandlers(map[string]http.Handler) {
 			"proxy":      http.HandlerFunc(c.ProxyHandler),
 		},
 	)
-
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider

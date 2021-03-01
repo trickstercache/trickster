@@ -18,7 +18,7 @@ package tls
 
 import (
 	"io/ioutil"
-	"os"
+	"strings"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/config"
@@ -127,32 +127,39 @@ func TestVerifyTLSConfigs(t *testing.T) {
 
 func TestProcessTLSConfigs(t *testing.T) {
 
+	td := t.TempDir()
+	confFile := td + "/trickster_test.conf"
+
 	_, ca, _ := tlstest.GetTestKeyAndCert(true)
-	const caFile = "../../../testdata/test.rootca.01.pem"
+	caFile := td + "/rootca.01.pem"
 	err := ioutil.WriteFile(caFile, ca, 0600)
 	if err != nil {
 		t.Error(err)
-	} else {
-		defer os.Remove(caFile)
 	}
 
 	k, c, _ := tlstest.GetTestKeyAndCert(false)
-	const certFile = "../../../testdata/test.01.cert.pem"
-	const keyfile = "../../../testdata/test.01.key.pem"
+
+	certFile := td + "/01.cert.pem"
 	err = ioutil.WriteFile(certFile, c, 0600)
 	if err != nil {
 		t.Error(err)
-	} else {
-		defer os.Remove(certFile)
 	}
+
+	keyfile := td + "/01.key.pem"
 	err = ioutil.WriteFile(keyfile, k, 0600)
 	if err != nil {
 		t.Error(err)
-	} else {
-		defer os.Remove(keyfile)
 	}
 
-	a := []string{"-config", "../../../testdata/test.full.tls.conf"}
+	b, err := ioutil.ReadFile("../../../testdata/test.full.tls.conf")
+	b = []byte(strings.ReplaceAll(string(b), "../../../testdata/test.", td+"/"))
+
+	err = ioutil.WriteFile(confFile, b, 0600)
+	if err != nil {
+		t.Error(err)
+	}
+
+	a := []string{"-config", confFile}
 	_, _, err = config.Load("trickster-test", "0", a)
 	if err != nil {
 		t.Error(err)
