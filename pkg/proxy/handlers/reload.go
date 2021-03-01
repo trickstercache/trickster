@@ -37,7 +37,7 @@ func ReloadHandleFunc(f reload.ReloaderFunc, conf *config.Config, wg *sync.WaitG
 			defer conf.Main.ReloaderLock.Unlock()
 			if conf.IsStale() {
 				log.Warn("configuration reload starting now", tl.Pairs{"source": "reloadEndpoint"})
-				err := f(conf, wg, log, caches, args, false)
+				err := f(conf, wg, log, caches, args, nil)
 				if err == nil {
 					w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 					w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
