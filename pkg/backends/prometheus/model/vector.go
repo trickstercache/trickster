@@ -111,18 +111,3 @@ func MergeAndWriteVector(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 	marshalTSOrVectorWriter(ts, nil, statusCode, w, true)
 
 }
-
-// if ts == nil || f == nil {
-// 	handlers.HandleBadGateway(w, r)
-// 	return
-// }
-// if len(tsm) > 0 {
-// 	ts.Merge(true, tsm...)
-// }
-// h.Del(headers.NameLastModified)
-// h.Del(headers.NameDate)
-// h.Del(headers.NameContentLength)
-// h.Del(headers.NameContentType)
-// h.Del(headers.NameTransferEncoding)
-// h.Del(headers.NameTricksterResult)
-// f(ts, rlo, 200, w)

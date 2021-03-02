@@ -133,40 +133,4 @@ func MergeAndWriteSeries(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 		w.Write([]byte("]"))
 	}
 	w.Write([]byte("}")) // complete the envelope
-
-	// tsm := make([]timeseries.Timeseries, 0)
-	// for _, rg := range rgs {
-	// 	rsc := request.GetResources(rg.Request)
-	// 	if rsc == nil {
-	// 		continue
-	// 	}
-	// 	if rsc.TS != nil {
-	// 		headers.Merge(h, rg.Header())
-	// 		if f == nil && rsc.TSMarshaler != nil {
-	// 			f = rsc.TSMarshaler
-	// 		}
-	// 		if rlo == nil {
-	// 			rlo = rsc.TSReqestOptions
-	// 		}
-	// 		if ts == nil {
-	// 			ts = rsc.TS
-	// 			continue
-	// 		}
-	// 		tsm = append(tsm, rsc.TS)
-	// 	}
-	// }
-	// if ts == nil || f == nil {
-	// 	handlers.HandleBadGateway(w, r)
-	// 	return
-	// }
-	// if len(tsm) > 0 {
-	// 	ts.Merge(true, tsm...)
-	// }
-	// h.Del(headers.NameLastModified)
-	// h.Del(headers.NameDate)
-	// h.Del(headers.NameContentLength)
-	// h.Del(headers.NameContentType)
-	// h.Del(headers.NameTransferEncoding)
-	// h.Del(headers.NameTricksterResult)
-	// f(ts, rlo, 200, w)
 }

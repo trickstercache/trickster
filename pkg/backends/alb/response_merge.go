@@ -68,7 +68,7 @@ func (c *Client) handleResponseMerge(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GetResponseGates serves the client rewuest to each fanout and returns a collection of responses
+// GetResponseGates make the client request to each fanout backend and returns a collection of responses
 func GetResponseGates(w http.ResponseWriter, r *http.Request, hl []http.Handler) merge.ResponseGates {
 	var wg sync.WaitGroup
 	var mtx sync.Mutex
