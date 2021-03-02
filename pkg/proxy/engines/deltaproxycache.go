@@ -48,10 +48,12 @@ import (
 // requests the gaps from the origin server and returns the reconstituted dataset to the downstream
 // request while caching the results for subsequent requests of the same data
 func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *timeseries.Modeler) {
-
 	rsc := request.GetResources(r)
+	if modeler != nil {
+		rsc.TSMarshaler = modeler.WireMarshalWriter
+		rsc.TSUnmarshaler = modeler.WireUnmarshaler
+	}
 	o := rsc.BackendOptions
-
 	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "DeltaProxyCacheRequest")
 	if span != nil {
 		defer span.End()
@@ -66,10 +68,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	client := rsc.BackendClient.(backends.TimeseriesBackend)
 
 	trq, rlo, canOPC, err := client.ParseTimeRangeQuery(r)
+	rsc.TimeRangeQuery = trq
+	rsc.TSReqestOptions = rlo
 	if err != nil {
 		if canOPC {
 			tl.Debug(rsc.Logger, "could not parse time range query, using object proxy cache", tl.Pairs{"error": err.Error()})
-			rsc.AlternateCacheTTL = time.Second * 30 // TODO: make configurable
+			rsc.AlternateCacheTTL = time.Second * o.FastForwardTTL
 			ObjectProxyCacheRequest(w, r)
 			return
 		}
@@ -88,7 +92,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	bf := timeseries.Extent{Start: time.Unix(0, 0), End: trq.Extent.End}
 	bt := trq.GetBackfillTolerance(o.BackfillTolerance)
 
-	if !trq.IsOffset && bt > 0 {
+	if !trq.IsOffset && bt > 0 { // TODO: research if we need this clause: && !time.Now().Add(-bt).After(bf.End) {
 		bf.End = bf.End.Add(-bt)
 	}
 
@@ -458,7 +462,15 @@ checkCache:
 	// so as to not map conflict with cacheData on WriteCache
 	logDeltaRoutine(pr.Logger, dpStatus)
 	recordDPCResult(r, cacheStatus, sc, r.URL.Path, ffStatus, elapsed.Seconds(), missRanges, rh)
-	PrepareResponseWriter(w, 0, rh)
+
+	rsc.TS = rts
+	Respond(w, 0, rh, nil) // body and code are nil so this only sets appropriate headers; no writes
+	if rsc.IsMergeMember { // don't bother marshaling this dataset if it's just going to be merged internally
+		if rsc.Response == nil {
+			rsc.Response = &http.Response{StatusCode: sc}
+		}
+		return
+	}
 	modeler.WireMarshalWriter(rts, rlo, sc, w)
 }
 
@@ -467,7 +479,8 @@ func logDeltaRoutine(logger interface{}, p tl.Pairs) {
 }
 
 func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
-	client backends.TimeseriesBackend, modeler *timeseries.Modeler) (timeseries.Timeseries, *HTTPDocument, time.Duration, error) {
+	client backends.TimeseriesBackend, modeler *timeseries.Modeler) (timeseries.Timeseries,
+	*HTTPDocument, time.Duration, error) {
 
 	rsc := request.GetResources(pr.Request)
 	o := rsc.BackendOptions
@@ -486,6 +499,9 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 
 	start := time.Now()
 	_, resp, _ := PrepareFetchReader(pr.upstreamRequest)
+
+	pr.upstreamResponse = resp
+	rsc.Response = resp
 
 	d := &HTTPDocument{
 		Status:     resp.Status,

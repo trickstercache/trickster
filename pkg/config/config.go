@@ -33,7 +33,6 @@ import (
 	cache "github.com/tricksterproxy/trickster/pkg/cache/options"
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 	reload "github.com/tricksterproxy/trickster/pkg/config/reload/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	rewriter "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	rwopts "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 	tracing "github.com/tricksterproxy/trickster/pkg/tracing/options"
@@ -119,7 +118,7 @@ type FrontendConfig struct {
 	ConnectionsLimit int `toml:"connections_limit"`
 
 	// ServeTLS indicates whether to listen and serve on the TLS port, meaning
-	// at least one backend configuration has a valid certificate and key file configured.
+	// at least one backend options has a valid certificate and key file configured.
 	ServeTLS bool `toml:"-"`
 }
 
@@ -262,6 +261,9 @@ func (c *Config) setDefaults(metadata *toml.MetaData) error {
 		c.LoaderWarnings = append(c.LoaderWarnings, v)
 	}
 
+	// This ensures that in places where backend options reference other named config sections
+	// (like caches, rules, negative caches, tracing, etc) referenced by names, the names
+	// referenced in the configuration are valid and refer to a defined resource
 	ol := bo.Lookup(c.Backends)
 	if err = ol.ValidateConfigMappings(c.Rules, c.Caches); err != nil {
 		return err
@@ -390,25 +392,8 @@ func (c *Config) String() string {
 	// the toml library will panic if the Handler is assigned,
 	// even though this field is annotated as skip ("-") in the prototype
 	// so we'll iterate the paths and set to nil the Handler (in our local copy only)
-	if cp.Backends != nil {
-		for _, v := range cp.Backends {
-			if v != nil {
-				for _, w := range v.Paths {
-					w.Handler = nil
-					w.KeyHasher = nil
-				}
-			}
-			if v.HealthCheck != nil {
-				// also strip out potentially sensitive headers
-				hideAuthorizationCredentials(v.HealthCheck.Headers)
-			}
-			if v.Paths != nil {
-				for _, p := range v.Paths {
-					hideAuthorizationCredentials(p.RequestHeaders)
-					hideAuthorizationCredentials(p.ResponseHeaders)
-				}
-			}
-		}
+	for k, o := range cp.Backends {
+		cp.Backends[k] = o.CloneTOMLSafe()
 	}
 
 	// strip Redis password
@@ -435,15 +420,4 @@ func (c *Config) ConfigFilePath() string {
 // Equal returns true if the FrontendConfigs are identical in value.
 func (fc *FrontendConfig) Equal(fc2 *FrontendConfig) bool {
 	return *fc == *fc2
-}
-
-var sensitiveCredentials = map[string]bool{headers.NameAuthorization: true}
-
-func hideAuthorizationCredentials(headers map[string]string) {
-	// strip Authorization Headers
-	for k := range headers {
-		if _, ok := sensitiveCredentials[k]; ok {
-			headers[k] = "*****"
-		}
-	}
 }

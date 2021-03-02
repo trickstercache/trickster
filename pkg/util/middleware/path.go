@@ -26,8 +26,8 @@ import (
 // StripPathPrefix removes the provided prefix from incoming HTTP Requests URLs
 func StripPathPrefix(prefix string, next http.Handler) http.Handler {
 
-	// This is for adjusting due to origin routing, so it needs to have
-	// leading and trailing slashes, such as /origin-name/
+	// This is for adjusting due to backend routing, so it needs to have
+	// leading and trailing slashes, such as /backend-name/
 	if !strings.HasPrefix(prefix, "/") {
 		prefix = "/" + prefix
 	}

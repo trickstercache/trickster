@@ -43,10 +43,18 @@ type Resources struct {
 	TimeRangeQuery    *timeseries.TimeRangeQuery
 	Tracer            *tracing.Tracer
 	Logger            interface{}
+	IsMergeMember     bool
+	ResponseBytes     []byte
+	ResponseMergeFunc interface{}
+	TSUnmarshaler     timeseries.UnmarshalerFunc
+	TSMarshaler       timeseries.MarshalWriterFunc
+	TS                timeseries.Timeseries
+	TSReqestOptions   *timeseries.RequestOptions
+	Response          *http.Response
 }
 
 // Clone returns an exact copy of the subject Resources collection
-func (r Resources) Clone() *Resources {
+func (r *Resources) Clone() *Resources {
 	return &Resources{
 		BackendOptions:    r.BackendOptions,
 		PathConfig:        r.PathConfig,
@@ -58,6 +66,13 @@ func (r Resources) Clone() *Resources {
 		TimeRangeQuery:    r.TimeRangeQuery,
 		Tracer:            r.Tracer,
 		Logger:            r.Logger,
+		IsMergeMember:     r.IsMergeMember,
+		ResponseBytes:     r.ResponseBytes,
+		ResponseMergeFunc: r.ResponseMergeFunc,
+		TSUnmarshaler:     r.TSUnmarshaler,
+		TSMarshaler:       r.TSMarshaler,
+		TS:                r.TS,
+		TSReqestOptions:   r.TSReqestOptions,
 	}
 }
 
@@ -95,4 +110,21 @@ func SetResources(r *http.Request, rsc *Resources) *http.Request {
 		return r
 	}
 	return r.WithContext(tctx.WithResources(r.Context(), rsc))
+}
+
+// Merge sets the configuration references in the subject resources to the source's
+func (r *Resources) Merge(r2 *Resources) {
+	if r == nil {
+		return
+	}
+	r.BackendOptions = r2.BackendOptions
+	r.PathConfig = r2.PathConfig
+	r.CacheConfig = r2.CacheConfig
+	r.NoLock = r2.NoLock
+	r.CacheClient = r2.CacheClient
+	r.BackendClient = r2.BackendClient
+	r.AlternateCacheTTL = r2.AlternateCacheTTL
+	r.TimeRangeQuery = r2.TimeRangeQuery
+	r.Tracer = r2.Tracer
+	r.Logger = r2.Logger
 }

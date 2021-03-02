@@ -17,8 +17,6 @@
 package badger
 
 import (
-	"io/ioutil"
-	"os"
 	"testing"
 	"time"
 
@@ -32,17 +30,14 @@ import (
 const provider = "badger"
 const cacheKey = "cacheKey"
 
-func newCacheConfig(t *testing.T) *co.Options {
-	dir, err := ioutil.TempDir("/tmp", provider)
-	if err != nil {
-		t.Fatalf("could not create temp directory (%s): %s", dir, err)
-	}
-	return &co.Options{Provider: provider, Badger: &bo.Options{Directory: dir, ValueDirectory: dir}}
+func newCacheConfig(dbPath string) *co.Options {
+	return &co.Options{Provider: provider,
+		Badger: &bo.Options{Directory: dbPath, ValueDirectory: dbPath}}
 }
 
 func TestConfiguration(t *testing.T) {
-	cacheConfig := newCacheConfig(t)
-	defer os.RemoveAll(cacheConfig.Badger.Directory)
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
 	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	cfg := bc.Configuration()
@@ -52,8 +47,8 @@ func TestConfiguration(t *testing.T) {
 }
 
 func TestBadgerCache_Connect(t *testing.T) {
-	cacheConfig := newCacheConfig(t)
-	defer os.RemoveAll(cacheConfig.Badger.Directory)
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
 	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	// it should connect
@@ -64,9 +59,7 @@ func TestBadgerCache_Connect(t *testing.T) {
 }
 
 func TestBadgerCache_ConnectFailed(t *testing.T) {
-	cacheConfig := newCacheConfig(t)
-	cacheConfig.Badger.Directory = "/root/trickster-test-noaccess"
-	os.RemoveAll(cacheConfig.Badger.Directory)
+	cacheConfig := newCacheConfig("/root/trickster-test-noaccess")
 	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	// it should connect
@@ -78,8 +71,8 @@ func TestBadgerCache_ConnectFailed(t *testing.T) {
 }
 
 func TestBadgerCache_Store(t *testing.T) {
-	cacheConfig := newCacheConfig(t)
-	defer os.RemoveAll(cacheConfig.Badger.Directory)
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
 	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	if err := bc.Connect(); err != nil {
@@ -95,8 +88,8 @@ func TestBadgerCache_Store(t *testing.T) {
 }
 
 func TestBadgerCache_Remove(t *testing.T) {
-	cacheConfig := newCacheConfig(t)
-	defer os.RemoveAll(cacheConfig.Badger.Directory)
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
 	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	if err := bc.Connect(); err != nil {
@@ -135,8 +128,8 @@ func TestBadgerCache_Remove(t *testing.T) {
 }
 
 func TestBadgerCache_BulkRemove(t *testing.T) {
-	cacheConfig := newCacheConfig(t)
-	defer os.RemoveAll(cacheConfig.Badger.Directory)
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
 	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	if err := bc.Connect(); err != nil {
@@ -178,8 +171,8 @@ func TestBadgerCache_BulkRemove(t *testing.T) {
 }
 
 func TestBadgerCache_Retrieve(t *testing.T) {
-	cacheConfig := newCacheConfig(t)
-	defer os.RemoveAll(cacheConfig.Badger.Directory)
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
 	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	if err := bc.Connect(); err != nil {
@@ -256,13 +249,9 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 }
 
 func TestBadgerCache_Close(t *testing.T) {
-	dir, err := ioutil.TempDir("/tmp", provider)
-	if err != nil {
-		t.Fatalf("could not create temp directory (%s): %s", dir, err)
-	}
-	defer os.RemoveAll(dir)
 
-	cacheConfig := &co.Options{Provider: provider, Badger: &bo.Options{Directory: dir, ValueDirectory: dir}}
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := &co.Options{Provider: provider, Badger: &bo.Options{Directory: testDbPath, ValueDirectory: testDbPath}}
 	bc := Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}
 
 	if err := bc.Connect(); err != nil {

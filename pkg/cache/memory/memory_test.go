@@ -17,7 +17,6 @@
 package memory
 
 import (
-	"io/ioutil"
 	"strconv"
 	"testing"
 	"time"
@@ -61,10 +60,6 @@ func storeBenchmark(b *testing.B) *Cache {
 }
 
 func newCacheConfig(t *testing.T) co.Options {
-	dir, err := ioutil.TempDir("/tmp", provider)
-	if err != nil {
-		t.Fatalf("could not create temp directory (%s): %s", dir, err)
-	}
 	return co.Options{Provider: provider, Index: &io.Options{ReapInterval: 0}}
 }
 

@@ -21,13 +21,21 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
 // SeriesHandler proxies requests for path /series to the origin by way of the object proxy cache
 func (c *Client) SeriesHandler(w http.ResponseWriter, r *http.Request) {
+
+	// if this request is part of a scatter/gather, provide a reconstitution function
+	rsc := request.GetResources(r)
+	if rsc.IsMergeMember {
+		rsc.ResponseMergeFunc = model.MergeAndWriteSeries
+	}
 
 	u := urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 	qp, _, _ := params.GetRequestValues(r)

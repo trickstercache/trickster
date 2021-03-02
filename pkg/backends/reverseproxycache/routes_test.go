@@ -25,17 +25,6 @@ import (
 
 const localResponse = "localresponse"
 
-func TestRegisterHandlers(t *testing.T) {
-	c, err := NewClient("test", nil, nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	c.RegisterHandlers(nil)
-	if _, ok := c.Handlers()[localResponse]; !ok {
-		t.Errorf("expected to find handler named: %s", localResponse)
-	}
-}
-
 func TestDefaultPathConfigs(t *testing.T) {
 	backendClient, err := NewClient("test", nil, nil, nil)
 	if err != nil {

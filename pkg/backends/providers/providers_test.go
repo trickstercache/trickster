@@ -65,3 +65,19 @@ func TestIsValidProvider(t *testing.T) {
 	}
 
 }
+
+func TestIsSupportedTimeSeriesProvider(t *testing.T) {
+
+	name := "test-should-fail"
+	ok := IsSupportedTimeSeriesProvider(name)
+	if ok {
+		t.Error("expected false")
+	}
+
+	name = "prometheus"
+	ok = IsSupportedTimeSeriesProvider(name)
+	if !ok {
+		t.Error("expected true")
+	}
+
+}

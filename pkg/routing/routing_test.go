@@ -19,7 +19,7 @@ package routing
 import (
 	"io/ioutil"
 	"net/http"
-	"os"
+	"strings"
 	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
@@ -148,7 +148,7 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	conf.Backends["1"] = o1
 	delete(conf.Backends, "default")
 
-	o1.Paths["/-GET-HEAD"].Methods = nil
+	o1.Paths["/-0000000011"].Methods = nil
 
 	_, err = RegisterProxyRoutes(conf, router, caches, tr, log, false)
 	if err != nil {
@@ -285,22 +285,31 @@ func TestRegisterProxyRoutesInvalidCert(t *testing.T) {
 	expected := "tls: failed to find any PEM data in certificate input"
 
 	kb, _, _ := tlstest.GetTestKeyAndCert(false)
-	const certfile = "../../testdata/test.06.cert.pem"
-	const keyfile = "../../testdata/test.06.key.pem"
+
+	td := t.TempDir()
+
+	certfile := td + "/cert.pem"
+	keyfile := td + "/key.pem"
+	confFile := td + "/trickster_test_config.conf"
+
 	err := ioutil.WriteFile(certfile, []byte{}, 0600)
 	if err != nil {
 		t.Error(err)
-	} else {
-		defer os.Remove(certfile)
 	}
 	err = ioutil.WriteFile(keyfile, kb, 0600)
 	if err != nil {
 		t.Error(err)
-	} else {
-		defer os.Remove(keyfile)
 	}
 
-	a := []string{"-config", "../../testdata/test.bad_tls_cert.routes.conf"}
+	b, err := ioutil.ReadFile("../../testdata/test.bad_tls_cert.routes.conf")
+	b = []byte(strings.ReplaceAll(string(b), `../../testdata/test.06.`, td+"/"))
+
+	err = ioutil.WriteFile(confFile, b, 0600)
+	if err != nil {
+		t.Error(err)
+	}
+
+	a := []string{"-config", confFile}
 	conf, _, err := config.Load("trickster", "test", a)
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -317,7 +326,7 @@ func TestRegisterProxyRoutesInvalidCert(t *testing.T) {
 }
 
 func TestRegisterProxyRoutesBadCacheName(t *testing.T) {
-	expected := "invalid cache name [test2] provided in backend options [test]"
+	expected := `invalid cache name "test2" provided in backend options "test"`
 	a := []string{"-config", "../../testdata/test.bad_cache_name.conf"}
 	_, _, err := config.Load("trickster", "test", a)
 	if err == nil {
@@ -329,7 +338,7 @@ func TestRegisterProxyRoutesBadCacheName(t *testing.T) {
 
 func TestRegisterProxyRoutesBadProvider(t *testing.T) {
 	expected := "unknown backend provider in backend options. backendName: test, backendProvider: foo"
-	a := []string{"-config", "../../testdata/test.unknown_backend_type.conf"}
+	a := []string{"-config", "../../testdata/test.unknown_backend_provider.conf"}
 	conf, _, err := config.Load("trickster", "test", a)
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())

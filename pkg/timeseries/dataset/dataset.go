@@ -47,6 +47,10 @@ type DataSet struct {
 	UpdateLock sync.Mutex `msg:"-"`
 	// Error is a container for any DataSet-level Errors
 	Error string `msg:"error"`
+	// ErrorType describes the type for any DataSet-level Errors
+	ErrorType string `msg:"errorType"`
+	// Warnings is a container for any DataSet-level Warnings
+	Warnings []string `msg:"warnings"`
 	// TimeRangeQuery is the trq associated with the Timeseries
 	TimeRangeQuery *timeseries.TimeRangeQuery `msg:"trq"`
 	// Sorter is the DataSet's Sort function, which defaults to DefaultSort

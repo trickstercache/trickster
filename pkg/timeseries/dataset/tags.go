@@ -98,3 +98,10 @@ func (t Tags) Clone() Tags {
 	}
 	return clone
 }
+
+// Merge merges the provided tags into the subject tags, replacing any duplicate tag names
+func (t Tags) Merge(t2 Tags) {
+	for k := range t2 {
+		t[k] = t2[k]
+	}
+}

@@ -17,9 +17,7 @@
 package config
 
 import (
-	"fmt"
 	"io/ioutil"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -92,14 +90,6 @@ func TestString(t *testing.T) {
 	s := c1.String()
 	if !strings.Contains(s, `password = "*****"`) {
 		t.Errorf("missing password mask: %s", "*****")
-	}
-}
-
-func TestHideAuthorizationCredentials(t *testing.T) {
-	hdrs := map[string]string{headers.NameAuthorization: "Basic SomeHash"}
-	hideAuthorizationCredentials(hdrs)
-	if hdrs[headers.NameAuthorization] != "*****" {
-		t.Errorf("expected '*****' got '%s'", hdrs[headers.NameAuthorization])
 	}
 }
 
@@ -209,7 +199,7 @@ const testPaths = `
 	   req_rewriter_name = 'example'
  `
 
-func TestProcessBackendOptionss(t *testing.T) {
+func TestProcessBackendOptions(t *testing.T) {
 
 	c, _ := emptyTestConfig()
 	c.Backends["test"].ReqRewriterName = "invalid"
@@ -280,14 +270,13 @@ func TestLoadTOMLConfig(t *testing.T) {
 
 func TestIsStale(t *testing.T) {
 
-	testFile := fmt.Sprintf("/tmp/trickster_test_config.%d.conf", time.Now().UnixNano())
+	testFile := t.TempDir() + "/trickster_test.conf"
 	_, tml := emptyTestConfig()
 
 	err := ioutil.WriteFile(testFile, []byte(tml), 0666)
 	if err != nil {
 		t.Error(err)
 	}
-	defer os.Remove(testFile)
 
 	c, _, _ := Load("testing", "testing", []string{"-config", testFile})
 	c.ReloadConfig.RateLimitMS = 0

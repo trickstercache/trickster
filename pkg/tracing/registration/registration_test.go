@@ -108,7 +108,7 @@ func TestRegisterAll(t *testing.T) {
 	}
 	cfg.TracingConfigs = temp
 
-	// test nil backend config
+	// test nil backend options
 	cfg.Backends = nil
 	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
 	if err == nil {

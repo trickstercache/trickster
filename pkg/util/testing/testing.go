@@ -187,3 +187,16 @@ func NewTestTracer() *tracing.Tracer {
 	tracer, _ := tr.GetTracer(tc, tl.ConsoleLogger("warn"), true)
 	return tracer
 }
+
+// BasicHTTPHandler is a basic HTTP Handler for use in unit e
+func BasicHTTPHandler(w http.ResponseWriter, r *http.Request) {
+	if w == nil {
+		return
+	}
+	h := w.Header()
+	h.Set("Test-Header", "Trickster")
+	h.Set("Last-Modified", "Wed, 01 Jan 2020 00:00:00 UTC")
+	h.Set("X-Trickster-Status", "engine=none")
+	w.WriteHeader(200)
+	w.Write([]byte("{}"))
+}

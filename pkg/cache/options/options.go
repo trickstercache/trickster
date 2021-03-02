@@ -38,7 +38,7 @@ type Lookup map[string]*Options
 type Options struct {
 	// Name is the Name of the cache, taken from the Key in the Caches map[string]*CacheConfig
 	Name string `toml:"-"`
-	// Type represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
+	// Provider represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
 	Provider string `toml:"provider"`
 	// Index provides options for the Cache Index
 	Index *index.Options `toml:"index"`
@@ -53,12 +53,12 @@ type Options struct {
 
 	//  Synthetic Values
 
-	// ID represents the internal constant for the provided  string
+	// ProviderID represents the internal constant for the provided Provider string
 	// and is automatically populated at startup
 	ProviderID providers.Provider `toml:"-"`
 }
 
-// New will return a pointer to a cache Options with the default configuration settings
+// New will return a pointer to a CacheOptions with the default configuration settings
 func New() *Options {
 	return &Options{
 		Provider:   d.DefaultCacheProvider,
@@ -134,7 +134,8 @@ func (cc *Options) Equal(cc2 *Options) bool {
 
 }
 
-// ProcessTOML processes the provided TOML
+// ProcessTOML will return examine the provided TOML and place a corresponding CacheOptions
+// reference into the Lookup table
 func (l Lookup) ProcessTOML(metadata *toml.MetaData, activeCaches map[string]bool) ([]string, error) {
 
 	// setCachingDefaults assumes that processBackendOptionss was just ran

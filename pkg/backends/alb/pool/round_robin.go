@@ -14,17 +14,20 @@
  * limitations under the License.
  */
 
-package floats
+package pool
 
 import (
-	"sort"
-	"testing"
+	"net/http"
+	"sync/atomic"
 )
 
-func TestSortFloats(t *testing.T) {
-	f := Floats{2, 1, 6, 5}
-	sort.Sort(f)
-	if f[0] != 1 && f[3] != 6 {
-		t.Error("sort failed")
+func nextRoundRobin(p *pool) []http.Handler {
+	p.mtx.RLock()
+	t := p.healthy
+	p.mtx.RUnlock()
+	if len(t) == 0 {
+		return nil
 	}
+	i := atomic.AddUint64(&p.pos, 1) % uint64(len(t))
+	return []http.Handler{t[i]}
 }

@@ -14,23 +14,23 @@
  * limitations under the License.
  */
 
-// Package floats provides sorting capabilities to a slice of type float64
-package floats
+package alb
 
-// Floats represents an array of float64's
-type Floats []float64
+import (
+	"net/http"
 
-// Len returns the length of an array of float64's
-func (t Floats) Len() int {
-	return len(t)
-}
+	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
+)
 
-// Less returns true if i comes before j
-func (t Floats) Less(i, j int) bool {
-	return t[i] < t[j]
-}
-
-// Swap modifies an array of float64's by swapping the values in indexes i and j
-func (t Floats) Swap(i, j int) {
-	t[i], t[j] = t[j], t[i]
+func (c *Client) handleRoundRobin(w http.ResponseWriter, r *http.Request) {
+	if c.pool == nil {
+		handlers.HandleBadGateway(w, r)
+		return
+	}
+	hl := c.pool.Next()
+	if len(hl) > 0 {
+		hl[0].ServeHTTP(w, r)
+		return
+	}
+	handlers.HandleBadGateway(w, r)
 }

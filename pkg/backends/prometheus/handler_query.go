@@ -21,13 +21,41 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	"github.com/tricksterproxy/trickster/pkg/proxy/response/merge"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 // QueryHandler handles calls to /query (for instantaneous values)
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	var hasTransformations bool
+
+	rsc := request.GetResources(r)
+	wasMergeMember := rsc.IsMergeMember
+
+	// this checks if there are any labels to append, or whether it's part of a scatter/gather,
+	// and if so, sets up the request context for these scenarios
+	if rsc.IsMergeMember || (rsc.BackendOptions != nil && rsc.BackendOptions.Prometheus != nil) {
+		var trq *timeseries.TimeRangeQuery
+		trq, err = parseVectorQuery(r)
+		if err == nil {
+			rsc.TimeRangeQuery = trq
+			hasTransformations = len(trq.Labels) > 0
+		}
+		if rsc.IsMergeMember || hasTransformations {
+			// if there are transformations (e.g. labels to insert, merging with other datasets),
+			// this will enable those
+			rsc.IsMergeMember = true
+			rsc.ResponseMergeFunc = model.MergeAndWriteVector
+		}
+	}
+
 	u := urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 	qp, _, _ := params.GetRequestValues(r)
 	// Round time param down to the nearest 15 seconds if it exists
@@ -39,5 +67,16 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	r.URL = u
 	params.SetRequestValues(r, qp)
 
+	// if there are labels to append to the dataset, and it's not part of a merge, then
+	// it runs through the merge writer for processing. it doesn't merge with anything,
+	// but the labels get appended and written to the wire
+	if hasTransformations && !wasMergeMember {
+		mg := merge.NewResponseGate(w, r, rsc)
+		engines.ObjectProxyCacheRequest(mg, r)
+		model.MergeAndWriteVector(w, r, merge.ResponseGates{mg})
+		return
+	}
+
+	// otherwise, process as normal
 	engines.ObjectProxyCacheRequest(w, r)
 }

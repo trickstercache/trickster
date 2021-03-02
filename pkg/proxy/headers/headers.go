@@ -23,8 +23,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
 const (
@@ -192,35 +190,6 @@ func UpdateHeaders(headers http.Header, updates map[string]string) {
 		}
 		headers.Set(k, v)
 	}
-}
-
-// SetResultsHeader adds a response header summarizing Trickster's handling of the HTTP request
-func SetResultsHeader(headers http.Header, engine, status, ffstatus string, fetched timeseries.ExtentList) {
-
-	if headers == nil || engine == "" {
-		return
-	}
-
-	parts := append(make([]string, 0, 4), fmt.Sprintf("engine=%s", engine))
-
-	if status != "" {
-		parts = append(parts, fmt.Sprintf("status=%s", status))
-	}
-
-	if fetched != nil && len(fetched) > 0 {
-		fp := make([]string, 0, len(fetched))
-		for _, v := range fetched {
-			fp = append(fp, v.String())
-		}
-		parts = append(parts, fmt.Sprintf("fetched=[%s]", strings.Join(fp, ",")))
-	}
-
-	if ffstatus != "" {
-		parts = append(parts, fmt.Sprintf("ffstatus=%s", ffstatus))
-	}
-
-	headers.Set(NameTricksterResult, strings.Join(parts, "; "))
-
 }
 
 // ExtractHeader returns the value for the provided header name, and a boolean indicating if the header was present

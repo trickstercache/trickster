@@ -17,7 +17,6 @@
 package handlers
 
 import (
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -38,7 +37,7 @@ func TestReloadHandleFunc(t *testing.T) {
 		return nil
 	}
 
-	testFile := fmt.Sprintf("trickster_test_config.%d.conf", time.Now().UnixNano())
+	testFile := t.TempDir() + "/trickster_test_config.conf"
 
 	tml, err := ioutil.ReadFile("../../../testdata/test.empty.conf")
 	if err != nil {
@@ -49,7 +48,6 @@ func TestReloadHandleFunc(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer os.Remove(testFile)
 
 	cfg, _, _ := config.Load("testing", "testing", []string{"-config", testFile})
 	cfg.ReloadConfig.RateLimitMS = 0

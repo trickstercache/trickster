@@ -45,28 +45,28 @@ func TestNewHTTPClient(t *testing.T) {
 	caFileInvalid1 := caFile + ".invalid"
 	const caFileInvalid2 = "../../testdata/test.06.cert.pem"
 
-	// test good backend config, no CA
+	// test good backend options, no CA
 	o := bo.New()
 	_, err = NewHTTPClient(o)
 	if err != nil {
 		t.Error(err)
 	}
 
-	// test good backend config, 1 good CA
+	// test good backend options, 1 good CA
 	o.TLS.CertificateAuthorityPaths = []string{caFile}
 	_, err = NewHTTPClient(o)
 	if err != nil {
 		t.Error(err)
 	}
 
-	// test good backend config, 1 bad CA (file not found)
+	// test good backend options, 1 bad CA (file not found)
 	o.TLS.CertificateAuthorityPaths = []string{caFileInvalid1}
 	_, err = NewHTTPClient(o)
 	if err == nil {
 		t.Errorf("expected error for no such file or directory on %s", caFileInvalid1)
 	}
 
-	// test good backend config, 1 bad CA (junk content)
+	// test good backend options, 1 bad CA (junk content)
 	o.TLS.CertificateAuthorityPaths = []string{caFileInvalid2}
 	_, err = NewHTTPClient(o)
 	if err == nil {

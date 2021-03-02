@@ -24,6 +24,8 @@ type Provider int
 const (
 	// RPC represents the Reverse Proxy Cache backend provider
 	RPC = Provider(iota)
+	// ALB represents the Application Load Balancer backend provider
+	ALB
 	// RP represents the Reverse Proxy (no caching) backend provider
 	RP
 	// Rule represents the Ruler backend provider
@@ -43,6 +45,7 @@ var Names = map[string]Provider{
 	"rule":              Rule,
 	"reverseproxycache": RPC,
 	"rpc":               RPC,
+	"alb":               ALB,
 	"prometheus":        Prometheus,
 	"influxdb":          InfluxDB,
 	"irondb":            IronDB,
@@ -63,6 +66,19 @@ func init() {
 	// and "rp" for proxy
 	Values[RPC] = "rpc"
 	Values[RP] = "rp"
+}
+
+var supportedTimeSeries = map[string]Provider{
+	"prometheus": Prometheus,
+	"influxdb":   InfluxDB,
+	"clickhouse": ClickHouse,
+	"irondb":     IronDB,
+}
+
+// IsSupportedTimeSeriesProvider returns true if the provided time series is supported by Trickster
+func IsSupportedTimeSeriesProvider(name string) bool {
+	_, ok := supportedTimeSeries[name]
+	return ok
 }
 
 func (t Provider) String() string {

@@ -28,10 +28,12 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
+	po "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/config"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	pe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
@@ -124,7 +126,8 @@ func TestParseTimeFails(t *testing.T) {
 func TestParseTimeRangeQuery(t *testing.T) {
 
 	qp := url.Values(map[string][]string{
-		"query": {`up-` + timeseries.FastForwardUserDisableFlag},
+		"query": {`up-` + timeseries.FastForwardUserDisableFlag + " " +
+			timeseries.BackfillToleranceFlag + "30a"},
 		"start": {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
 		"end":   {strconv.Itoa(int(time.Now().Unix()))},
 		"step":  {"15"},
@@ -138,6 +141,11 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	}
 
 	req := &http.Request{URL: u}
+	o := bo.New()
+	o.Prometheus = &po.Options{Labels: map[string]string{"test": "trickster"}}
+	rsc := request.NewResources(o, nil, nil, nil, nil, nil, nil)
+	req = request.SetResources(req, rsc)
+
 	client := &Client{}
 	res, _, _, err := client.ParseTimeRangeQuery(req)
 	if err != nil {
@@ -352,6 +360,73 @@ func TestParseTimeRangeQueryWithOffset(t *testing.T) {
 
 	if !res.IsOffset {
 		t.Errorf("expected true got %t", res.IsOffset)
+	}
+
+}
+
+func TestParseVectorQuery(t *testing.T) {
+
+	req := &http.Request{URL: &url.URL{
+		Scheme: "https",
+		Host:   "blah.com",
+		Path:   "/",
+		RawQuery: url.Values(map[string][]string{
+			"query": {`up and has offset `},
+			"time":  {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+		}).Encode(),
+	}}
+
+	o := bo.New()
+	o.Prometheus = &po.Options{Labels: map[string]string{"test": "trickster"}}
+	rsc := request.NewResources(o, nil, nil, nil, nil, nil, nil)
+	req = request.SetResources(req, rsc)
+
+	_, err := parseVectorQuery(req)
+	if err != nil {
+		t.Error(err)
+	}
+
+	req = &http.Request{URL: &url.URL{
+		Scheme: "https",
+		Host:   "blah.com",
+		Path:   "/",
+		RawQuery: url.Values(map[string][]string{
+			"time": {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
+		}).Encode(),
+	}}
+
+	_, err = parseVectorQuery(req)
+	if err == nil {
+		t.Error("expected error for missing parameter")
+	}
+
+	req = &http.Request{URL: &url.URL{
+		Scheme: "https",
+		Host:   "blah.com",
+		Path:   "/",
+		RawQuery: url.Values(map[string][]string{
+			"query": {`up and has offset `},
+			"time":  {`a`},
+		}).Encode(),
+	}}
+
+	_, err = parseVectorQuery(req)
+	if err == nil {
+		t.Error("expected error for time parsing")
+	}
+
+	req = &http.Request{URL: &url.URL{
+		Scheme: "https",
+		Host:   "blah.com",
+		Path:   "/",
+		RawQuery: url.Values(map[string][]string{
+			"query": {`up and has offset `},
+		}).Encode(),
+	}}
+
+	_, err = parseVectorQuery(req)
+	if err != nil {
+		t.Error(err)
 	}
 
 }

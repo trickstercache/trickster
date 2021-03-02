@@ -62,9 +62,15 @@ func TestDefaultPathConfigs(t *testing.T) {
 		t.Errorf("expected to find path named: %s", "/")
 	}
 
-	const expectedLen = 13
+	const expectedLen = 14
 	if len(dpc) != expectedLen {
 		t.Errorf("expected ordered length to be: %d got %d", expectedLen, len(dpc))
 	}
 
+}
+
+func TestMergeablePaths(t *testing.T) {
+	if len(MergeablePaths()) != 6 {
+		t.Errorf("expected %d got %d", 6, len(MergeablePaths()))
+	}
 }

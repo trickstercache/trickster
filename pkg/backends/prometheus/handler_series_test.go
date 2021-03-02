@@ -47,6 +47,7 @@ func TestSeriesHandler(t *testing.T) {
 	client := backendClient.(*Client)
 	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+	rsc.IsMergeMember = true
 
 	_, ok := rsc.BackendOptions.Paths[APIPath+mnSeries]
 	if !ok {

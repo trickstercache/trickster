@@ -20,18 +20,22 @@ import (
 	"io/ioutil"
 	"testing"
 
+	po "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
 )
 
 func TestQueryHandler(t *testing.T) {
 
+	const expected = `{"status":"ok","data":{"resultType":"vector","result":[]}}`
+
 	backendClient, err := NewClient("test", nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
 	ts, w, r, _, err := tu.NewTestInstance("",
-		backendClient.DefaultPathConfigs, 200, "{}", nil, "prometheus", "/query?q=up&time=0", "debug")
+		backendClient.DefaultPathConfigs, 200, `{"status":"ok"}`, nil, "prometheus",
+		"/api/v1/query?query=up&time=0", "debug")
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -45,6 +49,10 @@ func TestQueryHandler(t *testing.T) {
 	client := backendClient.(*Client)
 	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+
+	rsc.BackendOptions.Prometheus = &po.Options{
+		Labels: map[string]string{"test": "trickster"},
+	}
 
 	_, ok := rsc.BackendOptions.Paths[APIPath+mnQuery]
 	if !ok {
@@ -65,7 +73,7 @@ func TestQueryHandler(t *testing.T) {
 		t.Error(err)
 	}
 
-	if string(bodyBytes) != "{}" {
+	if string(bodyBytes) != expected {
 		t.Errorf("expected '{}' got %s.", bodyBytes)
 	}
 }

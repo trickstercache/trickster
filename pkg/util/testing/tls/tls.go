@@ -34,6 +34,33 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/util/md5"
 )
 
+// WriteTestKeyAndCert writes a self-signed test TLS key and cert. Paths should
+// use t.TempDir() to ensure they are auto-cleaned, otherwise, you must cleanup
+func WriteTestKeyAndCert(isCA bool, keyPath, certPath string) error {
+
+	k, c, err := GetTestKeyAndCert(isCA)
+	if err != nil {
+		return err
+	}
+
+	if !isCA || keyPath != "" {
+		err := ioutil.WriteFile(keyPath, k, 0600)
+		if err != nil {
+			return err
+		}
+	}
+
+	if certPath != "" {
+		err := ioutil.WriteFile(certPath, c, 0600)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+
+}
+
 // GetTestKeyAndCert returns a self-sign test TLS key and certificate
 func GetTestKeyAndCert(isCA bool) ([]byte, []byte, error) {
 	priv, _ := rsa.GenerateKey(rand.Reader, 2048)

@@ -17,28 +17,31 @@
 package options
 
 import (
-	"errors"
-	"fmt"
+	"bytes"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
+	ao "github.com/tricksterproxy/trickster/pkg/backends/alb/options"
 	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
+	prop "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
 	ro "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	"github.com/tricksterproxy/trickster/pkg/cache/negative"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
+	"github.com/tricksterproxy/trickster/pkg/timeseries/dataset"
 
 	"github.com/gorilla/mux"
 )
 
-var restrictedOriginNames = map[string]bool{"frontend": true}
+var restrictedOriginNames = map[string]bool{"": true, "frontend": true}
 
 // Lookup is a map of Options
 type Lookup map[string]*Options
@@ -104,6 +107,11 @@ type Options struct {
 	// ReqRewriterName is the name of a configured Rewriter that will modify the request prior to
 	// processing by the backend client
 	ReqRewriterName string `toml:"req_rewriter_name"`
+
+	// ALBOptions holds the options for ALBs
+	ALBOptions *ao.Options `toml:"alb"`
+	// Prometheus holds options specific to prometheus backends
+	Prometheus *prop.Options `toml:"prometheus"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `toml:"tls"`
@@ -172,6 +180,9 @@ type Options struct {
 	RuleOptions *ro.Options `toml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
 	ReqRewriter rewriter.RewriteInstructions
+
+	//
+	md *toml.MetaData `toml:"-"`
 }
 
 // New will return a pointer to an BackendOptions with the default configuration settings
@@ -302,6 +313,17 @@ func (o *Options) Clone() *Options {
 		no.RuleOptions = o.RuleOptions.Clone()
 	}
 
+	if o.ALBOptions != nil {
+		no.ALBOptions = o.ALBOptions.Clone()
+	}
+
+	if o.Prometheus != nil {
+		no.Prometheus = &prop.Options{}
+		if o.Prometheus.Labels != nil {
+			no.Prometheus.Labels = dataset.Tags(o.Prometheus.Labels).Clone()
+		}
+	}
+
 	return no
 }
 
@@ -309,10 +331,10 @@ func (o *Options) Clone() *Options {
 func (l Lookup) Validate(ncl negative.Lookups) error {
 	for k, o := range l {
 		if o.Provider == "" {
-			return fmt.Errorf(`missing provider for backend "%s"`, k)
+			return NewErrMissingProvider(k)
 		}
 		if (o.Provider != "rule" && o.Provider != "alb") && o.OriginURL == "" {
-			return fmt.Errorf(`missing origin-url for backend "%s"`, k)
+			return NewErrMissingOriginURL(k)
 		}
 		url, err := url.Parse(o.OriginURL)
 		if err != nil {
@@ -341,11 +363,13 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 			o.CacheKeyPrefix = o.Host
 		}
 
-		nc := ncl.Get(o.NegativeCacheName)
-		if nc == nil {
-			return fmt.Errorf(`invalid negative cache name: %s`, o.NegativeCacheName)
+		if ncl != nil {
+			nc := ncl.Get(o.NegativeCacheName)
+			if nc == nil {
+				return NewErrInvalidNegativeCacheName(o.NegativeCacheName)
+			}
+			o.NegativeCache = nc
 		}
-		o.NegativeCache = nc
 
 		// enforce MaxTTL
 		if o.TimeseriesTTLMS > o.MaxTTLMS {
@@ -366,7 +390,7 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 // restricted words
 func ValidateBackendName(name string) error {
 	if _, ok := restrictedOriginNames[name]; ok {
-		return errors.New("invalid backend name:" + name)
+		return NewErrInvalidBackendName(name)
 	}
 	return nil
 }
@@ -374,8 +398,8 @@ func ValidateBackendName(name string) error {
 // ValidateConfigMappings ensures that named config mappings from within origin configs
 // (e.g., backends.cache_name) are valid
 func (l Lookup) ValidateConfigMappings(rules ro.Lookup, caches co.Lookup) error {
-	for k, o := range l {
-		if err := ValidateBackendName(k); err != nil {
+	for _, o := range l {
+		if err := ValidateBackendName(o.Name); err != nil {
 			return err
 		}
 		switch o.Provider {
@@ -383,14 +407,22 @@ func (l Lookup) ValidateConfigMappings(rules ro.Lookup, caches co.Lookup) error 
 			// Rule Type Validations
 			r, ok := rules[o.RuleName]
 			if !ok {
-				return fmt.Errorf("invalid rule name [%s] provided in backend options [%s]", o.RuleName, k)
+				return NewErrInvalidRuleName(o.RuleName, o.Name)
 			}
 			r.Name = o.RuleName
 			o.RuleOptions = r
 		case "alb":
+			// ALB Validations
+			if ao := o.ALBOptions; ao != nil {
+				for _, bn := range ao.Pool {
+					if _, ok := l[bn]; !ok {
+						return NewErrInvalidALBOptions(bn, o.Name)
+					}
+				}
+			}
 		default:
 			if _, ok := caches[o.CacheName]; !ok {
-				return fmt.Errorf("invalid cache name [%s] provided in backend options [%s]", o.CacheName, k)
+				return NewErrInvalidCacheName(o.CacheName, o.Name)
 			}
 		}
 	}
@@ -425,7 +457,7 @@ func ProcessTOML(
 ) (*Options, error) {
 
 	if metadata == nil {
-		return nil, errors.New("invalid config metadata")
+		return nil, ErrInvalidMetadata
 	}
 
 	no := New()
@@ -435,8 +467,7 @@ func ProcessTOML(
 		no.ReqRewriterName = o.ReqRewriterName
 		ri, ok := crw[no.ReqRewriterName]
 		if !ok {
-			return nil, fmt.Errorf("invalid rewriter name %s in backend options %s",
-				no.ReqRewriterName, name)
+			return nil, NewErrInvalidRewriterName(no.ReqRewriterName, name)
 		}
 		no.ReqRewriter = ri
 	}
@@ -541,6 +572,14 @@ func ProcessTOML(
 		}
 	}
 
+	if metadata.IsDefined("backends", name, "alb") {
+		opts, err := ao.ProcessTOML(name, o.ALBOptions, metadata)
+		if err != nil {
+			return nil, err
+		}
+		no.ALBOptions = opts
+	}
+
 	if metadata.IsDefined("backends", name, "negative_cache_name") {
 		no.NegativeCacheName = o.NegativeCacheName
 	}
@@ -586,4 +625,37 @@ func ProcessTOML(
 	}
 
 	return no, nil
+}
+
+// CloneTOMLSafe returns a copy of the Options that is safe to export to TOML without
+// exposing credentials (by masking known credential fields with "*****")
+func (o *Options) CloneTOMLSafe() *Options {
+
+	co := o.Clone()
+	for _, w := range co.Paths {
+		w.Handler = nil
+		w.KeyHasher = nil
+		headers.HideAuthorizationCredentials(w.RequestHeaders)
+		headers.HideAuthorizationCredentials(w.ResponseHeaders)
+	}
+	if co.HealthCheck != nil {
+		// also strip out potentially sensitive headers
+		headers.HideAuthorizationCredentials(co.HealthCheck.Headers)
+	}
+	return co
+}
+
+// ToTOML prints the Options as a TOML representation
+func (o *Options) ToTOML() string {
+	co := o.CloneTOMLSafe()
+	var buf bytes.Buffer
+	e := toml.NewEncoder(&buf)
+	e.Encode(co)
+	return buf.String()
+}
+
+// HasTransformations returns true if the backend will artificially transform payloads
+// based on the running configuration (e.g., insert labels into prometheus response)
+func (o *Options) HasTransformations() bool {
+	return o.Prometheus != nil && len(o.Prometheus.Labels) > 0
 }

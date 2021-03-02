@@ -20,12 +20,21 @@ import (
 	"net/http"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	"github.com/tricksterproxy/trickster/pkg/proxy/response/merge"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
 
 // QueryRangeHandler handles timeseries requests for
 // Prometheus and processes them through the delta proxy cache
 func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
+
+	// if this request is part of a scatter/gather, provide a reconstitution function
+	rsc := request.GetResources(r)
+	if rsc.IsMergeMember {
+		rsc.ResponseMergeFunc = merge.Timeseries
+	}
+
 	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 	engines.DeltaProxyCacheRequest(w, r, c.Modeler())
 }

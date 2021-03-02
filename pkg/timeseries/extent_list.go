@@ -38,7 +38,7 @@ func (el ExtentList) String() string {
 	for i, e := range el {
 		lines[i] = e.String()
 	}
-	return strings.Join(lines, ";")
+	return strings.Join(lines, ",")
 }
 
 // InsideOf returns true if the provided extent is contained
@@ -266,7 +266,7 @@ func (el ExtentListLRU) String() string {
 	for _, e := range el {
 		lines = append(lines, fmt.Sprintf("%d-%d:%d", e.Start.Unix(), e.End.Unix(), e.LastUsed.Unix()))
 	}
-	return strings.Join(lines, ";")
+	return strings.Join(lines, ",")
 }
 
 // UpdateLastUsed updates the ExtentListLRU's LastUsed field for the provided extent.

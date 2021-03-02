@@ -19,7 +19,6 @@ package reverseproxycache
 
 import (
 	"net/http"
-	"net/url"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
@@ -31,9 +30,6 @@ var _ backends.Backend = (*Client)(nil)
 // Client Implements the Proxy Client Interface
 type Client struct {
 	backends.Backend
-	healthURL     *url.URL
-	healthMethod  string
-	healthHeaders http.Header
 }
 
 // NewClient returns a new Client Instance

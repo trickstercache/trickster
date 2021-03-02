@@ -17,7 +17,6 @@
 package bbolt
 
 import (
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -35,23 +34,19 @@ import (
 const cacheProvider = "bbolt"
 const cacheKey = "cacheKey"
 
-func newCacheConfig() co.Options {
-	const testDbPath = "/tmp/test.db"
-	os.Remove(testDbPath)
+func newCacheConfig(dbPath string) co.Options {
 	return co.Options{Provider: cacheProvider, BBolt: &bo.Options{
-		Filename: testDbPath, Bucket: "trickster_test"}, Index: &io.Options{ReapInterval: time.Second}}
+		Filename: dbPath, Bucket: "trickster_test"}, Index: &io.Options{ReapInterval: time.Second}}
 }
 
 func storeBenchmark(b *testing.B) Cache {
-	testDbPath := "/tmp/test.db"
-	os.Remove(testDbPath)
+	testDbPath := b.TempDir() + "/test.db"
 	cacheConfig := co.Options{
 		Provider: cacheProvider,
 		BBolt:    &bo.Options{Filename: testDbPath, Bucket: "trickster_test"},
 		Index:    &io.Options{ReapInterval: time.Second},
 	}
 	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
-	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
 	if err != nil {
@@ -69,7 +64,8 @@ func storeBenchmark(b *testing.B) Cache {
 }
 
 func TestConfiguration(t *testing.T) {
-	cacheConfig := newCacheConfig()
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
 	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	cfg := bc.Configuration()
 	if cfg.Provider != cacheProvider {
@@ -78,8 +74,8 @@ func TestConfiguration(t *testing.T) {
 }
 
 func TestBboltCache_Connect(t *testing.T) {
-	cacheConfig := newCacheConfig()
-	defer os.RemoveAll(cacheConfig.BBolt.Filename)
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
 	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	// it should connect
 	err := bc.Connect()
@@ -91,15 +87,13 @@ func TestBboltCache_Connect(t *testing.T) {
 
 func TestBboltCache_ConnectFailed(t *testing.T) {
 	const expected = `open /root/noaccess.bbolt:`
-	cacheConfig := newCacheConfig()
-	cacheConfig.BBolt.Filename = "/root/noaccess.bbolt"
+	cacheConfig := newCacheConfig("/root/noaccess.bbolt")
 	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	// it should connect
 	err := bc.Connect()
 	if err == nil {
 		t.Errorf("expected error for %s", expected)
 		bc.Close()
-		defer os.RemoveAll(cacheConfig.BBolt.Filename)
 	}
 	if !strings.HasPrefix(err.Error(), expected) {
 		t.Errorf("expected error '%s' got '%s'", expected, err.Error())
@@ -108,26 +102,25 @@ func TestBboltCache_ConnectFailed(t *testing.T) {
 
 func TestBboltCache_ConnectBadBucketName(t *testing.T) {
 	const expected = `create bucket: bucket name required`
-	cacheConfig := newCacheConfig()
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
 	cacheConfig.BBolt.Bucket = ""
-	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	// it should connect
 	err := bc.Connect()
 	if err == nil {
 		t.Errorf("expected error for %s", expected)
 		bc.Close()
-	}
-	if err.Error() != expected {
+	} else if err.Error() != expected {
 		t.Errorf("expected error '%s' got '%s'", expected, err.Error())
 	}
 }
 
 func TestBboltCache_Store(t *testing.T) {
 
-	cacheConfig := newCacheConfig()
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
 	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
-	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
 	if err != nil {
@@ -149,9 +142,9 @@ func BenchmarkCache_Store(b *testing.B) {
 
 func TestBboltCache_SetTTL(t *testing.T) {
 
-	cacheConfig := newCacheConfig()
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
 	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
-	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
 	if err != nil {
@@ -229,7 +222,8 @@ func TestBboltCache_StoreNoIndex(t *testing.T) {
 
 	const expected = `value for key [] not in cache`
 
-	cacheConfig := newCacheConfig()
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
 	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 
 	err := bc.Connect()
@@ -314,9 +308,9 @@ func BenchmarkCache_StoreNoIndex(b *testing.B) {
 
 func TestBboltCache_Remove(t *testing.T) {
 
-	cacheConfig := newCacheConfig()
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
 	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
-	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
 	if err != nil {
@@ -394,9 +388,9 @@ func BenchmarkCache_Remove(b *testing.B) {
 
 func TestBboltCache_BulkRemove(t *testing.T) {
 
-	cacheConfig := newCacheConfig()
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
 	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
-	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
 	if err != nil {
@@ -462,9 +456,9 @@ func TestBboltCache_Retrieve(t *testing.T) {
 	const expected1 = `value for key [cacheKey] not in cache`
 	const expected2 = `value for key [cacheKey-invalid] could not be deserialized from cache`
 
-	cacheConfig := newCacheConfig()
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
 	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
-	defer os.RemoveAll(cacheConfig.BBolt.Filename)
 
 	err := bc.Connect()
 	if err != nil {
@@ -614,7 +608,8 @@ func TestLocker(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
-	cacheConfig := newCacheConfig()
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
 	bc := Cache{Config: &cacheConfig, Logger: tl.ConsoleLogger("error"), locker: locks.NewNamedLocker()}
 	bc.dbh = nil
 	err := bc.Close()

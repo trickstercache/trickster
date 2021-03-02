@@ -26,6 +26,9 @@ import (
 // HandleLocalResponse responds to an HTTP Request based on the local configuration without making any upstream requests
 func HandleLocalResponse(w http.ResponseWriter, r *http.Request) {
 	rsc := request.GetResources(r)
+	if w == nil || rsc == nil {
+		return
+	}
 	p := rsc.PathConfig
 	if p == nil {
 		return
@@ -43,6 +46,27 @@ func HandleLocalResponse(w http.ResponseWriter, r *http.Request) {
 
 // HandleBadRequestResponse responds to an HTTP Request with 400 Bad Request
 func HandleBadRequestResponse(w http.ResponseWriter, r *http.Request) {
+	if w == nil {
+		return
+	}
 	w.WriteHeader(http.StatusBadRequest)
+	w.Write(nil)
+}
+
+// HandleInternalServerError responds to an HTTP Request with 500 Internal Server Error
+func HandleInternalServerError(w http.ResponseWriter, r *http.Request) {
+	if w == nil {
+		return
+	}
+	w.WriteHeader(http.StatusInternalServerError)
+	w.Write(nil)
+}
+
+// HandleBadGateway responds to an HTTP Request with 502 Bad Gateway
+func HandleBadGateway(w http.ResponseWriter, r *http.Request) {
+	if w == nil {
+		return
+	}
+	w.WriteHeader(http.StatusBadGateway)
 	w.Write(nil)
 }

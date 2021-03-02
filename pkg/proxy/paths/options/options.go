@@ -217,7 +217,7 @@ func ProcessTOML(
 			p.ReqRewriterName != "" {
 			ri, ok := crw[p.ReqRewriterName]
 			if !ok {
-				return fmt.Errorf("invalid rewriter name %s in path %s of backend config %s",
+				return fmt.Errorf("invalid rewriter name %s in path %s of backend options %s",
 					p.ReqRewriterName, k, backendName)
 			}
 			p.ReqRewriter = ri

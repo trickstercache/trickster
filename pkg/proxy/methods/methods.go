@@ -65,6 +65,11 @@ func AllHTTPMethods() []string {
 		http.MethodConnect, http.MethodOptions, http.MethodTrace, http.MethodPatch, MethodPurge}
 }
 
+// GetAndPost returns a string slice containing "GET" and "POST"
+func GetAndPost() []string {
+	return []string{http.MethodGet, http.MethodPost}
+}
+
 // CacheableHTTPMethods returns a list of HTTP methods that are generally considered cacheable
 func CacheableHTTPMethods() []string {
 	return []string{http.MethodGet, http.MethodHead}

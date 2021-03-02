@@ -363,7 +363,9 @@ func (pr *proxyRequest) stripConditionalHeaders() {
 }
 
 func (pr *proxyRequest) writeResponseHeader() {
+	pr.mapLock.Lock()
 	headers.SetResultsHeader(pr.upstreamResponse.Header, "ObjectProxyCache", pr.cacheStatus.String(), "", nil)
+	pr.mapLock.Unlock()
 }
 
 func (pr *proxyRequest) setBodyWriter() {
@@ -620,7 +622,9 @@ func (pr *proxyRequest) reconstituteResponses() {
 				pr.upstreamRequest = pr.originRequests[i]
 				pr.upstreamResponse = pr.originResponses[i]
 				pr.upstreamReader = pr.originResponses[i].Body
+				pr.mapLock.Lock()
 				pr.upstreamResponse.Header.Del(headers.NameContentRange)
+				pr.mapLock.Unlock()
 				requestCount = 1
 				break
 			}
@@ -727,8 +731,10 @@ func (pr *proxyRequest) reconstituteResponses() {
 	// now we merge the caching policy of the new upstreams
 	if pr.upstreamResponse.StatusCode != http.StatusNotModified {
 		rsc := request.GetResources(pr.Request)
+		pr.mapLock.Lock()
 		pr.cachingPolicy.Merge(GetResponseCachingPolicy(pr.upstreamResponse.StatusCode,
 			rsc.BackendOptions.NegativeCache, pr.upstreamResponse.Header))
+		pr.mapLock.Unlock()
 
 	}
 

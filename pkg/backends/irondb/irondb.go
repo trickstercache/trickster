@@ -19,7 +19,6 @@ package irondb
 
 import (
 	"net/http"
-	"net/url"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
@@ -71,9 +70,6 @@ type extentSetter func(*http.Request, *timeseries.TimeRangeQuery, *timeseries.Ex
 type Client struct {
 	backends.TimeseriesBackend
 
-	healthURL     *url.URL
-	healthHeaders http.Header
-	healthMethod  string
 	trqParsers    map[string]trqParser
 	extentSetters map[string]extentSetter
 }

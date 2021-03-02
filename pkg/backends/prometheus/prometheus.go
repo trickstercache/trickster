@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -31,6 +30,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	tt "github.com/tricksterproxy/trickster/pkg/util/timeconv"
 )
@@ -66,9 +66,6 @@ const (
 // Client Implements Proxy Client Interface
 type Client struct {
 	backends.TimeseriesBackend
-	healthURL     *url.URL
-	healthHeaders http.Header
-	healthMethod  string
 }
 
 // NewClient returns a new Client Instance
@@ -112,6 +109,14 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	rlo := &timeseries.RequestOptions{}
+
+	rsc := request.GetResources(r)
+	if rsc != nil && rsc.BackendOptions != nil && rsc.BackendOptions.Prometheus != nil &&
+		len(rsc.BackendOptions.Prometheus.Labels) > 0 {
+		trq.Labels = rsc.BackendOptions.Prometheus.Labels
+	} else {
+		trq.Labels = make(map[string]string)
+	}
 
 	qp, _, _ := params.GetRequestValues(r)
 
@@ -172,4 +177,42 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	}
 
 	return trq, rlo, true, nil
+}
+
+// parseVectorQuery parses the key parts of an Instantaneous Query from the inbound HTTP Request
+func parseVectorQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
+
+	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
+
+	rsc := request.GetResources(r)
+	if rsc != nil && rsc.BackendOptions != nil && rsc.BackendOptions.Prometheus != nil &&
+		len(rsc.BackendOptions.Prometheus.Labels) > 0 {
+		trq.Labels = rsc.BackendOptions.Prometheus.Labels
+	} else {
+		trq.Labels = make(map[string]string)
+	}
+
+	qp, _, _ := params.GetRequestValues(r)
+
+	trq.Statement = qp.Get(upQuery)
+	if trq.Statement == "" {
+		return nil, errors.MissingURLParam(upQuery)
+	}
+
+	if p := qp.Get(upTime); p != "" {
+		t, err := parseTime(p)
+		if err != nil {
+			return nil, err
+		}
+		trq.Extent.Start = t
+		trq.Extent.End = t
+	} else {
+		trq.Extent.Start = time.Now().Truncate(time.Second * time.Duration(15))
+	}
+
+	if strings.Contains(trq.Statement, " offset ") {
+		trq.IsOffset = true
+	}
+
+	return trq, nil
 }

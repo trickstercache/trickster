@@ -61,7 +61,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 			d.PathPrefix = url.Path
 		}
 		// If the user has configured their own backends, and one of them is not "default"
-		// then Trickster will not use the auto-created default default
+		// then Trickster will not use the auto-created default backend
 		if d.OriginURL == "" {
 			delete(c.Backends, "default")
 		}

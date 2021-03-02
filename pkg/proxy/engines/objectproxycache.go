@@ -99,12 +99,15 @@ func handleCachePartialHit(pr *proxyRequest) error {
 
 		if err == nil {
 			pr.upstreamResponse.Body = ioutil.NopCloser(bytes.NewReader(d.Body))
+			pr.mapLock.Lock()
 			pr.upstreamResponse.Header.Set(headers.NameContentType, d.ContentType)
+			pr.mapLock.Unlock()
 			pr.upstreamReader = pr.upstreamResponse.Body
 		} else {
 			h, b := d.RangeParts.ExtractResponseRange(pr.wantedRanges, d.ContentLength, d.ContentType, nil)
-
+			pr.mapLock.Lock()
 			headers.Merge(pr.upstreamResponse.Header, h)
+			pr.mapLock.Unlock()
 			pr.upstreamReader = ioutil.NopCloser(bytes.NewReader(b))
 		}
 
@@ -288,8 +291,10 @@ func handlePCF(pr *proxyRequest) error {
 		pr.hasWriteLock = false
 		pcf := pcfResult.(ProgressiveCollapseForwarder)
 		pr.upstreamResponse = pcf.GetResp()
+		pr.mapLock.Lock()
 		pr.responseWriter = PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode,
 			pr.upstreamResponse.Header)
+		pr.mapLock.Unlock()
 		pcf.AddClient(pr.responseWriter)
 		return nil
 	}
@@ -404,7 +409,9 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		}
 		pcf := pcfResult.(ProgressiveCollapseForwarder)
 		pr.upstreamResponse = pcf.GetResp()
+		pr.mapLock.Lock()
 		writer := PrepareResponseWriter(w, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header)
+		pr.mapLock.Unlock()
 		pcf.AddClient(writer)
 		return pr.upstreamResponse, status.LookupStatusProxyHit
 	}
@@ -454,9 +461,11 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 
 // ObjectProxyCacheRequest provides a Basic HTTP Reverse Proxy/Cache
 func ObjectProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
-	_, cacheStatus := fetchViaObjectProxyCache(w, r)
+	resp, cacheStatus := fetchViaObjectProxyCache(w, r)
 	if cacheStatus == status.LookupStatusProxyOnly {
 		DoProxy(w, r, true)
+	} else if rsc := request.GetResources(r); rsc != nil && rsc.ResponseMergeFunc != nil {
+		rsc.Response = resp
 	}
 }
 
