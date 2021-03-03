@@ -26,11 +26,11 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
+	tspan "github.com/tricksterproxy/trickster/pkg/observability/tracing/span"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 
 	"github.com/golang/snappy"
 	"go.opentelemetry.io/otel/label"

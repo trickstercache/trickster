@@ -35,9 +35,9 @@ import (
 	cache "github.com/tricksterproxy/trickster/pkg/cache/options"
 	fo "github.com/tricksterproxy/trickster/pkg/frontend/options"
 	lo "github.com/tricksterproxy/trickster/pkg/observability/logging/options"
+	tracing "github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
 	rewriter "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	rwopts "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
-	tracing "github.com/tricksterproxy/trickster/pkg/tracing/options"
 
 	"github.com/BurntSushi/toml"
 )

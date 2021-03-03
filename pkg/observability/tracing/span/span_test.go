@@ -20,9 +20,9 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/stdout"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/context"
-	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/stdout"
-	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 
 	"go.opentelemetry.io/otel/label"
 )

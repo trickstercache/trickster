@@ -21,7 +21,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
-	"github.com/tricksterproxy/trickster/pkg/tracing/options"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
 )
 
 func TestRegisterAll(t *testing.T) {

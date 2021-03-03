@@ -18,8 +18,8 @@
 package noop
 
 import (
-	"github.com/tricksterproxy/trickster/pkg/tracing"
-	"github.com/tricksterproxy/trickster/pkg/tracing/options"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
 )
 
 // NewTracer returns a new Noop Tracer

@@ -23,13 +23,13 @@ import (
 
 	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
-	"github.com/tricksterproxy/trickster/pkg/tracing"
-	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/jaeger"
-	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/noop"
-	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/stdout"
-	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/zipkin"
-	"github.com/tricksterproxy/trickster/pkg/tracing/options"
-	"github.com/tricksterproxy/trickster/pkg/tracing/providers"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/jaeger"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/noop"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/stdout"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/zipkin"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing/providers"
 	"github.com/tricksterproxy/trickster/pkg/util/strings"
 )
 

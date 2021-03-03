@@ -19,8 +19,8 @@ package stdout
 
 import (
 	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
-	"github.com/tricksterproxy/trickster/pkg/tracing"
-	"github.com/tricksterproxy/trickster/pkg/tracing/options"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
 
 	"go.opentelemetry.io/otel/exporters/stdout"
 	"go.opentelemetry.io/otel/label"

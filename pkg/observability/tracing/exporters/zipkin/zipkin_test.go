@@ -20,8 +20,8 @@ package zipkin
 import (
 	"testing"
 
-	errs "github.com/tricksterproxy/trickster/pkg/tracing/errors"
-	"github.com/tricksterproxy/trickster/pkg/tracing/options"
+	errs "github.com/tricksterproxy/trickster/pkg/observability/tracing/errors"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
 )
 
 func TestNewTracer(t *testing.T) {

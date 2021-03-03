@@ -18,9 +18,9 @@
 package zipkin
 
 import (
-	"github.com/tricksterproxy/trickster/pkg/tracing"
-	errs "github.com/tricksterproxy/trickster/pkg/tracing/errors"
-	"github.com/tricksterproxy/trickster/pkg/tracing/options"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
+	errs "github.com/tricksterproxy/trickster/pkg/observability/tracing/errors"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
 
 	"go.opentelemetry.io/otel/exporters/trace/zipkin"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"

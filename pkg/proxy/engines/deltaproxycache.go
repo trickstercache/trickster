@@ -31,12 +31,12 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/locks"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 	"github.com/tricksterproxy/trickster/pkg/observability/metrics"
+	tspan "github.com/tricksterproxy/trickster/pkg/observability/tracing/span"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	tpe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 
 	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/trace"

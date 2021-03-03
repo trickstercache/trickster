@@ -22,10 +22,10 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
 	"github.com/tricksterproxy/trickster/pkg/proxy/context"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	"github.com/tricksterproxy/trickster/pkg/tracing"
 )
 
 // WithResourcesContext ...

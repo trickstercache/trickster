@@ -20,8 +20,8 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
-	"github.com/tricksterproxy/trickster/pkg/tracing"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 

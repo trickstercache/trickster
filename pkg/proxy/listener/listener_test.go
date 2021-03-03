@@ -32,11 +32,11 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/stdout"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	ph "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
-	"github.com/tricksterproxy/trickster/pkg/tracing"
-	"github.com/tricksterproxy/trickster/pkg/tracing/exporters/stdout"
 	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
 )
 

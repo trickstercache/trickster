@@ -34,11 +34,11 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 	"github.com/tricksterproxy/trickster/pkg/observability/metrics"
+	tr "github.com/tricksterproxy/trickster/pkg/observability/tracing/registration"
 	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	th "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	"github.com/tricksterproxy/trickster/pkg/routing"
 	"github.com/tricksterproxy/trickster/pkg/runtime"
-	tr "github.com/tricksterproxy/trickster/pkg/tracing/registration"
 
 	"github.com/gorilla/mux"
 )
