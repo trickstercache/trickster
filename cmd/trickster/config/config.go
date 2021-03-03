@@ -34,6 +34,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/negative"
 	cache "github.com/tricksterproxy/trickster/pkg/cache/options"
 	fo "github.com/tricksterproxy/trickster/pkg/frontend/options"
+	lo "github.com/tricksterproxy/trickster/pkg/logging/options"
 	rewriter "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	rwopts "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 	tracing "github.com/tricksterproxy/trickster/pkg/tracing/options"
@@ -52,7 +53,7 @@ type Config struct {
 	// ProxyServer is provides configurations about the Proxy Front End
 	Frontend *fo.Options `toml:"frontend"`
 	// Logging provides configurations that affect logging behavior
-	Logging *LoggingConfig `toml:"logging"`
+	Logging *lo.Options `toml:"logging"`
 	// Metrics provides configurations for collecting Metrics about the application
 	Metrics *MetricsConfig `toml:"metrics"`
 	// TracingConfigs provides the distributed tracing configuration
@@ -105,14 +106,6 @@ type MainConfig struct {
 	stalenessCheckLock  sync.Mutex
 }
 
-// LoggingConfig is a collection of Logging configurations
-type LoggingConfig struct {
-	// LogFile provides the filepath to the instances's logfile. Set as empty string to Log to Console
-	LogFile string `toml:"log_file"`
-	// LogLevel provides the most granular level (e.g., DEBUG, INFO, ERROR) to log
-	LogLevel string `toml:"log_level"`
-}
-
 // MetricsConfig is a collection of Metrics Collection configurations
 type MetricsConfig struct {
 	// ListenAddress is IP address from which the Application Metrics are available for pulling at /metrics
@@ -134,10 +127,7 @@ func NewConfig() *Config {
 		Caches: map[string]*cache.Options{
 			"default": cache.New(),
 		},
-		Logging: &LoggingConfig{
-			LogFile:  d.DefaultLogFile,
-			LogLevel: d.DefaultLogLevel,
-		},
+		Logging: lo.New(),
 		Main: &MainConfig{
 			ConfigHandlerPath: d.DefaultConfigHandlerPath,
 			PingHandlerPath:   d.DefaultPingHandlerPath,
@@ -290,21 +280,19 @@ func (c *Config) Clone() *Config {
 	nc.Main.configLastModified = c.Main.configLastModified
 	nc.Main.configRateLimitTime = c.Main.configRateLimitTime
 
-	nc.Logging.LogFile = c.Logging.LogFile
-	nc.Logging.LogLevel = c.Logging.LogLevel
-
 	nc.Metrics.ListenAddress = c.Metrics.ListenAddress
 	nc.Metrics.ListenPort = c.Metrics.ListenPort
 
-	nc.Frontend.ListenAddress = c.Frontend.ListenAddress
-	nc.Frontend.ListenPort = c.Frontend.ListenPort
-	nc.Frontend.TLSListenAddress = c.Frontend.TLSListenAddress
-	nc.Frontend.TLSListenPort = c.Frontend.TLSListenPort
-	nc.Frontend.ConnectionsLimit = c.Frontend.ConnectionsLimit
-	nc.Frontend.ServeTLS = c.Frontend.ServeTLS
+	if c.Frontend != nil {
+		nc.Frontend = c.Frontend.Clone()
+	}
 
 	nc.Resources = &Resources{
 		QuitChan: make(chan bool, 1),
+	}
+
+	if c.Logging != nil {
+		nc.Logging = c.Logging.Clone()
 	}
 
 	for k, v := range c.Backends {

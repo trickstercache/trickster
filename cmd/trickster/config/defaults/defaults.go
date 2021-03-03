@@ -24,28 +24,10 @@ import (
 )
 
 const (
-	// DefaultLogFile is the default disk location for log files.
-	// we use an empty string to indicate log to console
-	DefaultLogFile = ""
-	// DefaultLogLevel is the default level for logging
-	DefaultLogLevel = "INFO"
-
-	// DefaultProxyListenPort is the default port that the HTTP frontend will listen on
-	DefaultProxyListenPort = 8480
-	// DefaultProxyListenAddress is the default address that the HTTP frontend will listen on
-	DefaultProxyListenAddress = ""
-
 	// DefaultMetricsListenPort is the default port that the HTTP metrics endpoint will listen on
 	DefaultMetricsListenPort = 8481
 	// DefaultMetricsListenAddress is the default address that the HTTP metrics endpoint will listen on
 	DefaultMetricsListenAddress = ""
-
-	// 8482 is reserved for mockster, allowing the default TLS port to end with 3
-
-	// DefaultTLSProxyListenPort is the default port that the TLS frontend endpoint will listen on
-	DefaultTLSProxyListenPort = 8483
-	// DefaultTLSProxyListenAddress is the default address that the TLS frontend endpoint will listen on
-	DefaultTLSProxyListenAddress = ""
 
 	// DefaultReloadPort is the default port that the Reload endpoint will listen on
 	DefaultReloadPort = 8484
