@@ -17,30 +17,30 @@
 package options
 
 import (
-	"github.com/BurntSushi/toml"
 	"github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	jaegeropts "github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/jaeger/options"
 	stdoutopts "github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/stdout/options"
 
 	"github.com/tricksterproxy/trickster/pkg/util/strings"
+	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 )
 
 // Options is a Tracing Options collection
 type Options struct {
-	Name          string            `toml:"-"`
-	Provider      string            `toml:"provider"`
-	ServiceName   string            `toml:"service_name"`
-	CollectorURL  string            `toml:"collector_url"`
-	CollectorUser string            `toml:"collector_user"`
-	CollectorPass string            `toml:"collector_pass"`
-	SampleRate    float64           `toml:"sample_rate"`
-	Tags          map[string]string `toml:"tags"`
-	OmitTagsList  []string          `toml:"omit_tags"`
+	Name          string            `yaml:"-"`
+	Provider      string            `yaml:"provider,omitempty"`
+	ServiceName   string            `yaml:"service_name,omitempty"`
+	CollectorURL  string            `yaml:"collector_url,omitempty"`
+	CollectorUser string            `yaml:"collector_user,omitempty"`
+	CollectorPass string            `yaml:"collector_pass,omitempty"`
+	SampleRate    float64           `yaml:"sample_rate,omitempty"`
+	Tags          map[string]string `yaml:"tags,omitempty"`
+	OmitTagsList  []string          `yaml:"omit_tags,omitempty"`
 
-	StdOutOptions *stdoutopts.Options `toml:"stdout"`
-	JaegerOptions *jaegeropts.Options `toml:"jaeger"`
+	StdOutOptions *stdoutopts.Options `yaml:"stdout,omitempty"`
+	JaegerOptions *jaegeropts.Options `yaml:"jaeger,omitempty"`
 
-	OmitTags map[string]bool `toml:"-"`
+	OmitTags map[string]bool `yaml:"-"`
 	// for tracers that don't support WithProcess (e.g., Zipkin)
 	attachTagsToSpan bool
 }
@@ -83,7 +83,7 @@ func (o *Options) Clone() *Options {
 }
 
 // ProcessTracingOptions enriches the configuration data of the provided Tracing Options collection
-func ProcessTracingOptions(mo map[string]*Options, metadata *toml.MetaData) {
+func ProcessTracingOptions(mo map[string]*Options, metadata yamlx.KeyLookup) {
 	if len(mo) == 0 {
 		return
 	}

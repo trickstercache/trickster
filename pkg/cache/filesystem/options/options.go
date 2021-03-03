@@ -23,7 +23,7 @@ import (
 // Options is a collection of Configurations for storing cached data on the Filesystem
 type Options struct {
 	// CachePath represents the path on disk where our cache will live
-	CachePath string `toml:"cache_path"`
+	CachePath string `yaml:"cache_path,omitempty"`
 }
 
 // New returns a new Filesystem Options Reference with default values set

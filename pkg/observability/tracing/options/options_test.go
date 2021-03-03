@@ -19,7 +19,7 @@ package options
 import (
 	"testing"
 
-	"github.com/BurntSushi/toml"
+	"gopkg.in/yaml.v2"
 )
 
 func TestNew(t *testing.T) {

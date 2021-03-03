@@ -25,8 +25,7 @@ import (
 	"github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-
-	"github.com/BurntSushi/toml"
+	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 )
 
 // MaxProbeWaitMS is the maximum time a health check will wait before timing out
@@ -42,42 +41,42 @@ var ErrNoOptionsProvided = errors.New("no health check options provided")
 type Options struct {
 
 	// IntervalMS defines the interval in milliseconds at which the target will be probed
-	IntervalMS int `toml:"interval_ms"`
+	IntervalMS int `yaml:"interval_ms,omitempty"`
 	// FailureThreshold indicates the number of consecutive failed probes required to
 	// mark an available target as unavailable
-	FailureThreshold int `toml:"failure_threshold"`
+	FailureThreshold int `yaml:"failure_threshold,omitempty"`
 	// RecoveryThreshold indicates the number of consecutive successful probes required to
 	// mark an unavailable target as available
-	RecoveryThreshold int `toml:"recovery_threshold"`
+	RecoveryThreshold int `yaml:"recovery_threshold,omitempty"`
 
 	// Target Outbound Request Options
 	// Verb provides the HTTP verb to use when making an upstream health check
-	Verb string `toml:"verb"`
+	Verb string `yaml:"verb,omitempty"`
 	// Scheme is the scheme to use when making an upstream health check (http or https)
-	Scheme string `toml:"scheme"`
+	Scheme string `yaml:"scheme,omitempty"`
 	// Host is the Host name header to use when making an upstream health check
-	Host string `toml:"host"`
+	Host string `yaml:"host,omitempty"`
 	// Path provides the URL path for the upstream health check
-	Path string `toml:"path"`
+	Path string `yaml:"path,omitempty"`
 	// Query provides the HTTP query parameters to use when making an upstream health check
-	Query string `toml:"query"`
+	Query string `yaml:"query,omitempty"`
 	// Headers provides the HTTP Headers to apply when making an upstream health check
-	Headers map[string]string `toml:"headers"`
+	Headers map[string]string `yaml:"headers,omitempty"`
 	// Body provides a body to apply when making an upstream health check request
-	Body string `toml:"body"`
+	Body string `yaml:"body,omitempty"`
 	// TimeoutMS is the amount of time a health check probe should wait for a response
 	// before timing out
-	TimeoutMS int `toml:"timeout_ms"`
+	TimeoutMS int `yaml:"timeout_ms,omitempty"`
 	// Target Probe Response Options
 	// ExpectedCodes is the list of Status Codes that positively indicate a Healthy status
-	ExpectedCodes []int `toml:"expected_codes"`
+	ExpectedCodes []int `yaml:"expected_codes,omitempty"`
 	// ExpectedHeaders is a list of Headers (name and value) expected in the response
 	// in order to be considered Healthy status
-	ExpectedHeaders map[string]string `toml:"expected_headers"`
+	ExpectedHeaders map[string]string `yaml:"expected_headers,omitempty"`
 	// ExpectedBody is the body expected in the response to be considered Healthy status
-	ExpectedBody string `toml:"expected_body"`
+	ExpectedBody string `yaml:"expected_body,omitempty"`
 
-	md              *toml.MetaData
+	md              yamlx.KeyLookup
 	hasExpectedBody bool
 }
 
@@ -96,7 +95,7 @@ func New() *Options {
 }
 
 // SetMetaData sets the TOML metadata for the health checker options
-func (o *Options) SetMetaData(md *toml.MetaData) {
+func (o *Options) SetMetaData(md yamlx.KeyLookup) {
 	o.md = md
 }
 

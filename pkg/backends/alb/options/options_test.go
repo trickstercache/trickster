@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/BurntSushi/toml"
+	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 )
 
 type testObj struct {
@@ -27,14 +28,14 @@ type testObj struct {
 }
 
 type testOptions1 struct {
-	Backends map[string]*testOptions2 `toml:"backends"`
+	Backends map[string]*testOptions2 `yaml:"backends,omitempty"`
 }
 
 type testOptions2 struct {
-	Alb *Options `toml:"alb"`
+	Alb *Options `yaml:"alb,omitempty"`
 }
 
-func fromTOML(conf string) (*Options, *toml.MetaData, error) {
+func fromTOML(conf string) (*Options, yamlx.KeyLookup, error) {
 
 	to := &testOptions1{}
 	md, err := toml.Decode(conf, to)

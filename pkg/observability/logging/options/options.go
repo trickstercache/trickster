@@ -19,9 +19,9 @@ package options
 // Options is a collection of Logging options
 type Options struct {
 	// LogFile provides the filepath to the instances's logfile. Set as empty string to Log to Console
-	LogFile string `toml:"log_file"`
+	LogFile string `yaml:"log_file,omitempty"`
 	// LogLevel provides the most granular level (e.g., DEBUG, INFO, ERROR) to log
-	LogLevel string `toml:"log_level"`
+	LogLevel string `yaml:"log_level,omitempty"`
 }
 
 // New returns a new Options with default values

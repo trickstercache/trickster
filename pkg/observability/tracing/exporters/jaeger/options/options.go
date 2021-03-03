@@ -18,7 +18,7 @@ package options
 
 // Options is a collection of Jaeger-specific options
 type Options struct {
-	EndpointType string `toml:"endpoint_type"`
+	EndpointType string `yaml:"endpoint_type,omitempty"`
 }
 
 // Clone returns a perfect copy of the subject *Options

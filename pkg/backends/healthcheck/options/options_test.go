@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BurntSushi/toml"
+	"gopkg.in/yaml.v2"
 	"github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 )
 

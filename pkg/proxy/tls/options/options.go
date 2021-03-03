@@ -26,22 +26,22 @@ import (
 type Options struct {
 	// FullChainCertPath specifies the path of the file containing the
 	// concatenated server certification and the intermediate certification for the tls endpoint
-	FullChainCertPath string `toml:"full_chain_cert_path"`
+	FullChainCertPath string `yaml:"full_chain_cert_path,omitempty"`
 	// PrivateKeyPath specifies the path of the private key file for the tls endpoint
-	PrivateKeyPath string `toml:"private_key_path"`
+	PrivateKeyPath string `yaml:"private_key_path,omitempty"`
 	// ServeTLS is set to true once the Cert and Key files have been validated,
 	// indicating the consumer of this config can service requests over TLS
-	ServeTLS bool `toml:"-"`
+	ServeTLS bool `yaml:"-"`
 	// InsecureSkipVerify indicates that the HTTPS Client in Trickster should bypass
 	// hostname verification for the origin's certificate when proxying requests
-	InsecureSkipVerify bool `toml:"insecure_skip_verify"`
+	InsecureSkipVerify bool `yaml:"insecure_skip_verify,omitempty"`
 	// CertificateAuthorities provides a list of custom Certificate Authorities for the upstream origin
 	// which are considered in addition to any system CA's by the Trickster HTTPS Client
-	CertificateAuthorityPaths []string `toml:"certificate_authority_paths"`
+	CertificateAuthorityPaths []string `yaml:"certificate_authority_paths,omitempty"`
 	// ClientCertPath provides the path to the Client Certificate when using Mutual Authorization
-	ClientCertPath string `toml:"client_cert_path"`
+	ClientCertPath string `yaml:"client_cert_path,omitempty"`
 	// ClientKeyPath provides the path to the Client Key when using Mutual Authorization
-	ClientKeyPath string `toml:"client_key_path"`
+	ClientKeyPath string `yaml:"client_key_path,omitempty"`
 }
 
 // New will return a *Options with the default settings

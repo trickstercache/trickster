@@ -19,19 +19,19 @@ package options
 // FrontendConfig is a collection of configurations for the main http frontend for the application
 type Options struct {
 	// ListenAddress is IP address for the main http listener for the application
-	ListenAddress string `toml:"listen_address"`
+	ListenAddress string `yaml:"listen_address,omitempty"`
 	// ListenPort is TCP Port for the main http listener for the application
-	ListenPort int `toml:"listen_port"`
+	ListenPort int `yaml:"listen_port,omitempty"`
 	// TLSListenAddress is IP address for the tls  http listener for the application
-	TLSListenAddress string `toml:"tls_listen_address"`
+	TLSListenAddress string `yaml:"tls_listen_address,omitempty"`
 	// TLSListenPort is the TCP Port for the tls http listener for the application
-	TLSListenPort int `toml:"tls_listen_port"`
+	TLSListenPort int `yaml:"tls_listen_port,omitempty"`
 	// ConnectionsLimit indicates how many concurrent front end connections trickster will handle at any time
-	ConnectionsLimit int `toml:"connections_limit"`
+	ConnectionsLimit int `yaml:"connections_limit,omitempty"`
 
 	// ServeTLS indicates whether to listen and serve on the TLS port, meaning
 	// at least one backend options has a valid certificate and key file configured.
-	ServeTLS bool `toml:"-"`
+	ServeTLS bool `yaml:"-"`
 }
 
 // New returns a new Frontend Options with default values
