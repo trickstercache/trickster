@@ -27,12 +27,13 @@ import (
 	"sync"
 	"time"
 
+	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
+	reload "github.com/tricksterproxy/trickster/cmd/trickster/config/reload/options"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	rule "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/negative"
 	cache "github.com/tricksterproxy/trickster/pkg/cache/options"
-	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
-	reload "github.com/tricksterproxy/trickster/cmd/trickster/config/reload/options"
+	fo "github.com/tricksterproxy/trickster/pkg/frontend/options"
 	rewriter "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	rwopts "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 	tracing "github.com/tricksterproxy/trickster/pkg/tracing/options"
@@ -49,7 +50,7 @@ type Config struct {
 	// Caches is a map of CacheConfigs
 	Caches map[string]*cache.Options `toml:"caches"`
 	// ProxyServer is provides configurations about the Proxy Front End
-	Frontend *FrontendConfig `toml:"frontend"`
+	Frontend *fo.Options `toml:"frontend"`
 	// Logging provides configurations that affect logging behavior
 	Logging *LoggingConfig `toml:"logging"`
 	// Metrics provides configurations for collecting Metrics about the application
@@ -104,24 +105,6 @@ type MainConfig struct {
 	stalenessCheckLock  sync.Mutex
 }
 
-// FrontendConfig is a collection of configurations for the main http frontend for the application
-type FrontendConfig struct {
-	// ListenAddress is IP address for the main http listener for the application
-	ListenAddress string `toml:"listen_address"`
-	// ListenPort is TCP Port for the main http listener for the application
-	ListenPort int `toml:"listen_port"`
-	// TLSListenAddress is IP address for the tls  http listener for the application
-	TLSListenAddress string `toml:"tls_listen_address"`
-	// TLSListenPort is the TCP Port for the tls http listener for the application
-	TLSListenPort int `toml:"tls_listen_port"`
-	// ConnectionsLimit indicates how many concurrent front end connections trickster will handle at any time
-	ConnectionsLimit int `toml:"connections_limit"`
-
-	// ServeTLS indicates whether to listen and serve on the TLS port, meaning
-	// at least one backend options has a valid certificate and key file configured.
-	ServeTLS bool `toml:"-"`
-}
-
 // LoggingConfig is a collection of Logging configurations
 type LoggingConfig struct {
 	// LogFile provides the filepath to the instances's logfile. Set as empty string to Log to Console
@@ -169,12 +152,7 @@ func NewConfig() *Config {
 		Backends: map[string]*bo.Options{
 			"default": bo.New(),
 		},
-		Frontend: &FrontendConfig{
-			ListenPort:       d.DefaultProxyListenPort,
-			ListenAddress:    d.DefaultProxyListenAddress,
-			TLSListenPort:    d.DefaultTLSProxyListenPort,
-			TLSListenAddress: d.DefaultTLSProxyListenAddress,
-		},
+		Frontend: fo.New(),
 		NegativeCacheConfigs: map[string]negative.Config{
 			"default": negative.New(),
 		},
@@ -415,9 +393,4 @@ func (c *Config) ConfigFilePath() string {
 		return c.Main.configFilePath
 	}
 	return ""
-}
-
-// Equal returns true if the FrontendConfigs are identical in value.
-func (fc *FrontendConfig) Equal(fc2 *FrontendConfig) bool {
-	return *fc == *fc2
 }
