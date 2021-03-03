@@ -67,6 +67,11 @@ func GetKeyList(yml string) (KeyLookup, error) {
 	return keys, nil
 }
 
+func (k KeyLookup) IsDefined(s ...string) bool {
+	_, ok := k[strings.Join(s, ".")]
+	return ok
+}
+
 func getIndentDepth(line string) int {
 	var depth int
 	for i := 0; i < len(line); i++ {
