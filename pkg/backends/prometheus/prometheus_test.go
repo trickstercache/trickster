@@ -31,7 +31,7 @@ import (
 	po "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/cmd/trickster/config"
-	tl "github.com/tricksterproxy/trickster/pkg/logging"
+	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 	pe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"

@@ -26,7 +26,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/locks"
-	tl "github.com/tricksterproxy/trickster/pkg/logging"
+	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 
 	"github.com/go-redis/redis"
 )

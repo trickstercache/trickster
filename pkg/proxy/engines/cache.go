@@ -25,7 +25,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
-	tl "github.com/tricksterproxy/trickster/pkg/logging"
+	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"

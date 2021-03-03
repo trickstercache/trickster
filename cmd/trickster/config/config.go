@@ -34,7 +34,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/negative"
 	cache "github.com/tricksterproxy/trickster/pkg/cache/options"
 	fo "github.com/tricksterproxy/trickster/pkg/frontend/options"
-	lo "github.com/tricksterproxy/trickster/pkg/logging/options"
+	lo "github.com/tricksterproxy/trickster/pkg/observability/logging/options"
 	rewriter "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	rwopts "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 	tracing "github.com/tricksterproxy/trickster/pkg/tracing/options"

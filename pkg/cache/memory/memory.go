@@ -28,7 +28,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/locks"
-	tl "github.com/tricksterproxy/trickster/pkg/logging"
+	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 )
 
 // Cache defines a a Memory Cache client that conforms to the Cache interface

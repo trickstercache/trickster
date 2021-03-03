@@ -26,7 +26,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	"github.com/tricksterproxy/trickster/pkg/locks"
-	tl "github.com/tricksterproxy/trickster/pkg/logging"
+	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 
 	"github.com/alicebob/miniredis"
 )

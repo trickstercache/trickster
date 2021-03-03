@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	tl "github.com/tricksterproxy/trickster/pkg/logging"
+	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	ph "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	sw "github.com/tricksterproxy/trickster/pkg/proxy/tls"

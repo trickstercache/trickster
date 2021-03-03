@@ -32,7 +32,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	ro "github.com/tricksterproxy/trickster/cmd/trickster/config/reload/options"
-	tl "github.com/tricksterproxy/trickster/pkg/logging"
+	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	th "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	"github.com/tricksterproxy/trickster/pkg/routing"

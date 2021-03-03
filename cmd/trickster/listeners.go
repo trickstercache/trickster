@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/cmd/trickster/config"
-	tl "github.com/tricksterproxy/trickster/pkg/logging"
+	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 	ph "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/listener"
 	ttls "github.com/tricksterproxy/trickster/pkg/proxy/tls"

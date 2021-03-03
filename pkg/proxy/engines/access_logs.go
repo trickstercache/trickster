@@ -19,7 +19,7 @@ package engines
 import (
 	"net/http"
 
-	tl "github.com/tricksterproxy/trickster/pkg/logging"
+	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 )
 
 func logUpstreamRequest(logger interface{}, backendName, backendProvider, handlerName, method,
