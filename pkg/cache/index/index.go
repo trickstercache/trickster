@@ -27,7 +27,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/index/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/metrics"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
-	gm "github.com/tricksterproxy/trickster/pkg/util/metrics"
+	gm "github.com/tricksterproxy/trickster/pkg/observability/metrics"
 )
 
 //go:generate msgp

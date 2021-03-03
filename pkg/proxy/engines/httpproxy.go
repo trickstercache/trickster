@@ -29,6 +29,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
+	"github.com/tricksterproxy/trickster/pkg/observability/metrics"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
@@ -37,7 +38,6 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
-	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
 	othttptrace "go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 	"go.opentelemetry.io/otel/label"

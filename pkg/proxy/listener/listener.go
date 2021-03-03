@@ -27,11 +27,11 @@ import (
 	"time"
 
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
+	"github.com/tricksterproxy/trickster/pkg/observability/metrics"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	ph "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	sw "github.com/tricksterproxy/trickster/pkg/proxy/tls"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
-	"github.com/tricksterproxy/trickster/pkg/util/metrics"
 
 	"github.com/gorilla/handlers"
 	"golang.org/x/net/netutil"
