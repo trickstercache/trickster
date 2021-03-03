@@ -22,8 +22,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/config/defaults"
-	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
+	"github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
+	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 
 	"github.com/BurntSushi/toml"

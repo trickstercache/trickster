@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
-	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
+	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
 )
 

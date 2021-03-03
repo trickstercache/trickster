@@ -18,7 +18,7 @@
 package stdout
 
 import (
-	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
+	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/tracing"
 	"github.com/tricksterproxy/trickster/pkg/tracing/options"
 

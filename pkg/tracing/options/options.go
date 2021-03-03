@@ -18,7 +18,7 @@ package options
 
 import (
 	"github.com/BurntSushi/toml"
-	"github.com/tricksterproxy/trickster/pkg/config/defaults"
+	"github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	jaegeropts "github.com/tricksterproxy/trickster/pkg/tracing/exporters/jaeger/options"
 	stdoutopts "github.com/tricksterproxy/trickster/pkg/tracing/exporters/stdout/options"
 	"github.com/tricksterproxy/trickster/pkg/util/strings"

@@ -14,18 +14,4 @@
  * limitations under the License.
  */
 
-// Package reload helps with reloading the running Trickster configuration
-package reload
-
-import (
-	"sync"
-
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	"github.com/tricksterproxy/trickster/pkg/config"
-	tl "github.com/tricksterproxy/trickster/pkg/logging"
-)
-
-// ReloaderFunc describes a function that loads and applies a Trickster config at startup,
-// or gracefully over an existing running Config
-type ReloaderFunc func(*config.Config, *sync.WaitGroup, *tl.Logger,
-	map[string]cache.Cache, []string, func()) error
+package options

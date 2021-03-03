@@ -17,7 +17,7 @@
 // Package options provides options for configuration reload support
 package options
 
-import "github.com/tricksterproxy/trickster/pkg/config/defaults"
+import "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 
 // Options is a collection of configurations for in-process config reloading
 type Options struct {

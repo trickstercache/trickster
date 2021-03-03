@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"

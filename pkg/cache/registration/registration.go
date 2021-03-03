@@ -26,7 +26,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/memory"
 	"github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/redis"
-	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	"github.com/tricksterproxy/trickster/pkg/locks"
 )
 

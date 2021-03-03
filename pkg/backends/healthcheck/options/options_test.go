@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/tricksterproxy/trickster/pkg/config/defaults"
+	"github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 )
 
 func TestNew(t *testing.T) {

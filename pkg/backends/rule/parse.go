@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	ro "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
-	"github.com/tricksterproxy/trickster/pkg/config/defaults"
+	"github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 )

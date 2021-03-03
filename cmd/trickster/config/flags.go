@@ -19,7 +19,7 @@ package config
 import (
 	"flag"
 
-	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
+	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 )
 
 const (

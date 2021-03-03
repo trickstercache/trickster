@@ -24,7 +24,7 @@ import (
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	ro "github.com/tricksterproxy/trickster/pkg/cache/redis/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
-	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	"github.com/tricksterproxy/trickster/pkg/locks"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 

@@ -14,21 +14,18 @@
  * limitations under the License.
  */
 
-package options
+// Package reload helps with reloading the running Trickster configuration
+package reload
 
 import (
-	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
+	"sync"
+
+	"github.com/tricksterproxy/trickster/pkg/cache"
+	"github.com/tricksterproxy/trickster/cmd/trickster/config"
+	tl "github.com/tricksterproxy/trickster/pkg/logging"
 )
 
-// Options is a collection of Configurations for storing cached data on the Filesystem
-type Options struct {
-	// Filename represents the filename (including path) of the BotlDB database
-	Filename string `toml:"filename"`
-	// Bucket represents the name of the bucket within BBolt under which Trickster's keys will be stored.
-	Bucket string `toml:"bucket"`
-}
-
-// New returns a reference to a new bbolt Options
-func New() *Options {
-	return &Options{Filename: d.DefaultBBoltFile, Bucket: d.DefaultBBoltBucket}
-}
+// ReloaderFunc describes a function that loads and applies a Trickster config at startup,
+// or gracefully over an existing running Config
+type ReloaderFunc func(*config.Config, *sync.WaitGroup, *tl.Logger,
+	map[string]cache.Cache, []string, func()) error

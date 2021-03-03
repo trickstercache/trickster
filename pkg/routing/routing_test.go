@@ -28,7 +28,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/backends/reverseproxycache"
 	"github.com/tricksterproxy/trickster/pkg/backends/rule"
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
-	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/tracing"

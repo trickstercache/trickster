@@ -26,7 +26,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 
 	gkl "github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"

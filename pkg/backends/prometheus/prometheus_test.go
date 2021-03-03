@@ -30,7 +30,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
 	po "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
-	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	pe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"

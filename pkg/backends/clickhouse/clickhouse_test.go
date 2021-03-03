@@ -25,7 +25,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/backends/clickhouse/model"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
-	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 )
 

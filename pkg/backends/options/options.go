@@ -31,7 +31,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	"github.com/tricksterproxy/trickster/pkg/cache/negative"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
-	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
+	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"

@@ -24,7 +24,7 @@ import (
 
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	rule "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
-	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
+	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	rwo "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"

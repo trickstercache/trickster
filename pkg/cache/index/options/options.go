@@ -19,7 +19,7 @@ package options
 import (
 	"time"
 
-	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
+	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 )
 
 // Options defines the operation of the Cache Indexer

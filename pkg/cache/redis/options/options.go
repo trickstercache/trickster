@@ -17,7 +17,7 @@
 package options
 
 import (
-	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
+	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 )
 
 // Options is a collection of Configurations for Connecting to Redis

@@ -28,7 +28,7 @@ import (
 	index "github.com/tricksterproxy/trickster/pkg/cache/index/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/providers"
 	redis "github.com/tricksterproxy/trickster/pkg/cache/redis/options"
-	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
+	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 )
 
 // Lookup is a map of Options

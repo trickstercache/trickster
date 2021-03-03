@@ -21,8 +21,8 @@ import (
 	"sync"
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
-	"github.com/tricksterproxy/trickster/pkg/config"
-	"github.com/tricksterproxy/trickster/pkg/config/reload"
+	"github.com/tricksterproxy/trickster/cmd/trickster/config"
+	"github.com/tricksterproxy/trickster/cmd/trickster/config/reload"
 	tl "github.com/tricksterproxy/trickster/pkg/logging"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 )
