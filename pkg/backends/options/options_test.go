@@ -257,7 +257,7 @@ func TestValidate(t *testing.T) {
 
 }
 
-func TestProcessTOML(t *testing.T) {
+func TestSetDefaults(t *testing.T) {
 
 	o, err := fromTestTOML()
 	if err != nil {
@@ -266,12 +266,12 @@ func TestProcessTOML(t *testing.T) {
 
 	backends := Lookup{o.Name: o}
 
-	_, err = ProcessTOML("test", o, o.md, nil, backends, map[string]bool{})
+	_, err = SetDefaults("test", o, o.md, nil, backends, map[string]bool{})
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = ProcessTOML("test", o, nil, nil, backends, map[string]bool{})
+	_, err = SetDefaults("test", o, nil, nil, backends, map[string]bool{})
 	if err != ErrInvalidMetadata {
 		t.Error("expected invalid metadata, got", err)
 	}
@@ -281,13 +281,13 @@ func TestProcessTOML(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, err = ProcessTOML("test", o2, o2.md, nil, backends, map[string]bool{})
+	_, err = SetDefaults("test", o2, o2.md, nil, backends, map[string]bool{})
 	if err != nil {
 		t.Error(err)
 	}
 
 	o.Paths["series"].ReqRewriterName = "invalid"
-	_, err = ProcessTOML("test", o, o.md, nil, backends, map[string]bool{})
+	_, err = SetDefaults("test", o, o.md, nil, backends, map[string]bool{})
 	if err == nil {
 		t.Error("expected error for invalid rewriter name")
 	}
@@ -297,13 +297,13 @@ func TestProcessTOML(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, err = ProcessTOML("test", o2, o2.md, map[string]rewriter.RewriteInstructions{"test": nil},
+	_, err = SetDefaults("test", o2, o2.md, map[string]rewriter.RewriteInstructions{"test": nil},
 		backends, map[string]bool{})
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = ProcessTOML("test", o2, o2.md, map[string]rewriter.RewriteInstructions{"not-test": nil},
+	_, err = SetDefaults("test", o2, o2.md, map[string]rewriter.RewriteInstructions{"not-test": nil},
 		backends, map[string]bool{})
 	if err == nil {
 		t.Error("expected error for invalid rewriter name")
@@ -314,7 +314,7 @@ func TestProcessTOML(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, err = ProcessTOML("test", o2, o2.md, nil,
+	_, err = SetDefaults("test", o2, o2.md, nil,
 		backends, map[string]bool{})
 	if err != nil {
 		t.Error(err)

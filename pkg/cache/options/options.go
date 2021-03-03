@@ -134,9 +134,8 @@ func (cc *Options) Equal(cc2 *Options) bool {
 
 }
 
-// ProcessTOML will return examine the provided TOML and place a corresponding CacheOptions
-// reference into the Lookup table
-func (l Lookup) ProcessTOML(metadata yamlx.KeyLookup, activeCaches map[string]bool) ([]string, error) {
+// SetDefaults iterates the provided Options, and overlays user-set values onto the default Options
+func (l Lookup) SetDefaults(metadata yamlx.KeyLookup, activeCaches map[string]bool) ([]string, error) {
 
 	// setCachingDefaults assumes that processBackendOptionss was just ran
 

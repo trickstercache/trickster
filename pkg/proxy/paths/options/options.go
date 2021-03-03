@@ -203,7 +203,7 @@ var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_ke
 	"req_rewriter_name",
 }
 
-func ProcessTOML(
+func SetDefaults(
 	backendName string,
 	metadata yamlx.KeyLookup,
 	paths Lookup,

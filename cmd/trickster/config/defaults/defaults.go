@@ -24,10 +24,6 @@ import (
 )
 
 const (
-	// DefaultMetricsListenPort is the default port that the HTTP metrics endpoint will listen on
-	DefaultMetricsListenPort = 8481
-	// DefaultMetricsListenAddress is the default address that the HTTP metrics endpoint will listen on
-	DefaultMetricsListenAddress = ""
 
 	// DefaultReloadPort is the default port that the Reload endpoint will listen on
 	DefaultReloadPort = 8484

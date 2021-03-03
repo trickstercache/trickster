@@ -75,8 +75,8 @@ func (o *Options) Clone() *Options {
 	return c
 }
 
-// ProcessTOML iterates a TOML Config and incorporates into the base Options
-func ProcessTOML(name string, options *Options, metadata yamlx.KeyLookup) (*Options, error) {
+// SetDefaults iterates the provided Options, and overlays user-set values onto the default Options
+func SetDefaults(name string, options *Options, metadata yamlx.KeyLookup) (*Options, error) {
 
 	if metadata == nil {
 		return nil, nil // todo: add error

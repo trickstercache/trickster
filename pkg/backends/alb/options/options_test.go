@@ -80,9 +80,9 @@ func TestClone(t *testing.T) {
 
 }
 
-func TestProcessTOML(t *testing.T) {
+func TestSetDefaults(t *testing.T) {
 
-	o2, err := ProcessTOML("test", nil, nil)
+	o2, err := SetDefaults("test", nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -94,7 +94,7 @@ func TestProcessTOML(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = ProcessTOML("test", o, md)
+	_, err = SetDefaults("test", o, md)
 	if err != nil {
 		t.Error(err)
 	}
@@ -103,7 +103,7 @@ func TestProcessTOML(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	o2, err = ProcessTOML("test", o, md)
+	o2, err = SetDefaults("test", o, md)
 	if err != nil {
 		t.Error(err)
 	}
@@ -115,7 +115,7 @@ func TestProcessTOML(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = ProcessTOML("test", o, md)
+	_, err = SetDefaults("test", o, md)
 	if err == nil {
 		t.Error("expected output_format error")
 	}
@@ -124,7 +124,7 @@ func TestProcessTOML(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = ProcessTOML("test", o, md)
+	_, err = SetDefaults("test", o, md)
 	if err == nil {
 		t.Error("expected output_format error")
 	}

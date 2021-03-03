@@ -23,10 +23,12 @@ import (
 	"bytes"
 	"errors"
 	"io/ioutil"
+	"log"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	reload "github.com/tricksterproxy/trickster/cmd/trickster/config/reload/options"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
@@ -35,70 +37,72 @@ import (
 	cache "github.com/tricksterproxy/trickster/pkg/cache/options"
 	fo "github.com/tricksterproxy/trickster/pkg/frontend/options"
 	lo "github.com/tricksterproxy/trickster/pkg/observability/logging/options"
+	mo "github.com/tricksterproxy/trickster/pkg/observability/metrics/options"
 	tracing "github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
 	rewriter "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	rwopts "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
+	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 
-	"github.com/BurntSushi/toml"
+	"gopkg.in/yaml.v2"
 )
 
 // Config is the main configuration object
 type Config struct {
 	// Main is the primary MainConfig section
-	Main *MainConfig `toml:"main"`
+	Main *MainConfig `yaml:"main,omitempty"`
 	// Backends is a map of BackendOptionss
-	Backends map[string]*bo.Options `toml:"backends"`
+	Backends map[string]*bo.Options `yaml:"backends,omitempty"`
 	// Caches is a map of CacheConfigs
-	Caches map[string]*cache.Options `toml:"caches"`
+	Caches map[string]*cache.Options `yaml:"caches,omitempty"`
 	// ProxyServer is provides configurations about the Proxy Front End
-	Frontend *fo.Options `toml:"frontend"`
+	Frontend *fo.Options `yaml:"frontend,omitempty"`
 	// Logging provides configurations that affect logging behavior
-	Logging *lo.Options `toml:"logging"`
+	Logging *lo.Options `yaml:"logging,omitempty"`
 	// Metrics provides configurations for collecting Metrics about the application
-	Metrics *MetricsConfig `toml:"metrics"`
+	Metrics *mo.Options `yaml:"metrics,omitempty"`
 	// TracingConfigs provides the distributed tracing configuration
-	TracingConfigs map[string]*tracing.Options `toml:"tracing"`
+	TracingConfigs map[string]*tracing.Options `yaml:"tracing,omitempty"`
 	// NegativeCacheConfigs is a map of NegativeCacheConfigs
-	NegativeCacheConfigs map[string]negative.Config `toml:"negative_caches"`
+	NegativeCacheConfigs map[string]negative.Config `yaml:"negative_caches,omitempty"`
 	// Rules is a map of the Rules
-	Rules map[string]*rule.Options `toml:"rules"`
+	Rules map[string]*rule.Options `yaml:"rules,omitempty"`
 	// RequestRewriters is a map of the Rewriters
-	RequestRewriters map[string]*rwopts.Options `toml:"request_rewriters"`
+	RequestRewriters map[string]*rwopts.Options `yaml:"request_rewriters,omitempty"`
 	// ReloadConfig provides configurations for in-process config reloading
-	ReloadConfig *reload.Options `toml:"reloading"`
+	ReloadConfig *reload.Options `yaml:"reloading,omitempty"`
 
 	// Resources holds runtime resources uses by the Config
-	Resources *Resources `toml:"-"`
+	Resources *Resources `yaml:"-"`
 
-	CompiledRewriters map[string]rewriter.RewriteInstructions `toml:"-"`
+	CompiledRewriters map[string]rewriter.RewriteInstructions `yaml:"-"`
 	activeCaches      map[string]bool
 	providedOriginURL string
 	providedProvider  string
 
-	LoaderWarnings []string `toml:"-"`
+	LoaderWarnings []string `yaml:"-"`
 }
 
 // MainConfig is a collection of general configuration values.
 type MainConfig struct {
 	// InstanceID represents a unique ID for the current instance, when multiple instances on the same host
-	InstanceID int `toml:"instance_id"`
+	InstanceID int `yaml:"instance_id,omitempty"`
 	// ConfigHandlerPath provides the path to register the Config Handler for outputting the running configuration
-	ConfigHandlerPath string `toml:"config_handler_path"`
+	ConfigHandlerPath string `yaml:"config_handler_path,omitempty"`
 	// PingHandlerPath provides the path to register the Ping Handler for checking that Trickster is running
-	PingHandlerPath string `toml:"ping_handler_path"`
+	PingHandlerPath string `yaml:"ping_handler_path,omitempty"`
 	// ReloadHandlerPath provides the path to register the Config Reload Handler
-	ReloadHandlerPath string `toml:"reload_handler_path"`
+	ReloadHandlerPath string `yaml:"reload_handler_path,omitempty"`
 	// HeatlHandlerPath provides the base Health Check Handler path
-	HealthHandlerPath string `toml:"health_handler_path"`
+	HealthHandlerPath string `yaml:"health_handler_path,omitempty"`
 	// PprofServer provides the name of the http listener that will host the pprof debugging routes
 	// Options are: "metrics", "reload", "both", or "off"; default is both
-	PprofServer string `toml:"pprof_server"`
+	PprofServer string `yaml:"pprof_server,omitempty"`
 	// ServerName represents the server name that is conveyed in Via headers to upstream origins
 	// defaults to os.Hostname
-	ServerName string `toml:"server_name"`
+	ServerName string `yaml:"server_name,omitempty"`
 
 	// ReloaderLock is used to lock the config for reloading
-	ReloaderLock sync.Mutex `toml:"-"`
+	ReloaderLock sync.Mutex `yaml:"-"`
 
 	configFilePath      string
 	configLastModified  time.Time
@@ -106,18 +110,10 @@ type MainConfig struct {
 	stalenessCheckLock  sync.Mutex
 }
 
-// MetricsConfig is a collection of Metrics Collection configurations
-type MetricsConfig struct {
-	// ListenAddress is IP address from which the Application Metrics are available for pulling at /metrics
-	ListenAddress string `toml:"listen_address"`
-	// ListenPort is TCP Port from which the Application Metrics are available for pulling at /metrics
-	ListenPort int `toml:"listen_port"`
-}
-
 // Resources is a collection of values used by configs at runtime that are not part of the config itself
 type Resources struct {
-	QuitChan chan bool `toml:"-"`
-	metadata *toml.MetaData
+	QuitChan chan bool `yaml:"-"`
+	metadata yamlx.KeyLookup
 }
 
 // NewConfig returns a Config initialized with default values.
@@ -136,9 +132,7 @@ func NewConfig() *Config {
 			PprofServer:       d.DefaultPprofServerName,
 			ServerName:        hn,
 		},
-		Metrics: &MetricsConfig{
-			ListenPort: d.DefaultMetricsListenPort,
-		},
+		Metrics: mo.New(),
 		Backends: map[string]*bo.Options{
 			"default": bo.New(),
 		},
@@ -157,24 +151,29 @@ func NewConfig() *Config {
 	}
 }
 
-// loadFile loads application configuration from a TOML-formatted file.
+// loadFile loads application configuration from a YAML-formatted file.
 func (c *Config) loadFile(flags *Flags) error {
 	b, err := ioutil.ReadFile(flags.ConfigPath)
 	if err != nil {
-		c.setDefaults(&toml.MetaData{})
+		c.setDefaults(yamlx.KeyLookup{})
 		return err
 	}
-	return c.loadTOMLConfig(string(b), flags)
+	return c.loadYAMLConfig(string(b), flags)
 }
 
-// loadTOMLConfig loads application configuration from a TOML-formatted byte slice.
-func (c *Config) loadTOMLConfig(tml string, flags *Flags) error {
-	md, err := toml.Decode(tml, c)
+// loadYAMLConfig loads application configuration from a YAML-formatted byte slice.
+func (c *Config) loadYAMLConfig(yml string, flags *Flags) error {
+
+	err := yaml.Unmarshal([]byte(yml), &c)
 	if err != nil {
-		c.setDefaults(&toml.MetaData{})
+		log.Fatalf("error: %v", err)
+	}
+	md, err := yamlx.GetKeyList(yml)
+	if err != nil {
+		c.setDefaults(yamlx.KeyLookup{})
 		return err
 	}
-	err = c.setDefaults(&md)
+	err = c.setDefaults(md)
 	if err == nil {
 		c.Main.configFilePath = flags.ConfigPath
 		c.Main.configLastModified = c.CheckFileLastModified()
@@ -194,7 +193,7 @@ func (c *Config) CheckFileLastModified() time.Time {
 	return file.ModTime()
 }
 
-func (c *Config) setDefaults(metadata *toml.MetaData) error {
+func (c *Config) setDefaults(metadata yamlx.KeyLookup) error {
 
 	c.Resources.metadata = metadata
 
@@ -212,7 +211,7 @@ func (c *Config) setDefaults(metadata *toml.MetaData) error {
 
 	c.activeCaches = make(map[string]bool)
 	for k, v := range c.Backends {
-		w, err := bo.ProcessTOML(k, v, metadata, c.CompiledRewriters, c.Backends, c.activeCaches)
+		w, err := bo.SetDefaults(k, v, metadata, c.CompiledRewriters, c.Backends, c.activeCaches)
 		if err != nil {
 			return err
 		}
@@ -222,7 +221,7 @@ func (c *Config) setDefaults(metadata *toml.MetaData) error {
 	tracing.ProcessTracingOptions(c.TracingConfigs, metadata)
 
 	var lw []string
-	if lw, err = cache.Lookup(c.Caches).ProcessTOML(metadata, c.activeCaches); err != nil {
+	if lw, err = cache.Lookup(c.Caches).SetDefaults(metadata, c.activeCaches); err != nil {
 		return err
 	}
 	for _, v := range lw {

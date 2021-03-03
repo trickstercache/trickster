@@ -17,7 +17,6 @@
 package options
 
 import (
-	"bytes"
 	"net/http"
 	"net/url"
 	"strings"
@@ -38,7 +37,6 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/timeseries/dataset"
 	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 
-	"gopkg.in/yaml.v2"
 	"github.com/gorilla/mux"
 )
 
@@ -447,8 +445,8 @@ func (l Lookup) ValidateTLSConfigs() (bool, error) {
 	return serveTLS, nil
 }
 
-// ProcessTOML iterates a TOML Config
-func ProcessTOML(
+// SetDefaults iterates a TOML Config
+func SetDefaults(
 	name string,
 	o *Options,
 	metadata yamlx.KeyLookup,
@@ -567,14 +565,14 @@ func ProcessTOML(
 	}
 
 	if metadata.IsDefined("backends", name, "paths") {
-		err := po.ProcessTOML(name, metadata, o.Paths, crw)
+		err := po.SetDefaults(name, metadata, o.Paths, crw)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if metadata.IsDefined("backends", name, "alb") {
-		opts, err := ao.ProcessTOML(name, o.ALBOptions, metadata)
+		opts, err := ao.SetDefaults(name, o.ALBOptions, metadata)
 		if err != nil {
 			return nil, err
 		}
@@ -648,11 +646,13 @@ func (o *Options) CloneTOMLSafe() *Options {
 
 // ToTOML prints the Options as a TOML representation
 func (o *Options) ToTOML() string {
-	co := o.CloneTOMLSafe()
-	var buf bytes.Buffer
-	e := toml.NewEncoder(&buf)
-	e.Encode(co)
-	return buf.String()
+	// co := o.CloneTOMLSafe()
+	// var buf bytes.Buffer
+	// //e := toml.NewEncoder(&buf)
+	// e.Encode(co)
+	// return buf.String()
+	return ""
+	// TODO: restore w/ YAML
 }
 
 // HasTransformations returns true if the backend will artificially transform payloads

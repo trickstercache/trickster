@@ -94,7 +94,7 @@ func New() *Options {
 	}
 }
 
-// SetMetaData sets the TOML metadata for the health checker options
+// SetMetaData sets the metadata for the health checker options
 func (o *Options) SetMetaData(md yamlx.KeyLookup) {
 	o.md = md
 }

@@ -72,7 +72,7 @@ func (o *Options) Clone() *Options {
 	}
 }
 
-// Equal returns true if all TOML-exposed option members are equal
+// Equal returns true if all exposed option members are equal
 func (o *Options) Equal(o2 *Options) bool {
 	return o.FullChainCertPath == o2.FullChainCertPath &&
 		o.PrivateKeyPath == o2.PrivateKeyPath &&
