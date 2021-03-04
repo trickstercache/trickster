@@ -17,8 +17,6 @@
 // Package options provides options for configuration reload support
 package options
 
-import "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
-
 // Options is a collection of configurations for in-process config reloading
 type Options struct {
 	// ListenAddress is IP address from which the Reload API is available at ReloadHandlerPath
@@ -40,10 +38,10 @@ type Options struct {
 // New returns a new Options references with Default Values set
 func New() *Options {
 	return &Options{
-		ListenAddress:  defaults.DefaultReloadAddress,
-		ListenPort:     defaults.DefaultReloadPort,
-		HandlerPath:    defaults.DefaultReloadHandlerPath,
-		DrainTimeoutMS: defaults.DefaultDrainTimeoutMS,
-		RateLimitMS:    defaults.DefaultRateLimitMS,
+		ListenAddress:  DefaultReloadAddress,
+		ListenPort:     DefaultReloadPort,
+		HandlerPath:    DefaultReloadHandlerPath,
+		DrainTimeoutMS: DefaultDrainTimeoutMS,
+		RateLimitMS:    DefaultRateLimitMS,
 	}
 }

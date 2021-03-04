@@ -16,10 +16,6 @@
 
 package options
 
-import (
-	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
-)
-
 // Options is a collection of Configurations for Connecting to Redis
 type Options struct {
 	// ClientType defines the type of Redis Client ("standard", "cluster", "sentinel")
@@ -69,9 +65,9 @@ type Options struct {
 // New returns a new Redis Options Reference with default values set
 func New() *Options {
 	return &Options{
-		ClientType: d.DefaultRedisClientType,
-		Protocol:   d.DefaultRedisProtocol,
-		Endpoint:   d.DefaultRedisEndpoint,
-		Endpoints:  []string{d.DefaultRedisEndpoint},
+		ClientType: DefaultRedisClientType,
+		Protocol:   DefaultRedisProtocol,
+		Endpoint:   DefaultRedisEndpoint,
+		Endpoints:  []string{DefaultRedisEndpoint},
 	}
 }

@@ -21,11 +21,11 @@ import (
 	"fmt"
 	"strings"
 
-	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	badger "github.com/tricksterproxy/trickster/pkg/cache/badger/options"
 	bbolt "github.com/tricksterproxy/trickster/pkg/cache/bbolt/options"
 	filesystem "github.com/tricksterproxy/trickster/pkg/cache/filesystem/options"
 	index "github.com/tricksterproxy/trickster/pkg/cache/index/options"
+	"github.com/tricksterproxy/trickster/pkg/cache/options/defaults"
 	"github.com/tricksterproxy/trickster/pkg/cache/providers"
 	redis "github.com/tricksterproxy/trickster/pkg/cache/redis/options"
 	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
@@ -61,8 +61,8 @@ type Options struct {
 // New will return a pointer to a CacheOptions with the default configuration settings
 func New() *Options {
 	return &Options{
-		Provider:   d.DefaultCacheProvider,
-		ProviderID: d.DefaultCacheProviderID,
+		Provider:   defaults.DefaultCacheProvider,
+		ProviderID: defaults.DefaultCacheProviderID,
 		Redis:      redis.New(),
 		Filesystem: filesystem.New(),
 		BBolt:      bbolt.New(),

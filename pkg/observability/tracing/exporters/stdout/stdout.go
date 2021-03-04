@@ -18,7 +18,6 @@
 package stdout
 
 import (
-	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
 	"github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
 
@@ -39,7 +38,7 @@ func NewTracer(opts *options.Options) (*tracing.Tracer, error) {
 	if opts == nil {
 		opts = &options.Options{
 			SampleRate:  1,
-			ServiceName: d.DefaultTracerServiceName,
+			ServiceName: options.DefaultTracerServiceName,
 			Provider:    "stdout",
 		}
 	}

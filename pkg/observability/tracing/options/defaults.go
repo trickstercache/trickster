@@ -16,17 +16,9 @@
 
 package options
 
-import (
-	d "github.com/tricksterproxy/trickster/pkg/cache/options/defaults"
+const (
+	// DefaultTracerProvider is the default distributed tracer exporter implementation
+	DefaultTracerProvider = "none"
+	// DefaultTracerServiceName is the default service name under which traces are registered
+	DefaultTracerServiceName = "trickster"
 )
-
-// Options is a collection of Configurations for storing cached data on the Filesystem
-type Options struct {
-	// CachePath represents the path on disk where our cache will live
-	CachePath string `yaml:"cache_path,omitempty"`
-}
-
-// New returns a new Filesystem Options Reference with default values set
-func New() *Options {
-	return &Options{CachePath: d.DefaultCachePath}
-}

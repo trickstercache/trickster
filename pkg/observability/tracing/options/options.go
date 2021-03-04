@@ -17,10 +17,8 @@
 package options
 
 import (
-	"github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	jaegeropts "github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/jaeger/options"
 	stdoutopts "github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/stdout/options"
-
 	"github.com/tricksterproxy/trickster/pkg/util/strings"
 	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 )
@@ -48,8 +46,8 @@ type Options struct {
 // New returns a new *Options with the default values
 func New() *Options {
 	return &Options{
-		Provider:      defaults.DefaultTracerProvider,
-		ServiceName:   defaults.DefaultTracerServiceName,
+		Provider:      DefaultTracerProvider,
+		ServiceName:   DefaultTracerServiceName,
 		StdOutOptions: &stdoutopts.Options{},
 		JaegerOptions: &jaegeropts.Options{},
 	}
@@ -93,10 +91,10 @@ func ProcessTracingOptions(mo map[string]*Options, metadata yamlx.KeyLookup) {
 				v.SampleRate = 1
 			}
 			if !metadata.IsDefined("tracing", k, "service_name") {
-				v.ServiceName = defaults.DefaultTracerServiceName
+				v.ServiceName = DefaultTracerServiceName
 			}
 			if !metadata.IsDefined("tracing", k, "provider") {
-				v.Provider = defaults.DefaultTracerProvider
+				v.Provider = DefaultTracerProvider
 			}
 		}
 		v.generateOmitTags()

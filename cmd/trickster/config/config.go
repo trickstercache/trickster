@@ -26,7 +26,6 @@ import (
 	"sync"
 	"time"
 
-	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	reload "github.com/tricksterproxy/trickster/cmd/trickster/config/reload/options"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	rule "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
@@ -122,11 +121,11 @@ func NewConfig() *Config {
 		},
 		Logging: lo.New(),
 		Main: &MainConfig{
-			ConfigHandlerPath: d.DefaultConfigHandlerPath,
-			PingHandlerPath:   d.DefaultPingHandlerPath,
-			ReloadHandlerPath: d.DefaultReloadHandlerPath,
-			HealthHandlerPath: d.DefaultHealthHandlerPath,
-			PprofServer:       d.DefaultPprofServerName,
+			ConfigHandlerPath: DefaultConfigHandlerPath,
+			PingHandlerPath:   DefaultPingHandlerPath,
+			ReloadHandlerPath: reload.DefaultReloadHandlerPath,
+			HealthHandlerPath: DefaultHealthHandlerPath,
+			PprofServer:       DefaultPprofServerName,
 			ServerName:        hn,
 		},
 		Metrics: mo.New(),
@@ -251,7 +250,7 @@ func (c *Config) processPprofConfig() error {
 	case "metrics", "reload", "off", "both":
 		return nil
 	case "":
-		c.Main.PprofServer = d.DefaultPprofServerName
+		c.Main.PprofServer = DefaultPprofServerName
 		return nil
 	}
 	return ErrInvalidPprofServerName

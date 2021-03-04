@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	ao "github.com/tricksterproxy/trickster/pkg/backends/alb/options"
 	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
 	prop "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
@@ -188,34 +187,34 @@ type Options struct {
 // New will return a pointer to an BackendOptions with the default configuration settings
 func New() *Options {
 	return &Options{
-		BackfillTolerance:            d.DefaultBackfillToleranceMS,
-		BackfillToleranceMS:          d.DefaultBackfillToleranceMS,
+		BackfillTolerance:            DefaultBackfillToleranceMS,
+		BackfillToleranceMS:          DefaultBackfillToleranceMS,
 		CacheKeyPrefix:               "",
-		CacheName:                    d.DefaultBackendCacheName,
-		CompressableTypeList:         d.DefaultCompressableTypes(),
-		FastForwardTTL:               d.DefaultFastForwardTTLMS * time.Millisecond,
-		FastForwardTTLMS:             d.DefaultFastForwardTTLMS,
-		ForwardedHeaders:             d.DefaultForwardedHeaders,
+		CacheName:                    DefaultBackendCacheName,
+		CompressableTypeList:         DefaultCompressableTypes(),
+		FastForwardTTL:               DefaultFastForwardTTLMS * time.Millisecond,
+		FastForwardTTLMS:             DefaultFastForwardTTLMS,
+		ForwardedHeaders:             DefaultForwardedHeaders,
 		HealthCheck:                  ho.New(),
-		KeepAliveTimeoutMS:           d.DefaultKeepAliveTimeoutMS,
-		MaxIdleConns:                 d.DefaultMaxIdleConns,
-		MaxObjectSizeBytes:           d.DefaultMaxObjectSizeBytes,
-		MaxTTL:                       d.DefaultMaxTTLMS * time.Millisecond,
-		MaxTTLMS:                     d.DefaultMaxTTLMS,
+		KeepAliveTimeoutMS:           DefaultKeepAliveTimeoutMS,
+		MaxIdleConns:                 DefaultMaxIdleConns,
+		MaxObjectSizeBytes:           DefaultMaxObjectSizeBytes,
+		MaxTTL:                       DefaultMaxTTLMS * time.Millisecond,
+		MaxTTLMS:                     DefaultMaxTTLMS,
 		NegativeCache:                make(map[int]time.Duration),
-		NegativeCacheName:            d.DefaultBackendNegativeCacheName,
+		NegativeCacheName:            DefaultBackendNegativeCacheName,
 		Paths:                        make(map[string]*po.Options),
-		RevalidationFactor:           d.DefaultRevalidationFactor,
+		RevalidationFactor:           DefaultRevalidationFactor,
 		TLS:                          &to.Options{},
-		Timeout:                      time.Millisecond * d.DefaultBackendTimeoutMS,
-		TimeoutMS:                    d.DefaultBackendTimeoutMS,
-		TimeseriesEvictionMethod:     d.DefaultBackendTEM,
-		TimeseriesEvictionMethodName: d.DefaultBackendTEMName,
-		TimeseriesRetention:          d.DefaultBackendTRF,
-		TimeseriesRetentionFactor:    d.DefaultBackendTRF,
-		TimeseriesTTL:                d.DefaultTimeseriesTTLMS * time.Millisecond,
-		TimeseriesTTLMS:              d.DefaultTimeseriesTTLMS,
-		TracingConfigName:            d.DefaultTracingConfigName,
+		Timeout:                      time.Millisecond * DefaultBackendTimeoutMS,
+		TimeoutMS:                    DefaultBackendTimeoutMS,
+		TimeseriesEvictionMethod:     DefaultBackendTEM,
+		TimeseriesEvictionMethodName: DefaultBackendTEMName,
+		TimeseriesRetention:          DefaultBackendTRF,
+		TimeseriesRetentionFactor:    DefaultBackendTRF,
+		TimeseriesTTL:                DefaultTimeseriesTTLMS * time.Millisecond,
+		TimeseriesTTLMS:              DefaultTimeseriesTTLMS,
+		TracingConfigName:            DefaultTracingConfigName,
 	}
 }
 

@@ -16,10 +16,6 @@
 
 package options
 
-import (
-	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
-)
-
 // Options is a collection of Configurations for storing cached data on the Filesystem
 type Options struct {
 	// Filename represents the filename (including path) of the BotlDB database
@@ -30,5 +26,5 @@ type Options struct {
 
 // New returns a reference to a new bbolt Options
 func New() *Options {
-	return &Options{Filename: d.DefaultBBoltFile, Bucket: d.DefaultBBoltBucket}
+	return &Options{Filename: DefaultBBoltFile, Bucket: DefaultBBoltBucket}
 }

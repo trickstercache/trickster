@@ -21,7 +21,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 
 	"gopkg.in/yaml.v2"
@@ -138,7 +137,7 @@ backends:
 
 func TestCalibrateTimeout(t *testing.T) {
 
-	const defaultTimeout = time.Duration(defaults.DefaultHealthCheckTimeoutMS) * time.Millisecond
+	const defaultTimeout = time.Duration(DefaultHealthCheckTimeoutMS) * time.Millisecond
 	const maxTimeout = time.Duration(MaxProbeWaitMS) * time.Millisecond
 	const minTimeout = time.Duration(MinProbeWaitMS) * time.Millisecond
 

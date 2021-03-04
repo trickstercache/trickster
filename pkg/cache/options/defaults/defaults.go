@@ -14,19 +14,14 @@
  * limitations under the License.
  */
 
-package options
+package defaults
 
-import (
-	d "github.com/tricksterproxy/trickster/pkg/cache/options/defaults"
+import "github.com/tricksterproxy/trickster/pkg/cache/providers"
+
+const (
+	// DefaultCacheProvider is the default cache providers for any defined cache
+	DefaultCacheProvider = "memory"
+	// DefaultCacheProviderID is the default cache providers ID for any defined cache
+	// and should align with DefaultCacheProvider
+	DefaultCacheProviderID = providers.Memory
 )
-
-// Options is a collection of Configurations for storing cached data on the Filesystem
-type Options struct {
-	// CachePath represents the path on disk where our cache will live
-	CachePath string `yaml:"cache_path,omitempty"`
-}
-
-// New returns a new Filesystem Options Reference with default values set
-func New() *Options {
-	return &Options{CachePath: d.DefaultCachePath}
-}

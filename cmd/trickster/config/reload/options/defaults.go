@@ -16,17 +16,16 @@
 
 package options
 
-import (
-	d "github.com/tricksterproxy/trickster/pkg/cache/options/defaults"
+const (
+	// DefaultReloadPort is the default port that the Reload endpoint will listen on
+	DefaultReloadPort = 8484
+	// DefaultReloadAddress is the default address that the Reload endpoint will listen on
+	DefaultReloadAddress = "127.0.0.1"
+	// DefaultDrainTimeoutMS is the default time that is allowed for an old configuration's requests to drain
+	// before its resources are closed
+	DefaultDrainTimeoutMS = 30000
+	// DefaultRateLimitMS is the default Rate Limit time for Config Reloads
+	DefaultRateLimitMS = 3000
+	// DefaultReloadHandlerPath defines the default path for the Reload Handler
+	DefaultReloadHandlerPath = "/trickster/config/reload"
 )
-
-// Options is a collection of Configurations for storing cached data on the Filesystem
-type Options struct {
-	// CachePath represents the path on disk where our cache will live
-	CachePath string `yaml:"cache_path,omitempty"`
-}
-
-// New returns a new Filesystem Options Reference with default values set
-func New() *Options {
-	return &Options{CachePath: d.DefaultCachePath}
-}

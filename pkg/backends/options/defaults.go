@@ -15,3 +15,61 @@
  */
 
 package options
+
+import (
+	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
+)
+
+const (
+	// DefaultTimeseriesTTLMS is the default Cache TTL for Time Series Objects
+	DefaultTimeseriesTTLMS = 21600000
+	// DefaultFastForwardTTLMS is the default Cache TTL for Time Series Fast Forward Objects
+	DefaultFastForwardTTLMS = 15000
+	// DefaultMaxTTLMS is the default Maximum TTL of any cache object
+	DefaultMaxTTLMS = 86400000
+	// DefaultRevalidationFactor is the default Cache Object Freshness Lifetime to TTL multiplier
+	DefaultRevalidationFactor = 2
+	// DefaultMaxObjectSizeBytes is the default Max Size of any Cache Object
+	DefaultMaxObjectSizeBytes = 524288
+	// DefaultBackendTRF is the default Timeseries Retention Factor for Time Series-based Backends
+	DefaultBackendTRF = 1024
+	// DefaultBackendTEM is the default Timeseries Eviction Method for Time Series-based Backends
+	DefaultBackendTEM = evictionmethods.EvictionMethodOldest
+	// DefaultBackendTEMName is the default Timeseries Eviction Method name for Time Series-based Backends
+	DefaultBackendTEMName = "oldest"
+	// DefaultBackendTimeoutMS is the default Upstream Request Timeout for Backends
+	DefaultBackendTimeoutMS = 180000
+	// DefaultBackendCacheName is the default Cache Name for Backends
+	DefaultBackendCacheName = "default"
+	// DefaultBackendNegativeCacheName is the default Negative Cache Name for Backends
+	DefaultBackendNegativeCacheName = "default"
+	// DefaultTracingConfigName is the default Tracing Config Name for Backends
+	DefaultTracingConfigName = "default"
+	// DefaultBackfillToleranceMS is the default Backfill Tolerance setting for Backends
+	DefaultBackfillToleranceMS = 0
+	// DefaultKeepAliveTimeoutMS is the default Keep Alive Timeout for Backends' upstream client pools
+	DefaultKeepAliveTimeoutMS = 300000
+	// DefaultMaxIdleConns is the default number of Idle Connections in Backends' upstream client pools
+	DefaultMaxIdleConns = 20
+	// DefaultPprofServerName defines the default Pprof Server Name
+	DefaultPprofServerName = "both"
+	// DefaultForwardedHeaders defines which class of 'Forwarded' headers are attached to upstream requests
+	DefaultForwardedHeaders = "standard"
+	// DefaullALBMechansimName defines the default ALB Mechanism Name
+	DefaullALBMechansimName = "rr" // round robin
+)
+
+// DefaultCompressableTypes returns a list of types that Trickster should compress before caching
+func DefaultCompressableTypes() []string {
+	return []string{
+		"text/html",
+		"text/javascript",
+		"text/css",
+		"text/plain",
+		"text/xml",
+		"text/json",
+		"application/json",
+		"application/javascript",
+		"application/xml",
+	}
+}

@@ -19,7 +19,7 @@ package context
 import (
 	"context"
 
-	"github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
+	"github.com/tricksterproxy/trickster/pkg/backends/rule/options"
 )
 
 // WithHops returns a copy of the provided context that also includes
@@ -36,5 +36,5 @@ func Hops(ctx context.Context) (current, max int) {
 			return i[0], i[1]
 		}
 	}
-	return 0, defaults.DefaultMaxRuleExecutions
+	return 0, options.DefaultMaxRuleExecutions
 }

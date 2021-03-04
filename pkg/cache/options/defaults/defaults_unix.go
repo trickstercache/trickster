@@ -1,4 +1,4 @@
-// +build windows
+// +build !windows
 
 /*
  * Copyright 2018 Comcast Cable Communications Management, LLC
@@ -20,7 +20,5 @@ package defaults
 
 const (
 	// DefaultCachePath is the default Cache Path for the Filesystem Cache
-	DefaultCachePath = `.\cache`
-	// DefaultConfigPath defines the default location of the Trickster config file
-	DefaultConfigPath = `.\trickster.conf`
+	DefaultCachePath = "/tmp/trickster"
 )

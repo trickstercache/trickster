@@ -1,5 +1,3 @@
-// +build !windows
-
 /*
  * Copyright 2018 Comcast Cable Communications Management, LLC
  *
@@ -16,11 +14,9 @@
  * limitations under the License.
  */
 
-package defaults
+package options
 
 const (
-	// DefaultCachePath is the default Cache Path for the Filesystem Cache
-	DefaultCachePath = "/tmp/trickster"
-	// DefaultConfigPath defines the default location of the Trickster config file
-	DefaultConfigPath = "/etc/trickster/trickster.conf"
+	// DefaultMaxRuleExecutions is the default value for the number of allowed Rule executions per Request
+	DefaultMaxRuleExecutions = 16
 )

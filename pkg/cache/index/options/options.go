@@ -18,8 +18,6 @@ package options
 
 import (
 	"time"
-
-	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 )
 
 // Options defines the operation of the Cache Indexer
@@ -48,12 +46,12 @@ type Options struct {
 // New returns a new Cache Index Options Reference with default values set
 func New() *Options {
 	return &Options{
-		ReapIntervalMS:        d.DefaultCacheIndexReap,
-		FlushIntervalMS:       d.DefaultCacheIndexFlush,
-		MaxSizeBytes:          d.DefaultCacheMaxSizeBytes,
-		MaxSizeBackoffBytes:   d.DefaultMaxSizeBackoffBytes,
-		MaxSizeObjects:        d.DefaultMaxSizeObjects,
-		MaxSizeBackoffObjects: d.DefaultMaxSizeBackoffObjects,
+		ReapIntervalMS:        DefaultCacheIndexReap,
+		FlushIntervalMS:       DefaultCacheIndexFlush,
+		MaxSizeBytes:          DefaultCacheMaxSizeBytes,
+		MaxSizeBackoffBytes:   DefaultMaxSizeBackoffBytes,
+		MaxSizeObjects:        DefaultMaxSizeObjects,
+		MaxSizeBackoffObjects: DefaultMaxSizeBackoffObjects,
 	}
 }
 

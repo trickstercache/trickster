@@ -1,3 +1,5 @@
+// +build windows
+
 /*
  * Copyright 2018 Comcast Cable Communications Management, LLC
  *
@@ -14,19 +16,9 @@
  * limitations under the License.
  */
 
-package options
+package config
 
-import (
-	d "github.com/tricksterproxy/trickster/pkg/cache/options/defaults"
+const (
+	// DefaultConfigPath defines the default location of the Trickster config file
+	DefaultConfigPath = `.\trickster.conf`
 )
-
-// Options is a collection of Configurations for storing cached data on the Filesystem
-type Options struct {
-	// CachePath represents the path on disk where our cache will live
-	CachePath string `yaml:"cache_path,omitempty"`
-}
-
-// New returns a new Filesystem Options Reference with default values set
-func New() *Options {
-	return &Options{CachePath: d.DefaultCachePath}
-}

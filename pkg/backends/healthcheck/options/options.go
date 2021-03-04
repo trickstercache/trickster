@@ -22,8 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
-	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 )
@@ -83,14 +81,14 @@ type Options struct {
 // New returns a new Options reference with default values
 func New() *Options {
 	return &Options{
-		Verb:              d.DefaultHealthCheckVerb,
+		Verb:              DefaultHealthCheckVerb,
 		Scheme:            "http",
 		Headers:           make(map[string]string),
-		Path:              d.DefaultHealthCheckPath,
-		Query:             d.DefaultHealthCheckQuery,
+		Path:              DefaultHealthCheckPath,
+		Query:             DefaultHealthCheckQuery,
 		ExpectedCodes:     []int{200},
-		FailureThreshold:  d.DefaultHealthCheckFailureThreshold,
-		RecoveryThreshold: d.DefaultHealthCheckRecoveryThreshold,
+		FailureThreshold:  DefaultHealthCheckFailureThreshold,
+		RecoveryThreshold: DefaultHealthCheckRecoveryThreshold,
 	}
 }
 
@@ -191,7 +189,7 @@ func CalibrateTimeout(ms int) time.Duration {
 	if ms > MaxProbeWaitMS {
 		ms = MaxProbeWaitMS
 	} else if ms <= 0 {
-		ms = defaults.DefaultHealthCheckTimeoutMS
+		ms = DefaultHealthCheckTimeoutMS
 	} else if ms < MinProbeWaitMS {
 		ms = MinProbeWaitMS
 	}

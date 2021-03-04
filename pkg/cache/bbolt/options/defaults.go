@@ -16,17 +16,9 @@
 
 package options
 
-import (
-	d "github.com/tricksterproxy/trickster/pkg/cache/options/defaults"
+const (
+	// DefaultBBoltFile is the default bbolt Cache filename
+	DefaultBBoltFile = "trickster.db"
+	// DefaultBBoltBucket is the default bbolt Cache bucket name
+	DefaultBBoltBucket = "trickster"
 )
-
-// Options is a collection of Configurations for storing cached data on the Filesystem
-type Options struct {
-	// CachePath represents the path on disk where our cache will live
-	CachePath string `yaml:"cache_path,omitempty"`
-}
-
-// New returns a new Filesystem Options Reference with default values set
-func New() *Options {
-	return &Options{CachePath: d.DefaultCachePath}
-}

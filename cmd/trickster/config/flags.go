@@ -18,8 +18,6 @@ package config
 
 import (
 	"flag"
-
-	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 )
 
 const (
@@ -81,7 +79,7 @@ func parseFlags(applicationName string, arguments []string) (*Flags, error) {
 	if flags.ConfigPath != "" {
 		flags.customPath = true
 	} else {
-		flags.ConfigPath = d.DefaultConfigPath
+		flags.ConfigPath = DefaultConfigPath
 	}
 	return flags, nil
 }
