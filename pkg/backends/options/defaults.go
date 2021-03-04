@@ -51,8 +51,6 @@ const (
 	DefaultKeepAliveTimeoutMS = 300000
 	// DefaultMaxIdleConns is the default number of Idle Connections in Backends' upstream client pools
 	DefaultMaxIdleConns = 20
-	// DefaultPprofServerName defines the default Pprof Server Name
-	DefaultPprofServerName = "both"
 	// DefaultForwardedHeaders defines which class of 'Forwarded' headers are attached to upstream requests
 	DefaultForwardedHeaders = "standard"
 	// DefaullALBMechansimName defines the default ALB Mechanism Name

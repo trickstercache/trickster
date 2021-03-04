@@ -22,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	rule "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
@@ -136,8 +135,8 @@ func TestProcessPprofConfig(t *testing.T) {
 		t.Error(err)
 	}
 
-	if c.Main.PprofServer != d.DefaultPprofServerName {
-		t.Errorf("expected %s got %s", d.DefaultPprofServerName, c.Main.PprofServer)
+	if c.Main.PprofServer != DefaultPprofServerName {
+		t.Errorf("expected %s got %s", DefaultPprofServerName, c.Main.PprofServer)
 	}
 
 	c.Main.PprofServer = "x"

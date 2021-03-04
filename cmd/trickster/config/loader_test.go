@@ -23,7 +23,6 @@ import (
 	"testing"
 	"time"
 
-	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
 )
@@ -426,10 +425,6 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %s backend provider, got %s", "test", o.Provider)
 	}
 
-	if o.CacheName != d.DefaultBackendCacheName {
-		t.Errorf("expected %s, got %s", d.DefaultBackendCacheName, o.CacheName)
-	}
-
 	if o.Scheme != "http" {
 		t.Errorf("expected %s, got %s", "http", o.Scheme)
 	}
@@ -442,28 +437,8 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected '%s', got '%s'", "", o.PathPrefix)
 	}
 
-	if o.TimeseriesRetentionFactor != d.DefaultBackendTRF {
-		t.Errorf("expected %d, got %d", d.DefaultBackendTRF, o.TimeseriesRetentionFactor)
-	}
-
 	if o.FastForwardDisable {
 		t.Errorf("expected fast_forward_disable false, got %t", o.FastForwardDisable)
-	}
-
-	if o.BackfillToleranceMS != d.DefaultBackfillToleranceMS {
-		t.Errorf("expected %d, got %d", d.DefaultBackfillToleranceMS, o.BackfillToleranceMS)
-	}
-
-	if o.TimeoutMS != d.DefaultBackendTimeoutMS {
-		t.Errorf("expected %d, got %d", d.DefaultBackendTimeoutMS, o.TimeoutMS)
-	}
-
-	if o.TimeseriesTTLMS != d.DefaultTimeseriesTTLMS {
-		t.Errorf("expected %d, got %d", d.DefaultTimeseriesTTLMS, o.TimeseriesTTLMS)
-	}
-
-	if o.FastForwardTTLMS != d.DefaultFastForwardTTLMS {
-		t.Errorf("expected %d, got %d", d.DefaultFastForwardTTLMS, o.FastForwardTTLMS)
 	}
 
 	c, ok := conf.Caches["default"]
@@ -472,44 +447,8 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if c.Provider != d.DefaultCacheProvider {
-		t.Errorf("expected %s, got %s", d.DefaultCacheProvider, c.Provider)
-	}
-
-	if c.Index.ReapIntervalMS != d.DefaultCacheIndexReap {
-		t.Errorf("expected %d, got %d", d.DefaultCacheIndexReap, c.Index.ReapIntervalMS)
-	}
-
-	if c.Index.FlushIntervalMS != d.DefaultCacheIndexFlush {
-		t.Errorf("expected %d, got %d", d.DefaultCacheIndexFlush, c.Index.FlushIntervalMS)
-	}
-
-	if c.Index.MaxSizeBytes != d.DefaultCacheMaxSizeBytes {
-		t.Errorf("expected %d, got %d", d.DefaultCacheMaxSizeBytes, c.Index.MaxSizeBytes)
-	}
-
-	if c.Index.MaxSizeBackoffBytes != d.DefaultMaxSizeBackoffBytes {
-		t.Errorf("expected %d, got %d", d.DefaultMaxSizeBackoffBytes, c.Index.MaxSizeBackoffBytes)
-	}
-
-	if c.Index.MaxSizeObjects != d.DefaultMaxSizeObjects {
-		t.Errorf("expected %d, got %d", d.DefaultMaxSizeObjects, c.Index.MaxSizeObjects)
-	}
-
-	if c.Index.MaxSizeBackoffObjects != d.DefaultMaxSizeBackoffObjects {
-		t.Errorf("expected %d, got %d", d.DefaultMaxSizeBackoffObjects, c.Index.MaxSizeBackoffObjects)
-	}
-
 	if c.Index.ReapIntervalMS != 3000 {
 		t.Errorf("expected 3000, got %d", c.Index.ReapIntervalMS)
-	}
-
-	if c.Redis.ClientType != d.DefaultRedisClientType {
-		t.Errorf("expected %s, got %s", d.DefaultRedisClientType, c.Redis.ClientType)
-	}
-
-	if c.Redis.Protocol != d.DefaultRedisProtocol {
-		t.Errorf("expected %s, got %s", d.DefaultRedisProtocol, c.Redis.Protocol)
 	}
 
 	if c.Redis.Endpoint != "redis:6379" {
