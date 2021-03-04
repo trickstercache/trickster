@@ -25,12 +25,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
 	po "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
-	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 	pe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"

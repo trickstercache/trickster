@@ -31,7 +31,7 @@ import (
 	rule "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/negative"
 	cache "github.com/tricksterproxy/trickster/pkg/cache/options"
-	fo "github.com/tricksterproxy/trickster/pkg/frontend/options"
+	fropt "github.com/tricksterproxy/trickster/pkg/frontend/options"
 	lo "github.com/tricksterproxy/trickster/pkg/observability/logging/options"
 	mo "github.com/tricksterproxy/trickster/pkg/observability/metrics/options"
 	tracing "github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
@@ -51,7 +51,7 @@ type Config struct {
 	// Caches is a map of CacheConfigs
 	Caches map[string]*cache.Options `yaml:"caches,omitempty"`
 	// ProxyServer is provides configurations about the Proxy Front End
-	Frontend *fo.Options `yaml:"frontend,omitempty"`
+	Frontend *fropt.Options `yaml:"frontend,omitempty"`
 	// Logging provides configurations that affect logging behavior
 	Logging *lo.Options `yaml:"logging,omitempty"`
 	// Metrics provides configurations for collecting Metrics about the application
@@ -132,7 +132,7 @@ func NewConfig() *Config {
 		Backends: map[string]*bo.Options{
 			"default": bo.New(),
 		},
-		Frontend: fo.New(),
+		Frontend: fropt.New(),
 		NegativeCacheConfigs: map[string]negative.Config{
 			"default": negative.New(),
 		},

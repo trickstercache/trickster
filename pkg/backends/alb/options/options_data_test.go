@@ -25,7 +25,7 @@ const testTOMLBadOutputFormat1 = `
 backends:
   test:
     alb:
-      mechansim: 'not-tsm'
+      mechanism: 'not-tsm'
       output_format: invalid
  `
 

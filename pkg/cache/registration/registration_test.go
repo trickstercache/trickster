@@ -19,6 +19,7 @@ package registration
 import (
 	"testing"
 
+	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	bao "github.com/tricksterproxy/trickster/pkg/cache/badger/options"
 	bbo "github.com/tricksterproxy/trickster/pkg/cache/bbolt/options"
 	flo "github.com/tricksterproxy/trickster/pkg/cache/filesystem/options"
@@ -26,7 +27,6 @@ import (
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/providers"
 	ro "github.com/tricksterproxy/trickster/pkg/cache/redis/options"
-	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 )
 

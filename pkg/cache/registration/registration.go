@@ -19,6 +19,7 @@
 package registration
 
 import (
+	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/badger"
 	"github.com/tricksterproxy/trickster/pkg/cache/bbolt"
@@ -26,7 +27,6 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/memory"
 	"github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/redis"
-	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	"github.com/tricksterproxy/trickster/pkg/locks"
 )
 

@@ -22,8 +22,8 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/cmd/trickster/config"
+	"github.com/tricksterproxy/trickster/pkg/cache"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 )
 
