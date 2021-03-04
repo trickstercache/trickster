@@ -3,7 +3,6 @@ module github.com/tricksterproxy/trickster
 go 1.16
 
 require (
-	github.com/BurntSushi/toml v0.3.1
 	github.com/alicebob/gopher-json v0.0.0-20200520072559-a9ecdc9d1d3a // indirect
 	github.com/alicebob/miniredis v2.5.0+incompatible
 	github.com/dgraph-io/badger v1.6.2
@@ -28,10 +27,8 @@ require (
 	go.opentelemetry.io/otel/exporters/trace/zipkin v0.17.0
 	go.opentelemetry.io/otel/sdk v0.17.0
 	go.opentelemetry.io/otel/trace v0.17.0
-	golang.org/x/mod v0.4.1 // indirect
 	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110
 	golang.org/x/sys v0.0.0-20210301091718-77cc2087c03b // indirect
-	golang.org/x/tools v0.1.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v2 v2.4.0
 )
