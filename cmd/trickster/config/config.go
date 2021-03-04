@@ -20,15 +20,12 @@
 package config
 
 import (
-	"bytes"
 	"errors"
 	"io/ioutil"
-	"log"
 	"os"
 	"sync"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	reload "github.com/tricksterproxy/trickster/cmd/trickster/config/reload/options"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
@@ -166,7 +163,7 @@ func (c *Config) loadYAMLConfig(yml string, flags *Flags) error {
 
 	err := yaml.Unmarshal([]byte(yml), &c)
 	if err != nil {
-		log.Fatalf("error: %v", err)
+		return err
 	}
 	md, err := yamlx.GetKeyList(yml)
 	if err != nil {
@@ -354,11 +351,8 @@ func (c *Config) IsStale() bool {
 func (c *Config) String() string {
 	cp := c.Clone()
 
-	// the toml library will panic if the Handler is assigned,
-	// even though this field is annotated as skip ("-") in the prototype
-	// so we'll iterate the paths and set to nil the Handler (in our local copy only)
 	for k, o := range cp.Backends {
-		cp.Backends[k] = o.CloneTOMLSafe()
+		cp.Backends[k] = o.CloneYAMLSafe()
 	}
 
 	// strip Redis password
@@ -368,10 +362,13 @@ func (c *Config) String() string {
 		}
 	}
 
-	var buf bytes.Buffer
-	e := toml.NewEncoder(&buf)
-	e.Encode(cp)
-	return buf.String()
+	bytes, err := yaml.Marshal(cp)
+	if err == nil {
+		return string(bytes)
+	}
+
+	return ""
+
 }
 
 // ConfigFilePath returns the file path from which this configuration is based

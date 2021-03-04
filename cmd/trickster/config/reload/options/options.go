@@ -22,19 +22,19 @@ import "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 // Options is a collection of configurations for in-process config reloading
 type Options struct {
 	// ListenAddress is IP address from which the Reload API is available at ReloadHandlerPath
-	ListenAddress string `toml:"listen_address"`
+	ListenAddress string `yaml:"listen_address,omitempty"`
 	// ListenPort is TCP Port from which the Reload API is available at ReloadHandlerPath
-	ListenPort int `toml:"listen_port"`
+	ListenPort int `yaml:"listen_port,omitempty"`
 	// ReloadHandlerPath provides the path to register the Config Reload Handler
-	HandlerPath string `toml:"handler_path"`
+	HandlerPath string `yaml:"handler_path,omitempty"`
 	// DrainTimeoutMS provides the duration to wait for all sessions to drain before closing
 	// old resources following a reload
-	DrainTimeoutMS int `toml:"drain_timeout_ms"`
+	DrainTimeoutMS int `yaml:"drain_timeout_ms,omitempty"`
 	// RateLimitMS limits the # of handled config reload HTTP requests to 1 per CheckRateMS
 	// if multiple HTTP requests are received in the rate limit window, only the first is handled
 	// This prevents a bad actor from stating the config file with millions of concurrent requets
 	// The rate limit does not apply to SIGHUP-based reload requests
-	RateLimitMS int `toml:"rate_limit_ms"`
+	RateLimitMS int `yaml:"rate_limit_ms,omitempty"`
 }
 
 // New returns a new Options references with Default Values set

@@ -22,16 +22,16 @@ import (
 	"testing"
 	"time"
 
+	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	rule "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
-	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	rwo "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
 )
 
-const emptyFilePath = "../../testdata/test.empty.conf"
+const emptyFilePath = "../../../testdata/test.empty.conf"
 
 // EmptyTestConfig returns an empty config based on the testdata empty conf
 func emptyTestConfig() (*Config, string) {
@@ -88,7 +88,8 @@ func TestString(t *testing.T) {
 	c1.Caches["default"].Redis.Password = "plaintext-password"
 
 	s := c1.String()
-	if !strings.Contains(s, `password = "*****"`) {
+
+	if !strings.Contains(s, `password: '*****'`) {
 		t.Errorf("missing password mask: %s", "*****")
 	}
 }
@@ -167,102 +168,114 @@ func TestSetDefaults(t *testing.T) {
 }
 
 const testRule = `
- [rules]
-   [rules.example]
-   input_source = 'path'
-   input_type = 'string'
-   operation = 'prefix'
-   next_route = 'test'
-	 [rules.example.cases]
-		 [rules.example.cases.1]
-		 matches = ['trickster']
-		 next_route = 'test'
- `
+rules:
+  example:
+    input_source: path
+    input_type: string
+    operation: prefix
+    next_route: test
+    cases:
+      '1':
+        matches:
+          - trickster
+        next_route: test
+
+`
 
 const testRewriter = `
- [request_rewriters]
-   [request_rewriters.example]
-	 instructions = [
-	   ['path', 'set', '/api/v1/query'],
-	   ['param', 'delete', 'start'],
-	   ['param', 'delete', 'end'],
-	   ['param', 'delete', 'step']
-	 ]
- `
+request_rewriters:
+  example:
+    instructions:
+      - - path
+        - set
+        - /api/v1/query
+      - - param
+        - delete
+        - start
+      - - param
+        - delete
+        - end
+      - - param
+        - delete
+        - step
+`
 
 const testPaths = `
-	 [backends.test.paths]
-	   [backends.test.paths.root]
-	   path = '/'
-	   match_type = 'prefix'
-	   handler = 'proxycache'
-	   req_rewriter_name = 'example'
- `
+backends:
+  test:
+    paths:
+      root:
+        path: /
+        match_type: prefix
+        handler: proxycache
+        req_rewriter_name: example
+`
 
 func TestProcessBackendOptions(t *testing.T) {
 
 	c, _ := emptyTestConfig()
 	c.Backends["test"].ReqRewriterName = "invalid"
-	toml := c.String() + testRewriter
-	err := c.loadTOMLConfig(toml, &Flags{})
+	yml := c.String() + testRewriter
+	err := c.loadYAMLConfig(yml, &Flags{})
 	if err == nil {
 		t.Error("expected error for invalid rewriter name")
 	}
 
-	toml = strings.Replace(strings.Replace(
-		toml,
-		`req_rewriter_name = "invalid"`,
-		`req_rewriter_name = "example"`,
-		-1), "['path',", "['patha',", -1,
+	yml = strings.Replace(strings.Replace(
+		yml,
+		`req_rewriter_name: invalid`,
+		`req_rewriter_name: example`,
+		-1), "- - path", "- - patha", -1,
 	)
 
-	err = c.loadTOMLConfig(toml, &Flags{})
+	err = c.loadYAMLConfig(yml, &Flags{})
 	if err == nil {
 		t.Error("expected error for rewriter compilation")
 	}
 
-	toml = strings.Replace(toml, "['patha',", "['path',", -1)
-	err = c.loadTOMLConfig(toml, &Flags{})
+	yml = strings.Replace(yml, "- - patha", "- - path", -1)
+	err = c.loadYAMLConfig(yml, &Flags{})
 	if err != nil {
 		t.Error(err)
 	}
 
-	toml = strings.Replace(
+	yml = strings.Replace(
 		c.String(),
-		"[backends.test.paths]",
+		"backends:\n  test:\n",
 		testPaths,
 		-1,
 	)
 
-	err = c.loadTOMLConfig(toml, &Flags{})
+	err = c.loadYAMLConfig(yml, &Flags{})
 	if err != nil {
 		t.Error(err)
 	}
 
-	toml = strings.Replace(
-		toml,
-		` req_rewriter_name = 'example'`,
-		` req_rewriter_name = 'invalid'`,
+	yml = strings.Replace(
+		yml,
+		` req_rewriter_name: example`,
+		` req_rewriter_name: invalid`,
 		-1,
 	)
 
-	err = c.loadTOMLConfig(toml, &Flags{})
+	err = c.loadYAMLConfig(yml, &Flags{})
 	if err == nil || !strings.Contains(err.Error(), "invalid rewriter name") {
-		t.Error("expected toml parsing error", err)
+		t.Error("expected yaml parsing error", err)
 	}
 
 }
 
-func TestLoadTOMLConfig(t *testing.T) {
+func TestLoadYAMLConfig(t *testing.T) {
 
 	c := NewConfig()
-	err := c.loadTOMLConfig("[[", nil)
-	if err == nil || !strings.Contains(err.Error(), "unexpected end of table name") {
-		t.Error("expected toml parsing error")
+	err := c.loadYAMLConfig("[[", nil)
+
+	if err == nil || !strings.Contains(err.Error(), "did not find expected node content") {
+		t.Error("expected yaml parsing error")
 	}
 
 	c, tml := emptyTestConfig()
-	err = c.loadTOMLConfig(tml, &Flags{})
+	err = c.loadYAMLConfig(tml, &Flags{})
 	if err != nil {
 		t.Error(err)
 	}
@@ -324,18 +337,6 @@ func TestConfigFilePath(t *testing.T) {
 	c.Main = nil
 	if c.ConfigFilePath() != "" {
 		t.Errorf("expected %s got %s", "", c.ConfigFilePath())
-	}
-
-}
-
-func TestFrontendConfigEqual(t *testing.T) {
-
-	f1 := &FrontendConfig{}
-	f2 := &FrontendConfig{}
-
-	b := f1.Equal(f2)
-	if !b {
-		t.Errorf("expected %t got %t", true, b)
 	}
 
 }

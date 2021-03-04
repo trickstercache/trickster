@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	d "github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
+	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
 )
 
@@ -57,35 +57,35 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 		expected string
 	}{
 		{ // Case 0
-			"../../testdata/test.missing-origin-url.conf",
-			`missing origin-url for backend "2"`,
+			"../../../testdata/test.missing-origin-url.conf",
+			`missing origin-url for backend "test"`,
 		},
 		{ // Case 1
-			"../../testdata/test.bad_origin_url.conf",
+			"../../../testdata/test.bad_origin_url.conf",
 			"first path segment in URL cannot contain colon",
 		},
 		{ // Case 2
-			"../../testdata/test.missing_backend_provider.conf",
+			"../../../testdata/test.missing_backend_provider.conf",
 			`missing provider for backend "test"`,
 		},
 		{ // Case 3
-			"../../testdata/test.bad-cache-name.conf",
+			"../../../testdata/test.bad-cache-name.conf",
 			`invalid cache name "test_fail" provided in backend options "test"`,
 		},
 		{ // Case 4
-			"../../testdata/test.invalid-negative-cache-1.conf",
+			"../../../testdata/test.invalid-negative-cache-1.conf",
 			`invalid negative cache config in default: a is not a valid status code`,
 		},
 		{ // Case 5
-			"../../testdata/test.invalid-negative-cache-2.conf",
+			"../../../testdata/test.invalid-negative-cache-2.conf",
 			`invalid negative cache config in default: 1212 is not >= 400 and < 600`,
 		},
 		{ // Case 6
-			"../../testdata/test.invalid-negative-cache-3.conf",
+			"../../../testdata/test.invalid-negative-cache-3.conf",
 			`invalid negative cache name: foo`,
 		},
 		{ // Case 7
-			"../../testdata/test.invalid-pcf-name.conf",
+			"../../../testdata/test.invalid-pcf-name.conf",
 			`invalid collapsed_forwarding name: INVALID`,
 		},
 	}
@@ -123,7 +123,7 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Error(err)
 	}
 
-	b, err := ioutil.ReadFile("../../testdata/test.full.02.conf")
+	b, err := ioutil.ReadFile("../../../testdata/test.full.02.conf")
 	b = []byte(strings.ReplaceAll(string(b), `../../testdata/test.02.`, td+"/"))
 
 	err = ioutil.WriteFile(confFile, b, 0600)
@@ -401,7 +401,7 @@ func TestFullLoadConfiguration(t *testing.T) {
 }
 
 func TestEmptyLoadConfiguration(t *testing.T) {
-	a := []string{"-config", "../../testdata/test.empty.conf"}
+	a := []string{"-config", "../../../testdata/test.empty.conf"}
 	// it should not error if config path is not set
 	conf, _, err := Load("trickster-test", "0", a)
 	if err != nil {
@@ -412,33 +412,6 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		// we define a "test" cache, but never reference it by a backend,
 		// so it should not make it into the running config
 		t.Errorf("expected %d, got %d", 1, len(conf.Backends))
-	}
-
-	// Test Proxy Server
-	if conf.Frontend.ListenPort != d.DefaultProxyListenPort {
-		t.Errorf("expected %d, got %d", d.DefaultProxyListenPort, conf.Frontend.ListenPort)
-	}
-
-	if conf.Frontend.ListenAddress != d.DefaultProxyListenAddress {
-		t.Errorf("expected '%s', got '%s'", d.DefaultProxyListenAddress, conf.Frontend.ListenAddress)
-	}
-
-	// Test Metrics Server
-	if conf.Metrics.ListenPort != d.DefaultMetricsListenPort {
-		t.Errorf("expected %d, got %d", d.DefaultMetricsListenPort, conf.Metrics.ListenPort)
-	}
-
-	if conf.Metrics.ListenAddress != d.DefaultMetricsListenAddress {
-		t.Errorf("expected '%s', got '%s'", d.DefaultMetricsListenAddress, conf.Metrics.ListenAddress)
-	}
-
-	// Test Logging
-	if conf.Logging.LogLevel != d.DefaultLogLevel {
-		t.Errorf("expected %s, got %s", d.DefaultLogLevel, conf.Logging.LogLevel)
-	}
-
-	if conf.Logging.LogFile != d.DefaultLogFile {
-		t.Errorf("expected '%s', got '%s'", d.DefaultLogFile, conf.Logging.LogFile)
 	}
 
 	// Test Backends
@@ -668,7 +641,7 @@ func TestLoadConfigurationBadArg(t *testing.T) {
 
 func TestLoadConfigurationWarning1(t *testing.T) {
 
-	a := []string{"-config", "../../testdata/test.warning1.conf"}
+	a := []string{"-config", "../../../testdata/test.warning1.conf"}
 	// it should not error if config path is not set
 	conf, _, err := Load("trickster-test", "0", a)
 	if err != nil {
@@ -686,7 +659,7 @@ func TestLoadConfigurationWarning1(t *testing.T) {
 
 func TestLoadConfigurationWarning2(t *testing.T) {
 
-	a := []string{"-config", "../../testdata/test.warning2.conf"}
+	a := []string{"-config", "../../../testdata/test.warning2.conf"}
 	// it should not error if config path is not set
 	conf, _, err := Load("trickster-test", "0", a)
 	if err != nil {

@@ -21,8 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/yaml.v2"
 	"github.com/tricksterproxy/trickster/cmd/trickster/config/defaults"
+	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
+
+	"gopkg.in/yaml.v2"
 )
 
 func TestNew(t *testing.T) {
@@ -98,13 +100,18 @@ func TestOverlay(t *testing.T) {
 	}
 
 	c := &Options{}
-	md, err := toml.Decode(hcTOML, c)
+	err := yaml.Unmarshal([]byte(hcTOML), c)
+	if err != nil {
+		t.Error(err)
+	}
+
+	md, err := yamlx.GetKeyList(hcTOML)
 	if err != nil {
 		t.Error(err)
 	}
 
 	o2 := New()
-	o2.md = &md
+	o2.md = md
 	o.Overlay("test", o2)
 	if o.IntervalMS != 0 {
 		t.Error("expected 5000 got ", o.IntervalMS)
@@ -112,20 +119,21 @@ func TestOverlay(t *testing.T) {
 }
 
 const hcTOML = `
-[backends]
-  [backends.test]
-    [backends.test.healthcheck]
-	upstream_path = 'test_path'
-	verb = 'POST'
-	query = '?myqueryparam=myqueryval'
-	body = 'custom body'
-	expected_codes = [200]
-	expected_body = 'expected body'
-	interval_ms = 0
-	  [backends.test.healthcheck.headers]
-	  TestHeader = 'test-header-val'
-	  [backends.test.healthcheck.expected_headers]
-	  TestHeader = 'test-header-val'
+backends:
+  test:
+    healthcheck:
+      upstream_path: test_path
+      verb: POST
+      query: '?myqueryparam=myqueryval'
+      body: custom body
+      expected_codes:
+        - 200
+      expected_body: expected body
+      interval_ms: 0
+      headers:
+        TestHeader: test-header-val
+      expected_headers:
+        TestHeader: test-header-val
 `
 
 func TestCalibrateTimeout(t *testing.T) {

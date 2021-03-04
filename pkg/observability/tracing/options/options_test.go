@@ -19,7 +19,7 @@ package options
 import (
 	"testing"
 
-	"gopkg.in/yaml.v2"
+	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 )
 
 func TestNew(t *testing.T) {
@@ -42,7 +42,7 @@ func TestProcessTracingConfigs(t *testing.T) {
 		"test": o,
 	}
 
-	ProcessTracingOptions(mo, &toml.MetaData{})
+	ProcessTracingOptions(mo, yamlx.KeyLookup{})
 
 	if int(o.SampleRate) != 1 {
 		t.Errorf("expected 1 got %d", int(o.SampleRate))

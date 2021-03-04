@@ -20,7 +20,6 @@ import (
 	"net/http"
 
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	"github.com/tricksterproxy/trickster/pkg/cache/key"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 )
@@ -71,7 +70,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 		"/" + mnFetch: {
 			Path:            "/" + mnFetch,
 			HandlerName:     "FetchHandler",
-			KeyHasher:       []key.HasherFunc{c.fetchHandlerDeriveCacheKey},
+			KeyHasher:       c.fetchHandlerDeriveCacheKey,
 			Methods:         []string{http.MethodPost},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
@@ -82,7 +81,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 		"/" + mnRead + "/": {
 			Path:            "/" + mnRead + "/",
 			HandlerName:     "TextHandler",
-			KeyHasher:       []key.HasherFunc{c.textHandlerDeriveCacheKey},
+			KeyHasher:       c.textHandlerDeriveCacheKey,
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{"*"},
 			CacheKeyHeaders: []string{},
@@ -94,7 +93,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 			Path:            "/" + mnHistogram + "/",
 			HandlerName:     "HistogramHandler",
 			Methods:         []string{http.MethodGet},
-			KeyHasher:       []key.HasherFunc{c.histogramHandlerDeriveCacheKey},
+			KeyHasher:       c.histogramHandlerDeriveCacheKey,
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			MatchType:       matching.PathMatchTypePrefix,

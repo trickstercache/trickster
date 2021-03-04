@@ -23,6 +23,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
+	tlo "github.com/tricksterproxy/trickster/pkg/observability/logging/options"
 )
 
 func TestLogUpstreamRequest(t *testing.T) {
@@ -30,7 +31,7 @@ func TestLogUpstreamRequest(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
-	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "debug"}
+	conf.Logging = &tlo.Options{LogFile: fileName, LogLevel: "debug"}
 	log := &tl.SyncLogger{Logger: tl.New(conf)}
 	logUpstreamRequest(log, "testBackend", "testType", "testHandler", "testMethod",
 		"testPath", "testUserAgent", 200, 0, 1.0)
@@ -45,7 +46,7 @@ func TestLogDownstreamRequest(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
-	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "debug"}
+	conf.Logging = &tlo.Options{LogFile: fileName, LogLevel: "debug"}
 	log := &tl.SyncLogger{Logger: tl.New(conf)}
 	r, err := http.NewRequest("get", "http://testBackend", nil)
 	if err != nil {

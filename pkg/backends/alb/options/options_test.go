@@ -19,8 +19,9 @@ package options
 import (
 	"testing"
 
-	"github.com/BurntSushi/toml"
 	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
+
+	"gopkg.in/yaml.v2"
 )
 
 type testObj struct {
@@ -35,20 +36,24 @@ type testOptions2 struct {
 	Alb *Options `yaml:"alb,omitempty"`
 }
 
-func fromTOML(conf string) (*Options, yamlx.KeyLookup, error) {
+func fromYAML(conf string) (*Options, yamlx.KeyLookup, error) {
 
 	to := &testOptions1{}
-	md, err := toml.Decode(conf, to)
+	err := yaml.Unmarshal([]byte(conf), to)
+	if err != nil {
+		return nil, nil, err
+	}
+	md, err := yamlx.GetKeyList(conf)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	for _, v := range to.Backends {
-		if v.Alb != nil {
-			return v.Alb, &md, nil
+		if v != nil && v.Alb != nil {
+			return v.Alb, md, nil
 		}
 	}
-	return nil, &md, nil
+	return nil, md, nil
 }
 
 func TestNew(t *testing.T) {
@@ -90,7 +95,7 @@ func TestSetDefaults(t *testing.T) {
 		t.Error("expected nil Options")
 	}
 
-	o, md, err := fromTOML(testTOML)
+	o, md, err := fromYAML(testTOML)
 	if err != nil {
 		t.Error(err)
 	}
@@ -99,7 +104,7 @@ func TestSetDefaults(t *testing.T) {
 		t.Error(err)
 	}
 
-	o, md, err = fromTOML(testTOMLNoALB)
+	o, md, err = fromYAML(testTOMLNoALB)
 	if err != nil {
 		t.Error(err)
 	}
@@ -111,7 +116,7 @@ func TestSetDefaults(t *testing.T) {
 		t.Error("expected nil Options")
 	}
 
-	o, md, err = fromTOML(testTOMLBadOutputFormat1)
+	o, md, err = fromYAML(testTOMLBadOutputFormat1)
 	if err != nil {
 		t.Error(err)
 	}
@@ -120,7 +125,7 @@ func TestSetDefaults(t *testing.T) {
 		t.Error("expected output_format error")
 	}
 
-	o, md, err = fromTOML(testTOMLBadOutputFormat2)
+	o, md, err = fromYAML(testTOMLBadOutputFormat2)
 	if err != nil {
 		t.Error(err)
 	}

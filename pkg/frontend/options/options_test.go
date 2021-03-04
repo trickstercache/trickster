@@ -16,33 +16,21 @@
 
 package options
 
-const testTOMLNoALB = `
-backends:
-  test:
- `
+import "testing"
 
-const testTOMLBadOutputFormat1 = `
-backends:
-  test:
-    alb:
-      mechansim: 'not-tsm'
-      output_format: invalid
- `
+func TestFrontendOptions(t *testing.T) {
 
-const testTOMLBadOutputFormat2 = `
-backends:
-  test:
-    alb:
-      mechanism: tsm
-      output_format: invalid
-`
+	f1 := New()
+	f2 := New()
 
-const testTOML = `
-backends:
-  test:
-    alb:
-      mechanism: tsm
-      output_format: prometheus
-      healthy_floor: 1
-      pool: [ 'test' ]
-`
+	b := f1.Equal(f2)
+	if !b {
+		t.Errorf("expected %t got %t", true, b)
+	}
+
+	f1.ListenAddress = "trickster"
+	f2 = f1.Clone()
+	if !b {
+		t.Errorf("expected %t got %t", true, b)
+	}
+}

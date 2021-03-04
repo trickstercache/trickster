@@ -29,7 +29,6 @@ import (
 	"testing"
 
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	"github.com/tricksterproxy/trickster/pkg/cache/key"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 	ct "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
@@ -187,7 +186,7 @@ func TestDeriveCacheKey(t *testing.T) {
 	}
 
 	// Test Custom KeyHasher Integration
-	rpath.KeyHasher = []key.HasherFunc{exampleKeyHasher}
+	rpath.KeyHasher = exampleKeyHasher
 	ck = pr.DeriveCacheKey(nil, "extra")
 	if ck != "test-key" {
 		t.Errorf("expected %s got %s", "test-key", ck)

@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/tricksterproxy/trickster/cmd/trickster/config"
+	"github.com/tricksterproxy/trickster/pkg/observability/logging/options"
 )
 
 func TestConsoleLogger(t *testing.T) {
@@ -47,7 +48,7 @@ func TestConsoleLogger(t *testing.T) {
 func TestNew(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
-	conf.Logging = &config.LoggingConfig{LogLevel: "info"}
+	conf.Logging = &options.Options{LogLevel: "info"}
 	log := New(conf)
 	if log.level != "info" {
 		t.Errorf("expected %s got %s", "info", log.level)
@@ -62,7 +63,7 @@ func TestNewLogger_LogFile(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 1}
-	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "info"}
+	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "info"}
 	log := &SyncLogger{Logger: New(conf)}
 	Info(log, "test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(instanceFileName); err != nil {
@@ -76,7 +77,7 @@ func TestNewLoggerDebug_LogFile(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
-	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "debug"}
+	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "debug"}
 	log := &SyncLogger{Logger: New(conf)}
 	log.Debug("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
@@ -90,7 +91,7 @@ func TestNewLoggerWarn_LogFile(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
-	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "warn"}
+	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "warn"}
 	log := &SyncLogger{Logger: New(conf)}
 	log.Warn("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
@@ -104,7 +105,7 @@ func TestNewLoggerWarnOnce_LogFile(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
-	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "x"}
+	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "x"}
 	log := &SyncLogger{Logger: New(conf)}
 
 	key := "warnonce-test-key"
@@ -142,7 +143,7 @@ func TestNewLoggerError_LogFile(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
-	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "error"}
+	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "error"}
 	log := &SyncLogger{Logger: New(conf)}
 	log.Error("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
@@ -156,7 +157,7 @@ func TestNewLoggerErrorOnce_LogFile(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
-	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "x"}
+	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "x"}
 	log := &SyncLogger{Logger: New(conf)}
 
 	ok := log.ErrorOnce("erroroonce-test-key", "test entry", Pairs{"testKey": "testVal"})
@@ -180,7 +181,7 @@ func TestNewLoggerTrace_LogFile(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
-	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "trace"}
+	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "trace"}
 	log := &SyncLogger{Logger: New(conf)}
 	log.Trace("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
@@ -194,7 +195,7 @@ func TestNewLoggerDefault_LogFile(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
-	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "x"}
+	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "x"}
 	log := &SyncLogger{Logger: New(conf)}
 	log.Info("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
@@ -208,7 +209,7 @@ func TestNewLoggerInfoOnce_LogFile(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
-	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "info"}
+	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "info"}
 	log := &SyncLogger{Logger: New(conf)}
 	ok := log.InfoOnce("infoonce-test-key", "test entry", Pairs{"testKey": "testVal"})
 	if !ok {
@@ -232,7 +233,7 @@ func TestNewLoggerFatal_LogFile(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
-	conf.Logging = &config.LoggingConfig{LogFile: fileName, LogLevel: "debug"}
+	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "debug"}
 	log := &SyncLogger{Logger: New(conf)}
 	log.Fatal(-1, "test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {

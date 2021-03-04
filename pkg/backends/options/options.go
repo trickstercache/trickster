@@ -38,6 +38,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 
 	"github.com/gorilla/mux"
+	"gopkg.in/yaml.v2"
 )
 
 var restrictedOriginNames = map[string]bool{"": true, "frontend": true}
@@ -445,7 +446,7 @@ func (l Lookup) ValidateTLSConfigs() (bool, error) {
 	return serveTLS, nil
 }
 
-// SetDefaults iterates a TOML Config
+// SetDefaults iterates a YAML Config
 func SetDefaults(
 	name string,
 	o *Options,
@@ -626,9 +627,9 @@ func SetDefaults(
 	return no, nil
 }
 
-// CloneTOMLSafe returns a copy of the Options that is safe to export to TOML without
+// CloneYAMLSafe returns a copy of the Options that is safe to export to YAML without
 // exposing credentials (by masking known credential fields with "*****")
-func (o *Options) CloneTOMLSafe() *Options {
+func (o *Options) CloneYAMLSafe() *Options {
 
 	co := o.Clone()
 	for _, w := range co.Paths {
@@ -644,15 +645,11 @@ func (o *Options) CloneTOMLSafe() *Options {
 	return co
 }
 
-// ToTOML prints the Options as a TOML representation
-func (o *Options) ToTOML() string {
-	// co := o.CloneTOMLSafe()
-	// var buf bytes.Buffer
-	// //e := toml.NewEncoder(&buf)
-	// e.Encode(co)
-	// return buf.String()
-	return ""
-	// TODO: restore w/ YAML
+// ToYAML prints the Options as a YAML representation
+func (o *Options) ToYAML() string {
+	co := o.CloneYAMLSafe()
+	b, _ := yaml.Marshal(co)
+	return string(b)
 }
 
 // HasTransformations returns true if the backend will artificially transform payloads

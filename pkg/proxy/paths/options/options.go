@@ -77,8 +77,7 @@ type Options struct {
 	CollapsedForwardingType forwarding.CollapsedForwardingType `yaml:"-"`
 	// KeyHasher points to an optional function that hashes the cacheKey with a custom algorithm
 	// NOTE: This is used by some backends like IronDB, but is not configurable by end users.
-	// Due to a bug in the vendored toml package, this must be a slice to avoid panic
-	KeyHasher []key.HasherFunc `yaml:"-"`
+	KeyHasher key.HasherFunc `yaml:"-"`
 	// Custom is a compiled list of any custom settings for this path from the config file
 	Custom []string `yaml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
