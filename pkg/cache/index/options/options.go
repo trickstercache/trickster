@@ -18,42 +18,40 @@ package options
 
 import (
 	"time"
-
-	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 )
 
 // Options defines the operation of the Cache Indexer
 type Options struct {
 	// ReapIntervalMS defines how long the Cache Index reaper sleeps between reap cycles
-	ReapIntervalMS int `toml:"reap_interval_ms"`
+	ReapIntervalMS int `yaml:"reap_interval_ms,omitempty"`
 	// FlushIntervalMS sets how often the Cache Index saves its metadata to the cache from application memory
-	FlushIntervalMS int `toml:"flush_interval_ms"`
+	FlushIntervalMS int `yaml:"flush_interval_ms,omitempty"`
 	// MaxSizeBytes indicates how large the cache can grow in bytes before the Index evicts
 	// least-recently-accessed items.
-	MaxSizeBytes int64 `toml:"max_size_bytes"`
+	MaxSizeBytes int64 `yaml:"max_size_bytes,omitempty"`
 	// MaxSizeBackoffBytes indicates how far below max_size_bytes the cache size must be
 	// to complete a byte-size-based eviction exercise.
-	MaxSizeBackoffBytes int64 `toml:"max_size_backoff_bytes"`
+	MaxSizeBackoffBytes int64 `yaml:"max_size_backoff_bytes,omitempty"`
 	// MaxSizeObjects  indicates how large the cache can grow in objects before the Index
 	// evicts least-recently-accessed items.
-	MaxSizeObjects int64 `toml:"max_size_objects"`
+	MaxSizeObjects int64 `yaml:"max_size_objects,omitempty"`
 	// MaxSizeBackoffObjects indicates how far under max_size_objects the cache size must
 	// be to complete object-size-based eviction exercise.
-	MaxSizeBackoffObjects int64 `toml:"max_size_backoff_objects"`
+	MaxSizeBackoffObjects int64 `yaml:"max_size_backoff_objects,omitempty"`
 
-	ReapInterval  time.Duration `toml:"-"`
-	FlushInterval time.Duration `toml:"-"`
+	ReapInterval  time.Duration `yaml:"-"`
+	FlushInterval time.Duration `yaml:"-"`
 }
 
 // New returns a new Cache Index Options Reference with default values set
 func New() *Options {
 	return &Options{
-		ReapIntervalMS:        d.DefaultCacheIndexReap,
-		FlushIntervalMS:       d.DefaultCacheIndexFlush,
-		MaxSizeBytes:          d.DefaultCacheMaxSizeBytes,
-		MaxSizeBackoffBytes:   d.DefaultMaxSizeBackoffBytes,
-		MaxSizeObjects:        d.DefaultMaxSizeObjects,
-		MaxSizeBackoffObjects: d.DefaultMaxSizeBackoffObjects,
+		ReapIntervalMS:        DefaultCacheIndexReap,
+		FlushIntervalMS:       DefaultCacheIndexFlush,
+		MaxSizeBytes:          DefaultCacheMaxSizeBytes,
+		MaxSizeBackoffBytes:   DefaultMaxSizeBackoffBytes,
+		MaxSizeObjects:        DefaultMaxSizeObjects,
+		MaxSizeBackoffObjects: DefaultMaxSizeBackoffObjects,
 	}
 }
 

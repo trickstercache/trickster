@@ -61,9 +61,9 @@ func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) strin
 		b = []byte(s)
 	}
 
-	if pc.KeyHasher != nil && len(pc.KeyHasher) == 1 {
+	if pc.KeyHasher != nil {
 		var k string
-		k, r.Body = pc.KeyHasher[0](r.URL.Path, qp, r.Header, r.Body, extra)
+		k, r.Body = pc.KeyHasher(r.URL.Path, qp, r.Header, r.Body, extra)
 		return k
 	}
 

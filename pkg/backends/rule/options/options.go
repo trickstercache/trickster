@@ -19,20 +19,20 @@ package options
 // Options defines the options for a Rule
 type Options struct {
 	// Name provides the name of the Rule
-	Name string `toml:"-"`
+	Name string `yaml:"-"`
 	// NextRoute indicates the name of the next BackendOptions destination for the request when
 	// none of the cases are met following the execution of the rule
-	NextRoute string `toml:"next_route"`
+	NextRoute string `yaml:"next_route,omitempty"`
 	// IngressReqRewriterName is the name of a configured Rewriter that will modify the request prior
 	// to the rule taking any other action
-	IngressReqRewriterName string `toml:"ingress_req_rewriter_name"`
+	IngressReqRewriterName string `yaml:"ingress_req_rewriter_name,omitempty"`
 	// EgressReqRewriterName is the name of a configured Rewriter that will modify the request once
 	// all other rule actions have occurred, prior to the request being passed to the next route
-	EgressReqRewriterName string `toml:"egress_req_rewriter_name"`
+	EgressReqRewriterName string `yaml:"egress_req_rewriter_name,omitempty"`
 	// NoMatchReqRewriterName is the name of a configured Rewriter that will modify the request once
 	// all other rule actions have occurred, and only if the Request did not match any defined case,
 	// prior to the request being passed to the next route
-	NoMatchReqRewriterName string `toml:"nomatch_req_rewriter_name"`
+	NoMatchReqRewriterName string `yaml:"nomatch_req_rewriter_name,omitempty"`
 	//
 	// Input source specifies the data source used when executing the rule. Possible options:
 	//  Source           Example Source Used
@@ -46,23 +46,23 @@ type Options struct {
 	//  params           ?param1=value
 	//  param            [must be used with InputKey as described below]
 	//  header           [must be used with InputKey as described below]
-	InputSource string `toml:"input_source"`
+	InputSource string `yaml:"input_source,omitempty"`
 	//
 	// InputKey is optional and provides extra information for locating the data source
 	// when the InputSource is header or param, the input key must be the target header or param name
-	InputKey string `toml:"input_key"`
+	InputKey string `yaml:"input_key,omitempty"`
 	// InputType is optional, defaulting to string, and indicates the type of input:
 	// string, num (treated internally as float64), or bool
-	InputType string `toml:"input_type"`
+	InputType string `yaml:"input_type,omitempty"`
 	// InputEncoding is optional, defaulting to '', and defines any special encoding format on
 	// the input. Supported Options are: 'base64'
-	InputEncoding string `toml:"input_encoding"`
+	InputEncoding string `yaml:"input_encoding,omitempty"`
 	// InputIndex is optional, defaulting to -1 (no parts / use full string), and indicates which part
 	// of the Input contains the specific value to which this rule applies. InputIndex is zero-based.
-	InputIndex int `toml:"input_index"`
+	InputIndex int `yaml:"input_index,omitempty"`
 	// InputDelimiter is optional, defaulting to " ", and indicates the delimiter for separating the Input
 	// into parts. This value has no effect unless InputIndex >= 0
-	InputDelimiter string `toml:"input_delimiter"`
+	InputDelimiter string `yaml:"input_delimiter,omitempty"`
 	//
 	// Operation specifies what action to take on the input, whose result is used to
 	// determine if any case is matched. Possible options are as follows.
@@ -70,33 +70,33 @@ type Options struct {
 	// num:      eq, gt, lt, ge, le, bt (inclusive), modulo
 	// bool:     eq
 	// any boolean operation (everything but md5, sha1, base64, modulo) can be prefixed with !
-	Operation string `toml:"operation"`
+	Operation string `yaml:"operation,omitempty"`
 	//
 	// OperationArg is optional and provides extra information used when performing the
 	// configured Operation, such as the demonimator when the operation is modulus
-	OperationArg string `toml:"operation_arg"`
+	OperationArg string `yaml:"operation_arg,omitempty"`
 	// RuleCaseOptions is the map of cases to apply to evaluate against this rule
-	CaseOptions map[string]*CaseOptions `toml:"cases"`
+	CaseOptions map[string]*CaseOptions `yaml:"cases,omitempty"`
 	// RedirectURL provides a URL to redirect the request in the default case, rather than
 	// handing off to the NextRoute
-	RedirectURL string `toml:"redirect_url"`
+	RedirectURL string `yaml:"redirect_url,omitempty"`
 	// MaxRuleExecutions limits the maximum number of per-Request rule-based hops so as to avoid
 	// execution loops.
-	MaxRuleExecutions int `toml:"max_rule_executions"`
+	MaxRuleExecutions int `yaml:"max_rule_executions,omitempty"`
 }
 
 // CaseOptions defines the options for a given evaluation case
 type CaseOptions struct {
 	// Matches indicates the values matching the rule execution's output that apply to this case
-	Matches []string `toml:"matches"`
+	Matches []string `yaml:"matches,omitempty"`
 	// ReqRewriterName is the name of a configured Rewriter that will modify the request in this case
 	// prior to handing off to the NextRoute
-	ReqRewriterName string `toml:"req_rewriter_name"`
+	ReqRewriterName string `yaml:"req_rewriter_name,omitempty"`
 	// NextRoute is the name of the next BackendOptions destination for the request in this case
-	NextRoute string `toml:"next_route"`
+	NextRoute string `yaml:"next_route,omitempty"`
 	// RedirectURL provides a URL to redirect the request in this case, rather than
 	// handing off to the NextRoute
-	RedirectURL string `toml:"redirect_url"`
+	RedirectURL string `yaml:"redirect_url,omitempty"`
 }
 
 // Lookup is a map of Options

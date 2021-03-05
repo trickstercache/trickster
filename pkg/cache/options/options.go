@@ -21,14 +21,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/BurntSushi/toml"
 	badger "github.com/tricksterproxy/trickster/pkg/cache/badger/options"
 	bbolt "github.com/tricksterproxy/trickster/pkg/cache/bbolt/options"
 	filesystem "github.com/tricksterproxy/trickster/pkg/cache/filesystem/options"
 	index "github.com/tricksterproxy/trickster/pkg/cache/index/options"
+	"github.com/tricksterproxy/trickster/pkg/cache/options/defaults"
 	"github.com/tricksterproxy/trickster/pkg/cache/providers"
 	redis "github.com/tricksterproxy/trickster/pkg/cache/redis/options"
-	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
+	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 )
 
 // Lookup is a map of Options
@@ -37,32 +37,32 @@ type Lookup map[string]*Options
 // Options is a collection of defining the Trickster Caching Behavior
 type Options struct {
 	// Name is the Name of the cache, taken from the Key in the Caches map[string]*CacheConfig
-	Name string `toml:"-"`
+	Name string `yaml:"-"`
 	// Provider represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
-	Provider string `toml:"provider"`
+	Provider string `yaml:"provider,omitempty"`
 	// Index provides options for the Cache Index
-	Index *index.Options `toml:"index"`
+	Index *index.Options `yaml:"index,omitempty"`
 	// Redis provides options for Redis caching
-	Redis *redis.Options `toml:"redis"`
+	Redis *redis.Options `yaml:"redis,omitempty"`
 	// Filesystem provides options for Filesystem caching
-	Filesystem *filesystem.Options `toml:"filesystem"`
+	Filesystem *filesystem.Options `yaml:"filesystem,omitempty"`
 	// BBolt provides options for BBolt caching
-	BBolt *bbolt.Options `toml:"bbolt"`
+	BBolt *bbolt.Options `yaml:"bbolt,omitempty"`
 	// Badger provides options for BadgerDB caching
-	Badger *badger.Options `toml:"badger"`
+	Badger *badger.Options `yaml:"badger,omitempty"`
 
 	//  Synthetic Values
 
 	// ProviderID represents the internal constant for the provided Provider string
 	// and is automatically populated at startup
-	ProviderID providers.Provider `toml:"-"`
+	ProviderID providers.Provider `yaml:"-"`
 }
 
 // New will return a pointer to a CacheOptions with the default configuration settings
 func New() *Options {
 	return &Options{
-		Provider:   d.DefaultCacheProvider,
-		ProviderID: d.DefaultCacheProviderID,
+		Provider:   defaults.DefaultCacheProvider,
+		ProviderID: defaults.DefaultCacheProviderID,
 		Redis:      redis.New(),
 		Filesystem: filesystem.New(),
 		BBolt:      bbolt.New(),
@@ -134,9 +134,8 @@ func (cc *Options) Equal(cc2 *Options) bool {
 
 }
 
-// ProcessTOML will return examine the provided TOML and place a corresponding CacheOptions
-// reference into the Lookup table
-func (l Lookup) ProcessTOML(metadata *toml.MetaData, activeCaches map[string]bool) ([]string, error) {
+// SetDefaults iterates the provided Options, and overlays user-set values onto the default Options
+func (l Lookup) SetDefaults(metadata yamlx.KeyLookup, activeCaches map[string]bool) ([]string, error) {
 
 	// setCachingDefaults assumes that processBackendOptionss was just ran
 

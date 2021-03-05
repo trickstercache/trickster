@@ -17,32 +17,32 @@
 package options
 
 const testTOMLNoALB = `
-[backends]
-	[backends.test]
+backends:
+  test:
  `
 
 const testTOMLBadOutputFormat1 = `
-[backends]
-	[backends.test]
-	    [backends.test.alb]
-		mechanism = 'not-tsm'
-		output_format = 'invalid'
+backends:
+  test:
+    alb:
+      mechanism: 'not-tsm'
+      output_format: invalid
  `
 
 const testTOMLBadOutputFormat2 = `
-[backends]
-	[backends.test]
-	    [backends.test.alb]
-		mechanism = 'tsm'
-		output_format = 'invalid'
+backends:
+  test:
+    alb:
+      mechanism: tsm
+      output_format: invalid
 `
 
 const testTOML = `
-[backends]
-	[backends.test]
-	    [backends.test.alb]
-		mechanism = 'tsm'
-		output_format = 'prometheus'
-		healthy_floor = 1
-		pool = ['test']
- `
+backends:
+  test:
+    alb:
+      mechanism: tsm
+      output_format: prometheus
+      healthy_floor: 1
+      pool: [ 'test' ]
+`

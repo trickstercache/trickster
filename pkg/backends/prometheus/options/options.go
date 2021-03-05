@@ -18,5 +18,5 @@ package options
 
 // Options stores information about Prometheus Options
 type Options struct {
-	Labels map[string]string `toml:"labels"`
+	Labels map[string]string `yaml:"labels,omitempty"`
 }

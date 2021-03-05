@@ -21,8 +21,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/config"
-	tl "github.com/tricksterproxy/trickster/pkg/logging"
+	"github.com/tricksterproxy/trickster/cmd/trickster/config"
+	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
@@ -40,10 +40,12 @@ func TestHandleLocalResponse(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
 
+	const expected = "trickster"
+
 	pc := &po.Options{
 		ResponseCode:      418,
-		ResponseBody:      "[test",
-		ResponseBodyBytes: []byte("[test"),
+		ResponseBody:      expected,
+		ResponseBodyBytes: []byte(expected),
 		ResponseHeaders:   map[string]string{headers.NameTricksterResult: "1234"},
 	}
 
@@ -64,11 +66,11 @@ func TestHandleLocalResponse(t *testing.T) {
 	}
 
 	if len(bodyBytes) < 1 {
-		t.Errorf("missing body in response")
+		t.Error("missing body in response")
 	}
 
-	if bodyBytes[0] != 91 {
-		t.Errorf("response is not toml format")
+	if string(bodyBytes) != expected {
+		t.Errorf("expected %s got %s", expected, string(bodyBytes))
 	}
 
 	if resp.Header.Get(headers.NameTricksterResult) == "" {
@@ -88,10 +90,12 @@ func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
 
+	const expected = "trickster"
+
 	pc := &po.Options{
 		ResponseCode:      0,
-		ResponseBody:      "[test",
-		ResponseBodyBytes: []byte("[test"),
+		ResponseBody:      expected,
+		ResponseBodyBytes: []byte(expected),
 		ResponseHeaders:   map[string]string{headers.NameTricksterResult: "1234"},
 	}
 
@@ -111,12 +115,8 @@ func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 		t.Error(err)
 	}
 
-	if len(bodyBytes) < 1 {
-		t.Errorf("missing body in response")
-	}
-
-	if bodyBytes[0] != 91 {
-		t.Errorf("response is not toml format")
+	if string(bodyBytes) != expected {
+		t.Errorf("expected %s got %s", expected, string(bodyBytes))
 	}
 
 	if resp.Header.Get(headers.NameTricksterResult) == "" {

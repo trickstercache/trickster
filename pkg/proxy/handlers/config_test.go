@@ -19,9 +19,10 @@ package handlers
 import (
 	"io/ioutil"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 )
 
 func TestConfigHandler(t *testing.T) {
@@ -53,8 +54,10 @@ func TestConfigHandler(t *testing.T) {
 		t.Errorf("missing body in response")
 	}
 
-	if bodyBytes[0] != 91 {
-		t.Errorf("response is not toml format")
+	lines := strings.Split(string(bodyBytes), "\n")
+
+	if !strings.HasSuffix(lines[0], ":") {
+		t.Errorf("response is not yaml format")
 	}
 
 }

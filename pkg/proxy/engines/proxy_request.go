@@ -27,13 +27,13 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
 	"github.com/tricksterproxy/trickster/pkg/locks"
-	tl "github.com/tricksterproxy/trickster/pkg/logging"
+	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
+	tspan "github.com/tricksterproxy/trickster/pkg/observability/tracing/span"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
 
 	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/trace"

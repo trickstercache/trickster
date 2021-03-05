@@ -24,10 +24,10 @@ import (
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	"github.com/tricksterproxy/trickster/pkg/tracing"
 )
 
 // Resources is a collection of resources a Trickster request would need to fulfill the client request

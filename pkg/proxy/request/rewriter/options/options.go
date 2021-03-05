@@ -21,7 +21,7 @@ type RewriteList [][]string
 
 // Options is a collection of Options pertaining to Request Rewriter Instructions
 type Options struct {
-	Instructions RewriteList `toml:"instructions"`
+	Instructions RewriteList `yaml:"instructions,omitempty"`
 }
 
 // Clone returns an exact copy of the subject *Options

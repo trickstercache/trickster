@@ -19,7 +19,9 @@ package options
 import (
 	"testing"
 
-	"github.com/BurntSushi/toml"
+	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
+
+	"gopkg.in/yaml.v2"
 )
 
 type testObj struct {
@@ -27,27 +29,31 @@ type testObj struct {
 }
 
 type testOptions1 struct {
-	Backends map[string]*testOptions2 `toml:"backends"`
+	Backends map[string]*testOptions2 `yaml:"backends,omitempty"`
 }
 
 type testOptions2 struct {
-	Alb *Options `toml:"alb"`
+	Alb *Options `yaml:"alb,omitempty"`
 }
 
-func fromTOML(conf string) (*Options, *toml.MetaData, error) {
+func fromYAML(conf string) (*Options, yamlx.KeyLookup, error) {
 
 	to := &testOptions1{}
-	md, err := toml.Decode(conf, to)
+	err := yaml.Unmarshal([]byte(conf), to)
+	if err != nil {
+		return nil, nil, err
+	}
+	md, err := yamlx.GetKeyList(conf)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	for _, v := range to.Backends {
-		if v.Alb != nil {
-			return v.Alb, &md, nil
+		if v != nil && v.Alb != nil {
+			return v.Alb, md, nil
 		}
 	}
-	return nil, &md, nil
+	return nil, md, nil
 }
 
 func TestNew(t *testing.T) {
@@ -79,9 +85,9 @@ func TestClone(t *testing.T) {
 
 }
 
-func TestProcessTOML(t *testing.T) {
+func TestSetDefaults(t *testing.T) {
 
-	o2, err := ProcessTOML("test", nil, nil)
+	o2, err := SetDefaults("test", nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -89,20 +95,20 @@ func TestProcessTOML(t *testing.T) {
 		t.Error("expected nil Options")
 	}
 
-	o, md, err := fromTOML(testTOML)
+	o, md, err := fromYAML(testTOML)
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = ProcessTOML("test", o, md)
+	_, err = SetDefaults("test", o, md)
 	if err != nil {
 		t.Error(err)
 	}
 
-	o, md, err = fromTOML(testTOMLNoALB)
+	o, md, err = fromYAML(testTOMLNoALB)
 	if err != nil {
 		t.Error(err)
 	}
-	o2, err = ProcessTOML("test", o, md)
+	o2, err = SetDefaults("test", o, md)
 	if err != nil {
 		t.Error(err)
 	}
@@ -110,20 +116,20 @@ func TestProcessTOML(t *testing.T) {
 		t.Error("expected nil Options")
 	}
 
-	o, md, err = fromTOML(testTOMLBadOutputFormat1)
+	o, md, err = fromYAML(testTOMLBadOutputFormat1)
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = ProcessTOML("test", o, md)
+	_, err = SetDefaults("test", o, md)
 	if err == nil {
 		t.Error("expected output_format error")
 	}
 
-	o, md, err = fromTOML(testTOMLBadOutputFormat2)
+	o, md, err = fromYAML(testTOMLBadOutputFormat2)
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = ProcessTOML("test", o, md)
+	_, err = SetDefaults("test", o, md)
 	if err == nil {
 		t.Error("expected output_format error")
 	}

@@ -17,13 +17,11 @@
 package options
 
 import (
-	"bytes"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	ao "github.com/tricksterproxy/trickster/pkg/backends/alb/options"
 	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
 	prop "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
@@ -31,14 +29,15 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	"github.com/tricksterproxy/trickster/pkg/cache/negative"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
-	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
 	"github.com/tricksterproxy/trickster/pkg/timeseries/dataset"
+	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 
 	"github.com/gorilla/mux"
+	"gopkg.in/yaml.v2"
 )
 
 var restrictedOriginNames = map[string]bool{"": true, "frontend": true}
@@ -52,170 +51,170 @@ type Options struct {
 	// HTTP and Proxy Configurations
 	//
 	// Hosts identifies the frontend hostnames this backend should handle (virtual hosting)
-	Hosts []string `toml:"hosts"`
+	Hosts []string `yaml:"hosts,omitempty"`
 	// Provider describes the type of backend (e.g., 'prometheus')
-	Provider string `toml:"provider"`
+	Provider string `yaml:"provider,omitempty"`
 	// OriginURL provides the base upstream URL for all proxied requests to this Backend.
 	// it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
-	OriginURL string `toml:"origin_url"`
+	OriginURL string `yaml:"origin_url,omitempty"`
 	// TimeoutMS defines how long the HTTP request will wait for a response before timing out
-	TimeoutMS int64 `toml:"timeout_ms"`
+	TimeoutMS int64 `yaml:"timeout_ms,omitempty"`
 	// KeepAliveTimeoutMS defines how long an open keep-alive HTTP connection remains idle before closing
-	KeepAliveTimeoutMS int64 `toml:"keep_alive_timeout_ms"`
+	KeepAliveTimeoutMS int64 `yaml:"keep_alive_timeout_ms,omitempty"`
 	// MaxIdleConns defines maximum number of open keep-alive connections to maintain
-	MaxIdleConns int `toml:"max_idle_conns"`
+	MaxIdleConns int `yaml:"max_idle_conns,omitempty"`
 	// CacheName provides the name of the configured cache where the backend client will store it's cache data
-	CacheName string `toml:"cache_name"`
+	CacheName string `yaml:"cache_name,omitempty"`
 	// CacheKeyPrefix defines the cache key prefix the backend will use when writing objects to the cache
-	CacheKeyPrefix string `toml:"cache_key_prefix"`
+	CacheKeyPrefix string `yaml:"cache_key_prefix,omitempty"`
 	// HealthCheck is the health check options reference for this backend
-	HealthCheck *ho.Options `toml:"healthcheck"`
+	HealthCheck *ho.Options `yaml:"healthcheck,omitempty"`
 	// Object Proxy Cache and Delta Proxy Cache Configurations
 	// TimeseriesRetentionFactor limits the maximum the number of chronological
 	// timestamps worth of data to store in cache for each query
-	TimeseriesRetentionFactor int `toml:"timeseries_retention_factor"`
+	TimeseriesRetentionFactor int `yaml:"timeseries_retention_factor,omitempty"`
 	// TimeseriesEvictionMethodName specifies which methodology ("oldest", "lru") is used to identify
 	//timeseries to evict from a full cache object
-	TimeseriesEvictionMethodName string `toml:"timeseries_eviction_method"`
+	TimeseriesEvictionMethodName string `yaml:"timeseries_eviction_method,omitempty"`
 	// BackfillToleranceMS prevents values with timestamps newer than the provided
 	// number of seconds from being cached this allows propagation of upstream backfill operations
 	// that modify recently-served data
-	BackfillToleranceMS int64 `toml:"backfill_tolerance_ms"`
+	BackfillToleranceMS int64 `yaml:"backfill_tolerance_ms,omitempty"`
 	// PathList is a list of Path Options that control the behavior of the given paths when requested
-	Paths map[string]*po.Options `toml:"paths"`
+	Paths map[string]*po.Options `yaml:"paths,omitempty"`
 	// NegativeCacheName provides the name of the Negative Cache Config to be used by this Backend
-	NegativeCacheName string `toml:"negative_cache_name"`
+	NegativeCacheName string `yaml:"negative_cache_name,omitempty"`
 	// TimeseriesTTLMS specifies the cache TTL of timeseries objects
-	TimeseriesTTLMS int `toml:"timeseries_ttl_ms"`
+	TimeseriesTTLMS int `yaml:"timeseries_ttl_ms,omitempty"`
 	// TimeseriesTTLMS specifies the cache TTL of fast forward data
-	FastForwardTTLMS int `toml:"fastforward_ttl_ms"`
+	FastForwardTTLMS int `yaml:"fastforward_ttl_ms,omitempty"`
 	// MaxTTLMS specifies the maximum allowed TTL for any cache object
-	MaxTTLMS int `toml:"max_ttl_ms"`
+	MaxTTLMS int `yaml:"max_ttl_ms,omitempty"`
 	// RevalidationFactor specifies how many times to multiply the object freshness lifetime
 	// by to calculate an absolute cache TTL
-	RevalidationFactor float64 `toml:"revalidation_factor"`
+	RevalidationFactor float64 `yaml:"revalidation_factor,omitempty"`
 	// MaxObjectSizeBytes specifies the max objectsize to be accepted for any given cache object
-	MaxObjectSizeBytes int `toml:"max_object_size_bytes"`
+	MaxObjectSizeBytes int `yaml:"max_object_size_bytes,omitempty"`
 	// CompressableTypeList specifies the HTTP Object Content Types that will be compressed internally
 	// when stored in the Trickster cache
-	CompressableTypeList []string `toml:"compressable_types"`
+	CompressableTypeList []string `yaml:"compressable_types,omitempty"`
 	// TracingConfigName provides the name of the Tracing Config to be used by this Backend
-	TracingConfigName string `toml:"tracing_name"`
+	TracingConfigName string `yaml:"tracing_name,omitempty"`
 	// RuleName provides the name of the rule config to be used by this backend.
 	// This is only effective if the Backend provider is 'rule'
-	RuleName string `toml:"rule_name"`
+	RuleName string `yaml:"rule_name,omitempty"`
 	// ReqRewriterName is the name of a configured Rewriter that will modify the request prior to
 	// processing by the backend client
-	ReqRewriterName string `toml:"req_rewriter_name"`
+	ReqRewriterName string `yaml:"req_rewriter_name,omitempty"`
 
 	// ALBOptions holds the options for ALBs
-	ALBOptions *ao.Options `toml:"alb"`
+	ALBOptions *ao.Options `yaml:"alb,omitempty"`
 	// Prometheus holds options specific to prometheus backends
-	Prometheus *prop.Options `toml:"prometheus"`
+	Prometheus *prop.Options `yaml:"prometheus,omitempty"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
-	TLS *to.Options `toml:"tls"`
+	TLS *to.Options `yaml:"tls,omitempty"`
 
 	// ForwardedHeaders indicates the class of 'Forwarded' header to attach to upstream requests
-	ForwardedHeaders string `toml:"forwarded_headers"`
+	ForwardedHeaders string `yaml:"forwarded_headers,omitempty"`
 
 	// IsDefault indicates if this is the d.Default backend for any request not matching a configured route
-	IsDefault bool `toml:"is_default"`
+	IsDefault bool `yaml:"is_default,omitempty"`
 	// FastForwardDisable indicates whether the FastForward feature should be disabled for this backend
-	FastForwardDisable bool `toml:"fast_forward_disable"`
+	FastForwardDisable bool `yaml:"fast_forward_disable,omitempty"`
 	// PathRoutingDisabled, when true, will bypass /backendName/path route registrations
-	PathRoutingDisabled bool `toml:"path_routing_disabled"`
+	PathRoutingDisabled bool `yaml:"path_routing_disabled,omitempty"`
 	// RequireTLS, when true, indicates this Backend Config's paths must only be registered with the TLS Router
-	RequireTLS bool `toml:"require_tls"`
+	RequireTLS bool `yaml:"require_tls,omitempty"`
 	// MultipartRangesDisabled, when true, indicates that if a downstream client requests multiple ranges
 	// in a single request, Trickster will instead request and return a 200 OK with the full object body
-	MultipartRangesDisabled bool `toml:"multipart_ranges_disabled"`
+	MultipartRangesDisabled bool `yaml:"multipart_ranges_disabled,omitempty"`
 	// DearticulateUpstreamRanges, when true, indicates that when Trickster requests multiple ranges from
 	// the backend, that they be requested as individual upstream requests instead of a single request that
 	// expects a multipart response	// this optimizes Trickster to request as few bytes as possible when
 	// fronting backends that only support single range requests
-	DearticulateUpstreamRanges bool `toml:"dearticulate_upstream_ranges"`
+	DearticulateUpstreamRanges bool `yaml:"dearticulate_upstream_ranges,omitempty"`
 
 	// Synthesized Configurations
 	// These configurations are parsed versions of those defined above, and are what Trickster uses internally
 	//
 	// Name is the Name of the backend, taken from the Key in the Backends map[string]*BackendOptions
-	Name string `toml:"-"`
+	Name string `yaml:"-"`
 	// Router is a mux.Router containing this backend's Path Routes; it is set during route registration
-	Router *mux.Router `toml:"-"`
+	Router *mux.Router `yaml:"-"`
 	// Timeout is the time.Duration representation of TimeoutMS
-	Timeout time.Duration `toml:"-"`
+	Timeout time.Duration `yaml:"-"`
 	// BackfillTolerance is the time.Duration representation of BackfillToleranceMS
-	BackfillTolerance time.Duration `toml:"-"`
+	BackfillTolerance time.Duration `yaml:"-"`
 	// ValueRetention is the time.Duration representation of ValueRetentionSecs
-	ValueRetention time.Duration `toml:"-"`
+	ValueRetention time.Duration `yaml:"-"`
 	// Scheme is the layer 7 protocol indicator (e.g. 'http'), derived from OriginURL
-	Scheme string `toml:"-"`
+	Scheme string `yaml:"-"`
 	// Host is the upstream hostname/IP[:port] the backend client will connect to when fetching uncached data,
 	// derived from OriginURL
-	Host string `toml:"-"`
+	Host string `yaml:"-"`
 	// PathPrefix provides any prefix added to the front of the requested path when constructing the upstream
 	// request url, derived from OriginURL
-	PathPrefix string `toml:"-"`
+	PathPrefix string `yaml:"-"`
 	// NegativeCache provides a map for the negative cache, with TTLs converted to time.Durations
-	NegativeCache negative.Lookup `toml:"-"`
+	NegativeCache negative.Lookup `yaml:"-"`
 	// TimeseriesRetention when subtracted from time.Now() represents the oldest allowable timestamp in a
 	// timeseries when EvictionMethod is 'oldest'
-	TimeseriesRetention time.Duration `toml:"-"`
+	TimeseriesRetention time.Duration `yaml:"-"`
 	// TimeseriesEvictionMethod is the parsed value of TimeseriesEvictionMethodName
-	TimeseriesEvictionMethod evictionmethods.TimeseriesEvictionMethod `toml:"-"`
+	TimeseriesEvictionMethod evictionmethods.TimeseriesEvictionMethod `yaml:"-"`
 	// TimeseriesTTL is the parsed value of TimeseriesTTLMS
-	TimeseriesTTL time.Duration `toml:"-"`
+	TimeseriesTTL time.Duration `yaml:"-"`
 	// FastForwardTTL is the parsed value of FastForwardTTL
-	FastForwardTTL time.Duration `toml:"-"`
+	FastForwardTTL time.Duration `yaml:"-"`
 	// FastForwardPath is the paths.Options to use for upstream Fast Forward Requests
-	FastForwardPath *po.Options `toml:"-"`
+	FastForwardPath *po.Options `yaml:"-"`
 	// MaxTTL is the parsed value of MaxTTLMS
-	MaxTTL time.Duration `toml:"-"`
+	MaxTTL time.Duration `yaml:"-"`
 	// HTTPClient is the Client used by Trickster to communicate with the origin
-	HTTPClient *http.Client `toml:"-"`
+	HTTPClient *http.Client `yaml:"-"`
 	// CompressableTypes is the map version of CompressableTypeList for fast lookup
-	CompressableTypes map[string]bool `toml:"-"`
+	CompressableTypes map[string]bool `yaml:"-"`
 	// RuleOptions is the reference to the Rule Options as indicated by RuleName
-	RuleOptions *ro.Options `toml:"-"`
+	RuleOptions *ro.Options `yaml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
 	ReqRewriter rewriter.RewriteInstructions
 
 	//
-	md *toml.MetaData `toml:"-"`
+	md yamlx.KeyLookup `yaml:"-"`
 }
 
 // New will return a pointer to an BackendOptions with the default configuration settings
 func New() *Options {
 	return &Options{
-		BackfillTolerance:            d.DefaultBackfillToleranceMS,
-		BackfillToleranceMS:          d.DefaultBackfillToleranceMS,
+		BackfillTolerance:            DefaultBackfillToleranceMS,
+		BackfillToleranceMS:          DefaultBackfillToleranceMS,
 		CacheKeyPrefix:               "",
-		CacheName:                    d.DefaultBackendCacheName,
-		CompressableTypeList:         d.DefaultCompressableTypes(),
-		FastForwardTTL:               d.DefaultFastForwardTTLMS * time.Millisecond,
-		FastForwardTTLMS:             d.DefaultFastForwardTTLMS,
-		ForwardedHeaders:             d.DefaultForwardedHeaders,
+		CacheName:                    DefaultBackendCacheName,
+		CompressableTypeList:         DefaultCompressableTypes(),
+		FastForwardTTL:               DefaultFastForwardTTLMS * time.Millisecond,
+		FastForwardTTLMS:             DefaultFastForwardTTLMS,
+		ForwardedHeaders:             DefaultForwardedHeaders,
 		HealthCheck:                  ho.New(),
-		KeepAliveTimeoutMS:           d.DefaultKeepAliveTimeoutMS,
-		MaxIdleConns:                 d.DefaultMaxIdleConns,
-		MaxObjectSizeBytes:           d.DefaultMaxObjectSizeBytes,
-		MaxTTL:                       d.DefaultMaxTTLMS * time.Millisecond,
-		MaxTTLMS:                     d.DefaultMaxTTLMS,
+		KeepAliveTimeoutMS:           DefaultKeepAliveTimeoutMS,
+		MaxIdleConns:                 DefaultMaxIdleConns,
+		MaxObjectSizeBytes:           DefaultMaxObjectSizeBytes,
+		MaxTTL:                       DefaultMaxTTLMS * time.Millisecond,
+		MaxTTLMS:                     DefaultMaxTTLMS,
 		NegativeCache:                make(map[int]time.Duration),
-		NegativeCacheName:            d.DefaultBackendNegativeCacheName,
+		NegativeCacheName:            DefaultBackendNegativeCacheName,
 		Paths:                        make(map[string]*po.Options),
-		RevalidationFactor:           d.DefaultRevalidationFactor,
+		RevalidationFactor:           DefaultRevalidationFactor,
 		TLS:                          &to.Options{},
-		Timeout:                      time.Millisecond * d.DefaultBackendTimeoutMS,
-		TimeoutMS:                    d.DefaultBackendTimeoutMS,
-		TimeseriesEvictionMethod:     d.DefaultBackendTEM,
-		TimeseriesEvictionMethodName: d.DefaultBackendTEMName,
-		TimeseriesRetention:          d.DefaultBackendTRF,
-		TimeseriesRetentionFactor:    d.DefaultBackendTRF,
-		TimeseriesTTL:                d.DefaultTimeseriesTTLMS * time.Millisecond,
-		TimeseriesTTLMS:              d.DefaultTimeseriesTTLMS,
-		TracingConfigName:            d.DefaultTracingConfigName,
+		Timeout:                      time.Millisecond * DefaultBackendTimeoutMS,
+		TimeoutMS:                    DefaultBackendTimeoutMS,
+		TimeseriesEvictionMethod:     DefaultBackendTEM,
+		TimeseriesEvictionMethodName: DefaultBackendTEMName,
+		TimeseriesRetention:          DefaultBackendTRF,
+		TimeseriesRetentionFactor:    DefaultBackendTRF,
+		TimeseriesTTL:                DefaultTimeseriesTTLMS * time.Millisecond,
+		TimeseriesTTLMS:              DefaultTimeseriesTTLMS,
+		TracingConfigName:            DefaultTracingConfigName,
 	}
 }
 
@@ -446,11 +445,11 @@ func (l Lookup) ValidateTLSConfigs() (bool, error) {
 	return serveTLS, nil
 }
 
-// ProcessTOML iterates a TOML Config
-func ProcessTOML(
+// SetDefaults iterates a YAML Config
+func SetDefaults(
 	name string,
 	o *Options,
-	metadata *toml.MetaData,
+	metadata yamlx.KeyLookup,
 	crw map[string]rewriter.RewriteInstructions,
 	backends Lookup,
 	activeCaches map[string]bool,
@@ -566,14 +565,14 @@ func ProcessTOML(
 	}
 
 	if metadata.IsDefined("backends", name, "paths") {
-		err := po.ProcessTOML(name, metadata, o.Paths, crw)
+		err := po.SetDefaults(name, metadata, o.Paths, crw)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if metadata.IsDefined("backends", name, "alb") {
-		opts, err := ao.ProcessTOML(name, o.ALBOptions, metadata)
+		opts, err := ao.SetDefaults(name, o.ALBOptions, metadata)
 		if err != nil {
 			return nil, err
 		}
@@ -627,9 +626,9 @@ func ProcessTOML(
 	return no, nil
 }
 
-// CloneTOMLSafe returns a copy of the Options that is safe to export to TOML without
+// CloneYAMLSafe returns a copy of the Options that is safe to export to YAML without
 // exposing credentials (by masking known credential fields with "*****")
-func (o *Options) CloneTOMLSafe() *Options {
+func (o *Options) CloneYAMLSafe() *Options {
 
 	co := o.Clone()
 	for _, w := range co.Paths {
@@ -645,13 +644,11 @@ func (o *Options) CloneTOMLSafe() *Options {
 	return co
 }
 
-// ToTOML prints the Options as a TOML representation
-func (o *Options) ToTOML() string {
-	co := o.CloneTOMLSafe()
-	var buf bytes.Buffer
-	e := toml.NewEncoder(&buf)
-	e.Encode(co)
-	return buf.String()
+// ToYAML prints the Options as a YAML representation
+func (o *Options) ToYAML() string {
+	co := o.CloneYAMLSafe()
+	b, _ := yaml.Marshal(co)
+	return string(b)
 }
 
 // HasTransformations returns true if the backend will artificially transform payloads

@@ -24,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
 	ro "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/negative"
@@ -33,23 +32,32 @@ import (
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
+	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
+
+	"gopkg.in/yaml.v2"
 )
 
 type testOptions struct {
-	Backends map[string]*Options `toml:"backends"`
+	Backends map[string]*Options `yaml:"backends,omitempty"`
 	ncl      negative.Lookups
 }
 
-func fromTOML(conf string) (*Options, error) {
+func fromYAML(conf string) (*Options, error) {
 	to := &testOptions{}
-	md, err := toml.Decode(conf, to)
+
+	err := yaml.Unmarshal([]byte(conf), to)
+	if err != nil {
+		return nil, err
+	}
+
+	md, err := yamlx.GetKeyList(conf)
 	if err != nil {
 		return nil, err
 	}
 	// always return the first one
 	for k, o := range to.Backends {
 		o.Name = k
-		o.md = &md
+		o.md = md
 		return o, err
 	}
 	return nil, nil
@@ -95,7 +103,6 @@ func TestValidateBackendName(t *testing.T) {
 }
 
 func testConfig() (Lookup, string) {
-	//_, toml := testutil.EmptyTestConfig()
 	n := New()
 	n.Name = "test"
 	n.Provider = "test"
@@ -106,16 +113,12 @@ func testConfig() (Lookup, string) {
 	if err != nil {
 		panic(err)
 	}
-	// tml, err := toml.Decode(string(b), nil)
-	// if err != nil {
-	// 	panic(err)
-	// }
 	return ol, string(b)
 }
 
 func TestValidateConfigMappings(t *testing.T) {
 
-	o, err := fromTestTOML()
+	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
@@ -173,7 +176,7 @@ func testStringValueValidationError(to *testOptions, location *string, testValue
 func TestValidate(t *testing.T) {
 
 	ncl := testNegativeCaches()
-	o, err := fromTestTOML()
+	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
@@ -257,64 +260,64 @@ func TestValidate(t *testing.T) {
 
 }
 
-func TestProcessTOML(t *testing.T) {
+func TestSetDefaults(t *testing.T) {
 
-	o, err := fromTestTOML()
+	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
 
 	backends := Lookup{o.Name: o}
 
-	_, err = ProcessTOML("test", o, o.md, nil, backends, map[string]bool{})
+	_, err = SetDefaults("test", o, o.md, nil, backends, map[string]bool{})
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = ProcessTOML("test", o, nil, nil, backends, map[string]bool{})
+	_, err = SetDefaults("test", o, nil, nil, backends, map[string]bool{})
 	if err != ErrInvalidMetadata {
 		t.Error("expected invalid metadata, got", err)
 	}
 
-	o2, err := fromTestTOMLWithDefault()
+	o2, err := fromTestYAMLWithDefault()
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = ProcessTOML("test", o2, o2.md, nil, backends, map[string]bool{})
+	_, err = SetDefaults("test", o2, o2.md, nil, backends, map[string]bool{})
 	if err != nil {
 		t.Error(err)
 	}
 
 	o.Paths["series"].ReqRewriterName = "invalid"
-	_, err = ProcessTOML("test", o, o.md, nil, backends, map[string]bool{})
+	_, err = SetDefaults("test", o, o.md, nil, backends, map[string]bool{})
 	if err == nil {
 		t.Error("expected error for invalid rewriter name")
 	}
 
-	o2, err = fromTestTOMLWithReqRewriter()
+	o2, err = fromTestYAMLWithReqRewriter()
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = ProcessTOML("test", o2, o2.md, map[string]rewriter.RewriteInstructions{"test": nil},
+	_, err = SetDefaults("test", o2, o2.md, map[string]rewriter.RewriteInstructions{"test": nil},
 		backends, map[string]bool{})
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = ProcessTOML("test", o2, o2.md, map[string]rewriter.RewriteInstructions{"not-test": nil},
+	_, err = SetDefaults("test", o2, o2.md, map[string]rewriter.RewriteInstructions{"not-test": nil},
 		backends, map[string]bool{})
 	if err == nil {
 		t.Error("expected error for invalid rewriter name")
 	}
 
-	o2, err = fromTestTOMLWithALB()
+	o2, err = fromTestYAMLWithALB()
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = ProcessTOML("test", o2, o2.md, nil,
+	_, err = SetDefaults("test", o2, o2.md, nil,
 		backends, map[string]bool{})
 	if err != nil {
 		t.Error(err)
@@ -324,7 +327,7 @@ func TestProcessTOML(t *testing.T) {
 
 func TestValidateTLSConfigs(t *testing.T) {
 
-	o, err := fromTestTOML()
+	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
@@ -368,9 +371,9 @@ func TestValidateTLSConfigs(t *testing.T) {
 
 }
 
-func TestCloneTOMLSafe(t *testing.T) {
+func TestCloneYAMLSafe(t *testing.T) {
 
-	o, err := fromTestTOML()
+	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
@@ -381,7 +384,7 @@ func TestCloneTOMLSafe(t *testing.T) {
 	}
 	p.RequestHeaders = map[string]string{headers.NameAuthorization: "trickster"}
 
-	co := o.CloneTOMLSafe()
+	co := o.CloneYAMLSafe()
 	p, ok = co.Paths["series"]
 	if !ok {
 		t.Error("expected 'series' path")
@@ -395,14 +398,14 @@ func TestCloneTOMLSafe(t *testing.T) {
 
 }
 
-func TestToTOML(t *testing.T) {
-	o, err := fromTestTOML()
+func TestToYAML(t *testing.T) {
+	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
-	s := o.ToTOML()
-	if !(strings.Index(s, `provider = "test_type"`) > 0) {
-		t.Error("ToTOML mismatch", s)
+	s := o.ToYAML()
+	if !(strings.Index(s, `provider: test_type`) > 0) {
+		t.Error("ToYAML mismatch", s)
 	}
 }
 

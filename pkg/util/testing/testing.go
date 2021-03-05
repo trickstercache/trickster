@@ -26,18 +26,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
-	"github.com/tricksterproxy/trickster/pkg/config"
-	tl "github.com/tricksterproxy/trickster/pkg/logging"
+	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
+	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
+	to "github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
+	tr "github.com/tricksterproxy/trickster/pkg/observability/tracing/registration"
 	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	th "github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/runtime"
-	"github.com/tricksterproxy/trickster/pkg/tracing"
-	to "github.com/tricksterproxy/trickster/pkg/tracing/options"
-	tr "github.com/tricksterproxy/trickster/pkg/tracing/registration"
 
 	"github.com/tricksterproxy/mockster/pkg/testutil"
 )

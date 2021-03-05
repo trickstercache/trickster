@@ -21,27 +21,26 @@ import (
 	"strings"
 
 	"github.com/tricksterproxy/trickster/pkg/backends/providers"
-
-	"github.com/BurntSushi/toml"
+	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 )
 
 // Options defines options for ALBs
 type Options struct {
 	// MechanismName indicates the name of the load balancing mechanism
-	MechanismName string `toml:"mechanism"`
+	MechanismName string `yaml:"mechanism,omitempty"`
 	// Pool provides the list of backend names to be used by the load balancer
-	Pool []string `toml:"pool"`
+	Pool []string `yaml:"pool,omitempty"`
 	// HealthyFloor is the minimum health check status value to be considered Available in the pool
 	// -1 : all pool members are Available regardless of health check status
 	//  0 (default) : pool members with status of unknown (0) or healthy (1) are Available
 	//  1 : only pool members with status of healthy (1) are Available
 	// unknown means the first hc hasn't returned yet, or (more likely) HealthCheck Interval on target backend is not set
-	HealthyFloor int `toml:"healthy_floor"`
+	HealthyFloor int `yaml:"healthy_floor,omitempty"`
 	// OutputFormat accompanies the tsmerge Mechanism to indicate the provider output format
 	// options include any valid time seres backend like prometheus, influxdb or clickhouse
-	OutputFormat string `toml:"output_format"`
+	OutputFormat string `yaml:"output_format,omitempty"`
 	// MergeablePaths are ones that Trickster can merge multiple documents into a single response
-	MergeablePaths []string `toml:"-"` // this is populated by backends that support tsmerge
+	MergeablePaths []string `yaml:"-"` // this is populated by backends that support tsmerge
 
 }
 
@@ -76,8 +75,8 @@ func (o *Options) Clone() *Options {
 	return c
 }
 
-// ProcessTOML iterates a TOML Config and incorporates into the base Options
-func ProcessTOML(name string, options *Options, metadata *toml.MetaData) (*Options, error) {
+// SetDefaults iterates the provided Options, and overlays user-set values onto the default Options
+func SetDefaults(name string, options *Options, metadata yamlx.KeyLookup) (*Options, error) {
 
 	if metadata == nil {
 		return nil, nil // todo: add error

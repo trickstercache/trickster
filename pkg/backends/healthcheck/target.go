@@ -29,7 +29,7 @@ import (
 	"time"
 
 	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
-	"github.com/tricksterproxy/trickster/pkg/logging"
+	"github.com/tricksterproxy/trickster/pkg/observability/logging"
 	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
 )

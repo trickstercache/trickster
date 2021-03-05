@@ -20,15 +20,15 @@ import (
 	"context"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/config/defaults"
+	"github.com/tricksterproxy/trickster/pkg/backends/rule/options"
 )
 
 func TestHops(t *testing.T) {
 
 	ctx := context.Background()
 	_, j := Hops(ctx)
-	if j != defaults.DefaultMaxRuleExecutions {
-		t.Errorf("expected %d got %d", defaults.DefaultMaxRuleExecutions, j)
+	if j != options.DefaultMaxRuleExecutions {
+		t.Errorf("expected %d got %d", options.DefaultMaxRuleExecutions, j)
 	}
 
 	ctx = WithHops(ctx, 0, 1)

@@ -22,76 +22,75 @@ import (
 	"strings"
 
 	ro "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
-	"github.com/tricksterproxy/trickster/pkg/config/defaults"
 	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 )
 
-func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteInstructions) error {
+func (c *Client) parseOptions(o *ro.Options, rwi map[string]rewriter.RewriteInstructions) error {
 
 	name := c.Name()
 
-	if ro == nil {
+	if o == nil {
 		return fmt.Errorf("rule client %s failed to parse nil options", name)
 	}
 
-	if ro.InputSource == "" {
+	if o.InputSource == "" {
 		return fmt.Errorf("rule client %s options missing input_source", name)
 	}
 
-	if ro.InputType == "" {
+	if o.InputType == "" {
 		return fmt.Errorf("rule client %s options missing input_type", name)
 	}
 
-	if ro.Operation == "" {
+	if o.Operation == "" {
 		return fmt.Errorf("rule client %s options missing operation", name)
 	}
 
-	if ro.MaxRuleExecutions == 0 {
-		ro.MaxRuleExecutions = defaults.DefaultMaxRuleExecutions
+	if o.MaxRuleExecutions == 0 {
+		o.MaxRuleExecutions = ro.DefaultMaxRuleExecutions
 	}
 
 	var nr http.Handler
-	r := &rule{maxRuleExecutions: ro.MaxRuleExecutions}
+	r := &rule{maxRuleExecutions: o.MaxRuleExecutions}
 
-	if ro.EgressReqRewriterName != "" {
-		ri, ok := rwi[ro.EgressReqRewriterName]
+	if o.EgressReqRewriterName != "" {
+		ri, ok := rwi[o.EgressReqRewriterName]
 		if !ok {
 			return fmt.Errorf("invalid egress rewriter %s in rule %s",
-				ro.EgressReqRewriterName, ro.Name)
+				o.EgressReqRewriterName, o.Name)
 		}
 		r.egressReqRewriter = ri
 	}
 
-	if ro.IngressReqRewriterName != "" {
-		ri, ok := rwi[ro.IngressReqRewriterName]
+	if o.IngressReqRewriterName != "" {
+		ri, ok := rwi[o.IngressReqRewriterName]
 		if !ok {
 			return fmt.Errorf("invalid ingress rewriter %s in rule %s",
-				ro.IngressReqRewriterName, ro.Name)
+				o.IngressReqRewriterName, o.Name)
 		}
 		r.ingressReqRewriter = ri
 	}
 
-	if ro.NoMatchReqRewriterName != "" {
-		ri, ok := rwi[ro.NoMatchReqRewriterName]
+	if o.NoMatchReqRewriterName != "" {
+		ri, ok := rwi[o.NoMatchReqRewriterName]
 		if !ok {
 			return fmt.Errorf("invalid default rewriter %s in rule %s",
-				ro.NoMatchReqRewriterName, ro.Name)
+				o.NoMatchReqRewriterName, o.Name)
 		}
 		r.defaultRewriter = ri
 	}
 
 	badDefaultRoute := fmt.Errorf("invalid default rule route %s in rule %s",
-		ro.NextRoute, ro.Name)
+		o.NextRoute, o.Name)
 
-	if ro.NextRoute != "" {
-		nc := c.clients.Get(ro.NextRoute)
+	if o.NextRoute != "" {
+		nc := c.clients.Get(o.NextRoute)
 		if nc == nil || nc.Router() == nil {
 			return badDefaultRoute
 		}
 		nr = nc.Router()
-	} else if ro.RedirectURL != "" {
-		r.defaultRedirectURL = ro.RedirectURL
+	} else if o.RedirectURL != "" {
+		r.defaultRedirectURL = o.RedirectURL
 		r.defaultRedirectCode = 302
 		nr = http.HandlerFunc(handlers.HandleRedirectResponse)
 	} else {
@@ -100,72 +99,72 @@ func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteIns
 
 	r.defaultRouter = nr
 
-	exf, ok := isValidSourceName(ro.InputSource)
+	exf, ok := isValidSourceName(o.InputSource)
 	if !ok {
-		return fmt.Errorf("invalid source name %s in rule %s", ro.InputSource, ro.Name)
+		return fmt.Errorf("invalid source name %s in rule %s", o.InputSource, o.Name)
 	}
 	r.extractionFunc = exf
-	r.extractionArg = ro.InputKey
+	r.extractionArg = o.InputKey
 
 	// if the user only wants a part of the response
-	if ro.InputIndex > -1 && ro.InputDelimiter != "" {
+	if o.InputIndex > -1 && o.InputDelimiter != "" {
 		f := r.extractionFunc
 		r.extractionFunc = func(hr *http.Request, arg string) string {
-			return extractSourcePart(f(hr, arg), ro.InputDelimiter, ro.InputIndex)
+			return extractSourcePart(f(hr, arg), o.InputDelimiter, o.InputIndex)
 		}
 	}
 
 	// if the user needs to decode the input
-	if ro.InputEncoding != "" {
+	if o.InputEncoding != "" {
 		f := r.extractionFunc
-		df, ok := decodingFuncs[encoding(ro.InputEncoding)]
+		df, ok := decodingFuncs[encoding(o.InputEncoding)]
 		if !ok {
-			return fmt.Errorf("invalid encoding name %s in rule %s", ro.InputEncoding, ro.Name)
+			return fmt.Errorf("invalid encoding name %s in rule %s", o.InputEncoding, o.Name)
 		}
 		r.extractionFunc = func(hr *http.Request, arg string) string {
 			return df(f(hr, arg), "", 0)
 		}
 	}
 
-	if strings.HasPrefix(ro.Operation, "!") {
+	if strings.HasPrefix(o.Operation, "!") {
 		r.negateOpResult = true
-		ro.Operation = ro.Operation[1:]
+		o.Operation = o.Operation[1:]
 	}
 
-	of, ok := operationFuncs[operation(ro.InputType+"-"+ro.Operation)]
+	of, ok := operationFuncs[operation(o.InputType+"-"+o.Operation)]
 	if !ok {
-		return fmt.Errorf("invalid operation %s in rule %s", ro.InputType+"-"+ro.Operation, ro.Name)
+		return fmt.Errorf("invalid operation %s in rule %s", o.InputType+"-"+o.Operation, o.Name)
 	}
 	r.operationFunc = of
-	r.operationArg = ro.OperationArg
+	r.operationArg = o.OperationArg
 	if r.operationArg == "" {
 		r.evaluatorFunc = r.EvaluateCaseArg
 	} else {
 		r.evaluatorFunc = r.EvaluateOpArg
 	}
 
-	if len(ro.CaseOptions) > 0 {
+	if len(o.CaseOptions) > 0 {
 
 		r.cases = make(caseMap)
 		r.caseList = make(caseList, 0)
 
-		for k, v := range ro.CaseOptions {
+		for k, v := range o.CaseOptions {
 
 			var ri rewriter.RewriteInstructions
 			if v.ReqRewriterName != "" {
 				i, ok := rwi[v.ReqRewriterName]
 				if !ok {
-					return fmt.Errorf("invalid rewriter %s in rule %s case %s", k, ro.Name, k)
+					return fmt.Errorf("invalid rewriter %s in rule %s case %s", k, o.Name, k)
 				}
 				ri = i
 			}
 
 			if v.NextRoute == "" && v.RedirectURL == "" && v.ReqRewriterName == "" {
-				return fmt.Errorf("missing next_route in rule %s case %s", ro.Name, k)
+				return fmt.Errorf("missing next_route in rule %s case %s", o.Name, k)
 			}
 
 			if len(v.Matches) == 0 {
-				return fmt.Errorf("missing matches in rule %s case %s", ro.Name, k)
+				return fmt.Errorf("missing matches in rule %s case %s", o.Name, k)
 			}
 
 			rc := 0
@@ -176,7 +175,7 @@ func (c *Client) parseOptions(ro *ro.Options, rwi map[string]rewriter.RewriteIns
 				no, ok := c.clients[v.NextRoute]
 				if !ok {
 					return fmt.Errorf("unknown next_route %s in rule %s case %s",
-						v.NextRoute, ro.Name, k)
+						v.NextRoute, o.Name, k)
 				}
 				nr = no.Router()
 			}
