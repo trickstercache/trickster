@@ -4,13 +4,12 @@ A Request Rewriter is a named series of instructions that modifies any part of t
 
 In a configuration, request rewriters are represented as map of instructions, which themselves are represented as a list of string lists, in the following format:
 
-```toml
-[rewriters]
-  [rewriters.example_rewriter]
-  instructions = [
-    [ 'header', 'set', 'Cache-Control', 'max-age=60 ], # instruction 0
-    [ 'path', 'replace', '/cgi-bin/', '/' ],           # instruction 1
-  ]
+```yaml
+request_rewriters:
+  example_rewriter:
+    instructions:
+      - [ 'header', 'set', 'Cache-Control', 'max-age=60' ], # instruction 0
+      - [ 'path', 'replace', '/cgi-bin/', '/' ],            # instruction 1
 ```
 
 In this case, any other configuration entity that supports mapping to a rewriter by name can do so with by referencing `example_rewriter`.

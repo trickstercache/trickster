@@ -4,33 +4,30 @@ Trickster supports TLS on both the frontend server and backend clients.
 
 ## Basics
 
-To enable the TLS server, you must specify the `tls_listen_port`, and optionally, the `tls_listen_address` in the `[frontend]` section of your config file. For example:
+To enable the TLS server, you must specify the `tls_listen_port`, and optionally, the `tls_listen_address` in the `frontend` section of your config file. For example:
 
-```toml
-[frontend]
-
-listen_port = 8480
-tls_listen_port = 8483
+```yaml
+frontend:
+  listen_port: 8480
+  tls_listen_port: 8483
 ```
 
 Note, Trickster will only start listening on the TLS port if at least one origin has a valid certificate and key configured.
 
 Each origin section of a Trickster config file can be augmented with the optional `tls` section to modify TLS behavior for front-end and back-end requests. For example:
 
-```toml
-[origins]
-
-    [origins.example] # origin for example
-
-        [origins.example.tls] # TLS settings for origin named example
-        # front-end configs
-        full_chain_cert_path = '/path/to/my/cert.pem'
-        private_key_path = '/path/to/my/key.pem'
-        # back-end configs
-        insecure_skip_verify = true
-        certificate_authority_paths = [ '/path/to/ca1.pem', '/path/to/ca2.pem' ]
-        client_cert_path = '/path/to/client/cert.pem'
-        client_key_path = '/path/to/client/key.pem'
+```yaml
+backends:
+  example: # origin for example
+    tls:   # TLS settings for origin named example
+      # front-end configs
+      full_chain_cert_path: '/path/to/my/cert.pem'
+      private_key_path: '/path/to/my/key.pem'
+      # back-end configs
+      insecure_skip_verify: true
+      certificate_authority_paths: [ '/path/to/ca1.pem', '/path/to/ca2.pem' ]
+      client_cert_path: '/path/to/client/cert.pem'
+      client_key_path: '/path/to/client/key.pem'
 ```
 
 ## Front-End

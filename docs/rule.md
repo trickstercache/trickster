@@ -70,43 +70,41 @@ Optional Case Parts
 
 ## Example Rule - Route Request by Basic Auth Username
 
-```toml
-[rules]
-  [rules.example-user-router]
+In this example config, requests routed through the `/example` path will be compared against the rules and routed to either the Reader cluster or the Writer cluster. Curling `http://trickster-host/example/path` would route to the reader or writer cluster based on a provided Authorization header.
 
-  # default route is reader cluster
-  next_route = 'example-reader-cluster'
+```yaml
+rules:
+  example-user-router:
+    # default route is reader cluster
+    next_route: example-reader-cluster
 
-  input_source = 'header'
-  input_key = 'Authorization'
-  input_type = 'string'
-  input_encoding = 'base64'  # Authorization: Basic <base64string>
-  input_index = 1            # Field 1 is the <base64string>
-  input_delimiter = ' '      # Authorization Header field is space-delimited
-  operation = 'prefix'       # Basic Auth credentials are formatted as user:pass,
-                             # so we can check if it is prefixed with $user:
+    input_source: header
+    input_key: Authorization
+    input_type: string
+    input_encoding: base64 # Authorization: Basic <base64string>
+    input_index: 1         # Field 1 is the <base64string>
+    input_delimiter: ' '   # Authorization Header field is space-delimited
+    operation: prefix      # Basic Auth credentials are formatted as user:pass,
+                           # so we can check if it is prefixed with $user:
+    cases:
+      writers:
+        matches: # route johndoe and janedoe users to writer cluster
+          - 'johndoe:'
+          - 'janedoe:'
+        next_route: example-writer-cluster
 
-  [rules.example-user-router.cases]
-    [rules.example-user-router.cases.writers]
-    matches = ['johndoe:', 'janedoe:'] # route johndoe and janedoe to writer cluster
-    next_route = 'example-writer-cluster'
+backends:
+  example:
+    provider: rule
+    rule_name: example-user-router
 
-[origins]
+  example-reader-cluster:
+    provider: rpc
+    origin_url: 'http://reader-cluster.example.com'
 
-  [origins.example]
-  provider = 'rule'
-  rule_name = 'example-user-router'
-
-  [origins.example-reader-cluster]
-  provider = 'rpc'
-  origin_url = 'http://reader-cluster.example.com'
-
-  [origins.example-writer-cluster]
-  provider = 'rpc'
-  origin_url = 'http://writer-cluster.example.com'
-  path_routing_disabled = true  # restrict routing to this origin via rule only
-                                # users cannot directly access via /example-writer-cluster/
-
+  example-writer-cluster:
+    provider: rpc
+    origin_url: 'http://writer-cluster.example.com'
+    path_routing_disabled: true  # restrict routing to this backend via rule only, so
+                                 # users cannot directly access via /example-writer-cluster/
 ```
-
-Curling `http://trickster-host/example/path` would route to the reader or writer cluster based on a provided Authorization header.

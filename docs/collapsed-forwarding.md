@@ -34,19 +34,20 @@ When configuring path configs as described in [Paths Documentation](./paths.md) 
 
 Example:
 
-```toml
-        [origins.test.paths]
-            [origins.test.paths.thing1]
-                path = '/test_path1/'
-                match_type = 'prefix'
-                handler = 'proxycache'
-                progressive_collapsed_forwarding = true
-
-            [origins.test.paths.thing2]
-                path = '/test_path2/'
-                match_type = 'prefix'
-                handler = 'proxy'
-                progressive_collapsed_forwarding = true
+```yaml
+origins:
+  test:
+    paths:
+      thing1:
+        path: /test_path1/
+        match_type: prefix
+        handler: proxycache
+        progressive_collapsed_forwarding: true
+      thing2:
+        path: /test_path2/
+        match_type: prefix
+        handler: proxy
+        progressive_collapsed_forwarding: true
 ```
 
 See the [example.conf](../cmd/trickster/conf/example.conf) for more configuration examples.

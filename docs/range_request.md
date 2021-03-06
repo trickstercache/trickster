@@ -10,12 +10,12 @@ In addition to supporting requests with a single Range (`Range: bytes=0-5`) Tric
 
 In the event that an upstream origin supports serving a single Range, but does not support serving Multipart Range Requests, which is quite common, Trickster can transparently enable that support on behalf of the origin. To do so, Trickster offers a unique feature called Upstream Range Dearticulation, that will separate any ranges needed from the origin into individual, parallel HTTP requests, which are reconstituted by Trickster. This behavior can be enabled for any origin that only supports serving a single Range, by setting the origin configuration value `dearticulate_upstream_ranges = true`, as in this example:
 
-```toml
-[origins]
-    [origins.default]
-    provider = 'reverseproxycache'
-    origin_url = 'http://example.com/'
-    dearticulate_upstream_ranges = true
+```yaml
+backends:
+  default:
+    provider: reverseproxycache
+    origin_url: 'http://example.com/'
+    dearticulate_upstream_ranges: true
 ```
 
 If you know that your clients will be making Range requests (even if they are not Multipart), check to ensure the configured origin supports Multipart Range requests. Use `curl` to request any static object from the origin, for which you know the size, and include a Multipart Range request; like `curl -v -H 'Range: bytes=0-1, 3-4' 'http://example.com/object.js'`. If the origin returns `200 OK` and the entire object body, instead of `206 Partial Content` and a multipart body, enable Upstream Range Dearticulation to ensure optimal performance.
@@ -30,13 +30,13 @@ One of the great benefits of using Upstream Range Dearticulation is that it tran
 
 There may, however, be cases where you do not want to enable Multipart Range support for clients (since its paired Origin does not), but need Upstream Range Dearticulation to optimize Partial Hit fulfillments. For those cases, Trickster offers a setting to disable Multipart Range support for clients, while Upstream Range Dearticulation is enabled. Set `multipart_ranges_disabled = true`, as in the below example, and Trickster will strip Multipart Range Request headers, which will result in a 200 OK response with the full body. Client single Range requests are unaffected by this setting. This should only be set if you have a specific use case where clients _should not_ be able to make multipart Range requests.
 
-```toml
-[origins]
-    [origins.default]
-    provider = 'reverseproxycache'
-    origin_url = 'http://example.com/'
-    dearticulate_upstream_ranges = true
-    multipart_ranges_disabled = true
+```yaml
+backends:
+  default:
+    provider: reverseproxycache
+    origin_url: 'http://example.com/'
+    dearticulate_upstream_ranges: true
+    multipart_ranges_disabled: true
 ```
 
 ## Partial Hit with Object Revalidation

@@ -29,27 +29,24 @@ In this mode, Trickster will use a single FQDN but still map to multiple upstrea
 
 Example Path-based Multi-Origin Configuration:
 
-```toml
-[origins]
-
-    # origin1 origin
-    [origins.origin1]
-        origin_url = 'http://prometheus.example.com:9090'
-        provider = 'prometheus'
-        cache_name = 'default'
-        is_default = true
-
-    # "foo" origin
-    [origins.foo]
-        origin_url = 'http://influxdb-foo.example.com:9090'
-        provider = 'influxdb'
-        cache_name = 'default'
-
-    # "bar" origin
-    [origins.bar]
-        origin_url = 'http://prometheus-bar.example.com:9090'
-        provider = 'prometheus'
-        cache_name = 'default'
+```yaml
+backends:
+  # backend1 backend
+  backend1:
+    origin_url: 'http://prometheus.example.com:9090'
+    provider: prometheus
+    cache_name: default
+    is_default: true
+  # "foo" backend
+  foo:
+    origin_url: 'http://influxdb-foo.example.com:9090'
+    provider: influxdb
+    cache_name: default
+  # "bar" backend
+  bar:
+    origin_url: 'http://prometheus-bar.example.com:9090'
+    provider: prometheus
+    cache_name: default
 ```
 
 #### Using HTTP Path as the Multi-Origin Indicator
@@ -78,31 +75,31 @@ In this mode, multiple DNS records point to a single Trickster instance. The FQD
 
 Example DNS-based Origin Configuration:
 
-```toml
-[origins]
-
-    # origin1 origin
-    [origins.origin1]
-        hosts = [ '1.example.com', '2.example.com' ] # users can route to this origin via these FQDNs, or via `/origin1`
-        origin_url = 'http://prometheus.example.com:9090'
-        provider = 'prometheus'
-        cache_name = 'default'
-        is_default = true
-
-    # "foo" origin
-    [origins.foo]
-        hosts = [ 'trickster-foo.example.com' ] # users can route to this origin via these FQDNs, or via `/foo`
-        origin_url = 'http://prometheus-foo.example.com:9090'
-        provider = 'prometheus'
-        cache_name = 'default'
-
-    # "bar" origin
-    [origins.bar]
-        hosts = [ 'trickster-bar.example.com' ] # users can route to this origin via these FQDNs, or via `/bar`
-        origin_url = 'http://prometheus-bar.example.com:9090'
-        provider = 'prometheus'
-        cache_name = 'default'
-
+```yaml
+backends:
+  # backend1 backend
+  backend1:
+    hosts: # users can route to this origin via these FQDNs, or via `/backend1`
+      - 1.example.com
+      - 2.example.com
+    origin_url: 'http://prometheus.example.com:9090'
+    provider: prometheus
+    cache_name: default
+    is_default: true
+  # "foo" backend
+  foo:
+    hosts: # users can route to this origin via these FQDNs, or via `/foo`
+      - trickster-foo.example.com
+    origin_url: 'http://prometheus-foo.example.com:9090'
+    provider: prometheus
+    cache_name: default
+  # "bar" backend
+  bar:
+    hosts: # users can route to this origin via these FQDNs, or via `/bar`
+      - trickster-bar.example.com
+    origin_url: 'http://prometheus-bar.example.com:9090'
+    provider: prometheus
+    cache_name: default
 ```
 
 Example Client Request URLs:
@@ -121,15 +118,15 @@ Note: It is currently possible to specify the same FQDN in multiple origin confi
 
 You may wish for an origin to be inaccessible via the `/origin_name/` path, and only by Hostname or as the target of a [rule](./rule.md). You can disable path routing by setting `path_routing_disabled = true` for the origin, as in this example, which requires the Request's Host header match `1.example.com` or `2.example.com` in order to be routed to the origin:
 
-```toml
-[origins]
-
-    # origin1 origin
-    [origins.origin1]
-        hosts = [ '1.example.com', '2.example.com' ]
-        origin_url = 'http://prometheus.example.com:9090'
-        provider = 'prometheus'
-        cache_name = 'default'
-        is_default = false
-        path_routing_disabled = true
+```yaml
+backends:
+  backend1:
+    hosts:
+      - 1.example.com
+      - 2.example.com
+    origin_url: 'http://prometheus.example.com:9090'
+    provider: prometheus
+    cache_name: default
+    is_default: false
+    path_routing_disabled: true # this will disable routing through /backend1
 ```
