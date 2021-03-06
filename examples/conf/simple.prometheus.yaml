@@ -1,5 +1,5 @@
 #
-# Trickster 1.x Example Configuration File - Simple Prometheus Reverse Proxy Cache
+# Trickster 2.0 Example Configuration File - Simple Prometheus Reverse Proxy Cache
 #
 # To use this, run: trickster -config /path/to/simple.prometheus.conf
 #
