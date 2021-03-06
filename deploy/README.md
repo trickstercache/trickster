@@ -3,7 +3,7 @@
 ## Docker
 ---
 ```
-$ docker run --name trickster -d [-v /path/to/trickster.conf:/etc/trickster/trickster.conf] -p 0.0.0.0:9090:9090 tricksterio/trickster:latest
+$ docker run --name trickster -d [-v /path/to/trickster.yaml:/etc/trickster/trickster.yaml] -p 0.0.0.0:9090:9090 tricksterio/trickster:latest
 ```
 
 ## Kubernetes, Helm, RBAC

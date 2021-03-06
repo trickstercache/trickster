@@ -1,7 +1,7 @@
 #
 # Trickster 2.0 Example Configuration File - Exhaustive
 #
-# To use this, run: trickster -config /path/to/example.yaml
+# To use this, run: trickster -config /path/to/example.full.yaml
 #
 # This file contains descriptions and examples for all
 # Trickster configuration options. More documentation is

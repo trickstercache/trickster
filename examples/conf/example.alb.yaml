@@ -1,7 +1,7 @@
 #
 # Trickster 2.0 Example Configuration File - Simple HTTP Reverse Proxy Cache
 #
-# To use this, run: trickster -config /path/to/simple.reverseproxycache.conf
+# To use this, run: trickster -config /path/to/example.alb.yaml
 #
 # This file demonstrates a basic configuration for operating an
 # HTTP Reverse Proxy Cache using Trickster. More documentation is

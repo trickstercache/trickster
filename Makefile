@@ -59,10 +59,10 @@ build: go-mod-tidy go-mod-vendor
 rpm: build
 	mkdir -p ./$(BUILD_SUBDIR)/SOURCES
 	cp -p ./$(BUILD_SUBDIR)/trickster ./$(BUILD_SUBDIR)/SOURCES/
-	cp $(TRICKSTER_MAIN)/conf/trickster.service ./$(BUILD_SUBDIR)/SOURCES/
-	sed -e 's%^# log_file =.*$$%log_file = "/var/log/trickster/trickster.log"%' \
+	cp deploy/systemd/trickster.service ./$(BUILD_SUBDIR)/SOURCES/
+	sed -e 's%^# log_file:.*$$%log_file: /var/log/trickster/trickster.log%' \
 		-e 's%prometheus:9090%localhost:9090%' \
-		< $(TRICKSTER_MAIN)/conf/example.conf > ./$(BUILD_SUBDIR)/SOURCES/trickster.conf
+		< examples/conf/example.full.yaml > ./$(BUILD_SUBDIR)/SOURCES/trickster.yaml
 	rpmbuild --define "_topdir $(CURDIR)/$(BUILD_SUBDIR)" \
 		--define "_version $(PROGVER)" \
 		--define "_release 1" \
@@ -87,7 +87,7 @@ release-artifacts: clean
 	cp ./README.md $(PACKAGE_DIR)
 	cp ./CONTRIBUTING.md $(PACKAGE_DIR)
 	cp ./LICENSE $(PACKAGE_DIR)
-	cp ./cmd/trickster/conf/*.conf $(CONF_DIR)
+	cp ./examples/conf/*.yaml $(CONF_DIR)
 	
 	GOOS=darwin  GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).darwin-amd64  -a -v $(TRICKSTER_MAIN)/*.go
 	GOOS=linux   GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-amd64   -a -v $(TRICKSTER_MAIN)/*.go

@@ -1,7 +1,7 @@
 #
 # Trickster 2.0 Example Configuration File - Simple Prometheus Reverse Proxy Cache
 #
-# To use this, run: trickster -config /path/to/simple.prometheus.conf
+# To use this, run: trickster -config /path/to/simple.prometheus.yaml
 #
 # This file demonstrates a basic configuration to accelerate
 # Prometheus queries using Trickster. More documentation is

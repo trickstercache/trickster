@@ -72,7 +72,7 @@ Trickster's Fast Forward feature ensures that even with step boundary normalizat
 
 ## Trying Out Trickster
 
-Check out our end-to-end [Docker Compose demo composition](./deploy/trickster-demo) for a zero-configuration running environment.
+Check out our end-to-end [Docker Compose demo composition](./examples/docker-compose) for a zero-configuration running environment.
 
 ## Installing
 
@@ -80,7 +80,7 @@ Check out our end-to-end [Docker Compose demo composition](./deploy/trickster-de
 
 Docker images are available on Docker Hub:
 
-    $ docker run --name trickster -d -v /path/to/trickster.conf:/etc/trickster/trickster.conf -p 0.0.0.0:8480:8480 tricksterproxy/trickster
+    $ docker run --name trickster -d -v /path/to/trickster.yaml:/etc/trickster/trickster.yaml -p 0.0.0.0:8480:8480 tricksterproxy/trickster
 
 See the 'deploy' Directory for more information about using or creating Trickster docker images.
 

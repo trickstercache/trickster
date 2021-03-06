@@ -31,10 +31,10 @@ Trickster Usage:
  trickster -version
 
  Validating a configuration file:
-  trickster -validate-config -config /path/to/file.conf
+  trickster -validate-config -config /path/to/file.yaml
 
  Using a configuration file:
-  trickster -config /path/to/file.conf [-log-level DEBUG|INFO|WARN|ERROR] [-proxy-port 8480] [-metrics-port 8481]
+  trickster -config /path/to/file.yaml [-log-level DEBUG|INFO|WARN|ERROR] [-proxy-port 8480] [-metrics-port 8481]
 
  Using origin-url and provider:
   trickster -origin-url https://example.com -provider reverseproxycache [-log-level DEBUG|INFO|WARN|ERROR] [-proxy-port 8480] [-metrics-port 8481]

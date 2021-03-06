@@ -10,8 +10,6 @@ data:
     #
     # Trickster 2.0 Example Configuration File - Exhaustive
     #
-    # To use this, run: trickster -config /path/to/example.yaml
-    #
     # This file contains descriptions and examples for all
     # Trickster configuration options. More documentation is
     # available at https://github.com/tricksterproxy/trickster/docs/
