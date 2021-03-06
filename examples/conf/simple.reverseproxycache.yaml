@@ -16,7 +16,7 @@ frontend:
 backends:
   default:
     # update FQDN and (optional) Port to work in your environment
-    origin_url: https://www.google.com
+    origin_url: https://www.example.com
     provider: reverseproxycache # use 'reverseproxy' for no caching
 
 metrics:
