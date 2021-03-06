@@ -2,7 +2,7 @@
 
 Negative Caching means to cache undesired HTTP responses for a very short period of time, in order to prevent overwhelming a system that would otherwise scale normally when desired, cacheable HTTP responses are being returned. For example, Trickster can be configured to cache `404 Not Found` or `500 Internal Server Error` responses for a short period of time, to ensure that a thundering herd of HTTP requests for a non-existent object, or unexpected downtime of a citical service, do not create an i/o bottleneck in your application pipeline.
 
-Trickster supports negative caching of any status code >= 300 and < 600, on a per-Backend basis. In your Trickster configuration file, associate the desired Negative Cache Map to the desired Backend config. See the [example.conf](../cmd/trickster/conf/example.conf), or refer to the snippet below for more information.
+Trickster supports negative caching of any status code >= 300 and < 600, on a per-Backend basis. In your Trickster configuration file, associate the desired Negative Cache Map to the desired Backend config. See the [example.full.yaml](../examples/conf/example.full.yaml), or refer to the snippet below for more information.
 
 The Negative Cache Map must be an all-inclusive list of explicit status codes; there is currently no wildcard or status code range support for Negative Caching entries. By default, the Negative Cache Map is empty for all backend configs. The Negative Cache only applies to Cacheable Objects, and does not apply to Proxy-Only configurations.
 

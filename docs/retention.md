@@ -20,7 +20,7 @@ For time series data responses, Trickster will cache as follows:
 
 ### TTL Settings
 
-TTL settings for each Origin configured in Trickster can be customized independently of each other, and separate TTL configurations are available for timeseries objects, and fast forward data. See [cmd/trickster/conf/example.conf](../cmd/trickster/conf/example.conf) for more info on configuring default TTLs.
+TTL settings for each Origin configured in Trickster can be customized independently of each other, and separate TTL configurations are available for timeseries objects, and fast forward data. See [examples/conf/example.full.yaml](../examples/conf/example.full.yaml) for more info on configuring default TTLs.
 
 ### Time Series Data Retention
 

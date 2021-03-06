@@ -50,7 +50,7 @@ origins:
         progressive_collapsed_forwarding: true
 ```
 
-See the [example.conf](../cmd/trickster/conf/example.conf) for more configuration examples.
+See the [example.full.yaml](../examples/conf/example.full.yaml) for more configuration examples.
 
 ## How to test Progressive Collapsed Forwarding
 
