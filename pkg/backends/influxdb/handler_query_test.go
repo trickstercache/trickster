@@ -28,8 +28,6 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
-
-	"github.com/influxdata/influxdb/pkg/testing/assert"
 )
 
 var testVals = url.Values(map[string][]string{"q": {
@@ -52,8 +50,12 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	} else {
-		assert.Equal(t, int(res.Step.Seconds()), 15)
-		assert.Equal(t, int(res.Extent.End.Sub(res.Extent.Start).Hours()), 6)
+		if res.Step.Seconds() != 15 {
+			t.Errorf("expected %d got %d", 15, int(res.Step.Seconds()))
+		}
+		if int(res.Extent.End.Sub(res.Extent.Start).Hours()) != 6 {
+			t.Errorf("expected %d got %d", 6, int(res.Extent.End.Sub(res.Extent.Start).Hours()))
+		}
 	}
 
 	req, _ = http.NewRequest(http.MethodPost, "http://blah.com/",
@@ -65,8 +67,12 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	} else {
-		assert.Equal(t, int(res.Step.Seconds()), 15)
-		assert.Equal(t, int(res.Extent.End.Sub(res.Extent.Start).Hours()), 6)
+		if res.Step.Seconds() != 15 {
+			t.Errorf("expected %d got %d", 15, int(res.Step.Seconds()))
+		}
+		if int(res.Extent.End.Sub(res.Extent.Start).Hours()) != 6 {
+			t.Errorf("expected %d got %d", 6, int(res.Extent.End.Sub(res.Extent.Start).Hours()))
+		}
 	}
 }
 
