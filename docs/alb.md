@@ -86,7 +86,7 @@ Separate from an HA use case, it is possible to use tmerge as a Federation broke
 
 #### Providers Supporting Time Series Merge
 
-Trickster currently suppports Time Series Merging for the following TSDB Providers:
+Trickster currently supports Time Series Merging for the following TSDB Providers:
 
 | Provider Name |
 |---|
@@ -224,7 +224,7 @@ Here is the visual representation of this configuration:
 
 The **Newest Last-Modified** methodology is focused on providing the user with the _newest_ representation of the response, rather than responding as quickly as possible. It will fan the client request out to all backends, and wait for all responses to come back (or the ALB timeout to be reached) before determining which response is returned to the user.
 
-If at least one fanout response has a `Last-Modified` header, then any response not containing the header is discarded. The remaning responses are sorted based on their Last Modified header value, and the newest value determines which response is chosen.
+If at least one fanout response has a `Last-Modified` header, then any response not containing the header is discarded. The remaining responses are sorted based on their Last Modified header value, and the newest value determines which response is chosen.
 
 This methodology is useful in applications where an object residing at the same path on multiple origins is updated frequently, such as a DASH or HLS manifest for a live video broadcast. When using Trickster as an ALB+Cache in this scenario, it will poll both backends for the object, and ensure the newest version between them is used as the client response.
 
@@ -335,7 +335,7 @@ You can also provide a 'Accept: application/json' Header or query param ?json
 
 ### JSON Health Status
 
-As the table footer from the plaintext version fo the health status page indicates, you may also request a JSON version of the health status for machine consumption. The JSON version includes additional detail about any Backends marked as `unavailable`, and is structured as follows:
+As the table footer from the plaintext version of the health status page indicates, you may also request a JSON version of the health status for machine consumption. The JSON version includes additional detail about any Backends marked as `unavailable`, and is structured as follows:
 
 ```bash
 $ curl "http://${trickster-fqdn}:8480/trickster/health?json" | jq

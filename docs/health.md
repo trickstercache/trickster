@@ -14,13 +14,13 @@ The backend health path prefix `/trickster/health/` is customizable. See the [ex
 
 ```yaml
 frontend:
-  # this overides the default '/trickster/health' to '/-/trickster/health'
+  # this overrides the default '/trickster/health' to '/-/trickster/health'
   health_handler_path: /-/trickster/health
 ```
 
 The behavior of a `health` request will vary based on the Backend provider, as each has their own health check protocol. For example, with Prometheus, Trickster makes a request to `/query?query=up` and (hopefully) receives a `200 OK`, while for InfluxDB the request is to `/ping` which returns a `204 No Content`.
 
-Supported TSDB Providers are pre-configured in Trickster to perform a suitable health check operation, however these can be overriden in the configuration file.
+Supported TSDB Providers are pre-configured in Trickster to perform a suitable health check operation, however these can be overridden in the configuration file.
 
 For non-TSDB Backends, the default behavior is to make a `GET` request to `http://origin_url:port/` and expect a 2xx response. However, all aspects of the Health Check request and expected response are configurable per-Backend.
 
@@ -78,7 +78,7 @@ See more examples in [example.full.yaml](../examples/conf/example.full.yaml).
 
 By default, a Backend will only initiate a health check on-demand, upon receiving a request to its health endpoint.
 
-To faciliate integrations with the Trickster Application Load Balancer provider, additional options provide for 1) timed interval health checks and 2) thresholding for consective successful or unsuccessful health checks that determine the backend's overall health status.
+To facilitate integrations with the Trickster Application Load Balancer provider, additional options provide for 1) timed interval health checks and 2) thresholding for consecutive successful or unsuccessful health checks that determine the backend's overall health status.
 
 ### Example Health Check Configuration for use in ALB
 

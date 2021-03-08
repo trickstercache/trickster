@@ -45,7 +45,7 @@ Using [tricktool](http://github.com/tricksterproxy/tricktool) to migrate your co
 
 - <https://www.convertsimple.com/convert-toml-to-yaml/> is a good starting point
 - The `[origins]` section of the Trickster 1.x TOML config is named `backends:` in the 2.0 YAML config
-- All duration-based values are now represented in milliseconds. 1.x values ending in `_secs` are the same in 2.0 but end in `_ms`. Be sure to multipy by 1000
+- All duration-based values are now represented in milliseconds. 1.x values ending in `_secs` are the same in 2.0 but end in `_ms`. Be sure to multiply by 1000
 - `origin_type`, `cache_type` and `tracing_type` are now called `provider`.
 - Health checking configurations now reside in their own `healthcheck` subsection under `backends` and use simplified config names like `method`, `path`, etc.
 
