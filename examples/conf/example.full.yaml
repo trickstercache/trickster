@@ -224,6 +224,11 @@ backends:
     # provider is a required configuration value
     provider: prometheus
 
+    # for prometheus backends, you can configure label injection as follows:
+    # prometheus:
+    #   labels:
+    #     labelname: value
+
     # origin_url provides the base upstream URL for all proxied requests to this origin.
     # it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
     # origin_url is a required configuration value
@@ -263,7 +268,7 @@ backends:
 #     # This is only effective if the provider is rule
 #     rule_name: example-rule
 
-#     # req_rewriter_name is the name of a configured rewriter (in [request_rewriters]) that will modify the request prior to
+#     # req_rewriter_name is the name of a configured rewriter (in the request_rewriters key) that modifies the request prior to
 #     # processing by the backend client
 #     req_rewriter_name: example-rewriter
 
@@ -332,27 +337,69 @@ backends:
 #     fastforward_ttl_ms: 15000
 
 #     #
-#     # Each backend provider implements their own defaults for health_check_upstream_url, health_check_verb and health_check_query,
-#     # which can be overridden per backend. See /docs/health.md for more information
+#     # Each backend provider implements their own defaults for health checking
+#     # which can be overridden per backend configuration. See /docs/health.md for more information
 #     healthcheck: 
-#       # path is the URL Trickster will request against this backend to
-#       # when a health check request is received by Trickster via http://<trickster-endpoint>/trickster/<backend_name>/health 
-#       # this is the default value for prometheus:
-#       path: /api/v1/query
+
+#       ## Crafting a Heatlh Check
 
 #       # verb is the HTTP Method Trickster will when performing an upstream health check for this backend
 #       # default is GET for all backend types unless overridden per-backend here.
 #       verb: GET
 
+#       # scheme is either http or https
+#       # default is http
+#       scheme: https
+
+#       # host defines a custom Host header to include in health check requests
+#       # default is the hostname in the backend configuration's origin_url
+#       host: alternate-host.example.com
+
+#       # port defines a custom port to include in health check requests
+#       # default is 80 or 443 depending upon scheme
+#       port: 8080
+
+#       # path is the URL Trickster will request against this backend to
+#       # when a health check request is received by Trickster via http://<trickster-endpoint>/trickster/<backend_name>/health 
+#       # this is the default value for prometheus:
+#       path: /api/v1/query
+
 #       # query is the query string Trickster will append the when performing an upstream health check for this backend
-#       # This value is the default for prometheus (again, see /docs/health.md)
+#       # This example value is the default for prometheus (again, see /docs/health.md)
 #       query: query=up
 
-#         # health_check_headers provides a list of HTTP Headers to add to Health Check HTTP Requests to this backend
+#       # headers provides a list of HTTP Headers to add to Health Check HTTP Requests to this backend
+#       # default is none
 #       headers:
 #         Authorization: Basic SomeHash
 
-#     # [backends.BACKEND_NAME.paths] section customizes the behavior of Trickster for specific paths. See /docs/paths.md for more info.
+#       # body provides a body to use with the health check request when the method is POST or PUT
+#       # default is empty string, and is ignored for non-Body-based methods
+#       body: "my health check request body"
+
+#       ## Crafting a Healthy Response Profile
+
+#       # timeout_ms is the maximum during the health checker will wait for a response before aborting the check
+#       # default is 3s
+#       timeout_ms: 3000
+
+#       # expected_codes is the list of acceptable HTTP response codes when health checking the backend
+#       # for considering the backend healthy
+#       # default is [ 200 ]
+#       expected_codes: [ 200, 204, 206, 301, 302, 304 ]
+
+#       # expected_headers is the list of required HTTP response headers when health checking the backend
+#       # for considering the backend healthy
+#       # default is empty set
+#       expected_headers:
+#         X-Health-Check-Status: success
+
+#       # expected_body is the response body string a health check response must provide
+#       # for considering the backend healthy
+#       # default is not checked
+#       expected_body: "health check pass."
+
+#     # the paths section customizes the behavior of Trickster for specific paths for this Backend. See /docs/paths.md for more info.
 #     paths:
 #       example1:
 #         path: /api/v1/admin/
@@ -383,7 +430,7 @@ backends:
 #           request_params:
 #             +authToken: SomeTokenHere                 # manipulate request query parameters in the same way
 
-#         # the [backends.ORIGIN_NAME.tls] section configures the frontend and backend TLS operation for the backend
+#         # the tls section configures the frontend and backend TLS operation for the backend
 #     tls:
 #         # TLS Frontend Configs
 #         # You can configure which certificate and key to use when this endpoint serves downstream clients over TLS
@@ -412,23 +459,47 @@ backends:
 #         # empty string '' by default
 #         client_key_path: /path/to/my/client/key.pem
 
-#     # For multi-backend support, backends are named, and the name is the second word of the configuration section name.
-#     # In this example, an backend is named "foo".
-#     # Clients can indicate this backend in their path (http://trickster.example.com:8480/foo/api/v1/query_range?.....)
-#     # there are other ways for clients to indicate which backend to use in a multi-backend setup. See the documentation for more information
+#   # For multi-backend support, backends are named, and the name is the second word of the configuration section name.
+#   # In this example, backends are named foo-01.example.com and foo-02.example.com.
+#   # Clients can indicate this backend in their path (http://trickster.example.com:8480/foo/api/v1/query_range?.....)
+#   # unless path_routing_disabled: true
+#   # there are other ways for clients to indicate which backend to use in a multi-backend setup. See the documentation for more information
 
-#     # use quotes around FQDNs for host-based routing (see /docs/multi-backend.md).
-#   foo.example.com:
+#   foo-01.example.com:
 #     is_default: false
-#     provider: influxdb
-#     origin_url: http://influx-origin:8086
-#     cache_name: bbolt_example
-#     negative_cache_name: general
-#     timeseries_retention_factor: 1024
-#     timeseries_eviction_method: oldest
-#     timeout_ms: 180000
-#     backfill_tolerance_ms: 180000
-#     tracing_name: example
+#     provider: reverseproxy
+#     origin_url: http://foo-origin-01
+#     healthcheck:
+#       interval_ms: 1000
+
+#   foo-02.example.com:
+#     is_default: false
+#     provider: reverseproxy
+#     origin_url: http://foo-origin-02
+#     healthcheck:
+#       interval_ms: 1000
+
+# # Application Load Balancer Backend configuration options, see /docs/alb.md for more information
+#
+#   alb01:
+#     hosts: [ foo.example.com ]
+#     path_routing_disabled: true # only route to the alb via the foo.example.com Host header
+#     provider: alb
+#     alb:
+#       # mechanism defines the ALB pool member selection mechanism.
+#       # values are rr, fr, fgr, nlm, or tsmerge. see the docs for detailed descriptions of each
+#       mechanism: rr # use a basic round robin
+
+#       # pool defines the pool of backends to which the alb routes
+#       # use the two example backends above
+#       pool: [ foo-01.example.com, foo-02.example.com ]
+
+#       # healthy_floor is the minimum health status for a Backend to be considered healthy in the pool
+#       #  1 indicates only backends positively reporting as healthy are included
+#       #  0 indicates backends in either a unknown/unchecked state or healthy reporting state
+#       # -1 includes all backends, regardless of reporting state
+#       # default is 0
+#       healthy_floor: 0
 
 # # Configuration Options for Request Routing Rules - see /docs/rule.md for more information
 
