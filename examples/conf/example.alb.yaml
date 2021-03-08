@@ -15,7 +15,7 @@ frontend:
 
 backends:
 
-  # a Prometheus tsmerge alb
+  # a Prometheus time series merge alb
   promalb:
     provider: alb
     alb:
@@ -34,10 +34,14 @@ backends:
   prom1:
     provider: prometheus
     origin_url: "http://prom1:9090"
-
+    healthcheck:
+      interval_ms: 1000
+      
   prom2:
     provider: prometheus
     origin_url: "http://prom2:9090"
+    healthcheck:
+      interval_ms: 1000
 
   ## 
 
@@ -46,11 +50,12 @@ backends:
     origin_url: "https://origin1/"
     healthcheck:
       path: /health
+      interval_ms: 1000
 
   origin2:
     provider: rp # this one will not go through the cache
     origin_url: "http://origin2" # and will not use TLS
     healthcheck:
       path: /health
-
+      interval_ms: 1000
   

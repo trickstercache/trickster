@@ -48,7 +48,7 @@ backends:
   node01:
     provider: reverseproxycache # will cache responses to the default memory cache
     path_routing_disabled: true # disables frontend request routing via /node01 path
-    origin_url: http://node01.example.com
+    origin_url: https://node01.example.com # make requests with TLS
     tls: # this backend might use mutual TLS Auth
       client_cert_path: ./cert.pem
       client_key_path: ./cert.key
@@ -56,7 +56,7 @@ backends:
   node02:
     provider: reverseproxy      # requests will be proxy-only with no caching
     path_routing_disabled: true # disables frontend request routing via /node02 path
-    origin_url: http://node-02.example.com
+    origin_url: http://node-02.example.com # make unsecured requests
     request_headers: # this backend might use basic auth headers
       Authoriziation: "basic jdoe:*****"
 
@@ -117,7 +117,7 @@ backends:
   prom-alb-01:
     provider: alb
     alb:
-      methodology: tsmerge
+      methodology: tsm
       pool: 
         - prom01a
         - prom01b
@@ -135,13 +135,13 @@ backends:
       labels:
         region: us-west-1
 
-  # prom-alb-02 scatter/gathers prom01a/b, prom02 and prom03 and merges their responses
+  # prom-alb-all scatter/gathers prom01a/b, prom02 and prom03 and merges their responses
   # for the caller. since a unique region label was applied to non-redundant backends,
   # collisions are avoided
-  prom-alb-02:
+  prom-alb-all:
     provider: alb
     alb:
-      methodology: tsmerge
+      methodology: tsm
       pool: 
         - prom01a
         - prom01b
@@ -286,7 +286,7 @@ backends:
   prom-alb-tsm:
     provider: alb
     alb:
-      mechanism: tsmerge
+      mechanism: tsm
       healthy_floor: 1 # only include Backends reporting as 'available' in the healthy pool
       pool:
         - prom01

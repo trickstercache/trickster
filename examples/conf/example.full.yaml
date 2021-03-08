@@ -487,7 +487,7 @@ backends:
 #     provider: alb
 #     alb:
 #       # mechanism defines the ALB pool member selection mechanism.
-#       # values are rr, fr, fgr, nlm, or tsmerge. see the docs for detailed descriptions of each
+#       # values are rr, fr, fgr, nlm, or tsm. see the docs for detailed descriptions of each
 #       mechanism: rr # use a basic round robin
 
 #       # pool defines the pool of backends to which the alb routes
