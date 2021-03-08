@@ -21,7 +21,6 @@ package config
 
 import (
 	"errors"
-	"io/ioutil"
 	"os"
 	"sync"
 	"time"
@@ -149,7 +148,7 @@ func NewConfig() *Config {
 
 // loadFile loads application configuration from a YAML-formatted file.
 func (c *Config) loadFile(flags *Flags) error {
-	b, err := ioutil.ReadFile(flags.ConfigPath)
+	b, err := os.ReadFile(flags.ConfigPath)
 	if err != nil {
 		c.setDefaults(yamlx.KeyLookup{})
 		return err

@@ -19,7 +19,7 @@ package options
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -109,7 +109,7 @@ func testConfig() (Lookup, string) {
 	n.OriginURL = "http://1"
 	ol := Lookup{"test": n}
 
-	b, err := ioutil.ReadFile("../../../testdata/test.empty.conf")
+	b, err := os.ReadFile("../../../testdata/test.empty.conf")
 	if err != nil {
 		panic(err)
 	}

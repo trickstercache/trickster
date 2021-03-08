@@ -19,7 +19,6 @@ package engines
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"math"
 	"net/http"
 	"strconv"
@@ -254,7 +253,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	if hasCustomResponseBody {
 		// Since we are not responding with the actual upstream response body, close it here
 		resp.Body.Close()
-		rc = ioutil.NopCloser(bytes.NewReader(pc.ResponseBodyBytes))
+		rc = io.NopCloser(bytes.NewReader(pc.ResponseBodyBytes))
 	} else {
 		rc = resp.Body
 	}

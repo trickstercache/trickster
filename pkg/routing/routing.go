@@ -362,29 +362,66 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		}
 	}
 
-	if o.IsDefault {
-		tl.Info(logger,
-			"registering default backend handler paths", tl.Pairs{"backendName": o.Name})
-		for _, v := range plist {
-			p := pathsWithVerbs[v]
-			if p.Handler != nil && len(p.Methods) > 0 {
-				tl.Debug(logger, "registering default backend handler paths",
-					tl.Pairs{"backendName": o.Name, "path": p.Path, "handlerName": p.HandlerName,
-						"matchType": p.MatchType})
-				switch p.MatchType {
-				case matching.PathMatchTypePrefix:
-					// Case where we path match by prefix
-					router.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...)
-				default:
-					// default to exact match
-					router.Handle(p.Path, decorate(p)).Methods(p.Methods...)
+	o.Router = or
+	o.Paths = pathsWithVerbs
+}
+
+// RegisterDefaultBackendRoutes will iterate the Backends and register the default routes
+func RegisterDefaultBackendRoutes(router *mux.Router, bknds backends.Backends,
+	logger interface{}, tracers tracing.Tracers) {
+
+	decorate := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,
+		c cache.Cache, client backends.Backend) http.Handler {
+		// default base route is the path handler
+		h := po.Handler
+		// attach distributed tracer
+		if tr != nil {
+			h = middleware.Trace(tr, h)
+		}
+		// add Backend, Cache, and Path Configs to the HTTP Request's context
+		h = middleware.WithResourcesContext(client, o, c, po, tr, logger, h)
+		// attach any request rewriters
+		if len(o.ReqRewriter) > 0 {
+			h = rewriter.Rewrite(o.ReqRewriter, h)
+		}
+		if len(po.ReqRewriter) > 0 {
+			h = rewriter.Rewrite(po.ReqRewriter, h)
+		}
+		// decorate frontend prometheus metrics
+		if !po.NoMetrics {
+			h = middleware.Decorate(o.Name, o.Provider, po.Path, h)
+		}
+		return h
+	}
+
+	for _, b := range bknds {
+		o := b.Configuration()
+		if o.IsDefault {
+			var tr *tracing.Tracer
+			if t, ok := tracers[o.TracingConfigName]; ok {
+				tr = t
+			}
+			tl.Info(logger,
+				"registering default backend handler paths", tl.Pairs{"backendName": o.Name})
+			for _, p := range o.Paths {
+				if p.Handler != nil && len(p.Methods) > 0 {
+					tl.Debug(logger, "registering default backend handler paths",
+						tl.Pairs{"backendName": o.Name, "path": p.Path, "handlerName": p.HandlerName,
+							"matchType": p.MatchType})
+					switch p.MatchType {
+					case matching.PathMatchTypePrefix:
+						// Case where we path match by prefix
+						router.PathPrefix(p.Path).Handler(decorate(o, p, tr, b.Cache(), b)).Methods(p.Methods...)
+					default:
+						// default to exact match
+						router.Handle(p.Path, decorate(o, p, tr, b.Cache(), b)).Methods(p.Methods...)
+					}
+					router.Handle(p.Path, decorate(o, p, tr, b.Cache(), b)).Methods(p.Methods...)
 				}
-				router.Handle(p.Path, decorate(p)).Methods(p.Methods...)
 			}
 		}
 	}
-	o.Router = or
-	o.Paths = pathsWithVerbs
+
 }
 
 // ByLen allows sorting of a string slice by string length

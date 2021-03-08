@@ -140,6 +140,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 	}
 	alb.StartALBPools(o, hc.Statuses())
 	routing.RegisterHealthHandler(router, conf.Main.HealthHandlerPath, hc)
+	routing.RegisterDefaultBackendRoutes(router, o, logger, tracers)
 
 	applyListenerConfigs(conf, oldConf, router, http.HandlerFunc(rh), logger, tracers)
 

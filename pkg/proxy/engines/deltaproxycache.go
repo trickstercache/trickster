@@ -19,7 +19,7 @@ package engines
 import (
 	"bytes"
 	"context"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -512,7 +512,7 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	if resp.StatusCode != 200 {
 		var b []byte
 		if resp.Body != nil {
-			b, _ := ioutil.ReadAll(resp.Body)
+			b, _ := io.ReadAll(resp.Body)
 			if len(b) > 128 {
 				b = b[:128]
 			}

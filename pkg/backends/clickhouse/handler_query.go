@@ -17,7 +17,7 @@
 package clickhouse
 
 import (
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 
@@ -34,7 +34,7 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	sqlQuery := q.Get(upQuery)
 	if methods.HasBody(r.Method) {
-		b, err := ioutil.ReadAll(r.Body)
+		b, err := io.ReadAll(r.Body)
 		if err != nil {
 			handlers.HandleBadRequestResponse(w, r)
 			return

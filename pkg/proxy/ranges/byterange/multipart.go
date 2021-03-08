@@ -21,7 +21,6 @@ package byterange
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -189,7 +188,7 @@ func ParseMultipartRangeResponseBody(body io.Reader,
 						return nil, "", nil, -1, err
 					}
 					ranges = append(ranges, r)
-					bdy, err := ioutil.ReadAll(p)
+					bdy, err := io.ReadAll(p)
 					if err != nil {
 						return nil, "", nil, -1, err
 					}

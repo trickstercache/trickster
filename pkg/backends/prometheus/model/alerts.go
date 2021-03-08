@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"sort"
 
@@ -143,7 +142,7 @@ func MergeAndWriteAlerts(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 			}
 			if bestResp == nil || resp.StatusCode < bestResp.StatusCode {
 				bestResp = resp
-				resp.Body = ioutil.NopCloser(bytes.NewReader(rg.Body()))
+				resp.Body = io.NopCloser(bytes.NewReader(rg.Body()))
 			}
 		}
 	}

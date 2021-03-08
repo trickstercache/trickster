@@ -18,7 +18,7 @@ package request
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -29,12 +29,12 @@ import (
 func SetBody(r *http.Request, body []byte) *http.Request {
 
 	if len(body) == 0 {
-		r.Body = ioutil.NopCloser(bytes.NewReader([]byte{}))
+		r.Body = io.NopCloser(bytes.NewReader([]byte{}))
 		r.ContentLength = 0
 		r.Header.Del(headers.NameContentLength)
 	}
 
-	r.Body = ioutil.NopCloser(bytes.NewReader(body))
+	r.Body = io.NopCloser(bytes.NewReader(body))
 	r.Header.Set(headers.NameContentLength, strconv.Itoa(len(body)))
 	r.ContentLength = int64(len(body))
 	return r.WithContext(tctx.WithRequestBody(r.Context(), body))
@@ -48,7 +48,7 @@ func GetBody(r *http.Request) []byte {
 	if r.Body == nil {
 		return nil
 	}
-	body, _ = ioutil.ReadAll(r.Body)
-	r.Body = ioutil.NopCloser(bytes.NewReader(body)) // allows body to be re-read from byte 0
+	body, _ = io.ReadAll(r.Body)
+	r.Body = io.NopCloser(bytes.NewReader(body)) // allows body to be re-read from byte 0
 	return body
 }

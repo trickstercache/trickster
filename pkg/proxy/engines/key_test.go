@@ -21,7 +21,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -174,7 +173,7 @@ func TestDeriveCacheKey(t *testing.T) {
 
 	_, _, tr, _, _ = tu.NewTestInstance("", nil, 0, "", nil, "rpc", "http://127.0.0.1/", "INFO")
 	tr.Method = http.MethodPost
-	tr.Body = ioutil.NopCloser(bytes.NewReader([]byte(testJSONDocument)))
+	tr.Body = io.NopCloser(bytes.NewReader([]byte(testJSONDocument)))
 	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
 	tr.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
 	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testJSONDocument)))
@@ -193,7 +192,7 @@ func TestDeriveCacheKey(t *testing.T) {
 	}
 
 	tr = httptest.NewRequest(http.MethodPost, "http://127.0.0.1/", nil)
-	tr.Body = ioutil.NopCloser(bytes.NewReader([]byte(testJSONDocument)))
+	tr.Body = io.NopCloser(bytes.NewReader([]byte(testJSONDocument)))
 	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
 	tr.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
 	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testJSONDocument)))

@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"sort"
 	"strconv"
@@ -383,7 +382,7 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOp
 
 // UnmarshalTimeseriesReader converts a JSON blob into a Timeseries via io.Reader
 func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
-	b, _ := ioutil.ReadAll(reader)
+	b, _ := io.ReadAll(reader)
 	return UnmarshalTimeseries(b, trq)
 }
 

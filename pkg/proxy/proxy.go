@@ -21,9 +21,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
@@ -62,7 +62,7 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 
 			for _, path := range o.TLS.CertificateAuthorityPaths {
 				// Read in the cert file
-				certs, err := ioutil.ReadFile(path)
+				certs, err := os.ReadFile(path)
 				if err != nil {
 					return nil, err
 				}

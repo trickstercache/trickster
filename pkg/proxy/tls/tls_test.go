@@ -17,7 +17,7 @@
 package tls
 
 import (
-	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 
@@ -132,7 +132,7 @@ func TestProcessTLSConfigs(t *testing.T) {
 
 	_, ca, _ := tlstest.GetTestKeyAndCert(true)
 	caFile := td + "/rootca.01.pem"
-	err := ioutil.WriteFile(caFile, ca, 0600)
+	err := os.WriteFile(caFile, ca, 0600)
 	if err != nil {
 		t.Error(err)
 	}
@@ -140,21 +140,21 @@ func TestProcessTLSConfigs(t *testing.T) {
 	k, c, _ := tlstest.GetTestKeyAndCert(false)
 
 	certFile := td + "/01.cert.pem"
-	err = ioutil.WriteFile(certFile, c, 0600)
+	err = os.WriteFile(certFile, c, 0600)
 	if err != nil {
 		t.Error(err)
 	}
 
 	keyfile := td + "/01.key.pem"
-	err = ioutil.WriteFile(keyfile, k, 0600)
+	err = os.WriteFile(keyfile, k, 0600)
 	if err != nil {
 		t.Error(err)
 	}
 
-	b, err := ioutil.ReadFile("../../../testdata/test.full.tls.conf")
+	b, err := os.ReadFile("../../../testdata/test.full.tls.conf")
 	b = []byte(strings.ReplaceAll(string(b), "../../../testdata/test.", td+"/"))
 
-	err = ioutil.WriteFile(confFile, b, 0600)
+	err = os.WriteFile(confFile, b, 0600)
 	if err != nil {
 		t.Error(err)
 	}

@@ -24,7 +24,6 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"io/ioutil"
 	"math/big"
 	"net"
 	"os"
@@ -44,14 +43,14 @@ func WriteTestKeyAndCert(isCA bool, keyPath, certPath string) error {
 	}
 
 	if !isCA || keyPath != "" {
-		err := ioutil.WriteFile(keyPath, k, 0600)
+		err := os.WriteFile(keyPath, k, 0600)
 		if err != nil {
 			return err
 		}
 	}
 
 	if certPath != "" {
-		err := ioutil.WriteFile(certPath, c, 0600)
+		err := os.WriteFile(certPath, c, 0600)
 		if err != nil {
 			return err
 		}
@@ -112,11 +111,11 @@ func GetTestKeyAndCertFiles(condition string) (string, string, func(), error) {
 		c = []byte("invalid cert data\n")
 	}
 
-	err := ioutil.WriteFile(kf, k, 0600)
+	err := os.WriteFile(kf, k, 0600)
 	if err != nil {
 		return "", "", nil, err
 	}
-	err = ioutil.WriteFile(cf, c, 0600)
+	err = os.WriteFile(cf, c, 0600)
 	if err != nil {
 		return "", "", func() { os.Remove(kf) }, err
 	}

@@ -17,7 +17,6 @@
 package handlers
 
 import (
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -39,12 +38,12 @@ func TestReloadHandleFunc(t *testing.T) {
 
 	testFile := t.TempDir() + "/trickster_test_config.conf"
 
-	tml, err := ioutil.ReadFile("../../../testdata/test.empty.conf")
+	tml, err := os.ReadFile("../../../testdata/test.empty.conf")
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = ioutil.WriteFile(testFile, tml, 0666)
+	err = os.WriteFile(testFile, tml, 0666)
 	if err != nil {
 		t.Error(err)
 	}
@@ -59,7 +58,7 @@ func TestReloadHandleFunc(t *testing.T) {
 	f(w, r)
 	os.Remove(testFile)
 	time.Sleep(time.Millisecond * 500)
-	ioutil.WriteFile(testFile, []byte(string(tml)), 0666)
+	os.WriteFile(testFile, []byte(string(tml)), 0666)
 	time.Sleep(time.Millisecond * 500)
 	f(w, r)
 }

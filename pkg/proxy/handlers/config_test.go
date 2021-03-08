@@ -17,7 +17,7 @@
 package handlers
 
 import (
-	"io/ioutil"
+	"io"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -45,7 +45,7 @@ func TestConfigHandler(t *testing.T) {
 		t.Errorf("expected 200 got %d.", resp.StatusCode)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}

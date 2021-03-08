@@ -18,7 +18,7 @@ package irondb
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -61,7 +61,7 @@ func TestFetchHandler(t *testing.T) {
 		t.Errorf("expected 200 got %d.", resp.StatusCode)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -84,7 +84,7 @@ func TestFetchHandlerDeriveCacheKey(t *testing.T) {
 		t.Error(err)
 	}
 
-	r.Body = ioutil.NopCloser(bytes.NewReader([]byte("{}")))
+	r.Body = io.NopCloser(bytes.NewReader([]byte("{}")))
 
 	const expected = "a34bbb372c505e9eea0e0589e16c0914"
 	var result string
@@ -117,14 +117,14 @@ func TestFetchHandlerSetExtent(t *testing.T) {
 	now := time.Now()
 	then := now.Add(-5 * time.Hour)
 
-	r.Body = ioutil.NopCloser(bytes.NewReader([]byte(`{"start": 300, "period": 300, "count": 5}`)))
+	r.Body = io.NopCloser(bytes.NewReader([]byte(`{"start": 300, "period": 300, "count": 5}`)))
 
 	// should short circuit from internal checks
 	// all though this func does not return a value to test, these exercise all coverage areas
 	client.fetchHandlerSetExtent(nil, nil, nil)
 	client.fetchHandlerSetExtent(r, nil, &timeseries.Extent{Start: then, End: now})
 	client.fetchHandlerSetExtent(r, nil, &timeseries.Extent{Start: now, End: now})
-	r.Body = ioutil.NopCloser(bytes.NewReader([]byte(`{a}`)))
+	r.Body = io.NopCloser(bytes.NewReader([]byte(`{a}`)))
 	client.fetchHandlerSetExtent(r, nil, &timeseries.Extent{Start: then, End: now})
 
 }
@@ -145,27 +145,27 @@ func TestFetchHandlerParseTimeRangeQuery(t *testing.T) {
 		t.Error(err)
 	}
 
-	r.Body = ioutil.NopCloser(bytes.NewReader([]byte(`{"start": 300, "period": 300, "count": 5}`)))
+	r.Body = io.NopCloser(bytes.NewReader([]byte(`{"start": 300, "period": 300, "count": 5}`)))
 	_, err = client.fetchHandlerParseTimeRangeQuery(r)
 	if err != nil {
 		t.Error(err)
 	}
 
-	r.Body = ioutil.NopCloser(bytes.NewReader([]byte(`{"period": 300, "count": 5}`)))
+	r.Body = io.NopCloser(bytes.NewReader([]byte(`{"period": 300, "count": 5}`)))
 	expected := "missing request parameter: start"
 	_, err = client.fetchHandlerParseTimeRangeQuery(r)
 	if err.Error() != expected {
 		t.Errorf("expected %s got %s", expected, err.Error())
 	}
 
-	r.Body = ioutil.NopCloser(bytes.NewReader([]byte(`{"start": 300, "count": 5}`)))
+	r.Body = io.NopCloser(bytes.NewReader([]byte(`{"start": 300, "count": 5}`)))
 	expected = "missing request parameter: period"
 	_, err = client.fetchHandlerParseTimeRangeQuery(r)
 	if err.Error() != expected {
 		t.Errorf("expected %s got %s", expected, err.Error())
 	}
 
-	r.Body = ioutil.NopCloser(bytes.NewReader([]byte(`{"start": 300, "period": 300}`)))
+	r.Body = io.NopCloser(bytes.NewReader([]byte(`{"start": 300, "period": 300}`)))
 	expected = "missing request parameter: count"
 	_, err = client.fetchHandlerParseTimeRangeQuery(r)
 	if err.Error() != expected {

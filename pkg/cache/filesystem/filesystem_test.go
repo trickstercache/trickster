@@ -17,7 +17,6 @@
 package filesystem
 
 import (
-	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
@@ -387,7 +386,7 @@ func TestFilesystemCache_Retrieve(t *testing.T) {
 
 	// should fail
 	filename := fc.getFileName(cacheKey + "-invalid")
-	err = ioutil.WriteFile(filename, []byte("junk"), os.FileMode(0777))
+	err = os.WriteFile(filename, []byte("junk"), os.FileMode(0777))
 	if err != nil {
 		t.Error(err)
 	}
@@ -443,7 +442,7 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 
 		filename := fc.getFileName(cacheKey + strconv.Itoa(n))
 		// create a corrupted cache entry and expect an error
-		ioutil.WriteFile(filename, []byte("junk"), os.FileMode(0777))
+		os.WriteFile(filename, []byte("junk"), os.FileMode(0777))
 
 		// it should fail to retrieve a value
 		data, ls, err = fc.Retrieve(cacheKey+strconv.Itoa(n), false)

@@ -19,7 +19,7 @@ package influxdb
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"testing"
@@ -65,7 +65,7 @@ func TestSetExtent(t *testing.T) {
 	}
 
 	r.Method = http.MethodPost
-	r.Body = ioutil.NopCloser(bytes.NewBufferString(tokenized))
+	r.Body = io.NopCloser(bytes.NewBufferString(tokenized))
 	client.SetExtent(r, trq, e)
 	_, s, _ := params.GetRequestValues(r)
 	if expected != s {

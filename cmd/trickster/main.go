@@ -33,7 +33,7 @@ var (
 
 const (
 	applicationName    = "trickster"
-	applicationVersion = "2.0.0-beta0"
+	applicationVersion = "2.0.0-beta1"
 )
 
 var wg = &sync.WaitGroup{}

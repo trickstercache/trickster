@@ -17,7 +17,7 @@
 package config
 
 import (
-	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -112,20 +112,20 @@ func TestFullLoadConfiguration(t *testing.T) {
 	keyfile := td + "/key.pem"
 	confFile := td + "/trickster_test_config.conf"
 
-	err := ioutil.WriteFile(certfile, cb, 0600)
+	err := os.WriteFile(certfile, cb, 0600)
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = ioutil.WriteFile(keyfile, kb, 0600)
+	err = os.WriteFile(keyfile, kb, 0600)
 	if err != nil {
 		t.Error(err)
 	}
 
-	b, err := ioutil.ReadFile("../../../testdata/test.full.02.conf")
+	b, err := os.ReadFile("../../../testdata/test.full.02.conf")
 	b = []byte(strings.ReplaceAll(string(b), `../../testdata/test.02.`, td+"/"))
 
-	err = ioutil.WriteFile(confFile, b, 0600)
+	err = os.WriteFile(confFile, b, 0600)
 	if err != nil {
 		t.Error(err)
 	}

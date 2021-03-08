@@ -20,7 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -197,7 +197,7 @@ func TestIsGoodBody(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			res := test.target.isGoodBody(ioutil.NopCloser(bytes.NewReader([]byte(test.body))))
+			res := test.target.isGoodBody(io.NopCloser(bytes.NewReader([]byte(test.body))))
 			if res != test.expected {
 				t.Errorf("expected %t got %t", test.expected, res)
 			}

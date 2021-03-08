@@ -17,7 +17,7 @@
 package config
 
 import (
-	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -39,7 +39,7 @@ func emptyTestConfig() (*Config, string) {
 	if err != nil {
 		panic("could not load empty test config: " + err.Error())
 	}
-	s, _ := ioutil.ReadFile(path)
+	s, _ := os.ReadFile(path)
 	return c, string(s)
 }
 
@@ -285,7 +285,7 @@ func TestIsStale(t *testing.T) {
 	testFile := t.TempDir() + "/trickster_test.conf"
 	_, tml := emptyTestConfig()
 
-	err := ioutil.WriteFile(testFile, []byte(tml), 0666)
+	err := os.WriteFile(testFile, []byte(tml), 0666)
 	if err != nil {
 		t.Error(err)
 	}
@@ -306,7 +306,7 @@ func TestIsStale(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 10)
 
-	err = ioutil.WriteFile(testFile, []byte(tml), 0666)
+	err = os.WriteFile(testFile, []byte(tml), 0666)
 	if err != nil {
 		t.Error(err)
 	}

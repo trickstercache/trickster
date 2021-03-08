@@ -19,7 +19,7 @@ package engines
 import (
 	"bytes"
 	"errors"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -148,7 +148,7 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte,
 			}
 		}
 	} else if strings.HasPrefix(ct, headers.ValueMultipartByteRanges) {
-		p, ct, r, cl, err := byterange.ParseMultipartRangeResponseBody(ioutil.NopCloser(bytes.NewReader(body)), ct)
+		p, ct, r, cl, err := byterange.ParseMultipartRangeResponseBody(io.NopCloser(bytes.NewReader(body)), ct)
 		if err == nil {
 			if d.RangeParts == nil {
 				d.Ranges = r

@@ -18,7 +18,7 @@ package request
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"testing"
 )
@@ -32,7 +32,7 @@ func TestGetAndSetBody(t *testing.T) {
 		t.Errorf("expected `` got `%s`", string(body))
 	}
 
-	req.Body = ioutil.NopCloser(bytes.NewReader([]byte("trickster")))
+	req.Body = io.NopCloser(bytes.NewReader([]byte("trickster")))
 	body = GetBody(req)
 	if string(body) != "trickster" {
 		t.Errorf("expected `` got `%s`", string(body))

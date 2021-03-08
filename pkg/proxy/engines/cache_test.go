@@ -19,7 +19,7 @@ package engines
 import (
 	"context"
 	"errors"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -318,7 +318,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 		t.Error(err)
 	}
 
-	bytes, _ := ioutil.ReadAll(resp.Body)
+	bytes, _ := io.ReadAll(resp.Body)
 
 	//--------------------------------------
 	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})

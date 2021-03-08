@@ -72,6 +72,7 @@ func StatusHandler(hc healthcheck.HealthChecker) http.Handler {
 }
 
 func builder(hc healthcheck.HealthChecker, hd *healthDetail) {
+	udpateStatusText(hc, hd) // setup the initial status page text
 	notifier := make(chan bool, 32)
 	for _, c := range hc.Statuses() {
 		c.RegisterSubscriber(notifier)
@@ -134,7 +135,7 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 			}
 			d := cleanupDescription(st[k].Description())
 			tw.Write([]byte(fmt.Sprintf("%s\t%s\t%s\n", k, d, statusToString(1))))
-			json.WriteString(fmt.Sprintf(`{"name":"%s","type":"%s"}`, k, d))
+			json.WriteString(fmt.Sprintf(`{"name":"%s","provider":"%s"}`, k, d))
 		}
 		json.WriteString(`]`)
 		tw.Write([]byte("\t\t\t\n"))
@@ -151,7 +152,7 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 			d := cleanupDescription(st[k].Description())
 			fs := v.FailingSince().Truncate(time.Second).UTC().String()[:20] + "UTC"
 			tw.Write([]byte(fmt.Sprintf("%s\t%s\t%s %s\n", k, d, statusToString(-1), fs)))
-			json.WriteString(fmt.Sprintf(`{"name":"%s","type":"%s","downSince":"%s","detail":"%s"}`,
+			json.WriteString(fmt.Sprintf(`{"name":"%s","provider":"%s","downSince":"%s","detail":"%s"}`,
 				k, d, fs, strings.Replace(v.Detail(), `"`, `'`, -1)))
 		}
 		json.WriteString(`]`)
@@ -167,7 +168,7 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 			}
 			d := cleanupDescription(st[k].Description())
 			tw.Write([]byte(fmt.Sprintf("%s\t%s\t%s\n", k, d, statusToString(0))))
-			json.WriteString(fmt.Sprintf(`{"name":"%s","type":"%s"}`, k, d))
+			json.WriteString(fmt.Sprintf(`{"name":"%s","provider":"%s"}`, k, d))
 		}
 		json.WriteString(`]`)
 		tw.Write([]byte("\n"))
