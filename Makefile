@@ -123,9 +123,9 @@ docker:
 .PHONY: docker-release
 docker-release:
 # linux x86 image
-	docker build --build-arg IMAGE_ARCH=amd64 --build-arg GOARCH=amd64 -f ./deploy/Dockerfile -t tricksterio/trickster:$(IMAGE_TAG) .
+	docker build --build-arg IMAGE_ARCH=amd64 --build-arg GOARCH=amd64 -f ./deploy/Dockerfile -t tricksterproxy/trickster:$(IMAGE_TAG) .
 # linux arm image
-	docker build --build-arg IMAGE_ARCH=arm64v8 --build-arg GOARCH=arm64 -f ./deploy/Dockerfile -t tricksterio/trickster:arm64v8-$(IMAGE_TAG) .
+	docker build --build-arg IMAGE_ARCH=arm64v8 --build-arg GOARCH=arm64 -f ./deploy/Dockerfile -t tricksterproxy/trickster:arm64v8-$(IMAGE_TAG) .
 
 .PHONY: style
 style:
