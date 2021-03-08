@@ -1,50 +1,50 @@
 # Trickster Roadmap
 
-The roadmap for Trickster in 2020 focuses on delivering incremental enhancements to the core Trickster application, as well as new supporting applications and cloud native integrations.
+The roadmap for Trickster in 2021 focuses on delivering Trickster versions 2.0 and 2.1, as well as new supporting applications and cloud native integrations. Additional details for Q3 and Q4 will be provided as the year progresses.
 
 ## Timeline
 
-### Q1 2020
+### Q1 2021
 
-- [x] Trickster 1.0 GA Release
-- [x] Submit Helm charts to Helm Hub
-- [x] Trickster v1.1 Release
-  - [x] Relocate project to `tricksterproxy` organization
-  - [x] Release Binaries for Windows
-  - [x] Change default frontend listen port to 8480
-  - [x] Frontend HTTP 2.0 Support
-  - [x] Rules-based Request Routing and Rewriting
-  - [x] Use RWMutex for cache synchronization
-  - [x] Reload configuration without process restart
-  - [x] Add implementation-specific Tracing options in config
-  - [x] Additional performance improvements
-  - [x] Relocate and merge PromSim and RangeSim into a separate repo called [mockster](https://github.com/tricksterproxy/mockster)
-  - [x] Relocate Helm charts to a [separate repo](https://github.com/tricksterproxy/helm-charts)
-  - [x] Automate Helm chart releases via GitHub Workflows
-
-### Q3 2020
-
-- [ ] Kubernetes Ingress Controller
-- [ ] Submit Trickster for CNCF Sandbox Consideration
-- [ ] Register Official Docker Hub Repositories
 - [ ] Trickster v2.0 Beta Release
+  - [x] Common Time Series Format used internally for all TSDBs
+  - [x] Universal HTTP Health Checker Package
+  - [x] ALB with features for high availability and scatter/gather timeseries merge
+  - [x] YAML config support
+  - [x] Extended support for ClickHouse
+  - [ ] Support for InfluxDB 2.0, Flux syntax and querying via Chronograf
+  - [ ] Purge object from cache by path or key
+  - [ ] Short-term caching of non-timeseries read-only queries (e.g., generic SELECT statements)
+  - [ ] Support Brotli encoding over the wire and as a cache compression format
+  
+- [ ] Submit Trickster for CNCF Sandbox Consideration
 
-### Q4 2020
+### Q2 2021
 
 - [ ] Trickster v2.0 GA Release
-  - [ ] Common Time Series Format used internally for all TSDBs
-  - [ ] Importable Golang Handler Package
-  - [ ] Origin Pools w/ health checking for high availability and timeseries merge
-  - [ ] L7 Load balancing: round robin, hash, latency, lru, fewest # conns
-  - [ ] HA Request Spray: serve first response, or HA merge of time series responses
-  - [ ] YAML config support
-  - [ ] Support for InfluxDB 2.0 and Flux syntax
-  - [ ] Extended support for ClickHouse
-  - [ ] Purge object from cache by path or key
-  - [ ] Short-term caching of non-timeseries read-only queries (e.g., SELECT statements)
-- [ ] [Benchster](https://github.com/tricksterproxy/benchster) - RFC Compliance and Benchmarking Suite for Proxies
+  - [ ] Documentation overhaul using MkDocs with Release deployment automation
+  - [ ] Migrate integration tests infrastrucure from private cloud to AWS and deployed via Terraform
 
-## How to Help
+- [ ] Trickster v2.1 Beta Release
+  - [ ] Support for ElasticSearch
+  - [ ] Support operating as an adaptive, front-side cache for Grafana, including its UI, API's, and accelerating any supported timeseries datasources.
+  - [ ] Better support for operating in front of Thanos
+  - [ ] Ability to parallelize large timerange queries by scatter/gathering smaller sections of the main timerange.
+  - [ ] Additional Rules Engine capabilities for more complex request routing
+  - [ ] Grafana-style environment variable support
+  - [ ] Subdirectory (e.g., `/etc/trickster.conf.d/`) support for chained config files
+
+- [ ] Register Official Docker Hub Repositories
+
+### Q3 2021
+
+- [ ] Trickster v2.1 GA Release
+
+### Q4 2021
+
+- [ ] Trickster v2.2 Beta Release
+
+## Get Involved
 
 You can help by contributing to Trickster, or trying it out in your environment.
 

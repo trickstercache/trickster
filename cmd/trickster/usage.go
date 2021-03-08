@@ -25,33 +25,33 @@ import (
 const usageText = `
 Trickster Usage:
 
- You must provide -version, -config or both -origin-url and -origin-type.
+ You must provide -version, -config or both -origin-url and -provider.
 
  Print Version Info:
  trickster -version
 
  Validating a configuration file:
-  trickster -validate-config -config /path/to/file.conf
+  trickster -validate-config -config /path/to/file.yaml
 
  Using a configuration file:
-  trickster -config /path/to/file.conf [-log-level DEBUG|INFO|WARN|ERROR] [-proxy-port 8480] [-metrics-port 8481]
+  trickster -config /path/to/file.yaml [-log-level DEBUG|INFO|WARN|ERROR] [-proxy-port 8480] [-metrics-port 8481]
 
- Using origin-url and origin-type:
-  trickster -origin-url https://example.com -origin-type reverseproxycache [-log-level DEBUG|INFO|WARN|ERROR] [-proxy-port 8480] [-metrics-port 8481]
+ Using origin-url and provider:
+  trickster -origin-url https://example.com -provider reverseproxycache [-log-level DEBUG|INFO|WARN|ERROR] [-proxy-port 8480] [-metrics-port 8481]
 
 ------
 
  Simple HTTP Reverse Proxy Cache listening on 8080:
-   trickster -origin-url https://example.com/ -origin-type reverseproxycache -proxy-port 8080
+   trickster -origin-url https://example.com/ -provider reverseproxycache -proxy-port 8080
 
  Simple Prometheus Accelerator listening on 9090 (default port) with Debugging:
-   trickster -origin-url http://prometheus.example.com:9090/ -origin-type prometheus -log-level DEBUG
+   trickster -origin-url http://prometheus.example.com:9090/ -provider prometheus -log-level DEBUG
 
  Simple InfluxDB Accelerator listening on 8086:
-   trickster -origin-url http://influxdb.example.com:8086/ -origin-type influxdb -proxy-port 8086
+   trickster -origin-url http://influxdb.example.com:8086/ -provider influxdb -proxy-port 8086
 
  Simple ClickHouse Accelerator listening on 8123:
-   trickster -origin-url http://clickhouse.example.com:8123/ -origin-type clickhouse -proxy-port 8123
+   trickster -origin-url http://clickhouse.example.com:8123/ -provider clickhouse -proxy-port 8123
 
 ------
 

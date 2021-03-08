@@ -10,7 +10,7 @@ There are several cache types supported by Trickster
 * BadgerDB
 * Redis (basic, cluster, and sentinel)
 
-The sample configuration ([cmd/trickster/conf/example.conf](../cmd/trickster/conf/example.conf)) demonstrates how to select and configure a particular cache type, as well as how to configure generic cache configurations such as Retention Policy.
+The sample configuration ([examples/conf/example.full.yaml](../examples/conf/example.full.yaml)) demonstrates how to select and configure a particular cache type, as well as how to configure generic cache configurations such as Retention Policy.
 
 ## In-Memory
 

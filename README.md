@@ -10,7 +10,7 @@
 
 Trickster is an HTTP reverse proxy/cache for http applications and a dashboard query accelerator for time series databases.
 
-<img src="./docs/images/high-level-1.png" width=512/>
+<img src="./docs/images/high-level.png" width=512/>
 
 Learn more below, and check out our [roadmap](./docs/roadmap.md) to find out what else is in the works.
 
@@ -22,9 +22,10 @@ Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications lik
 
 ### Proxy Feature Highlights
 
+* A unique and powerful [Application Load Balancer](./docs/alb.md) for Time Series and generic HTTP endoints
 * [Supports TLS](./docs/tls.md) and HTTP/2 for frontend termination and backend origination
 * Offers several options for a [caching layer](./docs/caches.md), including in-memory, filesystem, Redis and bbolt
-* [Highly customizable](./docs/configuring.md), using simple configuration settings, [down to the HTTP Path](./docs/paths.md)
+* [Highly customizable](./docs/configuring.md), using simple yaml configuration settings, [down to the HTTP Path](./docs/paths.md)
 * Built-in Prometheus [metrics](./docs/metrics.md) and customizable [Health Check](./docs/health.md) Endpoints for end-to-end monitoring
 * [Negative Caching](./docs/negative-caching.md) to prevent domino effect outages
 * High-performance [Collapsed Forwarding](./docs/collapsed-forwarding.md)
@@ -48,7 +49,7 @@ Trickster works with virtually any Dashboard application that makes queries to a
 
 <img src="./docs/images/external/irondb_logo_60.png" width=16 /> Circonus IRONdb
 
-See the [Supported Origin Types](./docs/supported-origin-types.md) document for full details
+See the [Supported TSDB Providers](./docs/supported-origin-types.md) document for full details
 
 ### How Trickster Accelerates Time Series
 
@@ -72,7 +73,7 @@ Trickster's Fast Forward feature ensures that even with step boundary normalizat
 
 ## Trying Out Trickster
 
-Check out our end-to-end [Docker Compose demo composition](./deploy/trickster-demo) for a zero-configuration running environment.
+Check out our end-to-end [Docker Compose demo composition](./examples/docker-compose) for a zero-configuration running environment.
 
 ## Installing
 
@@ -80,7 +81,7 @@ Check out our end-to-end [Docker Compose demo composition](./deploy/trickster-de
 
 Docker images are available on Docker Hub:
 
-    $ docker run --name trickster -d -v /path/to/trickster.conf:/etc/trickster/trickster.conf -p 0.0.0.0:8480:8480 tricksterproxy/trickster
+    $ docker run --name trickster -d -v /path/to/trickster.yaml:/etc/trickster/trickster.yaml -p 0.0.0.0:8480:8480 tricksterproxy/trickster
 
 See the 'deploy' Directory for more information about using or creating Trickster docker images.
 
@@ -100,17 +101,22 @@ Go environment with [version 1.9 or greater installed](http://golang.org/doc/ins
 You can directly use the `go` tool to download and install the `trickster`
 binary into your `GOPATH`:
 
-    $ go get github.com/tricksterproxy/trickster
-    $ trickster -origin-url http://prometheus.example.com:9090 -origin-type prometheus
+```bash
+    $ go get github.com/tricksterproxy/trickster/cmd/trickster
+    # this starts a prometheus accelerator proxy for the provided endpoint
+    $ trickster -origin-url http://prometheus.example.com:9090 -provider prometheus
+```
 
 You can also clone the repository yourself and build using `make`:
 
+```bash
     $ mkdir -p $GOPATH/src/github.com/tricksterproxy
     $ cd $GOPATH/src/github.com/tricksterproxy
     $ git clone https://github.com/tricksterproxy/trickster.git
     $ cd trickster
     $ make build
-    $ ./OPATH/trickster -origin-url http://prometheus.example.com:9090 -origin-type prometheus
+    $ ./OPATH/trickster -origin-url http://prometheus.example.com:9090 -provider prometheus
+```
 
 The Makefile provides several targets, including:
 

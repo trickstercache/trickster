@@ -13,9 +13,9 @@ As OpenTelemetry evolves to support additional exporter formats, we will work to
 
 ## Configuration
 
-Trickster allows the operator to configure multiple tracing configurations, which can be associated into each Origin configuration by name.
+Trickster allows the operator to configure multiple tracing configurations, which can be associated into each Backend configuration by name.
 
-The [example config](https://github.com/tricksterproxy/trickster/blob/v1.1.2/cmd/trickster/conf/example.conf#L508) has exhaustive examples of configuring Trickster for distributed tracing.
+The [example config](https://github.com/tricksterproxy/trickster/blob/v1.1.2/examples/conf/example.full.yaml#L508) has exhaustive examples of configuring Trickster for distributed tracing.
 
 ## Span List
 
@@ -23,7 +23,7 @@ Trickster can insert several spans to the traces that it captures, depending upo
 
 | Span Name              | Observes when Trickster is: |
 | ---------------------- | ------------- |
-| request                | initially handling the client request by an Origin |
+| request                | initially handling the client request by a Backend |
 | QueryCache             | querying the cache for an object |
 | WriteCache             | writing an object to the cache |
 | DeltaProxyCacheRequest | handling a Time Series-based client request |
@@ -35,17 +35,17 @@ Trickster can insert several spans to the traces that it captures, depending upo
 
 ## Tags / Attributes
 
-Trickster supports adding custom tags to every span via the configuration. Depending upon your preferred tracing backend, these may be referred to as attributes. See the [example config](https://github.com/tricksterproxy/trickster/blob/v1.1.2/cmd/trickster/conf/example.conf#L548) for examples of adding custom attributes.
+Trickster supports adding custom tags to every span via the configuration. Depending upon your preferred tracing backend, these may be referred to as attributes. See the [example config](https://github.com/tricksterproxy/trickster/blob/v1.1.2/examples/conf/example.full.yaml#L548) for examples of adding custom attributes.
 
 Trickster also supports omitting any tags that Trickster inserts by default. The list of default tags are below. For example on the "request" span, an `http.url` tag is attached with the current full URL. In deployments where that tag may introduce too much cardinality in your backend trace storage system, you may wish to omit that tag and rely on the more concise `path` tag. Each tracer config can be provided a string list of tags to omit from traces.
 
 ### Attributes added to top level (request) span
 
 - `http.url` - the full HTTP request URL
-- `origin.name`
-- `origin.type`
+- `backend.name`
+- `backend.provider`
 - `cache.name`
-- `cache.type`
+- `cache.provider`
 - `router.path` - request path trimmed to the route match path for the request (e.g., `/api/v1/query`), good for aggregating when there are large variations in the full URL path
 
 ### Attributes added to QueryCache span

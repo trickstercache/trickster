@@ -7,7 +7,7 @@ networks:
 services:
 
   prometheus:
-    image: prom/prometheus:v2.17.2
+    image: prom/prometheus:v2.25.0
     volumes:
       - ./docker-compose-data/prometheus-config:/etc/prometheus
     command:
@@ -22,7 +22,7 @@ services:
     restart: always
 
   grafana:
-    image: grafana/grafana:6.7.3
+    image: grafana/grafana:7.4.3
     user: nobody
     ports:
       - 3000:3000
@@ -52,7 +52,7 @@ services:
     restart: always
 
   jaeger:
-    image: jaegertracing/all-in-one:1.17
+    image: jaegertracing/all-in-one:1.22
     ports:
      - 5775:5775/udp
      - 6831:6831/udp

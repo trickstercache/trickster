@@ -18,7 +18,7 @@ Notes: This can only be used to disable fast forward. A value of `on` will have 
 
 Instruction `trickster-backfill-tolerance`
 
-Supported for: All time series origins
+Supported for: All time series backends
 
 Usage: `SELECT time, count(*) FROM table  # trickster-backfill-tolerance:120`
 

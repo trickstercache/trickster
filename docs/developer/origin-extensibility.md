@@ -1,6 +1,6 @@
-# Extending Trickster to Support a New Origin Type
+# Extending Trickster to Support a New Provider
 
-Trickster 1.0 was written with extensibility in mind, and should be able to work with any time series database that has an HTTP-based API. In Trickster, we generically refer to our supported TSDB's as Origin Types. Some Origin Types are easier to implement and maintain than others, depending upon a host of factors that are covered later in this document. This document is meant to help anyone wishing to extend Trickster to support a new Origin Type, particularly in gauging the level of effort, understanding what is involved, and implementing the required interfaces and rules.
+Trickster 2.0 was written with extensibility in mind, and should be able to work with any time series database that has an HTTP-based API. In Trickster, we generically refer to our supported TSDB's as Providers. Some Providers are easier to implement and maintain than others, depending upon a host of factors that are covered later in this document. This document is meant to help anyone wishing to extend Trickster to support a new Provider, particularly in gauging the level of effort, understanding what is involved, and implementing the required interfaces and rules.
 
 ## Qualifications
 
@@ -12,94 +12,46 @@ As mentioned, the database must be able to be queried for and return time series
 
 In addition to these requirements in the technology, there are also skills qualifications to consider.
 
-Whether or not you've contributed to Open Source Software before, take a look at our Contributing guidelines so  you know how the process works for the Trickster project. If you are unfamiliar with the Forking Workflow, read up on it so that you are able to contribute to the project through Pull Requests.
+Whether or not you've contributed to Open Source Software before, take a look at our Contributing guidelines so you know how the process works for the Trickster project. If you are unfamiliar with the Forking Workflow, read up on it so that you are able to contribute to the project through Pull Requests.
 
-Trickster is a 100% Go project, so you will need to have experience writing in Go, and in particular, data marshaling/unmarshaling and data set manipulation (sorting, merging, cropping, de-duplicating, etc.). You will need to have a good understanding of the prospective Origin Type's query language and response payload structure, so you can write the necessary parsing and modeling methods that allow Trickster to manipulate upstream HTTP requests and merge newly fetched data sets into the cache.
+Trickster is a 100% Go project, so you will need to have experience writing in Go, and in particular, data marshaling/unmarshaling, HTTP 1.0 and 2 specifications, and manipulation of HTTP requsets and responses. You will need to have a good understanding of the prospective Provider's query language and response payload structure, so you can write the necessary parsing and modeling methods that allow Trickster to manipulate upstream HTTP requests and merge newly fetched data sets into the cache.
 
-While this might sound daunting, it is actually much easier than it appears on the surface. Since Trickster's DeltaProxyCache engine does a lot of the heavy lifting, you only have to write a series of interface functions before finding yourself near the finish line. And since a few Origin Types are already implemented, you can use their implementations for references, since the logic for your prospective Origin Type should be similar.
+While this might sound daunting, it is actually much easier than it appears on the surface. Since Trickster's DeltaProxyCache engine does a lot of the heavy lifting, you only have to write a series of interface functions before finding yourself near the finish line. And since a few Providers are already implemented, you can use their implementations for references, since the logic for your prospective Provider should be similar.
 
-## Interfaces
+## Interfacing
 
-Trickster provides 2 required interfaces for enabling a new Origin Type: The Proxy Client and the Time Series
+A Time Series Backend is used by Trickster to 1) manipulate HTTP requests and responses in order to accelerate the requests, 2) unmarshal data from origin databases into the [Common Time Series Format](https://github.com/tricksterproxy/trickster/blob/main/pkg/timeseries/dataset/dataset.go), and 3) marshal from the CTSF into a format supported by the Provider as requested by the downstream Client.
 
-### Proxy Client Interface
+Trickster provides 1 required interfaces for enabling a new Provider: [Time Series Backend](https://github.com/tricksterproxy/trickster/blob/main/pkg/backends/timeseries_backend.go). Separately, you must implement `io.Writer`-based marshalers and unmarshalers that conform to Trickster's [Modeler specifications](https://github.com/tricksterproxy/trickster/blob/main/pkg/timeseries/modeler.go).
 
-The Proxy Client Interface ([code](https://github.com/tricksterproxy/trickster/blob/next/internal/proxy/model/client.go)) is used by Trickster to manipulate HTTP requests and responses in order to accelerate the requests.
-
-For your Proxy Client Implementation, you will need to know these things about the Origin:
+Once data is unmarshaled into the Common Time Series Format, Trickster's other packages will handle operations like Delta Proxy Caching, etc. Thus, the implementor of a new Provider only needs to worry about wire protocols and formats.
+ Specifically, you will need to know these things about the Backend:
 
 - What URL paths and methods must be supported, and which engine through which to route each path (Basic HTTP Proxy, Object Proxy Cache, or Time Series Delta Proxy Cache). The proxy engines will call your client implementation's interface exports in order to service user requests.
 
 - What data inputs the origin expects (Path, URL parameters, POST Data, HTTP Headers, cookies, etc.), and how to manipulate the query's time range when constructing those inputs to achieve a desired result.
 
-The Proxy Client Interface Methods you will need to implement are broken into several groups of functionality, as follows.
+- The Content Type, format and structure of the Provider's datasets when transmitted over the wire.
 
-#### Basic Getters
+The Interface Methods you will need to implement are as follows:
 
-- `Configuration` returns the \*config.OriginConfig object for the origin.
+- `RegisterHandlers` registers the provided http.Handlers into the Router
 
-- `Name` returns the configured name of the Origin Type instance.
+- `DefaultPathConfigs` returns the default PathConfigs for the given Provider
 
-- `HTTPClient` returns the reusable \*http.Client object that communicates with the Origin.
+- `DefaultHealthCheckConfig` returns the default HealthCheck Config for the Provider
 
-#### HTTP Request Routing and Handling
-
-- `RegisterRoutes` registers all of the HTTP Paths that will be used by the Origin Type and map them to handlers written to service the various paths.
-
-- `HealthHandler` this method is a standard HTTP Handler that can verify and report back the health of the upstream origin and the proxy's connection to it. You will certainly create at least one other handler in your Origin Type package, but this is the only one required for conformance to the Proxy Client interface.
-
-#### Caching
-
-- `DeriveCacheKey` inspects the client request and returns the corresponding cache key
-
-#### Time Series Handling
-
-- `UnmarshalTimeseries` deserializes an HTTP Response time series payload into a Go struct
-
-- `MarshalTimeseries` seralizes a time-series struct into a serialized byte slice.
-
-- `UnmarshalInstantaneous` deserializes an HTTP Response instantaneous payload into a Go struct. This may not be applicable to every potential Origin Type.
+- `SetExtents` sets the list of the time ranges present in the cache
 
 - `ParseTimeRangeQuery` inspects the client request and returns a corresponding timeseries.TimeRangeQuery
 
-- `SetExtent` updates an upstream request's time range parameters as needed based on the delta gap analysis
-
-- `FastForwardURL` returns the URL to the origin to collect Fast Forward data points based on the provided HTTP Request
-
-### Time Series Interface
-
-The Time Series Interface ([code](https://github.com/tricksterproxy/trickster/blob/next/internal/timeseries/timeseries.go)) is used by Trickster to manipulate Time Series documents in order to maintain the cache and construct downstream client request bodies.
-
-For your Time Series Implementation, you will need to know these things about the Origin:
-
-- The structure of the response payload and how that translates into Go structs. More often than not, a prospective Origin Type offers an importable model to assist with this.
-
-The Time Series Interface Methods you will need to implement are broken into several groups of functionality, as follows.
-
-#### Getters
-
-- `Extents` returns a list of the time ranges present in the cache
-- `Step` returns the Step (the duration between each timestamp in the series)
-- `SeriesCount` returns the number of series (e.g., graph lines) in the data set
-- `ValueCount` returns the total number of values across all series in the data set
-
-#### Setters
-
-- `SetExtents` sets the list of the time ranges present in the cache
-- `SetStep` sets the Step
-
-#### Data Set Manipulation
-
-- `Merge` merges a variadic list of time series into the base time series
-- `Sort` chronologically sorts the values in each series in the time series
-- `Copy` makes an new exact copy of the time series
-- `Crop` removes any values from the time series that are outside of the provided time range
+- `FastForwardURL` (optional) returns the URL to the origin to collect Fast Forward data points based on the provided HTTP Request.
 
 ## Special Considerations
 
 ### Query Language Complexity
 
-One of the main areas of consideration is the complexity of parsing and manipulating an inbound query. You will need to (1) determine if it is indeed a request for a timeseries; and if so (2) extract the requested time range and step duration for the query; and in the event of a partial cache hit, (3) adjust the time range for the query to a provided range - all of which allows the DeltaProxyCache to fetch just the needed sections of data from the upstream origin. Requirements 1 and 2 are functionality in `ParseTimeRangeQuery` while requirement 3 is the functionality of `SetExtent`. The overall complexity of this process can significantly affect the level of effort required to implement a new Origin Type.
+One of the main areas of consideration is the complexity of parsing and manipulating an inbound query. You will need to (1) determine if it is indeed a request for a timeseries; and if so (2) extract the requested time range and step duration for the query; and in the event of a partial cache hit, (3) adjust the time range for the query to a provided range - all of which allows the DeltaProxyCache to fetch just the needed sections of data from the upstream origin. Requirements 1 and 2 are functionality in `ParseTimeRangeQuery` while requirement 3 is the functionality of `SetExtent`. The overall complexity of this process can significantly affect the level of effort required to implement a new Provider.
 
 In the example of Prometheus, the process was extremely simple: since, in the Prometheus HTTP API, time range queries have a separate http endpoint path from instantaneous queries, and because the time range is provided as separate query parameters from the query itself, the range is easily modified without Trickster having any knowledge of the underlying query or having to even parse it at all.
 

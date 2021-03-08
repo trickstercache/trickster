@@ -1,0 +1,79 @@
+frontend:
+  listen_port: 8480
+negative_caches:
+  default:
+    '400': 3000
+    '404': 3000
+    '500': 3000
+    '502': 3000
+caches:
+  fs1:
+    provider: filesystem
+    filesystem:
+      cache_path: /data/trickster
+    index:
+      max_size_objects: 512
+      max_size_backoff_objects: 128
+  mem1:
+    provider: memory
+    index:
+      max_size_objects: 512
+      max_size_backoff_objects: 128
+  rds1:
+    provider: redis
+    redis:
+      client_type: standard
+      protocol: tcp
+      endpoint: 'redis:6379'
+tracing:
+  std1:
+    provider: stdout
+    stdout:
+      pretty_print: true
+  zip1:
+    provider: zipkin
+    collector_url: 'http://zipkin:9411/api/v2/spans'
+  jc1:
+    provider: jaeger # jaeger collector
+    collector_url: 'http://jaeger:14268/api/traces'
+  ja1:
+    provider: jaeger # jaeger agent
+    collector_url: 'jaeger:6831'
+    jaeger:
+      endpoint_type: agent
+backends:
+  prom1: # prometheus cached with a memory cache, traces sent to stdout
+    provider: prometheus
+    origin_url: 'http://prometheus:9090'
+    tracing_name: std1
+    cache_name: mem1
+  prom2: # prometheus cached with a filesystem cache, traces sent to jaeger collector
+    provider: prometheus
+    origin_url: 'http://prometheus:9090'
+    tracing_name: jc1
+    cache_name: fs1
+  sim1: # simulated prometheus cached with a memory cache, traces sent to jaeger agent
+    provider: prometheus
+    origin_url: 'http://mockster:8482/prometheus'
+    tracing_name: ja1
+    cache_name: mem1
+  sim2: # simulated prometheus cached with a Redis cache, traces sent to jaeger agent
+    provider: prometheus
+    origin_url: 'http://mockster:8482/prometheus'
+    tracing_name: ja1
+    cache_name: rds1
+  rpc1: # memory reverse proxy cache of the byterange request simulation endpoint, traces sent to jager agent
+    provider: reverseproxycache
+    origin_url: 'http://mockster:8482/byterange'
+    tracing_name: ja1
+    cache_name: mem1
+    paths:
+      root:
+        path: /
+        match_type: prefix
+        handler: proxycache
+        collapsed_forwarding: progressive
+logging:
+  log_level: info
+metrics:
+  listen_port: 8481

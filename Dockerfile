@@ -1,19 +1,17 @@
 # This docker file is for local dev, the official Dockerfile is at
 # https://github.com/tricksterproxy/trickster-docker-images/
-ARG IMAGE_ARCH=amd64
 
-FROM golang:1.15 as builder
+FROM golang:1.16 as builder
 COPY . /go/src/github.com/tricksterproxy/trickster
 WORKDIR /go/src/github.com/tricksterproxy/trickster
 
-ARG GOARCH=amd64
-RUN GOOS=linux GOARCH=${GOARCH} CGO_ENABLED=0 make build
+RUN GOOS=linux CGO_ENABLED=0 make build
 
-FROM ${IMAGE_ARCH}/alpine:3.12
+FROM alpine:3
 LABEL maintainer "The Trickster Authors <trickster-developers@googlegroups.com>"
 
 COPY --from=builder /go/src/github.com/tricksterproxy/trickster/OPATH/trickster /usr/local/bin/trickster
-COPY cmd/trickster/conf/example.conf /etc/trickster/trickster.conf
+COPY examples/conf/example.full.yaml /etc/trickster/trickster.yaml
 RUN chown nobody /usr/local/bin/trickster
 RUN chmod +x /usr/local/bin/trickster
 

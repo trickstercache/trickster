@@ -1,0 +1,26 @@
+#
+# Trickster 2.0 Example Configuration File - Simple Prometheus Reverse Proxy Cache
+#
+# To use this, run: trickster -config /path/to/simple.prometheus.yaml
+#
+# This file demonstrates a basic configuration to accelerate
+# Prometheus queries using Trickster. More documentation is
+# available at https://github.com/tricksterproxy/trickster/docs/
+#
+# Copyright 2018 Comcast Cable Communications Management, LLC
+#
+
+frontend:
+  listen_port: 9090
+
+backends:
+  default:
+    # update FQDN and Port to work in your environment
+    origin_url: 'http://prometheus:9090'
+    provider: 'prometheus'
+
+metrics:
+  listen_port: 8481   # available for scraping at http://<trickster>:<metrics.listen_port>/metrics
+
+logging:
+  log_level: 'info'

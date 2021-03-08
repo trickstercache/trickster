@@ -32,7 +32,7 @@ echo rm -rf %{buildroot}
 
 %{__install} -p $RPM_SOURCE_DIR/%{name} %{buildroot}%{_bindir}
 %{__install} -p $RPM_SOURCE_DIR/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
-%{__install} -p $RPM_SOURCE_DIR/%{name}.conf %{buildroot}%{_sysconfdir}/%{name}/%{name}.conf
+%{__install} -p $RPM_SOURCE_DIR/%{name}.yaml %{buildroot}%{_sysconfdir}/%{name}/%{name}.yaml
 
 %files
 %defattr(644, root, root, 755)
@@ -42,7 +42,7 @@ echo rm -rf %{buildroot}
 %{_unitdir}/%{name}.service
 
 %dir %{_sysconfdir}/%{name}
-%config %{_sysconfdir}/%{name}/%{name}.conf
+%config %{_sysconfdir}/%{name}/%{name}.yaml
 
 %dir %attr(755, %{name}, %{name}) %{_localstatedir}/log/%{name}
 %dir %attr(755, %{name}, %{name}) %{_localstatedir}/run/%{name}

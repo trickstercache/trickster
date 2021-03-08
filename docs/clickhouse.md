@@ -1,6 +1,6 @@
 # ClickHouse Support
 
-Trickster 1.1 provides expanded support for accelerating ClickHouse queries that return time series data normally visualized on a dashboard. Acceleration works by using the Time Series Delta Proxy Cache to minimize the number and time range of queries to the upstream ClickHouse server.
+Trickster will accelerate ClickHouse queries that return time series data normally visualized on a dashboard. Acceleration works by using the Time Series Delta Proxy Cache to minimize the number and time range of queries to the upstream ClickHouse server.
 
 ## Scope of Support
 

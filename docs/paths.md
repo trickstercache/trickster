@@ -1,12 +1,12 @@
 # Customizing HTTP Path Behavior
 
-Trickster supports, via configuration, customizing the upstream request and downstream response behavior on a per-Path, per-Origin basis, by providing a `paths` configuration section for each origin configuration. Here are the basic capabilities for customizing Path behavior:
+Trickster supports, via configuration, customizing the upstream request and downstream response behavior on a per-Path, per-Backend basis, by providing a `paths` configuration section for each backend configuration. Here are the basic capabilities for customizing Path behavior:
 
 - Modify client request headers prior to contacting the origin while proxying
 - Modify origin response headers prior to processing the response object in Trickster and delivering to the client
 - Modify the response code and body
 - Limit the scope of a path by HTTP Method
-- Select the HTTP Handler for the path (`proxy`, `proxycache` or a published origin-type-specific handler)
+- Select the HTTP Handler for the path (`proxy`, `proxycache` or a published provider-specific handler)
 - Select which HTTP Headers, URL Parameters and other client request characteristics will be used to derive the Cache Key under which Trickster stores the object.
 - Disable Metrics Reporting for the path
 
@@ -32,27 +32,25 @@ The `methods` section of a Path Config takes a string array of HTTP Methods that
 
 ## Request Rewriters
 
-You can configure paths send inbound requests through a request rewriter that can modify any aspect of the inbound request (method, url, headers, etc.), before being processed by the path route. This means, when the path route inspects the request, it will have already been modified by the rewriter. Provide a rewriter with the `req_rewriter_name` config. It must map to a named/configured request rewriter (see [request rewriters](./request_rewriters.md) for more info). Note, you can also send requests through a rewriter at the origin level. If both are configured, origin-level rewriters are executed before path rewriters are.
+You can configure paths send inbound requests through a request rewriter that can modify any aspect of the inbound request (method, url, headers, etc.), before being processed by the path route. This means, when the path route inspects the request, it will have already been modified by the rewriter. Provide a rewriter with the `req_rewriter_name` config. It must map to a named/configured request rewriter (see [request rewriters](./request_rewriters.md) for more info). Note, you can also send requests through a rewriter at the backend level. If both are configured, backend-level rewriters are executed before path rewriters are.
 
-```toml
+```yaml
+request_rewriters:
+  # this example request rewriter adds an additional header to the request
+  # you can include as many instructions in rewriter as required
+  example:
+    instructions:
+      - [ header, set, Example-Header-Name, Example Value ]
 
-[request_rewriters]
-    # this example request rewriter adds an additional header to the request
-    [request_rewriters.example]
-        instructions = [
-            ["header", "set", "Example-Header-Name", "Example Value"]
-        ]
+backends:
+  default:
+    provider: rpc
+    origin_url: 'http://example.com'
+    paths:
+      root:
+        path: /
+        req_rewriter_name: example
 
-[origins]
-
-    [origins.default]
-    provider = 'rpc'
-    origin_url = 'http://example.com'
-
-        [origins.default.paths]
-            [origins.default.paths.root]
-            path = '/'
-            req_rewriter_name = 'example'
 ```
 
 ## Header and Query Parameter Behavior
@@ -77,7 +75,7 @@ Example: if the client request provides a `token=SomeHash` parameter and the Pat
 
 #### Removing
 
-Removing a header or parameter means to strip it from the HTTP Request or Response when present. To do so, prefix the header/parameter name with '-', for example, `-Cache-control: none`. When removing headers, a value is required to be provided in order to conform to TOML specification; this value, however, is innefectual. Note that there is currently no ability to remove a specific header value from a specific header - only the entire removal header. Consider setting the header value outright as described above, to strip any unwanted values.
+Removing a header or parameter means to strip it from the HTTP Request or Response when present. To do so, prefix the header/parameter name with '-', for example, `-Cache-control: none`. When removing headers, a value is required to be provided in order to conform to YAML specification; this value, however, is innefectual. Note that there is currently no ability to remove a specific header value from a specific header - only the entire removal header. Consider setting the header value outright as described above, to strip any unwanted values.
 
 #### Response Header Timing
 
@@ -114,137 +112,144 @@ To include the `requestType`, `table`, `fields`, and `filter` fields from this d
 
 ## Example Reverse Proxy Cache Config with Path Customizations
 
-```toml
-[origins]
-
-    [origins.default]
-    provider = 'rpc'
-
-        [origins.default.paths]
-
-            # root path '/'. Paths must be uniquely named but the
-            # name is otherwise unimportant
-            [origins.default.paths.root]
-            path = '/' # each path must be unique for the origin
-            methods = [ '*' ] # All HTTP methods applicable to this config
-            match_type = 'prefix' # matches any path under '/'
-            handler = 'proxy' # proxy only, no caching (this is the default)
-
-                # modify the query parameters en route to the origin
-                [origins.default.paths.root.request_params]
-                'authToken' = 'secret string'
-
-                # When a user requests a path matching this route, Trickster will
-                # inject these headers into the request before contacting the Origin
-                [origins.default.paths.root.request_headers]
-                'Cache-Control' = 'No-Transform' # Due to hyphens, quote the key name
-
-                # inject these headers into the response from the Origin
-                # before replying to the client
-                [origins.default.paths.root.response_headers]
-                'Expires' = '-1'
-
-            [origins.default.paths.images]
-            path = '/images/'
-            methods = [ 'GET', 'HEAD' ]
-            handler = 'proxycache' # Trickster will cache the images directory
-            match_type = 'prefix'
-
-                [origins.default.paths.images.response_headers]
-                'Cache-Control' = 'max-age=2592000' # cache for 30 days
-
-            # but only cache this rotating image for 30 seconds
-            [origins.default.paths.images_rotating]
-            path = '/images/rotating.jpg'
-            methods = [ 'GET' ]
-            handler = 'proxycache'
-            match_type = 'exact'
-
-                [origins.default.paths.images_rotating.response_headers]
-                'Cache-Control' = 'max-age=30'
-                '-Expires' = '
-
-            # redirect this sunsetted feature to a discontinued message
-            [origins.default.paths.redirect]
-            path = '/blog'
-            methods = [ '*' ]
-            handler = 'localresponse'
-            match_type = 'prefix'
-            response_code = 302
-
-                [origins.default.paths.redirect.response_headers]
-                Location = '/discontinued'
-
-            # cache this API endpoint, keying on the query parameter
-            [origins.default.paths.api]
-            path = '/api/'
-            methods = [ 'GET', 'HEAD' ]
-            handler = 'proxycache'
-            match_type = 'prefix'
-            cache_key_params = [ 'query' ]
-
-            # same API endpoint, different HTTP methods to route against
-            [origins.default.paths.api-deny]
-            path = '/api/'
-            methods = [ 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'CONNECT' ]
-            handler = 'localresponse'
-            match_type = 'prefix'
-            response_code = 401
-            response_body = 'this is a read-only api endpoint'
-
-            # cache the query endpoint, permitting GET or POST
-            [origins.default.paths.api-query]
-            path = '/api/query/'
-            methods = [ 'GET', 'HEAD', 'POST' ]
-            handler = 'proxycache'
-            match_type = 'prefix'
-            cache_key_params = [ 'query' ]       # for GET / HEAD
-            cache_key_form_fields = [ 'query' ]  # for POST
+```yaml
+backends:
+  default:
+    provider: rpc
+    paths:
+      # root path '/'. Paths must be uniquely named but the
+      # name is otherwise unimportant
+      root:
+        path: / # each path must be unique for the backend
+        methods: [ '*' ] # All HTTP methods applicable to this config
+        match_type: prefix # matches any path under '/'
+        handler: proxy # proxy only, no caching (this is the default)
+        # modify the query params en route to the origin; this adds authToken=secret_string
+        request_params:
+          authToken: secret string
+        # When a user requests a path matching this route, Trickster will
+        # inject these headers into the request before contacting the Origin
+        request_headers:
+          Cache-Control: No-Transform
+        # inject these headers into the response from the Origin
+        # before replying to the client
+        response_headers:
+          Expires: '-1'
+      images:
+        path: /images/
+        methods:
+          - GET
+          - HEAD
+        handler: proxycache # Trickster will cache the images directory
+        match_type: prefix
+        response_headers:
+          Cache-Control: max-age=2592000 # cache for 30 days
+      # but only cache this rotating image for 30 seconds
+      images_rotating:
+        path: /images/rotating.jpg
+        methods:
+          - GET
+        handler: proxycache
+        match_type: exact
+        response_headers:
+          Cache-Control: max-age=30
+          '-Expires': ''
+      # redirect this sunsetted feature to a discontinued message
+      redirect:
+        path: /blog
+        methods:
+          - '*'
+        handler: localresponse
+        match_type: prefix
+        response_code: 302
+        response_headers:
+          Location: /discontinued
+      # cache this API endpoint, keying on the query parameter
+      api:
+        path: /api/
+        methods:
+          - GET
+          - HEAD
+        handler: proxycache
+        match_type: prefix
+        cache_key_params:
+          - query
+      # same API endpoint, different HTTP methods to route against, which are denied
+      api-deny:
+        path: /api/
+        methods:
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+          - CONNECT
+        handler: localresponse
+        match_type: prefix
+        response_code: 401
+        response_body: this is a read-only api endpoint
+      # cache the query endpoint, permitting GET, HEAD, POST
+      api-query:
+        path: /api/query/
+        methods:
+          - GET
+          - HEAD
+          - POST
+        handler: proxycache
+        match_type: prefix
+        cache_key_params:
+          - query # for GET/HEAD
+        cache_key_form_fields:
+          - query # for POST
 ```
 
-## Modifying Behavior of Time Series Origin Types
+## Modifying Behavior of Time Series Backend
 
-Each of the Time Series Origin Types supported in Trickster comes with its own custom handlers and pre-defined Path Configs that are registered with the HTTP Router when Trickster starts up.
+Each of the Time Series Providers supported in Trickster comes with its own custom handlers and pre-defined Path Configs that are registered with the HTTP Router when Trickster starts up.
 
 For example, when Trickster is configured to accelerate Prometheus, pre-defined Path Configs are registered to control how requests to `/api/v1/query` work differently from requests to `/api/v1/query_range`. For example, the `/ap1/v1/query` Path Config uses the `query` and `time` URL query qarameters when creating the cache key, and is routed through the Object Proxy Cache; while the `/api/v1/query_range` Path Config uses the `query`, `start`, `end` and `step` parameters, and is routed through the Time Series Delta Proxy Cache.
 
-In the Trickster config file, you can add your own Path Configs to your time series origin, as well override individual settings for any of the pre-defined Path Configs, and those custom settings will be applied at startup.
+In the Trickster config file, you can add your own Path Configs to your time series backend, as well override individual settings for any of the pre-defined Path Configs, and those custom settings will be applied at startup.
 
-To know what configs you'd like to add or modify, take a look at the Trickster source code and examine the pre-definitions for the selected Origin Type. Each supported Origin Type's handlers and default Path Configs can be viewed under `/internal/proxy/origins/<origin_type>/routes.go`. These files are in a standard format that are quite human-readable, even for a non-coder, so don't be too intimidated. If you can understand Path Configs as TOML, you can understand them as Go code.
+To know what configs you'd like to add or modify, take a look at the Trickster source code and examine the pre-definitions for the selected Backend Provider. Each supported Provider's handlers and default Path Configs can be viewed under `/pkg/backends/<provider>/routes.go`. These files are in a standard format that are quite human-readable, even for a non-coder, so don't be too intimidated. If you can understand Path Configs as YAML, you can understand them as Go code.
 
-Examples of customizing Path Configs for Origin Types with Pre-Definitions:
+Examples of customizing Path Configs for Providers with Pre-Definitions:
 
-```toml
-[origins]
-
-    [origins.default]
-    provider = 'prometheus'
-
-        [origins.default.paths]
-
-            # route /api/v1/label* (including /labels/*)
-            # through Proxy instead of ProxyCache as pre-defined
-            [origins.default.paths.label]
-            path = '/api/v1/label'
-            methods = [ 'GET' ]
-            match_type = 'prefix'
-            handler = 'proxy'
-
-            # route fictional new /api/v1/coffee to ProxyCache
-            [origins.default.paths.series_range]
-            path = '/api/v1/coffee'
-            methods = [ 'GET' ]
-            match_type = 'prefix'
-            handler = 'proxycache'
-            cache_key_params = [ 'beans' ]
-
-            # block /api/v1/admin/ from being reachable via Trickster
-            [origins.default.paths.admin]
-            path = '/api/v1/admin/'
-            methods = [ 'GET', 'POST', 'PUT', 'HEAD', 'DELETE', 'OPTIONS' ]
-            match_type = 'prefix'
-            handler = 'localresponse'
-            response_code = 401
-            response_body = 'No soup for you!'
-            no_metrics = true
+```yaml
+backends:
+  default:
+    provider: prometheus
+    paths:
+      # route /api/v1/label* (including /labels/*)
+      # through Proxy instead of ProxyCache as pre-defined
+      label:
+        path: /api/v1/label
+        methods:
+          - GET
+        match_type: prefix
+        handler: proxy
+      # route fictional new /api/v1/coffee to ProxyCache
+      series_range:
+        path: /api/v1/coffee
+        methods:
+          - GET
+        match_type: prefix
+        handler: proxycache
+        cache_key_params:
+          - beans
+      # block /api/v1/admin/ from being reachable via Trickster
+      admin:
+        path: /api/v1/admin/
+        methods:
+          - GET
+          - POST
+          - PUT
+          - HEAD
+          - DELETE
+          - OPTIONS
+        match_type: prefix
+        handler: localresponse
+        response_code: 401
+        response_body: No soup for you!
+        no_metrics: true
 ```

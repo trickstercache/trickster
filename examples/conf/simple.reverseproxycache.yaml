@@ -1,0 +1,26 @@
+#
+# Trickster 2.0 Example Configuration File - Simple HTTP Reverse Proxy Cache
+#
+# To use this, run: trickster -config /path/to/simple.reverseproxycache.yaml
+#
+# This file demonstrates a basic configuration for operating an
+# HTTP Reverse Proxy Cache using Trickster. More documentation is
+# available at https://github.com/tricksterproxy/trickster/docs/
+#
+# Copyright 2018 Comcast Cable Communications Management, LLC
+#
+
+frontend:
+  listen_port: 8480
+
+backends:
+  default:
+    # update FQDN and (optional) Port to work in your environment
+    origin_url: https://www.example.com
+    provider: reverseproxycache # use 'reverseproxy' for no caching
+
+metrics:
+  listen_port: 8481   # available for scraping at http://<trickster>:<metrics.listen_port>/metrics
+
+logging:
+  log_level: info

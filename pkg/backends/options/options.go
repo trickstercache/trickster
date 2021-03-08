@@ -184,7 +184,7 @@ type Options struct {
 	md yamlx.KeyLookup `yaml:"-"`
 }
 
-// New will return a pointer to an BackendOptions with the default configuration settings
+// New will return a pointer to a Backend Options with the default configuration settings
 func New() *Options {
 	return &Options{
 		BackfillTolerance:            DefaultBackfillToleranceMS,

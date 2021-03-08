@@ -20,5 +20,5 @@ package config
 
 const (
 	// DefaultConfigPath defines the default location of the Trickster config file
-	DefaultConfigPath = "/etc/trickster/trickster.conf"
+	DefaultConfigPath = "/etc/trickster/trickster.yaml"
 )

@@ -1,6 +1,6 @@
 # Trickster Caching Retention Policies
 
-## Basic HTTP Origins
+## Basic HTTP Backends
 
 Trickster will respect HTTP 1.0, 1.1 and 2.0 caching directives from both the downstream client and the upstream origin when determining objectly cacheability and TTL. You can override the TTL by setting a custom `Cache-Control` header on a per-[Path Config](./paths.md) basis.
 
@@ -12,7 +12,7 @@ Once the cache has reached its configured maximum size of objects or bytes, Tric
 
 Caches whose object lifetimes are not managed internally by Trickster (Redis, BadgerDB) will use their own policies and methodologies for evicting cache records.
 
-## Time Series Origins
+## Time Series Backends
 
 For non-time series responses from a TSDB, Trickster will adhere to HTTP caching rules as directed by the downstream client and upstream origin.
 
@@ -20,7 +20,7 @@ For time series data responses, Trickster will cache as follows:
 
 ### TTL Settings
 
-TTL settings for each Origin configured in Trickster can be customized independently of each other, and separate TTL configurations are available for timeseries objects, and fast forward data. See [cmd/trickster/conf/example.conf](../cmd/trickster/conf/example.conf) for more info on configuring default TTLs.
+TTL settings for each Backend configured in Trickster can be customized independently of each other, and separate TTL configurations are available for timeseries objects, and fast forward data. See [examples/conf/example.full.yaml](../examples/conf/example.full.yaml) for more info on configuring default TTLs.
 
 ### Time Series Data Retention
 
