@@ -8,11 +8,11 @@ Depending upon the size of your existing or planned deployment, there are severa
 
 Single "Everything" is the most common placement model. In this configuration, you have one optional dashboard endpoint, one Trickster endpoint and one HTTP or TSDB endpoint. Behind each endpoint, you may have a single instance or a cluster. Each component is only aware of the other component's endpoint exposure and not the underlying configuration. This configuration represents a one-for-one-for-one deployment of your Dashboard, Origin, and Trickster endpoints.
 
-## Multiple Origins
+## Multiple Backends
 
 <img src="./images/deploy-multi-origin-1.png" width="762"/>
 
-In a Multi-Origin placement, you have one dashboard endpoint, one Trickster endpoint, and multiple TSDB and/or HTTP endpoints. Trickster is aware of each upstream endpoint and treats each as a unique origin to which it proxies and caches data independently from the others. Trickster selects the origin based on Host Header or URL Path from the client request.
+In a Multiple Backend placement, you have one dashboard endpoint, one Trickster endpoint, and multiple TSDB and/or HTTP endpoints. Trickster is aware of each upstream endpoint and treats each as a unique backend to which it proxies and caches data independently from the others. Trickster routes a request to a specific backend based on Host Header or URL Path in the client request.
 
 This setup may benefit situations where you have one ore more a static file server origins serving HTML, CSS and JavaScript assets and/or one or more API endpoints, all supporting a common platform.
 
@@ -26,4 +26,4 @@ In this configuration, be aware that the default 'memory' cache may be underpowe
 
 <img src="./images/deploy-multi-trickster-1.png" width="611"/>
 
-In a Multi-Trickster configuration, you have one dashboard endpoint, multiple Trickster endpoints, and multiple TSDB or HTTP endpoints, with each Trickster Endpoint having a one-to-one mapping to a TSDB/HTTP Endpoint as a pair. This is a good design if Multi-Origin is not performant enough for the amount of activity associated with your solution (e.g., you need more Tricksters). If the Dashboard system owner is different from the TSDB system owner, either party could own and operate the Trickster instance.
+In a Multi-Trickster configuration, you have one dashboard endpoint, multiple Trickster endpoints, and multiple TSDB or HTTP endpoints, with each Trickster Endpoint having a one-to-one mapping to a TSDB/HTTP Endpoint as a pair. This is a good design if Multiple Backends is not performant enough for the amount of activity associated with your solution (e.g., you need more Tricksters). If the Dashboard system owner is different from the TSDB system owner, either party could own and operate the Trickster instance.

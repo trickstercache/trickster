@@ -18,7 +18,7 @@ In this case, any other configuration entity that supports mapping to a rewriter
 
 Rewriters are exposed as optional configurations for the following configuration constructs:
 
-In an `origin` config, provide a `req_rewriter_name` to rewrite the Request using the named Request Rewriter, before it is handled by the Path route.
+In a `backend` config, provide a `req_rewriter_name` to rewrite the Request using the named Request Rewriter, before it is handled by the Path route.
 
 In a `path` config, provide a `req_rewriter_name` to rewrite the Request using the named Request Rewriter, before it is handled by the Path route.
 

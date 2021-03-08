@@ -13,7 +13,7 @@ As OpenTelemetry evolves to support additional exporter formats, we will work to
 
 ## Configuration
 
-Trickster allows the operator to configure multiple tracing configurations, which can be associated into each Origin configuration by name.
+Trickster allows the operator to configure multiple tracing configurations, which can be associated into each Backend configuration by name.
 
 The [example config](https://github.com/tricksterproxy/trickster/blob/v1.1.2/examples/conf/example.full.yaml#L508) has exhaustive examples of configuring Trickster for distributed tracing.
 
@@ -23,7 +23,7 @@ Trickster can insert several spans to the traces that it captures, depending upo
 
 | Span Name              | Observes when Trickster is: |
 | ---------------------- | ------------- |
-| request                | initially handling the client request by an Origin |
+| request                | initially handling the client request by a Backend |
 | QueryCache             | querying the cache for an object |
 | WriteCache             | writing an object to the cache |
 | DeltaProxyCacheRequest | handling a Time Series-based client request |

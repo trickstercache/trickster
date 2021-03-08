@@ -270,7 +270,7 @@ data:
     #     # This is only effective if the provider is rule
     #     rule_name: example-rule
 
-    #     # req_rewriter_name is the name of a configured rewriter (in [request_rewriters]) that will modify the request prior to
+    #     # req_rewriter_name is the name of a configured rewriter (in the request_rewriters key) that will modify the request prior to
     #     # processing by the backend client
     #     req_rewriter_name: example-rewriter
 

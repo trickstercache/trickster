@@ -1,6 +1,6 @@
 # Customizing HTTP Path Behavior
 
-Trickster supports, via configuration, customizing the upstream request and downstream response behavior on a per-Path, per-Origin basis, by providing a `paths` configuration section for each backend configuration. Here are the basic capabilities for customizing Path behavior:
+Trickster supports, via configuration, customizing the upstream request and downstream response behavior on a per-Path, per-Backend basis, by providing a `paths` configuration section for each backend configuration. Here are the basic capabilities for customizing Path behavior:
 
 - Modify client request headers prior to contacting the origin while proxying
 - Modify origin response headers prior to processing the response object in Trickster and delivering to the client

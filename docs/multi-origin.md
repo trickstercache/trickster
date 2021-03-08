@@ -1,6 +1,6 @@
 # Using Multiple Backends with a single Trickster instance
 
-Trickster supports proxying to multiple backends in a single Trickster instance, by examining the inbound request and using a multiplexer to direct the proxied request to the correct upstream origin, in the same way that web servers support virtual hosting. 
+Trickster supports proxying to multiple backends in a single Trickster instance, by examining the inbound request and using a multiplexer to direct the proxied request to the correct upstream origin, in the same way that web servers support virtual hosting.
 
 There are 2 ways to route to multiple backends.
 
@@ -89,9 +89,9 @@ Example Client Request URLs:
 
 ### DNS Alias Configuration
 
-In this mode, multiple DNS records point to a single Trickster instance. The FQDN used by the client to reach Trickster is mapped to specific backend configurations using the `hosts` list. In this mode, the URL Path is _not_ considered during Origin Selection.
+In this mode, multiple DNS records point to a single Trickster instance. The FQDN used by the client to reach Trickster is mapped to specific backend configurations using the `hosts` list. In this mode, the URL Path is _not_ considered during Backend Selection.
 
-Example DNS-based Origin Configuration:
+Example DNS-based Backend Configuration:
 
 ```yaml
 backends:
@@ -132,7 +132,7 @@ Example Client Request URLs:
 
 Note: It is currently possible to specify the same FQDN in multiple backend configurations. You should not do this (obviously). A future enhancement will cause Trickster to exit fatally upon detection at startup.
 
-## Disabling Path-based Routing for an Origin
+## Disabling Path-based Routing for a Backend
 
 You may wish for a backend to be inaccessible via the `/backend_name/` path, and only by Hostname or as the target of a [rule](./rule.md) or [ALB](./alb.md). You can disable path routing by setting `path_routing_disabled: true` for the backend, as in this example, which requires the Request's Host header match `1.example.com` or `2.example.com` in order to be routed to the backend:
 
