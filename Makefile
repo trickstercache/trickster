@@ -59,7 +59,7 @@ build: go-mod-tidy go-mod-vendor
 rpm: build
 	mkdir -p ./$(BUILD_SUBDIR)/SOURCES
 	cp -p ./$(BUILD_SUBDIR)/trickster ./$(BUILD_SUBDIR)/SOURCES/
-	cp $(TRICKSTER_MAIN)/conf/trickster.service ./$(BUILD_SUBDIR)/SOURCES/
+	cp ./deploy/systemd/trickster.service ./$(BUILD_SUBDIR)/SOURCES/
 	sed -e 's%^# log_file =.*$$%log_file = "/var/log/trickster/trickster.log"%' \
 		-e 's%prometheus:9090%localhost:9090%' \
 		< $(TRICKSTER_MAIN)/conf/example.conf > ./$(BUILD_SUBDIR)/SOURCES/trickster.conf

@@ -371,13 +371,13 @@ data:
         # fastforward_ttl_secs = 15
 
         ##
-        ## Each origin type implements their own defaults for health_check_upstream_url, health_check_verb and health_check_query,
+        ## Each origin type implements their own defaults for health_check_upstream_path, health_check_verb and health_check_query,
         ## which can be overridden per origin. See /docs/health.md for more information
         
-        ## health_check_upstream_url is the URL Trickster will request against this origin to
+        ## health_check_upstream_path is the URL Trickster will request against this origin to
         ## when a health check request is received by Trickster via http://<trickster-endpoint>/trickster/<origin_name>/health 
         ## this is the default value for prometheus:
-        # health_check_upstream_url = '/api/v1/query'
+        # health_check_upstream_path = '/api/v1/query'
 
         ## health_check_verb is the HTTP Method Trickster will when performing an upstream health check for this origin
         ## default is 'GET' for all origin types unless overridden per-origin here.

@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: trickster
-          image: tricksterio/trickster:latest
+          image: tricksterproxy/trickster:latest
           imagePullPolicy: IfNotPresent
           volumeMounts:
             - name: cfg-volume
