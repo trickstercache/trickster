@@ -9,6 +9,10 @@ jobs:
   build:
     name: Publish Beta Release
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: [1.16.x]
     steps:
       - name: Get current date
         id: date
