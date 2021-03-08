@@ -72,6 +72,7 @@ func StatusHandler(hc healthcheck.HealthChecker) http.Handler {
 }
 
 func builder(hc healthcheck.HealthChecker, hd *healthDetail) {
+	udpateStatusText(hc, hd) // setup the initial status page text
 	notifier := make(chan bool, 32)
 	for _, c := range hc.Statuses() {
 		c.RegisterSubscriber(notifier)
