@@ -4,7 +4,7 @@ The Rule Origin is not really a true Origin; it only routes inbound requests to 
 
 A Rule is a single inspection operation performed against a single component of an inbound request, which determines the Next Origin to send the request to. The Next Origin can also be a rule Origin, so as to route requests through multiple Rules before arriving at a true Origin destination.
 
-A rule can optionally rewrite multiple portions of the request before, during and after rule matching, by using [rewriters](./rewriters.md), which allows for powerful and limitless combinations of request rewriting and routing.
+A rule can optionally rewrite multiple portions of the request before, during and after rule matching, by using [request rewriters](./request_rewriters.md), which allows for powerful and limitless combinations of request rewriting and routing.
 
 ## Rule Parts
 
