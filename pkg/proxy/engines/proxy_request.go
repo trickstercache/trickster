@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"sync"
 	"time"
@@ -164,7 +163,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 	var body []byte
 	var err error
 	if reader != nil {
-		body, err = ioutil.ReadAll(reader)
+		body, err = io.ReadAll(reader)
 		resp.Body.Close()
 	}
 	if err != nil {
@@ -529,7 +528,7 @@ func (pr *proxyRequest) prepareResponse() {
 				pr.cacheStatus == status.LookupStatusRangeMiss) {
 			var b []byte
 			if pr.upstreamReader != nil {
-				b, _ = ioutil.ReadAll(pr.upstreamReader)
+				b, _ = io.ReadAll(pr.upstreamReader)
 			}
 			d = DocumentFromHTTPResponse(pr.upstreamResponse, b, pr.cachingPolicy, pr.Logger)
 			pr.cacheBuffer = bytes.NewBuffer(b)
@@ -661,7 +660,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 				go func() {
 					// oh snap. so we have some partial content to merge in, but the original cache document
 					// is now invalid. lets go ahead and reset it.
-					b, _ := ioutil.ReadAll(resp.Body)
+					b, _ := io.ReadAll(resp.Body)
 					appendLock.Lock()
 					parts.ParsePartialContentBody(resp, b, pr.Logger)
 					appendLock.Unlock()
@@ -687,7 +686,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 				}
 
 				if resp.StatusCode == http.StatusPartialContent {
-					b, _ := ioutil.ReadAll(resp.Body)
+					b, _ := io.ReadAll(resp.Body)
 					appendLock.Lock()
 					parts.ParsePartialContentBody(resp, b, pr.Logger)
 					appendLock.Unlock()

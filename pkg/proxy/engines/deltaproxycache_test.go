@@ -18,7 +18,7 @@ package engines
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -104,7 +104,7 @@ func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -133,7 +133,7 @@ func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	bodyBytes, err = io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -185,7 +185,7 @@ func TestDeltaProxyCacheRequestAllItemsTooNew(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -243,7 +243,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -275,7 +275,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
-	_, err = ioutil.ReadAll(resp.Body)
+	_, err = io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -323,7 +323,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 // 	client.QueryRangeHandler(w, r)
 // 	resp := w.Result()
 
-// 	bodyBytes, err := ioutil.ReadAll(resp.Body)
+// 	bodyBytes, err := io.ReadAll(resp.Body)
 // 	if err != nil {
 // 		t.Error(err)
 // 	}
@@ -356,7 +356,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 // 	client.QueryRangeHandler(w, r)
 // 	resp = w.Result()
 
-// 	_, err = ioutil.ReadAll(resp.Body)
+// 	_, err = io.ReadAll(resp.Body)
 // 	if err != nil {
 // 		t.Error(err)
 // 	}
@@ -453,7 +453,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -492,7 +492,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	bodyBytes, err = io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -536,7 +536,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	bodyBytes, err = io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -585,7 +585,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	bodyBytes, err = io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -646,7 +646,7 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -735,7 +735,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -775,7 +775,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	bodyBytes, err = io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -827,7 +827,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 		t.Error(err)
 	}
 
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	bodyBytes, err = io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -916,7 +916,7 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 		t.Error(err)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -950,7 +950,7 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 		t.Error(err)
 	}
 
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	bodyBytes, err = io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1009,7 +1009,7 @@ func TestDeltaProxyCacheRequestFastForwardUrlError(t *testing.T) {
 		t.Error(err)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1070,7 +1070,7 @@ func TestDeltaProxyCacheRequestWithRefresh(t *testing.T) {
 		t.Error(err)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1163,7 +1163,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 		t.Error(err)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1196,7 +1196,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 		t.Error(err)
 	}
 
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	bodyBytes, err = io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1295,7 +1295,7 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailed(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
-	_, err = ioutil.ReadAll(resp.Body)
+	_, err = io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1312,7 +1312,7 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailed(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp = w.Result()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1365,7 +1365,7 @@ func TestDeltaProxyCacheRequestOutOfWindow(t *testing.T) {
 		t.Error(err)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1388,7 +1388,7 @@ func TestDeltaProxyCacheRequestOutOfWindow(t *testing.T) {
 		t.Error(err)
 	}
 
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	bodyBytes, err = io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1481,7 +1481,7 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 		t.Error(err)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1509,7 +1509,7 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 		t.Error(err)
 	}
 
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	bodyBytes, err = io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1563,7 +1563,7 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
 	client.QueryRangeHandler(w, r)
 	resp := w.Result()
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}

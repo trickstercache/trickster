@@ -17,7 +17,7 @@
 package options
 
 import (
-	"io/ioutil"
+	"os"
 
 	strutil "github.com/tricksterproxy/trickster/pkg/util/strings"
 )
@@ -90,11 +90,11 @@ func (o *Options) Validate() (bool, error) {
 		return false, nil
 	}
 
-	_, err := ioutil.ReadFile(o.FullChainCertPath)
+	_, err := os.ReadFile(o.FullChainCertPath)
 	if err != nil {
 		return false, err
 	}
-	_, err = ioutil.ReadFile(o.PrivateKeyPath)
+	_, err = os.ReadFile(o.PrivateKeyPath)
 	if err != nil {
 		return false, err
 	}
@@ -102,7 +102,7 @@ func (o *Options) Validate() (bool, error) {
 	// Verify CA Paths
 	if o.CertificateAuthorityPaths != nil && len(o.CertificateAuthorityPaths) > 0 {
 		for _, path := range o.CertificateAuthorityPaths {
-			_, err = ioutil.ReadFile(path)
+			_, err = os.ReadFile(path)
 			if err != nil {
 				return false, err
 			}

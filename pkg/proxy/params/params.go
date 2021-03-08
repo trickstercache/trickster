@@ -19,7 +19,7 @@ package params
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 
@@ -61,9 +61,9 @@ func GetRequestValues(r *http.Request) (url.Values, string, bool) {
 		s = r.URL.RawQuery
 	} else if r.Header.Get(headers.NameContentType) == headers.ValueApplicationJSON {
 		v = url.Values{}
-		b, _ := ioutil.ReadAll(r.Body)
+		b, _ := io.ReadAll(r.Body)
 		r.Body.Close()
-		r.Body = ioutil.NopCloser(bytes.NewReader(b))
+		r.Body = io.NopCloser(bytes.NewReader(b))
 		s = string(b)
 		isBody = true
 	} else {
@@ -72,7 +72,7 @@ func GetRequestValues(r *http.Request) (url.Values, string, bool) {
 		s = v.Encode()
 		isBody = true
 		r.ContentLength = int64(len(s))
-		r.Body = ioutil.NopCloser(bytes.NewReader([]byte(s)))
+		r.Body = io.NopCloser(bytes.NewReader([]byte(s)))
 	}
 	return v, s, isBody
 }
@@ -86,6 +86,6 @@ func SetRequestValues(r *http.Request, v url.Values) {
 	} else {
 		// reset the body
 		r.ContentLength = int64(len(s))
-		r.Body = ioutil.NopCloser(bytes.NewReader([]byte(s)))
+		r.Body = io.NopCloser(bytes.NewReader([]byte(s)))
 	}
 }

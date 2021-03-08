@@ -20,7 +20,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -224,7 +223,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 					continue
 				}
 				defer func() {
-					io.Copy(ioutil.Discard, res.Body)
+					io.Copy(io.Discard, res.Body)
 					res.Body.Close()
 				}()
 			}

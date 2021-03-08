@@ -17,7 +17,7 @@
 package model
 
 import (
-	"io/ioutil"
+	"io"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -224,7 +224,7 @@ var testDataset = &dataset.DataSet{
 func TestMarshalJSON(t *testing.T) {
 	w := httptest.NewRecorder()
 	marshalTimeseriesJSON(testDataset, &timeseries.RequestOptions{}, 200, w)
-	b, _ := ioutil.ReadAll(w.Result().Body)
+	b, _ := io.ReadAll(w.Result().Body)
 	if string(b) != testDataJSON {
 		t.Error()
 	}
@@ -233,7 +233,7 @@ func TestMarshalJSON(t *testing.T) {
 func TestMarshalCSV(t *testing.T) {
 	w := httptest.NewRecorder()
 	marshalTimeseriesCSV(testDataset, &timeseries.RequestOptions{OutputFormat: 1}, 200, w)
-	b, _ := ioutil.ReadAll(w.Result().Body)
+	b, _ := io.ReadAll(w.Result().Body)
 	if string(b) != testDataCSV {
 		t.Error()
 	}
@@ -242,7 +242,7 @@ func TestMarshalCSV(t *testing.T) {
 func TestMarshalCSVWithNames(t *testing.T) {
 	w := httptest.NewRecorder()
 	marshalTimeseriesCSVWithNames(testDataset, &timeseries.RequestOptions{OutputFormat: 2}, 200, w)
-	b, _ := ioutil.ReadAll(w.Result().Body)
+	b, _ := io.ReadAll(w.Result().Body)
 	if string(b) != testDataCSVWithNames {
 		t.Error()
 	}
@@ -251,7 +251,7 @@ func TestMarshalCSVWithNames(t *testing.T) {
 func TestMarshalTSV(t *testing.T) {
 	w := httptest.NewRecorder()
 	marshalTimeseriesTSV(testDataset, &timeseries.RequestOptions{OutputFormat: 3}, 200, w)
-	b, _ := ioutil.ReadAll(w.Result().Body)
+	b, _ := io.ReadAll(w.Result().Body)
 	if string(b) != testDataTSV {
 		t.Error()
 	}
@@ -260,7 +260,7 @@ func TestMarshalTSV(t *testing.T) {
 func TestMarshalTSVWithNames(t *testing.T) {
 	w := httptest.NewRecorder()
 	marshalTimeseriesTSVWithNames(testDataset, &timeseries.RequestOptions{OutputFormat: 4}, 200, w)
-	b, _ := ioutil.ReadAll(w.Result().Body)
+	b, _ := io.ReadAll(w.Result().Body)
 	if string(b) != testDataTSVWithNames {
 		t.Error()
 	}
@@ -269,7 +269,7 @@ func TestMarshalTSVWithNames(t *testing.T) {
 func TestMarshalTSVWithNamesAndTypes(t *testing.T) {
 	w := httptest.NewRecorder()
 	marshalTimeseriesTSVWithNamesAndTypes(testDataset, &timeseries.RequestOptions{OutputFormat: 5}, 200, w)
-	b, _ := ioutil.ReadAll(w.Result().Body)
+	b, _ := io.ReadAll(w.Result().Body)
 	if string(b) != testDataTSVWithNamesAndTypes {
 		t.Error()
 	}

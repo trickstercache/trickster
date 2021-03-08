@@ -18,7 +18,7 @@ package model
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -62,7 +62,7 @@ func TestMergeAndWriteVector(t *testing.T) {
 func testResponseGates7() merge.ResponseGates {
 
 	b1 := []byte(testVector)
-	closer1 := ioutil.NopCloser(bytes.NewReader(b1))
+	closer1 := io.NopCloser(bytes.NewReader(b1))
 	rsc1 := request.NewResources(nil, nil, nil, nil, nil, nil, nil)
 	rsc1.Response = &http.Response{
 		Body:       closer1,
@@ -77,7 +77,7 @@ func testResponseGates7() merge.ResponseGates {
 	rg1.Write(b1)
 
 	b2bad := []byte(`{"stat`)
-	closer2 := ioutil.NopCloser(bytes.NewReader(b2bad))
+	closer2 := io.NopCloser(bytes.NewReader(b2bad))
 	rsc2 := request.NewResources(nil, nil, nil, nil, nil, nil, nil)
 	rsc2.Response = &http.Response{
 		Body:       closer2,
@@ -91,7 +91,7 @@ func testResponseGates7() merge.ResponseGates {
 	rg2.Write(b2bad)
 
 	b3 := []byte(testVector2)
-	closer3 := ioutil.NopCloser(bytes.NewReader(b3))
+	closer3 := io.NopCloser(bytes.NewReader(b3))
 	rsc3 := request.NewResources(nil, nil, nil, nil, nil, nil, nil)
 	rsc3.Response = &http.Response{
 		Body:       closer3,
@@ -113,7 +113,7 @@ func testResponseGates7() merge.ResponseGates {
 func testResponseGates8() merge.ResponseGates {
 
 	b1 := []byte(`{"status":"error","data":{}`)
-	closer1 := ioutil.NopCloser(bytes.NewReader(b1))
+	closer1 := io.NopCloser(bytes.NewReader(b1))
 	rsc1 := request.NewResources(nil, nil, nil, nil, nil, nil, nil)
 	rsc1.Response = &http.Response{
 		Body:       closer1,
@@ -127,7 +127,7 @@ func testResponseGates8() merge.ResponseGates {
 	rg1.Write(b1)
 
 	b2 := []byte(`{"status":"error","data":{}`)
-	closer2 := ioutil.NopCloser(bytes.NewReader(b1))
+	closer2 := io.NopCloser(bytes.NewReader(b1))
 	rsc2 := request.NewResources(nil, nil, nil, nil, nil, nil, nil)
 	rsc2.Response = &http.Response{
 		Body:       closer2,

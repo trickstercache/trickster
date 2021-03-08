@@ -17,7 +17,7 @@
 package handlers
 
 import (
-	"io/ioutil"
+	"io"
 	"net/http/httptest"
 	"testing"
 
@@ -60,7 +60,7 @@ func TestHandleLocalResponse(t *testing.T) {
 		t.Errorf("expected 418 got %d.", resp.StatusCode)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -110,7 +110,7 @@ func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 		t.Errorf("expected 200 got %d.", resp.StatusCode)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -147,7 +147,7 @@ func TestHandleLocalResponseNoPathConfig(t *testing.T) {
 		t.Errorf("expected 200 got %d.", resp.StatusCode)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}

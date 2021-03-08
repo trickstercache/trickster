@@ -17,8 +17,8 @@
 package routing
 
 import (
-	"io/ioutil"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -292,19 +292,19 @@ func TestRegisterProxyRoutesInvalidCert(t *testing.T) {
 	keyfile := td + "/key.pem"
 	confFile := td + "/trickster_test_config.conf"
 
-	err := ioutil.WriteFile(certfile, []byte{}, 0600)
+	err := os.WriteFile(certfile, []byte{}, 0600)
 	if err != nil {
 		t.Error(err)
 	}
-	err = ioutil.WriteFile(keyfile, kb, 0600)
+	err = os.WriteFile(keyfile, kb, 0600)
 	if err != nil {
 		t.Error(err)
 	}
 
-	b, err := ioutil.ReadFile("../../testdata/test.bad_tls_cert.routes.conf")
+	b, err := os.ReadFile("../../testdata/test.bad_tls_cert.routes.conf")
 	b = []byte(strings.ReplaceAll(string(b), `../../testdata/test.06.`, td+"/"))
 
-	err = ioutil.WriteFile(confFile, b, 0600)
+	err = os.WriteFile(confFile, b, 0600)
 	if err != nil {
 		t.Error(err)
 	}

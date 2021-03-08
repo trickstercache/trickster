@@ -19,7 +19,7 @@ package params
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -81,7 +81,7 @@ func TestGetSetRequestValues(t *testing.T) {
 		t.Errorf("expected false")
 	}
 
-	r, _ = http.NewRequest(http.MethodPost, "http://example.com/", ioutil.NopCloser(bytes.NewBufferString(params)))
+	r, _ = http.NewRequest(http.MethodPost, "http://example.com/", io.NopCloser(bytes.NewBufferString(params)))
 	r.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
 	v, s, hb = GetRequestValues(r)
 	if len(v) != 1 {

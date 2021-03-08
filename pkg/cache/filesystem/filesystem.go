@@ -19,7 +19,6 @@ package filesystem
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
@@ -107,7 +106,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
 
 	o := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
-	err := ioutil.WriteFile(dataFile, o.ToBytes(), os.FileMode(0777))
+	err := os.WriteFile(dataFile, o.ToBytes(), os.FileMode(0777))
 	if err != nil {
 		nl.Release()
 		return err
@@ -131,7 +130,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	dataFile := c.getFileName(cacheKey)
 
 	nl, _ := c.locker.RAcquire(c.lockPrefix + cacheKey)
-	data, err := ioutil.ReadFile(dataFile)
+	data, err := os.ReadFile(dataFile)
 	nl.RRelease()
 
 	if err != nil {
@@ -226,7 +225,7 @@ func makeDirectory(path string) error {
 		}
 		// verify writability by attempting to touch a test file in the cache path
 		tf := path + s + ".test." + strconv.FormatInt(time.Now().Unix(), 10)
-		err = ioutil.WriteFile(tf, []byte(""), 0600)
+		err = os.WriteFile(tf, []byte(""), 0600)
 		if err == nil {
 			os.Remove(tf)
 		}

@@ -21,7 +21,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"sync"
@@ -156,7 +155,7 @@ func (t *target) isGoodBody(r io.ReadCloser) bool {
 	if !t.ceb {
 		return true
 	}
-	x, err := ioutil.ReadAll(r)
+	x, err := io.ReadAll(r)
 	if err != nil {
 		t.status.detail = "error reading response body from target"
 		return false

@@ -20,7 +20,7 @@ package gzip
 import (
 	"bytes"
 	"compress/gzip"
-	"io/ioutil"
+	"io"
 )
 
 // Inflate returns the inflated version of a gzip-deflated byte slice
@@ -29,5 +29,5 @@ func Inflate(in []byte) ([]byte, error) {
 	if err != nil {
 		return []byte{}, err
 	}
-	return ioutil.ReadAll(gr)
+	return io.ReadAll(gr)
 }

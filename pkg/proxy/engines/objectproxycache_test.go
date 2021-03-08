@@ -19,7 +19,7 @@ package engines
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -843,7 +843,7 @@ func getExpectedRangeBody(r *http.Request, boundary string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	b, _ := ioutil.ReadAll(resp.Body)
+	b, _ := io.ReadAll(resp.Body)
 	expectedBody := string(b)
 
 	if boundary != "" {
@@ -1126,7 +1126,7 @@ func testFetchOPC(r *http.Request, sc int, body string,
 		e = append(e, err)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		e = append(e, err)
 	}

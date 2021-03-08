@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
@@ -57,7 +56,7 @@ func (c *Client) fetchHandlerSetExtent(r *http.Request,
 		}
 	}
 
-	b, err := ioutil.ReadAll(r.Body)
+	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -82,7 +81,7 @@ func (c *Client) fetchHandlerSetExtent(r *http.Request,
 		return
 	}
 
-	r.Body = ioutil.NopCloser(newBody)
+	r.Body = io.NopCloser(newBody)
 }
 
 // fetchHandlerParseTimeRangeQuery parses the key parts of a TimeRangeQuery
@@ -91,12 +90,12 @@ func (c *Client) fetchHandlerParseTimeRangeQuery(
 	r *http.Request) (*timeseries.TimeRangeQuery, error) {
 	trq := &timeseries.TimeRangeQuery{}
 
-	b, err := ioutil.ReadAll(r.Body)
+	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, errors.ParseRequestBody(err)
 	}
 
-	r.Body = ioutil.NopCloser(bytes.NewReader(b))
+	r.Body = io.NopCloser(bytes.NewReader(b))
 	fetchReq := map[string]interface{}{}
 	if err = json.NewDecoder(bytes.NewReader(b)).Decode(&fetchReq); err != nil {
 		return nil, errors.ParseRequestBody(err)
@@ -129,8 +128,8 @@ func (c *Client) fetchHandlerDeriveCacheKey(path string, params url.Values,
 	var sb strings.Builder
 	sb.WriteString(path)
 	newBody := &bytes.Buffer{}
-	if b, err := ioutil.ReadAll(body); err == nil {
-		body = ioutil.NopCloser(bytes.NewReader(b))
+	if b, err := io.ReadAll(body); err == nil {
+		body = io.NopCloser(bytes.NewReader(b))
 		fetchReq := map[string]interface{}{}
 		err := json.NewDecoder(bytes.NewReader(b)).Decode(&fetchReq)
 		if err == nil {

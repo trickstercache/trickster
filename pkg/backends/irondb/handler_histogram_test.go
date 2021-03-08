@@ -17,7 +17,7 @@
 package irondb
 
 import (
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -62,7 +62,7 @@ func TestHistogramHandler(t *testing.T) {
 		t.Errorf("expected 200 got %d.", resp.StatusCode)
 	}
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}
@@ -87,7 +87,7 @@ func TestHistogramHandler(t *testing.T) {
 		t.Errorf("expected 200 got %d.", resp.StatusCode)
 	}
 
-	bodyBytes, err = ioutil.ReadAll(resp.Body)
+	bodyBytes, err = io.ReadAll(resp.Body)
 	if err != nil {
 		t.Error(err)
 	}

@@ -19,7 +19,7 @@ package byterange
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"strings"
 	"testing"
 
@@ -50,7 +50,7 @@ Content-Range: bytes %s/%s
 
 func TestParseMultipartRangeResponseBody(t *testing.T) {
 
-	reader := ioutil.NopCloser(bytes.NewBuffer(content))
+	reader := io.NopCloser(bytes.NewBuffer(content))
 
 	parts, ct, ranges, cl, err := ParseMultipartRangeResponseBody(reader,
 		headers.ValueMultipartByteRanges+testSeparator)

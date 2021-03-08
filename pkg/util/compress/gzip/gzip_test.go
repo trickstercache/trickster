@@ -17,13 +17,13 @@
 package gzip
 
 import (
-	"io/ioutil"
+	"os"
 	"testing"
 )
 
 func TestInflate(t *testing.T) {
 	const expected = "this is the inflated text string"
-	c, err := ioutil.ReadFile("../../../../testdata/gzip_test.txt.gz")
+	c, err := os.ReadFile("../../../../testdata/gzip_test.txt.gz")
 	if err != nil {
 		t.Error(err)
 	}

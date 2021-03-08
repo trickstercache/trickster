@@ -19,7 +19,6 @@ package engines
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"time"
 
@@ -84,7 +83,7 @@ func handleCachePartialHit(pr *proxyRequest) error {
 	d := pr.cacheDocument
 	resp := pr.upstreamResponse
 	if pr.isPartialResponse {
-		b, _ := ioutil.ReadAll(pr.upstreamReader)
+		b, _ := io.ReadAll(pr.upstreamReader)
 		d2 := &HTTPDocument{}
 
 		d2.ParsePartialContentBody(resp, b, pr.Logger)
@@ -98,7 +97,7 @@ func handleCachePartialHit(pr *proxyRequest) error {
 		err := d.FulfillContentBody()
 
 		if err == nil {
-			pr.upstreamResponse.Body = ioutil.NopCloser(bytes.NewReader(d.Body))
+			pr.upstreamResponse.Body = io.NopCloser(bytes.NewReader(d.Body))
 			pr.mapLock.Lock()
 			pr.upstreamResponse.Header.Set(headers.NameContentType, d.ContentType)
 			pr.mapLock.Unlock()
@@ -108,7 +107,7 @@ func handleCachePartialHit(pr *proxyRequest) error {
 			pr.mapLock.Lock()
 			headers.Merge(pr.upstreamResponse.Header, h)
 			pr.mapLock.Unlock()
-			pr.upstreamReader = ioutil.NopCloser(bytes.NewReader(b))
+			pr.upstreamReader = io.NopCloser(bytes.NewReader(b))
 		}
 
 	} else if d != nil {

@@ -19,7 +19,7 @@ package irondb
 import (
 	"bytes"
 	"context"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -172,7 +172,7 @@ func TestSetExtent(t *testing.T) {
 
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 
-			r, _ := http.NewRequest(http.MethodGet, c.u.String(), ioutil.NopCloser(bytes.NewBufferString(c.body)))
+			r, _ := http.NewRequest(http.MethodGet, c.u.String(), io.NopCloser(bytes.NewBufferString(c.body)))
 			rsc.PathConfig = c.p
 			r = request.SetResources(r, rsc)
 
@@ -186,7 +186,7 @@ func TestSetExtent(t *testing.T) {
 			}
 
 			if c.expBody != "" {
-				b, err := ioutil.ReadAll(r.Body)
+				b, err := io.ReadAll(r.Body)
 				if err != nil {
 					t.Errorf("Unable to read request body: %v", err)
 					return
