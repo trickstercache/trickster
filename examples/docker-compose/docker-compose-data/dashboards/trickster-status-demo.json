@@ -1119,10 +1119,10 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(idelta(trickster_frontend_requests_total{job=\"trickster\",job=\"trickster\"}[1m])) by (origin_name, http_status)",
+          "expr": "sum(idelta(trickster_frontend_requests_total{job=\"trickster\",job=\"trickster\"}[1m])) by (backend_name, http_status)",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "{{origin_name}} - {{http_status}}",
+          "legendFormat": "{{backend_name}} - {{http_status}}",
           "refId": "A"
         }
       ],
@@ -1221,10 +1221,10 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(idelta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[1m])) by (origin_name)",
+          "expr": "sum(idelta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[1m])) by (backend_name)",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "{{origin_name}}",
+          "legendFormat": "{{backend_name}}",
           "refId": "A"
         },
         {
@@ -1452,10 +1452,10 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(idelta(trickster_proxy_requests_total{job=\"trickster\"}[1m])) by (origin_name)",
+          "expr": "sum(idelta(trickster_proxy_requests_total{job=\"trickster\"}[1m])) by (backend_name)",
           "format": "time_series",
           "intervalFactor": 1,
-          "legendFormat": "{{origin_name}}",
+          "legendFormat": "{{backend_name}}",
           "refId": "A"
         }
       ],
