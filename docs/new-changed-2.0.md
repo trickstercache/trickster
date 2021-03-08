@@ -40,6 +40,10 @@ You can build the 2.0 binary from the `main` branch, download binaries from the 
 
 ## Breaking Changes from 1.x
 
+### Metrics
+
+- In metrics related to Trickster's operation, all label names of `origin_name` are changed to `backend_name`
+
 ### Configuration
 
 Using [tricktool](http://github.com/tricksterproxy/tricktool) to migrate your configurations is the recommended approach. However, if you choose to convert your configuration by hand, here is what you need to know:
