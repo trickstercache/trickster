@@ -18,51 +18,51 @@ The following metrics are available for polling with any Trickster configuration
 
 * `trickster_frontend_requests_total` (Counter) - Count of front end requests handled by Trickster
   * labels:
-    * `origin_name` - the name of the configured origin handling the proxy request
-    * `provider` - the type of the configured origin handling the proxy request
+    * `backend_name` - the name of the configured backend handling the proxy request
+    * `provider` - the type of the configured backend handling the proxy request
     * `method` - the HTTP Method of the proxied request
-    * `http_status` - The HTTP response code provided by the origin
+    * `http_status` - The HTTP response code provided by the backend
     * `path` - the Path portion of the requested URL
 
 * `trickster_frontend_requests_duration_seconds` (Histogram) - Histogram of front end request durations handled by Trickster
   * labels:
-    * `origin_name` - the name of the configured origin handling the proxy request
-    * `provider` - the type of the configured origin handling the proxy request
+    * `backend_name` - the name of the configured backend handling the proxy request
+    * `provider` - the type of the configured backend handling the proxy request
     * `method` - the HTTP Method of the proxied request
-    * `http_status` - The HTTP response code provided by the origin
+    * `http_status` - The HTTP response code provided by the backend
     * `path` - the Path portion of the requested URL
 
 * `trickster_frontend_written_byte_total` (Counter) - Count of bytes written in front end requests handled by Trickster
   * labels:
-    * `origin_name` - the name of the configured origin handling the proxy request
-    * `provider` - the type of the configured origin handling the proxy request
+    * `backend_name` - the name of the configured backend handling the proxy request
+    * `provider` - the type of the configured backend handling the proxy request
     * `method` - the HTTP Method of the proxied request
-    * `http_status` - The HTTP response code provided by the origin
+    * `http_status` - The HTTP response code provided by the backend
     * `path` - the Path portion of the requested URL
 
 * `trickster_proxy_requests_total` (Counter) - The total number of requests Trickster has handled.
   * labels:
-    * `origin_name` - the name of the configured origin handling the proxy request
-    * `provider` - the type of the configured origin handling the proxy request
+    * `backend_name` - the name of the configured backend handling the proxy request
+    * `provider` - the type of the configured backend handling the proxy request
     * `method` - the HTTP Method of the proxied request
     * `cache_status` - status codes are described [here](./caches.md#cache-status)
-    * `http_status` - The HTTP response code provided by the origin
+    * `http_status` - The HTTP response code provided by the backend
     * `path` - the Path portion of the requested URL
 
 * `trickster_proxy_points_total` (Counter) - The total number of data points Trickster has handled.
   * labels:
-    * `origin_name` - the name of the configured origin handling the proxy request
-    * `provider` - the type of the configured origin handling the proxy request
+    * `backend_name` - the name of the configured backend handling the proxy request
+    * `provider` - the type of the configured backend handling the proxy request
     * `cache_status` - status codes are described [here](./caches.md#cache-status)
     * `path` - the Path portion of the requested URL
 
 * `trickster_proxy_request_duration_seconds` (Histogram) - Time required to proxy a given Prometheus query.
   * labels:
-    * `origin_name` - the name of the configured origin handling the proxy request
-    * `provider` - the type of the configured origin handling the proxy request
+    * `backend_name` - the name of the configured backend handling the proxy request
+    * `provider` - the type of the configured backend handling the proxy request
     * `method` - the HTTP Method of the proxied request
     * `cache_status` - status codes are described [here](./caches.md#cache-status)
-    * `http_status` - The HTTP response code provided by the origin
+    * `http_status` - The HTTP response code provided by the backend
     * `path` - the Path portion of the requested URL
 
 * `trickster_proxy_max_connections` (Gauge) - Trickster max number of allowed concurrent connections

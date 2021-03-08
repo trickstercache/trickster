@@ -18,9 +18,9 @@ Each origin section of a Trickster config file can be augmented with the optiona
 
 ```yaml
 backends:
-  example: # origin for example
-    tls:   # TLS settings for origin named example
-      # front-end configs
+  example: # example backend
+    tls:   # TLS settings for example backend
+      # server configs
       full_chain_cert_path: '/path/to/my/cert.pem'
       private_key_path: '/path/to/my/key.pem'
       # back-end configs
@@ -30,17 +30,17 @@ backends:
       client_key_path: '/path/to/client/key.pem'
 ```
 
-## Front-End
+## Server Configs - used when responding to clients
 
-Each origin can handle encryption with exactly 1 certificate and key pair, as configured in the TLS section of the origin config (demonstrated above).
+Each backend can handle encryption with exactly 1 certificate and key pair, as configured in the TLS section of the backend config (demonstrated above).
 
 If the path to any configured Certificate or Key file is unreachable or unparsable, Trickster will exit upon startup with an error providing reasonable context.
 
-You may use the same TLS certificate and key for multiple origins, depending upon how your Trickster configurations are laid out. Any certificates configured by Trickster must match the hostname header of the inbound http request (exactly, or by wildcard interpolation), or clients will likely reject the certificate for security issues.
+You may use the same TLS certificate and key for multiple backends, depending upon how your Trickster configurations are laid out. Any certificates configured by Trickster must match the hostname header of the inbound http request (exactly, or by wildcard interpolation), or clients will likely reject the certificate for security issues.
 
-## Back-End
+## Client Configs - used when proxying to an origin
 
-Each Trickster origin front-end configuration is paired with its own back-end http(s) client, which can be configured in the TLS section of the origin config, as demonstrated above.
+Each backend's tls configuration can also configure the https client used for making requests against the origin as demonstrated above.
 
 `insecure_skip_verify` will instruct the http client to ignore hostname verification issues with the upstream origin's certificate, and process the request anyway. This is analogous to `-k | --insecure` in curl.
 

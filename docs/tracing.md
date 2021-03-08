@@ -42,10 +42,10 @@ Trickster also supports omitting any tags that Trickster inserts by default. The
 ### Attributes added to top level (request) span
 
 - `http.url` - the full HTTP request URL
-- `origin.name`
-- `origin.type`
+- `backend.name`
+- `backend.provider`
 - `cache.name`
-- `cache.type`
+- `cache.provider`
 - `router.path` - request path trimmed to the route match path for the request (e.g., `/api/v1/query`), good for aggregating when there are large variations in the full URL path
 
 ### Attributes added to QueryCache span

@@ -1,12 +1,12 @@
 # Customizing HTTP Path Behavior
 
-Trickster supports, via configuration, customizing the upstream request and downstream response behavior on a per-Path, per-Origin basis, by providing a `paths` configuration section for each origin configuration. Here are the basic capabilities for customizing Path behavior:
+Trickster supports, via configuration, customizing the upstream request and downstream response behavior on a per-Path, per-Origin basis, by providing a `paths` configuration section for each backend configuration. Here are the basic capabilities for customizing Path behavior:
 
 - Modify client request headers prior to contacting the origin while proxying
 - Modify origin response headers prior to processing the response object in Trickster and delivering to the client
 - Modify the response code and body
 - Limit the scope of a path by HTTP Method
-- Select the HTTP Handler for the path (`proxy`, `proxycache` or a published origin-type-specific handler)
+- Select the HTTP Handler for the path (`proxy`, `proxycache` or a published provider-specific handler)
 - Select which HTTP Headers, URL Parameters and other client request characteristics will be used to derive the Cache Key under which Trickster stores the object.
 - Disable Metrics Reporting for the path
 
@@ -32,7 +32,7 @@ The `methods` section of a Path Config takes a string array of HTTP Methods that
 
 ## Request Rewriters
 
-You can configure paths send inbound requests through a request rewriter that can modify any aspect of the inbound request (method, url, headers, etc.), before being processed by the path route. This means, when the path route inspects the request, it will have already been modified by the rewriter. Provide a rewriter with the `req_rewriter_name` config. It must map to a named/configured request rewriter (see [request rewriters](./request_rewriters.md) for more info). Note, you can also send requests through a rewriter at the origin level. If both are configured, origin-level rewriters are executed before path rewriters are.
+You can configure paths send inbound requests through a request rewriter that can modify any aspect of the inbound request (method, url, headers, etc.), before being processed by the path route. This means, when the path route inspects the request, it will have already been modified by the rewriter. Provide a rewriter with the `req_rewriter_name` config. It must map to a named/configured request rewriter (see [request rewriters](./request_rewriters.md) for more info). Note, you can also send requests through a rewriter at the backend level. If both are configured, backend-level rewriters are executed before path rewriters are.
 
 ```yaml
 request_rewriters:
@@ -42,7 +42,7 @@ request_rewriters:
     instructions:
       - [ header, set, Example-Header-Name, Example Value ]
 
-origins:
+backends:
   default:
     provider: rpc
     origin_url: 'http://example.com'
@@ -203,20 +203,20 @@ backends:
           - query # for POST
 ```
 
-## Modifying Behavior of Time Series Origin Types
+## Modifying Behavior of Time Series Backend
 
-Each of the Time Series Origin Types supported in Trickster comes with its own custom handlers and pre-defined Path Configs that are registered with the HTTP Router when Trickster starts up.
+Each of the Time Series Providers supported in Trickster comes with its own custom handlers and pre-defined Path Configs that are registered with the HTTP Router when Trickster starts up.
 
 For example, when Trickster is configured to accelerate Prometheus, pre-defined Path Configs are registered to control how requests to `/api/v1/query` work differently from requests to `/api/v1/query_range`. For example, the `/ap1/v1/query` Path Config uses the `query` and `time` URL query qarameters when creating the cache key, and is routed through the Object Proxy Cache; while the `/api/v1/query_range` Path Config uses the `query`, `start`, `end` and `step` parameters, and is routed through the Time Series Delta Proxy Cache.
 
-In the Trickster config file, you can add your own Path Configs to your time series origin, as well override individual settings for any of the pre-defined Path Configs, and those custom settings will be applied at startup.
+In the Trickster config file, you can add your own Path Configs to your time series backend, as well override individual settings for any of the pre-defined Path Configs, and those custom settings will be applied at startup.
 
-To know what configs you'd like to add or modify, take a look at the Trickster source code and examine the pre-definitions for the selected Origin Type. Each supported Origin Type's handlers and default Path Configs can be viewed under `/internal/proxy/origins/<origin_type>/routes.go`. These files are in a standard format that are quite human-readable, even for a non-coder, so don't be too intimidated. If you can understand Path Configs as YAML, you can understand them as Go code.
+To know what configs you'd like to add or modify, take a look at the Trickster source code and examine the pre-definitions for the selected Backend Provider. Each supported Provider's handlers and default Path Configs can be viewed under `/pkg/backends/<provider>/routes.go`. These files are in a standard format that are quite human-readable, even for a non-coder, so don't be too intimidated. If you can understand Path Configs as YAML, you can understand them as Go code.
 
-Examples of customizing Path Configs for Origin Types with Pre-Definitions:
+Examples of customizing Path Configs for Providers with Pre-Definitions:
 
 ```yaml
-origins:
+backends:
   default:
     provider: prometheus
     paths:
