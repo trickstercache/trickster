@@ -19,8 +19,8 @@ import (
 	"net/http"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
-	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/semconv"
 	"go.opentelemetry.io/otel/trace"
@@ -50,20 +50,20 @@ func WithPropagators(props propagation.TextMapPropagator) Option {
 }
 
 // Returns the Attributes, Context Entries, and SpanContext that were encoded by Inject.
-func Extract(ctx context.Context, req *http.Request, opts ...Option) ([]label.KeyValue, []label.KeyValue, trace.SpanContext) {
+func Extract(ctx context.Context, req *http.Request, opts ...Option) ([]attribute.KeyValue, []attribute.KeyValue, trace.SpanContext) {
 	c := newConfig(opts)
-	ctx = c.propagators.Extract(ctx, req.Header)
+	ctx = c.propagators.Extract(ctx, propagation.HeaderCarrier(req.Header))
 
 	attrs := append(
 		semconv.HTTPServerAttributesFromHTTPRequest("", "", req),
 		semconv.NetAttributesFromHTTPRequest("tcp", req)...,
 	)
 
-	labels := baggage.Set(ctx)
-	return attrs, (&labels).ToSlice(), trace.RemoteSpanContextFromContext(ctx)
+	attributes := baggage.Set(ctx)
+	return attrs, (&attributes).ToSlice(), trace.RemoteSpanContextFromContext(ctx)
 }
 
 func Inject(ctx context.Context, req *http.Request, opts ...Option) {
 	c := newConfig(opts)
-	c.propagators.Inject(ctx, req.Header)
+	c.propagators.Inject(ctx, propagation.HeaderCarrier(req.Header))
 }
