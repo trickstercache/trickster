@@ -21,8 +21,8 @@ import (
 	"strconv"
 	"testing"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/label"
 )
 
 func TestHTTPToCode(t *testing.T) {
@@ -79,7 +79,7 @@ func TestTags(t *testing.T) {
 		t.Errorf("expected %d got %d", 2, len(t1))
 	}
 
-	attrs := []label.KeyValue{label.String("testKey3", "testValue3")}
+	attrs := []attribute.KeyValue{attribute.String("testKey3", "testValue3")}
 	t1.MergeAttr(attrs)
 	if len(t1) != 3 {
 		t.Errorf("expected %d got %d", 3, len(t1))

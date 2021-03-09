@@ -34,7 +34,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 
-	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -286,7 +286,7 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 			if span != nil {
 				if req.Header != nil {
 					if _, ok := req.Header[headers.NameRange]; ok {
-						span.SetAttributes(label.Bool("isRange", true))
+						span.SetAttributes(attribute.Bool("isRange", true))
 					}
 				}
 				pr.revalidationRequest = req.WithContext(trace.ContextWithSpan(req.Context(), span))
@@ -308,7 +308,7 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 				if span != nil {
 					if req.Header != nil {
 						if _, ok := req.Header[headers.NameRange]; ok {
-							span.SetAttributes(label.Bool("isRange", true))
+							span.SetAttributes(attribute.Bool("isRange", true))
 						}
 					}
 					req = req.WithContext(trace.ContextWithSpan(req.Context(), span))

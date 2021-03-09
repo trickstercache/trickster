@@ -24,17 +24,17 @@ import (
 
 	"go.opentelemetry.io/contrib"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/semconv"
 	"go.opentelemetry.io/otel/trace"
 )
 
 var (
-	HTTPStatus     = label.Key("http.status")
-	HTTPHeaderMIME = label.Key("http.mime")
-	HTTPRemoteAddr = label.Key("http.remote")
-	HTTPLocalAddr  = label.Key("http.local")
+	HTTPStatus     = attribute.Key("http.status")
+	HTTPHeaderMIME = attribute.Key("http.mime")
+	HTTPRemoteAddr = attribute.Key("http.remote")
+	HTTPLocalAddr  = attribute.Key("http.local")
 )
 
 var (
@@ -93,7 +93,7 @@ func NewClientTrace(ctx context.Context) *httptrace.ClientTrace {
 	}
 }
 
-func (ct *clientTracer) start(hook, spanName string, attrs ...label.KeyValue) {
+func (ct *clientTracer) start(hook, spanName string, attrs ...attribute.KeyValue) {
 	ct.mtx.Lock()
 	defer ct.mtx.Unlock()
 
@@ -113,7 +113,7 @@ func (ct *clientTracer) start(hook, spanName string, attrs ...label.KeyValue) {
 	}
 }
 
-func (ct *clientTracer) end(hook string, err error, attrs ...label.KeyValue) {
+func (ct *clientTracer) end(hook string, err error, attrs ...attribute.KeyValue) {
 	ct.mtx.Lock()
 	defer ct.mtx.Unlock()
 	if ctx, ok := ct.activeHooks[hook]; ok {
@@ -201,7 +201,7 @@ func (ct *clientTracer) wroteHeaderField(k string, v []string) {
 	if ct.span("http.headers") == nil {
 		ct.start("http.headers", "http.headers")
 	}
-	ct.root.SetAttributes(label.String("http."+strings.ToLower(k), sliceToString(v)))
+	ct.root.SetAttributes(attribute.String("http."+strings.ToLower(k), sliceToString(v)))
 }
 
 func (ct *clientTracer) wroteHeaders() {

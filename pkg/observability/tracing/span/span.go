@@ -25,8 +25,8 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
-	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -99,7 +99,7 @@ func NewChildSpan(ctx context.Context, tr *tracing.Tracer,
 }
 
 // SetAttributes safely sets attributes on a span, unless they are in the omit list
-func SetAttributes(tr *tracing.Tracer, span trace.Span, kvs ...label.KeyValue) {
+func SetAttributes(tr *tracing.Tracer, span trace.Span, kvs ...attribute.KeyValue) {
 	l := len(kvs)
 	if tr == nil || span == nil || l == 0 {
 		return
@@ -107,13 +107,13 @@ func SetAttributes(tr *tracing.Tracer, span trace.Span, kvs ...label.KeyValue) {
 	span.SetAttributes(filterAttributes(tr, kvs)...)
 }
 
-func filterAttributes(tr *tracing.Tracer, kvs []label.KeyValue) []label.KeyValue {
+func filterAttributes(tr *tracing.Tracer, kvs []attribute.KeyValue) []attribute.KeyValue {
 	l := len(kvs)
 	if tr == nil || tr.Tracer == nil || l == 0 || tr.Options == nil ||
 		len(tr.Options.OmitTagsList) == 0 {
 		return kvs
 	}
-	approved := make([]label.KeyValue, 0, l)
+	approved := make([]attribute.KeyValue, 0, l)
 	for _, kv := range kvs {
 		// if the key is not in the omit list, add it to the approved list
 		if _, ok := tr.Options.OmitTags[string(kv.Key)]; !ok {

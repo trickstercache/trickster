@@ -22,8 +22,8 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -65,7 +65,7 @@ func (t Tags) Merge(t2 Tags) {
 }
 
 // MergeAttr merges the provided attributes into the Tags map
-func (t Tags) MergeAttr(attr []label.KeyValue) {
+func (t Tags) MergeAttr(attr []attribute.KeyValue) {
 	if len(attr) == 0 {
 		return
 	}
@@ -75,11 +75,11 @@ func (t Tags) MergeAttr(attr []label.KeyValue) {
 }
 
 // ToAttr returns the Tags map as an Attributes List
-func (t Tags) ToAttr() []label.KeyValue {
-	attr := make([]label.KeyValue, len(t))
+func (t Tags) ToAttr() []attribute.KeyValue {
+	attr := make([]attribute.KeyValue, len(t))
 	i := 0
 	for k, v := range t {
-		attr[i] = label.String(k, v)
+		attr[i] = attribute.String(k, v)
 		i++
 	}
 	return attr
