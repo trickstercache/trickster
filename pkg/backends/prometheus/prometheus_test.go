@@ -381,7 +381,9 @@ func TestParseVectorQuery(t *testing.T) {
 	rsc := request.NewResources(o, nil, nil, nil, nil, nil, nil)
 	req = request.SetResources(req, rsc)
 
-	_, err := parseVectorQuery(req)
+	rounder := time.Second * 15
+
+	_, err := parseVectorQuery(req, rounder)
 	if err != nil {
 		t.Error(err)
 	}
@@ -395,7 +397,7 @@ func TestParseVectorQuery(t *testing.T) {
 		}).Encode(),
 	}}
 
-	_, err = parseVectorQuery(req)
+	_, err = parseVectorQuery(req, rounder)
 	if err == nil {
 		t.Error("expected error for missing parameter")
 	}
@@ -410,7 +412,7 @@ func TestParseVectorQuery(t *testing.T) {
 		}).Encode(),
 	}}
 
-	_, err = parseVectorQuery(req)
+	_, err = parseVectorQuery(req, rounder)
 	if err == nil {
 		t.Error("expected error for time parsing")
 	}
@@ -424,7 +426,7 @@ func TestParseVectorQuery(t *testing.T) {
 		}).Encode(),
 	}}
 
-	_, err = parseVectorQuery(req)
+	_, err = parseVectorQuery(req, rounder)
 	if err != nil {
 		t.Error(err)
 	}
