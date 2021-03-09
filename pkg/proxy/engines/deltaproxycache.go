@@ -38,7 +38,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 
-	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -233,7 +233,7 @@ checkCache:
 		cacheStatus = status.LookupStatusRangeMiss
 	}
 
-	tspan.SetAttributes(rsc.Tracer, span, label.String("cache.status", cacheStatus.String()))
+	tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", cacheStatus.String()))
 
 	var writeLock locks.NamedLock
 

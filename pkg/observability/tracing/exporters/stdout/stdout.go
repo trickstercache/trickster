@@ -21,8 +21,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
 	"github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/stdout"
-	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -66,17 +66,17 @@ func NewTracer(opts *options.Options) (*tracing.Tracer, error) {
 		sampler = sdktrace.TraceIDRatioBased(opts.SampleRate)
 	}
 
-	serviceKey := label.String("service.name", opts.ServiceName)
+	serviceKey := attribute.String("service.name", opts.ServiceName)
 
-	var tags []label.KeyValue
+	var tags []attribute.KeyValue
 	if opts.Tags != nil && len(opts.Tags) > 0 {
-		tags = make([]label.KeyValue, 1, len(opts.Tags)+1)
+		tags = make([]attribute.KeyValue, 1, len(opts.Tags)+1)
 		tags[0] = serviceKey
 		for k, v := range opts.Tags {
-			tags = append(tags, label.String(k, v))
+			tags = append(tags, attribute.String(k, v))
 		}
 	} else {
-		tags = []label.KeyValue{serviceKey}
+		tags = []attribute.KeyValue{serviceKey}
 	}
 
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp),
