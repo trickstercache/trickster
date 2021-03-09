@@ -128,9 +128,7 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 		clone.ExtentList = timeseries.ExtentList{}
 		return clone
 	}
-	clone.ExtentList = make(timeseries.ExtentList, len(ds.ExtentList))
-	copy(clone.ExtentList, ds.ExtentList)
-	clone.ExtentList = clone.ExtentList.Crop(e)
+	clone.ExtentList = ds.ExtentList.Clone().Crop(e)
 
 	startNS := epoch.Epoch(e.Start.UnixNano())
 	endNS := epoch.Epoch(e.End.UnixNano())
@@ -169,11 +167,8 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 				}()
 				iwg.Wait()
 				if start < l && end <= l && end > start {
-					// give 1 extra slot in the capacity for a possible fast forward value
-					pts := make(Points, len(s2.Points[start:end]), len(s2.Points[start:end])+1)
-					copy(pts, s2.Points[start:end])
-					sc.Points = pts
-					sc.PointSize = pts.Size()
+					sc.Points = s2.Points.CloneRange(start, end)
+					sc.PointSize = sc.Points.Size()
 					clone.Results[n].SeriesList[o] = sc
 				} else {
 					skips = true
@@ -205,13 +200,16 @@ func (ds *DataSet) Clone() timeseries.Timeseries {
 		Merger:       ds.Merger,
 		SizeCropper:  ds.SizeCropper,
 		RangeCropper: ds.RangeCropper,
-		ExtentList:   make(timeseries.ExtentList, len(ds.ExtentList)),
 		Results:      make([]*Result, len(ds.Results)),
 	}
 	if ds.TimeRangeQuery != nil {
 		clone.TimeRangeQuery = ds.TimeRangeQuery.Clone()
 	}
-	copy(clone.ExtentList, ds.ExtentList)
+
+	if ds.ExtentList != nil {
+		clone.ExtentList = ds.ExtentList.Clone()
+	}
+
 	for i := range ds.Results {
 		clone.Results[i] = ds.Results[i].Clone()
 	}
@@ -324,9 +322,7 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 							if n <= 1 {
 								// extra 10 capacity prevents an extra copy/expand of the whole
 								// slice for small incremental merges on the next load
-								x := make(Points, n, n+10)
-								copy(x, es.Points[0:n])
-								es.Points = x
+								es.Points = es.Points.CloneRange(0, n)
 							} else {
 								x := make(Points, 0, len(es.Points)+10)
 								for k := 0; k < n; k++ {
@@ -442,11 +438,8 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 				}()
 				iwg.Wait()
 				if start < l && end <= l && end > start {
-					// give 1 extra slot in the capacity for a possible fast forward value
-					pts := make(Points, len(s2.Points[start:end]), len(s2.Points[start:end])+1)
-					copy(pts, s2.Points[start:end])
-					s2.Points = pts
-					s2.PointSize = pts.Size()
+					s2.Points = s2.Points.CloneRange(start, end)
+					s2.PointSize = s2.Points.Size()
 				}
 				wg.Done()
 				sl = append(sl, s2)
@@ -520,9 +513,9 @@ func (ds *DataSet) Extents() timeseries.ExtentList {
 
 // SetExtents overwrites a DataSet's known extents with the provided extent list
 func (ds *DataSet) SetExtents(el timeseries.ExtentList) {
-	l := make(timeseries.ExtentList, len(el))
-	copy(l, el)
-	ds.ExtentList = l
+	if el != nil {
+		ds.ExtentList = el.Clone()
+	}
 }
 
 // Sort sorts all Values in each Series chronologically by their timestamp

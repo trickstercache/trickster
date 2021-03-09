@@ -27,6 +27,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
+	"github.com/tricksterproxy/trickster/pkg/util/copiers"
 	strutil "github.com/tricksterproxy/trickster/pkg/util/strings"
 	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 )
@@ -121,29 +122,24 @@ func (o *Options) Clone() *Options {
 		MatchType:               o.MatchType,
 		HandlerName:             o.HandlerName,
 		Handler:                 o.Handler,
-		RequestHeaders:          strutil.CloneMap(o.RequestHeaders),
-		RequestParams:           strutil.CloneMap(o.RequestParams),
+		RequestHeaders:          copiers.CopyStringLookup(o.RequestHeaders),
+		RequestParams:           copiers.CopyStringLookup(o.RequestParams),
 		ReqRewriter:             o.ReqRewriter,
 		ReqRewriterName:         o.ReqRewriterName,
-		ResponseHeaders:         strutil.CloneMap(o.ResponseHeaders),
+		ResponseHeaders:         copiers.CopyStringLookup(o.ResponseHeaders),
 		ResponseBody:            o.ResponseBody,
 		ResponseBodyBytes:       o.ResponseBodyBytes,
 		CollapsedForwardingName: o.CollapsedForwardingName,
 		CollapsedForwardingType: o.CollapsedForwardingType,
 		NoMetrics:               o.NoMetrics,
 		HasCustomResponseBody:   o.HasCustomResponseBody,
-		Methods:                 make([]string, len(o.Methods)),
-		CacheKeyParams:          make([]string, len(o.CacheKeyParams)),
-		CacheKeyHeaders:         make([]string, len(o.CacheKeyHeaders)),
-		CacheKeyFormFields:      make([]string, len(o.CacheKeyFormFields)),
-		Custom:                  make([]string, len(o.Custom)),
+		Methods:                 copiers.CopyStrings(o.Methods),
+		CacheKeyParams:          copiers.CopyStrings(o.CacheKeyParams),
+		CacheKeyHeaders:         copiers.CopyStrings(o.CacheKeyHeaders),
+		CacheKeyFormFields:      copiers.CopyStrings(o.CacheKeyFormFields),
+		Custom:                  copiers.CopyStrings(o.Custom),
 		KeyHasher:               o.KeyHasher,
 	}
-	copy(c.Methods, o.Methods)
-	copy(c.CacheKeyParams, o.CacheKeyParams)
-	copy(c.CacheKeyHeaders, o.CacheKeyHeaders)
-	copy(c.CacheKeyFormFields, o.CacheKeyFormFields)
-	copy(c.Custom, o.Custom)
 	return c
 }
 

@@ -16,6 +16,8 @@
 
 package options
 
+import "github.com/tricksterproxy/trickster/pkg/util/copiers"
+
 // RewriteList is a list of Rewrite Instructions
 type RewriteList [][]string
 
@@ -39,8 +41,7 @@ func (rl RewriteList) Clone() RewriteList {
 	if len(rl) > 0 {
 		rl2 = make(RewriteList, len(rl))
 		for i := range rl {
-			rl2[i] = make([]string, len(rl[i]))
-			copy(rl2[i], rl[i])
+			rl2[i] = copiers.CopyStrings(rl[i])
 		}
 	}
 	return rl2

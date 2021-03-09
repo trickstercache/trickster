@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/tricksterproxy/trickster/pkg/backends/providers"
+	"github.com/tricksterproxy/trickster/pkg/util/copiers"
 	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 )
 
@@ -58,19 +59,8 @@ func (o *Options) Clone() *Options {
 		OutputFormat:  o.OutputFormat,
 	}
 
-	if o.Pool != nil {
-		c.Pool = make([]string, len(o.Pool))
-		if len(o.Pool) > 0 {
-			copy(c.Pool, o.Pool)
-		}
-	}
-
-	if o.MergeablePaths != nil {
-		c.MergeablePaths = make([]string, len(o.MergeablePaths))
-		if len(o.MergeablePaths) > 0 {
-			copy(c.MergeablePaths, o.MergeablePaths)
-		}
-	}
+	c.Pool = copiers.CopyStrings(o.Pool)
+	c.MergeablePaths = copiers.CopyStrings(o.MergeablePaths)
 
 	return c
 }

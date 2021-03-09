@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	"github.com/tricksterproxy/trickster/pkg/util/copiers"
 )
 
 // ResponseGate is a Request/ResponseWriter Pair that must be handled in its entirety
@@ -68,8 +69,7 @@ func (rg *ResponseGate) Write(b []byte) (int, error) {
 	}
 
 	if rg.body == nil {
-		rg.body = make([]byte, l)
-		copy(rg.body, b)
+		rg.body = copiers.CopyBytes(b)
 	} else {
 		rg.body = append(rg.body, b...)
 	}

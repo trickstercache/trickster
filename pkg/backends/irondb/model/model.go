@@ -247,10 +247,11 @@ func (se *SeriesEnvelope) Clone() timeseries.Timeseries {
 	b := &SeriesEnvelope{
 		Data:         make([]DataPoint, len(se.Data)),
 		StepDuration: se.StepDuration,
-		ExtentList:   make(timeseries.ExtentList, 0, len(se.ExtentList)),
+	}
+	if se.ExtentList != nil {
+		b.ExtentList = se.ExtentList.Clone()
 	}
 
-	copy(b.ExtentList, se.ExtentList)
 	if len(se.Data) > 0 {
 		b.Data = make(DataPoints, len(se.Data))
 		copy(b.Data, se.Data)

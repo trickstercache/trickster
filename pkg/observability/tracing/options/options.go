@@ -19,7 +19,7 @@ package options
 import (
 	jaegeropts "github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/jaeger/options"
 	stdoutopts "github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/stdout/options"
-	"github.com/tricksterproxy/trickster/pkg/util/strings"
+	"github.com/tricksterproxy/trickster/pkg/util/copiers"
 	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 )
 
@@ -38,7 +38,7 @@ type Options struct {
 	StdOutOptions *stdoutopts.Options `yaml:"stdout,omitempty"`
 	JaegerOptions *jaegeropts.Options `yaml:"jaeger,omitempty"`
 
-	OmitTags map[string]bool `yaml:"-"`
+	OmitTags map[string]interface{} `yaml:"-"`
 	// for tracers that don't support WithProcess (e.g., Zipkin)
 	attachTagsToSpan bool
 }
@@ -71,9 +71,9 @@ func (o *Options) Clone() *Options {
 		CollectorUser:    o.CollectorUser,
 		CollectorPass:    o.CollectorPass,
 		SampleRate:       o.SampleRate,
-		Tags:             strings.CloneMap(o.Tags),
-		OmitTags:         strings.CloneBoolMap(o.OmitTags),
-		OmitTagsList:     strings.CloneList(o.OmitTagsList),
+		Tags:             copiers.CopyStringLookup(o.Tags),
+		OmitTags:         copiers.CopyLookup(o.OmitTags),
+		OmitTagsList:     copiers.CopyStrings(o.OmitTagsList),
 		StdOutOptions:    so,
 		JaegerOptions:    jo,
 		attachTagsToSpan: o.attachTagsToSpan,
@@ -103,13 +103,7 @@ func ProcessTracingOptions(mo map[string]*Options, metadata yamlx.KeyLookup) {
 }
 
 func (o *Options) generateOmitTags() {
-	o.OmitTags = make(map[string]bool)
-	if len(o.OmitTagsList) == 0 {
-		return
-	}
-	for _, v := range o.OmitTagsList {
-		o.OmitTags[v] = true
-	}
+	o.OmitTags = copiers.LookupFromStrings(o.OmitTagsList)
 }
 
 // AttachTagsToSpan indicates that Tags should be attached to the span
