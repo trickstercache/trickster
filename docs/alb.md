@@ -36,7 +36,7 @@ Trickster's round robiner cycles through the pool in the order it is defined in 
 
 #### More About Our Round Robin Methodology
 
-Trickster's ALB works by maintaining an atomic uint64 counter that increments each time a request is received by the ALB. The ALB then performs a modulo operation on the request's counter value, with the denominator being the count of healthy backends in the pool. The resulting value, ranging from `0` to `len(healthy_pool) -1` indicates the assigned backend based on the counter and current pool size.
+Trickster's ALB works by maintaining an atomic uint64 counter that increments each time a request is received by the ALB. The ALB then performs a modulo operation on the request's counter value, with the denominator being the count of healthy backends in the pool. The resulting value, ranging from `0` to `len(healthy_pool) - 1` indicates the assigned backend based on the counter and current pool size.
 
 #### Example Round Robin Configuration
 
@@ -82,7 +82,7 @@ Here is the visual representation of this configuration:
 
 The recommended application for using the **Time Series Merge** methodology is as a High Availability solution. In this application, Trickster fans the client request out to multiple redundant tsdb endpoints and merges the responses back into a single document for the client. If any of the two endpoints are down, or have gaps in their respone (due to prior downtime), the Trickster cache along with the data from the healthy endpoints will ensure the client receives the most complete response possible. Instantaneous downtime of any Backend will result in a warning being injected in the client response.
 
-Separate from an HA use case, it is possible to use tmerge as a Federation broker that merges responses from different, non-redundant tsdb endpoints; for example, to aggregate responses from a solution running clusters in multiple regions, with their own in-region-only tsdb deployments. In this use case, it is recommended to [inject labels](./prometheus.md#injecting-labels) into the responses to protect against data collisions across series. Label injecion is demonstrated in the snippet below.
+Separate from an HA use case, it is possible to use tmerge as a Federation broker that merges responses from different, non-redundant tsdb endpoints; for example, to aggregate metrics from a solution running clusters in multiple regions, with separate, in-region-only tsdb deployments. In this use case, it is recommended to [inject labels](./prometheus.md#injecting-labels) into the responses to protect against data collisions across series. Label injecion is demonstrated in the snippet below.
 
 #### Providers Supporting Time Series Merge
 
@@ -137,7 +137,7 @@ backends:
 
   # prom-alb-all scatter/gathers prom01a/b, prom02 and prom03 and merges their responses
   # for the caller. since a unique region label was applied to non-redundant backends,
-  # collisions are avoided
+  # collisions are avoided. each backend caches data independently of the aggregated response
   prom-alb-all:
     provider: alb
     alb:
@@ -257,7 +257,7 @@ Here is the visual representation of this configuration:
 
 ## Maintaining Healthy Pools With Automated Health Check Integrations
 
-Health Checks are configured on a per-Backend as described in the [Health documentation](./health.md). Each Backend's health checker will notify all ALB pools of which it is a member when its health status changes, so long as it has been configured with a [health check interval](./health#example+health+check+configuration+for+use+in+alb) for automated checking. When an ALB is notified that the state of a pool member has changed, the ALB will reconstruct its list of healthy pool members before serving the next request.
+Health Checks are configured per-Backend as described in the [Health documentation](./health.md). Each Backend's health checker will notify all ALB pools of which it is a member when its health status changes, so long as it has been configured with a [health check interval](./health#example+health+check+configuration+for+use+in+alb) for automated checking. When an ALB is notified that the state of a pool member has changed, the ALB will reconstruct its list of healthy pool members before serving the next request.
 
 ## Health Check States
 
@@ -276,12 +276,14 @@ backends:
   prom01:
     provider: prometheus
     origin_url: http://prom01.example.com:9090
-    interval_ms: 1000 # enables automatic health check polling for ALB pool reporting
+    healthcheck:
+      interval_ms: 1000 # enables automatic health check polling for ALB pool reporting
 
   prom02:
     provider: prometheus
     origin_url: http://prom02.example.com:9090
-    interval_ms: 1000
+    healthcheck:
+      interval_ms: 1000
 
   prom-alb-tsm:
     provider: alb
@@ -309,12 +311,14 @@ backends:
   prom-01:
     provider: prometheus
     origin_url: http://prom01.example.com:9090
-    interval_ms: 1000 # enables automatic health check polling every 1s
+    healthcheck:
+      interval_ms: 1000 # enables automatic health check polling every 1s
 
   flux-01:
     provider: inflxudb
     origin_url: http://flux01.example.com:8086
-    interval_ms: 1000 # enables automatic health check polling every 1s
+    healthcheck:
+      interval_ms: 1000 # enables automatic health check polling every 1s
 ```
 
 ```text
