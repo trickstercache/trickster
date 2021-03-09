@@ -12,7 +12,7 @@ Trickster 2.0 provides an all-new Application Load Balancer that is easy to conf
 
 ## Integration with Backends
 
-The ALB works by applying a Methodology to select a Backend from a list of Pool Members, through which to route a request. Pool member names represent Backend Configs (known in Trickster 0.x and 1.x as Origin Configs) that can be pre-existing or newly defined.
+The ALB works by applying a Methodology to select one or more Backends from a list of Healthy Pool Members, through which to route a request. Pool member names represent Backend Configs (known in Trickster 0.x and 1.x as Origin Configs) that can be pre-existing or newly defined.
 
 All settings and functions configured for a Backend are applicable to traffic routed via an ALB - caching, rewriters, rules, tracing, TLS, etc.
 
