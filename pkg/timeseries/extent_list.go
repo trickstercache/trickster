@@ -166,7 +166,8 @@ func (el ExtentList) Clone() ExtentList {
 	return c
 }
 
-// CloneRange returns a true copy of the ExtentList, limited to the provided ranges
+// CloneRange returns a perfect copy of the ExtentList, cloning only the
+// Extents in the provided index range (upper-bound exclusive)
 func (el ExtentList) CloneRange(start, end int) ExtentList {
 	if end < start {
 		return nil

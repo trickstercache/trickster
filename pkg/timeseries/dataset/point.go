@@ -72,9 +72,8 @@ func (p Points) Clone() Points {
 	return clone
 }
 
-// Clone returns a perfect copy of the Points, cloning only the
-// points in the provided range (upper-bound exclusive)
-
+// CloneRange returns a perfect copy of the Points, cloning only the
+// points in the provided index range (upper-bound exclusive)
 func (p Points) CloneRange(start, end int) Points {
 	if end < start {
 		return nil
