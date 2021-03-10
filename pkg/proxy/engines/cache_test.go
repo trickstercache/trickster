@@ -84,7 +84,7 @@ func TestMultiPartByteRange(t *testing.T) {
 
 	ranges := make(byterange.Ranges, 1)
 	ranges[0] = byterange.Range{Start: 5, End: 10}
-	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]interface{}{"text/plain": nil})
 	if err != nil {
 		t.Error("Expected multi part byte range request to pass, but failed with ", err.Error())
 	}
@@ -111,7 +111,7 @@ func TestCacheHitRangeRequest(t *testing.T) {
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
-	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]interface{}{"text/plain": true})
 	if err != nil {
 		t.Error(err)
 	}
@@ -155,7 +155,7 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
-	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]interface{}{"text/plain": true})
 	if err != nil {
 		t.Error(err)
 	}
@@ -198,7 +198,7 @@ func TestCacheHitRangeRequest3(t *testing.T) {
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
-	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]interface{}{"text/plain": true})
 	if err != nil {
 		t.Error(err)
 	}
@@ -239,7 +239,7 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
-	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]interface{}{"text/plain": true})
 	if err != nil {
 		t.Error(err)
 	}
@@ -283,7 +283,7 @@ func TestFullCacheMissRangeRequest(t *testing.T) {
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
-	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]interface{}{"text/plain": true})
 	if err != nil {
 		t.Error(err)
 	}
@@ -336,7 +336,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
 	d := DocumentFromHTTPResponse(resp, bytes, nil, testLogger)
-	err = WriteCache(ctx, cache, "testKey2", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	err = WriteCache(ctx, cache, "testKey2", d, time.Duration(60)*time.Second, map[string]interface{}{"text/plain": true})
 	if err != nil {
 		t.Error(err)
 	}
@@ -387,7 +387,7 @@ func TestQueryCache(t *testing.T) {
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer(), Logger: testLogger})
 
-	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]interface{}{"text/plain": true})
 	if err != nil {
 		t.Error(err)
 	}
@@ -419,7 +419,7 @@ func TestQueryCache(t *testing.T) {
 		t.Errorf("expected error")
 	}
 
-	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]bool{"text/plain": true})
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]interface{}{"text/plain": true})
 	if err != nil {
 		t.Error(err)
 	}

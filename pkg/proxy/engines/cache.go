@@ -155,7 +155,7 @@ func stripConditionalHeaders(h http.Header) {
 
 // WriteCache writes an HTTPDocument to the cache
 func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
-	ttl time.Duration, compressTypes map[string]bool) error {
+	ttl time.Duration, compressTypes map[string]interface{}) error {
 
 	rsc := tc.Resources(ctx).(*request.Resources)
 

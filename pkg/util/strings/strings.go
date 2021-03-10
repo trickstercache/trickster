@@ -46,18 +46,6 @@ func CloneMap(in map[string]string) map[string]string {
 	return out
 }
 
-// CloneBoolMap returns an exact copy of a map consisting string key and bool value
-func CloneBoolMap(in map[string]bool) map[string]bool {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]bool)
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
-
 // CloneList returns an exact copy of the provided string slice
 func CloneList(in []string) []string {
 	if in == nil {
@@ -66,6 +54,18 @@ func CloneList(in []string) []string {
 	l := len(in)
 	out := make([]string, l)
 	copy(out, in)
+	return out
+}
+
+// CloneLookup returns an exact copy of the provided string lookup map
+func CloneLookup(in map[string]interface{}) map[string]interface{} {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]interface{})
+	for k, v := range in {
+		out[k] = v
+	}
 	return out
 }
 
@@ -91,14 +91,14 @@ func Unique(in []string) []string {
 	if l == 0 {
 		return in
 	}
-	m := make(map[string]bool)
+	m := make(map[string]interface{})
 	out := make([]string, 0, l)
 	for _, v := range in {
 		if _, ok := m[v]; ok {
 			continue
 		}
 		out = append(out, v)
-		m[v] = true
+		m[v] = nil
 	}
 	return out
 }

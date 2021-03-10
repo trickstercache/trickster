@@ -101,7 +101,7 @@ func TestFilterAttributes(t *testing.T) {
 	_, sp := PrepareRequest(r, tr)
 	kvs := []attribute.KeyValue{attribute.String("testKey", "testValue")}
 	tr.Options.OmitTagsList = []string{"testKey2"}
-	tr.Options.OmitTags = map[string]bool{"testKey2": true}
+	tr.Options.OmitTags = map[string]interface{}{"testKey2": nil}
 	SetAttributes(tr, sp, kvs...)
 	kvs = filterAttributes(tr, kvs)
 

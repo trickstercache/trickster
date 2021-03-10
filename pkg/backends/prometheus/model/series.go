@@ -45,9 +45,9 @@ type WFSeriesData struct {
 
 // Merge merges the passed WFSeries into the subject WFSeries
 func (s *WFSeries) Merge(results ...*WFSeries) {
-	m := map[WFSeriesData]bool{}
+	m := map[WFSeriesData]interface{}{}
 	for _, d := range s.Data {
-		m[d] = true
+		m[d] = nil
 	}
 	for _, s2 := range results {
 
@@ -55,7 +55,7 @@ func (s *WFSeries) Merge(results ...*WFSeries) {
 
 		for _, d := range s2.Data {
 			if _, ok := m[d]; !ok {
-				m[d] = true
+				m[d] = nil
 				s.Data = append(s.Data, d)
 			}
 		}

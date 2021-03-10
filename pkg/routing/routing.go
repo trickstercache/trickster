@@ -143,11 +143,11 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 	return clients, nil
 }
 
-var noCacheBackends = map[string]bool{
-	"rp":           true,
-	"reverseproxy": true,
-	"proxy":        true,
-	"rule":         true,
+var noCacheBackends = map[string]interface{}{
+	"rp":           nil,
+	"reverseproxy": nil,
+	"proxy":        nil,
+	"rule":         nil,
 }
 
 // RegisterHealthHandler registers the main health handler

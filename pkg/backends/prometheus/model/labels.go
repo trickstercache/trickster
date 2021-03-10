@@ -40,15 +40,15 @@ type WFLabelData struct {
 
 // Merge merges the passed WFSeries into the subject WFSeries
 func (ld *WFLabelData) Merge(results ...*WFLabelData) {
-	m := map[string]bool{}
+	m := map[string]interface{}{}
 	for _, d := range ld.Data {
-		m[d] = true
+		m[d] = nil
 	}
 	for _, ld2 := range results {
 		ld.Envelope.Merge(ld2.Envelope)
 		for _, d := range ld2.Data {
 			if _, ok := m[d]; !ok {
-				m[d] = true
+				m[d] = nil
 				ld.Data = append(ld.Data, d)
 			}
 		}
