@@ -135,7 +135,7 @@ func (cc *Options) Equal(cc2 *Options) bool {
 }
 
 // SetDefaults iterates the provided Options, and overlays user-set values onto the default Options
-func (l Lookup) SetDefaults(metadata yamlx.KeyLookup, activeCaches map[string]bool) ([]string, error) {
+func (l Lookup) SetDefaults(metadata yamlx.KeyLookup, activeCaches map[string]interface{}) ([]string, error) {
 
 	// setCachingDefaults assumes that processBackendOptionss was just ran
 

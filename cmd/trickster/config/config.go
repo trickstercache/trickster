@@ -70,7 +70,7 @@ type Config struct {
 	Resources *Resources `yaml:"-"`
 
 	CompiledRewriters map[string]rewriter.RewriteInstructions `yaml:"-"`
-	activeCaches      map[string]bool
+	activeCaches      map[string]interface{}
 	providedOriginURL string
 	providedProvider  string
 
@@ -204,7 +204,7 @@ func (c *Config) setDefaults(metadata yamlx.KeyLookup) error {
 		}
 	}
 
-	c.activeCaches = make(map[string]bool)
+	c.activeCaches = make(map[string]interface{})
 	for k, v := range c.Backends {
 		w, err := bo.SetDefaults(k, v, metadata, c.CompiledRewriters, c.Backends, c.activeCaches)
 		if err != nil {

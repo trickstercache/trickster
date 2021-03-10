@@ -75,7 +75,7 @@ func TestClone(t *testing.T) {
 	o := New()
 	o.Hosts = []string{"test"}
 	o.CacheName = "test"
-	o.CompressableTypes = map[string]bool{"test": true}
+	o.CompressableTypes = map[string]interface{}{"test": nil}
 	o.Paths = map[string]*po.Options{"test": p}
 	o.NegativeCache = map[int]time.Duration{1: 1}
 	o.HealthCheck = &ho.Options{}
@@ -269,12 +269,12 @@ func TestSetDefaults(t *testing.T) {
 
 	backends := Lookup{o.Name: o}
 
-	_, err = SetDefaults("test", o, o.md, nil, backends, map[string]bool{})
+	_, err = SetDefaults("test", o, o.md, nil, backends, map[string]interface{}{})
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o, nil, nil, backends, map[string]bool{})
+	_, err = SetDefaults("test", o, nil, nil, backends, map[string]interface{}{})
 	if err != ErrInvalidMetadata {
 		t.Error("expected invalid metadata, got", err)
 	}
@@ -284,13 +284,13 @@ func TestSetDefaults(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o2, o2.md, nil, backends, map[string]bool{})
+	_, err = SetDefaults("test", o2, o2.md, nil, backends, map[string]interface{}{})
 	if err != nil {
 		t.Error(err)
 	}
 
 	o.Paths["series"].ReqRewriterName = "invalid"
-	_, err = SetDefaults("test", o, o.md, nil, backends, map[string]bool{})
+	_, err = SetDefaults("test", o, o.md, nil, backends, map[string]interface{}{})
 	if err == nil {
 		t.Error("expected error for invalid rewriter name")
 	}
@@ -301,13 +301,13 @@ func TestSetDefaults(t *testing.T) {
 	}
 
 	_, err = SetDefaults("test", o2, o2.md, map[string]rewriter.RewriteInstructions{"test": nil},
-		backends, map[string]bool{})
+		backends, map[string]interface{}{})
 	if err != nil {
 		t.Error(err)
 	}
 
 	_, err = SetDefaults("test", o2, o2.md, map[string]rewriter.RewriteInstructions{"not-test": nil},
-		backends, map[string]bool{})
+		backends, map[string]interface{}{})
 	if err == nil {
 		t.Error("expected error for invalid rewriter name")
 	}
@@ -318,7 +318,7 @@ func TestSetDefaults(t *testing.T) {
 	}
 
 	_, err = SetDefaults("test", o2, o2.md, nil,
-		backends, map[string]bool{})
+		backends, map[string]interface{}{})
 	if err != nil {
 		t.Error(err)
 	}

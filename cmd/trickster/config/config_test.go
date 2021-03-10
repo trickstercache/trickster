@@ -52,7 +52,7 @@ func TestClone(t *testing.T) {
 	const expected = "trickster"
 
 	o.CompressableTypeList = []string{"text/plain"}
-	o.CompressableTypes = map[string]bool{"text/plain": true}
+	o.CompressableTypes = map[string]interface{}{"text/plain": nil}
 	o.NegativeCacheName = "default"
 	o.NegativeCache = map[int]time.Duration{404: time.Duration(10) * time.Second}
 	o.FastForwardPath = po.New()

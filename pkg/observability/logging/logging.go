@@ -42,7 +42,7 @@ type Logger struct {
 	level      string
 
 	onceMutex      *sync.Mutex
-	onceRanEntries map[string]bool
+	onceRanEntries map[string]interface{}
 }
 
 // SyncLogger is a Logger that writes synchronously
@@ -184,7 +184,7 @@ func DefaultLogger() *Logger {
 
 func noopLogger() *Logger {
 	return &Logger{
-		onceRanEntries: make(map[string]bool),
+		onceRanEntries: make(map[string]interface{}),
 		onceMutex:      &sync.Mutex{},
 	}
 }
@@ -280,7 +280,7 @@ func (tl *Logger) InfoOnce(key string, event string, detail Pairs) bool {
 	defer tl.onceMutex.Unlock()
 	key = "info." + key
 	if _, ok := tl.onceRanEntries[key]; !ok {
-		tl.onceRanEntries[key] = true
+		tl.onceRanEntries[key] = nil
 		tl.Info(event, detail)
 		return true
 	}
@@ -299,7 +299,7 @@ func (tl *Logger) WarnOnce(key string, event string, detail Pairs) bool {
 	defer tl.onceMutex.Unlock()
 	key = "warn." + key
 	if _, ok := tl.onceRanEntries[key]; !ok {
-		tl.onceRanEntries[key] = true
+		tl.onceRanEntries[key] = nil
 		tl.Warn(event, detail)
 		return true
 	}
@@ -327,7 +327,7 @@ func (tl *Logger) ErrorOnce(key string, event string, detail Pairs) bool {
 	defer tl.onceMutex.Unlock()
 	key = "error." + key
 	if _, ok := tl.onceRanEntries[key]; !ok {
-		tl.onceRanEntries[key] = true
+		tl.onceRanEntries[key] = nil
 		tl.Error(event, detail)
 		return true
 	}
