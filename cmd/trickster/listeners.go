@@ -34,7 +34,7 @@ import (
 var lg = listener.NewListenerGroup()
 
 func applyListenerConfigs(conf, oldConf *config.Config,
-	router, reloadHandler http.Handler, log *tl.Logger,
+	router, reloadHandler http.Handler, metricsRouter *http.ServeMux, log *tl.Logger,
 	tracers tracing.Tracers) {
 
 	var err error
@@ -133,22 +133,22 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		(!hasOldMC || (conf.Metrics.ListenAddress != oldConf.Metrics.ListenAddress ||
 			conf.Metrics.ListenPort != oldConf.Metrics.ListenPort)) {
 		lg.DrainAndClose("metricsListener", 0)
-		mr := http.NewServeMux()
-		mr.Handle("/metrics", metrics.Handler())
-		mr.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
+		metricsRouter.Handle("/metrics", metrics.Handler())
+		metricsRouter.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "metrics" {
-			routing.RegisterPprofRoutes("metrics", mr, log)
+			routing.RegisterPprofRoutes("metrics", metricsRouter, log)
 		}
 		wg.Add(1)
 		go lg.StartListener("metricsListener",
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, mr, wg, nil, true, 0, log)
+			conf.Frontend.ConnectionsLimit, nil, metricsRouter, wg, nil, true, 0, log)
 	} else {
-		mr := http.NewServeMux()
-		mr.Handle("/metrics", metrics.Handler())
-		mr.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
-		lg.UpdateRouter("metricsListener", mr)
+		metricsRouter.Handle("/metrics", metrics.Handler())
+		metricsRouter.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
+		lg.UpdateRouter("metricsListener", metricsRouter)
 	}
+
+	rr := http.NewServeMux() // serveMux router for the Reload port
 
 	// if the Reload HTTP port is configured, then set up the http listener instance
 	if conf.ReloadConfig != nil && conf.ReloadConfig.ListenPort > 0 &&
@@ -156,19 +156,17 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			conf.ReloadConfig.ListenPort != oldConf.ReloadConfig.ListenPort)) {
 		wg.Add(1)
 		lg.DrainAndClose("reloadListener", time.Millisecond*500)
-		mr := http.NewServeMux()
-		mr.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
-		mr.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
+		rr.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
+		rr.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "reload" {
-			routing.RegisterPprofRoutes("reload", mr, log)
+			routing.RegisterPprofRoutes("reload", rr, log)
 		}
 		go lg.StartListener("reloadListener",
 			conf.ReloadConfig.ListenAddress, conf.ReloadConfig.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, mr, wg, nil, true, 0, log)
+			conf.Frontend.ConnectionsLimit, nil, rr, wg, nil, true, 0, log)
 	} else {
-		mr := http.NewServeMux()
-		mr.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
-		mr.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
-		lg.UpdateRouter("reloadListener", mr)
+		rr.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
+		rr.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
+		lg.UpdateRouter("reloadListener", rr)
 	}
 }

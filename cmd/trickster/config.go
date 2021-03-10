@@ -119,6 +119,8 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 
 	// every config (re)load is a new router
 	router := mux.NewRouter()
+	mr := http.NewServeMux()
+
 	router.HandleFunc(conf.Main.PingHandlerPath, th.PingHandleFunc(conf)).Methods(http.MethodGet)
 
 	var caches = applyCachingConfig(conf, oldConf, logger, oldCaches)
@@ -139,10 +141,9 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 		return err
 	}
 	alb.StartALBPools(o, hc.Statuses())
-	routing.RegisterHealthHandler(router, conf.Main.HealthHandlerPath, hc)
 	routing.RegisterDefaultBackendRoutes(router, o, logger, tracers)
-
-	applyListenerConfigs(conf, oldConf, router, http.HandlerFunc(rh), logger, tracers)
+	routing.RegisterHealthHandler(mr, conf.Main.HealthHandlerPath, hc)
+	applyListenerConfigs(conf, oldConf, router, http.HandlerFunc(rh), mr, logger, tracers)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
