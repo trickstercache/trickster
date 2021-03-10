@@ -34,35 +34,12 @@ func IndexInSlice(arr []string, val string) int {
 	return -1
 }
 
-// CloneMap returns an exact copy of a map consisting string key and value
-func CloneMap(in map[string]string) map[string]string {
+// CloneBoolMap returns an exact copy of a map consisting string key and bool value
+func CloneBoolMap(in map[string]bool) map[string]bool {
 	if in == nil {
 		return nil
 	}
-	out := make(map[string]string)
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
-
-// CloneList returns an exact copy of the provided string slice
-func CloneList(in []string) []string {
-	if in == nil {
-		return nil
-	}
-	l := len(in)
-	out := make([]string, l)
-	copy(out, in)
-	return out
-}
-
-// CloneLookup returns an exact copy of the provided string lookup map
-func CloneLookup(in map[string]interface{}) map[string]interface{} {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]interface{})
+	out := make(map[string]bool)
 	for k, v := range in {
 		out[k] = v
 	}

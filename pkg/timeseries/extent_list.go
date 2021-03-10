@@ -96,9 +96,7 @@ func (el ExtentList) Crop(e Extent) ExtentList {
 		}
 		endIndex++
 		if endIndex >= startIndex {
-			cropped := make(ExtentList, len(el[startIndex:endIndex]))
-			copy(cropped, el[startIndex:endIndex])
-			return cropped
+			return el.CloneRange(startIndex, endIndex)
 		}
 	}
 	return make(ExtentList, 0)
@@ -164,6 +162,27 @@ func (el ExtentList) Clone() ExtentList {
 		c[i].Start = el[i].Start
 		c[i].End = el[i].End
 		c[i].LastUsed = el[i].LastUsed
+	}
+	return c
+}
+
+// CloneRange returns a perfect copy of the ExtentList, cloning only the
+// Extents in the provided index range (upper-bound exclusive)
+func (el ExtentList) CloneRange(start, end int) ExtentList {
+	if end < start {
+		return nil
+	}
+	size := end - start
+	if size > len(el) {
+		return nil
+	}
+	c := make(ExtentList, size)
+	j := start
+	for i := 0; i < size; i++ {
+		c[i].Start = el[j].Start
+		c[i].End = el[j].End
+		c[i].LastUsed = el[j].LastUsed
+		j++
 	}
 	return c
 }

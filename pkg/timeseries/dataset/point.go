@@ -72,6 +72,25 @@ func (p Points) Clone() Points {
 	return clone
 }
 
+// CloneRange returns a perfect copy of the Points, cloning only the
+// points in the provided index range (upper-bound exclusive)
+func (p Points) CloneRange(start, end int) Points {
+	if end < start {
+		return nil
+	}
+	size := end - start
+	if size > len(p) {
+		return nil
+	}
+	clone := make(Points, size, size+10)
+	j := start
+	for i := 0; i < size; i++ {
+		clone[i] = p[j].Clone()
+		j++
+	}
+	return clone
+}
+
 // Len returns the length of a slice of time series data points
 func (p Points) Len() int {
 	return len(p)

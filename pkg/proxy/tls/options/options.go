@@ -19,6 +19,7 @@ package options
 import (
 	"os"
 
+	"github.com/tricksterproxy/trickster/pkg/util/copiers"
 	strutil "github.com/tricksterproxy/trickster/pkg/util/strings"
 )
 
@@ -54,19 +55,12 @@ func New() *Options {
 
 // Clone returns an exact copy of the subject *Options
 func (o *Options) Clone() *Options {
-
-	var caps []string
-	if o.CertificateAuthorityPaths != nil {
-		caps = make([]string, len(o.CertificateAuthorityPaths))
-		copy(caps, o.CertificateAuthorityPaths)
-	}
-
 	return &Options{
 		FullChainCertPath:         o.FullChainCertPath,
 		PrivateKeyPath:            o.PrivateKeyPath,
 		ServeTLS:                  o.ServeTLS,
 		InsecureSkipVerify:        o.InsecureSkipVerify,
-		CertificateAuthorityPaths: caps,
+		CertificateAuthorityPaths: copiers.CopyStrings(o.CertificateAuthorityPaths),
 		ClientCertPath:            o.ClientCertPath,
 		ClientKeyPath:             o.ClientKeyPath,
 	}

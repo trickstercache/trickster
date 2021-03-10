@@ -34,6 +34,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
 	"github.com/tricksterproxy/trickster/pkg/timeseries/dataset"
+	"github.com/tricksterproxy/trickster/pkg/util/copiers"
 	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 
 	"github.com/gorilla/mux"
@@ -263,20 +264,8 @@ func (o *Options) Clone() *Options {
 		no.HealthCheck = o.HealthCheck.Clone()
 	}
 
-	if o.Hosts != nil {
-		no.Hosts = make([]string, len(o.Hosts))
-		copy(no.Hosts, o.Hosts)
-	}
-
-	if o.Hosts != nil {
-		no.Hosts = make([]string, len(o.Hosts))
-		copy(no.Hosts, o.Hosts)
-	}
-
-	if o.CompressableTypeList != nil {
-		no.CompressableTypeList = make([]string, len(o.CompressableTypeList))
-		copy(no.CompressableTypeList, o.CompressableTypeList)
-	}
+	no.Hosts = copiers.CopyStrings(o.Hosts)
+	no.CompressableTypeList = copiers.CopyStrings(no.CompressableTypeList)
 
 	if o.CompressableTypes != nil {
 		no.CompressableTypes = make(map[string]interface{})
@@ -484,8 +473,7 @@ func SetDefaults(
 	}
 
 	if metadata.IsDefined("backends", name, "hosts") && o != nil {
-		no.Hosts = make([]string, len(o.Hosts))
-		copy(no.Hosts, o.Hosts)
+		no.Hosts = copiers.CopyStrings(o.Hosts)
 	}
 
 	if metadata.IsDefined("backends", name, "is_default") {
