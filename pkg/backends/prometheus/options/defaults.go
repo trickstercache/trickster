@@ -16,8 +16,5 @@
 
 package options
 
-// Options stores information about Prometheus Options
-type Options struct {
-	Labels         map[string]string `yaml:"labels,omitempty"`
-	InstantRoundMS int               `yaml:"instant_round_ms,omitempty"`
-}
+// DefaultInstantRoundMS is the default Instant Rounding Value for Prometheus
+const DefaultInstantRoundMS = 15000

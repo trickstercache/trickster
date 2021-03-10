@@ -27,6 +27,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	po "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
@@ -66,6 +67,7 @@ const (
 // Client Implements Proxy Client Interface
 type Client struct {
 	backends.TimeseriesBackend
+	instantRounder time.Duration
 }
 
 // NewClient returns a new Client Instance
@@ -75,6 +77,17 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	c := &Client{}
 	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, modeler)
 	c.TimeseriesBackend = b
+
+	rounder := time.Duration(po.DefaultInstantRoundMS) * time.Millisecond
+	if o != nil {
+		if o.Prometheus == nil {
+			o.Prometheus = &po.Options{InstantRoundMS: po.DefaultInstantRoundMS}
+		} else {
+			rounder = time.Duration(o.Prometheus.InstantRoundMS) * time.Millisecond
+		}
+	}
+	c.instantRounder = rounder
+
 	return c, err
 }
 
@@ -180,7 +193,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 }
 
 // parseVectorQuery parses the key parts of an Instantaneous Query from the inbound HTTP Request
-func parseVectorQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
+func parseVectorQuery(r *http.Request, rounder time.Duration) (*timeseries.TimeRangeQuery, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 
@@ -207,7 +220,7 @@ func parseVectorQuery(r *http.Request) (*timeseries.TimeRangeQuery, error) {
 		trq.Extent.Start = t
 		trq.Extent.End = t
 	} else {
-		trq.Extent.Start = time.Now().Truncate(time.Second * time.Duration(15))
+		trq.Extent.Start = time.Now().Truncate(rounder)
 	}
 
 	if strings.Contains(trq.Statement, " offset ") {
