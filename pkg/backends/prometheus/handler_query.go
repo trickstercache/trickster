@@ -43,7 +43,7 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	// and if so, sets up the request context for these scenarios
 	if rsc.IsMergeMember || (rsc.BackendOptions != nil && rsc.BackendOptions.Prometheus != nil) {
 		var trq *timeseries.TimeRangeQuery
-		trq, err = parseVectorQuery(r)
+		trq, err = parseVectorQuery(r, c.instantRounder)
 		if err == nil {
 			rsc.TimeRangeQuery = trq
 			hasTransformations = len(trq.Labels) > 0
@@ -61,7 +61,7 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	// Round time param down to the nearest 15 seconds if it exists
 	if p := qp.Get(upTime); p != "" {
 		if i, err := strconv.ParseInt(p, 10, 64); err == nil {
-			qp.Set(upTime, strconv.FormatInt(time.Unix(i, 0).Truncate(time.Second*time.Duration(15)).Unix(), 10))
+			qp.Set(upTime, strconv.FormatInt(time.Unix(i, 0).Truncate(c.instantRounder).Unix(), 10))
 		}
 	}
 	r.URL = u

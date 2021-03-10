@@ -51,14 +51,10 @@ func TestRegisterPprofRoutes(t *testing.T) {
 }
 
 func TestRegisterHealthHandler(t *testing.T) {
-	router := mux.NewRouter()
+	router := http.NewServeMux()
 	path := "/test"
 	hc := healthcheck.New()
-
-	route := RegisterHealthHandler(router, path, hc)
-	if route == nil {
-		t.Error("expected non-nil route")
-	}
+	RegisterHealthHandler(router, path, hc)
 }
 
 func TestRegisterProxyRoutes(t *testing.T) {

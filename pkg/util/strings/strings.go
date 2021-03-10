@@ -39,10 +39,9 @@ func CloneBoolMap(in map[string]bool) map[string]bool {
 	if in == nil {
 		return nil
 	}
-	out := make(map[string]bool)
-	for k, v := range in {
-		out[k] = v
-	}
+	l := len(in)
+	out := make([]string, l)
+	copy(out, in)
 	return out
 }
 
@@ -68,14 +67,14 @@ func Unique(in []string) []string {
 	if l == 0 {
 		return in
 	}
-	m := make(map[string]bool)
+	m := make(map[string]interface{})
 	out := make([]string, 0, l)
 	for _, v := range in {
 		if _, ok := m[v]; ok {
 			continue
 		}
 		out = append(out, v)
-		m[v] = true
+		m[v] = nil
 	}
 	return out
 }

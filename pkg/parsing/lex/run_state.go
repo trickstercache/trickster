@@ -144,16 +144,16 @@ func (rs *RunState) ScanNumber() bool {
 	return true
 }
 
-var terminators = map[rune]bool{
-	' ':  true,
-	'\t': true,
-	'\n': true,
-	'\r': true,
-	EOF:  true,
-	',':  true,
-	';':  true,
-	')':  true,
-	'(':  true,
+var terminators = map[rune]interface{}{
+	' ':  nil,
+	'\t': nil,
+	'\n': nil,
+	'\r': nil,
+	EOF:  nil,
+	',':  nil,
+	';':  nil,
+	')':  nil,
+	'(':  nil,
 }
 
 // AtTerminator reports whether the input is at valid termination character to

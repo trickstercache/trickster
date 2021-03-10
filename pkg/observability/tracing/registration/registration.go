@@ -48,7 +48,7 @@ func RegisterAll(cfg *config.Config, logger interface{}, isDryRun bool) (tracing
 
 	// remove any tracers that are configured but not used by a backend, we don't want
 	// to use resources to instantiate them
-	mappedTracers := make(map[string]bool)
+	mappedTracers := make(map[string]interface{})
 
 	for k, v := range cfg.Backends {
 		if v != nil && v.TracingConfigName != "" {
@@ -56,7 +56,7 @@ func RegisterAll(cfg *config.Config, logger interface{}, isDryRun bool) (tracing
 				return nil, fmt.Errorf("backend %s provided invalid tracing config name %s",
 					k, v.TracingConfigName)
 			}
-			mappedTracers[v.TracingConfigName] = true
+			mappedTracers[v.TracingConfigName] = nil
 		}
 	}
 

@@ -40,11 +40,11 @@ type Options struct {
 type StateFn func(Lexer, *RunState) StateFn
 
 // SpaceCharLookup is a map of acceptable space characters
-var SpaceCharLookup = map[byte]bool{
-	9:  true, // "\t"
-	10: true, // "\n"
-	13: true, // "\r"
-	32: true, // " "
+var SpaceCharLookup = map[byte]interface{}{
+	9:  nil, // "\t"
+	10: nil, // "\n"
+	13: nil, // "\r"
+	32: nil, // " "
 }
 
 // IsWhiteSpace reports whether r is a whitespace character.

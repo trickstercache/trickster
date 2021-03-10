@@ -41,7 +41,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-var restrictedOriginNames = map[string]bool{"": true, "frontend": true}
+var restrictedOriginNames = map[string]interface{}{"": true, "frontend": true}
 
 // Lookup is a map of Options
 type Lookup map[string]*Options
@@ -175,7 +175,7 @@ type Options struct {
 	// HTTPClient is the Client used by Trickster to communicate with the origin
 	HTTPClient *http.Client `yaml:"-"`
 	// CompressableTypes is the map version of CompressableTypeList for fast lookup
-	CompressableTypes map[string]bool `yaml:"-"`
+	CompressableTypes map[string]interface{} `yaml:"-"`
 	// RuleOptions is the reference to the Rule Options as indicated by RuleName
 	RuleOptions *ro.Options `yaml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
@@ -268,7 +268,7 @@ func (o *Options) Clone() *Options {
 	no.CompressableTypeList = copiers.CopyStrings(no.CompressableTypeList)
 
 	if o.CompressableTypes != nil {
-		no.CompressableTypes = make(map[string]bool)
+		no.CompressableTypes = make(map[string]interface{})
 		for k := range o.CompressableTypes {
 			no.CompressableTypes[k] = true
 		}
@@ -342,7 +342,7 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 		o.FastForwardTTL = time.Duration(o.FastForwardTTLMS) * time.Millisecond
 		o.MaxTTL = time.Duration(o.MaxTTLMS) * time.Millisecond
 		if o.CompressableTypeList != nil {
-			o.CompressableTypes = make(map[string]bool)
+			o.CompressableTypes = make(map[string]interface{})
 			for _, v := range o.CompressableTypeList {
 				o.CompressableTypes[v] = true
 			}
@@ -441,7 +441,7 @@ func SetDefaults(
 	metadata yamlx.KeyLookup,
 	crw map[string]rewriter.RewriteInstructions,
 	backends Lookup,
-	activeCaches map[string]bool,
+	activeCaches map[string]interface{},
 ) (*Options, error) {
 
 	if metadata == nil {
