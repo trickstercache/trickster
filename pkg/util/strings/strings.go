@@ -39,9 +39,10 @@ func CloneBoolMap(in map[string]bool) map[string]bool {
 	if in == nil {
 		return nil
 	}
-	l := len(in)
-	out := make([]string, l)
-	copy(out, in)
+	out := make(map[string]bool)
+	for k, v := range in {
+		out[k] = v
+	}
 	return out
 }
 
