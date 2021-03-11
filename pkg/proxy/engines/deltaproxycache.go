@@ -87,15 +87,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	pr := newProxyRequest(r, w)
 	rlo.FastForwardDisable = o.FastForwardDisable || rlo.FastForwardDisable
 	trq.NormalizeExtent()
-
-	// this is used to ensure the head of the cache respects the BackFill Tolerance
-	bf := timeseries.Extent{Start: time.Unix(0, 0), End: trq.Extent.End}
-	bt := trq.GetBackfillTolerance(o.BackfillTolerance)
-
-	if !trq.IsOffset && bt > 0 { // TODO: research if we need this clause: && !time.Now().Add(-bt).After(bf.End) {
-		bf.End = bf.End.Add(-bt)
-	}
-
 	now := time.Now()
 
 	OldestRetainedTimestamp := time.Time{}
@@ -105,13 +96,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			tl.Debug(pr.Logger, "timerange end is too early to consider caching",
 				tl.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp,
 					"step": trq.Step, "retention": o.TimeseriesRetention})
-			DoProxy(w, r, true)
-			return
-		}
-		if trq.Extent.Start.After(bf.End) {
-			tl.Debug(pr.Logger, "timerange is too new to cache due to backfill tolerance",
-				tl.Pairs{"backFillToleranceSecs": bt,
-					"newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
 			DoProxy(w, r, true)
 			return
 		}
@@ -198,18 +182,6 @@ checkCache:
 							DoProxy(w, r, true)
 							return
 						}
-						if trq.Extent.Start.After(el[len(el)-1].End) {
-							pr.cacheLock.RRelease()
-							tl.Debug(pr.Logger, "timerange not cached due to backfill tolerance",
-								tl.Pairs{
-									"backFillToleranceSecs":   bt,
-									"newestRetainedTimestamp": bf.End,
-									"queryStart":              trq.Extent.Start,
-								},
-							)
-							DoProxy(w, r, true)
-							return
-						}
 					}
 				}
 				cacheStatus = status.LookupStatusPartialHit
@@ -244,7 +216,7 @@ checkCache:
 		// in this case, it's not a cache hit, so something is _likely_ going to be cached now.
 		// we write lock here, so as to prevent other concurrent client requests for the same url,
 		// which will have the same cacheStatus, from causing the same or similar HTTP requests
-		// to be made against the origin, since just one should doc.
+		// to be made against the origin, since just one should do.
 
 		// acquire a write lock via the Upgrade method, which will swap the read lock for a
 		// write lock, and return true if this client was the only one, or otherwise the first
@@ -299,8 +271,25 @@ checkCache:
 	appendLock := sync.Mutex{}
 	var uncachedValueCount int64
 
+	// determine backfill tolerance start window
+	bt := o.BackfillTolerance              // todo, deterministic when we add in points vs time option
+	bfs := now.Add(-bt).Truncate(trq.Step) // start of the backfill tolerance window
+
 	// iterate each time range that the client needs and fetch from the upstream origin
 	for i := range missRanges {
+
+		// this implements backfill tolerance by expanding the miss range to
+		// include any cached-but-volatile ranges
+		if missRanges[i].End.After(bfs) {
+			if trq.Extent.Start.Before(bfs) {
+				if bfs.Before(missRanges[i].Start) {
+					missRanges[i].Start = bfs
+				}
+			} else {
+				missRanges[i].Start = trq.Extent.Start
+			}
+		}
+
 		wg.Add(1)
 		// This fetches the gaps from the origin and adds their datasets to the merge list
 		go func(e *timeseries.Extent, rq *proxyRequest) {
@@ -399,9 +388,9 @@ checkCache:
 			// Backfill Tolerance before storing to cache
 			switch o.TimeseriesEvictionMethod {
 			case evictionmethods.EvictionMethodLRU:
-				cts.CropToSize(o.TimeseriesRetentionFactor, bf.End, trq.Extent)
+				cts.CropToSize(o.TimeseriesRetentionFactor, now, trq.Extent)
 			default:
-				cts.CropToRange(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
+				cts.CropToRange(timeseries.Extent{End: now, Start: OldestRetainedTimestamp})
 			}
 			// Don't cache datasets with empty extents
 			// (everything was cropped so there is nothing to cache)
