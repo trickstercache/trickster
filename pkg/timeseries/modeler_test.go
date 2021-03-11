@@ -18,34 +18,23 @@ package timeseries
 
 import "testing"
 
-func TestFieldDefinitionClone(t *testing.T) {
+func TestNewModeler(t *testing.T) {
 
-	fd := FieldDefinition{
-		Name:     "test",
-		DataType: FieldDataType(1),
+	// 	// UnmarshalerFunc describes a function that unmarshals a Timeseries
+	// type UnmarshalerFunc func([]byte, *TimeRangeQuery) (Timeseries, error)
+
+	f := func([]byte, *TimeRangeQuery) (Timeseries, error) {
+		return nil, nil
 	}
 
-	fd2 := fd.Clone()
+	m := NewModeler(f, nil, nil, nil, f, nil)
 
-	if fd2 != fd {
-		t.Error("clone mismatch")
+	if m.WireUnmarshaler == nil {
+		t.Error("expected non-nil WireUnmarshaler")
 	}
 
-}
-
-func TestFieldDefinitionString(t *testing.T) {
-
-	fd := FieldDefinitions{
-		FieldDefinition{
-			Name:     "test",
-			DataType: FieldDataType(1),
-		},
-	}
-
-	const expected = `[{"name":"test","type":1,"pos":0,"stype":"","provider1":0}]`
-
-	if fd.String() != expected {
-		t.Errorf("expected `%s` got `%s`", expected, fd.String())
+	if m.CacheUnmarshaler == nil {
+		t.Error("expected non-nil CacheUnmarshaler")
 	}
 
 }

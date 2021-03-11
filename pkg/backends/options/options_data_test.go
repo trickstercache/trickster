@@ -52,6 +52,7 @@ backends:
     timeseries_eviction_method: lru
     fast_forward_disable: true
     backfill_tolerance_ms: 301000
+    backfill_tolerance_points: 2
     timeout_ms: 37000
     health_check_endpoint: /test_health
     health_check_upstream_path: /test/upstream/endpoint
@@ -84,6 +85,12 @@ backends:
         collapsed_forwarding: basic
         response_headers:
           X-Header-Test: test-value
+    prometheus:
+      labels:
+        testlabel: trickster
+    alb:
+      methodology: rr
+      pool: [ test ]
     tls:
       full_chain_cert_path: file.that.should.not.exist.ever.pem
       private_key_path: file.that.should.not.exist.ever.pem
