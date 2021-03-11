@@ -98,15 +98,24 @@ func TestGetBackfillTolerance(t *testing.T) {
 	expected := time.Second * 5
 
 	trq := &TimeRangeQuery{Statement: "1234"}
-	i := trq.GetBackfillTolerance(expected)
+	i := trq.GetBackfillTolerance(expected, 0)
 	if i != expected {
 		t.Errorf("expected %s got %s", expected, i)
 	}
 
 	trq.BackfillTolerance = time.Second * 30
-	i = trq.GetBackfillTolerance(expected)
+	i = trq.GetBackfillTolerance(expected, 0)
 	if i == expected {
 		t.Errorf("expected %s got %s", time.Second*30, i)
+	}
+
+	trq.Step = 5 * time.Second
+	trq.BackfillTolerance = 0
+
+	expected = time.Second * 50
+	i = trq.GetBackfillTolerance(time.Second*5, 10)
+	if i != expected {
+		t.Errorf("expected %s got %s", expected, i)
 	}
 
 }
