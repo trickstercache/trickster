@@ -17,14 +17,18 @@
 package rule
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	ro "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 )
+
+var ErrInvalidRegularExpression = errors.New("invalid regular expression")
 
 func (c *Client) parseOptions(o *ro.Options, rwi map[string]rewriter.RewriteInstructions) error {
 
@@ -141,6 +145,17 @@ func (c *Client) parseOptions(o *ro.Options, rwi map[string]rewriter.RewriteInst
 		r.evaluatorFunc = r.EvaluateCaseArg
 	} else {
 		r.evaluatorFunc = r.EvaluateOpArg
+	}
+
+	if o.InputType == "rmatch" {
+		if r.operationArg == "" {
+			return ErrInvalidRegularExpression
+		}
+		re, err := regexp.Compile(r.operationArg)
+		if err != nil {
+			return err
+		}
+		compiledRegexes[r.operationArg] = re
 	}
 
 	if len(o.CaseOptions) > 0 {

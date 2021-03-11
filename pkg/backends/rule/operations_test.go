@@ -51,6 +51,9 @@ func TestOperations(t *testing.T) {
 		expected          string
 	}{
 		{"string-eq", "test", "test", false, "true"},
+		{"string-rmatch", "/example/writer", "^.*\\/writer.*$", false, "true"},
+		{"string-rmatch", "mytesting", "^.*[test.*$", false, "false"},
+		{"string-rmatch", "mytesting", "^.*tst.*$", false, "false"},
 		{"string-contains", "test", "test", false, "true"},
 		{"string-contains", "test", "foo", false, "false"},
 		{"string-prefix", "test", "t", false, "true"},

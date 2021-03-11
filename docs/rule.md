@@ -48,7 +48,7 @@ Optional Rule Parts
 
 | type name          | permitted operations  |
 | ------------------ | ----------------------|
-| string  (default)  | prefix, suffix, contains, eq, md5, sha1, modulo |
+| string  (default)  | prefix, suffix, contains, eq, md5, sha1, modulo, rmatch |
 | num                | eq, le, ge, gt, lt, modulo |
 | bool               | eq |
 
@@ -91,6 +91,41 @@ rules:
         matches: # route johndoe and janedoe users to writer cluster
           - 'johndoe:'
           - 'janedoe:'
+        next_route: example-writer-cluster
+
+backends:
+  example:
+    provider: rule
+    rule_name: example-user-router
+
+  example-reader-cluster:
+    provider: rpc
+    origin_url: 'http://reader-cluster.example.com'
+
+  example-writer-cluster:
+    provider: rpc
+    origin_url: 'http://writer-cluster.example.com'
+    path_routing_disabled: true  # restrict routing to this backend via rule only, so
+                                 # users cannot directly access via /example-writer-cluster/
+```
+
+## Example Rule - Route Request by Path Regex
+
+In this example config, requests routed through the `/example` path will be compared against the rules and routed to either the Reader cluster or the Writer cluster. Curling `http://trickster-host/example/reader` and `http://trickster-host/example/writer` would route to the reader or writer cluster by matching the path.
+
+```yaml
+rules:
+  example-user-router:
+    # default route is reader cluster
+    next_route: example-reader-cluster
+
+    input_source: path
+    input_type: string
+    operation: rmatch      # perform regex match against the path to see if it matches 'writer
+    operation_arg: '^.*\/writer.*$'
+    cases:
+      rmatch-true:
+        matches: [ 'true' ] # rmatch returns true when the input matches the regex; update next_route
         next_route: example-writer-cluster
 
 backends:

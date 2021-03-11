@@ -17,6 +17,7 @@
 package rule
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -28,8 +29,11 @@ import (
 type operation string
 type operationFunc func(input string, arg string, negate bool) string
 
+var compiledRegexes = make(map[string]*regexp.Regexp)
+
 var operationFuncs = map[operation]operationFunc{
 
+	"string-rmatch":   opStringRMatch,
 	"string-eq":       opStringEquality,
 	"string-contains": opStringContains,
 	"string-prefix":   opStringPrefix,
@@ -53,10 +57,28 @@ var operationFuncs = map[operation]operationFunc{
 }
 
 func btos(t bool, negate bool) string {
+
 	if negate {
 		t = !t
 	}
 	if t {
+		return "true"
+	}
+	return "false"
+}
+
+func opStringRMatch(input, arg string, negate bool) string {
+	re, ok := compiledRegexes[arg]
+	if !ok {
+		var err error
+		re, err = regexp.Compile(arg)
+		if err != nil {
+			compiledRegexes[arg] = nil
+			return "false"
+		}
+		compiledRegexes[arg] = re
+	}
+	if re != nil && re.Match([]byte(input)) {
 		return "true"
 	}
 	return "false"
