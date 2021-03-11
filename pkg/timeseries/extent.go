@@ -40,9 +40,29 @@ func (e *Extent) StartsAt(t time.Time) bool {
 	return t.Equal(e.Start)
 }
 
+// StartsAtOrBefore returns true if t is equal or before to the Extent's start time
+func (e *Extent) StartsAtOrBefore(t time.Time) bool {
+	return t.Equal(e.Start) || e.Start.Before(t)
+}
+
+// StartsAtOrAfter returns true if t is equal to or after the Extent's start time
+func (e *Extent) StartsAtOrAfter(t time.Time) bool {
+	return t.Equal(e.Start) || e.Start.After(t)
+}
+
 // EndsAt returns true if t is equal to the Extent's end time
 func (e *Extent) EndsAt(t time.Time) bool {
 	return t.Equal(e.End)
+}
+
+// EndsAtOrBefore returns true if t is equal to or earlier than the Extent's end time
+func (e *Extent) EndsAtOrBefore(t time.Time) bool {
+	return t.Equal(e.End) || e.End.Before(t)
+}
+
+// EndsAtOrAfter returns true if t is equal to or after the Extent's end time
+func (e *Extent) EndsAtOrAfter(t time.Time) bool {
+	return t.Equal(e.End) || e.End.After(t)
 }
 
 // After returns true if the range of the Extent is completely after the provided time

@@ -382,7 +382,7 @@ checkCache:
 		if len(cvr) > 0 {
 			// this updates the timeseries's volatile list to remove anything just fetched that is
 			// older than the current backfill tolerance timestamp; so it is now immutable in cache
-			ve = ve.Remove(cvr)
+			ve = ve.Remove(cvr, trq.Step)
 			shouldCompress = true
 		}
 
