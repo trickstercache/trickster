@@ -89,8 +89,14 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	trq.NormalizeExtent()
 	now := time.Now()
 
-	// determine backfill tolerance start window
-	bt := o.BackfillTolerance              // todo, deterministic when we add in points vs time option
+	// determine backfill tolerance start window MS or Points*Step
+	bt := o.BackfillTolerance
+	if o.BackfillTolerancePoints > 0 {
+		if bt2 := time.Duration(o.BackfillTolerancePoints) * trq.Step; bt2 > bt {
+			bt = bt2
+		}
+	}
+	bt = trq.GetBackfillTolerance(bt)      // set any query override for backfull tolerance
 	bfs := now.Add(-bt).Truncate(trq.Step) // start of the backfill tolerance window
 
 	OldestRetainedTimestamp := time.Time{}

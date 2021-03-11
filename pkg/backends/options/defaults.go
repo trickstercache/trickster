@@ -47,6 +47,8 @@ const (
 	DefaultTracingConfigName = "default"
 	// DefaultBackfillToleranceMS is the default Backfill Tolerance setting for Backends
 	DefaultBackfillToleranceMS = 0
+	// DefaultBackfillTolerancePoints is the default Backfill Tolerance setting for Backends
+	DefaultBackfillTolerancePoints = 0
 	// DefaultKeepAliveTimeoutMS is the default Keep Alive Timeout for Backends' upstream client pools
 	DefaultKeepAliveTimeoutMS = 300000
 	// DefaultMaxIdleConns is the default number of Idle Connections in Backends' upstream client pools
