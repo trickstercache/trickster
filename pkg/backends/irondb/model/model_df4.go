@@ -34,6 +34,9 @@ type DF4SeriesEnvelope struct {
 	StepDuration   time.Duration            `json:"step,omitempty"`
 	ExtentList     timeseries.ExtentList    `json:"extents,omitempty"`
 	timeRangeQuery *timeseries.TimeRangeQuery
+	// VolatileExtents is the list extents in the dataset that should be refreshed
+	// on the next request to the Origin
+	VolatileExtentList timeseries.ExtentList `json:"-"`
 }
 
 // DF4Info values contain information about the timestamps of the data elements
@@ -363,4 +366,12 @@ func (se *DF4SeriesEnvelope) Size() int64 {
 	}
 	wg.Wait()
 	return c
+}
+
+func (se *DF4SeriesEnvelope) VolatileExtents() timeseries.ExtentList {
+	return se.VolatileExtentList
+}
+
+func (se *DF4SeriesEnvelope) SetVolatileExtents(e timeseries.ExtentList) {
+	se.VolatileExtentList = e
 }
