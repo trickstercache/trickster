@@ -46,6 +46,12 @@ type Timeseries interface {
 	SetExtents(ExtentList)
 	// Extents should return the list of time Extents having data present in the Timeseries
 	Extents() ExtentList
+	// VolatileExtents should return the list of time Extents in the cached Timeseries
+	// that should be re-fetched
+	VolatileExtents() ExtentList
+	// SetVolatileExtents sets the list of time Extents in the cached Timeseries
+	// that should be re-fetched
+	SetVolatileExtents(ExtentList)
 	// TimeStampCount should return the number of unique timestamps across the timeseries
 	TimestampCount() int64
 	// Step should return the Step Interval of the Timeseries

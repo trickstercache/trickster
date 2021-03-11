@@ -89,6 +89,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	trq.NormalizeExtent()
 	now := time.Now()
 
+	// determine backfill tolerance start window
+	bt := o.BackfillTolerance              // todo, deterministic when we add in points vs time option
+	bfs := now.Add(-bt).Truncate(trq.Step) // start of the backfill tolerance window
+
 	OldestRetainedTimestamp := time.Time{}
 	if o.TimeseriesEvictionMethod == evictionmethods.EvictionMethodOldest {
 		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * o.TimeseriesRetention))
@@ -190,9 +194,21 @@ checkCache:
 	}
 
 	// Find the ranges that we want, but which are not currently cached
-	var missRanges timeseries.ExtentList
+	var missRanges, cvr timeseries.ExtentList
+	vr := cts.VolatileExtents()
 	if cacheStatus == status.LookupStatusPartialHit {
 		missRanges = cts.Extents().CalculateDeltas(trq.Extent, trq.Step)
+		// this is the backfill part of backfill tolerance. if there are any volatile
+		// ranges in the timeseries, this determines if any fall within the client's
+		// requested range and ensures they are re-requested. this only happens if
+		// the request is already a phit
+		if bt > 0 && len(missRanges) > 0 && len(vr) > 0 {
+			// this checks the timeseries's volatile ranges for any overlap with
+			// the request extent, and adds those to the missRanges to refresh
+			if cvr = vr.Crop(trq.Extent); len(cvr) > 0 {
+				missRanges = append(missRanges, cvr...).Compress(trq.Step)
+			}
+		}
 	}
 
 	if len(missRanges) == 0 && cacheStatus == status.LookupStatusPartialHit {
@@ -271,25 +287,8 @@ checkCache:
 	appendLock := sync.Mutex{}
 	var uncachedValueCount int64
 
-	// determine backfill tolerance start window
-	bt := o.BackfillTolerance              // todo, deterministic when we add in points vs time option
-	bfs := now.Add(-bt).Truncate(trq.Step) // start of the backfill tolerance window
-
 	// iterate each time range that the client needs and fetch from the upstream origin
 	for i := range missRanges {
-
-		// this implements backfill tolerance by expanding the miss range to
-		// include any cached-but-volatile ranges
-		if missRanges[i].End.After(bfs) {
-			if trq.Extent.Start.Before(bfs) {
-				if bfs.Before(missRanges[i].Start) {
-					missRanges[i].Start = bfs
-				}
-			} else {
-				missRanges[i].Start = trq.Extent.Start
-			}
-		}
-
 		wg.Add(1)
 		// This fetches the gaps from the origin and adds their datasets to the merge list
 		go func(e *timeseries.Extent, rq *proxyRequest) {
@@ -370,6 +369,43 @@ checkCache:
 		// on phit, elapsed records the time spent waiting for all upstream requests to complete
 		elapsed = time.Since(now)
 		cts.Merge(true, mts...)
+	}
+
+	// this handles the tolerance part of backfill tolerance, by adding new tolerable ranges to
+	// the timeseries's volatile list, and removing those that no longer tolerate backfill
+	if bt > 0 && cacheStatus != status.LookupStatusHit {
+
+		var shouldCompress bool
+		ve := cts.VolatileExtents()
+
+		// first, remove those that are now too old to tolerate backfill.
+		if len(cvr) > 0 {
+			// this updates the timeseries's volatile list to remove anything just fetched that is
+			// older than the current backfill tolerance timestamp; so it is now immutable in cache
+			ve = ve.Remove(cvr)
+			shouldCompress = true
+		}
+
+		// now add in any new time ranges that should tolerate backfill
+		var adds timeseries.Extent
+		if trq.Extent.End.After(bfs) {
+			adds.End = trq.Extent.End
+			if trq.Extent.Start.Before(bfs) {
+				adds.Start = bfs
+			} else {
+				adds.Start = trq.Extent.Start
+			}
+		}
+		if !adds.End.IsZero() {
+			ve = append(ve, adds)
+			shouldCompress = true
+		}
+
+		// if any changes happend to the volatile list, set it in the cached timeseries
+		if shouldCompress {
+			cts.SetVolatileExtents(ve.Compress(trq.Step))
+		}
+
 	}
 
 	// cts is the cacheable time series, rts is the user's response timeseries

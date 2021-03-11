@@ -187,6 +187,50 @@ func (el ExtentList) CloneRange(start, end int) ExtentList {
 	return c
 }
 
+// Remove removes the provided extent list ranges from the subject extent list
+func (el ExtentList) Remove(r ExtentList) ExtentList {
+	if len(r) == 0 {
+		return el
+	}
+	if len(el) == 0 {
+		return r
+	}
+
+	splices := make(map[int]interface{})
+	c := el.Clone()
+	for _, rem := range r {
+		for i, ex := range c {
+			if !(ex.Start.After(rem.End)) && !(ex.End.Before(rem.Start)) {
+				// removal range end is >= extent.End, and start is <= extent.Start
+				// so the entire range will be spliced out of the list
+				splices[i] = nil
+			} else if !(ex.Start.After(rem.End)) || !(ex.End.Before(rem.Start)) {
+				// removal range has some overlap with the current extent, so size it down
+				if rem.Start.After(ex.Start) {
+					c[i].Start = rem.Start
+				}
+				if rem.End.Before(ex.End) {
+					c[i].End = rem.End
+				}
+			}
+		}
+	}
+
+	// if there are no Extents to completely remove from the slice, just return the edited clone
+	if len(splices) == 0 {
+		return c
+	}
+
+	// otherwise, make a version of the list that does not include the splice out indexes
+	r = make(ExtentList, 0, len(r))
+	for i, ex := range c {
+		if _, ok := splices[i]; !ok {
+			r = append(r, ex)
+		}
+	}
+	return r
+}
+
 // TimestampCount returns the calculated number of timestamps based on the extents
 // in the list and the provided duration
 func (el ExtentList) TimestampCount(d time.Duration) int64 {

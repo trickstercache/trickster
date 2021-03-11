@@ -53,6 +53,9 @@ type DataSet struct {
 	Warnings []string `msg:"warnings"`
 	// TimeRangeQuery is the trq associated with the Timeseries
 	TimeRangeQuery *timeseries.TimeRangeQuery `msg:"trq"`
+	// VolatileExtents is the list extents in the dataset that should be refreshed
+	// on the next request to the Origin
+	VolatileExtentList timeseries.ExtentList `msg:"volatile_extents"`
 	// Sorter is the DataSet's Sort function, which defaults to DefaultSort
 	Sorter func() `msg:"-"`
 	// Merger is the DataSet's Merge function, which defaults to DefaultMerge
@@ -129,6 +132,7 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 		return clone
 	}
 	clone.ExtentList = ds.ExtentList.Clone().Crop(e)
+	clone.VolatileExtentList = ds.VolatileExtentList.Clone().Crop(e)
 
 	startNS := epoch.Epoch(e.Start.UnixNano())
 	endNS := epoch.Epoch(e.End.UnixNano())
@@ -208,6 +212,10 @@ func (ds *DataSet) Clone() timeseries.Timeseries {
 
 	if ds.ExtentList != nil {
 		clone.ExtentList = ds.ExtentList.Clone()
+	}
+
+	if ds.VolatileExtentList != nil {
+		clone.VolatileExtentList = ds.VolatileExtentList.Clone()
 	}
 
 	for i := range ds.Results {
@@ -398,6 +406,7 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 	}
 
 	ds.ExtentList = ds.ExtentList.Crop(e)
+	ds.VolatileExtentList = ds.VolatileExtentList.Clone().Crop(e)
 
 	// if the series extent is entirely inside the extent of the crop range,
 	// simply adjust down its ExtentList
@@ -552,4 +561,14 @@ func MarshalDataSet(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, st
 		ds.TimeRangeQuery.StepNS = ds.TimeRangeQuery.Step.Nanoseconds()
 	}
 	return ds.MarshalMsg(nil)
+}
+
+// VolatileExtents returns the list of time Extents in the dataset that should be re-fetched
+func (ds *DataSet) VolatileExtents() timeseries.ExtentList {
+	return ds.VolatileExtentList
+}
+
+// SetVolatileExtents sets the list of time Extents in the dataset that should be re-fetched
+func (ds *DataSet) SetVolatileExtents(e timeseries.ExtentList) {
+	ds.VolatileExtentList = e
 }
