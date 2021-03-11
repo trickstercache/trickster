@@ -400,7 +400,7 @@ checkCache:
 			shouldCompress = true
 		}
 
-		// if any changes happend to the volatile list, set it in the cached timeseries
+		// if any changes happened to the volatile list, set it in the cached timeseries
 		if shouldCompress {
 			cts.SetVolatileExtents(ve.Compress(trq.Step))
 		}

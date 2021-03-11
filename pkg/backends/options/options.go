@@ -82,7 +82,7 @@ type Options struct {
 	// that modify recently-cached data
 	BackfillToleranceMS int64 `yaml:"backfill_tolerance_ms,omitempty"`
 	// BackfillTolerancePoints is similar to the MS version, except that it's final value is dependent
-	// on the query step value to determin the relative duration of backfill tolerance per-query
+	// on the query step value to determine the relative duration of backfill tolerance per-query
 	// When both are set, the higher of the two values is used
 	BackfillTolerancePoints int `yaml:"backfill_tolerance_points,omitempty"`
 	// PathList is a list of Path Options that control the behavior of the given paths when requested
