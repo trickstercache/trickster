@@ -31,7 +31,7 @@ In a `rule` config, provide `ingress_req_rewriter_name`, `egress_req_rewriter_na
 
 In a Rule's `case` configurations, provide `req_rewriter_name`. If there is a Rule Case match when executing the Rule against the incoming Request, the configured rewriter will execute on the Request before returning control back to the Rule to execute any configured egress request rewriter and hand the Request off to the next route.
 
-In a rewriter instruction with the `chain` instruction type. Provide the Rewriter Name as the third argument in the instruction  as follows: `[ 'chain', 'exec', '$rewriter_name']`. See more information [below](#chain).
+In a Request Rewriter instruction using the `chain` instruction type. Provide the Rewriter Name as the third argument in the instruction  as follows: `[ 'chain', 'exec', '$rewriter_name']`. See more information [below](#chain).
 
 ## Instruction Construction Guide
 
