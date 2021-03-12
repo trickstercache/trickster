@@ -20,9 +20,6 @@ import "testing"
 
 func TestNewModeler(t *testing.T) {
 
-	// 	// UnmarshalerFunc describes a function that unmarshals a Timeseries
-	// type UnmarshalerFunc func([]byte, *TimeRangeQuery) (Timeseries, error)
-
 	f := func([]byte, *TimeRangeQuery) (Timeseries, error) {
 		return nil, nil
 	}
