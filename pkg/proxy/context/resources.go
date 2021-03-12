@@ -24,7 +24,7 @@ import (
 // CachingConfig and PathConfig for the request
 func WithResources(ctx context.Context, r interface{}) context.Context {
 	if r != nil {
-		return context.WithValue(ctx, resourcesKey, r)
+		return context.WithValue(StartRewriterHops(ctx), resourcesKey, r)
 	}
 	return ctx
 }

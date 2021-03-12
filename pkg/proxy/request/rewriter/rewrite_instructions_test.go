@@ -17,12 +17,14 @@
 package rewriter
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"testing"
 
+	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 )
@@ -32,6 +34,29 @@ const testURLRaw = "https://example.com:8480/path1/path2?param1=value&param2=val
 var testURL, _ = url.Parse(testURLRaw)
 
 var testRL0 = options.RewriteList{
+	[]string{"header", "set", "Cache-Control", "max-age=60"},
+	[]string{"header", "append", "Cache-Control", "max-age=300"},
+	[]string{"header", "append", "Cache-Control", "private"},
+	[]string{"header", "append", "Cache-Control", "private"},
+	[]string{"header", "set", "Test-Header", "Trickster"},
+	[]string{"header", "replace", "Cache-Control", "300", "60"},
+	[]string{"header", "delete", "Test-Header"},
+	[]string{"header", "delete", "Cache-Control", "private"},
+	[]string{"header", "append", "Cache-Control", "smax-age=30"},
+	[]string{"param", "set", "param1", "foo"},
+	[]string{"param", "append", "param1", "value2"},
+	[]string{"param", "set", "param2", "${trickster}"},
+	[]string{"param", "replace", "param1", "foo", "bar"},
+	[]string{"param", "replace", "paramX", "foo", "bar"},
+	[]string{"param", "delete", "param2"},
+	[]string{"param", "delete", "param1", "value2"},
+	[]string{"param", "append", "param1", "too"},
+	[]string{"param", "append", "param1", "too"},
+	[]string{"param", "append", "param3", "trickster"},
+	[]string{"chain", "exec", "rewriter1"},
+}
+
+var testRLW1 = options.RewriteList{
 	[]string{"header", "set", "Cache-Control", "max-age=60"},
 	[]string{"header", "append", "Cache-Control", "max-age=300"},
 	[]string{"header", "append", "Cache-Control", "private"},
@@ -77,6 +102,16 @@ var testRL3 = options.RewriteList{
 	[]string{"hostname", "replace", "example.com", "tricksterproxy.io"},
 }
 
+type testRewriteInstruction struct {
+}
+
+func (ri *testRewriteInstruction) Execute(*http.Request) {}
+func (ri *testRewriteInstruction) Parse([]string) error  { return nil }
+func (ri *testRewriteInstruction) String() string        { return "" }
+func (ri *testRewriteInstruction) HasTokens() bool       { return false }
+
+var testRWI = RewriteInstructions{&testRewriteInstruction{}}
+
 var testRI0 = RewriteInstructions{
 	&rwiKeyBasedSetter{key: "Cache-Control", value: "max-age=60"},
 	&rwiKeyBasedAppender{key: "Cache-Control", value: "max-age=300"},
@@ -97,6 +132,7 @@ var testRI0 = RewriteInstructions{
 	&rwiKeyBasedAppender{key: "param1", value: "too"},
 	&rwiKeyBasedAppender{key: "param1", value: "too"},
 	&rwiKeyBasedAppender{key: "param3", value: "trickster"},
+	&rwiChainExecutor{rewriterName: "rewriter1", rewriter: testRWI},
 }
 
 var testRI1 = RewriteInstructions{
@@ -451,6 +487,12 @@ func TestMiscRequestSetters(t *testing.T) {
 	if err != errBadParams {
 		t.Error("expected bad params error")
 	}
+
+	s = &rwiChainExecutor{}
+	err = s.Parse([]string{"foo", "foo", "foo", "foo"})
+	if err != errBadParams {
+		t.Error("expected bad params error")
+	}
 }
 
 func reqString(r *http.Request) string {
@@ -478,4 +520,25 @@ func reqString(r *http.Request) string {
 	sb.WriteString("\n")
 
 	return sb.String()
+}
+
+func TestReqChainExecute(t *testing.T) {
+	ri := RewriteInstructions{
+		&rwiChainExecutor{rewriterName: "rewriter1", rewriter: testRWI},
+	}
+	r, _ := http.NewRequest(http.MethodGet, "/", nil)
+	r = r.WithContext(tctx.StartRewriterHops(context.Background()))
+	ri.Execute(r)
+	hops := tctx.RewriterHops(r.Context())
+	if hops != 1 {
+		t.Errorf("expected 1 got %d", hops)
+	}
+}
+
+func TestReqChainHasTokens(t *testing.T) {
+	ri := &rwiChainExecutor{rewriterName: "rewriter1"}
+	b := ri.HasTokens()
+	if b {
+		t.Error("expected false")
+	}
 }

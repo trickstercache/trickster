@@ -22,6 +22,9 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/tricksterproxy/trickster/pkg/proxy/context"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 )
 
 type rewriteInstruction interface {
@@ -56,6 +59,7 @@ var rewriters = map[string]func() rewriteInstruction{
 	"port-set":         func() rewriteInstruction { return &rwiBasicSetter{} },
 	"port-replace":     func() rewriteInstruction { return &rwiBasicReplacer{} },
 	"port-delete":      func() rewriteInstruction { return &rwiPortDeleter{} },
+	"chain-exec":       func() rewriteInstruction { return &rwiChainExecutor{} },
 }
 
 type dictable interface {
@@ -682,5 +686,42 @@ func (ri *rwiPortDeleter) Execute(r *http.Request) {
 }
 
 func (ri *rwiPortDeleter) HasTokens() bool {
+	return false
+}
+
+type rwiChainExecutor struct {
+	rewriterName string
+	rewriter     RewriteInstructions
+}
+
+func (ri *rwiChainExecutor) String() string {
+	return fmt.Sprintf(`{"type":"chainExecutor","rewriter":"%s"}`, ri.rewriterName)
+}
+
+func (ri *rwiChainExecutor) Parse(parts []string) error {
+	lp := len(parts)
+	if lp != 3 || strings.Trim(parts[2], " \t\n") == "" {
+		return errBadParams
+	}
+	ri.rewriterName = parts[2]
+	// a separate process will validate and map the rewriter based on this parsed name
+	return nil
+}
+
+func (ri *rwiChainExecutor) Execute(r *http.Request) {
+	if ri.rewriter == nil {
+		return
+	}
+
+	// this incmements the RewriterHops counter for the request
+	// and only executes the chained rewriter the counter is below the max allowed (32)
+	h := context.IncrementedRewriterHops(r.Context(), 1)
+
+	if h < options.MaxRewriterChainExecutions {
+		ri.rewriter.Execute(r)
+	}
+}
+
+func (ri *rwiChainExecutor) HasTokens() bool {
 	return false
 }
