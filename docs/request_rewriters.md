@@ -10,9 +10,14 @@ request_rewriters:
     instructions:
       - [ 'header', 'set', 'Cache-Control', 'max-age=60' ], # instruction 0
       - [ 'path', 'replace', '/cgi-bin/', '/' ],            # instruction 1
+      - [ 'chain', 'exec', 'remove_accept_encoding' ]       # instruction 2
+
+  remove_accept_encoding:
+    instructions:
+      - [ 'header', 'delete', 'Accept-Encoding' ] # instruction 0
 ```
 
-In this case, any other configuration entity that supports mapping to a rewriter by name can do so with by referencing `example_rewriter`.
+In this case, any other configuration entity that supports mapping to a rewriter by name can do so with by referencing `example_rewriter` or `remove_accept_encoding`. Note that `example_rewriter` executes `remove_accept_encoding` using the `chain` instruction.
 
 ## Where Rewriters Can Be Used
 
@@ -25,6 +30,8 @@ In a `path` config, provide a `req_rewriter_name` to rewrite the Request using t
 In a `rule` config, provide `ingress_req_rewriter_name`, `egress_req_rewriter_name` and/or `nomatch_req_rewriter_name`  configurations to rewrite the Request using the named Request Rewriter. The meaning of Ingress and Egress, in this case, are scoped to a Request's traversal through the Rule in which these configuration values exist, and is unrelated to the wire traversal of the request. For ingress and egress, the rewriter is executed before or after, respectively, it is handled by the Rule (including any modifications made by a matching rule case). The No-Match Request Rewriter is only executed when the request does not match to any defined case.
 
 In a Rule's `case` configurations, provide `req_rewriter_name`. If there is a Rule Case match when executing the Rule against the incoming Request, the configured rewriter will execute on the Request before returning control back to the Rule to execute any configured egress request rewriter and hand the Request off to the next route.
+
+In a Request Rewriter instruction using the `chain` instruction type. Provide the Rewriter Name as the third argument in the instruction  as follows: `[ 'chain', 'exec', '$rewriter_name']`. See more information [below](#chain).
 
 ## Instruction Construction Guide
 
@@ -197,3 +204,12 @@ To clear the URL parameters, use `['params', 'set', '']`
 `scheme set` sets the scheme of the HTTP Request URL. This must be `http` or `https` in lowercase, and is not validated.
 
 `['scheme', 'set', 'https']`
+
+### chain
+
+`chain` rewriters do not directly rewrite the request, but execute other rewriters' instructions before proceeding with the current rewriter's remaining instructions (if any). You can create a rewriter with some reusable functionality and include that in other rewriters with a chain exec. Or you can define a rewriter that is just a list of other chained rewriters. Note that there is currently no validation of the configuration to prevent infinite cyclic chained rewriter calls. There is, however, a hard limit of 32 chained rules before a request will stop rewriting and proceed with being served by the backend.
+
+`chain exec` executes the supplied rewriter name. Trickster will error at startup if the rewriter name is invalid. An example is provided in the sample yaml config at the top of this article.
+
+`['chain', 'exec', 'example_rewriter']`
+

@@ -19,10 +19,9 @@ package rewriter
 import (
 	"net/http"
 	"net/http/httptest"
+	"testing"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
-
-	"testing"
 )
 
 func TestProcessConfig(t *testing.T) {
@@ -34,6 +33,13 @@ func TestProcessConfig(t *testing.T) {
 
 	o := &options.Options{Instructions: testRL0}
 	ri, err := ProcessConfigs(map[string]*options.Options{"test": o})
+	if err != errInvalidRewriterOptions {
+		t.Error("expected error for invalid rewriter options", err)
+	}
+
+	o2 := &options.Options{Instructions: testRLW1}
+
+	ri, err = ProcessConfigs(map[string]*options.Options{"test": o, "rewriter1": o2})
 	if err != nil {
 		t.Error(err)
 	}

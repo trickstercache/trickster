@@ -14,14 +14,21 @@
  * limitations under the License.
  */
 
-package context
+package options
 
-type contextKey int
+import "testing"
 
-const (
-	resourcesKey contextKey = iota
-	hopsKey
-	rewriterHopsKey
-	healthCheckKey
-	requestBodyKey
-)
+func TestClone(t *testing.T) {
+
+	o := &Options{
+		Instructions: [][]string{
+			{"test"},
+		},
+	}
+
+	c := o.Clone()
+	if len(c.Instructions) != 1 {
+		t.Errorf("Expected %d got %d", 1, len(c.Instructions))
+	}
+
+}

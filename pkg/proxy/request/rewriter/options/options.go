@@ -18,6 +18,8 @@ package options
 
 import "github.com/tricksterproxy/trickster/pkg/util/copiers"
 
+const MaxRewriterChainExecutions int = 32
+
 // RewriteList is a list of Rewrite Instructions
 type RewriteList [][]string
 

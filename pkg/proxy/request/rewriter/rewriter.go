@@ -40,6 +40,20 @@ func ProcessConfigs(rwl map[string]*options.Options) (map[string]RewriteInstruct
 		}
 		crw[k] = ri
 	}
+
+	// this validates the rewriter names in the rewriter chains
+	for _, ri := range crw {
+		for _, instr := range ri {
+			if ce, ok := instr.(*rwiChainExecutor); ok {
+				rwi, ok := crw[ce.rewriterName]
+				if !ok {
+					return nil, errInvalidRewriterOptions
+				}
+				ce.rewriter = rwi
+			}
+		}
+	}
+
 	return crw, nil
 }
 
