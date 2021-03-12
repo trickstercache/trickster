@@ -87,16 +87,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	pr := newProxyRequest(r, w)
 	rlo.FastForwardDisable = o.FastForwardDisable || rlo.FastForwardDisable
 	trq.NormalizeExtent()
-
-	// this is used to ensure the head of the cache respects the BackFill Tolerance
-	bf := timeseries.Extent{Start: time.Unix(0, 0), End: trq.Extent.End}
-	bt := trq.GetBackfillTolerance(o.BackfillTolerance)
-
-	if !trq.IsOffset && bt > 0 { // TODO: research if we need this clause: && !time.Now().Add(-bt).After(bf.End) {
-		bf.End = bf.End.Add(-bt)
-	}
-
 	now := time.Now()
+
+	bt := trq.GetBackfillTolerance(o.BackfillTolerance, o.BackfillTolerancePoints)
+	bfs := now.Add(-bt).Truncate(trq.Step) // start of the backfill tolerance window
 
 	OldestRetainedTimestamp := time.Time{}
 	if o.TimeseriesEvictionMethod == evictionmethods.EvictionMethodOldest {
@@ -105,13 +99,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			tl.Debug(pr.Logger, "timerange end is too early to consider caching",
 				tl.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp,
 					"step": trq.Step, "retention": o.TimeseriesRetention})
-			DoProxy(w, r, true)
-			return
-		}
-		if trq.Extent.Start.After(bf.End) {
-			tl.Debug(pr.Logger, "timerange is too new to cache due to backfill tolerance",
-				tl.Pairs{"backFillToleranceSecs": bt,
-					"newestRetainedTimestamp": bf.End, "queryStart": trq.Extent.Start})
 			DoProxy(w, r, true)
 			return
 		}
@@ -198,18 +185,6 @@ checkCache:
 							DoProxy(w, r, true)
 							return
 						}
-						if trq.Extent.Start.After(el[len(el)-1].End) {
-							pr.cacheLock.RRelease()
-							tl.Debug(pr.Logger, "timerange not cached due to backfill tolerance",
-								tl.Pairs{
-									"backFillToleranceSecs":   bt,
-									"newestRetainedTimestamp": bf.End,
-									"queryStart":              trq.Extent.Start,
-								},
-							)
-							DoProxy(w, r, true)
-							return
-						}
 					}
 				}
 				cacheStatus = status.LookupStatusPartialHit
@@ -218,9 +193,21 @@ checkCache:
 	}
 
 	// Find the ranges that we want, but which are not currently cached
-	var missRanges timeseries.ExtentList
+	var missRanges, cvr timeseries.ExtentList
+	vr := cts.VolatileExtents()
 	if cacheStatus == status.LookupStatusPartialHit {
 		missRanges = cts.Extents().CalculateDeltas(trq.Extent, trq.Step)
+		// this is the backfill part of backfill tolerance. if there are any volatile
+		// ranges in the timeseries, this determines if any fall within the client's
+		// requested range and ensures they are re-requested. this only happens if
+		// the request is already a phit
+		if bt > 0 && len(missRanges) > 0 && len(vr) > 0 {
+			// this checks the timeseries's volatile ranges for any overlap with
+			// the request extent, and adds those to the missRanges to refresh
+			if cvr = vr.Crop(trq.Extent); len(cvr) > 0 {
+				missRanges = append(missRanges, cvr...).Compress(trq.Step)
+			}
+		}
 	}
 
 	if len(missRanges) == 0 && cacheStatus == status.LookupStatusPartialHit {
@@ -244,7 +231,7 @@ checkCache:
 		// in this case, it's not a cache hit, so something is _likely_ going to be cached now.
 		// we write lock here, so as to prevent other concurrent client requests for the same url,
 		// which will have the same cacheStatus, from causing the same or similar HTTP requests
-		// to be made against the origin, since just one should doc.
+		// to be made against the origin, since just one should do.
 
 		// acquire a write lock via the Upgrade method, which will swap the read lock for a
 		// write lock, and return true if this client was the only one, or otherwise the first
@@ -383,6 +370,43 @@ checkCache:
 		cts.Merge(true, mts...)
 	}
 
+	// this handles the tolerance part of backfill tolerance, by adding new tolerable ranges to
+	// the timeseries's volatile list, and removing those that no longer tolerate backfill
+	if bt > 0 && cacheStatus != status.LookupStatusHit {
+
+		var shouldCompress bool
+		ve := cts.VolatileExtents()
+
+		// first, remove those that are now too old to tolerate backfill.
+		if len(cvr) > 0 {
+			// this updates the timeseries's volatile list to remove anything just fetched that is
+			// older than the current backfill tolerance timestamp; so it is now immutable in cache
+			ve = ve.Remove(cvr, trq.Step)
+			shouldCompress = true
+		}
+
+		// now add in any new time ranges that should tolerate backfill
+		var adds timeseries.Extent
+		if trq.Extent.End.After(bfs) {
+			adds.End = trq.Extent.End
+			if trq.Extent.Start.Before(bfs) {
+				adds.Start = bfs
+			} else {
+				adds.Start = trq.Extent.Start
+			}
+		}
+		if !adds.End.IsZero() {
+			ve = append(ve, adds)
+			shouldCompress = true
+		}
+
+		// if any changes happened to the volatile list, set it in the cached timeseries
+		if shouldCompress {
+			cts.SetVolatileExtents(ve.Compress(trq.Step))
+		}
+
+	}
+
 	// cts is the cacheable time series, rts is the user's response timeseries
 	var rts timeseries.Timeseries
 	if cacheStatus != status.LookupStatusKeyMiss {
@@ -399,9 +423,9 @@ checkCache:
 			// Backfill Tolerance before storing to cache
 			switch o.TimeseriesEvictionMethod {
 			case evictionmethods.EvictionMethodLRU:
-				cts.CropToSize(o.TimeseriesRetentionFactor, bf.End, trq.Extent)
+				cts.CropToSize(o.TimeseriesRetentionFactor, now, trq.Extent)
 			default:
-				cts.CropToRange(timeseries.Extent{End: bf.End, Start: OldestRetainedTimestamp})
+				cts.CropToRange(timeseries.Extent{End: now, Start: OldestRetainedTimestamp})
 			}
 			// Don't cache datasets with empty extents
 			// (everything was cropped so there is nothing to cache)

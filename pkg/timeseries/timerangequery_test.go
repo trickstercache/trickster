@@ -76,9 +76,38 @@ func TestClone(t *testing.T) {
 	u, _ := url.Parse("http://127.0.0.1/")
 	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{Start: time.Unix(5, 0),
 		End: time.Unix(10, 0)}, Step: time.Duration(5) * time.Second, TemplateURL: u}
+
+	trq.TagFieldDefintions = []FieldDefinition{{}}
+	trq.ValueFieldDefinitions = []FieldDefinition{{}}
+	trq.Labels = map[string]string{"test": "trickster"}
+
 	c := trq.Clone()
 	if !reflect.DeepEqual(trq, c) {
 		t.Errorf("expected %s got %s", trq.String(), c.String())
+	}
+}
+
+func TestSizeTRQ(t *testing.T) {
+
+	u, _ := url.Parse("http://127.0.0.1/")
+	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{Start: time.Unix(5, 0),
+		End: time.Unix(10, 0)}, Step: time.Duration(5) * time.Second, TemplateURL: u}
+
+	size := trq.Size()
+
+	if size != 119 {
+		t.Errorf("expected %d got %d", 119, size)
+	}
+}
+
+func TestExtractBackfillTolerance(t *testing.T) {
+
+	trq := &TimeRangeQuery{}
+
+	trq.ExtractBackfillTolerance("testing trickster-backfill-tolerance:30 ")
+
+	if trq.BackfillTolerance != time.Second*30 {
+		t.Error("expected 30 got", trq.BackfillTolerance)
 	}
 }
 
@@ -98,15 +127,30 @@ func TestGetBackfillTolerance(t *testing.T) {
 	expected := time.Second * 5
 
 	trq := &TimeRangeQuery{Statement: "1234"}
-	i := trq.GetBackfillTolerance(expected)
+	i := trq.GetBackfillTolerance(expected, 0)
 	if i != expected {
 		t.Errorf("expected %s got %s", expected, i)
 	}
 
 	trq.BackfillTolerance = time.Second * 30
-	i = trq.GetBackfillTolerance(expected)
+	i = trq.GetBackfillTolerance(expected, 0)
 	if i == expected {
 		t.Errorf("expected %s got %s", time.Second*30, i)
+	}
+
+	trq.Step = 5 * time.Second
+	trq.BackfillTolerance = 0
+
+	expected = time.Second * 50
+	i = trq.GetBackfillTolerance(time.Second*5, 10)
+	if i != expected {
+		t.Errorf("expected %s got %s", expected, i)
+	}
+
+	trq.BackfillTolerance = -1
+	i = trq.GetBackfillTolerance(time.Second*5, 10)
+	if i != 0 {
+		t.Errorf("expected %d got %d", 0, i)
 	}
 
 }

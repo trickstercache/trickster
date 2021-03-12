@@ -154,64 +154,6 @@ func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 	}
 }
 
-func TestDeltaProxyCacheRequestAllItemsTooNew(t *testing.T) {
-
-	ts, w, r, rsc, err := setupTestHarnessDPC()
-	if err != nil {
-		t.Error(err)
-	}
-	defer ts.Close()
-
-	client := rsc.BackendClient.(*TestClient)
-	o := rsc.BackendOptions
-	rsc.CacheConfig.Provider = "test"
-
-	o.FastForwardDisable = true
-	o.BackfillToleranceMS = 600000
-	o.BackfillTolerance = time.Millisecond * time.Duration(o.BackfillToleranceMS)
-
-	step := time.Duration(300) * time.Second
-	end := time.Now()
-
-	extr := timeseries.Extent{Start: end.Add(-time.Duration(5) * time.Minute), End: end}
-
-	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extr.Start, extr.End, step)
-
-	u := r.URL
-	u.Path = "/prometheus/api/v1/query_range"
-	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
-		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
-
-	client.QueryRangeHandler(w, r)
-	resp := w.Result()
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), expected)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
-		t.Error(err)
-	}
-
-	if resp.Header.Get("status") != "" {
-		t.Errorf("status header should not be present. Found with value %s", resp.Header.Get("stattus"))
-	}
-
-	// ensure the request was sent through the proxy instead of the DeltaProxyCache
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"engine": "HTTPProxy"})
-	if err != nil {
-		t.Error(err)
-	}
-
-}
-
 func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 
 	ts, w, r, rsc, err := setupTestHarnessDPC()
@@ -1465,7 +1407,6 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 	xn := timeseries.Extent{Start: now.Add(-time.Duration(6) * time.Hour).Truncate(step), End: now.Truncate(step)}
 
 	// We can predict what slice will need to be fetched and ensure that is only what is requested upstream
-	expectedFetched := fmt.Sprintf("[%s]", timeseries.Extent{Start: xn.End, End: xn.End})
 	expected, _, _ := mockprom.GetTimeSeriesData(query, xn.Start, xn.End, step)
 
 	u := r.URL
@@ -1519,12 +1460,7 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "phit"})
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "hit"})
 	if err != nil {
 		t.Error(err)
 	}

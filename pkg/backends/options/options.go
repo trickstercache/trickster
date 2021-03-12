@@ -77,10 +77,14 @@ type Options struct {
 	// TimeseriesEvictionMethodName specifies which methodology ("oldest", "lru") is used to identify
 	//timeseries to evict from a full cache object
 	TimeseriesEvictionMethodName string `yaml:"timeseries_eviction_method,omitempty"`
-	// BackfillToleranceMS prevents values with timestamps newer than the provided
-	// number of seconds from being cached this allows propagation of upstream backfill operations
-	// that modify recently-served data
+	// BackfillToleranceMS prevents values with timestamps newer than the provided number of
+	// milliseconds from being cached. this allows propagation of upstream backfill operations
+	// that modify recently-cached data
 	BackfillToleranceMS int64 `yaml:"backfill_tolerance_ms,omitempty"`
+	// BackfillTolerancePoints is similar to the MS version, except that it's final value is dependent
+	// on the query step value to determine the relative duration of backfill tolerance per-query
+	// When both are set, the higher of the two values is used
+	BackfillTolerancePoints int `yaml:"backfill_tolerance_points,omitempty"`
 	// PathList is a list of Path Options that control the behavior of the given paths when requested
 	Paths map[string]*po.Options `yaml:"paths,omitempty"`
 	// NegativeCacheName provides the name of the Negative Cache Config to be used by this Backend
@@ -188,8 +192,9 @@ type Options struct {
 // New will return a pointer to a Backend Options with the default configuration settings
 func New() *Options {
 	return &Options{
-		BackfillTolerance:            DefaultBackfillToleranceMS,
+		BackfillTolerance:            time.Duration(DefaultBackfillToleranceMS) * time.Millisecond,
 		BackfillToleranceMS:          DefaultBackfillToleranceMS,
+		BackfillTolerancePoints:      DefaultBackfillTolerancePoints,
 		CacheKeyPrefix:               "",
 		CacheName:                    DefaultBackendCacheName,
 		CompressableTypeList:         DefaultCompressableTypes(),
@@ -226,6 +231,7 @@ func (o *Options) Clone() *Options {
 	no.DearticulateUpstreamRanges = o.DearticulateUpstreamRanges
 	no.BackfillTolerance = o.BackfillTolerance
 	no.BackfillToleranceMS = o.BackfillToleranceMS
+	no.BackfillTolerancePoints = o.BackfillTolerancePoints
 	no.CacheName = o.CacheName
 	no.CacheKeyPrefix = o.CacheKeyPrefix
 	no.FastForwardDisable = o.FastForwardDisable
@@ -550,6 +556,10 @@ func SetDefaults(
 
 	if metadata.IsDefined("backends", name, "backfill_tolerance_ms") {
 		no.BackfillToleranceMS = o.BackfillToleranceMS
+	}
+
+	if metadata.IsDefined("backends", name, "backfill_tolerance_points") {
+		no.BackfillTolerancePoints = o.BackfillTolerancePoints
 	}
 
 	if metadata.IsDefined("backends", name, "paths") {

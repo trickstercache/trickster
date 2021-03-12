@@ -35,10 +35,11 @@ import (
 // SeriesEnvelope values represent a time series data response from the
 // IRONdb API.
 type SeriesEnvelope struct {
-	Data           DataPoints            `json:"data"`
-	ExtentList     timeseries.ExtentList `json:"extents,omitempty"`
-	StepDuration   time.Duration         `json:"step,omitempty"`
-	timeRangeQuery *timeseries.TimeRangeQuery
+	Data               DataPoints            `json:"data"`
+	ExtentList         timeseries.ExtentList `json:"extents,omitempty"`
+	StepDuration       time.Duration         `json:"step,omitempty"`
+	timeRangeQuery     *timeseries.TimeRangeQuery
+	VolatileExtentList timeseries.ExtentList `json:"-"`
 }
 
 // MarshalJSON encodes a series envelope value into a JSON byte slice.
@@ -100,6 +101,14 @@ func (se *SeriesEnvelope) UnmarshalJSON(b []byte) error {
 
 	err := json.Unmarshal(b, &se.Data)
 	return err
+}
+
+func (se *SeriesEnvelope) VolatileExtents() timeseries.ExtentList {
+	return se.VolatileExtentList
+}
+
+func (se *SeriesEnvelope) SetVolatileExtents(e timeseries.ExtentList) {
+	se.VolatileExtentList = e
 }
 
 // DataPoint values represent a single data element of a time series data

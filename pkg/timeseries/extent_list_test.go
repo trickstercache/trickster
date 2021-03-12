@@ -167,6 +167,158 @@ func TestInsideOf(t *testing.T) {
 
 }
 
+func TestRemove(t *testing.T) {
+
+	step := time.Second * 1
+
+	tests := []struct {
+		el       ExtentList
+		removals ExtentList
+		expected ExtentList
+	}{
+		{ // Case 0 (splice entire line)
+			ExtentList{
+				Extent{Start: t100, End: t200},
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+			ExtentList{
+				Extent{Start: t100, End: t200},
+			},
+			ExtentList{
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+		},
+		{ // case 1 (adjust start)
+			ExtentList{
+				Extent{Start: t100, End: t200},
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+			ExtentList{
+				Extent{Start: t100, End: t100},
+			},
+			ExtentList{
+				Extent{Start: t101, End: t200},
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+		},
+		{ // case 2 (adjust end)
+			ExtentList{
+				Extent{Start: t100, End: t201},
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+			ExtentList{
+				Extent{Start: t201, End: t201},
+			},
+			ExtentList{
+				Extent{Start: t100, End: t200},
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+		},
+		{ // case 3 (adjust start and end)
+			ExtentList{
+				Extent{Start: t100, End: t201},
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+			ExtentList{
+				Extent{Start: t100, End: t100},
+				Extent{Start: t201, End: t201},
+			},
+			ExtentList{
+				Extent{Start: t101, End: t200},
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+		},
+		{ // case 4 (overlap)
+			ExtentList{
+				Extent{Start: t100, End: t201},
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+			ExtentList{
+				Extent{Start: t101, End: t200},
+			},
+			ExtentList{
+				Extent{Start: t100, End: t100},
+				Extent{Start: t201, End: t201},
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+		},
+		{ // Case 5 (splice entire line 2)
+			ExtentList{
+				Extent{Start: t101, End: t200},
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+			ExtentList{
+				Extent{Start: t100, End: t200},
+			},
+			ExtentList{
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+		},
+		{ // Case 6 (splice entire line 3)
+			ExtentList{
+				Extent{Start: t101, End: t200},
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+			ExtentList{
+				Extent{Start: t100, End: t201},
+			},
+			ExtentList{
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+		},
+		{ // Case 7 empty removals
+			ExtentList{
+				Extent{Start: t101, End: t200},
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+			ExtentList{},
+			ExtentList{
+				Extent{Start: t101, End: t200},
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+		},
+		{ // Case 8 subject list
+			ExtentList{},
+			ExtentList{
+				Extent{Start: t101, End: t200},
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+			ExtentList{
+				Extent{Start: t101, End: t200},
+				Extent{Start: t600, End: t900},
+				Extent{Start: t1100, End: t1300},
+			},
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			v := test.el.Remove(test.removals, step)
+			if !v.Equal(test.expected) {
+				t.Errorf("expected %v got %v", test.expected, v)
+			}
+		})
+	}
+
+}
+
 func TestOutsideOf(t *testing.T) {
 
 	el := ExtentList{
@@ -236,6 +388,24 @@ func TestString(t *testing.T) {
 				t.Errorf("got %s expected %s", test.el.String(), test.expected)
 			}
 		})
+	}
+
+}
+
+func TestCloneRange(t *testing.T) {
+
+	el := ExtentList{
+		Extent{Start: t600, End: t900},
+	}
+
+	res := el.CloneRange(-1, -1)
+	if res != nil {
+		t.Error("expected nil result", res)
+	}
+
+	res = el.CloneRange(0, 200)
+	if res != nil {
+		t.Error("expected nil result", res)
 	}
 
 }
@@ -493,6 +663,36 @@ func TestCrop(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEqual(t *testing.T) {
+
+	el := ExtentList{
+		Extent{Start: t100, End: t200},
+		Extent{Start: t600, End: t900},
+		Extent{Start: t1100, End: t1300},
+	}
+
+	b := el.Equal(nil)
+	if b {
+		t.Error("expected false")
+	}
+
+	b = el.Equal(ExtentList{})
+	if b {
+		t.Error("expected false")
+	}
+
+	el2 := ExtentList{
+		Extent{Start: t101, End: t200},
+		Extent{Start: t600, End: t900},
+		Extent{Start: t1100, End: t1300},
+	}
+
+	b = el.Equal(el2)
+	if b {
+		t.Error("expected false")
+	}
 
 }
 
@@ -678,4 +878,21 @@ func TestCalculateDeltas(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTimestampCount(t *testing.T) {
+
+	el := ExtentList{
+		Extent{Start: t100, End: t200},
+		Extent{Start: t600, End: t900},
+		Extent{},
+		Extent{Start: t1100, End: t1300},
+	}
+
+	const expected int64 = 9
+
+	if v := el.TimestampCount(time.Second * 100); v != expected {
+		t.Errorf("expected %d got %d", expected, v)
+	}
+
 }

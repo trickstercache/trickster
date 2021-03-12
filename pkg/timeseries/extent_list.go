@@ -169,7 +169,7 @@ func (el ExtentList) Clone() ExtentList {
 // CloneRange returns a perfect copy of the ExtentList, cloning only the
 // Extents in the provided index range (upper-bound exclusive)
 func (el ExtentList) CloneRange(start, end int) ExtentList {
-	if end < start {
+	if end < start || start < 0 || end < 0 {
 		return nil
 	}
 	size := end - start
@@ -185,6 +185,92 @@ func (el ExtentList) CloneRange(start, end int) ExtentList {
 		j++
 	}
 	return c
+}
+
+// Equal returns true if the provided extent list is identical to the subject list
+func (el ExtentList) Equal(el2 ExtentList) bool {
+	if el2 == nil {
+		return false
+	}
+
+	l := len(el)
+	l2 := len(el2)
+	if l != l2 {
+		return false
+	}
+
+	for i := range el {
+		if el2[i] != el[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// Remove removes the provided extent list ranges from the subject extent list
+func (el ExtentList) Remove(r ExtentList, step time.Duration) ExtentList {
+	if len(r) == 0 {
+		return el
+	}
+	if len(el) == 0 {
+		return r
+	}
+
+	splices := make(map[int]interface{})
+	spliceIns := make(map[int]Extent)
+	c := el.Clone()
+	for _, rem := range r {
+		for i, ex := range c {
+
+			if rem.End.Before(ex.Start) || rem.Start.After(ex.End) {
+				// removal range is not relevant to this extent
+				continue
+			}
+
+			if rem.StartsAtOrBefore(ex.Start) && rem.EndsAtOrAfter(ex.End) {
+				// removal range end is >= extent.End, and start is <= extent.Start
+				// so the entire range will be spliced out of the list
+				splices[i] = nil
+				continue
+			}
+
+			// the removal is fully inside of the extent, it must be split into two
+			if rem.Start.After(ex.Start) && rem.End.Before(ex.End) {
+				// the first piece will be inserted back in later
+				spliceIns[i] = Extent{Start: ex.Start, End: rem.Start.Add(-step)}
+				// the existing piece will be adjusted in place
+				c[i].Start = rem.End.Add(step)
+				continue
+			}
+
+			// The removal is attached to only one side of the extent, so the
+			// boundaries can be adjusted
+			if rem.Start.After(ex.Start) {
+				c[i].End = rem.Start.Add(-step)
+			} else if rem.End.Before(ex.End) {
+				c[i].Start = rem.End.Add(step)
+			}
+
+		}
+	}
+
+	// if the clone is final, return it now
+	if len(splices) == 0 && len(spliceIns) == 0 {
+		return c
+	}
+
+	// otherwise, make a version of the does not include the splice out indexes
+	// and includes any splice-in indexes
+	r = make(ExtentList, 0, len(r)+len(spliceIns))
+	for i, ex := range c {
+		if ex2, ok := spliceIns[i]; ok {
+			r = append(r, ex2)
+		}
+		if _, ok := splices[i]; !ok {
+			r = append(r, ex)
+		}
+	}
+	return r
 }
 
 // TimestampCount returns the calculated number of timestamps based on the extents

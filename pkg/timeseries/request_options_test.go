@@ -16,36 +16,14 @@
 
 package timeseries
 
-import "testing"
+import (
+	"testing"
+)
 
-func TestFieldDefinitionClone(t *testing.T) {
-
-	fd := FieldDefinition{
-		Name:     "test",
-		DataType: FieldDataType(1),
+func TestExtractFastForwardDisabled(t *testing.T) {
+	ro := &RequestOptions{}
+	ro.ExtractFastForwardDisabled("test query trickster-fast-forward:off ")
+	if !ro.FastForwardDisable {
+		t.Error("expected true")
 	}
-
-	fd2 := fd.Clone()
-
-	if fd2 != fd {
-		t.Error("clone mismatch")
-	}
-
-}
-
-func TestFieldDefinitionString(t *testing.T) {
-
-	fd := FieldDefinitions{
-		FieldDefinition{
-			Name:     "test",
-			DataType: FieldDataType(1),
-		},
-	}
-
-	const expected = `[{"name":"test","type":1,"pos":0,"stype":"","provider1":0}]`
-
-	if fd.String() != expected {
-		t.Errorf("expected `%s` got `%s`", expected, fd.String())
-	}
-
 }
