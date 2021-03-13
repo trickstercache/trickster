@@ -18,7 +18,6 @@ package influxdb
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/influxdata/influxql"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
@@ -39,8 +38,6 @@ const (
 	upPretty  = "pretty"
 	upChunked = "chunked"
 )
-
-var valuer = &influxql.NowValuer{Now: time.Now()}
 
 // SetExtent will change the upstream request query to use the provided Extent
 func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {

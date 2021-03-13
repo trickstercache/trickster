@@ -68,6 +68,8 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	rlo := &timeseries.RequestOptions{}
 
+	var valuer = &influxql.NowValuer{Now: time.Now()}
+
 	v, _, _ := params.GetRequestValues(r)
 	if trq.Statement = v.Get(upQuery); trq.Statement == "" {
 		return nil, nil, false, errors.MissingURLParam(upQuery)
