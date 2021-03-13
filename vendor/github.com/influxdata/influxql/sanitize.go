@@ -1,8 +1,8 @@
 package influxql
 
 import (
-	"bytes"
 	"regexp"
+	"strings"
 )
 
 var (
@@ -21,7 +21,7 @@ var (
 // as much as possible.
 func Sanitize(query string) string {
 	if matches := sanitizeSetPassword.FindAllStringSubmatchIndex(query, -1); matches != nil {
-		var buf bytes.Buffer
+		var buf strings.Builder
 		i := 0
 		for _, match := range matches {
 			buf.WriteString(query[i:match[2]])
@@ -33,7 +33,7 @@ func Sanitize(query string) string {
 	}
 
 	if matches := sanitizeCreatePassword.FindAllStringSubmatchIndex(query, -1); matches != nil {
-		var buf bytes.Buffer
+		var buf strings.Builder
 		i := 0
 		for _, match := range matches {
 			buf.WriteString(query[i:match[2]])

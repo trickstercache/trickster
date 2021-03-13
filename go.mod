@@ -14,7 +14,8 @@ require (
 	github.com/gomodule/redigo v1.8.4 // indirect
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
-	github.com/influxdata/influxql v1.1.0
+	github.com/influxdata/influxdb v1.8.4
+	github.com/influxdata/influxql v1.1.1-0.20200828144457-65d3ef77d385
 	github.com/prometheus/client_golang v1.9.0
 	github.com/tinylib/msgp v1.1.5
 	github.com/tricksterproxy/mockster v1.1.1

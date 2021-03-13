@@ -1,7 +1,6 @@
 package influxql
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -3089,7 +3088,7 @@ func QuoteString(s string) string {
 
 // QuoteIdent returns a quoted identifier from multiple bare identifiers.
 func QuoteIdent(segments ...string) string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	for i, segment := range segments {
 		needQuote := IdentNeedsQuotes(segment) ||
 			((i < len(segments)-1) && segment != "") || // not last segment && not ""

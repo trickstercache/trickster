@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // Scanner represents a lexical scanner for InfluxQL.
@@ -139,7 +140,7 @@ func (s *Scanner) Scan() (tok Token, pos Pos, lit string) {
 // scanWhitespace consumes the current rune and all contiguous whitespace.
 func (s *Scanner) scanWhitespace() (tok Token, pos Pos, lit string) {
 	// Create a buffer and read the current character into it.
-	var buf bytes.Buffer
+	var buf strings.Builder
 	ch, pos := s.r.curr()
 	_, _ = buf.WriteRune(ch)
 
@@ -195,7 +196,7 @@ func (s *Scanner) scanIdent(lookup bool) (tok Token, pos Pos, lit string) {
 	_, pos = s.r.read()
 	s.r.unread()
 
-	var buf bytes.Buffer
+	var buf strings.Builder
 	for {
 		if ch, _ := s.r.read(); ch == eof {
 			break
@@ -263,7 +264,7 @@ func (s *Scanner) ScanRegex() (tok Token, pos Pos, lit string) {
 
 // scanNumber consumes anything that looks like the start of a number.
 func (s *Scanner) scanNumber() (tok Token, pos Pos, lit string) {
-	var buf bytes.Buffer
+	var buf strings.Builder
 
 	// Check if the initial rune is a ".".
 	ch, pos := s.r.curr()
@@ -333,7 +334,7 @@ func (s *Scanner) scanNumber() (tok Token, pos Pos, lit string) {
 
 // scanDigits consumes a contiguous series of digits.
 func (s *Scanner) scanDigits() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	for {
 		ch, _ := s.r.read()
 		if !isDigit(ch) {
@@ -561,7 +562,7 @@ func ScanString(r io.RuneScanner) (string, error) {
 		return "", errBadString
 	}
 
-	var buf bytes.Buffer
+	var buf strings.Builder
 	for {
 		ch0, _, err := r.ReadRune()
 		if ch0 == ending {
@@ -596,7 +597,7 @@ var errBadEscape = errors.New("bad escape")
 func ScanBareIdent(r io.RuneScanner) string {
 	// Read every ident character into the buffer.
 	// Non-ident characters and EOF will cause the loop to exit.
-	var buf bytes.Buffer
+	var buf strings.Builder
 	for {
 		ch, _, err := r.ReadRune()
 		if err != nil {

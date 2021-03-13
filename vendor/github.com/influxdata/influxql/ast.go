@@ -444,7 +444,7 @@ type Sources []Source
 
 // String returns a string representation of a Sources array.
 func (a Sources) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 
 	ubound := len(a) - 1
 	for i, src := range a {
@@ -548,7 +548,7 @@ type SortField struct {
 
 // String returns a string representation of a sort field.
 func (field *SortField) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	if field.Name != "" {
 		_, _ = buf.WriteString(field.Name)
 		_, _ = buf.WriteString(" ")
@@ -596,7 +596,7 @@ type CreateDatabaseStatement struct {
 
 // String returns a string representation of the create database statement.
 func (s *CreateDatabaseStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("CREATE DATABASE ")
 	_, _ = buf.WriteString(QuoteIdent(s.Name))
 	if s.RetentionPolicyCreate {
@@ -635,7 +635,7 @@ type DropDatabaseStatement struct {
 
 // String returns a string representation of the drop database statement.
 func (s *DropDatabaseStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("DROP DATABASE ")
 	_, _ = buf.WriteString(QuoteIdent(s.Name))
 	return buf.String()
@@ -657,7 +657,7 @@ type DropRetentionPolicyStatement struct {
 
 // String returns a string representation of the drop retention policy statement.
 func (s *DropRetentionPolicyStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("DROP RETENTION POLICY ")
 	_, _ = buf.WriteString(QuoteIdent(s.Name))
 	_, _ = buf.WriteString(" ON ")
@@ -689,7 +689,7 @@ type CreateUserStatement struct {
 
 // String returns a string representation of the create user statement.
 func (s *CreateUserStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("CREATE USER ")
 	_, _ = buf.WriteString(QuoteIdent(s.Name))
 	_, _ = buf.WriteString(" WITH PASSWORD ")
@@ -713,7 +713,7 @@ type DropUserStatement struct {
 
 // String returns a string representation of the drop user statement.
 func (s *DropUserStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("DROP USER ")
 	_, _ = buf.WriteString(QuoteIdent(s.Name))
 	return buf.String()
@@ -770,7 +770,7 @@ type GrantStatement struct {
 
 // String returns a string representation of the grant statement.
 func (s *GrantStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("GRANT ")
 	_, _ = buf.WriteString(s.Privilege.String())
 	_, _ = buf.WriteString(" ON ")
@@ -798,7 +798,7 @@ type GrantAdminStatement struct {
 
 // String returns a string representation of the grant admin statement.
 func (s *GrantAdminStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("GRANT ALL PRIVILEGES TO ")
 	_, _ = buf.WriteString(QuoteIdent(s.User))
 	return buf.String()
@@ -820,7 +820,7 @@ type KillQueryStatement struct {
 
 // String returns a string representation of the kill query statement.
 func (s *KillQueryStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("KILL QUERY ")
 	_, _ = buf.WriteString(strconv.FormatUint(s.QueryID, 10))
 	if s.Host != "" {
@@ -846,7 +846,7 @@ type SetPasswordUserStatement struct {
 
 // String returns a string representation of the set password statement.
 func (s *SetPasswordUserStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("SET PASSWORD FOR ")
 	_, _ = buf.WriteString(QuoteIdent(s.Name))
 	_, _ = buf.WriteString(" = ")
@@ -873,7 +873,7 @@ type RevokeStatement struct {
 
 // String returns a string representation of the revoke statement.
 func (s *RevokeStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("REVOKE ")
 	_, _ = buf.WriteString(s.Privilege.String())
 	_, _ = buf.WriteString(" ON ")
@@ -901,7 +901,7 @@ type RevokeAdminStatement struct {
 
 // String returns a string representation of the revoke admin statement.
 func (s *RevokeAdminStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("REVOKE ALL PRIVILEGES FROM ")
 	_, _ = buf.WriteString(QuoteIdent(s.User))
 	return buf.String()
@@ -935,7 +935,7 @@ type CreateRetentionPolicyStatement struct {
 
 // String returns a string representation of the create retention policy.
 func (s *CreateRetentionPolicyStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("CREATE RETENTION POLICY ")
 	_, _ = buf.WriteString(QuoteIdent(s.Name))
 	_, _ = buf.WriteString(" ON ")
@@ -987,7 +987,7 @@ type AlterRetentionPolicyStatement struct {
 
 // String returns a string representation of the alter retention policy statement.
 func (s *AlterRetentionPolicyStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("ALTER RETENTION POLICY ")
 	_, _ = buf.WriteString(QuoteIdent(s.Name))
 	_, _ = buf.WriteString(" ON ")
@@ -1757,7 +1757,7 @@ func (s *SelectStatement) Reduce(valuer Valuer) *SelectStatement {
 
 // String returns a string representation of the select statement.
 func (s *SelectStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("SELECT ")
 	_, _ = buf.WriteString(s.Fields.String())
 
@@ -2078,7 +2078,7 @@ func (t *Target) String() string {
 		return ""
 	}
 
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("INTO ")
 	_, _ = buf.WriteString(t.Measurement.String())
 	if t.Measurement.Name == "" {
@@ -2097,7 +2097,7 @@ type ExplainStatement struct {
 
 // String returns a string representation of the explain statement.
 func (e *ExplainStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	buf.WriteString("EXPLAIN ")
 	if e.Analyze {
 		buf.WriteString("ANALYZE ")
@@ -2122,7 +2122,7 @@ type DeleteStatement struct {
 
 // String returns a string representation of the delete statement.
 func (s *DeleteStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("DELETE FROM ")
 	_, _ = buf.WriteString(s.Source.String())
 	if s.Condition != nil {
@@ -2170,7 +2170,7 @@ type ShowSeriesStatement struct {
 
 // String returns a string representation of the list series statement.
 func (s *ShowSeriesStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("SHOW SERIES")
 
 	if s.Database != "" {
@@ -2222,7 +2222,7 @@ type DropSeriesStatement struct {
 
 // String returns a string representation of the drop series statement.
 func (s *DropSeriesStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	buf.WriteString("DROP SERIES")
 
 	if s.Sources != nil {
@@ -2253,7 +2253,7 @@ type DeleteSeriesStatement struct {
 
 // String returns a string representation of the delete series statement.
 func (s *DeleteSeriesStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	buf.WriteString("DELETE")
 
 	if s.Sources != nil {
@@ -2282,7 +2282,7 @@ type DropShardStatement struct {
 
 // String returns a string representation of the drop series statement.
 func (s *DropShardStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	buf.WriteString("DROP SHARD ")
 	buf.WriteString(strconv.FormatUint(s.ID, 10))
 	return buf.String()
@@ -2317,7 +2317,7 @@ type ShowSeriesCardinalityStatement struct {
 
 // String returns a string representation of the show continuous queries statement.
 func (s *ShowSeriesCardinalityStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("SHOW SERIES")
 
 	if s.Exact {
@@ -2384,7 +2384,7 @@ type ShowGrantsForUserStatement struct {
 
 // String returns a string representation of the show grants for user.
 func (s *ShowGrantsForUserStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("SHOW GRANTS FOR ")
 	_, _ = buf.WriteString(QuoteIdent(s.Name))
 
@@ -2430,7 +2430,7 @@ type CreateContinuousQueryStatement struct {
 
 // String returns a string representation of the statement.
 func (s *CreateContinuousQueryStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	fmt.Fprintf(&buf, "CREATE CONTINUOUS QUERY %s ON %s ", QuoteIdent(s.Name), QuoteIdent(s.Database))
 
 	if s.ResampleEvery > 0 || s.ResampleFor > 0 {
@@ -2522,7 +2522,7 @@ type ShowMeasurementCardinalityStatement struct {
 
 // String returns a string representation of the statement.
 func (s *ShowMeasurementCardinalityStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("SHOW MEASUREMENT")
 
 	if s.Exact {
@@ -2594,7 +2594,7 @@ type ShowMeasurementsStatement struct {
 
 // String returns a string representation of the statement.
 func (s *ShowMeasurementsStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("SHOW MEASUREMENTS")
 
 	if s.Database != "" {
@@ -2647,7 +2647,7 @@ type DropMeasurementStatement struct {
 
 // String returns a string representation of the drop measurement statement.
 func (s *DropMeasurementStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("DROP MEASUREMENT ")
 	_, _ = buf.WriteString(QuoteIdent(s.Name))
 	return buf.String()
@@ -2679,7 +2679,7 @@ type ShowRetentionPoliciesStatement struct {
 
 // String returns a string representation of a ShowRetentionPoliciesStatement.
 func (s *ShowRetentionPoliciesStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("SHOW RETENTION POLICIES")
 	if s.Database != "" {
 		_, _ = buf.WriteString(" ON ")
@@ -2705,7 +2705,7 @@ type ShowStatsStatement struct {
 
 // String returns a string representation of a ShowStatsStatement.
 func (s *ShowStatsStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("SHOW STATS")
 	if s.Module != "" {
 		_, _ = buf.WriteString(" FOR ")
@@ -2749,7 +2749,7 @@ type ShowDiagnosticsStatement struct {
 
 // String returns a string representation of the ShowDiagnosticsStatement.
 func (s *ShowDiagnosticsStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("SHOW DIAGNOSTICS")
 	if s.Module != "" {
 		_, _ = buf.WriteString(" FOR ")
@@ -2774,7 +2774,7 @@ type CreateSubscriptionStatement struct {
 
 // String returns a string representation of the CreateSubscriptionStatement.
 func (s *CreateSubscriptionStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("CREATE SUBSCRIPTION ")
 	_, _ = buf.WriteString(QuoteIdent(s.Name))
 	_, _ = buf.WriteString(" ON ")
@@ -2870,7 +2870,7 @@ type ShowTagKeysStatement struct {
 
 // String returns a string representation of the statement.
 func (s *ShowTagKeysStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("SHOW TAG KEYS")
 
 	if s.Database != "" {
@@ -2930,7 +2930,7 @@ type ShowTagKeyCardinalityStatement struct {
 
 // String returns a string representation of the statement.
 func (s *ShowTagKeyCardinalityStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("SHOW TAG KEY ")
 	if s.Exact {
 		_, _ = buf.WriteString("EXACT ")
@@ -3004,7 +3004,7 @@ type ShowTagValuesStatement struct {
 
 // String returns a string representation of the statement.
 func (s *ShowTagValuesStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("SHOW TAG VALUES")
 
 	if s.Database != "" {
@@ -3066,7 +3066,7 @@ type ShowTagValuesCardinalityStatement struct {
 
 // String returns a string representation of the statement.
 func (s *ShowTagValuesCardinalityStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("SHOW TAG VALUES ")
 	if s.Exact {
 		_, _ = buf.WriteString("EXACT ")
@@ -3142,7 +3142,7 @@ type ShowFieldKeyCardinalityStatement struct {
 
 // String returns a string representation of the statement.
 func (s *ShowFieldKeyCardinalityStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("SHOW FIELD KEY ")
 
 	if s.Exact {
@@ -3208,7 +3208,7 @@ type ShowFieldKeysStatement struct {
 
 // String returns a string representation of the statement.
 func (s *ShowFieldKeysStatement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("SHOW FIELD KEYS")
 
 	if s.Database != "" {
@@ -3416,7 +3416,7 @@ func (m *Measurement) Clone() *Measurement {
 
 // String returns a string representation of the measurement.
 func (m *Measurement) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	if m.Database != "" {
 		_, _ = buf.WriteString(QuoteIdent(m.Database))
 		_, _ = buf.WriteString(".")
@@ -3593,7 +3593,7 @@ type ListLiteral struct {
 
 // String returns a string representation of the literal.
 func (s *ListLiteral) String() string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	_, _ = buf.WriteString("(")
 	for idx, tagKey := range s.Vals {
 		if idx != 0 {
