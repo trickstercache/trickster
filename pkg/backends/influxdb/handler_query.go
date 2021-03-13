@@ -32,8 +32,6 @@ import (
 	"github.com/influxdata/influxql"
 )
 
-var valuer = &influxql.NowValuer{Now: time.Now()}
-
 // QueryHandler handles timeseries requests for InfluxDB and processes them through the delta proxy cache
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 

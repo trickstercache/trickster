@@ -18,6 +18,7 @@ package influxdb
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/influxdata/influxql"
 	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
@@ -39,6 +40,8 @@ const (
 	upChunked = "chunked"
 )
 
+var valuer = &influxql.NowValuer{Now: time.Now()}
+
 // SetExtent will change the upstream request query to use the provided Extent
 func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
 
@@ -58,7 +61,9 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 
 	for _, s := range q.Statements {
 		if sel, ok := s.(*influxql.SelectStatement); ok {
-			sel.SetTimeRange(extent.Start, extent.End)
+			// since setting timerange results in a clause of '>= start AND < end', we add the
+			// size of 1 step onto the end time so as to ensure it is included in the results
+			sel.SetTimeRange(extent.Start, extent.End.Add(trq.Step))
 		}
 	}
 
