@@ -56,6 +56,8 @@ type TimeRangeQuery struct {
 	ValueFieldDefinitions []FieldDefinition `msg:"vfdefs"`
 	// Labels holds key/value pairs for labels to add to the output dataset.
 	Labels map[string]string `msg:"-"`
+	// ParsedQuery is a member for the vendor-specific query object
+	ParsedQuery interface{} `msg:"-"`
 }
 
 // Clone returns an exact copy of a TimeRangeQuery

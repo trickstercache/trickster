@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
@@ -27,9 +28,11 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
 	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	"github.com/tricksterproxy/trickster/pkg/util/regexp/matching"
-	"github.com/tricksterproxy/trickster/pkg/util/timeconv"
+
+	"github.com/influxdata/influxql"
 )
+
+var valuer = &influxql.NowValuer{Now: time.Now()}
 
 // QueryHandler handles timeseries requests for InfluxDB and processes them through the delta proxy cache
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
@@ -40,15 +43,9 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 		c.ProxyHandler(w, r)
 		return
 	}
-	// move past any semicolons
-	for {
-		if q[0] != ';' {
-			break
-		}
-		q = q[1:]
-	}
+
 	// if it's not a select statement, just proxy it instead
-	if !strings.HasPrefix(q, "select ") {
+	if strings.Index(q, "select ") == -1 {
 		c.ProxyHandler(w, r)
 		return
 	}
@@ -89,19 +86,45 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		rlo.OutputFormat = 2
 	}
 
-	// if the Step wasn't found in the query (e.g., "group by time(1m)"), just proxy it instead
-	step, found := matching.GetNamedMatch("step", reStep, trq.Statement)
-	if !found {
-		return nil, nil, false, errors.ErrStepParse
-	}
-	stepDuration, err := timeconv.ParseDuration(step)
+	p := influxql.NewParser(strings.NewReader(trq.Statement))
+	q, err := p.ParseQuery()
 	if err != nil {
-		return nil, nil, false, errors.ErrStepParse
+		return nil, nil, false, err
 	}
-	trq.Step = stepDuration
-	trq.Statement, trq.Extent = getQueryParts(trq.Statement)
-	trq.TemplateURL = urls.Clone(r.URL)
 
+	var hasTimeQueryParts bool
+	for _, v := range q.Statements {
+		if sel, ok := v.(*influxql.SelectStatement); ok {
+			if sel.Condition != nil {
+				step, err := sel.GroupByInterval()
+				if err != nil {
+					return nil, nil, false, err
+				}
+				trq.Step = step
+				_, tr, err := influxql.ConditionExpr(sel.Condition, valuer)
+				if err != nil {
+					return nil, nil, false, err
+				}
+				trq.Extent = timeseries.Extent{Start: tr.Min, End: tr.Max}
+				if trq.Extent.End.IsZero() {
+					trq.Extent.End = time.Now()
+				}
+
+				// this sets a zero time range for normalizing the query for cache key hashing
+				sel.SetTimeRange(time.Time{}, time.Time{})
+				trq.Statement = sel.String()
+				hasTimeQueryParts = true
+				break
+			}
+		}
+	}
+
+	if !hasTimeQueryParts {
+		return nil, nil, false, errors.ErrNotTimeRangeQuery
+	}
+
+	trq.ParsedQuery = q
+	trq.TemplateURL = urls.Clone(r.URL)
 	qt := url.Values(http.Header(v).Clone())
 	qt.Set(upQuery, trq.Statement)
 
