@@ -153,21 +153,11 @@ generate: perform-generate insert-license-headers
 
 .PHONY: perform-generate
 perform-generate:
-	$(GO) generate ./...
+	$(GO) generate ./pkg/... ./cmd/...
 
 .PHONY: insert-license-headers
 insert-license-headers:
-	@for file in $$(find ./pkg -name '*.go') ; \
-	do \
-		output=$$(grep 'Licensed under the Apache License' $$file) ; \
-		if [[ "$$?" != "0" ]]; then \
-			echo "adding License Header Block to $$file" ; \
-			cat $(BUMPER_FILE) > /tmp/trktmp.go ; \
-			cat $$file >> /tmp/trktmp.go ; \
-			mv /tmp/trktmp.go $$file ; \
-		fi ; \
-	done
-	@for file in $$(find ./cmd -name '*.go') ; \
+	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
 	do \
 		output=$$(grep 'Licensed under the Apache License' $$file) ; \
 		if [[ "$$?" != "0" ]]; then \
