@@ -20,11 +20,11 @@ backends:
 
 If you know that your clients will be making Range requests (even if they are not Multipart), check to ensure the configured origin supports Multipart Range requests. Use `curl` to request any static object from the origin, for which you know the size, and include a Multipart Range request; like `curl -v -H 'Range: bytes=0-1, 3-4' 'http://example.com/object.js'`. If the origin returns `200 OK` and the entire object body, instead of `206 Partial Content` and a multipart body, enable Upstream Range Dearticulation to ensure optimal performance.
 
-This is important because a partial hit could result in multiple ranges being needed from the origin - even for a single-Range client request, depending upon what ranges are already in cache. If Upstream Range Dearticulation is disabled in this case, full objects could be uncessaritly returned from the Origin to Trickster, instead of small delta ranges, irrespective of the object's overall size. This may or may not impact your use case.
+This is important because a partial hit could result in multiple ranges being needed from the origin - even for a single-Range client request, depending upon what ranges are already in cache. If Upstream Range Dearticulation is disabled in this case, full objects could be unnecessarily returned from the Origin to Trickster, instead of small delta ranges, irrespective of the object's overall size. This may or may not impact your use case.
 
 Rule of thumb: If the origin does not support Multipart requests, enable Upstream Range Dearticulation in Trickster to compensate. Conversely, if the origin does support Multipart requests, do not enable Upstream Range Dearticulation.
 
-### Disabling Multpart Ranges to Clients
+### Disabling Multipart Ranges to Clients
 
 One of the great benefits of using Upstream Range Dearticulation is that it transparently enables Multipart Range support for clients, when fronting any origin that already supports serving just a single Range.
 
@@ -55,13 +55,13 @@ When a Range Miss occurs against an object that also requires revalidation, Tric
 
 ### Multiple Parts Require Revalidation
 
-A situation can arise where there is a partial cache hit has multiple ranges that require revalidation before they can be used to satisfy the client. In these cases, Trickster will check if Upstream Range Dearticulation is enabled for the origin to determine how to resolve this condition. If Upstream Range Dearticulation is not enabled, Trickster trusts that the upstream origin will support Multipart Range Requests, and will include just the client's needed-and-cached-but-expired ranges in the revalidation request. If Upstream Range Dearticulation is enabled, Trickster will forward, without modification, the client's requested Ranges to the revalidation request to the origin. This behavior means Trickster currently does not support multiple parallel revalidations requests. Whenever the cache object requires revalidation, there will be only 1 revalidation request upstream, and 0 to N additional parallel upstream range requests as required to fulfill a partial hit.
+A situation can arise where there is a partial cache hit has multiple ranges that require revalidation before they can be used to satisfy the client. In these cases, Trickster will check if Upstream Range Dearticulation is enabled for the origin to determine how to resolve this condition. If Upstream Range Dearticulation is not enabled, Trickster trusts that the upstream origin will support Multipart Range Requests, and will include just the client's needed-and-cached-but-expired ranges in the revalidation request. If Upstream Range Dearticulation is enabled, Trickster will forward, without modification, the client's requested Ranges to the revalidation request to the origin. This behavior means Trickster currently does not support multiple parallel revalidation requests. Whenever the cache object requires revalidation, there will be only 1 revalidation request upstream, and 0 to N additional parallel upstream range requests as required to fulfill a partial hit.
 
 ## If-Range Not Yet Supported
 
 Trickster currently does not support revalidation based on `If-Range` request headers, for use with partial download resumptions by clients.  `If-Range` headers are simply ignored by Trickster and passed through to the origin, which can result in unexpected behavior with the Trickster cache for that object.
 
- We plan to provide full support for `If-Range` as part of Trickster 1.1 or 1.2.
+ We plan to provide full support for `If-Range` as part of Trickster 1.1 or 2.0
 
 ## Mockster Byte Range
 

@@ -16,7 +16,7 @@ In a Multiple Backend placement, you have one dashboard endpoint, one Trickster 
 
 This setup may benefit situations where you have one ore more a static file server origins serving HTML, CSS and JavaScript assets and/or one or more API endpoints, all supporting a common platform.
 
-For Time Series Dasbhoard acceleration, this is a good configuration to use when you have a single dashboard that displays data about multiple redundant clusters (each with its own TSDB), or when you have a single dashboard representing information about many different kinds of systems. For example, if you operate a "Dashboard as a Service" solution under which many teams use your Dashboard system by designing their own dashboard screens and bringing their own databases, a single Trickster endpoint can be used to accelerate dashboards for all of your customers.
+For Time Series Dashboard acceleration, this is a good configuration to use when you have a single dashboard that displays data about multiple redundant clusters (each with its own TSDB), or when you have a single dashboard representing information about many different kinds of systems. For example, if you operate a "Dashboard as a Service" solution under which many teams use your Dashboard system by designing their own dashboard screens and bringing their own databases, a single Trickster endpoint can be used to accelerate dashboards for all of your customers.
 
 You will need to configure each Trickster-to-TSDB mapping separately in your dashboard application as a separately named TSDB data source. Refer to the [multi-origin](./multi-origin.md) documentation for configuring multi-origin support in Trickster and Grafana.
 
