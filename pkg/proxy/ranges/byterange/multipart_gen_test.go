@@ -90,7 +90,7 @@ func TestEncodeDecodeMultipartByteRange(t *testing.T) {
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Logf("WARNING: Msgsize() for %v is inaccurate", v)
+		t.Log("WARNING: TestEncodeDecodeMultipartByteRange Msgsize() is inaccurate")
 	}
 
 	vn := MultipartByteRange{}

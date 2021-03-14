@@ -90,6 +90,31 @@ func (z *DataSet) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "Error")
 				return
 			}
+		case "errorType":
+			z.ErrorType, err = dc.ReadString()
+			if err != nil {
+				err = msgp.WrapError(err, "ErrorType")
+				return
+			}
+		case "warnings":
+			var zb0003 uint32
+			zb0003, err = dc.ReadArrayHeader()
+			if err != nil {
+				err = msgp.WrapError(err, "Warnings")
+				return
+			}
+			if cap(z.Warnings) >= int(zb0003) {
+				z.Warnings = (z.Warnings)[:zb0003]
+			} else {
+				z.Warnings = make([]string, zb0003)
+			}
+			for za0002 := range z.Warnings {
+				z.Warnings[za0002], err = dc.ReadString()
+				if err != nil {
+					err = msgp.WrapError(err, "Warnings", za0002)
+					return
+				}
+			}
 		case "trq":
 			if dc.IsNil() {
 				err = dc.ReadNil()
@@ -108,6 +133,12 @@ func (z *DataSet) DecodeMsg(dc *msgp.Reader) (err error) {
 					return
 				}
 			}
+		case "volatile_extents":
+			err = z.VolatileExtentList.DecodeMsg(dc)
+			if err != nil {
+				err = msgp.WrapError(err, "VolatileExtentList")
+				return
+			}
 		default:
 			err = dc.Skip()
 			if err != nil {
@@ -121,9 +152,9 @@ func (z *DataSet) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *DataSet) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 5
+	// map header, size 8
 	// write "status"
-	err = en.Append(0x85, 0xa6, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73)
+	err = en.Append(0x88, 0xa6, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73)
 	if err != nil {
 		return
 	}
@@ -176,6 +207,33 @@ func (z *DataSet) EncodeMsg(en *msgp.Writer) (err error) {
 		err = msgp.WrapError(err, "Error")
 		return
 	}
+	// write "errorType"
+	err = en.Append(0xa9, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x54, 0x79, 0x70, 0x65)
+	if err != nil {
+		return
+	}
+	err = en.WriteString(z.ErrorType)
+	if err != nil {
+		err = msgp.WrapError(err, "ErrorType")
+		return
+	}
+	// write "warnings"
+	err = en.Append(0xa8, 0x77, 0x61, 0x72, 0x6e, 0x69, 0x6e, 0x67, 0x73)
+	if err != nil {
+		return
+	}
+	err = en.WriteArrayHeader(uint32(len(z.Warnings)))
+	if err != nil {
+		err = msgp.WrapError(err, "Warnings")
+		return
+	}
+	for za0002 := range z.Warnings {
+		err = en.WriteString(z.Warnings[za0002])
+		if err != nil {
+			err = msgp.WrapError(err, "Warnings", za0002)
+			return
+		}
+	}
 	// write "trq"
 	err = en.Append(0xa3, 0x74, 0x72, 0x71)
 	if err != nil {
@@ -193,15 +251,25 @@ func (z *DataSet) EncodeMsg(en *msgp.Writer) (err error) {
 			return
 		}
 	}
+	// write "volatile_extents"
+	err = en.Append(0xb0, 0x76, 0x6f, 0x6c, 0x61, 0x74, 0x69, 0x6c, 0x65, 0x5f, 0x65, 0x78, 0x74, 0x65, 0x6e, 0x74, 0x73)
+	if err != nil {
+		return
+	}
+	err = z.VolatileExtentList.EncodeMsg(en)
+	if err != nil {
+		err = msgp.WrapError(err, "VolatileExtentList")
+		return
+	}
 	return
 }
 
 // MarshalMsg implements msgp.Marshaler
 func (z *DataSet) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 5
+	// map header, size 8
 	// string "status"
-	o = append(o, 0x85, 0xa6, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73)
+	o = append(o, 0x88, 0xa6, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73)
 	o = msgp.AppendString(o, z.Status)
 	// string "extent_list"
 	o = append(o, 0xab, 0x65, 0x78, 0x74, 0x65, 0x6e, 0x74, 0x5f, 0x6c, 0x69, 0x73, 0x74)
@@ -227,6 +295,15 @@ func (z *DataSet) MarshalMsg(b []byte) (o []byte, err error) {
 	// string "error"
 	o = append(o, 0xa5, 0x65, 0x72, 0x72, 0x6f, 0x72)
 	o = msgp.AppendString(o, z.Error)
+	// string "errorType"
+	o = append(o, 0xa9, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x54, 0x79, 0x70, 0x65)
+	o = msgp.AppendString(o, z.ErrorType)
+	// string "warnings"
+	o = append(o, 0xa8, 0x77, 0x61, 0x72, 0x6e, 0x69, 0x6e, 0x67, 0x73)
+	o = msgp.AppendArrayHeader(o, uint32(len(z.Warnings)))
+	for za0002 := range z.Warnings {
+		o = msgp.AppendString(o, z.Warnings[za0002])
+	}
 	// string "trq"
 	o = append(o, 0xa3, 0x74, 0x72, 0x71)
 	if z.TimeRangeQuery == nil {
@@ -237,6 +314,13 @@ func (z *DataSet) MarshalMsg(b []byte) (o []byte, err error) {
 			err = msgp.WrapError(err, "TimeRangeQuery")
 			return
 		}
+	}
+	// string "volatile_extents"
+	o = append(o, 0xb0, 0x76, 0x6f, 0x6c, 0x61, 0x74, 0x69, 0x6c, 0x65, 0x5f, 0x65, 0x78, 0x74, 0x65, 0x6e, 0x74, 0x73)
+	o, err = z.VolatileExtentList.MarshalMsg(o)
+	if err != nil {
+		err = msgp.WrapError(err, "VolatileExtentList")
+		return
 	}
 	return
 }
@@ -307,6 +391,31 @@ func (z *DataSet) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				err = msgp.WrapError(err, "Error")
 				return
 			}
+		case "errorType":
+			z.ErrorType, bts, err = msgp.ReadStringBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "ErrorType")
+				return
+			}
+		case "warnings":
+			var zb0003 uint32
+			zb0003, bts, err = msgp.ReadArrayHeaderBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "Warnings")
+				return
+			}
+			if cap(z.Warnings) >= int(zb0003) {
+				z.Warnings = (z.Warnings)[:zb0003]
+			} else {
+				z.Warnings = make([]string, zb0003)
+			}
+			for za0002 := range z.Warnings {
+				z.Warnings[za0002], bts, err = msgp.ReadStringBytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "Warnings", za0002)
+					return
+				}
+			}
 		case "trq":
 			if msgp.IsNil(bts) {
 				bts, err = msgp.ReadNilBytes(bts)
@@ -323,6 +432,12 @@ func (z *DataSet) UnmarshalMsg(bts []byte) (o []byte, err error) {
 					err = msgp.WrapError(err, "TimeRangeQuery")
 					return
 				}
+			}
+		case "volatile_extents":
+			bts, err = z.VolatileExtentList.UnmarshalMsg(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "VolatileExtentList")
+				return
 			}
 		default:
 			bts, err = msgp.Skip(bts)
@@ -346,11 +461,16 @@ func (z *DataSet) Msgsize() (s int) {
 			s += z.Results[za0001].Msgsize()
 		}
 	}
-	s += 6 + msgp.StringPrefixSize + len(z.Error) + 4
+	s += 6 + msgp.StringPrefixSize + len(z.Error) + 10 + msgp.StringPrefixSize + len(z.ErrorType) + 9 + msgp.ArrayHeaderSize
+	for za0002 := range z.Warnings {
+		s += msgp.StringPrefixSize + len(z.Warnings[za0002])
+	}
+	s += 4
 	if z.TimeRangeQuery == nil {
 		s += msgp.NilSize
 	} else {
 		s += z.TimeRangeQuery.Msgsize()
 	}
+	s += 17 + z.VolatileExtentList.Msgsize()
 	return
 }

@@ -90,7 +90,7 @@ func TestEncodeDecodeRange(t *testing.T) {
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Logf("WARNING: Msgsize() for %v is inaccurate", v)
+		t.Log("WARNING: TestEncodeDecodeRange Msgsize() is inaccurate")
 	}
 
 	vn := Range{}
@@ -203,7 +203,7 @@ func TestEncodeDecodeRanges(t *testing.T) {
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Logf("WARNING: Msgsize() for %v is inaccurate", v)
+		t.Log("WARNING: TestEncodeDecodeRanges Msgsize() is inaccurate")
 	}
 
 	vn := Ranges{}

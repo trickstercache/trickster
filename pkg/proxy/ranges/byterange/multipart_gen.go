@@ -29,28 +29,33 @@ func (z *MultipartByteRange) DecodeMsg(dc *msgp.Reader) (err error) {
 	var zb0001 uint32
 	zb0001, err = dc.ReadMapHeader()
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0001 > 0 {
 		zb0001--
 		field, err = dc.ReadMapKeyPtr()
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		switch msgp.UnsafeString(field) {
 		case "range":
 			err = z.Range.DecodeMsg(dc)
 			if err != nil {
+				err = msgp.WrapError(err, "Range")
 				return
 			}
 		case "content":
 			z.Content, err = dc.ReadBytes(z.Content)
 			if err != nil {
+				err = msgp.WrapError(err, "Content")
 				return
 			}
 		default:
 			err = dc.Skip()
 			if err != nil {
+				err = msgp.WrapError(err)
 				return
 			}
 		}
@@ -68,6 +73,7 @@ func (z *MultipartByteRange) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = z.Range.EncodeMsg(en)
 	if err != nil {
+		err = msgp.WrapError(err, "Range")
 		return
 	}
 	// write "content"
@@ -77,6 +83,7 @@ func (z *MultipartByteRange) EncodeMsg(en *msgp.Writer) (err error) {
 	}
 	err = en.WriteBytes(z.Content)
 	if err != nil {
+		err = msgp.WrapError(err, "Content")
 		return
 	}
 	return
@@ -90,6 +97,7 @@ func (z *MultipartByteRange) MarshalMsg(b []byte) (o []byte, err error) {
 	o = append(o, 0x82, 0xa5, 0x72, 0x61, 0x6e, 0x67, 0x65)
 	o, err = z.Range.MarshalMsg(o)
 	if err != nil {
+		err = msgp.WrapError(err, "Range")
 		return
 	}
 	// string "content"
@@ -105,28 +113,33 @@ func (z *MultipartByteRange) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	var zb0001 uint32
 	zb0001, bts, err = msgp.ReadMapHeaderBytes(bts)
 	if err != nil {
+		err = msgp.WrapError(err)
 		return
 	}
 	for zb0001 > 0 {
 		zb0001--
 		field, bts, err = msgp.ReadMapKeyZC(bts)
 		if err != nil {
+			err = msgp.WrapError(err)
 			return
 		}
 		switch msgp.UnsafeString(field) {
 		case "range":
 			bts, err = z.Range.UnmarshalMsg(bts)
 			if err != nil {
+				err = msgp.WrapError(err, "Range")
 				return
 			}
 		case "content":
 			z.Content, bts, err = msgp.ReadBytesBytes(bts, z.Content)
 			if err != nil {
+				err = msgp.WrapError(err, "Content")
 				return
 			}
 		default:
 			bts, err = msgp.Skip(bts)
 			if err != nil {
+				err = msgp.WrapError(err)
 				return
 			}
 		}
