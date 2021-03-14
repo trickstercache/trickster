@@ -167,3 +167,19 @@ insert-license-headers:
 			mv /tmp/trktmp.go $$file ; \
 		fi ; \
 	done
+
+.PHONY: spelling
+spelling:
+	@which mdspell ; \
+	if [[ "$$?" != "0" ]]; then \
+		echo "mdspell is not installed" ; \
+	else \
+		mdspell './README.md' './docs/**/*.md' ; \
+	fi
+
+	@which codespell ; \
+	if [[ "$$?" != "0" ]]; then \
+		echo "codespell is not installed" ; \
+	else \
+		codespell --skip='vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz' --ignore-words='./testdata/ignore_words.txt' ; \
+	fi
