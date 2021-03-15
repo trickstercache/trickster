@@ -27,6 +27,7 @@ datasources:
   url: http://trickster:8480/prom2
   version: 1
   editable: true
+
 # Mockster (Prom API Simulator)
 - name: sim-direct
   type: prometheus
@@ -52,3 +53,31 @@ datasources:
   url: http://trickster:8480/sim2
   version: 1
   editable: true
+
+- name: influxdb-direct-influxql
+  type: influxdb
+  access: proxy
+  orgId: 1
+  uid: ds_influxdb2_ql_direct
+  url: http://influxdb:8086
+  editable: true
+  database: trickster
+  jsonData:
+    httpMode: GET
+    httpHeaderName1: 'Authorization'
+  secureJsonData:
+    httpHeaderValue1: 'Token trickster-demo-token'
+
+- name: influxdb-trickster-influxql
+  type: influxdb
+  access: proxy
+  orgId: 1
+  uid: ds_influxdb2_ql_trk
+  url: http://trickster:8480/influx1
+  editable: true
+  database: trickster
+  jsonData:
+    httpMode: GET
+    httpHeaderName1: 'Authorization'
+  secureJsonData:
+    httpHeaderValue1: 'Token trickster-demo-token'

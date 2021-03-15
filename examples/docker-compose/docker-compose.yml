@@ -21,6 +21,45 @@ services:
       - trk-ex-back-tier
     restart: always
 
+  influxdb:
+    image: influxdb:2.0
+    volumes:
+      - ./docker-compose-data/influxdb-config/config.yml:/etc/influxdb2/config.yml
+      - influxdbv2:/.influxdbv2
+    networks:
+      - trk-ex-back-tier
+    restart: always
+    ports:
+     - 8086:8086
+    command:
+      - '--reporting-disabled'
+
+  # influxdb 2.0 cli, for setting up influxdb on startup
+  influxdb_cli:
+    links:
+      - influxdb
+    image: influxdb:2.0
+    volumes:
+      - ./docker-compose-data/influxdb-config/setup-influxdb.sh:/bin/setup-influxdb.sh
+    entrypoint: sh /bin/setup-influxdb.sh
+    networks:
+      - trk-ex-back-tier
+    restart: on-failure:10
+    depends_on:
+      # Wait for the influxd service in the influxdb container has fully bootstrapped before
+      # trying to setup an influxdb instance with the influxdb_cli service. 
+      - influxdb
+
+  telegraf:
+    image: telegraf:1.17
+    volumes:
+      - ./docker-compose-data/telegraf-config/telegraf.conf:/etc/telegraf/telegraf.conf
+    depends_on:
+      - influxdb
+    networks:
+      - trk-ex-back-tier
+    restart: always
+
   grafana:
     image: grafana/grafana:7.4.3
     user: nobody
@@ -93,3 +132,5 @@ services:
   #     - trk-ex-back-tier
   #   restart: always
 
+volumes:
+  influxdbv2:
