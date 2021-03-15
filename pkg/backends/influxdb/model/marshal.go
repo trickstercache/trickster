@@ -88,8 +88,6 @@ func writeValue(w io.Writer, v interface{}, nilVal string) {
 		w.Write([]byte(strconv.Itoa(t)))
 	case float64:
 		w.Write([]byte(strconv.FormatFloat(t, 'f', -1, 64)))
-	case float32:
-		w.Write([]byte(strconv.FormatFloat(float64(t), 'f', -1, 64)))
 	}
 }
 
@@ -113,8 +111,6 @@ func writeCSVValue(w io.Writer, v interface{}, nilVal string) {
 		w.Write([]byte(strconv.Itoa(t)))
 	case float64:
 		w.Write([]byte(strconv.FormatFloat(t, 'f', -1, 64)))
-	case float32:
-		w.Write([]byte(strconv.FormatFloat(float64(t), 'f', -1, 64)))
 	}
 }
 

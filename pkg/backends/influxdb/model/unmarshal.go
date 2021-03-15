@@ -105,9 +105,11 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 					pt, cols, err := pointFromValues(vals, sh.TimestampIndex)
 					if err != nil {
 						ume = err
+						wg.Done()
 						return
 					}
 					if pt.Epoch == 0 {
+						wg.Done()
 						return
 					}
 					if idx == 0 {
@@ -129,7 +131,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			wg.Wait()
 			sort.Sort(pts)
 			if ume != nil {
-				return nil, err
+				return nil, ume
 			}
 			s := &dataset.Series{
 				Header:    sh,
@@ -154,7 +156,8 @@ func pointFromValues(v []interface{}, tsIndex int) (dataset.Point,
 		}
 		ns = int64(fns)
 	}
-	p.Values = append(v[:tsIndex], v[tsIndex+1:]...)
+	p.Values = append(make([]interface{}, 0, len(v)-1), v[:tsIndex]...)
+	p.Values = append(p.Values, v[tsIndex+1:]...)
 	p.Epoch = epoch.Epoch(ns)
 	p.Size = 12
 	fdts := make([]timeseries.FieldDataType, len(p.Values))
