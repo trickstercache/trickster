@@ -92,37 +92,62 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		return nil, nil, false, err
 	}
 
+	trq.Step = -1
 	var hasTimeQueryParts bool
+	statements := make([]string, 0, len(q.Statements))
 	for _, v := range q.Statements {
-		if sel, ok := v.(*influxql.SelectStatement); ok {
-			if sel.Condition != nil {
-				step, err := sel.GroupByInterval()
-				if err != nil {
-					return nil, nil, false, err
-				}
-				trq.Step = step
-				_, tr, err := influxql.ConditionExpr(sel.Condition, valuer)
-				if err != nil {
-					return nil, nil, false, err
-				}
-				trq.Extent = timeseries.Extent{Start: tr.Min, End: tr.Max}
-				if trq.Extent.End.IsZero() {
-					trq.Extent.End = time.Now()
-				}
-
-				// this sets a zero time range for normalizing the query for cache key hashing
-				sel.SetTimeRange(time.Time{}, time.Time{})
-				trq.Statement = sel.String()
-				hasTimeQueryParts = true
-				break
-			}
+		sel, ok := v.(*influxql.SelectStatement)
+		if !ok {
+			return nil, nil, false, errors.ErrNotTimeRangeQuery
 		}
+		if sel.Condition == nil {
+			return nil, nil, false, errors.ErrNotTimeRangeQuery
+		}
+		step, err := sel.GroupByInterval()
+		if err != nil {
+			return nil, nil, false, err
+		}
+		if trq.Step == -1 {
+			trq.Step = step
+		} else if trq.Step != step {
+			// this condition means multiple queries were present, and had
+			// different step widths
+			return nil, nil, false, errors.ErrNotTimeRangeQuery
+		}
+		_, tr, err := influxql.ConditionExpr(sel.Condition, valuer)
+		if err != nil {
+			return nil, nil, false, err
+		}
+
+		// this section determines the time range of the query
+		ex := timeseries.Extent{Start: tr.Min, End: tr.Max}
+		if ex.Start.IsZero() {
+			ex.Start = time.Unix(0, 0)
+		}
+		if ex.End.IsZero() {
+			ex.End = time.Now().Truncate(trq.Step)
+		}
+		if trq.Extent.Start.IsZero() {
+			trq.Extent = ex
+		} else if trq.Extent != ex {
+			// this condition means multiple queries were present, and had
+			// different time ranges
+			return nil, nil, false, errors.ErrNotTimeRangeQuery
+		}
+
+		// this sets a zero time range for normalizing the query for cache key hashing
+		sel.SetTimeRange(time.Time{}, time.Time{})
+		statements = append(statements, sel.String())
+
+		hasTimeQueryParts = true
 	}
 
 	if !hasTimeQueryParts {
 		return nil, nil, false, errors.ErrNotTimeRangeQuery
 	}
 
+	// this field is used as part of the data that calculates the cache key
+	trq.Statement = strings.Join(statements, " ; ")
 	trq.ParsedQuery = q
 	trq.TemplateURL = urls.Clone(r.URL)
 	qt := url.Values(http.Header(v).Clone())

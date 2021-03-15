@@ -96,7 +96,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	if o.TimeseriesEvictionMethod == evictionmethods.EvictionMethodOldest {
 		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * o.TimeseriesRetention))
 		if trq.Extent.End.Before(OldestRetainedTimestamp) {
-			tl.Debug(pr.Logger, "timerange end is too early to consider caching",
+			tl.Debug(pr.Logger, "timerange end is too old to consider caching",
 				tl.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp,
 					"step": trq.Step, "retention": o.TimeseriesRetention})
 			DoProxy(w, r, true)
@@ -180,7 +180,7 @@ checkCache:
 						tsc >= int64(o.TimeseriesRetentionFactor) {
 						if trq.Extent.End.Before(el[0].Start) {
 							pr.cacheLock.RRelease()
-							tl.Debug(pr.Logger, "timerange end is too early to consider caching",
+							tl.Debug(pr.Logger, "timerange end is too old to consider caching",
 								tl.Pairs{"step": trq.Step, "retention": o.TimeseriesRetention})
 							DoProxy(w, r, true)
 							return
