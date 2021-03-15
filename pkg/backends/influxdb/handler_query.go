@@ -95,28 +95,27 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	trq.Step = -1
 	var hasTimeQueryParts bool
 	statements := make([]string, 0, len(q.Statements))
+	var cacheError error
 	for _, v := range q.Statements {
 		sel, ok := v.(*influxql.SelectStatement)
-		if !ok {
-			return nil, nil, false, errors.ErrNotTimeRangeQuery
-		}
-		if sel.Condition == nil {
-			return nil, nil, false, errors.ErrNotTimeRangeQuery
+		if !ok || sel.Condition == nil {
+			cacheError = errors.ErrNotTimeRangeQuery
 		}
 		step, err := sel.GroupByInterval()
 		if err != nil {
-			return nil, nil, false, err
-		}
-		if trq.Step == -1 {
-			trq.Step = step
-		} else if trq.Step != step {
-			// this condition means multiple queries were present, and had
-			// different step widths
-			return nil, nil, false, errors.ErrNotTimeRangeQuery
+			cacheError = err
+		} else {
+			if trq.Step == -1 && step > 0 {
+				trq.Step = step
+			} else if trq.Step != step {
+				// this condition means multiple queries were present, and had
+				// different step widths
+				cacheError = errors.ErrStepParse
+			}
 		}
 		_, tr, err := influxql.ConditionExpr(sel.Condition, valuer)
 		if err != nil {
-			return nil, nil, false, err
+			cacheError = err
 		}
 
 		// this section determines the time range of the query
@@ -125,14 +124,14 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 			ex.Start = time.Unix(0, 0)
 		}
 		if ex.End.IsZero() {
-			ex.End = time.Now().Truncate(trq.Step)
+			ex.End = time.Now()
 		}
 		if trq.Extent.Start.IsZero() {
 			trq.Extent = ex
 		} else if trq.Extent != ex {
 			// this condition means multiple queries were present, and had
 			// different time ranges
-			return nil, nil, false, errors.ErrNotTimeRangeQuery
+			cacheError = errors.ErrNotTimeRangeQuery
 		}
 
 		// this sets a zero time range for normalizing the query for cache key hashing
@@ -143,7 +142,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	}
 
 	if !hasTimeQueryParts {
-		return nil, nil, false, errors.ErrNotTimeRangeQuery
+		cacheError = errors.ErrNotTimeRangeQuery
 	}
 
 	// this field is used as part of the data that calculates the cache key
@@ -155,6 +154,10 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	// Swap in the Tokenzed Query in the Url Params
 	trq.TemplateURL.RawQuery = qt.Encode()
+
+	if cacheError != nil {
+		return trq, rlo, true, cacheError
+	}
 
 	return trq, rlo, false, nil
 

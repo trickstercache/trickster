@@ -18,7 +18,6 @@ package influxdb
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -73,8 +72,6 @@ func TestSetExtent(t *testing.T) {
 	r.Body = io.NopCloser(bytes.NewBufferString(tokenized))
 	client.SetExtent(r, trq, e)
 	v, _, _ := params.GetRequestValues(r)
-
-	fmt.Println("V", v)
 
 	if expected != v.Get("q") {
 		t.Errorf("\nexpected [%s]\ngot    [%s]", expected, v.Get("q'"))

@@ -101,7 +101,7 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 
 // NormalizeExtent adjusts the Start and End of a TimeRangeQuery's Extent to align against normalized boundaries.
 func (trq *TimeRangeQuery) NormalizeExtent() {
-	if trq.Step.Seconds() > 0 {
+	if trq.Step > 0 {
 		if !trq.IsOffset && trq.Extent.End.After(time.Now()) {
 			trq.Extent.End = time.Now()
 		}

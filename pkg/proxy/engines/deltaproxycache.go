@@ -105,7 +105,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	}
 
 	client.SetExtent(pr.upstreamRequest, trq, &trq.Extent)
-	key := o.CacheKeyPrefix + ".dpc." + pr.DeriveCacheKey(trq.TemplateURL, "")
+	key := o.CacheKeyPrefix + ".dpc." + pr.DeriveCacheKey("")
 	pr.cacheLock, _ = locker.RAcquire(key)
 
 	// this is used to determine if Fast Forward should be activated for this request
