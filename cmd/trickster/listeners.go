@@ -91,7 +91,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			tracerFlusherSet = true
 			go lg.StartListener("tlsListener",
 				conf.Frontend.TLSListenAddress, conf.Frontend.TLSListenPort,
-				conf.Frontend.ConnectionsLimit, tlsConfig, router, wg, tracers, true,
+				conf.Frontend.ConnectionsLimit, tlsConfig, router, wg, tracers, exitFunc,
 				time.Duration(conf.ReloadConfig.DrainTimeoutMS)*time.Millisecond, log)
 		}
 	} else if !conf.Frontend.ServeTLS && hasOldFC && oldConf.Frontend.ServeTLS {
@@ -125,7 +125,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		}
 		go lg.StartListener("httpListener",
 			conf.Frontend.ListenAddress, conf.Frontend.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, router, wg, t2, true, 0, log)
+			conf.Frontend.ConnectionsLimit, nil, router, wg, t2, exitFunc, 0, log)
 	}
 
 	// if the Metrics HTTP port is configured, then set up the http listener instance
@@ -141,7 +141,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		wg.Add(1)
 		go lg.StartListener("metricsListener",
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, metricsRouter, wg, nil, true, 0, log)
+			conf.Frontend.ConnectionsLimit, nil, metricsRouter, wg, nil, exitFunc, 0, log)
 	} else {
 		metricsRouter.Handle("/metrics", metrics.Handler())
 		metricsRouter.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
@@ -163,7 +163,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		}
 		go lg.StartListener("reloadListener",
 			conf.ReloadConfig.ListenAddress, conf.ReloadConfig.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, rr, wg, nil, true, 0, log)
+			conf.Frontend.ConnectionsLimit, nil, rr, wg, nil, exitFunc, 0, log)
 	} else {
 		rr.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
 		rr.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)

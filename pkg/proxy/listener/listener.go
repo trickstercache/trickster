@@ -166,11 +166,11 @@ func (lg *ListenerGroup) Get(name string) *Listener {
 // StartListener starts a new HTTP listener and adds it to the listener group
 func (lg *ListenerGroup) StartListener(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, router http.Handler, wg *sync.WaitGroup, tracers tracing.Tracers,
-	exitOnError bool, drainTimeout time.Duration, logger interface{}) error {
+	f func(), drainTimeout time.Duration, logger interface{}) error {
 	if wg != nil {
 		defer wg.Done()
 	}
-	l := &Listener{routeSwapper: ph.NewSwitchHandler(router), exitOnError: exitOnError}
+	l := &Listener{routeSwapper: ph.NewSwitchHandler(router), exitOnError: f != nil}
 	if tlsConfig != nil && len(tlsConfig.Certificates) > 0 {
 		l.tlsConfig = tlsConfig
 		l.tlsSwapper = sw.NewSwapper(tlsConfig.Certificates)
@@ -185,8 +185,8 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 	if err != nil {
 		tl.Error(logger,
 			"http listener startup failed", tl.Pairs{"name": listenerName, "detail": err})
-		if exitOnError {
-			os.Exit(1)
+		if f != nil {
+			f()
 		}
 		return err
 	}
@@ -241,11 +241,11 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 // StartListenerRouter starts a new HTTP listener with a new router, and adds it to the listener group
 func (lg *ListenerGroup) StartListenerRouter(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, path string, handler http.Handler, wg *sync.WaitGroup,
-	tracers tracing.Tracers, exitOnError bool, drainTimeout time.Duration, logger interface{}) error {
+	tracers tracing.Tracers, f func(), drainTimeout time.Duration, logger interface{}) error {
 	router := http.NewServeMux()
 	router.Handle(path, handler)
 	return lg.StartListener(listenerName, address, port, connectionsLimit,
-		tlsConfig, router, wg, tracers, exitOnError, drainTimeout, logger)
+		tlsConfig, router, wg, tracers, f, drainTimeout, logger)
 }
 
 // DrainAndClose drains and closes the named listener

@@ -90,7 +90,7 @@ func TestEncodeDecodeIndex(t *testing.T) {
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Logf("WARNING: Msgsize() for %v is inaccurate", v)
+		t.Log("WARNING: TestEncodeDecodeIndex Msgsize() is inaccurate")
 	}
 
 	vn := Index{}
@@ -203,7 +203,7 @@ func TestEncodeDecodeObject(t *testing.T) {
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Logf("WARNING: Msgsize() for %v is inaccurate", v)
+		t.Log("WARNING: TestEncodeDecodeObject Msgsize() is inaccurate")
 	}
 
 	vn := Object{}

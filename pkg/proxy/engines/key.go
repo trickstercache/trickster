@@ -33,7 +33,7 @@ import (
 )
 
 // DeriveCacheKey calculates a query-specific keyname based on the user request
-func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) string {
+func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 
 	rsc := request.GetResources(pr.Request)
 	pc := rsc.PathConfig
@@ -53,8 +53,8 @@ func (pr *proxyRequest) DeriveCacheKey(templateURL *url.URL, extra string) strin
 	}
 
 	var b []byte
-	if templateURL != nil {
-		qp = templateURL.Query()
+	if rsc.TimeRangeQuery != nil && rsc.TimeRangeQuery.TemplateURL != nil {
+		qp = rsc.TimeRangeQuery.TemplateURL.Query()
 	} else {
 		var s string
 		qp, s, _ = params.GetRequestValues(r)

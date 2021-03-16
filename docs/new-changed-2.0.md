@@ -8,7 +8,7 @@
 - example configurations are relocated to the [examples](../examples/conf) directory
 - the [Trickster docker-compose demo](../examples/docker-compose) has been relocated to the examples directory and updated to use latest version tags
 - we now use a common time series format internally for caching all supported TSDB's, rather than implementing each one separately
-- [health checking](./health.md) now uses a common package for all backend provdiers, rather than implementing separately in each backend, and we now support automated health check polling for any backend, and provide a global health status endpoint
+- [health checking](./health.md) now uses a common package for all backend providers, rather than implementing separately in each backend, and we now support automated health check polling for any backend, and provide a global health status endpoint
 - we offer a brand new [Application Load Balancer](./alb.md) feature with unique and powerful options, like merging data from multiple backends into a single response.
 - We've updated to Go 1.16
 - We've re-organized many packages in the codebase to be more easily importable by other projects. Over the course of the beta, we'll be publishing new patterns to the [examples](../examples/) folder for using Trickster packages in your own projects, including caching, acceleration and load balancing.

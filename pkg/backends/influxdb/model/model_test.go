@@ -16,102 +16,13 @@
 
 package model
 
-import (
-	"testing"
+import "testing"
 
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-)
+func TestNewModeler(t *testing.T) {
 
-func TestUnmarshalTimeseries(t *testing.T) {
-
-	const testVal = `{"results":[{"statement_id":0},{"statement_id":1}]}`
-
-	trq := &timeseries.TimeRangeQuery{
-		Statement: "hello",
-	}
-
-	_, err := UnmarshalTimeseries([]byte(testVal), trq)
-	if err != nil {
-		t.Error(err)
+	m := NewModeler()
+	if m.WireMarshalWriter == nil {
+		t.Error("expected non-nil modeler funcs")
 	}
 
 }
-
-// 	se := &SeriesEnvelope{
-// 		Results: []Result{
-// 			{
-// 				Series: []models.Row{
-// 					{
-// 						Name:    "a",
-// 						Columns: []string{"time", "units"},
-// 						Tags:    map[string]string{"tagName1": "tagValue1"},
-// 						Values: [][]interface{}{
-// 							{float64(1000), 1.5},
-// 							{float64(5000), 1.5},
-// 							{float64(10000), 1.5},
-// 						},
-// 					},
-// 					{
-// 						Name:    "b",
-// 						Columns: []string{"time", "units"},
-// 						Tags:    map[string]string{"tagName2": "tagValue2"},
-// 						Values: [][]interface{}{
-// 							{float64(1000), 2.5},
-// 							{float64(5000), 2.1},
-// 							{float64(10000), 2.4},
-// 						},
-// 					},
-// 				},
-// 			},
-// 		},
-// 	}
-
-// 	expected := `{"results":[{"statement_id":0,"series":[{"name":"a","tags":{"tagName1":"tagValue1"},` +
-// 		`"columns":["time","units"],"values":[[1000,1.5],[5000,1.5],[10000,1.5]]},{"name":"b",` +
-// 		`"tags":{"tagName2":"tagValue2"},"columns":["time","units"],"values":[[1000,2.5],[5000,2.1],[10000,2.4]]}]}]}`
-// 	bytes, err := MarshalTimeseries(se)
-// 	if err != nil {
-// 		t.Error(err)
-// 		return
-// 	}
-
-// 	if string(bytes) != expected {
-// 		t.Errorf("expected [%s] got [%s]", expected, string(bytes))
-// 	}
-
-// }
-
-// func TestUnmarshalTimeseries(t *testing.T) {
-
-// 	bytes := []byte(`{"results":[{"statement_id":0,"series":[{"name":"a","tags":{"tagName1":"tagValue1"},` +
-// 		`"columns":["time","units"],"values":[[1000,1.5],[5000,1.5],[10000,1.5]]},{"name":"b",` +
-// 		`"tags":{"tagName2":"tagValue2"},"columns":["time","units"],"values":[[1000,2.5],[5000,2.1],[10000,2.4]]}]}]}`)
-// 	ts, err := UnmarshalTimeseries(bytes)
-// 	if err != nil {
-// 		t.Error(err)
-// 		return
-// 	}
-
-// 	se := ts.(*SeriesEnvelope)
-
-// 	if len(se.Results) != 1 {
-// 		t.Errorf(`expected 1. got %d`, len(se.Results))
-// 		return
-// 	}
-
-// 	if len(se.Results[0].Series) != 2 {
-// 		t.Errorf(`expected 2. got %d`, len(se.Results[0].Series))
-// 		return
-// 	}
-
-// 	if len(se.Results[0].Series[0].Values) != 3 {
-// 		t.Errorf(`expected 3. got %d`, len(se.Results[0].Series[0].Values))
-// 		return
-// 	}
-
-// 	if len(se.Results[0].Series[1].Values) != 3 {
-// 		t.Errorf(`expected 3. got %d`, len(se.Results[0].Series[1].Values))
-// 		return
-// 	}
-
-// }

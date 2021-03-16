@@ -90,7 +90,7 @@ func TestEncodeDecodeCachingPolicy(t *testing.T) {
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Logf("WARNING: Msgsize() for %v is inaccurate", v)
+		t.Log("WARNING: TestEncodeDecodeCachingPolicy Msgsize() is inaccurate")
 	}
 
 	vn := CachingPolicy{}

@@ -39,7 +39,7 @@ Whether proxying to one or more upstreams, Trickster has the concept of a "defau
 
 Here's an example: if you have Trickster configured with an backend named `foo` that proxies to `http://foo/` and is configured as the default backend, then requesting `http://trickster/image.jpg` will initiate a proxy request to `http://foo/image.jpg`, without requiring the path be prefixed with `/foo`. But requesting to `http://trickster/foo/image.jpg` would also work.
 
-The default backend can be configured by setting `is_default: true` for the backend you have elected to make the default.  Having a default backend is optional. In a single-backend configuration, Trickster will automatically set the sole backend as `is_default: true` unless you explicly set `is_default: false` in the configuration file. If you have multiple backends, and don't wish to have a default backend, you can just omit the value for all backends. If you set `is_default: true` for more than one backend, Trickster will exit with a fatal error on startup.
+The default backend can be configured by setting `is_default: true` for the backend you have elected to make the default.  Having a default backend is optional. In a single-backend configuration, Trickster will automatically set the sole backend as `is_default: true` unless you explicitly set `is_default: false` in the configuration file. If you have multiple backends, and don't wish to have a default backend, you can just omit the value for all backends. If you set `is_default: true` for more than one backend, Trickster will exit with a fatal error on startup.
 
 ### Path-based Routing Configurations
 

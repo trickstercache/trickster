@@ -398,7 +398,7 @@ func TestObjectProxyCachePartialHitNotFresh(t *testing.T) {
 	o := rsc.BackendOptions
 	cc := rsc.CacheClient
 	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
-	pr.key = o.Host + "." + pr.DeriveCacheKey(nil, "")
+	pr.key = o.Host + "." + pr.DeriveCacheKey("")
 	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, _ = QueryCache(ctx, cc, pr.key, pr.wantedRanges)
 	handleCacheKeyMiss(pr)
 
@@ -433,7 +433,7 @@ func TestObjectProxyCachePartialHitFullResponse(t *testing.T) {
 	o := rsc.BackendOptions
 	cc := rsc.CacheClient
 	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
-	pr.key = o.Host + "." + pr.DeriveCacheKey(nil, "")
+	pr.key = o.Host + "." + pr.DeriveCacheKey("")
 	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, _ = QueryCache(ctx, cc, pr.key, pr.wantedRanges)
 	handleCacheKeyMiss(pr)
 	handleCachePartialHit(pr)

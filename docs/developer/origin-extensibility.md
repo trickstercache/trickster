@@ -14,7 +14,7 @@ In addition to these requirements in the technology, there are also skills quali
 
 Whether or not you've contributed to Open Source Software before, take a look at our Contributing guidelines so you know how the process works for the Trickster project. If you are unfamiliar with the Forking Workflow, read up on it so that you are able to contribute to the project through Pull Requests.
 
-Trickster is a 100% Go project, so you will need to have experience writing in Go, and in particular, data marshaling/unmarshaling, HTTP 1.0 and 2 specifications, and manipulation of HTTP requsets and responses. You will need to have a good understanding of the prospective Provider's query language and response payload structure, so you can write the necessary parsing and modeling methods that allow Trickster to manipulate upstream HTTP requests and merge newly fetched data sets into the cache.
+Trickster is a 100% Go project, so you will need to have experience writing in Go, and in particular, data marshaling/unmarshaling, HTTP 1.0 and 2 specifications, and manipulation of HTTP requests and responses. You will need to have a good understanding of the prospective Provider's query language and response payload structure, so you can write the necessary parsing and modeling methods that allow Trickster to manipulate upstream HTTP requests and merge newly fetched data sets into the cache.
 
 While this might sound daunting, it is actually much easier than it appears on the surface. Since Trickster's DeltaProxyCache engine does a lot of the heavy lifting, you only have to write a series of interface functions before finding yourself near the finish line. And since a few Providers are already implemented, you can use their implementations for references, since the logic for your prospective Provider should be similar.
 
@@ -24,7 +24,7 @@ A Time Series Backend is used by Trickster to 1) manipulate HTTP requests and re
 
 Trickster provides 1 required interfaces for enabling a new Provider: [Time Series Backend](https://github.com/tricksterproxy/trickster/blob/main/pkg/backends/timeseries_backend.go). Separately, you must implement `io.Writer`-based marshalers and unmarshalers that conform to Trickster's [Modeler specifications](https://github.com/tricksterproxy/trickster/blob/main/pkg/timeseries/modeler.go).
 
-Once data is unmarshaled into the Common Time Series Format, Trickster's other packages will handle operations like Delta Proxy Caching, etc. Thus, the implementor of a new Provider only needs to worry about wire protocols and formats.
+Once data is unmarshaled into the Common Time Series Format, Trickster's other packages will handle operations like Delta Proxy Caching, etc. Thus, the implementer of a new Provider only needs to worry about wire protocols and formats.
  Specifically, you will need to know these things about the Backend:
 
 - What URL paths and methods must be supported, and which engine through which to route each path (Basic HTTP Proxy, Object Proxy Cache, or Time Series Delta Proxy Cache). The proxy engines will call your client implementation's interface exports in order to service user requests.

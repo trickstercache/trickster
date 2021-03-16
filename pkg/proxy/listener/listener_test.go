@@ -61,7 +61,7 @@ func TestListeners(t *testing.T) {
 		}
 
 		err = testLG.StartListener("httpListener",
-			"", 0, 20, tc, http.NewServeMux(), wg, trs, false, 0, tl.ConsoleLogger("info"))
+			"", 0, 20, tc, http.NewServeMux(), wg, trs, nil, 0, tl.ConsoleLogger("info"))
 	}()
 
 	time.Sleep(time.Millisecond * 300)
@@ -76,7 +76,7 @@ func TestListeners(t *testing.T) {
 	go func() {
 		err = testLG.StartListenerRouter("httpListener2",
 			"", 0, 20, nil, "/", http.HandlerFunc(handlers.HandleLocalResponse), wg,
-			nil, false, 0, tl.ConsoleLogger("info"))
+			nil, nil, 0, tl.ConsoleLogger("info"))
 	}()
 	time.Sleep(time.Millisecond * 300)
 	l = testLG.members["httpListener2"]
@@ -88,7 +88,7 @@ func TestListeners(t *testing.T) {
 
 	wg.Add(1)
 	err = testLG.StartListener("testBadPort",
-		"", -31, 20, nil, http.NewServeMux(), wg, trs, false, 0, tl.ConsoleLogger("info"))
+		"", -31, 20, nil, http.NewServeMux(), wg, trs, nil, 0, tl.ConsoleLogger("info"))
 	if err == nil {
 		t.Error("expected invalid port error")
 	}

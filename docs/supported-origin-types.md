@@ -4,7 +4,7 @@ Trickster currently supports the following Providers:
 
 ### <img src="./images/logos/trickster-logo.svg" width=16 /> Generic HTTP Reverse Proxy Cache
 
-Trickster operates as a fully-featured and highly-customizable reverse proxy cache, designed to accellerate and scale upstream endpoints like API services and other simple http services. Specify `'reverseproxycache'` or just `'rpc'` as the Provider when configuring Trickster.
+Trickster operates as a fully-featured and highly-customizable reverse proxy cache, designed to accelerate and scale upstream endpoints like API services and other simple http services. Specify `'reverseproxycache'` or just `'rpc'` as the Provider when configuring Trickster.
 
 ---
 

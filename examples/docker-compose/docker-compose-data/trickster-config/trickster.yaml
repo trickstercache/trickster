@@ -52,6 +52,12 @@ backends:
     origin_url: 'http://prometheus:9090'
     tracing_name: jc1
     cache_name: fs1
+  influx1: # influxdb cached with a memory cache, traces sent to jaeger collector
+    provider: influxdb
+    origin_url: 'http://influxdb:8086'
+    tracing_name: jc1
+    cache_name: mem1
+    backfill_tolerance_ms: 60000
   sim1: # simulated prometheus cached with a memory cache, traces sent to jaeger agent
     provider: prometheus
     origin_url: 'http://mockster:8482/prometheus'

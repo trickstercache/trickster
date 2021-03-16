@@ -75,7 +75,7 @@ Example: if the client request provides a `token=SomeHash` parameter and the Pat
 
 #### Removing
 
-Removing a header or parameter means to strip it from the HTTP Request or Response when present. To do so, prefix the header/parameter name with '-', for example, `-Cache-control: none`. When removing headers, a value is required to be provided in order to conform to YAML specification; this value, however, is innefectual. Note that there is currently no ability to remove a specific header value from a specific header - only the entire removal header. Consider setting the header value outright as described above, to strip any unwanted values.
+Removing a header or parameter means to strip it from the HTTP Request or Response when present. To do so, prefix the header/parameter name with '-', for example, `-Cache-control: none`. When removing headers, a value is required to be provided in order to conform to YAML specification; this value, however, is ineffectual. Note that there is currently no ability to remove a specific header value from a specific header - only the entire removal header. Consider setting the header value outright as described above, to strip any unwanted values.
 
 #### Response Header Timing
 
@@ -207,7 +207,7 @@ backends:
 
 Each of the Time Series Providers supported in Trickster comes with its own custom handlers and pre-defined Path Configs that are registered with the HTTP Router when Trickster starts up.
 
-For example, when Trickster is configured to accelerate Prometheus, pre-defined Path Configs are registered to control how requests to `/api/v1/query` work differently from requests to `/api/v1/query_range`. For example, the `/ap1/v1/query` Path Config uses the `query` and `time` URL query qarameters when creating the cache key, and is routed through the Object Proxy Cache; while the `/api/v1/query_range` Path Config uses the `query`, `start`, `end` and `step` parameters, and is routed through the Time Series Delta Proxy Cache.
+For example, when Trickster is configured to accelerate Prometheus, pre-defined Path Configs are registered to control how requests to `/api/v1/query` work differently from requests to `/api/v1/query_range`. For example, the `/ap1/v1/query` Path Config uses the `query` and `time` URL query parameters when creating the cache key, and is routed through the Object Proxy Cache; while the `/api/v1/query_range` Path Config uses the `query`, `start`, `end` and `step` parameters, and is routed through the Time Series Delta Proxy Cache.
 
 In the Trickster config file, you can add your own Path Configs to your time series backend, as well override individual settings for any of the pre-defined Path Configs, and those custom settings will be applied at startup.
 

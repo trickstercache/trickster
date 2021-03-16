@@ -2,7 +2,7 @@
 
 ## Basic HTTP Backends
 
-Trickster will respect HTTP 1.0, 1.1 and 2.0 caching directives from both the downstream client and the upstream origin when determining objectly cacheability and TTL. You can override the TTL by setting a custom `Cache-Control` header on a per-[Path Config](./paths.md) basis.
+Trickster will respect HTTP 1.0, 1.1 and 2.0 caching directives from both the downstream client and the upstream origin when determining object cacheability and TTL. You can override the TTL by setting a custom `Cache-Control` header on a per-[Path Config](./paths.md) basis.
 
 ### Cache Object Evictions
 
@@ -32,13 +32,13 @@ If you have users with a high-resolution dashboard configuration (e.g., a 24-hou
 
 Once the TRF is reached for a time series cache object, Trickster will undergo a timestamp eviction process for the record in question. Unlike the Cache Object Eviction, which removes an object from cache completely, TRF evictions examine the data set contained in a cache object and remove timestamped data in order to reduce the object size down to the TRF.
 
-Time Series Data Evictions apply to all cached time seres data sets, regardless of whether or not the cache object lifecycle is managed by Trickster.
+Time Series Data Evictions apply to all cached time series data sets, regardless of whether or not the cache object lifecycle is managed by Trickster.
 
 Trickster provides two eviction methodologies (`timeseries_eviction_method`) for time series data eviction: `oldest` (default) and `lru`, and is configurable per-origin.
 
 When `timeseries_eviction_method` is set to `oldest`, Trickster maintains time series data by calculating the "oldest cacheable timestamp" value upon each request, using `time.Now().Add(step * timeseries_retention_factor * -1)`. Any queries for data older than the oldest cacheable timestamp are intelligently offloaded to the proxy since they will never be cached, and no data that is older than the oldest cacheable timestamp will be stored in the query's cache record.
 
-When `timeseries_eviction_method` is set to `lru`, Trickster will not calculate an oldest cacheable timestamp, but rather maintain a last-accessed time for _each timestamp_ in the cache object, and evict the Least-Recently-Used items in order to maintian the cache size.
+When `timeseries_eviction_method` is set to `lru`, Trickster will not calculate an oldest cacheable timestamp, but rather maintain a last-accessed time for _each timestamp_ in the cache object, and evict the Least-Recently-Used items in order to maintain the cache size.
 
 The advantage of the `oldest` methodology better cache performance, at the cost of not caching very old data. Thus, Trickster will be more performant computationally while providing a slightly lower cache hit rate.  The `lru` methodology, since it requires accessing the cache on _every request_ and maintaining access times for every timestamp, is computationally more expensive, but can achieve a higher cache hit rate since it permits caching data of any age, so long as it is accessed frequently enough to avoid eviction.
 

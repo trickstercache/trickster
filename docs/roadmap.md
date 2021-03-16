@@ -23,7 +23,7 @@ The roadmap for Trickster in 2021 focuses on delivering Trickster versions 2.0 a
 
 - [ ] Trickster v2.0 GA Release
   - [ ] Documentation overhaul using MkDocs with Release deployment automation
-  - [ ] Migrate integration tests infrastrucure from private cloud to AWS and deployed via Terraform
+  - [ ] Migrate integration tests infrastructure from private cloud to AWS and deployed via Terraform
 
 - [ ] Trickster v2.1 Beta Release
   - [ ] Support for ElasticSearch

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -56,8 +57,16 @@ func runConfig(oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Logger,
 	defer cfgLock.Unlock()
 	var err error
 
+	sargs := make([]string, 0, len(args))
+	// this sanitizes the args from -test flags, which can cause issues with unit tests relying on cli args
+	for _, v := range args {
+		if !strings.HasPrefix(v, "-test.") {
+			sargs = append(sargs, v)
+		}
+	}
+
 	// load the config
-	conf, flags, err := config.Load(runtime.ApplicationName, runtime.ApplicationVersion, args)
+	conf, flags, err := config.Load(runtime.ApplicationName, runtime.ApplicationVersion, sargs)
 	if err != nil {
 		fmt.Println("\nERROR: Could not load configuration:", err.Error())
 		if flags != nil && !flags.ValidateConfig {

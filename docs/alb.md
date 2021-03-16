@@ -1,26 +1,26 @@
 # Application Load Balancer
 
-Trickster 2.0 provides an all-new Application Load Balancer that is easy to configure and provides unique features to aid with Scaling, High Availability and other applications. The ALB supports several balancing methodologies:
+Trickster 2.0 provides an all-new Application Load Balancer that is easy to configure and provides unique features to aid with Scaling, High Availability and other applications. The ALB supports several balancing Mechanisms:
 
-| Methodology | AKA | Provides | Description |
+| Mechanism | Config | Provides | Description |
 |-----|-----|-----|----|
 | Round Robin | rr | Scaling | a basic, stateless round robin between healthy pool members |
 | Time Series Merge | tsm | Federation | uses scatter/gather to collect and merge data from multiple replica tsdb sources |
 | First Response | fr | Speed | fans a request out to multiple backends, and returns the first response received |
 | First Good Response | fgr | Speed | fans a request out to multiple backends, and returns the first response received with a status code < 400 |
-| Newest Last-Modified | nlm | Freshness | fans a request out to multiple backends, and returns the response with the newest Last-Modified header |
+| Newest&nbsp;Last‑Modified | nlm | Freshness | fans a request out to multiple backends, and returns the response with the newest Last-Modified header |
 
 ## Integration with Backends
 
-The ALB works by applying a Methodology to select one or more Backends from a list of Healthy Pool Members, through which to route a request. Pool member names represent Backend Configs (known in Trickster 0.x and 1.x as Origin Configs) that can be pre-existing or newly defined.
+The ALB works by applying a Mechanism to select one or more Backends from a list of Healthy Pool Members, through which to route a request. Pool member names represent Backend Configs (known in Trickster 0.x and 1.x as Origin Configs) that can be pre-existing or newly defined.
 
 All settings and functions configured for a Backend are applicable to traffic routed via an ALB - caching, rewriters, rules, tracing, TLS, etc.
 
 In Trickster configuration files, each ALB itself is a Backend, just like the pool members to which it routes.
 
-## Methodologies Deep Dive
+## Mechanisms Deep Dive
 
-Each methodology has its own use cases and pitfalls. Be sure to read about each one to understand how they might apply to your situation.
+Each mechanism has its own use cases and pitfalls. Be sure to read about each one to understand how they might apply to your situation.
 
 ### Basic Round Robin
 
@@ -32,11 +32,11 @@ The Trickster ALB is intended to support stateless workloads, and does not suppo
 
 Trickster supports Weighted Round Robin by permitting repeated pool member names in the same pool list. In this way, an operator can craft a desired apportionment based on the number of times a given backend appears in the pool list. We've provided an example in the snippet below.
 
-Trickster's round robiner cycles through the pool in the order it is defined in the Configuration file. Thus, when using Weighted Round Robin, it is recommended to use a non-sorted, staggered ordering pattern in the pool list configuration, so as to prevent routing burts of consecutive requests to the same backend.
+Trickster's round robiner cycles through the pool in the order it is defined in the Configuration file. Thus, when using Weighted Round Robin, it is recommended to use a non-sorted, staggered ordering pattern in the pool list configuration, so as to prevent routing bursts of consecutive requests to the same backend.
 
-#### More About Our Round Robin Methodology
+#### More About Our Round Robin Mechanism
 
-Trickster's ALB works by maintaining an atomic uint64 counter that increments each time a request is received by the ALB. The ALB then performs a modulo operation on the request's counter value, with the denominator being the count of healthy backends in the pool. The resulting value, ranging from `0` to `len(healthy_pool) - 1` indicates the assigned backend based on the counter and current pool size.
+Trickster's Round Robin Mechanism works by maintaining an atomic uint64 counter that increments each time a request is received by the ALB. The ALB then performs a modulo operation on the request's counter value, with the denominator being the count of healthy backends in the pool. The resulting value, ranging from `0` to `len(healthy_pool) - 1` indicates the assigned backend based on the counter and current pool size.
 
 #### Example Round Robin Configuration
 
@@ -80,9 +80,9 @@ Here is the visual representation of this configuration:
 
 ### Time Series Merge
 
-The recommended application for using the **Time Series Merge** methodology is as a High Availability solution. In this application, Trickster fans the client request out to multiple redundant tsdb endpoints and merges the responses back into a single document for the client. If any of the two endpoints are down, or have gaps in their respone (due to prior downtime), the Trickster cache along with the data from the healthy endpoints will ensure the client receives the most complete response possible. Instantaneous downtime of any Backend will result in a warning being injected in the client response.
+The recommended application for using the **Time Series Merge** mechanism is as a High Availability solution. In this application, Trickster fans the client request out to multiple redundant tsdb endpoints and merges the responses back into a single document for the client. If any of the endpoints are down, or have gaps in their response (due to prior downtime), the Trickster cache along with the data from the healthy endpoints will ensure the client receives the most complete response possible. Instantaneous downtime of any Backend will result in a warning being injected in the client response.
 
-Separate from an HA use case, it is possible to use tmerge as a Federation broker that merges responses from different, non-redundant tsdb endpoints; for example, to aggregate metrics from a solution running clusters in multiple regions, with separate, in-region-only tsdb deployments. In this use case, it is recommended to [inject labels](./prometheus.md#injecting-labels) into the responses to protect against data collisions across series. Label injecion is demonstrated in the snippet below.
+Separate from an HA use case, it is possible to Time Series Merge as a Federation broker that merges responses from different, non-redundant tsdb endpoints; for example, to aggregate metrics from a solution running clusters in multiple regions, with separate, in-region-only tsdb deployments. In this use case, it is recommended to [inject labels](./prometheus.md#injecting-labels) into the responses to protect against data collisions across series. Label injection is demonstrated in the snippet below.
 
 #### Providers Supporting Time Series Merge
 
@@ -113,11 +113,11 @@ backends:
       labels:
         region: us-east-1
 
-  # prom-alb-01 scatter/gathers to prom01a and prom01a and merges responses for the caller
+  # prom-alb-01 scatter/gathers to prom01a and prom01b and merges responses for the caller
   prom-alb-01:
     provider: alb
     alb:
-      methodology: tsm
+      mechanism: tsm # time series merge
       pool: 
         - prom01a
         - prom01b
@@ -141,7 +141,7 @@ backends:
   prom-alb-all:
     provider: alb
     alb:
-      methodology: tsm
+      mechanism: tsm
       pool: 
         - prom01a
         - prom01b
@@ -155,9 +155,9 @@ Here is the visual representation of a basic TS Merge configuration:
 
 ### First Response
 
-The **First Response** methodology fans a request out to all healthy pool members, and returns the first response received back to the client. All other fanned out responses are cached (if applicable) but otherwise discarded. If one backend in the fanout has already cached the requested object, and the other backends do not, the cached response will return to the caller while the other backends in the fanout will cache their responses as well for subsequent requests through the ALB.
+The **First Response** mechanism fans a request out to all healthy pool members, and returns the first response received back to the client. All other fanned out responses are cached (if applicable) but otherwise discarded. If one backend in the fanout has already cached the requested object, and the other backends do not, the cached response will return to the caller while the other backends in the fanout will cache their responses as well for subsequent requests through the ALB.
 
-This methodology works well when using Trickster as an HTTP object cache fronting multiple redundant origins, to ensure the fastest response possible is delivered to downstream clients - even if the HTTP Response Code indicates an error in the request or by the first backend to respond.
+This mechanism works well when using Trickster as an HTTP object cache fronting multiple redundant origins, to ensure the fastest response possible is delivered to downstream clients - even if the HTTP Response Code indicates an error in the request or by the first backend to respond.
 
 #### First Response Configuration Example
 
@@ -174,7 +174,7 @@ backends:
   node-alb-fr:
     provider: alb
     alb:
-      mechanism: fr
+      mechanism: fr # first response
       pool:
         - node01
         - node02
@@ -186,9 +186,9 @@ Here is the visual representation of this configuration:
 
 ### First Good Response
 
-The **First Good Response** methodology acts just as First Response does, except that waits to return the first response with an HTTP Status Code < 400. If no fanned out response codes are in the acceptable range once all responses are returned (or the timeout has been reached), then the healthiest response, based on `min(all_responses_status_codes)`, is used.
+The **First Good Response** mechanism acts just as First Response does, except that waits to return the first response with an HTTP Status Code < 400. If no fanned out response codes are in the acceptable range once all responses are returned (or the timeout has been reached), then the healthiest response, based on `min(all_responses_status_codes)`, is used.
 
-This methodology is useful in applications such as live internet television. Consider an operational condition where an object may have been written to Origin 1, but not yet written to redundant Origin 2, while users have already received references to and begin requesting the object in a separate manifest. Trickster, when used as an ALB+Cache in this scenario, will poll both backends for the object and cache the positive responses from Origin 1 for serving subsequent requests locally, while a negative cache configuration will avoid potential 404 storms on Origin 2 until the object can be written by the replication process.
+This mechanism is useful in applications such as live internet television. Consider an operational condition where an object may have been written to Origin 1, but not yet written to redundant Origin 2, while users have already received references to and begin requesting the object in a separate manifest. Trickster, when used as an ALB+Cache in this scenario, will poll both backends for the object and cache the positive responses from Origin 1 for serving subsequent requests locally, while a negative cache configuration will avoid potential 404 storms on Origin 2 until the object can be written by the replication process.
 
 #### First Good Response Configuration Example
 
@@ -210,7 +210,7 @@ backends:
   node-alb-fgr:
     provider: alb
     alb:
-      mechanism: fgr
+      mechanism: fgr # first good response
       pool:
         - node01
         - node02
@@ -222,11 +222,11 @@ Here is the visual representation of this configuration:
 
 ### Newest Last-Modified
 
-The **Newest Last-Modified** methodology is focused on providing the user with the _newest_ representation of the response, rather than responding as quickly as possible. It will fan the client request out to all backends, and wait for all responses to come back (or the ALB timeout to be reached) before determining which response is returned to the user.
+The **Newest Last-Modified** mechanism is focused on providing the user with the _newest_ representation of the response, rather than responding as quickly as possible. It will fan the client request out to all backends, and wait for all responses to come back (or the ALB timeout to be reached) before determining which response is returned to the user.
 
 If at least one fanout response has a `Last-Modified` header, then any response not containing the header is discarded. The remaining responses are sorted based on their Last Modified header value, and the newest value determines which response is chosen.
 
-This methodology is useful in applications where an object residing at the same path on multiple origins is updated frequently, such as a DASH or HLS manifest for a live video broadcast. When using Trickster as an ALB+Cache in this scenario, it will poll both backends for the object, and ensure the newest version between them is used as the client response.
+This mechanism is useful in applications where an object residing at the same path on multiple origins is updated frequently, such as a DASH or HLS manifest for a live video broadcast. When using Trickster as an ALB+Cache in this scenario, it will poll both backends for the object, and ensure the newest version between them is used as the client response.
 
 Note that with NLM, the response to the user is only as fast as the slowest backend to respond.
 
@@ -245,7 +245,7 @@ backends:
   node-alb-nlm:
     provider: alb
     alb:
-      mechanism: nlm
+      mechanism: nlm # newest last modified
       pool:
         - node01
         - node02
@@ -288,7 +288,7 @@ backends:
   prom-alb-tsm:
     provider: alb
     alb:
-      mechanism: tsm
+      mechanism: tsm   # times series merge healthy pool members
       healthy_floor: 1 # only include Backends reporting as 'available' in the healthy pool
       pool:
         - prom01
@@ -297,7 +297,7 @@ backends:
 
 ## All-Backends Health Status Page
 
-Trickster 2.0 provides a new global health status page available at `http://trickster:frontend-port/trickster/health` or (the configured `health_handler_path`).
+Trickster 2.0 provides a new global health status page available at `http://trickster:metrics-port/trickster/health` or (the configured `health_handler_path`).
 
 The global status page will display the health state about all backends configured for automated health checking. Here is an example configuration and a possible corresponding status page output:
 
@@ -322,7 +322,7 @@ backends:
 ```
 
 ```text
-$ curl "http://${trickster-fqdn}:8480/trickster/health"
+$ curl "http://${trickster-fqdn}:8481/trickster/health"
 
 Trickster Backend Health Status            last change: 2020-01-01 00:00:00 UTC
 -------------------------------------------------------------------------------
@@ -342,7 +342,7 @@ You can also provide a 'Accept: application/json' Header or query param ?json
 As the table footer from the plaintext version of the health status page indicates, you may also request a JSON version of the health status for machine consumption. The JSON version includes additional detail about any Backends marked as `unavailable`, and is structured as follows:
 
 ```bash
-$ curl "http://${trickster-fqdn}:8480/trickster/health?json" | jq
+$ curl "http://${trickster-fqdn}:8481/trickster/health?json" | jq
 
 {
   "title": "Trickster Backend Health Status",

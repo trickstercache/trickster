@@ -33,6 +33,7 @@ PACKAGE_DIR    := ./$(BUILD_SUBDIR)/trickster-$(PROGVER)
 BIN_DIR        := $(PACKAGE_DIR)/bin
 CONF_DIR       := $(PACKAGE_DIR)/conf
 CGO_ENABLED    ?= 0
+BUMPER_FILE    := ./testdata/license_header_template.txt
 
 .PHONY: validate-app-version
 validate-app-version:
@@ -146,3 +147,39 @@ test-cover: test
 .PHONY: clean
 clean:
 	rm -rf ./trickster ./$(BUILD_SUBDIR)
+
+.PHONY: generate
+generate: perform-generate insert-license-headers
+
+.PHONY: perform-generate
+perform-generate:
+	$(GO) generate ./pkg/... ./cmd/...
+
+.PHONY: insert-license-headers
+insert-license-headers:
+	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
+	do \
+		output=$$(grep 'Licensed under the Apache License' $$file) ; \
+		if [[ "$$?" != "0" ]]; then \
+			echo "adding License Header Block to $$file" ; \
+			cat $(BUMPER_FILE) > /tmp/trktmp.go ; \
+			cat $$file >> /tmp/trktmp.go ; \
+			mv /tmp/trktmp.go $$file ; \
+		fi ; \
+	done
+
+.PHONY: spelling
+spelling:
+	@which mdspell ; \
+	if [[ "$$?" != "0" ]]; then \
+		echo "mdspell is not installed" ; \
+	else \
+		mdspell './README.md' './docs/**/*.md' ; \
+	fi
+
+	@which codespell ; \
+	if [[ "$$?" != "0" ]]; then \
+		echo "codespell is not installed" ; \
+	else \
+		codespell --skip='vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz' --ignore-words='./testdata/ignore_words.txt' ; \
+	fi

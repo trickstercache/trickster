@@ -56,6 +56,8 @@ type TimeRangeQuery struct {
 	ValueFieldDefinitions []FieldDefinition `msg:"vfdefs"`
 	// Labels holds key/value pairs for labels to add to the output dataset.
 	Labels map[string]string `msg:"-"`
+	// ParsedQuery is a member for the vendor-specific query object
+	ParsedQuery interface{} `msg:"-"`
 }
 
 // Clone returns an exact copy of a TimeRangeQuery
@@ -99,7 +101,7 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 
 // NormalizeExtent adjusts the Start and End of a TimeRangeQuery's Extent to align against normalized boundaries.
 func (trq *TimeRangeQuery) NormalizeExtent() {
-	if trq.Step.Seconds() > 0 {
+	if trq.Step > 0 {
 		if !trq.IsOffset && trq.Extent.End.After(time.Now()) {
 			trq.Extent.End = time.Now()
 		}

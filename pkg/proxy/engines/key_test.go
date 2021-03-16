@@ -136,7 +136,7 @@ func TestDeriveCacheKey(t *testing.T) {
 	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
 
 	pr := newProxyRequest(tr, nil)
-	ck := pr.DeriveCacheKey(nil, "extra")
+	ck := pr.DeriveCacheKey("extra")
 
 	if ck != "52dc11456c84506d3444e53ee4c99777" {
 		t.Errorf("expected %s got %s", "52dc11456c84506d3444e53ee4c99777", ck)
@@ -145,7 +145,8 @@ func TestDeriveCacheKey(t *testing.T) {
 	cfg.Paths["root"].CacheKeyParams = []string{"*"}
 
 	pr = newProxyRequest(tr, nil)
-	ck = pr.DeriveCacheKey(pr.URL, "extra")
+	// might need to get something into the resources
+	ck = pr.DeriveCacheKey("extra")
 	if ck != "407aba34f02c87f6898a6d80b01f38a4" {
 		t.Errorf("expected %s got %s", "407aba34f02c87f6898a6d80b01f38a4", ck)
 	}
@@ -156,7 +157,7 @@ func TestDeriveCacheKey(t *testing.T) {
 	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
 	tr.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
 	pr = newProxyRequest(tr, nil)
-	ck = pr.DeriveCacheKey(nil, "extra")
+	ck = pr.DeriveCacheKey("extra")
 	if ck != expected {
 		t.Errorf("expected %s got %s", expected, ck)
 	}
@@ -166,7 +167,7 @@ func TestDeriveCacheKey(t *testing.T) {
 	tr.Header.Set(headers.NameContentType, headers.ValueMultipartFormData+testMultipartBoundary)
 	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testMultipartBody)))
 	pr = newProxyRequest(tr, nil)
-	ck = pr.DeriveCacheKey(nil, "extra")
+	ck = pr.DeriveCacheKey("extra")
 	if ck != "4766201eee9ef1916f57309deae22f90" {
 		t.Errorf("expected %s got %s", "4766201eee9ef1916f57309deae22f90", ck)
 	}
@@ -179,14 +180,14 @@ func TestDeriveCacheKey(t *testing.T) {
 	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testJSONDocument)))
 	pr = newProxyRequest(tr, nil)
 
-	ck = pr.DeriveCacheKey(nil, "extra")
+	ck = pr.DeriveCacheKey("extra")
 	if ck != "82c1d86126a02b96b8d0fcb94a9f486a" {
 		t.Errorf("expected %s got %s", "82c1d86126a02b96b8d0fcb94a9f486a", ck)
 	}
 
 	// Test Custom KeyHasher Integration
 	rpath.KeyHasher = exampleKeyHasher
-	ck = pr.DeriveCacheKey(nil, "extra")
+	ck = pr.DeriveCacheKey("extra")
 	if ck != "test-key" {
 		t.Errorf("expected %s got %s", "test-key", ck)
 	}
@@ -198,7 +199,7 @@ func TestDeriveCacheKey(t *testing.T) {
 	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testJSONDocument)))
 	pr = newProxyRequest(tr, nil)
 	pr.upstreamRequest.URL = nil
-	ck = pr.DeriveCacheKey(nil, "extra")
+	ck = pr.DeriveCacheKey("extra")
 	if ck != "test-key" {
 		t.Errorf("expected %s got %s", expected, ck)
 	}
@@ -234,7 +235,7 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 
 	pr := newProxyRequest(tr, nil)
 
-	ck := pr.DeriveCacheKey(nil, "extra")
+	ck := pr.DeriveCacheKey("extra")
 
 	if ck != "60257fa6b18d6072b90a294269a8e6e1" {
 		t.Errorf("expected %s got %s", "60257fa6b18d6072b90a294269a8e6e1", ck)
@@ -262,7 +263,7 @@ func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
 		request.NewResources(client.Configuration(), nil, nil, nil, nil, nil, tl.ConsoleLogger("error"))))
 
 	pr := newProxyRequest(tr, nil)
-	ck := pr.DeriveCacheKey(nil, "extra")
+	ck := pr.DeriveCacheKey("extra")
 
 	if ck != "f53b04ce5c434a7357804ae15a64ee6c" {
 		t.Errorf("expected %s got %s", "f53b04ce5c434a7357804ae15a64ee6c", ck)
@@ -277,7 +278,7 @@ func TestDeriveCacheKeyNilURL(t *testing.T) {
 
 	pr := newProxyRequest(r, w)
 	pr.upstreamRequest.URL = nil
-	k := pr.DeriveCacheKey(nil, "")
+	k := pr.DeriveCacheKey("")
 	if k != "c04284eb2c269dd939d54437d4efb071" {
 		t.Errorf("unexpected cache key: %s", k)
 	}

@@ -22,7 +22,7 @@ Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications lik
 
 ### Proxy Feature Highlights
 
-* A unique and powerful [Application Load Balancer](./docs/alb.md) for Time Series and generic HTTP endoints
+* A unique and powerful [Application Load Balancer](./docs/alb.md) for Time Series and generic HTTP endpoints
 * [Supports TLS](./docs/tls.md) and HTTP/2 for frontend termination and backend origination
 * Offers several options for a [caching layer](./docs/caches.md), including in-memory, filesystem, Redis and bbolt
 * [Highly customizable](./docs/configuring.md), using simple yaml configuration settings, [down to the HTTP Path](./docs/paths.md)

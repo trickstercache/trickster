@@ -18,10 +18,10 @@ package influxdb
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,13 +30,17 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
+const expectedTokenized = "SELECT * FROM some_column WHERE time >= '$START_TIME$' AND time < '$END_TIME$' GROUP BY time(1m)"
+
 func TestSetExtent(t *testing.T) {
 
-	start := time.Now().Add(time.Duration(-6) * time.Hour)
-	end := time.Now()
-	expected := "epoch=ns&q=select+%2A+where+time+%3E%3D+" +
-		fmt.Sprintf("%d", start.Unix()*1000) +
-		"ms+AND+time+%3C%3D+" + fmt.Sprintf("%d", end.Unix()*1000) + "ms+group+by+time%281m%29"
+	start := time.Now().UTC().Add(time.Duration(-6) * time.Hour).Truncate(time.Second)
+	end := time.Now().UTC().Truncate(time.Second)
+
+	startToken := start.Format(time.RFC3339Nano)
+	endToken := end.Add(time.Second * 60).Format(time.RFC3339Nano)
+
+	expected := strings.Replace(strings.Replace(expectedTokenized, "$START_TIME$", startToken, -1), "$END_TIME$", endToken, -1)
 
 	conf, _, err := config.Load("trickster", "test",
 		[]string{"-origin-url", "none:9090", "-provider", "influxdb", "-log-level", "debug"})
@@ -51,25 +55,26 @@ func TestSetExtent(t *testing.T) {
 		t.Error(err)
 	}
 
-	const tokenized = "q=select * where <$TIME_TOKEN$> group by time(1m)"
+	const tokenized = "q=select * FROM some_column where time >= now() - 6h group by time(1m)"
 
 	tu := &url.URL{RawQuery: tokenized}
 
 	r, _ := http.NewRequest(http.MethodGet, tu.String(), nil)
-	trq := &timeseries.TimeRangeQuery{TemplateURL: tu}
+	trq := &timeseries.TimeRangeQuery{TemplateURL: tu, Step: time.Second * 60}
 	e := &timeseries.Extent{Start: start, End: end}
 	client.SetExtent(r, trq, e)
 
-	if expected != r.URL.RawQuery {
-		t.Errorf("\nexpected [%s]\ngot    [%s]", expected, r.URL.RawQuery)
+	if expected != r.URL.Query().Get("q") {
+		t.Errorf("\nexpected [%s]\ngot    [%s]", expected, r.URL.Query().Get("q"))
 	}
 
 	r.Method = http.MethodPost
 	r.Body = io.NopCloser(bytes.NewBufferString(tokenized))
 	client.SetExtent(r, trq, e)
-	_, s, _ := params.GetRequestValues(r)
-	if expected != s {
-		t.Errorf("\nexpected [%s]\ngot    [%s]", expected, s)
+	v, _, _ := params.GetRequestValues(r)
+
+	if expected != v.Get("q") {
+		t.Errorf("\nexpected [%s]\ngot    [%s]", expected, v.Get("q'"))
 	}
 
 }
