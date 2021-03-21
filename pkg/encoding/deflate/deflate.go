@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-// Package gzip provides gzip capabilities for byte slices
-package gzip
+package deflate
 
 import (
 	"bytes"
-	"compress/gzip"
+	"compress/flate"
 	"io"
 
 	"github.com/tricksterproxy/trickster/pkg/encoding/reader"
@@ -27,34 +26,25 @@ import (
 
 // Decode returns the inflated version of the gzip-deflated byte slice
 func Decode(in []byte) ([]byte, error) {
-	gr, err := gzip.NewReader(bytes.NewReader(in))
-	if err != nil {
-		return []byte{}, err
-	}
-	return io.ReadAll(gr)
+	dr := flate.NewReader(bytes.NewReader(in))
+	return io.ReadAll(dr)
 }
 
 // Encode returns the gzip-deflated version of the byte slice
 func Encode(in []byte) ([]byte, error) {
 	buf := bytes.NewBuffer(nil)
-	gw := gzip.NewWriter(buf)
-	_, err := gw.Write(in)
-	gw.Close()
-	return buf.Bytes(), err
+	// NewWriter only returns an error if the second param is < -2
+	dw, _ := flate.NewWriter(buf, -1)
+	dw.Write(in)
+	dw.Close()
+	return buf.Bytes(), nil
 }
 
 func NewEncoder(w io.Writer, level int) io.WriteCloser {
-	if level == -1 {
-		level = 6
-	}
-	wc, _ := gzip.NewWriterLevel(w, level)
+	wc, _ := flate.NewWriter(w, level)
 	return wc
 }
 
 func NewDecoder(r io.Reader) reader.ReadCloserResetter {
-	rc, err := gzip.NewReader(r)
-	if err != nil {
-		return nil
-	}
-	return rc
+	return reader.NewReadCloserResetter(flate.NewReader(r))
 }

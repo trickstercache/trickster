@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package gzip
+package snappy
 
 import (
 	"bytes"
@@ -35,12 +35,6 @@ func TestDecodeEncode(t *testing.T) {
 	if string(b) != expected {
 		t.Errorf("expected %s got %s", expected, string(b))
 	}
-
-	b, err = Decode([]byte(expected))
-	if err == nil {
-		t.Error("expected EOF error")
-	}
-
 }
 
 func TestNewDecoder(t *testing.T) {
@@ -54,24 +48,30 @@ func TestNewDecoder(t *testing.T) {
 	if dec == nil {
 		t.Error("expected non-nil decoder")
 	}
-
-	r = bytes.NewReader([]byte(expected))
-	dec = NewDecoder(r)
-	b, err = Decode([]byte(expected))
-	if err == nil {
-		t.Error("expected EOF error")
-	}
-
 }
 
 func TestNewEncoder(t *testing.T) {
 	w := httptest.NewRecorder()
-	enc := NewEncoder(w, -1)
+	enc := NewEncoder(w, 0)
+	if enc == nil {
+		t.Error("expected non-nil encoder")
+	}
+
+	w = httptest.NewRecorder()
+	enc = NewEncoder(w, 1)
+	if enc == nil {
+		t.Error("expected non-nil encoder")
+	}
+
+	w = httptest.NewRecorder()
+	enc = NewEncoder(w, 4)
+	if enc == nil {
+		t.Error("expected non-nil encoder")
+	}
+
+	w = httptest.NewRecorder()
+	enc = NewEncoder(w, 9)
 	if enc == nil {
 		t.Error("expected non-nil encoder")
 	}
 }
-
-// 	b := []byte("trickster")
-// 	r := bytes.NewReader(b)
-// 	rc := io.NopCloser(r)

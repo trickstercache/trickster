@@ -14,47 +14,39 @@
  * limitations under the License.
  */
 
-// Package gzip provides gzip capabilities for byte slices
-package gzip
+package brotli
 
 import (
 	"bytes"
-	"compress/gzip"
 	"io"
 
 	"github.com/tricksterproxy/trickster/pkg/encoding/reader"
+
+	"github.com/andybalholm/brotli"
 )
 
 // Decode returns the inflated version of the gzip-deflated byte slice
 func Decode(in []byte) ([]byte, error) {
-	gr, err := gzip.NewReader(bytes.NewReader(in))
-	if err != nil {
-		return []byte{}, err
-	}
-	return io.ReadAll(gr)
+	br := brotli.NewReader(bytes.NewReader(in))
+	return io.ReadAll(br)
 }
 
 // Encode returns the gzip-deflated version of the byte slice
 func Encode(in []byte) ([]byte, error) {
 	buf := bytes.NewBuffer(nil)
-	gw := gzip.NewWriter(buf)
-	_, err := gw.Write(in)
-	gw.Close()
+	bw := brotli.NewWriter(buf)
+	_, err := bw.Write(in)
+	bw.Close()
 	return buf.Bytes(), err
 }
 
 func NewEncoder(w io.Writer, level int) io.WriteCloser {
-	if level == -1 {
-		level = 6
+	if level < 1 {
+		level = 4
 	}
-	wc, _ := gzip.NewWriterLevel(w, level)
-	return wc
+	return brotli.NewWriterLevel(w, level)
 }
 
 func NewDecoder(r io.Reader) reader.ReadCloserResetter {
-	rc, err := gzip.NewReader(r)
-	if err != nil {
-		return nil
-	}
-	return rc
+	return reader.NewReadCloserResetter(brotli.NewReader(r))
 }

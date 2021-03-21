@@ -14,47 +14,31 @@
  * limitations under the License.
  */
 
-// Package gzip provides gzip capabilities for byte slices
-package gzip
+package snappy
 
 import (
-	"bytes"
-	"compress/gzip"
 	"io"
 
 	"github.com/tricksterproxy/trickster/pkg/encoding/reader"
+
+	"github.com/golang/snappy"
 )
 
 // Decode returns the inflated version of the gzip-deflated byte slice
 func Decode(in []byte) ([]byte, error) {
-	gr, err := gzip.NewReader(bytes.NewReader(in))
-	if err != nil {
-		return []byte{}, err
-	}
-	return io.ReadAll(gr)
+	return snappy.Decode(nil, in)
 }
 
 // Encode returns the gzip-deflated version of the byte slice
 func Encode(in []byte) ([]byte, error) {
-	buf := bytes.NewBuffer(nil)
-	gw := gzip.NewWriter(buf)
-	_, err := gw.Write(in)
-	gw.Close()
-	return buf.Bytes(), err
+	b := snappy.Encode(nil, in)
+	return b, nil
 }
 
-func NewEncoder(w io.Writer, level int) io.WriteCloser {
-	if level == -1 {
-		level = 6
-	}
-	wc, _ := gzip.NewWriterLevel(w, level)
-	return wc
+func NewEncoder(w io.Writer, unused int) io.WriteCloser {
+	return snappy.NewWriter(w)
 }
 
 func NewDecoder(r io.Reader) reader.ReadCloserResetter {
-	rc, err := gzip.NewReader(r)
-	if err != nil {
-		return nil
-	}
-	return rc
+	return reader.NewReadCloserResetter(snappy.NewReader(r))
 }
