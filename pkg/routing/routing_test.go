@@ -18,6 +18,7 @@ package routing
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -30,11 +31,15 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/backends/reverseproxycache"
 	"github.com/tricksterproxy/trickster/pkg/backends/rule"
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
+	"github.com/tricksterproxy/trickster/pkg/observability/logging"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
 	"github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/zipkin"
 	to "github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
+	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
+	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
+	testutil "github.com/tricksterproxy/trickster/pkg/util/testing"
 	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
 
 	"github.com/gorilla/mux"
@@ -428,7 +433,19 @@ func TestRegisterPathRoutes(t *testing.T) {
 	rpc, _ := reverseproxycache.NewClient("test", oo, mux.NewRouter(), nil)
 	dpc := rpc.DefaultPathConfigs(oo)
 	dpc["/-GET-HEAD"].Methods = nil
-	RegisterPathRoutes(nil, nil, rpc, oo, nil, dpc, nil, "", tl.ConsoleLogger("INFO"))
+
+	testHandler := http.HandlerFunc(testutil.BasicHTTPHandler)
+	handlers := map[string]http.Handler{"testHandler": testHandler}
+
+	RegisterPathRoutes(nil, handlers, rpc, oo, nil, dpc, nil, "", tl.ConsoleLogger("INFO"))
+
+	router := mux.NewRouter()
+	dpc = rpc.DefaultPathConfigs(oo)
+	dpc["/-GET-HEAD"].Methods = []string{"*"}
+	dpc["/-GET-HEAD"].Handler = testHandler
+	dpc["/-GET-HEAD"].HandlerName = "testHandler"
+	dpc["/-GET-HEAD"].ReqRewriter = testutil.NewTestRewriteInstructions()
+	RegisterPathRoutes(router, handlers, rpc, oo, nil, dpc, nil, "", tl.ConsoleLogger("INFO"))
 
 }
 
@@ -459,5 +476,40 @@ func TestValidateRuleClients(t *testing.T) {
 	if err == nil {
 		t.Error("expected error")
 	}
+
+}
+
+func TestRegisterDefaultBackendRoutes(t *testing.T) {
+
+	// successful passing of this test is no panic
+
+	router := mux.NewRouter()
+	conf := config.NewConfig()
+	oo := conf.Backends["default"]
+	w := httptest.NewRecorder()
+	logger := logging.StreamLogger(w, "DEBUG")
+
+	po1 := po.New()
+	po1.Path = "/"
+	po1.Handler = http.HandlerFunc(testutil.BasicHTTPHandler)
+	po1.Methods = methods.GetAndPost()
+	po1.MatchType = matching.PathMatchTypePrefix
+
+	oo.TracingConfigName = "testTracer"
+	oo.Paths = map[string]*po.Options{"root": po1}
+	oo.IsDefault = true
+	rpc, _ := reverseproxycache.NewClient("default", oo, mux.NewRouter(), nil)
+	b := backends.Backends{"default": rpc}
+
+	tr := tracing.Tracers{"testTracer": testutil.NewTestTracer()}
+
+	ri := testutil.NewTestRewriteInstructions()
+	oo.ReqRewriter = ri
+	po1.ReqRewriter = ri
+	RegisterDefaultBackendRoutes(router, b, logger, tr)
+
+	router = mux.NewRouter()
+	po1.MatchType = matching.PathMatchTypeExact
+	RegisterDefaultBackendRoutes(router, b, logger, tr)
 
 }

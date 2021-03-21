@@ -248,9 +248,9 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		}
 	}
 
-	decorate := func(po *po.Options) http.Handler {
+	decorate := func(po1 *po.Options) http.Handler {
 		// default base route is the path handler
-		h := po.Handler
+		h := po1.Handler
 		// attach distributed tracer
 		if tr != nil {
 			h = middleware.Trace(tr, h)
@@ -258,17 +258,17 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		// attach compression handler
 		h = encoding.HandleCompression(h, o.CompressibleTypes)
 		// add Backend, Cache, and Path Configs to the HTTP Request's context
-		h = middleware.WithResourcesContext(client, o, c, po, tr, logger, h)
+		h = middleware.WithResourcesContext(client, o, c, po1, tr, logger, h)
 		// attach any request rewriters
 		if len(o.ReqRewriter) > 0 {
 			h = rewriter.Rewrite(o.ReqRewriter, h)
 		}
-		if len(po.ReqRewriter) > 0 {
-			h = rewriter.Rewrite(po.ReqRewriter, h)
+		if len(po1.ReqRewriter) > 0 {
+			h = rewriter.Rewrite(po1.ReqRewriter, h)
 		}
 		// decorate frontend prometheus metrics
-		if !po.NoMetrics {
-			h = middleware.Decorate(o.Name, o.Provider, po.Path, h)
+		if !po1.NoMetrics {
+			h = middleware.Decorate(o.Name, o.Provider, po1.Path, h)
 		}
 		return h
 	}
