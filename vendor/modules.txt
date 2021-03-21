@@ -66,8 +66,6 @@ github.com/golang/snappy
 # github.com/gomodule/redigo v1.8.4
 ## explicit
 github.com/gomodule/redigo/redis
-# github.com/gorilla/handlers v1.5.1
-## explicit
 # github.com/gorilla/mux v1.8.0
 ## explicit
 github.com/gorilla/mux
