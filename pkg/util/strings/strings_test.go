@@ -55,6 +55,10 @@ func TestEqual(t *testing.T) {
 	if Equal(l1, l4) {
 		t.Error("expected false got true")
 	}
+
+	if !Equal(nil, nil) {
+		t.Error("expected true got false")
+	}
 }
 
 func TestStringMap(t *testing.T) {
@@ -103,5 +107,25 @@ func TestUnique(t *testing.T) {
 	empty := Unique(nil)
 	if len(empty) != 0 {
 		t.Error("expected empty list")
+	}
+}
+
+func TestGetInt(t *testing.T) {
+
+	m := StringMap{"trickster": "proxy", "test": "1"}
+
+	if _, err := m.GetInt("invalid"); err != ErrKeyNotInMap {
+		t.Error("expected err for Key Not In Map", err)
+	}
+
+	if _, err := m.GetInt("trickster"); err == nil {
+		t.Error("expected err for invalid conversion", err)
+	}
+	i, err := m.GetInt("test")
+	if err != nil {
+		t.Error(err)
+	}
+	if i != 1 {
+		t.Errorf("expected %d got %d", 1, i)
 	}
 }
