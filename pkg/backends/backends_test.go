@@ -125,3 +125,10 @@ type testBackend struct {
 func (tb *testBackend) DefaultHealthCheckConfig() *ho.Options {
 	return ho.New()
 }
+
+func TestUsesCache(t *testing.T) {
+	b := UsesCache("rp")
+	if b {
+		t.Error("expected false")
+	}
+}
