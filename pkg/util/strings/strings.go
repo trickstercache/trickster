@@ -86,6 +86,9 @@ var ErrKeyNotInMap = errors.New("key not found in map")
 // StringMap represents a map[string]string
 type StringMap map[string]string
 
+// Lookup represents a map[string]interface{} with assumed nil values
+type Lookup map[string]interface{}
+
 func (m StringMap) String() string {
 	delimiter := ""
 	sb := &strings.Builder{}

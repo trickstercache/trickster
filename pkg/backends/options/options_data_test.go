@@ -39,7 +39,7 @@ backends:
     revalidation_factor: 2
     multipart_ranges_disabled: true
     dearticulate_upstream_ranges: true
-    compressable_types:
+    compressible_types:
       - image/png
     provider: test_type
     cache_name: test

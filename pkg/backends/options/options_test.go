@@ -75,7 +75,7 @@ func TestClone(t *testing.T) {
 	o := New()
 	o.Hosts = []string{"test"}
 	o.CacheName = "test"
-	o.CompressableTypes = map[string]interface{}{"test": nil}
+	o.CompressibleTypes = map[string]interface{}{"test": nil}
 	o.Paths = map[string]*po.Options{"test": p}
 	o.NegativeCache = map[int]time.Duration{1: 1}
 	o.HealthCheck = &ho.Options{}

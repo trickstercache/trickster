@@ -165,6 +165,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 	if reader != nil {
 		body, err = io.ReadAll(reader)
 		resp.Body.Close()
+		resp.Body = io.NopCloser(bytes.NewReader(body))
 	}
 	if err != nil {
 		tl.Error(pr.Logger, "error reading body from http response",
@@ -475,7 +476,7 @@ func (pr *proxyRequest) store() error {
 
 	d.CachingPolicy = pr.cachingPolicy
 	err := WriteCache(pr.upstreamRequest.Context(), rsc.CacheClient, pr.key, d,
-		pr.cachingPolicy.TTL(rf, o.MaxTTL), o.CompressableTypes)
+		pr.cachingPolicy.TTL(rf, o.MaxTTL), o.CompressibleTypes)
 	if err != nil {
 		return err
 	}

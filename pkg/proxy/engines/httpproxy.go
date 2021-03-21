@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/encoding/profile"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 	"github.com/tricksterproxy/trickster/pkg/observability/metrics"
 	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
@@ -48,6 +49,9 @@ var reqs sync.Map
 
 // HTTPBlockSize represents 32K of bytes
 const HTTPBlockSize = 32 * 1024
+
+// ClockOffsetWarning is the warning provided to users when the origin's clock offset is suspect
+const ClockOffsetWarning = "clock offset between trickster host and origin is high and may cause data anomalies"
 
 // DoProxy proxies an inbound request to its corresponding upstream origin with no caching features
 func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
@@ -130,7 +134,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	return resp
 }
 
-// PrepareResponseWriter prepares a response and returns an io.Writer for the data to be written to.
+// PrepareResponseWriter prepares a response and returns a destination io.Writer for the payload
 // Used in Respond.
 func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer {
 	if rw, ok := w.(http.ResponseWriter); ok {
@@ -151,6 +155,9 @@ func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer 
 func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) {
 
 	rsc := request.GetResources(r)
+
+	ep := profile.FromContext(r.Context())
+
 	o := rsc.BackendOptions
 
 	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "PrepareFetchReader")
@@ -169,6 +176,10 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		qp, _, _ := params.GetRequestValues(r)
 		params.UpdateParams(qp, pc.RequestParams)
 		params.SetRequestValues(r, qp)
+	}
+
+	if ep := profile.FromContext(r.Context()); ep != nil && ep.SupportedHeaderVal != "" {
+		r.Header.Set(headers.NameAcceptEncoding, ep.SupportedHeaderVal)
 	}
 
 	r.Close = false
@@ -196,7 +207,8 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		// if there is an err and the response is nil, the server could not be reached
 		// so make a 502 for the downstream response
 		if resp == nil {
-			resp = &http.Response{StatusCode: http.StatusBadGateway, Request: r, Header: make(http.Header)}
+			resp = &http.Response{StatusCode: http.StatusBadGateway,
+				Request: r, Header: make(http.Header)}
 		}
 
 		if pc != nil {
@@ -216,6 +228,14 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		return nil, resp, 0
 	}
 
+	if ep := profile.FromContext(r.Context()); ep != nil && ep.SupportedHeaderVal != "" {
+		r.Header.Set(headers.NameAcceptEncoding, ep.SupportedHeaderVal)
+	}
+
+	if ce := resp.Header.Get(headers.NameContentEncoding); ep != nil && ce != "" {
+		ep.ContentEncoding = ce
+	}
+
 	originalLen := int64(-1)
 	if v, ok := resp.Header[headers.NameContentLength]; ok {
 		originalLen, err = strconv.ParseInt(strings.Join(v, ""), 10, 64)
@@ -231,7 +251,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		if err == nil {
 			if offset := time.Since(d); time.Duration(math.Abs(float64(offset))) > time.Minute {
 				tl.WarnOnce(rsc.Logger, "clockoffset."+o.Name,
-					"clock offset between trickster host and origin is high and may cause data anomalies",
+					ClockOffsetWarning,
 					tl.Pairs{
 						"backendName":   o.Name,
 						"tricksterTime": strconv.FormatInt(d.Add(offset).Unix(), 10),
@@ -279,7 +299,8 @@ func setStatusHeader(httpStatus int, header http.Header) status.LookupStatus {
 }
 
 func recordResults(r *http.Request, engine string, cacheStatus status.LookupStatus,
-	statusCode int, path, ffStatus string, elapsed float64, extents timeseries.ExtentList, header http.Header) {
+	statusCode int, path, ffStatus string, elapsed float64, extents timeseries.ExtentList,
+	header http.Header) {
 
 	rsc := request.GetResources(r)
 	pc := rsc.PathConfig
@@ -289,7 +310,8 @@ func recordResults(r *http.Request, engine string, cacheStatus status.LookupStat
 
 	if pc != nil && !pc.NoMetrics {
 		httpStatus := strconv.Itoa(statusCode)
-		metrics.ProxyRequestStatus.WithLabelValues(o.Name, o.Provider, r.Method, status, httpStatus, path).Inc()
+		metrics.ProxyRequestStatus.WithLabelValues(o.Name, o.Provider, r.Method, status,
+			httpStatus, path).Inc()
 		if elapsed > 0 {
 			metrics.ProxyRequestDuration.WithLabelValues(o.Name, o.Provider,
 				r.Method, status, httpStatus, path).Observe(elapsed)

@@ -28,6 +28,8 @@ import (
 	tc "github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/encoding/profile"
+	"github.com/tricksterproxy/trickster/pkg/encoding/providers"
 	"github.com/tricksterproxy/trickster/pkg/locks"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 	"github.com/tricksterproxy/trickster/pkg/observability/metrics"
@@ -261,6 +263,7 @@ checkCache:
 				ffStatus = "err"
 				rlo.FastForwardDisable = true
 			} else {
+				ffReq = ffReq.WithContext(profile.ToContext(ffReq.Context(), dpcEncodingProfile.Clone()))
 				rs := request.NewResources(o, o.FastForwardPath, cc, cache, client, rsc.Tracer, pr.Logger)
 				rs.AlternateCacheTTL = o.FastForwardTTL
 				ffReq = ffReq.WithContext(tctx.WithResources(ffReq.Context(), rs))
@@ -292,9 +295,13 @@ checkCache:
 		// This fetches the gaps from the origin and adds their datasets to the merge list
 		go func(e *timeseries.Extent, rq *proxyRequest) {
 			defer wg.Done()
+
+			mrsc := request.NewResources(o, pc, cc, cache, client, rsc.Tracer, pr.Logger)
 			rq.upstreamRequest = rq.WithContext(tctx.WithResources(
 				trace.ContextWithSpan(context.Background(), span),
-				request.NewResources(o, pc, cc, cache, client, rsc.Tracer, pr.Logger)))
+				mrsc))
+			rq.upstreamRequest = rq.upstreamRequest.WithContext(profile.ToContext(rq.upstreamRequest.Context(),
+				dpcEncodingProfile.Clone()))
 			client.SetExtent(rq.upstreamRequest, trq, e)
 
 			ctxMR, spanMR := tspan.NewChildSpan(rq.upstreamRequest.Context(), rsc.Tracer, "FetchRange")
@@ -305,7 +312,7 @@ checkCache:
 
 			body, resp, _ := rq.Fetch()
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
-				nts, err := modeler.WireUnmarshaler(body, trq)
+				nts, err := modeler.WireUnmarshalerReader(getDecoderReader(resp), trq)
 				if err != nil {
 					tl.Error(pr.Logger, "proxy object unmarshaling failed",
 						tl.Pairs{"body": string(body)})
@@ -340,7 +347,7 @@ checkCache:
 			}
 			body, resp, isHit := FetchViaObjectProxyCache(ffReq)
 			if resp != nil && resp.StatusCode == http.StatusOK && len(body) > 0 {
-				ffts, err = modeler.WireUnmarshaler(body, trq)
+				ffts, err = modeler.WireUnmarshalerReader(getDecoderReader(resp), trq)
 				if err != nil {
 					ffStatus = "err"
 					tl.Error(pr.Logger, "proxy object unmarshaling failed",
@@ -443,7 +450,7 @@ checkCache:
 					}
 					doc.Body = cdata
 				}
-				if err := WriteCache(ctx, cache, key, doc, o.TimeseriesTTL, o.CompressableTypes); err != nil {
+				if err := WriteCache(ctx, cache, key, doc, o.TimeseriesTTL, o.CompressibleTypes); err != nil {
 					tl.Error(pr.Logger, "error writing object to cache",
 						tl.Pairs{
 							"backendName": o.Name,
@@ -502,11 +509,17 @@ func logDeltaRoutine(logger interface{}, p tl.Pairs) {
 	tl.Debug(logger, "delta routine completed", p)
 }
 
+var dpcEncodingProfile = &profile.Profile{
+	ClientAcceptEncoding: providers.AllSupportedWebProviders,
+	Supported:            7,
+	SupportedHeaderVal:   providers.AllSupportedWebProviders,
+}
+
 func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	client backends.TimeseriesBackend, modeler *timeseries.Modeler) (timeseries.Timeseries,
 	*HTTPDocument, time.Duration, error) {
 
-	rsc := request.GetResources(pr.Request)
+	rsc := request.GetResources(pr.Request).Clone()
 	o := rsc.BackendOptions
 	pc := rsc.PathConfig
 
@@ -519,7 +532,9 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	if span != nil {
 		defer span.End()
 	}
-	pr.upstreamRequest = pr.upstreamRequest.WithContext(ctx)
+
+	ctx = profile.ToContext(ctx, dpcEncodingProfile.Clone())
+	pr.upstreamRequest = request.SetResources(pr.upstreamRequest.WithContext(ctx), rsc)
 
 	start := time.Now()
 	_, resp, _ := PrepareFetchReader(pr.upstreamRequest)
@@ -557,7 +572,7 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 		return nil, d, time.Duration(0), tpe.ErrUnexpectedUpstreamResponse
 	}
 
-	ts, err := modeler.WireUnmarshalerReader(resp.Body, trq)
+	ts, err := modeler.WireUnmarshalerReader(getDecoderReader(resp), trq)
 	if err != nil {
 		tl.Error(pr.Logger,
 			"proxy object unmarshaling failed", tl.Pairs{"detail": err.Error()})
@@ -575,4 +590,17 @@ func recordDPCResult(r *http.Request, cacheStatus status.LookupStatus, httpStatu
 	ffStatus string, elapsed float64, needed []timeseries.Extent, header http.Header) {
 	recordResults(r, "DeltaProxyCache", cacheStatus, httpStatus, path, ffStatus, elapsed,
 		timeseries.ExtentList(needed), header)
+}
+
+func getDecoderReader(resp *http.Response) io.Reader {
+	var reader io.Reader = resp.Body
+	// if the content is encoded, it will need to be decoded
+	if ce := resp.Header.Get(headers.NameContentEncoding); ce != "" {
+		decoderInit := providers.GetDecoderInitializer(ce)
+		if decoderInit != nil {
+			reader = decoderInit(io.NopCloser(reader))
+			resp.Header.Del(headers.NameContentEncoding)
+		}
+	}
+	return reader
 }
