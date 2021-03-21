@@ -25,15 +25,15 @@ import (
 	"github.com/andybalholm/brotli"
 )
 
-// Decode returns the inflated version of the gzip-deflated byte slice
+// Decode returns the decoded version of the encoded byte slice
 func Decode(in []byte) ([]byte, error) {
 	br := brotli.NewReader(bytes.NewReader(in))
 	return io.ReadAll(br)
 }
 
-// Encode returns the gzip-deflated version of the byte slice
+// Encode returns the encoded version of the byte slice
 func Encode(in []byte) ([]byte, error) {
-	buf := bytes.NewBuffer(nil)
+	buf := bytes.NewBuffer(make([]byte, 0, len(in)))
 	bw := brotli.NewWriter(buf)
 	_, err := bw.Write(in)
 	bw.Close()

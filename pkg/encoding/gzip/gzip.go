@@ -25,7 +25,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/encoding/reader"
 )
 
-// Decode returns the inflated version of the gzip-deflated byte slice
+// Decode returns the decoded version of the encoded byte slice
 func Decode(in []byte) ([]byte, error) {
 	gr, err := gzip.NewReader(bytes.NewReader(in))
 	if err != nil {
@@ -34,9 +34,9 @@ func Decode(in []byte) ([]byte, error) {
 	return io.ReadAll(gr)
 }
 
-// Encode returns the gzip-deflated version of the byte slice
+// Encode returns the encoded version of the byte slice
 func Encode(in []byte) ([]byte, error) {
-	buf := bytes.NewBuffer(nil)
+	buf := bytes.NewBuffer(make([]byte, 0, len(in)))
 	gw := gzip.NewWriter(buf)
 	_, err := gw.Write(in)
 	gw.Close()

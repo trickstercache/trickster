@@ -24,12 +24,12 @@ import (
 	"github.com/golang/snappy"
 )
 
-// Decode returns the inflated version of the gzip-deflated byte slice
+// Decode returns the decoded version of the encoded byte slice
 func Decode(in []byte) ([]byte, error) {
 	return snappy.Decode(nil, in)
 }
 
-// Encode returns the gzip-deflated version of the byte slice
+// Encode returns the encoded version of the byte slice
 func Encode(in []byte) ([]byte, error) {
 	b := snappy.Encode(nil, in)
 	return b, nil
