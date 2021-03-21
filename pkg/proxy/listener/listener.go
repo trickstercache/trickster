@@ -33,7 +33,6 @@ import (
 	ph "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	sw "github.com/tricksterproxy/trickster/pkg/proxy/tls"
 
-	"github.com/gorilla/handlers"
 	"golang.org/x/net/netutil"
 )
 
@@ -208,7 +207,7 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 
 	if tlsConfig != nil {
 		svr := &http.Server{
-			Handler:   handlers.CompressHandler(l.routeSwapper),
+			Handler:   l.routeSwapper,
 			TLSConfig: tlsConfig,
 		}
 		l.server = svr
@@ -224,7 +223,7 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 	}
 
 	svr := &http.Server{
-		Handler: handlers.CompressHandler(l.routeSwapper),
+		Handler: l.routeSwapper,
 	}
 	l.server = svr
 	err = svr.Serve(l)

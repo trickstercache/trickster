@@ -17,7 +17,6 @@
 package model
 
 import (
-	"fmt"
 	"io"
 	"net/http/httptest"
 	"strconv"
@@ -157,9 +156,6 @@ func TestWriteValue(t *testing.T) {
 			expectedVal: `1.1`,
 		},
 	}
-
-	x, _ := strconv.ParseFloat("1.1", 32)
-	fmt.Println("X", x)
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {

@@ -100,9 +100,9 @@ type Options struct {
 	RevalidationFactor float64 `yaml:"revalidation_factor,omitempty"`
 	// MaxObjectSizeBytes specifies the max objectsize to be accepted for any given cache object
 	MaxObjectSizeBytes int `yaml:"max_object_size_bytes,omitempty"`
-	// CompressableTypeList specifies the HTTP Object Content Types that will be compressed internally
-	// when stored in the Trickster cache
-	CompressableTypeList []string `yaml:"compressable_types,omitempty"`
+	// CompressibleTypeList specifies the HTTP Object Content Types that will be compressed internally
+	// when stored in the Trickster cache or served to clients with a compatible 'Accept-Encoding' header
+	CompressibleTypeList []string `yaml:"compressible_types,omitempty"`
 	// TracingConfigName provides the name of the Tracing Config to be used by this Backend
 	TracingConfigName string `yaml:"tracing_name,omitempty"`
 	// RuleName provides the name of the rule config to be used by this backend.
@@ -178,8 +178,8 @@ type Options struct {
 	MaxTTL time.Duration `yaml:"-"`
 	// HTTPClient is the Client used by Trickster to communicate with the origin
 	HTTPClient *http.Client `yaml:"-"`
-	// CompressableTypes is the map version of CompressableTypeList for fast lookup
-	CompressableTypes map[string]interface{} `yaml:"-"`
+	// CompressibleTypes is the map version of CompressibleTypeList for fast lookup
+	CompressibleTypes map[string]interface{} `yaml:"-"`
 	// RuleOptions is the reference to the Rule Options as indicated by RuleName
 	RuleOptions *ro.Options `yaml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
@@ -197,7 +197,7 @@ func New() *Options {
 		BackfillTolerancePoints:      DefaultBackfillTolerancePoints,
 		CacheKeyPrefix:               "",
 		CacheName:                    DefaultBackendCacheName,
-		CompressableTypeList:         DefaultCompressableTypes(),
+		CompressibleTypeList:         DefaultCompressibleTypes(),
 		FastForwardTTL:               DefaultFastForwardTTLMS * time.Millisecond,
 		FastForwardTTLMS:             DefaultFastForwardTTLMS,
 		ForwardedHeaders:             DefaultForwardedHeaders,
@@ -271,12 +271,12 @@ func (o *Options) Clone() *Options {
 	}
 
 	no.Hosts = copiers.CopyStrings(o.Hosts)
-	no.CompressableTypeList = copiers.CopyStrings(no.CompressableTypeList)
+	no.CompressibleTypeList = copiers.CopyStrings(no.CompressibleTypeList)
 
-	if o.CompressableTypes != nil {
-		no.CompressableTypes = make(map[string]interface{})
-		for k := range o.CompressableTypes {
-			no.CompressableTypes[k] = true
+	if o.CompressibleTypes != nil {
+		no.CompressibleTypes = make(map[string]interface{})
+		for k := range o.CompressibleTypes {
+			no.CompressibleTypes[k] = true
 		}
 	}
 
@@ -347,10 +347,10 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 		o.TimeseriesTTL = time.Duration(o.TimeseriesTTLMS) * time.Millisecond
 		o.FastForwardTTL = time.Duration(o.FastForwardTTLMS) * time.Millisecond
 		o.MaxTTL = time.Duration(o.MaxTTLMS) * time.Millisecond
-		if o.CompressableTypeList != nil {
-			o.CompressableTypes = make(map[string]interface{})
-			for _, v := range o.CompressableTypeList {
-				o.CompressableTypes[v] = true
+		if o.CompressibleTypeList != nil {
+			o.CompressibleTypes = make(map[string]interface{})
+			for _, v := range o.CompressibleTypeList {
+				o.CompressibleTypes[v] = true
 			}
 		}
 		if o.CacheKeyPrefix == "" {
@@ -511,8 +511,8 @@ func SetDefaults(
 		no.OriginURL = o.OriginURL
 	}
 
-	if metadata.IsDefined("backends", name, "compressable_types") {
-		no.CompressableTypeList = o.CompressableTypeList
+	if metadata.IsDefined("backends", name, "compressible_types") {
+		no.CompressibleTypeList = o.CompressibleTypeList
 	}
 
 	if metadata.IsDefined("backends", name, "timeout_ms") {

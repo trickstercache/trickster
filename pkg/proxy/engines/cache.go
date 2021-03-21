@@ -17,7 +17,9 @@
 package engines
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"mime"
 	"net/http"
 	"strings"
@@ -32,7 +34,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 
-	"github.com/golang/snappy"
+	"github.com/andybalholm/brotli"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -50,7 +52,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 
 	d := &HTTPDocument{}
 	var lookupStatus status.LookupStatus
-	var bytes []byte
+	var b []byte
 	var err error
 
 	if c.Configuration().Provider == "memory" {
@@ -78,7 +80,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 
 	} else {
 
-		bytes, lookupStatus, err = c.Retrieve(key, true)
+		b, lookupStatus, err = c.Retrieve(key, true)
 
 		if err != nil || (lookupStatus != status.LookupStatusHit) {
 			var nr byterange.Ranges
@@ -92,21 +94,28 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 
 		var inflate bool
 		// check and remove compression bit
-		if len(bytes) > 0 {
-			if bytes[0] == 1 {
+		if len(b) > 0 {
+			if b[0] == 1 {
 				inflate = true
 			}
-			bytes = bytes[1:]
+			b = b[1:]
 		}
 
 		if inflate {
 			tl.Debug(rsc.Logger, "decompressing cached data", tl.Pairs{"cacheKey": key})
-			b, err := snappy.Decode(nil, bytes)
-			if err == nil {
-				bytes = b
+			decoder := brotli.NewReader(bytes.NewReader(b))
+			b, err = io.ReadAll(decoder)
+			if err != nil {
+				tl.Error(rsc.Logger, "error decoding cache document", tl.Pairs{
+					"cacheKey": key,
+					"detail":   err.Error(),
+				})
+				tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusKeyMiss.String()))
+				return d, status.LookupStatusKeyMiss, ranges, err
 			}
+
 		}
-		_, err = d.UnmarshalMsg(bytes)
+		_, err = d.UnmarshalMsg(b)
 		if err != nil {
 			tl.Error(rsc.Logger, "error unmarshaling cache document", tl.Pairs{
 				"cacheKey": key,
@@ -173,7 +182,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 	ce := h.Get(headers.NameContentEncoding)
 	d.headerLock.Unlock()
 
-	var bytes []byte
+	var b []byte
 	var err error
 	var compress bool
 
@@ -206,7 +215,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 	}
 
 	// for non-memory, we have to seralize the document to a byte slice to store
-	bytes, err = d.MarshalMsg(nil)
+	b, err = d.MarshalMsg(nil)
 	if err != nil {
 		tl.Error(rsc.Logger, "error marshaling cache document", tl.Pairs{
 			"cacheKey": key,
@@ -216,12 +225,16 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 
 	if compress {
 		tl.Debug(rsc.Logger, "compressing cache data", tl.Pairs{"cacheKey": key})
-		bytes = append([]byte{1}, snappy.Encode(nil, bytes)...)
+		buf := bytes.NewBuffer([]byte{1})
+		encoder := brotli.NewWriter(buf)
+		encoder.Write(b)
+		encoder.Close()
+		b = buf.Bytes()
 	} else {
-		bytes = append([]byte{0}, bytes...)
+		b = append([]byte{0}, b...)
 	}
 
-	err = c.Store(key, bytes, ttl)
+	err = c.Store(key, b, ttl)
 	if err != nil {
 		if span != nil {
 			span.AddEvent(
@@ -237,7 +250,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		span.AddEvent(
 			"Cache Write",
 			trace.EventOption(trace.WithAttributes(
-				attribute.Int("bytesWritten", len(bytes)),
+				attribute.Int("bytesWritten", len(b)),
 			)),
 		)
 	}

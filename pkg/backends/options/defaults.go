@@ -59,8 +59,8 @@ const (
 	DefaullALBMechansimName = "rr" // round robin
 )
 
-// DefaultCompressableTypes returns a list of types that Trickster should compress before caching
-func DefaultCompressableTypes() []string {
+// DefaultCompressibleTypes returns a list of types that Trickster should compress before caching
+func DefaultCompressibleTypes() []string {
 	return []string{
 		"text/html",
 		"text/javascript",

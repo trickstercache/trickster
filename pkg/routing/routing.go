@@ -42,6 +42,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/backends/reverseproxycache"
 	"github.com/tricksterproxy/trickster/pkg/backends/rule"
 	"github.com/tricksterproxy/trickster/pkg/cache"
+	encoding "github.com/tricksterproxy/trickster/pkg/encoding/handler"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
 	"github.com/tricksterproxy/trickster/pkg/proxy/handlers/health"
@@ -238,6 +239,8 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		if tr != nil {
 			h = middleware.Trace(tr, h)
 		}
+		// attach compression handler
+		h = encoding.HandleCompression(h, o.CompressibleTypes)
 		// add Backend, Cache, and Path Configs to the HTTP Request's context
 		h = middleware.WithResourcesContext(client, o, c, po, tr, logger, h)
 		// attach any request rewriters

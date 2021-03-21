@@ -24,6 +24,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/cache/status"
+	"github.com/tricksterproxy/trickster/pkg/encoding/profile"
 	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
 	tspan "github.com/tricksterproxy/trickster/pkg/observability/tracing/span"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
@@ -239,6 +240,11 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 		pr.upstreamReader = bytes.NewReader(b)
 	} else {
 		pr.upstreamReader = bytes.NewReader(d.Body)
+	}
+
+	ce := pr.upstreamResponse.Header.Get(headers.NameContentEncoding)
+	if ep := profile.FromContext(pr.Request.Context()); ep != nil {
+		ep.ContentEncoding = ce
 	}
 
 	return handleResponse(pr)
@@ -477,8 +483,11 @@ func FetchViaObjectProxyCache(r *http.Request) ([]byte, *http.Response, bool) {
 		resp = DoProxy(w, r, false)
 	}
 
-	if resp != nil && resp.Body != nil {
-		defer resp.Body.Close()
+	if resp != nil {
+		if resp.Body != nil {
+			resp.Body.Close()
+		}
+		resp.Body = io.NopCloser(w)
 	}
 
 	return w.Bytes(), resp, cacheStatus == status.LookupStatusHit
