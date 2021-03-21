@@ -54,7 +54,7 @@ jobs:
           fi
       - run: go mod vendor
       - run: go test -v -coverprofile=profile.cov ./...
-      - run: sed -i -e '/^.*_gen\.go:.*$/d' .coverprofile
+      - run: sed -i -e '/^.*_gen\.go:.*$/d' profile.cov
       - run: go build -o /dev/null ./cmd/trickster
 
       - name: Send coverage
