@@ -29,6 +29,14 @@ func TestAllHTTPMethods(t *testing.T) {
 	}
 }
 
+func TestGetAndPost(t *testing.T) {
+	expected := 2
+	l := len(GetAndPost())
+	if l != expected {
+		t.Errorf("expected %d got %d", expected, l)
+	}
+}
+
 func TestCacheableHTTPMethods(t *testing.T) {
 	expected := 2
 	l := len(CacheableHTTPMethods())
