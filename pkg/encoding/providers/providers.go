@@ -17,7 +17,6 @@
 package providers
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -97,7 +96,6 @@ func init() {
 			AllSupportedWwebProvidersBitmap = AllSupportedWwebProvidersBitmap | p
 		}
 		providers = append(providers, s)
-		fmt.Println(">>>>", s, p)
 		providerLookup[s] = p
 	}
 	AllSupportedWebProviders = strings.Join(webProviders, ", ")
