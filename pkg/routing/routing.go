@@ -68,7 +68,7 @@ func RegisterPprofRoutes(routerName string, h *http.ServeMux, logger interface{}
 
 // RegisterProxyRoutes iterates the Trickster Configuration and
 // registers the routes for the configured backends
-func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
+func RegisterProxyRoutes(conf *config.Config, router *mux.Router, metricsRouter *http.ServeMux,
 	caches map[string]cache.Cache, tracers tracing.Tracers,
 	logger interface{}, dryRun bool) (backends.Backends, error) {
 
@@ -109,7 +109,8 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 			ndo = o
 			continue
 		}
-		err = registerBackendRoutes(router, conf, k, o, clients, caches, tracers, logger, dryRun)
+		err = registerBackendRoutes(router, metricsRouter, conf,
+			k, o, clients, caches, tracers, logger, dryRun)
 		if err != nil {
 			return nil, err
 		}
@@ -120,14 +121,15 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router,
 			cdo = ndo
 			defaultBackend = "default"
 		} else {
-			err = registerBackendRoutes(router, conf, "default", ndo, clients, caches, tracers, logger, dryRun)
+			err = registerBackendRoutes(router, nil, conf, "default", ndo, clients, caches, tracers, logger, dryRun)
 			if err != nil {
 				return nil, err
 			}
 		}
 	}
 	if cdo != nil {
-		err = registerBackendRoutes(router, conf, defaultBackend, cdo, clients, caches, tracers, logger, dryRun)
+		err = registerBackendRoutes(router, metricsRouter, conf,
+			defaultBackend, cdo, clients, caches, tracers, logger, dryRun)
 		if err != nil {
 			return nil, err
 		}
@@ -156,7 +158,7 @@ func RegisterHealthHandler(router *http.ServeMux, path string, hc healthcheck.He
 	router.Handle(path, health.StatusHandler(hc))
 }
 
-func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
+func registerBackendRoutes(router *mux.Router, metricsRouter *http.ServeMux, conf *config.Config, k string,
 	o *bo.Options, clients backends.Backends, caches map[string]cache.Cache,
 	tracers tracing.Tracers, logger interface{}, dryRun bool) error {
 
@@ -206,8 +208,22 @@ func registerBackendRoutes(router *mux.Router, conf *config.Config, k string,
 		o.HTTPClient = client.HTTPClient()
 		clients[k] = client
 		defaultPaths := client.DefaultPathConfigs(o)
-		RegisterPathRoutes(router, client.Handlers(), client, o, c, defaultPaths,
+
+		h := client.Handlers()
+
+		RegisterPathRoutes(router, h, client, o, c, defaultPaths,
 			tracers, conf.Main.HealthHandlerPath, logger)
+
+		// now we'll go ahead and register the health handler
+		if h, ok := client.Handlers()["health"]; ok && o.Name != "" && metricsRouter != nil && (o.HealthCheck == nil ||
+			o.HealthCheck.Verb != "x") {
+			hp := strings.Replace(conf.Main.HealthHandlerPath+"/"+o.Name, "//", "/", -1)
+			tl.Debug(logger, "registering health handler path",
+				tl.Pairs{"path": hp, "backendName": o.Name,
+					"upstreamPath": o.HealthCheck.Path,
+					"upstreamVerb": o.HealthCheck.Verb})
+			metricsRouter.Handle(hp, http.Handler(middleware.WithResourcesContext(client, o, nil, nil, nil, logger, h)))
+		}
 	}
 	return nil
 }
@@ -255,19 +271,6 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 			h = middleware.Decorate(o.Name, o.Provider, po.Path, h)
 		}
 		return h
-	}
-
-	// now we'll go ahead and register the health handler
-	if h, ok := handlers["health"]; ok && (o.HealthCheck == nil ||
-		o.HealthCheck.Verb != "x") {
-		hp := strings.Replace(healthHandlerPath+"/"+o.Name, "//", "/", -1)
-		tl.Debug(logger, "registering health handler path",
-			tl.Pairs{"path": hp, "backendName": o.Name,
-				"upstreamPath": o.HealthCheck.Path,
-				"upstreamVerb": o.HealthCheck.Verb})
-		router.Path(hp).
-			Handler(middleware.WithResourcesContext(client, o, nil, nil, tr, logger, h)).
-			Methods(methods.CacheableHTTPMethods()...)
 	}
 
 	// This takes the default paths, named like '/api/v1/query' and morphs the name
