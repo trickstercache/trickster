@@ -339,3 +339,18 @@ func TestConfigFilePath(t *testing.T) {
 	}
 
 }
+
+func TestSetStalenessInfo(t *testing.T) {
+
+	fp := "trickster"
+	t1 := time.Now()
+	t2 := t1.Add(-1 * time.Minute)
+
+	mc := &MainConfig{}
+	mc.SetStalenessInfo(fp, t1, t2)
+
+	if fp != mc.configFilePath || !t1.Equal(mc.configLastModified) ||
+		!t2.Equal(mc.configRateLimitTime) {
+		t.Error("mismatch")
+	}
+}

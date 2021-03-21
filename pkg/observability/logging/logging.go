@@ -189,6 +189,17 @@ func noopLogger() *Logger {
 	}
 }
 
+func StreamLogger(w io.Writer, logLevel string) *Logger {
+	l := noopLogger()
+	l.baseLogger = gkl.NewLogfmtLogger(gkl.NewSyncWriter(w))
+	l.baseLogger = gkl.With(l.baseLogger,
+		"time", gkl.DefaultTimestampUTC,
+		"app", "trickster",
+	)
+	l.SetLogLevel(logLevel)
+	return l
+}
+
 // ConsoleLogger returns a Logger object that prints log events to the Console
 func ConsoleLogger(logLevel string) *Logger {
 

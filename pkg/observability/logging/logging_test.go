@@ -337,3 +337,14 @@ func testLogFunction(f1 basicLogFunc, f2 onceLogFunc, f3 fatalLogFunc,
 	}
 
 }
+
+func TestStreamLogger(t *testing.T) {
+
+	w := httptest.NewRecorder()
+	sl := StreamLogger(w, "ERROR")
+	sl.Error("test error", Pairs{"testKey": "testVal"})
+	if w.Body.String() == "" {
+		t.Error("expected non-empty string")
+	}
+
+}
