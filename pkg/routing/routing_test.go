@@ -24,6 +24,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	"github.com/tricksterproxy/trickster/pkg/backends"
+	"github.com/tricksterproxy/trickster/pkg/backends/alb/options"
 	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/backends/reverseproxycache"
@@ -200,6 +201,29 @@ func TestRegisterProxyRoutesClickHouse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
+
+	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
+	defer registration.CloseCaches(caches)
+	proxyClients, err := RegisterProxyRoutes(conf, mux.NewRouter(), caches, nil, tl.ConsoleLogger("info"), false)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(proxyClients) == 0 {
+		t.Errorf("expected %d got %d", 1, 0)
+	}
+
+}
+
+func TestRegisterProxyRoutesALB(t *testing.T) {
+
+	conf, _, err := config.Load("trickster", "test",
+		[]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "alb"})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	conf.Backends["default"].ALBOptions = &options.Options{MechanismName: "tsm"}
 
 	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)

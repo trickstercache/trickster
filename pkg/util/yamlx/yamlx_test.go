@@ -17,7 +17,6 @@
 package yamlx
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -39,7 +38,6 @@ func TestGetKeyList(t *testing.T) {
 		t.Error(err)
 	}
 
-	fmt.Println(">>>", keys)
 	if _, ok := keys["frontend.test.subkey.types"]; !ok {
 		t.Error("missing key")
 	}
