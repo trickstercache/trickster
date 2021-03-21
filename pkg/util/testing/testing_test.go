@@ -18,6 +18,7 @@ package testing
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
@@ -105,4 +106,20 @@ func TestNewTestInstance(t *testing.T) {
 		t.Error(err)
 	}
 
+}
+
+func TestNewTestTracer(t *testing.T) {
+	tr := NewTestTracer()
+	if tr.Name != "test" {
+		t.Error("expected test got", tr.Name)
+	}
+}
+
+func TestBasicHTTPHandler(t *testing.T) {
+	w := httptest.NewRecorder()
+	BasicHTTPHandler(nil, nil) // cover nil writer case, success = no panic
+	BasicHTTPHandler(w, nil)
+	if w.Body.String() != "{}" {
+		t.Error("basic handler error")
+	}
 }
