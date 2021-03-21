@@ -31,6 +31,8 @@ import (
 
 func TestHandleLocalResponse(t *testing.T) {
 
+	HandleLocalResponse(nil, nil)
+
 	_, _, err := config.Load("trickster-test", "test",
 		[]string{"-origin-url", "http://1.2.3.4", "-provider", "prometheus"})
 	if err != nil {
@@ -159,10 +161,31 @@ func TestHandleLocalResponseNoPathConfig(t *testing.T) {
 }
 
 func TestHandleBadRequestResponse(t *testing.T) {
+	HandleBadRequestResponse(nil, nil)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
 	HandleBadRequestResponse(w, r)
 	if w.Result().StatusCode != 400 {
 		t.Errorf("expected %d got %d", 400, w.Result().StatusCode)
+	}
+}
+
+func TestHandleInternalServerError(t *testing.T) {
+	HandleInternalServerError(nil, nil)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
+	HandleInternalServerError(w, r)
+	if w.Result().StatusCode != 500 {
+		t.Errorf("expected %d got %d", 500, w.Result().StatusCode)
+	}
+}
+
+func TestHandleBadGateway(t *testing.T) {
+	HandleBadGateway(nil, nil)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
+	HandleBadGateway(w, r)
+	if w.Result().StatusCode != 502 {
+		t.Errorf("expected %d got %d", 502, w.Result().StatusCode)
 	}
 }
