@@ -17,11 +17,16 @@
 package logging
 
 import (
+	"log"
+	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	"github.com/tricksterproxy/trickster/pkg/observability/logging/options"
+
+	gkl "github.com/go-kit/kit/log"
 )
 
 func TestConsoleLogger(t *testing.T) {
@@ -49,11 +54,11 @@ func TestNew(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &options.Options{LogLevel: "info"}
-	log := New(conf)
-	if log.level != "info" {
-		t.Errorf("expected %s got %s", "info", log.level)
+	logger := New(conf)
+	if logger.level != "info" {
+		t.Errorf("expected %s got %s", "info", logger.level)
 	}
-	log.Close()
+	logger.Close()
 }
 
 func TestNewLogger_LogFile(t *testing.T) {
@@ -64,12 +69,12 @@ func TestNewLogger_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 1}
 	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "info"}
-	log := &SyncLogger{Logger: New(conf)}
-	Info(log, "test entry", Pairs{"testKey": "testVal"})
+	logger := &SyncLogger{Logger: New(conf)}
+	Info(logger, "test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(instanceFileName); err != nil {
 		t.Errorf(err.Error())
 	}
-	log.Close()
+	logger.Close()
 }
 
 func TestNewLoggerDebug_LogFile(t *testing.T) {
@@ -78,12 +83,12 @@ func TestNewLoggerDebug_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "debug"}
-	log := &SyncLogger{Logger: New(conf)}
-	log.Debug("test entry", Pairs{"testKey": "testVal"})
+	logger := &SyncLogger{Logger: New(conf)}
+	logger.Debug("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
 	}
-	log.Close()
+	logger.Close()
 }
 
 func TestNewLoggerWarn_LogFile(t *testing.T) {
@@ -92,12 +97,12 @@ func TestNewLoggerWarn_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "warn"}
-	log := &SyncLogger{Logger: New(conf)}
-	log.Warn("test entry", Pairs{"testKey": "testVal"})
+	logger := &SyncLogger{Logger: New(conf)}
+	logger.Warn("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
 	}
-	log.Close()
+	logger.Close()
 }
 
 func TestNewLoggerWarnOnce_LogFile(t *testing.T) {
@@ -106,36 +111,36 @@ func TestNewLoggerWarnOnce_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "x"}
-	log := &SyncLogger{Logger: New(conf)}
+	logger := &SyncLogger{Logger: New(conf)}
 
 	key := "warnonce-test-key"
 
-	if log.HasWarnedOnce(key) {
+	if logger.HasWarnedOnce(key) {
 		t.Errorf("expected %t got %t", false, true)
 	}
 
-	ok := log.WarnOnce(key, "test entry", Pairs{"testKey": "testVal"})
+	ok := logger.WarnOnce(key, "test entry", Pairs{"testKey": "testVal"})
 	if !ok {
 		t.Errorf("expected %t got %t", true, ok)
 	}
 
-	if !log.HasWarnedOnce(key) {
+	if !logger.HasWarnedOnce(key) {
 		t.Errorf("expected %t got %t", true, false)
 	}
 
-	ok = log.WarnOnce(key, "test entry", Pairs{"testKey": "testVal"})
+	ok = logger.WarnOnce(key, "test entry", Pairs{"testKey": "testVal"})
 	if ok {
 		t.Errorf("expected %t got %t", false, ok)
 	}
 
-	if !log.HasWarnedOnce(key) {
+	if !logger.HasWarnedOnce(key) {
 		t.Errorf("expected %t got %t", true, false)
 	}
 
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
 	}
-	log.Close()
+	logger.Close()
 }
 
 func TestNewLoggerError_LogFile(t *testing.T) {
@@ -144,12 +149,12 @@ func TestNewLoggerError_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "error"}
-	log := &SyncLogger{Logger: New(conf)}
-	log.Error("test entry", Pairs{"testKey": "testVal"})
+	logger := &SyncLogger{Logger: New(conf)}
+	logger.Error("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
 	}
-	log.Close()
+	logger.Close()
 }
 
 func TestNewLoggerErrorOnce_LogFile(t *testing.T) {
@@ -158,14 +163,14 @@ func TestNewLoggerErrorOnce_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "x"}
-	log := &SyncLogger{Logger: New(conf)}
+	logger := &SyncLogger{Logger: New(conf)}
 
-	ok := log.ErrorOnce("erroroonce-test-key", "test entry", Pairs{"testKey": "testVal"})
+	ok := logger.ErrorOnce("erroroonce-test-key", "test entry", Pairs{"testKey": "testVal"})
 	if !ok {
 		t.Errorf("expected %t got %t", true, ok)
 	}
 
-	ok = log.ErrorOnce("erroroonce-test-key", "test entry", Pairs{"testKey": "testVal"})
+	ok = logger.ErrorOnce("erroroonce-test-key", "test entry", Pairs{"testKey": "testVal"})
 	if ok {
 		t.Errorf("expected %t got %t", false, ok)
 	}
@@ -173,7 +178,7 @@ func TestNewLoggerErrorOnce_LogFile(t *testing.T) {
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
 	}
-	log.Close()
+	logger.Close()
 }
 
 func TestNewLoggerTrace_LogFile(t *testing.T) {
@@ -182,12 +187,12 @@ func TestNewLoggerTrace_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "trace"}
-	log := &SyncLogger{Logger: New(conf)}
-	log.Trace("test entry", Pairs{"testKey": "testVal"})
+	logger := &SyncLogger{Logger: New(conf)}
+	logger.Trace("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
 	}
-	log.Close()
+	logger.Close()
 }
 
 func TestNewLoggerDefault_LogFile(t *testing.T) {
@@ -196,12 +201,12 @@ func TestNewLoggerDefault_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "x"}
-	log := &SyncLogger{Logger: New(conf)}
-	log.Info("test entry", Pairs{"testKey": "testVal"})
+	logger := &SyncLogger{Logger: New(conf)}
+	logger.Info("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
 	}
-	log.Close()
+	logger.Close()
 }
 
 func TestNewLoggerInfoOnce_LogFile(t *testing.T) {
@@ -210,13 +215,13 @@ func TestNewLoggerInfoOnce_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "info"}
-	log := &SyncLogger{Logger: New(conf)}
-	ok := log.InfoOnce("infoonce-test-key", "test entry", Pairs{"testKey": "testVal"})
+	logger := &SyncLogger{Logger: New(conf)}
+	ok := logger.InfoOnce("infoonce-test-key", "test entry", Pairs{"testKey": "testVal"})
 	if !ok {
 		t.Errorf("expected %t got %t", true, ok)
 	}
 
-	ok = log.InfoOnce("infoonce-test-key", "test entry", Pairs{"testKey": "testVal"})
+	ok = logger.InfoOnce("infoonce-test-key", "test entry", Pairs{"testKey": "testVal"})
 	if ok {
 		t.Errorf("expected %t got %t", false, ok)
 	}
@@ -225,7 +230,7 @@ func TestNewLoggerInfoOnce_LogFile(t *testing.T) {
 		t.Errorf(err.Error())
 	}
 
-	log.Close()
+	logger.Close()
 }
 
 func TestNewLoggerFatal_LogFile(t *testing.T) {
@@ -234,12 +239,12 @@ func TestNewLoggerFatal_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "debug"}
-	log := &SyncLogger{Logger: New(conf)}
-	log.Fatal(-1, "test entry", Pairs{"testKey": "testVal"})
+	logger := &SyncLogger{Logger: New(conf)}
+	logger.Fatal(-1, "test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
 		t.Errorf(err.Error())
 	}
-	log.Close()
+	logger.Close()
 }
 
 func TestSetLogLevel(t *testing.T) {
@@ -252,6 +257,83 @@ func TestSetLogLevel(t *testing.T) {
 	l.SetLogLevel("warn")
 	if l.Level() != "warn" {
 		t.Errorf("expected %s got %s", "warn", l.level)
+	}
+
+}
+
+func TestDebug(t *testing.T) {
+	testLogFunction(Debug, nil, nil, "DEBUG", t)
+}
+
+func TestInfo(t *testing.T) {
+	testLogFunction(Info, nil, nil, "INFO", t)
+}
+
+func TestWarn(t *testing.T) {
+	testLogFunction(Warn, WarnOnce, nil, "WARN", t)
+}
+
+func TestError(t *testing.T) {
+	testLogFunction(Error, nil, nil, "ERROR", t)
+}
+
+func TestFatal(t *testing.T) {
+	testLogFunction(nil, nil, Fatal, "ERROR", t)
+}
+
+type basicLogFunc func(interface{}, string, Pairs)
+type onceLogFunc func(interface{}, string, string, Pairs)
+type fatalLogFunc func(interface{}, int, string, Pairs)
+
+func testLogFunction(f1 basicLogFunc, f2 onceLogFunc, f3 fatalLogFunc,
+	level string, t *testing.T) {
+
+	tw := httptest.NewRecorder()
+	gw := httptest.NewRecorder()
+	kw := httptest.NewRecorder()
+	sw := httptest.NewRecorder()
+
+	tl := ConsoleLogger(level)
+	tl.logger = gkl.NewJSONLogger(tw)
+
+	sla := ConsoleLogger(level)
+	sla.logger = gkl.NewJSONLogger(sw)
+
+	sl := &SyncLogger{Logger: sla}
+	gl := log.New(gw, "", 0)
+	kl := gkl.NewJSONLogger(kw)
+
+	loggers := []interface{}{nil, tl, sl, gl, kl}
+
+	// cover debug cases
+	for _, logger := range loggers {
+
+		if f1 != nil {
+			f1(logger, "test trickster "+level, Pairs{"testKey": "testValue"})
+		}
+		if f2 != nil {
+			f2(logger, "test-key", "test trickster "+level, Pairs{"testKey": "testValue"})
+		}
+		if f3 != nil {
+			f3(logger, -1, "test trickster "+level, Pairs{"testKey": "testValue"})
+		}
+	}
+	time.Sleep(time.Millisecond * 300)
+
+	if tw.Body.String() == "" {
+		t.Error("expected non-empty string")
+	}
+
+	if gw.Body.String() == "" {
+		t.Error("expected non-empty string")
+	}
+
+	if kw.Body.String() == "" {
+		t.Error("expected non-empty string")
+	}
+
+	if sw.Body.String() == "" {
+		t.Error("expected non-empty string")
 	}
 
 }
