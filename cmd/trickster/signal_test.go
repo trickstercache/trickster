@@ -12,10 +12,11 @@ import (
 
 func TestStartHupMonitor(t *testing.T) {
 
+	// passing case for this test is no panics or hangs
+
 	w := httptest.NewRecorder()
 	logger := logging.StreamLogger(w, "WARN")
 
-	// passing case is the call returns immediately without starting the goroutine
 	startHupMonitor(nil, nil, nil, nil, nil)
 
 	qch := make(chan bool)
@@ -42,6 +43,4 @@ func TestStartHupMonitor(t *testing.T) {
 	time.Sleep(time.Millisecond * 100)
 	hups <- syscall.SIGHUP
 	time.Sleep(time.Millisecond * 100)
-	t.Error()
-
 }
