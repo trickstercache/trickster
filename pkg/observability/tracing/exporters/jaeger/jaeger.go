@@ -76,11 +76,9 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 
 	// Create Tracing Provider
 	tp, flusher, err = jaeger.NewExportPipeline(eo,
-		jaeger.WithSDK(&sdktrace.Config{DefaultSampler: sampler}),
-		jaeger.WithProcess(jaeger.Process{
-			ServiceName: options.ServiceName,
-			Tags:        tags,
-		}),
+		jaeger.WithSDKOptions(
+			sdktrace.WithSampler(sampler),
+		),
 	)
 	if err != nil {
 		return nil, err

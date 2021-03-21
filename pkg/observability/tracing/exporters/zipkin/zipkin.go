@@ -48,14 +48,13 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 
 	exporter, err := zipkin.NewRawExporter(
 		options.CollectorURL,
-		options.ServiceName,
+		zipkin.WithSDKOptions(sdktrace.WithSampler(sampler)),
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	tp = sdktrace.NewTracerProvider(
-		sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sampler}),
 		sdktrace.WithBatcher(exporter,
 			sdktrace.WithBatchTimeout(5),
 			sdktrace.WithMaxExportBatchSize(10),
