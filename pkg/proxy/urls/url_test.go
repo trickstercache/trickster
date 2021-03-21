@@ -47,3 +47,17 @@ func TestBuildUpstreamURL(t *testing.T) {
 		t.Errorf("expected %s got %s", expected, u2.Path)
 	}
 }
+
+func TestSize(t *testing.T) {
+
+	u, _ := url.Parse("https://tricksterproxy.io")
+	i := Size(u)
+	if i != 23 {
+		t.Errorf("expected %d got %d", 23, i)
+	}
+	i = Size(nil)
+	if i != 0 {
+		t.Errorf("expected %d got %d", 0, i)
+	}
+
+}
