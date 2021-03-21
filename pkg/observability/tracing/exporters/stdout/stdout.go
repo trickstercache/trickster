@@ -80,7 +80,7 @@ func NewTracer(opts *options.Options) (*tracing.Tracer, error) {
 	}
 
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp),
-		sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sampler}),
+		sdktrace.WithSampler(sampler),
 		sdktrace.WithResource(resource.NewWithAttributes(tags...)),
 	)
 
