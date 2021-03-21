@@ -198,6 +198,8 @@ var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_ke
 	"req_rewriter_name",
 }
 
+var errInvalidConfigMetadata = errors.New("invalid config metadata")
+
 func SetDefaults(
 	backendName string,
 	metadata yamlx.KeyLookup,
@@ -205,7 +207,7 @@ func SetDefaults(
 	crw map[string]rewriter.RewriteInstructions,
 ) error {
 	if metadata == nil {
-		return errors.New("invalid config metadata")
+		return errInvalidConfigMetadata
 	}
 	for k, p := range paths {
 		if metadata.IsDefined("backends", backendName, "paths", k, "req_rewriter_name") &&
