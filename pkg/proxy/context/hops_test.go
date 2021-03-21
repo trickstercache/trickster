@@ -42,4 +42,14 @@ func TestHops(t *testing.T) {
 		t.Errorf("expected %d got %d", 1, j)
 	}
 
+	ctx = context.Background()
+	IncrementedRewriterHops(ctx, 5)
+	i = RewriterHops(ctx)
+	ctx = StartRewriterHops(ctx)
+	IncrementedRewriterHops(ctx, 5)
+	i = RewriterHops(ctx)
+	if i != 5 {
+		t.Error("expected 5 got", i)
+	}
+
 }

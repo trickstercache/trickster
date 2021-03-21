@@ -18,6 +18,7 @@ package context
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 
 	"github.com/tricksterproxy/trickster/pkg/backends/rule/options"
@@ -46,12 +47,14 @@ func IncrementedRewriterHops(ctx context.Context, i int) int {
 	var p *int32
 	if v != nil {
 		if j, ok := v.(*int32); ok {
+			fmt.Println(":)")
 			p = j
 		}
 	}
 	if p == nil {
 		return 0
 	}
+	fmt.Println("****")
 	i = int(atomic.AddInt32(p, int32(i)))
 	return i
 }
