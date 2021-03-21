@@ -135,7 +135,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 	var caches = applyCachingConfig(conf, oldConf, logger, oldCaches)
 	rh := handlers.ReloadHandleFunc(runConfig, conf, wg, logger, caches, args)
 
-	o, err := routing.RegisterProxyRoutes(conf, router, caches, tracers, logger, false)
+	o, err := routing.RegisterProxyRoutes(conf, router, mr, caches, tracers, logger, false)
 	if err != nil {
 		handleStartupIssue("route registration failed", tl.Pairs{"detail": err.Error()},
 			logger, errorFunc)
@@ -316,6 +316,7 @@ func validateConfig(conf *config.Config) error {
 	}
 
 	router := mux.NewRouter()
+	mr := http.NewServeMux()
 	logger := tl.ConsoleLogger(conf.Logging.LogLevel)
 
 	tracers, err := tr.RegisterAll(conf, logger, true)
@@ -323,7 +324,7 @@ func validateConfig(conf *config.Config) error {
 		return err
 	}
 
-	_, err = routing.RegisterProxyRoutes(conf, router, caches, tracers, logger, true)
+	_, err = routing.RegisterProxyRoutes(conf, router, mr, caches, tracers, logger, true)
 	if err != nil {
 		return err
 	}
