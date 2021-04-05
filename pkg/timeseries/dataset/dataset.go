@@ -21,10 +21,8 @@
 package dataset
 
 import (
-	"fmt"
 	"io"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -68,31 +66,6 @@ type DataSet struct {
 
 // Marshaler is a function that serializes the provided DataSet into a byte slice
 type Marshaler func(*DataSet, *timeseries.RequestOptions, int, io.Writer) error
-
-// String is a debugging function to print a string representation of the DataSet
-func (ds *DataSet) String() string {
-	var sb strings.Builder
-	sb.WriteByte('{')
-	if ds.Status != "" {
-		sb.WriteString(fmt.Sprintf(`"status":"%s",`, ds.Status))
-	}
-	if ds.Error != "" {
-		sb.WriteString(fmt.Sprintf(`"error":"%s",`, ds.Error))
-	}
-	if ds.TimeRangeQuery != nil {
-		sb.WriteString(fmt.Sprintf(`"step":"%s",`, ds.TimeRangeQuery.Step.String()))
-	}
-	sb.WriteString(fmt.Sprintf(`"extentList":"%s",results:[`, ds.ExtentList.String()))
-	l := len(ds.Results)
-	for i, r := range ds.Results {
-		sb.WriteString(r.String())
-		if i < l-1 {
-			sb.WriteByte(',')
-		}
-	}
-	sb.WriteString("]}")
-	return sb.String()
-}
 
 // CroppedClone returns a new, perfect copy of the DataSet, efficiently
 // cropped to the provided Extent. CroppedClone assumes the DataSet is sorted.

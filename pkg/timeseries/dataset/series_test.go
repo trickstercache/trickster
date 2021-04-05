@@ -30,6 +30,31 @@ func testSeries() *Series {
 	}
 }
 
+func TestSeriesSize(t *testing.T) {
+	s := testSeries()
+	size := s.Size()
+	if size != 72 {
+		t.Errorf("expected %d got %d", 72, size)
+	}
+}
+
+func TestString(t *testing.T) {
+	expected := `{"header":{"name":"test","query":"SELECT TRICKSTER!",` +
+		`"tags":"test1=value1","fields":["Field1"],"timestampIndex":37},` +
+		`points:[{5000000000,1,37},{10000000000,1,24}]}`
+	s := testSeries()
+	if s.String() != expected {
+		t.Errorf("expected %s got %s", expected, s.String())
+	}
+
+	expected = "[8621797787432305383]"
+	sl := SeriesList{s}
+	if sl.String() != expected {
+		t.Errorf("expected %s got %s", expected, sl.String())
+	}
+
+}
+
 func testSeriesHeader() SeriesHeader {
 	sh := SeriesHeader{
 		Name:           "test",
