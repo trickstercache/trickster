@@ -17,7 +17,7 @@ The roadmap for Trickster in 2021 focuses on delivering Trickster versions 2.0 a
   - [ ] Short-term caching of non-timeseries read-only queries (e.g., generic SELECT statements)
   - [ ] Support Brotli encoding over the wire and as a cache compression format
   
-- [ ] Submit Trickster for CNCF Sandbox Consideration
+- [x] Submit Trickster for CNCF Sandbox Consideration
 
 ### Q2 2021
 

@@ -14,6 +14,8 @@ Trickster is an HTTP reverse proxy/cache for http applications and a dashboard q
 
 Learn more below, and check out our [roadmap](./docs/roadmap.md) to find out what else is in the works.
 
+Trickster is hosted by the [Cloud Native Computing Foundation](https://cncf.io) (CNCF) as a sandbox level project. If you are a company that wants to help shape the evolution of technologies that are container-packaged, dynamically-scheduled and microservices-oriented, consider joining the CNCF.
+
 Note: Trickster v1.1 is the production release, sourced from the [v1.1.x](https://github.com/tricksterproxy/trickster/tree/v1.1.x) branch. The `main` branch sources Trickster 2.0, which is currently in beta.
 
 ## HTTP Reverse Proxy Cache
@@ -144,3 +146,5 @@ As the Trickster community grows, we'd like to keep track of who is using it in 
 3. [swarmstack](https://github.com/swarmstack) [[@mh720](https://github.com/mh720)]
 4. [Hostinger](https://www.hostinger.com/) [[@ton31337](https://github.com/ton31337)]
 5. [The Remote Company (MailerLite, MailerSend, MailerCheck, YCode)](https://www.remotecompany.com) [[@aorfanos]](https://github.com/aorfanos)
+
+© 2021 The Linux Foundation. All rights reserved. The Linux Foundation has registered trademarks and uses trademarks. For a list of trademarks of The Linux Foundation, please see our [Trademark Usage](https://www.linuxfoundation.org/trademark-usage) page.

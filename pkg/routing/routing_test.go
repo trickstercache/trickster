@@ -282,7 +282,8 @@ func TestRegisterProxyRoutesWithReqRewriters(t *testing.T) {
 
 	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	proxyClients, err := RegisterProxyRoutes(conf, mux.NewRouter(), nil, caches, nil, tl.ConsoleLogger("info"), false)
+	proxyClients, err := RegisterProxyRoutes(conf, mux.NewRouter(), http.NewServeMux(), caches,
+		nil, tl.ConsoleLogger("info"), false)
 	if err != nil {
 		t.Error(err)
 	}
