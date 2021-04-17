@@ -19,7 +19,7 @@ data:
     # Optional configs are commented out, required configs are uncommented
     # and set to common values that let you try it out with Prometheus
     #
-    # Copyright 2018 Comcast Cable Communications Management, LLC
+    # Copyright 2018 The Trickster Authors
     #
 
     # [main]

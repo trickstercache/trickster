@@ -6,8 +6,8 @@ Version:    %{_version}
 Release:    %{_release}
 Summary:    Dashboard Accelerator for Prometheus
 
-Vendor:     Comcast
-Packager:   Comcast
+Vendor:     The Trickster Authors
+Packager:   The Trickster Authors
 Group:      System Environment/Daemons
 License:    ASL 2.0
 URL:        https://github.com/tricksterproxy/trickster
