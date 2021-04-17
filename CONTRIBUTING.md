@@ -1,11 +1,6 @@
 # Contributing
 
-If you would like to contribute code to this project you can do so through GitHub by forking the repository and sending a pull request.
-
-Before Comcast merges your code into the project you must sign the Comcast Contributor License Agreement (CLA).
-If you haven't previously signed a Comcast CLA, you'll automatically be asked to when you open a pull request.
-Alternatively, we can e-mail you a PDF that you can sign and scan back to us.
-Please send us an e-mail or create a new GitHub issue to request a PDF version of the CLA.
+If you would like to contribute to this project you can do so through GitHub by forking the repository and sending a pull request. Please make note of the following:
 
 * If you are a new contributor see: [Steps to Contribute](#steps-to-contribute)
 
@@ -23,13 +18,15 @@ Please send us an e-mail or create a new GitHub issue to request a PDF version o
   Practices for Production
   Environments](http://peter.bourgon.org/go-in-production/#formatting-and-style).
 
+* Before your contribution can be accepted, you must sign off your commits to signify accepttance of the [DCO](https://github.com/probot/dco#how-it-works).
+
 ## Reporting Feature Requests, Bugs, Vulnerabilities and other Issues
 
 If you find a bug in Trickster, please file a detailed report as an Issue. We currently do not utilize an Issue template, but please be as thorough as possible in your report. There is no such thing as too much information.
 
 Likewise, if you have a Feature Request, please file a detailed Issue, explaining the feature's functionality and use cases. Features should be useful to the broader community, so be sure to consider that before filing.
 
-If you find a security vulnerability in Trickster, please report it at <https://my.xfinity.com/vulnerabilityreport> and contact the [Maintainers](MAINTAINERS.md).
+If you find a security vulnerability in Trickster, please contact the [Maintainers](MAINTAINERS.md) directly.
 
 ## Steps to Contribute
 
@@ -52,7 +49,7 @@ make test
 
 ## Pull Request Checklist
 
-* Branch from the master branch and, if needed, rebase to the current master branch before submitting your pull request. If it doesn't merge cleanly with master you may be asked to rebase your changes.
+* Branch from the main branch and, if needed, rebase to the current main branch before submitting your pull request. If it doesn't merge cleanly with main you may be asked to rebase your changes.
 
 * Commits should be as small as possible, while ensuring that each commit is correct independently (i.e., each commit should compile and pass tests).
 
