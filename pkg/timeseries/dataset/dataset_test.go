@@ -359,6 +359,4 @@ func TestCropToRange(t *testing.T) {
 	if len(exs) != 0 {
 		t.Error("invalid extent in crop", exs)
 	}
-	t.Error()
-
 }
