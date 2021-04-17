@@ -24,14 +24,14 @@ import (
 func ExamplePrintVersion() {
 	runtime.ApplicationVersion = "test"
 	PrintVersion()
-	// Output: Trickster version: test, buildInfo:  , goVersion: , copyright: © 2018 Comcast Corporation
+	// Output: Trickster version: test, buildInfo:  , goVersion: , copyright: © 2018 The Trickster Authors
 }
 
 func ExamplePrintUsage() {
 
 	runtime.ApplicationVersion = "test"
 	PrintUsage()
-	// Output: Trickster version: test, buildInfo:  , goVersion: , copyright: © 2018 Comcast Corporation
+	// Output: Trickster version: test, buildInfo:  , goVersion: , copyright: © 2018 The Trickster Authors
 	//
 	// Trickster Usage:
 	//
