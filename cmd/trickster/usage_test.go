@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Comcast Cable Communications Management, LLC
+ * Copyright 2018 The Trickster Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,14 +24,14 @@ import (
 func ExamplePrintVersion() {
 	runtime.ApplicationVersion = "test"
 	PrintVersion()
-	// Output: Trickster version: test, buildInfo:  , goVersion: , copyright: © 2018 Comcast Corporation
+	// Output: Trickster version: test, buildInfo:  , goVersion: , copyright: © 2018 The Trickster Authors
 }
 
 func ExamplePrintUsage() {
 
 	runtime.ApplicationVersion = "test"
 	PrintUsage()
-	// Output: Trickster version: test, buildInfo:  , goVersion: , copyright: © 2018 Comcast Corporation
+	// Output: Trickster version: test, buildInfo:  , goVersion: , copyright: © 2018 The Trickster Authors
 	//
 	// Trickster Usage:
 	//

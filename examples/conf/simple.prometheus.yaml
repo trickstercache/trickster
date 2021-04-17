@@ -7,7 +7,7 @@
 # Prometheus queries using Trickster. More documentation is
 # available at https://github.com/tricksterproxy/trickster/docs/
 #
-# Copyright 2018 Comcast Cable Communications Management, LLC
+# Copyright 2018 The Trickster Authors
 #
 
 frontend:

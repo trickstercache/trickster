@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Comcast Cable Communications Management, LLC
+ * Copyright 2018 The Trickster Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,7 +69,7 @@ https://github.com/tricksterproxy/trickster
 `
 
 func version() string {
-	return fmt.Sprintf("Trickster version: %s, buildInfo: %s %s, goVersion: %s, copyright: © 2018 Comcast Corporation",
+	return fmt.Sprintf("Trickster version: %s, buildInfo: %s %s, goVersion: %s, copyright: © 2018 The Trickster Authors",
 		runtime.ApplicationVersion,
 		applicationBuildTime, applicationGitCommitID,
 		applicationGoVersion,
