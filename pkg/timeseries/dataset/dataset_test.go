@@ -248,3 +248,117 @@ func TestVolatileExtents(t *testing.T) {
 		t.Errorf("expected %d got %d", expected, l)
 	}
 }
+
+func TestMarshalDataSet(t *testing.T) {
+
+	_, err := MarshalDataSet(nil, &timeseries.RequestOptions{}, 200)
+	if err != timeseries.ErrUnknownFormat {
+		t.Errorf("expected unknown format error, got %s", err.Error())
+	}
+
+	ds := testDataSet()
+	trq := ds.TimeRangeQuery
+	b, err := MarshalDataSet(ds, &timeseries.RequestOptions{}, 200)
+	if err != nil {
+		t.Error(err)
+	}
+	if len(b) == 0 {
+		t.Error("invalid length")
+	}
+	ts, err := UnmarshalDataSet(b, trq)
+	if err != nil {
+		t.Error(err)
+	}
+	var ok bool
+	if ds, ok = ts.(*DataSet); !ok {
+		t.Error("invalid dataset")
+	}
+}
+
+func TestCroppedClone(t *testing.T) {
+
+	// an extent fully inside of time series's extent
+	ex := timeseries.Extent{Start: time.Unix(15, 0), End: time.Unix(20, 0)}
+
+	// an extent fully surrounding the time series's extent
+	ex2 := timeseries.Extent{Start: time.Unix(0, 0), End: time.Unix(35, 0)}
+
+	// an extent having no intersection with the time series's extent
+	// an extent fully outside of time series's extent
+	ex3 := timeseries.Extent{Start: time.Unix(35, 0), End: time.Unix(50, 0)}
+
+	ds := testDataSet2().CroppedClone(ex)
+	exs := ds.Extents()
+	if len(exs) != 1 || (exs[0].Start != time.Unix(15, 0) || exs[0].End != time.Unix(20, 0)) {
+		t.Error("invalid extent in clone")
+	}
+
+	ts := testDataSet2()
+	ts.ExtentList = nil
+	ds = ts.CroppedClone(ex)
+	ts, _ = ds.(*DataSet)
+	if ts.ExtentList != nil {
+		t.Error("invalid extent in clone")
+	}
+
+	ts = testDataSet2()
+	ds = ts.CroppedClone(ex2)
+	exs = ds.Extents()
+	if len(exs) != 1 || (exs[0].Start != time.Unix(5, 0) || exs[0].End != time.Unix(30, 0)) {
+		t.Error("invalid extent in clone", exs)
+	}
+
+	ts = testDataSet2()
+	ds = ts.CroppedClone(ex3)
+	exs = ds.Extents()
+	if len(exs) != 0 {
+		t.Error("invalid extent in clone", exs)
+	}
+}
+
+func TestCropToRange(t *testing.T) {
+
+	// an extent fully inside of time series's extent
+	ex := timeseries.Extent{Start: time.Unix(15, 0), End: time.Unix(20, 0)}
+
+	// an extent fully surrounding the time series's extent
+	ex2 := timeseries.Extent{Start: time.Unix(0, 0), End: time.Unix(35, 0)}
+
+	// an extent having no intersection with the time series's extent
+	// an extent fully outside of time series's extent
+	ex3 := timeseries.Extent{Start: time.Unix(35, 0), End: time.Unix(50, 0)}
+
+	ds := testDataSet2()
+
+	ds.RangeCropper = nil
+	ds.CropToRange(ex)
+	exs := ds.Extents()
+	if len(exs) != 1 || (exs[0].Start != time.Unix(15, 0) || exs[0].End != time.Unix(20, 0)) {
+		t.Error("invalid extent in crop")
+	}
+
+	ds = testDataSet2()
+	ds.RangeCropper = ds.DefaultRangeCropper
+	ds.CropToRange(ex2)
+	exs = ds.ExtentList
+	if len(exs) != 1 || (exs[0].Start != time.Unix(5, 0) || exs[0].End != time.Unix(30, 0)) {
+		t.Error("invalid extent in crop", exs)
+	}
+
+	ds = testDataSet2()
+	ds.DefaultRangeCropper(ex3)
+	exs = ds.ExtentList
+	if len(exs) != 0 {
+		t.Error("invalid extent in crop", exs)
+	}
+
+	ds = testDataSet2()
+	ds.ExtentList = timeseries.ExtentList{}
+	ds.DefaultRangeCropper(ex3)
+	exs = ds.ExtentList
+	if len(exs) != 0 {
+		t.Error("invalid extent in crop", exs)
+	}
+	t.Error()
+
+}

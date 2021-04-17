@@ -76,7 +76,7 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 	}
 	// if the series extent is entirely inside the extent of the crop range,
 	// simply adjust down its ExtentList
-	if ds.ExtentList.InsideOf(e) {
+	if ds.ExtentList.EncompassedBy(e) {
 		clone := ds.Clone().(*DataSet)
 		clone.ExtentList = clone.ExtentList.Crop(e)
 		return clone
@@ -99,7 +99,11 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 	// range, return empty set and bail
 	if ds.ExtentList.OutsideOf(e) {
 		for i := range ds.Results {
-			clone.Results[i].SeriesList = make([]*Series, 0)
+			clone.Results[i] = &Result{
+				StatementID: ds.Results[i].StatementID,
+				Error:       ds.Results[i].Error,
+				SeriesList:  make([]*Series, 0),
+			}
 		}
 		clone.ExtentList = timeseries.ExtentList{}
 		return clone
@@ -378,20 +382,21 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 		return
 	}
 
-	ds.ExtentList = ds.ExtentList.Crop(e)
 	ds.VolatileExtentList = ds.VolatileExtentList.Clone().Crop(e)
 
 	// if the series extent is entirely inside the extent of the crop range,
 	// simply adjust down its ExtentList
-	if ds.ExtentList.InsideOf(e) {
+	if ds.ExtentList.EncompassedBy(e) {
 		if ds.ValueCount() == 0 {
 			for i := range ds.Results {
 				ds.Results[i].SeriesList = make([]*Series, 0)
 			}
 		}
+		ds.ExtentList = ds.ExtentList.Crop(e)
 		return
 	}
 
+	ds.ExtentList = ds.ExtentList.Crop(e)
 	startNS := epoch.Epoch(e.Start.UnixNano())
 	endNS := epoch.Epoch(e.End.UnixNano())
 
@@ -527,7 +532,7 @@ func UnmarshalDataSet(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Time
 // MarshalDataSet marshals the dataset into a msgpack-formatted byte slice
 func MarshalDataSet(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int) ([]byte, error) {
 	ds, ok := ts.(*DataSet)
-	if !ok {
+	if !ok || ds == nil {
 		return nil, timeseries.ErrUnknownFormat
 	}
 	if ds.TimeRangeQuery != nil {
