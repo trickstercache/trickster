@@ -26,9 +26,10 @@ import (
 
 func testDataSet() *DataSet {
 	ds := &DataSet{
-		Results:        []*Result{testResult()},
-		ExtentList:     timeseries.ExtentList{timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(10, 0)}},
-		TimeRangeQuery: &timeseries.TimeRangeQuery{Step: time.Duration(5 * timeseries.Second)},
+		Results:            []*Result{testResult()},
+		ExtentList:         timeseries.ExtentList{timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(10, 0)}},
+		TimeRangeQuery:     &timeseries.TimeRangeQuery{Step: time.Duration(5 * timeseries.Second)},
+		VolatileExtentList: timeseries.ExtentList{timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(10, 0)}},
 	}
 	ds.Merger = ds.DefaultMerger
 	ds.SizeCropper = ds.DefaultSizeCropper
@@ -214,5 +215,36 @@ func TestMerge(t *testing.T) {
 	if ds.SeriesCount() != 4 {
 		t.Errorf("expected %d got %d", 4, ds.SeriesCount())
 	}
+}
 
+func TestSize(t *testing.T) {
+
+	ds := testDataSet()
+	s := ds.Size()
+	const expected = 237
+
+	if s != expected {
+		t.Errorf("expected %d got %d", expected, s)
+	}
+}
+
+func TestVolatileExtents(t *testing.T) {
+
+	ds := testDataSet()
+	expected := 1
+	e := ds.VolatileExtents().Clone()
+	l := len(e)
+	if l != expected {
+		t.Errorf("expected %d got %d", expected, l)
+	}
+
+	e = append(e, timeseries.Extent{})
+	ds.SetVolatileExtents(e)
+
+	e = ds.VolatileExtents().Clone()
+	l = len(e)
+	expected = 2
+	if l != expected {
+		t.Errorf("expected %d got %d", expected, l)
+	}
 }
