@@ -162,7 +162,6 @@ func (p Pairs) ToList(event string) []interface{} {
 	if level, ok := p["level"]; ok {
 		a[0] = "level"
 		a[1] = level
-		delete(p, "level")
 		i += 2
 	}
 	// Ensure the event description is the second Pair in the output order (after prefixes)
@@ -170,6 +169,9 @@ func (p Pairs) ToList(event string) []interface{} {
 	a[i+1] = event
 	i += 2
 	for k, v := range p {
+		if k == "level" {
+			continue
+		}
 		a[i] = k
 		a[i+1] = v
 		i += 2
@@ -187,6 +189,17 @@ func noopLogger() *Logger {
 		onceRanEntries: make(map[string]interface{}),
 		onceMutex:      &sync.Mutex{},
 	}
+}
+
+func StreamLogger(w io.Writer, logLevel string) *Logger {
+	l := noopLogger()
+	l.baseLogger = gkl.NewLogfmtLogger(gkl.NewSyncWriter(w))
+	l.baseLogger = gkl.With(l.baseLogger,
+		"time", gkl.DefaultTimestampUTC,
+		"app", "trickster",
+	)
+	l.SetLogLevel(logLevel)
+	return l
 }
 
 // ConsoleLogger returns a Logger object that prints log events to the Console

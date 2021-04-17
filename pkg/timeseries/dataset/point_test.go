@@ -18,7 +18,9 @@ package dataset
 
 import (
 	"sort"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"github.com/tricksterproxy/trickster/pkg/timeseries/epoch"
@@ -30,12 +32,12 @@ func testPoints() Points {
 		Point{
 			Epoch:  epoch.Epoch(5 * timeseries.Second),
 			Size:   27,
-			Values: []interface{}{1},
+			Values: []interface{}{1, 37},
 		},
 		Point{
 			Epoch:  epoch.Epoch(10 * timeseries.Second),
 			Size:   27,
-			Values: []interface{}{1},
+			Values: []interface{}{1, 24},
 		},
 	}
 }
@@ -50,6 +52,35 @@ func TestPointClone(t *testing.T) {
 	if p2.Epoch != p.Epoch || p2.Values[0] != p.Values[0] || p2.Size != p.Size {
 		t.Error("clone mismatch")
 	}
+}
+
+func TestPointsCloneRange(t *testing.T) {
+
+	tests := []struct {
+		start, end, expLen, epoch int
+	}{
+		{0, 1, 1, 5 * timeseries.Second},
+		{0, 2, 2, 5 * timeseries.Second},
+		{1, 1, 0, 0},
+		{1, 2, 1, 10 * timeseries.Second},
+		{2, 1, 0, 0},
+		{0, 3, 0, 0},
+	}
+
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			pts := testPoints().CloneRange(test.start, test.end)
+			if len(pts) != test.expLen {
+				t.Errorf("expected %d got %d", test.expLen, len(pts))
+			}
+			if len(pts) > 0 {
+				if pts[0].Epoch != epoch.Epoch(test.epoch) {
+					t.Errorf("expected %d got %d", test.epoch, pts[0].Epoch)
+				}
+			}
+		})
+	}
+
 }
 
 func TestPointsClone(t *testing.T) {
@@ -86,4 +117,49 @@ func TestPointsSort(t *testing.T) {
 	if p.Epoch != 10*timeseries.Second {
 		t.Error("sort mismatch")
 	}
+}
+
+func TestOnOrJustAfter(t *testing.T) {
+
+	pts := testPoints()
+	i := pts.onOrJustAfter(0, 0, len(pts)-1)
+	if i != 0 {
+		t.Errorf("expected %d got %d", 0, i)
+	}
+
+	i = pts.onOrJustAfter(epoch.Epoch(6*time.Second), 0, 0)
+	if i != 1 {
+		t.Errorf("expected %d got %d", 1, i)
+	}
+
+	i = pts.onOrJustAfter(epoch.Epoch(6*time.Second), 0, 1)
+	if i != 1 {
+		t.Errorf("expected %d got %d", 1, i)
+	}
+
+}
+
+func TestOnOrJustBefore(t *testing.T) {
+
+	pts := testPoints()
+	i := pts.onOrJustBefore(0, 0, len(pts)-1)
+	if i != -1 {
+		t.Errorf("expected %d got %d", -1, i)
+	}
+
+	i = pts.onOrJustBefore(epoch.Epoch(6*time.Second), 0, 0)
+	if i != 0 {
+		t.Errorf("expected %d got %d", 0, i)
+	}
+
+	i = pts.onOrJustAfter(epoch.Epoch(15*time.Second), 0, 1)
+	if i != 2 {
+		t.Errorf("expected %d got %d", 2, i)
+	}
+
+	i = pts.onOrJustAfter(epoch.Epoch(6*time.Second), 0, 1)
+	if i != 1 {
+		t.Errorf("expected %d got %d", 1, i)
+	}
+
 }

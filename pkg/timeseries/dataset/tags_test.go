@@ -35,7 +35,17 @@ func TestTags(t *testing.T) {
 	tags["test2"] = "trickster"
 	tags["test1"] = "value1"
 
-	const expected = "test1=value1;test2=trickster"
+	expected := `{"test1":"value1","test2":"trickster"}`
+	if s := tags.JSON(); s != expected {
+		t.Errorf("expected %s got %s", expected, s)
+	}
+
+	expected = `"test1"="value1","test2"="trickster"`
+	if s := tags.KVP(); s != expected {
+		t.Errorf("expected %s got %s", expected, s)
+	}
+
+	expected = "test1=value1;test2=trickster"
 	if tags.String() != expected {
 		t.Errorf("expected %s got %s", expected, tags.String())
 	}
@@ -57,6 +67,25 @@ func TestTags(t *testing.T) {
 	t2 := tags.Clone()
 	if t2["test2"] != "trickster" {
 		t.Error("tags clone mismatch")
+	}
+
+	tags = Tags{}
+	if s := tags.StringsWithSep("", ""); s != "" {
+		t.Error("expected empty string got", s)
+	}
+
+	if s := tags.JSON(); s != "{}" {
+		t.Error("expected {} got", s)
+	}
+
+	if s := tags.KVP(); s != "" {
+		t.Error("expected empty string got", s)
+	}
+
+	t2.Merge(Tags{"test3": "value3"})
+
+	if len(t2) != 3 {
+		t.Error("expected 3, got", len(t2))
 	}
 
 }

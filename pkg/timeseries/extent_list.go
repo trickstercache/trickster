@@ -41,17 +41,26 @@ func (el ExtentList) String() string {
 	return strings.Join(lines, ",")
 }
 
-// InsideOf returns true if the provided extent is contained
+// Encompasses returns true if the provided extent is contained
 // completely within boundaries of the subject ExtentList
-func (el ExtentList) InsideOf(e Extent) bool {
+func (el ExtentList) Encompasses(e Extent) bool {
 	x := len(el)
 	if x == 0 {
 		return false
 	}
-	return ((!el[0].Start.Before(e.Start)) &&
-		(!el[0].Start.After(e.End)) &&
-		(!el[x-1].End.Before(e.Start)) &&
-		(!el[x-1].End.After(e.End)))
+	return (!e.Start.Before(el[0].Start)) &&
+		(!e.End.After(el[x-1].End))
+}
+
+// EncompassedBy returns true if the provided extent completely
+// surrounds the boundaries of the subject ExtentList
+func (el ExtentList) EncompassedBy(e Extent) bool {
+	x := len(el)
+	if x == 0 {
+		return false
+	}
+	return (!el[0].Start.Before(e.Start)) &&
+		(!el[x-1].End.After(e.End))
 }
 
 // OutsideOf returns true if the provided extent falls completely

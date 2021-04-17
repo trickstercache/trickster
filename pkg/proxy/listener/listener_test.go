@@ -36,6 +36,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
 	ph "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
+	testutil "github.com/tricksterproxy/trickster/pkg/util/testing"
 	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
 )
 
@@ -45,7 +46,6 @@ func testListener() net.Listener {
 }
 
 func TestListeners(t *testing.T) {
-
 	tr, _ := stdout.NewTracer(nil)
 	tr.Flusher = func() {}
 	trs := map[string]*tracing.Tracer{"default": tr}
@@ -92,6 +92,7 @@ func TestListeners(t *testing.T) {
 	if err == nil {
 		t.Error("expected invalid port error")
 	}
+	wg.Wait()
 }
 
 func TestUpdateRouter(t *testing.T) {
@@ -111,6 +112,26 @@ func TestNewListenerErr(t *testing.T) {
 		l.Close()
 		t.Errorf("expected error: %s", `listen tcp: lookup -: no such host`)
 	}
+}
+
+func TestListenerAccept(t *testing.T) {
+	testLG := NewListenerGroup()
+	var err error
+	go func() {
+		err = testLG.StartListener("httpListener",
+			"", 0, 20, nil, http.NewServeMux(), nil, nil, nil, 0, tl.ConsoleLogger("info"))
+	}()
+	time.Sleep(time.Millisecond * 500)
+	if err != nil {
+		t.Error(err)
+	}
+	l := testLG.Get("httpListener")
+	conn, err := net.Dial("tcp", l.Addr().String())
+	if err != nil {
+		t.Error(err)
+	}
+	conn.Close()
+	l.Close()
 }
 
 func TestNewListenerTLS(t *testing.T) {
@@ -295,5 +316,30 @@ func TestUpdateRouters(t *testing.T) {
 	}
 	if l.routeSwapper.Handler() == nil {
 		t.Error("expected non-nil handler")
+	}
+}
+
+func TestCloseObservedConnection(t *testing.T) {
+
+	s := httptest.NewServer(http.HandlerFunc(testutil.BasicHTTPHandler))
+	defer s.Close()
+	address := s.URL[7:]
+	if !strings.HasPrefix(address, "127.0.0.1:") {
+		t.Errorf("invalid address:[%s]", address)
+	}
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		t.Error(err)
+	}
+	tconn, ok := conn.(*net.TCPConn)
+	if !ok {
+		t.Error("invalid connection type")
+	}
+	oconn := &observedConnection{
+		TCPConn: tconn,
+	}
+	err = oconn.Close()
+	if err != nil {
+		t.Error(err)
 	}
 }

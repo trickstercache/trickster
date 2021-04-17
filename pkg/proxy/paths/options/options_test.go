@@ -22,6 +22,8 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
+	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 )
 
 func TestNew(t *testing.T) {
@@ -154,3 +156,99 @@ func TestMerge(t *testing.T) {
 	}
 
 }
+
+func TestSetDefaults(t *testing.T) {
+
+	err := SetDefaults("default", nil, nil, nil)
+	if err != errInvalidConfigMetadata {
+		t.Error("expected errInvalidConfigMetadata, got", err)
+	}
+
+	kl, err := yamlx.GetKeyList(testYAML)
+	if err != nil {
+		t.Error(err)
+	}
+
+	o := New()
+	pl := Lookup{"root": o}
+	o.ReqRewriterName = "path"
+	o.ResponseBody = "trickster"
+	o.Methods = nil
+	crw := map[string]rewriter.RewriteInstructions{"path": nil}
+
+	err = SetDefaults("test", kl, pl, crw)
+	if err != nil {
+		t.Error(err)
+	}
+
+	o.ReqRewriterName = "invalid"
+	err = SetDefaults("test", kl, pl, crw)
+	if err == nil {
+		t.Error("expected error for invalid rewriter name")
+	}
+
+	o.ReqRewriterName = "path"
+	o.MatchTypeName = "invalid"
+	err = SetDefaults("test", kl, pl, crw)
+	if err != nil {
+		t.Error(err)
+	}
+
+	o.CollapsedForwardingName = "invalid"
+	err = SetDefaults("test", kl, pl, crw)
+	if err == nil {
+		t.Error("expected error for invalid collapsed_forwarding name")
+	}
+}
+
+const testYAML = `
+request_rewriters:
+  path:
+    instructions:
+      - - header
+        - set
+        - Test-Path
+        - pass
+  origin:
+    instructions:
+      - - header
+        - set
+        - Test-Origin
+        - pass
+  ingress:
+    instructions:
+      - - header
+        - set
+        - Test-Ingress
+        - pass
+  egress:
+    instructions:
+      - - header
+        - set
+        - Test-Egress
+        - pass
+  default:
+    instructions:
+      - - header
+        - set
+        - Test-Default
+        - pass
+  match:
+    instructions:
+      - - header
+        - set
+        - Test-Match
+        - pass
+backends:
+  test:
+    provider: rpc
+    origin_url: 'http://1'
+    req_rewriter_name: origin
+    paths:
+      root:
+        path: /
+        req_rewriter_name: path
+        handler: proxycache
+        response_body: trickster
+        collapsed_forwarding: progressive
+`

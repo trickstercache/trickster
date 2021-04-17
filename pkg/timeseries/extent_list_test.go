@@ -131,7 +131,7 @@ func TestUpdateLastUsed(t *testing.T) {
 
 }
 
-func TestInsideOf(t *testing.T) {
+func TestEncompasses(t *testing.T) {
 
 	el := ExtentList{
 		Extent{Start: t100, End: t200},
@@ -139,32 +139,106 @@ func TestInsideOf(t *testing.T) {
 		Extent{Start: t1100, End: t1300},
 	}
 
-	if el.InsideOf(Extent{Start: t100, End: t100}) {
-		t.Errorf("expected false got %t", true)
+	tests := []struct {
+		el       ExtentList
+		extent   Extent
+		expected bool
+	}{
+		{ // 0
+			el,
+			Extent{Start: t100, End: t100},
+			true,
+		},
+		{ // 1
+			el,
+			Extent{Start: time.Unix(0, 0), End: t100},
+			false,
+		},
+		{ // 2
+			el,
+			Extent{Start: time.Unix(0, 0), End: time.Unix(0, 0)},
+			false,
+		},
+		{ // 3
+			el,
+			Extent{Start: t201, End: t201},
+			true,
+		},
+		{ // 4
+			el,
+			Extent{Start: t1400, End: t1400},
+			false,
+		},
+		{ // 5
+			ExtentList{},
+			Extent{Start: t100, End: t100},
+			false,
+		},
 	}
 
-	if el.InsideOf(Extent{Start: time.Unix(0, 0), End: t100}) {
-		t.Errorf("expected false got %t", true)
+	for i, test := range tests {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			res := test.el.Encompasses(test.extent)
+			if res != test.expected {
+				t.Errorf("expected %t got %t", test.expected, res)
+			}
+		})
+	}
+}
+
+func TestEncompassedBy(t *testing.T) {
+
+	el := ExtentList{
+		Extent{Start: t100, End: t200},
+		Extent{Start: t600, End: t900},
+		Extent{Start: t1100, End: t1300},
 	}
 
-	if el.InsideOf(Extent{Start: time.Unix(0, 0), End: time.Unix(0, 0)}) {
-		t.Errorf("expected false got %t", true)
+	tests := []struct {
+		el       ExtentList
+		extent   Extent
+		expected bool
+	}{
+		{ // 0
+			el,
+			Extent{Start: t100, End: t100},
+			false,
+		},
+		{ // 1
+			el,
+			Extent{Start: time.Unix(0, 0), End: t100},
+			false,
+		},
+		{ // 2
+			el,
+			Extent{Start: time.Unix(0, 0), End: time.Unix(0, 0)},
+			false,
+		},
+		{ // 3
+			el,
+			Extent{Start: t201, End: t201},
+			false,
+		},
+		{ // 4
+			el,
+			Extent{Start: t1400, End: t1400},
+			false,
+		},
+		{ // 5
+			ExtentList{},
+			Extent{Start: t100, End: t100},
+			false,
+		},
 	}
 
-	if el.InsideOf(Extent{Start: t201, End: t201}) {
-		t.Errorf("expected false got %t", true)
+	for i, test := range tests {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			res := test.el.EncompassedBy(test.extent)
+			if res != test.expected {
+				t.Errorf("expected %t got %t", test.expected, res)
+			}
+		})
 	}
-
-	if el.InsideOf(Extent{Start: t1400, End: t1400}) {
-		t.Errorf("expected false got %t", true)
-	}
-
-	// test empty
-	el = ExtentList{}
-	if el.InsideOf(Extent{Start: t100, End: t100}) {
-		t.Errorf("expected false got %t", true)
-	}
-
 }
 
 func TestRemove(t *testing.T) {

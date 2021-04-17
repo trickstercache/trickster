@@ -49,3 +49,14 @@ func TestGetTestKeyAndCertFiles(t *testing.T) {
 	}
 
 }
+
+func TestWriteKeyAndCert(t *testing.T) {
+
+	err := WriteTestKeyAndCert(true, t.TempDir()+"/test.key", t.TempDir()+"/test.cert")
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+
+// func WriteTestKeyAndCert(isCA bool, keyPath, certPath string) error {

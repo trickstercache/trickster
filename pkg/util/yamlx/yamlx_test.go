@@ -16,7 +16,9 @@
 
 package yamlx
 
-import "testing"
+import (
+	"testing"
+)
 
 const testYML = `
 frontend:
@@ -40,4 +42,47 @@ func TestGetKeyList(t *testing.T) {
 		t.Error("missing key")
 	}
 
+}
+
+func TestIsDefined(t *testing.T) {
+
+	k := KeyLookup{"test": nil}
+	if k.IsDefined("testing") {
+		t.Error("expected false")
+	}
+
+}
+
+func TestGetIndentDepth(t *testing.T) {
+
+	i := getIndentDepth("      ")
+	if i != 6 {
+		t.Errorf("expected %d got %d", 6, i)
+	}
+
+}
+
+func TestGetDepthData(t *testing.T) {
+
+	_, err := getDepthData(1, nil)
+	if err != errDepthNotInList {
+		t.Error("expected err for depth not in list", err)
+	}
+
+}
+
+func TestGetParentDepthData(t *testing.T) {
+
+	_, err := getParentDepthData(1, nil, nil)
+	if err != errEmptyDepthList {
+		t.Error("expected err for empty depth list", err)
+	}
+
+}
+
+func TestGetKeyword(t *testing.T) {
+	s := getKeyword("myline", 0)
+	if s != "" {
+		t.Error("expected empty string got", s)
+	}
 }

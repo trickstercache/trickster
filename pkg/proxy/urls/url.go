@@ -66,5 +66,5 @@ func Size(u *url.URL) int {
 		return 0
 	}
 	return len(u.Fragment) + len(u.Host) + len(u.Opaque) + len(u.Path) +
-		len(u.RawPath) + len(u.RawQuery) + len(u.Scheme) + 1 // ForceQuery=1
+		len(u.RawPath) + len(u.RawQuery) + len(u.Scheme) + 1
 }

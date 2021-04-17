@@ -37,6 +37,8 @@ import (
 	th "github.com/tricksterproxy/trickster/pkg/proxy/headers"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
+	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
 	"github.com/tricksterproxy/trickster/pkg/runtime"
 
 	"github.com/tricksterproxy/mockster/pkg/testutil"
@@ -199,4 +201,25 @@ func BasicHTTPHandler(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Trickster-Status", "engine=none")
 	w.WriteHeader(200)
 	w.Write([]byte("{}"))
+}
+
+// NewTestRewriterInstructions returns a set of example Rewriter Instructions
+// for use in unit testing
+func NewTestRewriteInstructions() rewriter.RewriteInstructions {
+
+	trwl := options.RewriteList{
+		[]string{"method", "set", "POST"},
+		[]string{"host", "set", "example.com:9090"},
+		[]string{"host", "replace", "example.com", "tricksterproxy.io"},
+		[]string{"port", "delete"},
+		[]string{"port", "set", "8000"},
+		[]string{"port", "replace", "000", "480"},
+		[]string{"scheme", "set", "https"},
+		[]string{"hostname", "set", "example.com"},
+		[]string{"hostname", "replace", "example.com", "tricksterproxy.io"},
+	}
+
+	ri, _ := rewriter.ParseRewriteList(trwl)
+
+	return ri
 }

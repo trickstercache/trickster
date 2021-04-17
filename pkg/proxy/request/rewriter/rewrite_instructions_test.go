@@ -279,7 +279,7 @@ func TestParseRewriteList(t *testing.T) {
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 
-			got, err := parseRewriteList(test.rl)
+			got, err := ParseRewriteList(test.rl)
 			if err != test.expectedErr {
 				t.Errorf("expected error %s got %s", test.expectedErr, err)
 			}
@@ -316,16 +316,16 @@ func TestExecuteRewriteInstructions(t *testing.T) {
 
 	var exh0 = http.Header{"Cache-Control": []string{"max-age=60, smax-age=30"}}
 	eu0, _ := url.Parse("https://example.com:8480/path1/path2?param1=bar&param1=too&param3=trickster")
-	ri0, _ := parseRewriteList(testRL0)
+	ri0, _ := ParseRewriteList(testRL0)
 
 	eu1, _ := url.Parse("https://example.com:8480/my/path/was/there?param1=value&param2=value&param1=value2")
-	ri1, _ := parseRewriteList(testRL1)
+	ri1, _ := ParseRewriteList(testRL1)
 
 	eu2, _ := url.Parse("https://example.com:8480/path1/path2?param1=bar&param2=trickster&param3=foo&param1=too")
-	ri2, _ := parseRewriteList(testRL2)
+	ri2, _ := ParseRewriteList(testRL2)
 
 	eu3, _ := url.Parse("https://tricksterproxy.io:8480/path1/path2?param1=value&param2=value&param1=value2")
-	ri3, _ := parseRewriteList(testRL3)
+	ri3, _ := ParseRewriteList(testRL3)
 
 	var tests = []struct {
 		in       *http.Request

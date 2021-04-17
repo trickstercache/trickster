@@ -21,6 +21,7 @@ package dataset
 import (
 	"encoding/binary"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
@@ -46,7 +47,7 @@ type SeriesHeader struct {
 }
 
 // CalculateHash sums the FNV64a hash for the Header and stores it to the Hash member
-func (sh SeriesHeader) CalculateHash() Hash {
+func (sh *SeriesHeader) CalculateHash() Hash {
 	hash := fnv.NewInlineFNV64a()
 	hash.Write([]byte(sh.Name))
 	hash.Write([]byte(sh.QueryStatement))
@@ -65,7 +66,7 @@ func (sh SeriesHeader) CalculateHash() Hash {
 }
 
 // Clone returns a perfect, new copy of the SeriesHeader
-func (sh SeriesHeader) Clone() SeriesHeader {
+func (sh *SeriesHeader) Clone() SeriesHeader {
 	clone := SeriesHeader{
 		Name:       sh.Name,
 		Tags:       sh.Tags.Clone(),
@@ -83,7 +84,7 @@ func (sh SeriesHeader) Clone() SeriesHeader {
 }
 
 // CalculateSize sets and returns the header size
-func (sh SeriesHeader) CalculateSize() int {
+func (sh *SeriesHeader) CalculateSize() int {
 	c := len(sh.Name) + sh.Tags.Size() + 8 + len(sh.QueryStatement) + 28
 	for i := range sh.FieldsList {
 		c += len(sh.FieldsList[i].Name) + 17
@@ -113,9 +114,9 @@ func (sh *SeriesHeader) String() string {
 				sb.WriteByte(',')
 			}
 		}
-		sb.WriteByte(']')
+		sb.WriteString("],")
 	}
-	sb.WriteString(fmt.Sprintf(`"timestampIndex":%d,`, sh.TimestampIndex))
+	sb.WriteString(`"timestampIndex":` + strconv.Itoa(sh.TimestampIndex))
 	sb.WriteByte('}')
 	return sb.String()
 }

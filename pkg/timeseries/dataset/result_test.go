@@ -19,10 +19,9 @@ package dataset
 import "testing"
 
 func testResult() *Result {
-	s := testSeries()
 	r := &Result{
 		StatementID: 42,
-		SeriesList:  []*Series{s},
+		SeriesList:  []*Series{testSeries()},
 	}
 	return r
 }
@@ -40,11 +39,40 @@ func TestResultHashes(t *testing.T) {
 
 func TestResultClone(t *testing.T) {
 	r := testResult()
+	r.SeriesList = append(r.SeriesList, nil)
 	r2 := r.Clone()
 	if r2.StatementID != r.StatementID {
 		t.Error("result clone mismatch")
 	}
 	if r2.SeriesList[0].Header.Name != r.SeriesList[0].Header.Name {
 		t.Error("result clone mismatch")
+	}
+}
+
+func TestResultSize(t *testing.T) {
+	const expected = 116
+	i := testResult().Size()
+	if i != expected {
+		t.Errorf("expected %d got %d", expected, i)
+	}
+}
+
+func TestResultString(t *testing.T) {
+	const expected = `{"error":"test_error","statementID":42,` +
+		`series:[{"header":{"name":"test",` +
+		`"query":"SELECT TRICKSTER!","tags":"test1=value1",` +
+		`"fields":["Field1"],"timestampIndex":37},` +
+		`points:[{5000000000,1,37},{10000000000,1,24}]},` +
+		`{"header":{"name":"test2",` +
+		`"query":"SELECT TRICKSTER!","tags":"test1=value1",` +
+		`"fields":["Field1"],"timestampIndex":37}` +
+		`,points:[{5000000000,1,37},{10000000000,1,24}]}]}`
+	r := testResult()
+	r.Error = "test_error"
+	r.SeriesList = append(r.SeriesList, testSeries())
+	r.SeriesList[1].Header.Name = "test2"
+	s := r.String()
+	if s != expected {
+		t.Errorf("expected %s got %s", expected, s)
 	}
 }

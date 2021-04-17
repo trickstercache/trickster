@@ -63,7 +63,7 @@ func (t Tags) KVP() string {
 	if len(t) == 0 {
 		return ""
 	}
-	return t.StringsWithSep(`"="`, `","`)
+	return `"` + t.StringsWithSep(`"="`, `","`) + `"`
 }
 
 // Keys returns a string-sorted list of the Tags's keys

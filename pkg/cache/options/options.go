@@ -28,6 +28,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache/options/defaults"
 	"github.com/tricksterproxy/trickster/pkg/cache/providers"
 	redis "github.com/tricksterproxy/trickster/pkg/cache/redis/options"
+	strutil "github.com/tricksterproxy/trickster/pkg/util/strings"
 	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 )
 
@@ -134,8 +135,11 @@ func (cc *Options) Equal(cc2 *Options) bool {
 
 }
 
+var errMaxSizeBackoffBytesTooBig = errors.New("MaxSizeBackoffBytes can't be larger than MaxSizeBytes")
+var errMaxSizeBackoffObjectsTooBig = errors.New("MaxSizeBackoffObjects can't be larger than MaxSizeObjects")
+
 // SetDefaults iterates the provided Options, and overlays user-set values onto the default Options
-func (l Lookup) SetDefaults(metadata yamlx.KeyLookup, activeCaches map[string]interface{}) ([]string, error) {
+func (l Lookup) SetDefaults(metadata yamlx.KeyLookup, activeCaches strutil.Lookup) ([]string, error) {
 
 	// setCachingDefaults assumes that processBackendOptionss was just ran
 
@@ -176,7 +180,7 @@ func (l Lookup) SetDefaults(metadata yamlx.KeyLookup, activeCaches map[string]in
 		}
 
 		if cc.Index.MaxSizeBytes > 0 && cc.Index.MaxSizeBackoffBytes > cc.Index.MaxSizeBytes {
-			return nil, errors.New("MaxSizeBackoffBytes can't be larger than MaxSizeBytes")
+			return nil, errMaxSizeBackoffBytesTooBig
 		}
 
 		if metadata.IsDefined("caches", k, "index", "max_size_objects") {
@@ -188,7 +192,7 @@ func (l Lookup) SetDefaults(metadata yamlx.KeyLookup, activeCaches map[string]in
 		}
 
 		if cc.Index.MaxSizeObjects > 0 && cc.Index.MaxSizeBackoffObjects > cc.Index.MaxSizeObjects {
-			return nil, errors.New("MaxSizeBackoffObjects can't be larger than MaxSizeObjects")
+			return nil, errMaxSizeBackoffObjectsTooBig
 		}
 
 		if cc.ProviderID == providers.Redis {

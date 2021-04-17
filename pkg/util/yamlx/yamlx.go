@@ -95,30 +95,38 @@ type depthData struct {
 
 type depthLookup map[int]depthData
 
+var errDepthNotInList = errors.New("depth not in list")
+
 func getDepthData(depth int, dl depthLookup) (depthData, error) {
 	if dd, ok := dl[depth]; ok {
 		return dd, nil
 	}
-	return depthData{}, errors.New("depth not in list")
+	return depthData{}, errDepthNotInList
 }
+
+var errEmptyDepthList = errors.New("empty depth list")
 
 func getParentDepthData(depth int, l []int, dl depthLookup) (depthData, error) {
 
 	if len(l) == 0 {
-		return depthData{}, errors.New("empty depth list")
+		return depthData{}, errEmptyDepthList
 	}
 
 	if len(l) == 1 {
 		return getDepthData(0, dl)
 	}
 
+	var dd depthData
+	var err error
+
 	for i := len(l) - 1; i > -1; i-- {
 		if l[i] >= depth {
 			continue
 		}
-		return getDepthData(l[i], dl)
+		dd, err = getDepthData(l[i], dl)
+		break
 	}
-	return depthData{}, errors.New("unknown error")
+	return dd, err
 }
 
 func rootDepthData(depth int, key string) (depthLookup, []int) {

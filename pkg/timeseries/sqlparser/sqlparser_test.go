@@ -151,6 +151,11 @@ func TestFormatOutputTime(t *testing.T) {
 			exp1:  "2020-01-01 00:00:00",
 			typ:   2,
 		},
+		{
+			input: epoch.Epoch(0) * million,
+			exp1:  "0",
+			typ:   8,
+		},
 	}
 
 	for i, test := range tests {
