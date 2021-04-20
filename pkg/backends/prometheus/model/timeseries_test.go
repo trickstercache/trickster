@@ -125,7 +125,7 @@ func TestMarshalTSOrVectorWriter(t *testing.T) {
 	var s1 *dataset.Series
 	s2 := &dataset.Series{
 		Points: []dataset.Point{
-			dataset.Point{
+			{
 				Epoch:  1234567980,
 				Values: []interface{}{"12345"},
 			},
@@ -134,7 +134,7 @@ func TestMarshalTSOrVectorWriter(t *testing.T) {
 
 	err = marshalTSOrVectorWriter(&dataset.DataSet{
 		Results: []*dataset.Result{
-			&dataset.Result{
+			{
 				SeriesList: []*dataset.Series{s1, s2},
 			},
 		},

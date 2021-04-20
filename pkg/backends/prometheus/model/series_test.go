@@ -59,7 +59,7 @@ func TestSeries(t *testing.T) {
 			Status: "success",
 		},
 		Data: []WFSeriesData{
-			WFSeriesData{
+			{
 				Name:     "test1",
 				Instance: "instance1",
 				Job:      "job1",
@@ -81,12 +81,12 @@ func TestSeries(t *testing.T) {
 			Warnings: []string{"test warning"},
 		},
 		Data: []WFSeriesData{
-			WFSeriesData{
+			{
 				Name:     "test1",
 				Instance: "instance1",
 				Job:      "job1",
 			},
-			WFSeriesData{
+			{
 				Name:     "test2",
 				Instance: "instance",
 				Job:      "job1",

@@ -51,7 +51,7 @@ func TestMerge(t *testing.T) {
 		},
 		Data: &WFAlertData{
 			Alerts: []WFAlert{
-				WFAlert{
+				{
 					State:  "test",
 					Labels: map[string]string{"test": "trickster"},
 				}},
@@ -63,7 +63,7 @@ func TestMerge(t *testing.T) {
 		},
 		Data: &WFAlertData{
 			Alerts: []WFAlert{
-				WFAlert{
+				{
 					State:  "test2",
 					Labels: map[string]string{"test2": "trickster"},
 				},
