@@ -33,7 +33,6 @@ import (
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
-	"github.com/tricksterproxy/trickster/pkg/timeseries/dataset"
 	"github.com/tricksterproxy/trickster/pkg/util/copiers"
 	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 
@@ -312,10 +311,7 @@ func (o *Options) Clone() *Options {
 	}
 
 	if o.Prometheus != nil {
-		no.Prometheus = &prop.Options{}
-		if o.Prometheus.Labels != nil {
-			no.Prometheus.Labels = dataset.Tags(o.Prometheus.Labels).Clone()
-		}
+		no.Prometheus = o.Prometheus.Clone()
 	}
 
 	return no
