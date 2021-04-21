@@ -14,33 +14,17 @@
  * limitations under the License.
  */
 
-// Package reverseproxycache provides the HTTP Reverse Proxy Cache Backend provider
-package reverseproxycache
+package types
 
 import (
 	"net/http"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	"github.com/tricksterproxy/trickster/pkg/backends/providers/registration/types"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 )
 
-var _ backends.Backend = (*Client)(nil)
+type NewBackendClientFunc func(string, *bo.Options, http.Handler,
+	cache.Cache, backends.Backends, Lookup) (backends.Backend, error)
 
-// Client Implements the Proxy Client Interface
-type Client struct {
-	backends.Backend
-}
-
-var _ types.NewBackendClientFunc = NewClient
-
-// NewClient returns a new Client Instance
-func NewClient(name string, o *bo.Options, router http.Handler,
-	cache cache.Cache, _ backends.Backends,
-	_ types.Lookup) (backends.Backend, error) {
-	c := &Client{}
-	b, err := backends.New(name, o, c.RegisterHandlers, router, cache)
-	c.Backend = b
-	return c, err
-}
+type Lookup map[string]NewBackendClientFunc

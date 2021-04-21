@@ -22,6 +22,8 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	"github.com/tricksterproxy/trickster/pkg/backends/providers/registration/types"
+	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
@@ -41,9 +43,12 @@ type Client struct {
 	router     http.Handler
 }
 
+var _ types.NewBackendClientFunc = NewClient
+
 // NewClient returns a new Rules Router client reference
 func NewClient(name string, o *bo.Options, router http.Handler,
-	clients backends.Backends) (backends.Backend, error) {
+	_ cache.Cache, clients backends.Backends,
+	_ types.Lookup) (backends.Backend, error) {
 
 	c := &Client{
 		clients:    clients,

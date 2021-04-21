@@ -27,7 +27,9 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	modelprom "github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
 	po "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
+	"github.com/tricksterproxy/trickster/pkg/backends/providers/registration/types"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
@@ -70,12 +72,16 @@ type Client struct {
 	instantRounder time.Duration
 }
 
+var _ types.NewBackendClientFunc = NewClient
+
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
-	cache cache.Cache, modeler *timeseries.Modeler) (backends.TimeseriesBackend, error) {
+	cache cache.Cache, _ backends.Backends,
+	_ types.Lookup) (backends.Backend, error) {
 
 	c := &Client{}
-	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, modeler)
+	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router,
+		cache, modelprom.NewModeler())
 	c.TimeseriesBackend = b
 
 	rounder := time.Duration(po.DefaultInstantRoundMS) * time.Millisecond

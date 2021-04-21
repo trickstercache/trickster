@@ -26,6 +26,8 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/backends/alb/pool"
 	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	"github.com/tricksterproxy/trickster/pkg/backends/providers/registration/types"
+	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
@@ -48,9 +50,12 @@ func (c *Client) Handlers() map[string]http.Handler {
 	return map[string]http.Handler{"alb": c.handler}
 }
 
+var _ types.NewBackendClientFunc = NewClient
+
 // NewClient returns a new ALB client reference
 func NewClient(name string, o *bo.Options, router http.Handler,
-) (*Client, error) {
+	_ cache.Cache, _ backends.Backends, factories types.Lookup,
+) (backends.Backend, error) {
 	c := &Client{}
 
 	b, err := backends.New(name, o, nil, router, nil)
