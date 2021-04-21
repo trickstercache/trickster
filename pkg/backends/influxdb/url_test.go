@@ -50,7 +50,7 @@ func TestSetExtent(t *testing.T) {
 
 	o := conf.Backends["default"]
 
-	client, err := NewClient("default", o, nil, nil, nil)
+	client, err := NewClient("default", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -59,10 +59,12 @@ func TestSetExtent(t *testing.T) {
 
 	tu := &url.URL{RawQuery: tokenized}
 
+	ic := client.(*Client)
+
 	r, _ := http.NewRequest(http.MethodGet, tu.String(), nil)
 	trq := &timeseries.TimeRangeQuery{TemplateURL: tu, Step: time.Second * 60}
 	e := &timeseries.Extent{Start: start, End: end}
-	client.SetExtent(r, trq, e)
+	ic.SetExtent(r, trq, e)
 
 	if expected != r.URL.Query().Get("q") {
 		t.Errorf("\nexpected [%s]\ngot    [%s]", expected, r.URL.Query().Get("q"))
@@ -70,7 +72,7 @@ func TestSetExtent(t *testing.T) {
 
 	r.Method = http.MethodPost
 	r.Body = io.NopCloser(bytes.NewBufferString(tokenized))
-	client.SetExtent(r, trq, e)
+	ic.SetExtent(r, trq, e)
 	v, _, _ := params.GetRequestValues(r)
 
 	if expected != v.Get("q") {

@@ -431,7 +431,7 @@ func TestRegisterPathRoutes(t *testing.T) {
 	}
 
 	oo := conf.Backends["default"]
-	rpc, _ := reverseproxycache.NewClient("test", oo, mux.NewRouter(), nil)
+	rpc, _ := reverseproxycache.NewClient("test", oo, mux.NewRouter(), nil, nil, nil)
 	dpc := rpc.DefaultPathConfigs(oo)
 	dpc["/-GET-HEAD"].Methods = nil
 
@@ -452,7 +452,7 @@ func TestRegisterPathRoutes(t *testing.T) {
 
 func TestValidateRuleClients(t *testing.T) {
 
-	c, err := rule.NewClient("test", nil, nil, nil)
+	c, err := rule.NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -499,7 +499,7 @@ func TestRegisterDefaultBackendRoutes(t *testing.T) {
 	oo.TracingConfigName = "testTracer"
 	oo.Paths = map[string]*po.Options{"root": po1}
 	oo.IsDefault = true
-	rpc, _ := reverseproxycache.NewClient("default", oo, mux.NewRouter(), nil)
+	rpc, _ := reverseproxycache.NewClient("default", oo, mux.NewRouter(), nil, nil, nil)
 	b := backends.Backends{"default": rpc}
 
 	tr := tracing.Tracers{"testTracer": testutil.NewTestTracer()}

@@ -25,7 +25,7 @@ import (
 )
 
 func TestNewNewClient(t *testing.T) {
-	c, err := NewClient("test", bo.New(), nil, nil)
+	c, err := NewClient("test", bo.New(), nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -43,7 +43,7 @@ func TestDefaultPathConfigs(t *testing.T) {
 }
 
 func TestRegisterHandlers(t *testing.T) {
-	c, err := NewClient("test", nil, nil, nil)
+	c, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -56,7 +56,7 @@ func TestRegisterHandlers(t *testing.T) {
 func TestValidate(t *testing.T) {
 
 	backendClient, err := NewClient("test", &bo.Options{
-		RuleOptions: &options.Options{InputType: "header"}}, nil, nil)
+		RuleOptions: &options.Options{InputType: "header"}}, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -66,7 +66,7 @@ func TestValidate(t *testing.T) {
 		t.Error("expected error")
 	}
 
-	backendClient, err = NewClient("test", nil, nil, nil)
+	backendClient, err = NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -81,7 +81,7 @@ func TestValidate(t *testing.T) {
 
 func TestValidateOptions(t *testing.T) {
 
-	backendClient, err := NewClient("test", nil, nil, nil)
+	backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}

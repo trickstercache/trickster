@@ -14,25 +14,4 @@
  * limitations under the License.
  */
 
-package reverseproxycache
-
-import (
-	"testing"
-
-	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-)
-
-func TestDefaultHealthCheckConfig(t *testing.T) {
-
-	c, _ := NewClient("test", bo.New(), nil, nil, nil, nil)
-
-	dho := c.DefaultHealthCheckConfig()
-	if dho == nil {
-		t.Error("expected non-nil result")
-	}
-
-	if dho.Path != "" {
-		t.Error("expected / for path", dho.Path)
-	}
-
-}
+package prometheus

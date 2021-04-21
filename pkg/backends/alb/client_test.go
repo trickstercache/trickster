@@ -33,7 +33,7 @@ func TestHandlers(t *testing.T) {
 	o := bo.New()
 	o.ALBOptions = a
 
-	cl, err := NewClient("test", o, nil)
+	cl, err := NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -43,25 +43,25 @@ func TestHandlers(t *testing.T) {
 	}
 
 	a.MechanismName = "fgr"
-	cl, err = NewClient("test", o, nil)
+	cl, err = NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
 
 	a.MechanismName = "nlm"
-	cl, err = NewClient("test", o, nil)
+	cl, err = NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
 
 	a.MechanismName = "tsm"
-	cl, err = NewClient("test", o, nil)
+	cl, err = NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
 
 	a.MechanismName = "rr"
-	cl, err = NewClient("test", o, nil)
+	cl, err = NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -81,7 +81,7 @@ func TestStartALBPools(t *testing.T) {
 		t.Error(err)
 	}
 	o := bo.New()
-	cl, _ := NewClient("test", o, nil)
+	cl, _ := NewClient("test", o, nil, nil, nil, nil)
 	b := backends.Backends{"test": cl}
 	err = StartALBPools(b, nil)
 	if err == nil || err.Error() != "invalid options" {
@@ -101,7 +101,7 @@ func TestValidatePools(t *testing.T) {
 
 	o.ALBOptions = a
 	o.Provider = "alb"
-	cl, _ := NewClient("test", o, nil)
+	cl, _ := NewClient("test", o, nil, nil, nil, nil)
 	b := backends.Backends{"test": cl}
 	err = ValidatePools(b)
 	expected := `invalid mechanism name [rx] in backend [test]`
@@ -134,7 +134,9 @@ func TestValidateAndStartPool(t *testing.T) {
 
 	o := bo.New()
 	o.ALBOptions = nil
-	cl, _ := NewClient("test", o, nil)
+	tscl, _ := NewClient("test", o, nil, nil, nil, nil)
+	cl := tscl.(*Client)
+
 	err := cl.ValidateAndStartPool(nil, nil)
 	if err == nil || err.Error() != "invalid options" {
 		t.Error("expected error for invalid options, got ", err)

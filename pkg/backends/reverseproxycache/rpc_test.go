@@ -28,7 +28,7 @@ func TestReverseProxyCacheClientInterfacing(t *testing.T) {
 	// this test ensures the client will properly conform to the
 	// Client interface
 
-	c, err := NewClient("test", nil, nil, nil)
+	c, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -41,7 +41,7 @@ func TestReverseProxyCacheClientInterfacing(t *testing.T) {
 }
 
 func TestNewNewClient(t *testing.T) {
-	c, err := NewClient("test", bo.New(), nil, nil)
+	c, err := NewClient("test", bo.New(), nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}

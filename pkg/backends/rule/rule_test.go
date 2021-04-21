@@ -141,19 +141,19 @@ func newTestRules() ([]*rule, error) {
 
 	ropts := newTestRuleOpts()
 
-	cl1, err := NewClient("test-backend-1", nil, testMux1, nil)
+	cl1, err := NewClient("test-backend-1", nil, testMux1, nil, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	cl2, err := NewClient("test-backend-2", nil, testMux2, nil)
+	cl2, err := NewClient("test-backend-2", nil, testMux2, nil, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	clients := backends.Backends{"test-backend-1": cl1, "test-backend-2": cl2}
 
-	backendClient, err := NewClient("test-client", oopts, nil, clients)
+	backendClient, err := NewClient("test-client", oopts, nil, nil, clients, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -190,19 +190,19 @@ func newTestClient() (*Client, error) {
 
 	ropts := newTestRuleOpts()
 
-	cl1, err := NewClient("test-backend-1", nil, testMux1, nil)
+	cl1, err := NewClient("test-backend-1", nil, testMux1, nil, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	cl2, err := NewClient("test-backend-2", nil, testMux2, nil)
+	cl2, err := NewClient("test-backend-2", nil, testMux2, nil, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	clients := backends.Backends{"test-backend-1": cl1, "test-backend-2": cl2}
 
-	backendClient, err := NewClient("test-client", oopts, nil, clients)
+	backendClient, err := NewClient("test-client", oopts, nil, nil, clients, nil)
 	if err != nil {
 		return nil, err
 	}

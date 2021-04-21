@@ -44,12 +44,12 @@ func TestPrometheusClientInterfacing(t *testing.T) {
 	// this test ensures the client will properly conform to the
 	// Backend and TimeseriesBackend interfaces
 
-	c, err := NewClient("test", nil, nil, nil, nil)
+	c, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
 	var oc backends.Backend = c
-	var tc backends.TimeseriesBackend = c
+	var tc backends.TimeseriesBackend = c.(*Client)
 
 	if oc.Name() != "test" {
 		t.Errorf("expected %s got %s", "test", oc.Name())
@@ -75,7 +75,7 @@ func TestNewClient(t *testing.T) {
 	}
 
 	o := &bo.Options{Provider: "TEST_CLIENT"}
-	c, err := NewClient("default", o, nil, cache, testModeler)
+	c, err := NewClient("default", o, nil, cache, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
