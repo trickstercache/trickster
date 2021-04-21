@@ -90,8 +90,6 @@ func Timeseries(w http.ResponseWriter, r *http.Request, rgs ResponseGates) {
 		ts.Merge(true, tsm...)
 	}
 
-	// TODO: Run Provider-specific transformation here:
-
 	headers.StripMergeHeaders(h)
 	f(ts, rlo, statusCode, w)
 }
