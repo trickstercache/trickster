@@ -54,8 +54,6 @@ type TimeRangeQuery struct {
 	TagFieldDefintions []FieldDefinition `msg:"tfdefs"`
 	// ValueFieldDefinitions contains the definitions for Value columns in the timeseries, based on the query
 	ValueFieldDefinitions []FieldDefinition `msg:"vfdefs"`
-	// Labels holds key/value pairs for labels to add to the output dataset.
-	Labels map[string]string `msg:"-"`
 	// ParsedQuery is a member for the vendor-specific query object
 	ParsedQuery interface{} `msg:"-"`
 }
@@ -87,13 +85,6 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 
 	if trq.TemplateURL != nil {
 		t.TemplateURL = urls.Clone(trq.TemplateURL)
-	}
-
-	if trq.Labels != nil {
-		t.Labels = make(map[string]string)
-		for k, v := range trq.Labels {
-			t.Labels[k] = v
-		}
 	}
 
 	return t

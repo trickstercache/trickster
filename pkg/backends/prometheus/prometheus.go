@@ -33,7 +33,6 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	tt "github.com/tricksterproxy/trickster/pkg/util/timeconv"
 )
@@ -71,6 +70,7 @@ const (
 type Client struct {
 	backends.TimeseriesBackend
 	instantRounder time.Duration
+	injectLabels   map[string]string
 }
 
 var _ types.NewBackendClientFunc = NewClient
@@ -91,6 +91,7 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 			o.Prometheus = &po.Options{InstantRoundMS: po.DefaultInstantRoundMS}
 		} else {
 			rounder = time.Duration(o.Prometheus.InstantRoundMS) * time.Millisecond
+			c.injectLabels = o.Prometheus.Labels
 		}
 	}
 	c.instantRounder = rounder
@@ -129,15 +130,6 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	rlo := &timeseries.RequestOptions{}
-
-	rsc := request.GetResources(r)
-	if rsc != nil && rsc.BackendOptions != nil && rsc.BackendOptions.Prometheus != nil &&
-		len(rsc.BackendOptions.Prometheus.Labels) > 0 {
-		trq.Labels = rsc.BackendOptions.Prometheus.Labels
-	} else {
-		trq.Labels = make(map[string]string)
-	}
-
 	qp, _, _ := params.GetRequestValues(r)
 
 	trq.Statement = qp.Get(upQuery)
@@ -203,15 +195,6 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 func parseVectorQuery(r *http.Request, rounder time.Duration) (*timeseries.TimeRangeQuery, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
-
-	rsc := request.GetResources(r)
-	if rsc != nil && rsc.BackendOptions != nil && rsc.BackendOptions.Prometheus != nil &&
-		len(rsc.BackendOptions.Prometheus.Labels) > 0 {
-		trq.Labels = rsc.BackendOptions.Prometheus.Labels
-	} else {
-		trq.Labels = make(map[string]string)
-	}
-
 	qp, _, _ := params.GetRequestValues(r)
 
 	trq.Statement = qp.Get(upQuery)

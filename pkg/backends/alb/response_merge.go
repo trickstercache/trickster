@@ -37,8 +37,8 @@ func (c *Client) handleResponseMerge(w http.ResponseWriter, r *http.Request) {
 		handlers.HandleBadGateway(w, r)
 		return
 	}
-	// just proxy 1:1 if no folds in the fan and no label inserts or other transformations
-	if l == 1 && !c.hasTransformations {
+	// just proxy 1:1 if no folds in the fan
+	if l == 1 {
 		hl[0].ServeHTTP(w, r)
 		return
 	}

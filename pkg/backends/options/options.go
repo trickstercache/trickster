@@ -617,6 +617,10 @@ func SetDefaults(
 		}
 	}
 
+	if metadata.IsDefined("backends", name, "prometheus") {
+		no.Prometheus = o.Prometheus.Clone()
+	}
+
 	return no, nil
 }
 
@@ -643,10 +647,4 @@ func (o *Options) ToYAML() string {
 	co := o.CloneYAMLSafe()
 	b, _ := yaml.Marshal(co)
 	return string(b)
-}
-
-// HasTransformations returns true if the backend will artificially transform payloads
-// based on the running configuration (e.g., insert labels into prometheus response)
-func (o *Options) HasTransformations() bool {
-	return o.Prometheus != nil && len(o.Prometheus.Labels) > 0
 }

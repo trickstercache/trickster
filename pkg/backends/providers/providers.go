@@ -17,7 +17,6 @@
 package providers
 
 import (
-	"fmt"
 	"strconv"
 )
 
@@ -91,7 +90,6 @@ var supportedTimeSeriesMerge = map[string]Provider{
 // IsSupportedTimeSeriesProvider returns true if the provided time series is supported by Trickster
 func IsSupportedTimeSeriesMergeProvider(name string) bool {
 	_, ok := supportedTimeSeriesMerge[name]
-	fmt.Println("LOOKING UP", name, ok)
 	return ok
 }
 

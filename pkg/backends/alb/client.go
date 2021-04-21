@@ -38,12 +38,11 @@ import (
 type Client struct {
 	backends.Backend
 
-	pool               pool.Pool
-	handler            http.Handler // this is the actual handler for all request to this backend
-	fgr                bool
-	mergePaths         []string     // paths handled by the alb client that are enabled for tsmerge
-	nonmergeHandler    http.Handler // when methodology is tsmerge, this handler is for non-mergable paths
-	hasTransformations bool
+	pool            pool.Pool
+	handler         http.Handler // this is the actual handler for all request to this backend
+	fgr             bool
+	mergePaths      []string     // paths handled by the alb client that are enabled for tsmerge
+	nonmergeHandler http.Handler // when methodology is tsmerge, this handler is for non-mergable paths
 }
 
 // Handlers returns a map of the HTTP Handlers the client has registered
@@ -79,7 +78,6 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 			c.nonmergeHandler = http.HandlerFunc(c.handleRoundRobin)
 			// this validates the merge configuration for the ALB client as it sets it up
 			// First, verify the output format is a support merge provider
-			fmt.Println(">>>", o.ALBOptions.OutputFormat)
 			if !providers.IsSupportedTimeSeriesMergeProvider(o.ALBOptions.OutputFormat) {
 				return nil, ErrInvalidTimeSeriesMergeProvider
 			}
@@ -103,7 +101,6 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		default:
 			c.handler = http.HandlerFunc(c.handleRoundRobin)
 		}
-		c.hasTransformations = o.HasTransformations()
 	}
 	return c, nil
 }

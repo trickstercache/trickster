@@ -15,3 +15,19 @@
  */
 
 package prometheus
+
+import (
+	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/tricksterproxy/trickster/pkg/timeseries/dataset"
+)
+
+func (c *Client) ProcessTransformations(ts timeseries.Timeseries) {
+	if len(c.injectLabels) == 0 {
+		return
+	}
+	ds, ok := ts.(*dataset.DataSet)
+	if !ok {
+		return
+	}
+	ds.InjectTags(c.injectLabels)
+}

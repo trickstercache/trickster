@@ -96,14 +96,6 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			Tags:           pr.Metric,
 			QueryStatement: trq.Statement,
 		}
-
-		if trq.Labels != nil {
-			if sh.Tags == nil {
-				sh.Tags = make(dataset.Tags)
-			}
-			dataset.Tags(sh.Tags).Merge(trq.Labels)
-		}
-
 		if n, ok := pr.Metric["__name__"]; ok {
 			sh.Name = n
 		}
