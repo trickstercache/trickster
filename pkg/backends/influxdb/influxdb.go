@@ -27,7 +27,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/cache"
 )
 
-var _ backends.Backend = (*Client)(nil)
+var _ backends.TimeseriesBackend = (*Client)(nil)
 
 // Client Implements the Proxy Client Interface
 type Client struct {

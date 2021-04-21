@@ -38,7 +38,8 @@ import (
 	tt "github.com/tricksterproxy/trickster/pkg/util/timeconv"
 )
 
-var _ backends.Backend = (*Client)(nil)
+var _ backends.TimeseriesBackend = (*Client)(nil)
+var _ backends.MergeableTimeseriesBackend = (*Client)(nil)
 
 // Prometheus API
 const (

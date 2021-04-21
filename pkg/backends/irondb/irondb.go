@@ -28,7 +28,7 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
-var _ backends.Backend = (*Client)(nil)
+var _ backends.TimeseriesBackend = (*Client)(nil)
 
 // IRONdb API path segments.
 const (
