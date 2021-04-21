@@ -21,7 +21,6 @@ import (
 	"net/url"
 
 	"github.com/tricksterproxy/trickster/pkg/backends/influxdb"
-	"github.com/tricksterproxy/trickster/pkg/backends/influxdb/model"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
@@ -60,7 +59,7 @@ func NewAcceleratorWithOptions(baseURL string, o *bo.Options, c *co.Options) (ht
 	o.Host = u.Host
 	o.PathPrefix = u.Path
 	r := mux.NewRouter()
-	cl, err := influxdb.NewClient("default", o, mux.NewRouter(), cache, model.NewModeler())
+	cl, err := influxdb.NewClient("default", o, mux.NewRouter(), cache, nil, nil)
 	if err != nil {
 		return nil, err
 	}
