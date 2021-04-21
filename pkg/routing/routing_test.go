@@ -231,7 +231,7 @@ func TestRegisterProxyRoutesALB(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	conf.Backends["default"].ALBOptions = &options.Options{MechanismName: "tsm"}
+	conf.Backends["default"].ALBOptions = &options.Options{MechanismName: "tsm", OutputFormat: "prometheus"}
 
 	caches := registration.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)

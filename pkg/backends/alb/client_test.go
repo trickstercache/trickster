@@ -23,12 +23,15 @@ import (
 	ao "github.com/tricksterproxy/trickster/pkg/backends/alb/options"
 	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	"github.com/tricksterproxy/trickster/pkg/backends/prometheus"
+	"github.com/tricksterproxy/trickster/pkg/backends/providers/registration/types"
 )
 
 func TestHandlers(t *testing.T) {
 
 	a := &ao.Options{
 		MechanismName: "fr",
+		OutputFormat:  "prometheus",
 	}
 	o := bo.New()
 	o.ALBOptions = a
@@ -55,7 +58,7 @@ func TestHandlers(t *testing.T) {
 	}
 
 	a.MechanismName = "tsm"
-	cl, err = NewClient("test", o, nil, nil, nil, nil)
+	cl, err = NewClient("test", o, nil, nil, nil, types.Lookup{"prometheus": prometheus.NewClient})
 	if err != nil {
 		t.Error(err)
 	}

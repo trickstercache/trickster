@@ -16,3 +16,7 @@
 
 // Package alb implements the Application Load Balancer Backend
 package alb
+
+import "errors"
+
+var ErrInvalidTimeSeriesMergeProvider = errors.New("invalid time series merge provider")
