@@ -68,7 +68,7 @@ func TestNewClient(t *testing.T) {
 	}
 
 	o := &bo.Options{Provider: "TEST_CLIENT"}
-	c, err := NewClient("default", o, nil, cache, testModeler)
+	c, err := NewClient("default", o, nil, cache, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}

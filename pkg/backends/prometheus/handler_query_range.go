@@ -31,10 +31,14 @@ func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
 
 	// if this request is part of a scatter/gather, provide a reconstitution function
 	rsc := request.GetResources(r)
-	if rsc.IsMergeMember {
-		rsc.ResponseMergeFunc = merge.Timeseries
+	if rsc != nil {
+		if c.hasTransformations {
+			rsc.TSTransformer = c.ProcessTransformations
+		}
+		if rsc.IsMergeMember {
+			rsc.ResponseMergeFunc = merge.Timeseries
+		}
 	}
-
 	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 	engines.DeltaProxyCacheRequest(w, r, c.Modeler())
 }

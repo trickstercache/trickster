@@ -46,16 +46,18 @@ func TestSetExtent(t *testing.T) {
 	}
 
 	o := conf.Backends["default"]
-	client, err := NewClient("default", o, nil, nil, nil)
+	client, err := NewClient("default", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
+
+	pc := client.(*Client)
 
 	u := &url.URL{RawQuery: "q=up"}
 
 	r, _ := http.NewRequest(http.MethodGet, u.String(), nil)
 	e := &timeseries.Extent{Start: start, End: end}
-	client.SetExtent(r, nil, e)
+	pc.SetExtent(r, nil, e)
 
 	if expected != r.URL.RawQuery {
 		t.Errorf("\nexpected [%s]\ngot [%s]", expected, r.URL.RawQuery)
@@ -67,7 +69,7 @@ func TestSetExtent(t *testing.T) {
 	b := bytes.NewBufferString(expected)
 	r, _ = http.NewRequest(http.MethodPost, u2.String(), b)
 
-	client.SetExtent(r, nil, e)
+	pc.SetExtent(r, nil, e)
 	if r.ContentLength != 31 {
 		t.Errorf("expected 31 got %d", r.ContentLength)
 	}
@@ -85,15 +87,17 @@ func TestFastForwardURL(t *testing.T) {
 	}
 
 	o := conf.Backends["default"]
-	client, err := NewClient("default", o, nil, nil, nil)
+	client, err := NewClient("default", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
 
+	pc := client.(*Client)
+
 	u := &url.URL{Path: "/query_range", RawQuery: "q=up&start=1&end=1&step=1"}
 	r, _ := http.NewRequest(http.MethodGet, u.String(), nil)
 
-	r2, err := client.FastForwardRequest(r)
+	r2, err := pc.FastForwardRequest(r)
 	if err != nil {
 		t.Error(err)
 	}
@@ -106,7 +110,7 @@ func TestFastForwardURL(t *testing.T) {
 	b := bytes.NewBufferString(expected)
 	r, _ = http.NewRequest(http.MethodPost, r2.URL.String(), b)
 
-	_, err = client.FastForwardRequest(r)
+	_, err = pc.FastForwardRequest(r)
 	if err != nil {
 		t.Error(err)
 	}

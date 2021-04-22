@@ -22,10 +22,34 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // Tags is a key/value pair associated with a Series to scope the cardinality of the DataSet
 type Tags map[string]string
+
+// InjectTags injects the provided tags into all series in all results in the Dataset
+// in an insert-or-update fashion
+func (ds *DataSet) InjectTags(tags Tags) {
+	var wg sync.WaitGroup
+	var mtx sync.Mutex
+	for _, r := range ds.Results {
+		for _, s := range r.SeriesList {
+			wg.Add(1)
+			go func(s1 *Series) {
+				mtx.Lock()
+				if s1.Header.Tags == nil {
+					s1.Header.Tags = tags.Clone()
+				} else {
+					s1.Header.Tags.Merge(tags.Clone())
+				}
+				mtx.Unlock()
+				wg.Done()
+			}(s)
+		}
+	}
+	wg.Wait()
+}
 
 // StringsWithSep returns a string representation of the Tags with the provided key/value separator
 func (t Tags) StringsWithSep(sep1, sep2 string) string {

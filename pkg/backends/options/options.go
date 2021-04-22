@@ -33,7 +33,6 @@ import (
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
 	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
 	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
-	"github.com/tricksterproxy/trickster/pkg/timeseries/dataset"
 	"github.com/tricksterproxy/trickster/pkg/util/copiers"
 	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
 
@@ -312,10 +311,7 @@ func (o *Options) Clone() *Options {
 	}
 
 	if o.Prometheus != nil {
-		no.Prometheus = &prop.Options{}
-		if o.Prometheus.Labels != nil {
-			no.Prometheus.Labels = dataset.Tags(o.Prometheus.Labels).Clone()
-		}
+		no.Prometheus = o.Prometheus.Clone()
 	}
 
 	return no
@@ -621,6 +617,10 @@ func SetDefaults(
 		}
 	}
 
+	if metadata.IsDefined("backends", name, "prometheus") {
+		no.Prometheus = o.Prometheus.Clone()
+	}
+
 	return no, nil
 }
 
@@ -647,10 +647,4 @@ func (o *Options) ToYAML() string {
 	co := o.CloneYAMLSafe()
 	b, _ := yaml.Marshal(co)
 	return string(b)
-}
-
-// HasTransformations returns true if the backend will artificially transform payloads
-// based on the running configuration (e.g., insert labels into prometheus response)
-func (o *Options) HasTransformations() bool {
-	return o.Prometheus != nil && len(o.Prometheus.Labels) > 0
 }

@@ -40,10 +40,9 @@ type Options struct {
 	// OutputFormat accompanies the tsmerge Mechanism to indicate the provider output format
 	// options include any valid time seres backend like prometheus, influxdb or clickhouse
 	OutputFormat string `yaml:"output_format,omitempty"`
-	// MergeablePaths are ones that Trickster can merge multiple documents into a single response
-	MergeablePaths []string `yaml:"-"` // this is populated by backends that support tsmerge
-
 }
+
+const defaultOutputFormat = "prometheus"
 
 // New returns a New Options object with the default values
 func New() *Options {
@@ -52,16 +51,12 @@ func New() *Options {
 
 // Clone returns a perfect copy of the Options
 func (o *Options) Clone() *Options {
-
 	c := &Options{
 		MechanismName: o.MechanismName,
 		HealthyFloor:  o.HealthyFloor,
 		OutputFormat:  o.OutputFormat,
 	}
-
 	c.Pool = copiers.CopyStrings(o.Pool)
-	c.MergeablePaths = copiers.CopyStrings(o.MergeablePaths)
-
 	return c
 }
 
@@ -95,9 +90,13 @@ func SetDefaults(name string, options *Options, metadata yamlx.KeyLookup) (*Opti
 			return nil, errors.New("'output_format' option is only valid for provider 'alb' and mechanism 'tsmerge'")
 		}
 		o.OutputFormat = options.OutputFormat
-		if !providers.IsSupportedTimeSeriesProvider(o.OutputFormat) {
+		if !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
 			return nil, errors.New("value for 'output_format' is invalid")
 		}
+	}
+
+	if strings.HasPrefix(o.MechanismName, "tsm") && o.OutputFormat == "" {
+		o.OutputFormat = defaultOutputFormat
 	}
 
 	return o, nil

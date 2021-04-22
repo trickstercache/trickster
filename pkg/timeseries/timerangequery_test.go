@@ -79,7 +79,6 @@ func TestClone(t *testing.T) {
 
 	trq.TagFieldDefintions = []FieldDefinition{{}}
 	trq.ValueFieldDefinitions = []FieldDefinition{{}}
-	trq.Labels = map[string]string{"test": "trickster"}
 
 	c := trq.Clone()
 	if !reflect.DeepEqual(trq, c) {

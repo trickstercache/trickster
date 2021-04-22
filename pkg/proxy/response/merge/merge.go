@@ -28,6 +28,7 @@ import (
 type ResponseGate struct {
 	http.ResponseWriter
 	Request   *http.Request
+	Response  *http.Response
 	Resources *request.Resources
 	body      []byte
 	header    http.Header

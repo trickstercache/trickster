@@ -27,18 +27,10 @@ import (
 	"github.com/tricksterproxy/trickster/cmd/trickster/config"
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	"github.com/tricksterproxy/trickster/pkg/backends/alb"
-	"github.com/tricksterproxy/trickster/pkg/backends/clickhouse"
-	modelch "github.com/tricksterproxy/trickster/pkg/backends/clickhouse/model"
 	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
-	"github.com/tricksterproxy/trickster/pkg/backends/influxdb"
-	modelflux "github.com/tricksterproxy/trickster/pkg/backends/influxdb/model"
-	"github.com/tricksterproxy/trickster/pkg/backends/irondb"
-	modeliron "github.com/tricksterproxy/trickster/pkg/backends/irondb/model"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	"github.com/tricksterproxy/trickster/pkg/backends/prometheus"
-	modelprom "github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
 	"github.com/tricksterproxy/trickster/pkg/backends/providers"
-	"github.com/tricksterproxy/trickster/pkg/backends/reverseproxy"
+	"github.com/tricksterproxy/trickster/pkg/backends/providers/registration"
 	"github.com/tricksterproxy/trickster/pkg/backends/reverseproxycache"
 	"github.com/tricksterproxy/trickster/pkg/backends/rule"
 	"github.com/tricksterproxy/trickster/pkg/cache"
@@ -74,7 +66,7 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router, metricsRouter 
 
 	// a fake "top-level" backend representing the main frontend, so rules can route
 	// to it via the clients map
-	tlo, _ := reverseproxycache.NewClient("frontend", &bo.Options{}, router, nil)
+	tlo, _ := reverseproxycache.NewClient("frontend", &bo.Options{}, router, nil, nil, nil)
 
 	// proxyClients maintains a list of proxy clients configured for use by Trickster
 	var clients = backends.Backends{"frontend": tlo}
@@ -147,6 +139,7 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router, metricsRouter 
 }
 
 var noCacheBackends = map[string]interface{}{
+	"alb":          nil,
 	"rp":           nil,
 	"reverseproxy": nil,
 	"proxy":        nil,
@@ -178,27 +171,9 @@ func registerBackendRoutes(router *mux.Router, metricsRouter *http.ServeMux, con
 			"backendProvider": o.Provider, "upstreamHost": o.Host})
 	}
 
-	switch strings.ToLower(o.Provider) {
-	case "prometheus":
-		client, err = prometheus.NewClient(k, o, mux.NewRouter(), c, modelprom.NewModeler())
-	case "influxdb":
-		client, err = influxdb.NewClient(k, o, mux.NewRouter(), c, modelflux.NewModeler())
-	case "irondb":
-		client, err = irondb.NewClient(k, o, mux.NewRouter(), c, modeliron.NewModeler())
-	case "clickhouse":
-		client, err = clickhouse.NewClient(k, o, mux.NewRouter(), c, modelch.NewModeler())
-	case "rpc", "reverseproxycache":
-		client, err = reverseproxycache.NewClient(k, o, mux.NewRouter(), c)
-	case "rp", "reverseproxy", "proxy":
-		client, err = reverseproxy.NewClient(k, o, mux.NewRouter())
-	case "rule":
-		client, err = rule.NewClient(k, o, mux.NewRouter(), clients)
-	case "alb":
-		if strings.HasPrefix(o.ALBOptions.MechanismName, "tsm") {
-			// for now assume prometheus but will need to revisit if more mergeable providers are supported
-			o.ALBOptions.MergeablePaths = prometheus.MergeablePaths()
-		}
-		client, err = alb.NewClient(k, o, mux.NewRouter())
+	cf := registration.SupportedProviders()
+	if f, ok := cf[strings.ToLower(o.Provider)]; ok && f != nil {
+		client, err = f(k, o, mux.NewRouter(), c, clients, cf)
 	}
 	if err != nil {
 		return err

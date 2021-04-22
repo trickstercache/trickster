@@ -16,7 +16,9 @@
 
 package providers
 
-import "strconv"
+import (
+	"strconv"
+)
 
 // Provider enumerates the supported backend providers
 type Provider int
@@ -78,6 +80,16 @@ var supportedTimeSeries = map[string]Provider{
 // IsSupportedTimeSeriesProvider returns true if the provided time series is supported by Trickster
 func IsSupportedTimeSeriesProvider(name string) bool {
 	_, ok := supportedTimeSeries[name]
+	return ok
+}
+
+var supportedTimeSeriesMerge = map[string]Provider{
+	"prometheus": Prometheus,
+}
+
+// IsSupportedTimeSeriesProvider returns true if the provided time series is supported by Trickster
+func IsSupportedTimeSeriesMergeProvider(name string) bool {
+	_, ok := supportedTimeSeriesMerge[name]
 	return ok
 }
 

@@ -22,7 +22,6 @@ import (
 
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
 	"github.com/tricksterproxy/trickster/pkg/backends/prometheus"
-	"github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
 	co "github.com/tricksterproxy/trickster/pkg/cache/options"
 	"github.com/tricksterproxy/trickster/pkg/cache/registration"
 	"github.com/tricksterproxy/trickster/pkg/routing"
@@ -60,7 +59,7 @@ func NewAcceleratorWithOptions(baseURL string, o *bo.Options, c *co.Options) (ht
 	o.Host = u.Host
 	o.PathPrefix = u.Path
 	r := mux.NewRouter()
-	cl, err := prometheus.NewClient("default", o, mux.NewRouter(), cache, model.NewModeler())
+	cl, err := prometheus.NewClient("default", o, mux.NewRouter(), cache, nil, nil)
 	if err != nil {
 		return nil, err
 	}

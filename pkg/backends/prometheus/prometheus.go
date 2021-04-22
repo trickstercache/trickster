@@ -27,16 +27,18 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	modelprom "github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
 	po "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
+	"github.com/tricksterproxy/trickster/pkg/backends/providers/registration/types"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/params"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	tt "github.com/tricksterproxy/trickster/pkg/util/timeconv"
 )
 
-var _ backends.Backend = (*Client)(nil)
+var _ backends.TimeseriesBackend = (*Client)(nil)
+var _ backends.MergeableTimeseriesBackend = (*Client)(nil)
 
 // Prometheus API
 const (
@@ -67,15 +69,21 @@ const (
 // Client Implements Proxy Client Interface
 type Client struct {
 	backends.TimeseriesBackend
-	instantRounder time.Duration
+	instantRounder     time.Duration
+	hasTransformations bool
+	injectLabels       map[string]string
 }
+
+var _ types.NewBackendClientFunc = NewClient
 
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
-	cache cache.Cache, modeler *timeseries.Modeler) (backends.TimeseriesBackend, error) {
+	cache cache.Cache, _ backends.Backends,
+	_ types.Lookup) (backends.Backend, error) {
 
 	c := &Client{}
-	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, modeler)
+	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router,
+		cache, modelprom.NewModeler())
 	c.TimeseriesBackend = b
 
 	rounder := time.Duration(po.DefaultInstantRoundMS) * time.Millisecond
@@ -84,6 +92,8 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 			o.Prometheus = &po.Options{InstantRoundMS: po.DefaultInstantRoundMS}
 		} else {
 			rounder = time.Duration(o.Prometheus.InstantRoundMS) * time.Millisecond
+			c.injectLabels = o.Prometheus.Labels
+			c.hasTransformations = len(c.injectLabels) > 0
 		}
 	}
 	c.instantRounder = rounder
@@ -122,15 +132,6 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	rlo := &timeseries.RequestOptions{}
-
-	rsc := request.GetResources(r)
-	if rsc != nil && rsc.BackendOptions != nil && rsc.BackendOptions.Prometheus != nil &&
-		len(rsc.BackendOptions.Prometheus.Labels) > 0 {
-		trq.Labels = rsc.BackendOptions.Prometheus.Labels
-	} else {
-		trq.Labels = make(map[string]string)
-	}
-
 	qp, _, _ := params.GetRequestValues(r)
 
 	trq.Statement = qp.Get(upQuery)
@@ -196,15 +197,6 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 func parseVectorQuery(r *http.Request, rounder time.Duration) (*timeseries.TimeRangeQuery, error) {
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
-
-	rsc := request.GetResources(r)
-	if rsc != nil && rsc.BackendOptions != nil && rsc.BackendOptions.Prometheus != nil &&
-		len(rsc.BackendOptions.Prometheus.Labels) > 0 {
-		trq.Labels = rsc.BackendOptions.Prometheus.Labels
-	} else {
-		trq.Labels = make(map[string]string)
-	}
-
 	qp, _, _ := params.GetRequestValues(r)
 
 	trq.Statement = qp.Get(upQuery)

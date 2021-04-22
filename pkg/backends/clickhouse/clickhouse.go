@@ -23,7 +23,9 @@ import (
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
+	modelch "github.com/tricksterproxy/trickster/pkg/backends/clickhouse/model"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	"github.com/tricksterproxy/trickster/pkg/backends/providers/registration/types"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
@@ -39,14 +41,17 @@ type Client struct {
 	backends.TimeseriesBackend
 }
 
+var _ types.NewBackendClientFunc = NewClient
+
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
-	cache cache.Cache, modeler *timeseries.Modeler) (backends.TimeseriesBackend, error) {
+	cache cache.Cache, _ backends.Backends,
+	_ types.Lookup) (backends.Backend, error) {
 	if o != nil {
 		o.FastForwardDisable = true
 	}
 	c := &Client{}
-	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, modeler)
+	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, modelch.NewModeler())
 	c.TimeseriesBackend = b
 	return c, err
 }

@@ -56,6 +56,12 @@ func MergeablePaths() []string {
 	}
 }
 
+// MergeablePaths returns the list of Prometheus Paths for which Trickster supports
+// merging multiple documents into a single response
+func (c *Client) MergeablePaths() []string {
+	return MergeablePaths()
+}
+
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
 func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 

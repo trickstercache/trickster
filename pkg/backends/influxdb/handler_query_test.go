@@ -77,7 +77,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 
 func TestQueryHandlerWithSelect(t *testing.T) {
 
-	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -89,7 +89,7 @@ func TestQueryHandlerWithSelect(t *testing.T) {
 		defer ts.Close()
 	}
 	rsc := request.GetResources(r)
-	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -118,7 +118,7 @@ func TestQueryHandlerWithSelect(t *testing.T) {
 
 func TestQueryHandlerNotSelect(t *testing.T) {
 
-	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -126,7 +126,7 @@ func TestQueryHandlerNotSelect(t *testing.T) {
 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/query", "debug")
 	rsc := request.GetResources(r)
 
-	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}

@@ -58,9 +58,7 @@ func TestUnmarshalTimeseriesReader(t *testing.T) {
 	}
 
 	r = bytes.NewReader([]byte(testMatrix))
-	ts, err = UnmarshalTimeseriesReader(r, &timeseries.TimeRangeQuery{
-		Labels: map[string]string{"test": "trickster"},
-	})
+	ts, err = UnmarshalTimeseriesReader(r, &timeseries.TimeRangeQuery{})
 	if err != nil {
 		t.Error(err)
 	}
@@ -107,17 +105,17 @@ func TestMarshalTSOrVectorWriter(t *testing.T) {
 
 	w := httptest.NewRecorder()
 
-	err := marshalTSOrVectorWriter(nil, nil, 0, nil, false)
+	err := MarshalTSOrVectorWriter(nil, nil, 0, nil, false)
 	if err != errors.ErrNilWriter {
 		t.Errorf("expected error for nil writer, got %v", err)
 	}
 
-	err = marshalTSOrVectorWriter(nil, nil, 0, w, false)
+	err = MarshalTSOrVectorWriter(nil, nil, 0, w, false)
 	if err != timeseries.ErrUnknownFormat {
 		t.Errorf("expected error for Unknown Format, got %v", err)
 	}
 
-	err = marshalTSOrVectorWriter(&dataset.DataSet{}, nil, 0, w, false)
+	err = MarshalTSOrVectorWriter(&dataset.DataSet{}, nil, 0, w, false)
 	if err != timeseries.ErrUnknownFormat {
 		t.Errorf("expected error for Unknown Format, got %v", err)
 	}
@@ -125,16 +123,16 @@ func TestMarshalTSOrVectorWriter(t *testing.T) {
 	var s1 *dataset.Series
 	s2 := &dataset.Series{
 		Points: []dataset.Point{
-			dataset.Point{
+			{
 				Epoch:  1234567980,
 				Values: []interface{}{"12345"},
 			},
 		},
 	}
 
-	err = marshalTSOrVectorWriter(&dataset.DataSet{
+	err = MarshalTSOrVectorWriter(&dataset.DataSet{
 		Results: []*dataset.Result{
-			&dataset.Result{
+			{
 				SeriesList: []*dataset.Series{s1, s2},
 			},
 		},

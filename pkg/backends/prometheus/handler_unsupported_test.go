@@ -23,7 +23,7 @@ import (
 
 func TestUnsupportedHandler(t *testing.T) {
 
-	b, err := NewClient("test", nil, nil, nil, nil)
+	b, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}

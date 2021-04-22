@@ -14,25 +14,26 @@
  * limitations under the License.
  */
 
-package reverseproxycache
+package options
 
-import (
-	"testing"
+import "testing"
 
-	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-)
+func TestClone(t *testing.T) {
 
-func TestDefaultHealthCheckConfig(t *testing.T) {
+	const expectedMS = 87
+	const expectedLen = 1
 
-	c, _ := NewClient("test", bo.New(), nil, nil, nil, nil)
-
-	dho := c.DefaultHealthCheckConfig()
-	if dho == nil {
-		t.Error("expected non-nil result")
+	o := &Options{
+		InstantRoundMS: expectedMS,
+		Labels:         map[string]string{"test": "trickster"},
 	}
 
-	if dho.Path != "" {
-		t.Error("expected / for path", dho.Path)
+	o2 := o.Clone()
+	if o2.InstantRoundMS != expectedMS {
+		t.Errorf("expected %d got %d", expectedMS, o2.InstantRoundMS)
+	}
+	if len(o2.Labels) != expectedLen {
+		t.Errorf("expected %d got %d", expectedLen, len(o2.Labels))
 	}
 
 }

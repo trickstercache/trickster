@@ -21,12 +21,14 @@ import (
 	"net/http"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
+	modeliron "github.com/tricksterproxy/trickster/pkg/backends/irondb/model"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	"github.com/tricksterproxy/trickster/pkg/backends/providers/registration/types"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 )
 
-var _ backends.Backend = (*Client)(nil)
+var _ backends.TimeseriesBackend = (*Client)(nil)
 
 // IRONdb API path segments.
 const (
@@ -74,11 +76,15 @@ type Client struct {
 	extentSetters map[string]extentSetter
 }
 
+var _ types.NewBackendClientFunc = NewClient
+
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
-	cache cache.Cache, modeler *timeseries.Modeler) (backends.TimeseriesBackend, error) {
+	cache cache.Cache, _ backends.Backends,
+	_ types.Lookup) (backends.Backend, error) {
 	c := &Client{}
-	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, modeler)
+	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers,
+		router, cache, modeliron.NewModeler())
 	c.TimeseriesBackend = b
 	c.makeTrqParsers()
 	c.makeExtentSetters()

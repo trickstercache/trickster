@@ -22,6 +22,7 @@ import (
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	"github.com/tricksterproxy/trickster/pkg/backends/providers/registration/types"
 	"github.com/tricksterproxy/trickster/pkg/cache"
 )
 
@@ -32,9 +33,12 @@ type Client struct {
 	backends.Backend
 }
 
+var _ types.NewBackendClientFunc = NewClient
+
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
-	cache cache.Cache) (backends.Backend, error) {
+	cache cache.Cache, _ backends.Backends,
+	_ types.Lookup) (backends.Backend, error) {
 	c := &Client{}
 	b, err := backends.New(name, o, c.RegisterHandlers, router, cache)
 	c.Backend = b

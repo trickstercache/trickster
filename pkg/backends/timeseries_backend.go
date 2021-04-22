@@ -70,6 +70,16 @@ type TimeseriesBackend interface {
 	HealthHandler(http.ResponseWriter, *http.Request)
 	// HealthCheckHTTPClient returns the HTTP Client used for Health Checking
 	HealthCheckHTTPClient() *http.Client
+	// ProcessTransformations executes any provider-specific transformations, like injecting
+	// labels into the dataset
+	ProcessTransformations(timeseries.Timeseries)
+}
+
+// MergeableTimeseriesBackend defines the interface for mergeable time series
+type MergeableTimeseriesBackend interface {
+	// MergePaths should return a slice of HTTP Paths that are safe to merge with
+	// other requests of the same path (e.g.,   /api/v1/query_range in prometheus)
+	MergeablePaths() []string
 }
 
 var _ TimeseriesBackend = (*timeseriesBackend)(nil)
@@ -86,22 +96,26 @@ func NewTimeseriesBackend(name string, o *bo.Options, registrar Registrar, route
 	return &timeseriesBackend{Backend: backend, modeler: modeler}, err
 }
 
-// FastForwardRequest is not used for InfluxDB and is here to conform to the Proxy Client interface
+// FastForwardRequest is the default implementation for the Timeseries Backend interface
 func (b *timeseriesBackend) FastForwardRequest(r *http.Request) (*http.Request, error) {
 	return nil, nil
 }
 
-// ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
+// ParseTimeRangeQuery is the default implementation for the Timeseries Backend interface
 func (b *timeseriesBackend) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
 	*timeseries.RequestOptions, bool, error) {
 	return nil, nil, false, nil
 }
 
+// SetExtent is the default implementation for the Timeseries Backend interface
 func (b *timeseriesBackend) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent) {
 }
 
-// Modeler returns the modeler for the time series provider
+// Modeler is the default implementation for the Timeseries Backend interface
 func (b *timeseriesBackend) Modeler() *timeseries.Modeler {
 	return b.modeler
 }
+
+// ProcessTransformations is the default implementation for the Timeseries Backend interface
+func (b *timeseriesBackend) ProcessTransformations(timeseries.Timeseries) {}

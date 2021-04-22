@@ -127,7 +127,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	recordResults(r, "HTTPProxy", cacheStatusCode, resp.StatusCode,
 		r.URL.Path, "", elapsed.Seconds(), nil, resp.Header)
 
-	if rsc != nil && rsc.IsMergeMember {
+	if resp != nil && rsc != nil && (rsc.IsMergeMember || rsc.TSTransformer != nil) {
 		rsc.Response = resp
 	}
 

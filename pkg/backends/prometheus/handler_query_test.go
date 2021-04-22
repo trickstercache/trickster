@@ -18,6 +18,7 @@ package prometheus
 
 import (
 	"io"
+	"net/http/httptest"
 	"testing"
 
 	po "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
@@ -29,12 +30,12 @@ func TestQueryHandler(t *testing.T) {
 
 	const expected = `{"status":"ok","data":{"resultType":"vector","result":[]}}`
 
-	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
 	ts, w, r, _, err := tu.NewTestInstance("",
-		backendClient.DefaultPathConfigs, 200, `{"status":"ok"}`, nil, "prometheus",
+		backendClient.DefaultPathConfigs, 200, expected, nil, "prometheus",
 		"/api/v1/query?query=up&time=0", "debug")
 	if err != nil {
 		t.Error(err)
@@ -42,7 +43,7 @@ func TestQueryHandler(t *testing.T) {
 		defer ts.Close()
 	}
 	rsc := request.GetResources(r)
-	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -59,6 +60,7 @@ func TestQueryHandler(t *testing.T) {
 		t.Errorf("could not find path config named %s", mnQuery)
 	}
 
+	client.hasTransformations = true
 	client.QueryHandler(w, r)
 
 	resp := w.Result()
@@ -74,6 +76,33 @@ func TestQueryHandler(t *testing.T) {
 	}
 
 	if string(bodyBytes) != expected {
-		t.Errorf("expected '{}' got %s.", bodyBytes)
+		t.Errorf("expected '%s' got '%s'", expected, bodyBytes)
 	}
+
+	client.hasTransformations = false
+	rsc.IsMergeMember = true
+
+	w = httptest.NewRecorder()
+	client.QueryHandler(w, r)
+
+	resp = w.Result()
+
+	// it should return 200 OK
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err = io.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if string(bodyBytes) != expected {
+		t.Errorf("expected '%s' got '%s'", expected, bodyBytes)
+	}
+}
+
+func TestIndicateTransoformations(t *testing.T) {
+	// passing test indicator is no panics
+	indicateTransoformations(nil)
 }

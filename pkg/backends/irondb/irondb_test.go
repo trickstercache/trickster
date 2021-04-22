@@ -32,12 +32,12 @@ func TestIRONdbClientInterfacing(t *testing.T) {
 	// this test ensures the client will properly conform to the
 	// Client and TimeseriesBackend interfaces
 
-	c, err := NewClient("test", nil, nil, nil, nil)
+	c, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
 	var bo backends.Backend = c
-	var to backends.TimeseriesBackend = c
+	var to backends.TimeseriesBackend = c.(*Client)
 
 	if bo.Name() != "test" {
 		t.Errorf("expected %s got %s", "test", bo.Name())
@@ -65,7 +65,7 @@ func TestNewClient(t *testing.T) {
 	}
 
 	o := &bo.Options{Provider: "TEST_CLIENT"}
-	c, err := NewClient("default", o, nil, cache, testModeler)
+	c, err := NewClient("default", o, nil, cache, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}

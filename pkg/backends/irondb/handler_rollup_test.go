@@ -33,7 +33,7 @@ import (
 
 func TestRollupHandler(t *testing.T) {
 
-	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -46,7 +46,7 @@ func TestRollupHandler(t *testing.T) {
 		defer ts.Close()
 	}
 	rsc := request.GetResources(r)
-	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -77,7 +77,7 @@ func TestRollupHandlerSetExtent(t *testing.T) {
 	// provide bad URL with no TimeRange query params
 	// hc := tu.NewTestWebClient()
 	o := bo.New()
-	backendClient, err := NewClient("test", o, nil, nil, nil)
+	backendClient, err := NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -108,7 +108,7 @@ func TestRollupHandlerParseTimeRangeQuery(t *testing.T) {
 	// provide bad URL with no TimeRange query params
 	// hc := tu.NewTestWebClient()
 	o := bo.New()
-	backendClient, err := NewClient("test", o, nil, nil, nil)
+	backendClient, err := NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -183,7 +183,7 @@ func TestRollupHandlerParseTimeRangeQuery(t *testing.T) {
 
 func TestRollupHandlerFastForwardRequestError(t *testing.T) {
 
-	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -196,7 +196,7 @@ func TestRollupHandlerFastForwardRequestError(t *testing.T) {
 		defer ts.Close()
 	}
 	rsc := request.GetResources(r)
-	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}

@@ -14,25 +14,17 @@
  * limitations under the License.
  */
 
-package reverseproxycache
+package types
 
 import (
-	"testing"
+	"net/http"
 
+	"github.com/tricksterproxy/trickster/pkg/backends"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	"github.com/tricksterproxy/trickster/pkg/cache"
 )
 
-func TestDefaultHealthCheckConfig(t *testing.T) {
+type NewBackendClientFunc func(string, *bo.Options, http.Handler,
+	cache.Cache, backends.Backends, Lookup) (backends.Backend, error)
 
-	c, _ := NewClient("test", bo.New(), nil, nil, nil, nil)
-
-	dho := c.DefaultHealthCheckConfig()
-	if dho == nil {
-		t.Error("expected non-nil result")
-	}
-
-	if dho.Path != "" {
-		t.Error("expected / for path", dho.Path)
-	}
-
-}
+type Lookup map[string]NewBackendClientFunc

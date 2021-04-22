@@ -31,7 +31,7 @@ import (
 
 func TestTextHandler(t *testing.T) {
 
-	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -43,7 +43,7 @@ func TestTextHandler(t *testing.T) {
 		defer ts.Close()
 	}
 	rsc := request.GetResources(r)
-	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -71,7 +71,7 @@ func TestTextHandler(t *testing.T) {
 
 func TestTextHandlerDeriveCacheKey(t *testing.T) {
 
-	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -101,7 +101,7 @@ func TestTextHandlerParseTimeRangeQuery(t *testing.T) {
 	// provide bad URL with no TimeRange query params
 	// hc := tu.NewTestWebClient()
 	o := bo.New()
-	backendClient, err := NewClient("test", o, nil, nil, nil)
+	backendClient, err := NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -146,7 +146,7 @@ func TestTextHandlerSetExtent(t *testing.T) {
 	// provide bad URL with no TimeRange query params
 	// hc := tu.NewTestWebClient()
 	o := bo.New()
-	backendClient, err := NewClient("test", o, nil, nil, nil)
+	backendClient, err := NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}

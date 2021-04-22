@@ -16,8 +16,17 @@
 
 package options
 
+import "github.com/tricksterproxy/trickster/pkg/util/copiers"
+
 // Options stores information about Prometheus Options
 type Options struct {
 	Labels         map[string]string `yaml:"labels,omitempty"`
 	InstantRoundMS int               `yaml:"instant_round_ms,omitempty"`
+}
+
+func (o *Options) Clone() *Options {
+	return &Options{
+		InstantRoundMS: o.InstantRoundMS,
+		Labels:         copiers.CopyStringLookup(o.Labels),
+	}
 }

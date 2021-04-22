@@ -26,6 +26,9 @@ import (
 	"github.com/tricksterproxy/trickster/pkg/backends/alb/pool"
 	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
 	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	"github.com/tricksterproxy/trickster/pkg/backends/providers"
+	"github.com/tricksterproxy/trickster/pkg/backends/providers/registration/types"
+	"github.com/tricksterproxy/trickster/pkg/cache"
 	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
 	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
 	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
@@ -35,12 +38,11 @@ import (
 type Client struct {
 	backends.Backend
 
-	pool               pool.Pool
-	handler            http.Handler // this is the actual handler for all request to this backend
-	fgr                bool
-	mergePaths         []string     // paths handled by the alb client that are enabled for tsmerge
-	nonmergeHandler    http.Handler // when methodology is tsmerge, this handler is for non-mergable paths
-	hasTransformations bool
+	pool            pool.Pool
+	handler         http.Handler // this is the actual handler for all request to this backend
+	fgr             bool
+	mergePaths      []string     // paths handled by the alb client that are enabled for tsmerge
+	nonmergeHandler http.Handler // when methodology is tsmerge, this handler is for non-mergable paths
 }
 
 // Handlers returns a map of the HTTP Handlers the client has registered
@@ -48,9 +50,12 @@ func (c *Client) Handlers() map[string]http.Handler {
 	return map[string]http.Handler{"alb": c.handler}
 }
 
+var _ types.NewBackendClientFunc = NewClient
+
 // NewClient returns a new ALB client reference
 func NewClient(name string, o *bo.Options, router http.Handler,
-) (*Client, error) {
+	_ cache.Cache, _ backends.Backends, factories types.Lookup,
+) (backends.Backend, error) {
 	c := &Client{}
 
 	b, err := backends.New(name, o, nil, router, nil)
@@ -71,11 +76,31 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		case pool.TimeSeriesMerge.String():
 			c.handler = http.HandlerFunc(c.handleResponseMerge)
 			c.nonmergeHandler = http.HandlerFunc(c.handleRoundRobin)
-			c.mergePaths = o.ALBOptions.MergeablePaths
+			// this validates the merge configuration for the ALB client as it sets it up
+			// First, verify the output format is a support merge provider
+			if !providers.IsSupportedTimeSeriesMergeProvider(o.ALBOptions.OutputFormat) {
+				return nil, ErrInvalidTimeSeriesMergeProvider
+			}
+			// next, get the factory function required to create a backend client for the supplied format
+			f, ok := factories[o.ALBOptions.OutputFormat]
+			if !ok {
+				return nil, ErrInvalidTimeSeriesMergeProvider
+			}
+			// now, create a client for the merge provider based on the supplied factory function
+			mc1, err := f("alb", nil, nil, nil, nil, nil)
+			if err != nil {
+				return nil, err
+			}
+			// convert the new time series client to a mergeable timeseries client to get the merge paths
+			mc2, ok := mc1.(backends.MergeableTimeseriesBackend)
+			if !ok {
+				return nil, ErrInvalidTimeSeriesMergeProvider
+			}
+			// set the merge paths in the ALB client
+			c.mergePaths = mc2.MergeablePaths()
 		default:
 			c.handler = http.HandlerFunc(c.handleRoundRobin)
 		}
-		c.hasTransformations = o.HasTransformations()
 	}
 	return c, nil
 }

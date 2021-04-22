@@ -50,7 +50,7 @@ func TestSetExtent(t *testing.T) {
 	}
 
 	o := conf.Backends["default"]
-	backendClient, err := NewClient("test", o, nil, nil, nil)
+	backendClient, err := NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -214,7 +214,7 @@ func TestFastForwardURL(t *testing.T) {
 	}
 
 	o := conf.Backends["default"]
-	backendClient, err := NewClient("default", o, nil, nil, nil)
+	backendClient, err := NewClient("default", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -318,7 +318,7 @@ func TestFastForwardURL(t *testing.T) {
 
 func TestParseTimerangeQuery(t *testing.T) {
 	expected := errors.ErrNotTimeRangeQuery
-	backendClient, err := NewClient("test", nil, nil, nil, nil)
+	backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
