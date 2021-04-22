@@ -313,12 +313,16 @@ backends:
 #     # max_object_size_bytes defines the largest byte size an object may be before it is uncacheable due to size. default is 524288 (512k)
 #     max_object_size_bytes: 524288
 
-#     # These next 6 settings only apply to Time Series backends
+#     # These next 7 settings only apply to Time Series backends
 
-#     # backfill_tolerance_ms prevents new datapoints that fall within the tolerance window (relative to time.Now) from being cached
-#     # Think of it as "never cache the newest N milliseconds of real-time data, because it may be preliminary and subject to updates"
+#     # backfill_tolerance_ms prevents new datapoints that fall within the tolerance window (relative to time.Now) from being permanently
+#     # cached. Think of it as "the newest N milliseconds of real-time data are preliminary and subject to updates, so refresh them periodically"
 #     # default is 0
 #     backfill_tolerance_ms: 0
+
+#     # backfill_tolerance_points works like the _ms version, except the methodology is based on # of intervaled timestamps (points) in the series
+#     # instead of a relative time. You can set both values and the one impacting the most number of elements in the time series takes precedence
+#     backfill_tolerance_points: 0
 
 #     # timeseries_retention_factor defines the maximum number of recent timestamps to cache for a given query. Default is 1024
 #     timeseries_retention_factor: 1024

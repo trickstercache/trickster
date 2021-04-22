@@ -12,15 +12,27 @@
 - we offer a brand new [Application Load Balancer](./alb.md) feature with unique and powerful options, like merging data from multiple backends into a single response.
 - We've updated to Go 1.16
 - We've re-organized many packages in the codebase to be more easily importable by other projects. Over the course of the beta, we'll be publishing new patterns to the [examples](../examples/) folder for using Trickster packages in your own projects, including caching, acceleration and load balancing.
-- InfluxDB and ClickHouse now support additional formats like csv. More documentation will be provided over the course of the beta
+- InfluxDB and ClickHouse now support additional output formats like CSV. More documentation will be provided over the course of the beta
+
+## New in Beta 2
+
+- For [InfluxDB](./influxdb.md), we've improved our compatibility with InfluxQL and hope you'll see improved cache hit rates. Flux support is not quite ready yet.
+- We've updated our "Backfill Tolerance" feature, which handles volatile data (e.g., real-time data that may not be immutable), to improve cache hit rates while ensuring volatile data is still refreshed. We've also added new options for controlling backfill tolerance thresholds. See the [example config](../examples/conf/example.full.yaml)
+- We've significantly revamped Trickster's compression capabilities. Beta 2 makes the following enhancements:
+  - adds Brotli and Zstd compression support when serving responses (we already supported gzip and deflate), when included in an `Accept-Encoding` header
+  - changes the cache compression storage format from Snappy to Brotli. A future beta will allow customization via configuration
+  - passes through (or injects) an `Accept-Encoding` header to requests between Trickster and Origins, to support end-to-end content encoding. We previously were not accepting encodings from upstreams.
+  - Provides a generic HTTP Handler package, supporting Zstd, Brotli, Gzip and Deflate; which is importable by any golang application
+- We fixed up a memory leak and refined the Prometheus label injection feature, so it plays nicely with the TSMerge ALB
+- Our [Rules Engine](./rule.md) now supports `rmatch` operations to permit regular expression-based routing against any part of the HTTP request.
+- You can now chain a collection [request rewriters](./request_rewriters.md) for more robust possibilities.
 
 ## Still to Come
 
 Trickster 2.0 is not yet feature complete, and we anticipate including the following additional features before the GA Release:
 
-- support for InfluxDB 2.0 and the flux query language, and for queries sourced by Chronograf
+- support for InfluxData's Flux query language, and for queries sourced by Chronograf
 - cache object purge via API
-- brotli compression support (wire and backend cache)
 - additional logging, metrics and tracing spans covering 2.0's new features
 - an up-to-date Grafana dashboard template for monitoring Trickster
 - support for additional Time Series Database providers
