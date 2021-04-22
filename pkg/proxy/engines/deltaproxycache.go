@@ -496,7 +496,9 @@ checkCache:
 
 	rsc.TS = rts
 	Respond(w, 0, rh, nil) // body and code are nil so this only sets appropriate headers; no writes
-	client.ProcessTransformations(rts)
+	if rsc.TSTransformer != nil {
+		rsc.TSTransformer(rts)
+	}
 	if rsc.IsMergeMember { // don't bother marshaling this dataset if it's just going to be merged internally
 		if rsc.Response == nil {
 			rsc.Response = &http.Response{StatusCode: sc}

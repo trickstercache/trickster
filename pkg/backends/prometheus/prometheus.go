@@ -69,8 +69,9 @@ const (
 // Client Implements Proxy Client Interface
 type Client struct {
 	backends.TimeseriesBackend
-	instantRounder time.Duration
-	injectLabels   map[string]string
+	instantRounder     time.Duration
+	hasTransformations bool
+	injectLabels       map[string]string
 }
 
 var _ types.NewBackendClientFunc = NewClient
@@ -92,6 +93,7 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		} else {
 			rounder = time.Duration(o.Prometheus.InstantRoundMS) * time.Millisecond
 			c.injectLabels = o.Prometheus.Labels
+			c.hasTransformations = len(c.injectLabels) > 0
 		}
 	}
 	c.instantRounder = rounder

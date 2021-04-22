@@ -469,7 +469,8 @@ func ObjectProxyCacheRequest(w http.ResponseWriter, r *http.Request) {
 	resp, cacheStatus := fetchViaObjectProxyCache(w, r)
 	if cacheStatus == status.LookupStatusProxyOnly {
 		DoProxy(w, r, true)
-	} else if rsc := request.GetResources(r); rsc != nil && rsc.ResponseMergeFunc != nil {
+	} else if rsc := request.GetResources(r); resp != nil && rsc != nil &&
+		(rsc.ResponseMergeFunc != nil || rsc.TSTransformer != nil) {
 		rsc.Response = resp
 	}
 }

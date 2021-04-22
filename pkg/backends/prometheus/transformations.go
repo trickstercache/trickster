@@ -17,12 +17,18 @@
 package prometheus
 
 import (
+	"net/http"
+
+	"github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
+	"github.com/tricksterproxy/trickster/pkg/observability/logging"
+	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/tricksterproxy/trickster/pkg/proxy/response/merge"
 	"github.com/tricksterproxy/trickster/pkg/timeseries"
 	"github.com/tricksterproxy/trickster/pkg/timeseries/dataset"
 )
 
 func (c *Client) ProcessTransformations(ts timeseries.Timeseries) {
-	if len(c.injectLabels) == 0 {
+	if !c.hasTransformations {
 		return
 	}
 	ds, ok := ts.(*dataset.DataSet)
@@ -30,4 +36,35 @@ func (c *Client) ProcessTransformations(ts timeseries.Timeseries) {
 		return
 	}
 	ds.InjectTags(c.injectLabels)
+}
+
+func (c *Client) processVectorTransformations(w http.ResponseWriter, rg *merge.ResponseGate, r *http.Request) {
+	var trq *timeseries.TimeRangeQuery
+	if rg.Resources.TimeRangeQuery != nil {
+		trq = rg.Resources.TimeRangeQuery
+	}
+	bytes := rg.Body()
+	h := w.Header()
+	headers.Merge(h, rg.Header())
+	t2, err := model.UnmarshalTimeseries(bytes, trq)
+	if err != nil {
+		logging.Error(rg.Resources.Logger, "vector unmarshaling error",
+			logging.Pairs{"provider": "prometheus", "detail": err.Error()})
+		defaultWrite(rg.Header(), rg.Response.StatusCode, w, bytes)
+		return
+	}
+	ds, ok := t2.(*dataset.DataSet)
+	if !ok {
+		logging.Error(rg.Resources.Logger, "vector unmarshaling error",
+			logging.Pairs{"provider": "prometheus", "detail": err.Error()})
+		w.Write(bytes)
+		return
+	}
+	ds.InjectTags(c.injectLabels)
+	model.MarshalTSOrVectorWriter(ds, rg.Resources.TSReqestOptions, rg.Response.StatusCode, w, true)
+}
+
+func defaultWrite(eh http.Header, statusCode int, w http.ResponseWriter, b []byte) {
+	w.WriteHeader(statusCode)
+	w.Write(b)
 }

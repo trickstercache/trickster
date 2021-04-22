@@ -173,11 +173,11 @@ func MarshalTimeseries(ts timeseries.Timeseries, rlo *timeseries.RequestOptions,
 
 // MarshalTimeseriesWriter converts a Timeseries into a JSON blob via an io.Writer
 func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int, w io.Writer) error {
-	return marshalTSOrVectorWriter(ts, rlo, status, w, false)
+	return MarshalTSOrVectorWriter(ts, rlo, status, w, false)
 }
 
 // marshalTSOrVectorWriter writes matrix and vector outputs to the provided io.Writer
-func marshalTSOrVectorWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions,
+func MarshalTSOrVectorWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions,
 	status int, w io.Writer, isVector bool) error {
 
 	if w == nil {

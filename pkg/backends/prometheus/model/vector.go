@@ -107,6 +107,6 @@ func MergeAndWriteVector(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 		return
 	}
 
-	marshalTSOrVectorWriter(ts, nil, statusCode, w, true)
+	MarshalTSOrVectorWriter(ts, nil, statusCode, w, true)
 
 }

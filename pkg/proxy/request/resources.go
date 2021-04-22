@@ -48,6 +48,7 @@ type Resources struct {
 	ResponseMergeFunc interface{}
 	TSUnmarshaler     timeseries.UnmarshalerFunc
 	TSMarshaler       timeseries.MarshalWriterFunc
+	TSTransformer     func(timeseries.Timeseries)
 	TS                timeseries.Timeseries
 	TSReqestOptions   *timeseries.RequestOptions
 	Response          *http.Response
@@ -71,6 +72,7 @@ func (r *Resources) Clone() *Resources {
 		ResponseMergeFunc: r.ResponseMergeFunc,
 		TSUnmarshaler:     r.TSUnmarshaler,
 		TSMarshaler:       r.TSMarshaler,
+		TSTransformer:     r.TSTransformer,
 		TS:                r.TS,
 		TSReqestOptions:   r.TSReqestOptions,
 	}
