@@ -139,6 +139,7 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router, metricsRouter 
 }
 
 var noCacheBackends = map[string]interface{}{
+	"alb":          nil,
 	"rp":           nil,
 	"reverseproxy": nil,
 	"proxy":        nil,
