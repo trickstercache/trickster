@@ -74,7 +74,7 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 		mg := merge.NewResponseGate(w, r, rsc)
 		engines.ObjectProxyCacheRequest(mg, r)
 		mg.Response = rsc.Response
-		c.processVectorTransformations(w, mg, r)
+		c.processVectorTransformations(w, mg)
 		return
 	}
 

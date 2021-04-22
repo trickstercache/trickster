@@ -38,7 +38,7 @@ func (c *Client) ProcessTransformations(ts timeseries.Timeseries) {
 	ds.InjectTags(c.injectLabels)
 }
 
-func (c *Client) processVectorTransformations(w http.ResponseWriter, rg *merge.ResponseGate, r *http.Request) {
+func (c *Client) processVectorTransformations(w http.ResponseWriter, rg *merge.ResponseGate) {
 	var trq *timeseries.TimeRangeQuery
 	if rg.Resources.TimeRangeQuery != nil {
 		trq = rg.Resources.TimeRangeQuery
@@ -47,24 +47,18 @@ func (c *Client) processVectorTransformations(w http.ResponseWriter, rg *merge.R
 	h := w.Header()
 	headers.Merge(h, rg.Header())
 	t2, err := model.UnmarshalTimeseries(bytes, trq)
-	if err != nil {
+	if err != nil || t2 == nil {
 		logging.Error(rg.Resources.Logger, "vector unmarshaling error",
 			logging.Pairs{"provider": "prometheus", "detail": err.Error()})
-		defaultWrite(rg.Header(), rg.Response.StatusCode, w, bytes)
+		defaultWrite(rg.Response.StatusCode, w, bytes)
 		return
 	}
-	ds, ok := t2.(*dataset.DataSet)
-	if !ok {
-		logging.Error(rg.Resources.Logger, "vector unmarshaling error",
-			logging.Pairs{"provider": "prometheus", "detail": err.Error()})
-		w.Write(bytes)
-		return
-	}
+	ds := t2.(*dataset.DataSet) // failure of this type assertion should be impossible
 	ds.InjectTags(c.injectLabels)
 	model.MarshalTSOrVectorWriter(ds, rg.Resources.TSReqestOptions, rg.Response.StatusCode, w, true)
 }
 
-func defaultWrite(eh http.Header, statusCode int, w http.ResponseWriter, b []byte) {
+func defaultWrite(statusCode int, w http.ResponseWriter, b []byte) {
 	w.WriteHeader(statusCode)
 	w.Write(b)
 }
