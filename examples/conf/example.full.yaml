@@ -316,7 +316,7 @@ backends:
 #     # These next 7 settings only apply to Time Series backends
 
 #     # backfill_tolerance_ms prevents new datapoints that fall within the tolerance window (relative to time.Now) from being permanently
-#     # cached. think of it as "the newest N milliseconds of real-time data are preliminary and subject to updates, so refresh them periodically"
+#     # cached. Think of it as "the newest N milliseconds of real-time data are preliminary and subject to updates, so refresh them periodically"
 #     # default is 0
 #     backfill_tolerance_ms: 0
 
