@@ -51,16 +51,12 @@ func New() *Options {
 
 // Clone returns a perfect copy of the Options
 func (o *Options) Clone() *Options {
-
 	c := &Options{
 		MechanismName: o.MechanismName,
 		HealthyFloor:  o.HealthyFloor,
 		OutputFormat:  o.OutputFormat,
 	}
-
 	c.Pool = copiers.CopyStrings(o.Pool)
-	// c.MergeablePaths = copiers.CopyStrings(o.MergeablePaths)
-
 	return c
 }
 
