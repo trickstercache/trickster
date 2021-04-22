@@ -16,15 +16,16 @@
 
 ## New in Beta 2
 
-- We've improved our compatibility with InfluxQL and hope you'll see improved cache hit rates. Flux support is not quite ready yet.
-- We've updated our "Backfill Tolerance" feature, which handles volatile data (e.g., real-time data that may not be immutable), to improve cache hit rates while ensuring volatile data is still refreshed. We've also added new options for controlling backfill tolerance thresholds.
+- For [InfluxDB](./influxdb.md), we've improved our compatibility with InfluxQL and hope you'll see improved cache hit rates. Flux support is not quite ready yet.
+- We've updated our "Backfill Tolerance" feature, which handles volatile data (e.g., real-time data that may not be immutable), to improve cache hit rates while ensuring volatile data is still refreshed. We've also added new options for controlling backfill tolerance thresholds. See the [example config](../examples/conf/example.full.yaml)
 - We've significantly revamped Trickster's compression capabilities. Beta 2 makes the following enhancements:
   - adds Brotli and Zstd compression support when serving responses (we already supported gzip and deflate), when included in an `Accept-Encoding` header
   - changes the cache compression storage format from Snappy to Brotli. A future beta will allow customization via configuration
   - passes through (or injects) an `Accept-Encoding` header to requests between Trickster and Origins, to support end-to-end content encoding. We previously were not accepting encodings from upstreams.
   - Provides a generic HTTP Handler package, supporting Zstd, Brotli, Gzip and Deflate; which is importable by any golang application
 - We fixed up a memory leak and refined the Prometheus label injection feature, so it plays nicely with the TSMerge ALB
-- Our Rules engine now supports `rmatch` operations to permit regular expression-based routing against any part of the request object.
+- Our [Rules Engine](./rule.md) now supports `rmatch` operations to permit regular expression-based routing against any part of the HTTP request.
+- You can now chain a collection [request rewriters](./request_rewriters.md) for more robust possibilities.
 
 ## Still to Come
 
