@@ -18,7 +18,6 @@ package params
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -46,7 +45,7 @@ func TestUpdateParams(t *testing.T) {
 
 	UpdateParams(params, updates)
 	if !reflect.DeepEqual(params, expected) {
-		fmt.Printf("mismatch\nexpected: %v\n     got: %v\n", expected, params)
+		t.Errorf("mismatch\nexpected: %v\n     got: %v\n", expected, params)
 	}
 
 }

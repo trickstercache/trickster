@@ -408,12 +408,3 @@ func TestToYAML(t *testing.T) {
 		t.Error("ToYAML mismatch", s)
 	}
 }
-
-func TestHasTransformations(t *testing.T) {
-	o := &Options{}
-	if o.HasTransformations() {
-		t.Error("expected false")
-	}
-}
-
-// TODO: migrate old tests from config pkg into this space prior to PR

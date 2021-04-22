@@ -17,7 +17,6 @@
 package headers
 
 import (
-	"fmt"
 	"net/http"
 	"reflect"
 	"testing"
@@ -71,7 +70,7 @@ func TestUpdateHeaders(t *testing.T) {
 	UpdateHeaders(headers, map[string]string{"": "ineffectual", "foo1": "bar", "-foo2": "",
 		"+foo3": "bar", "foo4": "bar", "+foo5": "bar", "-foo6": ""})
 	if !reflect.DeepEqual(headers, expected) {
-		fmt.Printf("mismatch\nexpected: %v\n     got: %v\n", expected, headers)
+		t.Errorf("mismatch\nexpected: %v\n     got: %v\n", expected, headers)
 	}
 
 }
