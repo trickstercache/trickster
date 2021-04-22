@@ -81,7 +81,7 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 			if !providers.IsSupportedTimeSeriesMergeProvider(o.ALBOptions.OutputFormat) {
 				return nil, ErrInvalidTimeSeriesMergeProvider
 			}
-			// next, get the factory function rquired to create a backend client for the supplied format
+			// next, get the factory function required to create a backend client for the supplied format
 			f, ok := factories[o.ALBOptions.OutputFormat]
 			if !ok {
 				return nil, ErrInvalidTimeSeriesMergeProvider

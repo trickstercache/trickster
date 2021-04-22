@@ -29,7 +29,7 @@ import (
 type Tags map[string]string
 
 // InjectTags injects the provided tags into all series in all results in the Dataset
-// in an insert-or-update fasion
+// in an insert-or-update fashion
 func (ds *DataSet) InjectTags(tags Tags) {
 	var wg sync.WaitGroup
 	var mtx sync.Mutex
