@@ -79,7 +79,7 @@ Proposals and ideas can either be submitted for agreement via a GitHub issue or 
 or by sending an email to `cncf-trickster-maintainers@lists.cncf.io`.
 
 In the Trickster project, contributors often have ideas, experiment with those ideas, and end up with a viable PR,
-without without first getting buy-in from the Maintainers. That is fine too - we welcome all contributions. We simply ask that all discussion and decision-making about the contribution is transparent and in the open.
+without first getting buy-in from the Maintainers. That is fine too - we welcome all contributions. We simply ask that all discussion and decision-making about the contribution is transparent and in the open.
 
 Any disputes between community members should be resolved amicably between the involved parties. 
 If a dispute cannot be decided independently, get a third-party maintainer (e.g. a mutual contact with some background
