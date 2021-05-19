@@ -5,7 +5,7 @@
 The Trickster community adheres to the following principles:
 
 - **Open**: Trickster is Open Source Software
-- **Welcoming and respectful**: See [Code of Conduct](CODE_OF_CONDUCT.md).
+- **Welcoming and respectful**: See [Code of Conduct](./CODE_OF_CONDUCT.md).
 - **Transparent and accessible**: Changes to the Trickster organization, Trickster code 
   repositories, and CNCF related activities (e.g. level, involvement, etc) are done in public.
 - **Merit**: Ideas and contributions are accepted according to their technical merit and alignment with
@@ -23,7 +23,7 @@ The term of the project lead is one year, with no term limit restriction.
 The project lead is elected by Trickster Maintainers
 according to an individual's technical merit to Trickster project.
 
-The current project lead is identified in the [MAINTAINERS](MAINTAINERS.md) file.
+The current project lead is identified in the [MAINTAINERS](./MAINTAINERS.md) file.
 
 The Trickster Maintainers can be contacted via email at <cncf-trickster-maintainers@lists.cncf.io>
 
@@ -48,7 +48,7 @@ file with Emeritus status, unless they decline this designation. Emeritus status
 majority vote of the remaining Maintainers.
 
 The Trickster organization will never forcefully remove a current Maintainer, unless they fail to meet
-the principles of Trickster community, or adhere to the [Code of Conduct](CODE_OF_CONDUCT.md).
+the principles of Trickster community, or adhere to the [Code of Conduct](./CODE_OF_CONDUCT.md).
 
 ## Changes in Project Lead
 
@@ -67,7 +67,7 @@ The project lead can volunteer to step down.
 
 ## Changes in Project Governance
 
-Changes in project governance (GOVERNANCE.md) could be initiated by opening a GitHub PR.
+Changes in project governance (GOVERNANCE.md) should be initiated by opening a GitHub PR.
 The PR should only be opened no earlier than 6 weeks before the end of the project lead's term.
 The PR should be kept open for no less than 4 weeks. The PR can only be merged following the same
 voting process as in `Changes in Project Lead`.
@@ -109,7 +109,7 @@ its sponsorship and ownership of any associated marks are transferred to the Clo
 
 ## Code of Conduct
 
-The [Trickster Code of Conduct](CODE_OF_CONDUCT.md) simply points to the
+The [Trickster Code of Conduct](./CODE_OF_CONDUCT.md) simply points to the
 [CNCF Code of Conduct](https://github.com/cncf/foundation/blob/master/code-of-conduct.md).
 
 ## Credits
