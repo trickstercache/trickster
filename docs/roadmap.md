@@ -15,7 +15,7 @@ The roadmap for Trickster in 2021 focuses on delivering Trickster versions 2.0 a
   - [ ] Support for InfluxDB 2.0, Flux syntax and querying via Chronograf
   - [ ] Purge object from cache by path or key
   - [ ] Short-term caching of non-timeseries read-only queries (e.g., generic SELECT statements)
-  - [ ] Support Brotli encoding over the wire and as a cache compression format
+  - [x] Support Brotli encoding over the wire and as a cache compression format
   
 - [x] Submit Trickster for CNCF Sandbox Consideration
 
@@ -23,7 +23,7 @@ The roadmap for Trickster in 2021 focuses on delivering Trickster versions 2.0 a
 
 - [ ] Trickster v2.0 GA Release
   - [ ] Documentation overhaul using MkDocs with Release deployment automation
-  - [ ] Migrate integration tests infrastructure from private cloud to AWS and deployed via Terraform
+  - [ ] Migrate integration tests infrastructure as needed to easily integrate with related CNCF projects.
 
 - [ ] Trickster v2.1 Beta Release
   - [ ] Support for ElasticSearch

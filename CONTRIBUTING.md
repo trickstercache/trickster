@@ -26,7 +26,7 @@ If you find a bug in Trickster, please file a detailed report as an Issue. We cu
 
 Likewise, if you have a Feature Request, please file a detailed Issue, explaining the feature's functionality and use cases. Features should be useful to the broader community, so be sure to consider that before filing.
 
-If you find a security vulnerability in Trickster, please contact the [Maintainers](MAINTAINERS.md) directly.
+If you find a security vulnerability in Trickster, please follow the instructions in [SECURITY.MD](./SECURITY.MD).
 
 ## Steps to Contribute
 
