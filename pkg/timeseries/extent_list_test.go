@@ -33,6 +33,8 @@ var t200 = time.Unix(200, 0)
 var t201 = time.Unix(201, 0)
 var t300 = time.Unix(300, 0)
 var t600 = time.Unix(600, 0)
+var t700 = time.Unix(700, 0)
+var t800 = time.Unix(800, 0)
 var t900 = time.Unix(900, 0)
 var t1000 = time.Unix(1000, 0)
 var t1100 = time.Unix(1100, 0)
@@ -967,6 +969,37 @@ func TestTimestampCount(t *testing.T) {
 
 	if v := el.TimestampCount(time.Second * 100); v != expected {
 		t.Errorf("expected %d got %d", expected, v)
+	}
+
+}
+
+func TestShard(t *testing.T) {
+
+	el := ExtentList{
+		Extent{Start: t100, End: t200},
+		Extent{Start: t600, End: t900},
+		Extent{},
+		Extent{Start: t1100, End: t1300},
+	}
+
+	expected := ExtentList{
+		Extent{Start: t100, End: t200},
+		Extent{Start: t600, End: t700},
+		Extent{Start: t800, End: t900},
+		Extent{},
+		Extent{Start: t1100, End: t1200},
+		Extent{Start: t1300, End: t1300},
+	}
+
+	el2 := el.Shard(time.Second*100, 2)
+
+	if !el2.Equal(expected) {
+		t.Errorf("expected %s\ngot      %s", expected, el2)
+	}
+
+	el2 = expected.Shard(0, 0)
+	if !el2.Equal(expected) {
+		t.Errorf("expected %s\ngot      %s", expected, el2)
 	}
 
 }

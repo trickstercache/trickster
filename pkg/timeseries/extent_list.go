@@ -149,6 +149,37 @@ func (el ExtentList) Compress(step time.Duration) ExtentList {
 	return compressed
 }
 
+// Shard breaks apart extents in the list into smaller, contiguous extents, based on the provided
+// shard size, and returns the resulting sharded list.
+func (el ExtentList) Shard(step time.Duration, size int) ExtentList {
+	if size == 0 || step == 0 {
+		return el.Clone()
+	}
+	out := make(ExtentList, 0, len(el))
+	for _, e := range el {
+		// this determines the number of time stamps in the extent
+		s := int(e.End.Sub(e.Start) / step)
+		// if the shard size is larger than the timestamp count, the extent can be passed through
+		if size > s || e.Start.IsZero() || e.End.IsZero() {
+			out = append(out, e)
+			continue
+		}
+		// otherwise, this extent is larger than the shard size, so it needs to be sharded
+		for i := e.Start; !i.After(e.End); {
+			// this creates a new shard to add to the output
+			e2 := Extent{Start: i, End: i.Add(step * time.Duration(size-1))}
+			// the final iteration may be partial/smaller than the shard size, so this clamps it
+			if e2.End.After(e.End) {
+				e2.End = e.End
+			}
+			out = append(out, e2)
+			// this advances i forward a step beyond the current shard end, to start the next one
+			i = e2.End.Add(step)
+		}
+	}
+	return out
+}
+
 // Len returns the length of a slice of type ExtentList
 func (el ExtentList) Len() int {
 	return len(el)
