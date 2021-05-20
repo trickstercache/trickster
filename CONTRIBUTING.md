@@ -18,7 +18,7 @@ If you would like to contribute to this project you can do so through GitHub by 
   Practices for Production
   Environments](http://peter.bourgon.org/go-in-production/#formatting-and-style).
 
-* Before your contribution can be accepted, you must sign off your commits to signify accepttance of the [DCO](https://github.com/probot/dco#how-it-works).
+* Before your contribution can be accepted, you must sign off your commits to signify acceptance of the [DCO](https://github.com/probot/dco#how-it-works).
 
 ## Reporting Feature Requests, Bugs, Vulnerabilities and other Issues
 
