@@ -24,7 +24,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
 )
 
 func TestUpdateParams(t *testing.T) {

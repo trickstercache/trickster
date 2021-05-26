@@ -1,4 +1,4 @@
-module github.com/tricksterproxy/trickster
+module github.com/trickstercache/trickster
 
 go 1.16
 
@@ -21,7 +21,7 @@ require (
 	github.com/prometheus/client_golang v1.10.0
 	github.com/prometheus/common v0.21.0 // indirect
 	github.com/tinylib/msgp v1.1.5
-	github.com/tricksterproxy/mockster v1.1.1
+	github.com/trickstercache/mockster v1.1.2
 	github.com/yuin/gopher-lua v0.0.0-20200816102855-ee81675732da // indirect
 	go.etcd.io/bbolt v1.3.5
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.19.0

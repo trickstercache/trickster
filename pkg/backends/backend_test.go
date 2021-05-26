@@ -21,10 +21,10 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/cmd/trickster/config"
-	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
-	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
+	"github.com/trickstercache/trickster/cmd/trickster/config"
+	bo "github.com/trickstercache/trickster/pkg/backends/options"
+	cr "github.com/trickstercache/trickster/pkg/cache/registration"
+	tl "github.com/trickstercache/trickster/pkg/observability/logging"
 )
 
 func TestConfiguration(t *testing.T) {
@@ -98,10 +98,10 @@ func TestSetCache(t *testing.T) {
 
 func TestBaseUpstreamURL(t *testing.T) {
 
-	u, _ := url.Parse("https://tricksterproxy.io/test")
+	u, _ := url.Parse("https://trickstercache.io/test")
 	b := &backend{name: "test", baseUpstreamURL: u}
 	u = b.BaseUpstreamURL()
-	if u.Host != "tricksterproxy.io" || u.Scheme != "https" || u.Path != "/test" {
+	if u.Host != "trickstercache.io" || u.Scheme != "https" || u.Path != "/test" {
 		t.Error("url mismatch")
 	}
 }

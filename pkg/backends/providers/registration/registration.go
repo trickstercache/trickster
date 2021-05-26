@@ -17,15 +17,15 @@
 package registration
 
 import (
-	"github.com/tricksterproxy/trickster/pkg/backends/alb"
-	"github.com/tricksterproxy/trickster/pkg/backends/clickhouse"
-	"github.com/tricksterproxy/trickster/pkg/backends/influxdb"
-	"github.com/tricksterproxy/trickster/pkg/backends/irondb"
-	"github.com/tricksterproxy/trickster/pkg/backends/prometheus"
-	"github.com/tricksterproxy/trickster/pkg/backends/providers/registration/types"
-	"github.com/tricksterproxy/trickster/pkg/backends/reverseproxy"
-	"github.com/tricksterproxy/trickster/pkg/backends/reverseproxycache"
-	"github.com/tricksterproxy/trickster/pkg/backends/rule"
+	"github.com/trickstercache/trickster/pkg/backends/alb"
+	"github.com/trickstercache/trickster/pkg/backends/clickhouse"
+	"github.com/trickstercache/trickster/pkg/backends/influxdb"
+	"github.com/trickstercache/trickster/pkg/backends/irondb"
+	"github.com/trickstercache/trickster/pkg/backends/prometheus"
+	"github.com/trickstercache/trickster/pkg/backends/providers/registration/types"
+	"github.com/trickstercache/trickster/pkg/backends/reverseproxy"
+	"github.com/trickstercache/trickster/pkg/backends/reverseproxycache"
+	"github.com/trickstercache/trickster/pkg/backends/rule"
 )
 
 func SupportedProviders() types.Lookup {

@@ -22,8 +22,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
 )
 
 // newestResponseGate a ResponseWriter that only writes when the muxer selects it based on the

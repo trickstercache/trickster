@@ -30,7 +30,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/util/md5"
+	"github.com/trickstercache/trickster/pkg/util/md5"
 )
 
 // WriteTestKeyAndCert writes a self-signed test TLS key and cert. Paths should

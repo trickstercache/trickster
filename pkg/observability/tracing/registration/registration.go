@@ -21,16 +21,16 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/tricksterproxy/trickster/cmd/trickster/config"
-	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
-	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
-	"github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/jaeger"
-	"github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/noop"
-	"github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/stdout"
-	"github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/zipkin"
-	"github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
-	"github.com/tricksterproxy/trickster/pkg/observability/tracing/providers"
-	"github.com/tricksterproxy/trickster/pkg/util/strings"
+	"github.com/trickstercache/trickster/cmd/trickster/config"
+	tl "github.com/trickstercache/trickster/pkg/observability/logging"
+	"github.com/trickstercache/trickster/pkg/observability/tracing"
+	"github.com/trickstercache/trickster/pkg/observability/tracing/exporters/jaeger"
+	"github.com/trickstercache/trickster/pkg/observability/tracing/exporters/noop"
+	"github.com/trickstercache/trickster/pkg/observability/tracing/exporters/stdout"
+	"github.com/trickstercache/trickster/pkg/observability/tracing/exporters/zipkin"
+	"github.com/trickstercache/trickster/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/pkg/observability/tracing/providers"
+	"github.com/trickstercache/trickster/pkg/util/strings"
 )
 
 // RegisterAll registers all Tracers in the provided configuration, and returns

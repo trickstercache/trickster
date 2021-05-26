@@ -19,7 +19,7 @@ package dataset
 import (
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/timeseries"
 )
 
 func testSeries() *Series {

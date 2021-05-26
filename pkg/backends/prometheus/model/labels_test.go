@@ -24,8 +24,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	"github.com/tricksterproxy/trickster/pkg/proxy/response/merge"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/pkg/proxy/response/merge"
 )
 
 func TestMergeLabelData(t *testing.T) {

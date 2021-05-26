@@ -21,12 +21,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	io "github.com/tricksterproxy/trickster/pkg/cache/index/options"
-	co "github.com/tricksterproxy/trickster/pkg/cache/options"
-	"github.com/tricksterproxy/trickster/pkg/cache/status"
-	"github.com/tricksterproxy/trickster/pkg/locks"
-	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
+	"github.com/trickstercache/trickster/pkg/cache"
+	io "github.com/trickstercache/trickster/pkg/cache/index/options"
+	co "github.com/trickstercache/trickster/pkg/cache/options"
+	"github.com/trickstercache/trickster/pkg/cache/status"
+	"github.com/trickstercache/trickster/pkg/locks"
+	tl "github.com/trickstercache/trickster/pkg/observability/logging"
 )
 
 const provider = "memory"

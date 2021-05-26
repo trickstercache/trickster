@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
+	"github.com/trickstercache/trickster/pkg/util/yamlx"
 
 	"gopkg.in/yaml.v2"
 )
@@ -58,11 +58,11 @@ func TestClone(t *testing.T) {
 func TestURL(t *testing.T) {
 	o := New()
 	o.Scheme = "https"
-	o.Host = "tricksterproxy.io"
+	o.Host = "trickstercache.io"
 	o.Path = "/"
 	o.Query = "?somequeryparam=somevalue"
 
-	const expected = "https://tricksterproxy.io/?somequeryparam=somevalue"
+	const expected = "https://trickstercache.io/?somequeryparam=somevalue"
 
 	u := o.URL()
 	if u.String() != expected {

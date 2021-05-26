@@ -19,15 +19,15 @@ package registration
 import (
 	"testing"
 
-	"github.com/tricksterproxy/trickster/cmd/trickster/config"
-	bao "github.com/tricksterproxy/trickster/pkg/cache/badger/options"
-	bbo "github.com/tricksterproxy/trickster/pkg/cache/bbolt/options"
-	flo "github.com/tricksterproxy/trickster/pkg/cache/filesystem/options"
-	io "github.com/tricksterproxy/trickster/pkg/cache/index/options"
-	co "github.com/tricksterproxy/trickster/pkg/cache/options"
-	"github.com/tricksterproxy/trickster/pkg/cache/providers"
-	ro "github.com/tricksterproxy/trickster/pkg/cache/redis/options"
-	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
+	"github.com/trickstercache/trickster/cmd/trickster/config"
+	bao "github.com/trickstercache/trickster/pkg/cache/badger/options"
+	bbo "github.com/trickstercache/trickster/pkg/cache/bbolt/options"
+	flo "github.com/trickstercache/trickster/pkg/cache/filesystem/options"
+	io "github.com/trickstercache/trickster/pkg/cache/index/options"
+	co "github.com/trickstercache/trickster/pkg/cache/options"
+	"github.com/trickstercache/trickster/pkg/cache/providers"
+	ro "github.com/trickstercache/trickster/pkg/cache/redis/options"
+	tl "github.com/trickstercache/trickster/pkg/observability/logging"
 )
 
 func TestLoadCachesFromConfig(t *testing.T) {

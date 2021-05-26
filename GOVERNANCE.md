@@ -92,7 +92,7 @@ should either be part of a GitHub issue or PR, or be sent to `cncf-trickster-mai
 
 ## GitHub Project Administration
 
-The [@tricksterproxy/maintainers](https://github.com/orgs/tricksterproxy/teams/maintainers) team reflects the list of Maintainers.
+The [@trickstercache/maintainers](https://github.com/orgs/trickstercache/teams/maintainers) team reflects the list of Maintainers.
 
 ## Other Projects
 

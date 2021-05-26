@@ -22,11 +22,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/backends/alb/pool"
-	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	"github.com/tricksterproxy/trickster/pkg/proxy/response/merge"
-	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
+	"github.com/trickstercache/trickster/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/pkg/proxy/response/merge"
+	tu "github.com/trickstercache/trickster/pkg/util/testing"
 )
 
 func testMergeFunc(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {
@@ -35,7 +35,7 @@ func testMergeFunc(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGat
 
 func TestHandleResponseMerge(t *testing.T) {
 
-	r, _ := http.NewRequest("GET", "http://tricksterproxy.io/", nil)
+	r, _ := http.NewRequest("GET", "http://trickstercache.io/", nil)
 	rsc := request.NewResources(nil, nil, nil, nil, nil, nil, nil)
 	rsc.ResponseMergeFunc = testMergeFunc
 	rsc.IsMergeMember = true

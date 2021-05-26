@@ -27,9 +27,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	"github.com/tricksterproxy/trickster/pkg/timeseries/dataset"
-	"github.com/tricksterproxy/trickster/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/pkg/timeseries/epoch"
 )
 
 // WFDocument the Wire Format Document for the timeseries

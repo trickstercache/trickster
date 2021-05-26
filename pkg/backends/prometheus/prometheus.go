@@ -25,16 +25,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/backends"
-	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	modelprom "github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
-	po "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
-	"github.com/tricksterproxy/trickster/pkg/backends/providers/registration/types"
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	"github.com/tricksterproxy/trickster/pkg/proxy/params"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	tt "github.com/tricksterproxy/trickster/pkg/util/timeconv"
+	"github.com/trickstercache/trickster/pkg/backends"
+	bo "github.com/trickstercache/trickster/pkg/backends/options"
+	modelprom "github.com/trickstercache/trickster/pkg/backends/prometheus/model"
+	po "github.com/trickstercache/trickster/pkg/backends/prometheus/options"
+	"github.com/trickstercache/trickster/pkg/backends/providers/registration/types"
+	"github.com/trickstercache/trickster/pkg/cache"
+	"github.com/trickstercache/trickster/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/pkg/proxy/params"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	tt "github.com/trickstercache/trickster/pkg/util/timeconv"
 )
 
 var _ backends.TimeseriesBackend = (*Client)(nil)

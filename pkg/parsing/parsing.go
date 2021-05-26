@@ -21,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/tricksterproxy/trickster/pkg/parsing/token"
+	"github.com/trickstercache/trickster/pkg/parsing/token"
 )
 
 // Parser is the main parser interface tor Trickster

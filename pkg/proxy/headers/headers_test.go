@@ -21,7 +21,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/runtime"
+	"github.com/trickstercache/trickster/pkg/runtime"
 )
 
 func TestExtractHeader(t *testing.T) {

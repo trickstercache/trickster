@@ -29,15 +29,15 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/tricksterproxy/trickster/cmd/trickster/config"
-	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
-	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
-	"github.com/tricksterproxy/trickster/pkg/observability/tracing/exporters/stdout"
-	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
-	ph "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
-	testutil "github.com/tricksterproxy/trickster/pkg/util/testing"
-	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
+	"github.com/trickstercache/trickster/cmd/trickster/config"
+	tl "github.com/trickstercache/trickster/pkg/observability/logging"
+	"github.com/trickstercache/trickster/pkg/observability/tracing"
+	"github.com/trickstercache/trickster/pkg/observability/tracing/exporters/stdout"
+	"github.com/trickstercache/trickster/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/pkg/proxy/handlers"
+	ph "github.com/trickstercache/trickster/pkg/proxy/handlers"
+	testutil "github.com/trickstercache/trickster/pkg/util/testing"
+	tlstest "github.com/trickstercache/trickster/pkg/util/testing/tls"
 )
 
 func testListener() net.Listener {

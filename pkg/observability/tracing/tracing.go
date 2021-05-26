@@ -20,7 +20,7 @@ package tracing
 import (
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/pkg/observability/tracing/options"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"

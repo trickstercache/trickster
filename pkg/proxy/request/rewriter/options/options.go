@@ -16,7 +16,7 @@
 
 package options
 
-import "github.com/tricksterproxy/trickster/pkg/util/copiers"
+import "github.com/trickstercache/trickster/pkg/util/copiers"
 
 const MaxRewriterChainExecutions int = 32
 

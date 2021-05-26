@@ -26,8 +26,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	"github.com/tricksterproxy/trickster/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/timeseries/epoch"
 )
 
 // DataSet is the Common Time Series Format that Trickster uses to

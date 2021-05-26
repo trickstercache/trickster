@@ -21,9 +21,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	po "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
+	po "github.com/trickstercache/trickster/pkg/backends/prometheus/options"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	tu "github.com/trickstercache/trickster/pkg/util/testing"
 )
 
 func TestQueryHandler(t *testing.T) {

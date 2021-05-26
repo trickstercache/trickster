@@ -24,9 +24,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/cmd/trickster/config"
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
+	"github.com/trickstercache/trickster/cmd/trickster/config"
+	"github.com/trickstercache/trickster/pkg/cache"
+	tl "github.com/trickstercache/trickster/pkg/observability/logging"
 )
 
 func TestReloadHandleFunc(t *testing.T) {

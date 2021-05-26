@@ -21,8 +21,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
+	bo "github.com/trickstercache/trickster/pkg/backends/options"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
 )
 
 func TestNewTestServer(t *testing.T) {

@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/pkg/backends/healthcheck"
 )
 
 func TestCheckHealth(t *testing.T) {

@@ -21,8 +21,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	"github.com/tricksterproxy/trickster/pkg/util/strings"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/util/strings"
 )
 
 func emptyHandler(w http.ResponseWriter, r *http.Request) {
@@ -31,7 +31,7 @@ func emptyHandler(w http.ResponseWriter, r *http.Request) {
 
 func TestHandleCompression(t *testing.T) {
 	f := HandleCompression(http.HandlerFunc(emptyHandler), strings.Lookup{"text/plain": nil})
-	r, _ := http.NewRequest(http.MethodGet, "http://tricksterproxy.io/", nil)
+	r, _ := http.NewRequest(http.MethodGet, "http://trickstercache.io/", nil)
 	w := httptest.NewRecorder()
 	f.ServeHTTP(w, r)
 	if w.Body.String() != "trickster" {

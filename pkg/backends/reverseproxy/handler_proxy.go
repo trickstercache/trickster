@@ -19,8 +19,8 @@ package reverseproxy
 import (
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
-	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
+	"github.com/trickstercache/trickster/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/pkg/proxy/urls"
 )
 
 // ProxyHandler will proxy the inbound HTTP Request to the configured origin

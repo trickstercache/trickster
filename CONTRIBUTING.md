@@ -34,7 +34,7 @@ Should you wish to work on an issue, please claim it first by commenting on the 
 
 If you have questions about one of the issues, please comment on them and one of the maintainers will clarify it. For a quicker response, contact us on the #trickster slack channel.
 
-For complete instructions on how to compile see: [Building From Source](https://github.com/tricksterproxy/trickster#building-from-source)
+For complete instructions on how to compile see: [Building From Source](https://github.com/trickstercache/trickster#building-from-source)
 
 For quickly compiling and testing your changes do:
 

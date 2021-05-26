@@ -113,12 +113,12 @@ github.com/stretchr/testify/assert
 # github.com/tinylib/msgp v1.1.5
 ## explicit
 github.com/tinylib/msgp/msgp
-# github.com/tricksterproxy/mockster v1.1.1
+# github.com/trickstercache/mockster v1.1.2
 ## explicit
-github.com/tricksterproxy/mockster/pkg/mocks/byterange
-github.com/tricksterproxy/mockster/pkg/mocks/prometheus
-github.com/tricksterproxy/mockster/pkg/routes
-github.com/tricksterproxy/mockster/pkg/testutil
+github.com/trickstercache/mockster/pkg/mocks/byterange
+github.com/trickstercache/mockster/pkg/mocks/prometheus
+github.com/trickstercache/mockster/pkg/routes
+github.com/trickstercache/mockster/pkg/testutil
 # github.com/yuin/gopher-lua v0.0.0-20200816102855-ee81675732da
 ## explicit
 github.com/yuin/gopher-lua

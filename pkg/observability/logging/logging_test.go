@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/cmd/trickster/config"
-	"github.com/tricksterproxy/trickster/pkg/observability/logging/options"
+	"github.com/trickstercache/trickster/cmd/trickster/config"
+	"github.com/trickstercache/trickster/pkg/observability/logging/options"
 
 	gkl "github.com/go-kit/kit/log"
 )

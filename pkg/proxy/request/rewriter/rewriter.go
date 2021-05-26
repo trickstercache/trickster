@@ -20,7 +20,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
+	"github.com/trickstercache/trickster/pkg/proxy/request/rewriter/options"
 )
 
 var errInvalidRewriterOptions = errors.New("invalid rewriter options")

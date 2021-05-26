@@ -19,9 +19,9 @@ package rule
 import (
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/backends"
-	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	"github.com/tricksterproxy/trickster/pkg/backends/rule/options"
+	"github.com/trickstercache/trickster/pkg/backends"
+	bo "github.com/trickstercache/trickster/pkg/backends/options"
+	"github.com/trickstercache/trickster/pkg/backends/rule/options"
 )
 
 func TestNewNewClient(t *testing.T) {

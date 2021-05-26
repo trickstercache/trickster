@@ -21,9 +21,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/cmd/trickster/config"
-	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
-	tlo "github.com/tricksterproxy/trickster/pkg/observability/logging/options"
+	"github.com/trickstercache/trickster/cmd/trickster/config"
+	tl "github.com/trickstercache/trickster/pkg/observability/logging"
+	tlo "github.com/trickstercache/trickster/pkg/observability/logging/options"
 )
 
 func TestLogUpstreamRequest(t *testing.T) {

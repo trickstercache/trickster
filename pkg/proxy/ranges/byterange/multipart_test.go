@@ -23,7 +23,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
 )
 
 const testSeparator = "TEST-SEPARATOR"

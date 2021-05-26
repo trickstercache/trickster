@@ -20,11 +20,11 @@ import (
 	"testing"
 	"time"
 
-	bo "github.com/tricksterproxy/trickster/pkg/cache/badger/options"
-	co "github.com/tricksterproxy/trickster/pkg/cache/options"
-	"github.com/tricksterproxy/trickster/pkg/cache/status"
-	"github.com/tricksterproxy/trickster/pkg/locks"
-	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
+	bo "github.com/trickstercache/trickster/pkg/cache/badger/options"
+	co "github.com/trickstercache/trickster/pkg/cache/options"
+	"github.com/trickstercache/trickster/pkg/cache/status"
+	"github.com/trickstercache/trickster/pkg/locks"
+	tl "github.com/trickstercache/trickster/pkg/observability/logging"
 )
 
 const provider = "badger"

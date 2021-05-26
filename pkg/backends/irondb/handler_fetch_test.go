@@ -23,11 +23,11 @@ import (
 	"testing"
 	"time"
 
-	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
+	bo "github.com/trickstercache/trickster/pkg/backends/options"
+	tl "github.com/trickstercache/trickster/pkg/observability/logging"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	tu "github.com/trickstercache/trickster/pkg/util/testing"
 )
 
 func TestFetchHandler(t *testing.T) {

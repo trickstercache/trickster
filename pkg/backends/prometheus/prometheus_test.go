@@ -25,16 +25,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/cmd/trickster/config"
-	"github.com/tricksterproxy/trickster/pkg/backends"
-	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	"github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
-	po "github.com/tricksterproxy/trickster/pkg/backends/prometheus/options"
-	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
-	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
-	pe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/cmd/trickster/config"
+	"github.com/trickstercache/trickster/pkg/backends"
+	bo "github.com/trickstercache/trickster/pkg/backends/options"
+	"github.com/trickstercache/trickster/pkg/backends/prometheus/model"
+	po "github.com/trickstercache/trickster/pkg/backends/prometheus/options"
+	cr "github.com/trickstercache/trickster/pkg/cache/registration"
+	tl "github.com/trickstercache/trickster/pkg/observability/logging"
+	pe "github.com/trickstercache/trickster/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/pkg/timeseries"
 )
 
 var testModeler = model.NewModeler()

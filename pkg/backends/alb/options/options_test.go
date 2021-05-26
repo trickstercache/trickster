@@ -19,7 +19,7 @@ package options
 import (
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
+	"github.com/trickstercache/trickster/pkg/util/yamlx"
 
 	"gopkg.in/yaml.v2"
 )

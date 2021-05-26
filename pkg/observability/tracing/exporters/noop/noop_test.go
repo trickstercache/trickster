@@ -20,7 +20,7 @@ package noop
 import (
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/pkg/observability/tracing/options"
 )
 
 func TestNewTracer(t *testing.T) {

@@ -21,11 +21,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
-	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
-	"github.com/tricksterproxy/trickster/pkg/proxy/params"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
+	"github.com/trickstercache/trickster/pkg/backends/prometheus/model"
+	"github.com/trickstercache/trickster/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/pkg/proxy/params"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/pkg/proxy/urls"
 )
 
 // SeriesHandler proxies requests for path /series to the origin by way of the object proxy cache

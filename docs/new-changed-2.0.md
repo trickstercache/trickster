@@ -4,7 +4,7 @@
 
 2.0 continues to improve the Trickster project, with a ton of new features, bug fixes, and optimizations. Here's the quick rundown of what's new and improved:
 
-- we now use YAML for configuration, and provide [tooling](http://github.com/tricksterproxy/tricktool) to migrate a 1.x TOML configuration
+- we now use YAML for configuration, and provide [tooling](http://github.com/trickstercache/tricktool) to migrate a 1.x TOML configuration
 - example configurations are relocated to the [examples](../examples/conf) directory
 - the [Trickster docker-compose demo](../examples/docker-compose) has been relocated to the examples directory and updated to use latest version tags
 - we now use a common time series format internally for caching all supported TSDB's, rather than implementing each one separately
@@ -48,7 +48,7 @@ The current Trickster 2.0 beta has the following known issues:
 
 ## Installing
 
-You can build the 2.0 binary from the `main` branch, download binaries from the [Releases](http://github.com/tricksterproxy/trickster/releases) page, or use the `tricksterproxy/trickster:2` Docker image tag in containerized environments.
+You can build the 2.0 binary from the `main` branch, download binaries from the [Releases](http://github.com/trickstercache/trickster/releases) page, or use the `trickstercache/trickster:2` Docker image tag in containerized environments.
 
 ## Breaking Changes from 1.x
 
@@ -58,7 +58,7 @@ You can build the 2.0 binary from the `main` branch, download binaries from the 
 
 ### Configuration
 
-Using [tricktool](http://github.com/tricksterproxy/tricktool) to migrate your configurations is the recommended approach. However, if you choose to convert your configuration by hand, here is what you need to know:
+Using [tricktool](http://github.com/trickstercache/tricktool) to migrate your configurations is the recommended approach. However, if you choose to convert your configuration by hand, here is what you need to know:
 
 - <https://www.convertsimple.com/convert-toml-to-yaml/> is a good starting point
 - The `[origins]` section of the Trickster 1.x TOML config is named `backends:` in the 2.0 YAML config

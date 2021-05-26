@@ -22,10 +22,10 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/errors"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	"github.com/tricksterproxy/trickster/pkg/timeseries/dataset"
-	"github.com/tricksterproxy/trickster/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/pkg/errors"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/pkg/timeseries/epoch"
 )
 
 func TestNewModeler(t *testing.T) {

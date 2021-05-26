@@ -20,8 +20,8 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
-	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
-	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	ho "github.com/trickstercache/trickster/pkg/backends/healthcheck/options"
+	bo "github.com/trickstercache/trickster/pkg/backends/options"
 )
 
 func TestBackends(t *testing.T) {

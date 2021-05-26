@@ -17,7 +17,7 @@
 package influxdb
 
 import (
-	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
+	ho "github.com/trickstercache/trickster/pkg/backends/healthcheck/options"
 )
 
 // DefaultHealthCheckConfig returns the default HealthCheck Config for this backend provider

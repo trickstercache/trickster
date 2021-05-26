@@ -20,8 +20,8 @@ package jaeger
 import (
 	"testing"
 
-	errs "github.com/tricksterproxy/trickster/pkg/observability/tracing/errors"
-	"github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
+	errs "github.com/trickstercache/trickster/pkg/observability/tracing/errors"
+	"github.com/trickstercache/trickster/pkg/observability/tracing/options"
 )
 
 func TestNewTracer(t *testing.T) {

@@ -19,7 +19,7 @@ package metrics
 import (
 	"fmt"
 
-	"github.com/tricksterproxy/trickster/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/pkg/observability/metrics"
 )
 
 // ObserveCacheMiss records a Cache Miss event

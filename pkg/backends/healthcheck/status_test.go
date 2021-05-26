@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
 )
 
 func TestString(t *testing.T) {

@@ -19,7 +19,7 @@ package sql
 import (
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/parsing/token"
+	"github.com/trickstercache/trickster/pkg/parsing/token"
 )
 
 // tokens for SELECT query

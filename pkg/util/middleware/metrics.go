@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/pkg/observability/metrics"
 )
 
 // Decorate decorates a function in such a way that it captures both the

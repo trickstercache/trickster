@@ -22,7 +22,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
 )
 
 // Envelope represents a Proemtheus Response Envelope Root Type

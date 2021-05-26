@@ -22,10 +22,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/backends/alb/pool"
-	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
-	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
-	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
+	"github.com/trickstercache/trickster/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/pkg/proxy/handlers"
+	tu "github.com/trickstercache/trickster/pkg/util/testing"
 )
 
 func testPool(mech pool.Mechanism, healthyFloor int, hs []http.Handler) (pool.Pool,

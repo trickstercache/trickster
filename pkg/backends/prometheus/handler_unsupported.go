@@ -19,7 +19,7 @@ package prometheus
 import (
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/backends/prometheus/model"
+	"github.com/trickstercache/trickster/pkg/backends/prometheus/model"
 )
 
 // UnsupportedHandler responds to endpoints like /api/v1/admin

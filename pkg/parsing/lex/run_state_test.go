@@ -19,7 +19,7 @@ package lex
 import (
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/parsing/token"
+	"github.com/trickstercache/trickster/pkg/parsing/token"
 )
 
 var testRunState = &RunState{

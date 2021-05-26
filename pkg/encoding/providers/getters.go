@@ -19,12 +19,12 @@ package providers
 import (
 	"io"
 
-	"github.com/tricksterproxy/trickster/pkg/encoding/brotli"
-	"github.com/tricksterproxy/trickster/pkg/encoding/deflate"
-	"github.com/tricksterproxy/trickster/pkg/encoding/gzip"
-	"github.com/tricksterproxy/trickster/pkg/encoding/reader"
-	"github.com/tricksterproxy/trickster/pkg/encoding/snappy"
-	"github.com/tricksterproxy/trickster/pkg/encoding/zstd"
+	"github.com/trickstercache/trickster/pkg/encoding/brotli"
+	"github.com/trickstercache/trickster/pkg/encoding/deflate"
+	"github.com/trickstercache/trickster/pkg/encoding/gzip"
+	"github.com/trickstercache/trickster/pkg/encoding/reader"
+	"github.com/trickstercache/trickster/pkg/encoding/snappy"
+	"github.com/trickstercache/trickster/pkg/encoding/zstd"
 )
 
 type EncoderInitializer func(io.Writer, int) io.WriteCloser

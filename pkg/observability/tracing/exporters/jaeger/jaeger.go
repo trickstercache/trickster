@@ -18,9 +18,9 @@
 package jaeger
 
 import (
-	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
-	errs "github.com/tricksterproxy/trickster/pkg/observability/tracing/errors"
-	"github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/pkg/observability/tracing"
+	errs "github.com/trickstercache/trickster/pkg/observability/tracing/errors"
+	"github.com/trickstercache/trickster/pkg/observability/tracing/options"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/trace/jaeger"

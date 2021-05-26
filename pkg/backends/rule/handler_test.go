@@ -17,7 +17,7 @@
 package rule
 
 import (
-	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
+	tu "github.com/trickstercache/trickster/pkg/util/testing"
 
 	"testing"
 )

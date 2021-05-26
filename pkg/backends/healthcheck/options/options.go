@@ -22,8 +22,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/util/yamlx"
 )
 
 // MaxProbeWaitMS is the maximum time a health check will wait before timing out

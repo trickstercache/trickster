@@ -20,11 +20,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/encoding/gzip"
-	"github.com/tricksterproxy/trickster/pkg/encoding/profile"
-	"github.com/tricksterproxy/trickster/pkg/encoding/reader"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	"github.com/tricksterproxy/trickster/pkg/util/strings"
+	"github.com/trickstercache/trickster/pkg/encoding/gzip"
+	"github.com/trickstercache/trickster/pkg/encoding/profile"
+	"github.com/trickstercache/trickster/pkg/encoding/reader"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/util/strings"
 )
 
 func TestNewEncoder(t *testing.T) {

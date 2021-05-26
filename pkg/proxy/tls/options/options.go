@@ -19,8 +19,8 @@ package options
 import (
 	"os"
 
-	"github.com/tricksterproxy/trickster/pkg/util/copiers"
-	strutil "github.com/tricksterproxy/trickster/pkg/util/strings"
+	"github.com/trickstercache/trickster/pkg/util/copiers"
+	strutil "github.com/trickstercache/trickster/pkg/util/strings"
 )
 
 // Options is a collection of TLS-related client and server configurations

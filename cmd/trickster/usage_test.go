@@ -17,7 +17,7 @@
 package main
 
 import (
-	"github.com/tricksterproxy/trickster/pkg/runtime"
+	"github.com/trickstercache/trickster/pkg/runtime"
 )
 
 // ExamplePrintVersion tests the output of the printVersion() func
@@ -75,6 +75,6 @@ func ExamplePrintUsage() {
 	//
 	// Thank you for using and contributing to Open Source Software!
 	//
-	// https://github.com/tricksterproxy/trickster
+	// https://github.com/trickstercache/trickster
 	//
 }

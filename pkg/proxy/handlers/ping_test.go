@@ -21,7 +21,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/cmd/trickster/config"
+	"github.com/trickstercache/trickster/cmd/trickster/config"
 )
 
 func TestPingHandler(t *testing.T) {

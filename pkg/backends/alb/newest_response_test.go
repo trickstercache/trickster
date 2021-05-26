@@ -22,14 +22,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/backends/alb/pool"
-	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
-	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
+	"github.com/trickstercache/trickster/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/pkg/backends/healthcheck"
+	tu "github.com/trickstercache/trickster/pkg/util/testing"
 )
 
 func TestHandleNewestResponse(t *testing.T) {
 
-	r, _ := http.NewRequest("GET", "http://tricksterproxy.io/", nil)
+	r, _ := http.NewRequest("GET", "http://trickstercache.io/", nil)
 
 	p, _, _ := testPool(pool.NewestLastModified, 0, nil)
 	c := &Client{pool: p}

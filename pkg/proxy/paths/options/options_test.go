@@ -20,10 +20,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
-	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
-	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
+	"github.com/trickstercache/trickster/pkg/proxy/forwarding"
+	"github.com/trickstercache/trickster/pkg/proxy/paths/matching"
+	"github.com/trickstercache/trickster/pkg/proxy/request/rewriter"
+	"github.com/trickstercache/trickster/pkg/util/yamlx"
 )
 
 func TestNew(t *testing.T) {

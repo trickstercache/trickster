@@ -20,9 +20,9 @@ While this might sound daunting, it is actually much easier than it appears on t
 
 ## Interfacing
 
-A Time Series Backend is used by Trickster to 1) manipulate HTTP requests and responses in order to accelerate the requests, 2) unmarshal data from origin databases into the [Common Time Series Format](https://github.com/tricksterproxy/trickster/blob/main/pkg/timeseries/dataset/dataset.go), and 3) marshal from the CTSF into a format supported by the Provider as requested by the downstream Client.
+A Time Series Backend is used by Trickster to 1) manipulate HTTP requests and responses in order to accelerate the requests, 2) unmarshal data from origin databases into the [Common Time Series Format](https://github.com/trickstercache/trickster/blob/main/pkg/timeseries/dataset/dataset.go), and 3) marshal from the CTSF into a format supported by the Provider as requested by the downstream Client.
 
-Trickster provides 1 required interfaces for enabling a new Provider: [Time Series Backend](https://github.com/tricksterproxy/trickster/blob/main/pkg/backends/timeseries_backend.go). Separately, you must implement `io.Writer`-based marshalers and unmarshalers that conform to Trickster's [Modeler specifications](https://github.com/tricksterproxy/trickster/blob/main/pkg/timeseries/modeler.go).
+Trickster provides 1 required interfaces for enabling a new Provider: [Time Series Backend](https://github.com/trickstercache/trickster/blob/main/pkg/backends/timeseries_backend.go). Separately, you must implement `io.Writer`-based marshalers and unmarshalers that conform to Trickster's [Modeler specifications](https://github.com/trickstercache/trickster/blob/main/pkg/timeseries/modeler.go).
 
 Once data is unmarshaled into the Common Time Series Format, Trickster's other packages will handle operations like Delta Proxy Caching, etc. Thus, the implementer of a new Provider only needs to worry about wire protocols and formats.
  Specifically, you will need to know these things about the Backend:
