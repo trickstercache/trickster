@@ -20,9 +20,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tricksterproxy/trickster/pkg/util/base64"
-	"github.com/tricksterproxy/trickster/pkg/util/md5"
-	"github.com/tricksterproxy/trickster/pkg/util/sha1"
+	"github.com/trickstercache/trickster/pkg/util/base64"
+	"github.com/trickstercache/trickster/pkg/util/md5"
+	"github.com/trickstercache/trickster/pkg/util/sha1"
 )
 
 type operation string

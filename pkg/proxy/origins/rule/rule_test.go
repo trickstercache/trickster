@@ -21,12 +21,12 @@ import (
 	"net/http"
 	"testing"
 
-	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	ro "github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
-	rwo "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
+	tc "github.com/trickstercache/trickster/pkg/proxy/context"
+	"github.com/trickstercache/trickster/pkg/proxy/origins"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
+	ro "github.com/trickstercache/trickster/pkg/proxy/origins/rule/options"
+	"github.com/trickstercache/trickster/pkg/proxy/request/rewriter"
+	rwo "github.com/trickstercache/trickster/pkg/proxy/request/rewriter/options"
 )
 
 var testMux1 = http.NewServeMux()
@@ -122,13 +122,13 @@ func newTestCaseOpts() map[string]*ro.CaseOptions {
 			ReqRewriterName: "test-rewriter-4",
 		},
 		"3": {
-			Matches:     []string{"tricksterproxy"},
-			RedirectURL: "http://tricksterproxy.io",
+			Matches:     []string{"trickstercache"},
+			RedirectURL: "http://trickstercache.org",
 		},
 		"4": {
 			Matches:         []string{"true"},
 			ReqRewriterName: "test-rewriter-5",
-			RedirectURL:     "http://tricksterproxy.io",
+			RedirectURL:     "http://trickstercache.org",
 		},
 	}
 }
@@ -222,7 +222,7 @@ func TestEvaluateOpArg(t *testing.T) {
 		t.Errorf("expected %s got %s", et, hr.Header.Get("Test-Trail"))
 	}
 
-	// hr.Header.Set(testRuleHeader, "tricksterproxy")
+	// hr.Header.Set(testRuleHeader, "trickstercache")
 	// _, _, err = r.EvaluateOpArg(hr)
 	// if err != nil {
 	// 	t.Error(err)
@@ -230,7 +230,7 @@ func TestEvaluateOpArg(t *testing.T) {
 
 	// Make sure redirection handlers are covered
 	r.defaultRedirectCode = 302
-	r.defaultRedirectURL = "http://tricksterproxy.io"
+	r.defaultRedirectURL = "http://trickstercache.org"
 
 	hr.Header.Del(testRuleHeader)
 	_, _, err = r.EvaluateOpArg(hr)
@@ -270,7 +270,7 @@ func TestEvaluateCaseArg(t *testing.T) {
 		t.Error(err)
 	}
 
-	hr.Header.Set(testRuleHeader, "tricksterproxy")
+	hr.Header.Set(testRuleHeader, "trickstercache")
 	_, _, err = r.EvaluateCaseArg(hr)
 	if err != nil {
 		t.Error(err)
@@ -278,7 +278,7 @@ func TestEvaluateCaseArg(t *testing.T) {
 
 	// Make sure redirection handlers are covered
 	r.defaultRedirectCode = 302
-	r.defaultRedirectURL = "http://tricksterproxy.io"
+	r.defaultRedirectURL = "http://trickstercache.org"
 
 	hr.Header.Del(testRuleHeader)
 	_, _, err = r.EvaluateCaseArg(hr)

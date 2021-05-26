@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/timeconv"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	"github.com/tricksterproxy/trickster/pkg/util/regexp/matching"
+	"github.com/trickstercache/trickster/pkg/proxy/timeconv"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/util/regexp/matching"
 )
 
 // This file handles tokenization of time parameters within InfluxDB queries

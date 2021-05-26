@@ -1,8 +1,8 @@
 ARG IMAGE_ARCH=amd64
 
 FROM golang:1.14.3 as builder
-COPY . /go/src/github.com/tricksterproxy/trickster
-WORKDIR /go/src/github.com/tricksterproxy/trickster
+COPY . /go/src/github.com/trickstercache/trickster
+WORKDIR /go/src/github.com/trickstercache/trickster
 
 ARG GOARCH=amd64
 RUN GOOS=linux GOARCH=${GOARCH} CGO_ENABLED=0 make build
@@ -10,7 +10,7 @@ RUN GOOS=linux GOARCH=${GOARCH} CGO_ENABLED=0 make build
 FROM ${IMAGE_ARCH}/alpine:3.12
 LABEL maintainer "The Trickster Authors <trickster-developers@googlegroups.com>"
 
-COPY --from=builder /go/src/github.com/tricksterproxy/trickster/OPATH/trickster /usr/local/bin/trickster
+COPY --from=builder /go/src/github.com/trickstercache/trickster/OPATH/trickster /usr/local/bin/trickster
 COPY cmd/trickster/conf/example.conf /etc/trickster/trickster.conf
 RUN chown nobody /usr/local/bin/trickster
 RUN chmod +x /usr/local/bin/trickster

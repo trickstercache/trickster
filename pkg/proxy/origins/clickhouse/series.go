@@ -22,8 +22,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/sort/times"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/sort/times"
+	"github.com/trickstercache/trickster/pkg/timeseries"
 )
 
 // Step returns the step for the Timeseries

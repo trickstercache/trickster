@@ -20,14 +20,14 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
+	"github.com/trickstercache/trickster/pkg/cache"
+	"github.com/trickstercache/trickster/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/pkg/proxy/methods"
+	"github.com/trickstercache/trickster/pkg/proxy/origins"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
+	"github.com/trickstercache/trickster/pkg/proxy/paths/matching"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/pkg/proxy/request/rewriter"
 )
 
 // Client Implements the Proxy Client Interface

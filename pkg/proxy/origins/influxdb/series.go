@@ -24,9 +24,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/sort/times"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	str "github.com/tricksterproxy/trickster/pkg/util/strings"
+	"github.com/trickstercache/trickster/pkg/sort/times"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	str "github.com/trickstercache/trickster/pkg/util/strings"
 
 	"github.com/influxdata/influxdb/models"
 )

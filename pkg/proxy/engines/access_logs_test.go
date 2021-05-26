@@ -21,8 +21,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/config"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	"github.com/trickstercache/trickster/pkg/config"
+	tl "github.com/trickstercache/trickster/pkg/util/log"
 )
 
 func TestLogUpstreamRequest(t *testing.T) {

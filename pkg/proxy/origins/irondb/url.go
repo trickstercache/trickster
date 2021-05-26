@@ -24,9 +24,9 @@ import (
 	"strings"
 	"time"
 
-	terr "github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	terr "github.com/trickstercache/trickster/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/pkg/timeseries"
 )
 
 // SetExtent will change the upstream request query to use the provided Extent.

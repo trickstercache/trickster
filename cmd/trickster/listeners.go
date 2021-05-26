@@ -21,15 +21,15 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/config"
-	ph "github.com/tricksterproxy/trickster/pkg/proxy/handlers"
-	"github.com/tricksterproxy/trickster/pkg/proxy/listener"
-	ttls "github.com/tricksterproxy/trickster/pkg/proxy/tls"
-	"github.com/tricksterproxy/trickster/pkg/routing"
-	"github.com/tricksterproxy/trickster/pkg/tracing"
-	"github.com/tricksterproxy/trickster/pkg/util/log"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
-	"github.com/tricksterproxy/trickster/pkg/util/metrics"
+	"github.com/trickstercache/trickster/pkg/config"
+	ph "github.com/trickstercache/trickster/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/pkg/proxy/listener"
+	ttls "github.com/trickstercache/trickster/pkg/proxy/tls"
+	"github.com/trickstercache/trickster/pkg/routing"
+	"github.com/trickstercache/trickster/pkg/tracing"
+	"github.com/trickstercache/trickster/pkg/util/log"
+	tl "github.com/trickstercache/trickster/pkg/util/log"
+	"github.com/trickstercache/trickster/pkg/util/metrics"
 )
 
 var lg = listener.NewListenerGroup()

@@ -20,15 +20,15 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	co "github.com/tricksterproxy/trickster/pkg/cache/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/context"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	"github.com/tricksterproxy/trickster/pkg/tracing"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	"github.com/trickstercache/trickster/pkg/cache"
+	co "github.com/trickstercache/trickster/pkg/cache/options"
+	"github.com/trickstercache/trickster/pkg/proxy/context"
+	"github.com/trickstercache/trickster/pkg/proxy/origins"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/tracing"
+	tl "github.com/trickstercache/trickster/pkg/util/log"
 )
 
 // Resources is a collection of resources a Trickster request would need to fulfill the client request

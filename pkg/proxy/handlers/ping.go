@@ -19,8 +19,8 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/config"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/config"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
 )
 
 // PingHandleFunc responds to an HTTP Request with 200 OK and "pong"

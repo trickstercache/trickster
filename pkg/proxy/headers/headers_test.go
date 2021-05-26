@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/runtime"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/runtime"
+	"github.com/trickstercache/trickster/pkg/timeseries"
 )
 
 func TestExtractHeader(t *testing.T) {

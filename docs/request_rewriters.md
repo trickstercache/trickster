@@ -149,7 +149,7 @@ To clear the URL parameters, use `['params', 'set', '']`
 
 `['host', 'replace', ':443', ':8443']`
 
-`['host', 'replace', 'example.com', 'tricksterproxy.io']`
+`['host', 'replace', 'example.com', 'trickstercache.org']`
 
 ### hostname
 
@@ -165,7 +165,7 @@ To clear the URL parameters, use `['params', 'set', '']`
 
 `hostname replace` performs a search/replace on the Request's hostname, without respect to the port.
 
-`['hostname', 'replace', 'example.com', 'tricksterproxy.io']`
+`['hostname', 'replace', 'example.com', 'trickstercache.org']`
 
 ### port
 

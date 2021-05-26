@@ -21,15 +21,15 @@ import (
 	"os"
 	"testing"
 
-	bao "github.com/tricksterproxy/trickster/pkg/cache/badger/options"
-	bbo "github.com/tricksterproxy/trickster/pkg/cache/bbolt/options"
-	flo "github.com/tricksterproxy/trickster/pkg/cache/filesystem/options"
-	io "github.com/tricksterproxy/trickster/pkg/cache/index/options"
-	co "github.com/tricksterproxy/trickster/pkg/cache/options"
-	ro "github.com/tricksterproxy/trickster/pkg/cache/redis/options"
-	"github.com/tricksterproxy/trickster/pkg/cache/types"
-	"github.com/tricksterproxy/trickster/pkg/config"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	bao "github.com/trickstercache/trickster/pkg/cache/badger/options"
+	bbo "github.com/trickstercache/trickster/pkg/cache/bbolt/options"
+	flo "github.com/trickstercache/trickster/pkg/cache/filesystem/options"
+	io "github.com/trickstercache/trickster/pkg/cache/index/options"
+	co "github.com/trickstercache/trickster/pkg/cache/options"
+	ro "github.com/trickstercache/trickster/pkg/cache/redis/options"
+	"github.com/trickstercache/trickster/pkg/cache/types"
+	"github.com/trickstercache/trickster/pkg/config"
+	tl "github.com/trickstercache/trickster/pkg/util/log"
 )
 
 func TestLoadCachesFromConfig(t *testing.T) {

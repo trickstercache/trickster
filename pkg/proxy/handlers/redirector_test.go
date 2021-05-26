@@ -24,7 +24,7 @@ import (
 
 func TestRedirector(t *testing.T) {
 	ctx := context.Background()
-	ctx = WithRedirects(ctx, 302, "http://tricksterproxy.io")
+	ctx = WithRedirects(ctx, 302, "http://trickstercache.org")
 	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
 	w := httptest.NewRecorder()
 	HandleRedirectResponse(w, r)

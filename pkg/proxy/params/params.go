@@ -23,8 +23,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/proxy/methods"
 )
 
 // UpdateParams updates the provided query parameters collection with the provided updates

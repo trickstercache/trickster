@@ -4,7 +4,7 @@
 
 1.1 continues to improve the Trickster project, with a ton of new features, bug fixes, and optimizations. Here's the quick rundown of what's new and improved:
 
-- Our GitHub project is relocated from `Comcast/trickster` to `tricksterproxy/trickster`
+- Our GitHub project is relocated from `Comcast/trickster` to `trickstercache/trickster`
 - Our Docker Hub organization name is changed from `tricksterio` to `tricksterproxy`
 - Helm charts are relocated to `tricksterproxy/helm-charts` and published at <https://helm.tricksterproxy.io>
 - All project references and package imports updated per the project relocation
@@ -22,13 +22,13 @@
 - New Rules Engine for custom request handling and rewriting
 - HTTP 2.0 Support
 - systemd service file (`trickster.service`) is relocated from `./cmd/trickster/conf/` to `./deploy/systemd/`
-- `rangesim` package has been rebranded as `mockster`, and moved to [its own project](https://github.com/tricksterproxy/mockster), with its own docker image using port `8482`
+- `rangesim` package has been rebranded as `mockster`, and moved to [its own project](https://github.com/trickstercache/mockster), with its own docker image using port `8482`
 - Fully support acceleration of HTTP POST requests to Prometheus and InfluxDB endpoints
 - Updated dependencies to Go 1.14.3, Alpine 3.12, InfluxDB 1.8.0
 
 ## Installing
 
-You can build the 1.1 binary from the `master` branch, download binaries from the Releases page, or use the `tricksterproxy/trickster:1.1` Docker image tag in containerized environments. Helm Charts version `1.5.0` is the chart release associated with Trickster v1.1.
+You can build the 1.1 binary from the `master` branch, download binaries from the Releases page, or use the `trickstercache/trickster:1.1` Docker image tag in containerized environments. Helm Charts version `1.5.0` is the chart release associated with Trickster v1.1.
 
 ## Breaking Changes from 1.0
 

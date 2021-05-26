@@ -31,7 +31,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/util/md5"
+	"github.com/trickstercache/trickster/pkg/util/md5"
 )
 
 // GetTestKeyAndCert returns a self-sign test TLS key and certificate

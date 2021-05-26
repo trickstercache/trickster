@@ -19,10 +19,10 @@ package origins
 import (
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/cache"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/pkg/timeseries"
 )
 
 // TimeseriesClient is the primary interface for interoperating with Trickster and upstream TSDB's

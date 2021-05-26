@@ -22,9 +22,9 @@ import (
 	"net/url"
 	"testing"
 
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	tu "github.com/trickstercache/trickster/pkg/util/testing"
 )
 
 func TestRawHandler(t *testing.T) {

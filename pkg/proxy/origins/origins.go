@@ -20,7 +20,7 @@ package origins
 import (
 	"net/http"
 
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
 )
 
 // Origins represents a map of Origin Clients keyed by Client Name

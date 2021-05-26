@@ -24,9 +24,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
-	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
-	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
+	"github.com/trickstercache/trickster/pkg/cache/evictionmethods"
+	d "github.com/trickstercache/trickster/pkg/config/defaults"
+	tlstest "github.com/trickstercache/trickster/pkg/util/testing/tls"
 )
 
 func TestLoadConfiguration(t *testing.T) {

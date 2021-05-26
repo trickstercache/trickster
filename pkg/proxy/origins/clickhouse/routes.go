@@ -19,9 +19,9 @@ package clickhouse
 import (
 	"net/http"
 
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
+	"github.com/trickstercache/trickster/pkg/proxy/paths/matching"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
 )
 
 func (c *Client) registerHandlers() {

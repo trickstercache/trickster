@@ -23,11 +23,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	"github.com/tricksterproxy/trickster/pkg/cache/index/options"
-	"github.com/tricksterproxy/trickster/pkg/cache/metrics"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
-	gm "github.com/tricksterproxy/trickster/pkg/util/metrics"
+	"github.com/trickstercache/trickster/pkg/cache"
+	"github.com/trickstercache/trickster/pkg/cache/index/options"
+	"github.com/trickstercache/trickster/pkg/cache/metrics"
+	tl "github.com/trickstercache/trickster/pkg/util/log"
+	gm "github.com/trickstercache/trickster/pkg/util/metrics"
 )
 
 //go:generate msgp

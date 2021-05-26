@@ -24,13 +24,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	flo "github.com/tricksterproxy/trickster/pkg/cache/filesystem/options"
-	io "github.com/tricksterproxy/trickster/pkg/cache/index/options"
-	co "github.com/tricksterproxy/trickster/pkg/cache/options"
-	"github.com/tricksterproxy/trickster/pkg/cache/status"
-	"github.com/tricksterproxy/trickster/pkg/locks"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	"github.com/trickstercache/trickster/pkg/cache"
+	flo "github.com/trickstercache/trickster/pkg/cache/filesystem/options"
+	io "github.com/trickstercache/trickster/pkg/cache/index/options"
+	co "github.com/trickstercache/trickster/pkg/cache/options"
+	"github.com/trickstercache/trickster/pkg/cache/status"
+	"github.com/trickstercache/trickster/pkg/locks"
+	tl "github.com/trickstercache/trickster/pkg/util/log"
 )
 
 const cacheType = "filesystem"

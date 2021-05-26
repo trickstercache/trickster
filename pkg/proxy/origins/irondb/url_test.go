@@ -26,12 +26,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/config"
-	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	"github.com/trickstercache/trickster/pkg/config"
+	"github.com/trickstercache/trickster/pkg/proxy/errors"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	tl "github.com/trickstercache/trickster/pkg/util/log"
 )
 
 func TestSetExtent(t *testing.T) {

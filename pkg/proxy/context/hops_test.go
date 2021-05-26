@@ -20,7 +20,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/config/defaults"
+	"github.com/trickstercache/trickster/pkg/config/defaults"
 )
 
 func TestHops(t *testing.T) {

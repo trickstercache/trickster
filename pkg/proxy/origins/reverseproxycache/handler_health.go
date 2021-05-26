@@ -20,11 +20,11 @@ import (
 	"context"
 	"net/http"
 
-	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
-	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
+	tctx "github.com/trickstercache/trickster/pkg/proxy/context"
+	"github.com/trickstercache/trickster/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/pkg/proxy/urls"
 )
 
 // HealthHandler checks the health of the Configured Upstream Origin

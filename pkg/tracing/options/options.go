@@ -18,10 +18,10 @@ package options
 
 import (
 	"github.com/BurntSushi/toml"
-	"github.com/tricksterproxy/trickster/pkg/config/defaults"
-	jaegeropts "github.com/tricksterproxy/trickster/pkg/tracing/exporters/jaeger/options"
-	stdoutopts "github.com/tricksterproxy/trickster/pkg/tracing/exporters/stdout/options"
-	"github.com/tricksterproxy/trickster/pkg/util/strings"
+	"github.com/trickstercache/trickster/pkg/config/defaults"
+	jaegeropts "github.com/trickstercache/trickster/pkg/tracing/exporters/jaeger/options"
+	stdoutopts "github.com/trickstercache/trickster/pkg/tracing/exporters/stdout/options"
+	"github.com/trickstercache/trickster/pkg/util/strings"
 )
 
 // Options is a Tracing Options collection

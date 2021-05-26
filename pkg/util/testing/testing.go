@@ -25,20 +25,20 @@ import (
 	"strings"
 	"time"
 
-	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
-	"github.com/tricksterproxy/trickster/pkg/config"
-	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
-	th "github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	"github.com/tricksterproxy/trickster/pkg/runtime"
-	"github.com/tricksterproxy/trickster/pkg/tracing"
-	to "github.com/tricksterproxy/trickster/pkg/tracing/options"
-	tr "github.com/tricksterproxy/trickster/pkg/tracing/registration"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	cr "github.com/trickstercache/trickster/pkg/cache/registration"
+	"github.com/trickstercache/trickster/pkg/config"
+	tc "github.com/trickstercache/trickster/pkg/proxy/context"
+	th "github.com/trickstercache/trickster/pkg/proxy/headers"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/pkg/runtime"
+	"github.com/trickstercache/trickster/pkg/tracing"
+	to "github.com/trickstercache/trickster/pkg/tracing/options"
+	tr "github.com/trickstercache/trickster/pkg/tracing/registration"
+	tl "github.com/trickstercache/trickster/pkg/util/log"
 
-	"github.com/tricksterproxy/mockster/pkg/testutil"
+	"github.com/trickstercache/mockster/pkg/testutil"
 )
 
 // this actively sets the ApplicationName for testing purposes

@@ -17,9 +17,9 @@
 package rule
 
 import (
-	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
+	"github.com/trickstercache/trickster/pkg/proxy/errors"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
+	"github.com/trickstercache/trickster/pkg/proxy/origins/rule/options"
 
 	"testing"
 )

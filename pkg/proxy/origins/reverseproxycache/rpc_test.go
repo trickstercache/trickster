@@ -19,8 +19,8 @@ package reverseproxycache
 import (
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	"github.com/trickstercache/trickster/pkg/proxy/origins"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
 )
 
 func TestReverseProxyCacheClientInterfacing(t *testing.T) {

@@ -20,7 +20,7 @@ package stdout
 import (
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/tracing/options"
+	"github.com/trickstercache/trickster/pkg/tracing/options"
 )
 
 func TestNewTracer(t *testing.T) {

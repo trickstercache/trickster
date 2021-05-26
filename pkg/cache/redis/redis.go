@@ -23,12 +23,12 @@ import (
 
 	"github.com/go-redis/redis"
 
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	"github.com/tricksterproxy/trickster/pkg/cache/metrics"
-	"github.com/tricksterproxy/trickster/pkg/cache/options"
-	"github.com/tricksterproxy/trickster/pkg/cache/status"
-	"github.com/tricksterproxy/trickster/pkg/locks"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	"github.com/trickstercache/trickster/pkg/cache"
+	"github.com/trickstercache/trickster/pkg/cache/metrics"
+	"github.com/trickstercache/trickster/pkg/cache/options"
+	"github.com/trickstercache/trickster/pkg/cache/status"
+	"github.com/trickstercache/trickster/pkg/locks"
+	tl "github.com/trickstercache/trickster/pkg/util/log"
 )
 
 // Redis is the string "redis"

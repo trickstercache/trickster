@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
-	ro "github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
+	ro "github.com/trickstercache/trickster/pkg/proxy/origins/rule/options"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
 )
 
 func TestNewOptions(t *testing.T) {

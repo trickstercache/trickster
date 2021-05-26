@@ -1,11 +1,11 @@
-# <img src="./docs/images/logos/trickster-logo.svg" width=90 />&nbsp;&nbsp;&nbsp;&nbsp;<img src="./docs/images/logos/trickster-text.svg" width=420 /> [![Follow on Twitter](https://img.shields.io/twitter/follow/tricksterio.svg?style=social&logo=twitter)](https://twitter.com/tricksterio)
+# <img src="./docs/images/logos/trickster-logo.svg" width=90 />&nbsp;&nbsp;&nbsp;&nbsp;<img src="./docs/images/logos/trickster-text.svg" width=420 /> [![Follow on Twitter](https://img.shields.io/twitter/follow/trickstercache.svg?style=social&logo=twitter)](https://twitter.com/trickstercache)
 
-[![License](https://img.shields.io/github/license/tricksterproxy/trickster)](/LICENSE)
-[![Coverage Status](https://coveralls.io/repos/github/tricksterproxy/trickster/badge.svg)](https://coveralls.io/github/tricksterproxy/trickster)
-[![Build Status](https://travis-ci.org/tricksterproxy/trickster.svg?branch=master)](https://travis-ci.org/tricksterproxy/trickster/)
-[![Go Report Card](https://goreportcard.com/badge/github.com/tricksterproxy/trickster)](https://goreportcard.com/report/github.com/tricksterproxy/trickster)
+[![License](https://img.shields.io/github/license/trickstercache/trickster)](/LICENSE)
+[![Coverage Status](https://coveralls.io/repos/github/trickstercache/trickster/badge.svg)](https://coveralls.io/github/trickstercache/trickster)
+[![Build Status](https://travis-ci.org/trickstercache/trickster.svg?branch=master)](https://travis-ci.org/trickstercache/trickster/)
+[![Go Report Card](https://goreportcard.com/badge/github.com/trickstercache/trickster)](https://goreportcard.com/report/github.com/trickstercache/trickster)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/2518/badge)](https://bestpractices.coreinfrastructure.org/en/projects/2518)
-[![GoDoc](https://godoc.org/github.com/tricksterproxy/trickster?status.svg)](https://godoc.org/github.com/tricksterproxy/trickster)
+[![GoDoc](https://godoc.org/github.com/trickstercache/trickster?status.svg)](https://godoc.org/github.com/trickstercache/trickster)
 [![Docker Pulls](https://img.shields.io/docker/pulls/tricksterio/trickster.svg?maxAge=86400)](https://hub.docker.com/r/tricksterio/trickster)
 
 Trickster is an HTTP reverse proxy/cache for http applications and a dashboard query accelerator for time series databases.
@@ -78,7 +78,7 @@ Check out our end-to-end [Docker Compose demo composition](./deploy/trickster-de
 
 Docker images are available on Docker Hub:
 
-    $ docker run --name trickster -d -v /path/to/trickster.conf:/etc/trickster/trickster.conf -p 0.0.0.0:8480:8480 tricksterproxy/trickster
+    $ docker run --name trickster -d -v /path/to/trickster.conf:/etc/trickster/trickster.conf -p 0.0.0.0:8480:8480 trickstercache/trickster
 
 See the 'deploy' Directory for more information about using or creating Trickster docker images.
 
@@ -98,14 +98,14 @@ Go environment with [version 1.9 or greater installed](http://golang.org/doc/ins
 You can directly use the `go` tool to download and install the `trickster`
 binary into your `GOPATH`:
 
-    $ go get github.com/tricksterproxy/trickster
+    $ go get github.com/trickstercache/trickster
     $ trickster -origin-url http://prometheus.example.com:9090 -origin-type prometheus
 
 You can also clone the repository yourself and build using `make`:
 
-    $ mkdir -p $GOPATH/src/github.com/tricksterproxy
-    $ cd $GOPATH/src/github.com/tricksterproxy
-    $ git clone https://github.com/tricksterproxy/trickster.git
+    $ mkdir -p $GOPATH/src/github.com/trickstercache
+    $ cd $GOPATH/src/github.com/trickstercache
+    $ git clone https://github.com/trickstercache/trickster.git
     $ cd trickster
     $ make build
     $ ./OPATH/trickster -origin-url http://prometheus.example.com:9090 -origin-type prometheus
