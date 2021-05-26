@@ -1,7 +1,7 @@
 #
-# Trickster 2.0 Example Configuration File - Simple Prometheus Reverse Proxy Cache
+# Trickster 2.0 Example Configuration File - Example Prometheus Accelerator with Sharding
 #
-# To use this, run: trickster -config /path/to/simple.prometheus.yaml
+# To use this, run: trickster -config /path/to/simple.sharding.yaml
 #
 # This file demonstrates a basic configuration to accelerate
 # Prometheus queries using Trickster. More documentation is
