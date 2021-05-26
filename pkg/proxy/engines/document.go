@@ -25,11 +25,11 @@ import (
 	"strings"
 	"sync"
 
-	txe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	"github.com/tricksterproxy/trickster/pkg/proxy/ranges/byterange"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	txe "github.com/trickstercache/trickster/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/proxy/ranges/byterange"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	tl "github.com/trickstercache/trickster/pkg/util/log"
 )
 
 //go:generate msgp

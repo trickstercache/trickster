@@ -19,8 +19,8 @@ package config
 import (
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
-	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
+	"github.com/trickstercache/trickster/pkg/proxy/tls/options"
+	tlstest "github.com/trickstercache/trickster/pkg/util/testing/tls"
 )
 
 func TestTLSCertConfig(t *testing.T) {

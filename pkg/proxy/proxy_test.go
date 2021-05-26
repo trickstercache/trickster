@@ -19,8 +19,8 @@ package proxy
 import (
 	"testing"
 
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
+	tlstest "github.com/trickstercache/trickster/pkg/util/testing/tls"
 )
 
 func TestNewHTTPClient(t *testing.T) {

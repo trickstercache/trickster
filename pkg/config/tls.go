@@ -19,7 +19,7 @@ package config
 import (
 	"crypto/tls"
 
-	origins "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
+	origins "github.com/trickstercache/trickster/pkg/proxy/origins/options"
 )
 
 // TLSCertConfig returns the crypto/tls configuration object with a list of name-bound

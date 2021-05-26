@@ -21,11 +21,11 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	"github.com/tricksterproxy/trickster/pkg/proxy"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
+	"github.com/trickstercache/trickster/pkg/cache"
+	"github.com/trickstercache/trickster/pkg/proxy"
+	"github.com/trickstercache/trickster/pkg/proxy/origins"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
+	"github.com/trickstercache/trickster/pkg/proxy/urls"
 )
 
 var _ origins.Client = (*Client)(nil)

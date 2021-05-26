@@ -21,12 +21,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
-	d "github.com/tricksterproxy/trickster/pkg/config/defaults"
-	rule "github.com/tricksterproxy/trickster/pkg/proxy/origins/rule/options"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
-	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
+	"github.com/trickstercache/trickster/pkg/cache/evictionmethods"
+	d "github.com/trickstercache/trickster/pkg/config/defaults"
+	rule "github.com/trickstercache/trickster/pkg/proxy/origins/rule/options"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/pkg/proxy/request/rewriter"
+	to "github.com/trickstercache/trickster/pkg/proxy/tls/options"
 
 	"github.com/gorilla/mux"
 )

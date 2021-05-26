@@ -23,8 +23,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/cache/status"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/cache/status"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
 )
 
 //go:generate msgp

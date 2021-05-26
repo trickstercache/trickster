@@ -19,13 +19,13 @@ package options
 import (
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/cache/key"
-	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
-	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
-	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
-	"github.com/tricksterproxy/trickster/pkg/util/strings"
-	ts "github.com/tricksterproxy/trickster/pkg/util/strings"
+	"github.com/trickstercache/trickster/pkg/cache/key"
+	"github.com/trickstercache/trickster/pkg/proxy/forwarding"
+	"github.com/trickstercache/trickster/pkg/proxy/methods"
+	"github.com/trickstercache/trickster/pkg/proxy/paths/matching"
+	"github.com/trickstercache/trickster/pkg/proxy/request/rewriter"
+	"github.com/trickstercache/trickster/pkg/util/strings"
+	ts "github.com/trickstercache/trickster/pkg/util/strings"
 )
 
 // Options defines a URL Path that is associated with an HTTP Handler

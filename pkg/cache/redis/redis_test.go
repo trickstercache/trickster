@@ -21,12 +21,12 @@ import (
 	"testing"
 	"time"
 
-	co "github.com/tricksterproxy/trickster/pkg/cache/options"
-	ro "github.com/tricksterproxy/trickster/pkg/cache/redis/options"
-	"github.com/tricksterproxy/trickster/pkg/cache/status"
-	"github.com/tricksterproxy/trickster/pkg/config"
-	"github.com/tricksterproxy/trickster/pkg/locks"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	co "github.com/trickstercache/trickster/pkg/cache/options"
+	ro "github.com/trickstercache/trickster/pkg/cache/redis/options"
+	"github.com/trickstercache/trickster/pkg/cache/status"
+	"github.com/trickstercache/trickster/pkg/config"
+	"github.com/trickstercache/trickster/pkg/locks"
+	tl "github.com/trickstercache/trickster/pkg/util/log"
 
 	"github.com/alicebob/miniredis"
 )

@@ -22,13 +22,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	"github.com/tricksterproxy/trickster/pkg/cache/index"
-	"github.com/tricksterproxy/trickster/pkg/cache/metrics"
-	"github.com/tricksterproxy/trickster/pkg/cache/options"
-	"github.com/tricksterproxy/trickster/pkg/cache/status"
-	"github.com/tricksterproxy/trickster/pkg/locks"
-	"github.com/tricksterproxy/trickster/pkg/util/log"
+	"github.com/trickstercache/trickster/pkg/cache"
+	"github.com/trickstercache/trickster/pkg/cache/index"
+	"github.com/trickstercache/trickster/pkg/cache/metrics"
+	"github.com/trickstercache/trickster/pkg/cache/options"
+	"github.com/trickstercache/trickster/pkg/cache/status"
+	"github.com/trickstercache/trickster/pkg/locks"
+	"github.com/trickstercache/trickster/pkg/util/log"
 
 	"go.etcd.io/bbolt"
 )

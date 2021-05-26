@@ -26,15 +26,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	"github.com/tricksterproxy/trickster/pkg/proxy"
-	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/params"
-	tt "github.com/tricksterproxy/trickster/pkg/proxy/timeconv"
-	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/cache"
+	"github.com/trickstercache/trickster/pkg/proxy"
+	"github.com/trickstercache/trickster/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/pkg/proxy/origins"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
+	"github.com/trickstercache/trickster/pkg/proxy/params"
+	tt "github.com/trickstercache/trickster/pkg/proxy/timeconv"
+	"github.com/trickstercache/trickster/pkg/proxy/urls"
+	"github.com/trickstercache/trickster/pkg/timeseries"
 )
 
 var _ origins.Client = (*Client)(nil)

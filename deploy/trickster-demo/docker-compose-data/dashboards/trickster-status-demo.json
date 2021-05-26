@@ -36,7 +36,7 @@
       "title": "Github",
       "tooltip": "Trickster Github repository",
       "type": "link",
-      "url": "https://github.com/tricksterproxy/trickster"
+      "url": "https://github.com/trickstercache/trickster"
     },
     {
       "icon": "bolt",
@@ -50,7 +50,7 @@
   ],
   "panels": [
     {
-      "content": "<img src=\"https://github.com/tricksterproxy/trickster/raw/master/docs/images/logos/trickster-logo.svg?sanitize=true\" height=\"90\" />\n",
+      "content": "<img src=\"https://github.com/trickstercache/trickster/raw/master/docs/images/logos/trickster-logo.svg?sanitize=true\" height=\"90\" />\n",
       "datasource": "${DS_PROMETHEUS}",
       "gridPos": {
         "h": 3,

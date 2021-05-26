@@ -20,11 +20,11 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	"github.com/tricksterproxy/trickster/pkg/config"
-	"github.com/tricksterproxy/trickster/pkg/config/reload"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	"github.com/trickstercache/trickster/pkg/cache"
+	"github.com/trickstercache/trickster/pkg/config"
+	"github.com/trickstercache/trickster/pkg/config/reload"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	tl "github.com/trickstercache/trickster/pkg/util/log"
 )
 
 // ReloadHandleFunc will reload the running configuration if it has changed

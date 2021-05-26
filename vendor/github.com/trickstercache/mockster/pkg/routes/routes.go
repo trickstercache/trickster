@@ -20,8 +20,8 @@ package routes
 import (
 	"net/http"
 
-	"github.com/tricksterproxy/mockster/pkg/mocks/byterange"
-	"github.com/tricksterproxy/mockster/pkg/mocks/prometheus"
+	"github.com/trickstercache/mockster/pkg/mocks/byterange"
+	"github.com/trickstercache/mockster/pkg/mocks/prometheus"
 )
 
 // GetRouter returns a Router wtih the Mockster routes

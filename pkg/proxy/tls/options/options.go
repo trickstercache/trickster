@@ -19,7 +19,7 @@ package options
 import (
 	"io/ioutil"
 
-	"github.com/tricksterproxy/trickster/pkg/util/strings"
+	"github.com/trickstercache/trickster/pkg/util/strings"
 )
 
 // Options is a collection of TLS-related client and server configurations

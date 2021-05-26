@@ -23,11 +23,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
-	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	"github.com/tricksterproxy/trickster/pkg/util/md5"
+	"github.com/trickstercache/trickster/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/pkg/proxy/urls"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/util/md5"
 )
 
 // TextHandler handles requests for text timeseries data and processes them

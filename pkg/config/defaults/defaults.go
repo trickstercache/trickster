@@ -17,8 +17,8 @@
 package defaults
 
 import (
-	"github.com/tricksterproxy/trickster/pkg/cache/evictionmethods"
-	"github.com/tricksterproxy/trickster/pkg/cache/types"
+	"github.com/trickstercache/trickster/pkg/cache/evictionmethods"
+	"github.com/trickstercache/trickster/pkg/cache/types"
 )
 
 const (

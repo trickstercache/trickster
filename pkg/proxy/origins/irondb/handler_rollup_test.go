@@ -24,12 +24,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
-	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
+	"github.com/trickstercache/trickster/pkg/proxy/errors"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	tl "github.com/trickstercache/trickster/pkg/util/log"
+	tu "github.com/trickstercache/trickster/pkg/util/testing"
 )
 
 func TestRollupHandler(t *testing.T) {

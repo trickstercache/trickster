@@ -26,16 +26,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/mockster/pkg/mocks/byterange"
-	"github.com/tricksterproxy/trickster/pkg/cache/status"
-	"github.com/tricksterproxy/trickster/pkg/locks"
-	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
-	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	"github.com/tricksterproxy/trickster/pkg/proxy/forwarding"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
+	"github.com/trickstercache/mockster/pkg/mocks/byterange"
+	"github.com/trickstercache/trickster/pkg/cache/status"
+	"github.com/trickstercache/trickster/pkg/locks"
+	tc "github.com/trickstercache/trickster/pkg/proxy/context"
+	"github.com/trickstercache/trickster/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/pkg/proxy/forwarding"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	tu "github.com/trickstercache/trickster/pkg/util/testing"
 )
 
 func setupTestHarnessOPC(file, body string, code int,

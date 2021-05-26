@@ -25,7 +25,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/tricksterproxy/trickster/pkg/config"
+	"github.com/trickstercache/trickster/pkg/config"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -276,5 +276,5 @@ type pkgCaller struct {
 
 // String returns a path from the call stack that is relative to the root of the project
 func (pc pkgCaller) String() string {
-	return strings.TrimPrefix(fmt.Sprintf("%+v", pc.c), "github.com/tricksterproxy/trickster/pkg/")
+	return strings.TrimPrefix(fmt.Sprintf("%+v", pc.c), "github.com/trickstercache/trickster/pkg/")
 }

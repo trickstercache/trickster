@@ -19,9 +19,9 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	"github.com/tricksterproxy/trickster/pkg/tracing"
-	tspan "github.com/tricksterproxy/trickster/pkg/tracing/span"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/pkg/tracing"
+	tspan "github.com/trickstercache/trickster/pkg/tracing/span"
 
 	"go.opentelemetry.io/otel/label"
 )

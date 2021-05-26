@@ -33,6 +33,6 @@ func TestRunConfig(t *testing.T) {
 
 	runConfig(nil, wg, nil, nil, []string{"-version"}, nil)
 
-	runConfig(nil, wg, nil, nil, []string{"-origin-type", "rpc", "-origin-url", "http://tricksterproxy.io"}, nil)
+	runConfig(nil, wg, nil, nil, []string{"-origin-type", "rpc", "-origin-url", "http://trickstercache.org"}, nil)
 
 }

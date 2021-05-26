@@ -20,7 +20,7 @@ The roadmap for Trickster in 2020 focuses on delivering incremental enhancements
   - [x] Reload configuration without process restart
   - [x] Add implementation-specific Tracing options in config
   - [x] Additional performance improvements
-  - [x] Relocate and merge PromSim and RangeSim into a separate repo called [mockster](https://github.com/tricksterproxy/mockster)
+  - [x] Relocate and merge PromSim and RangeSim into a separate repo called [mockster](https://github.com/trickstercache/mockster)
   - [x] Relocate Helm charts to a [separate repo](https://github.com/tricksterproxy/helm-charts)
   - [x] Automate Helm chart releases via GitHub Workflows
 

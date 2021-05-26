@@ -19,11 +19,11 @@ package irondb
 import (
 	"testing"
 
-	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
-	"github.com/tricksterproxy/trickster/pkg/config"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	cr "github.com/trickstercache/trickster/pkg/cache/registration"
+	"github.com/trickstercache/trickster/pkg/config"
+	"github.com/trickstercache/trickster/pkg/proxy/origins"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
+	tl "github.com/trickstercache/trickster/pkg/util/log"
 )
 
 func TestIRONdbClientInterfacing(t *testing.T) {

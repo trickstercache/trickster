@@ -24,7 +24,7 @@ Trickster provides 2 required interfaces for enabling a new Origin Type: The Pro
 
 ### Proxy Client Interface
 
-The Proxy Client Interface ([code](https://github.com/tricksterproxy/trickster/blob/next/internal/proxy/model/client.go)) is used by Trickster to manipulate HTTP requests and responses in order to accelerate the requests.
+The Proxy Client Interface ([code](https://github.com/trickstercache/trickster/blob/next/internal/proxy/model/client.go)) is used by Trickster to manipulate HTTP requests and responses in order to accelerate the requests.
 
 For your Proxy Client Implementation, you will need to know these things about the Origin:
 
@@ -68,7 +68,7 @@ The Proxy Client Interface Methods you will need to implement are broken into se
 
 ### Time Series Interface
 
-The Time Series Interface ([code](https://github.com/tricksterproxy/trickster/blob/next/internal/timeseries/timeseries.go)) is used by Trickster to manipulate Time Series documents in order to maintain the cache and construct downstream client request bodies.
+The Time Series Interface ([code](https://github.com/trickstercache/trickster/blob/next/internal/timeseries/timeseries.go)) is used by Trickster to manipulate Time Series documents in order to maintain the cache and construct downstream client request bodies.
 
 For your Time Series Implementation, you will need to know these things about the Origin:
 

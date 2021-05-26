@@ -19,8 +19,8 @@ package irondb
 import (
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
-	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
+	"github.com/trickstercache/trickster/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/pkg/proxy/urls"
 )
 
 // FindHandler handles requests to find metirc information and processes them

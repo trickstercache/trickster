@@ -19,8 +19,8 @@ package prometheus
 import (
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/engines"
-	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
+	"github.com/trickstercache/trickster/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/pkg/proxy/urls"
 )
 
 // QueryRangeHandler handles timeseries requests for

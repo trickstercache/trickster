@@ -25,13 +25,13 @@ import (
 	"testing"
 	"time"
 
-	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
-	"github.com/tricksterproxy/trickster/pkg/config"
-	pe "github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	"github.com/tricksterproxy/trickster/pkg/proxy/origins"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	tl "github.com/tricksterproxy/trickster/pkg/util/log"
+	cr "github.com/trickstercache/trickster/pkg/cache/registration"
+	"github.com/trickstercache/trickster/pkg/config"
+	pe "github.com/trickstercache/trickster/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/pkg/proxy/origins"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	tl "github.com/trickstercache/trickster/pkg/util/log"
 )
 
 func TestPrometheusClientInterfacing(t *testing.T) {

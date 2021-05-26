@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/sort/times"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/sort/times"
+	"github.com/trickstercache/trickster/pkg/timeseries"
 
 	"github.com/influxdata/influxdb/models"
 )

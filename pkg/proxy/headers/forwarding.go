@@ -22,7 +22,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/tricksterproxy/trickster/pkg/runtime"
+	"github.com/trickstercache/trickster/pkg/runtime"
 )
 
 const (

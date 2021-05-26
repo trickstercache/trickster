@@ -22,7 +22,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/pkg/proxy/errors"
 )
 
 // NEED TO DEAL WITH TIMEOUT

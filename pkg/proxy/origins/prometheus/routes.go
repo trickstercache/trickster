@@ -20,10 +20,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	oo "github.com/tricksterproxy/trickster/pkg/proxy/origins/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	oo "github.com/trickstercache/trickster/pkg/proxy/origins/options"
+	"github.com/trickstercache/trickster/pkg/proxy/paths/matching"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
 )
 
 func (c *Client) registerHandlers() {

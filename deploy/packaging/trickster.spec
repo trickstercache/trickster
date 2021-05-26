@@ -10,7 +10,7 @@ Vendor:     The Trickster Authors
 Packager:   The Trickster Authors
 Group:      System Environment/Daemons
 License:    ASL 2.0
-URL:        https://github.com/tricksterproxy/trickster
+URL:        https://github.com/trickstercache/trickster
 
 Prefix:     /opt
 BuildRoot:  %{_tmppath}/%{name}

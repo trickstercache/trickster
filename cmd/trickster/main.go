@@ -21,7 +21,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/tricksterproxy/trickster/pkg/runtime"
+	"github.com/trickstercache/trickster/pkg/runtime"
 )
 
 var (
