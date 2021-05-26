@@ -21,7 +21,7 @@ import (
 	"compress/flate"
 	"io"
 
-	"github.com/tricksterproxy/trickster/pkg/encoding/reader"
+	"github.com/trickstercache/trickster/pkg/encoding/reader"
 )
 
 // Decode returns the decoded version of the encoded byte slice

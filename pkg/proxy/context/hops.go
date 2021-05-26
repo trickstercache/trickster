@@ -20,7 +20,7 @@ import (
 	"context"
 	"sync/atomic"
 
-	"github.com/tricksterproxy/trickster/pkg/backends/rule/options"
+	"github.com/trickstercache/trickster/pkg/backends/rule/options"
 )
 
 // WithHops returns a copy of the provided context that also includes

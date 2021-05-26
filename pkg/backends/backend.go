@@ -20,13 +20,13 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
-	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
-	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	"github.com/tricksterproxy/trickster/pkg/proxy"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
+	"github.com/trickstercache/trickster/pkg/backends/healthcheck"
+	ho "github.com/trickstercache/trickster/pkg/backends/healthcheck/options"
+	bo "github.com/trickstercache/trickster/pkg/backends/options"
+	"github.com/trickstercache/trickster/pkg/cache"
+	"github.com/trickstercache/trickster/pkg/proxy"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/pkg/proxy/urls"
 )
 
 // Backend is the primary interface for interoperating with backends

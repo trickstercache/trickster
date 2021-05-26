@@ -19,8 +19,8 @@ package parsing
 import (
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/parsing/token"
-	testutil "github.com/tricksterproxy/trickster/pkg/util/testing"
+	"github.com/trickstercache/trickster/pkg/parsing/token"
+	testutil "github.com/trickstercache/trickster/pkg/util/testing"
 )
 
 func TestNoop(t *testing.T) {

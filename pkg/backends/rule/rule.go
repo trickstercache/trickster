@@ -19,9 +19,9 @@ package rule
 import (
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/context"
-	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
+	"github.com/trickstercache/trickster/pkg/proxy/context"
+	"github.com/trickstercache/trickster/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/pkg/proxy/request/rewriter"
 )
 
 type rule struct {

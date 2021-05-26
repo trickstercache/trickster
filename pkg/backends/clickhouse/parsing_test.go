@@ -23,12 +23,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/parsing"
-	"github.com/tricksterproxy/trickster/pkg/parsing/lex/sql"
-	lsql "github.com/tricksterproxy/trickster/pkg/parsing/lex/sql"
-	"github.com/tricksterproxy/trickster/pkg/parsing/token"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	"github.com/tricksterproxy/trickster/pkg/timeseries/sqlparser"
+	"github.com/trickstercache/trickster/pkg/parsing"
+	"github.com/trickstercache/trickster/pkg/parsing/lex/sql"
+	lsql "github.com/trickstercache/trickster/pkg/parsing/lex/sql"
+	"github.com/trickstercache/trickster/pkg/parsing/token"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/timeseries/sqlparser"
 )
 
 const tqNoFrom = `WITH some value SELECT toStartOfFiveMinute(datetime) AS t, count() as cnt`

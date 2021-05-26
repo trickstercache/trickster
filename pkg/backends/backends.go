@@ -20,8 +20,8 @@ package backends
 import (
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
-	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
+	"github.com/trickstercache/trickster/pkg/backends/healthcheck"
+	bo "github.com/trickstercache/trickster/pkg/backends/options"
 )
 
 // Backends represents a map of Backends keyed by Name

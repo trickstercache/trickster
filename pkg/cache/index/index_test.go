@@ -21,9 +21,9 @@ import (
 	"testing"
 	"time"
 
-	io "github.com/tricksterproxy/trickster/pkg/cache/index/options"
-	co "github.com/tricksterproxy/trickster/pkg/cache/options"
-	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
+	io "github.com/trickstercache/trickster/pkg/cache/index/options"
+	co "github.com/trickstercache/trickster/pkg/cache/options"
+	tl "github.com/trickstercache/trickster/pkg/observability/logging"
 )
 
 var testLogger = tl.ConsoleLogger("error")

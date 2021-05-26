@@ -20,7 +20,7 @@ package testutil
 import (
 	"net/http/httptest"
 
-	"github.com/tricksterproxy/mockster/pkg/routes"
+	"github.com/trickstercache/mockster/pkg/routes"
 )
 
 // NewTestServer launches a Test Prometheus Server (for unit testing)

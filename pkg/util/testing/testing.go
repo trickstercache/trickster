@@ -26,22 +26,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tricksterproxy/trickster/cmd/trickster/config"
-	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	cr "github.com/tricksterproxy/trickster/pkg/cache/registration"
-	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
-	"github.com/tricksterproxy/trickster/pkg/observability/tracing"
-	to "github.com/tricksterproxy/trickster/pkg/observability/tracing/options"
-	tr "github.com/tricksterproxy/trickster/pkg/observability/tracing/registration"
-	tc "github.com/tricksterproxy/trickster/pkg/proxy/context"
-	th "github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
-	"github.com/tricksterproxy/trickster/pkg/runtime"
+	"github.com/trickstercache/trickster/cmd/trickster/config"
+	bo "github.com/trickstercache/trickster/pkg/backends/options"
+	cr "github.com/trickstercache/trickster/pkg/cache/registration"
+	tl "github.com/trickstercache/trickster/pkg/observability/logging"
+	"github.com/trickstercache/trickster/pkg/observability/tracing"
+	to "github.com/trickstercache/trickster/pkg/observability/tracing/options"
+	tr "github.com/trickstercache/trickster/pkg/observability/tracing/registration"
+	tc "github.com/trickstercache/trickster/pkg/proxy/context"
+	th "github.com/trickstercache/trickster/pkg/proxy/headers"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/pkg/proxy/request/rewriter"
+	"github.com/trickstercache/trickster/pkg/proxy/request/rewriter/options"
+	"github.com/trickstercache/trickster/pkg/runtime"
 
-	"github.com/tricksterproxy/mockster/pkg/testutil"
+	"github.com/trickstercache/mockster/pkg/testutil"
 )
 
 // Epoch2020 is the epoch value representing 1 January 2020 00:00:00 UTC
@@ -210,13 +210,13 @@ func NewTestRewriteInstructions() rewriter.RewriteInstructions {
 	trwl := options.RewriteList{
 		[]string{"method", "set", "POST"},
 		[]string{"host", "set", "example.com:9090"},
-		[]string{"host", "replace", "example.com", "tricksterproxy.io"},
+		[]string{"host", "replace", "example.com", "trickstercache.io"},
 		[]string{"port", "delete"},
 		[]string{"port", "set", "8000"},
 		[]string{"port", "replace", "000", "480"},
 		[]string{"scheme", "set", "https"},
 		[]string{"hostname", "set", "example.com"},
-		[]string{"hostname", "replace", "example.com", "tricksterproxy.io"},
+		[]string{"hostname", "replace", "example.com", "trickstercache.io"},
 	}
 
 	ri, _ := rewriter.ParseRewriteList(trwl)

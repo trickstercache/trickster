@@ -19,9 +19,9 @@ package irondb
 import (
 	"net/http"
 
-	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/paths/matching"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
+	bo "github.com/trickstercache/trickster/pkg/backends/options"
+	"github.com/trickstercache/trickster/pkg/proxy/paths/matching"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
 )
 
 func (c *Client) RegisterHandlers(map[string]http.Handler) {

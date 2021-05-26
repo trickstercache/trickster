@@ -19,7 +19,7 @@ package clickhouse
 import (
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/timeseries"
 )
 
 // This file holds funcs required by the Proxy Client or Timeseries interfaces,

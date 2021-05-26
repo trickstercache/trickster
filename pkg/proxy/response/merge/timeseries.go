@@ -21,9 +21,9 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/timeseries"
 )
 
 // Timeseries merges the provided Responses into a single Timeseries Dataset

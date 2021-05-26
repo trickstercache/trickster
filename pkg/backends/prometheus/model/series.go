@@ -24,10 +24,10 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/tricksterproxy/trickster/pkg/observability/logging"
-	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	"github.com/tricksterproxy/trickster/pkg/proxy/response/merge"
+	"github.com/trickstercache/trickster/pkg/observability/logging"
+	"github.com/trickstercache/trickster/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/proxy/response/merge"
 )
 
 // WFSeries is the Wire Format Document for the /series endpoint

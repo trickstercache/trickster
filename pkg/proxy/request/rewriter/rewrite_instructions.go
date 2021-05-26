@@ -23,8 +23,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/context"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
+	"github.com/trickstercache/trickster/pkg/proxy/context"
+	"github.com/trickstercache/trickster/pkg/proxy/request/rewriter/options"
 )
 
 type rewriteInstruction interface {

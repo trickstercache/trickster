@@ -19,7 +19,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/tricksterproxy/trickster/pkg/runtime"
+	"github.com/trickstercache/trickster/pkg/runtime"
 )
 
 const usageText = `
@@ -65,7 +65,7 @@ repository, Charts on Helm Hub, and standalone binaries on our GitHub releases p
 
 Thank you for using and contributing to Open Source Software!
 
-https://github.com/tricksterproxy/trickster
+https://github.com/trickstercache/trickster
 `
 
 func version() string {

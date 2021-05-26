@@ -20,7 +20,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/backends/rule/options"
+	"github.com/trickstercache/trickster/pkg/backends/rule/options"
 )
 
 func TestHops(t *testing.T) {

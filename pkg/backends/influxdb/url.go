@@ -20,9 +20,9 @@ import (
 	"net/http"
 
 	"github.com/influxdata/influxql"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	"github.com/tricksterproxy/trickster/pkg/proxy/params"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/proxy/params"
+	"github.com/trickstercache/trickster/pkg/timeseries"
 )
 
 // Upstream Endpoints

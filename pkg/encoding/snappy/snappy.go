@@ -19,7 +19,7 @@ package snappy
 import (
 	"io"
 
-	"github.com/tricksterproxy/trickster/pkg/encoding/reader"
+	"github.com/trickstercache/trickster/pkg/encoding/reader"
 
 	"github.com/golang/snappy"
 )

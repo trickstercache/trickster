@@ -22,8 +22,8 @@ import (
 	"net/http"
 	"strconv"
 
-	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	tctx "github.com/trickstercache/trickster/pkg/proxy/context"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
 )
 
 func SetBody(r *http.Request, body []byte) *http.Request {

@@ -20,7 +20,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
 )
 
 type redirectKey int

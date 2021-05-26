@@ -20,11 +20,11 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/parsing"
-	lsql "github.com/tricksterproxy/trickster/pkg/parsing/lex/sql"
-	"github.com/tricksterproxy/trickster/pkg/parsing/token"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	"github.com/tricksterproxy/trickster/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/pkg/parsing"
+	lsql "github.com/trickstercache/trickster/pkg/parsing/lex/sql"
+	"github.com/trickstercache/trickster/pkg/parsing/token"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/timeseries/epoch"
 )
 
 func TestNew(t *testing.T) {

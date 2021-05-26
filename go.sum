@@ -486,8 +486,8 @@ github.com/tinylib/msgp v1.0.2/go.mod h1:+d+yLhGm8mzTaHzB+wgMYrodPfmZrzkirds8fDW
 github.com/tinylib/msgp v1.1.5 h1:2gXmtWueD2HefZHQe1QOy9HVzmFrLOVvsXwXBQ0ayy0=
 github.com/tinylib/msgp v1.1.5/go.mod h1:eQsjooMTnV42mHu917E26IogZ2930nFyBQdofk10Udg=
 github.com/tmc/grpc-websocket-proxy v0.0.0-20170815181823-89b8d40f7ca8/go.mod h1:ncp9v5uamzpCO7NfCPTXjqaC+bZgJeR0sMTm6dMHP7U=
-github.com/tricksterproxy/mockster v1.1.1 h1:emPI7q5OzL/a/IYpDVkQwfR3KqRbk4Q2yEsCDo2Od7w=
-github.com/tricksterproxy/mockster v1.1.1/go.mod h1:FutC1axiYNHVo6h+LilamS49n0U8H0oQzSrX3MxikJA=
+github.com/trickstercache/mockster v1.1.2 h1:O9BtsYgP9ADtIE0uhxOy1nwZ2Tp4DoY1hZqtjzcGIus=
+github.com/trickstercache/mockster v1.1.2/go.mod h1:blMUZHkQqWDtTkpXsRvOCPFZ7nnJDOGdSln1wwuYyGA=
 github.com/ttacon/chalk v0.0.0-20160626202418-22c06c80ed31/go.mod h1:onvgF043R+lC5RZ8IT9rBXDaEDnpnw/Cl+HFiw+v/7Q=
 github.com/ugorji/go/codec v0.0.0-20181204163529-d75b2dcb6bc8/go.mod h1:VFNgLljTbGfSG7qAOspJ7OScBnGdDN/yBr0sguwnwf0=
 github.com/urfave/cli v1.20.0/go.mod h1:70zkFmudgCuE/ngEzBv17Jvp/497gISqfk5gWijbERA=

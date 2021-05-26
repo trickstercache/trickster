@@ -2,7 +2,7 @@
 
 [Unit]
 Description=Dashboard Accelerator for Prometheus and HTTP Reverse Proxy Cache
-Documentation=https://github.com/tricksterproxy/trickster
+Documentation=https://github.com/trickstercache/trickster
 After=network.target
 
 [Service]

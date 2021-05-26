@@ -22,12 +22,12 @@ import (
 	"testing"
 	"time"
 
-	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	rule "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
-	rwo "github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
-	to "github.com/tricksterproxy/trickster/pkg/proxy/tls/options"
+	bo "github.com/trickstercache/trickster/pkg/backends/options"
+	rule "github.com/trickstercache/trickster/pkg/backends/rule/options"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
+	rwo "github.com/trickstercache/trickster/pkg/proxy/request/rewriter/options"
+	to "github.com/trickstercache/trickster/pkg/proxy/tls/options"
 )
 
 const emptyFilePath = "../../../testdata/test.empty.conf"

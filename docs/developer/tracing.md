@@ -1,6 +1,6 @@
 # Tracing support
 
-Trickster has minimal support for OpenTelemetry. See <https://github.com/tricksterproxy/trickster/issues/36>
+Trickster has minimal support for OpenTelemetry. See <https://github.com/trickstercache/trickster/issues/36>
 
 ## Config
 TODO

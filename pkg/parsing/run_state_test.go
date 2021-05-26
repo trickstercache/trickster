@@ -21,7 +21,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/parsing/token"
+	"github.com/trickstercache/trickster/pkg/parsing/token"
 )
 
 func TestNewRunState(t *testing.T) {

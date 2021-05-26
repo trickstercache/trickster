@@ -20,9 +20,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/cache/providers"
-	strutil "github.com/tricksterproxy/trickster/pkg/util/strings"
-	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
+	"github.com/trickstercache/trickster/pkg/cache/providers"
+	strutil "github.com/trickstercache/trickster/pkg/util/strings"
+	"github.com/trickstercache/trickster/pkg/util/yamlx"
 )
 
 func TestNew(t *testing.T) {

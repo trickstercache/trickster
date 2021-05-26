@@ -26,13 +26,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/cmd/trickster/config"
-	"github.com/tricksterproxy/trickster/pkg/backends/irondb/common"
-	tl "github.com/tricksterproxy/trickster/pkg/observability/logging"
-	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/cmd/trickster/config"
+	"github.com/trickstercache/trickster/pkg/backends/irondb/common"
+	tl "github.com/trickstercache/trickster/pkg/observability/logging"
+	"github.com/trickstercache/trickster/pkg/proxy/errors"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/pkg/timeseries"
 )
 
 func TestSetExtent(t *testing.T) {

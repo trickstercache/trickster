@@ -21,9 +21,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/tricksterproxy/trickster/pkg/encoding/providers"
+	"github.com/trickstercache/trickster/pkg/encoding/providers"
 
-	strutil "github.com/tricksterproxy/trickster/pkg/util/strings"
+	strutil "github.com/trickstercache/trickster/pkg/util/strings"
 )
 
 type Profile struct {

@@ -20,7 +20,7 @@ import (
 	"bytes"
 	"io"
 
-	"github.com/tricksterproxy/trickster/pkg/encoding/reader"
+	"github.com/trickstercache/trickster/pkg/encoding/reader"
 
 	"github.com/andybalholm/brotli"
 )

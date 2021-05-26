@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	"github.com/tricksterproxy/trickster/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/timeseries/dataset"
 )
 
 func TestTestColString(t *testing.T) {

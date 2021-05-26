@@ -22,7 +22,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/tricksterproxy/trickster/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/pkg/backends/healthcheck"
 )
 
 // Pool defines the interface for a load balancer pool

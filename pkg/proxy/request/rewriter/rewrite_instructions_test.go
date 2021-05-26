@@ -24,9 +24,9 @@ import (
 	"strings"
 	"testing"
 
-	tctx "github.com/tricksterproxy/trickster/pkg/proxy/context"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
+	tctx "github.com/trickstercache/trickster/pkg/proxy/context"
+	"github.com/trickstercache/trickster/pkg/proxy/request/rewriter/options"
+	"github.com/trickstercache/trickster/pkg/proxy/urls"
 )
 
 const testURLRaw = "https://example.com:8480/path1/path2?param1=value&param2=value&param1=value2"
@@ -93,13 +93,13 @@ var testRL2 = options.RewriteList{
 var testRL3 = options.RewriteList{
 	[]string{"method", "set", "POST"},
 	[]string{"host", "set", "example.com:9090"},
-	[]string{"host", "replace", "example.com", "tricksterproxy.io"},
+	[]string{"host", "replace", "example.com", "trickstercache.io"},
 	[]string{"port", "delete"},
 	[]string{"port", "set", "8000"},
 	[]string{"port", "replace", "000", "480"},
 	[]string{"scheme", "set", "https"},
 	[]string{"hostname", "set", "example.com"},
-	[]string{"hostname", "replace", "example.com", "tricksterproxy.io"},
+	[]string{"hostname", "replace", "example.com", "trickstercache.io"},
 }
 
 type testRewriteInstruction struct {
@@ -150,13 +150,13 @@ var testRI2 = RewriteInstructions{
 var testRI3 = RewriteInstructions{
 	&rwiBasicSetter{value: "POST"},
 	&rwiBasicSetter{value: "example.com:9090"},
-	&rwiBasicReplacer{search: "example.com", replacement: "tricksterproxy.io", depth: -1},
+	&rwiBasicReplacer{search: "example.com", replacement: "trickstercache.io", depth: -1},
 	&rwiPortDeleter{},
 	&rwiBasicSetter{value: "8000"},
 	&rwiBasicReplacer{search: "000", replacement: "480", depth: -1},
 	&rwiBasicSetter{value: "https"},
 	&rwiBasicSetter{value: "example.com"},
-	&rwiBasicReplacer{search: "example.com", replacement: "tricksterproxy.io", depth: -1},
+	&rwiBasicReplacer{search: "example.com", replacement: "trickstercache.io", depth: -1},
 }
 
 func TestParseRewriteList(t *testing.T) {
@@ -324,7 +324,7 @@ func TestExecuteRewriteInstructions(t *testing.T) {
 	eu2, _ := url.Parse("https://example.com:8480/path1/path2?param1=bar&param2=trickster&param3=foo&param1=too")
 	ri2, _ := ParseRewriteList(testRL2)
 
-	eu3, _ := url.Parse("https://tricksterproxy.io:8480/path1/path2?param1=value&param2=value&param1=value2")
+	eu3, _ := url.Parse("https://trickstercache.io:8480/path1/path2?param1=value&param2=value&param1=value2")
 	ri3, _ := ParseRewriteList(testRL3)
 
 	var tests = []struct {
@@ -439,10 +439,10 @@ func TestMiscRequestSetters(t *testing.T) {
 	fp(nil, "")
 
 	fp(r, "8480")
-	fh(r, "tricksterproxy.io")
+	fh(r, "trickstercache.io")
 
-	if r.URL.Host != "tricksterproxy.io:8480" {
-		t.Errorf("expected %s got %s", "tricksterproxy.io:8480", r.URL.Host)
+	if r.URL.Host != "trickstercache.io:8480" {
+		t.Errorf("expected %s got %s", "trickstercache.io:8480", r.URL.Host)
 	}
 
 	var s rewriteInstruction

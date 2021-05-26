@@ -20,8 +20,8 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/handlers"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
 )
 
 type firstResponseGate struct {

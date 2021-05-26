@@ -21,12 +21,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/parsing"
-	lsql "github.com/tricksterproxy/trickster/pkg/parsing/lex/sql"
-	"github.com/tricksterproxy/trickster/pkg/parsing/sql"
-	"github.com/tricksterproxy/trickster/pkg/parsing/token"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
-	"github.com/tricksterproxy/trickster/pkg/timeseries/sqlparser"
+	"github.com/trickstercache/trickster/pkg/parsing"
+	lsql "github.com/trickstercache/trickster/pkg/parsing/lex/sql"
+	"github.com/trickstercache/trickster/pkg/parsing/sql"
+	"github.com/trickstercache/trickster/pkg/parsing/token"
+	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/timeseries/sqlparser"
 )
 
 // chParser implements a basic sql parser for clickhouse.

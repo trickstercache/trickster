@@ -20,8 +20,8 @@ import (
 	"io"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	tu "github.com/tricksterproxy/trickster/pkg/util/testing"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	tu "github.com/trickstercache/trickster/pkg/util/testing"
 )
 
 func TestProxyHandler(t *testing.T) {

@@ -21,8 +21,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/tricksterproxy/trickster/pkg/parsing/lex"
-	"github.com/tricksterproxy/trickster/pkg/parsing/token"
+	"github.com/trickstercache/trickster/pkg/parsing/lex"
+	"github.com/trickstercache/trickster/pkg/parsing/token"
 )
 
 // sqllexer holds the state of the scanner.

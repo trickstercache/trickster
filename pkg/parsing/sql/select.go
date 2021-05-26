@@ -17,9 +17,9 @@
 package sql
 
 import (
-	"github.com/tricksterproxy/trickster/pkg/parsing"
-	lsql "github.com/tricksterproxy/trickster/pkg/parsing/lex/sql"
-	"github.com/tricksterproxy/trickster/pkg/parsing/token"
+	"github.com/trickstercache/trickster/pkg/parsing"
+	lsql "github.com/trickstercache/trickster/pkg/parsing/lex/sql"
+	"github.com/trickstercache/trickster/pkg/parsing/token"
 )
 
 // this file contains functions used while parsing select statements

@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	strutil "github.com/tricksterproxy/trickster/pkg/util/strings"
+	strutil "github.com/trickstercache/trickster/pkg/util/strings"
 )
 
 func TestClone(t *testing.T) {

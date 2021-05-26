@@ -20,9 +20,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/parsing"
-	lsql "github.com/tricksterproxy/trickster/pkg/parsing/lex/sql"
-	"github.com/tricksterproxy/trickster/pkg/parsing/token"
+	"github.com/trickstercache/trickster/pkg/parsing"
+	lsql "github.com/trickstercache/trickster/pkg/parsing/lex/sql"
+	"github.com/trickstercache/trickster/pkg/parsing/token"
 )
 
 func TestSelectTokens(t *testing.T) {

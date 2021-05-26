@@ -22,16 +22,16 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/tricksterproxy/trickster/pkg/backends"
-	modelch "github.com/tricksterproxy/trickster/pkg/backends/clickhouse/model"
-	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	"github.com/tricksterproxy/trickster/pkg/backends/providers/registration/types"
-	"github.com/tricksterproxy/trickster/pkg/cache"
-	"github.com/tricksterproxy/trickster/pkg/proxy/errors"
-	"github.com/tricksterproxy/trickster/pkg/proxy/methods"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request"
-	"github.com/tricksterproxy/trickster/pkg/proxy/urls"
-	"github.com/tricksterproxy/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/pkg/backends"
+	modelch "github.com/trickstercache/trickster/pkg/backends/clickhouse/model"
+	bo "github.com/trickstercache/trickster/pkg/backends/options"
+	"github.com/trickstercache/trickster/pkg/backends/providers/registration/types"
+	"github.com/trickstercache/trickster/pkg/cache"
+	"github.com/trickstercache/trickster/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/pkg/proxy/methods"
+	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/pkg/proxy/urls"
+	"github.com/trickstercache/trickster/pkg/timeseries"
 )
 
 var _ backends.TimeseriesBackend = (*Client)(nil)

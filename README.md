@@ -1,11 +1,11 @@
 # <img src="./docs/images/logos/trickster-logo.svg" width=90 />&nbsp;&nbsp;&nbsp;&nbsp;<img src="./docs/images/logos/trickster-text.svg" width=420 /> [![Follow on Twitter](https://img.shields.io/twitter/follow/trickstercache.svg?style=social&logo=twitter)](https://twitter.com/trickstercache)
 
-[![License](https://img.shields.io/github/license/tricksterproxy/trickster)](/LICENSE)
-[![Coverage Status](https://coveralls.io/repos/github/tricksterproxy/trickster/badge.svg)](https://coveralls.io/github/tricksterproxy/trickster)
-[![build Status](https://github.com/tricksterproxy/trickster/workflows/build/badge.svg)](https://github.com/tricksterproxy/trickster/actions)
-[![Go Report Card](https://goreportcard.com/badge/github.com/tricksterproxy/trickster)](https://goreportcard.com/report/github.com/tricksterproxy/trickster)
+[![License](https://img.shields.io/github/license/trickstercache/trickster)](/LICENSE)
+[![Coverage Status](https://coveralls.io/repos/github/trickstercache/trickster/badge.svg)](https://coveralls.io/github/trickstercache/trickster)
+[![build Status](https://github.com/trickstercache/trickster/workflows/build/badge.svg)](https://github.com/trickstercache/trickster/actions)
+[![Go Report Card](https://goreportcard.com/badge/github.com/trickstercache/trickster)](https://goreportcard.com/report/github.com/trickstercache/trickster)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/2518/badge)](https://bestpractices.coreinfrastructure.org/en/projects/2518)
-[![GoDoc](https://godoc.org/github.com/tricksterproxy/trickster?status.svg)](https://godoc.org/github.com/tricksterproxy/trickster)
+[![GoDoc](https://godoc.org/github.com/trickstercache/trickster?status.svg)](https://godoc.org/github.com/trickstercache/trickster)
 [![Docker Pulls](https://img.shields.io/docker/pulls/tricksterio/trickster.svg?maxAge=86400)](https://hub.docker.com/r/tricksterio/trickster)
 
 Trickster is an HTTP reverse proxy/cache for http applications and a dashboard query accelerator for time series databases.
@@ -16,7 +16,7 @@ Learn more below, and check out our [roadmap](./docs/roadmap.md) to find out wha
 
 Trickster is hosted by the [Cloud Native Computing Foundation](https://cncf.io) (CNCF) as a sandbox level project. If you are a company that wants to help shape the evolution of technologies that are container-packaged, dynamically-scheduled and microservices-oriented, consider joining the CNCF.
 
-Note: Trickster v1.1 is the production release, sourced from the [v1.1.x](https://github.com/tricksterproxy/trickster/tree/v1.1.x) branch. The `main` branch sources Trickster 2.0, which is currently in beta.
+Note: Trickster v1.1 is the production release, sourced from the [v1.1.x](https://github.com/trickstercache/trickster/tree/v1.1.x) branch. The `main` branch sources Trickster 2.0, which is currently in beta.
 
 ## HTTP Reverse Proxy Cache
 
@@ -83,7 +83,7 @@ Check out our end-to-end [Docker Compose demo composition](./examples/docker-com
 
 Docker images are available on Docker Hub:
 
-    $ docker run --name trickster -d -v /path/to/trickster.yaml:/etc/trickster/trickster.yaml -p 0.0.0.0:8480:8480 tricksterproxy/trickster
+    $ docker run --name trickster -d -v /path/to/trickster.yaml:/etc/trickster/trickster.yaml -p 0.0.0.0:8480:8480 trickstercache/trickster
 
 See the 'deploy' Directory for more information about using or creating Trickster docker images.
 
@@ -93,7 +93,7 @@ See the 'deploy' Directory for Kube and deployment files and examples.
 
 ### Helm
 
-Trickster Helm Charts are located at <https://helm.tricksterproxy.io> for installation, and maintained at <https://github.com/tricksterproxy/helm-charts>. We welcome chart contributions.
+Trickster Helm Charts are located at <https://helm.tricksterproxy.io> for installation, and maintained at <https://github.com/trickstercache/helm-charts>. We welcome chart contributions.
 
 ### Building from source
 
@@ -104,7 +104,7 @@ You can directly use the `go` tool to download and install the `trickster`
 binary into your `GOPATH`:
 
 ```bash
-    $ go get github.com/tricksterproxy/trickster/cmd/trickster
+    $ go get github.com/trickstercache/trickster/cmd/trickster
     # this starts a prometheus accelerator proxy for the provided endpoint
     $ trickster -origin-url http://prometheus.example.com:9090 -provider prometheus
 ```
@@ -112,9 +112,9 @@ binary into your `GOPATH`:
 You can also clone the repository yourself and build using `make`:
 
 ```bash
-    $ mkdir -p $GOPATH/src/github.com/tricksterproxy
-    $ cd $GOPATH/src/github.com/tricksterproxy
-    $ git clone https://github.com/tricksterproxy/trickster.git
+    $ mkdir -p $GOPATH/src/github.com/trickstercache
+    $ cd $GOPATH/src/github.com/trickstercache
+    $ git clone https://github.com/trickstercache/trickster.git
     $ cd trickster
     $ make build
     $ ./OPATH/trickster -origin-url http://prometheus.example.com:9090 -provider prometheus

@@ -24,15 +24,15 @@ import (
 	"testing"
 	"time"
 
-	ho "github.com/tricksterproxy/trickster/pkg/backends/healthcheck/options"
-	ro "github.com/tricksterproxy/trickster/pkg/backends/rule/options"
-	"github.com/tricksterproxy/trickster/pkg/cache/negative"
-	co "github.com/tricksterproxy/trickster/pkg/cache/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/headers"
-	po "github.com/tricksterproxy/trickster/pkg/proxy/paths/options"
-	"github.com/tricksterproxy/trickster/pkg/proxy/request/rewriter"
-	tlstest "github.com/tricksterproxy/trickster/pkg/util/testing/tls"
-	"github.com/tricksterproxy/trickster/pkg/util/yamlx"
+	ho "github.com/trickstercache/trickster/pkg/backends/healthcheck/options"
+	ro "github.com/trickstercache/trickster/pkg/backends/rule/options"
+	"github.com/trickstercache/trickster/pkg/cache/negative"
+	co "github.com/trickstercache/trickster/pkg/cache/options"
+	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/pkg/proxy/request/rewriter"
+	tlstest "github.com/trickstercache/trickster/pkg/util/testing/tls"
+	"github.com/trickstercache/trickster/pkg/util/yamlx"
 
 	"gopkg.in/yaml.v2"
 )
@@ -233,7 +233,7 @@ func TestValidate(t *testing.T) {
 		{ // 3 - valid origin URL + strip trailing slash
 			to:       to,
 			loc:      &o.OriginURL,
-			val:      "http://tricksterproxy.io/test/path/",
+			val:      "http://trickstercache.io/test/path/",
 			expected: nil,
 		},
 		{ // 4 - invalid cache key prefix

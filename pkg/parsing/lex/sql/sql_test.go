@@ -21,8 +21,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/parsing/lex"
-	"github.com/tricksterproxy/trickster/pkg/parsing/token"
+	"github.com/trickstercache/trickster/pkg/parsing/lex"
+	"github.com/trickstercache/trickster/pkg/parsing/token"
 )
 
 type mockParser struct {

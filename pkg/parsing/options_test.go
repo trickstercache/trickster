@@ -19,7 +19,7 @@ package parsing
 import (
 	"testing"
 
-	"github.com/tricksterproxy/trickster/pkg/parsing/token"
+	"github.com/trickstercache/trickster/pkg/parsing/token"
 )
 
 func TestOptions(t *testing.T) {

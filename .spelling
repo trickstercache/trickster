@@ -92,7 +92,7 @@ builtin
 SetExtent
 datapoints
 datapoint
-tricksterproxy
+trickstercache
 opentelemetry
 todo
 jaeger

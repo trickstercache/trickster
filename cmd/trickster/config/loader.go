@@ -21,8 +21,8 @@ import (
 	"net/url"
 	"time"
 
-	bo "github.com/tricksterproxy/trickster/pkg/backends/options"
-	"github.com/tricksterproxy/trickster/pkg/cache/negative"
+	bo "github.com/trickstercache/trickster/pkg/backends/options"
+	"github.com/trickstercache/trickster/pkg/cache/negative"
 )
 
 // Load returns the Application Configuration, starting with a default config,
