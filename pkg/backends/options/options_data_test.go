@@ -68,6 +68,9 @@ backends:
     forwarded_headers: x
     negative_cache_name: test
     rule_name: ''
+    max_shard_size_ms: 0
+    max_shard_size_points: 0
+    shard_step_ms: 0
     healthcheck:
       headers:
         Authorization: Basic SomeHash

@@ -173,6 +173,24 @@ func testStringValueValidationError(to *testOptions, location *string, testValue
 	return err
 }
 
+type intSwapper struct {
+	location   *int
+	restoreVal int
+	testValue  int
+}
+
+func testIntegerValueValidationError(to *testOptions, sws []intSwapper) error {
+	for i := range sws {
+		sws[i].restoreVal = *sws[i].location
+		*sws[i].location = sws[i].testValue
+	}
+	err := Lookup(to.Backends).Validate(to.ncl)
+	for i := range sws {
+		*sws[i].location = sws[i].restoreVal
+	}
+	return err
+}
+
 func TestValidate(t *testing.T) {
 
 	ncl := testNegativeCaches()
@@ -187,6 +205,7 @@ func TestValidate(t *testing.T) {
 	var errType02 = NewErrMissingOriginURL("test").(*ErrMissingOriginURL)
 	var errType03 = NewErrMissingProvider("test").(*ErrMissingProvider)
 
+	// string value tests
 	tests := []struct {
 		to       *testOptions
 		loc      *string
@@ -238,8 +257,76 @@ func TestValidate(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(fmt.Sprintf("strings %d", i), func(t *testing.T) {
+
 			err = testStringValueValidationError(test.to, test.loc, test.val)
+			if err == nil && test.expected == nil {
+				return
+			}
+
+			if err == nil && test.expected != nil {
+				t.Errorf("expected [%s] got nil", test.expected)
+			}
+
+			if err != nil && test.expected == nil {
+				t.Errorf("expected nil got [%s]", err)
+			}
+
+			if !errors.As(err, &test.expected) {
+				t.Errorf("expected [%s] got [%s]", test.expected, err)
+			}
+		})
+	}
+
+	// integer value tests
+	tests2 := []struct {
+		to       *testOptions
+		sw       []intSwapper
+		expected interface{}
+	}{
+		{ // case 0 - MaxShardSizeMS > 0 and MaxShardSizePoints > 0 are mutually exclusive
+			to: to,
+			sw: []intSwapper{
+				{
+					location:  &o.MaxShardSizeMS,
+					testValue: 1,
+				},
+				{
+					location:  &o.MaxShardSizePoints,
+					testValue: 1,
+				},
+			},
+			expected: ErrInvalidMaxShardSize,
+		},
+		{ // case 1 - verifies: if ShardStep > 0 && MaxShardSize == 0 { MaxShardSize = ShardStep }
+			to: to,
+			sw: []intSwapper{
+				{
+					location:  &o.ShardStepMS,
+					testValue: 1,
+				},
+			},
+			expected: nil,
+		},
+		{ // case 2 - verifies: if MaxShardSize % ShardStep != 0 { return ErrInvalidMaxShardSizeMS }
+			to: to,
+			sw: []intSwapper{
+				{
+					location:  &o.ShardStepMS,
+					testValue: 10,
+				},
+				{
+					location:  &o.MaxShardSizeMS,
+					testValue: 32,
+				},
+			},
+			expected: ErrInvalidMaxShardSizeMS,
+		},
+	}
+
+	for i, test := range tests2 {
+		t.Run(fmt.Sprintf("ints %d", i), func(t *testing.T) {
+			err = testIntegerValueValidationError(test.to, test.sw)
 			if err == nil && test.expected == nil {
 				return
 			}
