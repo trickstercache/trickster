@@ -2,7 +2,7 @@
 
 ## Overview
 
-A shard means "a small part of a whole," and Trickster 2.0 supports the sharding of upstream HTTP requests when retreiving timeseries data. When configured for a given time series backend, Trickster will shard eligible requests by inspecting the time ranges needed from origin and subdividing them into smaller ranges that conform to the backend's sharding configuration. Sharded requests are sent to the origin concurrently, and their responses are reconsitituted back into a single dataset by Trickster after they've all been returned.
+A shard means "a small part of a whole," and Trickster 2.0 supports the sharding of upstream HTTP requests when retrieving timeseries data. When configured for a given time series backend, Trickster will shard eligible requests by inspecting the time ranges needed from origin and subdividing them into smaller ranges that conform to the backend's sharding configuration. Sharded requests are sent to the origin concurrently, and their responses are reconstituted back into a single dataset by Trickster after they've all been returned.
 
 ## Mechanisms
 
