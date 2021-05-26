@@ -1,4 +1,4 @@
-# <img src="./docs/images/logos/trickster-logo.svg" width=90 />&nbsp;&nbsp;&nbsp;&nbsp;<img src="./docs/images/logos/trickster-text.svg" width=420 /> [![Follow on Twitter](https://img.shields.io/twitter/follow/tricksterio.svg?style=social&logo=twitter)](https://twitter.com/tricksterio)
+# <img src="./docs/images/logos/trickster-logo.svg" width=90 />&nbsp;&nbsp;&nbsp;&nbsp;<img src="./docs/images/logos/trickster-text.svg" width=420 /> [![Follow on Twitter](https://img.shields.io/twitter/follow/trickstercache.svg?style=social&logo=twitter)](https://twitter.com/trickstercache)
 
 [![License](https://img.shields.io/github/license/tricksterproxy/trickster)](/LICENSE)
 [![Coverage Status](https://coveralls.io/repos/github/tricksterproxy/trickster/badge.svg)](https://coveralls.io/github/tricksterproxy/trickster)
