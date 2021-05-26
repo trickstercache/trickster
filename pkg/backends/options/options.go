@@ -113,11 +113,11 @@ type Options struct {
 	// MaxShardSizePoints defines the maximum size of a timeseries request in unique timestamps,
 	// before sharding into multiple requests of this denomination and reconsitituting the results.
 	// If MaxShardSizePoints and MaxShardSizeMS are both > 0, the configuration is invalid
-	MaxShardSizePoints int `yaml:"max_shard_size_points,omitempty"`
+	MaxShardSizePoints int `yaml:"shard_max_size_points,omitempty"`
 	// MaxShardSizeMS defines the max size of a timeseries request in milliseconds,
 	// before sharding into multiple requests of this denomination and reconsitituting the results.
 	// If MaxShardSizePoints and MaxShardSizeMS are both > 0, the configuration is invalid
-	MaxShardSizeMS int `yaml:"max_shard_size_ms,omitempty"`
+	MaxShardSizeMS int `yaml:"shard_max_size_ms,omitempty"`
 	// ShardStepMS defines the epoch-aligned cadence to use when creating shards. When set to 0,
 	// shards are not aligned to the epoch at a specific step. MaxShardSizeMS must be perfectly
 	// divisible by ShardStepMS when both are > 0, or the configuration is invalid
@@ -569,11 +569,11 @@ func SetDefaults(
 		no.KeepAliveTimeoutMS = o.KeepAliveTimeoutMS
 	}
 
-	if metadata.IsDefined("backends", name, "max_shard_size_points") {
+	if metadata.IsDefined("backends", name, "shard_max_size_points") {
 		no.MaxShardSizePoints = o.MaxShardSizePoints
 	}
 
-	if metadata.IsDefined("backends", name, "max_shard_size_ms") {
+	if metadata.IsDefined("backends", name, "shard_max_size_ms") {
 		no.MaxShardSizeMS = o.MaxShardSizeMS
 	}
 
