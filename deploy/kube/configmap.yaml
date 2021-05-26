@@ -338,6 +338,24 @@ data:
     #     # fastforward_ttl_ms defines the relative expiration of cached fast forward data. default is 15s
     #     fastforward_ttl_ms: 15000
 
+    #     # shard_max_size_points defines the maximum size of a timeseries request in unique timestamps,
+    #     # before sharding into multiple requests of this denomination and reconsitituting the results.
+    #     # If shard_max_size_points and shard_max_size_ms are both > 0, the configuration is invalid.
+    #     # default is 0
+    #     shard_max_size_points: 0
+
+    #     # shard_max_size_ms defines the max size of a timeseries request in milliseconds,
+    #     # before sharding into multiple requests of this denomination and reconsitituting the results.
+    #     # If shard_max_size_ms and shard_max_size_points are both > 0, the configuration is invalid.
+    #     # default is 0
+    #     shard_max_size_ms: 0
+
+    #     # shard_step_ms defines the epoch-aligned cadence to use when creating shards. When set to 0,
+    #     # shards are not aligned to the epoch at a specific step. shard_max_size_ms must be perfectly
+    #     # divisible by shard_step_ms when both are > 0, or the configuration is invalid.
+    #     # default is 0
+    #     shard_step_ms: 0
+
     #     #
     #     # Each backend provider implements their own defaults for health_check_upstream_url, health_check_verb and health_check_query,
     #     # which can be overridden per backend. See /docs/health.md for more information

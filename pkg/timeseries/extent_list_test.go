@@ -32,13 +32,22 @@ var t101 = time.Unix(101, 0)
 var t200 = time.Unix(200, 0)
 var t201 = time.Unix(201, 0)
 var t300 = time.Unix(300, 0)
+var t400 = time.Unix(400, 0)
+var t500 = time.Unix(500, 0)
 var t600 = time.Unix(600, 0)
+var t700 = time.Unix(700, 0)
+var t800 = time.Unix(800, 0)
 var t900 = time.Unix(900, 0)
 var t1000 = time.Unix(1000, 0)
 var t1100 = time.Unix(1100, 0)
 var t1200 = time.Unix(1200, 0)
 var t1300 = time.Unix(1300, 0)
 var t1400 = time.Unix(1400, 0)
+var t1500 = time.Unix(1500, 0)
+var t1600 = time.Unix(1600, 0)
+var t1700 = time.Unix(1700, 0)
+var t1800 = time.Unix(1800, 0)
+var t1900 = time.Unix(1900, 0)
 
 func TestUpdateLastUsed(t *testing.T) {
 
@@ -969,4 +978,214 @@ func TestTimestampCount(t *testing.T) {
 		t.Errorf("expected %d got %d", expected, v)
 	}
 
+}
+
+func TestSplice(t *testing.T) {
+
+	tests := []struct {
+		el, expected               ExtentList
+		step, maxRange, spliceStep time.Duration
+		maxPoints                  int
+	}{
+		{ // case 0 - spliceByPoints basic
+			el: ExtentList{
+				Extent{Start: t100, End: t200},
+				Extent{Start: t600, End: t900},
+				Extent{},
+				Extent{Start: t1100, End: t1300}},
+			expected: ExtentList{
+				Extent{Start: t100, End: t200},
+				Extent{Start: t600, End: t700},
+				Extent{Start: t800, End: t900},
+				Extent{},
+				Extent{Start: t1100, End: t1200},
+				Extent{Start: t1300, End: t1300},
+			},
+			step:      time.Second * 100,
+			maxPoints: 2,
+		},
+		{ // case 1 - spliceByTime Fast Fail
+			el: ExtentList{
+				Extent{Start: t100, End: t200},
+				Extent{Start: t600, End: t700},
+				Extent{Start: t800, End: t900},
+				Extent{},
+				Extent{Start: t1100, End: t1200},
+				Extent{Start: t1300, End: t1300},
+			},
+			expected: ExtentList{
+				Extent{Start: t100, End: t200},
+				Extent{Start: t600, End: t700},
+				Extent{Start: t800, End: t900},
+				Extent{},
+				Extent{Start: t1100, End: t1200},
+				Extent{Start: t1300, End: t1300},
+			},
+		},
+		{ // case 2 - Splice Fast Fail 01
+			el:       ExtentList{},
+			expected: ExtentList{},
+		},
+		{ // case 3 - Splice Fast Fail 02
+			el:       nil,
+			expected: nil,
+		},
+		{ // case 4 - spliceByTimeAligned Fast Fail 01
+			el: ExtentList{
+				Extent{Start: t100, End: t200},
+			},
+			expected: ExtentList{
+				Extent{Start: t100, End: t200},
+			},
+			step:       time.Second * 100,
+			spliceStep: time.Second * 100,
+		},
+		{ // case 5 - spliceByPoints Fast Fail
+			el: ExtentList{
+				Extent{Start: t100, End: t200},
+			},
+			expected: ExtentList{
+				Extent{Start: t100, End: t200},
+			},
+			maxPoints: 2,
+		},
+		{ // case 6 - spliceByTimeAligned left-side splice only
+			el: ExtentList{
+				Extent{Start: t0, End: t200},
+				Extent{Start: t500, End: t600},
+				Extent{Start: t900, End: t1600},
+			},
+			expected: ExtentList{
+				Extent{Start: t0, End: t200},
+				Extent{Start: t500, End: t500},
+				Extent{Start: t600, End: t600},
+				Extent{Start: t900, End: t1100},
+				Extent{Start: t1200, End: t1600},
+			},
+			step:       time.Second * 100,
+			maxRange:   time.Second * 600,
+			spliceStep: time.Second * 600,
+		},
+		{ // case 7 - spliceByTimeAligned, left- and right-side splicing
+			el: ExtentList{
+				Extent{Start: t0, End: t200},
+				Extent{Start: t500, End: t600},
+				Extent{Start: t900, End: t1900},
+			},
+			expected: ExtentList{
+				Extent{Start: t0, End: t200},
+				Extent{Start: t500, End: t500},
+				Extent{Start: t600, End: t600},
+				Extent{Start: t900, End: t1100},
+				Extent{Start: t1200, End: t1700},
+				Extent{Start: t1800, End: t1900},
+			},
+			step:       time.Second * 100,
+			maxRange:   time.Second * 600,
+			spliceStep: time.Second * 600,
+		},
+		{ // case 8 - spliceByTime basic
+			el: ExtentList{
+				Extent{Start: t0, End: t200},
+				Extent{Start: t500, End: t600},
+				Extent{Start: t900, End: t1900},
+			},
+			expected: ExtentList{
+				Extent{Start: t0, End: t200},
+				Extent{Start: t500, End: t600},
+				Extent{Start: t900, End: t1400},
+				Extent{Start: t1500, End: t1900},
+			},
+			step:     time.Second * 100,
+			maxRange: time.Second * 600,
+		},
+		{ // case 9 - spliceByTimeAligned, spliceStep < maxRange
+			el: ExtentList{
+				Extent{Start: t0, End: t200},
+				Extent{Start: t500, End: t600},
+				Extent{Start: t900, End: t1900},
+			},
+			expected: ExtentList{
+				Extent{Start: t0, End: t200},
+				Extent{Start: t500, End: t500},
+				Extent{Start: t600, End: t600},
+				Extent{Start: t900, End: t1400},
+				Extent{Start: t1500, End: t1900},
+			},
+			step:       time.Second * 100,
+			maxRange:   time.Second * 600,
+			spliceStep: time.Second * 300,
+		},
+		{ // case 10 - spliceByTimeAligned, step > spliceStep
+			el: ExtentList{
+				Extent{Start: t0, End: t0},
+				Extent{Start: t300, End: t600},
+				Extent{Start: t900, End: t1800},
+			},
+			expected: ExtentList{
+				Extent{Start: t0, End: t0},
+				Extent{Start: t300, End: t600},
+				Extent{Start: t900, End: t1200},
+				Extent{Start: t1500, End: t1800},
+			},
+			step:       time.Second * 300,
+			maxRange:   time.Second * 600,
+			spliceStep: time.Second * 100,
+		},
+		{ // case 11 - spliceByTimeAligned, step > maxRange
+			el: ExtentList{
+				Extent{Start: t0, End: t600},
+				Extent{Start: t1200, End: t1800},
+			},
+			expected: ExtentList{
+				Extent{Start: t0, End: t0},
+				Extent{Start: t600, End: t600},
+				Extent{Start: t1200, End: t1200},
+				Extent{Start: t1800, End: t1800},
+			},
+			step:       time.Second * 600,
+			maxRange:   time.Second * 400,
+			spliceStep: time.Second * 200,
+		},
+		{ // case 12 - spliceByPoints, step > maxPoints spread
+			el: ExtentList{
+				Extent{Start: t0, End: t1800},
+			},
+			expected: ExtentList{
+				Extent{Start: t0, End: t0},
+				Extent{Start: t600, End: t600},
+				Extent{Start: t1200, End: t1200},
+				Extent{Start: t1800, End: t1800},
+			},
+			step:      time.Second * 600,
+			maxPoints: 1,
+		},
+		{ // case 12 - spliceByTime, step > maxRange
+			el: ExtentList{
+				Extent{Start: t0, End: t1800},
+			},
+			expected: ExtentList{
+				Extent{Start: t0, End: t0},
+				Extent{Start: t600, End: t600},
+				Extent{Start: t1200, End: t1200},
+				Extent{Start: t1800, End: t1800},
+			},
+			step:     time.Second * 600,
+			maxRange: 100,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			out := test.el.Splice(test.step, test.maxRange, test.spliceStep, test.maxPoints)
+			if out == nil && test.expected == nil {
+				return
+			}
+			if (test.expected == nil && out != nil) ||
+				(out == nil && test.expected != nil) ||
+				(!out.Equal(test.expected)) {
+				t.Errorf("expected %s\ngot      %s", test.expected, out)
+			}
+		})
+	}
 }

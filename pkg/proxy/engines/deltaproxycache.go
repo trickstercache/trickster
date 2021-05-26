@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/tricksterproxy/trickster/pkg/backends"
@@ -195,8 +196,10 @@ checkCache:
 	}
 
 	// Find the ranges that we want, but which are not currently cached
-	var missRanges, cvr timeseries.ExtentList
-	vr := cts.VolatileExtents()
+	var missRanges, vr, cvr timeseries.ExtentList
+	if cts != nil {
+		vr = cts.VolatileExtents()
+	}
 	if cacheStatus == status.LookupStatusPartialHit {
 		missRanges = cts.Extents().CalculateDeltas(trq.Extent, trq.Step)
 		// this is the backfill part of backfill tolerance. if there are any volatile
@@ -273,63 +276,8 @@ checkCache:
 		}
 	}
 
-	dpStatus := tl.Pairs{
-		"cacheKey":    key,
-		"cacheStatus": cacheStatus,
-		"reqStart":    trq.Extent.Start.Unix(),
-		"reqEnd":      trq.Extent.End.Unix(),
-	}
-	if len(missRanges) > 0 {
-		dpStatus["extentsFetched"] = missRanges.String()
-	}
-
 	// maintain a list of timeseries to merge into the main timeseries
-	mts := make([]timeseries.Timeseries, 0, len(missRanges))
-	wg := sync.WaitGroup{}
-	appendLock := sync.Mutex{}
-	var uncachedValueCount int64
-
-	// iterate each time range that the client needs and fetch from the upstream origin
-	for i := range missRanges {
-		wg.Add(1)
-		// This fetches the gaps from the origin and adds their datasets to the merge list
-		go func(e *timeseries.Extent, rq *proxyRequest) {
-			defer wg.Done()
-
-			mrsc := request.NewResources(o, pc, cc, cache, client, rsc.Tracer, pr.Logger)
-			rq.upstreamRequest = rq.WithContext(tctx.WithResources(
-				trace.ContextWithSpan(context.Background(), span),
-				mrsc))
-			rq.upstreamRequest = rq.upstreamRequest.WithContext(profile.ToContext(rq.upstreamRequest.Context(),
-				dpcEncodingProfile.Clone()))
-			client.SetExtent(rq.upstreamRequest, trq, e)
-
-			ctxMR, spanMR := tspan.NewChildSpan(rq.upstreamRequest.Context(), rsc.Tracer, "FetchRange")
-			if spanMR != nil {
-				rq.upstreamRequest = rq.upstreamRequest.WithContext(ctxMR)
-				defer spanMR.End()
-			}
-
-			body, resp, _ := rq.Fetch()
-			if resp.StatusCode == http.StatusOK && len(body) > 0 {
-				nts, err := modeler.WireUnmarshalerReader(getDecoderReader(resp), trq)
-				if err != nil {
-					tl.Error(pr.Logger, "proxy object unmarshaling failed",
-						tl.Pairs{"body": string(body)})
-					return
-				}
-				doc.headerLock.Lock()
-				headers.Merge(doc.Headers, resp.Header)
-				doc.headerLock.Unlock()
-				uncachedValueCount += nts.ValueCount()
-				nts.SetTimeRangeQuery(trq)
-				nts.SetExtents([]timeseries.Extent{*e})
-				appendLock.Lock()
-				mts = append(mts, nts)
-				appendLock.Unlock()
-			}
-		}(&missRanges[i], pr.Clone())
-	}
+	wg := &sync.WaitGroup{}
 
 	var hasFastForwardData bool
 	var ffts timeseries.Timeseries
@@ -368,7 +316,42 @@ checkCache:
 		}()
 	}
 
+	// while fast forward fetching is occurring in a goroutine, this section will
+	// fetch any uncached ranges in cases of partial hit or range miss
+	dpStatus := tl.Pairs{
+		"cacheKey":    key,
+		"cacheStatus": cacheStatus,
+		"reqStart":    trq.Extent.Start.Unix(),
+		"reqEnd":      trq.Extent.End.Unix(),
+	}
+
+	var mts []timeseries.Timeseries
+	var uncachedValueCount int64
+	var mresp *http.Response
+
+	var ferr error
+
+	// this concurrently fetches all missing ranges from the origin
+	if len(missRanges) > 0 {
+		if o.DoesShard {
+			missRanges = missRanges.Splice(trq.Step, o.MaxShardSize, o.ShardStep, o.MaxShardSizePoints)
+		}
+		dpStatus["extentsFetched"] = missRanges.String()
+		frsc := request.NewResources(o, pc, cc, cache, client, rsc.Tracer, pr.Logger)
+		frsc.TimeRangeQuery = trq
+		mts, uncachedValueCount, mresp, ferr = fetchExtents(missRanges, frsc, doc.Headers, client,
+			pr, modeler.WireUnmarshalerReader, span)
+	}
+
 	wg.Wait()
+
+	if ferr != nil {
+		if writeLock != nil {
+			writeLock.Release()
+		}
+		Respond(w, mresp.StatusCode, mresp.Header, mresp.Body)
+		return
+	}
 
 	// Merge the new delta timeseries into the cached timeseries
 	if len(mts) > 0 {
@@ -540,10 +523,18 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	pr.upstreamRequest = request.SetResources(pr.upstreamRequest.WithContext(ctx), rsc)
 
 	start := time.Now()
-	_, resp, _ := PrepareFetchReader(pr.upstreamRequest)
+	mts, _, resp, err := fetchExtents(timeseries.ExtentList{trq.Extent}.Splice(trq.Step,
+		o.MaxShardSize, o.ShardStep, o.MaxShardSizePoints), rsc,
+		http.Header{}, client, pr, modeler.WireUnmarshalerReader, nil)
 
-	pr.upstreamResponse = resp
-	rsc.Response = resp
+	// elaspsed measures only the time spent making origin requests
+	var elapsed time.Duration
+	if err == nil {
+		elapsed = time.Since(start)
+	}
+
+	go logUpstreamRequest(pr.Logger, o.Name, o.Provider, handlerName,
+		pr.Method, pr.URL.String(), pr.UserAgent(), resp.StatusCode, 0, elapsed.Seconds())
 
 	d := &HTTPDocument{
 		Status:     resp.Status,
@@ -551,40 +542,17 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 		Headers:    resp.Header,
 	}
 
-	if resp.StatusCode != 200 {
-		var b []byte
-		if resp.Body != nil {
-			b, _ := io.ReadAll(resp.Body)
-			if len(b) > 128 {
-				b = b[:128]
-			}
-		}
-		tl.Error(pr.Logger, "unexpected upstream response",
-			tl.Pairs{
-				"statusCode":              resp.StatusCode,
-				"clientRequestURL":        pr.Request.URL.String(),
-				"clientRequestMethod":     pr.Request.Method,
-				"clientRequestHeaders":    pr.Request.Header,
-				"upstreamRequestURL":      pr.upstreamRequest.URL.String(),
-				"upstreamRequestMethod":   pr.upstreamRequest.Method,
-				"upstreamRequestHeaders":  headers.LogString(pr.upstreamRequest.Header),
-				"upstreamResponseHeaders": headers.LogString(resp.Header),
-				"upstreamResponseBody":    string(b),
-			},
-		)
-		return nil, d, time.Duration(0), tpe.ErrUnexpectedUpstreamResponse
-	}
-
-	ts, err := modeler.WireUnmarshalerReader(getDecoderReader(resp), trq)
 	if err != nil {
-		tl.Error(pr.Logger,
-			"proxy object unmarshaling failed", tl.Pairs{"detail": err.Error()})
 		return nil, d, time.Duration(0), err
 	}
 
-	elapsed := time.Since(start)
-	go logUpstreamRequest(pr.Logger, o.Name, o.Provider, handlerName,
-		pr.Method, pr.URL.String(), pr.UserAgent(), resp.StatusCode, 0, elapsed.Seconds())
+	var ts timeseries.Timeseries
+	if len(mts) == 1 {
+		ts = mts[0]
+	} else if len(mts) > 1 {
+		ts = mts[0]
+		ts.Merge(true, mts[1:]...)
+	}
 
 	return ts, d, elapsed, nil
 }
@@ -606,4 +574,101 @@ func getDecoderReader(resp *http.Response) io.Reader {
 		}
 	}
 	return reader
+}
+
+// this will concurrently fetch provided requested extents
+func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Header,
+	client backends.TimeseriesBackend, pr *proxyRequest, wur timeseries.UnmarshalerReaderFunc,
+	span trace.Span) ([]timeseries.Timeseries, int64, *http.Response, error) {
+
+	var uncachedValueCount int64
+	var wg sync.WaitGroup
+	var appendLock, respLock sync.Mutex
+	var err error
+
+	// the list of time series created from the responses
+	mts := make([]timeseries.Timeseries, 0, len(el))
+	// the meta-response aggregating all upstream responses
+	mresp := &http.Response{Header: h}
+
+	// iterate each time range that the client needs and fetch from the upstream origin
+	for i := range el {
+		wg.Add(1)
+		// This concurrently fetches gaps from the origin and adds their datasets to the merge list
+		go func(e *timeseries.Extent, rq *proxyRequest) {
+			defer wg.Done()
+			mrsc := rsc.Clone()
+			rq.upstreamRequest = rq.WithContext(tctx.WithResources(
+				trace.ContextWithSpan(context.Background(), span),
+				mrsc))
+			rq.upstreamRequest = rq.upstreamRequest.WithContext(profile.ToContext(rq.upstreamRequest.Context(),
+				dpcEncodingProfile.Clone()))
+			client.SetExtent(rq.upstreamRequest, rsc.TimeRangeQuery, e)
+
+			ctxMR, spanMR := tspan.NewChildSpan(rq.upstreamRequest.Context(), rsc.Tracer, "FetchRange")
+			if spanMR != nil {
+				rq.upstreamRequest = rq.upstreamRequest.WithContext(ctxMR)
+				defer spanMR.End()
+			}
+
+			body, resp, _ := rq.Fetch()
+
+			respLock.Lock()
+			if resp.StatusCode > mresp.StatusCode {
+				mresp.Status = resp.Status
+				mresp.StatusCode = resp.StatusCode
+			}
+			respLock.Unlock()
+
+			if resp.StatusCode == http.StatusOK && len(body) > 0 {
+				nts, ferr := wur(getDecoderReader(resp), rsc.TimeRangeQuery)
+				if ferr != nil {
+					tl.Error(pr.Logger, "proxy object unmarshaling failed",
+						tl.Pairs{"detail": ferr.Error()})
+					appendLock.Lock()
+					if err == nil {
+						err = ferr
+					}
+					appendLock.Unlock()
+					return
+				}
+				atomic.AddInt64(&uncachedValueCount, nts.ValueCount())
+				nts.SetTimeRangeQuery(rsc.TimeRangeQuery)
+				nts.SetExtents([]timeseries.Extent{*e})
+				appendLock.Lock()
+				headers.Merge(h, resp.Header)
+				mts = append(mts, nts)
+				appendLock.Unlock()
+			} else if resp.StatusCode != 200 {
+				err = tpe.ErrUnexpectedUpstreamResponse
+				var b []byte
+				var s string
+				if resp.Body != nil {
+					b, _ = io.ReadAll(resp.Body)
+					s = string(b)
+					respLock.Lock()
+					mresp.Body = io.NopCloser(bytes.NewReader(b))
+					respLock.Unlock()
+				}
+				if len(s) > 128 {
+					s = s[:128]
+				}
+				tl.Error(pr.Logger, "unexpected upstream response",
+					tl.Pairs{
+						"statusCode":              resp.StatusCode,
+						"clientRequestURL":        pr.Request.URL.String(),
+						"clientRequestMethod":     pr.Request.Method,
+						"clientRequestHeaders":    pr.Request.Header,
+						"upstreamRequestURL":      pr.upstreamRequest.URL.String(),
+						"upstreamRequestMethod":   pr.upstreamRequest.Method,
+						"upstreamRequestHeaders":  headers.LogString(pr.upstreamRequest.Header),
+						"upstreamResponseHeaders": headers.LogString(resp.Header),
+						"upstreamResponseBody":    s,
+					},
+				)
+			}
+		}(&el[i], pr.Clone())
+	}
+	wg.Wait()
+	return mts, uncachedValueCount, mresp, err
 }

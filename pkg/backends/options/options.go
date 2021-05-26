@@ -110,6 +110,18 @@ type Options struct {
 	// ReqRewriterName is the name of a configured Rewriter that will modify the request prior to
 	// processing by the backend client
 	ReqRewriterName string `yaml:"req_rewriter_name,omitempty"`
+	// MaxShardSizePoints defines the maximum size of a timeseries request in unique timestamps,
+	// before sharding into multiple requests of this denomination and reconsitituting the results.
+	// If MaxShardSizePoints and MaxShardSizeMS are both > 0, the configuration is invalid
+	MaxShardSizePoints int `yaml:"shard_max_size_points,omitempty"`
+	// MaxShardSizeMS defines the max size of a timeseries request in milliseconds,
+	// before sharding into multiple requests of this denomination and reconsitituting the results.
+	// If MaxShardSizePoints and MaxShardSizeMS are both > 0, the configuration is invalid
+	MaxShardSizeMS int `yaml:"shard_max_size_ms,omitempty"`
+	// ShardStepMS defines the epoch-aligned cadence to use when creating shards. When set to 0,
+	// shards are not aligned to the epoch at a specific step. MaxShardSizeMS must be perfectly
+	// divisible by ShardStepMS when both are > 0, or the configuration is invalid
+	ShardStepMS int `yaml:"shard_step_ms,omitempty"`
 
 	// ALBOptions holds the options for ALBs
 	ALBOptions *ao.Options `yaml:"alb,omitempty"`
@@ -183,6 +195,13 @@ type Options struct {
 	RuleOptions *ro.Options `yaml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
 	ReqRewriter rewriter.RewriteInstructions
+	// DoesShard is true when sharding will be used with this origin, based on how the
+	// sharding options have been configured
+	DoesShard bool `yaml:"-"`
+	// MaxShardSize is the parsed version of MaxShardSizeMS
+	MaxShardSize time.Duration `yaml:"-"`
+	// ShardStep is the parsed version of ShardStepMS
+	ShardStep time.Duration `yaml:"-"`
 
 	//
 	md yamlx.KeyLookup `yaml:"-"`
@@ -210,6 +229,11 @@ func New() *Options {
 		NegativeCacheName:            DefaultBackendNegativeCacheName,
 		Paths:                        make(map[string]*po.Options),
 		RevalidationFactor:           DefaultRevalidationFactor,
+		MaxShardSizePoints:           DefaultTimeseriesShardSize,
+		MaxShardSizeMS:               DefaultTimeseriesShardSize,
+		MaxShardSize:                 time.Duration(DefaultTimeseriesShardSize) * time.Millisecond,
+		ShardStepMS:                  DefaultTimeseriesShardStep,
+		ShardStep:                    time.Duration(DefaultTimeseriesShardStep) * time.Millisecond,
 		TLS:                          &to.Options{},
 		Timeout:                      time.Millisecond * DefaultBackendTimeoutMS,
 		TimeoutMS:                    DefaultBackendTimeoutMS,
@@ -233,6 +257,7 @@ func (o *Options) Clone() *Options {
 	no.BackfillTolerancePoints = o.BackfillTolerancePoints
 	no.CacheName = o.CacheName
 	no.CacheKeyPrefix = o.CacheKeyPrefix
+	no.DoesShard = o.DoesShard
 	no.FastForwardDisable = o.FastForwardDisable
 	no.FastForwardTTL = o.FastForwardTTL
 	no.FastForwardTTLMS = o.FastForwardTTLMS
@@ -253,6 +278,11 @@ func (o *Options) Clone() *Options {
 	no.RevalidationFactor = o.RevalidationFactor
 	no.RuleName = o.RuleName
 	no.Scheme = o.Scheme
+	no.MaxShardSize = o.MaxShardSize
+	no.MaxShardSizeMS = o.MaxShardSizeMS
+	no.MaxShardSizePoints = o.MaxShardSizePoints
+	no.ShardStep = o.ShardStep
+	no.ShardStepMS = o.ShardStepMS
 	no.Timeout = o.Timeout
 	no.TimeoutMS = o.TimeoutMS
 	no.TimeseriesRetention = o.TimeseriesRetention
@@ -343,6 +373,22 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 		o.TimeseriesTTL = time.Duration(o.TimeseriesTTLMS) * time.Millisecond
 		o.FastForwardTTL = time.Duration(o.FastForwardTTLMS) * time.Millisecond
 		o.MaxTTL = time.Duration(o.MaxTTLMS) * time.Millisecond
+		o.DoesShard = o.MaxShardSizePoints > 0 || o.MaxShardSizeMS > 0 || o.ShardStepMS > 0
+		o.ShardStep = time.Duration(o.ShardStepMS) * time.Millisecond
+		o.MaxShardSize = time.Duration(o.MaxShardSizeMS) * time.Millisecond
+
+		if o.MaxShardSizeMS > 0 && o.MaxShardSizePoints > 0 {
+			return ErrInvalidMaxShardSize
+		}
+
+		if o.ShardStepMS > 0 && o.MaxShardSizeMS == 0 {
+			o.MaxShardSize = o.ShardStep
+		}
+
+		if o.ShardStep > 0 && o.MaxShardSize%o.ShardStep != 0 {
+			return ErrInvalidMaxShardSizeMS
+		}
+
 		if o.CompressibleTypeList != nil {
 			o.CompressibleTypes = make(map[string]interface{})
 			for _, v := range o.CompressibleTypeList {
@@ -521,6 +567,18 @@ func SetDefaults(
 
 	if metadata.IsDefined("backends", name, "keep_alive_timeout_ms") {
 		no.KeepAliveTimeoutMS = o.KeepAliveTimeoutMS
+	}
+
+	if metadata.IsDefined("backends", name, "shard_max_size_points") {
+		no.MaxShardSizePoints = o.MaxShardSizePoints
+	}
+
+	if metadata.IsDefined("backends", name, "shard_max_size_ms") {
+		no.MaxShardSizeMS = o.MaxShardSizeMS
+	}
+
+	if metadata.IsDefined("backends", name, "shard_step_ms") {
+		no.ShardStepMS = o.ShardStepMS
 	}
 
 	if metadata.IsDefined("backends", name, "timeseries_retention_factor") {

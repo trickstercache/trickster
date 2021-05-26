@@ -57,6 +57,10 @@ const (
 	DefaultForwardedHeaders = "standard"
 	// DefaullALBMechansimName defines the default ALB Mechanism Name
 	DefaullALBMechansimName = "rr" // round robin
+	// DefaultTimeseriesShardSize defines the default shard size of 0 (no sharding)
+	DefaultTimeseriesShardSize = 0
+	// DefaultTimeseriesShardStep defines the default shard step of 0 (no sharding)
+	DefaultTimeseriesShardStep = 0
 )
 
 // DefaultCompressibleTypes returns a list of types that Trickster should compress before caching
