@@ -35,7 +35,7 @@ func testMergeFunc(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGat
 
 func TestHandleResponseMerge(t *testing.T) {
 
-	r, _ := http.NewRequest("GET", "http://trickstercache.io/", nil)
+	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 	rsc := request.NewResources(nil, nil, nil, nil, nil, nil, nil)
 	rsc.ResponseMergeFunc = testMergeFunc
 	rsc.IsMergeMember = true

@@ -123,12 +123,12 @@ func newTestCaseOpts() map[string]*ro.CaseOptions {
 		},
 		"3": {
 			Matches:     []string{"trickstercache"},
-			RedirectURL: "http://trickstercache.io",
+			RedirectURL: "http://trickstercache.org",
 		},
 		"4": {
 			Matches:         []string{"true"},
 			ReqRewriterName: "test-rewriter-5",
-			RedirectURL:     "http://trickstercache.io",
+			RedirectURL:     "http://trickstercache.org",
 		},
 	}
 }
@@ -249,7 +249,7 @@ func TestEvaluateOpArg(t *testing.T) {
 
 	// Make sure redirection handlers are covered
 	r.defaultRedirectCode = 302
-	r.defaultRedirectURL = "http://trickstercache.io"
+	r.defaultRedirectURL = "http://trickstercache.org"
 
 	hr.Header.Del(testRuleHeader)
 	_, _, err = r.EvaluateOpArg(hr)
@@ -297,7 +297,7 @@ func TestEvaluateCaseArg(t *testing.T) {
 
 	// Make sure redirection handlers are covered
 	r.defaultRedirectCode = 302
-	r.defaultRedirectURL = "http://trickstercache.io"
+	r.defaultRedirectURL = "http://trickstercache.org"
 
 	hr.Header.Del(testRuleHeader)
 	_, _, err = r.EvaluateCaseArg(hr)

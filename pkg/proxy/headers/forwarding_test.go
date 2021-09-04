@@ -186,7 +186,7 @@ func TestFormatForwardedAddress(t *testing.T) {
 
 func TestStripMergeHeaders(t *testing.T) {
 
-	h := http.Header{NameContentLength: []string{"42"}, NameLocation: []string{"https://trickstercache.io/"}}
+	h := http.Header{NameContentLength: []string{"42"}, NameLocation: []string{"https://trickstercache.org/"}}
 	StripMergeHeaders(h)
 
 	if _, ok := h[NameContentLength]; ok {

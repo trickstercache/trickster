@@ -31,7 +31,7 @@ func emptyHandler(w http.ResponseWriter, r *http.Request) {
 
 func TestHandleCompression(t *testing.T) {
 	f := HandleCompression(http.HandlerFunc(emptyHandler), strings.Lookup{"text/plain": nil})
-	r, _ := http.NewRequest(http.MethodGet, "http://trickstercache.io/", nil)
+	r, _ := http.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
 	w := httptest.NewRecorder()
 	f.ServeHTTP(w, r)
 	if w.Body.String() != "trickster" {

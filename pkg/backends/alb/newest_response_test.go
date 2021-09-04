@@ -29,7 +29,7 @@ import (
 
 func TestHandleNewestResponse(t *testing.T) {
 
-	r, _ := http.NewRequest("GET", "http://trickstercache.io/", nil)
+	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 
 	p, _, _ := testPool(pool.NewestLastModified, 0, nil)
 	c := &Client{pool: p}

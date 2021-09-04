@@ -98,10 +98,10 @@ func TestSetCache(t *testing.T) {
 
 func TestBaseUpstreamURL(t *testing.T) {
 
-	u, _ := url.Parse("https://trickstercache.io/test")
+	u, _ := url.Parse("https://trickstercache.org/test")
 	b := &backend{name: "test", baseUpstreamURL: u}
 	u = b.BaseUpstreamURL()
-	if u.Host != "trickstercache.io" || u.Scheme != "https" || u.Path != "/test" {
+	if u.Host != "trickstercache.org" || u.Scheme != "https" || u.Path != "/test" {
 		t.Error("url mismatch")
 	}
 }
