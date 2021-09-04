@@ -23,9 +23,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/trickstercache/trickster/pkg/proxy/request"
-	"github.com/trickstercache/trickster/pkg/proxy/response/merge"
-	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 const testVector = `{"status":"success","data":{"resultType":"vector","result":[` +

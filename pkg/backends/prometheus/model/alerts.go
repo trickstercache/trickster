@@ -24,12 +24,12 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/trickstercache/trickster/pkg/observability/logging"
-	"github.com/trickstercache/trickster/pkg/proxy/handlers"
-	"github.com/trickstercache/trickster/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/pkg/proxy/response/merge"
-	"github.com/trickstercache/trickster/pkg/timeseries/dataset"
-	"github.com/trickstercache/trickster/pkg/util/fnv"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/util/fnv"
 )
 
 // WFAlerts is the Wire Format Document for the /alerts endpoint

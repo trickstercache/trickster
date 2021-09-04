@@ -19,13 +19,13 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/trickstercache/trickster/pkg/backends"
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
-	"github.com/trickstercache/trickster/pkg/cache"
-	"github.com/trickstercache/trickster/pkg/observability/tracing"
-	"github.com/trickstercache/trickster/pkg/proxy/context"
-	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
-	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
 // WithResourcesContext ...

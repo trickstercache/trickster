@@ -20,10 +20,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/trickstercache/trickster/pkg/encoding/profile"
-	"github.com/trickstercache/trickster/pkg/encoding/providers"
-	"github.com/trickstercache/trickster/pkg/proxy/headers"
-	strutil "github.com/trickstercache/trickster/pkg/util/strings"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	strutil "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
 // HandleCompression wraps an HTTP response in a compression writer

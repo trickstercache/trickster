@@ -23,11 +23,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/trickstercache/trickster/pkg/parsing"
-	lsql "github.com/trickstercache/trickster/pkg/parsing/lex/sql"
-	"github.com/trickstercache/trickster/pkg/parsing/sql"
-	"github.com/trickstercache/trickster/pkg/timeseries"
-	"github.com/trickstercache/trickster/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/parsing"
+	lsql "github.com/trickstercache/trickster/v2/pkg/parsing/lex/sql"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sql"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
 // Parser is a basic, extendable SQL Parser

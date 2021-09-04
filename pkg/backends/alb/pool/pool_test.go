@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/trickstercache/trickster/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
 
 func TestMechsToFuncs(t *testing.T) {

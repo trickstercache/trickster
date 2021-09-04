@@ -22,8 +22,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/trickstercache/trickster/pkg/proxy/params"
-	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // SetExtent will change the upstream request query to use the provided Extent

@@ -27,13 +27,13 @@ import (
 	"strconv"
 	"testing"
 
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
-	tl "github.com/trickstercache/trickster/pkg/observability/logging"
-	ct "github.com/trickstercache/trickster/pkg/proxy/context"
-	"github.com/trickstercache/trickster/pkg/proxy/headers"
-	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
-	"github.com/trickstercache/trickster/pkg/proxy/request"
-	tu "github.com/trickstercache/trickster/pkg/util/testing"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	ct "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	tu "github.com/trickstercache/trickster/v2/pkg/util/testing"
 )
 
 const testMultipartBoundary = `; boundary=------------------------d0509edbe55938c0`

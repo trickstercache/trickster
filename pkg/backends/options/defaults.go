@@ -17,7 +17,7 @@
 package options
 
 import (
-	"github.com/trickstercache/trickster/pkg/cache/evictionmethods"
+	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 )
 
 const (

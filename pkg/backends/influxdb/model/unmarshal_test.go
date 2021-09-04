@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 const testDoc01 = `{"results":[{"statement_id":0,"series":[` +

@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // ResultHeaderParts defines the components for building the Trickster Result Header

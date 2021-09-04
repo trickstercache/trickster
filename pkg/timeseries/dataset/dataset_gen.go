@@ -20,7 +20,7 @@ package dataset
 
 import (
 	"github.com/tinylib/msgp/msgp"
-	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // DecodeMsg implements msgp.Decodable

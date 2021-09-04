@@ -27,9 +27,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trickstercache/trickster/pkg/backends/irondb/common"
-	"github.com/trickstercache/trickster/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/backends/irondb/common"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // SeriesEnvelope values represent a time series data response from the

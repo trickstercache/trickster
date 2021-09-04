@@ -26,10 +26,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/trickstercache/trickster/pkg/errors"
-	"github.com/trickstercache/trickster/pkg/timeseries"
-	"github.com/trickstercache/trickster/pkg/timeseries/dataset"
-	"github.com/trickstercache/trickster/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
 // WFMatrixDocument is the Wire Format Document for prometheus range / timeseries

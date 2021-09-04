@@ -22,9 +22,9 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/trickstercache/trickster/cmd/trickster/config"
-	"github.com/trickstercache/trickster/pkg/cache"
-	tl "github.com/trickstercache/trickster/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
 var hups = make(chan os.Signal, 1)

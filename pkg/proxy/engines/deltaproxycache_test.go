@@ -25,11 +25,11 @@ import (
 	"time"
 
 	mockprom "github.com/trickstercache/mockster/pkg/mocks/prometheus"
-	"github.com/trickstercache/trickster/pkg/backends"
-	"github.com/trickstercache/trickster/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/pkg/proxy/request"
-	"github.com/trickstercache/trickster/pkg/timeseries"
-	tu "github.com/trickstercache/trickster/pkg/util/testing"
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	tu "github.com/trickstercache/trickster/v2/pkg/util/testing"
 )
 
 // test queries

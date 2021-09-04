@@ -26,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 )
 
 var testString = "Hey, I'm an http response body string."

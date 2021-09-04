@@ -16,7 +16,7 @@
 
 package defaults
 
-import "github.com/trickstercache/trickster/pkg/cache/providers"
+import "github.com/trickstercache/trickster/v2/pkg/cache/providers"
 
 const (
 	// DefaultCacheProvider is the default cache providers for any defined cache

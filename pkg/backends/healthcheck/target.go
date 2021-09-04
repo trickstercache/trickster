@@ -27,10 +27,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	ho "github.com/trickstercache/trickster/pkg/backends/healthcheck/options"
-	"github.com/trickstercache/trickster/pkg/observability/logging"
-	tctx "github.com/trickstercache/trickster/pkg/proxy/context"
-	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 // target defines a Health Check target

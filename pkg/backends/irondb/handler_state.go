@@ -19,8 +19,8 @@ package irondb
 import (
 	"net/http"
 
-	"github.com/trickstercache/trickster/pkg/proxy/engines"
-	"github.com/trickstercache/trickster/pkg/proxy/urls"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
 
 // StateHandler handles requests for state data and processes them through the

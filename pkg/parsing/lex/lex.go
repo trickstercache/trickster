@@ -19,7 +19,7 @@ package lex
 import (
 	"unicode"
 
-	"github.com/trickstercache/trickster/pkg/parsing/token"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
 )
 
 // EOF represents EOF as a value of -1

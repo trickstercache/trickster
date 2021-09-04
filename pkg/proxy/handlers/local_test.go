@@ -21,12 +21,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/trickstercache/trickster/cmd/trickster/config"
-	tl "github.com/trickstercache/trickster/pkg/observability/logging"
-	tc "github.com/trickstercache/trickster/pkg/proxy/context"
-	"github.com/trickstercache/trickster/pkg/proxy/headers"
-	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
-	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
+	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
 func TestHandleLocalResponse(t *testing.T) {

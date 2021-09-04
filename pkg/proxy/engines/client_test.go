@@ -28,17 +28,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trickstercache/trickster/pkg/backends"
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
-	"github.com/trickstercache/trickster/pkg/cache"
-	"github.com/trickstercache/trickster/pkg/proxy/errors"
-	"github.com/trickstercache/trickster/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/pkg/proxy/params"
-	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
-	"github.com/trickstercache/trickster/pkg/timeseries"
-	"github.com/trickstercache/trickster/pkg/timeseries/dataset"
-	tst "github.com/trickstercache/trickster/pkg/util/testing/timeseries/model"
-	tt "github.com/trickstercache/trickster/pkg/util/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	tst "github.com/trickstercache/trickster/v2/pkg/util/testing/timeseries/model"
+	tt "github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
 // Prometheus API

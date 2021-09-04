@@ -19,7 +19,7 @@ package clickhouse
 import (
 	"net/url"
 
-	ho "github.com/trickstercache/trickster/pkg/backends/healthcheck/options"
+	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 )
 
 const (

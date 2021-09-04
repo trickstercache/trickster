@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/trickstercache/trickster/pkg/proxy/urls"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
 
 type inputType string

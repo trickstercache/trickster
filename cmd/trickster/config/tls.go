@@ -19,7 +19,7 @@ package config
 import (
 	"crypto/tls"
 
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 )
 
 // TLSCertConfig returns the crypto/tls configuration object with a list of name-bound

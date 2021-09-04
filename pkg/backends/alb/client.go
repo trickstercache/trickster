@@ -22,16 +22,16 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/trickstercache/trickster/pkg/backends"
-	"github.com/trickstercache/trickster/pkg/backends/alb/pool"
-	"github.com/trickstercache/trickster/pkg/backends/healthcheck"
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
-	"github.com/trickstercache/trickster/pkg/backends/providers"
-	"github.com/trickstercache/trickster/pkg/backends/providers/registration/types"
-	"github.com/trickstercache/trickster/pkg/cache"
-	"github.com/trickstercache/trickster/pkg/proxy/methods"
-	"github.com/trickstercache/trickster/pkg/proxy/paths/matching"
-	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
 
 // Client Implements the Proxy Client Interface

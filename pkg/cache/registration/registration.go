@@ -19,15 +19,15 @@
 package registration
 
 import (
-	"github.com/trickstercache/trickster/cmd/trickster/config"
-	"github.com/trickstercache/trickster/pkg/cache"
-	"github.com/trickstercache/trickster/pkg/cache/badger"
-	"github.com/trickstercache/trickster/pkg/cache/bbolt"
-	"github.com/trickstercache/trickster/pkg/cache/filesystem"
-	"github.com/trickstercache/trickster/pkg/cache/memory"
-	"github.com/trickstercache/trickster/pkg/cache/options"
-	"github.com/trickstercache/trickster/pkg/cache/redis"
-	"github.com/trickstercache/trickster/pkg/locks"
+	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/cache/badger"
+	"github.com/trickstercache/trickster/v2/pkg/cache/bbolt"
+	"github.com/trickstercache/trickster/v2/pkg/cache/filesystem"
+	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
+	"github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/redis"
+	"github.com/trickstercache/trickster/v2/pkg/locks"
 )
 
 // Cache Interface Types

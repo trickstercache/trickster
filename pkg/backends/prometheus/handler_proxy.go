@@ -19,8 +19,8 @@ package prometheus
 import (
 	"net/http"
 
-	"github.com/trickstercache/trickster/pkg/proxy/engines"
-	"github.com/trickstercache/trickster/pkg/proxy/urls"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
 
 // ProxyHandler sends a request through the basic reverse proxy to the origin,

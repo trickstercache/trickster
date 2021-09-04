@@ -29,8 +29,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/trickstercache/trickster/pkg/backends/healthcheck"
-	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 type healthDetail struct {

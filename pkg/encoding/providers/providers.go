@@ -21,7 +21,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/trickstercache/trickster/pkg/util/copiers"
+	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
 )
 
 const (

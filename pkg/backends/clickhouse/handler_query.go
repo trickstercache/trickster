@@ -21,11 +21,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/trickstercache/trickster/pkg/proxy/engines"
-	"github.com/trickstercache/trickster/pkg/proxy/handlers"
-	"github.com/trickstercache/trickster/pkg/proxy/methods"
-	"github.com/trickstercache/trickster/pkg/proxy/request"
-	"github.com/trickstercache/trickster/pkg/proxy/urls"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
 
 // QueryHandler handles timeseries requests for ClickHouse and processes them through the delta proxy cache

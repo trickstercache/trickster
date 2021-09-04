@@ -21,12 +21,12 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/trickstercache/trickster/pkg/observability/logging"
-	"github.com/trickstercache/trickster/pkg/proxy/handlers"
-	"github.com/trickstercache/trickster/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/pkg/proxy/response/merge"
-	"github.com/trickstercache/trickster/pkg/timeseries"
-	"github.com/trickstercache/trickster/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
 // MergeAndWriteVector merges the provided Responses into a single prometheus Vector data object,

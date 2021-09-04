@@ -19,9 +19,9 @@ package registration
 import (
 	"testing"
 
-	"github.com/trickstercache/trickster/cmd/trickster/config"
-	tl "github.com/trickstercache/trickster/pkg/observability/logging"
-	"github.com/trickstercache/trickster/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
+	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 )
 
 func TestRegisterAll(t *testing.T) {

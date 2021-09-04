@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 )
 
 func TestNewTimeseriesBackend(t *testing.T) {

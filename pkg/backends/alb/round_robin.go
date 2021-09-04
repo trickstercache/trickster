@@ -19,7 +19,7 @@ package alb
 import (
 	"net/http"
 
-	"github.com/trickstercache/trickster/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 )
 
 func (c *Client) handleRoundRobin(w http.ResponseWriter, r *http.Request) {

@@ -21,9 +21,9 @@ import (
 	"strings"
 	"testing"
 
-	txe "github.com/trickstercache/trickster/pkg/proxy/errors"
-	"github.com/trickstercache/trickster/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/pkg/proxy/ranges/byterange"
+	txe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
 )
 
 func TestDocumentFromHTTPResponse(t *testing.T) {

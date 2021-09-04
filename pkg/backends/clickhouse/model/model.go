@@ -26,10 +26,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/trickstercache/trickster/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/pkg/timeseries"
-	"github.com/trickstercache/trickster/pkg/timeseries/dataset"
-	"github.com/trickstercache/trickster/pkg/timeseries/sqlparser"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/sqlparser"
 )
 
 var marshalers = map[byte]dataset.Marshaler{

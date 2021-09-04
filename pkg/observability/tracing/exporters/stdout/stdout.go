@@ -18,8 +18,8 @@
 package stdout
 
 import (
-	"github.com/trickstercache/trickster/pkg/observability/tracing"
-	"github.com/trickstercache/trickster/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
+	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/stdout"

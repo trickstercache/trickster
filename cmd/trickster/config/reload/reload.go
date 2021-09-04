@@ -20,9 +20,9 @@ package reload
 import (
 	"sync"
 
-	"github.com/trickstercache/trickster/cmd/trickster/config"
-	"github.com/trickstercache/trickster/pkg/cache"
-	tl "github.com/trickstercache/trickster/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
 // ReloaderFunc describes a function that loads and applies a Trickster config at startup,

@@ -21,10 +21,10 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/trickstercache/trickster/pkg/encoding/profile"
-	"github.com/trickstercache/trickster/pkg/encoding/providers"
-	"github.com/trickstercache/trickster/pkg/encoding/reader"
-	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 // ResponseEncoder defines the ResponseEncoder interface for encoding responses

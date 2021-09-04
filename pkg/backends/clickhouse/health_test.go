@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 )
 
 func TestDefaultHealthCheckConfig(t *testing.T) {

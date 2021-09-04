@@ -1,4 +1,4 @@
-module github.com/trickstercache/trickster
+module github.com/trickstercache/trickster/v2
 
 go 1.17
 

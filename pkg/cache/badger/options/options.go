@@ -17,7 +17,7 @@
 package options
 
 import (
-	d "github.com/trickstercache/trickster/pkg/cache/options/defaults"
+	d "github.com/trickstercache/trickster/v2/pkg/cache/options/defaults"
 )
 
 // Options is a collection of Configurations for storing cached data on the Filesystem in a Badger key-value store
