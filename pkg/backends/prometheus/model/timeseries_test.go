@@ -32,8 +32,7 @@ func TestNewModeler(t *testing.T) {
 	m := NewModeler()
 	if m == nil {
 		t.Error("expected non-nil modeler")
-	}
-	if m.WireMarshaler == nil {
+	} else if m.WireMarshaler == nil {
 		t.Error("expected non-nil funcs")
 	}
 }
@@ -58,7 +57,7 @@ func TestUnmarshalTimeseriesReader(t *testing.T) {
 	}
 
 	r = bytes.NewReader([]byte(testMatrix))
-	ts, err = UnmarshalTimeseriesReader(r, &timeseries.TimeRangeQuery{})
+	_, err = UnmarshalTimeseriesReader(r, &timeseries.TimeRangeQuery{})
 	if err != nil {
 		t.Error(err)
 	}
