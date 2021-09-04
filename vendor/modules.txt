@@ -11,18 +11,8 @@ github.com/alicebob/miniredis/server
 # github.com/andybalholm/brotli v1.0.3
 ## explicit; go 1.12
 github.com/andybalholm/brotli
-# github.com/aokoli/goutils v1.1.1
-## explicit
-# github.com/apache/thrift v0.13.0
-## explicit
-# github.com/aryann/difflib v0.0.0-20170710044230-e206f873d14a
-## explicit
-# github.com/aws/aws-lambda-go v1.13.3
-## explicit; go 1.12
 # github.com/benbjohnson/clock v1.1.0
 ## explicit; go 1.15
-# github.com/benbjohnson/tmpl v1.1.0
-## explicit; go 1.16
 # github.com/beorn7/perks v1.0.1
 ## explicit; go 1.11
 github.com/beorn7/perks/quantile
@@ -86,15 +76,9 @@ github.com/golang/snappy
 # github.com/gomodule/redigo v1.8.5
 ## explicit; go 1.14
 github.com/gomodule/redigo/redis
-# github.com/google/uuid v1.3.0
-## explicit
 # github.com/gorilla/mux v1.8.0
 ## explicit; go 1.12
 github.com/gorilla/mux
-# github.com/hashicorp/go-version v1.2.0
-## explicit
-# github.com/hashicorp/go.net v0.0.1
-## explicit
 # github.com/influxdata/influxdb v1.9.3
 ## explicit; go 1.15
 github.com/influxdata/influxdb/models
@@ -103,8 +87,6 @@ github.com/influxdata/influxdb/pkg/escape
 ## explicit; go 1.13
 github.com/influxdata/influxql
 github.com/influxdata/influxql/internal
-# github.com/influxdata/pkg-config v0.2.8
-## explicit; go 1.12
 # github.com/klauspost/compress v1.13.5
 ## explicit; go 1.15
 github.com/klauspost/compress
@@ -113,30 +95,12 @@ github.com/klauspost/compress/huff0
 github.com/klauspost/compress/internal/snapref
 github.com/klauspost/compress/zstd
 github.com/klauspost/compress/zstd/internal/xxhash
-# github.com/lightstep/lightstep-tracer-go v0.18.1
-## explicit; go 1.12
 # github.com/matttproud/golang_protobuf_extensions v1.0.1
 ## explicit
 github.com/matttproud/golang_protobuf_extensions/pbutil
-# github.com/mitchellh/copystructure v1.2.0
-## explicit; go 1.15
-# github.com/mitchellh/gox v0.4.0
-## explicit
-# github.com/mitchellh/iochan v1.0.0
-## explicit
-# github.com/oklog/oklog v0.3.2
-## explicit
-# github.com/opentracing/basictracer-go v1.0.0
-## explicit
-# github.com/openzipkin-contrib/zipkin-go-opentracing v0.4.5
-## explicit; go 1.12
 # github.com/openzipkin/zipkin-go v0.2.5
 ## explicit; go 1.12
 github.com/openzipkin/zipkin-go/model
-# github.com/pact-foundation/pact-go v1.0.4
-## explicit
-# github.com/pborman/uuid v1.2.0
-## explicit
 # github.com/philhofer/fwd v1.1.1
 ## explicit
 github.com/philhofer/fwd
@@ -164,8 +128,6 @@ github.com/prometheus/common/model
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/samuel/go-zookeeper v0.0.0-20190923202752-2cc03de413da
-## explicit
 # github.com/stretchr/testify v1.7.0
 ## explicit; go 1.13
 github.com/stretchr/testify/assert
@@ -178,8 +140,6 @@ github.com/trickstercache/mockster/pkg/mocks/byterange
 github.com/trickstercache/mockster/pkg/mocks/prometheus
 github.com/trickstercache/mockster/pkg/routes
 github.com/trickstercache/mockster/pkg/testutil
-# github.com/ttacon/chalk v0.0.0-20160626202418-22c06c80ed31
-## explicit
 # github.com/yuin/gopher-lua v0.0.0-20210529063254-f4c35e4016d9
 ## explicit; go 1.14
 github.com/yuin/gopher-lua
@@ -189,8 +149,6 @@ github.com/yuin/gopher-lua/pm
 # go.etcd.io/bbolt v1.3.6
 ## explicit; go 1.12
 go.etcd.io/bbolt
-# go.etcd.io/etcd v0.0.0-20191023171146-3cf2f69b5738
-## explicit
 # go.opentelemetry.io/contrib v0.19.0
 ## explicit; go 1.14
 go.opentelemetry.io/contrib
@@ -256,18 +214,6 @@ go.opentelemetry.io/otel/sdk/metric/selector/simple
 # go.opentelemetry.io/otel/trace v0.19.0
 ## explicit; go 1.14
 go.opentelemetry.io/otel/trace
-# go.uber.org/atomic v1.9.0
-## explicit; go 1.13
-# go.uber.org/multierr v1.7.0
-## explicit; go 1.14
-# go.uber.org/tools v0.0.0-20190618225709-2cfd321de3ee
-## explicit
-# go.uber.org/zap v1.19.0
-## explicit; go 1.13
-# golang.org/x/crypto v0.0.0-20210817164053-32db794688a5
-## explicit; go 1.17
-# golang.org/x/mod v0.5.0
-## explicit; go 1.17
 # golang.org/x/net v0.0.0-20210903162142-ad29c8ab022f
 ## explicit; go 1.17
 golang.org/x/net/internal/timeseries
@@ -281,8 +227,6 @@ golang.org/x/sync/semaphore
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# golang.org/x/tools v0.1.5
-## explicit; go 1.17
 # google.golang.org/api v0.56.0
 ## explicit; go 1.11
 google.golang.org/api/support/bundler
@@ -327,5 +271,3 @@ gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 ## explicit
 gopkg.in/yaml.v3
-# sourcegraph.com/sourcegraph/appdash v0.0.0-20190731080439-ebfcffb1b5c0
-## explicit
