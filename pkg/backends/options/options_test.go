@@ -233,7 +233,7 @@ func TestValidate(t *testing.T) {
 		{ // 3 - valid origin URL + strip trailing slash
 			to:       to,
 			loc:      &o.OriginURL,
-			val:      "http://trickstercache.io/test/path/",
+			val:      "http://trickstercache.org/test/path/",
 			expected: nil,
 		},
 		{ // 4 - invalid cache key prefix

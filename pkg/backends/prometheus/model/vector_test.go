@@ -35,7 +35,7 @@ const testVector = `{"status":"success","data":{"resultType":"vector","result":[
 
 const testVector2 = `{"status":"success","data":{"resultType":"vector","result":[` +
 	`{"metric":{"__name__":"go_memstats_alloc_bytes","instance":` +
-	`"trickstercache.io:8481","job":"trickster"},` +
+	`"trickstercache.org:8481","job":"trickster"},` +
 	`"value":[1577836800,"1"]}]}}`
 
 func TestMergeAndWriteVector(t *testing.T) {

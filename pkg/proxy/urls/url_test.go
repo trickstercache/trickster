@@ -50,10 +50,11 @@ func TestBuildUpstreamURL(t *testing.T) {
 
 func TestSize(t *testing.T) {
 
-	u, _ := url.Parse("https://trickstercache.io")
+	const expected = 24
+	u, _ := url.Parse("https://trickstercache.org")
 	i := Size(u)
-	if i != 23 {
-		t.Errorf("expected %d got %d", 23, i)
+	if i != expected {
+		t.Errorf("expected %d got %d", expected, i)
 	}
 	i = Size(nil)
 	if i != 0 {

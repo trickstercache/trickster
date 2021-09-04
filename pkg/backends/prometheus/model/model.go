@@ -40,6 +40,9 @@ func (e *Envelope) StartMarshal(w io.Writer, httpStatus int) {
 	if w == nil {
 		return
 	}
+	if httpStatus == 0 {
+		httpStatus = 200
+	}
 	if rw, ok := w.(http.ResponseWriter); ok {
 		h := rw.Header()
 		h.Set(headers.NameContentType, headers.ValueApplicationJSON+"; charset=UTF-8")

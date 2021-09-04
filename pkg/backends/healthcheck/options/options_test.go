@@ -58,11 +58,11 @@ func TestClone(t *testing.T) {
 func TestURL(t *testing.T) {
 	o := New()
 	o.Scheme = "https"
-	o.Host = "trickstercache.io"
+	o.Host = "trickstercache.org"
 	o.Path = "/"
 	o.Query = "?somequeryparam=somevalue"
 
-	const expected = "https://trickstercache.io/?somequeryparam=somevalue"
+	const expected = "https://trickstercache.org/?somequeryparam=somevalue"
 
 	u := o.URL()
 	if u.String() != expected {
