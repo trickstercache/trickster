@@ -21,15 +21,9 @@ package unix
 //sysnb	Getgid() (gid int)
 //sysnb	Getrlimit(resource int, rlim *Rlimit) (err error)
 //sysnb	Getuid() (uid int)
-//sysnb	inotifyInit() (fd int, err error)
 
 func InotifyInit() (fd int, err error) {
-	// First try inotify_init1, because Android's seccomp policy blocks the latter.
-	fd, err = InotifyInit1(0)
-	if err == ENOSYS {
-		fd, err = inotifyInit()
-	}
-	return
+	return InotifyInit1(0)
 }
 
 //sys	Ioperm(from int, num int, on int) (err error)
@@ -170,6 +164,10 @@ func (msghdr *Msghdr) SetIovlen(length int) {
 
 func (cmsg *Cmsghdr) SetLen(length int) {
 	cmsg.Len = uint64(length)
+}
+
+func (rsa *RawSockaddrNFCLLCP) SetServiceNameLen(length int) {
+	rsa.Service_name_len = uint64(length)
 }
 
 //sys	poll(fds *PollFd, nfds int, timeout int) (n int, err error)

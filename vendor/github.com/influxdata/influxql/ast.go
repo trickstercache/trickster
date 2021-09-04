@@ -2849,6 +2849,12 @@ type ShowTagKeysStatement struct {
 	// Data sources that fields are extracted from.
 	Sources Sources
 
+	// Op to compare tag keys with
+	TagKeyOp Token
+
+	// Literal to compare tag keys with
+	TagKeyExpr Expr
+
 	// An expression evaluated on data point.
 	Condition Expr
 

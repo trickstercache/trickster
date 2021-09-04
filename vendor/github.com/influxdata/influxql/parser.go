@@ -1227,6 +1227,17 @@ func (p *Parser) parseShowTagKeysStatement() (*ShowTagKeysStatement, error) {
 		p.Unscan()
 	}
 
+	// Parse optional WITH clause.
+	if tok, _, _ := p.ScanIgnoreWhitespace(); tok == WITH {
+		p.Unscan()
+		if stmt.TagKeyOp, stmt.TagKeyExpr, err = p.parseTagKeyExpr(); err != nil {
+			return nil, err
+		}
+	} else {
+		// Not a WITH clause so put the token back.
+		p.Unscan()
+	}
+
 	// Parse condition: "WHERE EXPR".
 	if stmt.Condition, err = p.parseCondition(); err != nil {
 		return nil, err
