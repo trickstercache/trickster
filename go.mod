@@ -1,6 +1,6 @@
 module github.com/trickstercache/trickster
 
-go 1.16
+go 1.17
 
 require (
 	github.com/alicebob/gopher-json v0.0.0-20200520072559-a9ecdc9d1d3a // indirect
@@ -70,4 +70,26 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 	sourcegraph.com/sourcegraph/appdash v0.0.0-20190731080439-ebfcffb1b5c0 // indirect
+)
+
+require (
+	github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96 // indirect
+	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/dustin/go-humanize v1.0.0 // indirect
+	github.com/go-logfmt/logfmt v0.5.0 // indirect
+	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
+	github.com/openzipkin/zipkin-go v0.2.5 // indirect
+	github.com/philhofer/fwd v1.1.1 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/prometheus/client_model v0.2.0 // indirect
+	github.com/prometheus/procfs v0.6.0 // indirect
+	github.com/stretchr/testify v1.7.0 // indirect
+	go.opentelemetry.io/contrib v0.19.0 // indirect
+	go.opentelemetry.io/otel/metric v0.19.0 // indirect
+	go.opentelemetry.io/otel/sdk/export/metric v0.19.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v0.19.0 // indirect
+	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
 )
