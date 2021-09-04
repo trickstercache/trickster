@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/pkg/util/yamlx"
+	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 
 	"gopkg.in/yaml.v2"
 )

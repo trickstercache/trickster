@@ -19,10 +19,10 @@ package prometheus
 import (
 	"net/http"
 
-	"github.com/trickstercache/trickster/pkg/backends/prometheus/model"
-	"github.com/trickstercache/trickster/pkg/proxy/engines"
-	"github.com/trickstercache/trickster/pkg/proxy/request"
-	"github.com/trickstercache/trickster/pkg/proxy/urls"
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
 
 // AlertsHandler proxies requests for path /alerts to the origin by way of the object proxy cache

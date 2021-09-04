@@ -19,12 +19,12 @@ package alb
 import (
 	"testing"
 
-	"github.com/trickstercache/trickster/pkg/backends"
-	ao "github.com/trickstercache/trickster/pkg/backends/alb/options"
-	"github.com/trickstercache/trickster/pkg/backends/healthcheck"
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
-	"github.com/trickstercache/trickster/pkg/backends/prometheus"
-	"github.com/trickstercache/trickster/pkg/backends/providers/registration/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
 )
 
 func TestHandlers(t *testing.T) {

@@ -21,9 +21,9 @@ import (
 	"net/http"
 	"testing"
 
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
-	"github.com/trickstercache/trickster/pkg/proxy/request"
-	tu "github.com/trickstercache/trickster/pkg/util/testing"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	tu "github.com/trickstercache/trickster/v2/pkg/util/testing"
 )
 
 func TestRawHandler(t *testing.T) {

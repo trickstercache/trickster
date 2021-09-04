@@ -20,12 +20,12 @@ package irondb
 import (
 	"net/http"
 
-	"github.com/trickstercache/trickster/pkg/backends"
-	modeliron "github.com/trickstercache/trickster/pkg/backends/irondb/model"
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
-	"github.com/trickstercache/trickster/pkg/backends/providers/registration/types"
-	"github.com/trickstercache/trickster/pkg/cache"
-	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	modeliron "github.com/trickstercache/trickster/v2/pkg/backends/irondb/model"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 var _ backends.TimeseriesBackend = (*Client)(nil)

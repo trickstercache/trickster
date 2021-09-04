@@ -24,9 +24,9 @@ import (
 	"strings"
 	"testing"
 
-	tctx "github.com/trickstercache/trickster/pkg/proxy/context"
-	"github.com/trickstercache/trickster/pkg/proxy/request/rewriter/options"
-	"github.com/trickstercache/trickster/pkg/proxy/urls"
+	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
 
 const testURLRaw = "https://example.com:8480/path1/path2?param1=value&param2=value&param1=value2"

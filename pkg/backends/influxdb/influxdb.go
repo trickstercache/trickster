@@ -20,11 +20,11 @@ package influxdb
 import (
 	"net/http"
 
-	"github.com/trickstercache/trickster/pkg/backends"
-	modelflux "github.com/trickstercache/trickster/pkg/backends/influxdb/model"
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
-	"github.com/trickstercache/trickster/pkg/backends/providers/registration/types"
-	"github.com/trickstercache/trickster/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	modelflux "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/model"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 )
 
 var _ backends.TimeseriesBackend = (*Client)(nil)

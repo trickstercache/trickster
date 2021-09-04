@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/cmd/trickster/config"
-	"github.com/trickstercache/trickster/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
 func TestStartHupMonitor(t *testing.T) {

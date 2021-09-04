@@ -21,7 +21,7 @@ import (
 	"net/http"
 	"testing"
 
-	ho "github.com/trickstercache/trickster/pkg/backends/healthcheck/options"
+	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 )
 
 func TestNew(t *testing.T) {

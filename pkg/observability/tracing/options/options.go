@@ -17,10 +17,10 @@
 package options
 
 import (
-	jaegeropts "github.com/trickstercache/trickster/pkg/observability/tracing/exporters/jaeger/options"
-	stdoutopts "github.com/trickstercache/trickster/pkg/observability/tracing/exporters/stdout/options"
-	"github.com/trickstercache/trickster/pkg/util/copiers"
-	"github.com/trickstercache/trickster/pkg/util/yamlx"
+	jaegeropts "github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/jaeger/options"
+	stdoutopts "github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout/options"
+	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
+	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
 // Options is a Tracing Options collection

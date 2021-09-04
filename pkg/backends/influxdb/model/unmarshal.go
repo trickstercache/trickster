@@ -23,9 +23,9 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/trickstercache/trickster/pkg/timeseries"
-	"github.com/trickstercache/trickster/pkg/timeseries/dataset"
-	"github.com/trickstercache/trickster/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
 // Unmarshal performs a standard unmarshal of the bytes into the InfluxDB Wire Format Document,

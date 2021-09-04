@@ -20,10 +20,10 @@ package reverseproxy
 import (
 	"net/http"
 
-	"github.com/trickstercache/trickster/pkg/backends"
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
-	"github.com/trickstercache/trickster/pkg/backends/providers/registration/types"
-	"github.com/trickstercache/trickster/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 )
 
 var _ backends.Backend = (*Client)(nil)

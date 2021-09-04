@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"net/http"
 
-	terr "github.com/trickstercache/trickster/pkg/proxy/errors"
-	"github.com/trickstercache/trickster/pkg/proxy/request"
-	"github.com/trickstercache/trickster/pkg/timeseries"
+	terr "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // SetExtent will change the upstream request query to use the provided Extent.

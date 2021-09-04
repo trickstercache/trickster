@@ -20,7 +20,7 @@ package engines
 
 import (
 	"github.com/tinylib/msgp/msgp"
-	"github.com/trickstercache/trickster/pkg/proxy/ranges/byterange"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
 )
 
 // DecodeMsg implements msgp.Decodable

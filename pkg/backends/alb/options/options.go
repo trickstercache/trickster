@@ -20,9 +20,9 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/trickstercache/trickster/pkg/backends/providers"
-	"github.com/trickstercache/trickster/pkg/util/copiers"
-	"github.com/trickstercache/trickster/pkg/util/yamlx"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
+	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
 // Options defines options for ALBs

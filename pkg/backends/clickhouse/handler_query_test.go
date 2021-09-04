@@ -23,8 +23,8 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/trickstercache/trickster/pkg/proxy/request"
-	tu "github.com/trickstercache/trickster/pkg/util/testing"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	tu "github.com/trickstercache/trickster/v2/pkg/util/testing"
 )
 
 func testRawQuery() string {

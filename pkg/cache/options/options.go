@@ -21,15 +21,15 @@ import (
 	"fmt"
 	"strings"
 
-	badger "github.com/trickstercache/trickster/pkg/cache/badger/options"
-	bbolt "github.com/trickstercache/trickster/pkg/cache/bbolt/options"
-	filesystem "github.com/trickstercache/trickster/pkg/cache/filesystem/options"
-	index "github.com/trickstercache/trickster/pkg/cache/index/options"
-	"github.com/trickstercache/trickster/pkg/cache/options/defaults"
-	"github.com/trickstercache/trickster/pkg/cache/providers"
-	redis "github.com/trickstercache/trickster/pkg/cache/redis/options"
-	strutil "github.com/trickstercache/trickster/pkg/util/strings"
-	"github.com/trickstercache/trickster/pkg/util/yamlx"
+	badger "github.com/trickstercache/trickster/v2/pkg/cache/badger/options"
+	bbolt "github.com/trickstercache/trickster/v2/pkg/cache/bbolt/options"
+	filesystem "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
+	index "github.com/trickstercache/trickster/v2/pkg/cache/index/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/options/defaults"
+	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
+	redis "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
+	strutil "github.com/trickstercache/trickster/v2/pkg/util/strings"
+	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
 // Lookup is a map of Options

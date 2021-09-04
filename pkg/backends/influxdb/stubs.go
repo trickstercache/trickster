@@ -19,7 +19,7 @@ package influxdb
 import (
 	"net/http"
 
-	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // This file holds funcs required by the Proxy Client or Timeseries interfaces,

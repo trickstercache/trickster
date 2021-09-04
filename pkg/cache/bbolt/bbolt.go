@@ -22,13 +22,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/trickstercache/trickster/pkg/cache"
-	"github.com/trickstercache/trickster/pkg/cache/index"
-	"github.com/trickstercache/trickster/pkg/cache/metrics"
-	"github.com/trickstercache/trickster/pkg/cache/options"
-	"github.com/trickstercache/trickster/pkg/cache/status"
-	"github.com/trickstercache/trickster/pkg/locks"
-	tl "github.com/trickstercache/trickster/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/cache/index"
+	"github.com/trickstercache/trickster/v2/pkg/cache/metrics"
+	"github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/locks"
+	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
 
 	"go.etcd.io/bbolt"
 )

@@ -19,7 +19,7 @@ package options
 import (
 	"strings"
 
-	"github.com/trickstercache/trickster/pkg/cache/negative"
+	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 )
 
 func testNegativeCaches() negative.Lookups {

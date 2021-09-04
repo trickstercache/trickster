@@ -23,9 +23,9 @@ import (
 	"regexp"
 	"strings"
 
-	ro "github.com/trickstercache/trickster/pkg/backends/rule/options"
-	"github.com/trickstercache/trickster/pkg/proxy/handlers"
-	"github.com/trickstercache/trickster/pkg/proxy/request/rewriter"
+	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 )
 
 var ErrInvalidRegularExpression = errors.New("invalid regular expression")

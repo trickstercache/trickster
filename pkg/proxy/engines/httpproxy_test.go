@@ -24,14 +24,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/cmd/trickster/config"
-	tl "github.com/trickstercache/trickster/pkg/observability/logging"
-	tc "github.com/trickstercache/trickster/pkg/proxy/context"
-	"github.com/trickstercache/trickster/pkg/proxy/forwarding"
-	"github.com/trickstercache/trickster/pkg/proxy/headers"
-	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
-	"github.com/trickstercache/trickster/pkg/proxy/request"
-	tu "github.com/trickstercache/trickster/pkg/util/testing"
+	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
+	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	tu "github.com/trickstercache/trickster/v2/pkg/util/testing"
 )
 
 var testLogger = tl.ConsoleLogger("error")

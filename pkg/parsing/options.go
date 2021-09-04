@@ -17,7 +17,7 @@
 package parsing
 
 import (
-	"github.com/trickstercache/trickster/pkg/parsing/lex"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/lex"
 )
 
 // Options represents the options for the parser

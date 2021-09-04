@@ -22,9 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/pkg/backends/alb/pool"
-	"github.com/trickstercache/trickster/pkg/backends/healthcheck"
-	tu "github.com/trickstercache/trickster/pkg/util/testing"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	tu "github.com/trickstercache/trickster/v2/pkg/util/testing"
 )
 
 func TestHandleFirstResponse(t *testing.T) {

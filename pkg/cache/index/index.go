@@ -23,11 +23,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/trickstercache/trickster/pkg/cache"
-	"github.com/trickstercache/trickster/pkg/cache/index/options"
-	"github.com/trickstercache/trickster/pkg/cache/metrics"
-	tl "github.com/trickstercache/trickster/pkg/observability/logging"
-	gm "github.com/trickstercache/trickster/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/cache/index/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/metrics"
+	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	gm "github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
 
 //go:generate msgp

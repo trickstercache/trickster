@@ -23,14 +23,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/cmd/trickster/config"
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
-	cr "github.com/trickstercache/trickster/pkg/cache/registration"
-	"github.com/trickstercache/trickster/pkg/cache/status"
-	tl "github.com/trickstercache/trickster/pkg/observability/logging"
-	"github.com/trickstercache/trickster/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/pkg/proxy/ranges/byterange"
-	"github.com/trickstercache/trickster/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
 func TestCheckCacheFreshness(t *testing.T) {

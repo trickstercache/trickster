@@ -19,7 +19,7 @@ package parsing
 import (
 	"context"
 
-	"github.com/trickstercache/trickster/pkg/parsing/token"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
 )
 
 // RunState maintains the state of a unique parsing run

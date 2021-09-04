@@ -19,8 +19,8 @@ package merge
 import (
 	"net/http"
 
-	"github.com/trickstercache/trickster/pkg/proxy/request"
-	"github.com/trickstercache/trickster/pkg/util/copiers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
 )
 
 // ResponseGate is a Request/ResponseWriter Pair that must be handled in its entirety

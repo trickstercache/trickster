@@ -20,12 +20,12 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/trickstercache/trickster/pkg/backends/healthcheck"
-	ho "github.com/trickstercache/trickster/pkg/backends/healthcheck/options"
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
-	"github.com/trickstercache/trickster/pkg/cache"
-	po "github.com/trickstercache/trickster/pkg/proxy/paths/options"
-	"github.com/trickstercache/trickster/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // TimeseriesBackend is the primary interface for interoperating with Trickster and upstream TSDB's

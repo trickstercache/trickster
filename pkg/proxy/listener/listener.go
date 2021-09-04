@@ -26,12 +26,12 @@ import (
 	"sync"
 	"time"
 
-	tl "github.com/trickstercache/trickster/pkg/observability/logging"
-	"github.com/trickstercache/trickster/pkg/observability/metrics"
-	"github.com/trickstercache/trickster/pkg/observability/tracing"
-	"github.com/trickstercache/trickster/pkg/proxy/errors"
-	ph "github.com/trickstercache/trickster/pkg/proxy/handlers"
-	sw "github.com/trickstercache/trickster/pkg/proxy/tls"
+	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
+	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 
 	"golang.org/x/net/netutil"
 )

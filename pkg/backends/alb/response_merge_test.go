@@ -22,11 +22,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/pkg/backends/alb/pool"
-	"github.com/trickstercache/trickster/pkg/backends/healthcheck"
-	"github.com/trickstercache/trickster/pkg/proxy/request"
-	"github.com/trickstercache/trickster/pkg/proxy/response/merge"
-	tu "github.com/trickstercache/trickster/pkg/util/testing"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
+	tu "github.com/trickstercache/trickster/v2/pkg/util/testing"
 )
 
 func testMergeFunc(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {

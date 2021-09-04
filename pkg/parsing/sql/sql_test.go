@@ -20,10 +20,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/trickstercache/trickster/pkg/parsing"
-	"github.com/trickstercache/trickster/pkg/parsing/lex"
-	lsql "github.com/trickstercache/trickster/pkg/parsing/lex/sql"
-	"github.com/trickstercache/trickster/pkg/parsing/token"
+	"github.com/trickstercache/trickster/v2/pkg/parsing"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/lex"
+	lsql "github.com/trickstercache/trickster/v2/pkg/parsing/lex/sql"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
 )
 
 const tq01 = `/* this tests a multi-line comment at the front, where the query continues after` +

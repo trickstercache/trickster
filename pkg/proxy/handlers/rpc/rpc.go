@@ -20,11 +20,11 @@ import (
 	"net/http"
 	"net/url"
 
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
-	rpc "github.com/trickstercache/trickster/pkg/backends/reverseproxycache"
-	co "github.com/trickstercache/trickster/pkg/cache/options"
-	"github.com/trickstercache/trickster/pkg/cache/registration"
-	"github.com/trickstercache/trickster/pkg/routing"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	rpc "github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
+	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	"github.com/trickstercache/trickster/v2/pkg/routing"
 
 	"github.com/gorilla/mux"
 )

@@ -22,9 +22,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/trickstercache/trickster/pkg/cache/options"
-	"github.com/trickstercache/trickster/pkg/cache/status"
-	"github.com/trickstercache/trickster/pkg/locks"
+	"github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/locks"
 )
 
 // ErrKNF represents the error "key not found in cache"

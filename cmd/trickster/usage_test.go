@@ -17,7 +17,7 @@
 package main
 
 import (
-	"github.com/trickstercache/trickster/pkg/runtime"
+	"github.com/trickstercache/trickster/v2/pkg/runtime"
 )
 
 // ExamplePrintVersion tests the output of the printVersion() func

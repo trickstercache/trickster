@@ -26,8 +26,8 @@ import (
 	"strconv"
 	"testing"
 
-	ho "github.com/trickstercache/trickster/pkg/backends/healthcheck/options"
-	"github.com/trickstercache/trickster/pkg/proxy/headers"
+	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 func TestNewTarget(t *testing.T) {

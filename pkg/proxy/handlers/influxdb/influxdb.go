@@ -20,11 +20,11 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/trickstercache/trickster/pkg/backends/influxdb"
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
-	co "github.com/trickstercache/trickster/pkg/cache/options"
-	"github.com/trickstercache/trickster/pkg/cache/registration"
-	"github.com/trickstercache/trickster/pkg/routing"
+	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	"github.com/trickstercache/trickster/v2/pkg/routing"
 
 	"github.com/gorilla/mux"
 )

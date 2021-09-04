@@ -17,9 +17,9 @@
 package clickhouse
 
 import (
-	"github.com/trickstercache/trickster/pkg/parsing/lex"
-	lsql "github.com/trickstercache/trickster/pkg/parsing/lex/sql"
-	"github.com/trickstercache/trickster/pkg/parsing/token"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/lex"
+	lsql "github.com/trickstercache/trickster/v2/pkg/parsing/lex/sql"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
 )
 
 const (

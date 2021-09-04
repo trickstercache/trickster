@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/pkg/timeseries"
-	"github.com/trickstercache/trickster/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
 func testPoints() Points {

@@ -21,12 +21,12 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/trickstercache/trickster/pkg/backends"
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
-	ro "github.com/trickstercache/trickster/pkg/backends/rule/options"
-	tc "github.com/trickstercache/trickster/pkg/proxy/context"
-	"github.com/trickstercache/trickster/pkg/proxy/request/rewriter"
-	rwo "github.com/trickstercache/trickster/pkg/proxy/request/rewriter/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
+	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
+	rwo "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 )
 
 var testMux1 = http.NewServeMux()

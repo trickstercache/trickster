@@ -26,7 +26,7 @@ import (
 	"os"
 	"time"
 
-	bo "github.com/trickstercache/trickster/pkg/backends/options"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 )
 
 // NewHTTPClient returns an HTTP client configured to the specifications of the

@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/pkg/cache/evictionmethods"
-	tlstest "github.com/trickstercache/trickster/pkg/util/testing/tls"
+	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
+	tlstest "github.com/trickstercache/trickster/v2/pkg/util/testing/tls"
 )
 
 func TestLoadConfiguration(t *testing.T) {

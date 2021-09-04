@@ -22,13 +22,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/pkg/cache"
-	bo "github.com/trickstercache/trickster/pkg/cache/bbolt/options"
-	io "github.com/trickstercache/trickster/pkg/cache/index/options"
-	co "github.com/trickstercache/trickster/pkg/cache/options"
-	"github.com/trickstercache/trickster/pkg/cache/status"
-	"github.com/trickstercache/trickster/pkg/locks"
-	tl "github.com/trickstercache/trickster/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	bo "github.com/trickstercache/trickster/v2/pkg/cache/bbolt/options"
+	io "github.com/trickstercache/trickster/v2/pkg/cache/index/options"
+	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/locks"
+	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
 const cacheProvider = "bbolt"

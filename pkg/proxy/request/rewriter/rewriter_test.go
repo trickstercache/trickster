@@ -21,7 +21,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/trickstercache/trickster/pkg/proxy/request/rewriter/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 )
 
 func TestProcessConfig(t *testing.T) {
