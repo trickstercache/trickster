@@ -17,7 +17,7 @@ func main() {
 
 	// create a new memory cache
 	c, err := bbolt.New("/Users/jranson/test.bbolt", "trickster")
-	// this starts some background threads for object lifecycle management, so
+	// this starts some background goroutines for object lifecycle management, so
 	// be sure to Close() once ready for the cache to be garbage collected
 	if err != nil {
 		panic(err)
@@ -81,7 +81,7 @@ func main() {
 		key2, status.String(), string(value))
 
 	// close the cache when you're ready for it to be garbage collected,
-	// or the background threads will continue to run
+	// or the background goroutines will continue to run
 	c.Close()
 
 }
