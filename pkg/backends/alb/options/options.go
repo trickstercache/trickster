@@ -35,11 +35,18 @@ type Options struct {
 	// -1 : all pool members are Available regardless of health check status
 	//  0 (default) : pool members with status of unknown (0) or healthy (1) are Available
 	//  1 : only pool members with status of healthy (1) are Available
-	// unknown means the first hc hasn't returned yet, or (more likely) HealthCheck Interval on target backend is not set
+	// unknown means the first hc hasn't returned yet,
+	// or (more likely) HealthCheck Interval on target backend is not set
 	HealthyFloor int `yaml:"healthy_floor,omitempty"`
 	// OutputFormat accompanies the tsmerge Mechanism to indicate the provider output format
 	// options include any valid time seres backend like prometheus, influxdb or clickhouse
 	OutputFormat string `yaml:"output_format,omitempty"`
+	// FGRStatusCodes provides an explicit list of status codes considered "good" when using
+	// the First Good Response (fgr) methodology. By default, any code < 400 is good.
+	FGRStatusCodes []int `yaml:"fgr_status_codes"`
+	//
+	// synthetic values
+	FgrCodesLookup map[int]interface{} `yaml:"-"`
 }
 
 const defaultOutputFormat = "prometheus"
@@ -51,10 +58,28 @@ func New() *Options {
 
 // Clone returns a perfect copy of the Options
 func (o *Options) Clone() *Options {
+
+	var fsc []int
+	var fscm map[int]interface{}
+
+	if o.FGRStatusCodes != nil {
+		fsc = make([]int, len(o.FGRStatusCodes))
+		copy(fsc, o.FGRStatusCodes)
+	}
+
+	if o.FgrCodesLookup != nil {
+		fscm = make(map[int]interface{})
+		for k, v := range o.FgrCodesLookup {
+			fscm[k] = v
+		}
+	}
+
 	c := &Options{
-		MechanismName: o.MechanismName,
-		HealthyFloor:  o.HealthyFloor,
-		OutputFormat:  o.OutputFormat,
+		MechanismName:  o.MechanismName,
+		HealthyFloor:   o.HealthyFloor,
+		OutputFormat:   o.OutputFormat,
+		FgrCodesLookup: fscm,
+		FGRStatusCodes: fsc,
 	}
 	c.Pool = copiers.CopyStrings(o.Pool)
 	return c
@@ -83,6 +108,18 @@ func SetDefaults(name string, options *Options, metadata yamlx.KeyLookup) (*Opti
 
 	if metadata.IsDefined("backends", name, "alb", "healthy_floor") && options.HealthyFloor > 0 {
 		o.HealthyFloor = options.HealthyFloor
+	}
+
+	if o.MechanismName == "fgr" {
+		if metadata.IsDefined("backends", name, "alb", "fgr_status_codes") && options.FGRStatusCodes != nil {
+			o.FGRStatusCodes = options.FGRStatusCodes
+		}
+		if o.FGRStatusCodes != nil {
+			o.FgrCodesLookup = make(map[int]interface{})
+			for _, i := range o.FGRStatusCodes {
+				o.FgrCodesLookup[i] = nil
+			}
+		}
 	}
 
 	if metadata.IsDefined("backends", name, "alb", "output_format") && options.OutputFormat != "" {

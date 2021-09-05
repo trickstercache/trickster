@@ -186,9 +186,13 @@ Here is the visual representation of this configuration:
 
 ### First Good Response
 
-The **First Good Response** mechanism acts just as First Response does, except that waits to return the first response with an HTTP Status Code < 400. If no fanned out response codes are in the acceptable range once all responses are returned (or the timeout has been reached), then the healthiest response, based on `min(all_responses_status_codes)`, is used.
+The **First Good Response** (fgr) mechanism acts just as First Response does, except that it waits to return the first response with an HTTP Status Code < 400. If no fanned out response codes are in the acceptable range once all responses are returned (or the timeout has been reached), then the healthiest response, based on `min(all_responses_status_codes)`, is used.
 
 This mechanism is useful in applications such as live internet television. Consider an operational condition where an object may have been written to Origin 1, but not yet written to redundant Origin 2, while users have already received references to and begin requesting the object in a separate manifest. Trickster, when used as an ALB+Cache in this scenario, will poll both backends for the object and cache the positive responses from Origin 1 for serving subsequent requests locally, while a negative cache configuration will avoid potential 404 storms on Origin 2 until the object can be written by the replication process.
+
+#### Custom Good Status Codes List
+
+By default, fgr will return the first repsonse with a status code < 400. However, you can optionally provide an explicit list of good status codes using the `fgr_status_codes` configuration settting, as shown in the example below. When set, Trickster will return the first response to be returned that has a status code found in the configured list.
 
 #### First Good Response Configuration Example
 
@@ -211,6 +215,7 @@ backends:
     provider: alb
     alb:
       mechanism: fgr # first good response
+      fgr_status_codes: [ 200, 201, 204 ] # only consider these codes when selecting a response
       pool:
         - node01
         - node02
