@@ -47,7 +47,9 @@ type Options struct {
 func New() *Options {
 	return &Options{
 		ReapIntervalMS:        DefaultCacheIndexReap,
+		ReapInterval:          time.Duration(DefaultCacheIndexReap) * time.Millisecond,
 		FlushIntervalMS:       DefaultCacheIndexFlush,
+		FlushInterval:         time.Duration(DefaultCacheIndexFlush) * time.Millisecond,
 		MaxSizeBytes:          DefaultCacheMaxSizeBytes,
 		MaxSizeBackoffBytes:   DefaultMaxSizeBackoffBytes,
 		MaxSizeObjects:        DefaultMaxSizeObjects,

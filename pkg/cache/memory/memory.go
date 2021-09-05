@@ -42,12 +42,16 @@ type Cache struct {
 	lockPrefix string
 }
 
-func New() cache.Cache {
+// New returns a new memory cache as a Trickster Cache Interface type
+func New() (cache.Cache, error) {
 	c := &Cache{}
 	c.SetLocker(locks.NewNamedLocker())
 	c.Config = options.New()
-	c.Connect()
-	return c
+	err := c.Connect()
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 // Locker returns the cache's locker
@@ -88,18 +92,23 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceObject,
 	ttl time.Duration, updateIndex bool) error {
 
+	var exp time.Time
+	if ttl > 0 {
+		exp = time.Now().Add(ttl)
+	}
+
 	var o1, o2 *index.Object
 	var l int
 	isDirect := byteData == nil && refData != nil
 	if byteData != nil {
 		l = len(byteData)
 		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "set", "none", float64(l))
-		o1 = &index.Object{Key: cacheKey, Value: byteData, Expiration: time.Now().Add(ttl)}
-		o2 = &index.Object{Key: cacheKey, Value: byteData, Expiration: time.Now().Add(ttl)}
+		o1 = &index.Object{Key: cacheKey, Value: byteData, Expiration: exp}
+		o2 = &index.Object{Key: cacheKey, Value: byteData, Expiration: exp}
 	} else if refData != nil {
 		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "setDirect", "none", 0)
-		o1 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: time.Now().Add(ttl)}
-		o2 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: time.Now().Add(ttl)}
+		o1 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: exp}
+		o2 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: exp}
 	}
 
 	if o1 != nil && o2 != nil {
