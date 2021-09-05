@@ -45,6 +45,25 @@ type Cache struct {
 	dbh *bbolt.DB
 }
 
+// New returns a new bbolt cache as a Trickster Cache Interface type
+func New(fileName, bucketName string) (cache.Cache, error) {
+
+	c := &Cache{}
+
+	c.SetLocker(locks.NewNamedLocker())
+	c.Config = options.New()
+
+	c.Config.BBolt.Bucket = bucketName
+	c.Config.BBolt.Filename = fileName
+
+	err := c.Connect()
+	if err != nil {
+		return nil, err
+	}
+
+	return c, nil
+}
+
 // Locker returns the cache's locker
 func (c *Cache) Locker() locks.NamedLocker {
 	return c.locker
@@ -106,9 +125,14 @@ func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 
 func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateIndex bool) error {
 
+	var exp time.Time
+	if ttl > 0 {
+		exp = time.Now().Add(ttl)
+	}
+
 	metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "set", "none", float64(len(data)))
 
-	o := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
+	o := &index.Object{Key: cacheKey, Value: data, Expiration: exp}
 	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
 	err := writeToBBolt(c.dbh, c.Config.BBolt.Bucket, cacheKey, o.ToBytes())
 	nl.Release()
