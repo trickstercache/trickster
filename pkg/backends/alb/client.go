@@ -41,6 +41,7 @@ type Client struct {
 	pool            pool.Pool
 	handler         http.Handler // this is the actual handler for all request to this backend
 	fgr             bool
+	fgrCodes        map[int]interface{}
 	mergePaths      []string     // paths handled by the alb client that are enabled for tsmerge
 	nonmergeHandler http.Handler // when methodology is tsmerge, this handler is for non-mergable paths
 }
@@ -71,6 +72,7 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		case pool.FirstGoodResponse.String():
 			c.handler = http.HandlerFunc(c.handleFirstResponse)
 			c.fgr = true
+			c.fgrCodes = o.ALBOptions.FgrCodesLookup
 		case pool.NewestLastModified.String():
 			c.handler = http.HandlerFunc(c.handleNewestResponse)
 		case pool.TimeSeriesMerge.String():

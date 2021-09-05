@@ -510,6 +510,12 @@ backends:
 #     alb:
 #       # mechanism defines the ALB pool member selection mechanism.
 #       # values are rr, fr, fgr, nlm, or tsm. see the docs for detailed descriptions of each
+#       # rr - standard round robin
+#       # fr - fanout and return the First Response regardless of status code
+#       # fgr - fanout and return the First Good Response based on status code
+#       # nlm - fanout and return the Response with the Newest Last-Modified header
+#       # tsm - fanount and perform a Time Series Merge of the results into a single time series
+#
 #       mechanism: rr # use a basic round robin
 
 #       # pool defines the pool of backends to which the alb routes
@@ -522,6 +528,11 @@ backends:
 #       # -1 includes all backends, regardless of reporting state
 #       # default is 0
 #       healthy_floor: 0
+
+#       # fgr_status_codes is a list of status codes considered 'good' when using the fgr mechanism
+#       # when this is not set, any response code < 400 is considered good. Use this setting to
+#       # provide an explicit list.
+#       fgr_status_codes: [ 200 ] # this would consider only 200 OK's good, and not 204, 302, etc.
 
 # # Configuration Options for Request Routing Rules - see /docs/rule.md for more information
 

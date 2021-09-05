@@ -26,10 +26,11 @@ import (
 
 type firstResponseGate struct {
 	http.ResponseWriter
-	i   int
-	fh  http.Header
-	c   *responderClaim
-	fgr bool
+	i        int
+	fh       http.Header
+	c        *responderClaim
+	fgr      bool
+	fgrCodes map[int]interface{}
 }
 
 func (c *Client) handleFirstResponse(w http.ResponseWriter, r *http.Request) {
@@ -57,7 +58,7 @@ func (c *Client) handleFirstResponse(w http.ResponseWriter, r *http.Request) {
 			if hl[j] == nil {
 				return
 			}
-			wm := newFirstResponseGate(w, wc, j, c.fgr)
+			wm := newFirstResponseGate(w, wc, j, c.fgr, c.fgrCodes)
 			r2 := r.Clone(wc.contexts[j])
 			hl[j].ServeHTTP(wm, r2)
 			wg.Done()
@@ -66,7 +67,8 @@ func (c *Client) handleFirstResponse(w http.ResponseWriter, r *http.Request) {
 	wg.Wait()
 }
 
-func newFirstResponseGate(w http.ResponseWriter, c *responderClaim, i int, fgr bool) *firstResponseGate {
+func newFirstResponseGate(w http.ResponseWriter, c *responderClaim, i int, fgr bool,
+	fgrCodes map[int]interface{}) *firstResponseGate {
 	return &firstResponseGate{ResponseWriter: w, c: c, fh: http.Header{}, i: i, fgr: fgr}
 }
 
@@ -75,7 +77,12 @@ func (frg *firstResponseGate) Header() http.Header {
 }
 
 func (frg *firstResponseGate) WriteHeader(i int) {
-	if (!frg.fgr || i < 400) && frg.c.Claim(frg.i) {
+	var custom = frg.fgr && len(frg.fgrCodes) > 0
+	var isGood bool
+	if custom {
+		_, isGood = frg.fgrCodes[i]
+	}
+	if (!frg.fgr || !custom && i < 400 || custom && isGood) && frg.c.Claim(frg.i) {
 		if len(frg.fh) > 0 {
 			headers.Merge(frg.ResponseWriter.Header(), frg.fh)
 			frg.fh = nil
