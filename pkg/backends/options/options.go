@@ -151,6 +151,16 @@ type Options struct {
 	// fronting backends that only support single range requests
 	DearticulateUpstreamRanges bool `yaml:"dearticulate_upstream_ranges,omitempty"`
 
+	// Simulated Latency
+	// When LatencyMinMS > 0 and LatencyMaxMS < LatencyMinMS (e.g., 0), then LatencyMinMS of latency
+	// are applied to the request. When LatencyMaxMS > LatencyMinMS, then a random amount of
+	// latency between the two values will be applied to the request
+	//
+	// LatencyMin is the minimum amount of simulated latency to apply to each incoming request
+	LatencyMinMS int `yaml:"latency_min_ms"`
+	// LatencyMax is the maximum amount of simulated latency to apply to each incoming request
+	LatencyMaxMS int `yaml:"latency_max_ms"`
+
 	// Synthesized Configurations
 	// These configurations are parsed versions of those defined above, and are what Trickster uses internally
 	//
@@ -263,6 +273,8 @@ func (o *Options) Clone() *Options {
 	no.FastForwardTTLMS = o.FastForwardTTLMS
 	no.ForwardedHeaders = o.ForwardedHeaders
 	no.Host = o.Host
+	no.LatencyMinMS = o.LatencyMinMS
+	no.LatencyMaxMS = o.LatencyMaxMS
 	no.Name = o.Name
 	no.IsDefault = o.IsDefault
 	no.KeepAliveTimeoutMS = o.KeepAliveTimeoutMS
@@ -360,9 +372,7 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 		if err != nil {
 			return err
 		}
-		if strings.HasSuffix(url.Path, "/") {
-			url.Path = url.Path[0 : len(url.Path)-1]
-		}
+		url.Path = strings.TrimSuffix(url.Path, "/")
 		o.Name = k
 		o.Scheme = url.Scheme
 		o.Host = url.Host
@@ -677,6 +687,14 @@ func SetDefaults(
 
 	if metadata.IsDefined("backends", name, "prometheus") {
 		no.Prometheus = o.Prometheus.Clone()
+	}
+
+	if metadata.IsDefined("backends", name, "latency_min_ms") {
+		no.LatencyMinMS = o.LatencyMinMS
+	}
+
+	if metadata.IsDefined("backends", name, "latency_max_ms") {
+		no.LatencyMaxMS = o.LatencyMaxMS
 	}
 
 	return no, nil
