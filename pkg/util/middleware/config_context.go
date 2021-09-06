@@ -39,6 +39,11 @@ func WithResourcesContext(client backends.Backend, o *bo.Options,
 	c cache.Cache, p *po.Options, t *tracing.Tracer,
 	l interface{}, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		if o != nil && (o.LatencyMinMS > 0 || o.LatencyMaxMS > 0) {
+			processSimulatedLatency(w, o.LatencyMinMS, o.LatencyMaxMS)
+		}
+
 		var resources *request.Resources
 		if c == nil {
 			resources = request.NewResources(o, p, nil, nil, client, t, l)
@@ -53,21 +58,6 @@ func WithResourcesContext(client backends.Backend, o *bo.Options,
 		}
 		rsc.Merge(resources)
 
-		if o != nil && (o.LatencyMinMS > 0 || o.LatencyMaxMS > 0) {
-			processSimulatedLatency(o.LatencyMinMS, o.LatencyMaxMS)
-		}
-
 		next.ServeHTTP(w, r.WithContext(context.WithResources(r.Context(), rsc)))
 	})
-}
-
-func processSimulatedLatency(minMS, maxMS int) {
-	if (minMS == 0 && maxMS == 0) || (minMS < 0 || maxMS < 0) {
-		return
-	}
-	if minMS >= maxMS {
-		time.Sleep(time.Duration(minMS) * time.Millisecond)
-	}
-	diff := int64(maxMS - minMS)
-	time.Sleep(time.Duration((rand.Int63()%diff)+int64(minMS)) * time.Millisecond)
 }
