@@ -358,6 +358,12 @@ backends:
 #     # default is 0
 #     shard_step_ms: 0
 
+#     # Simulated Latency
+#     # set latency_min_ms > 0 to apply a consistent latency to each request to this backend
+#     # set latency_max_ms > latency_max_ms (which can be 0) to apply a random latency between the two
+#     latency_max_ms = 0
+#     latency_max_ms = 0
+
 #     #
 #     # Each backend provider implements their own defaults for health checking
 #     # which can be overridden per backend configuration. See /docs/health.md for more information

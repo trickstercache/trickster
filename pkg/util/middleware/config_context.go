@@ -17,7 +17,9 @@
 package middleware
 
 import (
+	"math/rand"
 	"net/http"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -27,6 +29,10 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 // WithResourcesContext ...
 func WithResourcesContext(client backends.Backend, o *bo.Options,
@@ -46,6 +52,22 @@ func WithResourcesContext(client backends.Backend, o *bo.Options,
 			return
 		}
 		rsc.Merge(resources)
+
+		if o != nil && (o.LatencyMinMS > 0 || o.LatencyMaxMS > 0) {
+			processSimulatedLatency(o.LatencyMinMS, o.LatencyMaxMS)
+		}
+
 		next.ServeHTTP(w, r.WithContext(context.WithResources(r.Context(), rsc)))
 	})
+}
+
+func processSimulatedLatency(minMS, maxMS int) {
+	if (minMS == 0 && maxMS == 0) || (minMS < 0 || maxMS < 0) {
+		return
+	}
+	if minMS >= maxMS {
+		time.Sleep(time.Duration(minMS) * time.Millisecond)
+	}
+	diff := int64(maxMS - minMS)
+	time.Sleep(time.Duration((rand.Int63()%diff)+int64(minMS)) * time.Millisecond)
 }
