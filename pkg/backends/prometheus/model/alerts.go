@@ -29,7 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
-	"github.com/trickstercache/trickster/v2/pkg/util/fnv"
+	"github.com/trickstercache/trickster/v2/pkg/checksum/fnv"
 )
 
 // WFAlerts is the Wire Format Document for the /alerts endpoint

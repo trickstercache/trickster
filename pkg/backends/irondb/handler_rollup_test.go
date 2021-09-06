@@ -28,7 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	tu "github.com/trickstercache/trickster/v2/pkg/util/testing"
+	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
 
 func TestRollupHandler(t *testing.T) {

@@ -25,7 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
-	tu "github.com/trickstercache/trickster/v2/pkg/util/testing"
+	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
 
 func testPool(mech pool.Mechanism, healthyFloor int, hs []http.Handler) (pool.Pool,

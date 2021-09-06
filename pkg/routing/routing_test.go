@@ -39,8 +39,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
-	testutil "github.com/trickstercache/trickster/v2/pkg/util/testing"
-	tlstest "github.com/trickstercache/trickster/v2/pkg/util/testing/tls"
+	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
+	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
 	"github.com/gorilla/mux"
 )

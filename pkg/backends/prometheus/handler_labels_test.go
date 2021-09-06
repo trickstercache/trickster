@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-	tu "github.com/trickstercache/trickster/v2/pkg/util/testing"
+	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
 
 func TestLabelsHandler(t *testing.T) {

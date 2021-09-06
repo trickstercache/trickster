@@ -26,7 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
-	tu "github.com/trickstercache/trickster/v2/pkg/util/testing"
+	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
 
 func testMergeFunc(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {

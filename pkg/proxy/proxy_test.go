@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	tlstest "github.com/trickstercache/trickster/v2/pkg/util/testing/tls"
+	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
 
 func TestNewHTTPClient(t *testing.T) {

@@ -28,7 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	"github.com/trickstercache/trickster/v2/pkg/util/md5"
+	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 )
 
 // TextHandler handles requests for text timeseries data and processes them

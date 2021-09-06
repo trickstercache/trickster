@@ -38,7 +38,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-	tu "github.com/trickstercache/trickster/v2/pkg/util/testing"
+	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
 
 const testRangeBody = "This is a test file, to see how the byte range requests work.\n"

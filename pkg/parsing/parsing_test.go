@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
-	testutil "github.com/trickstercache/trickster/v2/pkg/util/testing"
+	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
 
 func TestNoop(t *testing.T) {

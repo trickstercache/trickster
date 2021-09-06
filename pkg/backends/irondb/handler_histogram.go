@@ -31,7 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	"github.com/trickstercache/trickster/v2/pkg/util/md5"
+	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 )
 
 // HistogramHandler handles requests for historgam timeseries data and processes

@@ -28,7 +28,7 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/v2/pkg/util/md5"
+	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 )
 
 // MultipartByteRange represents one part of a list of multipart byte ranges

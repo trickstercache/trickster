@@ -37,7 +37,7 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
-	tst "github.com/trickstercache/trickster/v2/pkg/util/testing/timeseries/model"
+	tst "github.com/trickstercache/trickster/v2/pkg/testutil/timeseries/model"
 	tt "github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 

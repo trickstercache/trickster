@@ -23,7 +23,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
-	tlstest "github.com/trickstercache/trickster/v2/pkg/util/testing/tls"
+	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
 
 func TestDefaultTLSConfig(t *testing.T) {

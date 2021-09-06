@@ -36,8 +36,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
-	testutil "github.com/trickstercache/trickster/v2/pkg/util/testing"
-	tlstest "github.com/trickstercache/trickster/v2/pkg/util/testing/tls"
+	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
+	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
 
 func testListener() net.Listener {

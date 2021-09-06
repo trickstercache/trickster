@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
-	testutil "github.com/trickstercache/trickster/v2/pkg/util/testing"
+	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
 
 func TestIsKeyword(t *testing.T) {

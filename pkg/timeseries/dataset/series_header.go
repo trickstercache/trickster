@@ -25,7 +25,7 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	"github.com/trickstercache/trickster/v2/pkg/util/fnv"
+	"github.com/trickstercache/trickster/v2/pkg/checksum/fnv"
 )
 
 // SeriesHeader is the header section of a series, and describes its

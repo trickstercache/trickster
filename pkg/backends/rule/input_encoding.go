@@ -17,7 +17,7 @@
 package rule
 
 import (
-	"github.com/trickstercache/trickster/v2/pkg/util/base64"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/base64"
 )
 
 type encoding string
