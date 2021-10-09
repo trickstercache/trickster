@@ -192,7 +192,7 @@ This mechanism is useful in applications such as live internet television. Consi
 
 #### Custom Good Status Codes List
 
-By default, fgr will return the first repsonse with a status code < 400. However, you can optionally provide an explicit list of good status codes using the `fgr_status_codes` configuration settting, as shown in the example below. When set, Trickster will return the first response to be returned that has a status code found in the configured list.
+By default, fgr will return the first response with a status code < 400. However, you can optionally provide an explicit list of good status codes using the `fgr_status_codes` configuration setting, as shown in the example below. When set, Trickster will return the first response to be returned that has a status code found in the configured list.
 
 #### First Good Response Configuration Example
 
