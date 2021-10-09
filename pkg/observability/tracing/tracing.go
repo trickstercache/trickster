@@ -18,6 +18,7 @@
 package tracing
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
@@ -27,15 +28,15 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// FlusherFunc defines a function used to Flush a Tracer
-type FlusherFunc func()
+// ShutdownFunc defines a function used to Flush a Tracer
+type ShutdownFunc func(context.Context) error
 
 // Tracer is a Tracer object used by Trickster
 type Tracer struct {
 	trace.Tracer
-	Name    string
-	Flusher FlusherFunc
-	Options *options.Options
+	Name         string
+	ShutdownFunc ShutdownFunc
+	Options      *options.Options
 }
 
 // Tracers is a map of *Tracer objects

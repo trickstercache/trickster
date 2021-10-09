@@ -19,5 +19,8 @@ package errors
 
 import "errors"
 
-// ErrNoTracerOptions is an error when the user calls GetTracer with nil *Options
+// ErrNoTracerOptions is an error for when GetTracer is called with nil *Options
 var ErrNoTracerOptions = errors.New("no tracer options provided")
+
+// ErrInvalidEndpointURL is an error for when the endpoint URL is invalid for the provider
+var ErrInvalidEndpointURL = errors.New("invalid endpoint url")
