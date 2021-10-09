@@ -23,10 +23,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 )
 
-func TestNewTracer(t *testing.T) {
+func TestNew(t *testing.T) {
 
 	o := options.New()
-	_, err := NewTracer(o)
+	_, err := New(o)
 	if err != nil {
 		t.Error(err)
 	}

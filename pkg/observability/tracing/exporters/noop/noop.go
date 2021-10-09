@@ -22,7 +22,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 )
 
-// NewTracer returns a new Noop Tracer
-func NewTracer(options *options.Options) (*tracing.Tracer, error) {
+// New returns a new Noop Tracer
+func New(options *options.Options) (*tracing.Tracer, error) {
 	return nil, nil
 }

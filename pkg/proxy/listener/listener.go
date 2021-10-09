@@ -197,13 +197,7 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 	lg.listenersLock.Unlock()
 
 	// defer the tracer flush here where the listener connection ends
-	if tracers != nil {
-		for _, v := range tracers {
-			if v != nil && v.Flusher != nil {
-				defer v.Flusher()
-			}
-		}
-	}
+	defer handleTracerShutdowns(tracers, logger)
 
 	if tlsConfig != nil {
 		svr := &http.Server{
@@ -235,6 +229,18 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 		}
 	}
 	return err
+}
+
+func handleTracerShutdowns(tracers tracing.Tracers, logger interface{}) {
+	for _, v := range tracers {
+		if v == nil || v.ShutdownFunc == nil {
+			continue
+		}
+		err := v.ShutdownFunc(context.Background())
+		if err != nil {
+			tl.Error(logger, "tracer shutdown failed", tl.Pairs{"detail": err.Error()})
+		}
+	}
 }
 
 // StartListenerRouter starts a new HTTP listener with a new router, and adds it to the listener group

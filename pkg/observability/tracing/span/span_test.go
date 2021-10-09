@@ -38,7 +38,7 @@ func TestNewChildSpan(t *testing.T) {
 	}
 
 	// test with nil context but non-nil tracer
-	tr, _ := stdout.NewTracer(nil)
+	tr, _ := stdout.New(nil)
 	tr.Options.Tags = map[string]string{"testTagName": "testTagValue"}
 
 	// force coverage of tags attachment
@@ -70,7 +70,7 @@ func TestPrepareRequest(t *testing.T) {
 		t.Error("expected nil")
 	}
 
-	tr, _ := stdout.NewTracer(nil)
+	tr, _ := stdout.New(nil)
 
 	r = r.WithContext(context.WithHealthCheckFlag(r.Context(), true))
 	_, sp = PrepareRequest(r, tr)
@@ -96,7 +96,7 @@ func TestPrepareRequest(t *testing.T) {
 
 func TestFilterAttributes(t *testing.T) {
 	SetAttributes(nil, nil)
-	tr, _ := stdout.NewTracer(nil)
+	tr, _ := stdout.New(nil)
 	r, _ := http.NewRequest("GET", "http://example.com", nil)
 	_, sp := PrepareRequest(r, tr)
 	kvs := []attribute.KeyValue{attribute.String("testKey", "testValue")}

@@ -47,7 +47,7 @@ func PrepareRequest(r *http.Request, tr *tracing.Tracer) (*http.Request, trace.S
 	attrs, entries, spanCtx := otelhttptrace.Extract(r.Context(), r)
 	attrs = filterAttributes(tr, attrs)
 
-	r = r.WithContext(baggage.ContextWithValues(r.Context(), entries...))
+	r = r.WithContext(baggage.ContextWithBaggage(r.Context(), entries))
 
 	// This will add any configured static tags to the span for Zipkin
 	// For Jaeger, they are automatically included in the Process section of the Trace

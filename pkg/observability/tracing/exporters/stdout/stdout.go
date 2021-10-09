@@ -22,13 +22,13 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/stdout"
+	stdout "go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-// NewTracer returns a new Stdout Tracer
-func NewTracer(opts *options.Options) (*tracing.Tracer, error) {
+// New returns a new Stdout Tracer
+func New(opts *options.Options) (*tracing.Tracer, error) {
 
 	var exp *stdout.Exporter
 	var err error
@@ -50,7 +50,7 @@ func NewTracer(opts *options.Options) (*tracing.Tracer, error) {
 	}
 
 	// Create Basic Stdout Exporter
-	exp, err = stdout.NewExporter(o...)
+	exp, err = stdout.New(o...)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func NewTracer(opts *options.Options) (*tracing.Tracer, error) {
 
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp),
 		sdktrace.WithSampler(sampler),
-		sdktrace.WithResource(resource.NewWithAttributes(tags...)),
+		sdktrace.WithResource(resource.NewWithAttributes("", tags...)),
 	)
 
 	tracer := tp.Tracer(opts.Name)

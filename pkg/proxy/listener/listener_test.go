@@ -17,6 +17,7 @@
 package listener
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -34,7 +35,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
@@ -46,8 +46,8 @@ func testListener() net.Listener {
 }
 
 func TestListeners(t *testing.T) {
-	tr, _ := stdout.NewTracer(nil)
-	tr.Flusher = func() {}
+	tr, _ := stdout.New(nil)
+	tr.ShutdownFunc = func(_ context.Context) error { return nil }
 	trs := map[string]*tracing.Tracer{"default": tr}
 	testLG := NewListenerGroup()
 
@@ -75,7 +75,7 @@ func TestListeners(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		err = testLG.StartListenerRouter("httpListener2",
-			"", 0, 20, nil, "/", http.HandlerFunc(handlers.HandleLocalResponse), wg,
+			"", 0, 20, nil, "/", http.HandlerFunc(ph.HandleLocalResponse), wg,
 			nil, nil, 0, tl.ConsoleLogger("info"))
 	}()
 	time.Sleep(time.Millisecond * 300)

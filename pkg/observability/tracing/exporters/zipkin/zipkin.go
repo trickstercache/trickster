@@ -22,12 +22,12 @@ import (
 	errs "github.com/trickstercache/trickster/v2/pkg/observability/tracing/errors"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 
-	"go.opentelemetry.io/otel/exporters/trace/zipkin"
+	"go.opentelemetry.io/otel/exporters/zipkin"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-// NewTracer returns a new Zipkin Tracer
-func NewTracer(options *options.Options) (*tracing.Tracer, error) {
+// New returns a new Zipkin Tracer
+func New(options *options.Options) (*tracing.Tracer, error) {
 
 	var tp *sdktrace.TracerProvider
 	var err error
@@ -46,9 +46,8 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 		sampler = sdktrace.TraceIDRatioBased(options.SampleRate)
 	}
 
-	exporter, err := zipkin.NewRawExporter(
+	exporter, err := zipkin.New(
 		options.CollectorURL,
-		zipkin.WithSDKOptions(sdktrace.WithSampler(sampler)),
 	)
 	if err != nil {
 		return nil, err
@@ -59,6 +58,7 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 			sdktrace.WithBatchTimeout(5),
 			sdktrace.WithMaxExportBatchSize(10),
 		),
+		sdktrace.WithSampler(sampler),
 	)
 
 	tracer := tp.Tracer(options.Name)
@@ -67,7 +67,6 @@ func NewTracer(options *options.Options) (*tracing.Tracer, error) {
 		Name:    options.Name,
 		Tracer:  tracer,
 		Options: options,
-		Flusher: nil,
 	}, nil
 
 }

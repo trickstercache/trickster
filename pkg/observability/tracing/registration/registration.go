@@ -87,7 +87,7 @@ func GetTracer(options *options.Options, logger interface{}, isDryRun bool) (*tr
 
 	if options == nil {
 		tl.Info(logger, "nil tracing config, using noop tracer", tl.Pairs{})
-		return noop.NewTracer(options)
+		return noop.New(options)
 	}
 
 	logTracerRegistration := func() {
@@ -110,13 +110,13 @@ func GetTracer(options *options.Options, logger interface{}, isDryRun bool) (*tr
 	switch options.Provider {
 	case providers.Stdout.String():
 		logTracerRegistration()
-		return stdout.NewTracer(options)
+		return stdout.New(options)
 	case providers.Jaeger.String():
 		logTracerRegistration()
-		return jaeger.NewTracer(options)
+		return jaeger.New(options)
 	case providers.Zipkin.String():
 		logTracerRegistration()
-		return zipkin.NewTracer(options)
+		return zipkin.New(options)
 	}
 
 	return nil, nil
