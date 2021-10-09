@@ -22,12 +22,13 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel"
-	export "go.opentelemetry.io/otel/sdk/export/trace"
 )
 
+// Defaults for BatchSpanProcessorOptions.
 const (
 	DefaultMaxQueueSize       = 2048
 	DefaultBatchTimeout       = 5000 * time.Millisecond
+	DefaultExportTimeout      = 30000 * time.Millisecond
 	DefaultMaxExportBatchSize = 512
 )
 
@@ -44,6 +45,11 @@ type BatchSpanProcessorOptions struct {
 	// The default value of BatchTimeout is 5000 msec.
 	BatchTimeout time.Duration
 
+	// ExportTimeout specifies the maximum duration for exporting spans. If the timeout
+	// is reached, the export will be cancelled.
+	// The default value of ExportTimeout is 30000 msec.
+	ExportTimeout time.Duration
+
 	// MaxExportBatchSize is the maximum number of spans to process in a single batch.
 	// If there are more than one batch worth of spans then it processes multiple batches
 	// of spans one batch after the other without any delay.
@@ -58,15 +64,15 @@ type BatchSpanProcessorOptions struct {
 }
 
 // batchSpanProcessor is a SpanProcessor that batches asynchronously-received
-// SpanSnapshots and sends them to a trace.Exporter when complete.
+// spans and sends them to a trace.Exporter when complete.
 type batchSpanProcessor struct {
-	e export.SpanExporter
+	e SpanExporter
 	o BatchSpanProcessorOptions
 
-	queue   chan *export.SpanSnapshot
+	queue   chan ReadOnlySpan
 	dropped uint32
 
-	batch      []*export.SpanSnapshot
+	batch      []ReadOnlySpan
 	batchMutex sync.Mutex
 	timer      *time.Timer
 	stopWait   sync.WaitGroup
@@ -80,9 +86,10 @@ var _ SpanProcessor = (*batchSpanProcessor)(nil)
 // span batches to the exporter with the supplied options.
 //
 // If the exporter is nil, the span processor will preform no action.
-func NewBatchSpanProcessor(exporter export.SpanExporter, options ...BatchSpanProcessorOption) SpanProcessor {
+func NewBatchSpanProcessor(exporter SpanExporter, options ...BatchSpanProcessorOption) SpanProcessor {
 	o := BatchSpanProcessorOptions{
 		BatchTimeout:       DefaultBatchTimeout,
+		ExportTimeout:      DefaultExportTimeout,
 		MaxQueueSize:       DefaultMaxQueueSize,
 		MaxExportBatchSize: DefaultMaxExportBatchSize,
 	}
@@ -92,9 +99,9 @@ func NewBatchSpanProcessor(exporter export.SpanExporter, options ...BatchSpanPro
 	bsp := &batchSpanProcessor{
 		e:      exporter,
 		o:      o,
-		batch:  make([]*export.SpanSnapshot, 0, o.MaxExportBatchSize),
+		batch:  make([]ReadOnlySpan, 0, o.MaxExportBatchSize),
 		timer:  time.NewTimer(o.BatchTimeout),
-		queue:  make(chan *export.SpanSnapshot, o.MaxQueueSize),
+		queue:  make(chan ReadOnlySpan, o.MaxQueueSize),
 		stopCh: make(chan struct{}),
 	}
 
@@ -117,7 +124,7 @@ func (bsp *batchSpanProcessor) OnEnd(s ReadOnlySpan) {
 	if bsp.e == nil {
 		return
 	}
-	bsp.enqueue(s.Snapshot())
+	bsp.enqueue(s)
 }
 
 // Shutdown flushes the queue and waits until all spans are processed.
@@ -148,7 +155,21 @@ func (bsp *batchSpanProcessor) Shutdown(ctx context.Context) error {
 
 // ForceFlush exports all ended spans that have not yet been exported.
 func (bsp *batchSpanProcessor) ForceFlush(ctx context.Context) error {
-	return bsp.exportSpans(ctx)
+	var err error
+	if bsp.e != nil {
+		wait := make(chan error)
+		go func() {
+			wait <- bsp.exportSpans(ctx)
+			close(wait)
+		}()
+		// Wait until the export is finished or the context is cancelled/timed out
+		select {
+		case err = <-wait:
+		case <-ctx.Done():
+			err = ctx.Err()
+		}
+	}
+	return err
 }
 
 func WithMaxQueueSize(size int) BatchSpanProcessorOption {
@@ -169,6 +190,12 @@ func WithBatchTimeout(delay time.Duration) BatchSpanProcessorOption {
 	}
 }
 
+func WithExportTimeout(timeout time.Duration) BatchSpanProcessorOption {
+	return func(o *BatchSpanProcessorOptions) {
+		o.ExportTimeout = timeout
+	}
+}
+
 func WithBlocking() BatchSpanProcessorOption {
 	return func(o *BatchSpanProcessorOptions) {
 		o.BlockOnQueueFull = true
@@ -182,11 +209,24 @@ func (bsp *batchSpanProcessor) exportSpans(ctx context.Context) error {
 	bsp.batchMutex.Lock()
 	defer bsp.batchMutex.Unlock()
 
-	if len(bsp.batch) > 0 {
-		if err := bsp.e.ExportSpans(ctx, bsp.batch); err != nil {
+	if bsp.o.ExportTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, bsp.o.ExportTimeout)
+		defer cancel()
+	}
+
+	if l := len(bsp.batch); l > 0 {
+		err := bsp.e.ExportSpans(ctx, bsp.batch)
+
+		// A new batch is always created after exporting, even if the batch failed to be exported.
+		//
+		// It is up to the exporter to implement any type of retry logic if a batch is failing
+		// to be exported, since it is specific to the protocol and backend being sent to.
+		bsp.batch = bsp.batch[:0]
+
+		if err != nil {
 			return err
 		}
-		bsp.batch = bsp.batch[:0]
 	}
 	return nil
 }
@@ -210,7 +250,7 @@ func (bsp *batchSpanProcessor) processQueue() {
 		case sd := <-bsp.queue:
 			bsp.batchMutex.Lock()
 			bsp.batch = append(bsp.batch, sd)
-			shouldExport := len(bsp.batch) == bsp.o.MaxExportBatchSize
+			shouldExport := len(bsp.batch) >= bsp.o.MaxExportBatchSize
 			bsp.batchMutex.Unlock()
 			if shouldExport {
 				if !bsp.timer.Stop() {
@@ -255,8 +295,8 @@ func (bsp *batchSpanProcessor) drainQueue() {
 	}
 }
 
-func (bsp *batchSpanProcessor) enqueue(sd *export.SpanSnapshot) {
-	if !sd.SpanContext.IsSampled() {
+func (bsp *batchSpanProcessor) enqueue(sd ReadOnlySpan) {
+	if !sd.SpanContext().IsSampled() {
 		return
 	}
 

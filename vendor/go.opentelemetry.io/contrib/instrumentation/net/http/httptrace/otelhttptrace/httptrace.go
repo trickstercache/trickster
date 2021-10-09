@@ -22,13 +22,21 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/semconv"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Option is a function that allows configuration of the httptrace Extract()
-// and Inject() functions
-type Option func(*config)
+// Option allows configuration of the httptrace Extract()
+// and Inject() functions.
+type Option interface {
+	apply(*config)
+}
+
+type optionFunc func(*config)
+
+func (o optionFunc) apply(c *config) {
+	o(c)
+}
 
 type config struct {
 	propagators propagation.TextMapPropagator
@@ -37,20 +45,22 @@ type config struct {
 func newConfig(opts []Option) *config {
 	c := &config{propagators: otel.GetTextMapPropagator()}
 	for _, o := range opts {
-		o(c)
+		o.apply(c)
 	}
 	return c
 }
 
 // WithPropagators sets the propagators to use for Extraction and Injection
 func WithPropagators(props propagation.TextMapPropagator) Option {
-	return func(c *config) {
-		c.propagators = props
-	}
+	return optionFunc(func(c *config) {
+		if props != nil {
+			c.propagators = props
+		}
+	})
 }
 
-// Returns the Attributes, Context Entries, and SpanContext that were encoded by Inject.
-func Extract(ctx context.Context, req *http.Request, opts ...Option) ([]attribute.KeyValue, []attribute.KeyValue, trace.SpanContext) {
+// Extract returns the Attributes, Context Entries, and SpanContext that were encoded by Inject.
+func Extract(ctx context.Context, req *http.Request, opts ...Option) ([]attribute.KeyValue, baggage.Baggage, trace.SpanContext) {
 	c := newConfig(opts)
 	ctx = c.propagators.Extract(ctx, propagation.HeaderCarrier(req.Header))
 
@@ -59,8 +69,7 @@ func Extract(ctx context.Context, req *http.Request, opts ...Option) ([]attribut
 		semconv.NetAttributesFromHTTPRequest("tcp", req)...,
 	)
 
-	attributes := baggage.Set(ctx)
-	return attrs, (&attributes).ToSlice(), trace.RemoteSpanContextFromContext(ctx)
+	return attrs, baggage.FromContext(ctx), trace.SpanContextFromContext(ctx)
 }
 
 func Inject(ctx context.Context, req *http.Request, opts ...Option) {

@@ -20,7 +20,7 @@ import (
 	"net/http/httptrace"
 )
 
-// Client
+// W3C client.
 func W3C(ctx context.Context, req *http.Request) (context.Context, *http.Request) {
 	ctx = httptrace.WithClientTrace(ctx, NewClientTrace(ctx))
 	req = req.WithContext(ctx)
