@@ -24,9 +24,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 )
 
-func TestNewTracer(t *testing.T) {
+func TestNew(t *testing.T) {
 
-	_, err := NewTracer(nil)
+	_, err := New(nil)
 	if err != errs.ErrNoTracerOptions {
 		t.Error("expected error for no tracer options")
 	}
@@ -37,25 +37,25 @@ func TestNewTracer(t *testing.T) {
 	opt.CollectorUser = "abc"
 	opt.CollectorPass = "123"
 
-	_, err = NewTracer(opt)
+	_, err = New(opt)
 	if err != nil {
 		t.Error(err)
 	}
 
 	opt.SampleRate = 1
-	_, err = NewTracer(opt)
+	_, err = New(opt)
 	if err != nil {
 		t.Error(err)
 	}
 
 	opt.SampleRate = 0.5
-	_, err = NewTracer(opt)
+	_, err = New(opt)
 	if err != nil {
 		t.Error(err)
 	}
 
 	opt.JaegerOptions.EndpointType = "agent"
-	_, err = NewTracer(opt)
+	_, err = New(opt)
 	if err != nil {
 		t.Error(err)
 	}

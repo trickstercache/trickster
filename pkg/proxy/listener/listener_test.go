@@ -46,7 +46,7 @@ func testListener() net.Listener {
 }
 
 func TestListeners(t *testing.T) {
-	tr, _ := stdout.NewTracer(nil)
+	tr, _ := stdout.New(nil)
 	tr.Flusher = func() {}
 	trs := map[string]*tracing.Tracer{"default": tr}
 	testLG := NewListenerGroup()

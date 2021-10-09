@@ -79,7 +79,7 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	z, err := zipkin.NewTracer(&to.Options{ServiceName: "test", CollectorURL: "http://1.2.3.4/"})
+	z, err := zipkin.New(&to.Options{ServiceName: "test", CollectorURL: "http://1.2.3.4/"})
 	if err != nil {
 		t.Error(err)
 	}
