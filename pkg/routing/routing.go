@@ -291,10 +291,6 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 	}
 
 	sort.Sort(ByLen(plist))
-	for i := len(plist)/2 - 1; i >= 0; i-- {
-		opp := len(plist) - 1 - i
-		plist[i], plist[opp] = plist[opp], plist[i]
-	}
 
 	or := client.Router().(*mux.Router)
 
@@ -384,7 +380,13 @@ func RegisterDefaultBackendRoutes(router *mux.Router, bknds backends.Backends,
 			}
 			tl.Info(logger,
 				"registering default backend handler paths", tl.Pairs{"backendName": o.Name})
-			for _, p := range o.Paths {
+			var pathList []string
+			for name := range o.Paths {
+				pathList = append(pathList, name)
+			}
+			sort.Sort(ByLen(pathList))
+			for _, path := range pathList {
+				p := o.Paths[path]
 				if p.Handler != nil && len(p.Methods) > 0 {
 					tl.Debug(logger, "registering default backend handler paths",
 						tl.Pairs{"backendName": o.Name, "path": p.Path, "handlerName": p.HandlerName,
@@ -413,7 +415,7 @@ func (a ByLen) Len() int {
 }
 
 func (a ByLen) Less(i, j int) bool {
-	return len(a[i]) < len(a[j])
+	return len(a[i]) > len(a[j])
 }
 
 func (a ByLen) Swap(i, j int) {
