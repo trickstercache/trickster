@@ -19,9 +19,13 @@ package params
 
 import (
 	"bytes"
+	"fmt"
+	"strconv"
+
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -59,20 +63,27 @@ func GetRequestValues(r *http.Request) (url.Values, string, bool) {
 	if !methods.HasBody(r.Method) {
 		v = r.URL.Query()
 		s = r.URL.RawQuery
-	} else if r.Header.Get(headers.NameContentType) == headers.ValueApplicationJSON {
-		v = url.Values{}
-		b, _ := io.ReadAll(r.Body)
-		r.Body.Close()
-		r.Body = io.NopCloser(bytes.NewReader(b))
-		s = string(b)
-		isBody = true
 	} else {
-		r.ParseForm()
-		v = r.PostForm
-		s = v.Encode()
-		isBody = true
-		r.ContentLength = int64(len(s))
-		r.Body = io.NopCloser(bytes.NewReader([]byte(s)))
+		if strings.HasPrefix(r.Header.Get(headers.NameContentType), headers.ValueApplicationJSON) {
+			v = r.URL.Query()
+			b, _ := io.ReadAll(r.Body)
+			r.Body.Close()
+			r.Body = io.NopCloser(bytes.NewReader(b))
+			s = string(b)
+			isBody = true
+		} else {
+			r.ParseForm()
+			v = r.PostForm
+			s = v.Encode()
+			isBody = true
+			r.ContentLength = int64(len(s))
+			r.Body = io.NopCloser(bytes.NewReader([]byte(s)))
+		}
+		if len(s) == 0 {
+			v = r.URL.Query()
+			s = r.URL.RawQuery
+			isBody = false
+		}
 	}
 	return v, s, isBody
 }

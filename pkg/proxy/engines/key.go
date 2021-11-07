@@ -97,10 +97,10 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	if methods.HasBody(r.Method) && pc.CacheKeyFormFields != nil && len(pc.CacheKeyFormFields) > 0 {
 		ct := r.Header.Get(headers.NameContentType)
 		if ct == headers.ValueXFormURLEncoded ||
-			strings.HasPrefix(ct, headers.ValueMultipartFormData) || ct == headers.ValueApplicationJSON {
+			strings.HasPrefix(ct, headers.ValueMultipartFormData) || strings.HasPrefix(ct, headers.ValueApplicationJSON) {
 			if strings.HasPrefix(ct, headers.ValueMultipartFormData) {
 				pr.ParseMultipartForm(1024 * 1024)
-			} else if ct == headers.ValueApplicationJSON {
+			} else if strings.HasPrefix(ct, headers.ValueApplicationJSON) {
 				var document map[string]interface{}
 				err := json.Unmarshal(b, &document)
 				if err == nil {
