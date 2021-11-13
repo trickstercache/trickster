@@ -74,7 +74,7 @@ services:
     restart: always
 
   mockster:
-    image: trickstercache/mockster:latest
+    image: tricksterproxy/mockster:latest
     ports:
       - 8482:8482
     networks:
@@ -105,7 +105,7 @@ services:
     restart: always
 
   trickster:
-    image: trickstercache/trickster:2
+    image: tricksterproxy/trickster:2
     depends_on:
       - prometheus
       - mockster
