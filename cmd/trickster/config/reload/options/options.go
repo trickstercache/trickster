@@ -30,7 +30,7 @@ type Options struct {
 	DrainTimeoutMS int `yaml:"drain_timeout_ms,omitempty"`
 	// RateLimitMS limits the # of handled config reload HTTP requests to 1 per CheckRateMS
 	// if multiple HTTP requests are received in the rate limit window, only the first is handled
-	// This prevents a bad actor from stating the config file with millions of concurrent requets
+	// This prevents a bad actor from stating the config file with millions of concurrent requests
 	// The rate limit does not apply to SIGHUP-based reload requests
 	RateLimitMS int `yaml:"rate_limit_ms,omitempty"`
 }

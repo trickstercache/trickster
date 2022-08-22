@@ -243,3 +243,12 @@ v5.0.0.
 600
 1000
 100
+microservices-oriented
+1.17
+InfluxQL
+zstd
+tsmerge
+influxdata's
+entrypoint
+sharding
+sharded
