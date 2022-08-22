@@ -9,7 +9,7 @@
 ## Trickster Project Maintainers
 
 | Name | Contact | Company | Pronouns | Focus Areas|
-|---|---|---|---|
+|---|---|---|---|---|
 |James Ranson ([@jranson](https://github.com/jranson)) | <james@ranson.org> | Virga | He/Him | Core Functionality |
 |Chris Randles ([@crandles](https://github.com/crandles)) | <randles.chris@gmail.com> | | He/Him | Core Functionality |
 |Adam Ross ([@LimitlessEarth](https://github.com/LimitlessEarth)) | <adamross1126@gmail.com> | Comcast | He/Him | Deployment & Artifacts (Makefile, Dockerfile, Helm Charts, etc) |
@@ -19,7 +19,7 @@ You can contact the maintainers using the `@trickstercache/maintainers` handle i
 ## Key Project Contributors
 
 | Name | Contact | Company | Pronouns | Focus Areas|
-|---|---|---|---|
+|---|---|---|---|---|
 |Jake Nichols ([@jakenichols2719](https://github.com/jakenichols2719)) | <jnichols2719@protonmail.com> | Virga | They/Them | Core Functionality |
 
 ## Reviewers
