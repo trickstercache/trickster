@@ -26,7 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
 
-	gkl "github.com/go-kit/kit/log"
+	gkl "github.com/go-kit/log"
 )
 
 func TestConsoleLogger(t *testing.T) {
