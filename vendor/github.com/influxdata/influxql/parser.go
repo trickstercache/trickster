@@ -1064,9 +1064,26 @@ func (p *Parser) parseShowMeasurementsStatement() (*ShowMeasurementsStatement, e
 	// Parse optional ON clause.
 	if tok, _, _ := p.ScanIgnoreWhitespace(); tok == ON {
 		// Parse the database.
-		stmt.Database, err = p.ParseIdent()
-		if err != nil {
-			return nil, err
+		tok, pos, lit := p.ScanIgnoreWhitespace()
+		if tok == IDENT {
+			stmt.Database = lit
+		} else if tok == MUL {
+			stmt.WildcardDatabase = true
+		} else{
+			return nil, newParseError(tokstr(tok, lit), []string{"identifier or *"}, pos)
+		}
+
+		if tok, _, _ := p.ScanIgnoreWhitespace(); tok == DOT {
+			tok, pos, lit := p.ScanIgnoreWhitespace()
+			if tok == IDENT {
+				stmt.RetentionPolicy = lit
+			} else if tok == MUL {
+				stmt.WildcardRetentionPolicy = true
+			} else{
+				return nil, newParseError(tokstr(tok, lit), []string{"identifier or *"}, pos)
+			}
+		} else {
+			p.Unscan()
 		}
 	} else {
 		p.Unscan()
