@@ -1,4 +1,4 @@
-// +build uint uint64
+//go:build uint || uint64
 
 package models
 

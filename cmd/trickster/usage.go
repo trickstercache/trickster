@@ -85,5 +85,6 @@ func PrintVersion() {
 func PrintUsage() {
 	fmt.Println()
 	fmt.Println(version())
-	fmt.Println(usageText)
+	fmt.Print(usageText)
+	fmt.Println()
 }

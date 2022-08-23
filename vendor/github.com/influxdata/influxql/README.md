@@ -626,7 +626,7 @@ SHOW GRANTS FOR "jdoe"
 ### SHOW MEASUREMENTS
 
 ```
-show_measurements_stmt = "SHOW MEASUREMENTS" [ with_measurement_clause ] [ where_clause ] [ limit_clause ] [ offset_clause ] .
+show_measurements_stmt = "SHOW MEASUREMENTS" [on_clause] [ with_measurement_clause ] [ where_clause ] [ limit_clause ] [ offset_clause ] .
 ```
 
 #### Examples:
@@ -634,6 +634,12 @@ show_measurements_stmt = "SHOW MEASUREMENTS" [ with_measurement_clause ] [ where
 ```sql
 -- show all measurements
 SHOW MEASUREMENTS
+
+-- show all measurements on all databases
+SHOW MEASUREMENTS ON *.*
+
+-- show all measurements on specific database and retention policy
+SHOW MEASUREMENTS ON mydb.myrp
 
 -- show measurements where region tag = 'uswest' AND host tag = 'serverA'
 SHOW MEASUREMENTS WHERE "region" = 'uswest' AND "host" = 'serverA'
