@@ -184,3 +184,15 @@ spelling:
 	else \
 		codespell --skip='vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz' --ignore-words='./testdata/ignore_words.txt' ; \
 	fi
+
+.PHONY: serve
+serve:
+	@cd cmd/trickster && go run . -config /etc/trickster/trickster.yaml
+
+.PHONY: serve-debug
+serve-debug:
+	@cd cmd/trickster && go run . -config /etc/trickster/trickster.yaml --log-level debug
+
+.PHONY: serve-info
+serve-info:
+	@cd cmd/trickster && go run . -config /etc/trickster/trickster.yaml --log-level info
