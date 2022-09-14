@@ -22,12 +22,11 @@ TRICKSTER      := $(FIRST_GOPATH)/bin/trickster
 PROGVER        := $(shell grep 'applicationVersion = ' $(TRICKSTER_MAIN)/main.go | awk '{print $$3}' | sed -e 's/\"//g')
 BUILD_TIME     := $(shell date -u +%FT%T%z)
 GIT_LATEST_COMMIT_ID     := $(shell git rev-parse HEAD)
-GO_VER         := $(shell go version | awk '{print $$3}')
 IMAGE_TAG      ?= latest
 IMAGE_ARCH     ?= amd64
-GOARCH         ?= amd64
+GOHOSTARCH     ?= amd64
 TAGVER         ?= unspecified
-LDFLAGS         =-ldflags "-extldflags '-static' -w -s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicationGitCommitID=$(GIT_LATEST_COMMIT_ID) -X main.applicationGoVersion=$(GO_VER) -X main.applicationGoArch=$(GOARCH)"
+LDFLAGS         =-ldflags "-extldflags '-static' -w -s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicationGitCommitID=$(GIT_LATEST_COMMIT_ID) -X main.applicationGoHostArch=$(GOHOSTARCH)"
 BUILD_SUBDIR   := OPATH
 PACKAGE_DIR    := ./$(BUILD_SUBDIR)/trickster-$(PROGVER)
 BIN_DIR        := $(PACKAGE_DIR)/bin
@@ -55,7 +54,7 @@ test-go-mod:
 
 .PHONY: build
 build: go-mod-tidy go-mod-vendor
-	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o ./$(BUILD_SUBDIR)/trickster -a -v $(TRICKSTER_MAIN)/*.go
+	GOOS=$(GOOS) GOHOSTARCH=$(GOHOSTARCH) CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o ./$(BUILD_SUBDIR)/trickster -a -v $(TRICKSTER_MAIN)/*.go
 
 rpm: build
 	mkdir -p ./$(BUILD_SUBDIR)/SOURCES
@@ -90,11 +89,11 @@ release-artifacts: clean
 	cp ./LICENSE $(PACKAGE_DIR)
 	cp ./examples/conf/*.yaml $(CONF_DIR)
 
-	GOOS=darwin  GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).darwin-amd64  -a -v $(TRICKSTER_MAIN)/*.go
-	GOOS=darwin  GOARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).darwin-arm64  -a -v $(TRICKSTER_MAIN)/*.go
-	GOOS=linux   GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-amd64   -a -v $(TRICKSTER_MAIN)/*.go
-	GOOS=linux   GOARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-arm64   -a -v $(TRICKSTER_MAIN)/*.go
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).windows-amd64 -a -v $(TRICKSTER_MAIN)/*.go
+	GOOS=darwin  GOHOSTARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).darwin-amd64  -a -v $(TRICKSTER_MAIN)/*.go
+	GOOS=darwin  GOHOSTARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).darwin-arm64  -a -v $(TRICKSTER_MAIN)/*.go
+	GOOS=linux   GOHOSTARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-amd64   -a -v $(TRICKSTER_MAIN)/*.go
+	GOOS=linux   GOHOSTARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-arm64   -a -v $(TRICKSTER_MAIN)/*.go
+	GOOS=windows GOHOSTARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).windows-amd64 -a -v $(TRICKSTER_MAIN)/*.go
 
 	cd ./$(BUILD_SUBDIR) && tar cvfz ./trickster-$(PROGVER).tar.gz ./trickster-$(PROGVER)/*
 
@@ -120,14 +119,14 @@ kube-local:
 
 .PHONY: docker
 docker:
-	docker build --build-arg IMAGE_ARCH=$(IMAGE_ARCH) --build-arg GOARCH=$(GOARCH) -f ./deploy/Dockerfile -t trickster:$(PROGVER) .
+	docker build --build-arg IMAGE_ARCH=$(IMAGE_ARCH) --build-arg GOHOSTARCH=$(GOHOSTARCH) -f ./deploy/Dockerfile -t trickster:$(PROGVER) .
 
 .PHONY: docker-release
 docker-release:
 # linux x86 image
-	docker build --build-arg IMAGE_ARCH=amd64 --build-arg GOARCH=amd64 -f ./deploy/Dockerfile -t trickstercache/trickster:$(IMAGE_TAG) .
+	docker build --build-arg IMAGE_ARCH=amd64 --build-arg GOHOSTARCH=amd64 -f ./deploy/Dockerfile -t trickstercache/trickster:$(IMAGE_TAG) .
 # linux arm image
-	docker build --build-arg IMAGE_ARCH=arm64v8 --build-arg GOARCH=arm64 -f ./deploy/Dockerfile -t trickstercache/trickster:arm64v8-$(IMAGE_TAG) .
+	docker build --build-arg IMAGE_ARCH=arm64v8 --build-arg GOHOSTARCH=arm64 -f ./deploy/Dockerfile -t trickstercache/trickster:arm64v8-$(IMAGE_TAG) .
 
 .PHONY: style
 style:

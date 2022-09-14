@@ -50,7 +50,7 @@ var hc healthcheck.HealthChecker
 func runConfig(oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Logger,
 	oldCaches map[string]cache.Cache, args []string, errorFunc func()) error {
 
-	metrics.BuildInfo.WithLabelValues(applicationGoVersion,
+	metrics.BuildInfo.WithLabelValues(runtime.GoVersion,
 		applicationGitCommitID, applicationVersion).Set(1)
 
 	cfgLock.Lock()
@@ -261,15 +261,15 @@ func initLogger(c *config.Config) *tl.Logger {
 	logger := tl.New(c)
 	tl.Info(logger, "application loaded from configuration",
 		tl.Pairs{
-			"name":      runtime.ApplicationName,
-			"version":   runtime.ApplicationVersion,
-			"goVersion": applicationGoVersion,
-			"goArch":    applicationGoArch,
-			"commitID":  applicationGitCommitID,
-			"buildTime": applicationBuildTime,
-			"logLevel":  c.Logging.LogLevel,
-			"config":    c.ConfigFilePath(),
-			"pid":       os.Getpid(),
+			"name":       runtime.ApplicationName,
+			"version":    runtime.ApplicationVersion,
+			"goVersion":  runtime.GoVersion,
+			"goHostArch": applicationGoHostArch,
+			"commitID":   applicationGitCommitID,
+			"buildTime":  applicationBuildTime,
+			"logLevel":   c.Logging.LogLevel,
+			"config":     c.ConfigFilePath(),
+			"pid":        os.Getpid(),
 		},
 	)
 	return logger
