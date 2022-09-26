@@ -136,6 +136,9 @@ type Options struct {
 
 	// IsDefault indicates if this is the d.Default backend for any request not matching a configured route
 	IsDefault bool `yaml:"is_default,omitempty"`
+	// IsTemplate indicates if this backend is meant to be used as a template for creating other backends.
+	// Template backends will stay inactive until instantiated by an autodiscovery process.
+	IsTemplate bool `yaml:"is_template,omitempty"`
 	// FastForwardDisable indicates whether the FastForward feature should be disabled for this backend
 	FastForwardDisable bool `yaml:"fast_forward_disable,omitempty"`
 	// PathRoutingDisabled, when true, will bypass /backendName/path route registrations
@@ -536,6 +539,10 @@ func SetDefaults(
 
 	if metadata.IsDefined("backends", name, "is_default") {
 		no.IsDefault = o.IsDefault
+	}
+
+	if metadata.IsDefined("backends", name, "is_template") {
+		no.IsTemplate = o.IsTemplate
 	}
 	// If there is only one backend and is_default is not explicitly false, make it true
 	if len(backends) == 1 && (!metadata.IsDefined("backends", name, "is_default")) {

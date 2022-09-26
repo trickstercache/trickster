@@ -33,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
+	"github.com/trickstercache/trickster/v2/pkg/backends/templates"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	encoding "github.com/trickstercache/trickster/v2/pkg/encoding/handler"
 	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -85,6 +86,9 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router, metricsRouter 
 		}
 		// Ensure only one default backend exists
 		if o.IsDefault {
+			if o.IsTemplate {
+				return nil, fmt.Errorf("backend [%s] cannot be both default and a template.", o.Name)
+			}
 			if cdo != nil {
 				return nil,
 					fmt.Errorf("only one backend can be marked as default. Found both %s and %s",
@@ -138,6 +142,22 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router, metricsRouter 
 	return clients, nil
 }
 
+// Register a every backend marked as a template under package backend/templates.
+// This allows autodiscovery to fetch this information at runtime.
+func RegisterTemplates(conf *config.Config, logger interface{}, dryRun bool) error {
+	// Iterate through config backends for any templates
+	for k, o := range conf.Backends {
+		// Skip over non-template entries
+		if !o.IsTemplate {
+			continue
+		}
+		templates.CreateTemplateBackend(k, o)
+		// TODO: log duplicates/failed registration
+	}
+
+	return nil
+}
+
 var noCacheBackends = map[string]interface{}{
 	"alb":          nil,
 	"rp":           nil,
@@ -180,8 +200,12 @@ func registerBackendRoutes(router *mux.Router, metricsRouter *http.ServeMux, con
 	}
 
 	if client != nil && !dryRun {
-		o.HTTPClient = client.HTTPClient()
 		clients[k] = client
+		// Quit out before registering routes if client is a template.
+		if client.Configuration().IsTemplate {
+			return nil
+		}
+		o.HTTPClient = client.HTTPClient()
 		defaultPaths := client.DefaultPathConfigs(o)
 
 		h := client.Handlers()

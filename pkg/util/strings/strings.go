@@ -20,6 +20,7 @@ package strings
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -113,4 +114,23 @@ func (m StringMap) GetInt(key string) (int, error) {
 		return 0, err
 	}
 	return i, nil
+}
+
+// TemplateReplace replaces $[key] values in a string with values in a map [key]value.
+func TemplateReplace(template string, values map[string]string) (string, error) {
+	r, _ := regexp.Compile(`\$\[.*?\]`)
+	success := true
+	result := r.ReplaceAllStringFunc(template, func(match string) string {
+		if newVal, ok := values[match[2:len(match)-1]]; ok {
+			return newVal
+		} else {
+			success = false
+			return match
+		}
+	})
+	if success {
+		return result, nil
+	} else {
+		return result, fmt.Errorf("Failed to replace all template items in string")
+	}
 }

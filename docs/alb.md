@@ -12,11 +12,73 @@ Trickster 2.0 provides an all-new Application Load Balancer that is easy to conf
 
 ## Integration with Backends
 
-The ALB works by applying a Mechanism to select one or more Backends from a list of Healthy Pool Members, through which to route a request. Pool member names represent Backend Configs (known in Trickster 0.x and 1.x as Origin Configs) that can be pre-existing or newly defined.
+The ALB works by applying a Mechanism to select one or more Backends from a list of Healthy Pool Members, through which to route a request. Pool member names represent Backend Configs (known in Trickster 0.x and 1.x as Origin Configs) that can be pre-existing, newly defined, or discovered.
 
 All settings and functions configured for a Backend are applicable to traffic routed via an ALB - caching, rewriters, rules, tracing, TLS, etc.
 
 In Trickster configuration files, each ALB itself is a Backend, just like the pool members to which it routes.
+
+### Pool Configuration
+
+### Autodiscovery Configuration
+
+ALB backends can be configured to discover pool members. Rather than define preset pool members based on backends, you can configure the ALB to query a number of methods and use the output with template backends.
+
+Queries are defined in config with a method, template, parameters, and results. The supported parameters and results depend on the methods used. Below is an example using the `kubernetes_external` method, which finds resources in a kubernetes cluster pointed to by the local kubeconfig:
+
+```yaml
+query_example:
+  method: kubernetes_external
+  use_template: template_example
+  parameters:
+    resource_type: service
+    resource_name: service-x
+    access_by: ingress
+  results:
+    external_address: ORIGIN_URL
+```
+
+This query will find any service in the cluster named `service-x`, and find information about how to access it through an Ingress in the same cluster. The resulting value `external_address` (predefined by the `kubernetes_external` method) will replace any value `ORIGIN_URL` in `template_example`.
+
+```yaml
+template_example:
+  use_backend: prom1
+  override:
+    origin_url: 'http://$[ORIGIN_URL]'
+```
+
+`template_example` will start with a named backend in config that *must* have `is_template: true` in its configuration. When a query using this template completes, it will start with the values provided for `prom1` and override a set of config options based on template values provided by the query (`ORIGIN_URL`).
+
+The full config for this ALB is:
+
+```yaml
+albDisc:
+  provider: alb
+  alb:
+    mechanism: tsm
+    autodiscovery:
+      queries:
+        query_example:
+          method: kubernetes_external
+          use_template: template_example
+          parameters:
+            resource_type: service
+            resource_name: service-x
+            access_by: ingress
+          results:
+            external_address: ORIGIN_URL
+      templates:
+        template_example:
+          use_backend: prom1
+          override:
+            origin_url: 'http://$[ORIGIN_URL]'
+
+...
+
+prom1:
+  is_template: true
+  ...
+```
 
 ## Mechanisms Deep Dive
 

@@ -20,6 +20,7 @@ import (
 	"errors"
 	"strings"
 
+	adopt "github.com/trickstercache/trickster/v2/pkg/autodiscovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
@@ -31,6 +32,9 @@ type Options struct {
 	MechanismName string `yaml:"mechanism,omitempty"`
 	// Pool provides the list of backend names to be used by the load balancer
 	Pool []string `yaml:"pool,omitempty"`
+	// AutoDiscovery provides a way of searching for available backend services that fit a query.
+	// This serves as an alternative to Pool.
+	AutoDiscovery *adopt.Options `yaml:"autodiscovery,omitempty"`
 	// HealthyFloor is the minimum health check status value to be considered Available in the pool
 	// -1 : all pool members are Available regardless of health check status
 	//  0 (default) : pool members with status of unknown (0) or healthy (1) are Available
@@ -100,6 +104,9 @@ func SetDefaults(name string, options *Options, metadata yamlx.KeyLookup) (*Opti
 
 	if metadata.IsDefined("backends", name, "alb", "pool") {
 		o.Pool = options.Pool
+	}
+	if metadata.IsDefined("backends", name, "alb", "autodiscovery") {
+		o.AutoDiscovery = options.AutoDiscovery
 	}
 
 	if metadata.IsDefined("backends", name, "alb", "mechanism") && options.MechanismName != "" {

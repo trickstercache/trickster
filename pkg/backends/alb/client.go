@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/autodiscovery"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
@@ -112,7 +113,9 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 // can be mapped to their respective clients
 func StartALBPools(clients backends.Backends, hcs healthcheck.StatusLookup) error {
 	for _, c := range clients {
+		fmt.Printf("Client [%s]\n", c.Name())
 		if rc, ok := c.(*Client); ok {
+			fmt.Println("ok")
 			err := rc.ValidateAndStartPool(clients, hcs)
 			if err != nil {
 				return err
@@ -162,18 +165,35 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 
 	o := c.Configuration().ALBOptions
 
+	fmt.Printf("%+v\n", o)
+
 	m, ok := pool.GetMechanismByName(o.MechanismName)
 	if !ok {
 		return fmt.Errorf("invalid mechanism name [%s] in backend [%s]", o.MechanismName, c.Name())
 	}
 	targets := make([]*pool.Target, 0, len(o.Pool))
-	for _, n := range o.Pool {
-		tc, ok := clients[n]
-		if !ok {
-			return fmt.Errorf("invalid pool member name [%s] in backend [%s]", n, c.Name())
+	// If config for a pool was provided, use it to fetch routers and health checks for all pool members.
+	// Otherwise, use autodiscovery to get routers and health checks for all backend clients matching the query.
+	if o.Pool != nil && len(o.Pool) > 0 {
+		fmt.Printf("Starting pool for alb [%s]\n", c.Name())
+		for _, n := range o.Pool {
+			tc, ok := clients[n]
+			if !ok {
+				return fmt.Errorf("invalid pool member name [%s] in backend [%s]", n, c.Name())
+			}
+			hc, _ := hcs[n]
+			targets = append(targets, pool.NewTarget(tc.Router(), hc))
 		}
-		hc, _ := hcs[n]
-		targets = append(targets, pool.NewTarget(tc.Router(), hc))
+	} else if o.AutoDiscovery != nil {
+		fmt.Printf("Starting autodiscovery for alb [%s]\n", c.Name())
+		autoBackends, err := autodiscovery.DiscoverWithOptions(o.AutoDiscovery)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("%+v\n", autoBackends[0])
+		// TODO: Uncertain how to register backends here, and again if more are instantiated later.
+	} else {
+		return fmt.Errorf("alb not provided with a pool or autodiscovery")
 	}
 	c.pool = pool.New(m, targets, o.HealthyFloor)
 	return nil

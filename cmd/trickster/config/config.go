@@ -164,7 +164,6 @@ func (c *Config) loadFile(flags *Flags) error {
 
 // loadYAMLConfig loads application configuration from a YAML-formatted byte slice.
 func (c *Config) loadYAMLConfig(yml string, flags *Flags) error {
-
 	err := yaml.Unmarshal([]byte(yml), &c)
 	if err != nil {
 		return err
