@@ -25,3 +25,20 @@ func New() *Options {
 		Results:     make(QueryResults),
 	}
 }
+
+func (opt *Options) Clone() *Options {
+	outParams := make(QueryParameters)
+	for k, v := range opt.Parameters {
+		outParams[k] = v
+	}
+	outResults := make(QueryResults)
+	for k, v := range opt.Results {
+		outResults[k] = v
+	}
+	return &Options{
+		Method:      opt.Method,
+		UseTemplate: opt.UseTemplate,
+		Parameters:  outParams,
+		Results:     outResults,
+	}
+}

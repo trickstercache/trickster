@@ -72,6 +72,14 @@ func CopyStringLookup(l map[string]string) map[string]string {
 	return clone
 }
 
+func CopyMap(m map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{})
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
 // LookupFromStrings retrurns a lookup map from a list of keys
 func LookupFromStrings(s []string) map[string]interface{} {
 	if s == nil {

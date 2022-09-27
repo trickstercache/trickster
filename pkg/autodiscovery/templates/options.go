@@ -15,3 +15,14 @@ func New() *Options {
 		Override:   make(OverrideMap),
 	}
 }
+
+func (opt *Options) Clone() *Options {
+	overrideOut := make(map[string]string)
+	for k, v := range opt.Override {
+		overrideOut[k] = v
+	}
+	return &Options{
+		UseBackend: opt.UseBackend,
+		Override:   overrideOut,
+	}
+}

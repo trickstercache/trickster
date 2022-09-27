@@ -2,15 +2,9 @@
 package options
 
 import (
-	"fmt"
-
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/queries"
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/templates"
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
-
-// QueryOptions are used to process queries with any given method of autodiscovery.
-type QueryOptions map[string]string
 
 // struct Options represents the configuration options for a backend provider that is
 // using automatic service discovery.
@@ -29,20 +23,16 @@ func New() *Options {
 
 // Returns a perfect deep copy of the calling Options
 func (opt *Options) Clone() *Options {
+	queriesOut := make(map[string]*queries.Options)
+	for k, v := range opt.Queries {
+		queriesOut[k] = v.Clone()
+	}
+	backendsOut := make(map[string]*templates.Options)
+	for k, v := range opt.Backends {
+		backendsOut[k] = v.Clone()
+	}
 	return &Options{
-		Queries:  opt.Queries,
-		Backends: opt.Backends,
+		Queries:  queriesOut,
+		Backends: backendsOut,
 	}
-}
-
-// Iterate over the provided options, returning a new options with all defined metadata values
-// set to either the provided option or default value.
-//
-// Note: the current default value is the empty Options.
-func SetDefaults(name string, options *Options, metadata yamlx.KeyLookup) (*Options, error) {
-	if metadata == nil {
-		return nil, fmt.Errorf("Can't call SetDefaults with nil metadata")
-	}
-	optOut := New()
-	return optOut, nil
 }
