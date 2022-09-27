@@ -9,11 +9,13 @@ type AutodiscoveryMethod int
 
 const (
 	// Discover by kubernetes annotation
-	EXTKUBE = AutodiscoveryMethod(iota)
+	MOCK = AutodiscoveryMethod(iota)
+	EXTKUBE
 )
 
 // Names maps string config names to constant AutodiscoveryMethod values.
 var Names = map[string]AutodiscoveryMethod{
+	"mock":                MOCK,
 	"kubernetes_external": EXTKUBE,
 }
 
