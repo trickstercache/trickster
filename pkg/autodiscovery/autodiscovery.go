@@ -6,6 +6,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/methods"
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/methods/extkube"
+	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/methods/intkube"
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/methods/mock"
 	adopt "github.com/trickstercache/trickster/v2/pkg/autodiscovery/options"
 	beopt "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -16,6 +17,7 @@ import (
 func init() {
 	methods.Methods[methods.MOCK] = &mock.Mock{}
 	methods.Methods[methods.EXTKUBE] = &extkube.ExtKube{}
+	methods.Methods[methods.INTKUBE] = &intkube.IntKube{}
 }
 
 // Run autodiscovery with a set of options, returning backend options for matched queries
