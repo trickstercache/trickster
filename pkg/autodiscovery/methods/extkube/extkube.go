@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -115,12 +116,54 @@ func (ek *ExtKube) Query(opts *queries.Options) ([]queries.QueryResults, error) 
 				res := make(queries.QueryResults)
 				queryMatched := true
 				// Resource Name
-				if resourceName, ok := params["resource_name"]; !ok || ok && resourceName != service.Name {
+				if resourceName, ok := params["resource_name"]; ok && resourceName != service.Name {
 					queryMatched = false
+				}
+				if annotations, ok := params["annotations"]; ok {
+					rA := service.Annotations
+					// Run through annotations key:value,key:value
+					alist := strings.Split(annotations, ",")
+					for _, a := range alist {
+						kv := strings.Split(a, ":")
+						if rV, hasK := rA[kv[0]]; hasK && rV != kv[1] {
+							queryMatched = false
+						}
+					}
 				}
 				// Append this result to output if the query is matched.
 				if queryMatched {
 					res["resource_name"] = service.Name
+					output = append(output, res)
+				}
+			}
+		}
+	}
+	// QUERY RESOURCETYPE POD
+	if params["resource_type"] == "pod" {
+		if pods, err := ek.core.Pods("").List(context.TODO(), metav1.ListOptions{}); err != nil {
+			return nil, err
+		} else {
+			for _, pod := range pods.Items {
+				res := make(queries.QueryResults)
+				queryMatched := true
+				// Resource Name
+				if resourceName, ok := params["resource_name"]; ok && resourceName != pod.Name {
+					queryMatched = false
+				}
+				if annotations, ok := params["annotations"]; ok {
+					rA := pod.Annotations
+					// Run through annotations key:value,key:value
+					alist := strings.Split(annotations, ",")
+					for _, a := range alist {
+						kv := strings.Split(a, ":")
+						if rV, hasK := rA[kv[0]]; hasK && rV != kv[1] {
+							queryMatched = false
+						}
+					}
+				}
+				// Append this result to output if the query is matched.
+				if queryMatched {
+					res["resource_name"] = pod.Name
 					output = append(output, res)
 				}
 			}
