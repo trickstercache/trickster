@@ -123,6 +123,7 @@ func (ek *IntKube) Query(opts *queries.Options) ([]queries.QueryResults, error) 
 				// Append this result to output if the query is matched.
 				if queryMatched {
 					res["resource_name"] = service.Name
+					res["cluster_ip"] = service.Spec.ClusterIP
 					output = append(output, res)
 				}
 			}
@@ -158,39 +159,6 @@ func (ek *IntKube) Query(opts *queries.Options) ([]queries.QueryResults, error) 
 				}
 			}
 		}
-	}
-
-	// ===== Query Networking =====
-	// We need to know how to access the resources we found meeting our query parameters.
-	// Map resource names to access paths, then iterate our already-existing outputs and add the external address.
-	externalPaths := make(map[string]string)
-	// QUERY ACCESSBY INGRESS
-	if params["access_by"] == "ingress" {
-		if params["resource_type"] != "service" {
-			return nil, fmt.Errorf("kubernetes_external queries with access_by:ingress must use resource_type:service")
-		}
-		if ingresses, err := ek.net.Ingresses("").List(context.TODO(), metav1.ListOptions{}); err != nil {
-			return nil, err
-		} else {
-			// Iterate through each ingress retreived from the API
-			for _, ingress := range ingresses.Items {
-				// Iterate through ingress rules
-				for _, rule := range ingress.Spec.Rules {
-					// Each rule has its own host (ex. localhost, google.com)
-					host := rule.Host
-					// Iterate through the paths for each rule
-					for _, conn := range rule.HTTP.Paths {
-						path := conn.Path
-						service := conn.Backend.Service.Name
-						externalPaths[service] = host + path
-					}
-				}
-			}
-		}
-	}
-	// Iterate through exiting output, and add the external address (and any other networking values)
-	for idx := range output {
-		output[idx]["external_address"] = externalPaths[output[idx]["resource_name"]]
 	}
 
 	// Output now contains the resources from kubernetes_external query; need to use resultMap to
