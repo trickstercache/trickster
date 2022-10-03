@@ -261,15 +261,16 @@ func initLogger(c *config.Config) *tl.Logger {
 	logger := tl.New(c)
 	tl.Info(logger, "application loaded from configuration",
 		tl.Pairs{
-			"name":       runtime.ApplicationName,
-			"version":    runtime.ApplicationVersion,
-			"goVersion":  goruntime.Version(),
-			"goHostArch": applicationGoHostArch,
-			"commitID":   applicationGitCommitID,
-			"buildTime":  applicationBuildTime,
-			"logLevel":   c.Logging.LogLevel,
-			"config":     c.ConfigFilePath(),
-			"pid":        os.Getpid(),
+			"name":      runtime.ApplicationName,
+			"version":   runtime.ApplicationVersion,
+			"goVersion": goruntime.Version(),
+			"goArch":    goruntime.GOARCH,
+			"goOS":      goruntime.GOOS,
+			"commitID":  applicationGitCommitID,
+			"buildTime": applicationBuildTime,
+			"logLevel":  c.Logging.LogLevel,
+			"config":    c.ConfigFilePath(),
+			"pid":       os.Getpid(),
 		},
 	)
 	return logger

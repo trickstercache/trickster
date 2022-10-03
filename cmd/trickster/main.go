@@ -27,7 +27,6 @@ import (
 var (
 	applicationGitCommitID string
 	applicationBuildTime   string
-	applicationGoHostArch  string
 )
 
 const (
