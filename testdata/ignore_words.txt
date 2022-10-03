@@ -2,4 +2,4 @@ te
 uint
 flate
 ro
-hasK
+hask
