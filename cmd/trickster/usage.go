@@ -70,10 +70,18 @@ https://github.com/trickstercache/trickster
 `
 
 func version() string {
+
+	goVer := goruntime.Version()
+	// the version printer uses an empty string for Go Version during unit tests
+	// to accommodate rigid tests like ExamplePrintVersion and ExamplePrintUsage
+	if runtime.ApplicationName == "test" {
+		goVer = ""
+	}
+
 	return fmt.Sprintf("Trickster version: %s, buildInfo: %s %s, goVersion: %s, copyright: © 2018 The Trickster Authors",
 		runtime.ApplicationVersion,
 		applicationBuildTime, applicationGitCommitID,
-		goruntime.Version(),
+		goVer,
 	)
 }
 
