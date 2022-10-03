@@ -18,6 +18,7 @@ package main
 
 import (
 	"fmt"
+	goruntime "runtime"
 
 	"github.com/trickstercache/trickster/v2/pkg/runtime"
 )
@@ -69,10 +70,18 @@ https://github.com/trickstercache/trickster
 `
 
 func version() string {
+
+	goVer := goruntime.Version()
+	// the version printer uses an empty string for Go Version during unit tests
+	// to accommodate rigid tests like ExamplePrintVersion and ExamplePrintUsage
+	if runtime.ApplicationVersion == "test" {
+		goVer = ""
+	}
+
 	return fmt.Sprintf("Trickster version: %s, buildInfo: %s %s, goVersion: %s, copyright: © 2018 The Trickster Authors",
 		runtime.ApplicationVersion,
 		applicationBuildTime, applicationGitCommitID,
-		applicationGoVersion,
+		goVer,
 	)
 }
 
