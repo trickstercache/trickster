@@ -60,7 +60,7 @@ func (ek *IntKube) RequiredParameters() map[string][]string {
 	}
 }
 
-// IntKube queryies MAY include these parameters.
+// IntKube queries MAY include these parameters.
 func (ek *IntKube) SupportedParameters() map[string][]string {
 	return map[string][]string{
 		"resource_type": {"service"},

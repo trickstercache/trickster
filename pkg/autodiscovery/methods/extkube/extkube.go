@@ -70,7 +70,7 @@ func (ek *ExtKube) RequiredParameters() map[string][]string {
 	}
 }
 
-// ExtKube queryies MAY include these parameters.
+// ExtKube queries MAY include these parameters.
 func (ek *ExtKube) SupportedParameters() map[string][]string {
 	return map[string][]string{
 		"resource_type": {"service"},
@@ -182,7 +182,7 @@ func (ek *ExtKube) Query(opts *queries.Options) ([]queries.QueryResults, error) 
 		if ingresses, err := ek.net.Ingresses("").List(context.TODO(), metav1.ListOptions{}); err != nil {
 			return nil, err
 		} else {
-			// Iterate through each ingress retreived from the API
+			// Iterate through each ingress retrieved from the API
 			for _, ingress := range ingresses.Items {
 				// Iterate through ingress rules
 				for _, rule := range ingress.Spec.Rules {
