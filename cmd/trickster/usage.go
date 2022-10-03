@@ -18,6 +18,7 @@ package main
 
 import (
 	"fmt"
+	goruntime "runtime"
 
 	"github.com/trickstercache/trickster/v2/pkg/runtime"
 )
@@ -72,7 +73,7 @@ func version() string {
 	return fmt.Sprintf("Trickster version: %s, buildInfo: %s %s, goVersion: %s, copyright: © 2018 The Trickster Authors",
 		runtime.ApplicationVersion,
 		applicationBuildTime, applicationGitCommitID,
-		runtime.GoVersion,
+		goruntime.Version(),
 	)
 }
 

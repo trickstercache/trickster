@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"time"
@@ -50,7 +51,7 @@ var hc healthcheck.HealthChecker
 func runConfig(oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Logger,
 	oldCaches map[string]cache.Cache, args []string, errorFunc func()) error {
 
-	metrics.BuildInfo.WithLabelValues(runtime.GoVersion,
+	metrics.BuildInfo.WithLabelValues(goruntime.Version(),
 		applicationGitCommitID, applicationVersion).Set(1)
 
 	cfgLock.Lock()
@@ -263,7 +264,7 @@ func initLogger(c *config.Config) *tl.Logger {
 		tl.Pairs{
 			"name":       runtime.ApplicationName,
 			"version":    runtime.ApplicationVersion,
-			"goVersion":  runtime.GoVersion,
+			"goVersion":  goruntime.Version(),
 			"goHostArch": applicationGoHostArch,
 			"commitID":   applicationGitCommitID,
 			"buildTime":  applicationBuildTime,

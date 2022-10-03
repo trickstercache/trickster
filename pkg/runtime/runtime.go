@@ -25,9 +25,6 @@ var ApplicationName string
 // ApplicationVersion holds the version of the Application
 var ApplicationVersion string
 
-// GoVersion is the version of Go that Trickster is running on, acquired from the golang runtime library.
-var GoVersion string
-
 // Server is the name, hostname or ip of the server as advertised in HTTP Headers
 // By default uses the hostname reported by the kernel
 var Server, _ = os.Hostname()

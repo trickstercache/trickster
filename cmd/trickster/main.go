@@ -19,7 +19,6 @@ package main
 
 import (
 	"os"
-	goruntime "runtime"
 	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/runtime"
@@ -43,7 +42,6 @@ var exitFunc func() = exitFatal
 func main() {
 	runtime.ApplicationName = applicationName
 	runtime.ApplicationVersion = applicationVersion
-	runtime.GoVersion = goruntime.Version()
 	runConfig(nil, wg, nil, nil, os.Args[1:], exitFunc)
 	wg.Wait()
 }
