@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"time"
@@ -37,7 +38,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registration"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
-	th "github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 	"github.com/trickstercache/trickster/v2/pkg/runtime"
 
@@ -50,7 +50,7 @@ var hc healthcheck.HealthChecker
 func runConfig(oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Logger,
 	oldCaches map[string]cache.Cache, args []string, errorFunc func()) error {
 
-	metrics.BuildInfo.WithLabelValues(applicationGoVersion,
+	metrics.BuildInfo.WithLabelValues(goruntime.Version(),
 		applicationGitCommitID, applicationVersion).Set(1)
 
 	cfgLock.Lock()
@@ -130,7 +130,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 	router := mux.NewRouter()
 	mr := http.NewServeMux()
 
-	router.HandleFunc(conf.Main.PingHandlerPath, th.PingHandleFunc(conf)).Methods(http.MethodGet)
+	router.HandleFunc(conf.Main.PingHandlerPath, handlers.PingHandleFunc(conf)).Methods(http.MethodGet)
 
 	var caches = applyCachingConfig(conf, oldConf, logger, oldCaches)
 	rh := handlers.ReloadHandleFunc(runConfig, conf, wg, logger, caches, args)
@@ -263,8 +263,9 @@ func initLogger(c *config.Config) *tl.Logger {
 		tl.Pairs{
 			"name":      runtime.ApplicationName,
 			"version":   runtime.ApplicationVersion,
-			"goVersion": applicationGoVersion,
-			"goArch":    applicationGoArch,
+			"goVersion": goruntime.Version(),
+			"goArch":    goruntime.GOARCH,
+			"goOS":      goruntime.GOOS,
 			"commitID":  applicationGitCommitID,
 			"buildTime": applicationBuildTime,
 			"logLevel":  c.Logging.LogLevel,
