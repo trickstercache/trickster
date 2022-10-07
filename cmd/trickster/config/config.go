@@ -276,7 +276,7 @@ func (c *Config) Clone() *Config {
 	nc.Main.PingHandlerPath = c.Main.PingHandlerPath
 	nc.Main.ReloadHandlerPath = c.Main.ReloadHandlerPath
 	nc.Main.HealthHandlerPath = c.Main.HealthHandlerPath
-	nc.Main.PurgeHandlerPath = c.Main.PurgeHandlerPath
+	nc.Main.PurgeKeyHandlerPath = c.Main.PurgeKeyHandlerPath
 	nc.Main.PprofServer = c.Main.PprofServer
 	nc.Main.ServerName = c.Main.ServerName
 
