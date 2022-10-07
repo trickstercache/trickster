@@ -131,7 +131,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 	mr := http.NewServeMux()
 
 	router.HandleFunc(conf.Main.PingHandlerPath, handlers.PingHandleFunc(conf)).Methods(http.MethodGet)
-
+	// Add cache purge here!!!
 	var caches = applyCachingConfig(conf, oldConf, logger, oldCaches)
 	rh := handlers.ReloadHandleFunc(runConfig, conf, wg, logger, caches, args)
 
@@ -141,6 +141,8 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 			logger, errorFunc)
 		return err
 	}
+
+	router.HandleFunc(conf.Main.PurgeKeyHandlerPath, handlers.PurgeKeyHandleFunc(conf, &o)).Methods(http.MethodDelete)
 
 	if hc != nil {
 		hc.Shutdown()
