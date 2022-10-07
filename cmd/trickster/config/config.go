@@ -228,9 +228,7 @@ func (c *Config) setDefaults(metadata yamlx.KeyLookup) error {
 	if lw, err = cache.Lookup(c.Caches).SetDefaults(metadata, c.activeCaches); err != nil {
 		return err
 	}
-	for _, v := range lw {
-		c.LoaderWarnings = append(c.LoaderWarnings, v)
-	}
+	c.LoaderWarnings = append(c.LoaderWarnings, lw...)
 
 	// This ensures that in places where backend options reference other named config sections
 	// (like caches, rules, negative caches, tracing, etc) referenced by names, the names
