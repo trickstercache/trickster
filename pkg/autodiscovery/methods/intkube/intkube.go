@@ -1,11 +1,8 @@
 package intkube
 
 import (
-	"context"
 	"fmt"
-	"strings"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	v1net "k8s.io/client-go/kubernetes/typed/networking/v1"
@@ -78,10 +75,10 @@ func (ek *IntKube) SupportedResults() []string {
 }
 
 // Run a single query.
-func (ek *IntKube) Query(opts *queries.Options) ([]queries.QueryResults, error) {
+func (ik *IntKube) Query(opts *queries.Options) ([]queries.QueryResults, error) {
 	// Initialize kubernetes
-	if !ek.IsInitialized() {
-		ek.Init()
+	if !ik.IsInitialized() {
+		ik.Init()
 	}
 
 	params := opts.Parameters
@@ -89,7 +86,7 @@ func (ek *IntKube) Query(opts *queries.Options) ([]queries.QueryResults, error) 
 	// ex. external_address -> ORIGIN_URL
 	resultsMap := opts.Results
 
-	if !methods.ParametersSupported(ek, params) {
+	if !methods.ParametersSupported(ik, params) {
 		return nil, fmt.Errorf("Query is missing required parameter")
 	}
 
@@ -97,67 +94,19 @@ func (ek *IntKube) Query(opts *queries.Options) ([]queries.QueryResults, error) 
 	// This section, generally, queries a set of non-networking resources in Kubernetes and adds their
 	// relevant result values to output. The next section handles networking dealies.
 	output := make([]queries.QueryResults, 0)
+	var err error
 	// QUERY RESOURCETYPE SERVICE
 	if params["resource_type"] == "service" {
-		if services, err := ek.core.Services("").List(context.TODO(), metav1.ListOptions{}); err != nil {
+		output, err = ik.queryServices(params)
+		if err != nil {
 			return nil, err
-		} else {
-			for _, service := range services.Items {
-				res := make(queries.QueryResults)
-				queryMatched := true
-				// Resource Name
-				if resourceName, ok := params["resource_name"]; ok && resourceName != service.Name {
-					queryMatched = false
-				}
-				if annotations, ok := params["annotations"]; ok {
-					rA := service.Annotations
-					// Run through annotations key:value,key:value
-					alist := strings.Split(annotations, ",")
-					for _, a := range alist {
-						kv := strings.Split(a, ":")
-						if rV, hasK := rA[kv[0]]; hasK && rV != kv[1] {
-							queryMatched = false
-						}
-					}
-				}
-				// Append this result to output if the query is matched.
-				if queryMatched {
-					res["resource_name"] = service.Name
-					res["cluster_ip"] = service.Spec.ClusterIP
-					output = append(output, res)
-				}
-			}
 		}
 	}
 	// QUERY RESOURCETYPE POD
 	if params["resource_type"] == "pod" {
-		if pods, err := ek.core.Pods("").List(context.TODO(), metav1.ListOptions{}); err != nil {
+		output, err = ik.queryPods(params)
+		if err != nil {
 			return nil, err
-		} else {
-			for _, pod := range pods.Items {
-				res := make(queries.QueryResults)
-				queryMatched := true
-				// Resource Name
-				if resourceName, ok := params["resource_name"]; ok && resourceName != pod.Name {
-					queryMatched = false
-				}
-				if annotations, ok := params["annotations"]; ok {
-					rA := pod.Annotations
-					// Run through annotations key:value,key:value
-					alist := strings.Split(annotations, ",")
-					for _, a := range alist {
-						kv := strings.Split(a, ":")
-						if rV, hasK := rA[kv[0]]; hasK && rV != kv[1] {
-							queryMatched = false
-						}
-					}
-				}
-				// Append this result to output if the query is matched.
-				if queryMatched {
-					res["resource_name"] = pod.Name
-					output = append(output, res)
-				}
-			}
 		}
 	}
 

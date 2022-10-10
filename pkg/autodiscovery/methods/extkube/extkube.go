@@ -1,13 +1,10 @@
 package extkube
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"path/filepath"
-	"strings"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	v1net "k8s.io/client-go/kubernetes/typed/networking/v1"
@@ -65,7 +62,7 @@ func (ek *ExtKube) IsInitialized() bool {
 // ExtKube queries MUST include a resource type and method of access.
 func (ek *ExtKube) RequiredParameters() map[string][]string {
 	return map[string][]string{
-		"resource_type": {"service"},
+		"resource_type": {"service", "pod"},
 		"access_by":     {"ingress"},
 	}
 }
@@ -106,68 +103,22 @@ func (ek *ExtKube) Query(opts *queries.Options) ([]queries.QueryResults, error) 
 	// ===== Query Resources =====
 	// This section, generally, queries a set of non-networking resources in Kubernetes and adds their
 	// relevant result values to output. The next section handles networking dealies.
+	// You can only query one resource_type.
 	output := make([]queries.QueryResults, 0)
+	var err error
 	// QUERY RESOURCETYPE SERVICE
 	if params["resource_type"] == "service" {
-		if services, err := ek.core.Services("").List(context.TODO(), metav1.ListOptions{}); err != nil {
-			return nil, err
-		} else {
-			for _, service := range services.Items {
-				res := make(queries.QueryResults)
-				queryMatched := true
-				// Resource Name
-				if resourceName, ok := params["resource_name"]; ok && resourceName != service.Name {
-					queryMatched = false
-				}
-				if annotations, ok := params["annotations"]; ok {
-					rA := service.Annotations
-					// Run through annotations key:value,key:value
-					alist := strings.Split(annotations, ",")
-					for _, a := range alist {
-						kv := strings.Split(a, ":")
-						if rV, hasK := rA[kv[0]]; hasK && rV != kv[1] {
-							queryMatched = false
-						}
-					}
-				}
-				// Append this result to output if the query is matched.
-				if queryMatched {
-					res["resource_name"] = service.Name
-					output = append(output, res)
-				}
-			}
-		}
+		output, err = ek.queryServices(params)
 	}
-	// QUERY RESOURCETYPE POD
-	if params["resource_type"] == "pod" {
-		if pods, err := ek.core.Pods("").List(context.TODO(), metav1.ListOptions{}); err != nil {
-			return nil, err
-		} else {
-			for _, pod := range pods.Items {
-				res := make(queries.QueryResults)
-				queryMatched := true
-				// Resource Name
-				if resourceName, ok := params["resource_name"]; ok && resourceName != pod.Name {
-					queryMatched = false
-				}
-				if annotations, ok := params["annotations"]; ok {
-					rA := pod.Annotations
-					// Run through annotations key:value,key:value
-					alist := strings.Split(annotations, ",")
-					for _, a := range alist {
-						kv := strings.Split(a, ":")
-						if rV, hasK := rA[kv[0]]; hasK && rV != kv[1] {
-							queryMatched = false
-						}
-					}
-				}
-				// Append this result to output if the query is matched.
-				if queryMatched {
-					res["resource_name"] = pod.Name
-					output = append(output, res)
-				}
-			}
+	/*
+		// QUERY RESOURCETYPE POD
+		if params["resource_type"] == "pod" {
+			output, err = ek.queryPods(params)
 		}
+	*/
+
+	if err != nil {
+		return nil, err
 	}
 
 	// ===== Query Networking =====
@@ -179,23 +130,9 @@ func (ek *ExtKube) Query(opts *queries.Options) ([]queries.QueryResults, error) 
 		if params["resource_type"] != "service" {
 			return nil, fmt.Errorf("kubernetes_external queries with access_by:ingress must use resource_type:service")
 		}
-		if ingresses, err := ek.net.Ingresses("").List(context.TODO(), metav1.ListOptions{}); err != nil {
+		externalPaths, err = ek.queryIngressPathsByService(params)
+		if err != nil {
 			return nil, err
-		} else {
-			// Iterate through each ingress retreived from the API
-			for _, ingress := range ingresses.Items {
-				// Iterate through ingress rules
-				for _, rule := range ingress.Spec.Rules {
-					// Each rule has its own host (ex. localhost, google.com)
-					host := rule.Host
-					// Iterate through the paths for each rule
-					for _, conn := range rule.HTTP.Paths {
-						path := conn.Path
-						service := conn.Backend.Service.Name
-						externalPaths[service] = host + path
-					}
-				}
-			}
 		}
 	}
 	// Iterate through exiting output, and add the external address (and any other networking values)
