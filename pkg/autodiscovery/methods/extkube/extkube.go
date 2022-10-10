@@ -67,7 +67,7 @@ func (ek *ExtKube) RequiredParameters() map[string][]string {
 	}
 }
 
-// ExtKube queryies MAY include these parameters.
+// ExtKube queries MAY include these parameters.
 func (ek *ExtKube) SupportedParameters() map[string][]string {
 	return map[string][]string{
 		"resource_type": {"service"},

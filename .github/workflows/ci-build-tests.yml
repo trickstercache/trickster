@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: [1.17.x]
+        go: [1.19.x]
 
     steps:
       

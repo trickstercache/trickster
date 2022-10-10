@@ -21,6 +21,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
         #
+      - name: install golang
+        uses: actions/setup-go@v2
+        with:
+          go-version: '1.19'
+        #
       - name: Build project
         run: |
           TAGVER=${{ steps.baretag.outputs.baretag }} make release

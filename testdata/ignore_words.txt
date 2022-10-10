@@ -2,3 +2,4 @@ te
 uint
 flate
 ro
+hask

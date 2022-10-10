@@ -252,3 +252,5 @@ influxdata's
 entrypoint
 sharding
 sharded
+1.19
+kubeconfig
