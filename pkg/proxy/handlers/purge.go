@@ -18,7 +18,7 @@ func PurgeKeyHandleFunc(conf *config.Config, from *backends.Backends) func(http.
 		if fromBackend == nil {
 			w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 			w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
-			w.WriteHeader(http.StatusNotFound)
+			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("Backend " + purgeFrom + " doesn't exist."))
 			return
 		}
@@ -26,7 +26,7 @@ func PurgeKeyHandleFunc(conf *config.Config, from *backends.Backends) func(http.
 		if fromCache == nil {
 			w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 			w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
-			w.WriteHeader(http.StatusNotFound)
+			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("Backend " + purgeFrom + " doesn't have a cache."))
 			return
 		}
