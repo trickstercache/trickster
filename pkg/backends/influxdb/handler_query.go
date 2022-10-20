@@ -95,11 +95,14 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	trq.Step = -1
 	var hasTimeQueryParts bool
 	statements := make([]string, 0, len(q.Statements))
+	var canObjectCache bool
 	var cacheError error
 	for _, v := range q.Statements {
 		sel, ok := v.(*influxql.SelectStatement)
 		if !ok || sel.Condition == nil {
 			cacheError = errors.ErrNotTimeRangeQuery
+		} else {
+			canObjectCache = true
 		}
 		step, err := sel.GroupByInterval()
 		if err != nil {
@@ -159,6 +162,6 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		return trq, rlo, true, cacheError
 	}
 
-	return trq, rlo, false, nil
+	return trq, rlo, canObjectCache, nil
 
 }
