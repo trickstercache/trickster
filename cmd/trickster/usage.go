@@ -18,6 +18,7 @@ package main
 
 import (
 	"fmt"
+	goruntime "runtime"
 
 	"github.com/trickstercache/trickster/v2/pkg/runtime"
 )
@@ -69,10 +70,23 @@ https://github.com/trickstercache/trickster
 `
 
 func version() string {
-	return fmt.Sprintf("Trickster version: %s, buildInfo: %s %s, goVersion: %s, copyright: © 2018 The Trickster Authors",
+
+	goVer := goruntime.Version()
+	arch := goruntime.GOARCH
+	os := goruntime.GOOS
+	// use an empty string for goVer, arch, and os during unit tests
+	// to accommodate rigid tests like ExamplePrintVersion and ExamplePrintUsage
+	if runtime.ApplicationVersion == "test" {
+		goVer = ""
+		arch = ""
+		os = ""
+	}
+
+	return fmt.Sprintf("Trickster version: %s (%s/%s), buildInfo: %s %s, goVersion: %s, copyright: © 2018 The Trickster Authors",
 		runtime.ApplicationVersion,
+		os, arch,
 		applicationBuildTime, applicationGitCommitID,
-		applicationGoVersion,
+		goVer,
 	)
 }
 
