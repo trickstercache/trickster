@@ -90,7 +90,8 @@ type MainConfig struct {
 	// HealthHandlerPath provides the base Health Check Handler path
 	HealthHandlerPath string `yaml:"health_handler_path,omitempty"`
 	// PurgeKeyHandlerPath provides the base Cache Purge Key Handler path
-	PurgeKeyHandlerPath string `yaml:"purge_handler_path,omitempty"`
+	PurgeKeyHandlerPath  string `yaml:"purge_key_handler_path,omitempty"`
+	PurgePathHandlerPath string `yaml:"purge_path_handler_path,omitempty"`
 	// PprofServer provides the name of the http listener that will host the pprof debugging routes
 	// Options are: "metrics", "reload", "both", or "off"; default is both
 	PprofServer string `yaml:"pprof_server,omitempty"`
@@ -128,13 +129,14 @@ func NewConfig() *Config {
 		},
 		Logging: lo.New(),
 		Main: &MainConfig{
-			ConfigHandlerPath:   DefaultConfigHandlerPath,
-			PingHandlerPath:     DefaultPingHandlerPath,
-			ReloadHandlerPath:   reload.DefaultReloadHandlerPath,
-			HealthHandlerPath:   DefaultHealthHandlerPath,
-			PurgeKeyHandlerPath: DefaultPurgeKeyHandlerPath,
-			PprofServer:         DefaultPprofServerName,
-			ServerName:          hn,
+			ConfigHandlerPath:    DefaultConfigHandlerPath,
+			PingHandlerPath:      DefaultPingHandlerPath,
+			ReloadHandlerPath:    reload.DefaultReloadHandlerPath,
+			HealthHandlerPath:    DefaultHealthHandlerPath,
+			PurgeKeyHandlerPath:  DefaultPurgeKeyHandlerPath,
+			PurgePathHandlerPath: DefaultPurgePathHandlerPath,
+			PprofServer:          DefaultPprofServerName,
+			ServerName:           hn,
 		},
 		Metrics: mo.New(),
 		Backends: map[string]*bo.Options{
@@ -275,6 +277,7 @@ func (c *Config) Clone() *Config {
 	nc.Main.ReloadHandlerPath = c.Main.ReloadHandlerPath
 	nc.Main.HealthHandlerPath = c.Main.HealthHandlerPath
 	nc.Main.PurgeKeyHandlerPath = c.Main.PurgeKeyHandlerPath
+	nc.Main.PurgePathHandlerPath = c.Main.PurgePathHandlerPath
 	nc.Main.PprofServer = c.Main.PprofServer
 	nc.Main.ServerName = c.Main.ServerName
 

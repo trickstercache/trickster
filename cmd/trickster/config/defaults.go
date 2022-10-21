@@ -26,7 +26,8 @@ const (
 	// DefaultPurgeKeyHandlerPath defines the default path for the Cache Purge (by Key) Handler
 	DefaultPurgeKeyHandlerPath = "/trickster/purge/key/{backend}/{key}"
 	// DefaultPurgePathHandlerPath defines the default path for the Cache Purge (by Path) Handler
-	// TODO
+	// Requires ?backend={backend}&path={path}
+	DefaultPurgePathHandlerPath = "/trickster/purge/path"
 	// DefaultPprofServerName defines the default Pprof Server Name
 	DefaultPprofServerName = "both"
 )

@@ -22,9 +22,11 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	ttls "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
@@ -35,7 +37,7 @@ var lg = listener.NewListenerGroup()
 
 func applyListenerConfigs(conf, oldConf *config.Config,
 	router, reloadHandler http.Handler, metricsRouter *http.ServeMux, log *tl.Logger,
-	tracers tracing.Tracers) {
+	tracers tracing.Tracers, o backends.Backends) {
 
 	var err error
 	var tlsConfig *tls.Config
@@ -46,6 +48,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 
 	adminRouter := http.NewServeMux()
 	adminRouter.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
+	adminRouter.HandleFunc(conf.Main.PurgePathHandlerPath, handlers.PurgePathHandlerFunc(conf, &o))
 
 	// No changes in frontend config
 	if oldConf != nil && oldConf.Frontend != nil &&
@@ -158,6 +161,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		lg.DrainAndClose("reloadListener", time.Millisecond*500)
 		rr.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
 		rr.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
+		rr.HandleFunc(conf.Main.PurgePathHandlerPath, handlers.PurgePathHandlerFunc(conf, &o))
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "reload" {
 			routing.RegisterPprofRoutes("reload", rr, log)
 		}
@@ -167,6 +171,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	} else {
 		rr.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
 		rr.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
+		rr.HandleFunc(conf.Main.PurgePathHandlerPath, handlers.PurgePathHandlerFunc(conf, &o))
 		lg.UpdateRouter("reloadListener", rr)
 	}
 }
