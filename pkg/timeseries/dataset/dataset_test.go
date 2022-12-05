@@ -377,17 +377,17 @@ func genBenchmarkDataset(pointct int) *DataSet {
 	if pointct > 1000 {
 		pointct = 1000
 	}
-	ser := &Series{
+	bmSeries := &Series{
 		Points: make(Points, pointct),
 	}
 	for i := 0; i < pointct; i++ {
 		back := pointct - i
 		t := epoch.Epoch(time.Now().Unix() - int64(back))
-		ser.Points[i] = genBenchmarkPoint(t, 4)
+		bmSeries.Points[i] = genBenchmarkPoint(t, 4)
 	}
 	res := &Result{
 		StatementID: 0,
-		SeriesList:  []*Series{ser},
+		SeriesList:  []*Series{bmSeries},
 	}
 	return &DataSet{
 		Results: []*Result{res},
