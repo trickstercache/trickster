@@ -42,14 +42,14 @@ func (c *Config) loadEnvVars() {
 
 	// Proxy Port
 	if x := os.Getenv(evProxyPort); x != "" {
-		if y, err := strconv.ParseInt(x, 10, 64); err == nil {
+		if y, err := strconv.ParseInt(x, 10, 32); err == nil {
 			c.Frontend.ListenPort = int(y)
 		}
 	}
 
 	// Metrics Port
 	if x := os.Getenv(evMetricsPort); x != "" {
-		if y, err := strconv.ParseInt(x, 10, 64); err == nil {
+		if y, err := strconv.ParseInt(x, 10, 32); err == nil {
 			c.Metrics.ListenPort = int(y)
 		}
 	}
