@@ -2,6 +2,7 @@
 package options
 
 import (
+	client_pool "github.com/trickstercache/trickster/v2/pkg/autodiscovery/client/pool"
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/queries"
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/templates"
 )
@@ -9,6 +10,7 @@ import (
 // struct Options represents the configuration options for a backend provider that is
 // using automatic service discovery.
 type Options struct {
+	Clients  *client_pool.ClientPool       `yaml:"clients,omitempty"`
 	Queries  map[string]*queries.Options   `yaml:"queries,omitempty"`
 	Backends map[string]*templates.Options `yaml:"templates,omitempty"`
 }

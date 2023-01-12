@@ -1,5 +1,7 @@
 package queries
 
+type QueryParams interface{}
+
 // QueryParameters map query parameters to their required values.
 // ex. query kubernetes for any service with name "test-service" that is accessed through an ingress
 type QueryParameters map[string]string

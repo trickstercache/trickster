@@ -3,7 +3,9 @@ package options
 import (
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/client/pool"
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/templates"
+	"gopkg.in/yaml.v3"
 )
 
 func TestOptions(t *testing.T) {
@@ -32,5 +34,25 @@ func TestOptions(t *testing.T) {
 
 	if b1 := o1.Backends["test_backend"].UseBackend; b1 == "test2" {
 		t.Errorf("Changing an options clone shouldn't change the original")
+	}
+}
+
+var testConf1 string = `clients:
+  client_etcd:
+    kind: etcd
+    endpoints:
+      - 127.0.0.1:8080
+      - localhost:8080
+`
+
+func TestYAML(t *testing.T) {
+	opts := &pool.ClientPool{}
+	err := yaml.Unmarshal([]byte(testConf1), &opts)
+	if err != nil {
+		t.Error(err)
+	}
+	_, ok := opts.Get("client_etcd")
+	if !ok {
+		t.Error("Expected client_etcd to be ok")
 	}
 }

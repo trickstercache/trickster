@@ -60,16 +60,17 @@ albDisc:
       queries:
         query_example:
           method: kubernetes_external
-          use_template: template_example
           parameters:
-            resource_type: service
-            resource_name: service-x
-            access_by: ingress
-          results:
+            resource:
+              type: service
+              name: service-x
+            access: ingress
+          template:
+            _ref: template_example
             external_address: ORIGIN_URL
       templates:
         template_example:
-          use_backend: prom1
+          backend: prom1
           override:
             origin_url: 'http://$[ORIGIN_URL]'
 
@@ -78,6 +79,36 @@ albDisc:
 prom1:
   is_template: true
   ...
+```
+
+Or for an etcd query,
+
+```yaml
+albDisc:
+  provider: alb
+  alb:
+    mechanism: tsm
+    autodiscovery:
+      clients:
+        client_etcd:
+          kind: etcd
+          endpoints:
+            - "127.0.0.1:3000"
+            - "localhost:3000"
+      queries:
+        query_etcd:
+          kind: etcd
+          client: client_etcd
+          keys:
+            - "key1"
+            - "key2"
+          request_timeout: 5
+      templates:
+        template_example:
+          backend: prom1
+          override:
+            origin_url: 'http://$[ORIGIN_URL]'
+
 ```
 
 ## Mechanisms Deep Dive
