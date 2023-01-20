@@ -10,7 +10,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/methods/mock"
 	adopt "github.com/trickstercache/trickster/v2/pkg/autodiscovery/options"
 	beopt "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	"github.com/trickstercache/trickster/v2/pkg/backends/templates"
 	betemps "github.com/trickstercache/trickster/v2/pkg/backends/templates"
 )
 
@@ -22,34 +21,35 @@ func init() {
 
 // Run autodiscovery with a set of options, returning backend options for matched queries
 func DiscoverWithOptions(opts *adopt.Options) ([]*beopt.Options, error) {
-	fmt.Printf("Running autodiscovery with\nQueries:%+v\nBackends:%+v\n", opts.Queries, opts.Backends)
+	fmt.Printf("Running autodiscovery with\nQueries:%+v\nTemplates:%+v\n", opts.Queries, opts.Templates)
+	clients := opts.Clients
 	queries := opts.Queries
-	backends := opts.Backends
+	templates := opts.Templates
 	out := make([]*beopt.Options, 0)
 	// Range over all autodiscovery queries
-	for _, queryOpts := range queries {
+	for queryName, query := range queries {
 		// If there's no backend attached to this query, there's not much point in running it.
-		backend, hasBackend := backends[queryOpts.UseTemplate]
-		if !hasBackend {
+		template, hasTemplate := templates[query.Template]
+		if !hasTemplate {
 			continue
 		}
 		// Get the method for this query.
-		method, err := methods.GetMethod(queryOpts.Method)
-		if err != nil {
-			return nil, err
+		client, ok := clients.Get(query.Client)
+		if !ok {
+			return nil, fmt.Errorf("failed to get client %s from pool for query %s", query.Client, queryName)
 		}
 		// Run the query and store the results
-		results, err := method.Query(queryOpts)
+		results, err := client.Execute(query)
 		if err != nil {
 			return nil, err
 		}
 		// Get and resolve the query template for each result
-		template, err := betemps.GetTemplateBackend(backend.UseBackend)
+		backend, err := betemps.GetTemplateBackend(template.UseBackend)
 		if err != nil {
 			return nil, err
 		}
 		for _, result := range results {
-			newBackend, err := templates.ResolveTemplateBackend(template, backend.Override, result)
+			newBackend, err := betemps.ResolveTemplateBackend(backend, template.Override, result)
 			if err != nil {
 				return nil, err
 			}

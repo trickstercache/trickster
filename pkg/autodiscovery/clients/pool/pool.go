@@ -1,14 +1,14 @@
 package pool
 
 import (
-	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/client"
-	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/client/builder"
+	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/clients"
+	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/clients/builder"
 	"gopkg.in/yaml.v3"
 )
 
 type ClientPool struct {
 	Builders map[string]*builder.ClientBuilder `yaml:"clients"`
-	clients  map[string]client.Client          `yaml:"-"`
+	clients  map[string]clients.Client         `yaml:"-"`
 }
 
 // Unmarshal a ClientPool from a yaml.Node.
@@ -21,7 +21,7 @@ func (pool *ClientPool) UnmarshalYAML(value *yaml.Node) (err error) {
 	if err != nil {
 		return err
 	}
-	pool.clients = make(map[string]client.Client)
+	pool.clients = make(map[string]clients.Client)
 	for name, builder := range pool.Builders {
 		pool.clients[name], err = builder.Build()
 		if err != nil {
@@ -31,7 +31,7 @@ func (pool *ClientPool) UnmarshalYAML(value *yaml.Node) (err error) {
 	return nil
 }
 
-func (pool *ClientPool) Get(clientName string) (c client.Client, ok bool) {
+func (pool *ClientPool) Get(clientName string) (c clients.Client, ok bool) {
 	c, ok = pool.clients[clientName]
 	return
 }

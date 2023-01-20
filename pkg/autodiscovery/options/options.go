@@ -2,7 +2,7 @@
 package options
 
 import (
-	client_pool "github.com/trickstercache/trickster/v2/pkg/autodiscovery/client/pool"
+	client_pool "github.com/trickstercache/trickster/v2/pkg/autodiscovery/clients/pool"
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/queries"
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/templates"
 )
@@ -10,31 +10,27 @@ import (
 // struct Options represents the configuration options for a backend provider that is
 // using automatic service discovery.
 type Options struct {
-	Clients  *client_pool.ClientPool       `yaml:"clients,omitempty"`
-	Queries  map[string]*queries.Options   `yaml:"queries,omitempty"`
-	Backends map[string]*templates.Options `yaml:"templates,omitempty"`
+	Clients   *client_pool.ClientPool       `yaml:"clients,omitempty"`
+	Queries   map[string]*queries.Query     `yaml:"queries,omitempty"`
+	Templates map[string]*templates.Options `yaml:"templates,omitempty"`
 }
 
 // Return an empty Options
 func New() *Options {
 	return &Options{
-		Queries:  make(map[string]*queries.Options),
-		Backends: make(map[string]*templates.Options),
+		Queries:   make(map[string]*queries.Query),
+		Templates: make(map[string]*templates.Options),
 	}
 }
 
-// Returns a perfect deep copy of the calling Options
-func (opt *Options) Clone() *Options {
-	queriesOut := make(map[string]*queries.Options)
-	for k, v := range opt.Queries {
-		queriesOut[k] = v.Clone()
+func (opts *Options) Clone() *Options {
+	out := New()
+	out.Clients = nil
+	for k, v := range opts.Queries {
+		out.Queries[k] = v.Clone()
 	}
-	backendsOut := make(map[string]*templates.Options)
-	for k, v := range opt.Backends {
-		backendsOut[k] = v.Clone()
+	for k, v := range opts.Templates {
+		out.Templates[k] = v.Clone()
 	}
-	return &Options{
-		Queries:  queriesOut,
-		Backends: backendsOut,
-	}
+	return out
 }

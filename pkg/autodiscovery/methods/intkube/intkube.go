@@ -21,7 +21,7 @@ type IntKube struct {
 
 // kubernetes_external
 func (ek *IntKube) Name() string {
-	return "kubernetes_external"
+	return "kubernetes_internal"
 }
 
 // Initialize IntKube.

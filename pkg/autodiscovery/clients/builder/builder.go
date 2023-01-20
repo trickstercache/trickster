@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/client"
-	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/client/etcd"
+	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/clients"
+	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/clients/etcd"
 	"gopkg.in/yaml.v3"
 )
 
@@ -15,7 +15,7 @@ const (
 
 type ClientBuilder struct {
 	yaml.Unmarshaler
-	Kind  client.Kind `yaml:"kind"`
+	Kind  clients.Kind `yaml:"kind"`
 	Value *yaml.Node
 }
 
@@ -30,12 +30,12 @@ func (builder *ClientBuilder) UnmarshalYAML(value *yaml.Node) (err error) {
 	if !ok {
 		return errors.New("unmarshalling into ClientBuilder requires *string* keyKind 'kind'")
 	}
-	builder.Kind = client.Kind(kindString)
+	builder.Kind = clients.Kind(kindString)
 	builder.Value = value
 	return nil
 }
 
-func (builder *ClientBuilder) Build() (c client.Client, err error) {
+func (builder *ClientBuilder) Build() (c clients.Client, err error) {
 	switch builder.Kind {
 	case etcd.Kind:
 		c = &etcd.Client{}

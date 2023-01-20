@@ -97,17 +97,16 @@ albDisc:
             - "localhost:3000"
       queries:
         query_etcd:
-          kind: etcd
+          kind: key
           client: client_etcd
-          keys:
-            - "key1"
-            - "key2"
+          template: template_example
+          keys: ["key1"]
           request_timeout: 5
       templates:
         template_example:
-          backend: prom1
+          use_backend: prom1
           override:
-            origin_url: 'http://$[ORIGIN_URL]'
+            origin_url: 'http://$[key1]'
 
 ```
 
