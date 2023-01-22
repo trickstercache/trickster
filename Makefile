@@ -119,7 +119,7 @@ kube-local:
 
 .PHONY: docker
 docker:
-	docker build --build-arg IMAGE_ARCH=$(IMAGE_ARCH)  --build-arg GOARCH=$(GOARCH) -f ./deploy/Dockerfile -t trickster:$(PROGVER) .
+	docker build --build-arg IMAGE_ARCH=$(IMAGE_ARCH)  --build-arg GOARCH=$(GOARCH) -f ./Dockerfile -t trickster:$(PROGVER) .
 
 .PHONY: docker-release
 docker-release:
