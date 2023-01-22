@@ -1,5 +1,6 @@
 package intkube
 
+/*
 import (
 	"context"
 	"strings"
@@ -77,3 +78,4 @@ func (ik *IntKube) queryPods(params queries.QueryParameters) ([]queries.QueryRes
 	}
 	return output, nil
 }
+*/

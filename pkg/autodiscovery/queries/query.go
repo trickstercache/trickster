@@ -8,25 +8,12 @@ const (
 	KubeQuery = QueryKind("kube")
 )
 
-type Query struct {
-	Kind       QueryKind      `yaml:"kind"`
-	Client     string         `yaml:"client"`
-	Template   string         `yaml:"template"`
-	Parameters map[string]any `yaml:"parameters"`
+type Query interface {
+	Client() string
+	Template() string
 }
 
-func New() *Query {
-	return &Query{
-		Kind:     NilQuery,
-		Client:   "",
-		Template: "",
-	}
-}
-
-func (q *Query) Clone() *Query {
-	return &Query{
-		Kind:     q.Kind,
-		Client:   q.Client,
-		Template: q.Template,
-	}
+func Cast[Q Query](q Query) (casted Q, ok bool) {
+	casted, ok = q.(Q)
+	return
 }

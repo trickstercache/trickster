@@ -1,5 +1,7 @@
 package intkube
 
+/*
+
 import (
 	"fmt"
 
@@ -124,3 +126,5 @@ func (ik *IntKube) Query(opts *queries.Options) ([]queries.QueryResults, error) 
 
 	return templateValues, nil
 }
+
+*/

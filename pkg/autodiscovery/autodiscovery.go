@@ -4,20 +4,10 @@ package autodiscovery
 import (
 	"fmt"
 
-	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/methods"
-	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/methods/extkube"
-	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/methods/intkube"
-	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/methods/mock"
 	adopt "github.com/trickstercache/trickster/v2/pkg/autodiscovery/options"
 	beopt "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	betemps "github.com/trickstercache/trickster/v2/pkg/backends/templates"
 )
-
-func init() {
-	methods.Methods[methods.MOCK] = &mock.Mock{}
-	methods.Methods[methods.EXTKUBE] = &extkube.ExtKube{}
-	methods.Methods[methods.INTKUBE] = &intkube.IntKube{}
-}
 
 // Run autodiscovery with a set of options, returning backend options for matched queries
 func DiscoverWithOptions(opts *adopt.Options) ([]*beopt.Options, error) {
@@ -27,16 +17,16 @@ func DiscoverWithOptions(opts *adopt.Options) ([]*beopt.Options, error) {
 	templates := opts.Templates
 	out := make([]*beopt.Options, 0)
 	// Range over all autodiscovery queries
-	for queryName, query := range queries {
+	for queryName, query := range queries.All() {
 		// If there's no backend attached to this query, there's not much point in running it.
-		template, hasTemplate := templates[query.Template]
+		template, hasTemplate := templates[query.Template()]
 		if !hasTemplate {
 			continue
 		}
 		// Get the method for this query.
-		client, ok := clients.Get(query.Client)
+		client, ok := clients.Get(query.Client())
 		if !ok {
-			return nil, fmt.Errorf("failed to get client %s from pool for query %s", query.Client, queryName)
+			return nil, fmt.Errorf("failed to get client %s from pool for query %s", query.Client(), queryName)
 		}
 		// Run the query and store the results
 		results, err := client.Execute(query)

@@ -1,10 +1,6 @@
 package autodiscovery
 
-import (
-	"testing"
-
-	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/methods"
-)
+/*
 
 func TestRegisteredMethods(t *testing.T) {
 	// Run through a list of registered methods by name, check that:
@@ -28,6 +24,7 @@ func TestRegisteredMethods(t *testing.T) {
 	}
 }
 
+*/
 /*
 func TestAutodiscovery(t *testing.T) {
 	// Create a template backend to test with

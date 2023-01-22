@@ -56,9 +56,8 @@ func (client *Client) Disconnect() {
 }
 
 func (client *Client) Execute(q *queries.Query) (queries.Results, error) {
-	if q.Kind != queries.KubeQuery {
-		return nil, fmt.Errorf("%s client requires %s query", Kind, queries.KubeQuery)
-	}
+	//var kq any
 	out := make(queries.Results, 0)
+	fmt.Println(out)
 	return nil, nil
 }

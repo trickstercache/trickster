@@ -1,5 +1,7 @@
 package methods
 
+/*
+
 import (
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/queries"
 	"github.com/trickstercache/trickster/v2/pkg/util/strings"
@@ -80,3 +82,4 @@ func ResultSupported(m Method, q queries.QueryResults) bool {
 
 // QueryResults map each query name to a slice of valid results of a query.
 type QueryResult map[string][]string
+*/

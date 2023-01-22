@@ -1,5 +1,6 @@
 package etcd
 
+/*
 import (
 	"context"
 	"errors"
@@ -93,3 +94,4 @@ func (method *etcd) Query(opts *queries.Options) ([]queries.QueryResults, error)
 	}
 	return out, nil
 }
+*/

@@ -1,5 +1,6 @@
 package methods
 
+/*
 import (
 	"fmt"
 )
@@ -52,3 +53,4 @@ func GetMethod(name string) (Method, error) {
 		}
 	}
 }
+*/

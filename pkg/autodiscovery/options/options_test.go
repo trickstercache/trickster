@@ -14,7 +14,7 @@ func TestOptions(t *testing.T) {
 	if i := len(o1.Templates); i != 0 {
 		t.Errorf("New options should have Backends len 0, has len %d", i)
 	}
-	if i := len(o1.Queries); i != 0 {
+	if i := len(o1.Queries.All()); i != 0 {
 		t.Errorf("New options should have Queries len 0, has len %d", i)
 	}
 
@@ -38,7 +38,6 @@ func TestOptions(t *testing.T) {
 }
 
 var testConf1 string = `
-autodiscovery:
   clients:
     client_etcd:
       kind: etcd
@@ -47,28 +46,32 @@ autodiscovery:
         - localhost:8080
   queries:
     query_etcd:
-	  kind: etcd
-	  client: client_etcd
-	  template: template_test
-	  parameters:
-	    keys: [url, path]
+      kind: etcd
+      client: client_etcd
+      template: template_test
+      keys: [url, path]
   templates:
     template_test:
-	  use_backend: mock
-	  override:
-	    some_backend_key: 'https://$[url]$[path]'
+      use_backend: mock
+      override:
+        some_backend_key: 'https://$[url]$[path]'
     
 `
 
 func TestYAML(t *testing.T) {
-	opts := &Options{}
+	opts := New()
 	err := yaml.Unmarshal([]byte(testConf1), &opts)
 	if err != nil {
 		t.Error(err)
 	}
-	_, ok := opts.Clients.Get("client_etcd")
+	client, ok := opts.Clients.Get("client_etcd")
 	if !ok {
 		t.Error("Expected client_etcd to be ok")
 	}
-	fmt.Printf("%+v\n", opts)
+	query, ok := opts.Queries.Get("query_etcd")
+	if !ok {
+		t.Error("Expected query_etcd to be ok")
+	}
+	fmt.Printf("%+v\n", client)
+	fmt.Printf("+%v\n", query)
 }

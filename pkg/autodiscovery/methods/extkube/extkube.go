@@ -1,5 +1,6 @@
 package extkube
 
+/*
 import (
 	"flag"
 	"fmt"
@@ -110,12 +111,6 @@ func (ek *ExtKube) Query(opts *queries.Options) ([]queries.QueryResults, error) 
 	if params["resource_type"] == "service" {
 		output, err = ek.queryServices(params)
 	}
-	/*
-		// QUERY RESOURCETYPE POD
-		if params["resource_type"] == "pod" {
-			output, err = ek.queryPods(params)
-		}
-	*/
 
 	if err != nil {
 		return nil, err
@@ -154,3 +149,4 @@ func (ek *ExtKube) Query(opts *queries.Options) ([]queries.QueryResults, error) 
 
 	return templateValues, nil
 }
+*/

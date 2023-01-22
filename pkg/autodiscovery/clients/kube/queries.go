@@ -66,7 +66,7 @@ func (c *Client) aggregateResources(inNamespace string, kinds ...resourceKind) (
 				Kind:   ingressResource,
 				Name:   i.Name,
 				Labels: i.Labels,
-				Base: 
+				Base:   i,
 			}
 			out = append(out, rm)
 		}

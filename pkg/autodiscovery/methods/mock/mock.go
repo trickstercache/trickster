@@ -1,5 +1,6 @@
 package mock
 
+/*
 import (
 	"fmt"
 
@@ -72,3 +73,4 @@ func (m *Mock) Query(opts *queries.Options) ([]queries.QueryResults, error) {
 	return templateValues, nil
 
 }
+*/
