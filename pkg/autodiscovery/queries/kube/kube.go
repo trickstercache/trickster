@@ -1,5 +1,9 @@
 package kube
 
+const (
+	Provider = string("kube")
+)
+
 type Query struct {
 	UseTemplate       string              `yaml:"template"`
 	Namespace         string              `yaml:"namespace"`

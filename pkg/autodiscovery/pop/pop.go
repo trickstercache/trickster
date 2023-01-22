@@ -2,7 +2,6 @@ package pop
 
 import (
 	"fmt"
-	"reflect"
 
 	"gopkg.in/yaml.v3"
 )
@@ -54,8 +53,9 @@ func (pool *PolyObjectPool[O, B]) UnmarshalYAML(value *yaml.Node) error {
 		}
 		key, ok := k.(string)
 		if !ok {
-			return fmt.Errorf("object pool key %s must have string value, got %s", pool.key, reflect.TypeOf(k).String())
+			return fmt.Errorf("object pool key %s must have string value", pool.key)
 		}
+		fmt.Println(b)
 		pool.objs[name], err = b.Build(key, entry.Value)
 		if err != nil {
 			return err

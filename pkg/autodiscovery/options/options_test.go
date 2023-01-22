@@ -58,20 +58,89 @@ var testConf1 string = `
     
 `
 
+var testConf2 string = `
+clients:
+  client_kube_int:
+    provider: kube
+    in_cluster: true
+    queries: [query_kube_pod]
+  client_kube_ext:
+    provider: kube
+    config: /some/path
+    queries: [query_kube_service, query_kube_ingress]
+queries:
+  query_kube_pod:
+    provider: kube
+    namespace: default
+    resource_kinds: [pod]
+    resource_name: target_pod
+    has_label_with_value:
+      is_target: ["true"]
+    access_by: resource_ip
+  query_kube_service:
+    provider: kube
+    namespace: default
+    resource_kinds: [service]
+    has_label_with_value:
+      is_target: ["true"]
+    access_by: resource_ip
+  query_kube_ingress:
+    provider: kube
+    namespace: default
+    resource_kinds: [service, ingress]
+    has_label_with_value:
+      is_target: ["true"]
+    access_by: ingress
+templates:
+  template_kube:
+    use_backend: mock
+    override:
+      some_backend_key: "https://$[address]"
+`
+
 func TestYAML(t *testing.T) {
-	opts := New()
-	err := yaml.Unmarshal([]byte(testConf1), &opts)
-	if err != nil {
-		t.Error(err)
-	}
-	client, ok := opts.Clients.Get("client_etcd")
-	if !ok {
-		t.Error("Expected client_etcd to be ok")
-	}
-	query, ok := opts.Queries.Get("query_etcd")
-	if !ok {
-		t.Error("Expected query_etcd to be ok")
-	}
-	fmt.Printf("%+v\n", client)
-	fmt.Printf("+%v\n", query)
+	t.Run("etcd", func(t *testing.T) {
+		opts := New()
+		err := yaml.Unmarshal([]byte(testConf1), &opts)
+		if err != nil {
+			t.Error(err)
+		}
+		client, ok := opts.Clients.Get("client_etcd")
+		if !ok {
+			t.Error("Expected client_etcd to be ok")
+		}
+		query, ok := opts.Queries.Get("query_etcd")
+		if !ok {
+			t.Error("Expected query_etcd to be ok")
+		}
+		fmt.Printf("%+v\n", client)
+		fmt.Printf("+%v\n", query)
+	})
+	t.Run("kube", func(t *testing.T) {
+		opts := New()
+		err := yaml.Unmarshal([]byte(testConf2), &opts)
+		if err != nil {
+			t.Error(err)
+		}
+		_, ok := opts.Clients.Get("client_kube_int")
+		if !ok {
+			t.Error("Expected client_kube_int to be ok")
+		}
+		_, ok = opts.Clients.Get("client_kube_ext")
+		if !ok {
+			t.Error("Expected client_kube_ext to be ok")
+		}
+		_, ok = opts.Queries.Get("query_kube_pod")
+		if !ok {
+			t.Error("Expected query_kube_pod to be ok")
+		}
+		_, ok = opts.Queries.Get("query_kube_service")
+		if !ok {
+			t.Error("Expected query_kube_service to be ok")
+		}
+		_, ok = opts.Queries.Get("query_kube_ingress")
+		if !ok {
+			t.Error("Expected query_kube_ingress to be ok")
+		}
+	})
 }
