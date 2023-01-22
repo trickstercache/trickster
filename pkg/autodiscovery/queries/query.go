@@ -9,7 +9,6 @@ const (
 )
 
 type Query interface {
-	Client() string
 	Template() string
 }
 

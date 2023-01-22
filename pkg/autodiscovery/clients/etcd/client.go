@@ -14,8 +14,13 @@ const (
 )
 
 type Client struct {
-	Endpoints []string `yaml:"endpoints"`
-	client    *clientv3.Client
+	UseQueries []string `yaml:"queries"`
+	Endpoints  []string `yaml:"endpoints"`
+	client     *clientv3.Client
+}
+
+func (client *Client) Queries() []string {
+	return client.UseQueries
 }
 
 func (client *Client) Default() {
