@@ -41,7 +41,7 @@ const (
 
 var dts = []string{
 	"integer", "smallint", "tinyint", "mediumint", "bigint",
-	"decimal", "numberic",
+	"decimal", "numeric",
 	"float", "double",
 	"bit",
 	"date", "datetime", "timestamp", "time", "year",
