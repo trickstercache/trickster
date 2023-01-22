@@ -23,6 +23,7 @@ import (
 
 func TestMain(t *testing.T) {
 	exitFunc = nil
+	wg = nil
 	main()
 	// Successful test criteria is that the call to main returns without timing out on wg.Wait()
 }

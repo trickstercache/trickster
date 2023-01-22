@@ -42,7 +42,9 @@ func main() {
 	runtime.ApplicationName = applicationName
 	runtime.ApplicationVersion = applicationVersion
 	runConfig(nil, wg, nil, nil, os.Args[1:], exitFunc)
-	wg.Wait()
+	if wg != nil {
+		wg.Wait()
+	}
 }
 
 func exitFatal() {
