@@ -5,13 +5,8 @@ const (
 )
 
 type Query struct {
-	UseClient   string   `yaml:"client"`
 	UseTemplate string   `yaml:"template"`
 	Keys        []string `yaml:"keys"`
-}
-
-func (q *Query) Client() string {
-	return q.UseClient
 }
 
 func (q *Query) Template() string {

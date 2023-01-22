@@ -1,11 +1,15 @@
 package kube
 
-import "github.com/trickstercache/trickster/v2/pkg/autodiscovery/clients/kube"
-
 type Query struct {
-	ResourceKind      kube.ResourceKind   `yaml:"resource_kind"`
-	ResourceName      string              `yaml:"resource_name"`
-	HasLabel          []string            `yaml:"has_label"`
-	HasLabelWithValue map[string][]string `yaml:"has_label_with_value"`
-	AccessBy          kube.AccessKind     `yaml:"access_by"`
+	UseTemplate       string              `yaml:"template"`
+	Namespace         string              `yaml:"namespace"`
+	ResourceKinds     []string            `yaml:"resource_kinds,omitempty"`
+	ResourceName      string              `yaml:"resource_name,omitempty"`
+	HasLabel          []string            `yaml:"has_label,omitempty"`
+	HasLabelWithValue map[string][]string `yaml:"has_label_with_value,omitempty"`
+	AccessBy          string              `yaml:"access_by"`
+}
+
+func (q *Query) Template() string {
+	return q.UseTemplate
 }
