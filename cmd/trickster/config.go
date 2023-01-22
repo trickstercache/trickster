@@ -131,7 +131,6 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 	mr := http.NewServeMux()
 
 	router.HandleFunc(conf.Main.PingHandlerPath, handlers.PingHandleFunc(conf)).Methods(http.MethodGet)
-
 	var caches = applyCachingConfig(conf, oldConf, logger, oldCaches)
 	rh := handlers.ReloadHandleFunc(runConfig, conf, wg, logger, caches, args)
 
@@ -141,6 +140,8 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 			logger, errorFunc)
 		return err
 	}
+
+	router.HandleFunc(conf.Main.PurgeKeyHandlerPath, handlers.PurgeKeyHandleFunc(conf, o)).Methods(http.MethodDelete)
 
 	if hc != nil {
 		hc.Shutdown()
@@ -152,7 +153,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 	alb.StartALBPools(o, hc.Statuses())
 	routing.RegisterDefaultBackendRoutes(router, o, logger, tracers)
 	routing.RegisterHealthHandler(mr, conf.Main.HealthHandlerPath, hc)
-	applyListenerConfigs(conf, oldConf, router, http.HandlerFunc(rh), mr, logger, tracers)
+	applyListenerConfigs(conf, oldConf, router, http.HandlerFunc(rh), mr, logger, tracers, o)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
