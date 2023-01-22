@@ -27,7 +27,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
-	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	ttls "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
@@ -137,7 +136,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			conf.Metrics.ListenPort != oldConf.Metrics.ListenPort)) {
 		lg.DrainAndClose("metricsListener", 0)
 		metricsRouter.Handle("/metrics", metrics.Handler())
-		metricsRouter.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
+		metricsRouter.HandleFunc(conf.Main.ConfigHandlerPath, handlers.ConfigHandleFunc(conf))
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "metrics" {
 			routing.RegisterPprofRoutes("metrics", metricsRouter, log)
 		}
@@ -147,7 +146,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			conf.Frontend.ConnectionsLimit, nil, metricsRouter, wg, nil, exitFunc, 0, log)
 	} else {
 		metricsRouter.Handle("/metrics", metrics.Handler())
-		metricsRouter.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
+		metricsRouter.HandleFunc(conf.Main.ConfigHandlerPath, handlers.ConfigHandleFunc(conf))
 		lg.UpdateRouter("metricsListener", metricsRouter)
 	}
 
@@ -159,7 +158,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			conf.ReloadConfig.ListenPort != oldConf.ReloadConfig.ListenPort)) {
 		wg.Add(1)
 		lg.DrainAndClose("reloadListener", time.Millisecond*500)
-		rr.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
+		rr.HandleFunc(conf.Main.ConfigHandlerPath, handlers.ConfigHandleFunc(conf))
 		rr.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
 		rr.HandleFunc(conf.Main.PurgePathHandlerPath, handlers.PurgePathHandlerFunc(conf, &o))
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "reload" {
@@ -169,7 +168,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			conf.ReloadConfig.ListenAddress, conf.ReloadConfig.ListenPort,
 			conf.Frontend.ConnectionsLimit, nil, rr, wg, nil, exitFunc, 0, log)
 	} else {
-		rr.HandleFunc(conf.Main.ConfigHandlerPath, ph.ConfigHandleFunc(conf))
+		rr.HandleFunc(conf.Main.ConfigHandlerPath, handlers.ConfigHandleFunc(conf))
 		rr.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
 		rr.HandleFunc(conf.Main.PurgePathHandlerPath, handlers.PurgePathHandlerFunc(conf, &o))
 		lg.UpdateRouter("reloadListener", rr)

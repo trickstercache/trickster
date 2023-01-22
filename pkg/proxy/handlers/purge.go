@@ -13,7 +13,7 @@ import (
 )
 
 // PurgeHandleFunc purges an object from a cache based on key.
-func PurgeKeyHandleFunc(conf *config.Config, from *backends.Backends) func(http.ResponseWriter, *http.Request) {
+func PurgeKeyHandleFunc(conf *config.Config, from backends.Backends) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		params := mux.Vars(req)
 		purgeFrom, purgeKey := params["backend"], params["key"]
