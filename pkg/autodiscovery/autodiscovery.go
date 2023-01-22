@@ -16,6 +16,7 @@ func DiscoverWithOptions(opts *adopt.Options) ([]*beopt.Options, error) {
 	queries := opts.Queries
 	templates := opts.Templates
 	out := make([]*beopt.Options, 0)
+	// Range over all clients and make queries
 	// Range over all autodiscovery queries
 	for queryName, query := range queries.All() {
 		// If there's no backend attached to this query, there's not much point in running it.

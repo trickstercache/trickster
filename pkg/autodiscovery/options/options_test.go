@@ -40,14 +40,14 @@ func TestOptions(t *testing.T) {
 var testConf1 string = `
   clients:
     client_etcd:
-      kind: etcd
+      provider: etcd
+      queries: [query_etcd]
       endpoints:
         - 127.0.0.1:8080
         - localhost:8080
   queries:
     query_etcd:
-      kind: etcd
-      client: client_etcd
+      provider: etcd
       template: template_test
       keys: [url, path]
   templates:

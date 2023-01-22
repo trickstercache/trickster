@@ -2,24 +2,36 @@ package pop
 
 import (
 	"fmt"
+	"reflect"
 
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	DefaultPolyKey = "provider"
+)
+
 type PolyObject any
 
-type Kind string
+type PolyKey string
 
 type PolyObjectBuilder[O PolyObject] interface {
-	Build(Kind, *yaml.Node) (O, error)
+	Build(string, *yaml.Node) (O, error)
 }
 
 type PolyObjectPool[O PolyObject, B PolyObjectBuilder[O]] struct {
+	key  PolyKey
 	objs map[string]O
 }
 
 func New[O PolyObject, B PolyObjectBuilder[O]]() *PolyObjectPool[O, B] {
-	return &PolyObjectPool[O, B]{}
+	return &PolyObjectPool[O, B]{
+		key: DefaultPolyKey,
+	}
+}
+
+func (pool *PolyObjectPool[O, B]) WithKey(key PolyKey) {
+	pool.key = key
 }
 
 // Unmarshal the contents of a yaml node into a ClientPool.
@@ -36,7 +48,15 @@ func (pool *PolyObjectPool[O, B]) UnmarshalYAML(value *yaml.Node) error {
 	b := (*new(B))
 	pool.objs = make(map[string]O)
 	for name, entry := range m {
-		pool.objs[name], err = b.Build(entry.Kind, entry.Value)
+		k, ok := entry.Map[string(pool.key)]
+		if !ok {
+			return fmt.Errorf("object pool entries must contain key %s to assign concrete type", pool.key)
+		}
+		key, ok := k.(string)
+		if !ok {
+			return fmt.Errorf("object pool key %s must have string value, got %s", pool.key, reflect.TypeOf(k).String())
+		}
+		pool.objs[name], err = b.Build(key, entry.Value)
 		if err != nil {
 			return err
 		}
@@ -54,18 +74,16 @@ func (pool *PolyObjectPool[O, B]) All() map[string]O {
 }
 
 type popMapEntry struct {
-	Kind  Kind
+	Map   map[string]any
 	Value *yaml.Node
 }
 
 func (entry *popMapEntry) UnmarshalYAML(value *yaml.Node) error {
-	m := make(map[string]any)
-	value.Decode(m)
-	kind, ok := m["kind"]
-	if !ok {
-		return fmt.Errorf("ClientPool requires kind 'kind' parameter for clients")
+	entry.Map = make(map[string]any)
+	err := value.Decode(&entry.Map)
+	if err != nil {
+		return err
 	}
-	entry.Kind = Kind(kind.(string))
 	entry.Value = value
 	return nil
 }

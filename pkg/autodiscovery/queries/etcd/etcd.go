@@ -1,9 +1,7 @@
 package etcd
 
-import "github.com/trickstercache/trickster/v2/pkg/autodiscovery/pop"
-
 const (
-	Kind = pop.Kind("etcd")
+	Kind = string("etcd")
 )
 
 type Query struct {

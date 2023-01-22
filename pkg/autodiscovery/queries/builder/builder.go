@@ -1,7 +1,6 @@
 package builder
 
 import (
-	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/pop"
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/queries"
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/queries/etcd"
 	"gopkg.in/yaml.v3"
@@ -9,7 +8,7 @@ import (
 
 type QueryBuilder struct{}
 
-func (builder *QueryBuilder) Build(kind pop.Kind, value *yaml.Node) (q queries.Query, err error) {
+func (builder *QueryBuilder) Build(kind string, value *yaml.Node) (q queries.Query, err error) {
 	switch kind {
 	case etcd.Kind:
 		q = &etcd.Query{}
