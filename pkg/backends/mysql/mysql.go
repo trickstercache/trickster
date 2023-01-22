@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// package mysql provides the ClickHouse backend provider
+// package mysql provides the MySQL backend provider
 package mysql
 
 import (
@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
-	modelch "github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/model"
+	"github.com/trickstercache/trickster/v2/pkg/backends/mysql/model"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
@@ -51,7 +51,7 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		o.FastForwardDisable = true
 	}
 	c := &Client{}
-	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, modelch.NewModeler())
+	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, model.NewModeler())
 	c.TimeseriesBackend = b
 	return c, err
 }
@@ -81,7 +81,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	var bf time.Duration
 	res := request.GetResources(r)
 	if res == nil {
-		// 60-second default backfill tolerance for ClickHouse
+		// 60-second default backfill tolerance for MySQL
 		bf = 60 * time.Second
 	} else {
 		bf = res.BackendOptions.BackfillTolerance

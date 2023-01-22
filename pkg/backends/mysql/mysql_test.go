@@ -23,7 +23,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
-	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/model"
+	"github.com/trickstercache/trickster/v2/pkg/backends/mysql/model"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
 	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -31,7 +31,7 @@ import (
 
 var testModeler = model.NewModeler()
 
-func TestClickhouseClientInterfacing(t *testing.T) {
+func TestClientInterfacing(t *testing.T) {
 
 	// this test ensures the client will properly conform to the
 	// Client and TimeseriesBackend interfaces
@@ -55,7 +55,7 @@ func TestClickhouseClientInterfacing(t *testing.T) {
 
 func TestNewClient(t *testing.T) {
 
-	conf, _, err := config.Load("trickster", "test", []string{"-provider", "clickhouse", "-origin-url", "http://1"})
+	conf, _, err := config.Load("trickster", "test", []string{"-provider", "mysql", "-origin-url", "http://1"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

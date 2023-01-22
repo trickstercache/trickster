@@ -28,7 +28,7 @@ func (c *Client) RegisterHandlers(map[string]http.Handler) {
 
 	c.TimeseriesBackend.RegisterHandlers(
 		map[string]http.Handler{
-			// This is the registry of handlers that Trickster supports for ClickHouse,
+			// This is the registry of handlers that Trickster supports for MySQL,
 			// and are able to be referenced by name (map key) in Config Files
 			"health": http.HandlerFunc(c.HealthHandler),
 			"query":  http.HandlerFunc(c.QueryHandler),

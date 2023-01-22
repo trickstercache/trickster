@@ -75,7 +75,7 @@ func (cs cols) String() string {
 	return sb.String()
 }
 
-// NewModeler returns a collection of modeling functions for clickhouse interoperability
+// NewModeler returns a collection of modeling functions for mysql interoperability
 func NewModeler() *timeseries.Modeler {
 	return &timeseries.Modeler{
 		WireUnmarshalerReader: UnmarshalTimeseriesReader,
@@ -104,7 +104,6 @@ func marshalTimeseriesJSON(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
 	if rw, ok := w.(http.ResponseWriter); ok {
 		h := rw.Header()
 		h.Set(headers.NameContentType, headers.ValueApplicationJSON+"; charset=UTF-8")
-		h.Set("X-Clickhouse-Format", "JSON")
 		rw.WriteHeader(status)
 	}
 
@@ -272,25 +271,16 @@ func marshalTimeseriesXSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
 			tw.separator = ","
 		}
 
-		var ctPart, fmtPart string
+		var ctPart string
 		switch tw.separator {
 		case "\t":
 			ctPart = "tab"
-			fmtPart = "TSV"
 		default:
 			ctPart = "comma"
-			fmtPart = "CSV"
 			tw.separator = ","
 		}
 
 		h.Set(headers.NameContentType, "text/"+ctPart+"-separated-values; charset=UTF-8")
-		if tw.writeTypes {
-			h.Set("X-Clickhouse-Format", fmtPart+"WithNamesAndTypes")
-		} else if tw.writeNames {
-			h.Set("X-Clickhouse-Format", fmtPart+"WithNames")
-		} else {
-			h.Set("X-Clickhouse-Format", fmtPart)
-		}
 		rw.WriteHeader(status)
 	}
 
@@ -445,7 +435,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 		return nil, timeseries.ErrNoTimerangeQuery
 	}
 
-	// ClickHouse doesn't support multi-statements, so there is always exactly 1 result element
+	// don't support multi-statements, so there is always exactly 1 result element
 	r := &dataset.Result{
 		SeriesList: make([]*dataset.Series, 0, 8),
 	}
