@@ -38,10 +38,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registration"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/router"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 	"github.com/trickstercache/trickster/v2/pkg/runtime"
-
-	"github.com/gorilla/mux"
 )
 
 var cfgLock = &sync.Mutex{}
@@ -127,21 +126,21 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 	}
 
 	// every config (re)load is a new router
-	router := mux.NewRouter()
+	r := router.NewRouter()
 	mr := http.NewServeMux()
 
-	router.HandleFunc(conf.Main.PingHandlerPath, handlers.PingHandleFunc(conf)).Methods(http.MethodGet)
+	r.HandleFunc(conf.Main.PingHandlerPath, handlers.PingHandleFunc(conf)).Methods(http.MethodGet)
 	var caches = applyCachingConfig(conf, oldConf, logger, oldCaches)
 	rh := handlers.ReloadHandleFunc(runConfig, conf, wg, logger, caches, args)
 
-	o, err := routing.RegisterProxyRoutes(conf, router, mr, caches, tracers, logger, false)
+	o, err := routing.RegisterProxyRoutes(conf, r, mr, caches, tracers, logger, false)
 	if err != nil {
 		handleStartupIssue("route registration failed", tl.Pairs{"detail": err.Error()},
 			logger, errorFunc)
 		return err
 	}
 
-	router.HandleFunc(conf.Main.PurgeKeyHandlerPath, handlers.PurgeKeyHandleFunc(conf, o)).Methods(http.MethodDelete)
+	r.HandleFunc(conf.Main.PurgeKeyHandlerPath, handlers.PurgeKeyHandleFunc(conf, o)).Methods(http.MethodDelete)
 
 	if hc != nil {
 		hc.Shutdown()
@@ -151,9 +150,9 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 		return err
 	}
 	alb.StartALBPools(o, hc.Statuses())
-	routing.RegisterDefaultBackendRoutes(router, o, logger, tracers)
+	routing.RegisterDefaultBackendRoutes(r, o, logger, tracers)
 	routing.RegisterHealthHandler(mr, conf.Main.HealthHandlerPath, hc)
-	applyListenerConfigs(conf, oldConf, router, http.HandlerFunc(rh), mr, logger, tracers, o)
+	applyListenerConfigs(conf, oldConf, r, http.HandlerFunc(rh), mr, logger, tracers, o)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
@@ -317,7 +316,7 @@ func validateConfig(conf *config.Config) error {
 		caches[k] = nil
 	}
 
-	router := mux.NewRouter()
+	r := router.NewRouter()
 	mr := http.NewServeMux()
 	logger := tl.ConsoleLogger(conf.Logging.LogLevel)
 
@@ -326,7 +325,7 @@ func validateConfig(conf *config.Config) error {
 		return err
 	}
 
-	_, err = routing.RegisterProxyRoutes(conf, router, mr, caches, tracers, logger, true)
+	_, err = routing.RegisterProxyRoutes(conf, r, mr, caches, tracers, logger, true)
 	if err != nil {
 		return err
 	}

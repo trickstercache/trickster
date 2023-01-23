@@ -1,4 +1,4 @@
-package mux
+package router
 
 import (
 	"net/http"
@@ -21,22 +21,17 @@ func (mw MiddlewareFunc) Middleware(handler http.Handler) http.Handler {
 }
 
 // Use appends a MiddlewareFunc to the chain. Middleware can be used to intercept or otherwise modify requests and/or responses, and are executed in the order that they are applied to the Router.
-func (r *Router) Use(mwf ...MiddlewareFunc) {
+func (r *router) Use(mwf ...MiddlewareFunc) {
 	for _, fn := range mwf {
 		r.middlewares = append(r.middlewares, fn)
 	}
-}
-
-// useInterface appends a middleware to the chain. Middleware can be used to intercept or otherwise modify requests and/or responses, and are executed in the order that they are applied to the Router.
-func (r *Router) useInterface(mw middleware) {
-	r.middlewares = append(r.middlewares, mw)
 }
 
 // CORSMethodMiddleware automatically sets the Access-Control-Allow-Methods response header
 // on requests for routes that have an OPTIONS method matcher to all the method matchers on
 // the route. Routes that do not explicitly handle OPTIONS requests will not be processed
 // by the middleware. See examples for usage.
-func CORSMethodMiddleware(r *Router) MiddlewareFunc {
+func CORSMethodMiddleware(r *router) MiddlewareFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			allMethods, err := getAllMethodsForRoute(r, req)
@@ -55,7 +50,7 @@ func CORSMethodMiddleware(r *Router) MiddlewareFunc {
 
 // getAllMethodsForRoute returns all the methods from method matchers matching a given
 // request.
-func getAllMethodsForRoute(r *Router, req *http.Request) ([]string, error) {
+func getAllMethodsForRoute(r *router, req *http.Request) ([]string, error) {
 	var allMethods []string
 
 	for _, route := range r.routes {

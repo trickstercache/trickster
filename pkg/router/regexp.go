@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package mux
+package router
 
 import (
 	"bytes"
@@ -22,10 +22,10 @@ type routeRegexpOptions struct {
 type regexpType int
 
 const (
-	regexpTypePath   regexpType = 0
-	regexpTypeHost   regexpType = 1
-	regexpTypePrefix regexpType = 2
-	regexpTypeQuery  regexpType = 3
+	regexpTypePath regexpType = iota
+	regexpTypeHost
+	regexpTypePrefix
+	regexpTypeQuery
 )
 
 // newRouteRegexp parses a route template and returns a routeRegexp,
@@ -82,7 +82,7 @@ func newRouteRegexp(tpl string, typ regexpType, options routeRegexpOptions) (*ro
 		}
 		// Name or pattern can't be empty.
 		if name == "" || patt == "" {
-			return nil, fmt.Errorf("mux: missing name or pattern in %q",
+			return nil, fmt.Errorf("router: missing name or pattern in %q",
 				tpl[idxs[i]:end])
 		}
 		// Build the regexp pattern.
@@ -195,11 +195,11 @@ func (r *routeRegexp) Match(req *http.Request, match *RouteMatch) bool {
 
 // url builds a URL part using the given values.
 func (r *routeRegexp) url(values map[string]string) (string, error) {
-	urlValues := make([]interface{}, len(r.varsN), len(r.varsN))
+	urlValues := make([]interface{}, len(r.varsN))
 	for k, v := range r.varsN {
 		value, ok := values[v]
 		if !ok {
-			return "", fmt.Errorf("mux: missing route variable %q", v)
+			return "", fmt.Errorf("router: missing route variable %q", v)
 		}
 		if r.regexpType == regexpTypeQuery {
 			value = url.QueryEscape(value)
@@ -214,7 +214,7 @@ func (r *routeRegexp) url(values map[string]string) (string, error) {
 		for k, v := range r.varsN {
 			if !r.varsR[k].MatchString(values[v]) {
 				return "", fmt.Errorf(
-					"mux: variable %q doesn't match, expected %q", values[v],
+					"router: variable %q doesn't match, expected %q", values[v],
 					r.varsR[k].String())
 			}
 		}
@@ -294,12 +294,12 @@ func braceIndices(s string) ([]int, error) {
 			if level--; level == 0 {
 				idxs = append(idxs, idx, i+1)
 			} else if level < 0 {
-				return nil, fmt.Errorf("mux: unbalanced braces in %q", s)
+				return nil, fmt.Errorf("router: unbalanced braces in %q", s)
 			}
 		}
 	}
 	if level != 0 {
-		return nil, fmt.Errorf("mux: unbalanced braces in %q", s)
+		return nil, fmt.Errorf("router: unbalanced braces in %q", s)
 	}
 	return idxs, nil
 }
