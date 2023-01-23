@@ -1,8 +1,6 @@
-// Copyright 2012 The Gorilla Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-package mux
+// Package router implements an HTTP Router
+// Originally based on https://github.com/gorilla/mux (archived)
+package router
 
 import (
 	"context"
@@ -13,6 +11,31 @@ import (
 	"regexp"
 )
 
+// Router registers routes to be matched and dispatches a handler.
+//
+// It implements the http.Handler interface, so it can be registered to serve
+// requests:
+//
+//	var router = router.NewRouter()
+//
+//	func main() {
+//	    http.Handle("/", router)
+//	}
+//
+// Or, for Google App Engine, register it in a init() function:
+//
+//	func init() {
+//	    http.Handle("/", router)
+//	}
+//
+// This will send all incoming requests to the router.
+type Router interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+	PathPrefix(string) *Route
+	Handle(string, http.Handler) *Route
+	HandleFunc(string, func(http.ResponseWriter, *http.Request)) *Route
+}
+
 var (
 	// ErrMethodMismatch is returned when the method in the request does not match
 	// the method defined against the route.
@@ -22,29 +45,11 @@ var (
 )
 
 // NewRouter returns a new router instance.
-func NewRouter() *Router {
-	return &Router{namedRoutes: make(map[string]*Route)}
+func NewRouter() Router {
+	return &router{namedRoutes: make(map[string]*Route)}
 }
 
-// Router registers routes to be matched and dispatches a handler.
-//
-// It implements the http.Handler interface, so it can be registered to serve
-// requests:
-//
-//     var router = mux.NewRouter()
-//
-//     func main() {
-//         http.Handle("/", router)
-//     }
-//
-// Or, for Google App Engine, register it in a init() function:
-//
-//     func init() {
-//         http.Handle("/", router)
-//     }
-//
-// This will send all incoming requests to the router.
-type Router struct {
+type router struct {
 	// Configurable Handler to be used when no route matches.
 	NotFoundHandler http.Handler
 
@@ -133,7 +138,7 @@ func copyRouteRegexp(r *routeRegexp) *routeRegexp {
 // will be filled in the match argument's MatchErr field. If the match failure type
 // (eg: not found) has a registered handler, the handler is assigned to the Handler
 // field of the match argument.
-func (r *Router) Match(req *http.Request, match *RouteMatch) bool {
+func (r *router) Match(req *http.Request, match *RouteMatch) bool {
 	for _, route := range r.routes {
 		if route.Match(req, match) {
 			// Build middleware chain if no error was found
@@ -169,8 +174,8 @@ func (r *Router) Match(req *http.Request, match *RouteMatch) bool {
 // ServeHTTP dispatches the handler registered in the matched route.
 //
 // When there is a match, the route variables can be retrieved calling
-// mux.Vars(request).
-func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+// router.Vars(request).
+func (r *router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if !r.skipClean {
 		path := req.URL.Path
 		if r.useEncodedPath {
@@ -211,13 +216,13 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 // Get returns a route registered with the given name.
-func (r *Router) Get(name string) *Route {
+func (r *router) Get(name string) *Route {
 	return r.namedRoutes[name]
 }
 
 // GetRoute returns a route registered with the given name. This method
 // was renamed to Get() and remains here for backwards compatibility.
-func (r *Router) GetRoute(name string) *Route {
+func (r *router) GetRoute(name string) *Route {
 	return r.namedRoutes[name]
 }
 
@@ -240,7 +245,7 @@ func (r *Router) GetRoute(name string) *Route {
 // strict slash is ignored for that route because the redirect behavior can't
 // be determined from a prefix alone. However, any subrouters created from that
 // route inherit the original StrictSlash setting.
-func (r *Router) StrictSlash(value bool) *Router {
+func (r *router) StrictSlash(value bool) http.Handler {
 	r.strictSlash = value
 	return r
 }
@@ -253,7 +258,7 @@ func (r *Router) StrictSlash(value bool) *Router {
 //
 // When false, the path will be cleaned, so /fetch/http://xkcd.com/534/ will
 // become /fetch/http/xkcd.com/534
-func (r *Router) SkipClean(value bool) *Router {
+func (r *router) SkipClean(value bool) http.Handler {
 	r.skipClean = value
 	return r
 }
@@ -264,7 +269,7 @@ func (r *Router) SkipClean(value bool) *Router {
 //
 // If not called, the router will match the unencoded path to the routes.
 // For eg. "/path/foo%2Fbar/to" will match the path "/path/foo/bar/to"
-func (r *Router) UseEncodedPath() *Router {
+func (r *router) UseEncodedPath() http.Handler {
 	r.useEncodedPath = true
 	return r
 }
@@ -274,7 +279,7 @@ func (r *Router) UseEncodedPath() *Router {
 // ----------------------------------------------------------------------------
 
 // NewRoute registers an empty route.
-func (r *Router) NewRoute() *Route {
+func (r *router) NewRoute() *Route {
 	// initialize a route with a copy of the parent router's configuration
 	route := &Route{routeConf: copyRouteConf(r.routeConf), namedRoutes: r.namedRoutes}
 	r.routes = append(r.routes, route)
@@ -283,104 +288,104 @@ func (r *Router) NewRoute() *Route {
 
 // Name registers a new route with a name.
 // See Route.Name().
-func (r *Router) Name(name string) *Route {
+func (r *router) Name(name string) *Route {
 	return r.NewRoute().Name(name)
 }
 
 // Handle registers a new route with a matcher for the URL path.
 // See Route.Path() and Route.Handler().
-func (r *Router) Handle(path string, handler http.Handler) *Route {
+func (r *router) Handle(path string, handler http.Handler) *Route {
 	return r.NewRoute().Path(path).Handler(handler)
 }
 
 // HandleFunc registers a new route with a matcher for the URL path.
 // See Route.Path() and Route.HandlerFunc().
-func (r *Router) HandleFunc(path string, f func(http.ResponseWriter,
+func (r *router) HandleFunc(path string, f func(http.ResponseWriter,
 	*http.Request)) *Route {
 	return r.NewRoute().Path(path).HandlerFunc(f)
 }
 
 // Headers registers a new route with a matcher for request header values.
 // See Route.Headers().
-func (r *Router) Headers(pairs ...string) *Route {
+func (r *router) Headers(pairs ...string) *Route {
 	return r.NewRoute().Headers(pairs...)
 }
 
 // Host registers a new route with a matcher for the URL host.
 // See Route.Host().
-func (r *Router) Host(tpl string) *Route {
+func (r *router) Host(tpl string) *Route {
 	return r.NewRoute().Host(tpl)
 }
 
 // MatcherFunc registers a new route with a custom matcher function.
 // See Route.MatcherFunc().
-func (r *Router) MatcherFunc(f MatcherFunc) *Route {
+func (r *router) MatcherFunc(f MatcherFunc) *Route {
 	return r.NewRoute().MatcherFunc(f)
 }
 
 // Methods registers a new route with a matcher for HTTP methods.
 // See Route.Methods().
-func (r *Router) Methods(methods ...string) *Route {
+func (r *router) Methods(methods ...string) *Route {
 	return r.NewRoute().Methods(methods...)
 }
 
 // Path registers a new route with a matcher for the URL path.
 // See Route.Path().
-func (r *Router) Path(tpl string) *Route {
+func (r *router) Path(tpl string) *Route {
 	return r.NewRoute().Path(tpl)
 }
 
 // PathPrefix registers a new route with a matcher for the URL path prefix.
 // See Route.PathPrefix().
-func (r *Router) PathPrefix(tpl string) *Route {
+func (r *router) PathPrefix(tpl string) *Route {
 	return r.NewRoute().PathPrefix(tpl)
 }
 
 // Queries registers a new route with a matcher for URL query values.
 // See Route.Queries().
-func (r *Router) Queries(pairs ...string) *Route {
+func (r *router) Queries(pairs ...string) *Route {
 	return r.NewRoute().Queries(pairs...)
 }
 
 // Schemes registers a new route with a matcher for URL schemes.
 // See Route.Schemes().
-func (r *Router) Schemes(schemes ...string) *Route {
+func (r *router) Schemes(schemes ...string) *Route {
 	return r.NewRoute().Schemes(schemes...)
 }
 
 // BuildVarsFunc registers a new route with a custom function for modifying
 // route variables before building a URL.
-func (r *Router) BuildVarsFunc(f BuildVarsFunc) *Route {
+func (r *router) BuildVarsFunc(f BuildVarsFunc) *Route {
 	return r.NewRoute().BuildVarsFunc(f)
 }
 
 // Walk walks the router and all its sub-routers, calling walkFn for each route
 // in the tree. The routes are walked in the order they were added. Sub-routers
 // are explored depth-first.
-func (r *Router) Walk(walkFn WalkFunc) error {
+func (r *router) Walk(walkFn WalkFunc) error {
 	return r.walk(walkFn, []*Route{})
 }
 
-// SkipRouter is used as a return value from WalkFuncs to indicate that the
+// ErrSkipRouter is used as a return value from WalkFuncs to indicate that the
 // router that walk is about to descend down to should be skipped.
-var SkipRouter = errors.New("skip this router")
+var ErrSkipRouter = errors.New("skip this router")
 
 // WalkFunc is the type of the function called for each route visited by Walk.
 // At every invocation, it is given the current route, and the current router,
 // and a list of ancestor routes that lead to the current route.
-type WalkFunc func(route *Route, router *Router, ancestors []*Route) error
+type WalkFunc func(route *Route, router *router, ancestors []*Route) error
 
-func (r *Router) walk(walkFn WalkFunc, ancestors []*Route) error {
+func (r *router) walk(walkFn WalkFunc, ancestors []*Route) error {
 	for _, t := range r.routes {
 		err := walkFn(t, r, ancestors)
-		if err == SkipRouter {
+		if err == ErrSkipRouter {
 			continue
 		}
 		if err != nil {
 			return err
 		}
 		for _, sr := range t.matchers {
-			if h, ok := sr.(*Router); ok {
+			if h, ok := sr.(*router); ok {
 				ancestors = append(ancestors, t)
 				err := h.walk(walkFn, ancestors)
 				if err != nil {
@@ -389,7 +394,7 @@ func (r *Router) walk(walkFn WalkFunc, ancestors []*Route) error {
 				ancestors = ancestors[:len(ancestors)-1]
 			}
 		}
-		if h, ok := t.handler.(*Router); ok {
+		if h, ok := t.handler.(*router); ok {
 			ancestors = append(ancestors, t)
 			err := h.walk(walkFn, ancestors)
 			if err != nil {
@@ -481,7 +486,7 @@ func uniqueVars(s1, s2 []string) error {
 	for _, v1 := range s1 {
 		for _, v2 := range s2 {
 			if v1 == v2 {
-				return fmt.Errorf("mux: duplicated route variable %q", v2)
+				return fmt.Errorf("router: duplicated route variable %q", v2)
 			}
 		}
 	}
@@ -494,7 +499,7 @@ func checkPairs(pairs ...string) (int, error) {
 	length := len(pairs)
 	if length%2 != 0 {
 		return length, fmt.Errorf(
-			"mux: number of parameters must be multiple of 2, got %v", pairs)
+			"router: number of parameters must be multiple of 2, got %v", pairs)
 	}
 	return length, nil
 }
