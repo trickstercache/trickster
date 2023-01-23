@@ -4,7 +4,7 @@
 
 | Name | Contact | Company | Term Expires |
 |---|---|---|---|
-|James Ranson ([@jranson](https://github.com/jranson)) | <james@ranson.org> | Virga | 22/Mar/2023 |
+|James Ranson ([@jranson](https://github.com/jranson)) | <james@ranson.org> | Virga | 22/Mar/2024 |
 
 ## Trickster Project Maintainers
 
