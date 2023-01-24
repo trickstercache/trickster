@@ -99,6 +99,7 @@ func testDataSet2() *DataSet {
 		StatementID: 0,
 		SeriesList: []*Series{
 			{sh1, newPoints(), s},
+			nil,
 		},
 	}
 
@@ -113,7 +114,7 @@ func testDataSet2() *DataSet {
 
 	ds := &DataSet{
 		TimeRangeQuery: &timeseries.TimeRangeQuery{Step: time.Duration(5 * timeseries.Second)},
-		Results:        []*Result{r1, r2},
+		Results:        []*Result{r1, r2, nil},
 		ExtentList:     timeseries.ExtentList{timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(30, 0)}},
 	}
 
