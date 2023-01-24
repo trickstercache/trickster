@@ -456,6 +456,9 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 func (ds *DataSet) SeriesCount() int {
 	var cnt int
 	for i := range ds.Results {
+		if ds.Results[i] == nil {
+			continue
+		}
 		cnt += len(ds.Results[i].SeriesList)
 	}
 	return cnt
