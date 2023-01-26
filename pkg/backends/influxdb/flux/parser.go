@@ -23,6 +23,7 @@ func NewParser(reader io.Reader) *Parser {
 }
 
 func (p *Parser) ParseQuery() (*Query, error) {
+	valid := false
 	r := bufio.NewReader(p.reader)
 	ln := 0
 	q := &Query{}
@@ -37,7 +38,7 @@ func (p *Parser) ParseQuery() (*Query, error) {
 		// Check for line 0 "from"
 		if ln == 0 {
 			if !strings.Contains(line, "from") {
-				return nil, FluxSyntax(line, "flux scripts must begin with from()")
+				return nil, FluxSyntax(line, "flux scripts must begin with from(bucket: ...)")
 			}
 		}
 		// Check for range
@@ -46,9 +47,13 @@ func (p *Parser) ParseQuery() (*Query, error) {
 			if err != nil {
 				return nil, err
 			}
+			valid = true
 		}
 		q.Statement += line + " "
 		ln++
+	}
+	if !valid {
+		return nil, FluxSemantics("script is not valid flux")
 	}
 	return q, nil
 }
