@@ -3,7 +3,6 @@ package flux
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -59,7 +58,6 @@ func parseRangeFilter(line string) (timeseries.Extent, error) {
 	tokens := strings.FieldsFunc(line, func(r rune) bool {
 		return r == ' ' || r == '(' || r == ')' || r == ','
 	})
-	fmt.Println(tokens)
 	var start, stop time.Time
 	var ok bool
 	for i, token := range tokens {
