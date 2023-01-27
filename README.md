@@ -117,7 +117,7 @@ You can also clone the repository yourself and build using `make`:
     $ git clone https://github.com/trickstercache/trickster.git
     $ cd trickster
     $ make build
-    $ ./OPATH/trickster -origin-url http://prometheus.example.com:9090 -provider prometheus
+    $ ./bin/trickster -origin-url http://prometheus.example.com:9090 -provider prometheus
 ```
 
 The Makefile provides several targets, including:
