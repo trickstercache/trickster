@@ -2,32 +2,50 @@ package flux
 
 import "fmt"
 
-type ErrFluxSyntax struct {
+type InvalidTimeFormatError struct {
+	rd error
+	at error
+	ut error
+}
+
+func ErrInvalidTimeFormat(relativeDuration, absoluteTime, unixTimestamp error) *InvalidTimeFormatError {
+	return &InvalidTimeFormatError{
+		rd: relativeDuration,
+		at: absoluteTime,
+		ut: unixTimestamp,
+	}
+}
+
+func (err *InvalidTimeFormatError) Error() string {
+	return fmt.Sprintf("invalid time format; must be relative duration (%s), RFC3999 string (%s), or Unix timestamp (%s)", err.rd, err.at, err.ut)
+}
+
+type FluxSyntaxError struct {
 	token string
 	rule  string
 }
 
-func FluxSyntax(token, rule string) *ErrFluxSyntax {
-	return &ErrFluxSyntax{
+func ErrFluxSyntax(token, rule string) *FluxSyntaxError {
+	return &FluxSyntaxError{
 		token: token,
 		rule:  rule,
 	}
 }
 
-func (err *ErrFluxSyntax) Error() string {
+func (err *FluxSyntaxError) Error() string {
 	return fmt.Sprintf("flux syntax error at '%s': %s", err.token, err.rule)
 }
 
-type ErrFluxSemantics struct {
+type FluxSemanticsError struct {
 	rule string
 }
 
-func FluxSemantics(rule string) *ErrFluxSemantics {
-	return &ErrFluxSemantics{
+func ErrFluxSemantics(rule string) *FluxSemanticsError {
+	return &FluxSemanticsError{
 		rule: rule,
 	}
 }
 
-func (err *ErrFluxSemantics) Error() string {
+func (err *FluxSemanticsError) Error() string {
 	return fmt.Sprintf("flux semantics error: %s", err.rule)
 }
