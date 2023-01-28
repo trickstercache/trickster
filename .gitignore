@@ -24,6 +24,7 @@ trickster-data
 
 # output path
 OPATH
+bin
 
 # MacOS and other operating system artifacts
 .DS_Store

@@ -10,7 +10,7 @@ RUN GOOS=linux CGO_ENABLED=0 make build
 FROM alpine
 LABEL maintainer "The Trickster Authors <trickster-developers@googlegroups.com>"
 
-COPY --from=builder /go/src/github.com/trickstercache/trickster/OPATH/trickster /usr/local/bin/trickster
+COPY --from=builder /go/src/github.com/trickstercache/trickster/bin/trickster /usr/local/bin/trickster
 COPY examples/conf/example.full.yaml /etc/trickster/trickster.yaml
 RUN chown nobody /usr/local/bin/trickster
 RUN chmod +x /usr/local/bin/trickster
