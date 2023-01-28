@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/util/timeconv/duration"
+	"github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
 var testRelativeDuration string = `from("test-bucket")
@@ -44,8 +44,8 @@ func TestRelativeDuration(t *testing.T) {
 		t.Errorf("failed to parse valid script: %s", err)
 		t.FailNow()
 	}
-	start := now.Add(-7 * duration.Day).Truncate(time.Second)
-	stop := now.Add(-6 * duration.Day).Truncate(time.Second)
+	start := now.Add(-7 * timeconv.Day).Truncate(time.Second)
+	stop := now.Add(-6 * timeconv.Day).Truncate(time.Second)
 	qStartApprox := q.Extent.Start.Truncate(time.Second)
 	qStopApprox := q.Extent.End.Truncate(time.Second)
 	if !start.Equal(qStartApprox) {

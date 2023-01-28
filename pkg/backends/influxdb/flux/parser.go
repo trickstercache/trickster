@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	"github.com/trickstercache/trickster/v2/pkg/util/timeconv/duration"
+	"github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
 type Parser struct {
@@ -101,7 +101,7 @@ func tryParseTimeField(s string) (time.Time, error) {
 }
 
 func tryParseRelativeDuration(s string) (time.Time, error) {
-	d, err := duration.ParseDuration(s)
+	d, err := timeconv.ParseDuration(s)
 	if err != nil {
 		return time.Time{}, err
 	}
