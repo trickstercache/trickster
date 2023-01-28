@@ -2,13 +2,15 @@ package flux
 
 import (
 	"bufio"
-	"errors"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
+
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 	"github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
@@ -23,61 +25,73 @@ func NewParser(reader io.Reader) *Parser {
 }
 
 func (p *Parser) ParseQuery() (*Query, error) {
-	valid := false
 	r := bufio.NewReader(p.reader)
-	ln := 0
 	q := &Query{}
-	for line, err := r.ReadString('\n'); ; line, err = r.ReadString('\n') {
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			} else {
-				return nil, err
-			}
-		}
-		// Check for line 0 "from"
-		if ln == 0 {
-			if !strings.Contains(line, "from") {
-				return nil, ErrFluxSyntax(line, "flux scripts must begin with from(bucket: ...)")
-			}
-		}
-		// Check for range
-		if strings.Contains(line, "range") {
-			q.Extent, err = parseRangeFilter(line)
+	if raw, err := io.ReadAll(r); err != nil {
+		return nil, err
+	} else {
+		content := string(raw)
+		if idx := strings.Index(content, "|> range("); idx == -1 {
+			return nil, ErrFluxSyntax("range()", "flux timerange query scripts must contain a range() function")
+		} else {
+			q.Extent, err = parseRangeFilter(content, idx+len("|> range("))
 			if err != nil {
 				return nil, err
 			}
-			valid = true
 		}
-		q.Statement += line + " "
-		ln++
-	}
-	if !valid {
-		return nil, ErrFluxSemantics("script is not valid flux")
 	}
 	return q, nil
 }
 
 // Parse a line that is a range filter range(start: $[start], stop: $[stop])
-func parseRangeFilter(line string) (timeseries.Extent, error) {
-	tokens := strings.FieldsFunc(line, func(r rune) bool {
-		return r == ' ' || r == '(' || r == ')' || r == ','
-	})
+func parseRangeFilter(query string, at int) (timeseries.Extent, error) {
 	var start, stop time.Time
 	var err error
-	for i, token := range tokens {
-		if token == "start:" {
-			start, err = tryParseTimeField(tokens[i+1])
+	for i := at; i < len(query); {
+		// If start: token at this index,
+		if token := tstrings.Substring(query, i, len("start:")); token == "start:" {
+			// find the start and end of the time argument
+			timeArgStart := i + len("start:")
+			if query[timeArgStart] == ' ' {
+				timeArgStart++
+			}
+			timeArgEnd := timeArgStart + strings.IndexAny(query[timeArgStart:], " ,)")
+			if timeArgEnd == -1 {
+				return timeseries.Extent{}, ErrFluxSyntax(query[timeArgStart:timeArgStart+10]+"...", "couldn't parse time field from start argument")
+			}
+			fmt.Printf("start '%s'\n", query[timeArgStart:timeArgEnd])
+			// and try to parse that argument as a time field
+			start, err = tryParseTimeField(query[timeArgStart:timeArgEnd])
 			if err != nil {
 				return timeseries.Extent{}, err
 			}
+			i = timeArgEnd
+			continue
 		}
-		if token == "stop:" {
-			stop, err = tryParseTimeField(tokens[i+1])
+		if token := tstrings.Substring(query, i, len("stop:")); token == "stop:" {
+			// find the start and end of the time argument
+			timeArgStart := i + len("stop:")
+			if query[timeArgStart] == ' ' {
+				timeArgStart++
+			}
+			timeArgEnd := timeArgStart + strings.IndexAny(query[timeArgStart:], " )")
+			if timeArgEnd == -1 {
+				return timeseries.Extent{}, ErrFluxSyntax(query[timeArgStart:timeArgStart+10]+"...", "couldn't parse time field from stop argument")
+			}
+			fmt.Printf("stop '%s'\n", query[timeArgStart:timeArgEnd])
+			// and try to parse that argument as a time field
+			stop, err = tryParseTimeField(query[timeArgStart:timeArgEnd])
 			if err != nil {
 				return timeseries.Extent{}, err
 			}
+			i = timeArgEnd
+			continue
 		}
+		// Break loop when we hit a ')'
+		if query[i] == ')' {
+			break
+		}
+		i++
 	}
 	if start.IsZero() {
 		return timeseries.Extent{}, ErrFluxSemantics("range() expressions require a valid start argument")

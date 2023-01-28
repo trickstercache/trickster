@@ -49,10 +49,10 @@ func TestRelativeDuration(t *testing.T) {
 	qStartApprox := q.Extent.Start.Truncate(time.Second)
 	qStopApprox := q.Extent.End.Truncate(time.Second)
 	if !start.Equal(qStartApprox) {
-		t.Errorf("query start time incorrect; got %s, should be %s", qStartApprox.Format(time.RFC3339), start.Format(time.RFC3339))
+		t.Errorf("query start time incorrect; got %v, should be %v", qStartApprox, start)
 	}
 	if !stop.Equal(qStopApprox) {
-		t.Errorf("query stop time incorrect; got %s, should be %s", qStopApprox.Format(time.RFC3339), stop.Format(time.RFC3339))
+		t.Errorf("query stop time incorrect; got %v, should be %v", qStopApprox, stop)
 	}
 }
 
