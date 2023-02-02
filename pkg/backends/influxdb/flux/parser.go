@@ -2,7 +2,6 @@ package flux
 
 import (
 	"bufio"
-	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -59,7 +58,6 @@ func parseRangeFilter(query string, at int) (timeseries.Extent, error) {
 			if timeArgEnd == -1 {
 				return timeseries.Extent{}, ErrFluxSyntax(query[timeArgStart:timeArgStart+10]+"...", "couldn't parse time field from start argument")
 			}
-			fmt.Printf("start '%s'\n", query[timeArgStart:timeArgEnd])
 			// and try to parse that argument as a time field
 			start, err = tryParseTimeField(query[timeArgStart:timeArgEnd])
 			if err != nil {
@@ -78,7 +76,6 @@ func parseRangeFilter(query string, at int) (timeseries.Extent, error) {
 			if timeArgEnd == -1 {
 				return timeseries.Extent{}, ErrFluxSyntax(query[timeArgStart:timeArgStart+10]+"...", "couldn't parse time field from stop argument")
 			}
-			fmt.Printf("stop '%s'\n", query[timeArgStart:timeArgEnd])
 			// and try to parse that argument as a time field
 			stop, err = tryParseTimeField(query[timeArgStart:timeArgEnd])
 			if err != nil {

@@ -8,21 +8,25 @@ type InvalidTimeFormatError struct {
 	ut error
 }
 
-func ErrInvalidTimeFormat(relativeDuration, absoluteTime, unixTimestamp error) *InvalidTimeFormatError {
-	return &InvalidTimeFormatError{
-		rd: relativeDuration,
-		at: absoluteTime,
-		ut: unixTimestamp,
-	}
+type FluxSyntaxError struct {
+	token string
+	rule  string
+}
+
+type FluxSemanticsError struct {
+	rule string
 }
 
 func (err *InvalidTimeFormatError) Error() string {
 	return fmt.Sprintf("invalid time format; must be relative duration (%s), RFC3999 string (%s), or Unix timestamp (%s)", err.rd, err.at, err.ut)
 }
 
-type FluxSyntaxError struct {
-	token string
-	rule  string
+func ErrInvalidTimeFormat(relativeDuration, absoluteTime, unixTimestamp error) *InvalidTimeFormatError {
+	return &InvalidTimeFormatError{
+		rd: relativeDuration,
+		at: absoluteTime,
+		ut: unixTimestamp,
+	}
 }
 
 func ErrFluxSyntax(token, rule string) *FluxSyntaxError {
@@ -34,10 +38,6 @@ func ErrFluxSyntax(token, rule string) *FluxSyntaxError {
 
 func (err *FluxSyntaxError) Error() string {
 	return fmt.Sprintf("flux syntax error at '%s': %s", err.token, err.rule)
-}
-
-type FluxSemanticsError struct {
-	rule string
 }
 
 func ErrFluxSemantics(rule string) *FluxSemanticsError {
