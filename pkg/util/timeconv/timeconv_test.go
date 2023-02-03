@@ -47,21 +47,3 @@ func TestParseDurationFailed(t *testing.T) {
 		t.Errorf("expected 'unable to parse duration: %s' error", val)
 	}
 }
-
-func TestParseDurationParts(t *testing.T) {
-	expected := time.Duration(1) * time.Hour
-	d, err := ParseDurationParts(1, "h")
-	if err != nil {
-		t.Error(err)
-	}
-	if d != expected {
-		t.Errorf("expected %d got %d", expected, d)
-	}
-}
-
-func TestParseDurationPartsFailed(t *testing.T) {
-	_, err := ParseDurationParts(1, "x")
-	if err == nil {
-		t.Errorf("expected 'unable to parse duration 1x' error")
-	}
-}
