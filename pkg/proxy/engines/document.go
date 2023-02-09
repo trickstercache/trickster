@@ -64,6 +64,29 @@ func (d *HTTPDocument) SafeHeaderClone() http.Header {
 	return h
 }
 
+func (d *HTTPDocument) CloneEmptyContent() *HTTPDocument {
+	dd := &HTTPDocument{
+		StatusCode:    d.StatusCode,
+		Status:        d.Status,
+		Headers:       d.SafeHeaderClone(),
+		Body:          []byte{},
+		ContentLength: d.ContentLength,
+		ContentType:   d.ContentType,
+		// Ranges
+		// RangeParts
+		// StoredRangeParts
+		rangePartsLoaded: d.rangePartsLoaded,
+		isFulfillment:    d.isFulfillment,
+		isLoaded:         d.isLoaded,
+		timeseries:       nil,
+		headerLock:       sync.Mutex{},
+	}
+	if d.CachingPolicy != nil {
+		dd.CachingPolicy = d.CachingPolicy.Clone()
+	}
+	return dd
+}
+
 // Size returns the size of the HTTPDocument's headers, CachingPolicy, RangeParts, Body and timeseries data
 func (d *HTTPDocument) Size() int {
 	var i int

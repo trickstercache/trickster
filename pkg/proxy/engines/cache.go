@@ -40,6 +40,83 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+const (
+	doCacheChunk = bool(true)
+	chunkFactor  = time.Duration(420)
+)
+
+func query(rsc *request.Resources, c cache.Cache, key string,
+	ranges byterange.Ranges, trq *timeseries.TimeRangeQuery,
+	span trace.Span) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
+
+	d := &HTTPDocument{}
+	b, lookupStatus, err := c.Retrieve(key, true)
+
+	if err != nil || (lookupStatus != status.LookupStatusHit) {
+		var nr byterange.Ranges
+		if lookupStatus == status.LookupStatusKeyMiss && ranges != nil && len(ranges) > 0 {
+			nr = ranges
+
+		}
+		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", lookupStatus.String()))
+		return d, lookupStatus, nr, err
+	}
+
+	var inflate bool
+	// check and remove compression bit
+	if len(b) > 0 {
+		if b[0] == 1 {
+			inflate = true
+		}
+		b = b[1:]
+	}
+
+	if inflate {
+		tl.Debug(rsc.Logger, "decompressing cached data", tl.Pairs{"cacheKey": key})
+		decoder := brotli.NewReader(bytes.NewReader(b))
+		b, err = io.ReadAll(decoder)
+		if err != nil {
+			tl.Error(rsc.Logger, "error decoding cache document", tl.Pairs{
+				"cacheKey": key,
+				"detail":   err.Error(),
+			})
+			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusKeyMiss.String()))
+			return d, status.LookupStatusKeyMiss, ranges, err
+		}
+
+	}
+	_, err = d.UnmarshalMsg(b)
+	if err != nil {
+		tl.Error(rsc.Logger, "error unmarshaling cache document", tl.Pairs{
+			"cacheKey": key,
+			"detail":   err.Error(),
+		})
+		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusKeyMiss.String()))
+		return d, status.LookupStatusKeyMiss, ranges, err
+	}
+	if trq != nil {
+		if rsc.CacheUnmarshaler == nil {
+			tl.Error(rsc.Logger, "querycache asked for a timerange, but no unmarshaler was provided", tl.Pairs{
+				"cacheKey": key,
+				"detail":   err.Error(),
+			})
+			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
+			return d, status.LookupStatusError, ranges, err
+		}
+		cts, err := rsc.CacheUnmarshaler(d.Body, trq)
+		if err != nil {
+			tl.Error(rsc.Logger, "error unmarshaling cache timeseries", tl.Pairs{
+				"cacheKey": key,
+				"detail":   err.Error(),
+			})
+			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
+			return d, status.LookupStatusError, ranges, err
+		}
+		d.timeseries = cts
+	}
+	return d, lookupStatus, ranges, err
+}
+
 // QueryCache queries the cache for an HTTPDocument and returns it
 func QueryCache(ctx context.Context, c cache.Cache, key string,
 	ranges byterange.Ranges, trq *timeseries.TimeRangeQuery) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
@@ -53,7 +130,6 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 
 	d := &HTTPDocument{}
 	var lookupStatus status.LookupStatus
-	var b []byte
 	var err error
 
 	if c.Configuration().Provider == "memory" {
@@ -80,70 +156,57 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 
 	} else {
-
-		b, lookupStatus, err = c.Retrieve(key, true)
-
-		if err != nil || (lookupStatus != status.LookupStatusHit) {
-			var nr byterange.Ranges
-			if lookupStatus == status.LookupStatusKeyMiss && ranges != nil && len(ranges) > 0 {
-				nr = ranges
-
+		if doCacheChunk && (trq != nil && trq.Step != 0) {
+			if trq != nil {
+				// Determine step and chunk size
+				step := trq.Step
+				size := step * chunkFactor
+				// Establish a duration start->end such that it is aligned to the epoch along size and contains all of trq
+				rootExt := trq.Extent
+				start, end := rootExt.Start.Truncate(size), rootExt.End.Truncate(size).Add(size)
+				// Iterate through that duration in chunks of size
+				var dd *HTTPDocument
+				lookupCt, lookupFound := 0, 0
+				for chunkStart := start; chunkStart.Before(end); chunkStart = chunkStart.Add(size) {
+					// End chunk one step before next; steps are inclusive
+					chunkEnd := chunkStart.Add(size - step)
+					chunkExt := timeseries.Extent{
+						Start: chunkStart,
+						End:   chunkEnd,
+					}
+					chunkKey := key + chunkExt.String()
+					dd, lookupStatus, ranges, err = query(rsc, c, chunkKey, ranges, trq, span)
+					lookupCt++
+					if err != nil || lookupStatus == status.LookupStatusKeyMiss {
+						continue
+					}
+					lookupFound++
+					dd.timeseries, err = rsc.CacheUnmarshaler(dd.Body, trq)
+					if err != nil {
+						tl.Error(rsc.Logger, "error unmarshaling cache document chunk", tl.Pairs{
+							"cacheKey": chunkKey,
+							"detail":   err.Error(),
+						})
+					}
+					if d.timeseries == nil {
+						d.timeseries = dd.timeseries
+					} else {
+						d.timeseries.Merge(true, dd.timeseries)
+					}
+				}
+				if lookupFound == 0 {
+					return d, status.LookupStatusKeyMiss, ranges, cache.ErrKNF
+				} else if lookupFound == lookupCt {
+					lookupStatus = status.LookupStatusHit
+				} else {
+					lookupStatus = status.LookupStatusPartialHit
+				}
 			}
-			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", lookupStatus.String()))
-			return d, lookupStatus, nr, err
-		}
-
-		var inflate bool
-		// check and remove compression bit
-		if len(b) > 0 {
-			if b[0] == 1 {
-				inflate = true
-			}
-			b = b[1:]
-		}
-
-		if inflate {
-			tl.Debug(rsc.Logger, "decompressing cached data", tl.Pairs{"cacheKey": key})
-			decoder := brotli.NewReader(bytes.NewReader(b))
-			b, err = io.ReadAll(decoder)
+		} else {
+			d, lookupStatus, ranges, err = query(rsc, c, key, ranges, trq, span)
 			if err != nil {
-				tl.Error(rsc.Logger, "error decoding cache document", tl.Pairs{
-					"cacheKey": key,
-					"detail":   err.Error(),
-				})
-				tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusKeyMiss.String()))
-				return d, status.LookupStatusKeyMiss, ranges, err
+				return d, lookupStatus, ranges, err
 			}
-
-		}
-		_, err = d.UnmarshalMsg(b)
-		if err != nil {
-			tl.Error(rsc.Logger, "error unmarshaling cache document", tl.Pairs{
-				"cacheKey": key,
-				"detail":   err.Error(),
-			})
-			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusKeyMiss.String()))
-			return d, status.LookupStatusKeyMiss, ranges, err
-		}
-		if trq != nil {
-			if rsc.CacheUnmarshaler == nil {
-				tl.Error(rsc.Logger, "querycache asked for a timerange, but no unmarshaler was provided", tl.Pairs{
-					"cacheKey": key,
-					"detail":   err.Error(),
-				})
-				tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
-				return d, status.LookupStatusError, ranges, err
-			}
-			cts, err := rsc.CacheUnmarshaler(d.Body, trq)
-			if err != nil {
-				tl.Error(rsc.Logger, "error unmarshaling cache timeseries", tl.Pairs{
-					"cacheKey": key,
-					"detail":   err.Error(),
-				})
-				tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
-				return d, status.LookupStatusError, ranges, err
-			}
-			d.timeseries = cts
 		}
 	}
 
@@ -180,6 +243,43 @@ func stripConditionalHeaders(h http.Header) {
 	h.Del(headers.NameIfUnmodifiedSince)
 	h.Del(headers.NameIfNoneMatch)
 	h.Del(headers.NameIfModifiedSince)
+}
+
+func write(rsc *request.Resources, c cache.Cache, d *HTTPDocument, key string, ttl time.Duration,
+	compress bool, span trace.Span) error {
+	b, err := d.MarshalMsg(nil)
+	if err != nil {
+		tl.Error(rsc.Logger, "error marshaling cache document", tl.Pairs{
+			"cacheKey": key,
+			"detail":   err.Error(),
+		})
+		return err
+	}
+
+	if compress {
+		tl.Debug(rsc.Logger, "compressing cache data", tl.Pairs{"cacheKey": key})
+		buf := bytes.NewBuffer([]byte{1})
+		encoder := brotli.NewWriter(buf)
+		encoder.Write(b)
+		encoder.Close()
+		b = buf.Bytes()
+	} else {
+		b = append([]byte{0}, b...)
+	}
+
+	err = c.Store(key, b, ttl)
+	if err != nil {
+		if span != nil {
+			span.AddEvent(
+				"Cache Write Failure",
+				trace.EventOption(trace.WithAttributes(
+					attribute.String("Error", err.Error()),
+				)),
+			)
+		}
+		return err
+	}
+	return nil
 }
 
 // WriteCache writes an HTTPDocument to the cache
@@ -251,38 +351,51 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		}
 	}
 
-	// for non-memory, we have to seralize the document to a byte slice to store
-	b, err = d.MarshalMsg(nil)
-	if err != nil {
-		tl.Error(rsc.Logger, "error marshaling cache document", tl.Pairs{
-			"cacheKey": key,
-			"detail":   err.Error(),
-		})
-	}
-
-	if compress {
-		tl.Debug(rsc.Logger, "compressing cache data", tl.Pairs{"cacheKey": key})
-		buf := bytes.NewBuffer([]byte{1})
-		encoder := brotli.NewWriter(buf)
-		encoder.Write(b)
-		encoder.Close()
-		b = buf.Bytes()
-	} else {
-		b = append([]byte{0}, b...)
-	}
-
-	err = c.Store(key, b, ttl)
-	if err != nil {
-		if span != nil {
-			span.AddEvent(
-				"Cache Write Failure",
-				trace.EventOption(trace.WithAttributes(
-					attribute.String("Error", err.Error()),
-				)),
-			)
+	// Currently this won't call without a timeseries; byte-only chunking TODO
+	if doCacheChunk && (d.timeseries != nil && d.timeseries.Step() != 0) {
+		if d.timeseries != nil {
+			// Chunk based on document timeseries
+			// Determine step and chunk size
+			root := d.timeseries
+			step := root.Step()
+			size := step * chunkFactor
+			// Establish a duration start->end such that it is aligned to the epoch along size and contains all of root
+			rootExts := root.Extents().Compress(step)
+			start, end := rootExts[0].Start.Truncate(size), rootExts[0].End.Truncate(size).Add(size)
+			// Iterate through that duration in chunks of size
+			for chunkStart := start; chunkStart.Before(end); chunkStart = chunkStart.Add(size) {
+				// End chunk one step before next; steps are inclusive
+				chunkEnd := chunkStart.Add(size - step)
+				chunkExt := timeseries.Extent{
+					Start: chunkStart,
+					End:   chunkEnd,
+				}
+				chunkKey := key + chunkExt.String()
+				dd := d.CloneEmptyContent()
+				dd.timeseries = root.CroppedClone(chunkExt)
+				dd.Body, err = rsc.CacheMarshaler(dd.timeseries, nil, 0)
+				if err != nil {
+					tl.Error(rsc.Logger, "error marshaling cache document chunk", tl.Pairs{
+						"cacheKey": chunkKey,
+						"detail":   err.Error(),
+					})
+				}
+				err = write(rsc, c, d, chunkKey, ttl, compress, span)
+				if err != nil {
+					return err
+				}
+			}
+		} else {
+			// byte-only chunking TODO
 		}
-		return err
+	} else {
+		// for non-memory, we have to seralize the document to a byte slice to store
+		err = write(rsc, c, d, key, ttl, compress, span)
+		if err != nil {
+			return err
+		}
 	}
+
 	if span != nil {
 		span.AddEvent(
 			"Cache Write",
