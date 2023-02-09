@@ -49,6 +49,8 @@ type Resources struct {
 	TSUnmarshaler     timeseries.UnmarshalerFunc
 	TSMarshaler       timeseries.MarshalWriterFunc
 	TSTransformer     func(timeseries.Timeseries)
+	CacheUnmarshaler  timeseries.UnmarshalerFunc
+	CacheMarshaler    timeseries.MarshalerFunc
 	TS                timeseries.Timeseries
 	TSReqestOptions   *timeseries.RequestOptions
 	Response          *http.Response

@@ -33,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/andybalholm/brotli"
 	"go.opentelemetry.io/otel/attribute"
@@ -41,7 +42,7 @@ import (
 
 // QueryCache queries the cache for an HTTPDocument and returns it
 func QueryCache(ctx context.Context, c cache.Cache, key string,
-	ranges byterange.Ranges) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
+	ranges byterange.Ranges, trq *timeseries.TimeRangeQuery) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
 
 	rsc := tc.Resources(ctx).(*request.Resources)
 
@@ -124,7 +125,26 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusKeyMiss.String()))
 			return d, status.LookupStatusKeyMiss, ranges, err
 		}
-
+		if trq != nil {
+			if rsc.CacheUnmarshaler == nil {
+				tl.Error(rsc.Logger, "querycache asked for a timerange, but no unmarshaler was provided", tl.Pairs{
+					"cacheKey": key,
+					"detail":   err.Error(),
+				})
+				tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
+				return d, status.LookupStatusError, ranges, err
+			}
+			cts, err := rsc.CacheUnmarshaler(d.Body, trq)
+			if err != nil {
+				tl.Error(rsc.Logger, "error unmarshaling cache timeseries", tl.Pairs{
+					"cacheKey": key,
+					"detail":   err.Error(),
+				})
+				tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
+				return d, status.LookupStatusError, ranges, err
+			}
+			d.timeseries = cts
+		}
 	}
 
 	var delta byterange.Ranges
@@ -212,6 +232,23 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		}
 
 		return mc.StoreReference(key, d, ttl)
+	}
+
+	if d.timeseries != nil {
+		if rsc.CacheMarshaler == nil {
+			tl.Error(rsc.Logger, "writecache provided for a timerange, but no marshaler was provided", tl.Pairs{
+				"cacheKey": key,
+				"detail":   err.Error(),
+			})
+		} else {
+			d.Body, err = rsc.CacheMarshaler(d.timeseries, nil, 0)
+			if err != nil {
+				tl.Error(rsc.Logger, "error marshaling cache document timeseries", tl.Pairs{
+					"cacheKey": key,
+					"detail":   err.Error(),
+				})
+			}
+		}
 	}
 
 	// for non-memory, we have to seralize the document to a byte slice to store
