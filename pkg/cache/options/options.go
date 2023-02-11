@@ -53,6 +53,8 @@ type Options struct {
 	Badger *badger.Options `yaml:"badger,omitempty"`
 
 	//  Synthetic Values
+	UseCacheChunking      bool `yaml:"use_cache_chunking"`
+	TimeseriesChunkFactor int  `yaml:"timeseries_chunk_factor"`
 
 	// ProviderID represents the internal constant for the provided Provider string
 	// and is automatically populated at startup
@@ -62,13 +64,14 @@ type Options struct {
 // New will return a pointer to a CacheOptions with the default configuration settings
 func New() *Options {
 	return &Options{
-		Provider:   defaults.DefaultCacheProvider,
-		ProviderID: defaults.DefaultCacheProviderID,
-		Redis:      redis.New(),
-		Filesystem: filesystem.New(),
-		BBolt:      bbolt.New(),
-		Badger:     badger.New(),
-		Index:      index.New(),
+		Provider:              defaults.DefaultCacheProvider,
+		ProviderID:            defaults.DefaultCacheProviderID,
+		Redis:                 redis.New(),
+		Filesystem:            filesystem.New(),
+		BBolt:                 bbolt.New(),
+		Badger:                badger.New(),
+		Index:                 index.New(),
+		TimeseriesChunkFactor: defaults.DefaultTimeseriesChunkFactor,
 	}
 }
 
@@ -117,6 +120,9 @@ func (cc *Options) Clone() *Options {
 	c.Redis.SentinelMaster = cc.Redis.SentinelMaster
 	c.Redis.WriteTimeoutMS = cc.Redis.WriteTimeoutMS
 
+	c.UseCacheChunking = cc.UseCacheChunking
+	c.TimeseriesChunkFactor = cc.TimeseriesChunkFactor
+
 	return c
 
 }
@@ -131,8 +137,9 @@ func (cc *Options) Equal(cc2 *Options) bool {
 
 	return cc.Name == cc2.Name &&
 		cc.Provider == cc2.Provider &&
-		cc.ProviderID == cc2.ProviderID
-
+		cc.ProviderID == cc2.ProviderID &&
+		cc.UseCacheChunking == cc2.UseCacheChunking &&
+		cc.TimeseriesChunkFactor == cc2.TimeseriesChunkFactor
 }
 
 var errMaxSizeBackoffBytesTooBig = errors.New("MaxSizeBackoffBytes can't be larger than MaxSizeBytes")
@@ -310,6 +317,14 @@ func (l Lookup) SetDefaults(metadata yamlx.KeyLookup, activeCaches strutil.Looku
 
 		if metadata.IsDefined("caches", k, "badger", "value_directory") {
 			cc.Badger.ValueDirectory = v.Badger.ValueDirectory
+		}
+
+		if metadata.IsDefined("caches", k, "use_cache_chunking") {
+			cc.UseCacheChunking = v.UseCacheChunking
+		}
+
+		if metadata.IsDefined("caches", k, "timeseries_chunk_factor") {
+			cc.TimeseriesChunkFactor = v.TimeseriesChunkFactor
 		}
 
 		l[k] = cc

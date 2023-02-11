@@ -40,11 +40,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const (
-	doCacheChunk = bool(true)
-	chunkFactor  = time.Duration(420)
-)
-
 func query(rsc *request.Resources, c cache.Cache, key string,
 	ranges byterange.Ranges, trq *timeseries.TimeRangeQuery,
 	span trace.Span) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
@@ -122,6 +117,8 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	ranges byterange.Ranges, trq *timeseries.TimeRangeQuery) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
 
 	rsc := tc.Resources(ctx).(*request.Resources)
+	doCacheChunk := c.Configuration().UseCacheChunking
+	chunkFactor := time.Duration(c.Configuration().TimeseriesChunkFactor)
 
 	ctx, span := tspan.NewChildSpan(ctx, rsc.Tracer, "QueryCache")
 	if span != nil {
@@ -286,6 +283,8 @@ func write(rsc *request.Resources, c cache.Cache, d *HTTPDocument, key string, t
 func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 	ttl time.Duration, compressTypes map[string]interface{}) error {
 
+	doCacheChunk := c.Configuration().UseCacheChunking
+	chunkFactor := time.Duration(c.Configuration().TimeseriesChunkFactor)
 	rsc := tc.Resources(ctx).(*request.Resources)
 
 	ctx, span := tspan.NewChildSpan(ctx, rsc.Tracer, "WriteCache")
