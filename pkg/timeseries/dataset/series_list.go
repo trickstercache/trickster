@@ -75,6 +75,9 @@ func (sl SeriesList) Equal(sl2 SeriesList) bool {
 		return false
 	}
 	for i, v := range sl {
+		if v == nil {
+			continue
+		}
 		if v.Header.CalculateHash() != sl2[i].Header.CalculateHash() {
 			return false
 		}
