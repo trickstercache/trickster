@@ -24,4 +24,6 @@ const (
 	// DefaultCacheProviderID is the default cache providers ID for any defined cache
 	// and should align with DefaultCacheProvider
 	DefaultCacheProviderID = providers.Memory
+	// DefaultTimeseriesChunkFactor determines the extent of timeseries chunks, based on timeseries query step duration.
+	DefaultTimeseriesChunkFactor = 420
 )
