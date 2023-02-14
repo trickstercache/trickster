@@ -3,6 +3,7 @@ package etcd
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/queries"
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/queries/etcd"
@@ -14,21 +15,29 @@ const (
 )
 
 type Client struct {
-	UseQueries []string `yaml:"queries"`
-	Endpoints  []string `yaml:"endpoints"`
-	client     *clientv3.Client
+	UseQueries    []string `yaml:"queries"`
+	Endpoints     []string `yaml:"endpoints"`
+	DialTimeoutMS int64    `yaml:"dial_timeout_ms"`
+	client        *clientv3.Client
+}
+
+func New() *Client {
+	return &Client{
+		UseQueries:    []string{},
+		Endpoints:     []string{},
+		DialTimeoutMS: 1000,
+		client:        nil,
+	}
 }
 
 func (client *Client) Queries() []string {
 	return client.UseQueries
 }
 
-func (client *Client) Default() {
-	client.Endpoints = []string{}
-}
 func (client *Client) Connect() (err error) {
 	client.client, err = clientv3.New(clientv3.Config{
-		Endpoints: client.Endpoints,
+		Endpoints:   client.Endpoints,
+		DialTimeout: time.Millisecond * time.Duration(client.DialTimeoutMS),
 	})
 	if err != nil {
 		client.client = nil

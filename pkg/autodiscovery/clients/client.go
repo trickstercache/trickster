@@ -8,7 +8,6 @@ type Kind string
 
 type Client interface {
 	Queries() []string
-	Default()
 	Connect() error
 	Disconnect()
 	Execute(queries.Query) (queries.Results, error)

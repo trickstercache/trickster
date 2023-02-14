@@ -188,10 +188,17 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		fmt.Printf("Starting autodiscovery for alb [%s]\n", c.Name())
 		autoBackends, err := autodiscovery.DiscoverWithOptions(o.AutoDiscovery)
 		if err != nil {
-			panic(err)
+			return err
 		}
 		fmt.Printf("%+v\n", autoBackends[0])
-		// TODO: Uncertain how to register backends here, and again if more are instantiated later.
+		for i, o := range autoBackends {
+			tc, err := backends.New(fmt.Sprintf("%s%d", o.Name, i), o, nil, c.Router(), nil)
+			if err != nil {
+				return err
+			}
+			// TODO: non-nil HC
+			targets = append(targets, pool.NewTarget(tc.Router(), nil))
+		}
 	} else {
 		return fmt.Errorf("alb not provided with a pool or autodiscovery")
 	}
