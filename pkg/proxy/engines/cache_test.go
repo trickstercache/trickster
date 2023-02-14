@@ -23,6 +23,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -126,6 +127,71 @@ func TestCacheHitRangeRequest(t *testing.T) {
 	}
 	if deltas != nil {
 		t.Errorf("updated query range was expected to be empty")
+	}
+}
+
+func TestCacheHitRangeRequestChunks(t *testing.T) {
+	expected := "Apache License"
+	conf, _, err := config.Load("trickster", "test", []string{
+		"-origin-url", "http://1",
+		"-provider", "default",
+	})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	lf, err := os.Open("../../../LICENSE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	license, err := io.ReadAll(lf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
+	cache, ok := caches["default"]
+	cache.Configuration().UseCacheChunking = true
+	cache.Configuration().ByterangeChunkSize = 4000
+	if !ok {
+		t.Error("could not load cache")
+	}
+
+	resp2 := &http.Response{}
+	resp2.Header = make(http.Header)
+	resp2.Header.Add(headers.NameContentLength, strconv.Itoa(len(license)))
+	resp2.StatusCode = 200
+	d := DocumentFromHTTPResponse(resp2, license, nil, testLogger)
+	d.ContentLength = int64(len(license))
+	d.Ranges = byterange.Ranges{byterange.Range{Start: 0, End: int64(len(license))}}
+	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
+
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]interface{}{"text/plain": true})
+	if err != nil {
+		t.Error(err)
+	}
+
+	ranges := byterange.Ranges{
+		byterange.Range{Start: 33, End: 47},
+		byterange.Range{Start: 4033, End: 4047},
+		byterange.Range{Start: 8033, End: 8047},
+	}
+	d2, _, deltas, err := QueryCache(ctx, cache, "testKey", ranges, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	if (string(d2.Body[33:47])) != "Apache License" {
+		t.Errorf("expected %s got %s", expected, string(d2.Body[33:47]))
+	}
+	if string(d2.Body[4033:4047]) != "rants to You a" {
+		t.Errorf("expected %s got %s", expected, string(d2.Body[4033:4047]))
+	}
+	if string(d2.Body[8033:8047]) != ". Disclaimer o" {
+		t.Errorf("expected %s got %s", expected, string(d2.Body[8033:8047]))
+	}
+	if deltas != nil {
+		t.Errorf("updated query range was expected to be empty, got %s", deltas)
 	}
 }
 

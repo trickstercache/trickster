@@ -46,87 +46,7 @@ func query(rsc *request.Resources, c cache.Cache, key string,
 	span trace.Span) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
 
 	d := &HTTPDocument{}
-	b, lookupStatus, err := c.Retrieve(key, true)
-
-	if err != nil || (lookupStatus != status.LookupStatusHit) {
-		var nr byterange.Ranges
-		if lookupStatus == status.LookupStatusKeyMiss && ranges != nil && len(ranges) > 0 {
-			nr = ranges
-
-		}
-		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", lookupStatus.String()))
-		return d, lookupStatus, nr, err
-	}
-
-	var inflate bool
-	// check and remove compression bit
-	if len(b) > 0 {
-		if b[0] == 1 {
-			inflate = true
-		}
-		b = b[1:]
-	}
-
-	if inflate {
-		tl.Debug(rsc.Logger, "decompressing cached data", tl.Pairs{"cacheKey": key})
-		decoder := brotli.NewReader(bytes.NewReader(b))
-		b, err = io.ReadAll(decoder)
-		if err != nil {
-			tl.Error(rsc.Logger, "error decoding cache document", tl.Pairs{
-				"cacheKey": key,
-				"detail":   err.Error(),
-			})
-			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusKeyMiss.String()))
-			return d, status.LookupStatusKeyMiss, ranges, err
-		}
-
-	}
-	_, err = d.UnmarshalMsg(b)
-	if err != nil {
-		tl.Error(rsc.Logger, "error unmarshaling cache document", tl.Pairs{
-			"cacheKey": key,
-			"detail":   err.Error(),
-		})
-		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusKeyMiss.String()))
-		return d, status.LookupStatusKeyMiss, ranges, err
-	}
-	if trq != nil {
-		if rsc.CacheUnmarshaler == nil {
-			tl.Error(rsc.Logger, "querycache asked for a timerange, but no unmarshaler was provided", tl.Pairs{
-				"cacheKey": key,
-				"detail":   err.Error(),
-			})
-			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
-			return d, status.LookupStatusError, ranges, err
-		}
-		cts, err := rsc.CacheUnmarshaler(d.Body, trq)
-		if err != nil {
-			tl.Error(rsc.Logger, "error unmarshaling cache timeseries", tl.Pairs{
-				"cacheKey": key,
-				"detail":   err.Error(),
-			})
-			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
-			return d, status.LookupStatusError, ranges, err
-		}
-		d.timeseries = cts
-	}
-	return d, lookupStatus, ranges, err
-}
-
-// QueryCache queries the cache for an HTTPDocument and returns it
-func QueryCache(ctx context.Context, c cache.Cache, key string,
-	ranges byterange.Ranges, trq *timeseries.TimeRangeQuery) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
-
-	rsc := tc.Resources(ctx).(*request.Resources)
-	doCacheChunk := c.Configuration().UseCacheChunking
-	chunkFactor := time.Duration(c.Configuration().TimeseriesChunkFactor)
-
-	ctx, span := tspan.NewChildSpan(ctx, rsc.Tracer, "QueryCache")
-	if span != nil {
-		defer span.End()
-	}
-
-	d := &HTTPDocument{}
+	var b []byte
 	var lookupStatus status.LookupStatus
 	var err error
 
@@ -154,97 +74,185 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 
 	} else {
-		if doCacheChunk {
-			if trq != nil {
-				if trq.Step == 0 {
-					return d, status.LookupStatusError, ranges, errors.New("cache timeseries query must have a range when using chunking")
+		b, lookupStatus, err = c.Retrieve(key, true)
+
+		if err != nil || (lookupStatus != status.LookupStatusHit) {
+			var nr byterange.Ranges
+			if lookupStatus == status.LookupStatusKeyMiss && ranges != nil && len(ranges) > 0 {
+				nr = ranges
+
+			}
+			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", lookupStatus.String()))
+			return d, lookupStatus, nr, err
+		}
+
+		var inflate bool
+		// check and remove compression bit
+		if len(b) > 0 {
+			if b[0] == 1 {
+				inflate = true
+			}
+			b = b[1:]
+		}
+
+		if inflate {
+			tl.Debug(rsc.Logger, "decompressing cached data", tl.Pairs{"cacheKey": key})
+			decoder := brotli.NewReader(bytes.NewReader(b))
+			b, err = io.ReadAll(decoder)
+			if err != nil {
+				tl.Error(rsc.Logger, "error decoding cache document", tl.Pairs{
+					"cacheKey": key,
+					"detail":   err.Error(),
+				})
+				tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusKeyMiss.String()))
+				return d, status.LookupStatusKeyMiss, ranges, err
+			}
+
+		}
+		_, err = d.UnmarshalMsg(b)
+		if err != nil {
+			tl.Error(rsc.Logger, "error unmarshaling cache document", tl.Pairs{
+				"cacheKey": key,
+				"detail":   err.Error(),
+			})
+			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusKeyMiss.String()))
+			return d, status.LookupStatusKeyMiss, ranges, err
+		}
+		if trq != nil {
+			if rsc.CacheUnmarshaler == nil {
+				tl.Error(rsc.Logger, "querycache asked for a timerange, but no unmarshaler was provided", tl.Pairs{
+					"cacheKey": key,
+					"detail":   err.Error(),
+				})
+				tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
+				return d, status.LookupStatusError, ranges, err
+			}
+			cts, err := rsc.CacheUnmarshaler(d.Body, trq)
+			if err != nil {
+				tl.Error(rsc.Logger, "error unmarshaling cache timeseries", tl.Pairs{
+					"cacheKey": key,
+					"detail":   err.Error(),
+				})
+				tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
+				return d, status.LookupStatusError, ranges, err
+			}
+			d.timeseries = cts
+		}
+	}
+
+	return d, lookupStatus, ranges, err
+}
+
+// QueryCache queries the cache for an HTTPDocument and returns it
+func QueryCache(ctx context.Context, c cache.Cache, key string,
+	ranges byterange.Ranges, trq *timeseries.TimeRangeQuery) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
+
+	rsc := tc.Resources(ctx).(*request.Resources)
+	doCacheChunk := c.Configuration().UseCacheChunking
+	chunkFactor := time.Duration(c.Configuration().TimeseriesChunkFactor)
+
+	ctx, span := tspan.NewChildSpan(ctx, rsc.Tracer, "QueryCache")
+	if span != nil {
+		defer span.End()
+	}
+
+	d := &HTTPDocument{}
+	var lookupStatus status.LookupStatus
+	var err error
+
+	if doCacheChunk {
+		if trq != nil {
+			if trq.Step == 0 {
+				return d, status.LookupStatusError, ranges, errors.New("cache timeseries query must have a range when using chunking")
+			}
+			// Determine step and chunk size
+			step := trq.Step
+			size := step * chunkFactor
+			// Establish a duration start->end such that it is aligned to the epoch along size and contains all of trq
+			rootExt := trq.Extent
+			start, end := rootExt.Start.Truncate(size), rootExt.End.Truncate(size).Add(size)
+			// Iterate through that duration in chunks of size
+			var dd *HTTPDocument
+			lookupCt, lookupFound := 0, 0
+			for chunkStart := start; chunkStart.Before(end); chunkStart = chunkStart.Add(size) {
+				// End chunk one step before next; steps are inclusive
+				chunkEnd := chunkStart.Add(size - step)
+				chunkExt := timeseries.Extent{
+					Start: chunkStart,
+					End:   chunkEnd,
 				}
-				// Determine step and chunk size
-				step := trq.Step
-				size := step * chunkFactor
-				// Establish a duration start->end such that it is aligned to the epoch along size and contains all of trq
-				rootExt := trq.Extent
-				start, end := rootExt.Start.Truncate(size), rootExt.End.Truncate(size).Add(size)
-				// Iterate through that duration in chunks of size
-				var dd *HTTPDocument
-				lookupCt, lookupFound := 0, 0
-				for chunkStart := start; chunkStart.Before(end); chunkStart = chunkStart.Add(size) {
-					// End chunk one step before next; steps are inclusive
-					chunkEnd := chunkStart.Add(size - step)
-					chunkExt := timeseries.Extent{
-						Start: chunkStart,
-						End:   chunkEnd,
-					}
-					chunkKey := key + chunkExt.String()
-					dd, lookupStatus, ranges, err = query(rsc, c, chunkKey, ranges, trq, span)
-					lookupCt++
-					if err != nil || lookupStatus == status.LookupStatusKeyMiss {
-						continue
-					}
-					lookupFound++
-					dd.timeseries, err = rsc.CacheUnmarshaler(dd.Body, trq)
-					if err != nil {
-						tl.Error(rsc.Logger, "error unmarshaling cache document chunk", tl.Pairs{
-							"cacheKey": chunkKey,
-							"detail":   err.Error(),
-						})
-					}
-					if d.timeseries == nil {
-						d.timeseries = dd.timeseries
-					} else {
-						d.timeseries.Merge(true, dd.timeseries)
-					}
+				chunkKey := key + chunkExt.String()
+				dd, lookupStatus, ranges, err = query(rsc, c, chunkKey, ranges, trq, span)
+				lookupCt++
+				if err != nil || lookupStatus == status.LookupStatusKeyMiss {
+					continue
 				}
-				if lookupFound == 0 {
-					return d, status.LookupStatusKeyMiss, ranges, cache.ErrKNF
-				} else if lookupFound == lookupCt {
-					lookupStatus = status.LookupStatusHit
+				lookupFound++
+				dd.timeseries, err = rsc.CacheUnmarshaler(dd.Body, trq)
+				if err != nil {
+					tl.Error(rsc.Logger, "error unmarshaling cache document chunk", tl.Pairs{
+						"cacheKey": chunkKey,
+						"detail":   err.Error(),
+					})
+				}
+				if d.timeseries == nil {
+					d.Headers = dd.SafeHeaderClone()
+					d.timeseries = dd.timeseries
 				} else {
-					lookupStatus = status.LookupStatusPartialHit
+					d.timeseries.Merge(true, dd.timeseries)
 				}
+			}
+			if lookupFound == 0 {
+				return d, status.LookupStatusKeyMiss, ranges, cache.ErrKNF
+			} else if lookupFound == lookupCt {
+				lookupStatus = status.LookupStatusHit
 			} else {
-				size := int64(c.Configuration().ByterangeChunkSize)
-				start, end := ranges[0].Start, ranges[len(ranges)-1].End
-				start = start - (start % size)
-				end = end + size - (end % size)
-				lookupCt, lookupFound := 0, 0
-				for chunkStart := start; chunkStart < end; chunkStart += size {
-					chunkEnd := chunkStart + size - 1
-					chunkRange := byterange.Range{
-						Start: chunkStart,
-						End:   chunkEnd,
-					}
-					chunkKey := key + ":" + chunkRange.String()
-					dd, lstat, got, err := query(rsc, c, chunkKey, byterange.Ranges{chunkRange}, trq, span)
-					lookupCt++
-					if err != nil || lstat == status.LookupStatusError {
-						return dd, lstat, got, err
-					}
-					if lstat == status.LookupStatusKeyMiss {
-						continue
-					}
-					lookupFound++
-					if d.Body == nil {
-						d.Body = dd.Body
-						d.Ranges = byterange.Ranges{chunkRange}
-					} else {
-						d.Body = append(d.Body, dd.Body...)
-						d.Ranges = append(d.Ranges, chunkRange)
-					}
-				}
-				if lookupFound == 0 {
-					return d, status.LookupStatusKeyMiss, ranges, cache.ErrKNF
-				} else if lookupFound == lookupCt {
-					lookupStatus = status.LookupStatusHit
-				} else {
-					lookupStatus = status.LookupStatusPartialHit
-				}
+				lookupStatus = status.LookupStatusPartialHit
 			}
 		} else {
-			d, lookupStatus, ranges, err = query(rsc, c, key, ranges, trq, span)
-			if err != nil {
-				return d, lookupStatus, ranges, err
+			size := int64(c.Configuration().ByterangeChunkSize)
+			start, end := ranges[0].Start, ranges[len(ranges)-1].End
+			start = start - (start % size)
+			end = end + size - (end % size)
+			lookupCt, lookupFound := 0, 0
+			for chunkStart := start; chunkStart < end; chunkStart += size {
+				chunkEnd := chunkStart + size - 1
+				chunkRange := byterange.Range{
+					Start: chunkStart,
+					End:   chunkEnd,
+				}
+				chunkKey := key + ":" + chunkRange.String()
+				dd, lstat, got, err := query(rsc, c, chunkKey, byterange.Ranges{chunkRange}, trq, span)
+				lookupCt++
+				if err != nil || lstat == status.LookupStatusError {
+					return dd, lstat, got, err
+				}
+				if lstat == status.LookupStatusKeyMiss {
+					continue
+				}
+				lookupFound++
+				if d.Body == nil {
+					d.Headers = dd.SafeHeaderClone()
+					d.ContentLength = dd.ContentLength
+					d.Body = dd.Body
+					d.Ranges = byterange.Ranges{chunkRange}
+				} else {
+					d.Body = append(d.Body, dd.Body...)
+					d.Ranges = append(d.Ranges, chunkRange)
+				}
 			}
+			if lookupFound == 0 {
+				return d, status.LookupStatusKeyMiss, ranges, cache.ErrKNF
+			} else if lookupFound == lookupCt {
+				lookupStatus = status.LookupStatusHit
+			} else {
+				lookupStatus = status.LookupStatusPartialHit
+			}
+		}
+	} else {
+		d, lookupStatus, ranges, err = query(rsc, c, key, ranges, trq, span)
+		if err != nil {
+			return d, lookupStatus, ranges, err
 		}
 	}
 
@@ -270,6 +278,9 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				lookupStatus = status.LookupStatusPartialHit
 			}
 		}
+		if len(delta) == 0 {
+			delta = nil
+		}
 
 	}
 	tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", lookupStatus.String()))
@@ -285,27 +296,40 @@ func stripConditionalHeaders(h http.Header) {
 
 func write(rsc *request.Resources, c cache.Cache, d *HTTPDocument, key string, ttl time.Duration,
 	compress bool, span trace.Span) error {
-	b, err := d.MarshalMsg(nil)
-	if err != nil {
-		tl.Error(rsc.Logger, "error marshaling cache document", tl.Pairs{
-			"cacheKey": key,
-			"detail":   err.Error(),
-		})
-		return err
-	}
 
-	if compress {
-		tl.Debug(rsc.Logger, "compressing cache data", tl.Pairs{"cacheKey": key})
-		buf := bytes.NewBuffer([]byte{1})
-		encoder := brotli.NewWriter(buf)
-		encoder.Write(b)
-		encoder.Close()
-		b = buf.Bytes()
+	var err error
+
+	if c.Configuration().Provider == "memory" {
+		mc := c.(cache.MemoryCache)
+		d.rangePartsLoaded = false
+		d.isFulfillment = false
+		d.isLoaded = false
+		d.RangeParts = nil
+		if d.CachingPolicy != nil {
+			d.CachingPolicy.ResetClientConditionals()
+		}
+		err = mc.StoreReference(key, d, ttl)
 	} else {
-		b = append([]byte{0}, b...)
+		b, err := d.MarshalMsg(nil)
+		if err != nil {
+			tl.Error(rsc.Logger, "error marshaling cache document", tl.Pairs{
+				"cacheKey": key,
+				"detail":   err.Error(),
+			})
+			return err
+		}
+		if compress {
+			tl.Debug(rsc.Logger, "compressing cache data", tl.Pairs{"cacheKey": key})
+			buf := bytes.NewBuffer([]byte{1})
+			encoder := brotli.NewWriter(buf)
+			encoder.Write(b)
+			encoder.Close()
+			b = buf.Bytes()
+		} else {
+			b = append([]byte{0}, b...)
+		}
+		err = c.Store(key, b, ttl)
 	}
-
-	err = c.Store(key, b, ttl)
 	if err != nil {
 		if span != nil {
 			span.AddEvent(
@@ -353,25 +377,6 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 				compress = true
 			}
 		}
-	}
-
-	// for memory cache, don't serialize the document, since we can retrieve it by reference.
-	if c.Configuration().Provider == "memory" {
-		mc := c.(cache.MemoryCache)
-
-		if d != nil {
-			// during unmarshal, these would come back as false, so lets set them as such even for direct access
-			d.rangePartsLoaded = false
-			d.isFulfillment = false
-			d.isLoaded = false
-			d.RangeParts = nil
-
-			if d.CachingPolicy != nil {
-				d.CachingPolicy.ResetClientConditionals()
-			}
-		}
-
-		return mc.StoreReference(key, d, ttl)
 	}
 
 	if d.timeseries != nil {
