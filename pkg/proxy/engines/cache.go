@@ -19,6 +19,7 @@ package engines
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -153,8 +154,11 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 
 	} else {
-		if doCacheChunk && (trq != nil && trq.Step != 0) {
+		if doCacheChunk {
 			if trq != nil {
+				if trq.Step == 0 {
+					return d, status.LookupStatusError, ranges, errors.New("cache timeseries query must have a range when using chunking")
+				}
 				// Determine step and chunk size
 				step := trq.Step
 				size := step * chunkFactor
@@ -189,6 +193,43 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 						d.timeseries = dd.timeseries
 					} else {
 						d.timeseries.Merge(true, dd.timeseries)
+					}
+				}
+				if lookupFound == 0 {
+					return d, status.LookupStatusKeyMiss, ranges, cache.ErrKNF
+				} else if lookupFound == lookupCt {
+					lookupStatus = status.LookupStatusHit
+				} else {
+					lookupStatus = status.LookupStatusPartialHit
+				}
+			} else {
+				size := int64(c.Configuration().ByterangeChunkSize)
+				start, end := ranges[0].Start, ranges[len(ranges)-1].End
+				start = start - (start % size)
+				end = end + size - (end % size)
+				lookupCt, lookupFound := 0, 0
+				for chunkStart := start; chunkStart < end; chunkStart += size {
+					chunkEnd := chunkStart + size - 1
+					chunkRange := byterange.Range{
+						Start: chunkStart,
+						End:   chunkEnd,
+					}
+					chunkKey := key + ":" + chunkRange.String()
+					dd, lstat, got, err := query(rsc, c, chunkKey, byterange.Ranges{chunkRange}, trq, span)
+					lookupCt++
+					if err != nil || lstat == status.LookupStatusError {
+						return dd, lstat, got, err
+					}
+					if lstat == status.LookupStatusKeyMiss {
+						continue
+					}
+					lookupFound++
+					if d.Body == nil {
+						d.Body = dd.Body
+						d.Ranges = byterange.Ranges{chunkRange}
+					} else {
+						d.Body = append(d.Body, dd.Body...)
+						d.Ranges = append(d.Ranges, chunkRange)
 					}
 				}
 				if lookupFound == 0 {
@@ -351,8 +392,11 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 	}
 
 	// Currently this won't call without a timeseries; byte-only chunking TODO
-	if doCacheChunk && (d.timeseries != nil && d.timeseries.Step() != 0) {
+	if doCacheChunk {
 		if d.timeseries != nil {
+			if d.timeseries.Step() == 0 {
+				return errors.New("")
+			}
 			// Chunk based on document timeseries
 			// Determine step and chunk size
 			root := d.timeseries
@@ -385,7 +429,28 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 				}
 			}
 		} else {
-			// byte-only chunking TODO
+			root := d.Body
+			size := int64(c.Configuration().ByterangeChunkSize)
+			// Get start/end of the document byterange
+			rootRanges := d.Ranges
+			start, end := rootRanges[0].Start, rootRanges[len(rootRanges)-1].End
+			start = start - (start % size)
+			end = end + size - (end % size)
+			for chunkStart := start; chunkStart < end; chunkStart += size {
+				chunkEnd := chunkStart + size - 1
+				chunkRange := byterange.Range{
+					Start: chunkStart,
+					End:   chunkEnd,
+				}
+				chunkKey := key + ":" + chunkRange.String()
+				dd := d.CloneEmptyContent()
+				dd.Ranges = byterange.Ranges{chunkRange}
+				dd.Body = root[chunkStart-start : chunkEnd-start]
+				err = write(rsc, c, dd, chunkKey, ttl, compress, span)
+				if err != nil {
+					return err
+				}
+			}
 		}
 	} else {
 		// for non-memory, we have to seralize the document to a byte slice to store

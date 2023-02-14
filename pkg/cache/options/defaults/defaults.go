@@ -26,4 +26,6 @@ const (
 	DefaultCacheProviderID = providers.Memory
 	// DefaultTimeseriesChunkFactor determines the extent of timeseries chunks, based on timeseries query step duration.
 	DefaultTimeseriesChunkFactor = 420
+	// DefaultByterangeChunkSize determines the size of byterange chunks.
+	DefaultByterangeChunkSize = 4096
 )

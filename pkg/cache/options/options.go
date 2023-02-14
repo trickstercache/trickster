@@ -55,6 +55,7 @@ type Options struct {
 	//  Synthetic Values
 	UseCacheChunking      bool `yaml:"use_cache_chunking"`
 	TimeseriesChunkFactor int  `yaml:"timeseries_chunk_factor"`
+	ByterangeChunkSize    int  `yaml:"byterange_chunk_size"`
 
 	// ProviderID represents the internal constant for the provided Provider string
 	// and is automatically populated at startup
@@ -72,6 +73,7 @@ func New() *Options {
 		Badger:                badger.New(),
 		Index:                 index.New(),
 		TimeseriesChunkFactor: defaults.DefaultTimeseriesChunkFactor,
+		ByterangeChunkSize:    defaults.DefaultByterangeChunkSize,
 	}
 }
 
@@ -122,6 +124,7 @@ func (cc *Options) Clone() *Options {
 
 	c.UseCacheChunking = cc.UseCacheChunking
 	c.TimeseriesChunkFactor = cc.TimeseriesChunkFactor
+	c.ByterangeChunkSize = cc.ByterangeChunkSize
 
 	return c
 
@@ -139,7 +142,8 @@ func (cc *Options) Equal(cc2 *Options) bool {
 		cc.Provider == cc2.Provider &&
 		cc.ProviderID == cc2.ProviderID &&
 		cc.UseCacheChunking == cc2.UseCacheChunking &&
-		cc.TimeseriesChunkFactor == cc2.TimeseriesChunkFactor
+		cc.TimeseriesChunkFactor == cc2.TimeseriesChunkFactor &&
+		cc.ByterangeChunkSize == cc2.ByterangeChunkSize
 }
 
 var errMaxSizeBackoffBytesTooBig = errors.New("MaxSizeBackoffBytes can't be larger than MaxSizeBytes")
@@ -325,6 +329,10 @@ func (l Lookup) SetDefaults(metadata yamlx.KeyLookup, activeCaches strutil.Looku
 
 		if metadata.IsDefined("caches", k, "timeseries_chunk_factor") {
 			cc.TimeseriesChunkFactor = v.TimeseriesChunkFactor
+		}
+
+		if metadata.IsDefined("caches", k, "byterange_chunk_size") {
+			cc.ByterangeChunkSize = v.ByterangeChunkSize
 		}
 
 		l[k] = cc
