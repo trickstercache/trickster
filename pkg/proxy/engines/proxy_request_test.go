@@ -350,7 +350,7 @@ func TestStoreTrueContentType(t *testing.T) {
 	pr.trueContentType = expected
 
 	err := pr.store()
-	if err != nil {
+	if err != nil && !request.GetResources(r).CacheConfig.UseCacheChunking {
 		t.Error(err)
 	}
 

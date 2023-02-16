@@ -28,8 +28,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // test queries
@@ -1076,7 +1076,8 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
-	rsc.CacheConfig.Provider = "test" // disable direct-memory and force marshaling
+	rsc.CacheConfig.Provider = "test"        // disable direct-memory and force marshaling
+	rsc.CacheConfig.UseCacheChunking = false // this test writes directly to cache, bypassing chunk key derivation
 
 	client.RangeCacheKey = "testkey"
 

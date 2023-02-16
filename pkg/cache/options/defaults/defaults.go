@@ -24,6 +24,8 @@ const (
 	// DefaultCacheProviderID is the default cache providers ID for any defined cache
 	// and should align with DefaultCacheProvider
 	DefaultCacheProviderID = providers.Memory
+	// DefaultUseCacheChunking determines if caches use chunking when no value is set in config.
+	DefaultUseCacheChunking = false
 	// DefaultTimeseriesChunkFactor determines the extent of timeseries chunks, based on timeseries query step duration.
 	DefaultTimeseriesChunkFactor = 420
 	// DefaultByterangeChunkSize determines the size of byterange chunks.

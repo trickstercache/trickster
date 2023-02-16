@@ -23,6 +23,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -62,7 +63,6 @@ func query(rsc *request.Resources, c cache.Cache, key string,
 			}
 
 			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", lookupStatus.String()))
-
 			return d, lookupStatus, nr, err
 		}
 
@@ -139,7 +139,6 @@ func query(rsc *request.Resources, c cache.Cache, key string,
 			d.timeseries = cts
 		}
 	}
-
 	return d, lookupStatus, ranges, err
 }
 
@@ -156,7 +155,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		defer span.End()
 	}
 
-	d := &HTTPDocument{}
+	var d *HTTPDocument = &HTTPDocument{}
 	var lookupStatus status.LookupStatus
 	var err error
 
@@ -211,11 +210,19 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			}
 		} else {
 			size := int64(c.Configuration().ByterangeChunkSize)
-			start, end := ranges[0].Start, ranges[len(ranges)-1].End
-			start = start - (start % size)
-			end = end + size - (end % size)
+			// Determine start/end
+			// If there's no ranges in the query, just query from 0-whatever byte gets kmiss first
+			var start, end int64
+			var queryUntilMiss bool
+			if len(ranges) > 0 {
+				start, end = ranges[0].Start, ranges[len(ranges)-1].End
+				start = start - (start % size)
+				end = end + size - (end % size)
+			} else {
+				queryUntilMiss = true
+			}
 			lookupCt, lookupFound := 0, 0
-			for chunkStart := start; chunkStart < end; chunkStart += size {
+			for chunkStart := start; chunkStart < end || queryUntilMiss; chunkStart += size {
 				chunkEnd := chunkStart + size - 1
 				chunkRange := byterange.Range{
 					Start: chunkStart,
@@ -224,29 +231,39 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				chunkKey := key + ":" + chunkRange.String()
 				dd, lstat, got, err := query(rsc, c, chunkKey, byterange.Ranges{chunkRange}, trq, span)
 				lookupCt++
-				if err != nil || lstat == status.LookupStatusError {
+				if lstat == status.LookupStatusError {
 					return dd, lstat, got, err
 				}
-				if lstat == status.LookupStatusKeyMiss {
-					continue
+				if lstat == status.LookupStatusKeyMiss || errors.Is(err, cache.ErrKNF) {
+					if queryUntilMiss {
+						lookupCt--
+						break
+					} else {
+						continue
+					}
 				}
 				lookupFound++
-				if d.Body == nil {
-					d.Headers = dd.SafeHeaderClone()
-					d.ContentLength = dd.ContentLength
-					d.Body = dd.Body
-					d.Ranges = byterange.Ranges{chunkRange}
-				} else {
-					d.Body = append(d.Body, dd.Body...)
-					d.Ranges = append(d.Ranges, chunkRange)
+				// Clone document for first result
+				if d.RangeParts == nil {
+					d = dd.CloneEmptyContent()
+					d.RangeParts = make(byterange.MultipartByteRanges)
+				}
+				// Add parts of chunk as range parts using document ranges
+				dd.LoadRangeParts()
+				dri := len(d.Ranges)
+				d.Ranges = append(d.Ranges, make(byterange.Ranges, len(dd.RangeParts))...)
+				for ddr, ddrp := range dd.RangeParts {
+					d.Ranges[dri] = ddr
+					d.RangeParts[ddr] = ddrp
 				}
 			}
 			if lookupFound == 0 {
 				return d, status.LookupStatusKeyMiss, ranges, cache.ErrKNF
-			} else if lookupFound == lookupCt {
-				lookupStatus = status.LookupStatusHit
 			} else {
-				lookupStatus = status.LookupStatusPartialHit
+				// If we got a full hit, fulfill the content body (maintain status code from result)
+				sc := d.StatusCode
+				_ = d.FulfillContentBody()
+				d.StatusCode = sc
 			}
 		}
 	} else {
@@ -268,10 +285,9 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 		ranges = byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength - 1}}
 	}
-
-	if ranges != nil && len(ranges) > 0 && d.Ranges != nil && len(d.Ranges) > 0 {
+	if len(ranges) > 0 && len(d.Ranges) > 0 {
 		delta = ranges.CalculateDelta(d.Ranges, d.ContentLength)
-		if delta != nil && len(delta) > 0 {
+		if len(delta) > 0 {
 			if delta.Equal(ranges) {
 				lookupStatus = status.LookupStatusRangeMiss
 			} else {
@@ -281,7 +297,6 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		if len(delta) == 0 {
 			delta = nil
 		}
-
 	}
 	tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", lookupStatus.String()))
 	return d, lookupStatus, delta, nil
@@ -296,6 +311,14 @@ func stripConditionalHeaders(h http.Header) {
 
 func write(rsc *request.Resources, c cache.Cache, d *HTTPDocument, key string, ttl time.Duration,
 	compress bool, span trace.Span) error {
+
+	d.headerLock.Lock()
+	h := http.Header(d.Headers)
+	h.Del(headers.NameDate)
+	h.Del(headers.NameTransferEncoding)
+	h.Del(headers.NameContentRange)
+	h.Del(headers.NameTricksterResult)
+	d.headerLock.Unlock()
 
 	var err error
 
@@ -359,10 +382,6 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 
 	d.headerLock.Lock()
 	h := http.Header(d.Headers)
-	h.Del(headers.NameDate)
-	h.Del(headers.NameTransferEncoding)
-	h.Del(headers.NameContentRange)
-	h.Del(headers.NameTricksterResult)
 	ce := h.Get(headers.NameContentEncoding)
 	d.headerLock.Unlock()
 
@@ -396,11 +415,10 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		}
 	}
 
-	// Currently this won't call without a timeseries; byte-only chunking TODO
 	if doCacheChunk {
 		if d.timeseries != nil {
 			if d.timeseries.Step() == 0 {
-				return errors.New("")
+				return errors.New("timeseries chunking requires a nonzero step")
 			}
 			// Chunk based on document timeseries
 			// Determine step and chunk size
@@ -434,23 +452,29 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 				}
 			}
 		} else {
-			root := d.Body
 			size := int64(c.Configuration().ByterangeChunkSize)
 			// Get start/end of the document byterange
-			rootRanges := d.Ranges
-			start, end := rootRanges[0].Start, rootRanges[len(rootRanges)-1].End
-			start = start - (start % size)
-			end = end + size - (end % size)
+			rootRanges, err := rangesFromDocument(d)
+			if err != nil || len(rootRanges) == 0 {
+				tl.Error(rsc.Logger, "error parsing ranges from write document", tl.Pairs{
+					"detail": err,
+				})
+				return err
+			}
+			rootStart := rootRanges[0].Start
+			rootEnd := rootRanges[len(rootRanges)-1].End
+			// Get start/end of the chunk ranges, aligned to size
+			start := rootStart - (rootStart % size)
+			end := rootEnd + size - (rootEnd % size)
 			for chunkStart := start; chunkStart < end; chunkStart += size {
+				// Determine full chunk range; chunks are always full-size
 				chunkEnd := chunkStart + size - 1
 				chunkRange := byterange.Range{
 					Start: chunkStart,
 					End:   chunkEnd,
 				}
 				chunkKey := key + ":" + chunkRange.String()
-				dd := d.CloneEmptyContent()
-				dd.Ranges = byterange.Ranges{chunkRange}
-				dd.Body = root[chunkStart-start : chunkEnd-start]
+				dd := chunkDocumentByteranges(d, rootRanges, chunkRange)
 				err = write(rsc, c, dd, chunkKey, ttl, compress, span)
 				if err != nil {
 					return err
@@ -473,8 +497,98 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 			)),
 		)
 	}
+
 	return nil
 
+}
+
+// Chunk a document's byteranges.
+// This returns a clone of d where:
+//   - All content in d.Body within contentRanges bounded by chunkRange is in dd.StoredRangeParts under its range
+//   - All content in d.RangeParts with a key in contentRanges is in dd.StoredRangeParts under its range
+func chunkDocumentByteranges(d *HTTPDocument, contentRanges byterange.Ranges, chunkRange byterange.Range) *HTTPDocument {
+	dd := d.CloneEmptyContent()
+	ddrs := make(byterange.Ranges, len(contentRanges))
+	ddrs_idx := 0
+	for _, cr := range contentRanges {
+		if cr.Start >= chunkRange.End || cr.End <= chunkRange.Start {
+			continue
+		}
+		if cr.Start < chunkRange.Start {
+			cr.Start = chunkRange.Start
+		}
+		if cr.End > chunkRange.End {
+			cr.End = chunkRange.End
+		}
+		ddrs[ddrs_idx] = cr
+		ddrs_idx++
+		if len(d.Body) > 0 {
+			// If body is non-zero, copy portion of body to RangeParts
+			dd.RangeParts[cr] = &byterange.MultipartByteRange{Range: cr, Content: d.Body[cr.Start : cr.End+1]}
+		} else {
+			// else iterate through rangeparts and copy parts (to make sure boundaries are split properly)
+			for dr, drp := range d.RangeParts {
+				if dr.Start >= cr.End || dr.End <= cr.Start {
+					continue
+				}
+				if dr.Start < cr.Start {
+					dr.Start = cr.Start
+				}
+				if dr.End > dr.End {
+					dr.End = cr.End
+				}
+				content := drp.Content[dr.Start-drp.Range.Start : dr.End-drp.Range.Start+1]
+				dd.RangeParts[dr] = &byterange.MultipartByteRange{Range: dr, Content: content}
+			}
+		}
+	}
+	dd.StoredRangeParts = dd.RangeParts.PackableMultipartByteRanges()
+	dd.Ranges = ddrs[:ddrs_idx]
+	return dd
+}
+
+func rangesFromDocument(d *HTTPDocument) (byterange.Ranges, error) {
+	d.headerLock.Lock()
+	h := http.Header(d.Headers)
+	rh := h.Get(headers.NameRange)
+	crh := h.Get(headers.NameContentRange)
+	clh := h.Get(headers.NameContentLength)
+	d.headerLock.Unlock()
+	var ranges byterange.Ranges
+	if len(d.Ranges) > 0 {
+		// If there are ranges, just use those
+		ranges = d.Ranges
+	} else if rh != "" {
+		ranges = byterange.ParseRangeHeader(rh)
+	} else if crh != "" {
+		// If Content-Range is specified, use that range
+		r, _, err := byterange.ParseContentRangeHeader(crh)
+		if err != nil {
+			return nil, err
+		}
+		ranges = byterange.Ranges{r}
+	} else if clh != "" {
+		// If Content-Length is specified, assume that the document is that entire content length
+		cl, err := strconv.ParseInt(clh, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		// Content-Length is *exclusive* and range is *inclusive*, so we need to sub 1 from end to rep as range
+		ranges = byterange.Ranges{
+			byterange.Range{Start: 0, End: cl - 1},
+		}
+	} else if d.ContentLength > 0 {
+		ranges = byterange.Ranges{
+			byterange.Range{Start: 0, End: int64(len(d.Body) - 1)},
+		}
+	} else if len(d.Body) != 0 {
+		ranges = byterange.Ranges{
+			byterange.Range{Start: 0, End: int64(len(d.Body) - 1)},
+		}
+	} else {
+		return nil, errors.New("failed to parse any byte range from the document request")
+	}
+	return ranges, nil
 }
 
 // DocumentFromHTTPResponse returns an HTTPDocument from the provided

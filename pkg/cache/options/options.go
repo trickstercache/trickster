@@ -72,6 +72,7 @@ func New() *Options {
 		BBolt:                 bbolt.New(),
 		Badger:                badger.New(),
 		Index:                 index.New(),
+		UseCacheChunking:      defaults.DefaultUseCacheChunking,
 		TimeseriesChunkFactor: defaults.DefaultTimeseriesChunkFactor,
 		ByterangeChunkSize:    defaults.DefaultByterangeChunkSize,
 	}

@@ -131,7 +131,6 @@ func TestCacheHitRangeRequest(t *testing.T) {
 }
 
 func TestCacheHitRangeRequestChunks(t *testing.T) {
-	expected := "Apache License"
 	conf, _, err := config.Load("trickster", "test", []string{
 		"-origin-url", "http://1",
 		"-provider", "default",
@@ -163,7 +162,7 @@ func TestCacheHitRangeRequestChunks(t *testing.T) {
 	resp2.StatusCode = 200
 	d := DocumentFromHTTPResponse(resp2, license, nil, testLogger)
 	d.ContentLength = int64(len(license))
-	d.Ranges = byterange.Ranges{byterange.Range{Start: 0, End: int64(len(license))}}
+	d.Ranges = byterange.Ranges{byterange.Range{Start: 0, End: int64(len(license) - 1)}}
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
@@ -173,22 +172,24 @@ func TestCacheHitRangeRequestChunks(t *testing.T) {
 	}
 
 	ranges := byterange.Ranges{
-		byterange.Range{Start: 33, End: 47},
-		byterange.Range{Start: 4033, End: 4047},
-		byterange.Range{Start: 8033, End: 8047},
+		byterange.Range{Start: 0, End: int64(len(d.Body) - 1)},
 	}
 	d2, _, deltas, err := QueryCache(ctx, cache, "testKey", ranges, nil)
 	if err != nil {
 		t.Error(err)
 	}
-	if (string(d2.Body[33:47])) != "Apache License" {
-		t.Errorf("expected %s got %s", expected, string(d2.Body[33:47]))
-	}
-	if string(d2.Body[4033:4047]) != "rants to You a" {
-		t.Errorf("expected %s got %s", expected, string(d2.Body[4033:4047]))
-	}
-	if string(d2.Body[8033:8047]) != ". Disclaimer o" {
-		t.Errorf("expected %s got %s", expected, string(d2.Body[8033:8047]))
+	// Inspect document in 10-byte chunks. Fail immediately if something is different.
+	for i := 0; i < len(d.Body); i += 20 {
+		end := i + 20
+		if end > len(d.Body) {
+			end = len(d.Body)
+		}
+		if end > len(d2.Body) {
+			end = len(d2.Body)
+		}
+		if string(d.Body[i:end]) != string(d2.Body[i:end]) {
+			t.Fatalf("cache integrity check failed; expected\n%s\ngot\n%s\nat %d-%d", d.Body[i:end], d2.Body[i:end], i, end)
+		}
 	}
 	if deltas != nil {
 		t.Errorf("updated query range was expected to be empty, got %s", deltas)

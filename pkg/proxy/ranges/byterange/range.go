@@ -231,6 +231,20 @@ func ParseContentRangeHeader(input string) (Range, int64, error) {
 	return Range{}, -1, errors.New("invalid input format")
 }
 
+func (brs Ranges) Compressed() Ranges {
+	out := Ranges{}
+	i := 0
+	for _, br := range brs {
+		if i > 0 && out[i-1].End == br.Start-1 {
+			out[i-1].End = br.End
+		} else {
+			out = append(out, br)
+			i++
+		}
+	}
+	return out
+}
+
 // ParseRangeHeader returns a Ranges list from the provided input,
 // which must be a properly-formatted HTTP 'Range' Request Header value
 func ParseRangeHeader(input string) Ranges {

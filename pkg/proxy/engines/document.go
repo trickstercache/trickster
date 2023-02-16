@@ -73,7 +73,7 @@ func (d *HTTPDocument) CloneEmptyContent() *HTTPDocument {
 		ContentLength: d.ContentLength,
 		ContentType:   d.ContentType,
 		// Ranges
-		// RangeParts
+		RangeParts: make(byterange.MultipartByteRanges),
 		// StoredRangeParts
 		rangePartsLoaded: d.rangePartsLoaded,
 		isFulfillment:    d.isFulfillment,
