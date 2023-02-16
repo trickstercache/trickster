@@ -241,7 +241,92 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 	}
 }
 
+func TestCacheHitRangeRequestChunks2(t *testing.T) {
+
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Error("could not load cache")
+	}
+	cache.Configuration().UseCacheChunking = true
+
+	have := byterange.Range{Start: 1, End: 20}
+	cl := int64(len(testRangeBody))
+	rl := (have.End - have.Start) + 1
+	resp2 := &http.Response{}
+	resp2.Header = make(http.Header)
+	resp2.Header.Add(headers.NameContentLength, strconv.FormatInt(rl, 10))
+	resp2.ContentLength = rl
+	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
+	resp2.StatusCode = 206
+	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
+	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
+
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]interface{}{"text/plain": true})
+	if err != nil {
+		t.Error(err)
+	}
+
+	ranges := byterange.Ranges{byterange.Range{Start: 5, End: 10}}
+	d2, _, deltas, err := QueryCache(ctx, cache, "testKey", ranges, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if deltas != nil && len(deltas) > 0 {
+		t.Errorf("updated query range was expected to be empty: %v", deltas)
+	}
+	if d2.Ranges[0].Start != 1 || d2.Ranges[0].End != 20 {
+		t.Errorf("expected start %d end %d, got start %d end %d", 1, 20, deltas[0].Start, deltas[0].End)
+	}
+}
+
 func TestCacheHitRangeRequest3(t *testing.T) {
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Error("could not load cache")
+	}
+
+	have := byterange.Range{Start: 1, End: 20}
+	cl := int64(len(testRangeBody))
+	rl := (have.End - have.Start) + 1
+	resp2 := &http.Response{}
+	resp2.Header = make(http.Header)
+	resp2.Header.Add(headers.NameContentLength, strconv.FormatInt(rl, 10))
+	resp2.ContentLength = rl
+	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
+	resp2.StatusCode = 206
+	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
+	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
+
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]interface{}{"text/plain": true})
+	if err != nil {
+		t.Error(err)
+	}
+
+	qrange := byterange.Ranges{byterange.Range{Start: 5, End: 10}}
+	_, _, deltas, err := QueryCache(ctx, cache, "testKey", qrange, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	if deltas != nil && len(deltas) > 0 {
+		t.Error("Expected empty query range got non empty response ", deltas)
+	}
+}
+
+func TestCacheHitRangeRequestChunks3(t *testing.T) {
 	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
@@ -324,6 +409,51 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 	}
 }
 
+func TestPartialCacheMissRangeRequestChunking(t *testing.T) {
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Error("could not load cache")
+	}
+	cache.Configuration().UseCacheChunking = true
+
+	have := byterange.Range{Start: 1, End: 9}
+	cl := int64(len(testRangeBody))
+	rl := (have.End - have.Start) + 1
+	resp2 := &http.Response{}
+	resp2.Header = make(http.Header)
+	resp2.Header.Add(headers.NameContentLength, strconv.FormatInt(rl, 10))
+	resp2.ContentLength = rl
+	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
+	resp2.StatusCode = 206
+	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
+
+	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
+
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]interface{}{"text/plain": true})
+	if err != nil {
+		t.Error(err)
+	}
+
+	ranges := byterange.Ranges{byterange.Range{Start: 5, End: 20}}
+	_, _, deltas, err := QueryCache(ctx, cache, "testKey", ranges, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	if deltas == nil || len(deltas) < 1 {
+		t.Errorf("invalid deltas: %v", deltas)
+	} else if deltas[0].Start != 10 ||
+		deltas[0].End != 20 {
+		t.Errorf("expected start %d end %d, got start %d end %d", 10, 20, deltas[0].Start, deltas[0].End)
+	}
+}
+
 func TestFullCacheMissRangeRequest(t *testing.T) {
 	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
@@ -335,6 +465,49 @@ func TestFullCacheMissRangeRequest(t *testing.T) {
 	if !ok {
 		t.Error("could not load cache")
 	}
+
+	have := byterange.Range{Start: 1, End: 9}
+	cl := int64(len(testRangeBody))
+	rl := (have.End - have.Start) + 1
+	resp2 := &http.Response{}
+	resp2.Header = make(http.Header)
+	resp2.Header.Add(headers.NameContentLength, strconv.FormatInt(rl, 10))
+	resp2.ContentLength = rl
+	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
+	resp2.StatusCode = 206
+	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil, testLogger)
+
+	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
+
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, map[string]interface{}{"text/plain": true})
+	if err != nil {
+		t.Error(err)
+	}
+
+	ranges := byterange.Ranges{byterange.Range{Start: 15, End: 20}}
+	_, _, deltas, err := QueryCache(ctx, cache, "testKey", ranges, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	if deltas[0].Start != 15 ||
+		deltas[0].End != 20 {
+		t.Errorf("expected start %d end %d, got start %d end %d", 10, 20, deltas[0].Start, deltas[0].End)
+	}
+}
+
+func TestFullCacheMissRangeRequestChunking(t *testing.T) {
+	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	if err != nil {
+		t.Errorf("Could not load configuration: %s", err.Error())
+	}
+
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Error("could not load cache")
+	}
+	cache.Configuration().UseCacheChunking = true
 
 	have := byterange.Range{Start: 1, End: 9}
 	cl := int64(len(testRangeBody))
