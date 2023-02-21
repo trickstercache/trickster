@@ -79,8 +79,10 @@ func (d *HTTPDocument) GetMeta() *HTTPDocument {
 
 func (d *HTTPDocument) GetTimeseriesChunk(chunkExtent timeseries.Extent) *HTTPDocument {
 	dd := &HTTPDocument{
-		IsChunk:    true,
-		timeseries: d.timeseries.CroppedClone(chunkExtent),
+		IsChunk: true,
+	}
+	if d.timeseries != nil {
+		dd.timeseries = d.timeseries.CroppedClone(chunkExtent)
 	}
 	return dd
 }
