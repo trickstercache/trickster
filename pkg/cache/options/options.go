@@ -52,6 +52,10 @@ type Options struct {
 	// Badger provides options for BadgerDB caching
 	Badger *badger.Options `yaml:"badger,omitempty"`
 
+	UseCacheChunking      bool  `yaml:"use_cache_chunking,omitempty"`
+	TimeseriesChunkFactor int64 `yaml:"timeseries_chunk_factor"`
+	ByterangeChunkSize    int64 `yaml:"byterange_chunk_size"`
+
 	//  Synthetic Values
 
 	// ProviderID represents the internal constant for the provided Provider string
@@ -62,13 +66,16 @@ type Options struct {
 // New will return a pointer to a CacheOptions with the default configuration settings
 func New() *Options {
 	return &Options{
-		Provider:   defaults.DefaultCacheProvider,
-		ProviderID: defaults.DefaultCacheProviderID,
-		Redis:      redis.New(),
-		Filesystem: filesystem.New(),
-		BBolt:      bbolt.New(),
-		Badger:     badger.New(),
-		Index:      index.New(),
+		Provider:              defaults.DefaultCacheProvider,
+		ProviderID:            defaults.DefaultCacheProviderID,
+		Redis:                 redis.New(),
+		Filesystem:            filesystem.New(),
+		BBolt:                 bbolt.New(),
+		Badger:                badger.New(),
+		Index:                 index.New(),
+		UseCacheChunking:      defaults.DefaultUseCacheChunking,
+		TimeseriesChunkFactor: defaults.DefaultTimeseriesChunkFactor,
+		ByterangeChunkSize:    defaults.DefaultByterangeChunkSize,
 	}
 }
 
@@ -116,6 +123,10 @@ func (cc *Options) Clone() *Options {
 	c.Redis.ReadTimeoutMS = cc.Redis.ReadTimeoutMS
 	c.Redis.SentinelMaster = cc.Redis.SentinelMaster
 	c.Redis.WriteTimeoutMS = cc.Redis.WriteTimeoutMS
+
+	c.UseCacheChunking = cc.UseCacheChunking
+	c.TimeseriesChunkFactor = cc.TimeseriesChunkFactor
+	c.ByterangeChunkSize = cc.ByterangeChunkSize
 
 	return c
 

@@ -41,12 +41,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const (
-	useCacheChunking      = bool(true)
-	timeseriesChunkFactor = int64(420)
-	byterangeChunkSize    = int64(4096)
-)
-
 type queryResult struct {
 	queryKey     string
 	d            *HTTPDocument
@@ -127,26 +121,27 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	var lookupStatus status.LookupStatus
 
 	// Query document
-	cr := make(chan queryResult)
-	go func() {
-		queryConcurrent(ctx, c, key, cr, nil)
-	}()
+	cr := make(chan queryResult, 1)
+	queryConcurrent(ctx, c, key, cr, nil)
 	qr := <-cr
 	if qr.err != nil {
 		return qr.d, qr.lookupStatus, ranges, qr.err
 	} else {
+		if unmarshal != nil {
+			qr.d.timeseries, _ = unmarshal(qr.d.Body, nil)
+		}
 		d = qr.d
 		lookupStatus = qr.lookupStatus
 	}
 
 	// If we got a meta document and want to use cache chunking, do so
 	// TODO: persist IsMeta; something's erasing it and it'd be good to have as a flag here
-	if useCacheChunking {
+	if c.Configuration().UseCacheChunking {
 		if trq := rsc.TimeRangeQuery; trq != nil {
 			// Do timeseries chunk retrieval
 			// Determine chunk extent and number of chunks
 			var cext timeseries.Extent
-			var csize = trq.Step * time.Duration(timeseriesChunkFactor)
+			var csize = trq.Step * time.Duration(c.Configuration().TimeseriesChunkFactor)
 			var cct int
 			cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
 			cct = int(cext.End.Sub(cext.Start) / csize)
@@ -193,21 +188,22 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			if len(ranges) == 0 {
 				ranges = byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength - 1}}
 			}
+			size := c.Configuration().ByterangeChunkSize
 			crs, cre = ranges[0].Start, ranges[len(ranges)-1].End
-			crs = (crs / byterangeChunkSize) * byterangeChunkSize
-			cre = (cre/byterangeChunkSize + 1) * byterangeChunkSize
-			cct = (cre - crs) / byterangeChunkSize
+			crs = (crs / size) * size
+			cre = (cre/size + 1) * size
+			cct = (cre - crs) / size
 			// Allocate body in meta document
 			d.Body = make([]byte, d.ContentLength)
 			// Prepare buffered results and waitgroup
 			cr := make(chan queryResult, cct)
 			wg := &sync.WaitGroup{}
 			// Iterate chunks
-			for chunkStart := crs; chunkStart < cre; chunkStart += byterangeChunkSize {
+			for chunkStart := crs; chunkStart < cre; chunkStart += size {
 				// Determine chunk range (inclusive)
 				chunkRange := byterange.Range{
 					Start: chunkStart,
-					End:   chunkStart + byterangeChunkSize - 1,
+					End:   chunkStart + size - 1,
 				}
 				// Determine subkey
 				subkey := key + chunkRange.String()
@@ -237,7 +233,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 					}
 					if qrc.lookupStatus == status.LookupStatusHit {
 						for _, r := range qrc.d.Ranges {
-							content := qrc.d.Body[r.Start%byterangeChunkSize : r.End%byterangeChunkSize+1]
+							content := qrc.d.Body[r.Start%size : r.End%size+1]
 							r.Copy(d.Body, content)
 							dbl_lock.Lock()
 							if r.End+1 > dbl {
@@ -389,13 +385,13 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		}
 	}
 
-	if useCacheChunking {
+	if c.Configuration().UseCacheChunking {
 		if trq := rsc.TimeRangeQuery; trq != nil {
 			// Do timeseries chunking
 			meta := d.GetMeta()
 			// Determine chunk extent and number of chunks
 			var cext timeseries.Extent
-			var csize = trq.Step * time.Duration(timeseriesChunkFactor)
+			var csize = trq.Step * time.Duration(c.Configuration().TimeseriesChunkFactor)
 			var cct int
 			cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
 			cct = int(cext.End.Sub(cext.Start) / csize)
@@ -437,26 +433,27 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 			// Do byterange chunking
 			// Determine chunk start/end and number of chunks
 			drs := d.getByteRanges()
+			size := c.Configuration().ByterangeChunkSize
 			crs, cre := drs[0].Start, drs[len(drs)-1].End
-			crs = (crs / byterangeChunkSize) * byterangeChunkSize
-			cre = (cre/byterangeChunkSize + 1) * byterangeChunkSize
-			cct := (cre - crs) / byterangeChunkSize
+			crs = (crs / size) * size
+			cre = (cre/size + 1) * size
+			cct := (cre - crs) / size
 			// Create meta document
 			meta := d.GetMeta()
 			// Prepare buffered results and waitgroup
 			cr := make(chan error, cct+1)
 			wg := &sync.WaitGroup{}
 			// Iterate chunks
-			for chunkStart := crs; chunkStart < cre; chunkStart += byterangeChunkSize {
+			for chunkStart := crs; chunkStart < cre; chunkStart += size {
 				// Determine chunk range (inclusive)
 				chunkRange := byterange.Range{
 					Start: chunkStart,
-					End:   chunkStart + byterangeChunkSize - 1,
+					End:   chunkStart + size - 1,
 				}
 				// Determine subkey
 				subkey := key + chunkRange.String()
 				// Get chunk
-				cd := d.GetByterangeChunk(chunkRange, byterangeChunkSize)
+				cd := d.GetByterangeChunk(chunkRange, size)
 				// Store subdocument
 				wg.Add(1)
 				go writeConcurrent(ctx, c, subkey, cd, compress, ttl, cr, wg.Done)
@@ -479,6 +476,9 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		// Write concurrently
 		cr := make(chan error)
 		go func() {
+			if marshal != nil {
+				d.Body, _ = marshal(d.timeseries, nil, 0)
+			}
 			writeConcurrent(ctx, c, key, d, compress, ttl, cr, nil)
 		}()
 		err = <-cr
