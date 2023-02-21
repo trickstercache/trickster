@@ -387,7 +387,11 @@ func (pr *proxyRequest) setBodyWriter() {
 			}
 		} else {
 			// we need to write to both the client over the wire, and the cache buffer
-			pr.responseWriter = io.MultiWriter(pr.responseWriter, pr.cacheBuffer)
+			if pr.responseWriter != nil {
+				pr.responseWriter = io.MultiWriter(pr.responseWriter, pr.cacheBuffer)
+			} else {
+				pr.responseWriter = pr.cacheBuffer
+			}
 		}
 	} else if pr.upstreamResponse.StatusCode == http.StatusNotModified {
 		pr.responseWriter = nil

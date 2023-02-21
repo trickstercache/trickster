@@ -39,57 +39,41 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// QueryCache queries the cache for an HTTPDocument and returns it
-func QueryCache(ctx context.Context, c cache.Cache, key string,
-	ranges byterange.Ranges) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
+type queryResult struct {
+	queryKey     string
+	d            *HTTPDocument
+	lookupStatus status.LookupStatus
+	err          error
+}
 
-	rsc := tc.Resources(ctx).(*request.Resources)
-
-	ctx, span := tspan.NewChildSpan(ctx, rsc.Tracer, "QueryCache")
-	if span != nil {
-		defer span.End()
+func queryConcurrent(ctx context.Context, c cache.Cache, key string, cr chan<- queryResult, done func()) {
+	if done != nil {
+		defer done()
 	}
-
-	d := &HTTPDocument{}
-	var lookupStatus status.LookupStatus
-	var b []byte
-	var err error
-
+	qr := queryResult{queryKey: key, d: &HTTPDocument{}}
 	if c.Configuration().Provider == "memory" {
 		mc := c.(cache.MemoryCache)
 		var ifc interface{}
-		ifc, lookupStatus, err = mc.RetrieveReference(key, true)
+		ifc, qr.lookupStatus, qr.err = mc.RetrieveReference(key, true)
 
-		if err != nil || (lookupStatus != status.LookupStatusHit) {
-			var nr byterange.Ranges
-			if lookupStatus == status.LookupStatusKeyMiss && ranges != nil && len(ranges) > 0 {
-				nr = ranges
-			}
-
-			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", lookupStatus.String()))
-
-			return d, lookupStatus, nr, err
+		if qr.err != nil || (qr.lookupStatus != status.LookupStatusHit) {
+			cr <- qr
+			return
 		}
 
 		if ifc != nil {
-			d, _ = ifc.(*HTTPDocument)
+			qr.d, _ = ifc.(*HTTPDocument)
 		} else {
-			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusKeyMiss.String()))
-			return d, status.LookupStatusKeyMiss, ranges, err
+			cr <- qr
 		}
 
 	} else {
+		var b []byte
+		b, qr.lookupStatus, qr.err = c.Retrieve(key, true)
 
-		b, lookupStatus, err = c.Retrieve(key, true)
-
-		if err != nil || (lookupStatus != status.LookupStatusHit) {
-			var nr byterange.Ranges
-			if lookupStatus == status.LookupStatusKeyMiss && ranges != nil && len(ranges) > 0 {
-				nr = ranges
-
-			}
-			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", lookupStatus.String()))
-			return d, lookupStatus, nr, err
+		if qr.err != nil || (qr.lookupStatus != status.LookupStatusHit) {
+			cr <- qr
+			return
 		}
 
 		var inflate bool
@@ -102,36 +86,60 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 
 		if inflate {
-			tl.Debug(rsc.Logger, "decompressing cached data", tl.Pairs{"cacheKey": key})
+			// tl.Debug(rsc.Logger, "decompressing cached data", tl.Pairs{"cacheKey": key})
 			decoder := brotli.NewReader(bytes.NewReader(b))
-			b, err = io.ReadAll(decoder)
-			if err != nil {
-				tl.Error(rsc.Logger, "error decoding cache document", tl.Pairs{
-					"cacheKey": key,
-					"detail":   err.Error(),
-				})
-				tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusKeyMiss.String()))
-				return d, status.LookupStatusKeyMiss, ranges, err
+			b, qr.err = io.ReadAll(decoder)
+			if qr.err != nil {
+				cr <- qr
+				return
 			}
 
 		}
-		_, err = d.UnmarshalMsg(b)
-		if err != nil {
-			tl.Error(rsc.Logger, "error unmarshaling cache document", tl.Pairs{
-				"cacheKey": key,
-				"detail":   err.Error(),
-			})
-			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusKeyMiss.String()))
-			return d, status.LookupStatusKeyMiss, ranges, err
+		_, qr.err = qr.d.UnmarshalMsg(b)
+		if qr.err != nil {
+			cr <- qr
+			return
 		}
+	}
+	cr <- qr
+	return
+}
 
+// QueryCache queries the cache for an HTTPDocument and returns it
+func QueryCache(ctx context.Context, c cache.Cache, key string,
+	ranges byterange.Ranges) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
+
+	rsc := tc.Resources(ctx).(*request.Resources)
+
+	ctx, span := tspan.NewChildSpan(ctx, rsc.Tracer, "QueryCache")
+	if span != nil {
+		defer span.End()
+	}
+
+	var d *HTTPDocument
+	var lookupStatus status.LookupStatus
+	// Query document
+	cr := make(chan queryResult)
+	go func() {
+		queryConcurrent(ctx, c, key, cr, nil)
+	}()
+	qr := <-cr
+	if qr.err != nil {
+		tl.Error(rsc.Logger, "Error querying cache", tl.Pairs{
+			"key":     key,
+			"details": qr.err,
+		})
+		return qr.d, qr.lookupStatus, ranges, qr.err
+	} else {
+		d = qr.d
+		lookupStatus = qr.lookupStatus
 	}
 
 	var delta byterange.Ranges
 
 	// Fulfillment is when we have a range stored, but a subsequent user wants the whole body, so
 	// we must inflate the requested range to be the entire object in order to get the correct delta.
-	d.isFulfillment = (d.Ranges != nil && len(d.Ranges) > 0) && (ranges == nil || len(ranges) == 0)
+	d.isFulfillment = (len(d.Ranges) > 0) && (len(ranges) == 0)
 
 	if d.isFulfillment {
 		if span != nil {
@@ -160,6 +168,51 @@ func stripConditionalHeaders(h http.Header) {
 	h.Del(headers.NameIfUnmodifiedSince)
 	h.Del(headers.NameIfNoneMatch)
 	h.Del(headers.NameIfModifiedSince)
+}
+
+func writeConcurrent(ctx context.Context, c cache.Cache, key string, d *HTTPDocument, compress bool, ttl time.Duration, cr chan<- error) {
+
+	var b []byte
+	var err error
+
+	// for memory cache, don't serialize the document, since we can retrieve it by reference.
+	if c.Configuration().Provider == "memory" {
+		mc := c.(cache.MemoryCache)
+
+		if d != nil {
+			// during unmarshal, these would come back as false, so lets set them as such even for direct access
+			d.rangePartsLoaded = false
+			d.isFulfillment = false
+			d.isLoaded = false
+			d.RangeParts = nil
+
+			if d.CachingPolicy != nil {
+				d.CachingPolicy.ResetClientConditionals()
+			}
+		}
+		cr <- mc.StoreReference(key, d, ttl)
+		return
+	}
+
+	// for non-memory, we have to seralize the document to a byte slice to store
+	b, err = d.MarshalMsg(nil)
+	if err != nil {
+		cr <- err
+		return
+	}
+
+	if compress {
+		// tl.Debug(rsc.Logger, "compressing cache data", tl.Pairs{"cacheKey": key})
+		buf := bytes.NewBuffer([]byte{1})
+		encoder := brotli.NewWriter(buf)
+		encoder.Write(b)
+		encoder.Close()
+		b = buf.Bytes()
+	} else {
+		b = append([]byte{0}, b...)
+	}
+
+	cr <- c.Store(key, b, ttl)
 }
 
 // WriteCache writes an HTTPDocument to the cache
@@ -195,46 +248,13 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		}
 	}
 
-	// for memory cache, don't serialize the document, since we can retrieve it by reference.
-	if c.Configuration().Provider == "memory" {
-		mc := c.(cache.MemoryCache)
+	// Write concurrently
+	cr := make(chan error)
+	go func() {
+		writeConcurrent(ctx, c, key, d, compress, ttl, cr)
+	}()
+	err = <-cr
 
-		if d != nil {
-			// during unmarshal, these would come back as false, so lets set them as such even for direct access
-			d.rangePartsLoaded = false
-			d.isFulfillment = false
-			d.isLoaded = false
-			d.RangeParts = nil
-
-			if d.CachingPolicy != nil {
-				d.CachingPolicy.ResetClientConditionals()
-			}
-		}
-
-		return mc.StoreReference(key, d, ttl)
-	}
-
-	// for non-memory, we have to seralize the document to a byte slice to store
-	b, err = d.MarshalMsg(nil)
-	if err != nil {
-		tl.Error(rsc.Logger, "error marshaling cache document", tl.Pairs{
-			"cacheKey": key,
-			"detail":   err.Error(),
-		})
-	}
-
-	if compress {
-		tl.Debug(rsc.Logger, "compressing cache data", tl.Pairs{"cacheKey": key})
-		buf := bytes.NewBuffer([]byte{1})
-		encoder := brotli.NewWriter(buf)
-		encoder.Write(b)
-		encoder.Close()
-		b = buf.Bytes()
-	} else {
-		b = append([]byte{0}, b...)
-	}
-
-	err = c.Store(key, b, ttl)
 	if err != nil {
 		if span != nil {
 			span.AddEvent(
