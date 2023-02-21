@@ -36,6 +36,8 @@ import (
 
 // HTTPDocument represents a full HTTP Response/Cache Document with unbuffered body
 type HTTPDocument struct {
+	IsMeta        bool                `msg:"is_meta"`
+	IsChunk       bool                `msg:"is_chunk"`
 	StatusCode    int                 `msg:"status_code"`
 	Status        string              `msg:"status"`
 	Headers       map[string][]string `msg:"headers"`
@@ -54,6 +56,51 @@ type HTTPDocument struct {
 	isLoaded         bool
 	timeseries       timeseries.Timeseries
 	headerLock       sync.Mutex
+}
+
+func (d *HTTPDocument) GetMeta() *HTTPDocument {
+	dd := &HTTPDocument{
+		IsMeta:        true,
+		StatusCode:    d.StatusCode,
+		Status:        d.Status,
+		Headers:       d.SafeHeaderClone(),
+		Body:          nil,
+		ContentLength: d.ContentLength,
+		ContentType:   d.ContentType,
+		CachingPolicy: d.CachingPolicy.Clone(),
+		Ranges:        d.Ranges.Clone(),
+		RangeParts:    nil,
+	}
+	return dd
+}
+
+func (d *HTTPDocument) GetTimeseriesChunk(chunkExtent timeseries.Extent) *HTTPDocument {
+	dd := &HTTPDocument{
+		IsChunk:    true,
+		timeseries: d.timeseries.CroppedClone(chunkExtent),
+	}
+	return dd
+}
+
+func (d *HTTPDocument) GetByterangeChunk(chunkRange byterange.Range) *HTTPDocument {
+	dd := &HTTPDocument{
+		IsChunk: true,
+	}
+	// size := chunkRange.End - chunkRange.Start + 1
+	if len(d.Body) > 0 {
+		dd.Body = chunkRange.CropByteSlice(d.Body, 0)
+	}
+	return dd
+}
+
+func (d *HTTPDocument) getByteRanges() byterange.Ranges {
+	if len(d.Ranges) > 0 {
+		return d.Ranges
+	} else if ranges := d.RangeParts.Ranges(); len(ranges) > 0 {
+		return ranges
+	} else {
+		return byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength}}
+	}
 }
 
 // SafeHeaderClone returns a threadsafe copy of the Document Header

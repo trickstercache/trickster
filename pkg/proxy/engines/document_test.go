@@ -17,6 +17,7 @@
 package engines
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -229,4 +230,33 @@ func TestLoadRangeParts(t *testing.T) {
 		t.Errorf("expected %d got %d", 1, len(d.Ranges))
 	}
 
+}
+
+func TestGetByterangeChunk(t *testing.T) {
+	d := &HTTPDocument{
+		Body: []byte{0, 1, 2, 3, 4, 5},
+	}
+	cmp := func(d0, d1 *HTTPDocument, r byterange.Range) error {
+		if len(d0.Body[r.Start:r.End+1]) != len(d1.Body) {
+			return fmt.Errorf("slice lengths %d and %d not eq", len(d0.Body), len(d1.Body))
+		}
+		var i int64
+		for i = 0; i < int64(len(d1.Body)); i++ {
+			if d0.Body[i+r.Start] != d1.Body[i] {
+				return fmt.Errorf("slices not eq at %d, got %b and %b", i, d0.Body[i], d1.Body[i])
+			}
+		}
+		if !d1.IsChunk {
+			return fmt.Errorf("d1 should be Chunk in this context")
+		}
+		return nil
+	}
+	var i int64
+	for i = 0; i < 6; i += 2 {
+		r := byterange.Range{Start: i, End: i + 1}
+		d2 := d.GetByterangeChunk(r)
+		if err := cmp(d, d2, r); err != nil {
+			t.Error(err)
+		}
+	}
 }
