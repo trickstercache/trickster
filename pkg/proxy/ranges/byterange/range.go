@@ -80,6 +80,12 @@ func (br Range) ContentRangeHeader(contentLength int64) string {
 	return byteResponsRangePrefix + start + "-" + end + "/" + cl
 }
 
+// Crop a byte slice to this byterange.
+// Generally equal to b[br.Start-offset:br.End-offset+1]. Use offset if b is a part of a whole.
+func (br Range) CropByteSlice(b []byte, offset int64) []byte {
+	return b[br.Start-offset : br.End-offset+1]
+}
+
 func (brs Ranges) String() string {
 	if len(brs) == 0 {
 		return ""
@@ -211,6 +217,12 @@ func (brs Ranges) CalculateDelta(haves Ranges, fullContentLength int64) Ranges {
 	}
 	sort.Sort(need)
 	return need
+}
+
+func (brs Ranges) Clone() Ranges {
+	brs2 := make(Ranges, len(brs))
+	copy(brs2, brs)
+	return brs2
 }
 
 // ParseContentRangeHeader returns a Ranges list from the provided input,
