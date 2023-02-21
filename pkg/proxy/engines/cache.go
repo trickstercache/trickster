@@ -153,6 +153,9 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			// Prepare buffered results and waitgroup
 			cr := make(chan queryResult, cct)
 			wg := &sync.WaitGroup{}
+			// Result slice of timeseries
+			ress := make([]timeseries.Timeseries, cct)
+			resi := 0
 			for chunkStart := cext.Start; chunkStart.Before(cext.End); chunkStart = chunkStart.Add(csize) {
 				// Chunk range (inclusive, on-step)
 				chunkExtent := timeseries.Extent{
@@ -163,21 +166,23 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				subkey := key + chunkExtent.String()
 				// Query
 				wg.Add(1)
-				go queryConcurrent(ctx, c, subkey, cr, wg.Done)
+				go func(outIdx int) {
+					defer wg.Done()
+					queryConcurrent(ctx, c, subkey, cr, nil)
+					// this doesn't always catch the same query but it evens out
+					qr := <-cr
+					qr.d.timeseries, qr.err = unmarshal(qr.d.Body, nil)
+					if qr.err == nil {
+						ress[outIdx] = qr.d.timeseries
+					}
+				}(resi)
+				resi++
 			}
 			// Wait on queries
 			wg.Wait()
 			close(cr)
-			for qr := range cr {
-				qr.d.timeseries, qr.err = unmarshal(qr.d.Body, nil)
-				if qr.err == nil {
-					if d.timeseries == nil {
-						d.timeseries = qr.d.timeseries
-					} else {
-						d.timeseries.Merge(true, qr.d.timeseries)
-					}
-				}
-			}
+			d.timeseries = ress[0]
+			d.timeseries.Merge(true, ress[1:]...)
 			if d.timeseries != nil {
 				d.timeseries.SetExtents(d.timeseries.Extents().Compress(trq.Step))
 			}

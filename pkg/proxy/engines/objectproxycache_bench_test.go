@@ -28,7 +28,7 @@ func BenchmarkObjectProxyCache(b *testing.B) {
 	}
 	defer ts.Close()
 
-	r.Header.Add(headers.NameRange, "bytes=9500-10000")
+	r.Header.Add(headers.NameRange, "bytes=0-10000")
 
 	o := rsc.BackendOptions
 	o.MaxTTLMS = 15000
