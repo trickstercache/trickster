@@ -232,7 +232,7 @@ func TestLoadRangeParts(t *testing.T) {
 
 }
 
-func TestGetByterangeChunk(t *testing.T) {
+func TestGetByterangeChunkBody(t *testing.T) {
 	d := &HTTPDocument{
 		Body: []byte{0, 1, 2, 3, 4, 5},
 	}
@@ -254,9 +254,38 @@ func TestGetByterangeChunk(t *testing.T) {
 	var i int64
 	for i = 0; i < 6; i += 2 {
 		r := byterange.Range{Start: i, End: i + 1}
-		d2 := d.GetByterangeChunk(r)
+		d2 := d.GetByterangeChunk(r, 2)
 		if err := cmp(d, d2, r); err != nil {
 			t.Error(err)
 		}
+	}
+}
+
+func TestGetByterangeChunkParts(t *testing.T) {
+	d := &HTTPDocument{
+		RangeParts: byterange.MultipartByteRanges{
+			byterange.Range{Start: 0, End: 1}: &byterange.MultipartByteRange{Range: byterange.Range{Start: 0, End: 1}, Content: []byte{0, 1}},
+			byterange.Range{Start: 2, End: 3}: &byterange.MultipartByteRange{Range: byterange.Range{Start: 2, End: 3}, Content: []byte{2, 3}},
+			byterange.Range{Start: 4, End: 5}: &byterange.MultipartByteRange{Range: byterange.Range{Start: 4, End: 5}, Content: []byte{4, 5}},
+		},
+	}
+
+	d1 := d.GetByterangeChunk(byterange.Range{Start: 0, End: 2}, 3)
+	if !d1.IsChunk {
+		t.Errorf("GetByterangeChunk should return document with IsChunk")
+	}
+	if d1.Body[0] != 0 || d1.Body[1] != 1 || d1.Body[2] != 2 {
+		t.Errorf("expected [0 1 2] got %v", d1.Body)
+	}
+	if d1.Ranges[0].Start != 0 || d1.Ranges[0].End != 1 || d1.Ranges[1].Start != 2 || d1.Ranges[1].End != 2 {
+		t.Errorf("ranges incorrect, got %s", d1.Ranges.String())
+	}
+
+	d2 := d.GetByterangeChunk(byterange.Range{Start: 3, End: 5}, 3)
+	if d2.Body[0] != 3 || d2.Body[1] != 4 || d2.Body[2] != 5 {
+		t.Errorf("expected [0 1 2] got %v", d1.Body)
+	}
+	if d2.Ranges[0].Start != 3 || d2.Ranges[0].End != 3 || d2.Ranges[1].Start != 4 || d2.Ranges[1].End != 5 {
+		t.Errorf("ranges incorrect, got %s", d1.Ranges.String())
 	}
 }

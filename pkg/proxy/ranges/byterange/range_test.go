@@ -217,31 +217,6 @@ func TestParseContentRangeHeader(t *testing.T) {
 	}
 }
 
-func TestRangeCrop(t *testing.T) {
-	r := Range{4, 7}
-	s := []byte{0, 1, 2, 3, 4, 5, 6, 7}
-	cmp := func(bs0, bs1 []byte) error {
-		if len(bs0) != len(bs1) {
-			return fmt.Errorf("slice lengths %d and %d not eq", len(bs0), len(bs1))
-		}
-		for i := 0; i < len(bs0); i++ {
-			if bs0[i] != bs1[i] {
-				return fmt.Errorf("slices not eq at %d, got %b and %b", i, bs0[i], bs1[i])
-			}
-		}
-		return nil
-	}
-	if err := cmp(r.CropByteSlice(s, 0), []byte{4, 5, 6, 7}); err != nil {
-		t.Error(err)
-	}
-	if err := cmp(r.CropByteSlice(s, 4), []byte{0, 1, 2, 3}); err != nil {
-		t.Error(err)
-	}
-	if err := cmp(Range{5, 8}.CropByteSlice(s, 0), []byte{5, 6, 7}); err != nil {
-		t.Error(err)
-	}
-}
-
 func TestRangesFilter(t *testing.T) {
 	rs := Ranges{
 		Range{1, 2},
@@ -259,10 +234,7 @@ func TestRangesFilter(t *testing.T) {
 		}
 		return nil
 	}
-	if err := cmp(rs.FilterByteSlice(s, 0), []byte{0, 1, 2, 0, 4}); err != nil {
-		t.Error(err)
-	}
-	if err := cmp(rs.FilterByteSlice(s, 1), []byte{0, 1, 0, 3, 4}); err != nil {
+	if err := cmp(rs.FilterByteSlice(s), []byte{0, 1, 2, 0, 4}); err != nil {
 		t.Error(err)
 	}
 }

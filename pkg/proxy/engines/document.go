@@ -21,6 +21,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,9 +68,11 @@ func (d *HTTPDocument) GetMeta() *HTTPDocument {
 		Body:          nil,
 		ContentLength: d.ContentLength,
 		ContentType:   d.ContentType,
-		CachingPolicy: d.CachingPolicy.Clone(),
 		Ranges:        d.Ranges.Clone(),
 		RangeParts:    nil,
+	}
+	if d.CachingPolicy != nil {
+		dd.CachingPolicy = d.CachingPolicy.Clone()
 	}
 	return dd
 }
@@ -82,13 +85,44 @@ func (d *HTTPDocument) GetTimeseriesChunk(chunkExtent timeseries.Extent) *HTTPDo
 	return dd
 }
 
-func (d *HTTPDocument) GetByterangeChunk(chunkRange byterange.Range) *HTTPDocument {
+func (d *HTTPDocument) GetByterangeChunk(chunkRange byterange.Range, chunkSize int64) *HTTPDocument {
 	dd := &HTTPDocument{
 		IsChunk: true,
 	}
 	// size := chunkRange.End - chunkRange.Start + 1
 	if len(d.Body) > 0 {
-		dd.Body = chunkRange.CropByteSlice(d.Body, 0)
+		var dr byterange.Range
+		dd.Body, dr = chunkRange.CropByteSlice(d.Body)
+		dd.ContentLength = int64(len(dd.Body))
+		dd.Ranges = byterange.Ranges{dr}
+	} else {
+		size := chunkRange.End - chunkRange.Start + 1
+		dd.Body = make([]byte, size)
+		var ddbi int64
+		dd.Ranges = make(byterange.Ranges, len(d.RangeParts))
+		ddri := 0
+		for r, rp := range d.RangeParts {
+			if r.Start > chunkRange.End || r.End < chunkRange.Start {
+				continue
+			}
+			if r.Start < chunkRange.Start {
+				r.Start = chunkRange.Start
+			}
+			if r.End > chunkRange.End {
+				r.End = chunkRange.End
+			}
+			if r.End+1 > ddbi {
+				ddbi = r.End + 1
+			}
+			content := rp.Content[:r.End-r.Start+1]
+			//r.Copy(dd.Body, content)
+			copy(dd.Body[r.Start%size:r.End%size+1], content)
+			dd.Ranges[ddri] = r
+			ddri++
+		}
+		dd.Body = dd.Body[:ddbi%size]
+		dd.Ranges = dd.Ranges[:ddri]
+		sort.Sort(dd.Ranges)
 	}
 	return dd
 }

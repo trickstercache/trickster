@@ -19,15 +19,16 @@ package engines
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -37,6 +38,12 @@ import (
 	"github.com/andybalholm/brotli"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+)
+
+const (
+	useCacheChunking      = bool(false)
+	timeseriesChunkFactor = int64(420)
+	byterangeChunkSize    = int64(100)
 )
 
 type queryResult struct {
@@ -102,7 +109,6 @@ func queryConcurrent(ctx context.Context, c cache.Cache, key string, cr chan<- q
 		}
 	}
 	cr <- qr
-	return
 }
 
 // QueryCache queries the cache for an HTTPDocument and returns it
@@ -118,6 +124,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 
 	var d *HTTPDocument
 	var lookupStatus status.LookupStatus
+
 	// Query document
 	cr := make(chan queryResult)
 	go func() {
@@ -125,14 +132,82 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	}()
 	qr := <-cr
 	if qr.err != nil {
-		tl.Error(rsc.Logger, "Error querying cache", tl.Pairs{
-			"key":     key,
-			"details": qr.err,
-		})
 		return qr.d, qr.lookupStatus, ranges, qr.err
 	} else {
 		d = qr.d
 		lookupStatus = qr.lookupStatus
+	}
+
+	// If we got a meta document and want to use cache chunking, do so
+	// TODO: persist IsMeta; something's erasing it and it'd be good to have as a flag here
+	if useCacheChunking && d.IsMeta {
+		if trq := rsc.TimeRangeQuery; trq != nil {
+			// Do timeseries chunk retrieval
+		} else {
+			// Do byterange chunking
+			// Determine chunk start/end and number of chunks
+			var crs, cre, cct int64
+			if len(ranges) == 0 {
+				ranges = byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength - 1}}
+			}
+			crs, cre = ranges[0].Start, ranges[len(ranges)-1].End
+			crs = (crs / byterangeChunkSize) * byterangeChunkSize
+			cre = (cre/byterangeChunkSize + 1) * byterangeChunkSize
+			cct = (cre - crs) / byterangeChunkSize
+			// Allocate body in meta document
+			d.Body = make([]byte, d.ContentLength)
+			// Prepare buffered results and waitgroup
+			cr := make(chan queryResult, cct)
+			wg := &sync.WaitGroup{}
+			// Iterate chunks
+			for chunkStart := crs; chunkStart < cre; chunkStart += byterangeChunkSize {
+				// Determine chunk range (inclusive)
+				chunkRange := byterange.Range{
+					Start: chunkStart,
+					End:   chunkStart + byterangeChunkSize - 1,
+				}
+				// Determine subkey
+				subkey := key + chunkRange.String()
+				// Query subdocument
+				wg.Add(1)
+				go queryConcurrent(ctx, c, subkey, cr, wg.Done)
+			}
+			// Wait on writes to finish (result channel is buffered and doesn't hold for receive)
+			wg.Wait()
+			close(cr)
+			// Handle results
+			dbl_lock := &sync.Mutex{}
+			var dbl int64
+			for qr := range cr {
+				// Return on error
+				if qr.err != nil && !errors.Is(qr.err, cache.ErrKNF) {
+					return qr.d, qr.lookupStatus, ranges, qr.err
+				}
+				// Merge with meta document on success
+				// We can do this concurrently since chunk ranges don't overlap
+
+				wg.Add(1)
+				go func(qrc queryResult) {
+					defer wg.Done()
+					if qrc.d.IsMeta {
+						return
+					}
+					if qrc.lookupStatus == status.LookupStatusHit {
+						for _, r := range qrc.d.Ranges {
+							content := qrc.d.Body[r.Start%byterangeChunkSize : r.End%byterangeChunkSize+1]
+							r.Copy(d.Body, content)
+							dbl_lock.Lock()
+							if r.End+1 > dbl {
+								dbl = r.End + 1
+							}
+							dbl_lock.Unlock()
+						}
+					}
+				}(qr)
+			}
+			wg.Wait()
+			d.Body = d.Body[:dbl]
+		}
 	}
 
 	var delta byterange.Ranges
@@ -148,9 +223,26 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		ranges = byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength - 1}}
 	}
 
-	if ranges != nil && len(ranges) > 0 && d.Ranges != nil && len(d.Ranges) > 0 {
+	if len(ranges) > 0 && len(d.Ranges) > 0 {
 		delta = ranges.CalculateDelta(d.Ranges, d.ContentLength)
-		if delta != nil && len(delta) > 0 {
+		if len(delta) > 0 {
+			if len(d.Body) > 0 {
+				// If there's delta, we need to treat this as a partial hit; move all of d's content to RangeParts
+				// Ignore ranges in d that are not bounded by the requested ranges
+				min, max := ranges[0].Start, ranges[len(ranges)-1].End
+				d.RangeParts = make(byterange.MultipartByteRanges)
+				for _, r := range d.Ranges {
+					if r.Start > max || r.End < min {
+						continue
+					}
+					content := d.Body[r.Start : r.End+1]
+					d.RangeParts[r] = &byterange.MultipartByteRange{
+						Range:   r,
+						Content: content,
+					}
+				}
+				d.Body = nil
+			}
 			if delta.Equal(ranges) {
 				lookupStatus = status.LookupStatusRangeMiss
 			} else {
@@ -159,6 +251,9 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 		}
 
 	}
+	d.IsMeta = false
+	d.IsChunk = false
+
 	tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", lookupStatus.String()))
 	return d, lookupStatus, delta, nil
 }
@@ -170,8 +265,12 @@ func stripConditionalHeaders(h http.Header) {
 	h.Del(headers.NameIfModifiedSince)
 }
 
-func writeConcurrent(ctx context.Context, c cache.Cache, key string, d *HTTPDocument, compress bool, ttl time.Duration, cr chan<- error) {
+func writeConcurrent(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
+	compress bool, ttl time.Duration, cr chan<- error, done func()) {
 
+	if done != nil {
+		defer done()
+	}
 	var b []byte
 	var err error
 
@@ -248,12 +347,59 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		}
 	}
 
-	// Write concurrently
-	cr := make(chan error)
-	go func() {
-		writeConcurrent(ctx, c, key, d, compress, ttl, cr)
-	}()
-	err = <-cr
+	if useCacheChunking {
+		if trq := rsc.TimeRangeQuery; trq != nil {
+			// Do timeseries chunking
+		} else {
+			// Do byterange chunking
+			// Determine chunk start/end and number of chunks
+			drs := d.getByteRanges()
+			crs, cre := drs[0].Start, drs[len(drs)-1].End
+			crs = (crs / byterangeChunkSize) * byterangeChunkSize
+			cre = (cre/byterangeChunkSize + 1) * byterangeChunkSize
+			cct := (cre - crs) / byterangeChunkSize
+			// Create meta document
+			meta := d.GetMeta()
+			// Prepare buffered results and waitgroup
+			cr := make(chan error, cct+1)
+			wg := &sync.WaitGroup{}
+			// Iterate chunks
+			for chunkStart := crs; chunkStart < cre; chunkStart += byterangeChunkSize {
+				// Determine chunk range (inclusive)
+				chunkRange := byterange.Range{
+					Start: chunkStart,
+					End:   chunkStart + byterangeChunkSize - 1,
+				}
+				// Determine subkey
+				subkey := key + chunkRange.String()
+				// Get chunk
+				cd := d.GetByterangeChunk(chunkRange, byterangeChunkSize)
+				// Store subdocument
+				wg.Add(1)
+				go writeConcurrent(ctx, c, subkey, cd, compress, ttl, cr, wg.Done)
+			}
+			// Store metadocument
+			wg.Add(1)
+			go writeConcurrent(ctx, c, key, meta, compress, ttl, cr, wg.Done)
+			// Wait on writes to finish (result channel is buffered and doesn't hold for receive)
+			wg.Wait()
+			close(cr)
+			// Handle results
+			for res := range cr {
+				if res != nil && err != nil {
+					err = res
+					break
+				}
+			}
+		}
+	} else {
+		// Write concurrently
+		cr := make(chan error)
+		go func() {
+			writeConcurrent(ctx, c, key, d, compress, ttl, cr, nil)
+		}()
+		err = <-cr
+	}
 
 	if err != nil {
 		if span != nil {
