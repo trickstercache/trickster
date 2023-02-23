@@ -27,7 +27,7 @@ IMAGE_ARCH     ?= amd64
 GOARCH         ?= amd64
 TAGVER         ?= unspecified
 LDFLAGS         =-ldflags "-extldflags '-static' -w -s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicationGitCommitID=$(GIT_LATEST_COMMIT_ID)"
-BUILD_SUBDIR   := OPATH
+BUILD_SUBDIR   := bin
 PACKAGE_DIR    := ./$(BUILD_SUBDIR)/trickster-$(PROGVER)
 BIN_DIR        := $(PACKAGE_DIR)/bin
 CONF_DIR       := $(PACKAGE_DIR)/conf
