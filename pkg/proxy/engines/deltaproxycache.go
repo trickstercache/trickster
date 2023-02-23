@@ -424,19 +424,6 @@ checkCache:
 			// (everything was cropped so there is nothing to cache)
 			if len(cts.Extents()) > 0 {
 				doc.timeseries = cts
-				if cc.Provider == "memory" {
-					doc.timeseries = cts
-				} else {
-					cdata, err := modeler.CacheMarshaler(cts, nil, 0)
-					if err != nil {
-						tl.Error(pr.Logger, "error marshaling timeseries", tl.Pairs{
-							"cacheKey": key,
-							"detail":   err.Error(),
-						})
-						return
-					}
-					doc.Body = cdata
-				}
 				if err := WriteCache(ctx, cache, key, doc, o.TimeseriesTTL, o.CompressibleTypes, modeler.CacheMarshaler); err != nil {
 					tl.Error(pr.Logger, "error writing object to cache",
 						tl.Pairs{

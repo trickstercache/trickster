@@ -245,7 +245,18 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				}(qr)
 			}
 			wg.Wait()
-			d.Body = d.Body[:dbl]
+			if len(d.Ranges) > 1 {
+				d.StoredRangeParts = make(map[string]*byterange.MultipartByteRange)
+				for _, r := range d.Ranges {
+					d.StoredRangeParts[r.String()] = &byterange.MultipartByteRange{
+						Range:   r,
+						Content: d.Body[r.Start : r.End+1],
+					}
+				}
+				d.Body = nil
+			} else {
+				d.Body = d.Body[:dbl]
+			}
 		}
 	}
 
@@ -268,18 +279,16 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			if len(d.Body) > 0 {
 				// If there's delta, we need to treat this as a partial hit; move all of d's content to RangeParts
 				// Ignore ranges in d that are not bounded by the requested ranges
-				min, max := ranges[0].Start, ranges[len(ranges)-1].End
+				// min, max := ranges[0].Start, ranges[len(ranges)-1].End
 				d.RangeParts = make(byterange.MultipartByteRanges)
 				for _, r := range d.Ranges {
-					if r.Start > max || r.End < min {
-						continue
-					}
 					content := d.Body[r.Start : r.End+1]
 					d.RangeParts[r] = &byterange.MultipartByteRange{
 						Range:   r,
 						Content: content,
 					}
 				}
+				d.StoredRangeParts = d.RangeParts.PackableMultipartByteRanges()
 				d.Body = nil
 			}
 			if delta.Equal(ranges) {

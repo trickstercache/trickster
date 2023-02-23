@@ -11,7 +11,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
-// 39669 ns/op		57914 B/op		101 allocs/op
 func BenchmarkObjectProxyCache(b *testing.B) {
 	license, err := os.Open("../../../LICENSE")
 	if err != nil {
@@ -40,7 +39,6 @@ func BenchmarkObjectProxyCache(b *testing.B) {
 	}
 }
 
-// 48449 ns/op		68814 B/op		187 allocs/op
 func BenchmarkObjectProxyCacheChunks(b *testing.B) {
 	license, err := os.Open("../../../LICENSE")
 	if err != nil {
