@@ -372,3 +372,15 @@ func TestParseRangeHeader_MultiRange(t *testing.T) {
 		t.Errorf("expected start %d end %d, got start %d end %d", 100, 150, res[1].Start, res[1].End)
 	}
 }
+
+func TestRangeCrop(t *testing.T) {
+	r1 := Range{0, 1}
+	r2 := Range{0, 3}
+	b := []byte{0, 1}
+	if cr, _ := r1.CropByteSlice(b); len(cr) != 2 || cr[0] != 0 || cr[1] != 1 {
+		t.Error(cr)
+	}
+	if cr, _ := r2.CropByteSlice(b); len(cr) != 2 || cr[0] != 0 || cr[1] != 1 {
+		t.Error(cr)
+	}
+}

@@ -107,6 +107,7 @@ func (d *HTTPDocument) GetByterangeChunk(chunkRange byterange.Range, chunkSize i
 			if r.Start > chunkRange.End || r.End < chunkRange.Start {
 				continue
 			}
+			start := r.Start
 			if r.Start < chunkRange.Start {
 				r.Start = chunkRange.Start
 			}
@@ -116,13 +117,13 @@ func (d *HTTPDocument) GetByterangeChunk(chunkRange byterange.Range, chunkSize i
 			if r.End+1 > ddbi {
 				ddbi = r.End + 1
 			}
-			content := rp.Content[:r.End-r.Start+1]
-			//r.Copy(dd.Body, content)
+			content := rp.Content[r.Start-start : r.End-start+1]
 			copy(dd.Body[r.Start%size:r.End%size+1], content)
 			dd.Ranges[ddri] = r
 			ddri++
 		}
-		dd.Body = dd.Body[:ddbi%size]
+		ddbi = ddbi - chunkRange.Start
+		dd.Body = dd.Body[:ddbi]
 		dd.Ranges = dd.Ranges[:ddri]
 		sort.Sort(dd.Ranges)
 	}
