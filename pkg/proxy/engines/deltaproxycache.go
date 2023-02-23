@@ -156,13 +156,6 @@ checkCache:
 			if doc == nil {
 				err = tpe.ErrEmptyDocumentBody
 			} else {
-				/*
-					if cc.Provider == "memory" {
-						cts = doc.timeseries
-					} else {
-						cts, err = modeler.CacheUnmarshaler(doc.Body, trq)
-					}
-				*/
 				cts = doc.timeseries
 			}
 			if err != nil {

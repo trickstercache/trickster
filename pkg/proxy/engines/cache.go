@@ -135,7 +135,6 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	}
 
 	// If we got a meta document and want to use cache chunking, do so
-	// TODO: persist IsMeta; something's erasing it and it'd be good to have as a flag here
 	if c.Configuration().UseCacheChunking {
 		if trq := rsc.TimeRangeQuery; trq != nil {
 			// Do timeseries chunk retrieval
@@ -166,7 +165,9 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 					queryConcurrent(ctx, c, subkey, cr, nil)
 					// this doesn't always catch the same query but it evens out
 					qr := <-cr
-					qr.d.timeseries, qr.err = unmarshal(qr.d.Body, nil)
+					if c.Configuration().Provider != "memory" {
+						qr.d.timeseries, qr.err = unmarshal(qr.d.Body, nil)
+					}
 					if qr.err == nil {
 						ress[outIdx] = qr.d.timeseries
 					}
@@ -415,15 +416,15 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 				}
 				// Derive subkey
 				subkey := key + chunkExtent.String()
-				cd := d.GetTimeseriesChunk(chunkExtent)
-				// Marshal chunk
-				cd.Body, err = marshal(cd.timeseries, nil, 0)
-				if err != nil {
-					return err
-				}
 				// Query
 				wg.Add(1)
-				go writeConcurrent(ctx, c, subkey, cd, compress, ttl, cr, wg.Done)
+				go func() {
+					cd := d.GetTimeseriesChunk(chunkExtent)
+					if c.Configuration().Provider != "memory" {
+						cd.Body, _ = marshal(cd.timeseries, nil, 0)
+					}
+					writeConcurrent(ctx, c, subkey, cd, compress, ttl, cr, wg.Done)
+				}()
 			}
 			// Store metadocument
 			wg.Add(1)
