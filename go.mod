@@ -16,7 +16,7 @@ require (
 	github.com/prometheus/client_golang v1.13.0
 	github.com/tinylib/msgp v1.1.6
 	github.com/trickstercache/mockster v1.1.2
-	go.etcd.io/bbolt v1.3.6
+	go.etcd.io/bbolt v1.3.7
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.34.0
 	go.opentelemetry.io/otel v1.9.0
 	go.opentelemetry.io/otel/exporters/jaeger v1.9.0
