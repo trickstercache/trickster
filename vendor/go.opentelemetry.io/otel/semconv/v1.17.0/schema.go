@@ -12,15 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package otelhttptrace // import "go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
+package semconv // import "go.opentelemetry.io/otel/semconv/v1.17.0"
 
-// Version is the current release version of the httptrace instrumentation.
-func Version() string {
-	return "0.39.0"
-	// This string is updated by the pre_release.sh script during release
-}
-
-// SemVersion is the semantic version to be supplied to tracer/meter creation.
-func SemVersion() string {
-	return "semver:" + Version()
-}
+// SchemaURL is the schema URL that matches the version of the semantic conventions
+// that this package defines. Semconv packages starting from v1.4.0 must declare
+// non-empty schema URL in the form https://opentelemetry.io/schemas/<version>
+const SchemaURL = "https://opentelemetry.io/schemas/1.17.0"
