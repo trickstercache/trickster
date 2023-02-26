@@ -83,8 +83,8 @@ github.com/influxdata/influxdb/pkg/escape
 ## explicit; go 1.13
 github.com/influxdata/influxql
 github.com/influxdata/influxql/internal
-# github.com/klauspost/compress v1.15.9
-## explicit; go 1.16
+# github.com/klauspost/compress v1.16.0
+## explicit; go 1.18
 github.com/klauspost/compress
 github.com/klauspost/compress/fse
 github.com/klauspost/compress/huff0
