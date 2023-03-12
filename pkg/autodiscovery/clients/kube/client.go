@@ -24,15 +24,18 @@ type Client struct {
 	net        v1net.NetworkingV1Interface
 }
 
-func (client *Client) Queries() []string {
-	return client.UseQueries
+func New() *Client {
+	return &Client{
+		UseQueries: []string{},
+		InCluster:  false,
+		ConfigPath: "",
+		core:       nil,
+		net:        nil,
+	}
 }
 
-func (client *Client) Default() {
-	client.InCluster = false
-	client.ConfigPath = ""
-	client.core = nil
-	client.net = nil
+func (client *Client) Queries() []string {
+	return client.UseQueries
 }
 
 func (client *Client) Connect() error {

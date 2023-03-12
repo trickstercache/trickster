@@ -11,10 +11,10 @@ type ClientBuilder struct{}
 
 func (builder *ClientBuilder) Build(provider string, value *yaml.Node) (c clients.Client, err error) {
 	switch provider {
-	case etcd.Kind:
-		c = &etcd.Client{}
+	case etcd.Provider:
+		c = etcd.New()
 	case kube.Provider:
-		c = &kube.Client{}
+		c = kube.New()
 	}
 	err = value.Decode(c)
 	if err != nil {

@@ -24,90 +24,61 @@ In Trickster configuration files, each ALB itself is a Backend, just like the po
 
 ALB backends can be configured to discover pool members. Rather than define preset pool members based on backends, you can configure the ALB to query a number of methods and use the output with template backends.
 
-Queries are defined in config with a method, template, parameters, and results. The supported parameters and results depend on the methods used. Below is an example using the `kubernetes_external` method, which finds resources in a kubernetes cluster pointed to by the local kubeconfig:
+Autodiscovery functions by connecting to a Client and running Queries. The below example connects to `etcd` at one or both of the provided endpoints, gets the keys `url` and `path`, then instantiates a backend using `template_test`.
 
 ```yaml
-query_example:
-  method: kubernetes_external
-  use_template: template_example
-  parameters:
-    resource_type: service
-    resource_name: service-x
-    access_by: ingress
-  results:
-    external_address: ORIGIN_URL
+clients:
+  client_etcd:
+    provider: etcd
+    queries: [query_etcd]
+    endpoints:
+      - 127.0.0.1:8080
+      - localhost:8080
+queries:
+  query_etcd:
+    provider: etcd
+    template: template_test
+    keys: [url, path]
 ```
 
 This query will find any service in the cluster named `service-x`, and find information about how to access it through an Ingress in the same cluster. The resulting value `external_address` (predefined by the `kubernetes_external` method) will replace any value `ORIGIN_URL` in `template_example`.
 
 ```yaml
-template_example:
-  use_backend: prom1
-  override:
-    origin_url: 'http://$[ORIGIN_URL]'
+templates:
+  template_test:
+    use_backend: mock
+    override:
+      some_backend_key: 'https://$[url]$[path]'
 ```
 
-`template_example` will start with a named backend in config that *must* have `is_template: true` in its configuration. When a query using this template completes, it will start with the values provided for `prom1` and override a set of config options based on template values provided by the query (`ORIGIN_URL`).
+`template_test` will start with a named backend `mock` in config that *must* have `is_template: true` in its configuration. Any string part enclosed in `$[]`  will be replaced with the query result attached to that part; in the case of etcd, this is just the key used in the query.
 
 The full config for this ALB is:
 
 ```yaml
-albDisc:
-  provider: alb
-  alb:
-    mechanism: tsm
-    autodiscovery:
-      queries:
-        query_example:
-          method: kubernetes_external
-          parameters:
-            resource:
-              type: service
-              name: service-x
-            access: ingress
-          template:
-            _ref: template_example
-            external_address: ORIGIN_URL
-      templates:
-        template_example:
-          backend: prom1
-          override:
-            origin_url: 'http://$[ORIGIN_URL]'
+clients:
+  client_etcd:
+    provider: etcd
+    queries: [query_etcd]
+    endpoints:
+      - 127.0.0.1:8080
+      - localhost:8080
+queries:
+  query_etcd:
+    provider: etcd
+    template: template_test
+    keys: [url, path]
+templates:
+  template_test:
+    use_backend: mock
+    override:
+      some_backend_key: 'https://$[url]$[path]'
 
 ...
 
-prom1:
+mock:
   is_template: true
   ...
-```
-
-Or for an etcd query,
-
-```yaml
-albDisc:
-  provider: alb
-  alb:
-    mechanism: tsm
-    autodiscovery:
-      clients:
-        client_etcd:
-          kind: etcd
-          endpoints:
-            - "127.0.0.1:3000"
-            - "localhost:3000"
-      queries:
-        query_etcd:
-          kind: key
-          client: client_etcd
-          template: template_example
-          keys: ["key1"]
-          request_timeout: 5
-      templates:
-        template_example:
-          use_backend: prom1
-          override:
-            origin_url: 'http://$[key1]'
-
 ```
 
 ## Mechanisms Deep Dive

@@ -1,4 +1,4 @@
-package pop
+package confpool
 
 import (
 	"fmt"
@@ -7,43 +7,41 @@ import (
 )
 
 const (
-	DefaultPolyKey = "provider"
+	DefaultConfKey = "provider"
 )
 
-type PolyObject any
+type ConfObject any
 
-type PolyKey string
+type ConfKey string
 
-type PolyObjectBuilder[O PolyObject] interface {
+type ConfObjectBuilder[O ConfObject] interface {
 	Build(string, *yaml.Node) (O, error)
 }
 
-type PolyObjectPool[O PolyObject, B PolyObjectBuilder[O]] struct {
-	key  PolyKey
+type ConfObjectPool[O ConfObject, B ConfObjectBuilder[O]] struct {
+	key  ConfKey
 	objs map[string]O
 }
 
-func New[O PolyObject, B PolyObjectBuilder[O]]() *PolyObjectPool[O, B] {
-	return &PolyObjectPool[O, B]{
-		key: DefaultPolyKey,
+func New[O ConfObject, B ConfObjectBuilder[O]]() *ConfObjectPool[O, B] {
+	return &ConfObjectPool[O, B]{
+		key: DefaultConfKey,
 	}
 }
 
-func (pool *PolyObjectPool[O, B]) WithKey(key PolyKey) {
+func (pool *ConfObjectPool[O, B]) SetKey(key ConfKey) {
 	pool.key = key
 }
 
 // Unmarshal the contents of a yaml node into a ClientPool.
 // In the context of an autodiscovery.Options, this is called on clients: !!map, so
 // value.Content[1] is the actual mapping of client configs.
-func (pool *PolyObjectPool[O, B]) UnmarshalYAML(value *yaml.Node) error {
-	fmt.Println("Unmarshalling pop")
+func (pool *ConfObjectPool[O, B]) UnmarshalYAML(value *yaml.Node) error {
 	m := make(popMap)
 	err := value.Decode(&m)
 	if err != nil {
 		return err
 	}
-	fmt.Println(m)
 	b := (*new(B))
 	pool.objs = make(map[string]O)
 	for name, entry := range m {
@@ -55,7 +53,6 @@ func (pool *PolyObjectPool[O, B]) UnmarshalYAML(value *yaml.Node) error {
 		if !ok {
 			return fmt.Errorf("object pool key %s must have string value", pool.key)
 		}
-		fmt.Println(b)
 		pool.objs[name], err = b.Build(key, entry.Value)
 		if err != nil {
 			return err
@@ -64,12 +61,12 @@ func (pool *PolyObjectPool[O, B]) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-func (pool *PolyObjectPool[O, B]) Get(name string) (obj O, ok bool) {
+func (pool *ConfObjectPool[O, B]) Get(name string) (obj O, ok bool) {
 	obj, ok = pool.objs[name]
 	return
 }
 
-func (pool *PolyObjectPool[O, B]) All() map[string]O {
+func (pool *ConfObjectPool[O, B]) All() map[string]O {
 	return pool.objs
 }
 

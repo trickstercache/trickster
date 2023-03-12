@@ -26,4 +26,10 @@ func TestOptions(t *testing.T) {
 	if original, ok := o1.Override["test_override"]; ok {
 		t.Errorf("After setting override in clone, original should be nil with that key; got %s", original)
 	}
+
+	o1 = o2.Clone()
+
+	if _, ok := o1.Override["test_override"]; !ok {
+		t.Errorf("Cloning optinos with an override should clone the override")
+	}
 }
