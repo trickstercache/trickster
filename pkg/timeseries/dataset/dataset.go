@@ -99,6 +99,9 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 	// range, return empty set and bail
 	if ds.ExtentList.OutsideOf(e) {
 		for i := range ds.Results {
+			if ds.Results[i] == nil {
+				continue
+			}
 			clone.Results[i] = &Result{
 				StatementID: ds.Results[i].StatementID,
 				Error:       ds.Results[i].Error,
@@ -196,6 +199,9 @@ func (ds *DataSet) Clone() timeseries.Timeseries {
 	}
 
 	for i := range ds.Results {
+		if ds.Results[i] == nil {
+			continue
+		}
 		clone.Results[i] = ds.Results[i].Clone()
 	}
 	return clone
@@ -367,6 +373,9 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 	// The DataSet has no extents, so no need to do anything
 	if x == 0 {
 		for i := range ds.Results {
+			if ds.Results[i] == nil {
+				continue
+			}
 			ds.Results[i].SeriesList = make([]*Series, 0)
 		}
 		ds.ExtentList = timeseries.ExtentList{}
@@ -376,6 +385,9 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 	// range, return empty set and bail
 	if ds.ExtentList.OutsideOf(e) {
 		for i := range ds.Results {
+			if ds.Results[i] == nil {
+				continue
+			}
 			ds.Results[i].SeriesList = make([]*Series, 0)
 		}
 		ds.ExtentList = timeseries.ExtentList{}
@@ -401,6 +413,9 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 	endNS := epoch.Epoch(e.End.UnixNano())
 
 	for i := range ds.Results {
+		if ds.Results[i] == nil {
+			continue
+		}
 		var wg sync.WaitGroup
 		if len(ds.Results[i].SeriesList) == 0 {
 			continue
@@ -441,6 +456,9 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 func (ds *DataSet) SeriesCount() int {
 	var cnt int
 	for i := range ds.Results {
+		if ds.Results[i] == nil {
+			continue
+		}
 		cnt += len(ds.Results[i].SeriesList)
 	}
 	return cnt
@@ -450,6 +468,9 @@ func (ds *DataSet) SeriesCount() int {
 func (ds *DataSet) ValueCount() int64 {
 	var cnt int64
 	for i := range ds.Results {
+		if ds.Results[i] == nil {
+			continue
+		}
 		if len(ds.Results[i].SeriesList) == 0 {
 			continue
 		}

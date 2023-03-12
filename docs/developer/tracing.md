@@ -36,7 +36,7 @@ go run cmd/promsim/main.go
 
 From the Trickster root run
 ```
-make build -o trickster && ./OPATH/trickster -config testdata/test.tracing.conf --log-level debug
+make build -o trickster && ./bin/trickster -config testdata/test.tracing.conf --log-level debug
 ```
 
 4. Query

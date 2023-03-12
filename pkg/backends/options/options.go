@@ -33,10 +33,10 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
+	"github.com/trickstercache/trickster/v2/pkg/router"
 	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 
-	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v2"
 )
 
@@ -169,8 +169,8 @@ type Options struct {
 	//
 	// Name is the Name of the backend, taken from the Key in the Backends map[string]*BackendOptions
 	Name string `yaml:"-"`
-	// Router is a mux.Router containing this backend's Path Routes; it is set during route registration
-	Router *mux.Router `yaml:"-"`
+	// Router is a router.Router containing this backend's Path Routes; it is set during route registration
+	Router router.Router `yaml:"-"`
 	// Timeout is the time.Duration representation of TimeoutMS
 	Timeout time.Duration `yaml:"-"`
 	// BackfillTolerance is the time.Duration representation of BackfillToleranceMS

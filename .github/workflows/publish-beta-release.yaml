@@ -47,6 +47,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./OPATH/trickster-${{ steps.baretag.outputs.baretag }}.tar.gz
+          asset_path: ./bin/trickster-${{ steps.baretag.outputs.baretag }}.tar.gz
           asset_name: trickster-${{ steps.baretag.outputs.baretag }}.tar.gz
           asset_content_type: application/gzip

@@ -24,39 +24,39 @@ import (
 // SwitchHandler is an HTTP Wrapper that allows users to update the underlying handler in-place
 // once associated with a net.Listener
 type SwitchHandler struct {
-	mux       http.Handler
-	oldMux    http.Handler
+	router    http.Handler
+	oldRouter http.Handler
 	reloading int32
 }
 
 // NewSwitchHandler returns a New *SwitchHandler
 func NewSwitchHandler(router http.Handler) *SwitchHandler {
-	return &SwitchHandler{mux: router, oldMux: router}
+	return &SwitchHandler{router: router, oldRouter: router}
 }
 
 // ServeHTTP serves an HTTP Request
 func (s *SwitchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.isReloading() {
-		s.oldMux.ServeHTTP(w, r)
+		s.oldRouter.ServeHTTP(w, r)
 		return
 	}
-	s.mux.ServeHTTP(w, r)
+	s.router.ServeHTTP(w, r)
 }
 
 // Update atomically changes the underlying handler without impacting user requests or uptime
 func (s *SwitchHandler) Update(h http.Handler) {
-	s.oldMux = s.mux
+	s.oldRouter = s.router
 	s.setReloading(true)
-	s.mux = h
+	s.router = h
 	s.setReloading(false)
 }
 
-// Handler returns the current mux
+// Handler returns the current router
 func (s *SwitchHandler) Handler() http.Handler {
 	if s.isReloading() {
-		return s.oldMux
+		return s.oldRouter
 	}
-	return s.mux
+	return s.router
 }
 
 func (s *SwitchHandler) isReloading() bool {

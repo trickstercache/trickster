@@ -25,6 +25,15 @@ import (
 	"strings"
 )
 
+// Get s[i:i+length].
+// Returns an empty string if i+length > len(s)
+func Substring(s string, i int, length int) string {
+	if i+length > len(s) {
+		return ""
+	}
+	return s[i : i+length]
+}
+
 // IndexInSlice returns the index of a string element in a given slice
 func IndexInSlice(arr []string, val string) int {
 	for i, v := range arr {

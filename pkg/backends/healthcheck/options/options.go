@@ -129,7 +129,7 @@ func (o *Options) Overlay(name string, custom *Options) {
 	if custom == nil || custom.md == nil {
 		return
 	}
-	if custom.md.IsDefined("backends", name, "healthcheck", "upstream_path") {
+	if custom.md.IsDefined("backends", name, "healthcheck", "path") {
 		o.Path = custom.Path
 	}
 	if custom.md.IsDefined("backends", name, "healthcheck", "verb") {

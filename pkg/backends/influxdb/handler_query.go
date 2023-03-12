@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flux"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -86,6 +87,31 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		rlo.OutputFormat = 2
 	}
 
+	var cacheError error
+
+	// Try to parse using Flux.
+	fp := flux.NewParser(strings.NewReader(trq.Statement))
+	if fq, err := fp.ParseQuery(); err == nil {
+		if fq.Extent.End.IsZero() {
+			fq.Extent.End = time.Now()
+		}
+		if trq.Extent.Start.IsZero() {
+			trq.Extent = fq.Extent
+		} else if trq.Extent != fq.Extent {
+			// this condition means multiple queries were present, and had
+			// different time ranges
+			cacheError = errors.ErrNotTimeRangeQuery
+		}
+		trq.Statement = fq.Statement
+		trq.ParsedQuery = fq
+		trq.TemplateURL = urls.Clone(r.URL)
+		qt := url.Values(http.Header(v).Clone())
+		qt.Set(upQuery, trq.Statement)
+		// Swap in the Tokenzed Query in the Url Params
+		trq.TemplateURL.RawQuery = qt.Encode()
+		return trq, rlo, cacheError != nil, cacheError
+	}
+
 	p := influxql.NewParser(strings.NewReader(trq.Statement))
 	q, err := p.ParseQuery()
 	if err != nil {
@@ -95,11 +121,13 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	trq.Step = -1
 	var hasTimeQueryParts bool
 	statements := make([]string, 0, len(q.Statements))
-	var cacheError error
+	var canObjectCache bool
 	for _, v := range q.Statements {
 		sel, ok := v.(*influxql.SelectStatement)
 		if !ok || sel.Condition == nil {
 			cacheError = errors.ErrNotTimeRangeQuery
+		} else {
+			canObjectCache = true
 		}
 		step, err := sel.GroupByInterval()
 		if err != nil {
@@ -159,6 +187,6 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		return trq, rlo, true, cacheError
 	}
 
-	return trq, rlo, false, nil
+	return trq, rlo, canObjectCache, nil
 
 }

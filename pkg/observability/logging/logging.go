@@ -136,6 +136,23 @@ func Error(logger interface{}, event string, detail Pairs) {
 	}
 }
 
+func ErrorSynchronous(logger interface{}, event string, detail Pairs) {
+	if logger == nil {
+		return
+	}
+	detail["caller"] = pkgCaller{stack.Caller(1)}
+	switch l := logger.(type) {
+	case *Logger:
+		l.Error(event, detail)
+	case *SyncLogger:
+		l.Error(event, detail)
+	case *log.Logger:
+		l.Print("")
+	case gkl.Logger:
+		level.Error(l).Log(detail.ToList(event)...)
+	}
+}
+
 // Fatal sends a "FATAL" event to the Logger and exits the program with the provided exit code
 func Fatal(logger interface{}, code int, event string, detail Pairs) {
 	// go-kit/log/level does not support Fatal, so implemented separately here

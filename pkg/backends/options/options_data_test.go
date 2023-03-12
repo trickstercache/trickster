@@ -54,10 +54,6 @@ backends:
     backfill_tolerance_ms: 301000
     backfill_tolerance_points: 2
     timeout_ms: 37000
-    health_check_endpoint: /test_health
-    health_check_upstream_path: /test/upstream/endpoint
-    health_check_verb: test_verb
-    health_check_query: query=1234
     timeseries_ttl_ms: 8666000
     max_ttl_ms: 300000
     fastforward_ttl_ms: 382000
@@ -74,6 +70,9 @@ backends:
     healthcheck:
       headers:
         Authorization: Basic SomeHash
+      path: /test/upstream/endpoint
+      verb: test_verb
+      query: query=1234
     paths:
       series:
         path: /series

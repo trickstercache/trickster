@@ -17,6 +17,7 @@
 package dataset
 
 import (
+	"math/rand"
 	"testing"
 	"time"
 
@@ -98,6 +99,7 @@ func testDataSet2() *DataSet {
 		StatementID: 0,
 		SeriesList: []*Series{
 			{sh1, newPoints(), s},
+			nil,
 		},
 	}
 
@@ -112,7 +114,7 @@ func testDataSet2() *DataSet {
 
 	ds := &DataSet{
 		TimeRangeQuery: &timeseries.TimeRangeQuery{Step: time.Duration(5 * timeseries.Second)},
-		Results:        []*Result{r1, r2},
+		Results:        []*Result{r1, r2, nil},
 		ExtentList:     timeseries.ExtentList{timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(30, 0)}},
 	}
 
@@ -212,7 +214,7 @@ func TestMerge(t *testing.T) {
 
 	ds.Merge(false, ds2)
 
-	if ds.SeriesCount() != 4 {
+	if ds.SeriesCount() != 5 {
 		t.Errorf("expected %d got %d", 4, ds.SeriesCount())
 	}
 }
@@ -358,5 +360,64 @@ func TestCropToRange(t *testing.T) {
 	exs = ds.ExtentList
 	if len(exs) != 0 {
 		t.Error("invalid extent in crop", exs)
+	}
+}
+
+func genBenchmarkPoint(e epoch.Epoch, valuect int) Point {
+	vals := make([]int32, valuect)
+	for i := 0; i < valuect; i++ {
+		vals[i] = int32(rand.Int() % 1000)
+	}
+	return Point{
+		Epoch:  e,
+		Values: []interface{}{},
+	}
+}
+
+func genBenchmarkDataset(pointct int) *DataSet {
+	if pointct > 1000 {
+		pointct = 1000
+	}
+	bmSeries := &Series{
+		Points: make(Points, pointct),
+	}
+	for i := 0; i < pointct; i++ {
+		back := pointct - i
+		t := epoch.Epoch(time.Now().Unix() - int64(back))
+		bmSeries.Points[i] = genBenchmarkPoint(t, 4)
+	}
+	res := &Result{
+		StatementID: 0,
+		SeriesList:  []*Series{bmSeries},
+	}
+	return &DataSet{
+		Results: []*Result{res},
+	}
+}
+
+func BenchmarkMerge(b *testing.B) {
+	dss := make([]*DataSet, b.N*2)
+	for i := 0; i < b.N; i++ {
+		dss[i] = genBenchmarkDataset(10)
+		dss[i+1] = genBenchmarkDataset(10)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i += 2 {
+		dss[i].Merge(true, dss[i+1])
+	}
+}
+
+func BenchmarkCropToRange(b *testing.B) {
+	dss := make([]*DataSet, b.N)
+	for i := 0; i < b.N; i++ {
+		dss[i] = genBenchmarkDataset(10)
+	}
+	bmExt := timeseries.Extent{
+		Start: time.Now().Add(time.Second * -750),
+		End:   time.Now().Add(time.Second * -250),
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		dss[i].CropToRange(bmExt)
 	}
 }

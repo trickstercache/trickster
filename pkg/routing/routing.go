@@ -43,9 +43,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
+	"github.com/trickstercache/trickster/v2/pkg/router"
 	"github.com/trickstercache/trickster/v2/pkg/util/middleware"
-
-	"github.com/gorilla/mux"
 )
 
 // RegisterPprofRoutes will register the Pprof Debugging endpoints to the provided router
@@ -61,13 +60,13 @@ func RegisterPprofRoutes(routerName string, h *http.ServeMux, logger interface{}
 
 // RegisterProxyRoutes iterates the Trickster Configuration and
 // registers the routes for the configured backends
-func RegisterProxyRoutes(conf *config.Config, router *mux.Router, metricsRouter *http.ServeMux,
+func RegisterProxyRoutes(conf *config.Config, r router.Router, metricsRouter *http.ServeMux,
 	caches map[string]cache.Cache, tracers tracing.Tracers,
 	logger interface{}, dryRun bool) (backends.Backends, error) {
 
 	// a fake "top-level" backend representing the main frontend, so rules can route
 	// to it via the clients map
-	tlo, _ := reverseproxycache.NewClient("frontend", &bo.Options{}, router, nil, nil, nil)
+	tlo, _ := reverseproxycache.NewClient("frontend", &bo.Options{}, r, nil, nil, nil)
 
 	// proxyClients maintains a list of proxy clients configured for use by Trickster
 	var clients = backends.Backends{"frontend": tlo}
@@ -105,7 +104,7 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router, metricsRouter 
 			ndo = o
 			continue
 		}
-		err = registerBackendRoutes(router, metricsRouter, conf,
+		err = registerBackendRoutes(r, metricsRouter, conf,
 			k, o, clients, caches, tracers, logger, dryRun)
 		if err != nil {
 			return nil, err
@@ -117,14 +116,14 @@ func RegisterProxyRoutes(conf *config.Config, router *mux.Router, metricsRouter 
 			cdo = ndo
 			defaultBackend = "default"
 		} else {
-			err = registerBackendRoutes(router, nil, conf, "default", ndo, clients, caches, tracers, logger, dryRun)
+			err = registerBackendRoutes(r, nil, conf, "default", ndo, clients, caches, tracers, logger, dryRun)
 			if err != nil {
 				return nil, err
 			}
 		}
 	}
 	if cdo != nil {
-		err = registerBackendRoutes(router, metricsRouter, conf,
+		err = registerBackendRoutes(r, metricsRouter, conf,
 			defaultBackend, cdo, clients, caches, tracers, logger, dryRun)
 		if err != nil {
 			return nil, err
@@ -171,7 +170,7 @@ func RegisterHealthHandler(router *http.ServeMux, path string, hc healthcheck.He
 	router.Handle(path, health.StatusHandler(hc))
 }
 
-func registerBackendRoutes(router *mux.Router, metricsRouter *http.ServeMux, conf *config.Config, k string,
+func registerBackendRoutes(r router.Router, metricsRouter *http.ServeMux, conf *config.Config, k string,
 	o *bo.Options, clients backends.Backends, caches map[string]cache.Cache,
 	tracers tracing.Tracers, logger interface{}, dryRun bool) error {
 
@@ -193,7 +192,7 @@ func registerBackendRoutes(router *mux.Router, metricsRouter *http.ServeMux, con
 
 	cf := registration.SupportedProviders()
 	if f, ok := cf[strings.ToLower(o.Provider)]; ok && f != nil {
-		client, err = f(k, o, mux.NewRouter(), c, clients, cf)
+		client, err = f(k, o, router.NewRouter(), c, clients, cf)
 	}
 	if err != nil {
 		return err
@@ -210,7 +209,7 @@ func registerBackendRoutes(router *mux.Router, metricsRouter *http.ServeMux, con
 
 		h := client.Handlers()
 
-		RegisterPathRoutes(router, h, client, o, c, defaultPaths,
+		RegisterPathRoutes(r, h, client, o, c, defaultPaths,
 			tracers, conf.Main.HealthHandlerPath, logger)
 
 		// now we'll go ahead and register the health handler
@@ -230,7 +229,7 @@ func registerBackendRoutes(router *mux.Router, metricsRouter *http.ServeMux, con
 // RegisterPathRoutes will take the provided default paths map,
 // merge it with any path data in the provided backend options, and then register
 // the path routes to the appropriate handler from the provided handlers map
-func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
+func RegisterPathRoutes(r router.Router, handlers map[string]http.Handler,
 	client backends.Backend, o *bo.Options, c cache.Cache,
 	defaultPaths map[string]*po.Options, tracers tracing.Tracers,
 	healthHandlerPath string, logger interface{}) {
@@ -320,7 +319,7 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 		plist[i], plist[opp] = plist[opp], plist[i]
 	}
 
-	or := client.Router().(*mux.Router)
+	or := client.Router().(router.Router)
 
 	for _, v := range plist {
 		p := pathsWithVerbs[v]
@@ -343,11 +342,11 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 				// Case where we path match by prefix
 				// Host Header Routing
 				for _, h := range o.Hosts {
-					router.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...).Host(h)
+					r.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...).Host(h)
 				}
 				if !o.PathRoutingDisabled {
 					// Path Routing
-					router.PathPrefix(handledPath).Handler(middleware.StripPathPrefix(pathPrefix,
+					r.PathPrefix(handledPath).Handler(middleware.StripPathPrefix(pathPrefix,
 						decorate(p))).Methods(p.Methods...)
 				}
 				or.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...)
@@ -355,11 +354,11 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 				// default to exact match
 				// Host Header Routing
 				for _, h := range o.Hosts {
-					router.Handle(p.Path, decorate(p)).Methods(p.Methods...).Host(h)
+					r.Handle(p.Path, decorate(p)).Methods(p.Methods...).Host(h)
 				}
 				if !o.PathRoutingDisabled {
 					// Path Routing
-					router.Handle(handledPath, middleware.StripPathPrefix(pathPrefix,
+					r.Handle(handledPath, middleware.StripPathPrefix(pathPrefix,
 						decorate(p))).Methods(p.Methods...)
 				}
 				or.Handle(p.Path, decorate(p)).Methods(p.Methods...)
@@ -372,7 +371,7 @@ func RegisterPathRoutes(router *mux.Router, handlers map[string]http.Handler,
 }
 
 // RegisterDefaultBackendRoutes will iterate the Backends and register the default routes
-func RegisterDefaultBackendRoutes(router *mux.Router, bknds backends.Backends,
+func RegisterDefaultBackendRoutes(router router.Router, bknds backends.Backends,
 	logger interface{}, tracers tracing.Tracers) {
 
 	decorate := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,

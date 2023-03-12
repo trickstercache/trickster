@@ -10,7 +10,6 @@ require (
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-stack/stack v1.8.1
 	github.com/golang/snappy v0.0.4
-	github.com/gorilla/mux v1.8.0
 	github.com/influxdata/influxdb v1.10.0
 	github.com/influxdata/influxql v1.1.1-0.20211004132434-7e7d61973256
 	github.com/klauspost/compress v1.15.9
