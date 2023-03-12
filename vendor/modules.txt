@@ -119,9 +119,6 @@ github.com/google/gnostic/openapiv3
 # github.com/google/gofuzz v1.1.0
 ## explicit; go 1.12
 github.com/google/gofuzz
-# github.com/gorilla/mux v1.8.0
-## explicit; go 1.12
-github.com/gorilla/mux
 # github.com/imdario/mergo v0.3.6
 ## explicit
 github.com/imdario/mergo
@@ -210,8 +207,8 @@ github.com/yuin/gopher-lua
 github.com/yuin/gopher-lua/ast
 github.com/yuin/gopher-lua/parse
 github.com/yuin/gopher-lua/pm
-# go.etcd.io/bbolt v1.3.7
-## explicit; go 1.17
+# go.etcd.io/bbolt v1.3.6
+## explicit; go 1.12
 go.etcd.io/bbolt
 # go.etcd.io/etcd/api/v3 v3.5.7
 ## explicit; go 1.17

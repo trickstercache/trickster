@@ -29,7 +29,7 @@ type limitListener struct {
 }
 
 // acquire acquires the limiting semaphore. Returns true if successfully
-// acquired, false if the listener is closed and the semaphore is not
+// accquired, false if the listener is closed and the semaphore is not
 // acquired.
 func (l *limitListener) acquire() bool {
 	select {
