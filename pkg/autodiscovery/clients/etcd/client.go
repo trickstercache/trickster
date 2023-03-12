@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	Kind = string("etcd")
+	Provider = string("etcd")
 )
 
 type Client struct {

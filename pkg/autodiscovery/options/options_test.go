@@ -1,7 +1,6 @@
 package options
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/templates"
@@ -105,16 +104,14 @@ func TestYAML(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		client, ok := opts.Clients.Get("client_etcd")
+		_, ok := opts.Clients.Get("client_etcd")
 		if !ok {
 			t.Error("Expected client_etcd to be ok")
 		}
-		query, ok := opts.Queries.Get("query_etcd")
+		_, ok = opts.Queries.Get("query_etcd")
 		if !ok {
 			t.Error("Expected query_etcd to be ok")
 		}
-		fmt.Printf("%+v\n", client)
-		fmt.Printf("+%v\n", query)
 	})
 	t.Run("kube", func(t *testing.T) {
 		opts := New()
