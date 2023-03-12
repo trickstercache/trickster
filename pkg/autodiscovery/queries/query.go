@@ -11,8 +11,3 @@ const (
 type Query interface {
 	Template() string
 }
-
-func Cast[Q Query](q Query) (casted Q, ok bool) {
-	casted, ok = q.(Q)
-	return
-}
