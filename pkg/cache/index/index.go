@@ -97,7 +97,7 @@ func (o *Object) ToBytes() []byte {
 	return bytes
 }
 
-// ObjectFromBytes returns a deserialized Cache Object from a seralized byte slice
+// ObjectFromBytes returns a deserialized Cache Object from a serialized byte slice
 func ObjectFromBytes(data []byte) (*Object, error) {
 	o := &Object{}
 	_, err := o.UnmarshalMsg(data)
