@@ -326,7 +326,7 @@ func validateConfig(conf *config.Config) error {
 	}
 
 	err = routing.RegisterTemplates(conf, logger, true)
-	_, err = routing.RegisterProxyRoutes(conf, router, mr, caches, tracers, logger, true)
+	_, err = routing.RegisterProxyRoutes(conf, r, mr, caches, tracers, logger, true)
 	if err != nil {
 		return err
 	}
