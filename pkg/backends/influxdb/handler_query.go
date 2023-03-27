@@ -17,6 +17,7 @@
 package influxdb
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -75,6 +76,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	if trq.Statement = v.Get(upQuery); trq.Statement == "" {
 		return nil, nil, false, errors.MissingURLParam(upQuery)
 	}
+	fmt.Println(trq.Statement)
 
 	if b, ok := epochToFlag[v.Get(upEpoch)]; ok {
 		rlo.TimeFormat = b
