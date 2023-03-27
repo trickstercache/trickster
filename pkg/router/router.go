@@ -1,5 +1,6 @@
-// Package router implements an HTTP Router
-// Originally based on https://github.com/gorilla/mux (archived)
+// Copyright (c) 2012-2018 The Gorilla Authors. All rights reserved.
+// https://github.com/gorilla/mux/blob/master/LICENSE
+// Gorilla Mux was archived in December 2022--this is a duplicate of its source to use in Trickster.
 package router
 
 import (

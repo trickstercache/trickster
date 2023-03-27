@@ -67,3 +67,17 @@ func TestGetAndSetResources(t *testing.T) {
 	}
 
 }
+
+func TestMergeResources(t *testing.T) {
+	r1 := NewResources(nil, nil, nil, nil, nil, nil, tl.ConsoleLogger("error"))
+	r1.NoLock = true
+	r1.Merge(nil)
+	if !r1.NoLock {
+		t.Errorf("nil merge shouldn't set anything in subject resources")
+	}
+	r2 := NewResources(nil, nil, nil, nil, nil, nil, tl.ConsoleLogger("error"))
+	r1.Merge(r2)
+	if r1.NoLock {
+		t.Errorf("merge should override subject resources")
+	}
+}

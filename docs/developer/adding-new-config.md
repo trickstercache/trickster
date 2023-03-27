@@ -26,6 +26,6 @@ The [example config file](../examples/conf/example.full.yaml) should be updated 
 
 ## Deployment
 
-The `./deply/kube/configmap.yaml` must be updated to include the new configuration option(s). Generally this file contains a copy/paste of [example.full.yaml](../examples/conf/example.full.yaml).
+The `./deploy/kube/configmap.yaml` must be updated to include the new configuration option(s). Generally this file contains a copy/paste of [example.full.yaml](../examples/conf/example.full.yaml).
 
 The `./deploy/helm/trickster/values.yaml` file must be updated to mirror the configuration option(s) in `example.full.yaml`, and `./deploy/helm/trickster/templates/configmap.yaml` must be updated to map any new `yamlCaseValues` to their respective snake case values for config file generation via the template.
