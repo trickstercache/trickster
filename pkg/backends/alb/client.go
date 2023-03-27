@@ -43,7 +43,7 @@ type Client struct {
 	fgr             bool
 	fgrCodes        map[int]interface{}
 	mergePaths      []string     // paths handled by the alb client that are enabled for tsmerge
-	nonmergeHandler http.Handler // when methodology is tsmerge, this handler is for non-mergable paths
+	nonmergeHandler http.Handler // when methodology is tsmerge, this handler is for non-mergeable paths
 }
 
 // Handlers returns a map of the HTTP Handlers the client has registered

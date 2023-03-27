@@ -23,10 +23,10 @@ import (
 // RequestOptions holds request-specific information about a query
 type RequestOptions struct {
 	// TimeFormat is a field usable by time series implementations to pass data between the parsed time range query
-	// and the data unmarshaler/marshaler to give indications about the format of Timestamps in the seralized dataset
+	// and the data unmarshaler/marshaler to give indications about the format of Timestamps in the serialized dataset
 	TimeFormat byte
 	// OutputFormat is a field usable by time series implementations to pass data between the parsed time range query
-	// and the data unmarshaler/marshaler to give indications about the content type of the seralized output
+	// and the data unmarshaler/marshaler to give indications about the content type of the serialized output
 	OutputFormat byte
 	// FastForwardDisable indicates whether the Time Range Query result should include fast forward data
 	FastForwardDisable bool
