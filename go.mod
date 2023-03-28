@@ -12,7 +12,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/influxdata/influxdb v1.11.0
 	github.com/influxdata/influxql v1.1.1-0.20211004132434-7e7d61973256
-	github.com/klauspost/compress v1.15.9
+	github.com/klauspost/compress v1.16.3
 	github.com/prometheus/client_golang v1.13.0
 	github.com/tinylib/msgp v1.1.6
 	github.com/trickstercache/mockster v1.1.2
