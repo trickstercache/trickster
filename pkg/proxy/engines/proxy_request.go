@@ -341,7 +341,7 @@ func (pr *proxyRequest) parseRequestRanges() bool {
 	if _, ok := pr.Header[headers.NameRange]; ok {
 		out = byterange.ParseRangeHeader(pr.Header.Get(headers.NameRange))
 	}
-	pr.wantsRanges = out != nil && len(out) > 0
+	pr.wantsRanges = len(out) > 0
 	pr.wantedRanges = out
 
 	// if the client shouldn't support multipart ranges, force a full range

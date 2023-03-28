@@ -48,25 +48,30 @@ type queryResult struct {
 	err          error
 }
 
-func queryConcurrent(ctx context.Context, c cache.Cache, key string, cr chan<- queryResult, done func()) {
+func queryConcurrent(ctx context.Context, c cache.Cache, key string, cr chan<- *queryResult, done func()) *queryResult {
 	if done != nil {
 		defer done()
 	}
-	qr := queryResult{queryKey: key, d: &HTTPDocument{}}
+	qr := &queryResult{queryKey: key, d: &HTTPDocument{}}
 	if c.Configuration().Provider == "memory" {
 		mc := c.(cache.MemoryCache)
 		var ifc interface{}
 		ifc, qr.lookupStatus, qr.err = mc.RetrieveReference(key, true)
 
 		if qr.err != nil || (qr.lookupStatus != status.LookupStatusHit) {
-			cr <- qr
-			return
+			if cr != nil {
+				cr <- qr
+			}
+			return qr
 		}
 
 		if ifc != nil {
 			qr.d, _ = ifc.(*HTTPDocument)
 		} else {
-			cr <- qr
+			if cr != nil {
+				cr <- qr
+			}
+			return qr
 		}
 
 	} else {
@@ -74,8 +79,10 @@ func queryConcurrent(ctx context.Context, c cache.Cache, key string, cr chan<- q
 		b, qr.lookupStatus, qr.err = c.Retrieve(key, true)
 
 		if qr.err != nil || (qr.lookupStatus != status.LookupStatusHit) {
-			cr <- qr
-			return
+			if cr != nil {
+				cr <- qr
+			}
+			return qr
 		}
 
 		var inflate bool
@@ -92,18 +99,25 @@ func queryConcurrent(ctx context.Context, c cache.Cache, key string, cr chan<- q
 			decoder := brotli.NewReader(bytes.NewReader(b))
 			b, qr.err = io.ReadAll(decoder)
 			if qr.err != nil {
-				cr <- qr
-				return
+				if cr != nil {
+					cr <- qr
+				}
+				return qr
 			}
 
 		}
 		_, qr.err = qr.d.UnmarshalMsg(b)
 		if qr.err != nil {
-			cr <- qr
-			return
+			if cr != nil {
+				cr <- qr
+			}
+			return qr
 		}
 	}
-	cr <- qr
+	if cr != nil {
+		cr <- qr
+	}
+	return qr
 }
 
 // QueryCache queries the cache for an HTTPDocument and returns it
@@ -121,9 +135,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	var lookupStatus status.LookupStatus
 
 	// Query document
-	cr := make(chan queryResult, 1)
-	queryConcurrent(ctx, c, key, cr, nil)
-	qr := <-cr
+	qr := queryConcurrent(ctx, c, key, nil, nil)
 	if qr.err != nil {
 		return qr.d, qr.lookupStatus, ranges, qr.err
 	} else {
@@ -145,7 +157,6 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
 			cct = int(cext.End.Sub(cext.Start) / csize)
 			// Prepare buffered results and waitgroup
-			cr := make(chan queryResult, cct)
 			wg := &sync.WaitGroup{}
 			// Result slice of timeseries
 			ress := make([]timeseries.Timeseries, cct)
@@ -162,9 +173,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				wg.Add(1)
 				go func(outIdx int) {
 					defer wg.Done()
-					queryConcurrent(ctx, c, subkey, cr, nil)
-					// this doesn't always catch the same query but it evens out
-					qr := <-cr
+					qr := queryConcurrent(ctx, c, subkey, nil, nil)
 					if c.Configuration().Provider != "memory" {
 						qr.d.timeseries, qr.err = unmarshal(qr.d.Body, nil)
 					}
@@ -176,7 +185,6 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			}
 			// Wait on queries
 			wg.Wait()
-			close(cr)
 			d.timeseries = ress[0]
 			d.timeseries.Merge(true, ress[1:]...)
 			if d.timeseries != nil {
@@ -197,7 +205,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			// Allocate body in meta document
 			d.Body = make([]byte, d.ContentLength)
 			// Prepare buffered results and waitgroup
-			cr := make(chan queryResult, cct)
+			cr := make(chan *queryResult, cct)
 			wg := &sync.WaitGroup{}
 			// Iterate chunks
 			for chunkStart := crs; chunkStart < cre; chunkStart += size {
@@ -227,7 +235,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				// We can do this concurrently since chunk ranges don't overlap
 
 				wg.Add(1)
-				go func(qrc queryResult) {
+				go func(qrc *queryResult) {
 					defer wg.Done()
 					if qrc.d.IsMeta {
 						return

@@ -30,7 +30,6 @@ import (
 
 	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
-	"github.com/trickstercache/trickster/v2/pkg/cache/registration"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
@@ -166,7 +165,7 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 		t.Error(err)
 	}
 
-	if deltas != nil && len(deltas) > 0 {
+	if len(deltas) > 0 {
 		t.Errorf("updated query range was expected to be empty: %v", deltas)
 	}
 	if d2.Ranges[0].Start != 1 || d2.Ranges[0].End != 20 {
@@ -208,7 +207,7 @@ func TestCacheHitRangeRequest3(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if deltas != nil && len(deltas) > 0 {
+	if len(deltas) > 0 {
 		t.Error("Expected empty query range got non empty response ", deltas)
 	}
 }
@@ -344,7 +343,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if deltas != nil && len(deltas) > 0 {
+	if len(deltas) > 0 {
 		t.Errorf("expected cache hit but got cache miss: %s", deltas)
 	}
 	want[0].Start = 20
@@ -370,8 +369,8 @@ func TestQueryCache(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := registration.LoadCachesFromConfig(conf, testLogger)
-	defer registration.CloseCaches(caches)
+	caches := cr.LoadCachesFromConfig(conf, testLogger)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Errorf("Could not find default configuration")

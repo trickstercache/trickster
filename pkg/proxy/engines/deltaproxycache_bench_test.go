@@ -25,7 +25,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-// 131075 ns/op		81103 B/op		2327 allocs/op
 func BenchmarkDeltaProxyCache(b *testing.B) {
 	ts, _, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
@@ -55,7 +54,6 @@ func BenchmarkDeltaProxyCache(b *testing.B) {
 	}
 }
 
-// 137204 ns/op		84277 B/op		2367 allocs/op
 func BenchmarkDeltaProxyCacheChunks(b *testing.B) {
 	ts, _, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
