@@ -70,9 +70,6 @@ func GetRequestValues(r *http.Request) (url.Values, string, bool) {
 		r.ParseForm()
 		v = r.PostForm
 		s = v.Encode()
-		isBody = true
-		r.ContentLength = int64(len(s))
-		r.Body = io.NopCloser(bytes.NewReader([]byte(s)))
 	}
 	return v, s, isBody
 }

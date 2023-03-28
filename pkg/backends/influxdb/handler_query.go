@@ -73,27 +73,25 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	var valuer = &influxql.NowValuer{Now: time.Now()}
 
-	v, _, _ := params.GetRequestValues(r)
-	statement := v.Get(upQuery)
+	values, _, _ := params.GetRequestValues(r)
+	statement := values.Get(upQuery)
 	if methods.HasBody(r.Method) {
 		raw, err := io.ReadAll(r.Body)
 		if err != nil {
 			return nil, nil, false, errors.ParseRequestBody(err)
 		}
 		statement = string(raw)
-		v.Del(upQuery)
-		r.URL.RawQuery = v.Encode()
 	}
 	if statement == "" {
 		return nil, nil, false, errors.MissingURLParam(upQuery)
 	}
 	trq.Statement = statement
 
-	if b, ok := epochToFlag[v.Get(upEpoch)]; ok {
+	if b, ok := epochToFlag[values.Get(upEpoch)]; ok {
 		rlo.TimeFormat = b
 	}
 
-	if v.Get(upPretty) == "true" {
+	if values.Get(upPretty) == "true" {
 		rlo.OutputFormat = 1
 	} else if r != nil && r.Header != nil &&
 		r.Header.Get(headers.NameAccept) == headers.ValueApplicationCSV {
@@ -119,7 +117,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		trq.Statement = fq.Statement
 		trq.ParsedQuery = fq
 		trq.TemplateURL = urls.Clone(r.URL)
-		qt := url.Values(http.Header(v).Clone())
+		qt := url.Values(http.Header(values).Clone())
 		qt.Set(upQuery, trq.Statement)
 		// Swap in the Tokenzed Query in the Url Params
 		trq.TemplateURL.RawQuery = qt.Encode()
@@ -191,7 +189,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	trq.Statement = strings.Join(statements, " ; ")
 	trq.ParsedQuery = q
 	trq.TemplateURL = urls.Clone(r.URL)
-	qt := url.Values(http.Header(v).Clone())
+	qt := url.Values(http.Header(values).Clone())
 	qt.Set(upQuery, trq.Statement)
 
 	// Swap in the Tokenzed Query in the Url Params
