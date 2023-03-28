@@ -13,7 +13,7 @@ require (
 	github.com/influxdata/influxdb v1.11.0
 	github.com/influxdata/influxql v1.1.1-0.20211004132434-7e7d61973256
 	github.com/klauspost/compress v1.16.3
-	github.com/prometheus/client_golang v1.13.0
+	github.com/prometheus/client_golang v1.14.0
 	github.com/tinylib/msgp v1.1.6
 	github.com/trickstercache/mockster v1.1.2
 	go.etcd.io/bbolt v1.3.7
@@ -47,7 +47,7 @@ require (
 	github.com/openzipkin/zipkin-go v0.4.0 // indirect
 	github.com/philhofer/fwd v1.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/prometheus/client_model v0.2.0 // indirect
+	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.37.0 // indirect
 	github.com/prometheus/procfs v0.8.0 // indirect
 	github.com/yuin/gopher-lua v1.1.0 // indirect
