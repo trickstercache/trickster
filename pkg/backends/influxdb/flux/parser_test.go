@@ -52,7 +52,7 @@ func TestParserOK(t *testing.T) {
 	for test, script := range testsOK {
 		t.Run(test, func(t *testing.T) {
 			p := NewParser(strings.NewReader(script))
-			_, err := p.ParseQuery()
+			_, _, err := p.ParseQuery()
 			if err != nil {
 				t.Errorf("failed to parse valid script: %s", err)
 			}
@@ -61,7 +61,7 @@ func TestParserOK(t *testing.T) {
 	for test, script := range testsNotOK {
 		t.Run(test, func(t *testing.T) {
 			p := NewParser(strings.NewReader(script))
-			_, err := p.ParseQuery()
+			_, _, err := p.ParseQuery()
 			if err == nil {
 				t.Errorf("parsed invalid script")
 			}
@@ -72,7 +72,7 @@ func TestParserOK(t *testing.T) {
 func TestRelativeDuration(t *testing.T) {
 	p := NewParser(strings.NewReader(testRelativeDuration))
 	now := time.Now()
-	q, err := p.ParseQuery()
+	q, _, err := p.ParseQuery()
 	if err != nil {
 		t.Errorf("failed to parse valid script: %s", err)
 		t.FailNow()
@@ -94,7 +94,7 @@ func TestRelativeDuration(t *testing.T) {
 
 func TestRFC3999Time(t *testing.T) {
 	p := NewParser(strings.NewReader(testAbsoluteTime))
-	q, err := p.ParseQuery()
+	q, _, err := p.ParseQuery()
 	if err != nil {
 		t.Errorf("failed to parse valid script: %s", err)
 		t.FailNow()
@@ -114,7 +114,7 @@ func TestRFC3999Time(t *testing.T) {
 
 func TestUnixTime(t *testing.T) {
 	p := NewParser(strings.NewReader(testUnixTime))
-	q, err := p.ParseQuery()
+	q, _, err := p.ParseQuery()
 	if err != nil {
 		t.Errorf("failed to parse valid script: %s", err)
 		t.FailNow()

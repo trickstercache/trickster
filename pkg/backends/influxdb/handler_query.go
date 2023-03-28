@@ -104,7 +104,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	// Try to parse using Flux.
 	fp := flux.NewParser(strings.NewReader(trq.Statement))
-	if fq, err := fp.ParseQuery(); err == nil {
+	if fq, canOPC, err := fp.ParseQuery(); err == nil || canOPC {
 		if fq.Extent.End.IsZero() {
 			fq.Extent.End = time.Now()
 		}
@@ -123,7 +123,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		qt.Set(upQuery, trq.Statement)
 		// Swap in the Tokenzed Query in the Url Params
 		trq.TemplateURL.RawQuery = qt.Encode()
-		return trq, rlo, cacheError != nil, cacheError
+		return trq, rlo, canOPC || cacheError != nil, cacheError
 	}
 
 	p := influxql.NewParser(strings.NewReader(trq.Statement))

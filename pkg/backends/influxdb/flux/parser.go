@@ -24,31 +24,34 @@ func NewParser(reader io.Reader) *Parser {
 	}
 }
 
-func (p *Parser) ParseQuery() (*Query, error) {
+// Parse a Flux query.
+// Returns the query and an error, plus a bool indicating if the query can use the OPC or not.
+// A 'true' value should be taken as the error being for Trickster (no timestep), but not necessarily for InfluxDB.
+func (p *Parser) ParseQuery() (*Query, bool, error) {
 	r := bufio.NewReader(p.reader)
 	q := &Query{}
 	if raw, err := io.ReadAll(r); err != nil {
-		return nil, err
+		return nil, false, err
 	} else {
 		content := string(raw)
 		ridx := strings.Index(content, "|> range(")
 		sidx := strings.Index(strings.ToLower(content), "window(")
 		if ridx == -1 {
-			return nil, ErrFluxSyntax("range()", "flux timerange query scripts must contain a range() function")
-		}
-		if sidx == -1 {
-			return nil, errors.New("trickster requires window() or aggregateWindow() to determine time step")
+			return nil, false, ErrFluxSyntax("range()", "flux timerange query scripts must contain a range() function")
 		}
 		q.Extent, err = parseRangeFilter(content, ridx+len("|> range("))
 		if err != nil {
-			return nil, err
+			return nil, false, err
+		}
+		if sidx == -1 {
+			return q, true, errors.New("trickster requires window() or aggregateWindow() to determine time step")
 		}
 		q.Step, err = parseWindowFunction(content, sidx+len("|"))
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
-	return q, nil
+	return q, false, nil
 }
 
 // Parse a line that is a range filter range(start: $[start], stop: $[stop])
