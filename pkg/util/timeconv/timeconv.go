@@ -127,14 +127,12 @@ func isIntAtPos(s string, i int) (v int64, is bool, inc int) {
 			break
 		}
 	}
-	var err error
-	token := s[i:j]
-	v, err = strconv.ParseInt(token, 10, 64)
-	if err != nil {
+	if i == j {
 		return 0, false, 1
-	} else {
-		return v, true, j - i
 	}
+	token := s[i:j]
+	v, _ = strconv.ParseInt(token, 10, 64)
+	return v, true, j - i
 }
 
 // ParseDuration returns a duration from a string. Slightly improved over the builtin,
@@ -142,20 +140,23 @@ func isIntAtPos(s string, i int) (v int64, is bool, inc int) {
 // Parse a literal duration.
 // Durations are formatted as [signed int][unit]..., with each int-unit pair representing a number of those units of duration.
 func ParseDuration(s string) (time.Duration, error) {
+	if len(s) <= 1 {
+		return 0, ErrInvalidDurationFormat(0, "value of at least length 2", s)
+	}
 	var d time.Duration = 0
 	var currentMult int64 = 0
 	for i := 0; i < len(s); {
 		if currentMult == 0 {
 			v, is, inc := isIntAtPos(s, i)
 			if !is {
-				return 0, InvalidDurationFormatErr(i, "valid integer value", s)
+				return 0, ErrInvalidDurationFormat(i, "valid integer value", s)
 			}
 			currentMult = v
 			i += inc
 		} else {
 			u, is, inc := isUnitAtPos(s, i)
 			if !is {
-				return 0, InvalidDurationFormatErr(i, "valid duration unit", s)
+				return 0, ErrInvalidDurationFormat(i, "valid duration unit", s)
 			}
 			d += time.Duration(currentMult) * Durations[u]
 			currentMult = 0
@@ -164,12 +165,12 @@ func ParseDuration(s string) (time.Duration, error) {
 	}
 	// If we don't have a duration at this point, catch-all with ErrUnableToParse
 	if d == 0 {
-		return d, UnableToParseErr(s)
+		return d, ErrInvalidDurationFormat(0, "valid duration string", s)
 	}
 	// Multiplier should be set to zero at this point; if there isn't, it means there was a trailing
 	// multiplier without a unit.
 	if currentMult != 0 {
-		return 0, InvalidDurationFormatErr(len(s), "valid duration unit", s)
+		return 0, ErrInvalidDurationFormat(len(s), "valid duration unit", s)
 	}
 	return d, nil
 }

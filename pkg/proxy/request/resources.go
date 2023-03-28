@@ -116,7 +116,7 @@ func SetResources(r *http.Request, rsc *Resources) *http.Request {
 
 // Merge sets the configuration references in the subject resources to the source's
 func (r *Resources) Merge(r2 *Resources) {
-	if r == nil {
+	if r == nil || r2 == nil {
 		return
 	}
 	r.BackendOptions = r2.BackendOptions

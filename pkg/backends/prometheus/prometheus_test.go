@@ -243,7 +243,7 @@ func TestParseTimeRangeBadEndTime(t *testing.T) {
 
 func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 
-	expected := `duration literal x: expected valid integer value at position 0`
+	expected := `duration literal x: expected value of at least length 2 at position 0`
 
 	req := &http.Request{URL: &url.URL{
 		Scheme: "https",

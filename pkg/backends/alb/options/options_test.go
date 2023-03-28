@@ -69,6 +69,8 @@ func TestClone(t *testing.T) {
 
 	o := New()
 	o.Pool = []string{"test"}
+	o.FGRStatusCodes = []int{200}
+	o.FgrCodesLookup = map[int]interface{}{200: "test"}
 	if o == nil {
 		t.Error("expected non-nil")
 	}
@@ -76,6 +78,12 @@ func TestClone(t *testing.T) {
 
 	if len(co.Pool) != 1 || co.Pool[0] != "test" {
 		t.Error("clone mismatch")
+	}
+	if len(co.FGRStatusCodes) != 1 || co.FGRStatusCodes[0] != 200 {
+		t.Error("status codes mismatch")
+	}
+	if len(co.FgrCodesLookup) != 1 || co.FgrCodesLookup[200] != "test" {
+		t.Error("fgr lookup mismatch")
 	}
 }
 
@@ -126,6 +134,24 @@ func TestSetDefaults(t *testing.T) {
 	_, err = SetDefaults("test", o, md)
 	if err == nil {
 		t.Error("expected output_format error")
+	}
+
+	o, md, err = fromYAML(testFGR)
+	if err != nil {
+		t.Error(err)
+	}
+	_, err = SetDefaults("test", o, md)
+	if err != nil {
+		t.Error("failed to set defaults")
+	}
+
+	_, md, err = fromYAML(testFGR)
+	if err != nil {
+		t.Error(err)
+	}
+	_, err = SetDefaults("test", o, md)
+	if err != nil {
+		t.Error("failed to set defaults")
 	}
 
 }

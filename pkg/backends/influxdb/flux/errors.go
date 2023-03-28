@@ -45,7 +45,7 @@ func ErrInvalidTimeFormat(relativeDuration, absoluteTime, unixTimestamp error) *
 	}
 }
 
-func ErrFluxSyntax(token, rule string) *FluxSyntaxError {
+func ErrFluxSyntax(token, rule string) error {
 	return &FluxSyntaxError{
 		token: token,
 		rule:  rule,
@@ -56,7 +56,7 @@ func (err *FluxSyntaxError) Error() string {
 	return fmt.Sprintf("flux syntax error at '%s': %s", err.token, err.rule)
 }
 
-func ErrFluxSemantics(rule string) *FluxSemanticsError {
+func ErrFluxSemantics(rule string) error {
 	return &FluxSemanticsError{
 		rule: rule,
 	}

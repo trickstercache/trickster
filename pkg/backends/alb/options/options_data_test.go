@@ -46,3 +46,18 @@ backends:
       healthy_floor: 1
       pool: [ 'test' ]
 `
+
+const testFGR = `
+backends:
+  test:
+    alb:
+      mechanism: fgr
+      fgr_status_codes: [200, 201]
+`
+
+const testFGRNoCodes = `
+backends:
+  test:
+    alb:
+      mechanism: fgr
+`

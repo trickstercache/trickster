@@ -341,7 +341,7 @@ func writeConcurrent(ctx context.Context, c cache.Cache, key string, d *HTTPDocu
 		return
 	}
 
-	// for non-memory, we have to seralize the document to a byte slice to store
+	// for non-memory, we have to serialize the document to a byte slice to store
 	b, err = d.MarshalMsg(nil)
 	if err != nil {
 		cr <- err
