@@ -80,6 +80,34 @@ func (br Range) ContentRangeHeader(contentLength int64) string {
 	return byteResponsRangePrefix + start + "-" + end + "/" + cl
 }
 
+func (br Range) Mod(i int64) Range {
+	return Range{
+		Start: br.Start % i,
+		End:   br.End % i,
+	}
+}
+
+// Crop a byte slice to this byterange.
+// Generally equal to b[br.Start-offset:br.End-offset+1], but will automatically adjust the end to avoid overflow.
+// Use offset if b is a part of a whole.
+func (br Range) CropByteSlice(b []byte) ([]byte, Range) {
+	over := (br.End + 1) - int64(len(b))
+	if over < 0 {
+		over = 0
+	}
+	return b[br.Start : br.End+1-over], Range{Start: br.Start, End: br.End - over}
+}
+
+// Copy a source byte slice, whose data range is represented by br, into dst in the range of br.
+// If src is smaller than br, Copy assumes that br.End should be reduced by the overage.
+func (br Range) Copy(dst []byte, src []byte) int {
+	over := br.End - br.Start + 1 - int64(len(src))
+	if over < 0 {
+		over = 0
+	}
+	return copy(dst[br.Start:br.End+1-over], src)
+}
+
 func (brs Ranges) String() string {
 	if len(brs) == 0 {
 		return ""
@@ -211,6 +239,26 @@ func (brs Ranges) CalculateDelta(haves Ranges, fullContentLength int64) Ranges {
 	}
 	sort.Sort(need)
 	return need
+}
+
+func (brs Ranges) Clone() Ranges {
+	brs2 := make(Ranges, len(brs))
+	copy(brs2, brs)
+	return brs2
+}
+
+// Crop a byte slice to a series of ranges.
+// This results in a byte slice of a length equal to the maximum value within brs, where all values within brs are set
+// and all others are zero.
+// Use offset if b is part of a whole.
+func (brs Ranges) FilterByteSlice(b []byte) []byte {
+	sort.Sort(brs)
+	out := make([]byte, brs[len(brs)-1].End)
+	for _, br := range brs {
+		content, _ := br.CropByteSlice(b)
+		br.Copy(out, content)
+	}
+	return out
 }
 
 // ParseContentRangeHeader returns a Ranges list from the provided input,

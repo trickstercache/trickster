@@ -18,21 +18,15 @@ package engines
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log"
 	"net/http"
-	"net/http/httptest"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
-	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
-	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-	"github.com/trickstercache/trickster/v2/pkg/locks"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
@@ -40,26 +34,7 @@ import (
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
 
-const testRangeBody = "This is a test file, to see how the byte range requests work.\n"
-
-func newRangeRequestTestServer() *httptest.Server {
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.ServeContent(w, r, "", time.Now(),
-			strings.NewReader(testRangeBody))
-	})
-	s := httptest.NewServer(handler)
-	return s
-}
-
-func TestInvalidContentRange(t *testing.T) {
-	_, _, err := byterange.ParseContentRangeHeader("blah")
-	if err == nil {
-		t.Errorf("expected error: %s", `invalid input format`)
-	}
-}
-
-func TestMultiPartByteRange(t *testing.T) {
+func TestMultiPartByteRangeChunks(t *testing.T) {
 
 	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
@@ -70,6 +45,7 @@ func TestMultiPartByteRange(t *testing.T) {
 	if !ok {
 		t.Error("could not load cache")
 	}
+	cache.Configuration().UseCacheChunking = true
 	resp2 := &http.Response{}
 	resp2.Header = make(http.Header)
 	resp2.Header.Add(headers.NameContentLength, "62")
@@ -89,7 +65,7 @@ func TestMultiPartByteRange(t *testing.T) {
 	}
 }
 
-func TestCacheHitRangeRequest(t *testing.T) {
+func TestCacheHitRangeRequestChunks(t *testing.T) {
 	expected := "is a "
 	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
@@ -101,6 +77,7 @@ func TestCacheHitRangeRequest(t *testing.T) {
 	if !ok {
 		t.Error("could not load cache")
 	}
+	cache.Configuration().UseCacheChunking = true
 
 	resp2 := &http.Response{}
 	resp2.Header = make(http.Header)
@@ -128,7 +105,7 @@ func TestCacheHitRangeRequest(t *testing.T) {
 	}
 }
 
-func TestCacheHitRangeRequest2(t *testing.T) {
+func TestCacheHitRangeRequest2Chunks(t *testing.T) {
 
 	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
@@ -140,6 +117,7 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 	if !ok {
 		t.Error("could not load cache")
 	}
+	cache.Configuration().UseCacheChunking = true
 
 	have := byterange.Range{Start: 1, End: 20}
 	cl := int64(len(testRangeBody))
@@ -173,7 +151,7 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 	}
 }
 
-func TestCacheHitRangeRequest3(t *testing.T) {
+func TestCacheHitRangeRequest3Chunks(t *testing.T) {
 	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
@@ -183,6 +161,7 @@ func TestCacheHitRangeRequest3(t *testing.T) {
 	if !ok {
 		t.Error("could not load cache")
 	}
+	cache.Configuration().UseCacheChunking = true
 
 	have := byterange.Range{Start: 1, End: 20}
 	cl := int64(len(testRangeBody))
@@ -212,7 +191,7 @@ func TestCacheHitRangeRequest3(t *testing.T) {
 	}
 }
 
-func TestPartialCacheMissRangeRequest(t *testing.T) {
+func TestPartialCacheMissRangeRequestChunks(t *testing.T) {
 	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
@@ -223,6 +202,7 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 	if !ok {
 		t.Error("could not load cache")
 	}
+	cache.Configuration().UseCacheChunking = true
 
 	have := byterange.Range{Start: 1, End: 9}
 	cl := int64(len(testRangeBody))
@@ -256,7 +236,7 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 	}
 }
 
-func TestFullCacheMissRangeRequest(t *testing.T) {
+func TestFullCacheMissRangeRequestChunks(t *testing.T) {
 	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
@@ -267,6 +247,7 @@ func TestFullCacheMissRangeRequest(t *testing.T) {
 	if !ok {
 		t.Error("could not load cache")
 	}
+	cache.Configuration().UseCacheChunking = true
 
 	have := byterange.Range{Start: 1, End: 9}
 	cl := int64(len(testRangeBody))
@@ -298,7 +279,7 @@ func TestFullCacheMissRangeRequest(t *testing.T) {
 	}
 }
 
-func TestRangeRequestFromClient(t *testing.T) {
+func TestRangeRequestFromClientChunks(t *testing.T) {
 
 	want := byterange.Ranges{byterange.Range{Start: 15, End: 20}}
 	haves := byterange.Ranges{byterange.Range{Start: 10, End: 25}}
@@ -330,6 +311,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 	if !ok {
 		t.Error("could not load cache")
 	}
+	cache.Configuration().UseCacheChunking = true
 
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
@@ -360,7 +342,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 	}
 }
 
-func TestQueryCache(t *testing.T) {
+func TestQueryCacheChunks(t *testing.T) {
 
 	expected := "1234"
 
@@ -375,6 +357,7 @@ func TestQueryCache(t *testing.T) {
 	if !ok {
 		t.Errorf("Could not find default configuration")
 	}
+	cache.Configuration().UseCacheChunking = true
 
 	resp := &http.Response{}
 	resp.Header = make(http.Header)
@@ -437,31 +420,3 @@ func TestQueryCache(t *testing.T) {
 	}
 
 }
-
-// Mock Cache for testing error conditions
-type testCache struct {
-	configuration *co.Options
-	locker        locks.NamedLocker
-}
-
-func (tc *testCache) Connect() error {
-	return nil
-}
-
-var errTest = errors.New("test error")
-
-func (tc *testCache) Store(cacheKey string, data []byte, ttl time.Duration) error {
-	return errTest
-}
-
-func (tc *testCache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error) {
-	return nil, status.LookupStatusError, errTest
-}
-
-func (tc *testCache) SetTTL(cacheKey string, ttl time.Duration) {}
-func (tc *testCache) Remove(cacheKey string)                    {}
-func (tc *testCache) BulkRemove(cacheKeys []string)             {}
-func (tc *testCache) Close() error                              { return errTest }
-func (tc *testCache) Configuration() *co.Options                { return tc.configuration }
-func (tc *testCache) Locker() locks.NamedLocker                 { return tc.locker }
-func (tc *testCache) SetLocker(l locks.NamedLocker)             { tc.locker = l }

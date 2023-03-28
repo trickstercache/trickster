@@ -140,7 +140,7 @@ checkCache:
 			return // fetchTimeseries logs the error
 		}
 	} else {
-		doc, cacheStatus, _, err = QueryCache(ctx, cache, key, nil)
+		doc, cacheStatus, _, err = QueryCache(ctx, cache, key, nil, modeler.CacheUnmarshaler)
 		if cacheStatus == status.LookupStatusKeyMiss && err == tc.ErrKNF {
 			cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
 			if err != nil {
@@ -156,11 +156,7 @@ checkCache:
 			if doc == nil {
 				err = tpe.ErrEmptyDocumentBody
 			} else {
-				if cc.Provider == "memory" {
-					cts = doc.timeseries
-				} else {
-					cts, err = modeler.CacheUnmarshaler(doc.Body, trq)
-				}
+				cts = doc.timeseries
 			}
 			if err != nil {
 				tl.Error(pr.Logger, "cache object unmarshaling failed",
@@ -420,20 +416,8 @@ checkCache:
 			// Don't cache datasets with empty extents
 			// (everything was cropped so there is nothing to cache)
 			if len(cts.Extents()) > 0 {
-				if cc.Provider == "memory" {
-					doc.timeseries = cts
-				} else {
-					cdata, err := modeler.CacheMarshaler(cts, nil, 0)
-					if err != nil {
-						tl.Error(pr.Logger, "error marshaling timeseries", tl.Pairs{
-							"cacheKey": key,
-							"detail":   err.Error(),
-						})
-						return
-					}
-					doc.Body = cdata
-				}
-				if err := WriteCache(ctx, cache, key, doc, o.TimeseriesTTL, o.CompressibleTypes); err != nil {
+				doc.timeseries = cts
+				if err := WriteCache(ctx, cache, key, doc, o.TimeseriesTTL, o.CompressibleTypes, modeler.CacheMarshaler); err != nil {
 					tl.Error(pr.Logger, "error writing object to cache",
 						tl.Pairs{
 							"backendName": o.Name,

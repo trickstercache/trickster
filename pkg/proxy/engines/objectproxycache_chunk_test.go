@@ -18,8 +18,6 @@ package engines
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,99 +29,16 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
 
-func setupTestHarnessOPC(file, body string, code int,
-	headers map[string]string) (*httptest.Server, *httptest.ResponseRecorder,
-	*http.Request, *request.Resources, error) {
-	return setupTestHarnessOPCByType(file, "test", "/opc", body, code, headers)
-}
-
-func setupTestHarnessOPCRange(hdr map[string]string) (*httptest.Server,
-	*httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
-	s, rr, r, rsc, err := setupTestHarnessOPCByType("", "rangesim", "/byterange/opc", "", 0, hdr)
-	return s, rr, r, rsc, err
-}
-
-func setupTestHarnessOPCByType(
-	file, serverType, path, body string, code int, headers map[string]string,
-) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
-
-	backendClient, err := NewTestClient("test", nil, nil, nil, nil)
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
-	}
-	ts, w, r, _, err := tu.NewTestInstance(file, backendClient.DefaultPathConfigs,
-		code, body, headers, serverType, path, "debug")
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
-	}
-	r.RequestURI = ""
-	rsc := request.GetResources(r)
-	backendClient, err = NewTestClient("test", rsc.BackendOptions, nil, rsc.CacheClient, nil)
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
-	}
-	client := backendClient.(*TestClient)
-	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
-	rsc.BackendClient = client
-	rsc.Tracer = tu.NewTestTracer()
-	pc := rsc.PathConfig
-
-	if pc == nil {
-		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/")
-	}
-
-	pc.CacheKeyParams = []string{"rangeKey", "instantKey"}
-
-	return ts, w, r, rsc, nil
-}
-
-func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]string) (*httptest.Server,
-	*httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
-
-	backendClient, err := NewTestClient("test", nil, nil, nil, nil)
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
-	}
-	ts, w, r, _, err := tu.NewTestInstance(file, backendClient.DefaultPathConfigs, code, body, headers,
-		"prometheus", "/prometheus/api/v1/query", "debug")
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
-	}
-	rsc := request.GetResources(r)
-	backendClient, err = NewTestClient("test", rsc.BackendOptions, nil, rsc.CacheClient, nil)
-	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
-	}
-	client := backendClient.(*TestClient)
-	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
-	rsc.BackendClient = client
-	rsc.Tracer = tu.NewTestTracer()
-
-	pc := rsc.PathConfig
-
-	if pc == nil {
-		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/prometheus/api/v1/query")
-	}
-
-	pc.CollapsedForwardingName = "progressive"
-	pc.CollapsedForwardingType = forwarding.CFTypeProgressive
-
-	pc.CacheKeyParams = []string{"rangeKey", "instantKey"}
-
-	return ts, w, r, rsc, nil
-}
-
-func TestObjectProxyCacheRequest(t *testing.T) {
+func TestObjectProxyCacheRequestChunks(t *testing.T) {
 
 	hdrs := map[string]string{"Cache-Control": "max-age=60"}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusPartialContent, hdrs)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -159,9 +74,10 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 
 }
 
-func TestObjectProxyCachePartialHit(t *testing.T) {
+func TestObjectProxyCachePartialHitChunks(t *testing.T) {
 
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -235,9 +151,10 @@ func TestObjectProxyCachePartialHit(t *testing.T) {
 	}
 }
 
-func TestFullArticuation(t *testing.T) {
+func TestFullArticuationChunks(t *testing.T) {
 
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -384,9 +301,10 @@ func TestFullArticuation(t *testing.T) {
 
 }
 
-func TestObjectProxyCachePartialHitNotFresh(t *testing.T) {
+func TestObjectProxyCachePartialHitNotFreshChunks(t *testing.T) {
 
 	ts, w, r, rsc, err := setupTestHarnessOPCRange(nil)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -419,9 +337,10 @@ func TestObjectProxyCachePartialHitNotFresh(t *testing.T) {
 	}
 }
 
-func TestObjectProxyCachePartialHitFullResponse(t *testing.T) {
+func TestObjectProxyCachePartialHitFullResponseChunks(t *testing.T) {
 
 	ts, w, r, rsc, err := setupTestHarnessOPCRange(nil)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -443,9 +362,10 @@ func TestObjectProxyCachePartialHitFullResponse(t *testing.T) {
 	}
 }
 
-func TestObjectProxyCacheRangeMiss(t *testing.T) {
+func TestObjectProxyCacheRangeMissChunks(t *testing.T) {
 
-	ts, _, r, _, err := setupTestHarnessOPCRange(nil)
+	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -472,9 +392,10 @@ func TestObjectProxyCacheRangeMiss(t *testing.T) {
 	}
 }
 
-func TestObjectProxyCacheRevalidation(t *testing.T) {
+func TestObjectProxyCacheRevalidationChunks(t *testing.T) {
 
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -557,10 +478,11 @@ func TestObjectProxyCacheRevalidation(t *testing.T) {
 	}
 }
 
-func TestObjectProxyCacheRequestWithPCF(t *testing.T) {
+func TestObjectProxyCacheRequestWithPCFChunks(t *testing.T) {
 
 	headers := map[string]string{"Cache-Control": "max-age=60"}
 	ts, _, r, rsc, err := setupTestHarnessOPCWithPCF("", "test", http.StatusOK, headers)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -579,7 +501,7 @@ func TestObjectProxyCacheRequestWithPCF(t *testing.T) {
 
 }
 
-func TestObjectProxyCacheTrueHitNoDocumentErr(t *testing.T) {
+func TestObjectProxyCacheTrueHitNoDocumentErrChunks(t *testing.T) {
 
 	pr := &proxyRequest{}
 	err := handleTrueCacheHit(pr)
@@ -588,9 +510,10 @@ func TestObjectProxyCacheTrueHitNoDocumentErr(t *testing.T) {
 	}
 }
 
-func TestObjectProxyCacheRequestClientNoCache(t *testing.T) {
+func TestObjectProxyCacheRequestClientNoCacheChunks(t *testing.T) {
 
-	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -604,9 +527,10 @@ func TestObjectProxyCacheRequestClientNoCache(t *testing.T) {
 	}
 }
 
-func TestFetchViaObjectProxyCacheRequestClientNoCache(t *testing.T) {
+func TestFetchViaObjectProxyCacheRequestClientNoCacheChunks(t *testing.T) {
 
-	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -625,10 +549,11 @@ func TestFetchViaObjectProxyCacheRequestClientNoCache(t *testing.T) {
 	}
 }
 
-func TestObjectProxyCacheRequestOriginNoCache(t *testing.T) {
+func TestObjectProxyCacheRequestOriginNoCacheChunks(t *testing.T) {
 
 	headers := map[string]string{"Cache-Control": "no-cache"}
-	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -640,10 +565,11 @@ func TestObjectProxyCacheRequestOriginNoCache(t *testing.T) {
 	}
 }
 
-func TestObjectProxyCacheIMS(t *testing.T) {
+func TestObjectProxyCacheIMSChunks(t *testing.T) {
 
 	hdrs := map[string]string{"Cache-Control": "max-age=1"}
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(hdrs)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -673,10 +599,11 @@ func TestObjectProxyCacheIMS(t *testing.T) {
 	}
 }
 
-func TestObjectProxyCacheINM(t *testing.T) {
+func TestObjectProxyCacheINMChunks(t *testing.T) {
 
 	rh := map[string]string{headers.NameCacheControl: "max-age=60", headers.NameETag: "test"}
-	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, rh)
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, rh)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -700,10 +627,11 @@ func TestObjectProxyCacheINM(t *testing.T) {
 	}
 }
 
-func TestObjectProxyCacheNoRevalidate(t *testing.T) {
+func TestObjectProxyCacheNoRevalidateChunks(t *testing.T) {
 
 	headers := map[string]string{headers.NameCacheControl: headers.ValueMaxAge + "=1"}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -725,13 +653,14 @@ func TestObjectProxyCacheNoRevalidate(t *testing.T) {
 	}
 }
 
-func TestObjectProxyCacheCanRevalidate(t *testing.T) {
+func TestObjectProxyCacheCanRevalidateChunks(t *testing.T) {
 
 	headers := map[string]string{
 		headers.NameCacheControl: headers.ValueMaxAge + "=1",
 		headers.NameETag:         "test-etag",
 	}
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -754,7 +683,7 @@ func TestObjectProxyCacheCanRevalidate(t *testing.T) {
 	}
 }
 
-func TestObjectProxyCacheRevalidated(t *testing.T) {
+func TestObjectProxyCacheRevalidatedChunks(t *testing.T) {
 
 	const dt = "Sun, 16 Jun 2019 14:19:04 GMT"
 
@@ -763,6 +692,7 @@ func TestObjectProxyCacheRevalidated(t *testing.T) {
 		headers.NameLastModified: dt,
 	}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, hdr)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -782,9 +712,10 @@ func TestObjectProxyCacheRevalidated(t *testing.T) {
 	}
 }
 
-func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
+func TestObjectProxyCacheRequestNegativeCacheChunks(t *testing.T) {
 
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusNotFound, nil)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -818,9 +749,10 @@ func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
 	}
 }
 
-func TestHandleCacheRevalidation(t *testing.T) {
+func TestHandleCacheRevalidationChunks(t *testing.T) {
 
-	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusNotFound, nil)
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusNotFound, nil)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -836,26 +768,10 @@ func TestHandleCacheRevalidation(t *testing.T) {
 	}
 }
 
-func getExpectedRangeBody(r *http.Request, boundary string) (string, error) {
-
-	client := &http.Client{}
-	resp, err := client.Do(r)
-	if err != nil {
-		return "", err
-	}
-	b, _ := io.ReadAll(resp.Body)
-	expectedBody := string(b)
-
-	if boundary != "" {
-		expectedBody = strings.Replace(expectedBody, "TestRangeServerBoundary", boundary, -1)
-	}
-
-	return expectedBody, nil
-}
-
-func TestRangesExhaustive(t *testing.T) {
+func TestRangesExhaustiveChunks(t *testing.T) {
 
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -1111,47 +1027,10 @@ func TestRangesExhaustive(t *testing.T) {
 	}
 }
 
-func testFetchOPC(r *http.Request, sc int, body string,
-	match map[string]string) (*httptest.ResponseRecorder, []error) {
-
-	e := make([]error, 0)
-
-	w := httptest.NewRecorder()
-
-	ObjectProxyCacheRequest(w, r)
-	resp := w.Result()
-
-	err := testStatusCodeMatch(resp.StatusCode, sc)
-	if err != nil {
-		e = append(e, err)
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		e = append(e, err)
-	}
-
-	err = testStringMatch(string(bodyBytes), body)
-	if err != nil {
-		e = append(e, err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, match)
-	if err != nil {
-		e = append(e, err)
-	}
-
-	if len(e) == 0 {
-		e = nil
-	}
-
-	return w, e
-
-}
-
-func TestFetchViaObjectProxyCacheRequestErroringCache(t *testing.T) {
+func TestFetchViaObjectProxyCacheRequestErroringCacheChunks(t *testing.T) {
 
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
@@ -1167,8 +1046,9 @@ func TestFetchViaObjectProxyCacheRequestErroringCache(t *testing.T) {
 	}
 }
 
-func TestRerunRequest(t *testing.T) {
-	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
+func TestRerunRequestChunks(t *testing.T) {
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
+	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	} else {
