@@ -17,6 +17,7 @@
 package influxdb
 
 import (
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -72,9 +74,20 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	var valuer = &influxql.NowValuer{Now: time.Now()}
 
 	v, _, _ := params.GetRequestValues(r)
-	if trq.Statement = v.Get(upQuery); trq.Statement == "" {
+	statement := v.Get(upQuery)
+	if methods.HasBody(r.Method) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			return nil, nil, false, errors.ParseRequestBody(err)
+		}
+		statement = string(raw)
+		v.Del(upQuery)
+		r.URL.RawQuery = v.Encode()
+	}
+	if statement == "" {
 		return nil, nil, false, errors.MissingURLParam(upQuery)
 	}
+	trq.Statement = statement
 
 	if b, ok := epochToFlag[v.Get(upEpoch)]; ok {
 		rlo.TimeFormat = b
