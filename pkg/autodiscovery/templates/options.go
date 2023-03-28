@@ -8,7 +8,7 @@ type Options struct {
 	Override   OverrideMap `yaml:"override"`
 }
 
-// Create a new Template config object
+// New creates a new Template config object
 func New() *Options {
 	return &Options{
 		UseBackend: "NO BACKEND",

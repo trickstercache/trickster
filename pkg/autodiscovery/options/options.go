@@ -18,7 +18,7 @@ type Options struct {
 	Templates map[string]*templates.Options                                   `yaml:"templates,omitempty"`
 }
 
-// Return an empty Options
+// New returns an empty Options
 func New() *Options {
 	return &Options{
 		Clients:   confpool.New[clients.Client, *cbuild.ClientBuilder](),

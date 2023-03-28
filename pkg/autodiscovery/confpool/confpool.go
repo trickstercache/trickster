@@ -33,7 +33,7 @@ func (pool *ConfObjectPool[O, B]) SetKey(key ConfKey) {
 	pool.key = key
 }
 
-// Unmarshal the contents of a yaml node into a ClientPool.
+// UnmarshalYAML unmarshals the contents of a yaml node into a ClientPool.
 // In the context of an autodiscovery.Options, this is called on clients: !!map, so
 // value.Content[1] is the actual mapping of client configs.
 func (pool *ConfObjectPool[O, B]) UnmarshalYAML(value *yaml.Node) error {

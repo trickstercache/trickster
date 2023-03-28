@@ -9,7 +9,7 @@ import (
 	betemps "github.com/trickstercache/trickster/v2/pkg/backends/templates"
 )
 
-// Run autodiscovery with a set of options, returning backend options for matched queries
+// DiscoverWithOptions runs autodiscovery with a set of options, returning backend options for matched queries
 func DiscoverWithOptions(opts *adopt.Options) ([]*beopt.Options, error) {
 	fmt.Printf("Running autodiscovery with\nQueries:%+v\nTemplates:%+v\n", opts.Queries, opts.Templates)
 	clients := opts.Clients

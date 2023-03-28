@@ -141,7 +141,7 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router, metricsRouter *ht
 	return clients, nil
 }
 
-// Register a every backend marked as a template under package backend/templates.
+// RegisterTempaltes registers every backend marked as a template under package backend/templates.
 // This allows autodiscovery to fetch this information at runtime.
 func RegisterTemplates(conf *config.Config, logger interface{}, dryRun bool) error {
 	// Iterate through config backends for any templates

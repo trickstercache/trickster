@@ -11,6 +11,10 @@ import (
 
 var templateBackends map[string]*options.Options = make(map[string]*options.Options)
 
+func ResetTemplateBackends() {
+	templateBackends = make(map[string]*options.Options)
+}
+
 // Stores a set of backend options under a string name.
 // Returns an error if the template backend already exists.
 func CreateTemplateBackend(name string, opts *options.Options) error {
