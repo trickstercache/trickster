@@ -52,9 +52,12 @@ type Options struct {
 	// Badger provides options for BadgerDB caching
 	Badger *badger.Options `yaml:"badger,omitempty"`
 
-	UseCacheChunking      bool  `yaml:"use_cache_chunking,omitempty"`
+	// Defines if the cache should use cache chunking. Splits cache objects into smaller, reliably-sized parts.
+	UseCacheChunking bool `yaml:"use_cache_chunking,omitempty"`
+	// Determines chunk size (duration) for timeseries objects, query step * chunk factor
 	TimeseriesChunkFactor int64 `yaml:"timeseries_chunk_factor"`
-	ByterangeChunkSize    int64 `yaml:"byterange_chunk_size"`
+	// Determines chunk size (bytes) for byterange objects
+	ByterangeChunkSize int64 `yaml:"byterange_chunk_size"`
 
 	//  Synthetic Values
 
