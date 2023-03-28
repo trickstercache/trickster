@@ -12,15 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package instrumentation // import "go.opentelemetry.io/otel/sdk/instrumentation"
+package semconv // import "go.opentelemetry.io/otel/semconv/v1.17.0"
 
-// Scope represents the instrumentation scope.
-type Scope struct {
-	// Name is the name of the instrumentation scope. This should be the
-	// Go package name of that scope.
-	Name string
-	// Version is the version of the instrumentation scope.
-	Version string
-	// SchemaURL of the telemetry emitted by the scope.
-	SchemaURL string
-}
+// HTTP scheme attributes.
+var (
+	HTTPSchemeHTTP  = HTTPSchemeKey.String("http")
+	HTTPSchemeHTTPS = HTTPSchemeKey.String("https")
+)
