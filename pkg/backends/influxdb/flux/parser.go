@@ -2,6 +2,7 @@ package flux
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"strconv"
 	"strings"
@@ -30,13 +31,21 @@ func (p *Parser) ParseQuery() (*Query, error) {
 		return nil, err
 	} else {
 		content := string(raw)
-		if idx := strings.Index(content, "|> range("); idx == -1 {
+		ridx := strings.Index(content, "|> range(")
+		sidx := strings.Index(strings.ToLower(content), "window(")
+		if ridx == -1 {
 			return nil, ErrFluxSyntax("range()", "flux timerange query scripts must contain a range() function")
-		} else {
-			q.Extent, err = parseRangeFilter(content, idx+len("|> range("))
-			if err != nil {
-				return nil, err
-			}
+		}
+		if sidx == -1 {
+			return nil, errors.New("trickster requires window() or aggregateWindow() to determine time step")
+		}
+		q.Extent, err = parseRangeFilter(content, ridx+len("|> range("))
+		if err != nil {
+			return nil, err
+		}
+		q.Step, err = parseWindowFunction(content, sidx+len("|"))
+		if err != nil {
+			return nil, err
 		}
 	}
 	return q, nil
@@ -94,6 +103,26 @@ func parseRangeFilter(query string, at int) (timeseries.Extent, error) {
 		return timeseries.Extent{}, ErrFluxSemantics("range() expressions require a valid start argument")
 	}
 	return timeseries.Extent{Start: start, End: stop}, nil
+}
+
+func parseWindowFunction(query string, at int) (time.Duration, error) {
+	for i := at; i < len(query); i++ {
+		if token := tstrings.Substring(query, i, len("every:")); token == "every:" {
+			stepArgStart := i + len(token)
+			if query[stepArgStart] == ' ' {
+				stepArgStart++
+			}
+			stepArgEnd := stepArgStart + strings.IndexAny(query[stepArgStart:], ", )")
+			if stepArgEnd == -1 {
+				return 0, ErrFluxSyntax(query[stepArgStart:stepArgStart+10]+"...", "couldn't parse timestep from window function")
+			}
+			return timeconv.ParseDuration(query[stepArgStart:stepArgEnd])
+		}
+		if query[i] == ')' {
+			break
+		}
+	}
+	return 0, ErrFluxSyntax("window()", "couldn't find a timestep, make sure argument 'every:' is included")
 }
 
 func tryParseTimeField(s string) (time.Time, error) {
