@@ -115,6 +115,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 			// different time ranges
 			cacheError = errors.ErrNotTimeRangeQuery
 		}
+		trq.Step = fq.Step
 		trq.Statement = fq.Statement
 		trq.ParsedQuery = fq
 		trq.TemplateURL = urls.Clone(r.URL)
