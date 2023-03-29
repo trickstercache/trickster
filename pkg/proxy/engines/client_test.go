@@ -35,9 +35,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	tst "github.com/trickstercache/trickster/v2/pkg/testutil/timeseries/model"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
-	tst "github.com/trickstercache/trickster/v2/pkg/testutil/timeseries/model"
 	tt "github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
@@ -478,7 +478,7 @@ func testResultHeaderPartMatch(header http.Header, kvp map[string]string) error 
 	if len(kvp) == 0 {
 		return nil
 	}
-	if header == nil || len(header) == 0 {
+	if len(header) == 0 {
 		return fmt.Errorf("missing response headers%s", "")
 	}
 

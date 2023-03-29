@@ -175,6 +175,17 @@ frontend:
 #       # default is /tmp/trickster
 #       value_directory: /tmp/trickster
 
+#     ## Configuration options when using cache chunking ###################
+#     # Determines if cache chunking should be used. The following two options have no effect if false. Default value is false.
+#     use_cache_chunking: true
+#     # Determines the size of cache chunks that store timeseries data.
+#     # Timeseries chunks are split by *duration*, not by literal size; the factor determines how large these chunks are
+#     # based on the timestep of the provided query. Default value is 420.
+#     timeseries_chunk_factor: 420
+#     # Determines the size of cache chunks that store byterange data.
+#     # Byterange chunks are split by literal size in bytes. Default value is 4096.
+#     byterange_chunk_size: 4096
+
 #   # Example of a second cache, sans comments, that backend configs below could use with: cache_name: bbolt_example
   
 #   bolt_example:

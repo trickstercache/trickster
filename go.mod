@@ -1,20 +1,20 @@
 module github.com/trickstercache/trickster/v2
 
-go 1.19
+go 1.20
 
 require (
 	github.com/alicebob/miniredis v2.5.0+incompatible
-	github.com/andybalholm/brotli v1.0.4
+	github.com/andybalholm/brotli v1.0.5
 	github.com/dgraph-io/badger v1.6.2
 	github.com/go-kit/log v0.2.1
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-stack/stack v1.8.1
 	github.com/golang/snappy v0.0.4
-	github.com/influxdata/influxdb v1.10.0
+	github.com/influxdata/influxdb v1.11.0
 	github.com/influxdata/influxql v1.1.1-0.20211004132434-7e7d61973256
-	github.com/klauspost/compress v1.15.9
-	github.com/prometheus/client_golang v1.13.0
-	github.com/tinylib/msgp v1.1.6
+	github.com/klauspost/compress v1.16.3
+	github.com/prometheus/client_golang v1.14.0
+	github.com/tinylib/msgp v1.1.8
 	github.com/trickstercache/mockster v1.1.2
 	go.etcd.io/bbolt v1.3.7
 	go.etcd.io/etcd/client/v3 v3.5.7
@@ -55,8 +55,8 @@ require (
 	github.com/go-openapi/jsonreference v0.19.5 // indirect
 	github.com/go-openapi/swag v0.19.14 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/glog v1.0.0 // indirect
-	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/golang/glog v1.1.1 // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/gomodule/redigo v1.8.9 // indirect
 	github.com/google/gnostic v0.5.7-v3refs // indirect
 	github.com/google/gofuzz v1.1.0 // indirect

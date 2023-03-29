@@ -17,6 +17,7 @@
 package byterange
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"testing"
@@ -216,6 +217,28 @@ func TestParseContentRangeHeader(t *testing.T) {
 	}
 }
 
+func TestRangesFilter(t *testing.T) {
+	rs := Ranges{
+		Range{1, 2},
+		Range{4, 5},
+	}
+	s := []byte{0, 1, 2, 3, 4}
+	cmp := func(bs0, bs1 []byte) error {
+		if len(bs0) != len(bs1) {
+			return fmt.Errorf("slice lengths %d and %d not eq", len(bs0), len(bs1))
+		}
+		for i := 0; i < len(bs0); i++ {
+			if bs0[i] != bs1[i] {
+				return fmt.Errorf("slices not eq at %d, got %b and %b", i, bs0[i], bs1[i])
+			}
+		}
+		return nil
+	}
+	if err := cmp(rs.FilterByteSlice(s), []byte{0, 1, 2, 0, 4}); err != nil {
+		t.Error(err)
+	}
+}
+
 func TestRangesEqual(t *testing.T) {
 
 	want := Ranges{Range{Start: 0, End: 20}}
@@ -347,5 +370,17 @@ func TestParseRangeHeader_MultiRange(t *testing.T) {
 	}
 	if res[1].Start != 100 || res[1].End != 150 {
 		t.Errorf("expected start %d end %d, got start %d end %d", 100, 150, res[1].Start, res[1].End)
+	}
+}
+
+func TestRangeCrop(t *testing.T) {
+	r1 := Range{0, 1}
+	r2 := Range{0, 3}
+	b := []byte{0, 1}
+	if cr, _ := r1.CropByteSlice(b); len(cr) != 2 || cr[0] != 0 || cr[1] != 1 {
+		t.Error(cr)
+	}
+	if cr, _ := r2.CropByteSlice(b); len(cr) != 2 || cr[0] != 0 || cr[1] != 1 {
+		t.Error(cr)
 	}
 }

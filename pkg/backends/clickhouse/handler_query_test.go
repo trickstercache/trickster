@@ -17,6 +17,7 @@
 package clickhouse
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/readers"
 )
 
 func testRawQuery() string {
@@ -110,4 +112,139 @@ func TestQueryHandler(t *testing.T) {
 		t.Errorf("expected '{}' got %s.", bodyBytes)
 	}
 
+}
+
+func TestQueryHandlerBody(t *testing.T) {
+	t.Run("body_and_query", func(t *testing.T) {
+		backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
+		if err != nil {
+			t.Error(err)
+		}
+		ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
+			200, "{}", nil, "clickhouse", "/?"+testRawQuery(), "debug")
+		if err != nil {
+			t.Error(err)
+		} else {
+			defer ts.Close()
+		}
+		r.Method = http.MethodPost
+		r.Body = io.NopCloser(bytes.NewReader([]byte(testRawQuery())))
+
+		rsc := request.GetResources(r)
+		backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil, nil)
+		if err != nil {
+			t.Error(err)
+		}
+		client := backendClient.(*Client)
+		rsc.BackendClient = client
+		rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+
+		_, ok := client.Configuration().Paths["/"]
+		if !ok {
+			t.Errorf("could not find path config named %s", "/")
+		}
+
+		client.QueryHandler(w, r)
+
+		resp := w.Result()
+
+		// it should return 200 OK
+		if resp.StatusCode != 200 {
+			t.Errorf("expected 200 got %d.", resp.StatusCode)
+		}
+
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Error(err)
+		}
+
+		if string(bodyBytes) != "{}" {
+			t.Errorf("expected '{}' got %s.", bodyBytes)
+		}
+	})
+	t.Run("body_no_query", func(t *testing.T) {
+		backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
+		if err != nil {
+			t.Error(err)
+		}
+		ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
+			200, "{}", nil, "clickhouse", "/", "debug")
+		if err != nil {
+			t.Error(err)
+		} else {
+			defer ts.Close()
+		}
+		r.Method = http.MethodPost
+		r.Body = io.NopCloser(bytes.NewReader([]byte(testRawQuery())))
+
+		rsc := request.GetResources(r)
+		backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil, nil)
+		if err != nil {
+			t.Error(err)
+		}
+		client := backendClient.(*Client)
+		rsc.BackendClient = client
+		rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+
+		_, ok := client.Configuration().Paths["/"]
+		if !ok {
+			t.Errorf("could not find path config named %s", "/")
+		}
+
+		client.QueryHandler(w, r)
+
+		resp := w.Result()
+
+		// it should return 200 OK
+		if resp.StatusCode != 200 {
+			t.Errorf("expected 200 got %d.", resp.StatusCode)
+		}
+
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Error(err)
+		}
+
+		if string(bodyBytes) != "{}" {
+			t.Errorf("expected '{}' got %s.", bodyBytes)
+		}
+	})
+	t.Run("bad_read", func(t *testing.T) {
+		backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
+		if err != nil {
+			t.Error(err)
+		}
+		ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
+			200, "{}", nil, "clickhouse", "/?"+testRawQuery(), "debug")
+		if err != nil {
+			t.Error(err)
+		} else {
+			defer ts.Close()
+		}
+		r.Method = http.MethodPost
+		r.Body = io.NopCloser(&readers.BadReader{})
+
+		rsc := request.GetResources(r)
+		backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil, nil)
+		if err != nil {
+			t.Error(err)
+		}
+		client := backendClient.(*Client)
+		rsc.BackendClient = client
+		rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+
+		_, ok := client.Configuration().Paths["/"]
+		if !ok {
+			t.Errorf("could not find path config named %s", "/")
+		}
+
+		client.QueryHandler(w, r)
+
+		resp := w.Result()
+
+		// it should return 400 Bad Request
+		if resp.StatusCode != 400 {
+			t.Errorf("expected 400 got %d.", resp.StatusCode)
+		}
+	})
 }

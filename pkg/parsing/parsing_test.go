@@ -39,4 +39,18 @@ func TestParserError(t *testing.T) {
 	if err == nil {
 		t.Error("expected non-nil err")
 	}
+	against := testutil.ErrTest
+	if !err.(*parsingError).Is(against) {
+		t.Error("parsing error should be a test error")
+	}
+	if !err.(*parsingError).Is(err) {
+		t.Error("parsing error should be a parsing error")
+	}
+	against = ErrInvalidKeywordOrder
+	if err.(*parsingError).Is(against) {
+		t.Error("parsing error should not be a invalid keyword order error")
+	}
+	if err.Error() != "parser error='test error', position=0, token='', type=0" {
+		t.Errorf("incorrect parser error %s", err.Error())
+	}
 }
