@@ -50,6 +50,7 @@ func (p *Parser) ParseQuery() (*Query, bool, error) {
 		if err != nil {
 			return nil, false, err
 		}
+		q.Statement = content
 	}
 	return q, false, nil
 }

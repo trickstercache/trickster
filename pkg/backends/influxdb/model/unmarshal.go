@@ -18,11 +18,14 @@ package model
 
 import (
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"io"
 	"sort"
+	"strconv"
 	"sync"
 
+	"github.com/influxdata/influxdb/models"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -37,17 +40,78 @@ func UnmarshalTimeseries(data []byte, trq *timeseries.TimeRangeQuery) (timeserie
 	return UnmarshalTimeseriesReader(buf, trq)
 }
 
+func decodeJSON(reader io.Reader) (*WFDocument, error) {
+	wfd := &WFDocument{}
+	err := json.NewDecoder(reader).Decode(wfd)
+	if err != nil {
+		return nil, err
+	}
+	return wfd, nil
+}
+
+func decodeCSV(reader io.Reader) (*WFDocument, error) {
+	records, err := csv.NewReader(reader).ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	var columns []string
+	wfd := &WFDocument{
+		Results: []WFResult{
+			{StatementID: 0, SeriesList: make([]models.Row, len(records)-1)},
+		},
+	}
+	for ri, r := range records {
+		// Do headers at first row
+		if ri == 0 {
+			columns = r
+			continue
+		}
+		// Construct WFD row from record
+		row := models.Row{
+			// Name, Tags deliberately left empty, they don't show up here
+			Columns: columns,
+			Values:  [][]interface{}{make([]interface{}, len(r))},
+		}
+		for ii, item := range r {
+			var val any
+			if f, err := strconv.ParseFloat(item, 64); err == nil {
+				val = f
+			} else if x, err := strconv.ParseInt(item, 10, 64); err == nil {
+				val = x
+			} else if b, err := strconv.ParseBool(item); err == nil {
+				val = b
+			} else {
+				val = item
+			}
+			row.Values[0][ii] = val
+		}
+		wfd.Results[0].SeriesList[ri-1] = row
+	}
+	return wfd, nil
+}
+
 // UnmarshalTimeseriesReader converts a JSON blob into a Timeseries via io.Reader
 func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
 	if trq == nil {
 		return nil, timeseries.ErrNoTimerangeQuery
 	}
-	wfd := &WFDocument{}
-	d := json.NewDecoder(reader)
-	err := d.Decode(wfd)
+	var bck bytes.Buffer
+	tr := io.TeeReader(reader, &bck)
+	wfd, err := decodeCSV(tr)
 	if err != nil {
-		return nil, err
+		wfd, err = decodeJSON(&bck)
+		if err != nil {
+			return nil, err
+		}
 	}
+	//wfd := &WFDocument{}
+	//d := json.NewDecoder(reader)
+	//err := d.Decode(wfd)
+	/*
+		if err != nil {
+			return nil, err
+		}
+	*/
 	ds := &dataset.DataSet{
 		Error:          wfd.Err,
 		TimeRangeQuery: trq,

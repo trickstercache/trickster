@@ -19,6 +19,7 @@ package engines
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -73,6 +74,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	trq, rlo, canOPC, err := client.ParseTimeRangeQuery(r)
 	rsc.TimeRangeQuery = trq
 	rsc.TSReqestOptions = rlo
+	fmt.Println(len(request.GetBody(r)))
 	if err != nil {
 		if canOPC {
 			tl.Debug(rsc.Logger, "could not parse time range query, using object proxy cache", tl.Pairs{"error": err.Error()})
@@ -84,14 +86,14 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		DoProxy(w, r, true)
 		return
 	}
-
+	fmt.Println(len(request.GetBody(r)))
 	var cacheStatus status.LookupStatus
 
 	pr := newProxyRequest(r, w)
 	rlo.FastForwardDisable = o.FastForwardDisable || rlo.FastForwardDisable
 	trq.NormalizeExtent()
 	now := time.Now()
-
+	fmt.Println(len(request.GetBody(pr.upstreamRequest)))
 	bt := trq.GetBackfillTolerance(o.BackfillTolerance, o.BackfillTolerancePoints)
 	bfs := now.Add(-bt).Truncate(trq.Step) // start of the backfill tolerance window
 
@@ -110,6 +112,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	client.SetExtent(pr.upstreamRequest, trq, &trq.Extent)
 	key := o.CacheKeyPrefix + ".dpc." + pr.DeriveCacheKey("")
 	pr.cacheLock, _ = locker.RAcquire(key)
+
+	fmt.Println(len(request.GetBody(pr.upstreamRequest)))
 
 	// this is used to determine if Fast Forward should be activated for this request
 	normalizedNow := &timeseries.TimeRangeQuery{
@@ -142,6 +146,7 @@ checkCache:
 	} else {
 		doc, cacheStatus, _, err = QueryCache(ctx, cache, key, nil)
 		if cacheStatus == status.LookupStatusKeyMiss && err == tc.ErrKNF {
+			fmt.Println(len(request.GetBody(pr.upstreamRequest)))
 			cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
 			if err != nil {
 				pr.cacheLock.RRelease()
@@ -597,19 +602,25 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 		// This concurrently fetches gaps from the origin and adds their datasets to the merge list
 		go func(e *timeseries.Extent, rq *proxyRequest) {
 			defer wg.Done()
+			fmt.Println("a", len(request.GetBody(rq.upstreamRequest)))
 			mrsc := rsc.Clone()
+			// upstreamRequest body is removed here
 			rq.upstreamRequest = rq.WithContext(tctx.WithResources(
 				trace.ContextWithSpan(context.Background(), span),
 				mrsc))
+			fmt.Println("b", len(request.GetBody(rq.upstreamRequest)))
 			rq.upstreamRequest = rq.upstreamRequest.WithContext(profile.ToContext(rq.upstreamRequest.Context(),
 				dpcEncodingProfile.Clone()))
+			fmt.Println("c", len(request.GetBody(rq.upstreamRequest)))
 			client.SetExtent(rq.upstreamRequest, rsc.TimeRangeQuery, e)
+			fmt.Println("d", len(request.GetBody(rq.upstreamRequest)))
 
 			ctxMR, spanMR := tspan.NewChildSpan(rq.upstreamRequest.Context(), rsc.Tracer, "FetchRange")
 			if spanMR != nil {
 				rq.upstreamRequest = rq.upstreamRequest.WithContext(ctxMR)
 				defer spanMR.End()
 			}
+			fmt.Println("e", len(request.GetBody(rq.upstreamRequest)))
 
 			body, resp, _ := rq.Fetch()
 

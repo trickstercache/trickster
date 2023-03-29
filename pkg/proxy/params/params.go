@@ -59,17 +59,20 @@ func GetRequestValues(r *http.Request) (url.Values, string, bool) {
 	if !methods.HasBody(r.Method) {
 		v = r.URL.Query()
 		s = r.URL.RawQuery
-	} else if r.Header.Get(headers.NameContentType) == headers.ValueApplicationJSON {
+	} else if ct := r.Header.Get(headers.NameContentType); ct == headers.ValueMultipartFormData || ct == headers.ValueXFormURLEncoded {
+		r.ParseForm()
+		v = r.PostForm
+		s = v.Encode()
+		isBody = true
+	} else {
 		v = url.Values{}
 		b, _ := io.ReadAll(r.Body)
 		r.Body.Close()
 		r.Body = io.NopCloser(bytes.NewReader(b))
 		s = string(b)
-		isBody = true
-	} else {
-		r.ParseForm()
-		v = r.PostForm
-		s = v.Encode()
+		if vs, err := url.ParseQuery(s); err == nil {
+			v = vs
+		}
 		isBody = true
 	}
 	return v, s, isBody

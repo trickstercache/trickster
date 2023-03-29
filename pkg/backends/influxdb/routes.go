@@ -50,6 +50,15 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 			MatchTypeName:   "exact",
 			MatchType:       matching.PathMatchTypeExact,
 		},
+		"/" + apiv2Query: {
+			Path:            "/" + apiv2Query,
+			HandlerName:     mnQuery,
+			Methods:         []string{http.MethodGet, http.MethodPost},
+			CacheKeyParams:  []string{upDB, upQuery, "u", "p"},
+			CacheKeyHeaders: []string{},
+			MatchTypeName:   "exact",
+			MatchType:       matching.PathMatchTypeExact,
+		},
 		"/": {
 			Path:          "/",
 			HandlerName:   "proxy",

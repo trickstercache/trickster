@@ -17,6 +17,8 @@
 package influxdb
 
 import (
+	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -38,15 +40,22 @@ import (
 // QueryHandler handles timeseries requests for InfluxDB and processes them through the delta proxy cache
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
-	qp, _, _ := params.GetRequestValues(r)
+	qp, qb, fromBody := params.GetRequestValues(r)
 	q := strings.Trim(strings.ToLower(qp.Get(upQuery)), " \t\n")
 	if q == "" {
-		c.ProxyHandler(w, r)
-		return
+		fmt.Println("no query")
+		if qb != "" && fromBody {
+			fmt.Println("using body")
+			q = qb
+		} else {
+			fmt.Println("proxying")
+			c.ProxyHandler(w, r)
+			return
+		}
 	}
 
 	// if it's not a select statement, just proxy it instead
-	if strings.Index(q, "select ") == -1 {
+	if !strings.Contains(q, "select ") && !strings.Contains(q, "from(") {
 		c.ProxyHandler(w, r)
 		return
 	}
@@ -80,6 +89,8 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		if err != nil {
 			return nil, nil, false, errors.ParseRequestBody(err)
 		}
+		r.Body.Close()
+		r.Body = io.NopCloser(bytes.NewReader(raw))
 		statement = string(raw)
 	}
 	if statement == "" {
