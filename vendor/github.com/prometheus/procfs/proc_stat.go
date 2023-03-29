@@ -102,8 +102,6 @@ type ProcStat struct {
 	RSS int
 	// Soft limit in bytes on the rss of the process.
 	RSSLimit uint64
-	// CPU number last executed on.
-	Processor uint
 	// Real-time scheduling priority, a number in the range 1 to 99 for processes
 	// scheduled under a real-time policy, or 0, for non-real-time processes.
 	RTPriority uint
@@ -186,7 +184,7 @@ func (p Proc) Stat() (ProcStat, error) {
 		&ignoreUint64,
 		&ignoreUint64,
 		&ignoreInt64,
-		&s.Processor,
+		&ignoreInt64,
 		&s.RTPriority,
 		&s.Policy,
 		&s.DelayAcctBlkIOTicks,

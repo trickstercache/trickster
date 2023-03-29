@@ -52,10 +52,10 @@ import (
 }
 
 /* Reserved words */
-%token<token> TAnd TBreak TDo TElse TElseIf TEnd TFalse TFor TFunction TIf TIn TLocal TNil TNot TOr TReturn TRepeat TThen TTrue TUntil TWhile TGoto
+%token<token> TAnd TBreak TDo TElse TElseIf TEnd TFalse TFor TFunction TIf TIn TLocal TNil TNot TOr TReturn TRepeat TThen TTrue TUntil TWhile 
 
 /* Literals */
-%token<token> TEqeq TNeq TLte TGte T2Comma T3Comma T2Colon TIdent TNumber TString '{' '('
+%token<token> TEqeq TNeq TLte TGte T2Comma T3Comma TIdent TNumber TString '{' '('
 
 /* Operators */
 %left TOr
@@ -186,14 +186,6 @@ stat:
         } |
         TLocal namelist {
             $$ = &ast.LocalAssignStmt{Names: $2, Exprs:[]ast.Expr{}}
-            $$.SetLine($1.Pos.Line)
-        } |
-        T2Colon TIdent T2Colon {
-            $$ = &ast.LabelStmt{Name: $2.Str}
-            $$.SetLine($1.Pos.Line)
-        } |
-        TGoto TIdent {
-            $$ = &ast.GotoStmt{Label: $2.Str}
             $$.SetLine($1.Pos.Line)
         }
 
