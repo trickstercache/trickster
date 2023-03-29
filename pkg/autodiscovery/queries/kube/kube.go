@@ -1,7 +1,7 @@
 package kube
 
 const (
-	Provider = string("kube")
+	Kind = string("kube")
 )
 
 type Query struct {

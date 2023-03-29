@@ -1,9 +1,12 @@
 package builder
 
 import (
+	"errors"
+
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/clients"
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/clients/etcd"
 	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/clients/kube"
+	"github.com/trickstercache/trickster/v2/pkg/autodiscovery/clients/mock"
 	"gopkg.in/yaml.v3"
 )
 
@@ -12,11 +15,20 @@ type ClientBuilder struct{}
 func (builder *ClientBuilder) Build(provider string, value *yaml.Node) (c clients.Client, err error) {
 	switch provider {
 	case etcd.Provider:
-		c = etcd.New()
+		ec := etcd.New()
+		err = value.Decode(&ec)
+		c = ec
 	case kube.Provider:
-		c = kube.New()
+		kc := kube.New()
+		err = value.Decode(&kc)
+		c = kc
+	case mock.Provider:
+		mc := mock.New()
+		err = value.Decode(&mc)
+		c = mc
+	default:
+		return nil, errors.New("invalid client provider " + provider)
 	}
-	err = value.Decode(c)
 	if err != nil {
 		return nil, err
 	}

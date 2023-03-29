@@ -11,13 +11,17 @@ import (
 
 // DiscoverWithOptions runs autodiscovery with a set of options, returning backend options for matched queries
 func DiscoverWithOptions(opts *adopt.Options) ([]*beopt.Options, error) {
-	fmt.Printf("Running autodiscovery with\nQueries:%+v\nTemplates:%+v\n", opts.Queries, opts.Templates)
+	fmt.Printf("Running autodiscovery with\nClients:%+v\nQueries:%+v\nTemplates:%+v\n", opts.Clients, opts.Queries, opts.Templates)
 	clients := opts.Clients
 	queries := opts.Queries
 	templates := opts.Templates
 	out := make([]*beopt.Options, 0)
 	// Range over all clients and make queries
 	for _, client := range clients.All() {
+		err := client.Connect()
+		if err != nil {
+			return nil, err
+		}
 		for _, queryName := range client.Queries() {
 			query, ok := queries.Get(queryName)
 			if !ok {
