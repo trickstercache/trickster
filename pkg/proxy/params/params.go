@@ -70,6 +70,7 @@ func GetRequestValues(r *http.Request) (url.Values, string, bool) {
 		r.ParseForm()
 		v = r.PostForm
 		s = v.Encode()
+		isBody = true
 	}
 	return v, s, isBody
 }
