@@ -18,7 +18,6 @@ package pool
 
 import (
 	"net/http"
-	"sync/atomic"
 )
 
 func nextRoundRobin(p *pool) []http.Handler {
@@ -28,6 +27,6 @@ func nextRoundRobin(p *pool) []http.Handler {
 	if len(t) == 0 {
 		return nil
 	}
-	i := atomic.AddUint64(&p.pos, 1) % uint64(len(t))
+	i := p.pos.Add(1) % uint64(len(t))
 	return []http.Handler{t[i]}
 }
