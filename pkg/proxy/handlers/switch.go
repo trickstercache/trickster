@@ -26,7 +26,7 @@ import (
 type SwitchHandler struct {
 	router    http.Handler
 	oldRouter http.Handler
-	reloading int32
+	reloading atomic.Int32
 }
 
 // NewSwitchHandler returns a New *SwitchHandler
@@ -60,13 +60,13 @@ func (s *SwitchHandler) Handler() http.Handler {
 }
 
 func (s *SwitchHandler) isReloading() bool {
-	return atomic.LoadInt32(&s.reloading) != 0
+	return s.reloading.Load() != 0
 }
 
 func (s *SwitchHandler) setReloading(isReloading bool) {
 	if isReloading {
-		atomic.StoreInt32(&s.reloading, 1)
+		s.reloading.Store(1)
 		return
 	}
-	atomic.StoreInt32(&s.reloading, 0)
+	s.reloading.Store(0)
 }
