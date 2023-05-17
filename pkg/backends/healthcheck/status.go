@@ -32,7 +32,7 @@ import (
 type Status struct {
 	name         string
 	description  string
-	status       int32
+	status       atomic.Int32
 	detail       string
 	failingSince time.Time
 	subscribers  []chan bool
@@ -46,10 +46,10 @@ type StatusLookup map[string]*Status
 func (s *Status) String() string {
 	sb := strings.Builder{}
 	sb.WriteString(fmt.Sprintf("target: %s\nstatus: %d\n", s.name, s.status))
-	if s.status < 1 {
+	if s.status.Load() < 1 {
 		sb.WriteString(fmt.Sprintf("detail: %s\n", s.detail))
 	}
-	if s.status < 0 {
+	if s.status.Load() < 0 {
 		sb.WriteString(fmt.Sprintf("since: %d", s.failingSince.Unix()))
 	}
 	return sb.String()
@@ -58,8 +58,8 @@ func (s *Status) String() string {
 // Headers returns a header set indicating the Status
 func (s *Status) Headers() http.Header {
 	h := http.Header{}
-	h.Set(headers.NameTrkHCStatus, strconv.Itoa(int(s.status)))
-	if s.status < 1 {
+	h.Set(headers.NameTrkHCStatus, strconv.Itoa(int(s.status.Load())))
+	if s.status.Load() < 1 {
 		h.Set(headers.NameTrkHCDetail, s.detail)
 	}
 	return h
@@ -67,7 +67,7 @@ func (s *Status) Headers() http.Header {
 
 // Set updates the status
 func (s *Status) Set(i int32) {
-	atomic.StoreInt32(&s.status, i)
+	s.status.Store(i)
 	for _, ch := range s.subscribers {
 		ch <- i == i
 	}
@@ -80,7 +80,7 @@ func (s *Status) Prober() func(http.ResponseWriter) {
 
 // Get provides the current status
 func (s *Status) Get() int {
-	return int(atomic.LoadInt32(&s.status))
+	return int(s.status.Load())
 }
 
 // Detail provides the current detail

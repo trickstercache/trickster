@@ -44,7 +44,7 @@ type nopReadCloserResetter struct {
 // readCloserResetter implements ReadCloserResetter
 type readCloserResetter struct {
 	io.Reader
-	closeCnt int32
+	closeCnt atomic.Int32
 	resetter Resetter
 }
 
@@ -53,7 +53,7 @@ type readCloserResetter struct {
 func (rc *readCloserResetter) Close() error {
 	// This gracefully handles when Close is called more than once and ensures
 	// only the first caller, even in a burst, is able to proceed.
-	if atomic.AddInt32(&rc.closeCnt, 1) != 1 {
+	if rc.closeCnt.Add(1) != 1 {
 		return nil
 	}
 	// if the underlying io.Reader is actually itself an io.ReadCloser, call
