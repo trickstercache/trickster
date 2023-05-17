@@ -28,10 +28,10 @@ func TestString(t *testing.T) {
 	status := &Status{
 		name:         "test",
 		description:  "test-description",
-		status:       -1,
 		detail:       "status-detail",
 		failingSince: tm,
 	}
+	status.status.Store(-1)
 	const expected = "target: test\nstatus: -1\ndetail: status-detail\nsince: 0"
 	s := status.String()
 	if s != expected {
@@ -68,7 +68,8 @@ func TestProber(t *testing.T) {
 
 func TestGet(t *testing.T) {
 
-	status := &Status{status: 8480}
+	status := &Status{}
+	status.status.Store(8480)
 	if status.Get() != 8480 {
 		t.Error("expected 8480 got", status.Get())
 	}

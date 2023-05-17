@@ -44,8 +44,8 @@ type target struct {
 	status                *Status
 	failureThreshold      int
 	recoveryThreshold     int
-	failConsecutiveCnt    int32
-	successConsecutiveCnt int32
+	failConsecutiveCnt    atomic.Int32
+	successConsecutiveCnt atomic.Int32
 	ks                    int // used internally and is not thread safe, do not expose
 	ctx                   context.Context
 	cancel                context.CancelFunc
@@ -210,15 +210,15 @@ func (t *target) probe() {
 	var passed bool
 	if err != nil || resp == nil {
 		t.status.detail = fmt.Sprintf("error probing target: %v", err)
-		errCnt = int(atomic.AddInt32(&t.failConsecutiveCnt, 1))
-		atomic.StoreInt32(&t.successConsecutiveCnt, 0)
+		errCnt = int(t.failConsecutiveCnt.Add(1))
+		t.successConsecutiveCnt.Store(0)
 	} else if !t.isGoodCode(resp.StatusCode) || !t.isGoodHeader(resp.Header) || !t.isGoodBody(resp.Body) {
-		errCnt = int(atomic.AddInt32(&t.failConsecutiveCnt, 1))
-		atomic.StoreInt32(&t.successConsecutiveCnt, 0)
+		errCnt = int(t.failConsecutiveCnt.Add(1))
+		t.successConsecutiveCnt.Store(0)
 	} else {
 		resp.Body.Close()
-		successCnt = int(atomic.AddInt32(&t.successConsecutiveCnt, 1))
-		atomic.StoreInt32(&t.failConsecutiveCnt, 0)
+		successCnt = int(t.successConsecutiveCnt.Add(1))
+		t.failConsecutiveCnt.Store(0)
 		passed = true
 	}
 	if !passed && t.ks != -1 && (errCnt == t.failureThreshold || t.ks == 0) {
@@ -244,7 +244,7 @@ func (t *target) demandProbe(w http.ResponseWriter) {
 	resp, err := t.httpClient.Do(r)
 	h := w.Header()
 	if err != nil {
-		if t.status != nil && t.status.status != 0 {
+		if t.status != nil && t.status.Get() != 0 {
 			sh := t.status.Headers()
 			for k := range sh {
 				h.Set(k, sh.Get(k))
@@ -257,7 +257,7 @@ func (t *target) demandProbe(w http.ResponseWriter) {
 	for k := range resp.Header {
 		h.Set(k, resp.Header.Get(k))
 	}
-	if t.status != nil && t.status.status != 0 {
+	if t.status != nil && t.status.Get() != 0 {
 		sh := t.status.Headers()
 		for k := range sh {
 			h.Set(k, sh.Get(k))

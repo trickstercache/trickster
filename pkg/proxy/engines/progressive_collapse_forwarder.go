@@ -46,14 +46,14 @@ type ProgressiveCollapseForwarder interface {
 
 type progressiveCollapseForwarder struct {
 	resp            *http.Response
-	rIndex          uint64
+	rIndex          atomic.Uint64
 	dataIndex       uint64
 	data            [][]byte
 	dataLen         uint64
 	dataStore       []byte
 	dataStoreLen    uint64
 	readCond        *sync.Cond
-	serverReadDone  int32
+	serverReadDone  atomic.Int32
 	clientWaitgroup *sync.WaitGroup
 	serverWaitCond  *sync.Cond
 }
@@ -75,17 +75,17 @@ func NewPCF(resp *http.Response, contentLength int64) ProgressiveCollapseForward
 
 	pcf := &progressiveCollapseForwarder{
 		resp:            resp,
-		rIndex:          0,
 		dataIndex:       0,
 		data:            refs,
 		dataLen:         uint64(len(refs)),
 		dataStore:       dataStore,
 		dataStoreLen:    uint64(contentLength),
 		readCond:        rc,
-		serverReadDone:  0,
 		clientWaitgroup: &wg,
 		serverWaitCond:  sd,
 	}
+	pcf.rIndex.Store(0)
+	pcf.serverReadDone.Store(0)
 
 	return pcf
 }
@@ -133,7 +133,7 @@ func (pcf *progressiveCollapseForwarder) AddClient(w io.Writer) error {
 // WaitServerComplete blocks until the object has been retrieved from the origin server
 // Need to get payload before can send to actual cache
 func (pcf *progressiveCollapseForwarder) WaitServerComplete() {
-	if atomic.LoadInt32(&pcf.serverReadDone) != 0 {
+	if pcf.serverReadDone.Load() != 0 {
 		return
 	}
 	pcf.serverWaitCond.L.Lock()
@@ -149,7 +149,7 @@ func (pcf *progressiveCollapseForwarder) WaitAllComplete() {
 
 // GetBody returns the underlying body of the data written into a PCF
 func (pcf *progressiveCollapseForwarder) GetBody() ([]byte, error) {
-	if atomic.LoadInt32(&pcf.serverReadDone) == 0 {
+	if pcf.serverReadDone.Load() == 0 {
 		return nil, errors.ErrServerRequestNotCompleted
 	}
 	return pcf.dataStore[0:pcf.dataIndex], nil
@@ -163,14 +163,14 @@ func (pcf *progressiveCollapseForwarder) GetResp() *http.Response {
 // Write writes the data in b to the ProgressiveCollapseForwarders data store,
 // adds a reference to that data, and increments the read index.
 func (pcf *progressiveCollapseForwarder) Write(b []byte) (int, error) {
-	n := atomic.LoadUint64(&pcf.rIndex)
+	n := pcf.rIndex.Load()
 	if pcf.dataIndex+uint64(len(b)) > pcf.dataStoreLen || n > pcf.dataLen {
 		return 0, io.ErrShortWrite
 	}
 	pcf.data[n] = pcf.dataStore[pcf.dataIndex : pcf.dataIndex+uint64(len(b))]
 	copy(pcf.data[n], b)
 	pcf.dataIndex += uint64(len(b))
-	atomic.AddUint64(&pcf.rIndex, 1)
+	pcf.rIndex.Add(1)
 	pcf.readCond.Broadcast()
 	return len(b), nil
 }
@@ -178,7 +178,7 @@ func (pcf *progressiveCollapseForwarder) Write(b []byte) (int, error) {
 // Close signals all things waiting on the server response body to complete.
 // This should be triggered by the client io.EOF
 func (pcf *progressiveCollapseForwarder) Close() {
-	atomic.AddInt32(&pcf.serverReadDone, 1)
+	pcf.serverReadDone.Add(1)
 	pcf.serverWaitCond.Broadcast()
 	pcf.readCond.Broadcast()
 }
@@ -186,12 +186,12 @@ func (pcf *progressiveCollapseForwarder) Close() {
 // Read will return the given index data requested by the read is behind the PCF readindex,
 // else blocks and waits for the data
 func (pcf *progressiveCollapseForwarder) IndexRead(index uint64, b []byte) (int, error) {
-	i := atomic.LoadUint64(&pcf.rIndex)
+	i := pcf.rIndex.Load()
 	if index >= i {
 		// need to check completion and return io.EOF
 		if index > pcf.dataLen {
 			return 0, errors.ErrReadIndexTooLarge
-		} else if atomic.LoadInt32(&pcf.serverReadDone) != 0 {
+		} else if pcf.serverReadDone.Load() != 0 {
 			return 0, io.EOF
 		}
 		pcf.readCond.L.Lock()
