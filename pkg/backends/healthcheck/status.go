@@ -45,7 +45,7 @@ type StatusLookup map[string]*Status
 
 func (s *Status) String() string {
 	sb := strings.Builder{}
-	sb.WriteString(fmt.Sprintf("target: %s\nstatus: %d\n", s.name, s.status))
+	sb.WriteString(fmt.Sprintf("target: %s\nstatus: %d\n", s.name, s.status.Load()))
 	if s.status.Load() < 1 {
 		sb.WriteString(fmt.Sprintf("detail: %s\n", s.detail))
 	}
