@@ -10,6 +10,8 @@
 
 Trickster is an HTTP reverse proxy/cache for http applications and a dashboard query accelerator for time series databases.
 
+some text
+
 <img src="./docs/images/high-level-1.png" width=512/>
 
 Learn more below, and check out our [roadmap](./docs/roadmap.md) to find out what else is in the works.
@@ -80,7 +82,7 @@ Check out our end-to-end [Docker Compose demo composition](./deploy/trickster-de
 
 Docker images are available on Docker Hub:
 
-    $ docker run --name trickster -d -v /path/to/trickster.conf:/etc/trickster/trickster.conf -p 0.0.0.0:8480:8480 tricksterproxy/trickster
+    docker run --name trickster -d -v /path/to/trickster.conf:/etc/trickster/trickster.conf -p 0.0.0.0:8480:8480 tricksterproxy/trickster
 
 See the 'deploy' Directory for more information about using or creating Trickster docker images.
 
@@ -100,17 +102,17 @@ Go environment with [version 1.9 or greater installed](http://golang.org/doc/ins
 You can directly use the `go` tool to download and install the `trickster`
 binary into your `GOPATH`:
 
-    $ go get github.com/tricksterproxy/trickster
-    $ trickster -origin-url http://prometheus.example.com:9090 -origin-type prometheus
+    go get github.com/tricksterproxy/trickster
+    trickster -origin-url http://prometheus.example.com:9090 -origin-type prometheus
 
 You can also clone the repository yourself and build using `make`:
 
-    $ mkdir -p $GOPATH/src/github.com/tricksterproxy
-    $ cd $GOPATH/src/github.com/tricksterproxy
-    $ git clone https://github.com/tricksterproxy/trickster.git
-    $ cd trickster
-    $ make build
-    $ ./OPATH/trickster -origin-url http://prometheus.example.com:9090 -origin-type prometheus
+    mkdir -p $GOPATH/src/github.com/tricksterproxy
+    cd $GOPATH/src/github.com/tricksterproxy
+    git clone https://github.com/tricksterproxy/trickster.git
+    cd trickster
+    make build
+    ./OPATH/trickster -origin-url http://prometheus.example.com:9090 -origin-type prometheus
 
 The Makefile provides several targets, including:
 
@@ -137,4 +139,4 @@ As the Trickster community grows, we'd like to keep track of who is using it in 
 2. [Selfnet e.V.](https://www.selfnet.de/) [[@ThoreKr](https://github.com/ThoreKr)]
 3. [swarmstack](https://github.com/swarmstack) [[@mh720](https://github.com/mh720)]
 4. [Hostinger](https://www.hostinger.com/) [[@ton31337](https://github.com/ton31337)]
-5. [The Remote Company (MailerLite, MailerSend, MailerCheck, YCode)](https://www.remotecompany.com) [[@aorfanos]](https://github.com/aorfanos)
+5. [The Remote Company (MailerLite, MailerSend, MailerCheck, YCode)](https://www.remotecompany.com) [[@aorfanos]](<https://github.com/aorfanos>)
