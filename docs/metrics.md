@@ -4,6 +4,8 @@ Trickster exposes a Prometheus /metrics endpoint with a customizable listener po
 
 ---
 
+some other text
+
 The following metrics are available for polling with any Trickster configuration:
 
 * `trickster_build_info` (Gauge) - This gauge is always 1 when Trickster is running
