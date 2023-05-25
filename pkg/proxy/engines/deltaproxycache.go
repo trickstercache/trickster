@@ -604,8 +604,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 			defer wg.Done()
 			fmt.Println("a", len(request.GetBody(rq.upstreamRequest)))
 			mrsc := rsc.Clone()
-			// upstreamRequest body is removed here
-			rq.upstreamRequest = rq.WithContext(tctx.WithResources(
+			rq.upstreamRequest = rq.upstreamRequest.WithContext(tctx.WithResources(
 				trace.ContextWithSpan(context.Background(), span),
 				mrsc))
 			fmt.Println("b", len(request.GetBody(rq.upstreamRequest)))

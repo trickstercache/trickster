@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/influxdata/influxdb/models"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -146,7 +147,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			sh.FieldsList = make([]timeseries.FieldDefinition, fdl)
 			var fdi int
 			for ci, cn := range wfd.Results[i].SeriesList[j].Columns {
-				if cn == "time" {
+				if cn == "time" || cn == "_time" {
 					timeFound = true
 					sh.TimestampIndex = ci
 					continue
@@ -209,16 +210,34 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 	return ds, nil
 }
 
+// tryParseTimestamp tries to parse a nanosecond timestamp from the value of a given field.
+// This assumes that, if a field is in number format, it is in nanoseconds; otherwise it
+// tried to parse some standard non-numeric formats. Returns -1 for invalid formats.
+//
+// tryParseTimestamp checks int ns, float ns and the following string formats:
+//   - RFC3339
+//   - RFC3339 (Nanoseconds)
+func tryParseTimestamp(v any) int64 {
+	if ns, ok := v.(int64); ok {
+		return ns
+	} else if fns, ok := v.(float64); ok {
+		return int64(fns)
+	} else if sns, ok := v.(string); ok {
+		if t, err := time.Parse(time.RFC3339, sns); err == nil {
+			return t.UnixNano()
+		} else if t, err := time.Parse(time.RFC3339Nano, sns); err == nil {
+			return t.UnixNano()
+		}
+	}
+	return -1
+}
+
 func pointFromValues(v []interface{}, tsIndex int) (dataset.Point,
 	[]timeseries.FieldDataType, error) {
 	p := dataset.Point{}
-	ns, ok := v[tsIndex].(int64)
-	if !ok {
-		fns, ok := v[tsIndex].(float64)
-		if !ok {
-			return p, nil, timeseries.ErrInvalidTimeFormat
-		}
-		ns = int64(fns)
+	ns := tryParseTimestamp(v[tsIndex])
+	if ns == -1 {
+		return p, nil, timeseries.ErrInvalidTimeFormat
 	}
 	p.Values = append(make([]interface{}, 0, len(v)-1), v[:tsIndex]...)
 	p.Values = append(p.Values, v[tsIndex+1:]...)
