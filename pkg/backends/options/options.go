@@ -631,6 +631,7 @@ func SetDefaults(
 		if err != nil {
 			return nil, err
 		}
+		no.Paths = o.Paths
 	}
 
 	if metadata.IsDefined("backends", name, "alb") {
