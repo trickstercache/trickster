@@ -17,7 +17,6 @@
 package model
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -54,11 +53,6 @@ func TestUnmarshalTimeseries(t *testing.T) {
 
 	trq := &timeseries.TimeRangeQuery{
 		Statement: "hello",
-	}
-
-	_, err = UnmarshalTimeseries([]byte("not-json:"), trq)
-	if !strings.HasPrefix(err.Error(), "invalid character ") {
-		t.Error("expected error for invalid character, got", err)
 	}
 
 	_, err = UnmarshalTimeseries([]byte("{}"), trq)

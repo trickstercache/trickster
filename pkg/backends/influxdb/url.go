@@ -74,7 +74,7 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 	v.Set(upEpoch, "ns") // request nanosecond epoch timestamp format from server
 	v.Del(upChunked)     // we do not support chunked output or handling chunked server responses
 	v.Del(upPretty)
-	//params.SetRequestValues(r, v)
+	params.SetRequestValues(r, v)
 	if !methods.HasBody(r.Method) {
 		r.URL.RawQuery = v.Encode()
 	}

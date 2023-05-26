@@ -55,7 +55,7 @@ func TestSetExtent(t *testing.T) {
 		t.Error(err)
 	}
 
-	const tokenized = "q=select * FROM some_column where time >= now() - 6h group by time(1m)"
+	const tokenized = "q=SELECT * FROM some_column WHERE time >= now() - 6h GROUP BY time(1m)"
 
 	tu := &url.URL{RawQuery: tokenized}
 
@@ -70,13 +70,15 @@ func TestSetExtent(t *testing.T) {
 		t.Errorf("\nexpected [%s]\ngot    [%s]", expected, r.URL.Query().Get("q"))
 	}
 
+	const body = "q=SELECT * FROM some_column WHERE time >= now() - 6h GROUP BY time(1m)"
+
 	r.Method = http.MethodPost
-	r.Body = io.NopCloser(bytes.NewBufferString(tokenized))
+	r.Body = io.NopCloser(bytes.NewBufferString(body))
 	ic.SetExtent(r, trq, e)
 	v, _, _ := params.GetRequestValues(r)
 
 	if expected != v.Get("q") {
-		t.Errorf("\nexpected [%s]\ngot    [%s]", expected, v.Get("q'"))
+		t.Errorf("\nexpected [%s]\ngot    [%s]", expected, v.Get("q"))
 	}
 
 }

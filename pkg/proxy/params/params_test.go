@@ -110,7 +110,7 @@ func TestGetSetRequestValues(t *testing.T) {
 	r.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
 	v, s, hb = GetRequestValues(r)
 	if len(v) != 0 {
-		t.Errorf("expected %d got %d", 0, len(v))
+		t.Errorf("expected %d got %d", 1, len(v))
 	}
 	if s != params {
 		t.Errorf("expected %s got %s", params, s)
