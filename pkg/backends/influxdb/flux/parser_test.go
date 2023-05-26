@@ -12,29 +12,29 @@ var testRelativeDuration string = `from("test-bucket")
 	|> range(start: -7d, stop: -6d)
 	|> window(every: 1m)
 	|> mean()
-	|> window(every: inf)
+	|> window(every: 10s)
 `
 var testAbsoluteTime string = `from("test-bucket")
 	|> range(start: 2023-01-01T00:00:00Z, stop: 2023-01-08T00:00:00Z)
 	|> window(every: 5m)
 	|> mean()
-	|> window(every: inf)
+	|> window(every: 10s)
 `
-var testUnixTime string = `from("test-bucket"
+var testUnixTime string = `from("test-bucket")
 	|> range(start: 1672531200, stop: 1673136000)
 	|> aggregateWindow(every: 30s, fn: mean)
 `
 
-var testNoRange string = `from("test-bucket
+var testNoRange string = `from("test-bucket")
 	|> aggregateWindow(every: 30s, fn: mean)
-)`
-var testNoStart string = `from("test-bucket
+`
+var testNoStart string = `from("test-bucket")
 	|> range(stop: 10)
 	|> aggregateWindow(every: 30s, fn: mean)
-)`
-var testNoWindow string = `from("test-bucket"
+`
+var testNoWindow string = `from("test-bucket")
 	|> range(start: 0, stop: 10)
-)`
+`
 
 var testsOK map[string]string = map[string]string{
 	"RelativeDuration": testRelativeDuration,

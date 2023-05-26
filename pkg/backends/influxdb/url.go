@@ -64,8 +64,8 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 		}
 		uq = q.String()
 	} else if q, ok := trq.ParsedQuery.(*flux.Query); ok {
-		q.Extent.End = q.Extent.End.Add(trq.Step)
-		uq = q.Statement
+		q.SetExtent(*extent)
+		uq = q.String()
 	} else {
 		return
 	}

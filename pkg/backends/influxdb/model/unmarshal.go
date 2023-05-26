@@ -56,9 +56,13 @@ func decodeCSV(reader io.Reader) (*WFDocument, error) {
 		return nil, err
 	}
 	var columns []string
+	var rows int = len(records) - 1
+	if len(records) == 0 {
+		rows = 0
+	}
 	wfd := &WFDocument{
 		Results: []WFResult{
-			{StatementID: 0, SeriesList: make([]models.Row, len(records)-1)},
+			{StatementID: 0, SeriesList: make([]models.Row, rows)},
 		},
 	}
 	for ri, r := range records {
