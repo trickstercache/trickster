@@ -18,7 +18,6 @@ package influxdb
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -43,12 +42,9 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	qp, qb, fromBody := params.GetRequestValues(r)
 	q := strings.Trim(strings.ToLower(qp.Get(upQuery)), " \t\n")
 	if q == "" {
-		fmt.Println("no query")
 		if qb != "" && fromBody {
-			fmt.Println("using body")
 			q = qb
 		} else {
-			fmt.Println("proxying")
 			c.ProxyHandler(w, r)
 			return
 		}
