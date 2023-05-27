@@ -55,11 +55,6 @@ func TestUnmarshalTimeseries(t *testing.T) {
 		Statement: "hello",
 	}
 
-	_, err = UnmarshalTimeseries([]byte("{}"), trq)
-	if err != timeseries.ErrInvalidBody {
-		t.Error("expected ErrInvalidBody got", err)
-	}
-
 	_, err = UnmarshalTimeseries([]byte(testDoc01), trq)
 	if err != nil {
 		t.Error(err)

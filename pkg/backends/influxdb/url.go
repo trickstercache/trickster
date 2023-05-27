@@ -17,12 +17,16 @@
 package influxdb
 
 import (
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/influxdata/influxql"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flux"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -44,7 +48,7 @@ const (
 // SetExtent will change the upstream request query to use the provided Extent
 func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
 
-	v, _, _ := params.GetRequestValues(r)
+	v, _, isBody := params.GetRequestValues(r)
 	if trq.ParsedQuery == nil {
 		t2, _, _, err := c.ParseTimeRangeQuery(r)
 		if err != nil {
@@ -71,11 +75,18 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 	}
 
 	v.Set(upQuery, uq)
+	if isBody {
+		r.Body = io.NopCloser(strings.NewReader(uq))
+		r.ContentLength = int64(len(uq))
+	}
 	v.Set(upEpoch, "ns") // request nanosecond epoch timestamp format from server
 	v.Del(upChunked)     // we do not support chunked output or handling chunked server responses
 	v.Del(upPretty)
-	params.SetRequestValues(r, v)
 	if !methods.HasBody(r.Method) {
 		r.URL.RawQuery = v.Encode()
 	}
+	// Need to set template URL for cache key derivation
+	trq.TemplateURL = urls.Clone(r.URL)
+	qt := url.Values(http.Header(v).Clone())
+	trq.TemplateURL.RawQuery = qt.Encode()
 }

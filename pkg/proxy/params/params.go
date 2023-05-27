@@ -19,7 +19,6 @@ package params
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -70,7 +69,6 @@ func isQueryBody(r *http.Request) bool {
 		headers.ValueApplicationFlux,
 	}
 	ct := r.Header.Get(headers.NameContentType)
-	fmt.Println(ct)
 	for _, nqb := range nqbs {
 		if ct == nqb {
 			return false

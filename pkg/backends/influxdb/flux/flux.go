@@ -37,7 +37,9 @@ type RangeStatement struct {
 
 func (stmt *RangeStatement) Kind() StatementKind { return Range }
 func (stmt *RangeStatement) String() string {
-	return fmt.Sprintf("|> range(start: %d, stop: %d)\n", stmt.ext.Start.UnixNano(), stmt.ext.End.UnixNano())
+	start := stmt.ext.Start.Format(time.RFC3339)
+	stop := stmt.ext.End.Format(time.RFC3339)
+	return fmt.Sprintf("|> range(start: %s, stop: %s)\n", start, stop)
 }
 
 type Query struct {

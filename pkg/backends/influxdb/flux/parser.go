@@ -34,6 +34,7 @@ func (p *Parser) ParseQuery() (*Query, bool, error) {
 	var hasRange, hasWindow bool
 	for {
 		line, err := r.ReadString('\n')
+		line = strings.TrimSpace(line) + "\n"
 		var stmt Statement
 		if err != nil {
 			if err == io.EOF {
@@ -119,6 +120,9 @@ func parseRangeFilter(query string, at int) (Statement, error) {
 	}
 	if start.IsZero() {
 		return nil, ErrFluxSemantics("range() expressions require a valid start argument")
+	}
+	if stop.IsZero() {
+		stop = time.Now()
 	}
 	return &RangeStatement{timeseries.Extent{Start: start, End: stop}}, nil
 }

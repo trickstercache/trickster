@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"encoding/csv"
 	"encoding/json"
-	"fmt"
 	"io"
 	"sort"
 	"strconv"
@@ -52,11 +51,12 @@ func decodeJSON(reader io.Reader) (*WFDocument, error) {
 }
 
 func decodeCSV(reader io.Reader) (*WFDocument, error) {
+	b, _ := io.ReadAll(reader)
+	reader = bytes.NewReader(b)
 	records, err := csv.NewReader(reader).ReadAll()
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(records)
 	var columns []string
 	var rows int = len(records) - 1
 	if len(records) == 0 {
@@ -104,9 +104,9 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 	}
 	var bck bytes.Buffer
 	tr := io.TeeReader(reader, &bck)
-	wfd, err := decodeJSON(tr)
+	wfd, err := decodeCSV(tr)
 	if err != nil {
-		wfd, err = decodeCSV(&bck)
+		wfd, err = decodeJSON(&bck)
 		if err != nil {
 			return nil, err
 		}
