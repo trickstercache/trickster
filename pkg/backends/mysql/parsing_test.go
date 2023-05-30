@@ -21,11 +21,12 @@ import (
 	"testing"
 )
 
-const tq00 = `SELECT col1, col2 FROM table WHERE col1 >= 1589904000 AND col1 < 1589997600 GROUP BY col1 ORDER BY col1`
-const tq01 = `SELECT col1, col2 FROM table WHERE col1 BETWEEN 1589904000 AND 1589997600 GROUP BY col1 ORDER BY col1`
-const tq02 = `SELECT col1 as ts, col2 FROM table WHERE ts > 1589904000 AND ts <= 1589997600 GROUP BY ts ORDER BY col1`
-const tq03 = `SELECT DATETIME(col1) as ts, col2, COUNT() as ct FROM table WHERE ts BETWEEN 1589904000 AND 1589997600 GROUP BY ts ORDER BY ts`
-const tq04 = `SELECT col1 as ts, col2 FROM table WHERE ts > 1589904000 AND ts <= 1589997600 GROUP BY ts ORDER BY col1 LIMIT 10`
+const tq00 = `SELECT col1, AVG(col2) FROM table WHERE col1 >= 1589904000 AND col1 < 1589997600 GROUP BY col1 div 60 ORDER BY col1`
+const tq01 = `SELECT col1, AVG(col2) FROM table WHERE col1 BETWEEN 1589904000 AND 1589997600 GROUP BY col1 div 60 ORDER BY col1`
+const tq02 = `SELECT col1 as ts, SUM(col2) FROM table WHERE ts > 1589904000 AND ts <= 1589997600 GROUP BY ts div 60 ORDER BY col1`
+const tq03 = `SELECT DATETIME(col1) as ts, SUM(col2), COUNT() as ct FROM table WHERE ts BETWEEN 1589904000 AND 1589997600 GROUP BY ts div 30 ORDER BY ts`
+const tq04 = `SELECT col1 as ts, AVG(col2) FROM table WHERE ts > 1589904000 AND ts <= 1589997600 GROUP BY ts div 60 ORDER BY col1 LIMIT 10`
+const tq05 = `SELECT col1 as ts, AVG(col2) FROM table WHERE ts > 1589904000 AND ts <= 1589997600 GROUP BY ts ORDER BY ts`
 
 func TestParseRawQuery(t *testing.T) {
 	tests := []struct {

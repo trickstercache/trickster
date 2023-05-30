@@ -27,6 +27,10 @@ import (
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
 
+func testQuery(q string) string {
+	return url.Values(map[string][]string{"query": {q}}).Encode()
+}
+
 func testRawQuery() string {
 	return url.Values(map[string][]string{"query": {tq00}}).
 		Encode()

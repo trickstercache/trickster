@@ -17,6 +17,9 @@
 package mysql
 
 import (
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/mysql/model"
@@ -237,9 +240,26 @@ func parseGroupByTokens(rs *parsing.RunState, trq *timeseries.TimeRangeQuery, ro
 	if !ok || len(tokens) == 0 {
 		return lsql.ErrInvalidGroupByClause
 	}
+	var nextStep, hasStep bool
 	trq.TagFieldDefintions = make([]timeseries.FieldDefinition, len(tokens))
 	for i, v := range tokens {
 		trq.TagFieldDefintions[i].Name = v.Val
+		if strings.ToLower(v.Val) == "div" {
+			nextStep = true
+			continue
+		}
+		if nextStep {
+			step, err := strconv.ParseInt(v.Val, 10, 64)
+			if err != nil {
+				return fmt.Errorf("failed to parse step from query: %s", err)
+			}
+			trq.Step = time.Duration(step) * time.Second
+			hasStep = true
+			nextStep = false
+		}
+	}
+	if !hasStep {
+		return fmt.Errorf("queries require a step; use GROUP BY tscol DIV (step in seconds)")
 	}
 	return nil
 }

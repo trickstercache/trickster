@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -87,51 +88,49 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestParseTimeRangeQuery(t *testing.T) {
-	req := &http.Request{URL: &url.URL{
-		Scheme:   "https",
-		Host:     "blah.com",
-		Path:     "/",
-		RawQuery: testRawQuery(),
-	},
-		Header: http.Header{},
+	type test_query struct {
+		name string
+		raw  string
+		pass bool
+		step time.Duration
+		over time.Duration
 	}
-	client := &Client{}
-	res, _, _, err := client.ParseTimeRangeQuery(req)
-	if err != nil {
-		t.Error(err)
-	} else {
-		if res.Step.Seconds() != 60 {
-			t.Errorf("expected 60 got %f", res.Step.Seconds())
-		}
-		if res.Extent.End.Sub(res.Extent.Start).Hours() != 6 {
-			t.Errorf("expected 6 got %f", res.Extent.End.Sub(res.Extent.Start).Hours())
-		}
+	tests := []test_query{
+		{"basic", tq00, true, 60 * time.Second, 26 * time.Hour},
+		{"between", tq01, true, 60 * time.Second, 26 * time.Hour},
+		{"order-by", tq02, true, 60 * time.Second, 26 * time.Hour},
+		{"count", tq03, true, 30 * time.Second, 26 * time.Hour},
+		{"limit", tq04, false, 0, 0},
+		{"nostep", tq05, false, 0, 0},
+		{"empty", "", false, 0, 0},
 	}
-
-	req.URL.RawQuery = ""
-	_, _, _, err = client.ParseTimeRangeQuery(req)
-	if err == nil {
-		t.Errorf("expected error for: %s", "missing URL parameter: [query]")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := &http.Request{URL: &url.URL{
+				Scheme:   "https",
+				Host:     "blah.com",
+				Path:     "/",
+				RawQuery: testQuery(test.raw),
+			},
+				Header: http.Header{},
+			}
+			client := &Client{}
+			res, _, _, err := client.ParseTimeRangeQuery(req)
+			if err != nil {
+				if test.pass {
+					t.Error(err)
+				}
+			} else {
+				if !test.pass {
+					t.Error("expected parsing to fail")
+				}
+				if res.Step != test.step {
+					t.Errorf("expected step %v, got %v", test.step, res.Step)
+				}
+				if res.Extent.End.Sub(res.Extent.Start) != test.over {
+					t.Errorf("expected query over duration %v, got %v", test.over, res.Extent.End.Sub(res.Extent.Start))
+				}
+			}
+		})
 	}
-
-	req.URL.RawQuery = url.Values(map[string][]string{"query": {
-		`SELECT (intDiv(toUInt32(abc), 6z0) * 6z0) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
-			`FROM testdb.test_table WHERE abc BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
-			`AND date_column >= toDate(1516665600) AND toDate(1516687200) ` +
-			`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`}}).Encode()
-	_, _, _, err = client.ParseTimeRangeQuery(req)
-	if err == nil {
-		t.Errorf("expected error for: %s", "not a time range query")
-	}
-
-	req.URL.RawQuery = url.Values(map[string][]string{"query": {
-		`SELECT (intDiv(toUInt32(0^^^), 60) * 60) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
-			`FROM testdb.test_table WHERE 0^^^ BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
-			`AND date_column >= toDate(1516665600) AND toDate(1516687200) ` +
-			`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`}}).Encode()
-	_, _, _, err = client.ParseTimeRangeQuery(req)
-	if err == nil {
-		t.Errorf("expected error for: %s", "not a time range query")
-	}
-
 }
