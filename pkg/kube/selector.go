@@ -10,9 +10,9 @@ type Selector struct {
 	Name string `yaml:"name"`
 	// HasLabels requires that all labels provided are on every resource found.
 	// The value isn't considered; use MatchLabels to match key-value pairs.
-	HasLabels []string `yaml:"hasLabel,omitempty"`
+	HasLabels []string `yaml:"hasLabels,omitempty"`
 	// MatchLabels requires that all labels and values are on every resource found.
-	MatchLabels map[string]string `yaml:"matchLabel,omitempty"`
+	MatchLabels map[string]string `yaml:"matchLabels,omitempty"`
 }
 
 // NameOK checks if the name of a resource matches the selector.
