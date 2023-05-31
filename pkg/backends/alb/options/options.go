@@ -105,6 +105,10 @@ func SetDefaults(name string, options *Options, metadata yamlx.KeyLookup) (*Opti
 		o.Pool = options.Pool
 	}
 
+	if metadata.IsDefined("backends", name, "alb", "discovery") {
+		o.Discovery = options.Discovery
+	}
+
 	if metadata.IsDefined("backends", name, "alb", "mechanism") && options.MechanismName != "" {
 		o.MechanismName = options.MechanismName
 	}

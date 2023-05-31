@@ -179,7 +179,7 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 			hc, _ := hcs[n]
 			targets = append(targets, pool.NewTarget(tc.Router(), hc))
 		}
-	} else {
+	} else if o.Discovery != nil {
 		discoClient, err := dc.New(o.Discovery.Provider)
 		if err != nil {
 			return err
@@ -189,12 +189,7 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 			return err
 		}
 		for _, nc := range newClients {
-			b, err := backends.New(nc.Name, nc, nil, c.Router(), c.Cache())
-			if err != nil {
-				return err
-			}
-			// TODO: non-nil hc
-			targets = append(targets, pool.NewTarget(b.Router(), nil))
+			targets = append(targets, pool.NewTarget(nc.Router(), nil))
 		}
 	}
 	c.pool = pool.New(m, targets, o.HealthyFloor)

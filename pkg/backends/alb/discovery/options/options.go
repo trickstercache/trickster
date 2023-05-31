@@ -6,8 +6,8 @@ import (
 )
 
 type Options struct {
-	Provider   string         `yaml:"provider"`
-	Kubernetes *ko.Options    `yaml:"kubernetes"`
-	Selector   *kube.Selector `yaml:"selector"`
-	Target     string         `yaml:"target"`
+	Provider   string            `yaml:"provider"`
+	Kubernetes *ko.Options       `yaml:"kubernetes"`
+	Selector   *kube.Selector    `yaml:"selector"`
+	Targets    map[string]string `yaml:"targets"`
 }

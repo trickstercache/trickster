@@ -82,6 +82,23 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router, metricsRouter *ht
 				fmt.Errorf(`unknown backend provider in backend options. backendName: %s, backendProvider: %s`,
 					k, o.Provider)
 		}
+		// Skip template backends; add directly without registering routes and continue
+		if o.IsTemplate {
+			cf := registration.SupportedProviders()
+			var client backends.Backend
+			if f, ok := cf[strings.ToLower(o.Provider)]; ok && f != nil {
+				cache, ok := caches[o.CacheName]
+				if !ok {
+					return nil, fmt.Errorf("couldn't find cache %s for backend %s", o.CacheName, o.Name)
+				}
+				client, err = f(k, o, router.NewRouter(), cache, clients, cf)
+				if err != nil {
+					return nil, err
+				}
+			}
+			clients[k] = client
+			continue
+		}
 		// Ensure only one default backend exists
 		if o.IsDefault {
 			if cdo != nil {

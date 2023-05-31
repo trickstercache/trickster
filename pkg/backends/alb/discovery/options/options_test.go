@@ -15,7 +15,8 @@ selector:
   namespace: default
   matchLabels:
     app: prometheus
-target: prom_template
+targets:
+  prometheus: prom_mock
 `
 
 func TestKubernetes(t *testing.T) {

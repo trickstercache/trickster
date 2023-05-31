@@ -137,7 +137,7 @@ type Options struct {
 	// IsDefault indicates if this is the d.Default backend for any request not matching a configured route
 	IsDefault bool `yaml:"is_default,omitempty"`
 	// IsTemplate indicates if the backend should be held for templating by autodiscovery
-	IsTemplate bool `yaml:"is_template, omitempty"`
+	IsTemplate bool `yaml:"is_template,omitempty"`
 	// FastForwardDisable indicates whether the FastForward feature should be disabled for this backend
 	FastForwardDisable bool `yaml:"fast_forward_disable,omitempty"`
 	// PathRoutingDisabled, when true, will bypass /backendName/path route registrations
@@ -367,7 +367,7 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 		if o.Provider == "" {
 			return NewErrMissingProvider(k)
 		}
-		if (o.Provider != "rule" && o.Provider != "alb") && o.OriginURL == "" {
+		if (o.Provider != "rule" && o.Provider != "alb" && !o.IsTemplate) && o.OriginURL == "" {
 			return NewErrMissingOriginURL(k)
 		}
 		url, err := url.Parse(o.OriginURL)
@@ -538,6 +538,10 @@ func SetDefaults(
 
 	if metadata.IsDefined("backends", name, "is_default") {
 		no.IsDefault = o.IsDefault
+	}
+
+	if metadata.IsDefined("backends", name, "is_template") {
+		no.IsTemplate = o.IsTemplate
 	}
 	// If there is only one backend and is_default is not explicitly false, make it true
 	if len(backends) == 1 && (!metadata.IsDefined("backends", name, "is_default")) {
