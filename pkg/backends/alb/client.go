@@ -184,11 +184,18 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		if err != nil {
 			return err
 		}
-		_, err = discovery.DiscoverServices(context.Background(), discoClient, o.Discovery, clients)
+		newClients, err := discovery.DiscoverServices(context.Background(), discoClient, o.Discovery, clients)
 		if err != nil {
 			return err
 		}
-		// Use discovered services to start backends and append to targets
+		for _, nc := range newClients {
+			b, err := backends.New(nc.Name, nc, nil, c.Router(), c.Cache())
+			if err != nil {
+				return err
+			}
+			// TODO: non-nil hc
+			targets = append(targets, pool.NewTarget(b.Router(), nil))
+		}
 	}
 	c.pool = pool.New(m, targets, o.HealthyFloor)
 	return nil
