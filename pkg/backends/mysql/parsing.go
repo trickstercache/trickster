@@ -31,11 +31,24 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/sqlparser"
 )
 
+type sqlquery struct {
+	tscol      string
+	rangeStart int
+	rangeEnd   int
+	extent     *timeseries.Extent
+	query      string
+}
+
+func (sq *sqlquery) String() string {
+	r := fmt.Sprintf("%s >= %d AND %s < %d", sq.tscol, sq.extent.Start.Unix(), sq.tscol, sq.extent.End.Unix())
+	return fmt.Sprintf(sq.query, r)
+}
+
 var parser = sqlparser.New(parsing.New(nil, lexer, lopts))
 
 // parse parses the Time Range Query
 func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions, bool, error) {
-	trq := &timeseries.TimeRangeQuery{Statement: statement}
+	trq := &timeseries.TimeRangeQuery{Statement: statement, ParsedQuery: &sqlquery{}}
 	ro := &timeseries.RequestOptions{}
 	rs, err := parser.Run(sqlparser.NewRunContext(trq, ro), parser, trq.Statement)
 
@@ -73,6 +86,12 @@ func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOpt
 	if err != nil {
 		return nil, nil, false, err
 	}
+	// Set modifiable parsedquery
+	pq := trq.ParsedQuery.(*sqlquery)
+	pq.query = trq.Statement[:pq.rangeStart] + "%s" + trq.Statement[pq.rangeEnd:]
+	pq.extent = &trq.Extent
+	// Modify upstream request with new values
+	trq.Statement = pq.String()
 	//var t *token.Token
 	/*
 		if t, err = parseGroupByTokens(results, trq, ro); err != nil {
@@ -99,7 +118,6 @@ func parseTSColumn(rs *parsing.RunState, trq *timeseries.TimeRangeQuery, ro *tim
 	if !ok {
 		return sqlparser.ErrMissingTimeseries
 	}
-	fmt.Println(tokens)
 	// Parse the first "statement" in the select portion. Need to check for datatype, column, alias
 	stmnt := tokens[0]
 	var col, alias string
@@ -131,6 +149,7 @@ func parseTSColumn(rs *parsing.RunState, trq *timeseries.TimeRangeQuery, ro *tim
 	// Set in trq/ro
 	if foundCol {
 		trq.TimestampDefinition.Name = col
+		trq.ParsedQuery.(*sqlquery).tscol = col
 	}
 	if foundAlias {
 		ro.BaseTimestampFieldName = alias
@@ -161,6 +180,7 @@ func parseFromTokens(rs *parsing.RunState, trq *timeseries.TimeRangeQuery, ro *t
 // the query could not be parsed properly OR if there's some WHERE statement including the tscol that is unrelated
 // to the timerange being requested.
 func parseWhereTokens(rs *parsing.RunState, trq *timeseries.TimeRangeQuery, ro *timeseries.RequestOptions) (error, bool) {
+	pq := trq.ParsedQuery.(*sqlquery)
 	whereTokens, ok := rs.GetResultsCollection("whereTokens")
 	if !ok {
 		return sqlparser.ErrMissingTimeseries, false
@@ -179,6 +199,7 @@ func parseWhereTokens(rs *parsing.RunState, trq *timeseries.TimeRangeQuery, ro *
 	for idxStatement := 0; idxStatement < len(tokens); idxStatement++ {
 		statement := tokens[idxStatement]
 		if !hasStart && isTimeseriesStartStatement(statement, tscol) {
+			pq.rangeStart = statement[0].Pos
 			start, _, err = lsql.TokenToTime(statement[2])
 			if err != nil {
 				return sqlparser.ErrNoLowerBound, false
@@ -188,10 +209,12 @@ func parseWhereTokens(rs *parsing.RunState, trq *timeseries.TimeRangeQuery, ro *
 			}
 			hasStart = true
 		} else if !hasStart && isTimeseriesBetweenStatement(statement, tscol) {
+			pq.rangeStart = statement[0].Pos
 			start, _, err = lsql.TokenToTime(statement[2])
 			if err != nil {
 				return sqlparser.ErrNoLowerBound, false
 			}
+			pq.rangeEnd = statement[4].Pos + len(statement[4].Val)
 			end, _, err = lsql.TokenToTime(statement[4])
 			if err != nil {
 				return sqlparser.ErrNoUpperBound, false
@@ -200,6 +223,7 @@ func parseWhereTokens(rs *parsing.RunState, trq *timeseries.TimeRangeQuery, ro *
 			hasEnd = true
 			break
 		} else if hasStart && isTimeseriesEndStatement(statement, tscol) {
+			pq.rangeEnd = statement[2].Pos + len(statement[2].Val)
 			end, _, err = lsql.TokenToTime(statement[2])
 			if err != nil {
 				return sqlparser.ErrNoUpperBound, false

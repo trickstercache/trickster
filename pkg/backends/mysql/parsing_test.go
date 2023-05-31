@@ -41,11 +41,10 @@ func TestParseRawQuery(t *testing.T) {
 	}
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			trq, _, _, err := parse(test.query)
+			_, _, _, err := parse(test.query)
 			if err != test.err {
 				t.Errorf("got '%v' expected '%v'", err, test.err)
 			}
-			t.Logf("%+v\n", trq)
 		})
 	}
 }
