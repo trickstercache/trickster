@@ -24,9 +24,8 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	"github.com/trickstercache/trickster/v2/pkg/router"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
-
-	"github.com/gorilla/mux"
 )
 
 // NewAccelerator returns a new InfluxDB Accelerator. only baseURL is required
@@ -58,8 +57,8 @@ func NewAcceleratorWithOptions(baseURL string, o *bo.Options, c *co.Options) (ht
 	o.Scheme = u.Scheme
 	o.Host = u.Host
 	o.PathPrefix = u.Path
-	r := mux.NewRouter()
-	cl, err := influxdb.NewClient("default", o, mux.NewRouter(), cache, nil, nil)
+	r := router.NewRouter()
+	cl, err := influxdb.NewClient("default", o, router.NewRouter(), cache, nil, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -19,12 +19,12 @@ package backends
 import (
 	"testing"
 
-	"github.com/gorilla/mux"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/router"
 )
 
 func TestNewTimeseriesBackend(t *testing.T) {
-	tb, _ := NewTimeseriesBackend("test1", bo.New(), nil, mux.NewRouter(), nil, nil)
+	tb, _ := NewTimeseriesBackend("test1", bo.New(), nil, router.NewRouter(), nil, nil)
 	if tb.Name() != "test1" {
 		t.Error("expected test1 got", tb.Name())
 	}

@@ -39,9 +39,9 @@ For complete instructions on how to compile see: [Building From Source](https://
 For quickly compiling and testing your changes do:
 
 ```bash
-# For building.
+# For building
 make
-./OPATH/trickster
+./bin/trickster
 
 # For testing.
 make test

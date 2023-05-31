@@ -341,7 +341,7 @@ func (pr *proxyRequest) parseRequestRanges() bool {
 	if _, ok := pr.Header[headers.NameRange]; ok {
 		out = byterange.ParseRangeHeader(pr.Header.Get(headers.NameRange))
 	}
-	pr.wantsRanges = out != nil && len(out) > 0
+	pr.wantsRanges = len(out) > 0
 	pr.wantedRanges = out
 
 	// if the client shouldn't support multipart ranges, force a full range
@@ -387,7 +387,11 @@ func (pr *proxyRequest) setBodyWriter() {
 			}
 		} else {
 			// we need to write to both the client over the wire, and the cache buffer
-			pr.responseWriter = io.MultiWriter(pr.responseWriter, pr.cacheBuffer)
+			if pr.responseWriter != nil {
+				pr.responseWriter = io.MultiWriter(pr.responseWriter, pr.cacheBuffer)
+			} else {
+				pr.responseWriter = pr.cacheBuffer
+			}
 		}
 	} else if pr.upstreamResponse.StatusCode == http.StatusNotModified {
 		pr.responseWriter = nil
@@ -476,7 +480,7 @@ func (pr *proxyRequest) store() error {
 
 	d.CachingPolicy = pr.cachingPolicy
 	err := WriteCache(pr.upstreamRequest.Context(), rsc.CacheClient, pr.key, d,
-		pr.cachingPolicy.TTL(rf, o.MaxTTL), o.CompressibleTypes)
+		pr.cachingPolicy.TTL(rf, o.MaxTTL), o.CompressibleTypes, nil)
 	if err != nil {
 		return err
 	}

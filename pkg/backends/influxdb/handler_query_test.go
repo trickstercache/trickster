@@ -18,6 +18,7 @@ package influxdb
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -27,12 +28,21 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
 var testVals = url.Values(map[string][]string{"q": {
 	`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h ` +
 		`GROUP BY time(15s), "cluster" fill(null)`}, "epoch": {"ms"}})
 var testRawQuery = testVals.Encode()
+
+var testFluxVals = url.Values(map[string][]string{
+	"q": {`from("test-bucket")
+	|> range(start: -7d, stop: -6d)
+	`},
+	"epoch": {"ms"},
+})
+var testFluxQuery = testFluxVals.Encode()
 
 func TestParseTimeRangeQuery(t *testing.T) {
 
@@ -71,6 +81,24 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		}
 		if int(res.Extent.End.Sub(res.Extent.Start).Hours()) != 6 {
 			t.Errorf("expected %d got %d", 6, int(res.Extent.End.Sub(res.Extent.Start).Hours()))
+		}
+	}
+
+	req = &http.Request{
+		Method: http.MethodGet,
+		URL: &url.URL{
+			Scheme:   "https",
+			Host:     "blah.com",
+			Path:     "/",
+			RawQuery: testFluxQuery,
+		}}
+	fmt.Println(req.URL.RawQuery)
+	res, _, _, err = client.ParseTimeRangeQuery(req)
+	if err != nil {
+		t.Error(err)
+	} else {
+		if int(res.Extent.End.Sub(res.Extent.Start).Hours()) != int(timeconv.Day.Hours()) {
+			t.Errorf("expected %d got %d", int(timeconv.Day.Hours()), int(res.Extent.End.Sub(res.Extent.Start).Hours()))
 		}
 	}
 }

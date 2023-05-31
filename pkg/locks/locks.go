@@ -56,18 +56,18 @@ func newNamedLock(name string, locker *namedLocker) *namedLock {
 type namedLock struct {
 	sync.RWMutex
 	name             string
-	queueSize        int32
+	queueSize        atomic.Int32
 	locker           *namedLocker
 	subsequentWriter bool
 }
 
 func (nl *namedLock) release(unlockFunc func()) {
-	qs := atomic.AddInt32(&nl.queueSize, -1)
+	qs := nl.queueSize.Add(-1)
 	if qs == 0 {
 		nl.locker.mapLock.Lock()
 		// recheck queue size after getting the lock since another client
 		// might have joined since the map lock was acquired
-		if nl.queueSize == 0 {
+		if nl.queueSize.Load() == 0 {
 			delete(nl.locker.locks, nl.name)
 		}
 		nl.locker.mapLock.Unlock()
@@ -121,7 +121,7 @@ func (lk *namedLocker) acquire(lockName string, isWrite bool) (NamedLock, error)
 		}
 		lk.locks[lockName] = nl
 	}
-	atomic.AddInt32(&nl.queueSize, 1)
+	nl.queueSize.Add(1)
 	mapUnlockFunc()
 
 	if isWrite {
