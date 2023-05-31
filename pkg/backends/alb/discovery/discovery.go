@@ -44,11 +44,14 @@ func DiscoverServices(ctx context.Context, c Client, opts *do.Options, bs map[st
 	out := make([]*bo.Options, len(ress))
 	for i, res := range ress {
 		t, ok := templates[res.Name]
-		t.IsTemplate = false
 		if !ok {
-			return nil, fmt.Errorf("resolved autodiscovery but could not find template %s", res.Name)
+			t, ok = templates["default"]
+			if !ok {
+				return nil, fmt.Errorf("resolved autodiscovery but could not find template %s", res.Name)
+			}
 		}
 		t = t.Clone()
+		t.IsTemplate = false
 		if res.Name != "" {
 			t.Name = res.Name
 		} else {
