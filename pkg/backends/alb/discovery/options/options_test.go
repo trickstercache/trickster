@@ -7,6 +7,7 @@ import (
 )
 
 var testYaml = `
+provider: kubernetes
 kubernetes:
   in_cluster: false
   config_path: ~/.kubeconfig
@@ -14,18 +15,7 @@ selector:
   namespace: default
   matchLabels:
     app: prometheus
-template:
-  latency_max_ms: 150
-  latency_min_ms: 50
-  is_default: true
-  provider: prometheus
-  cache_name: mem1
-  tls:
-    full_chain_cert_path: >-
-      /private/data/trickster/docker-compose/data/trickster-config/127.0.0.1.pem
-    private_key_path: >-
-      /private/data/trickster/docker-compose/data/trickster-config/127.0.0.1-key.pem
-    insecure_skip_verify: true
+target: prom_template
 `
 
 func TestKubernetes(t *testing.T) {
@@ -33,6 +23,9 @@ func TestKubernetes(t *testing.T) {
 	err := yaml.Unmarshal([]byte(testYaml), &opts)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if opts.Provider != "kubernetes" {
+		t.Error("expected kubernetes")
 	}
 	if k8s := opts.Kubernetes; k8s == nil {
 		t.Error("expected kubernetes client")

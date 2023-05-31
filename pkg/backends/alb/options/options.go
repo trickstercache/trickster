@@ -20,6 +20,7 @@ import (
 	"errors"
 	"strings"
 
+	do "github.com/trickstercache/trickster/v2/pkg/backends/alb/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
@@ -29,6 +30,8 @@ import (
 type Options struct {
 	// MechanismName indicates the name of the load balancing mechanism
 	MechanismName string `yaml:"mechanism,omitempty"`
+	// Discovery provides a mechanism for service discovery
+	Discovery *do.Options `yaml:"discovery,omitempty"`
 	// Pool provides the list of backend names to be used by the load balancer
 	Pool []string `yaml:"pool,omitempty"`
 	// HealthyFloor is the minimum health check status value to be considered Available in the pool
