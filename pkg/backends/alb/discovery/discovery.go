@@ -4,11 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends"
 	do "github.com/trickstercache/trickster/v2/pkg/backends/alb/discovery/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	"github.com/trickstercache/trickster/v2/pkg/cache"
-	"github.com/trickstercache/trickster/v2/pkg/router"
 )
 
 type Result struct {
@@ -27,19 +24,16 @@ type Client interface {
 //   - Use the client to find a set of named origin URLs
 //   - Use the template options provided to instantiate more options based on targets
 //   - Return the resulting instantiated options
-func DiscoverServices(ctx context.Context, c Client, opts *do.Options, bs backends.Backends) (backends.Backends, error) {
+func DiscoverServices(ctx context.Context, c Client, opts *do.Options, bs map[string]*bo.Options) ([]*bo.Options, error) {
 	// Arrange template mapping
 	templates := make(map[string]*bo.Options)
-	caches := make(map[string]cache.Cache)
 	for _, b := range bs {
-		conf := b.Configuration()
-		if !conf.IsTemplate {
+		if !b.IsTemplate {
 			continue
 		}
 		for tFrom, tTo := range opts.Targets {
-			if conf.Name == tTo {
-				templates[tFrom] = conf.Clone()
-				caches[tFrom] = b.Cache()
+			if b.Name == tTo {
+				templates[tFrom] = b.Clone()
 			}
 		}
 	}
@@ -47,9 +41,10 @@ func DiscoverServices(ctx context.Context, c Client, opts *do.Options, bs backen
 	if err != nil {
 		return nil, err
 	}
-	out := make(backends.Backends, len(ress))
+	out := make([]*bo.Options, len(ress))
 	for i, res := range ress {
 		t, ok := templates[res.Name]
+		t.IsTemplate = false
 		if !ok {
 			return nil, fmt.Errorf("resolved autodiscovery but could not find template %s", res.Name)
 		}
@@ -60,11 +55,10 @@ func DiscoverServices(ctx context.Context, c Client, opts *do.Options, bs backen
 			t.Name = fmt.Sprintf("%s_%d", t.Name, i)
 		}
 		t.OriginURL = res.URL
-		b, err := backends.New(t.Name, t, nil, router.NewRouter(), caches[res.Name])
 		if err != nil {
 			return nil, err
 		}
-		out[b.Name()] = b
+		out[i] = t
 	}
 	return out, nil
 }

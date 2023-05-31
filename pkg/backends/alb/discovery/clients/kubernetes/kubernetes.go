@@ -31,7 +31,7 @@ func doExternal(ctx context.Context, kc *kube.Client, opts *do.Options) ([]disco
 	if err != nil {
 		return nil, err
 	}
-	ings, err := kube.Ingresses(ctx, kc, opts.Selector)
+	ings, err := kube.Ingresses(ctx, kc, &kube.Selector{})
 	if err != nil {
 		return nil, err
 	}

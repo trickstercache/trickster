@@ -17,15 +17,12 @@
 package alb
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/discovery"
-	dc "github.com/trickstercache/trickster/v2/pkg/backends/alb/discovery/clients"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -176,20 +173,8 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 			if !ok {
 				return fmt.Errorf("invalid pool member name [%s] in backend [%s]", n, c.Name())
 			}
-			hc, _ := hcs[n]
+			hc := hcs[n]
 			targets = append(targets, pool.NewTarget(tc.Router(), hc))
-		}
-	} else if o.Discovery != nil {
-		discoClient, err := dc.New(o.Discovery.Provider)
-		if err != nil {
-			return err
-		}
-		newClients, err := discovery.DiscoverServices(context.Background(), discoClient, o.Discovery, clients)
-		if err != nil {
-			return err
-		}
-		for _, nc := range newClients {
-			targets = append(targets, pool.NewTarget(nc.Router(), nil))
 		}
 	}
 	c.pool = pool.New(m, targets, o.HealthyFloor)

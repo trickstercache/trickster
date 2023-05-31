@@ -65,7 +65,7 @@ func newService(s corev1.Service) *Service {
 }
 
 type PathBackend struct {
-	Obj  netv1.IngressBackend
+	Obj  netv1.IngressServiceBackend
 	Name string
 }
 
@@ -112,11 +112,11 @@ func newIngress(ing netv1.Ingress) *Ingress {
 				Path:     path.Path,
 				PathType: "",
 				Backend: &PathBackend{
-					Obj: path.Backend,
+					Obj: *path.Backend.Service,
 				},
 			}
-			if path.Backend.Resource != nil {
-				out.Rules[i].Paths[j].Backend.Name = path.Backend.Resource.Name
+			if path.Backend.Service != nil {
+				out.Rules[i].Paths[j].Backend.Name = path.Backend.Service.Name
 			}
 		}
 	}
