@@ -55,3 +55,11 @@ func IsDataType(tk *token.Token) (string, bool) {
 func (dt DataType) String() string {
 	return dts[dt]
 }
+
+var afs = []string{
+	"min", "max", "avg",
+}
+
+func IsAggregateFunction(tk *token.Token) (string, bool) {
+	return tk.Val, tk.Typ == token.Identifier && strings.IndexInSlice(afs, tk.Val) != -1
+}

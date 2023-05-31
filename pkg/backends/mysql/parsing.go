@@ -99,6 +99,7 @@ func parseTSColumn(rs *parsing.RunState, trq *timeseries.TimeRangeQuery, ro *tim
 	if !ok {
 		return sqlparser.ErrMissingTimeseries
 	}
+	fmt.Println(tokens)
 	// Parse the first "statement" in the select portion. Need to check for datatype, column, alias
 	stmnt := tokens[0]
 	var col, alias string
@@ -113,6 +114,9 @@ func parseTSColumn(rs *parsing.RunState, trq *timeseries.TimeRangeQuery, ro *tim
 			continue
 		}
 		if _, isDT := model.IsDataType(t); isDT {
+			continue
+		}
+		if _, isAF := model.IsAggregateFunction(t); isAF {
 			continue
 		}
 		if !foundCol {
