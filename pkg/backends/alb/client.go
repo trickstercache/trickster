@@ -17,12 +17,15 @@
 package alb
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/discovery"
+	dc "github.com/trickstercache/trickster/v2/pkg/backends/alb/discovery/clients"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -117,7 +120,7 @@ func StartALBPools(clients backends.Backends, hcs healthcheck.StatusLookup) erro
 			if err != nil {
 				return err
 			}
-		}
+		} // else if template
 	}
 	return nil
 }
@@ -167,13 +170,25 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		return fmt.Errorf("invalid mechanism name [%s] in backend [%s]", o.MechanismName, c.Name())
 	}
 	targets := make([]*pool.Target, 0, len(o.Pool))
-	for _, n := range o.Pool {
-		tc, ok := clients[n]
-		if !ok {
-			return fmt.Errorf("invalid pool member name [%s] in backend [%s]", n, c.Name())
+	if len(o.Pool) > 0 {
+		for _, n := range o.Pool {
+			tc, ok := clients[n]
+			if !ok {
+				return fmt.Errorf("invalid pool member name [%s] in backend [%s]", n, c.Name())
+			}
+			hc, _ := hcs[n]
+			targets = append(targets, pool.NewTarget(tc.Router(), hc))
 		}
-		hc, _ := hcs[n]
-		targets = append(targets, pool.NewTarget(tc.Router(), hc))
+	} else {
+		discoClient, err := dc.New(o.Discovery.Provider)
+		if err != nil {
+			return err
+		}
+		_, err = discovery.DiscoverServices(context.Background(), discoClient, o.Discovery, clients)
+		if err != nil {
+			return err
+		}
+		// Use discovered services to start backends and append to targets
 	}
 	c.pool = pool.New(m, targets, o.HealthyFloor)
 	return nil

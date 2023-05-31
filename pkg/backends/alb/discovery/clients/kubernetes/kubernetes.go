@@ -1,6 +1,7 @@
 package kubernetes
 
 import (
+	"context"
 	"errors"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/discovery"
@@ -9,7 +10,7 @@ import (
 
 type KubeClient struct{}
 
-func (c *KubeClient) Execute(opts *do.Options) ([]discovery.Result, error) {
+func (c *KubeClient) Execute(ctx context.Context, opts *do.Options) ([]discovery.Result, error) {
 	if opts.Provider != "kubernetes" || opts.Kubernetes == nil {
 		return nil, errors.New("KubeClient must be provided a set of options for Kubernetes service discovery")
 	}

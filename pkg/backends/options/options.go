@@ -136,6 +136,8 @@ type Options struct {
 
 	// IsDefault indicates if this is the d.Default backend for any request not matching a configured route
 	IsDefault bool `yaml:"is_default,omitempty"`
+	// IsTemplate indicates if the backend should be held for templating by autodiscovery
+	IsTemplate bool `yaml:"is_template, omitempty"`
 	// FastForwardDisable indicates whether the FastForward feature should be disabled for this backend
 	FastForwardDisable bool `yaml:"fast_forward_disable,omitempty"`
 	// PathRoutingDisabled, when true, will bypass /backendName/path route registrations
