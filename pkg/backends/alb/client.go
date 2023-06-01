@@ -117,7 +117,7 @@ func StartALBPools(clients backends.Backends, hcs healthcheck.StatusLookup) erro
 			if err != nil {
 				return err
 			}
-		}
+		} // else if template
 	}
 	return nil
 }
@@ -167,13 +167,15 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		return fmt.Errorf("invalid mechanism name [%s] in backend [%s]", o.MechanismName, c.Name())
 	}
 	targets := make([]*pool.Target, 0, len(o.Pool))
-	for _, n := range o.Pool {
-		tc, ok := clients[n]
-		if !ok {
-			return fmt.Errorf("invalid pool member name [%s] in backend [%s]", n, c.Name())
+	if len(o.Pool) > 0 {
+		for _, n := range o.Pool {
+			tc, ok := clients[n]
+			if !ok {
+				return fmt.Errorf("invalid pool member name [%s] in backend [%s]", n, c.Name())
+			}
+			hc := hcs[n]
+			targets = append(targets, pool.NewTarget(tc.Router(), hc))
 		}
-		hc, _ := hcs[n]
-		targets = append(targets, pool.NewTarget(tc.Router(), hc))
 	}
 	c.pool = pool.New(m, targets, o.HealthyFloor)
 	return nil

@@ -29,7 +29,10 @@ func (p *pool) checkHealth() {
 			p.mtx.Lock()
 			h := make([]http.Handler, 0, len(p.targets))
 			for _, t := range p.targets {
-				if t.hcStatus.Get() >= p.healthyFloor {
+				// Assume unchecked backends are healthy
+				if t.hcStatus == nil {
+					h = append(h, t.handler)
+				} else if t.hcStatus.Get() >= p.healthyFloor {
 					h = append(h, t.handler)
 				}
 			}

@@ -18,6 +18,7 @@
 package routing
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/pprof"
@@ -27,6 +28,8 @@ import (
 	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/discovery"
+	dc "github.com/trickstercache/trickster/v2/pkg/backends/alb/discovery/clients"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -81,6 +84,23 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router, metricsRouter *ht
 			return nil,
 				fmt.Errorf(`unknown backend provider in backend options. backendName: %s, backendProvider: %s`,
 					k, o.Provider)
+		}
+		// Skip template backends; add directly without registering routes and continue
+		if o.IsTemplate {
+			cf := registration.SupportedProviders()
+			var client backends.Backend
+			if f, ok := cf[strings.ToLower(o.Provider)]; ok && f != nil {
+				cache, ok := caches[o.CacheName]
+				if !ok {
+					return nil, fmt.Errorf("couldn't find cache %s for backend %s", o.CacheName, o.Name)
+				}
+				client, err = f(k, o, router.NewRouter(), cache, clients, cf)
+				if err != nil {
+					return nil, err
+				}
+			}
+			clients[k] = client
+			continue
 		}
 		// Ensure only one default backend exists
 		if o.IsDefault {
@@ -171,8 +191,48 @@ func registerBackendRoutes(r router.Router, metricsRouter *http.ServeMux, conf *
 	}
 
 	cf := registration.SupportedProviders()
-	if f, ok := cf[strings.ToLower(o.Provider)]; ok && f != nil {
+	prov := strings.ToLower(o.Provider)
+	if f, ok := cf[prov]; ok && f != nil {
 		client, err = f(k, o, router.NewRouter(), c, clients, cf)
+	}
+	if prov == "alb" && o.ALBOptions.Discovery != nil {
+		tl.Info(logger, "registering autodiscovery backends", tl.Pairs{"albName": k,
+			"upstreamHost": o.Host})
+		opts := o.ALBOptions
+		opts.Pool = make([]string, 0)
+		discoClient, err := dc.New(opts.Discovery.Provider)
+		if err != nil {
+			return err
+		}
+		newBackends, err := discovery.DiscoverServices(context.Background(), discoClient, opts.Discovery, conf.Backends)
+		if err != nil {
+			return err
+		}
+		// Register all found backends
+		for _, nb := range newBackends {
+			tl.Info(logger, "discovered backend", tl.Pairs{"name": nb.Name, "origin": nb.OriginURL,
+				"provider": nb.Provider})
+			var c cache.Cache
+			if useCache, ok := caches[o.CacheName]; ok {
+				c = useCache
+			} else {
+				return fmt.Errorf("could not find cache named [%s]", o.CacheName)
+			}
+			var newClient backends.Backend
+			if f, ok := cf[strings.ToLower(nb.Provider)]; ok {
+				newClient, err = f(nb.Name, nb, router.NewRouter(), c, clients, cf)
+			} else {
+				return fmt.Errorf("could not create client with provider [%s]", nb.Provider)
+			}
+			nb.HTTPClient = newClient.HTTPClient()
+			clients[nb.Name] = newClient
+			defaultPaths := newClient.DefaultPathConfigs(nb)
+			h := newClient.Handlers()
+			RegisterPathRoutes(r, h, newClient, nb, c, defaultPaths, tracers,
+				conf.Main.HealthHandlerPath, logger)
+			// Assign name of the new backends to the alb pool
+			opts.Pool = append(opts.Pool, nb.Name)
+		}
 	}
 	if err != nil {
 		return err

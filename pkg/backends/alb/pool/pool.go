@@ -56,7 +56,9 @@ func New(mechanism Mechanism, targets []*Target, healthyFloor int) Pool {
 	p.ch <- true
 
 	for _, t := range targets {
-		t.hcStatus.RegisterSubscriber(p.ch)
+		if t.hcStatus != nil {
+			t.hcStatus.RegisterSubscriber(p.ch)
+		}
 	}
 
 	go p.checkHealth()
