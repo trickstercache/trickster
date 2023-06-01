@@ -44,6 +44,7 @@ func doExternal(ctx context.Context, kc *kube.Client, opts *do.Options) ([]disco
 		for _, ing := range ings {
 			// Iterate rules
 			for _, rule := range ing.Rules {
+				scheme := rule.Scheme
 				// Iterate paths. We can go deeper!
 				for _, path := range rule.Paths {
 					if path.Backend == nil {
@@ -53,8 +54,9 @@ func doExternal(ctx context.Context, kc *kube.Client, opts *do.Options) ([]disco
 							host = rule.Host
 						}
 						out = append(out, discovery.Result{
-							Name: svc.Meta.Name,
-							URL:  host + path.Path,
+							Name:   svc.Meta.Name,
+							Scheme: scheme,
+							URL:    host + path.Path,
 						})
 					}
 				}

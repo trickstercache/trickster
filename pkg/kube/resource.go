@@ -6,6 +6,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/strings/slices"
 )
 
 // Metadata approximates the metadata attached to all kubernetes objects.
@@ -77,9 +78,10 @@ type Path struct {
 }
 
 type Rule struct {
-	Obj   netv1.IngressRule
-	Host  string
-	Paths []*Path
+	Obj    netv1.IngressRule
+	Scheme string
+	Host   string
+	Paths  []*Path
 }
 
 type Ingress struct {
@@ -100,12 +102,24 @@ func newIngress(ing netv1.Ingress) *Ingress {
 		},
 		Rules: make([]*Rule, len(ing.Spec.Rules)),
 	}
+	tlsHosts := make([]string, 0)
+	for _, tlsRule := range ing.Spec.TLS {
+		for _, tlsHost := range tlsRule.Hosts {
+			tlsHosts = append(tlsHosts, tlsHost)
+		}
+	}
 	for i, rule := range ing.Spec.Rules {
 		out.Rules[i] = &Rule{
 			Obj:   rule,
 			Host:  rule.Host,
 			Paths: make([]*Path, len(rule.HTTP.Paths)),
 		}
+		useTLS := slices.Contains(tlsHosts, rule.Host)
+		scheme := "http"
+		if useTLS {
+			scheme = "https"
+		}
+		out.Rules[i].Scheme = scheme
 		for j, path := range rule.HTTP.Paths {
 			out.Rules[i].Paths[j] = &Path{
 				Obj:      path,

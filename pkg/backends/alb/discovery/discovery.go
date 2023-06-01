@@ -3,14 +3,16 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	do "github.com/trickstercache/trickster/v2/pkg/backends/alb/discovery/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 )
 
 type Result struct {
-	Name string
-	URL  string
+	Name   string
+	Scheme string
+	URL    string
 }
 
 // Clients act on a set of options to fetch valid backend origins.
@@ -57,7 +59,16 @@ func DiscoverServices(ctx context.Context, c Client, opts *do.Options, bs map[st
 		} else {
 			t.Name = fmt.Sprintf("%s_%d", t.Name, i)
 		}
+		// scheme
+		t.Scheme = res.Scheme
 		t.OriginURL = res.URL
+		hostEnd := strings.Index(res.URL, "/")
+		if hostEnd == -1 {
+			hostEnd = len(res.URL)
+		} else {
+			t.PathPrefix = res.URL[hostEnd:]
+		}
+		t.Host = res.URL[:hostEnd]
 		if err != nil {
 			return nil, err
 		}

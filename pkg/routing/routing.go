@@ -226,8 +226,8 @@ func registerBackendRoutes(r router.Router, metricsRouter *http.ServeMux, conf *
 			}
 			nb.HTTPClient = newClient.HTTPClient()
 			clients[nb.Name] = newClient
-			defaultPaths := client.DefaultPathConfigs(nb)
-			h := client.Handlers()
+			defaultPaths := newClient.DefaultPathConfigs(nb)
+			h := newClient.Handlers()
 			RegisterPathRoutes(r, h, newClient, nb, c, defaultPaths, tracers,
 				conf.Main.HealthHandlerPath, logger)
 			// Assign name of the new backends to the alb pool
