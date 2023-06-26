@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/common/sigv4"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
@@ -212,7 +213,8 @@ type Options struct {
 	MaxShardSize time.Duration `yaml:"-"`
 	// ShardStep is the parsed version of ShardStepMS
 	ShardStep time.Duration `yaml:"-"`
-
+	// SigV4
+	SigV4 *sigv4.SigV4Config `yaml:"sigv4,omitempty"`
 	//
 	md yamlx.KeyLookup `yaml:"-"`
 }
@@ -695,6 +697,10 @@ func SetDefaults(
 
 	if metadata.IsDefined("backends", name, "latency_max_ms") {
 		no.LatencyMaxMS = o.LatencyMaxMS
+	}
+
+	if metadata.IsDefined("backends", name, "sigv4") {
+		no.SigV4 = o.SigV4
 	}
 
 	return no, nil

@@ -26,6 +26,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/prometheus/common/sigv4"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 )
 
@@ -77,7 +78,7 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 		}
 	}
 
-	return &http.Client{
+	client := &http.Client{
 		Timeout: o.Timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -88,6 +89,15 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 			MaxIdleConnsPerHost: o.MaxIdleConns,
 			TLSClientConfig:     TLSConfig,
 		},
-	}, nil
+	} 
 
+	if o.SigV4 != nil {
+		var err error
+		client.Transport, err = sigv4.NewSigV4RoundTripper(o.SigV4, client.Transport)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return client, nil
 }
