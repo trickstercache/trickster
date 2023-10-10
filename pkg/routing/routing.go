@@ -383,7 +383,20 @@ func RegisterDefaultBackendRoutes(router router.Router, bknds backends.Backends,
 			}
 			tl.Info(logger,
 				"registering default backend handler paths", tl.Pairs{"backendName": o.Name})
-			for _, p := range o.Paths {
+
+			// Sort by key length(Path length) to ensure /api/v1/query_range appear before /api/v1 or / path in regex path matching
+			keylist := make([]string, 0, len(o.Paths))
+			for key := range o.Paths {
+				keylist = append(keylist, key)
+			}
+			sort.Sort(ByLen(keylist))
+			for i := len(keylist)/2 - 1; i >= 0; i-- {
+				opp := len(keylist) - 1 - i
+				keylist[i], keylist[opp] = keylist[opp], keylist[i]
+			}
+
+			for _, k := range keylist {
+				var p = o.Paths[k]
 				if p.Handler != nil && len(p.Methods) > 0 {
 					tl.Debug(logger, "registering default backend handler paths",
 						tl.Pairs{"backendName": o.Name, "path": p.Path, "handlerName": p.HandlerName,

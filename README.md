@@ -18,7 +18,7 @@ Trickster is hosted by the [Cloud Native Computing Foundation](https://cncf.io) 
 
 Note: Trickster v1.1 is the production release, sourced from the [v1.1.x](https://github.com/trickstercache/trickster/tree/v1.1.x) branch. The `main` branch sources Trickster 2.0, which is currently in beta.
 
-## HTTP Reverse Proxy Cache ##
+## HTTP Reverse Proxy Cache
 
 Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications like static file servers and web API's.
 
