@@ -92,9 +92,7 @@ func MergeResultHeaderVals(h1, h2 string) string {
 	if len(r1.Fetched) == 0 {
 		r1.Fetched = r2.Fetched
 	} else {
-		for _, extent := range r2.Fetched {
-			r1.Fetched = append(r1.Fetched, extent)
-		}
+		r1.Fetched = append(r1.Fetched, r2.Fetched...)
 		r1.Fetched = r1.Fetched.Compress(0)
 	}
 
