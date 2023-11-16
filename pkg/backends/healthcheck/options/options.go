@@ -116,9 +116,7 @@ func (o *Options) Clone() *Options {
 	}
 	if len(o.ExpectedCodes) > 0 {
 		c.ExpectedCodes = make([]int, len(o.ExpectedCodes))
-		for i, v := range o.ExpectedCodes {
-			c.ExpectedCodes[i] = v
-		}
+		copy(c.ExpectedCodes, o.ExpectedCodes)
 	}
 	c.md = o.md
 	c.hasExpectedBody = o.hasExpectedBody
