@@ -20,11 +20,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"sync"
+
+	"github.com/go-logr/logr"
+	"github.com/go-logr/stdr"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -37,20 +39,20 @@ const (
 type Exporter struct {
 	url    string
 	client *http.Client
-	logger *log.Logger
+	logger logr.Logger
 
 	stoppedMu sync.RWMutex
 	stopped   bool
 }
 
-var (
-	_ sdktrace.SpanExporter = &Exporter{}
-)
+var _ sdktrace.SpanExporter = &Exporter{}
+
+var emptyLogger = logr.Logger{}
 
 // Options contains configuration for the exporter.
 type config struct {
 	client *http.Client
-	logger *log.Logger
+	logger logr.Logger
 }
 
 // Option defines a function that configures the exporter.
@@ -65,7 +67,14 @@ func (fn optionFunc) apply(cfg config) config {
 }
 
 // WithLogger configures the exporter to use the passed logger.
+// WithLogger and WithLogr will overwrite each other.
 func WithLogger(logger *log.Logger) Option {
+	return WithLogr(stdr.New(logger))
+}
+
+// WithLogr configures the exporter to use the passed logr.Logger.
+// WithLogr and WithLogger will overwrite each other.
+func WithLogr(logger logr.Logger) Option {
 	return optionFunc(func(cfg config) config {
 		cfg.logger = logger
 		return cfg
@@ -144,7 +153,7 @@ func (e *Exporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpa
 	// but it is still being read because according to https://golang.org/pkg/net/http/#Response
 	// > The default HTTP client's Transport may not reuse HTTP/1.x "keep-alive" TCP connections
 	// > if the Body is not read to completion and closed.
-	_, err = io.Copy(ioutil.Discard, resp.Body)
+	_, err = io.Copy(io.Discard, resp.Body)
 	if err != nil {
 		return e.errf("failed to read response body: %v", err)
 	}
@@ -171,8 +180,8 @@ func (e *Exporter) Shutdown(ctx context.Context) error {
 }
 
 func (e *Exporter) logf(format string, args ...interface{}) {
-	if e.logger != nil {
-		e.logger.Printf(format, args...)
+	if e.logger != emptyLogger {
+		e.logger.Info(fmt.Sprintf(format, args...))
 	}
 }
 
