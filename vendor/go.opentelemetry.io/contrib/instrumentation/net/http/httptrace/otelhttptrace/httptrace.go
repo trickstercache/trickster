@@ -18,11 +18,12 @@ import (
 	"context"
 	"net/http"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace/internal/semconvutil"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/propagation"
-	semconv "go.opentelemetry.io/otel/semconv/v1.12.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -64,11 +65,11 @@ func Extract(ctx context.Context, req *http.Request, opts ...Option) ([]attribut
 	c := newConfig(opts)
 	ctx = c.propagators.Extract(ctx, propagation.HeaderCarrier(req.Header))
 
-	attrs := append(
-		semconv.HTTPServerAttributesFromHTTPRequest("", "", req),
-		semconv.NetAttributesFromHTTPRequest("tcp", req)...,
-	)
-
+	attrs := append(semconvutil.HTTPServerRequest("", req), semconvutil.NetTransport("tcp"))
+	if req.ContentLength > 0 {
+		a := semconv.HTTPRequestContentLength(int(req.ContentLength))
+		attrs = append(attrs, a)
+	}
 	return attrs, baggage.FromContext(ctx), trace.SpanContextFromContext(ctx)
 }
 
