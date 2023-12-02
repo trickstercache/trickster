@@ -71,16 +71,12 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 
 	if trq.TagFieldDefintions != nil {
 		t.TagFieldDefintions = make([]FieldDefinition, len(trq.TagFieldDefintions))
-		for i, fd := range trq.TagFieldDefintions {
-			t.TagFieldDefintions[i] = fd
-		}
+		copy(t.TagFieldDefintions, trq.TagFieldDefintions)
 	}
 
 	if trq.ValueFieldDefinitions != nil {
 		t.ValueFieldDefinitions = make([]FieldDefinition, len(trq.ValueFieldDefinitions))
-		for i, fd := range trq.ValueFieldDefinitions {
-			t.ValueFieldDefinitions[i] = fd
-		}
+		copy(t.ValueFieldDefinitions, trq.ValueFieldDefinitions)
 	}
 
 	if trq.TemplateURL != nil {
