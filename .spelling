@@ -252,3 +252,10 @@ influxdata's
 entrypoint
 sharding
 sharded
+1.19
+byterange
+420
+subextent
+subkey
+4096
+380

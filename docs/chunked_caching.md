@@ -40,7 +40,7 @@ Byterange chunking splits the byterange into pieces with the same literal size. 
 - Failure to determine a range on read will read until the query fails
 - Determine a maximum range aligned along the chunk size that contains the entire byterange
 - To write: Write each chunk size range with `RangeParts` of all provided ranges cropped to that chunk range, under a subkey
-- To read: Read each subkey and reconsitute a body from `RangeParts`, if able
+- To read: Read each subkey and reconstitute a body from `RangeParts`, if able
 
 ## Full Example
 

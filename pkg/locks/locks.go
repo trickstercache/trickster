@@ -11,7 +11,7 @@
 * limitations under the License.
  */
 
-// Package locks provides Named Locks functionality for manging
+// Package locks provides Named Locks functionality for managing
 // mutexes by string name (e.g., cache keys).
 package locks
 
