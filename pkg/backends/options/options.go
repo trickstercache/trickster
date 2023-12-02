@@ -633,6 +633,9 @@ func SetDefaults(
 		if err != nil {
 			return nil, err
 		}
+		for k, v := range o.Paths {
+			no.Paths[k] = v.Clone()
+		}
 	}
 
 	if metadata.IsDefined("backends", name, "alb") {
