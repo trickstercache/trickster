@@ -57,7 +57,7 @@ func TestHandler(t *testing.T) {
 		t.Error("router mismatch")
 	}
 
-	sh.reloading = 1
+	sh.reloading.Store(1)
 	x = sh.Handler()
 	if x != router {
 		t.Error("router mismatch")

@@ -18,11 +18,15 @@ package model
 
 import (
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"io"
 	"sort"
+	"strconv"
 	"sync"
+	"time"
 
+	"github.com/influxdata/influxdb/models"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -37,17 +41,84 @@ func UnmarshalTimeseries(data []byte, trq *timeseries.TimeRangeQuery) (timeserie
 	return UnmarshalTimeseriesReader(buf, trq)
 }
 
+func decodeJSON(reader io.Reader) (*WFDocument, error) {
+	wfd := &WFDocument{}
+	err := json.NewDecoder(reader).Decode(wfd)
+	if err != nil {
+		return nil, err
+	}
+	return wfd, nil
+}
+
+func decodeCSV(reader io.Reader) (*WFDocument, error) {
+	b, _ := io.ReadAll(reader)
+	reader = bytes.NewReader(b)
+	records, err := csv.NewReader(reader).ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	var columns []string
+	var rows int = len(records) - 1
+	if len(records) == 0 {
+		rows = 0
+	}
+	wfd := &WFDocument{
+		Results: []WFResult{
+			{StatementID: 0, SeriesList: make([]models.Row, rows)},
+		},
+	}
+	for ri, r := range records {
+		// Do headers at first row
+		if ri == 0 {
+			columns = r
+			continue
+		}
+		// Construct WFD row from record
+		row := models.Row{
+			// Name, Tags deliberately left empty, they don't show up here
+			Columns: columns,
+			Values:  [][]interface{}{make([]interface{}, len(r))},
+		}
+		for ii, item := range r {
+			var val any
+			if f, err := strconv.ParseFloat(item, 64); err == nil {
+				val = f
+			} else if x, err := strconv.ParseInt(item, 10, 64); err == nil {
+				val = x
+			} else if b, err := strconv.ParseBool(item); err == nil {
+				val = b
+			} else {
+				val = item
+			}
+			row.Values[0][ii] = val
+		}
+		wfd.Results[0].SeriesList[ri-1] = row
+	}
+	return wfd, nil
+}
+
 // UnmarshalTimeseriesReader converts a JSON blob into a Timeseries via io.Reader
 func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
 	if trq == nil {
 		return nil, timeseries.ErrNoTimerangeQuery
 	}
-	wfd := &WFDocument{}
-	d := json.NewDecoder(reader)
-	err := d.Decode(wfd)
+	var bck bytes.Buffer
+	tr := io.TeeReader(reader, &bck)
+	wfd, err := decodeCSV(tr)
 	if err != nil {
-		return nil, err
+		wfd, err = decodeJSON(&bck)
+		if err != nil {
+			return nil, err
+		}
 	}
+	//wfd := &WFDocument{}
+	//d := json.NewDecoder(reader)
+	//err := d.Decode(wfd)
+	/*
+		if err != nil {
+			return nil, err
+		}
+	*/
 	ds := &dataset.DataSet{
 		Error:          wfd.Err,
 		TimeRangeQuery: trq,
@@ -82,7 +153,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			sh.FieldsList = make([]timeseries.FieldDefinition, fdl)
 			var fdi int
 			for ci, cn := range wfd.Results[i].SeriesList[j].Columns {
-				if cn == "time" {
+				if cn == "time" || cn == "_time" {
 					timeFound = true
 					sh.TimestampIndex = ci
 					continue
@@ -145,16 +216,34 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 	return ds, nil
 }
 
+// tryParseTimestamp tries to parse a nanosecond timestamp from the value of a given field.
+// This assumes that, if a field is in number format, it is in nanoseconds; otherwise it
+// tried to parse some standard non-numeric formats. Returns -1 for invalid formats.
+//
+// tryParseTimestamp checks int ns, float ns and the following string formats:
+//   - RFC3339
+//   - RFC3339 (Nanoseconds)
+func tryParseTimestamp(v any) int64 {
+	if ns, ok := v.(int64); ok {
+		return ns
+	} else if fns, ok := v.(float64); ok {
+		return int64(fns)
+	} else if sns, ok := v.(string); ok {
+		if t, err := time.Parse(time.RFC3339, sns); err == nil {
+			return t.UnixNano()
+		} else if t, err := time.Parse(time.RFC3339Nano, sns); err == nil {
+			return t.UnixNano()
+		}
+	}
+	return -1
+}
+
 func pointFromValues(v []interface{}, tsIndex int) (dataset.Point,
 	[]timeseries.FieldDataType, error) {
 	p := dataset.Point{}
-	ns, ok := v[tsIndex].(int64)
-	if !ok {
-		fns, ok := v[tsIndex].(float64)
-		if !ok {
-			return p, nil, timeseries.ErrInvalidTimeFormat
-		}
-		ns = int64(fns)
+	ns := tryParseTimestamp(v[tsIndex])
+	if ns == -1 {
+		return p, nil, timeseries.ErrInvalidTimeFormat
 	}
 	p.Values = append(make([]interface{}, 0, len(v)-1), v[:tsIndex]...)
 	p.Values = append(p.Values, v[tsIndex+1:]...)

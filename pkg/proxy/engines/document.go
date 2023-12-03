@@ -21,6 +21,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,6 +37,8 @@ import (
 
 // HTTPDocument represents a full HTTP Response/Cache Document with unbuffered body
 type HTTPDocument struct {
+	IsMeta        bool                `msg:"is_meta"`
+	IsChunk       bool                `msg:"is_chunk"`
 	StatusCode    int                 `msg:"status_code"`
 	Status        string              `msg:"status"`
 	Headers       map[string][]string `msg:"headers"`
@@ -54,6 +57,87 @@ type HTTPDocument struct {
 	isLoaded         bool
 	timeseries       timeseries.Timeseries
 	headerLock       sync.Mutex
+}
+
+func (d *HTTPDocument) GetMeta() *HTTPDocument {
+	dd := &HTTPDocument{
+		IsMeta:        true,
+		StatusCode:    d.StatusCode,
+		Status:        d.Status,
+		Headers:       d.SafeHeaderClone(),
+		Body:          nil,
+		ContentLength: d.ContentLength,
+		ContentType:   d.ContentType,
+		Ranges:        d.Ranges.Clone(),
+		RangeParts:    nil,
+	}
+	if d.CachingPolicy != nil {
+		dd.CachingPolicy = d.CachingPolicy.Clone()
+	}
+	return dd
+}
+
+func (d *HTTPDocument) GetTimeseriesChunk(chunkExtent timeseries.Extent) *HTTPDocument {
+	dd := &HTTPDocument{
+		IsChunk: true,
+	}
+	if d.timeseries != nil {
+		dd.timeseries = d.timeseries.CroppedClone(chunkExtent)
+	}
+	return dd
+}
+
+func (d *HTTPDocument) GetByterangeChunk(chunkRange byterange.Range, chunkSize int64) *HTTPDocument {
+	dd := &HTTPDocument{
+		IsChunk: true,
+	}
+	// size := chunkRange.End - chunkRange.Start + 1
+	if len(d.Body) > 0 {
+		var dr byterange.Range
+		dd.Body, dr = chunkRange.CropByteSlice(d.Body)
+		dd.ContentLength = int64(len(dd.Body))
+		dd.Ranges = byterange.Ranges{dr}
+	} else {
+		size := chunkRange.End - chunkRange.Start + 1
+		dd.Body = make([]byte, size)
+		var ddbi int64
+		dd.Ranges = make(byterange.Ranges, len(d.RangeParts))
+		ddri := 0
+		for r, rp := range d.RangeParts {
+			if r.Start > chunkRange.End || r.End < chunkRange.Start {
+				continue
+			}
+			start := r.Start
+			if r.Start < chunkRange.Start {
+				r.Start = chunkRange.Start
+			}
+			if r.End > chunkRange.End {
+				r.End = chunkRange.End
+			}
+			if r.End+1 > ddbi {
+				ddbi = r.End + 1
+			}
+			content := rp.Content[r.Start-start : r.End-start+1]
+			copy(dd.Body[r.Start%size:r.End%size+1], content)
+			dd.Ranges[ddri] = r
+			ddri++
+		}
+		ddbi = ddbi - chunkRange.Start
+		dd.Body = dd.Body[:ddbi]
+		dd.Ranges = dd.Ranges[:ddri]
+		sort.Sort(dd.Ranges)
+	}
+	return dd
+}
+
+func (d *HTTPDocument) getByteRanges() byterange.Ranges {
+	if len(d.Ranges) > 0 {
+		return d.Ranges
+	} else if ranges := d.RangeParts.Ranges(); len(ranges) > 0 {
+		return ranges
+	} else {
+		return byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength}}
+	}
 }
 
 // SafeHeaderClone returns a threadsafe copy of the Document Header

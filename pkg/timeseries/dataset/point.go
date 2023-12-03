@@ -50,17 +50,18 @@ func (p *Point) Clone() Point {
 
 // Size returns the memory utilization of the Points in bytes
 func (p Points) Size() int64 {
-	var c int64 = 16
+	var c atomic.Int64
+	c.Store(16)
 	var wg sync.WaitGroup
 	for i, pt := range p {
 		wg.Add(1)
 		go func(s, e int64, j int) {
-			atomic.AddInt64(&c, s)
+			c.Add(s)
 			wg.Done()
 		}(int64(pt.Size), int64(pt.Epoch), i)
 	}
 	wg.Wait()
-	return c
+	return c.Load()
 }
 
 // Clone returns a perfect copy of the Points

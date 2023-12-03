@@ -41,6 +41,18 @@ func (z *HTTPDocument) DecodeMsg(dc *msgp.Reader) (err error) {
 			return
 		}
 		switch msgp.UnsafeString(field) {
+		case "is_meta":
+			z.IsMeta, err = dc.ReadBool()
+			if err != nil {
+				err = msgp.WrapError(err, "IsMeta")
+				return
+			}
+		case "is_chunk":
+			z.IsChunk, err = dc.ReadBool()
+			if err != nil {
+				err = msgp.WrapError(err, "IsChunk")
+				return
+			}
 		case "status_code":
 			z.StatusCode, err = dc.ReadInt()
 			if err != nil {
@@ -193,9 +205,29 @@ func (z *HTTPDocument) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *HTTPDocument) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 9
+	// map header, size 11
+	// write "is_meta"
+	err = en.Append(0x8b, 0xa7, 0x69, 0x73, 0x5f, 0x6d, 0x65, 0x74, 0x61)
+	if err != nil {
+		return
+	}
+	err = en.WriteBool(z.IsMeta)
+	if err != nil {
+		err = msgp.WrapError(err, "IsMeta")
+		return
+	}
+	// write "is_chunk"
+	err = en.Append(0xa8, 0x69, 0x73, 0x5f, 0x63, 0x68, 0x75, 0x6e, 0x6b)
+	if err != nil {
+		return
+	}
+	err = en.WriteBool(z.IsChunk)
+	if err != nil {
+		err = msgp.WrapError(err, "IsChunk")
+		return
+	}
 	// write "status_code"
-	err = en.Append(0x89, 0xab, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x5f, 0x63, 0x6f, 0x64, 0x65)
+	err = en.Append(0xab, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x5f, 0x63, 0x6f, 0x64, 0x65)
 	if err != nil {
 		return
 	}
@@ -335,9 +367,15 @@ func (z *HTTPDocument) EncodeMsg(en *msgp.Writer) (err error) {
 // MarshalMsg implements msgp.Marshaler
 func (z *HTTPDocument) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 9
+	// map header, size 11
+	// string "is_meta"
+	o = append(o, 0x8b, 0xa7, 0x69, 0x73, 0x5f, 0x6d, 0x65, 0x74, 0x61)
+	o = msgp.AppendBool(o, z.IsMeta)
+	// string "is_chunk"
+	o = append(o, 0xa8, 0x69, 0x73, 0x5f, 0x63, 0x68, 0x75, 0x6e, 0x6b)
+	o = msgp.AppendBool(o, z.IsChunk)
 	// string "status_code"
-	o = append(o, 0x89, 0xab, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x5f, 0x63, 0x6f, 0x64, 0x65)
+	o = append(o, 0xab, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x5f, 0x63, 0x6f, 0x64, 0x65)
 	o = msgp.AppendInt(o, z.StatusCode)
 	// string "status"
 	o = append(o, 0xa6, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73)
@@ -415,6 +453,18 @@ func (z *HTTPDocument) UnmarshalMsg(bts []byte) (o []byte, err error) {
 			return
 		}
 		switch msgp.UnsafeString(field) {
+		case "is_meta":
+			z.IsMeta, bts, err = msgp.ReadBoolBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "IsMeta")
+				return
+			}
+		case "is_chunk":
+			z.IsChunk, bts, err = msgp.ReadBoolBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "IsChunk")
+				return
+			}
 		case "status_code":
 			z.StatusCode, bts, err = msgp.ReadIntBytes(bts)
 			if err != nil {
@@ -566,7 +616,7 @@ func (z *HTTPDocument) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *HTTPDocument) Msgsize() (s int) {
-	s = 1 + 12 + msgp.IntSize + 7 + msgp.StringPrefixSize + len(z.Status) + 8 + msgp.MapHeaderSize
+	s = 1 + 8 + msgp.BoolSize + 9 + msgp.BoolSize + 12 + msgp.IntSize + 7 + msgp.StringPrefixSize + len(z.Status) + 8 + msgp.MapHeaderSize
 	if z.Headers != nil {
 		for za0001, za0002 := range z.Headers {
 			_ = za0002

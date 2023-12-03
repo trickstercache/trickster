@@ -19,6 +19,8 @@ package common
 import (
 	"testing"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
 func TestFormatTimestamp(t *testing.T) {
@@ -55,4 +57,20 @@ func TestParseTimestamp(t *testing.T) {
 		t.Fatalf("expected error: %s", "parse timestamp")
 	}
 
+}
+
+func TestParseDuration(t *testing.T) {
+	sd := "10"
+	d, err := ParseDuration(sd)
+	if err != nil {
+		t.Error(err)
+	} else if d != 10*timeconv.Second {
+		t.Errorf("expected duration %s, got %s", (10 * timeconv.Second).String(), d.String())
+	}
+
+	sd = "10x"
+	_, err = ParseDuration(sd)
+	if err == nil {
+		t.Errorf("expected ParseDuration error")
+	}
 }

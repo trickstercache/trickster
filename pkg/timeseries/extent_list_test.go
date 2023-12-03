@@ -1189,3 +1189,73 @@ func TestSplice(t *testing.T) {
 		})
 	}
 }
+
+func genBenchmarkExtentList(len int, step time.Duration) (el ExtentList, start, end time.Time) {
+	end = time.Now()
+	start = end.Add(time.Duration(-1*len) * step)
+	el = make(ExtentList, len)
+	for i := 0; i < len; i++ {
+		el[i] = Extent{
+			Start: start.Add(time.Duration(i) * step),
+			End:   start.Add(time.Duration(i+1) * step),
+		}
+	}
+	return
+}
+
+var res any
+
+func BenchmarkCalculateDeltas(b *testing.B) {
+	bmTimeStep := time.Duration(10)
+	haves := make([]ExtentList, b.N)
+	wants := make([]Extent, b.N)
+	for i := 0; i < b.N; i++ {
+		el, s, e := genBenchmarkExtentList(10, bmTimeStep)
+		haves[i] = el
+		wants[i] = Extent{
+			Start: s.Add(2 * bmTimeStep),
+			End:   e.Add(-2 * bmTimeStep),
+		}
+	}
+	b.ResetTimer()
+	var r ExtentList
+	for i := 0; i < b.N; i++ {
+		r = haves[i].CalculateDeltas(wants[i], bmTimeStep)
+	}
+	res = r
+}
+
+func BenchmarkCrop(b *testing.B) {
+	bmTimeStep := time.Duration(10)
+	haves := make([]ExtentList, b.N)
+	wants := make([]Extent, b.N)
+	for i := 0; i < b.N; i++ {
+		el, s, e := genBenchmarkExtentList(10, bmTimeStep)
+		haves[i] = el
+		wants[i] = Extent{
+			Start: s.Add(2 * bmTimeStep),
+			End:   e.Add(-2 * bmTimeStep),
+		}
+	}
+	b.ResetTimer()
+	var r ExtentList
+	for i := 0; i < b.N; i++ {
+		r = haves[i].Crop(wants[i])
+	}
+	res = r
+}
+
+func BenchmarkCompress(b *testing.B) {
+	bmTimeStep := time.Duration(10)
+	haves := make([]ExtentList, b.N)
+	for i := 0; i < b.N; i++ {
+		el, _, _ := genBenchmarkExtentList(10, bmTimeStep)
+		haves[i] = el
+	}
+	b.ResetTimer()
+	var r ExtentList
+	for i := 0; i < b.N; i++ {
+		r = haves[i].Compress(bmTimeStep)
+	}
+	res = r
+}

@@ -121,7 +121,7 @@ const hcTOML = `
 backends:
   test:
     healthcheck:
-      upstream_path: test_path
+      path: test_path
       verb: POST
       query: '?myqueryparam=myqueryval'
       body: custom body

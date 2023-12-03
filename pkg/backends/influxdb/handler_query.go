@@ -17,14 +17,18 @@
 package influxdb
 
 import (
+	"bytes"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flux"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -35,15 +39,19 @@ import (
 // QueryHandler handles timeseries requests for InfluxDB and processes them through the delta proxy cache
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
-	qp, _, _ := params.GetRequestValues(r)
+	qp, qb, fromBody := params.GetRequestValues(r)
 	q := strings.Trim(strings.ToLower(qp.Get(upQuery)), " \t\n")
 	if q == "" {
-		c.ProxyHandler(w, r)
-		return
+		if qb != "" && fromBody {
+			q = qb
+		} else {
+			c.ProxyHandler(w, r)
+			return
+		}
 	}
 
 	// if it's not a select statement, just proxy it instead
-	if strings.Index(q, "select ") == -1 {
+	if !strings.Contains(q, "select ") && !strings.Contains(q, "from(") {
 		c.ProxyHandler(w, r)
 		return
 	}
@@ -70,20 +78,57 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	var valuer = &influxql.NowValuer{Now: time.Now()}
 
-	v, _, _ := params.GetRequestValues(r)
-	if trq.Statement = v.Get(upQuery); trq.Statement == "" {
+	values, _, _ := params.GetRequestValues(r)
+	statement := values.Get(upQuery)
+	if methods.HasBody(r.Method) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			return nil, nil, false, errors.ParseRequestBody(err)
+		}
+		r.Body.Close()
+		r.Body = io.NopCloser(bytes.NewReader(raw))
+		statement = string(raw)
+	}
+	if statement == "" {
 		return nil, nil, false, errors.MissingURLParam(upQuery)
 	}
+	trq.Statement = statement
 
-	if b, ok := epochToFlag[v.Get(upEpoch)]; ok {
+	if b, ok := epochToFlag[values.Get(upEpoch)]; ok {
 		rlo.TimeFormat = b
 	}
 
-	if v.Get(upPretty) == "true" {
+	if values.Get(upPretty) == "true" {
 		rlo.OutputFormat = 1
 	} else if r != nil && r.Header != nil &&
 		r.Header.Get(headers.NameAccept) == headers.ValueApplicationCSV {
 		rlo.OutputFormat = 2
+	}
+
+	var cacheError error
+
+	// Try to parse using Flux.
+	fp := flux.NewParser(strings.NewReader(trq.Statement))
+	if fq, canOPC, err := fp.ParseQuery(); err == nil || canOPC {
+		if fq.Extent.End.IsZero() {
+			fq.Extent.End = time.Now()
+		}
+		if trq.Extent.Start.IsZero() {
+			trq.Extent = fq.Extent
+		} else if trq.Extent != fq.Extent {
+			// this condition means multiple queries were present, and had
+			// different time ranges
+			cacheError = errors.ErrNotTimeRangeQuery
+		}
+		trq.Step = fq.Step
+		trq.Statement = fq.String()
+		trq.ParsedQuery = fq
+		trq.TemplateURL = urls.Clone(r.URL)
+		qt := url.Values(http.Header(values).Clone())
+		qt.Set(upQuery, trq.Statement)
+		// Swap in the Tokenzed Query in the Url Params
+		trq.TemplateURL.RawQuery = qt.Encode()
+		return trq, rlo, canOPC || cacheError != nil, cacheError
 	}
 
 	p := influxql.NewParser(strings.NewReader(trq.Statement))
@@ -95,11 +140,13 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	trq.Step = -1
 	var hasTimeQueryParts bool
 	statements := make([]string, 0, len(q.Statements))
-	var cacheError error
+	var canObjectCache bool
 	for _, v := range q.Statements {
 		sel, ok := v.(*influxql.SelectStatement)
 		if !ok || sel.Condition == nil {
 			cacheError = errors.ErrNotTimeRangeQuery
+		} else {
+			canObjectCache = true
 		}
 		step, err := sel.GroupByInterval()
 		if err != nil {
@@ -149,7 +196,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	trq.Statement = strings.Join(statements, " ; ")
 	trq.ParsedQuery = q
 	trq.TemplateURL = urls.Clone(r.URL)
-	qt := url.Values(http.Header(v).Clone())
+	qt := url.Values(http.Header(values).Clone())
 	qt.Set(upQuery, trq.Statement)
 
 	// Swap in the Tokenzed Query in the Url Params
@@ -159,6 +206,6 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		return trq, rlo, true, cacheError
 	}
 
-	return trq, rlo, false, nil
+	return trq, rlo, canObjectCache, nil
 
 }

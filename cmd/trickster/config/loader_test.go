@@ -123,6 +123,9 @@ func TestFullLoadConfiguration(t *testing.T) {
 	}
 
 	b, err := os.ReadFile("../../../testdata/test.full.02.conf")
+	if err != nil {
+		t.Error(err)
+	}
 	b = []byte(strings.ReplaceAll(string(b), `../../testdata/test.02.`, td+"/"))
 
 	err = os.WriteFile(confFile, b, 0600)
@@ -591,7 +594,7 @@ func TestLoadConfigurationWarning1(t *testing.T) {
 	l := len(conf.LoaderWarnings)
 
 	if l != expected {
-		t.Errorf("exepcted %d got %d", expected, l)
+		t.Errorf("expected %d got %d", expected, l)
 	}
 
 }
@@ -609,7 +612,7 @@ func TestLoadConfigurationWarning2(t *testing.T) {
 	l := len(conf.LoaderWarnings)
 
 	if l != expected {
-		t.Errorf("exepcted %d got %d", expected, l)
+		t.Errorf("expected %d got %d", expected, l)
 	}
 
 }

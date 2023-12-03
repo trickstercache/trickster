@@ -4,15 +4,16 @@
 
 | Name | Contact | Company | Term Expires |
 |---|---|---|---|
-|James Ranson ([@jranson](https://github.com/jranson)) | <james@ranson.org> | Virga | 22/Mar/2022 |
+|James Ranson ([@jranson](https://github.com/jranson)) | <james@ranson.org> | Virga | 22/Mar/2024 |
 
 ## Trickster Project Maintainers
 
-| Name | Contact | Company | Focus Areas|
-|---|---|---|---|
-|James Ranson ([@jranson](https://github.com/jranson)) | <james@ranson.org> | Virga | Core Functionality |
-|Chris Randles ([@crandles](https://github.com/crandles)) | <randles.chris@gmail.com> | Comcast | Core Functionality |
-|Adam Ross ([@LimitlessEarth](https://github.com/LimitlessEarth)) | <adamross1126@gmail.com> | Comcast | Deployment & Artifacts (Makefile, Dockerfile, Helm Charts, etc) |
+| Name | Contact | Company | Pronouns | Focus Areas|
+|---|---|---|---|---|
+|James Ranson ([@jranson](https://github.com/jranson)) | <james@ranson.org> | Virga | He/Him | Core Functionality |
+|Jake Nichols ([@jakenichols2719](https://github.com/jakenichols2719)) | <jnichols2719@protonmail.com> | Virga | They/Them | Core Functionality |
+|Chris Randles ([@crandles](https://github.com/crandles)) | <randles.chris@gmail.com> | | He/Him | Core Functionality |
+|Adam Ross ([@LimitlessEarth](https://github.com/LimitlessEarth)) | <adamross1126@gmail.com> | Amazon | He/Him | Deployment & Artifacts (Makefile, Dockerfile, Helm Charts, etc) |
 
 You can contact the maintainers using the `@trickstercache/maintainers` handle in an Issue or PR, or via email at <cncf-trickster-maintainers@lists.cncf.io>.
 

@@ -18,68 +18,82 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"sync"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/stdr"
+
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+)
+
+const (
+	defaultCollectorURL = "http://localhost:9411/api/v2/spans"
 )
 
 // Exporter exports spans to the zipkin collector.
 type Exporter struct {
 	url    string
 	client *http.Client
-	logger *log.Logger
-	config config
+	logger logr.Logger
 
 	stoppedMu sync.RWMutex
 	stopped   bool
 }
 
-var (
-	_ sdktrace.SpanExporter = &Exporter{}
-)
+var _ sdktrace.SpanExporter = &Exporter{}
+
+var emptyLogger = logr.Logger{}
 
 // Options contains configuration for the exporter.
 type config struct {
 	client *http.Client
-	logger *log.Logger
+	logger logr.Logger
 }
 
 // Option defines a function that configures the exporter.
 type Option interface {
-	apply(*config)
+	apply(config) config
 }
 
-type optionFunc func(*config)
+type optionFunc func(config) config
 
-func (fn optionFunc) apply(cfg *config) {
-	fn(cfg)
+func (fn optionFunc) apply(cfg config) config {
+	return fn(cfg)
 }
 
 // WithLogger configures the exporter to use the passed logger.
+// WithLogger and WithLogr will overwrite each other.
 func WithLogger(logger *log.Logger) Option {
-	return optionFunc(func(cfg *config) {
+	return WithLogr(stdr.New(logger))
+}
+
+// WithLogr configures the exporter to use the passed logr.Logger.
+// WithLogr and WithLogger will overwrite each other.
+func WithLogr(logger logr.Logger) Option {
+	return optionFunc(func(cfg config) config {
 		cfg.logger = logger
+		return cfg
 	})
 }
 
 // WithClient configures the exporter to use the passed HTTP client.
 func WithClient(client *http.Client) Option {
-	return optionFunc(func(cfg *config) {
+	return optionFunc(func(cfg config) config {
 		cfg.client = client
+		return cfg
 	})
 }
 
 // New creates a new Zipkin exporter.
 func New(collectorURL string, opts ...Option) (*Exporter, error) {
 	if collectorURL == "" {
-		return nil, errors.New("collector URL cannot be empty")
+		// Use endpoint from env var or default collector URL.
+		collectorURL = envOr(envEndpoint, defaultCollectorURL)
 	}
 	u, err := url.Parse(collectorURL)
 	if err != nil {
@@ -91,8 +105,9 @@ func New(collectorURL string, opts ...Option) (*Exporter, error) {
 
 	cfg := config{}
 	for _, opt := range opts {
-		opt.apply(&cfg)
+		cfg = opt.apply(cfg)
 	}
+
 	if cfg.client == nil {
 		cfg.client = http.DefaultClient
 	}
@@ -100,7 +115,6 @@ func New(collectorURL string, opts ...Option) (*Exporter, error) {
 		url:    collectorURL,
 		client: cfg.client,
 		logger: cfg.logger,
-		config: cfg,
 	}, nil
 }
 
@@ -139,7 +153,7 @@ func (e *Exporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpa
 	// but it is still being read because according to https://golang.org/pkg/net/http/#Response
 	// > The default HTTP client's Transport may not reuse HTTP/1.x "keep-alive" TCP connections
 	// > if the Body is not read to completion and closed.
-	_, err = io.Copy(ioutil.Discard, resp.Body)
+	_, err = io.Copy(io.Discard, resp.Body)
 	if err != nil {
 		return e.errf("failed to read response body: %v", err)
 	}
@@ -166,12 +180,23 @@ func (e *Exporter) Shutdown(ctx context.Context) error {
 }
 
 func (e *Exporter) logf(format string, args ...interface{}) {
-	if e.logger != nil {
-		e.logger.Printf(format, args...)
+	if e.logger != emptyLogger {
+		e.logger.Info(fmt.Sprintf(format, args...))
 	}
 }
 
 func (e *Exporter) errf(format string, args ...interface{}) error {
 	e.logf(format, args...)
 	return fmt.Errorf(format, args...)
+}
+
+// MarshalLog is the marshaling function used by the logging system to represent this exporter.
+func (e *Exporter) MarshalLog() interface{} {
+	return struct {
+		Type string
+		URL  string
+	}{
+		Type: "zipkin",
+		URL:  e.url,
+	}
 }

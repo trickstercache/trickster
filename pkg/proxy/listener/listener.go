@@ -182,7 +182,7 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 	var err error
 	l.Listener, err = NewListener(address, port, connectionsLimit, tlsConfig, drainTimeout, logger)
 	if err != nil {
-		tl.Error(logger,
+		tl.ErrorSynchronous(logger,
 			"http listener startup failed", tl.Pairs{"name": listenerName, "detail": err})
 		if f != nil {
 			f()
@@ -207,7 +207,7 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 		l.server = svr
 		err = svr.Serve(l)
 		if err != nil {
-			tl.Error(logger,
+			tl.ErrorSynchronous(logger,
 				"https listener stopping", tl.Pairs{"name": listenerName, "detail": err})
 			if l.exitOnError {
 				os.Exit(1)
@@ -222,7 +222,7 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 	l.server = svr
 	err = svr.Serve(l)
 	if err != nil {
-		tl.Error(logger,
+		tl.ErrorSynchronous(logger,
 			"http listener stopping", tl.Pairs{"name": listenerName, "detail": err})
 		if l.exitOnError {
 			os.Exit(1)

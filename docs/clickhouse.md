@@ -37,7 +37,7 @@ Again the time_col and/or alias is used to determine the request time range from
 
 Once the time column (or alias) and step are derived, Trickster parses each WHERE or PREWHERE clause to find comparison operations 
 that mark the requested time range.  To be cacheable, the WHERE clause must contain either a `[timecol|alias] BETWEEN` phrase or 
-a `[time_col|alias] >[=]` phrase.  The BETWEEN or >= arguments must be a parsable ClickHouse string date in the form `2006-01-02 15:04:05`, a
+a `[time_col|alias] >[=]` phrase.  The BETWEEN or >= arguments must be a parsable ClickHouse string date in the form `2006-01-02 15:04:05`, 
 a ten digit integer representing epoch seconds, or the `now()` ClickHouse function with optional subtraction.
 
 If a `>` phrase is used, a similar `<` phrase can be used to specify the end of the time period.  If none is found, Trickster will still cache results up to

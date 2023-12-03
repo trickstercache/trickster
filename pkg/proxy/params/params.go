@@ -51,6 +51,32 @@ func UpdateParams(params url.Values, updates map[string]string) {
 	}
 }
 
+// isMultipartOrForm checks if the request may contain form data.
+func isMultipartOrForm(r *http.Request) bool {
+	h := r.Header
+	if ct := h.Get(headers.NameContentType); strings.Contains(ct, headers.ValueMultipartFormData) {
+		return true
+	} else if strings.Contains(ct, headers.ValueXFormURLEncoded) {
+		return true
+	}
+	return false
+}
+
+// isQueryBody checks if the request body is a query string or actual content.
+func isQueryBody(r *http.Request) bool {
+	nqbs := []string{
+		headers.ValueApplicationCSV, headers.ValueApplicationJSON,
+		headers.ValueApplicationFlux,
+	}
+	ct := r.Header.Get(headers.NameContentType)
+	for _, nqb := range nqbs {
+		if ct == nqb {
+			return false
+		}
+	}
+	return true
+}
+
 // GetRequestValues returns the Query Parameters for the request
 // regardless of method
 func GetRequestValues(r *http.Request) (url.Values, string, bool) {
@@ -60,26 +86,31 @@ func GetRequestValues(r *http.Request) (url.Values, string, bool) {
 	if !methods.HasBody(r.Method) {
 		v = r.URL.Query()
 		s = r.URL.RawQuery
+	} else if isMultipartOrForm(r) {
+		r.ParseForm()
+		v = r.PostForm
+		s = v.Encode()
+		isBody = true
 	} else {
-		if strings.HasPrefix(strings.ToLower(r.Header.Get(headers.NameContentType)), headers.ValueApplicationJSON) {
-			v = r.URL.Query()
-			b, _ := io.ReadAll(r.Body)
-			r.Body.Close()
-			r.Body = io.NopCloser(bytes.NewReader(b))
-			s = string(b)
-			isBody = true
-		} else {
-			r.ParseForm()
-			v = r.PostForm
-			s = v.Encode()
-			isBody = true
-			r.ContentLength = int64(len(s))
-			r.Body = io.NopCloser(bytes.NewReader([]byte(s)))
-		}
-		if len(s) == 0 {
-			v = r.URL.Query()
-			s = r.URL.RawQuery
-			isBody = false
+		v = r.URL.Query()
+		b, _ := io.ReadAll(r.Body)
+		r.Body.Close()
+		r.Body = io.NopCloser(bytes.NewReader(b))
+		s = string(b)
+    isBody = true
+    if strings.HasPrefix(strings.ToLower(r.Header.Get(headers.NameContentType)), headers.ValueApplicationJSON) {
+      return v, s, is body
+    }
+		if vs, err := url.ParseQuery(s); err == nil && isQueryBody(r) {
+			for vsk := range vs {
+				for _, vsv := range vs[vsk] {
+					if !v.Has(vsk) {
+						v.Set(vsk, vsv)
+					} else {
+						v.Add(vsk, vsv)
+					}
+				}
+			}
 		}
 	}
 	return v, s, isBody

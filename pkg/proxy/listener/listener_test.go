@@ -29,13 +29,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/router"
 	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
@@ -224,7 +224,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 			}
 
 			go func() {
-				http.Serve(l, mux.NewRouter())
+				http.Serve(l, router.NewRouter())
 			}()
 
 			if err != nil {

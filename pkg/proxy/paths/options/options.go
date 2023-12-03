@@ -193,7 +193,7 @@ func (o *Options) Merge(o2 *Options) {
 }
 
 var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params",
-	"cache_key_headers", "default_ttl_ms", "request_headers", "response_headers",
+	"cache_key_headers", "default_ttl_ms", "request_params", "request_headers", "response_headers",
 	"response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding",
 	"req_rewriter_name",
 }

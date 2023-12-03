@@ -226,15 +226,15 @@ func TestProbe(t *testing.T) {
 		ec:          []int{200},
 	}
 	target.probe()
-	if target.successConsecutiveCnt != 1 {
+	if target.successConsecutiveCnt.Load() != 1 {
 		t.Error("expected 1 got ", target.successConsecutiveCnt)
 	}
 	target.ec[0] = 404
 	target.probe()
-	if target.successConsecutiveCnt != 0 {
+	if target.successConsecutiveCnt.Load() != 0 {
 		t.Error("expected 0 got ", target.successConsecutiveCnt)
 	}
-	if target.failConsecutiveCnt != 1 {
+	if target.failConsecutiveCnt.Load() != 1 {
 		t.Error("expected 1 got ", target.failConsecutiveCnt)
 	}
 
@@ -262,7 +262,7 @@ func TestDemandProbe(t *testing.T) {
 
 	// simulate a failed probe (bad response)
 	w = httptest.NewRecorder()
-	target.status.status = -1
+	target.status.status.Store(-1)
 	target.demandProbe(w)
 
 	if w.Code != 200 {
@@ -272,7 +272,7 @@ func TestDemandProbe(t *testing.T) {
 	// simulate a failed probe (unreachable)
 	ts.Close()
 	w = httptest.NewRecorder()
-	target.status.status = -1
+	target.status.status.Store(-1)
 	target.demandProbe(w)
 
 	if w.Code != 500 {

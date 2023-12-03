@@ -21,6 +21,7 @@ import (
 	"context"
 	"net/http"
 	"sync"
+	"sync/atomic"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
@@ -76,7 +77,7 @@ type pool struct {
 	targets      []*Target
 	healthy      []http.Handler
 	healthyFloor int
-	pos          uint64
+	pos          atomic.Uint64
 	mtx          sync.RWMutex
 	ctx          context.Context
 	ch           chan bool

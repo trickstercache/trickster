@@ -21,6 +21,19 @@ import (
 	"testing"
 )
 
+func TestSubstring(t *testing.T) {
+	str := "hello world"
+	if got := Substring(str, 0, 2); got != "he" {
+		t.Errorf("Expected 'he', got %s", got)
+	}
+	if got := Substring(str, 4, 3); got != "o w" {
+		t.Errorf("Expected 'o w', got %s", got)
+	}
+	if got := Substring(str, 9, 3); got != "" {
+		t.Errorf("Expected Substring(str, 9, 3) to overflow and return '', got %s", got)
+	}
+}
+
 func TestIndexOfString(t *testing.T) {
 
 	arr := []string{"string0", "string1", "string2"}

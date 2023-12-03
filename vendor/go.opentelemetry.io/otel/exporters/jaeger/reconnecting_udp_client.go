@@ -16,11 +16,12 @@ package jaeger // import "go.opentelemetry.io/otel/exporters/jaeger"
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/go-logr/logr"
 )
 
 // reconnectingUDPConn is an implementation of udpConn that resolves hostPort every resolveTimeout, if the resolved address is
@@ -32,7 +33,7 @@ type reconnectingUDPConn struct {
 	hostPort    string
 	resolveFunc resolveFunc
 	dialFunc    dialFunc
-	logger      *log.Logger
+	logger      logr.Logger
 
 	connMtx   sync.RWMutex
 	conn      *net.UDPConn
@@ -45,7 +46,7 @@ type dialFunc func(network string, laddr, raddr *net.UDPAddr) (*net.UDPConn, err
 
 // newReconnectingUDPConn returns a new udpConn that resolves hostPort every resolveTimeout, if the resolved address is
 // different than the current conn then the new address is dialed and the conn is swapped.
-func newReconnectingUDPConn(hostPort string, bufferBytes int, resolveTimeout time.Duration, resolveFunc resolveFunc, dialFunc dialFunc, logger *log.Logger) (*reconnectingUDPConn, error) {
+func newReconnectingUDPConn(hostPort string, bufferBytes int, resolveTimeout time.Duration, resolveFunc resolveFunc, dialFunc dialFunc, logger logr.Logger) (*reconnectingUDPConn, error) {
 	conn := &reconnectingUDPConn{
 		hostPort:    hostPort,
 		resolveFunc: resolveFunc,
@@ -65,8 +66,8 @@ func newReconnectingUDPConn(hostPort string, bufferBytes int, resolveTimeout tim
 }
 
 func (c *reconnectingUDPConn) logf(format string, args ...interface{}) {
-	if c.logger != nil {
-		c.logger.Printf(format, args...)
+	if c.logger != emptyLogger {
+		c.logger.Info(format, args...)
 	}
 }
 
@@ -134,7 +135,7 @@ func (c *reconnectingUDPConn) attemptDialNewAddr(newAddr *net.UDPAddr) error {
 	return nil
 }
 
-// Write calls net.udpConn.Write, if it fails an attempt is made to connect to a new addr, if that succeeds the write is retried before returning
+// Write calls net.udpConn.Write, if it fails an attempt is made to connect to a new addr, if that succeeds the write is retried before returning.
 func (c *reconnectingUDPConn) Write(b []byte) (int, error) {
 	var bytesWritten int
 	var err error
@@ -167,7 +168,7 @@ func (c *reconnectingUDPConn) Write(b []byte) (int, error) {
 	return bytesWritten, err
 }
 
-// Close stops the reconnectLoop, then closes the connection via net.udpConn 's implementation
+// Close stops the reconnectLoop, then closes the connection via net.udpConn 's implementation.
 func (c *reconnectingUDPConn) Close() error {
 	close(c.closeChan)
 
@@ -183,7 +184,7 @@ func (c *reconnectingUDPConn) Close() error {
 }
 
 // SetWriteBuffer defers to the net.udpConn SetWriteBuffer implementation wrapped with a RLock. if no conn is currently held
-// and SetWriteBuffer is called store bufferBytes to be set for new conns
+// and SetWriteBuffer is called store bufferBytes to be set for new conns.
 func (c *reconnectingUDPConn) SetWriteBuffer(bytes int) error {
 	var err error
 

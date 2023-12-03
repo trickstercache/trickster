@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build aix || dragonfly || freebsd || linux || netbsd || openbsd || solaris || zos
 // +build aix dragonfly freebsd linux netbsd openbsd solaris zos
 
 package resource // import "go.opentelemetry.io/otel/sdk/resource"
@@ -84,14 +85,14 @@ func skip(line string) bool {
 // parse attempts to split the provided line on the first '=' character, and then
 // sanitize each side of the split before returning them as a key-value pair.
 func parse(line string) (string, string, bool) {
-	parts := strings.SplitN(line, "=", 2)
+	k, v, found := strings.Cut(line, "=")
 
-	if len(parts) != 2 || len(parts[0]) == 0 {
+	if !found || len(k) == 0 {
 		return "", "", false
 	}
 
-	key := strings.TrimSpace(parts[0])
-	value := unescape(unquote(strings.TrimSpace(parts[1])))
+	key := strings.TrimSpace(k)
+	value := unescape(unquote(strings.TrimSpace(v)))
 
 	return key, value, true
 }

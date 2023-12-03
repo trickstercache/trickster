@@ -19,12 +19,13 @@ import (
 	"sync"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/internal/global"
 )
 
 // simpleSpanProcessor is a SpanProcessor that synchronously sends all
 // completed Spans to a trace.Exporter immediately.
 type simpleSpanProcessor struct {
-	exporterMu sync.RWMutex
+	exporterMu sync.Mutex
 	exporter   SpanExporter
 	stopOnce   sync.Once
 }
@@ -43,6 +44,8 @@ func NewSimpleSpanProcessor(exporter SpanExporter) SpanProcessor {
 	ssp := &simpleSpanProcessor{
 		exporter: exporter,
 	}
+	global.Warn("SimpleSpanProcessor is not recommended for production use, consider using BatchSpanProcessor instead.")
+
 	return ssp
 }
 
@@ -51,8 +54,8 @@ func (ssp *simpleSpanProcessor) OnStart(context.Context, ReadWriteSpan) {}
 
 // OnEnd immediately exports a ReadOnlySpan.
 func (ssp *simpleSpanProcessor) OnEnd(s ReadOnlySpan) {
-	ssp.exporterMu.RLock()
-	defer ssp.exporterMu.RUnlock()
+	ssp.exporterMu.Lock()
+	defer ssp.exporterMu.Unlock()
 
 	if ssp.exporter != nil && s.SpanContext().TraceFlags().IsSampled() {
 		if err := ssp.exporter.ExportSpans(context.Background(), []ReadOnlySpan{s}); err != nil {
@@ -88,10 +91,24 @@ func (ssp *simpleSpanProcessor) Shutdown(ctx context.Context) error {
 
 		go shutdown()
 
+		// Wait for the exporter to shut down or the deadline to expire.
 		select {
 		case err = <-done:
 		case <-ctx.Done():
-			err = ctx.Err()
+			// It is possible for the exporter to have immediately shut down
+			// and the context to be done simultaneously. In that case this
+			// outer select statement will randomly choose a case. This will
+			// result in a different returned error for similar scenarios.
+			// Instead, double check if the exporter shut down at the same
+			// time and return that error if so. This will ensure consistency
+			// as well as ensure the caller knows the exporter shut down
+			// successfully (they can already determine if the deadline is
+			// expired given they passed the context).
+			select {
+			case err = <-done:
+			default:
+				err = ctx.Err()
+			}
 		}
 	})
 	return err
@@ -100,4 +117,15 @@ func (ssp *simpleSpanProcessor) Shutdown(ctx context.Context) error {
 // ForceFlush does nothing as there is no data to flush.
 func (ssp *simpleSpanProcessor) ForceFlush(context.Context) error {
 	return nil
+}
+
+// MarshalLog is the marshaling function used by the logging system to represent this Span Processor.
+func (ssp *simpleSpanProcessor) MarshalLog() interface{} {
+	return struct {
+		Type     string
+		Exporter SpanExporter
+	}{
+		Type:     "SimpleSpanProcessor",
+		Exporter: ssp.exporter,
+	}
 }

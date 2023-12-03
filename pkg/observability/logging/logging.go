@@ -28,8 +28,8 @@ import (
 
 	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 
-	gkl "github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	gkl "github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/go-stack/stack"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
@@ -42,6 +42,7 @@ type Logger struct {
 	level      string
 
 	onceMutex      *sync.Mutex
+	mtx            sync.Mutex
 	onceRanEntries map[string]interface{}
 }
 
@@ -55,15 +56,15 @@ func Debug(logger interface{}, event string, detail Pairs) {
 		return
 	}
 	detail["caller"] = pkgCaller{stack.Caller(1)}
-	switch logger.(type) {
+	switch l := logger.(type) {
 	case *Logger:
-		go logger.(*Logger).Debug(event, detail)
+		go l.Debug(event, detail)
 	case *SyncLogger:
-		logger.(*SyncLogger).Debug(event, detail)
+		l.Debug(event, detail)
 	case *log.Logger:
-		go logger.(*log.Logger).Print("")
+		go l.Print("")
 	case gkl.Logger:
-		go level.Debug(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+		go level.Debug(l).Log(detail.ToList(event)...)
 	}
 }
 
@@ -72,15 +73,15 @@ func Info(logger interface{}, event string, detail Pairs) {
 		return
 	}
 	detail["caller"] = pkgCaller{stack.Caller(1)}
-	switch logger.(type) {
+	switch l := logger.(type) {
 	case *Logger:
-		go logger.(*Logger).Info(event, detail)
+		go l.Info(event, detail)
 	case *SyncLogger:
-		logger.(*SyncLogger).Info(event, detail)
+		l.Info(event, detail)
 	case *log.Logger:
-		go logger.(*log.Logger).Print("")
+		go l.Print("")
 	case gkl.Logger:
-		go level.Info(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+		go level.Info(l).Log(detail.ToList(event)...)
 	}
 }
 
@@ -89,15 +90,15 @@ func Warn(logger interface{}, event string, detail Pairs) {
 		return
 	}
 	detail["caller"] = pkgCaller{stack.Caller(1)}
-	switch logger.(type) {
+	switch l := logger.(type) {
 	case *Logger:
-		go logger.(*Logger).Warn(event, detail)
+		go l.Warn(event, detail)
 	case *SyncLogger:
-		logger.(*SyncLogger).Warn(event, detail)
+		l.Warn(event, detail)
 	case *log.Logger:
-		go logger.(*log.Logger).Print("")
+		go l.Print("")
 	case gkl.Logger:
-		go level.Warn(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+		go level.Warn(l).Log(detail.ToList(event)...)
 	}
 }
 
@@ -106,15 +107,15 @@ func WarnOnce(logger interface{}, key string, event string, detail Pairs) {
 		return
 	}
 	detail["caller"] = pkgCaller{stack.Caller(1)}
-	switch logger.(type) {
+	switch l := logger.(type) {
 	case *Logger: // must  be Synchronous to avoid double writes
-		logger.(*Logger).WarnOnce(key, event, detail)
+		l.WarnOnce(key, event, detail)
 	case *SyncLogger: // must  be Synchronous to avoid double writes
-		logger.(*SyncLogger).WarnOnce(key, event, detail)
+		l.WarnOnce(key, event, detail)
 	case *log.Logger:
-		go logger.(*log.Logger).Print("")
+		go l.Print("")
 	case gkl.Logger:
-		go level.Warn(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+		go level.Warn(l).Log(detail.ToList(event)...)
 	}
 }
 
@@ -123,15 +124,32 @@ func Error(logger interface{}, event string, detail Pairs) {
 		return
 	}
 	detail["caller"] = pkgCaller{stack.Caller(1)}
-	switch logger.(type) {
+	switch l := logger.(type) {
 	case *Logger:
-		go logger.(*Logger).Error(event, detail)
+		go l.Error(event, detail)
 	case *SyncLogger:
-		logger.(*SyncLogger).Error(event, detail)
+		l.Error(event, detail)
 	case *log.Logger:
-		go logger.(*log.Logger).Print("")
+		go l.Print("")
 	case gkl.Logger:
-		go level.Error(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+		go level.Error(l).Log(detail.ToList(event)...)
+	}
+}
+
+func ErrorSynchronous(logger interface{}, event string, detail Pairs) {
+	if logger == nil {
+		return
+	}
+	detail["caller"] = pkgCaller{stack.Caller(1)}
+	switch l := logger.(type) {
+	case *Logger:
+		l.Error(event, detail)
+	case *SyncLogger:
+		l.Error(event, detail)
+	case *log.Logger:
+		l.Print("")
+	case gkl.Logger:
+		level.Error(l).Log(detail.ToList(event)...)
 	}
 }
 
@@ -140,15 +158,15 @@ func Fatal(logger interface{}, code int, event string, detail Pairs) {
 	// go-kit/log/level does not support Fatal, so implemented separately here
 	detail["level"] = "fatal"
 	detail["caller"] = pkgCaller{stack.Caller(1)}
-	switch logger.(type) {
+	switch l := logger.(type) {
 	case *Logger:
-		logger.(*Logger).Fatal(code, event, detail)
+		l.Fatal(code, event, detail)
 	case *SyncLogger:
-		logger.(*SyncLogger).Fatal(code, event, detail)
+		l.Fatal(code, event, detail)
 	case *log.Logger:
-		logger.(*log.Logger).Print("")
+		l.Print("")
 	case gkl.Logger:
-		level.Error(logger.(gkl.Logger)).Log(detail.ToList(event)...)
+		level.Error(l).Log(detail.ToList(event)...)
 	}
 	if code >= 0 {
 		os.Exit(code)
@@ -283,7 +301,9 @@ type Pairs map[string]interface{}
 
 // Info sends an "INFO" event to the Logger
 func (tl *Logger) Info(event string, detail Pairs) {
+	tl.mtx.Lock()
 	level.Info(tl.logger).Log(detail.ToList(event)...)
+	tl.mtx.Unlock()
 }
 
 // InfoOnce sends a "INFO" event to the Logger only once per key.
@@ -302,7 +322,9 @@ func (tl *Logger) InfoOnce(key string, event string, detail Pairs) bool {
 
 // Warn sends an "WARN" event to the Logger
 func (tl *Logger) Warn(event string, detail Pairs) {
+	tl.mtx.Lock()
 	level.Warn(tl.logger).Log(detail.ToList(event)...)
+	tl.mtx.Unlock()
 }
 
 // WarnOnce sends a "WARN" event to the Logger only once per key.
@@ -330,7 +352,9 @@ func (tl *Logger) HasWarnedOnce(key string) bool {
 
 // Error sends an "ERROR" event to the Logger
 func (tl *Logger) Error(event string, detail Pairs) {
+	tl.mtx.Lock()
 	level.Error(tl.logger).Log(detail.ToList(event)...)
+	tl.mtx.Unlock()
 }
 
 // ErrorOnce sends an "ERROR" event to the Logger only once per key
@@ -349,16 +373,20 @@ func (tl *Logger) ErrorOnce(key string, event string, detail Pairs) bool {
 
 // Debug sends an "DEBUG" event to the Logger
 func (tl *Logger) Debug(event string, detail Pairs) {
+	tl.mtx.Lock()
 	level.Debug(tl.logger).Log(detail.ToList(event)...)
+	tl.mtx.Unlock()
 }
 
 // Trace sends a "TRACE" event to the Logger
 func (tl *Logger) Trace(event string, detail Pairs) {
+	tl.mtx.Lock()
 	// go-kit/log/level does not support Trace, so implemented separately here
 	if tl.level == "trace" {
 		detail["level"] = "trace"
 		tl.logger.Log(detail.ToList(event)...)
 	}
+	tl.mtx.Unlock()
 }
 
 // Fatal sends a "FATAL" event to the Logger and exits the program with the provided exit code

@@ -26,7 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
-// newestResponseGate a ResponseWriter that only writes when the muxer selects it based on the
+// newestResponseGate is a ResponseWriter that only writes when the muxer selects it based on the
 // newness of the response's LastModified header when compared to other responses in the Mux
 type newestResponseGate struct {
 	http.ResponseWriter

@@ -34,7 +34,13 @@ func (ds *DataSet) InjectTags(tags Tags) {
 	var wg sync.WaitGroup
 	var mtx sync.Mutex
 	for _, r := range ds.Results {
+		if r == nil {
+			continue
+		}
 		for _, s := range r.SeriesList {
+			if s == nil {
+				continue
+			}
 			wg.Add(1)
 			go func(s1 *Series) {
 				mtx.Lock()

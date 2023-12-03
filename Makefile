@@ -22,13 +22,12 @@ TRICKSTER      := $(FIRST_GOPATH)/bin/trickster
 PROGVER        := $(shell grep 'applicationVersion = ' $(TRICKSTER_MAIN)/main.go | awk '{print $$3}' | sed -e 's/\"//g')
 BUILD_TIME     := $(shell date -u +%FT%T%z)
 GIT_LATEST_COMMIT_ID     := $(shell git rev-parse HEAD)
-GO_VER         := $(shell go version | awk '{print $$3}')
 IMAGE_TAG      ?= latest
 IMAGE_ARCH     ?= amd64
 GOARCH         ?= amd64
 TAGVER         ?= unspecified
-LDFLAGS         =-ldflags "-extldflags '-static' -w -s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicationGitCommitID=$(GIT_LATEST_COMMIT_ID) -X main.applicationGoVersion=$(GO_VER) -X main.applicationGoArch=$(GOARCH)"
-BUILD_SUBDIR   := OPATH
+LDFLAGS         =-ldflags "-extldflags '-static' -w -s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicationGitCommitID=$(GIT_LATEST_COMMIT_ID)"
+BUILD_SUBDIR   := bin
 PACKAGE_DIR    := ./$(BUILD_SUBDIR)/trickster-$(PROGVER)
 BIN_DIR        := $(PACKAGE_DIR)/bin
 CONF_DIR       := $(PACKAGE_DIR)/conf
@@ -55,7 +54,7 @@ test-go-mod:
 
 .PHONY: build
 build: go-mod-tidy go-mod-vendor
-	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o ./$(BUILD_SUBDIR)/trickster -a -v $(TRICKSTER_MAIN)/*.go
+	CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o ./$(BUILD_SUBDIR)/trickster -a -v $(TRICKSTER_MAIN)/*.go
 
 rpm: build
 	mkdir -p ./$(BUILD_SUBDIR)/SOURCES
@@ -120,7 +119,7 @@ kube-local:
 
 .PHONY: docker
 docker:
-	docker build --build-arg IMAGE_ARCH=$(IMAGE_ARCH) --build-arg GOARCH=$(GOARCH) -f ./deploy/Dockerfile -t trickster:$(PROGVER) .
+	docker build --build-arg IMAGE_ARCH=$(IMAGE_ARCH)  --build-arg GOARCH=$(GOARCH) -f ./Dockerfile -t trickster:$(PROGVER) .
 
 .PHONY: docker-release
 docker-release:
@@ -182,5 +181,17 @@ spelling:
 	if [[ "$$?" != "0" ]]; then \
 		echo "codespell is not installed" ; \
 	else \
-		codespell --skip='vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz' --ignore-words='./testdata/ignore_words.txt' ; \
+		codespell --skip='vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz,go.sum,go.mod' --ignore-words='./testdata/ignore_words.txt' ; \
 	fi
+
+.PHONY: serve
+serve:
+	@cd cmd/trickster && go run . -config /etc/trickster/trickster.yaml
+
+.PHONY: serve-debug
+serve-debug:
+	@cd cmd/trickster && go run . -config /etc/trickster/trickster.yaml --log-level debug
+
+.PHONY: serve-info
+serve-info:
+	@cd cmd/trickster && go run . -config /etc/trickster/trickster.yaml --log-level info

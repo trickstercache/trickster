@@ -47,7 +47,7 @@ Trickster can validate a configuration file by running `trickster -validate-conf
 
 ## Reloading the Configuration
 
-Trickster can gracefully reload the configuration file from disk without impacting the uptime and responsiveness of the the application.
+Trickster can gracefully reload the configuration file from disk without impacting the uptime and responsiveness of the application.
 
 Trickster provides 2 ways to reload the Trickster configuration: by requesting an HTTP endpoint, or by sending a SIGHUP (e.g., `kill -1 $TRICKSTER_PID`) to the Trickster process. In both cases, the underlying running Configuration File must have been modified such that the last modified time of the file is different than from when it was previously loaded.
 

@@ -23,5 +23,8 @@ const (
 	DefaultCacheProvider = "memory"
 	// DefaultCacheProviderID is the default cache providers ID for any defined cache
 	// and should align with DefaultCacheProvider
-	DefaultCacheProviderID = providers.Memory
+	DefaultCacheProviderID       = providers.Memory
+	DefaultUseCacheChunking      = false
+	DefaultTimeseriesChunkFactor = int64(420)
+	DefaultByterangeChunkSize    = int64(4096)
 )

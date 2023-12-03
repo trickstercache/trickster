@@ -132,10 +132,10 @@ var supportedFormats = map[string]byte{
 }
 
 var timeFormats = map[int]byte{
-	0:          0, // expect epoch seconds from clickhouse, convey seconds to requestor
-	1000:       1, // expect epoch milliseconds from clickhouse, convey milliseconds to requestor
-	1000000:    2, // expect epoch microseconds (u) from clickhouse, convey microseconds to requestor
-	1000000000: 3, // expect epoch nanoseconds from clickhouse, convey nanoseconds to requestor
+	0:          0, // expect epoch seconds from clickhouse, convey seconds to requester
+	1000:       1, // expect epoch milliseconds from clickhouse, convey milliseconds to requester
+	1000000:    2, // expect epoch microseconds (u) from clickhouse, convey microseconds to requester
+	1000000000: 3, // expect epoch nanoseconds from clickhouse, convey nanoseconds to requester
 }
 
 func atWith(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {

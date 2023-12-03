@@ -171,8 +171,10 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	headers.AddForwardingHeaders(r, o.ForwardedHeaders)
 
-	if pc != nil && len(pc.RequestParams) > 0 {
+	if pc != nil && len(pc.RequestHeaders) > 0 {
 		headers.UpdateHeaders(r.Header, pc.RequestHeaders)
+	}
+	if pc != nil && len(pc.RequestParams) > 0 {
 		qp, _, _ := params.GetRequestValues(r)
 		params.UpdateParams(qp, pc.RequestParams)
 		params.SetRequestValues(r, qp)

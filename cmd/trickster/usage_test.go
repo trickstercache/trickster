@@ -20,18 +20,19 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/runtime"
 )
 
-// ExamplePrintVersion tests the output of the printVersion() func
+// ExamplePrintVersion tests the output of the PrintVersion() func
 func ExamplePrintVersion() {
 	runtime.ApplicationVersion = "test"
 	PrintVersion()
-	// Output: Trickster version: test, buildInfo:  , goVersion: , copyright: © 2018 The Trickster Authors
+	// Output: Trickster version: test (/), buildInfo:  , goVersion: , copyright: © 2018 The Trickster Authors
 }
 
+// ExamplePrintUsage tests the output of the PrintUsage() func
 func ExamplePrintUsage() {
 
 	runtime.ApplicationVersion = "test"
 	PrintUsage()
-	// Output: Trickster version: test, buildInfo:  , goVersion: , copyright: © 2018 The Trickster Authors
+	// Output: Trickster version: test (/), buildInfo:  , goVersion: , copyright: © 2018 The Trickster Authors
 	//
 	// Trickster Usage:
 	//

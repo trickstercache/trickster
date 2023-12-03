@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/common/sigv4"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
@@ -33,10 +34,10 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
+	"github.com/trickstercache/trickster/v2/pkg/router"
 	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 
-	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v2"
 )
 
@@ -166,8 +167,8 @@ type Options struct {
 	//
 	// Name is the Name of the backend, taken from the Key in the Backends map[string]*BackendOptions
 	Name string `yaml:"-"`
-	// Router is a mux.Router containing this backend's Path Routes; it is set during route registration
-	Router *mux.Router `yaml:"-"`
+	// Router is a router.Router containing this backend's Path Routes; it is set during route registration
+	Router router.Router `yaml:"-"`
 	// Timeout is the time.Duration representation of TimeoutMS
 	Timeout time.Duration `yaml:"-"`
 	// BackfillTolerance is the time.Duration representation of BackfillToleranceMS
@@ -212,7 +213,8 @@ type Options struct {
 	MaxShardSize time.Duration `yaml:"-"`
 	// ShardStep is the parsed version of ShardStepMS
 	ShardStep time.Duration `yaml:"-"`
-
+	// SigV4
+	SigV4 *sigv4.SigV4Config `yaml:"sigv4,omitempty"`
 	//
 	md yamlx.KeyLookup `yaml:"-"`
 }
@@ -631,6 +633,9 @@ func SetDefaults(
 		if err != nil {
 			return nil, err
 		}
+		for k, v := range o.Paths {
+			no.Paths[k] = v.Clone()
+		}
 	}
 
 	if metadata.IsDefined("backends", name, "alb") {
@@ -695,6 +700,10 @@ func SetDefaults(
 
 	if metadata.IsDefined("backends", name, "latency_max_ms") {
 		no.LatencyMaxMS = o.LatencyMaxMS
+	}
+
+	if metadata.IsDefined("backends", name, "sigv4") {
+		no.SigV4 = o.SigV4
 	}
 
 	return no, nil
