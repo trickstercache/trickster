@@ -24,12 +24,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 )
 
 // DeriveCacheKey calculates a query-specific keyname based on the user request
@@ -95,7 +95,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	}
 
 	if methods.HasBody(r.Method) && pc.CacheKeyFormFields != nil && len(pc.CacheKeyFormFields) > 0 {
-		ct := r.Header.Get(headers.NameContentType)
+		ct := strings.ToLower(r.Header.Get(headers.NameContentType))
 		if ct == headers.ValueXFormURLEncoded ||
 			strings.HasPrefix(ct, headers.ValueMultipartFormData) || strings.HasPrefix(ct, headers.ValueApplicationJSON) {
 			if strings.HasPrefix(ct, headers.ValueMultipartFormData) {

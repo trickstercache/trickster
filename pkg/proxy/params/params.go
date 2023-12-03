@@ -19,9 +19,6 @@ package params
 
 import (
 	"bytes"
-	"fmt"
-	"strconv"
-
 	"io"
 	"net/http"
 	"net/url"
@@ -64,7 +61,7 @@ func GetRequestValues(r *http.Request) (url.Values, string, bool) {
 		v = r.URL.Query()
 		s = r.URL.RawQuery
 	} else {
-		if strings.HasPrefix(r.Header.Get(headers.NameContentType), headers.ValueApplicationJSON) {
+		if strings.HasPrefix(strings.ToLower(r.Header.Get(headers.NameContentType)), headers.ValueApplicationJSON) {
 			v = r.URL.Query()
 			b, _ := io.ReadAll(r.Body)
 			r.Body.Close()
