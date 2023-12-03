@@ -19,6 +19,7 @@ package prometheus
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"testing"
@@ -70,8 +71,10 @@ func TestSetExtent(t *testing.T) {
 	r, _ = http.NewRequest(http.MethodPost, u2.String(), b)
 
 	pc.SetExtent(r, nil, e)
-	if r.ContentLength != 31 {
-		t.Errorf("expected 31 got %d", r.ContentLength)
+	if int(r.ContentLength) != len(expected) {
+		b, _ := io.ReadAll(r.Body)
+		fmt.Println(string(b))
+		t.Errorf("expected %d got %d", len(expected), r.ContentLength)
 	}
 
 }

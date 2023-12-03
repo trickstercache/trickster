@@ -59,9 +59,9 @@ func TestDefaultPathConfigs(t *testing.T) {
 		t.Errorf("expected to find path named: %s", "/")
 	}
 
-	const expectedLen = 2
+	const expectedLen = 3
 	if len(rsc.BackendOptions.Paths) != expectedLen {
-		t.Errorf("expected ordered length to be: %d", expectedLen)
+		t.Errorf("expected ordered length to be: %d, got: %d", expectedLen, len(rsc.BackendOptions.Paths))
 	}
 
 }

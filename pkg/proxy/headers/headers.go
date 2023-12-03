@@ -32,6 +32,8 @@ const (
 	ValueApplicationCSV = "application/csv"
 	// ValueApplicationJSON represents the HTTP Header Value of "application/json"
 	ValueApplicationJSON = "application/json"
+	// ValueApplicationFlux represents the HTTP Header Value of "application/vnd.flux"
+	ValueApplicationFlux = "application/vnd.flux"
 	// ValueChunked represents the HTTP Header Value of "chunked"
 	ValueChunked = "chunked"
 	// ValueMaxAge represents the HTTP Header Value of "max-age"

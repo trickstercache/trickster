@@ -17,12 +17,11 @@
 package influxdb
 
 import (
-	"bytes"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
@@ -39,6 +38,7 @@ var testRawQuery = testVals.Encode()
 var testFluxVals = url.Values(map[string][]string{
 	"q": {`from("test-bucket")
 	|> range(start: -7d, stop: -6d)
+	|> aggregateWindow(every: 1m, func: mean)
 	`},
 	"epoch": {"ms"},
 })
@@ -67,10 +67,9 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		}
 	}
 
-	req, _ = http.NewRequest(http.MethodPost, "http://blah.com/",
-		io.Reader(bytes.NewBufferString(testRawQuery)))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Content-Length", strconv.Itoa(len(testRawQuery)))
+	body := testVals["q"][0]
+	req, _ = http.NewRequest(http.MethodPost, "http://blah.com/", io.NopCloser(strings.NewReader(body)))
+	req.Header.Set("Content-Length", strconv.Itoa(len(body)))
 
 	res, _, _, err = client.ParseTimeRangeQuery(req)
 	if err != nil {
@@ -92,7 +91,6 @@ func TestParseTimeRangeQuery(t *testing.T) {
 			Path:     "/",
 			RawQuery: testFluxQuery,
 		}}
-	fmt.Println(req.URL.RawQuery)
 	res, _, _, err = client.ParseTimeRangeQuery(req)
 	if err != nil {
 		t.Error(err)

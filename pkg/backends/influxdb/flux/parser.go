@@ -39,27 +39,55 @@ func NewParser(reader io.Reader) *Parser {
 	}
 }
 
-func (p *Parser) ParseQuery() (*Query, error) {
+// Parse a Flux query.
+// Returns the query and an error, plus a bool indicating if the query can use the OPC or not.
+// A 'true' value should be taken as the error being for Trickster (no timestep), but not necessarily for InfluxDB.
+func (p *Parser) ParseQuery() (*Query, bool, error) {
 	r := bufio.NewReader(p.reader)
-	q := &Query{}
-	if raw, err := io.ReadAll(r); err != nil {
-		return nil, err
-	} else {
-		content := string(raw)
-		if idx := strings.Index(content, "|> range("); idx == -1 {
-			return nil, ErrFluxSyntax("range()", "flux timerange query scripts must contain a range() function")
-		} else {
-			q.Extent, err = parseRangeFilter(content, idx+len("|> range("))
-			if err != nil {
-				return nil, err
+	q := &Query{
+		stmts: make([]Statement, 0),
+	}
+	var hasRange, hasWindow bool
+	for {
+		line, err := r.ReadString('\n')
+		line = strings.TrimSpace(line) + "\n"
+		var stmt Statement
+		if err != nil {
+			if err == io.EOF {
+				break
+			} else {
+				return nil, false, err
 			}
 		}
+		if !hasRange && strings.Contains(line, "range") {
+			stmt, err = parseRangeFilter(line, 0)
+			if err != nil {
+				return nil, false, err
+			}
+			q.Extent = stmt.(*RangeStatement).ext
+			q.stmts = append(q.stmts, stmt)
+			hasRange = true
+		} else if !hasWindow && strings.Contains(strings.ToLower(line), "window") {
+			q.Step, err = parseWindowFunction(line, 0)
+			if err != nil {
+				return nil, false, err
+			}
+			q.stmts = append(q.stmts, &ConstStatement{line})
+			hasWindow = true
+		} else {
+			q.stmts = append(q.stmts, &ConstStatement{line})
+		}
 	}
-	return q, nil
+	if !hasRange {
+		return nil, false, ErrFluxSemantics("flux queries must have a range() filter")
+	} else if !hasWindow {
+		return nil, false, ErrFluxSemantics("flux queries in Trickster must have a window() filter to determine timestep")
+	}
+	return q, false, nil
 }
 
 // Parse a line that is a range filter range(start: $[start], stop: $[stop])
-func parseRangeFilter(query string, at int) (timeseries.Extent, error) {
+func parseRangeFilter(query string, at int) (Statement, error) {
 	var start, stop time.Time
 	var err error
 	for i := at; i < len(query); {
@@ -72,12 +100,12 @@ func parseRangeFilter(query string, at int) (timeseries.Extent, error) {
 			}
 			timeArgEnd := timeArgStart + strings.IndexAny(query[timeArgStart:], " ,)")
 			if timeArgEnd == -1 {
-				return timeseries.Extent{}, ErrFluxSyntax(query[timeArgStart:timeArgStart+10]+"...", "couldn't parse time field from start argument")
+				return nil, ErrFluxSyntax(query[timeArgStart:timeArgStart+10]+"...", "couldn't parse time field from start argument")
 			}
 			// and try to parse that argument as a time field
 			start, err = tryParseTimeField(query[timeArgStart:timeArgEnd])
 			if err != nil {
-				return timeseries.Extent{}, err
+				return nil, err
 			}
 			i = timeArgEnd
 			continue
@@ -90,12 +118,12 @@ func parseRangeFilter(query string, at int) (timeseries.Extent, error) {
 			}
 			timeArgEnd := timeArgStart + strings.IndexAny(query[timeArgStart:], " )")
 			if timeArgEnd == -1 {
-				return timeseries.Extent{}, ErrFluxSyntax(query[timeArgStart:timeArgStart+10]+"...", "couldn't parse time field from stop argument")
+				return nil, ErrFluxSyntax(query[timeArgStart:timeArgStart+10]+"...", "couldn't parse time field from stop argument")
 			}
 			// and try to parse that argument as a time field
 			stop, err = tryParseTimeField(query[timeArgStart:timeArgEnd])
 			if err != nil {
-				return timeseries.Extent{}, err
+				return nil, err
 			}
 			i = timeArgEnd
 			continue
@@ -107,9 +135,32 @@ func parseRangeFilter(query string, at int) (timeseries.Extent, error) {
 		i++
 	}
 	if start.IsZero() {
-		return timeseries.Extent{}, ErrFluxSemantics("range() expressions require a valid start argument")
+		return nil, ErrFluxSemantics("range() expressions require a valid start argument")
 	}
-	return timeseries.Extent{Start: start, End: stop}, nil
+	if stop.IsZero() {
+		stop = time.Now()
+	}
+	return &RangeStatement{timeseries.Extent{Start: start, End: stop}}, nil
+}
+
+func parseWindowFunction(query string, at int) (time.Duration, error) {
+	for i := at; i < len(query); i++ {
+		if token := tstrings.Substring(query, i, len("every:")); token == "every:" {
+			stepArgStart := i + len(token)
+			if query[stepArgStart] == ' ' {
+				stepArgStart++
+			}
+			stepArgEnd := stepArgStart + strings.IndexAny(query[stepArgStart:], ", )")
+			if stepArgEnd == -1 {
+				return 0, ErrFluxSyntax(query[stepArgStart:stepArgStart+10]+"...", "couldn't parse timestep from window function")
+			}
+			return timeconv.ParseDuration(query[stepArgStart:stepArgEnd])
+		}
+		if query[i] == ')' {
+			break
+		}
+	}
+	return 0, ErrFluxSyntax("window()", "couldn't find a timestep, make sure argument 'every:' is included")
 }
 
 func tryParseTimeField(s string) (time.Time, error) {

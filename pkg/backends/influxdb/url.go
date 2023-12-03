@@ -17,17 +17,23 @@
 package influxdb
 
 import (
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/influxdata/influxql"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flux"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // Upstream Endpoints
 const (
-	mnQuery = "query"
+	mnQuery    = "query"
+	apiv2Query = "api/v2/query"
 )
 
 // Common URL Parameter Names
@@ -42,7 +48,7 @@ const (
 // SetExtent will change the upstream request query to use the provided Extent
 func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
 
-	v, _, _ := params.GetRequestValues(r)
+	v, _, isBody := params.GetRequestValues(r)
 	if trq.ParsedQuery == nil {
 		t2, _, _, err := c.ParseTimeRangeQuery(r)
 		if err != nil {
@@ -51,23 +57,36 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 		trq.ParsedQuery = t2.ParsedQuery
 	}
 
-	q, ok := trq.ParsedQuery.(*influxql.Query)
-	if !ok {
+	var uq string
+	if q, ok := trq.ParsedQuery.(*influxql.Query); ok {
+		for _, s := range q.Statements {
+			if sel, ok := s.(*influxql.SelectStatement); ok {
+				// since setting timerange results in a clause of '>= start AND < end', we add the
+				// size of 1 step onto the end time so as to ensure it is included in the results
+				sel.SetTimeRange(extent.Start, extent.End.Add(trq.Step))
+			}
+		}
+		uq = q.String()
+	} else if q, ok := trq.ParsedQuery.(*flux.Query); ok {
+		q.SetExtent(*extent)
+		uq = q.String()
+	} else {
 		return
 	}
 
-	for _, s := range q.Statements {
-		if sel, ok := s.(*influxql.SelectStatement); ok {
-			// since setting timerange results in a clause of '>= start AND < end', we add the
-			// size of 1 step onto the end time so as to ensure it is included in the results
-			sel.SetTimeRange(extent.Start, extent.End.Add(trq.Step))
-		}
+	v.Set(upQuery, uq)
+	if isBody {
+		r.Body = io.NopCloser(strings.NewReader(uq))
+		r.ContentLength = int64(len(uq))
 	}
-
-	v.Set(upQuery, q.String())
 	v.Set(upEpoch, "ns") // request nanosecond epoch timestamp format from server
 	v.Del(upChunked)     // we do not support chunked output or handling chunked server responses
 	v.Del(upPretty)
-	r.Header.Set(headers.NameAccept, headers.ValueApplicationJSON)
-	params.SetRequestValues(r, v)
+	if !methods.HasBody(r.Method) {
+		r.URL.RawQuery = v.Encode()
+	}
+	// Need to set template URL for cache key derivation
+	trq.TemplateURL = urls.Clone(r.URL)
+	qt := url.Values(http.Header(v).Clone())
+	trq.TemplateURL.RawQuery = qt.Encode()
 }

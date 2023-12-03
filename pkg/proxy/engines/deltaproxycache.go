@@ -84,14 +84,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		DoProxy(w, r, true)
 		return
 	}
-
 	var cacheStatus status.LookupStatus
 
 	pr := newProxyRequest(r, w)
 	rlo.FastForwardDisable = o.FastForwardDisable || rlo.FastForwardDisable
 	trq.NormalizeExtent()
 	now := time.Now()
-
 	bt := trq.GetBackfillTolerance(o.BackfillTolerance, o.BackfillTolerancePoints)
 	bfs := now.Add(-bt).Truncate(trq.Step) // start of the backfill tolerance window
 
@@ -582,7 +580,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 		go func(e *timeseries.Extent, rq *proxyRequest) {
 			defer wg.Done()
 			mrsc := rsc.Clone()
-			rq.upstreamRequest = rq.WithContext(tctx.WithResources(
+			rq.upstreamRequest = rq.upstreamRequest.WithContext(tctx.WithResources(
 				trace.ContextWithSpan(context.Background(), span),
 				mrsc))
 			rq.upstreamRequest = rq.upstreamRequest.WithContext(profile.ToContext(rq.upstreamRequest.Context(),
