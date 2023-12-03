@@ -69,7 +69,6 @@ func TestParseTimeRangeQuery(t *testing.T) {
 
 	body := testVals["q"][0]
 	req, _ = http.NewRequest(http.MethodPost, "http://blah.com/", io.NopCloser(strings.NewReader(body)))
-	// req.Header.Set("Content-Type", "text/plain")
 	req.Header.Set("Content-Length", strconv.Itoa(len(body)))
 
 	res, _, _, err = client.ParseTimeRangeQuery(req)
