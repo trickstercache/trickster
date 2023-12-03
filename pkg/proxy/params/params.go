@@ -97,6 +97,10 @@ func GetRequestValues(r *http.Request) (url.Values, string, bool) {
 		r.Body.Close()
 		r.Body = io.NopCloser(bytes.NewReader(b))
 		s = string(b)
+		isBody = true
+		if strings.HasPrefix(strings.ToLower(r.Header.Get(headers.NameContentType)), headers.ValueApplicationJSON) {
+			return v, s, isBody
+		}
 		if vs, err := url.ParseQuery(s); err == nil && isQueryBody(r) {
 			for vsk := range vs {
 				for _, vsv := range vs[vsk] {
@@ -108,7 +112,6 @@ func GetRequestValues(r *http.Request) (url.Values, string, bool) {
 				}
 			}
 		}
-		isBody = true
 	}
 	return v, s, isBody
 }
