@@ -41,7 +41,6 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		var body []byte
 		if sqlQuery != "" {
-			body = make([]byte, 0, len(sqlQuery)+len(b))
 			body = append([]byte(sqlQuery), b...)
 			q.Del(upQuery)
 			r.URL.RawQuery = q.Encode()
