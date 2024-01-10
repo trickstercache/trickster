@@ -52,7 +52,9 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 		r = request.SetBody(r, body)
 	}
 	sqlQuery = strings.ToLower(sqlQuery)
-	if (!strings.HasPrefix(sqlQuery, "select ")) && (!(strings.Index(sqlQuery, " select ") > 0)) {
+	if !(strings.HasPrefix(sqlQuery, "select ") ||
+		strings.HasPrefix(sqlQuery, "select\n") ||
+		strings.Contains(sqlQuery, " select ")) {
 		c.ProxyHandler(w, r)
 		return
 	}
