@@ -38,7 +38,7 @@ func Clone(u *url.URL) *url.URL {
 	return u2
 }
 
-// FromParts returns a *url.URL consructed from the provided parts
+// FromParts returns a *url.URL constructed from the provided parts
 func FromParts(scheme, host, path, query, fragment string) *url.URL {
 	return &url.URL{
 		Scheme:   scheme,

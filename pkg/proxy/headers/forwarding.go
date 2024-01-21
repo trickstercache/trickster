@@ -49,7 +49,7 @@ type Hop struct {
 	Host string
 	// Scheme is the protocol scheme requested of the proxy
 	Scheme string
-	// Server is an identier for the server running the Trickster process
+	// Server is an identifier for the server running the Trickster process
 	Server string
 	// protocol indicates the HTTP protocol Version in proper format (.eg., "HTTP/1.1")
 	// requested by the client

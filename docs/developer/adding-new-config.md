@@ -10,7 +10,7 @@ Each new configuration value must be defined in the `config` package under an ex
 
 Make sure the TOML annotation uses a `lowercase_no_spaces` naming convention, while the configuration member name itself should be `CamelCase`. Follow the existing configs for guidance.
 
-Once you have defined the configuration member, if it is part of a `CacheConfig`, `OriginConfig` or `PathConfig`, it must also be added to the configuration parser for the specific type of configuration. These methods iterate through known TOML annoations to survey which configs have been set. This allows Trickster to know if a value is set because it is the initialized default value or because the operator has explicitly set it.
+Once you have defined the configuration member, if it is part of a `CacheConfig`, `OriginConfig` or `PathConfig`, it must also be added to the configuration parser for the specific type of configuration. These methods iterate through known TOML annotations to survey which configs have been set. This allows Trickster to know if a value is set because it is the initialized default value or because the operator has explicitly set it.
 
 ## Feature Code
 
@@ -18,7 +18,7 @@ Once you have defined your configuration value(s), you must put them to work by 
 
 ## Tests
 
-All new values that you add should have accompanying unit tests to ensure the modifications the value makes to the application in the feature code work as designed. Unit Tests should include verification of: proper parsing of configuration value from test config files (in ./testdata), correct feature functionality enable/disable based on the configuration value, correct feature implementation, coverage of all executable lines of code. Unit Test will span the `config` package, and any package(s) wherein the configuration value is used by the applciation.
+All new values that you add should have accompanying unit tests to ensure the modifications the value makes to the application in the feature code work as designed. Unit Tests should include verification of: proper parsing of configuration value from test config files (in ./testdata), correct feature functionality enable/disable based on the configuration value, correct feature implementation, coverage of all executable lines of code. Unit Test will span the `config` package, and any package(s) wherein the configuration value is used by the application.
 
 ## Documentation
 
@@ -28,7 +28,7 @@ The example config file (./cmd/trickster/conf/example.conf) should be updated to
 
 ## Deployment
 
-The `./deply/kube/configmap.yaml` must be updated to include the new configuration option(s). Generally this file contains a copy/paste of `./cmd/trickster/conf/example.conf`.
+The `./deploy/kube/configmap.yaml` must be updated to include the new configuration option(s). Generally this file contains a copy/paste of `./cmd/trickster/conf/example.conf`.
 
 The `./deploy/helm/trickster/values.yaml` file must be updated to mirror the configuration option(s) in the example.conf, and `./deploy/helm/trickster/templates/configmap.yaml` must be updated to map any new `yamlCaseValues` to their respective `toml_style_values` for config file generation via the template.
 

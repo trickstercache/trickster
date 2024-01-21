@@ -123,7 +123,7 @@ data:
             #
 
             ### Supported by Redis Cluster and Redis Sentinel #####################
-            ### These conigurations are ignored by Redis (standard)
+            ### These configurations are ignored by Redis (standard)
             ###
 
             ## endpoints is used for Redis Cluster and Redis Sentinel to define a list of endpoints
@@ -132,7 +132,7 @@ data:
             #
 
             ### Supported by Redis Sentinel #######################################
-            ### These conigurations are ignored by Redis (standard) and Redis Cluster
+            ### These configurations are ignored by Redis (standard) and Redis Cluster
             ###
             ## sentinel_master should be set when using Redis Sentinel to indicate the Master Node
             ## sentinel_master = ''
