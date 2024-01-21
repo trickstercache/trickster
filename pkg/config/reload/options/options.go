@@ -32,7 +32,7 @@ type Options struct {
 	DrainTimeoutSecs int `toml:"drain_timeout_secs"`
 	// RateLimitSecs limits the # of handled config reload HTTP requests to 1 per CheckRateSecs
 	// if multiple HTTP requests are received in the rate limit window, only the first is handled
-	// This prevents a bad actor from stating the config file with millions of concurrent requets
+	// This prevents a bad actor from stating the config file with millions of concurrent requests
 	// The rate limit does not apply to SIGHUP-based reload requests
 	RateLimitSecs int `toml:"rate_limit_secs"`
 }

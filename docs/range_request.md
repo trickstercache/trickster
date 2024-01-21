@@ -24,7 +24,7 @@ This is important because a partial hit could result in multiple ranges being ne
 
 Rule of thumb: If the origin does not support Multipart requests, enable Upstream Range Dearticulation in Trickster to compensate. Conversely, if the origin does support Multipart requests, do not enable Upstream Range Dearticulation.
 
-### Disabling Multpart Ranges to Clients
+### Disabling Multipart Ranges to Clients
 
 One of the great benefits of using Upstream Range Dearticulation is that it transparently enables Multipart Range support for clients, when fronting any origin that already supports serving just a single Range.
 

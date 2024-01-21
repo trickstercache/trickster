@@ -56,7 +56,7 @@ The Proxy Client Interface Methods you will need to implement are broken into se
 
 - `UnmarshalTimeseries` deserializes an HTTP Response time series payload into a Go struct
 
-- `MarshalTimeseries` seralizes a time-series struct into a serialized byte slice.
+- `MarshalTimeseries` serializes a time-series struct into a serialized byte slice.
 
 - `UnmarshalInstantaneous` deserializes an HTTP Response instantaneous payload into a Go struct. This may not be applicable to every potential Origin Type.
 

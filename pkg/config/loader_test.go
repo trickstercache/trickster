@@ -671,7 +671,7 @@ func TestLoadConfigurationWarning1(t *testing.T) {
 	l := len(conf.LoaderWarnings)
 
 	if l != expected {
-		t.Errorf("exepcted %d got %d", expected, l)
+		t.Errorf("expected %d got %d", expected, l)
 	}
 
 }
@@ -689,7 +689,7 @@ func TestLoadConfigurationWarning2(t *testing.T) {
 	l := len(conf.LoaderWarnings)
 
 	if l != expected {
-		t.Errorf("exepcted %d got %d", expected, l)
+		t.Errorf("expected %d got %d", expected, l)
 	}
 
 }
