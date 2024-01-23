@@ -12,11 +12,11 @@ jobs:
     steps:
       - name: Get current date
         id: date
-        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+        run: echo "date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
         #
       - name: Get bare tag
         id: baretag
-        run: echo "baretag=$(echo ${{ github.ref }} | cut -b 12-)" >> $GITHUB_OUTPUT
+        run: echo "baretag=$(echo ${{ github.ref }} | cut -b 12-)" >> "$GITHUB_OUTPUT"
         #
       - name: Checkout code
         uses: actions/checkout@v2
