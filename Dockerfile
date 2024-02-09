@@ -1,7 +1,7 @@
 # This docker file is for local dev, the official Dockerfile is at
 # https://github.com/trickstercache/trickster-docker-images/
 
-FROM golang:1.20 as builder
+FROM golang:1.21 as builder
 COPY . /go/src/github.com/trickstercache/trickster
 WORKDIR /go/src/github.com/trickstercache/trickster
 
