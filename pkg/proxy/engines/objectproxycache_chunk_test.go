@@ -729,6 +729,9 @@ func TestObjectProxyCacheRequestNegativeCacheChunks(t *testing.T) {
 	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig,
 		rsc.CacheClient, rsc.BackendClient, nil, rsc.Logger)))
 
+	// Remove negative cache for first request
+	delete(cfg.NegativeCache, 404)
+
 	_, e := testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "kmiss"})
 	for _, err = range e {
 		t.Error(err)
