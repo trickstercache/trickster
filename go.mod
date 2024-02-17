@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/alicebob/miniredis v2.5.0+incompatible
-	github.com/andybalholm/brotli v1.0.6
+	github.com/andybalholm/brotli v1.1.0
 	github.com/dgraph-io/badger v1.6.2
 	github.com/go-kit/log v0.2.1
 	github.com/go-redis/redis v6.15.9+incompatible
