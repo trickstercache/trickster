@@ -13,7 +13,7 @@ require (
 	github.com/influxdata/influxdb v1.11.2
 	github.com/influxdata/influxql v1.1.1-0.20211004132434-7e7d61973256
 	github.com/klauspost/compress v1.17.4
-	github.com/prometheus/client_golang v1.17.0
+	github.com/prometheus/client_golang v1.18.0
 	github.com/prometheus/common/sigv4 v0.1.0
 	github.com/tinylib/msgp v1.1.9
 	github.com/trickstercache/mockster v1.1.2
