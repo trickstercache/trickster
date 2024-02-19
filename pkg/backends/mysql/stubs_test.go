@@ -14,26 +14,40 @@
  * limitations under the License.
  */
 
-package main
+package mysql
 
 import (
-	"sync"
 	"testing"
 )
 
-func TestMain(t *testing.T) {
-	exitFunc = nil
-	wg = nil
-	main()
-	// Successful test criteria is that the call to main returns without timing out on wg.Wait()
+func TestFastForwardURL(t *testing.T) {
+
+	client := &Client{}
+	r, err := client.FastForwardRequest(nil)
+	if r != nil {
+		t.Errorf("Expected nil url, got %v", r)
+	}
+	if err != nil {
+		t.Errorf("Expected nil err, got %s", err)
+	}
 }
 
-func TestRunConfig(t *testing.T) {
-	wg := &sync.WaitGroup{}
-	runConfig(nil, wg, nil, nil, []string{}, nil)
+func TestUnmarshalInstantaneous(t *testing.T) {
 
-	runConfig(nil, wg, nil, nil, []string{"-version"}, nil)
+	client := &Client{}
+	tr, err := client.UnmarshalInstantaneous(nil)
 
-	runConfig(nil, wg, nil, nil, []string{"-provider", "rpc", "-origin-url", "http://trickstercache.org"}, nil)
+	if tr != nil {
+		t.Errorf("Expected nil timeseries, got %s", tr)
+	}
 
+	if err != nil {
+		t.Errorf("Expected nil err, got %s", err)
+	}
+
+}
+
+func TestQueryRangeHandler(t *testing.T) {
+	client := &Client{}
+	client.QueryRangeHandler(nil, nil)
 }

@@ -14,26 +14,25 @@
  * limitations under the License.
  */
 
-package main
+package mysql
 
 import (
-	"sync"
-	"testing"
+	"net/url"
+
+	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 )
 
-func TestMain(t *testing.T) {
-	exitFunc = nil
-	wg = nil
-	main()
-	// Successful test criteria is that the call to main returns without timing out on wg.Wait()
-}
+const (
+	healthQuery = "SELECT 1 FORMAT JSON"
+)
 
-func TestRunConfig(t *testing.T) {
-	wg := &sync.WaitGroup{}
-	runConfig(nil, wg, nil, nil, []string{}, nil)
-
-	runConfig(nil, wg, nil, nil, []string{"-version"}, nil)
-
-	runConfig(nil, wg, nil, nil, []string{"-provider", "rpc", "-origin-url", "http://trickstercache.org"}, nil)
-
+// DefaultHealthCheckConfig returns the default HealthCheck Config for this backend provider
+func (c *Client) DefaultHealthCheckConfig() *ho.Options {
+	o := ho.New()
+	u := c.BaseUpstreamURL()
+	o.Scheme = u.Scheme
+	o.Host = u.Host
+	o.Path = u.Path
+	o.Query = url.Values{"query": {healthQuery}}.Encode()
+	return o
 }

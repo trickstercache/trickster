@@ -29,7 +29,6 @@ type RunState struct {
 	err                      error
 	ctx                      context.Context
 	nextOverride             StateFn
-	isPeeked                 bool
 	results                  map[string]interface{}
 }
 
@@ -54,7 +53,7 @@ func (rs *RunState) GetResultsCollection(collectionName string) (interface{}, bo
 	return v, ok
 }
 
-// Results returns the results objecxt from the RunState
+// Results returns the results object from the RunState
 func (rs *RunState) Results() map[string]interface{} {
 	return rs.results
 }

@@ -14,26 +14,26 @@
  * limitations under the License.
  */
 
-package main
+package mysql
 
 import (
-	"sync"
+	"strings"
 	"testing"
+
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 )
 
-func TestMain(t *testing.T) {
-	exitFunc = nil
-	wg = nil
-	main()
-	// Successful test criteria is that the call to main returns without timing out on wg.Wait()
-}
+func TestDefaultHealthCheckConfig(t *testing.T) {
 
-func TestRunConfig(t *testing.T) {
-	wg := &sync.WaitGroup{}
-	runConfig(nil, wg, nil, nil, []string{}, nil)
+	c, _ := NewClient("test", bo.New(), nil, nil, nil, nil)
 
-	runConfig(nil, wg, nil, nil, []string{"-version"}, nil)
+	dho := c.DefaultHealthCheckConfig()
+	if dho == nil {
+		t.Error("expected non-nil result")
+	}
 
-	runConfig(nil, wg, nil, nil, []string{"-provider", "rpc", "-origin-url", "http://trickstercache.org"}, nil)
+	if !strings.HasPrefix(dho.Query, "query=SELECT") {
+		t.Error("expected SELECT-based query string")
+	}
 
 }

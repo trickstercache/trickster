@@ -14,26 +14,18 @@
  * limitations under the License.
  */
 
-package main
+package mysql
 
 import (
-	"sync"
-	"testing"
+	"net/http"
+
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
 
-func TestMain(t *testing.T) {
-	exitFunc = nil
-	wg = nil
-	main()
-	// Successful test criteria is that the call to main returns without timing out on wg.Wait()
-}
-
-func TestRunConfig(t *testing.T) {
-	wg := &sync.WaitGroup{}
-	runConfig(nil, wg, nil, nil, []string{}, nil)
-
-	runConfig(nil, wg, nil, nil, []string{"-version"}, nil)
-
-	runConfig(nil, wg, nil, nil, []string{"-provider", "rpc", "-origin-url", "http://trickstercache.org"}, nil)
-
+// ProxyHandler sends a request through the basic reverse proxy to the origin,
+// and services non-cacheable calls
+func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
+	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
+	engines.DoProxy(w, r, true)
 }
