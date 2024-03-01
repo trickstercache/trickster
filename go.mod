@@ -17,7 +17,7 @@ require (
 	github.com/prometheus/common/sigv4 v0.1.0
 	github.com/tinylib/msgp v1.1.9
 	github.com/trickstercache/mockster v1.1.2
-	go.etcd.io/bbolt v1.3.8
+	go.etcd.io/bbolt v1.3.9
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.46.1
 	go.opentelemetry.io/otel v1.23.1
 	go.opentelemetry.io/otel/exporters/jaeger v1.17.0
