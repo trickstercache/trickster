@@ -42,7 +42,7 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository }}
-            tricksterproxy/trickster
+            trickstercache/trickster
           flavor: |
             latest=false
             prefix=
