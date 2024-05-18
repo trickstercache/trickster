@@ -30,7 +30,7 @@ import (
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 )
 
-const emptyFilePath = "../../../testdata/test.empty.conf"
+const emptyFilePath = "../../testdata/test.empty.conf"
 
 // EmptyTestConfig returns an empty config based on the testdata empty conf
 func emptyTestConfig() (*Config, string) {
