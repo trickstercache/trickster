@@ -20,3 +20,9 @@ import "errors"
 
 // ErrNilWriter is an error for a nil writer when a non-nil writer was expected
 var ErrNilWriter = errors.New("nil writer")
+
+// ErrInvalidOptions is an error for when a configuration is invalid
+var ErrInvalidOptions = errors.New("invalid options")
+
+// ErrMissingPathconfig is an error for when a configuration is missing a path value
+var ErrMissingPathconfig = errors.New("missing path config")

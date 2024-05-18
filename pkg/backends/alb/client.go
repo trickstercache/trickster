@@ -17,7 +17,6 @@
 package alb
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -29,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -157,7 +157,7 @@ func (c *Client) ValidatePool(clients backends.Backends) error {
 // validate and map out the pool configuration
 func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck.StatusLookup) error {
 	if c.Configuration() == nil || c.Configuration().ALBOptions == nil {
-		return errors.New("invalid options")
+		return errors.ErrInvalidOptions
 	}
 
 	o := c.Configuration().ALBOptions
@@ -172,7 +172,7 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		if !ok {
 			return fmt.Errorf("invalid pool member name [%s] in backend [%s]", n, c.Name())
 		}
-		hc, _ := hcs[n]
+		hc := hcs[n]
 		targets = append(targets, pool.NewTarget(tc.Router(), hc))
 	}
 	c.pool = pool.New(m, targets, o.HealthyFloor)
