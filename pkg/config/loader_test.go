@@ -620,7 +620,7 @@ func TestLoadConfigurationWarning2(t *testing.T) {
 func TestLoadEmptyArgs(t *testing.T) {
 	a := []string{}
 	_, _, err := Load("trickster-test", "0", a)
-	if err == nil {
-		t.Error("expected error: no valid backends configured")
+	if err != ErrNoValidBackends {
+		t.Error("expected error:", ErrNoValidBackends)
 	}
 }
