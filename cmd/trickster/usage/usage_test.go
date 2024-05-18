@@ -14,15 +14,15 @@
  * limitations under the License.
  */
 
-package main
+package usage
 
 import (
-	"github.com/trickstercache/trickster/v2/pkg/runtime"
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 )
 
 // ExamplePrintVersion tests the output of the PrintVersion() func
 func ExamplePrintVersion() {
-	runtime.ApplicationVersion = "test"
+	appinfo.Version = "test"
 	PrintVersion()
 	// Output: Trickster version: test (/), buildInfo:  , goVersion: , copyright: © 2018 The Trickster Authors
 }
@@ -30,7 +30,7 @@ func ExamplePrintVersion() {
 // ExamplePrintUsage tests the output of the PrintUsage() func
 func ExamplePrintUsage() {
 
-	runtime.ApplicationVersion = "test"
+	appinfo.Version = "test"
 	PrintUsage()
 	// Output: Trickster version: test (/), buildInfo:  , goVersion: , copyright: © 2018 The Trickster Authors
 	//

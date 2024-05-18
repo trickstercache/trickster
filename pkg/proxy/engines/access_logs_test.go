@@ -21,7 +21,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	tlo "github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
 )

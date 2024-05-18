@@ -26,9 +26,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
@@ -39,7 +40,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
-	"github.com/trickstercache/trickster/v2/pkg/runtime"
 
 	"github.com/trickstercache/mockster/pkg/testutil"
 )
@@ -56,7 +56,7 @@ var ErrTest = errors.New("test error")
 // this actively sets the ApplicationName for testing purposes
 // do not import this package from main or any of its recursive imports
 func init() {
-	runtime.ApplicationName = "trickster-unit-tests"
+	appinfo.Name = "trickster-unit-tests"
 }
 
 // NewTestServer returns a new httptest.Server that responds with the provided code, body and headers

@@ -17,7 +17,6 @@
 package config
 
 import (
-	"errors"
 	"net/url"
 	"time"
 
@@ -72,7 +71,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	}
 
 	if len(c.Backends) == 0 {
-		return nil, flags, errors.New("no valid backends configured")
+		return nil, flags, ErrNoValidBackends
 	}
 
 	ncl, err := negative.ConfigLookup(c.NegativeCacheConfigs).Validate()

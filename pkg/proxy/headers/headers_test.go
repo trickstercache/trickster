@@ -21,7 +21,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/pkg/runtime"
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 )
 
 func TestExtractHeader(t *testing.T) {
@@ -32,8 +32,8 @@ func TestExtractHeader(t *testing.T) {
 	const appVer = "tests"
 	const appString = appName + " " + appVer
 
-	runtime.ApplicationName = appName
-	runtime.ApplicationVersion = appVer
+	appinfo.Name = appName
+	appinfo.Version = appVer
 
 	const testIP = "0.0.0.0"
 
@@ -116,8 +116,8 @@ func TestMerge(t *testing.T) {
 func TestAddResponseHeaders(t *testing.T) {
 
 	headers := http.Header{}
-	runtime.ApplicationName = "trickster-test"
-	runtime.ApplicationVersion = "tests"
+	appinfo.Name = "trickster-test"
+	appinfo.Version = "tests"
 
 	AddResponseHeaders(headers)
 

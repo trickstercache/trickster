@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-package main
+package usage
 
 import (
 	"fmt"
 	goruntime "runtime"
 
-	"github.com/trickstercache/trickster/v2/pkg/runtime"
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 )
 
 const usageText = `
@@ -76,16 +76,16 @@ func version() string {
 	os := goruntime.GOOS
 	// use an empty string for goVer, arch, and os during unit tests
 	// to accommodate rigid tests like ExamplePrintVersion and ExamplePrintUsage
-	if runtime.ApplicationVersion == "test" {
+	if appinfo.Version == "test" {
 		goVer = ""
 		arch = ""
 		os = ""
 	}
 
 	return fmt.Sprintf("Trickster version: %s (%s/%s), buildInfo: %s %s, goVersion: %s, copyright: © 2018 The Trickster Authors",
-		runtime.ApplicationVersion,
+		appinfo.Version,
 		os, arch,
-		applicationBuildTime, applicationGitCommitID,
+		appinfo.BuildTime, appinfo.GitCommitID,
 		goVer,
 	)
 }

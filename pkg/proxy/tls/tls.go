@@ -17,7 +17,7 @@
 // Package tls handles options for TLS (https) requests
 package tls
 
-import "github.com/trickstercache/trickster/v2/cmd/trickster/config"
+import "github.com/trickstercache/trickster/v2/pkg/config"
 
 // OptionsChanged will return true if the TLS options for any backend
 // is different between configs

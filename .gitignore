@@ -47,6 +47,10 @@ out.log
 
 tags
 
+# file copies that should not be committed to the repo
+*.old
+*.copy
+
 # any generated test cert/keys that testing did not cleanup due to user abort
 .pem
 

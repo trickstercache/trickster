@@ -14,17 +14,34 @@
  * limitations under the License.
  */
 
-// Package runtime holds application runtime information
-package runtime
+// Package app holds application build information
+package appinfo
 
 import "os"
 
-// ApplicationName is the name of the Application
-var ApplicationName string
+// Name is the name of the Application
+var Name string
 
-// ApplicationVersion holds the version of the Application
-var ApplicationVersion string
+// Version holds the version of the Application
+var Version string
+
+// BuildTime is the Time that the Application was Built
+var BuildTime string
+
+// GitCommitID holds the Git Commit ID of the current binary/build
+var GitCommitID string
 
 // Server is the name, hostname or ip of the server as advertised in HTTP Headers
 // By default uses the hostname reported by the kernel
 var Server, _ = os.Hostname()
+
+func SetAppInfo(name, version, buildTime, gitCommitID string) {
+	Name = name
+	Version = version
+	BuildTime = buildTime
+	GitCommitID = gitCommitID
+}
+
+func SetServer(server string) {
+	Server = server
+}

@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
 
 	gkl "github.com/go-kit/log"
@@ -58,7 +58,6 @@ func TestNew(t *testing.T) {
 	if logger.level != "info" {
 		t.Errorf("expected %s got %s", "info", logger.level)
 	}
-	logger.Close()
 }
 
 func TestNewLogger_LogFile(t *testing.T) {

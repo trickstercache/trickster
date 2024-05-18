@@ -19,11 +19,10 @@ package irondb
 import (
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
-	"github.com/trickstercache/trickster/v2/pkg/backends/irondb/model"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
@@ -47,8 +46,6 @@ func TestIRONdbClientInterfacing(t *testing.T) {
 		t.Errorf("expected %s got %s", "test", to.Name())
 	}
 }
-
-var testModeler = model.NewModeler()
 
 func TestNewClient(t *testing.T) {
 	conf, _, err := config.Load("trickster", "test",

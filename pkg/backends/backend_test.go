@@ -21,9 +21,9 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
