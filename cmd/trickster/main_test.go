@@ -17,7 +17,6 @@
 package main
 
 import (
-	"sync"
 	"testing"
 )
 
@@ -25,14 +24,4 @@ func TestMain(t *testing.T) {
 	exitFunc = nil
 	main()
 	// Successful test criteria is that the call to main returns without timing out on wg.Wait()
-}
-
-func TestRunConfig(t *testing.T) {
-	wg := &sync.WaitGroup{}
-	runConfig(nil, wg, nil, nil, []string{}, nil)
-
-	runConfig(nil, wg, nil, nil, []string{"-version"}, nil)
-
-	runConfig(nil, wg, nil, nil, []string{"-provider", "rpc", "-origin-url", "http://trickstercache.org"}, nil)
-
 }

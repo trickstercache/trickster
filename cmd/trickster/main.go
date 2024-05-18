@@ -21,7 +21,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/trickstercache/trickster/v2/pkg/runtime"
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
+	"github.com/trickstercache/trickster/v2/pkg/httpserver"
 )
 
 var (
@@ -39,9 +40,9 @@ var wg = &sync.WaitGroup{}
 var exitFunc func() = exitFatal
 
 func main() {
-	runtime.ApplicationName = applicationName
-	runtime.ApplicationVersion = applicationVersion
-	runConfig(nil, wg, nil, nil, os.Args[1:], exitFunc)
+	appinfo.SetAppInfo(applicationName, applicationVersion,
+		applicationBuildTime, applicationGitCommitID)
+	httpserver.Serve(nil, wg, nil, nil, os.Args[1:], exitFunc)
 	wg.Wait()
 }
 

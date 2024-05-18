@@ -19,7 +19,6 @@
 package registration
 
 import (
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/badger"
 	"github.com/trickstercache/trickster/v2/pkg/cache/bbolt"
@@ -27,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/redis"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 )
 

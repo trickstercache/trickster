@@ -25,8 +25,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
