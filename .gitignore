@@ -49,3 +49,6 @@ tags
 
 # any generated test cert/keys that testing did not cleanup due to user abort
 .pem
+
+# for local notes that should not be made part of the project
+notes.txt
