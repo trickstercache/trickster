@@ -2,6 +2,8 @@ module github.com/trickstercache/trickster/v2
 
 go 1.22
 
+toolchain go1.22.3
+
 require (
 	github.com/alicebob/miniredis v2.5.0+incompatible
 	github.com/andybalholm/brotli v1.1.0
