@@ -14,17 +14,25 @@
  * limitations under the License.
  */
 
-package main
+package signal
 
 import (
 	"net/http/httptest"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
+
+func mockServe(oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Logger,
+	oldCaches map[string]cache.Cache, args []string, errorFunc func()) error {
+	return nil
+}
 
 func TestStartHupMonitor(t *testing.T) {
 
@@ -33,16 +41,16 @@ func TestStartHupMonitor(t *testing.T) {
 	w := httptest.NewRecorder()
 	logger := logging.StreamLogger(w, "WARN")
 
-	startHupMonitor(nil, nil, nil, nil, nil)
+	StartHupMonitor(nil, nil, nil, nil, nil, mockServe)
 
 	qch := make(chan bool)
 	conf := config.NewConfig()
 	conf.Resources = &config.Resources{QuitChan: qch}
-	startHupMonitor(conf, nil, logger, nil, nil)
+	StartHupMonitor(conf, nil, logger, nil, nil, mockServe)
 	time.Sleep(time.Millisecond * 100)
 	qch <- true
 
-	startHupMonitor(conf, nil, logger, nil, nil)
+	StartHupMonitor(conf, nil, logger, nil, nil, mockServe)
 	time.Sleep(time.Millisecond * 100)
 	hups <- syscall.SIGHUP
 	time.Sleep(time.Millisecond * 100)
@@ -55,7 +63,7 @@ func TestStartHupMonitor(t *testing.T) {
 	now := time.Unix(1577836800, 0)
 	nowMinus1m := time.Now().Add(-1 * time.Minute)
 	conf.Main.SetStalenessInfo("../../testdata/test.empty.conf", now, nowMinus1m)
-	startHupMonitor(conf, nil, logger, nil, nil)
+	StartHupMonitor(conf, nil, logger, nil, nil, mockServe)
 	time.Sleep(time.Millisecond * 100)
 	hups <- syscall.SIGHUP
 	time.Sleep(time.Millisecond * 100)

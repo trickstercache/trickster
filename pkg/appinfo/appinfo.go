@@ -41,3 +41,7 @@ func SetAppInfo(name, version, buildTime, gitCommitID string) {
 	BuildTime = buildTime
 	GitCommitID = gitCommitID
 }
+
+func SetServer(server string) {
+	Server = server
+}

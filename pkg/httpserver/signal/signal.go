@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package main
+package signal
 
 import (
 	"os"
@@ -33,9 +33,12 @@ func init() {
 	signal.Notify(hups, syscall.SIGHUP)
 }
 
-func startHupMonitor(conf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
-	caches map[string]cache.Cache, args []string) {
-	if conf == nil || conf.Resources == nil {
+type ServeFunc = func(*config.Config, *sync.WaitGroup, *tl.Logger,
+	map[string]cache.Cache, []string, func()) error
+
+func StartHupMonitor(conf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
+	caches map[string]cache.Cache, args []string, f ServeFunc) {
+	if conf == nil || conf.Resources == nil || f == nil {
 		return
 	}
 	// assumes all parameters are instantiated
@@ -46,7 +49,7 @@ func startHupMonitor(conf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
 				conf.Main.ReloaderLock.Lock()
 				if conf.IsStale() {
 					tl.Warn(log, "configuration reload starting now", tl.Pairs{"source": "sighup"})
-					err := runConfig(conf, wg, log, caches, args, nil)
+					err := f(conf, wg, log, caches, args, nil)
 					if err == nil {
 						conf.Main.ReloaderLock.Unlock()
 						return // runConfig will start a new HupMonitor in place of this one

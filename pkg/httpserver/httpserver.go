@@ -26,6 +26,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/cmd/trickster/usage"
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
@@ -34,23 +36,25 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/registration"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	ro "github.com/trickstercache/trickster/v2/pkg/config/reload/options"
+	"github.com/trickstercache/trickster/v2/pkg/httpserver/signal"
 	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registration"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/router"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
-	"github.com/trickstercache/trickster/v2/pkg/runtime"
 )
 
 var cfgLock = &sync.Mutex{}
 var hc healthcheck.HealthChecker
 
+var _ signal.ServeFunc = Serve
+
 func Serve(oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Logger,
 	oldCaches map[string]cache.Cache, args []string, errorFunc func()) error {
 
 	metrics.BuildInfo.WithLabelValues(goruntime.Version(),
-		applicationGitCommitID, applicationVersion).Set(1)
+		appinfo.GitCommitID, appinfo.Version).Set(1)
 
 	cfgLock.Lock()
 	defer cfgLock.Unlock()
@@ -65,11 +69,11 @@ func Serve(oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Logger,
 	}
 
 	// load the config
-	conf, flags, err := config.Load(runtime.ApplicationName, runtime.ApplicationVersion, sargs)
+	conf, flags, err := config.Load(appinfo.Name, appinfo.Version, sargs)
 	if err != nil {
 		fmt.Println("\nERROR: Could not load configuration:", err.Error())
 		if flags != nil && !flags.ValidateConfig {
-			PrintUsage()
+			usage.PrintUsage()
 		}
 		handleStartupIssue("", nil, nil, errorFunc)
 		return err
@@ -77,7 +81,7 @@ func Serve(oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Logger,
 
 	// if it's a -version command, print version and exit
 	if flags.PrintVersion {
-		PrintVersion()
+		usage.PrintVersion()
 		return nil
 	}
 
@@ -105,7 +109,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 	if conf.Main.ServerName == "" {
 		conf.Main.ServerName, _ = os.Hostname()
 	}
-	runtime.Server = conf.Main.ServerName
+	appinfo.SetServer(conf.Main.ServerName)
 
 	if conf.ReloadConfig == nil {
 		conf.ReloadConfig = ro.New()
@@ -152,7 +156,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 	alb.StartALBPools(o, hc.Statuses())
 	routing.RegisterDefaultBackendRoutes(r, o, logger, tracers)
 	routing.RegisterHealthHandler(mr, conf.Main.HealthHandlerPath, hc)
-	applyListenerConfigs(conf, oldConf, r, http.HandlerFunc(rh), mr, logger, tracers, o)
+	applyListenerConfigs(conf, oldConf, r, http.HandlerFunc(rh), mr, logger, tracers, o, wg, errorFunc)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
@@ -160,7 +164,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 	if oldConf != nil && oldConf.Resources != nil {
 		oldConf.Resources.QuitChan <- true // this signals the old hup monitor goroutine to exit
 	}
-	startHupMonitor(conf, wg, logger, caches, args)
+	signal.StartHupMonitor(conf, wg, logger, caches, args, Serve)
 
 	return nil
 }
@@ -261,13 +265,13 @@ func initLogger(c *config.Config) *tl.Logger {
 	logger := tl.New(c)
 	tl.Info(logger, "application loaded from configuration",
 		tl.Pairs{
-			"name":      runtime.ApplicationName,
-			"version":   runtime.ApplicationVersion,
+			"name":      appinfo.Name,
+			"version":   appinfo.Version,
 			"goVersion": goruntime.Version(),
 			"goArch":    goruntime.GOARCH,
 			"goOS":      goruntime.GOOS,
-			"commitID":  applicationGitCommitID,
-			"buildTime": applicationBuildTime,
+			"commitID":  appinfo.GitCommitID,
+			"buildTime": appinfo.BuildTime,
 			"logLevel":  c.Logging.LogLevel,
 			"config":    c.ConfigFilePath(),
 			"pid":       os.Getpid(),
