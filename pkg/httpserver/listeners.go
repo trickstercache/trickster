@@ -14,15 +14,15 @@
  * limitations under the License.
  */
 
-package main
+package httpserver
 
 import (
 	"crypto/tls"
 	"net/http"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
