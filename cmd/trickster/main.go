@@ -35,13 +35,11 @@ const (
 	applicationVersion = "2.0.0-beta2"
 )
 
-var exitFunc func() = exitFatal
-
 func main() {
-	var wg = &sync.WaitGroup{}
+	wg := &sync.WaitGroup{}
 	appinfo.SetAppInfo(applicationName, applicationVersion,
 		applicationBuildTime, applicationGitCommitID)
-	httpserver.Serve(nil, wg, nil, nil, os.Args[1:], exitFunc)
+	httpserver.Serve(nil, wg, nil, nil, os.Args[1:], exitFatal)
 	wg.Wait()
 }
 
