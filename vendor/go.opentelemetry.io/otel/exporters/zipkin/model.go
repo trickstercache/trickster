@@ -1,16 +1,5 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package zipkin // import "go.opentelemetry.io/otel/exporters/zipkin"
 
@@ -35,9 +24,6 @@ import (
 )
 
 const (
-	keyInstrumentationLibraryName    = "otel.library.name"
-	keyInstrumentationLibraryVersion = "otel.library.version"
-
 	keyPeerHostname attribute.Key = "peer.hostname"
 	keyPeerAddress  attribute.Key = "peer.address"
 )
@@ -191,17 +177,19 @@ func attributeToStringPair(kv attribute.KeyValue) (string, string) {
 	}
 }
 
-// extraZipkinTags are those that may be added to every outgoing span.
-var extraZipkinTags = []string{
-	"otel.status_code",
-	keyInstrumentationLibraryName,
-	keyInstrumentationLibraryVersion,
-}
+// extraZipkinTagsLen is a count of tags that may be added to every outgoing span.
+var extraZipkinTagsLen = len([]attribute.Key{
+	semconv.OTelStatusCodeKey,
+	semconv.OTelScopeNameKey,
+	semconv.OTelScopeVersionKey,
+	semconv.OTelLibraryNameKey,
+	semconv.OTelLibraryVersionKey,
+})
 
 func toZipkinTags(data tracesdk.ReadOnlySpan) map[string]string {
 	attr := data.Attributes()
 	resourceAttr := data.Resource().Attributes()
-	m := make(map[string]string, len(attr)+len(resourceAttr)+len(extraZipkinTags))
+	m := make(map[string]string, len(attr)+len(resourceAttr)+extraZipkinTagsLen)
 	for _, kv := range attr {
 		k, v := attributeToStringPair(kv)
 		m[k] = v
@@ -214,7 +202,7 @@ func toZipkinTags(data tracesdk.ReadOnlySpan) map[string]string {
 	if data.Status().Code != codes.Unset {
 		// Zipkin expect to receive uppercase status values
 		// rather than default capitalized ones.
-		m["otel.status_code"] = strings.ToUpper(data.Status().Code.String())
+		m[string(semconv.OTelStatusCodeKey)] = strings.ToUpper(data.Status().Code.String())
 	}
 
 	if data.Status().Code == codes.Error {
@@ -224,9 +212,11 @@ func toZipkinTags(data tracesdk.ReadOnlySpan) map[string]string {
 	}
 
 	if is := data.InstrumentationScope(); is.Name != "" {
-		m[keyInstrumentationLibraryName] = is.Name
+		m[string(semconv.OTelScopeNameKey)] = is.Name
+		m[string(semconv.OTelLibraryNameKey)] = is.Name
 		if is.Version != "" {
-			m[keyInstrumentationLibraryVersion] = is.Version
+			m[string(semconv.OTelScopeVersionKey)] = is.Version
+			m[string(semconv.OTelLibraryVersionKey)] = is.Version
 		}
 	}
 

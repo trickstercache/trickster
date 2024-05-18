@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
 	internal "github.com/influxdata/influxql/internal"
+	"google.golang.org/protobuf/proto"
 )
 
 // DataType represents the primitive data types available in InfluxQL.
@@ -1405,8 +1405,8 @@ func (s *SelectStatement) RewriteFields(m FieldMapper) (*SelectStatement, error)
 //
 // Conditions that can currently be simplified are:
 //
-//     - host =~ /^foo$/ becomes host = 'foo'
-//     - host !~ /^foo$/ becomes host != 'foo'
+//   - host =~ /^foo$/ becomes host = 'foo'
+//   - host !~ /^foo$/ becomes host != 'foo'
 //
 // Note: if the regex contains groups, character classes, repetition or
 // similar, it's likely it won't be rewritten. In order to support rewriting
@@ -2093,6 +2093,7 @@ type ExplainStatement struct {
 	Statement *SelectStatement
 
 	Analyze bool
+	Verbose bool
 }
 
 // String returns a string representation of the explain statement.
@@ -2101,6 +2102,9 @@ func (e *ExplainStatement) String() string {
 	buf.WriteString("EXPLAIN ")
 	if e.Analyze {
 		buf.WriteString("ANALYZE ")
+	}
+	if e.Verbose {
+		buf.WriteString("VERBOSE ")
 	}
 	buf.WriteString(e.Statement.String())
 	return buf.String()
@@ -2578,7 +2582,7 @@ type ShowMeasurementsStatement struct {
 	// Retention policy to query. If blank, use all retention policies (do not use default)
 	RetentionPolicy string
 
-	WildcardDatabase bool
+	WildcardDatabase        bool
 	WildcardRetentionPolicy bool
 
 	// Measurement name or regex.
@@ -3571,7 +3575,19 @@ type NumberLiteral struct {
 }
 
 // String returns a string representation of the literal.
-func (l *NumberLiteral) String() string { return strconv.FormatFloat(l.Val, 'f', 3, 64) }
+func (l *NumberLiteral) String() string {
+	s := strconv.FormatFloat(l.Val, 'f', -1, 64)
+	// If l.Val is a whole number, s will not have a decimal point.
+	// Parsing the resulting string will result in a different AST with an IntegerLiteral
+	// instead of a NumberLiteral. Detect and correct this situation.
+	if strings.IndexByte(s, '.') >= 0 {
+		return s
+	}
+	if s != "NaN" && s != "+Inf" && s != "-Inf" {
+		return s + ".0"
+	}
+	return s
+}
 
 // IntegerLiteral represents an integer literal.
 type IntegerLiteral struct {

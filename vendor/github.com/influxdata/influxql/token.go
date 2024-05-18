@@ -138,6 +138,7 @@ const (
 	USER
 	USERS
 	VALUES
+	VERBOSE
 	WHERE
 	WITH
 	WRITE
@@ -261,6 +262,7 @@ var tokens = [...]string{
 	USER:          "USER",
 	USERS:         "USERS",
 	VALUES:        "VALUES",
+	VERBOSE:       "VERBOSE",
 	WHERE:         "WHERE",
 	WITH:          "WITH",
 	WRITE:         "WRITE",
