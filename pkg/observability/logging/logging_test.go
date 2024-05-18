@@ -58,7 +58,6 @@ func TestNew(t *testing.T) {
 	if logger.level != "info" {
 		t.Errorf("expected %s got %s", "info", logger.level)
 	}
-	logger.Close()
 }
 
 func TestNewLogger_LogFile(t *testing.T) {
