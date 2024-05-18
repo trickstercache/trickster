@@ -20,8 +20,8 @@ package reload
 import (
 	"sync"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 

@@ -25,11 +25,11 @@ import (
 	"sync"
 	"time"
 
-	reload "github.com/trickstercache/trickster/v2/cmd/trickster/config/reload/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	cache "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	reload "github.com/trickstercache/trickster/v2/pkg/config/reload/options"
 	fropt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	lo "github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
