@@ -186,7 +186,7 @@ func (rt *lmRouter) matchByHost(method, host, path string) http.Handler {
 			if prc.PathLen > lp {
 				continue
 			}
-			if strings.HasPrefix(prc.Path, path) {
+			if strings.HasPrefix(path, prc.Path) {
 				r, ok := prc.RoutesByMethod[method]
 				if !ok || r == nil {
 					return methodNotAllowedHandler
