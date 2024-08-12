@@ -9,6 +9,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	meth "github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/router"
 )
 
@@ -27,6 +28,7 @@ func NewRouter() router.Router {
 }
 
 var emptyHost = []string{""}
+var defaultMethods = []string{http.MethodGet, http.MethodHead}
 
 func (rt *rtr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.RequestURI == "*" {
@@ -46,7 +48,14 @@ func (rt *rtr) RegisterRoute(path string, hosts, methods []string,
 		return errors.ErrInvalidPath
 	}
 	if len(methods) == 0 {
-		return errors.ErrInvalidMethod
+		methods = defaultMethods
+	} else {
+		for i, m := range methods {
+			if !meth.IsValidMethod(m) {
+				return errors.ErrInvalidMethod
+			}
+			methods[i] = strings.ToUpper(m)
+		}
 	}
 	if hosts == nil {
 		hosts = emptyHost

@@ -50,15 +50,15 @@ import (
 func RegisterPprofRoutes(routerName string, r router.Router, logger interface{}) {
 	tl.Info(logger,
 		"registering pprof /debug routes", tl.Pairs{"routerName": routerName})
-	r.RegisterRoute("/debug/pprof/", nil, []string{http.MethodGet},
+	r.RegisterRoute("/debug/pprof/", nil, nil,
 		false, http.HandlerFunc(pprof.Index))
-	r.RegisterRoute("/debug/pprof/cmdline", nil, []string{http.MethodGet},
+	r.RegisterRoute("/debug/pprof/cmdline", nil, nil,
 		false, http.HandlerFunc(pprof.Cmdline))
-	r.RegisterRoute("/debug/pprof/profile", nil, []string{http.MethodGet},
+	r.RegisterRoute("/debug/pprof/profile", nil, nil,
 		false, http.HandlerFunc(pprof.Profile))
-	r.RegisterRoute("/debug/pprof/symbol", nil, []string{http.MethodGet},
+	r.RegisterRoute("/debug/pprof/symbol", nil, nil,
 		false, http.HandlerFunc(pprof.Symbol))
-	r.RegisterRoute("/debug/pprof/trace", nil, []string{http.MethodGet},
+	r.RegisterRoute("/debug/pprof/trace", nil, nil,
 		false, http.HandlerFunc(pprof.Trace))
 }
 
@@ -154,8 +154,7 @@ var noCacheBackends = map[string]interface{}{
 // RegisterHealthHandler registers the main health handler
 func RegisterHealthHandler(router router.Router, path string,
 	hc healthcheck.HealthChecker) {
-	router.RegisterRoute(path, []string{""}, []string{http.MethodGet},
-		false, health.StatusHandler(hc))
+	router.RegisterRoute(path, nil, nil, false, health.StatusHandler(hc))
 }
 
 func registerBackendRoutes(r router.Router, metricsRouter router.Router,
@@ -205,9 +204,9 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 				tl.Pairs{"path": hp, "backendName": o.Name,
 					"upstreamPath": o.HealthCheck.Path,
 					"upstreamVerb": o.HealthCheck.Verb})
-			metricsRouter.RegisterRoute(hp, []string{""},
-				[]string{http.MethodGet}, false,
-				http.Handler(middleware.WithResourcesContext(client, o, nil, nil, nil, logger, h)))
+			metricsRouter.RegisterRoute(hp, nil, nil, false,
+				http.Handler(middleware.WithResourcesContext(client, o, nil,
+					nil, nil, logger, h)))
 		}
 	}
 	return nil

@@ -139,10 +139,10 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		(!hasOldMC || (conf.Metrics.ListenAddress != oldConf.Metrics.ListenAddress ||
 			conf.Metrics.ListenPort != oldConf.Metrics.ListenPort)) {
 		lg.DrainAndClose("metricsListener", 0)
-		metricsRouter.RegisterRoute("/metrics", []string{""},
-			[]string{http.MethodGet}, false, metrics.Handler())
-		metricsRouter.RegisterRoute(conf.Main.ConfigHandlerPath, []string{""},
-			[]string{http.MethodGet}, false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
+		metricsRouter.RegisterRoute("/metrics", nil, nil,
+			false, metrics.Handler())
+		metricsRouter.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
+			false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "metrics" {
 			routing.RegisterPprofRoutes("metrics", metricsRouter, log)
 		}
@@ -151,10 +151,10 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
 			conf.Frontend.ConnectionsLimit, nil, metricsRouter, wg, nil, errorFunc, 0, log)
 	} else {
-		metricsRouter.RegisterRoute("/metrics", []string{""},
-			[]string{http.MethodGet}, false, metrics.Handler())
-		metricsRouter.RegisterRoute(conf.Main.ConfigHandlerPath, []string{""},
-			[]string{http.MethodGet}, false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
+		metricsRouter.RegisterRoute("/metrics", nil, nil,
+			false, metrics.Handler())
+		metricsRouter.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
+			false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
 		lg.UpdateRouter("metricsListener", metricsRouter)
 	}
 
@@ -166,13 +166,12 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			conf.ReloadConfig.ListenPort != oldConf.ReloadConfig.ListenPort)) {
 		wg.Add(1)
 		lg.DrainAndClose("reloadListener", time.Millisecond*500)
-
-		rr.RegisterRoute(conf.Main.ConfigHandlerPath, []string{""},
-			[]string{http.MethodGet}, false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
-		rr.RegisterRoute(conf.ReloadConfig.HandlerPath, []string{""},
-			[]string{http.MethodGet}, false, reloadHandler)
-		rr.RegisterRoute(conf.Main.PurgePathHandlerPath, []string{""},
-			[]string{http.MethodGet}, false, http.HandlerFunc(handlers.PurgePathHandlerFunc(conf, &o)))
+		rr.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
+			false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
+		rr.RegisterRoute(conf.ReloadConfig.HandlerPath, nil, nil,
+			false, reloadHandler)
+		rr.RegisterRoute(conf.Main.PurgePathHandlerPath, nil, nil,
+			false, http.HandlerFunc(handlers.PurgePathHandlerFunc(conf, &o)))
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "reload" {
 			routing.RegisterPprofRoutes("reload", rr, log)
 		}
@@ -180,13 +179,12 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			conf.ReloadConfig.ListenAddress, conf.ReloadConfig.ListenPort,
 			conf.Frontend.ConnectionsLimit, nil, rr, wg, nil, errorFunc, 0, log)
 	} else {
-
-		rr.RegisterRoute(conf.Main.ConfigHandlerPath, []string{""},
-			[]string{http.MethodGet}, false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
-		rr.RegisterRoute(conf.ReloadConfig.HandlerPath, []string{""},
-			[]string{http.MethodGet}, false, reloadHandler)
-		rr.RegisterRoute(conf.Main.PurgePathHandlerPath, []string{""},
-			[]string{http.MethodGet}, false, http.HandlerFunc(handlers.PurgePathHandlerFunc(conf, &o)))
+		rr.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
+			false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
+		rr.RegisterRoute(conf.ReloadConfig.HandlerPath, nil, nil,
+			false, reloadHandler)
+		rr.RegisterRoute(conf.Main.PurgePathHandlerPath, nil, nil,
+			false, http.HandlerFunc(handlers.PurgePathHandlerFunc(conf, &o)))
 		lg.UpdateRouter("reloadListener", rr)
 	}
 }
