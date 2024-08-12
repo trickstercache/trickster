@@ -94,7 +94,7 @@ func (l *sqllexer) Run(input string, ch chan *token.Token) {
 
 // lexEOLComment scans a // comment that terminates at the end of the line
 // it assumes you have already identified '//' and are positioned on the first slash
-func lexEOLComment(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func lexEOLComment(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	rs.Pos += 2
 	i := strings.Index(rs.InputLowered[rs.Pos:], "\n")
 	if i == -1 {
@@ -112,7 +112,7 @@ func lexEOLComment(li lex.Lexer, rs *lex.RunState) lex.StateFn {
 }
 
 // lexComment scans a comment. The left comment marker is known to be present.
-func lexComment(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func lexComment(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	rs.Pos += len(leftComment)
 	i := strings.Index(rs.InputLowered[rs.Pos:], rightComment)
 	if i < 0 {
