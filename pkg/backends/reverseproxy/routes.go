@@ -48,7 +48,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 		"/-" + strings.Join(am, "-"): {
 			Path:          "/",
 			HandlerName:   "proxy",
-			Methods:       methods.AllHTTPMethods(),
+			Methods:       am,
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",
 		},

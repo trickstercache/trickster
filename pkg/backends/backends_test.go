@@ -21,12 +21,12 @@ import (
 
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	"github.com/trickstercache/trickster/v2/pkg/router"
+	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 )
 
 func TestBackends(t *testing.T) {
 
-	cl, _ := New("test1", bo.New(), nil, router.NewRouter(), nil)
+	cl, _ := New("test1", bo.New(), nil, lm.NewRouter(), nil)
 	o := Backends{"test1": cl}
 
 	c := o.Get("test1")
@@ -77,11 +77,11 @@ func TestStartHealthChecks(t *testing.T) {
 	// 1: rule / Virtual provider
 	o1 := bo.New()
 	o1.Provider = "rule"
-	c1, _ := New("test1", o1, nil, router.NewRouter(), nil)
+	c1, _ := New("test1", o1, nil, lm.NewRouter(), nil)
 
 	// 2: non-virtual provider with no health check options
 	o2 := bo.New()
-	c2, _ := New("test2", o2, nil, router.NewRouter(), nil)
+	c2, _ := New("test2", o2, nil, lm.NewRouter(), nil)
 
 	b := Backends{"test1": c1}
 	_, err := b.StartHealthChecks(nil)

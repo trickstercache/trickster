@@ -30,13 +30,15 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	ttls "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
+	"github.com/trickstercache/trickster/v2/pkg/router"
+	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 
 var lg = listener.NewListenerGroup()
 
 func applyListenerConfigs(conf, oldConf *config.Config,
-	router, reloadHandler http.Handler, metricsRouter *http.ServeMux,
+	router, reloadHandler http.Handler, metricsRouter router.Router,
 	log *tl.Logger, tracers tracing.Tracers, o backends.Backends,
 	wg *sync.WaitGroup, errorFunc func()) {
 
@@ -137,8 +139,10 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		(!hasOldMC || (conf.Metrics.ListenAddress != oldConf.Metrics.ListenAddress ||
 			conf.Metrics.ListenPort != oldConf.Metrics.ListenPort)) {
 		lg.DrainAndClose("metricsListener", 0)
-		metricsRouter.Handle("/metrics", metrics.Handler())
-		metricsRouter.HandleFunc(conf.Main.ConfigHandlerPath, handlers.ConfigHandleFunc(conf))
+		metricsRouter.RegisterRoute("/metrics", []string{""},
+			[]string{http.MethodGet}, false, metrics.Handler())
+		metricsRouter.RegisterRoute(conf.Main.ConfigHandlerPath, []string{""},
+			[]string{http.MethodGet}, false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "metrics" {
 			routing.RegisterPprofRoutes("metrics", metricsRouter, log)
 		}
@@ -147,12 +151,14 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
 			conf.Frontend.ConnectionsLimit, nil, metricsRouter, wg, nil, errorFunc, 0, log)
 	} else {
-		metricsRouter.Handle("/metrics", metrics.Handler())
-		metricsRouter.HandleFunc(conf.Main.ConfigHandlerPath, handlers.ConfigHandleFunc(conf))
+		metricsRouter.RegisterRoute("/metrics", []string{""},
+			[]string{http.MethodGet}, false, metrics.Handler())
+		metricsRouter.RegisterRoute(conf.Main.ConfigHandlerPath, []string{""},
+			[]string{http.MethodGet}, false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
 		lg.UpdateRouter("metricsListener", metricsRouter)
 	}
 
-	rr := http.NewServeMux() // serveMux router for the Reload port
+	rr := lm.NewRouter() // serveMux router for the Reload port
 
 	// if the Reload HTTP port is configured, then set up the http listener instance
 	if conf.ReloadConfig != nil && conf.ReloadConfig.ListenPort > 0 &&
@@ -160,9 +166,13 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			conf.ReloadConfig.ListenPort != oldConf.ReloadConfig.ListenPort)) {
 		wg.Add(1)
 		lg.DrainAndClose("reloadListener", time.Millisecond*500)
-		rr.HandleFunc(conf.Main.ConfigHandlerPath, handlers.ConfigHandleFunc(conf))
-		rr.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
-		rr.HandleFunc(conf.Main.PurgePathHandlerPath, handlers.PurgePathHandlerFunc(conf, &o))
+
+		rr.RegisterRoute(conf.Main.ConfigHandlerPath, []string{""},
+			[]string{http.MethodGet}, false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
+		rr.RegisterRoute(conf.ReloadConfig.HandlerPath, []string{""},
+			[]string{http.MethodGet}, false, reloadHandler)
+		rr.RegisterRoute(conf.Main.PurgePathHandlerPath, []string{""},
+			[]string{http.MethodGet}, false, http.HandlerFunc(handlers.PurgePathHandlerFunc(conf, &o)))
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "reload" {
 			routing.RegisterPprofRoutes("reload", rr, log)
 		}
@@ -170,9 +180,13 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			conf.ReloadConfig.ListenAddress, conf.ReloadConfig.ListenPort,
 			conf.Frontend.ConnectionsLimit, nil, rr, wg, nil, errorFunc, 0, log)
 	} else {
-		rr.HandleFunc(conf.Main.ConfigHandlerPath, handlers.ConfigHandleFunc(conf))
-		rr.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
-		rr.HandleFunc(conf.Main.PurgePathHandlerPath, handlers.PurgePathHandlerFunc(conf, &o))
+
+		rr.RegisterRoute(conf.Main.ConfigHandlerPath, []string{""},
+			[]string{http.MethodGet}, false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
+		rr.RegisterRoute(conf.ReloadConfig.HandlerPath, []string{""},
+			[]string{http.MethodGet}, false, reloadHandler)
+		rr.RegisterRoute(conf.Main.PurgePathHandlerPath, []string{""},
+			[]string{http.MethodGet}, false, http.HandlerFunc(handlers.PurgePathHandlerFunc(conf, &o)))
 		lg.UpdateRouter("reloadListener", rr)
 	}
 }

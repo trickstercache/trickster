@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/pprof"
-	"sort"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -43,25 +42,32 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	"github.com/trickstercache/trickster/v2/pkg/router"
+	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/util/middleware"
 )
 
 // RegisterPprofRoutes will register the Pprof Debugging endpoints to the provided router
-func RegisterPprofRoutes(routerName string, h *http.ServeMux, logger interface{}) {
+func RegisterPprofRoutes(routerName string, r router.Router, logger interface{}) {
 	tl.Info(logger,
 		"registering pprof /debug routes", tl.Pairs{"routerName": routerName})
-	h.HandleFunc("/debug/pprof/", pprof.Index)
-	h.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	h.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	h.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	h.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	r.RegisterRoute("/debug/pprof/", nil, []string{http.MethodGet},
+		false, http.HandlerFunc(pprof.Index))
+	r.RegisterRoute("/debug/pprof/cmdline", nil, []string{http.MethodGet},
+		false, http.HandlerFunc(pprof.Cmdline))
+	r.RegisterRoute("/debug/pprof/profile", nil, []string{http.MethodGet},
+		false, http.HandlerFunc(pprof.Profile))
+	r.RegisterRoute("/debug/pprof/symbol", nil, []string{http.MethodGet},
+		false, http.HandlerFunc(pprof.Symbol))
+	r.RegisterRoute("/debug/pprof/trace", nil, []string{http.MethodGet},
+		false, http.HandlerFunc(pprof.Trace))
 }
 
 // RegisterProxyRoutes iterates the Trickster Configuration and
 // registers the routes for the configured backends
-func RegisterProxyRoutes(conf *config.Config, r router.Router, metricsRouter *http.ServeMux,
-	caches map[string]cache.Cache, tracers tracing.Tracers,
-	logger interface{}, dryRun bool) (backends.Backends, error) {
+func RegisterProxyRoutes(conf *config.Config, r router.Router,
+	metricsRouter router.Router, caches map[string]cache.Cache,
+	tracers tracing.Tracers, logger interface{},
+	dryRun bool) (backends.Backends, error) {
 
 	// a fake "top-level" backend representing the main frontend, so rules can route
 	// to it via the clients map
@@ -146,13 +152,16 @@ var noCacheBackends = map[string]interface{}{
 }
 
 // RegisterHealthHandler registers the main health handler
-func RegisterHealthHandler(router *http.ServeMux, path string, hc healthcheck.HealthChecker) {
-	router.Handle(path, health.StatusHandler(hc))
+func RegisterHealthHandler(router router.Router, path string,
+	hc healthcheck.HealthChecker) {
+	router.RegisterRoute(path, []string{""}, []string{http.MethodGet},
+		false, health.StatusHandler(hc))
 }
 
-func registerBackendRoutes(r router.Router, metricsRouter *http.ServeMux, conf *config.Config, k string,
-	o *bo.Options, clients backends.Backends, caches map[string]cache.Cache,
-	tracers tracing.Tracers, logger interface{}, dryRun bool) error {
+func registerBackendRoutes(r router.Router, metricsRouter router.Router,
+	conf *config.Config, k string, o *bo.Options, clients backends.Backends,
+	caches map[string]cache.Cache, tracers tracing.Tracers, logger interface{},
+	dryRun bool) error {
 
 	var client backends.Backend
 	var c cache.Cache
@@ -172,7 +181,7 @@ func registerBackendRoutes(r router.Router, metricsRouter *http.ServeMux, conf *
 
 	cf := registration.SupportedProviders()
 	if f, ok := cf[strings.ToLower(o.Provider)]; ok && f != nil {
-		client, err = f(k, o, router.NewRouter(), c, clients, cf)
+		client, err = f(k, o, lm.NewRouter(), c, clients, cf)
 	}
 	if err != nil {
 		return err
@@ -196,7 +205,9 @@ func registerBackendRoutes(r router.Router, metricsRouter *http.ServeMux, conf *
 				tl.Pairs{"path": hp, "backendName": o.Name,
 					"upstreamPath": o.HealthCheck.Path,
 					"upstreamVerb": o.HealthCheck.Verb})
-			metricsRouter.Handle(hp, http.Handler(middleware.WithResourcesContext(client, o, nil, nil, nil, logger, h)))
+			metricsRouter.RegisterRoute(hp, []string{""},
+				[]string{http.MethodGet}, false,
+				http.Handler(middleware.WithResourcesContext(client, o, nil, nil, nil, logger, h)))
 		}
 	}
 	return nil
@@ -207,7 +218,7 @@ func registerBackendRoutes(r router.Router, metricsRouter *http.ServeMux, conf *
 // the path routes to the appropriate handler from the provided handlers map
 func RegisterPathRoutes(r router.Router, handlers map[string]http.Handler,
 	client backends.Backend, o *bo.Options, c cache.Cache,
-	defaultPaths map[string]*po.Options, tracers tracing.Tracers,
+	paths map[string]*po.Options, tracers tracing.Tracers,
 	healthHandlerPath string, logger interface{}) {
 
 	if o == nil {
@@ -247,35 +258,24 @@ func RegisterPathRoutes(r router.Router, handlers map[string]http.Handler,
 		return h
 	}
 
-	// This takes the default paths, named like '/api/v1/query' and morphs the name
-	// into what the router wants, with methods like '/api/v1/query-0000011001', to help
-	// route sorting. the bitmap provides unique names multiple path entries of the same
-	// path but with different methods, without impacting true path sorting
-	pathsWithVerbs := make(map[string]*po.Options)
-	for _, p := range defaultPaths {
-		if len(p.Methods) == 0 {
-			p.Methods = methods.CacheableHTTPMethods()
-		}
-		pathsWithVerbs[p.Path+"-"+fmt.Sprintf("%010b", methods.MethodMask(p.Methods...))] = p
-	}
-
-	// now we will iterate through the configured paths, and overlay them on those default paths.
-	// for rule & alb backend providers, only the default paths are used with no overlay or importable config
+	// now we will iterate through the configured paths, and overlay them on
+	// those default paths. for rule & alb backend providers, only the default
+	// paths are used with no overlay or importable config
 	if !backends.IsVirtual(o.Provider) {
 		for k, p := range o.Paths {
-			if p2, ok := pathsWithVerbs[k]; ok {
+			if p2, ok := paths[k]; ok {
 				p2.Merge(p)
 				continue
 			}
 			p3 := po.New()
 			p3.Merge(p)
-			pathsWithVerbs[k] = p3
+			paths[k] = p3
 		}
 	}
 
-	plist := make([]string, 0, len(pathsWithVerbs))
-	deletes := make([]string, 0, len(pathsWithVerbs))
-	for k, p := range pathsWithVerbs {
+	plist := make([]string, 0, len(paths))
+	deletes := make([]string, 0, len(paths))
+	for k, p := range paths {
 		if h, ok := handlers[p.HandlerName]; ok && h != nil {
 			p.Handler = h
 			plist = append(plist, k)
@@ -286,19 +286,12 @@ func RegisterPathRoutes(r router.Router, handlers map[string]http.Handler,
 		}
 	}
 	for _, p := range deletes {
-		delete(pathsWithVerbs, p)
+		delete(paths, p)
 	}
-
-	sort.Sort(ByLen(plist))
-	for i := len(plist)/2 - 1; i >= 0; i-- {
-		opp := len(plist) - 1 - i
-		plist[i], plist[opp] = plist[opp], plist[i]
-	}
-
 	or := client.Router().(router.Router)
 
 	for _, v := range plist {
-		p := pathsWithVerbs[v]
+		p := paths[v]
 
 		pathPrefix := "/" + o.Name
 		handledPath := pathPrefix + p.Path
@@ -312,42 +305,27 @@ func RegisterPathRoutes(r router.Router, handlers map[string]http.Handler,
 			if p.Methods[0] == "*" {
 				p.Methods = methods.AllHTTPMethods()
 			}
-
-			switch p.MatchType {
-			case matching.PathMatchTypePrefix:
-				// Case where we path match by prefix
-				// Host Header Routing
-				for _, h := range o.Hosts {
-					r.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...).Host(h)
-				}
-				if !o.PathRoutingDisabled {
-					// Path Routing
-					r.PathPrefix(handledPath).Handler(middleware.StripPathPrefix(pathPrefix,
-						decorate(p))).Methods(p.Methods...)
-				}
-				or.PathPrefix(p.Path).Handler(decorate(p)).Methods(p.Methods...)
-			default:
-				// default to exact match
-				// Host Header Routing
-				for _, h := range o.Hosts {
-					r.Handle(p.Path, decorate(p)).Methods(p.Methods...).Host(h)
-				}
-				if !o.PathRoutingDisabled {
-					// Path Routing
-					r.Handle(handledPath, middleware.StripPathPrefix(pathPrefix,
-						decorate(p))).Methods(p.Methods...)
-				}
-				or.Handle(p.Path, decorate(p)).Methods(p.Methods...)
+			if len(o.Hosts) > 0 {
+				r.RegisterRoute(p.Path, o.Hosts, p.Methods,
+					p.MatchType == matching.PathMatchTypePrefix, decorate(p))
 			}
+			if !o.PathRoutingDisabled {
+				r.RegisterRoute(handledPath, nil, p.Methods,
+					p.MatchType == matching.PathMatchTypePrefix,
+					middleware.StripPathPrefix(pathPrefix, decorate(p)))
+			}
+			or.RegisterRoute(p.Path, nil, p.Methods,
+				p.MatchType == matching.PathMatchTypePrefix,
+				decorate(p))
 		}
 	}
 
 	o.Router = or
-	o.Paths = pathsWithVerbs
+	o.Paths = paths
 }
 
 // RegisterDefaultBackendRoutes will iterate the Backends and register the default routes
-func RegisterDefaultBackendRoutes(router router.Router, bknds backends.Backends,
+func RegisterDefaultBackendRoutes(r router.Router, bknds backends.Backends,
 	logger interface{}, tracers tracing.Tracers) {
 
 	decorate := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,
@@ -384,50 +362,23 @@ func RegisterDefaultBackendRoutes(router router.Router, bknds backends.Backends,
 			tl.Info(logger,
 				"registering default backend handler paths", tl.Pairs{"backendName": o.Name})
 
-			// Sort by key length(Path length) to ensure /api/v1/query_range appear before /api/v1 or / path in regex path matching
-			keylist := make([]string, 0, len(o.Paths))
-			for key := range o.Paths {
-				keylist = append(keylist, key)
-			}
-			sort.Sort(ByLen(keylist))
-			for i := len(keylist)/2 - 1; i >= 0; i-- {
-				opp := len(keylist) - 1 - i
-				keylist[i], keylist[opp] = keylist[opp], keylist[i]
-			}
-
-			for _, k := range keylist {
-				var p = o.Paths[k]
+			for _, p := range o.Paths {
 				if p.Handler != nil && len(p.Methods) > 0 {
-					tl.Debug(logger, "registering default backend handler paths",
-						tl.Pairs{"backendName": o.Name, "path": p.Path, "handlerName": p.HandlerName,
-							"matchType": p.MatchType})
-					switch p.MatchType {
-					case matching.PathMatchTypePrefix:
-						// Case where we path match by prefix
-						router.PathPrefix(p.Path).Handler(decorate(o, p, tr, b.Cache(), b)).Methods(p.Methods...)
-					default:
-						// default to exact match
-						router.Handle(p.Path, decorate(o, p, tr, b.Cache(), b)).Methods(p.Methods...)
+					tl.Debug(logger,
+						"registering default backend handler paths",
+						tl.Pairs{"backendName": o.Name, "path": p.Path,
+							"handlerName": p.HandlerName,
+							"matchType":   p.MatchType})
+
+					if p.MatchType == matching.PathMatchTypePrefix {
+						r.RegisterRoute(p.Path, nil, p.Methods,
+							true, decorate(o, p, tr, b.Cache(), b))
 					}
-					router.Handle(p.Path, decorate(o, p, tr, b.Cache(), b)).Methods(p.Methods...)
+					r.RegisterRoute(p.Path, nil, p.Methods,
+						false, decorate(o, p, tr, b.Cache(), b))
 				}
 			}
 		}
 	}
 
-}
-
-// ByLen allows sorting of a string slice by string length
-type ByLen []string
-
-func (a ByLen) Len() int {
-	return len(a)
-}
-
-func (a ByLen) Less(i, j int) bool {
-	return len(a[i]) < len(a[j])
-}
-
-func (a ByLen) Swap(i, j int) {
-	a[i], a[j] = a[j], a[i]
 }

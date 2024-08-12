@@ -41,7 +41,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registration"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
-	"github.com/trickstercache/trickster/v2/pkg/router"
+	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 
@@ -130,10 +130,14 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 	}
 
 	// every config (re)load is a new router
-	r := router.NewRouter()
-	mr := http.NewServeMux()
+	r := lm.NewRouter()
+	mr := lm.NewRouter()
+	mr.SetMatchingScheme(0)
 
-	r.HandleFunc(conf.Main.PingHandlerPath, handlers.PingHandleFunc(conf)).Methods(http.MethodGet)
+	r.RegisterRoute(conf.Main.PingHandlerPath, nil,
+		[]string{http.MethodGet, http.MethodHead}, false,
+		http.HandlerFunc((handlers.PingHandleFunc(conf))))
+
 	var caches = applyCachingConfig(conf, oldConf, logger, oldCaches)
 	rh := handlers.ReloadHandleFunc(Serve, conf, wg, logger, caches, args)
 
@@ -144,7 +148,12 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 		return err
 	}
 
-	r.HandleFunc(conf.Main.PurgeKeyHandlerPath, handlers.PurgeKeyHandleFunc(conf, o)).Methods(http.MethodDelete)
+	if !strings.HasSuffix(conf.Main.PurgeKeyHandlerPath, "/") {
+		conf.Main.PurgeKeyHandlerPath += "/"
+	}
+	r.RegisterRoute(conf.Main.PurgeKeyHandlerPath, nil,
+		[]string{http.MethodDelete}, true,
+		http.HandlerFunc(handlers.PurgeKeyHandleFunc(conf, o)))
 
 	if hc != nil {
 		hc.Shutdown()
@@ -320,8 +329,9 @@ func validateConfig(conf *config.Config) error {
 		caches[k] = nil
 	}
 
-	r := router.NewRouter()
-	mr := http.NewServeMux()
+	r := lm.NewRouter()
+	mr := lm.NewRouter()
+	mr.SetMatchingScheme(0)
 	logger := tl.ConsoleLogger(conf.Logging.LogLevel)
 
 	tracers, err := tr.RegisterAll(conf, logger, true)

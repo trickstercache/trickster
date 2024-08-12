@@ -18,6 +18,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
@@ -25,14 +26,19 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-	"github.com/trickstercache/trickster/v2/pkg/router"
 )
 
 // PurgeHandleFunc purges an object from a cache based on key.
 func PurgeKeyHandleFunc(conf *config.Config, from backends.Backends) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
-		params := router.Vars(req)
-		purgeFrom, purgeKey := params["backend"], params["key"]
+		vals := strings.Replace(req.URL.Path, conf.Main.PurgeKeyHandlerPath, "", 1)
+		parts := strings.Split(vals, "/")
+		if len(parts) != 2 {
+			http.NotFound(w, req)
+			return
+		}
+		purgeFrom := parts[0]
+		purgeKey := parts[1]
 		fromBackend := from.Get(purgeFrom)
 		if fromBackend == nil {
 			w.Header().Set(headers.NameContentType, headers.ValueTextPlain)

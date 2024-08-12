@@ -36,6 +36,8 @@ const (
 	ValueApplicationFlux = "application/vnd.flux"
 	// ValueChunked represents the HTTP Header Value of "chunked"
 	ValueChunked = "chunked"
+	// ValueClose represents the HTTP Header Value of "close"
+	ValueClose = "close"
 	// ValueMaxAge represents the HTTP Header Value of "max-age"
 	ValueMaxAge = "max-age"
 	// ValueMultipartFormData represents the HTTP Header Value of "multipart/form-data"

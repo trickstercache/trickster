@@ -35,7 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
-	"github.com/trickstercache/trickster/v2/pkg/router"
+	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
@@ -224,7 +224,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 			}
 
 			go func() {
-				http.Serve(l, router.NewRouter())
+				http.Serve(l, lm.NewRouter())
 			}()
 
 			if err != nil {
