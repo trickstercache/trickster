@@ -11,26 +11,27 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	meth "github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/router"
+	"github.com/trickstercache/trickster/v2/pkg/router/route"
 )
 
-var _ router.Router = &rtr{}
+var _ router.Router = &lmRouter{}
 
-type rtr struct {
+type lmRouter struct {
 	matchScheme router.MatchingScheme
-	routes      router.HostRouteSetLookup
+	routes      route.HostRouteSetLookup
 }
 
 func NewRouter() router.Router {
-	return &rtr{
+	return &lmRouter{
 		matchScheme: router.DefaultMatchingScheme,
-		routes:      make(router.HostRouteSetLookup),
+		routes:      make(route.HostRouteSetLookup),
 	}
 }
 
 var emptyHost = []string{""}
 var defaultMethods = []string{http.MethodGet, http.MethodHead}
 
-func (rt *rtr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (rt *lmRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.RequestURI == "*" {
 		if r.ProtoAtLeast(1, 1) {
 			w.Header().Set(headers.NameConnection, headers.ValueClose)
@@ -41,7 +42,7 @@ func (rt *rtr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rt.Handler(r).ServeHTTP(w, r)
 }
 
-func (rt *rtr) RegisterRoute(path string, hosts, methods []string,
+func (rt *lmRouter) RegisterRoute(path string, hosts, methods []string,
 	matchPrefix bool, handler http.Handler) error {
 	pl := len(path)
 	if pl == 0 {
@@ -63,21 +64,21 @@ func (rt *rtr) RegisterRoute(path string, hosts, methods []string,
 	for _, h := range hosts {
 		hrc, ok := rt.routes[h]
 		if !ok || hrc == nil {
-			hrc = &router.HostRouteSet{
-				ExactMatchRoutes:     make(router.RouteLookupLookup),
-				PrefixMatchRoutes:    make(router.PrefixRouteSets, 0, 16),
-				PrefixMatchRoutesLkp: make(router.PrefixRouteSetLookup),
+			hrc = &route.HostRouteSet{
+				ExactMatchRoutes:     make(route.RouteLookupLookup),
+				PrefixMatchRoutes:    make(route.PrefixRouteSets, 0, 16),
+				PrefixMatchRoutesLkp: make(route.PrefixRouteSetLookup),
 			}
 			rt.routes[h] = hrc
 		}
 		if !matchPrefix {
 			rl, ok := hrc.ExactMatchRoutes[path]
 			if rl == nil || !ok {
-				rl = make(router.RouteLookup)
+				rl = make(route.RouteLookup)
 				hrc.ExactMatchRoutes[path] = rl
 			}
 			for _, m := range methods {
-				rl[m] = &router.Route{
+				rl[m] = &route.Route{
 					ExactMatch: true,
 					Method:     m,
 					Host:       h,
@@ -86,7 +87,7 @@ func (rt *rtr) RegisterRoute(path string, hosts, methods []string,
 				}
 				if m == http.MethodGet {
 					if _, ok := rl[http.MethodHead]; !ok {
-						rl[http.MethodHead] = &router.Route{
+						rl[http.MethodHead] = &route.Route{
 							ExactMatch: true,
 							Method:     http.MethodHead,
 							Host:       h,
@@ -100,19 +101,19 @@ func (rt *rtr) RegisterRoute(path string, hosts, methods []string,
 		}
 		prc, ok := hrc.PrefixMatchRoutesLkp[path]
 		if prc == nil || !ok {
-			prc = &router.PrefixRouteSet{
+			prc = &route.PrefixRouteSet{
 				Path:           path,
 				PathLen:        pl,
-				RoutesByMethod: make(router.RouteLookup),
+				RoutesByMethod: make(route.RouteLookup),
 			}
 			hrc.PrefixMatchRoutesLkp[path] = prc
 			if len(hrc.PrefixMatchRoutes) == 0 {
-				hrc.PrefixMatchRoutes = make(router.PrefixRouteSets, 0, 16)
+				hrc.PrefixMatchRoutes = make(route.PrefixRouteSets, 0, 16)
 			}
 			hrc.PrefixMatchRoutes = append(hrc.PrefixMatchRoutes, prc)
 		}
 		for _, m := range methods {
-			prc.RoutesByMethod[m] = &router.Route{
+			prc.RoutesByMethod[m] = &route.Route{
 				ExactMatch: true,
 				Method:     m,
 				Host:       h,
@@ -121,7 +122,7 @@ func (rt *rtr) RegisterRoute(path string, hosts, methods []string,
 			}
 			if m == http.MethodGet {
 				if _, ok := prc.RoutesByMethod[http.MethodHead]; !ok {
-					prc.RoutesByMethod[http.MethodHead] = &router.Route{
+					prc.RoutesByMethod[http.MethodHead] = &route.Route{
 						ExactMatch: true,
 						Method:     http.MethodHead,
 						Host:       h,
@@ -137,7 +138,7 @@ func (rt *rtr) RegisterRoute(path string, hosts, methods []string,
 }
 
 // this sorts the prefix-match paths longest to shortest
-func (rt *rtr) sort() {
+func (rt *lmRouter) sort() {
 	for _, hrc := range rt.routes {
 		if len(hrc.PrefixMatchRoutes) == 0 {
 			continue
@@ -145,11 +146,11 @@ func (rt *rtr) sort() {
 		prs := prefixRouteSets(hrc.PrefixMatchRoutes)
 		sort.Sort(prs)
 		slices.Reverse(prs)
-		hrc.PrefixMatchRoutes = router.PrefixRouteSets(prs)
+		hrc.PrefixMatchRoutes = route.PrefixRouteSets(prs)
 	}
 }
 
-func (rt *rtr) Handler(r *http.Request) http.Handler {
+func (rt *lmRouter) Handler(r *http.Request) http.Handler {
 	if rt.matchScheme&router.MatchHostname == router.MatchHostname {
 		host := r.Host
 		i := strings.Index(host, ":")
@@ -168,7 +169,7 @@ func (rt *rtr) Handler(r *http.Request) http.Handler {
 	return notFoundHandler
 }
 
-func (rt *rtr) matchByHost(method, host, path string) http.Handler {
+func (rt *lmRouter) matchByHost(method, host, path string) http.Handler {
 	if hrc, ok := rt.routes[host]; ok && hrc != nil {
 		if rs, ok := hrc.ExactMatchRoutes[path]; ok && rs != nil {
 			r, ok := rs[method]
@@ -197,7 +198,7 @@ func (rt *rtr) matchByHost(method, host, path string) http.Handler {
 	return nil
 }
 
-func (rt *rtr) SetMatchingScheme(s router.MatchingScheme) {
+func (rt *lmRouter) SetMatchingScheme(s router.MatchingScheme) {
 	rt.matchScheme = s
 }
 
@@ -208,7 +209,9 @@ func MethodNotAllowed(w http.ResponseWriter, r *http.Request) {
 var methodNotAllowedHandler = http.HandlerFunc(MethodNotAllowed)
 var notFoundHandler = http.HandlerFunc(http.NotFound)
 
-type prefixRouteSets router.PrefixRouteSets
+// prefixRouteSets allows the route.PrefixRouteSets to be sorted by path from
+// longest-to-shortest using sort.Interface
+type prefixRouteSets route.PrefixRouteSets
 
 func (prs prefixRouteSets) Len() int {
 	return len(prs)
