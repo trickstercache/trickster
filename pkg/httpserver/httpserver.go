@@ -132,7 +132,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 	// every config (re)load is a new router
 	r := lm.NewRouter()
 	mr := lm.NewRouter()
-	mr.SetMatchingScheme(0)
+	mr.SetMatchingScheme(0) // metrics router is exact-match only
 
 	r.RegisterRoute(conf.Main.PingHandlerPath, nil,
 		[]string{http.MethodGet, http.MethodHead}, false,
@@ -331,7 +331,7 @@ func validateConfig(conf *config.Config) error {
 
 	r := lm.NewRouter()
 	mr := lm.NewRouter()
-	mr.SetMatchingScheme(0)
+	mr.SetMatchingScheme(0) // metrics router is exact-match only
 	logger := tl.ConsoleLogger(conf.Logging.LogLevel)
 
 	tracers, err := tr.RegisterAll(conf, logger, true)
