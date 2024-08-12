@@ -8,7 +8,7 @@ type Router interface {
 	// ServeHTTP services the provided HTTP Request and write the Response
 	ServeHTTP(http.ResponseWriter, *http.Request)
 	// RegisterRoute registers a handler for the provided path/host/method(s)
-	RegisterRoute(path string, hosts, methods []string, isWildcard bool,
+	RegisterRoute(path string, hosts, methods []string, matchPrefix bool,
 		handler http.Handler) error
 	// Handler returns the handler matching the method/host/path in the Request
 	Handler(*http.Request) http.Handler

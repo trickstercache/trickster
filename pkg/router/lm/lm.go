@@ -40,7 +40,7 @@ func (rt *rtr) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rt *rtr) RegisterRoute(path string, hosts, methods []string,
-	isWildcard bool, handler http.Handler) error {
+	matchPrefix bool, handler http.Handler) error {
 	pl := len(path)
 	if pl == 0 {
 		return errors.ErrInvalidPath
@@ -61,7 +61,7 @@ func (rt *rtr) RegisterRoute(path string, hosts, methods []string,
 			}
 			rt.routes[h] = hrc
 		}
-		if !isWildcard {
+		if !matchPrefix {
 			rl, ok := hrc.ExactMatchRoutes[path]
 			if rl == nil || !ok {
 				rl = make(router.RouteLookup)
@@ -127,7 +127,7 @@ func (rt *rtr) RegisterRoute(path string, hosts, methods []string,
 	return nil
 }
 
-// this sorts the prefix-match paths longest to shorted
+// this sorts the prefix-match paths longest to shortest
 func (rt *rtr) sort() {
 	for _, hrc := range rt.routes {
 		if len(hrc.PrefixMatchRoutes) == 0 {
