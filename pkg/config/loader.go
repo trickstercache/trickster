@@ -22,6 +22,7 @@ import (
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
+	"github.com/trickstercache/trickster/v2/pkg/errors"
 )
 
 // Load returns the Application Configuration, starting with a default config,
@@ -71,7 +72,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	}
 
 	if len(c.Backends) == 0 {
-		return nil, flags, ErrNoValidBackends
+		return nil, flags, errors.ErrNoValidBackends
 	}
 
 	ncl, err := negative.ConfigLookup(c.NegativeCacheConfigs).Validate()
