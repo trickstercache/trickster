@@ -19,7 +19,6 @@
 // support for specific SELECT statements
 //
 // NOTE: While Trickster does not proved a true, full AST; we would love to and welcome all contributions
-//
 package sql
 
 import (
@@ -36,11 +35,6 @@ var ErrUnsupportedVerb = errors.New("unsupported verb")
 
 // ErrUnsupportedClause represents an error of type "unsupported clause"
 var ErrUnsupportedClause = errors.New("unsupported clause")
-
-// // Parser defines the SQL Parser Interface
-// type Parser interface {
-// 	Run(parsing.Parser, string, context.Context) error
-// }
 
 // Parser represents the base SQLParser struct that conforms to the Parser interface
 type Parser struct {
