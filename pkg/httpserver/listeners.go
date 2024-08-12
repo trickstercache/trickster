@@ -158,7 +158,8 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		lg.UpdateRouter("metricsListener", metricsRouter)
 	}
 
-	rr := lm.NewRouter() // serveMux router for the Reload port
+	rr := lm.NewRouter()    // router for the Reload port
+	rr.SetMatchingScheme(0) // reload router is exact-match only
 
 	// if the Reload HTTP port is configured, then set up the http listener instance
 	if conf.ReloadConfig != nil && conf.ReloadConfig.ListenPort > 0 &&
