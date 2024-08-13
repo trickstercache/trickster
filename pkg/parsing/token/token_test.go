@@ -111,7 +111,7 @@ func TestCompress(t *testing.T) {
 	tk := Tokens{}
 	tk = tk.Compress()
 	if len(tk) != 0 {
-		t.Error("expedted enmpty tokens slice")
+		t.Error("expected empty tokens slice")
 	}
 
 	tk = Tokens{
@@ -120,7 +120,7 @@ func TestCompress(t *testing.T) {
 	}
 	tk = tk.Compress()
 	if len(tk) != 0 {
-		t.Error("expedted enmpty tokens slice")
+		t.Error("expected empty tokens slice")
 	}
 
 	tk = Tokens{
@@ -130,6 +130,6 @@ func TestCompress(t *testing.T) {
 	}
 	tk = tk.Compress()
 	if len(tk) != 1 {
-		t.Error("expedted 1 element in tokens slice")
+		t.Error("expected 1 element in tokens slice")
 	}
 }

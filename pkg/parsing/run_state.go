@@ -145,7 +145,7 @@ func (rs *RunState) IsPeeked() bool {
 	return rs.next != nil
 }
 
-// Next retrieves the next location by peeking and then advancin the state
+// Next retrieves the next location by peeking and then advancing the state
 func (rs *RunState) Next() *token.Token {
 	rs.Peek()
 	rs.prev = rs.curr
