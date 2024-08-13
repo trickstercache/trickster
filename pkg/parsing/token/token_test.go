@@ -106,3 +106,30 @@ func TestValues(t *testing.T) {
 		t.Error("values mismatch")
 	}
 }
+
+func TestCompress(t *testing.T) {
+	tk := Tokens{}
+	tk = tk.Compress()
+	if len(tk) != 0 {
+		t.Error("expedted enmpty tokens slice")
+	}
+
+	tk = Tokens{
+		nil,
+		nil,
+	}
+	tk = tk.Compress()
+	if len(tk) != 0 {
+		t.Error("expedted enmpty tokens slice")
+	}
+
+	tk = Tokens{
+		nil,
+		&Token{},
+		nil,
+	}
+	tk = tk.Compress()
+	if len(tk) != 1 {
+		t.Error("expedted 1 element in tokens slice")
+	}
+}

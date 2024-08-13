@@ -105,3 +105,18 @@ func (t Tokens) Values() []string {
 	}
 	return s
 }
+
+// Compress returns a new Tokens slice with nil values removed
+func (t Tokens) Compress() Tokens {
+	if len(t) == 0 {
+		return t
+	}
+	out := make(Tokens, 0, len(t))
+	for _, tk := range t {
+		if tk == nil {
+			continue
+		}
+		out = append(out, tk)
+	}
+	return out
+}

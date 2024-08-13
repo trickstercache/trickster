@@ -117,8 +117,8 @@ func (sp *Parser) Run(ctx context.Context, p parsing.Parser,
 	if lexer == nil {
 		return nil, parsing.ErrNoLexer
 	}
-	rs := parsing.NewRunState(ctx)
-	go lexer.Run(query, rs.Tokens())
+	tokens := lexer.Run(query)
+	rs := parsing.NewRunState(ctx, tokens)
 	for state := sp.options.EntryFunc(); state != nil; {
 		state = state(p, sp, rs)
 	}

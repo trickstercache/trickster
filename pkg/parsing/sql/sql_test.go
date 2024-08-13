@@ -76,13 +76,13 @@ func TestParser(t *testing.T) {
 
 	_, err = sp.Run(context.Background(), sp, tq01+"\n UNION something else")
 	if err != parsing.ErrUnsupportedKeyword {
-		t.Error("expected error for UnsupportedKeyword", err)
+		t.Error("expected error for UnsupportedKeyword got", err)
 	}
 
 }
 
 func TestUnsupportedVerb(t *testing.T) {
-	rs := parsing.NewRunState(context.Background())
+	rs := parsing.NewRunState(context.Background(), nil)
 	UnsupportedVerb(nil, nil, rs)
 	if rs.Error() != ErrUnsupportedVerb {
 		t.Error("expected err for UnsupportedVerb")
@@ -90,7 +90,7 @@ func TestUnsupportedVerb(t *testing.T) {
 }
 
 func TestUnsupportedClause(t *testing.T) {
-	rs := parsing.NewRunState(context.Background())
+	rs := parsing.NewRunState(context.Background(), nil)
 	UnsupportedClause(nil, nil, rs)
 	if rs.Error() != ErrUnsupportedClause {
 		t.Error("expected err for UnsupportedClause")
@@ -98,7 +98,7 @@ func TestUnsupportedClause(t *testing.T) {
 }
 
 func TestFindVerbUnsupportedParser(t *testing.T) {
-	rs := parsing.NewRunState(context.Background())
+	rs := parsing.NewRunState(context.Background(), nil)
 	FindVerb(nil, nil, rs)
 	if rs.Error() != parsing.ErrUnsupportedParser {
 		t.Error("expected err for UnsupportedParser")

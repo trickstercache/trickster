@@ -26,7 +26,7 @@ import (
 )
 
 func TestSelectTokens(t *testing.T) {
-	rs := parsing.NewRunState(context.Background())
+	rs := parsing.NewRunState(context.Background(), nil)
 	ts := SelectTokens(rs)
 	if ts != nil {
 		t.Error("expected nil tokens list")
@@ -82,10 +82,8 @@ func TestHasLimitClause(t *testing.T) {
 
 func TestGetFieldList(t *testing.T) {
 	p := New(nil).(*Parser)
-	rs := parsing.NewRunState(context.Background())
-	ch := rs.Tokens()
-	ch <- &token.Token{Typ: token.Space, Pos: 0, Val: " "}
-	rs.Next()
+	tokens := token.Tokens{&token.Token{Typ: token.Space, Pos: 0, Val: " "}}
+	rs := parsing.NewRunState(context.Background(), tokens)
 	p.GetFieldList(rs, token.Bool, parsing.ErrUnexpectedToken, nil, nil, nil, false)
 	if rs.Error() != parsing.ErrUnexpectedToken {
 		t.Error("expected ErrUnexpectedToken")
@@ -93,7 +91,7 @@ func TestGetFieldList(t *testing.T) {
 }
 
 func TestAtSelect(t *testing.T) {
-	rs := parsing.NewRunState(context.Background())
+	rs := parsing.NewRunState(context.Background(), nil)
 	f := AtSelect(nil, nil, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")
@@ -103,9 +101,8 @@ func TestAtSelect(t *testing.T) {
 	}
 
 	p := New(nil)
-	rs = parsing.NewRunState(context.Background())
-	ch := rs.Tokens()
-	ch <- &token.Token{Typ: token.Space, Pos: 0, Val: " "}
+	tokens := token.Tokens{&token.Token{Typ: token.Space, Pos: 0, Val: " "}}
+	rs = parsing.NewRunState(context.Background(), tokens)
 	rs.Next()
 	f = AtSelect(p, p, rs)
 	if f != nil {
@@ -115,11 +112,13 @@ func TestAtSelect(t *testing.T) {
 		t.Error("expected ErrNotAtSelect")
 	}
 
-	rs = parsing.NewRunState(context.Background())
-	ch = rs.Tokens()
-	ch <- &token.Token{Typ: lsql.TokenSelect, Pos: 0, Val: "SELECT"}
-	ch <- &token.Token{Typ: token.Identifier, Pos: 7, Val: "x"}
-	ch <- &token.Token{Typ: token.EOF, Pos: 8, Val: ""}
+	tokens = token.Tokens{
+		&token.Token{Typ: lsql.TokenSelect, Pos: 0, Val: "SELECT"},
+		&token.Token{Typ: token.Identifier, Pos: 7, Val: "x"},
+		&token.Token{Typ: token.EOF, Pos: 8, Val: ""},
+	}
+
+	rs = parsing.NewRunState(context.Background(), tokens)
 	rs.Next()
 	f = AtSelect(p, p, rs)
 	if f != nil {
@@ -131,7 +130,7 @@ func TestAtSelect(t *testing.T) {
 }
 
 func TestAtFrom(t *testing.T) {
-	rs := parsing.NewRunState(context.Background())
+	rs := parsing.NewRunState(context.Background(), nil)
 	f := AtFrom(nil, nil, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")
@@ -142,7 +141,7 @@ func TestAtFrom(t *testing.T) {
 }
 
 func TestAtWhere(t *testing.T) {
-	rs := parsing.NewRunState(context.Background())
+	rs := parsing.NewRunState(context.Background(), nil)
 	f := AtWhere(nil, nil, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")
@@ -153,7 +152,7 @@ func TestAtWhere(t *testing.T) {
 }
 
 func TestAtGroupBy(t *testing.T) {
-	rs := parsing.NewRunState(context.Background())
+	rs := parsing.NewRunState(context.Background(), nil)
 	f := AtGroupBy(nil, nil, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")
@@ -163,9 +162,10 @@ func TestAtGroupBy(t *testing.T) {
 	}
 
 	p := New(nil)
-	rs = parsing.NewRunState(context.Background())
-	ch := rs.Tokens()
-	ch <- &token.Token{Typ: token.Space, Pos: 0, Val: " "}
+	tokens := token.Tokens{
+		&token.Token{Typ: token.Space, Pos: 0, Val: " "},
+	}
+	rs = parsing.NewRunState(context.Background(), tokens)
 	rs.Next()
 	f = AtGroupBy(p, p, rs)
 	if f != nil {
@@ -177,7 +177,7 @@ func TestAtGroupBy(t *testing.T) {
 }
 
 func TestAtHaving(t *testing.T) {
-	rs := parsing.NewRunState(context.Background())
+	rs := parsing.NewRunState(context.Background(), nil)
 	f := AtHaving(nil, nil, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")
@@ -188,7 +188,7 @@ func TestAtHaving(t *testing.T) {
 }
 
 func TestAtOrderBy(t *testing.T) {
-	rs := parsing.NewRunState(context.Background())
+	rs := parsing.NewRunState(context.Background(), nil)
 	f := AtOrderBy(nil, nil, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")
@@ -199,7 +199,7 @@ func TestAtOrderBy(t *testing.T) {
 }
 
 func TestAtLimit(t *testing.T) {
-	rs := parsing.NewRunState(context.Background())
+	rs := parsing.NewRunState(context.Background(), nil)
 	f := AtLimit(nil, nil, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")
@@ -210,7 +210,7 @@ func TestAtLimit(t *testing.T) {
 }
 
 func TestAtIntoOutfile(t *testing.T) {
-	rs := parsing.NewRunState(context.Background())
+	rs := parsing.NewRunState(context.Background(), nil)
 	f := AtIntoOutfile(nil, nil, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")
@@ -221,7 +221,7 @@ func TestAtIntoOutfile(t *testing.T) {
 }
 
 func TestAtUnion(t *testing.T) {
-	rs := parsing.NewRunState(context.Background())
+	rs := parsing.NewRunState(context.Background(), nil)
 	f := AtUnion(nil, nil, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")

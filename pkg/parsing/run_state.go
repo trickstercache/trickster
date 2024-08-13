@@ -24,21 +24,25 @@ import (
 
 // RunState maintains the state of a unique parsing run
 type RunState struct {
-	tokens                   chan *token.Token
+	tokens                   token.Tokens
 	prev, curr, next, lastkw *token.Token
 	err                      error
 	ctx                      context.Context
 	nextOverride             StateFn
-	isPeeked                 bool
 	results                  map[string]interface{}
+	pos                      int
+	cnt                      int
 }
 
 // NewRunState returns a new RunState object for the parser
-func NewRunState(ctx context.Context) *RunState {
+func NewRunState(ctx context.Context, tokens token.Tokens) *RunState {
+	t := tokens.Compress()
 	rs := &RunState{
-		tokens:  make(chan *token.Token, 8),
 		ctx:     ctx,
 		results: make(map[string]interface{}),
+		tokens:  t,
+		cnt:     len(t),
+		pos:     -1,
 	}
 	return rs
 }
@@ -129,9 +133,10 @@ func (rs *RunState) Peek() *token.Token {
 	if rs.curr != nil && rs.curr.Typ == token.EOF {
 		return rs.curr
 	}
-	// this filters nil tokens so the parser is guaranteed to never encounter them
-	for ; rs.next == nil; rs.next = <-rs.tokens {
+	if rs.pos+1 >= rs.cnt {
+		return &token.Token{Typ: token.EOF, Pos: rs.pos}
 	}
+	rs.next = rs.tokens[rs.pos+1]
 	return rs.next
 }
 
@@ -140,17 +145,12 @@ func (rs *RunState) IsPeeked() bool {
 	return rs.next != nil
 }
 
-// Next retrieves the next location by peeking and then advancing
-// the state
+// Next retrieves the next location by peeking and then advancin the state
 func (rs *RunState) Next() *token.Token {
 	rs.Peek()
 	rs.prev = rs.curr
 	rs.curr = rs.next
+	rs.pos += 1
 	rs.next = nil
 	return rs.curr
-}
-
-// Tokens returns the Tokens Channel for the Run
-func (rs *RunState) Tokens() chan *token.Token {
-	return rs.tokens
 }
