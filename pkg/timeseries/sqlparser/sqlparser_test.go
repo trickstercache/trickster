@@ -65,9 +65,10 @@ func TestParseComment(t *testing.T) {
 	trq := &timeseries.TimeRangeQuery{Statement: "trickster"}
 	ro := &timeseries.RequestOptions{TimeFormat: 42}
 	rc := NewRunContext(trq, ro)
-	rs := parsing.NewRunState(rc)
-	ch := rs.Tokens()
-	ch <- &token.Token{Typ: lsql.TokenComment, Val: ":)"}
+	tk := token.Tokens{
+		&token.Token{Typ: lsql.TokenComment, Val: ":)"},
+	}
+	rs := parsing.NewRunState(rc, tk)
 	rs.Next()
 	ParseFVComment(nil, nil, rs)
 	if rs.Current().Typ != lsql.TokenComment {
