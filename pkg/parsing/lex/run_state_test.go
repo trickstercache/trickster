@@ -26,7 +26,7 @@ var testRunState = &RunState{
 	Input:        "Test",
 	InputLowered: "test",
 	InputWidth:   4,
-	Tokens:       make(chan *token.Token, 8),
+	Tokens:       make(token.Tokens, 0, 1),
 }
 
 func TestRunState(t *testing.T) {
@@ -88,7 +88,7 @@ func TestScanNumber(t *testing.T) {
 		Input:        "1234",
 		InputLowered: "1234",
 		InputWidth:   4,
-		Tokens:       make(chan *token.Token, 8),
+		Tokens:       make(token.Tokens, 0, 1),
 	}
 	b := tr.ScanNumber()
 	if !b {
@@ -167,7 +167,7 @@ func TestAtTeminator(t *testing.T) {
 		Input:        " ",
 		InputLowered: " ",
 		InputWidth:   1,
-		Tokens:       make(chan *token.Token, 8),
+		Tokens:       make(token.Tokens, 0, 1),
 	}
 	if !tr.AtTerminator() {
 		t.Error("expected true")
@@ -179,7 +179,7 @@ func TestErrorf(t *testing.T) {
 		Input:        " ",
 		InputLowered: " ",
 		InputWidth:   1,
-		Tokens:       make(chan *token.Token, 8),
+		Tokens:       make(token.Tokens, 0, 1),
 	}
 	tk := tr.Errorf("%s", "fail")
 	if tk.Val != "fail" {

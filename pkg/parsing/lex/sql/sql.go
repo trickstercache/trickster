@@ -77,17 +77,18 @@ func BaseKey() map[string]token.Typ {
 
 // Run runs the lexer against the provided string and returns tokens on the
 // provided channel. Run will end when the state is EOF or Error.
-func (l *sqllexer) Run(input string, ch chan *token.Token) {
+func (l *sqllexer) Run(input string) token.Tokens {
+	li := len(input)
 	rc := &lex.RunState{
 		Input:        input,
 		InputLowered: strings.ToLower(input),
-		InputWidth:   len(input),
-		Tokens:       ch,
+		InputWidth:   li,
+		Tokens:       make(token.Tokens, 0, li/4), // estimated # of tokens
 	}
 	for state := lexText; state != nil; {
 		state = state(l, rc)
 	}
-	close(ch)
+	return rc.Tokens
 }
 
 // state functions

@@ -38,10 +38,9 @@ const (
 
 // Token represents a token or text string returned from the scanner.
 type Token struct {
-	Typ  Typ       // The type of this Token.
-	Pos  int       // The starting position, in bytes, of this Token in the input string.
-	Val  string    // The value of this Token.
-	dict TypLookup // to get the token Typ as a string for String() calls
+	Typ Typ    // The type of this Token.
+	Pos int    // The starting position, in bytes, of this Token in the input string.
+	Val string // The value of this Token.
 }
 
 // Lookup represents a map of Strings to Token Reference
