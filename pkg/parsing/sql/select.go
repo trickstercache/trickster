@@ -111,7 +111,7 @@ func GetField(
 func (p *Parser) GetFieldList(rs *parsing.RunState, allowedToken token.Typ, disAllowedTokenErr error,
 	isDelim, isBreakable, isContinuable token.TypeCheckFunc,
 	isolateDelimiter bool) []token.Tokens {
-	if rs.Current().Typ != allowedToken {
+	if rs.Current() == nil || rs.Current().Typ != allowedToken {
 		rs.WithError(disAllowedTokenErr)
 		return nil
 	}
@@ -158,7 +158,7 @@ func DefaultIsBreakable(t token.Typ) bool {
 
 // IsWhereBreakable returns true if the token is a loop-breakable token (EOF or Error), or
 // a primary keyword excluding BETWEEN.
-//  These indicate the parser should break any loops and start a new token collection
+// These indicate the parser should break any loops and start a new token collection
 func IsWhereBreakable(t token.Typ) bool {
 	return lsql.IsNonVerbPrimaryKeyword(t) && t != lsql.TokenBetween
 }
