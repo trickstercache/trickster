@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-// Package jaeger provides a Jager Tracer
-package jaeger
+// Package otlp provides a OTLP Tracer
+package otlp
 
 import (
 	"testing"
@@ -33,9 +33,7 @@ func TestNew(t *testing.T) {
 
 	opt := options.New()
 	opt.Tags = map[string]string{"test": "test"}
-	opt.CollectorURL = "1.2.3.4:8000"
-	opt.CollectorUser = "abc"
-	opt.CollectorPass = "123"
+	opt.Endpoint = "1.2.3.4:8000"
 
 	_, err = New(opt)
 	if err != nil {
@@ -49,12 +47,6 @@ func TestNew(t *testing.T) {
 	}
 
 	opt.SampleRate = 0.5
-	_, err = New(opt)
-	if err != nil {
-		t.Error(err)
-	}
-
-	opt.JaegerOptions.EndpointType = "agent"
 	_, err = New(opt)
 	if err != nil {
 		t.Error(err)

@@ -14,23 +14,25 @@
  * limitations under the License.
  */
 
-// Package jaeger provides a Jaeger Tracer
-package jaeger
+// Package otlp provides a OTLP Tracer
+package otlp
 
 import (
+	"context"
 	"strings"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	errs "github.com/trickstercache/trickster/v2/pkg/observability/tracing/errors"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/jaeger"
+	otlp "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
-// New returns a new Jaeger Tracer based on the provided options
+// New returns a new OTLP Tracer based on the provided options
 func New(options *options.Options) (*tracing.Tracer, error) {
 
 	var tp trace.TracerProvider
@@ -59,29 +61,35 @@ func New(options *options.Options) (*tracing.Tracer, error) {
 		}
 	}
 
-	var eo jaeger.EndpointOption
-	if options.JaegerOptions != nil {
-		if options.JaegerOptions.EndpointType == "agent" {
-			parts := strings.Split(options.CollectorURL, ":")
-			if len(parts) != 2 {
-				return nil, errs.ErrInvalidEndpointURL
-			}
-			eo = jaeger.WithAgentEndpoint(jaeger.WithAgentHost(parts[0]), jaeger.WithAgentPort(parts[1]))
+	opts := make([]otlp.Option, 0, 10)
+	// this determines if the collector endpoint is a path, uri or url
+	// and calls the appropriate Options decorator
+	if strings.HasPrefix(options.Endpoint, "/") {
+		opts = append(opts, otlp.WithURLPath(options.Endpoint))
+	} else if strings.HasPrefix(options.Endpoint, "http") {
+		opts = append(opts, otlp.WithEndpointURL(options.Endpoint))
+		if !strings.HasPrefix(options.Endpoint, "https") {
+			opts = append(opts, otlp.WithInsecure())
 		}
-	}
-	if eo == nil { // by default assume a "collector" config
-		ceo := make([]jaeger.CollectorEndpointOption, 1, 3)
-		ceo[0] = jaeger.WithEndpoint(options.CollectorURL)
-		if options.CollectorUser != "" {
-			ceo = append(ceo, jaeger.WithUsername(options.CollectorUser))
-		}
-		if options.CollectorPass != "" {
-			ceo = append(ceo, jaeger.WithPassword(options.CollectorPass))
-		}
-		eo = jaeger.WithCollectorEndpoint(ceo...)
+	} else {
+		otlp.WithEndpoint(options.Endpoint)
 	}
 
-	exporter, err := jaeger.New(eo)
+	if options.TimeoutMS > 0 {
+		opts = append(opts, otlp.WithTimeout(
+			time.Millisecond*time.Duration(int64(options.TimeoutMS))),
+		)
+	}
+
+	if len(options.Headers) > 0 {
+		opts = append(opts, otlp.WithHeaders(options.Headers))
+	}
+
+	if !options.DisableCompression {
+		opts = append(opts, otlp.WithCompression(otlp.GzipCompression))
+	}
+
+	exporter, err := otlp.New(context.Background(), opts...)
 	if err != nil {
 		return nil, err
 	}

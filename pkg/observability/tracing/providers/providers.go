@@ -26,8 +26,8 @@ const (
 	None = Provider(iota)
 	// Stdout indicates the stdout tracing
 	Stdout
-	// Jaeger indicates Jaeger tracing
-	Jaeger
+	// OTLP indicates OTLP tracing
+	OTLP
 	// Zipkin indicates Zipkin tracing
 	Zipkin
 )
@@ -36,7 +36,7 @@ const (
 var Names = map[string]Provider{
 	"none":   None,
 	"stdout": Stdout,
-	"jaeger": Jaeger,
+	"otlp":   OTLP,
 	"zipkin": Zipkin,
 }
 
