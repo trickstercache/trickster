@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/config"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -34,7 +34,7 @@ import (
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
 
-var testLogger = tl.ConsoleLogger("error")
+var testLogger = logging.ConsoleLogger("error")
 
 func TestDoProxy(t *testing.T) {
 

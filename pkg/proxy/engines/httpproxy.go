@@ -28,7 +28,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
@@ -194,7 +194,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		othttptrace.Inject(ctx, r)
 	}
 
-	ctx, doSpan := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
+	_, doSpan := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
 	if doSpan != nil {
 		defer doSpan.End()
 	}
@@ -204,8 +204,8 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	resp, err := o.HTTPClient.Do(r)
 	if err != nil {
-		tl.Error(rsc.Logger,
-			"error downloading url", tl.Pairs{"url": r.URL.String(), "detail": err.Error()})
+		rsc.Logger.Error("error downloading url",
+			logging.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		// if there is an err and the response is nil, the server could not be reached
 		// so make a 502 for the downstream response
 		if resp == nil {
@@ -252,9 +252,9 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		d, err := http.ParseTime(date)
 		if err == nil {
 			if offset := time.Since(d); time.Duration(math.Abs(float64(offset))) > time.Minute {
-				tl.WarnOnce(rsc.Logger, "clockoffset."+o.Name,
+				rsc.Logger.WarnOnce("clockoffset."+o.Name,
 					ClockOffsetWarning,
-					tl.Pairs{
+					logging.Pairs{
 						"backendName":   o.Name,
 						"tricksterTime": strconv.FormatInt(d.Add(offset).Unix(), 10),
 						"originTime":    strconv.FormatInt(d.Unix(), 10),

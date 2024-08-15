@@ -22,10 +22,10 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
 // ReloaderFunc describes a function that loads and applies a Trickster config at startup,
 // or gracefully over an existing running Config
-type ReloaderFunc func(*config.Config, *sync.WaitGroup, *tl.Logger,
+type ReloaderFunc func(*config.Config, *sync.WaitGroup, logging.Logger,
 	map[string]cache.Cache, []string, func()) error

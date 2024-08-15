@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/redis"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
 // Cache Interface Types
@@ -50,7 +51,7 @@ const (
 // }
 
 // LoadCachesFromConfig iterates the Caching Config and Connects/Maps each Cache
-func LoadCachesFromConfig(conf *config.Config, logger interface{}) map[string]cache.Cache {
+func LoadCachesFromConfig(conf *config.Config, logger logging.Logger) map[string]cache.Cache {
 	caches := make(map[string]cache.Cache)
 	for k, v := range conf.Caches {
 		c := NewCache(k, v, logger)
@@ -70,7 +71,7 @@ func CloseCaches(caches map[string]cache.Cache) error {
 }
 
 // NewCache returns a Cache object based on the provided config.CachingConfig
-func NewCache(cacheName string, cfg *options.Options, logger interface{}) cache.Cache {
+func NewCache(cacheName string, cfg *options.Options, logger logging.Logger) cache.Cache {
 
 	var c cache.Cache
 

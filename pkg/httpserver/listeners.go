@@ -24,7 +24,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/config"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
@@ -39,7 +39,7 @@ var lg = listener.NewListenerGroup()
 
 func applyListenerConfigs(conf, oldConf *config.Config,
 	router, reloadHandler http.Handler, metricsRouter router.Router,
-	log *tl.Logger, tracers tracing.Tracers, o backends.Backends,
+	logger logging.Logger, tracers tracing.Tracers, o backends.Backends,
 	wg *sync.WaitGroup, errorFunc func()) {
 
 	var err error
@@ -70,8 +70,8 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	}
 
 	if oldConf != nil && oldConf.Frontend.ConnectionsLimit != conf.Frontend.ConnectionsLimit {
-		tl.Warn(log, "connections limit change requires a process restart. listeners not updated.",
-			tl.Pairs{"oldLimit": oldConf.Frontend.ConnectionsLimit,
+		logger.Warn("connections limit change requires a process restart. listeners not updated.",
+			logging.Pairs{"oldLimit": oldConf.Frontend.ConnectionsLimit,
 				"newLimit": conf.Frontend.ConnectionsLimit})
 		return
 	}
@@ -91,14 +91,15 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		lg.DrainAndClose("tlsListener", drainTimeout)
 		tlsConfig, err = conf.TLSCertConfig()
 		if err != nil {
-			tl.Error(log, "unable to start tls listener due to certificate error", tl.Pairs{"detail": err})
+			logger.Error("unable to start tls listener due to certificate error",
+				logging.Pairs{"detail": err})
 		} else {
 			wg.Add(1)
 			tracerFlusherSet = true
 			go lg.StartListener("tlsListener",
 				conf.Frontend.TLSListenAddress, conf.Frontend.TLSListenPort,
 				conf.Frontend.ConnectionsLimit, tlsConfig, router, wg, tracers, errorFunc,
-				time.Duration(conf.ReloadConfig.DrainTimeoutMS)*time.Millisecond, log)
+				time.Duration(conf.ReloadConfig.DrainTimeoutMS)*time.Millisecond, logger)
 		}
 	} else if !conf.Frontend.ServeTLS && hasOldFC && oldConf.Frontend.ServeTLS {
 		// the TLS configs have been removed between the last config load and this one,
@@ -107,7 +108,8 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	} else if conf.Frontend.ServeTLS && ttls.OptionsChanged(conf, oldConf) {
 		tlsConfig, err = conf.TLSCertConfig()
 		if err != nil {
-			tl.Error(log, "unable to update tls config to certificate error", tl.Pairs{"detail": err})
+			logger.Error("unable to update tls config to certificate error",
+				logging.Pairs{"detail": err})
 			return
 		}
 		l := lg.Get("tlsListener")
@@ -131,7 +133,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		}
 		go lg.StartListener("httpListener",
 			conf.Frontend.ListenAddress, conf.Frontend.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, router, wg, t2, errorFunc, 0, log)
+			conf.Frontend.ConnectionsLimit, nil, router, wg, t2, errorFunc, 0, logger)
 	}
 
 	// if the Metrics HTTP port is configured, then set up the http listener instance
@@ -144,12 +146,12 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		metricsRouter.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
 			false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "metrics" {
-			routing.RegisterPprofRoutes("metrics", metricsRouter, log)
+			routing.RegisterPprofRoutes("metrics", metricsRouter, logger)
 		}
 		wg.Add(1)
 		go lg.StartListener("metricsListener",
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, metricsRouter, wg, nil, errorFunc, 0, log)
+			conf.Frontend.ConnectionsLimit, nil, metricsRouter, wg, nil, errorFunc, 0, logger)
 	} else {
 		metricsRouter.RegisterRoute("/metrics", nil, nil,
 			false, metrics.Handler())
@@ -174,11 +176,11 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		rr.RegisterRoute(conf.Main.PurgePathHandlerPath, nil, nil,
 			false, http.HandlerFunc(handlers.PurgePathHandlerFunc(conf, &o)))
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "reload" {
-			routing.RegisterPprofRoutes("reload", rr, log)
+			routing.RegisterPprofRoutes("reload", rr, logger)
 		}
 		go lg.StartListener("reloadListener",
 			conf.ReloadConfig.ListenAddress, conf.ReloadConfig.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, rr, wg, nil, errorFunc, 0, log)
+			conf.Frontend.ConnectionsLimit, nil, rr, wg, nil, errorFunc, 0, logger)
 	} else {
 		rr.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
 			false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))

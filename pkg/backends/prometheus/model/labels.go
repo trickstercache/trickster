@@ -78,7 +78,7 @@ func MergeAndWriteLabelData(w http.ResponseWriter, r *http.Request, rgs merge.Re
 				ld1 := &WFLabelData{}
 				err := json.Unmarshal(rg.Body(), &ld1)
 				if err != nil {
-					logging.Error(rg.Resources.Logger, "labels unmarshaling error",
+					rg.Resources.Logger.Error("labels unmarshaling error",
 						logging.Pairs{"provider": "prometheus", "detail": err.Error()})
 					continue
 				}

@@ -8,7 +8,6 @@ require (
 	github.com/alicebob/miniredis v2.5.0+incompatible
 	github.com/andybalholm/brotli v1.1.0
 	github.com/dgraph-io/badger v1.6.2
-	github.com/go-kit/log v0.2.1
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/golang/snappy v0.0.4
 	github.com/influxdata/influxdb v1.11.6
@@ -40,7 +39,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dgraph-io/ristretto v0.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang/glog v1.2.2 // indirect

@@ -37,7 +37,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	ro "github.com/trickstercache/trickster/v2/pkg/config/reload/options"
 	"github.com/trickstercache/trickster/v2/pkg/httpserver/signal"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registration"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
@@ -50,7 +51,7 @@ var hc healthcheck.HealthChecker
 
 var _ signal.ServeFunc = Serve
 
-func Serve(oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Logger,
+func Serve(oldConf *config.Config, wg *sync.WaitGroup, logger logging.Logger,
 	oldCaches map[string]cache.Cache, args []string, errorFunc func()) error {
 
 	metrics.BuildInfo.WithLabelValues(goruntime.Version(),
@@ -99,7 +100,7 @@ func Serve(oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Logger,
 
 }
 
-func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Logger,
+func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger logging.Logger,
 	oldCaches map[string]cache.Cache, args []string, errorFunc func()) error {
 
 	if conf == nil {
@@ -118,13 +119,13 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 	logger = applyLoggingConfig(conf, oldConf, logger)
 
 	for _, w := range conf.LoaderWarnings {
-		tl.Warn(logger, w, tl.Pairs{})
+		logger.Warn(w, nil)
 	}
 
 	//Register Tracing Configurations
 	tracers, err := tr.RegisterAll(conf, logger, false)
 	if err != nil {
-		handleStartupIssue("tracing registration failed", tl.Pairs{"detail": err.Error()},
+		handleStartupIssue("tracing registration failed", logging.Pairs{"detail": err.Error()},
 			logger, errorFunc)
 		return err
 	}
@@ -143,7 +144,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 
 	o, err := routing.RegisterProxyRoutes(conf, r, mr, caches, tracers, logger, false)
 	if err != nil {
-		handleStartupIssue("route registration failed", tl.Pairs{"detail": err.Error()},
+		handleStartupIssue("route registration failed", logging.Pairs{"detail": err.Error()},
 			logger, errorFunc)
 		return err
 	}
@@ -178,7 +179,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Lo
 	return nil
 }
 
-func applyLoggingConfig(c, o *config.Config, oldLog *tl.Logger) *tl.Logger {
+func applyLoggingConfig(c, o *config.Config, oldLog logging.Logger) logging.Logger {
 
 	if c == nil || c.Logging == nil {
 		return oldLog
@@ -206,7 +207,7 @@ func applyLoggingConfig(c, o *config.Config, oldLog *tl.Logger) *tl.Logger {
 		}
 		if c.Logging.LogLevel != o.Logging.LogLevel {
 			// the only change is the log level, so update it and return the original logger
-			oldLog.SetLogLevel(c.Logging.LogLevel)
+			oldLog.SetLogLevel(level.Level(c.Logging.LogLevel))
 			return oldLog
 		}
 	}
@@ -214,7 +215,7 @@ func applyLoggingConfig(c, o *config.Config, oldLog *tl.Logger) *tl.Logger {
 	return initLogger(c)
 }
 
-func applyCachingConfig(c, oc *config.Config, logger *tl.Logger,
+func applyCachingConfig(c, oc *config.Config, logger logging.Logger,
 	oldCaches map[string]cache.Cache) map[string]cache.Cache {
 
 	if c == nil {
@@ -270,10 +271,10 @@ func applyCachingConfig(c, oc *config.Config, logger *tl.Logger,
 	return caches
 }
 
-func initLogger(c *config.Config) *tl.Logger {
-	logger := tl.New(c)
-	tl.Info(logger, "application loaded from configuration",
-		tl.Pairs{
+func initLogger(c *config.Config) logging.Logger {
+	logger := logging.New(c)
+	logger.Info("application loaded from configuration",
+		logging.Pairs{
 			"name":      appinfo.Name,
 			"version":   appinfo.Version,
 			"goVersion": goruntime.Version(),
@@ -289,7 +290,7 @@ func initLogger(c *config.Config) *tl.Logger {
 	return logger
 }
 
-func delayedLogCloser(logger *tl.Logger, delay time.Duration) {
+func delayedLogCloser(logger logging.Logger, delay time.Duration) {
 	// we can't immediately close the logger, because some outstanding
 	// http requests might still be on the old reference, so this will
 	// allow time for those connections to drain
@@ -300,15 +301,15 @@ func delayedLogCloser(logger *tl.Logger, delay time.Duration) {
 	logger.Close()
 }
 
-func handleStartupIssue(event string, detail tl.Pairs, logger *tl.Logger, errorFunc func()) {
+func handleStartupIssue(event string, detail logging.Pairs, logger logging.Logger, errorFunc func()) {
 	metrics.LastReloadSuccessful.Set(0)
 	if event != "" {
 		if logger != nil {
 			if errorFunc != nil {
-				tl.Error(logger, event, detail)
+				logger.Error(event, detail)
 				errorFunc()
 			}
-			tl.Warn(logger, event, detail)
+			logger.Warn(event, detail)
 			return
 		}
 		fmt.Println(event)
@@ -332,7 +333,7 @@ func validateConfig(conf *config.Config) error {
 	r := lm.NewRouter()
 	mr := lm.NewRouter()
 	mr.SetMatchingScheme(0) // metrics router is exact-match only
-	logger := tl.ConsoleLogger(conf.Logging.LogLevel)
+	logger := logging.ConsoleLogger(level.Info)
 
 	tracers, err := tr.RegisterAll(conf, logger, true)
 	if err != nil {

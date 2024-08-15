@@ -29,6 +29,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -528,7 +529,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 // DocumentFromHTTPResponse returns an HTTPDocument from the provided
 // HTTP Response and Body
 func DocumentFromHTTPResponse(resp *http.Response, body []byte,
-	cp *CachingPolicy, logger interface{}) *HTTPDocument {
+	cp *CachingPolicy, logger logging.Logger) *HTTPDocument {
 	d := &HTTPDocument{}
 	d.StatusCode = resp.StatusCode
 	d.Status = resp.Status
