@@ -56,7 +56,7 @@ func queryConcurrent(ctx context.Context, c cache.Cache, key string, cr chan<- *
 	qr := &queryResult{queryKey: key, d: &HTTPDocument{}}
 	if c.Configuration().Provider == "memory" {
 		mc := c.(cache.MemoryCache)
-		var ifc interface{}
+		var ifc any
 		ifc, qr.lookupStatus, qr.err = mc.RetrieveReference(key, true)
 
 		if qr.err != nil || (qr.lookupStatus != status.LookupStatusHit) {
@@ -373,7 +373,7 @@ func writeConcurrent(ctx context.Context, c cache.Cache, key string, d *HTTPDocu
 
 // WriteCache writes an HTTPDocument to the cache
 func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
-	ttl time.Duration, compressTypes map[string]interface{}, marshal timeseries.MarshalerFunc) error {
+	ttl time.Duration, compressTypes map[string]any, marshal timeseries.MarshalerFunc) error {
 
 	rsc := tc.Resources(ctx).(*request.Resources)
 

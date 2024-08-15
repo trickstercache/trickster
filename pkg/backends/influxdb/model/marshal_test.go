@@ -114,7 +114,7 @@ func TestWriteEpochTime(t *testing.T) {
 func TestWriteValue(t *testing.T) {
 
 	tests := []struct {
-		val         interface{}
+		val         any
 		nilVal      string
 		expectedErr error
 		expectedVal string
@@ -175,7 +175,7 @@ func TestWriteValue(t *testing.T) {
 func TestWriteCSVValue(t *testing.T) {
 
 	tests := []struct {
-		val         interface{}
+		val         any
 		nilVal      string
 		expectedErr error
 		expectedVal string

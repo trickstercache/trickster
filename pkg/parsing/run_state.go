@@ -29,7 +29,7 @@ type RunState struct {
 	err                      error
 	ctx                      context.Context
 	nextOverride             StateFn
-	results                  map[string]interface{}
+	results                  map[string]any
 	pos                      int
 	cnt                      int
 }
@@ -39,7 +39,7 @@ func NewRunState(ctx context.Context, tokens token.Tokens) *RunState {
 	t := tokens.Compress()
 	rs := &RunState{
 		ctx:     ctx,
-		results: make(map[string]interface{}),
+		results: make(map[string]any),
 		tokens:  t,
 		cnt:     len(t),
 		pos:     -1,
@@ -48,18 +48,18 @@ func NewRunState(ctx context.Context, tokens token.Tokens) *RunState {
 }
 
 // SetResultsCollection places a collection of results into the results map
-func (rs *RunState) SetResultsCollection(collectionName string, val interface{}) {
+func (rs *RunState) SetResultsCollection(collectionName string, val any) {
 	rs.results[collectionName] = val
 }
 
 // GetResultsCollection retrieves a collection from the results map
-func (rs *RunState) GetResultsCollection(collectionName string) (interface{}, bool) {
+func (rs *RunState) GetResultsCollection(collectionName string) (any, bool) {
 	v, ok := rs.results[collectionName]
 	return v, ok
 }
 
 // Results returns the results objecxt from the RunState
-func (rs *RunState) Results() map[string]interface{} {
+func (rs *RunState) Results() map[string]any {
 	return rs.results
 }
 

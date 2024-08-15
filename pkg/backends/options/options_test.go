@@ -75,7 +75,7 @@ func TestClone(t *testing.T) {
 	o := New()
 	o.Hosts = []string{"test"}
 	o.CacheName = "test"
-	o.CompressibleTypes = map[string]interface{}{"test": nil}
+	o.CompressibleTypes = map[string]any{"test": nil}
 	o.Paths = map[string]*po.Options{"test": p}
 	o.NegativeCache = map[int]time.Duration{1: 1}
 	o.HealthCheck = &ho.Options{}
@@ -210,7 +210,7 @@ func TestValidate(t *testing.T) {
 		to       *testOptions
 		loc      *string
 		val      string
-		expected interface{}
+		expected any
 	}{
 		{ // 0 - invalid negative cache name
 			to:       to,
@@ -282,7 +282,7 @@ func TestValidate(t *testing.T) {
 	tests2 := []struct {
 		to       *testOptions
 		sw       []intSwapper
-		expected interface{}
+		expected any
 	}{
 		{ // case 0 - MaxShardSizeMS > 0 and MaxShardSizePoints > 0 are mutually exclusive
 			to: to,
@@ -356,12 +356,12 @@ func TestSetDefaults(t *testing.T) {
 
 	backends := Lookup{o.Name: o}
 
-	_, err = SetDefaults("test", o, o.md, nil, backends, map[string]interface{}{})
+	_, err = SetDefaults("test", o, o.md, nil, backends, map[string]any{})
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o, nil, nil, backends, map[string]interface{}{})
+	_, err = SetDefaults("test", o, nil, nil, backends, map[string]any{})
 	if err != ErrInvalidMetadata {
 		t.Error("expected invalid metadata, got", err)
 	}
@@ -371,13 +371,13 @@ func TestSetDefaults(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o2, o2.md, nil, backends, map[string]interface{}{})
+	_, err = SetDefaults("test", o2, o2.md, nil, backends, map[string]any{})
 	if err != nil {
 		t.Error(err)
 	}
 
 	o.Paths["series"].ReqRewriterName = "invalid"
-	_, err = SetDefaults("test", o, o.md, nil, backends, map[string]interface{}{})
+	_, err = SetDefaults("test", o, o.md, nil, backends, map[string]any{})
 	if err == nil {
 		t.Error("expected error for invalid rewriter name")
 	}
@@ -388,13 +388,13 @@ func TestSetDefaults(t *testing.T) {
 	}
 
 	_, err = SetDefaults("test", o2, o2.md, map[string]rewriter.RewriteInstructions{"test": nil},
-		backends, map[string]interface{}{})
+		backends, map[string]any{})
 	if err != nil {
 		t.Error(err)
 	}
 
 	_, err = SetDefaults("test", o2, o2.md, map[string]rewriter.RewriteInstructions{"not-test": nil},
-		backends, map[string]interface{}{})
+		backends, map[string]any{})
 	if err == nil {
 		t.Error("expected error for invalid rewriter name")
 	}
@@ -405,7 +405,7 @@ func TestSetDefaults(t *testing.T) {
 	}
 
 	_, err = SetDefaults("test", o2, o2.md, nil,
-		backends, map[string]interface{}{})
+		backends, map[string]any{})
 	if err != nil {
 		t.Error(err)
 	}

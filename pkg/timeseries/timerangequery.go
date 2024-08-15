@@ -55,7 +55,7 @@ type TimeRangeQuery struct {
 	// ValueFieldDefinitions contains the definitions for Value columns in the timeseries, based on the query
 	ValueFieldDefinitions []FieldDefinition `msg:"vfdefs"`
 	// ParsedQuery is a member for the vendor-specific query object
-	ParsedQuery interface{} `msg:"-"`
+	ParsedQuery any `msg:"-"`
 }
 
 // Clone returns an exact copy of a TimeRangeQuery

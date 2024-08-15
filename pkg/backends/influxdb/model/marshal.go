@@ -73,7 +73,7 @@ func writeEpochTime(w io.Writer, epoch epoch.Epoch, m int64) {
 	w.Write([]byte(strconv.FormatInt(int64(epoch)/m, 10)))
 }
 
-func writeValue(w io.Writer, v interface{}, nilVal string) {
+func writeValue(w io.Writer, v any, nilVal string) {
 	if v == nil {
 		w.Write([]byte(nilVal))
 	}
@@ -91,7 +91,7 @@ func writeValue(w io.Writer, v interface{}, nilVal string) {
 	}
 }
 
-func writeCSVValue(w io.Writer, v interface{}, nilVal string) {
+func writeCSVValue(w io.Writer, v any, nilVal string) {
 	if v == nil {
 		w.Write([]byte(nilVal))
 	}

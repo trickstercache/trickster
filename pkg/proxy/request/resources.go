@@ -46,7 +46,7 @@ type Resources struct {
 	Logger            logging.Logger
 	IsMergeMember     bool
 	ResponseBytes     []byte
-	ResponseMergeFunc interface{}
+	ResponseMergeFunc any
 	TSUnmarshaler     timeseries.UnmarshalerFunc
 	TSMarshaler       timeseries.MarshalWriterFunc
 	TSTransformer     func(timeseries.Timeseries)
