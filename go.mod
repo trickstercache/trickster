@@ -10,7 +10,6 @@ require (
 	github.com/dgraph-io/badger v1.6.2
 	github.com/go-kit/log v0.2.1
 	github.com/go-redis/redis v6.15.9+incompatible
-	github.com/go-stack/stack v1.8.1
 	github.com/golang/snappy v0.0.4
 	github.com/influxdata/influxdb v1.11.6
 	github.com/influxdata/influxql v1.2.0

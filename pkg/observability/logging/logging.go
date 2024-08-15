@@ -22,6 +22,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,7 +31,6 @@ import (
 
 	gkl "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/go-stack/stack"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -51,11 +51,26 @@ type SyncLogger struct {
 	*Logger
 }
 
+const prefixToken = "github.com/trickstercache/trickster/"
+const prefxTokenLen = 36
+
+func addCaller(detail Pairs) {
+	_, file, line, ok := runtime.Caller(2)
+	if ok {
+		var offset int
+		if idx := strings.Index(file, prefixToken); idx >= 0 {
+			offset = idx + prefxTokenLen
+		}
+		detail["caller"] = fmt.Sprintf("%s:%d", file[offset:], line)
+	}
+}
+
 func Debug(logger interface{}, event string, detail Pairs) {
 	if logger == nil {
 		return
 	}
-	detail["caller"] = pkgCaller{stack.Caller(1)}
+
+	addCaller(detail)
 	switch l := logger.(type) {
 	case *Logger:
 		go l.Debug(event, detail)
@@ -72,7 +87,7 @@ func Info(logger interface{}, event string, detail Pairs) {
 	if logger == nil {
 		return
 	}
-	detail["caller"] = pkgCaller{stack.Caller(1)}
+	addCaller(detail)
 	switch l := logger.(type) {
 	case *Logger:
 		go l.Info(event, detail)
@@ -89,7 +104,7 @@ func Warn(logger interface{}, event string, detail Pairs) {
 	if logger == nil {
 		return
 	}
-	detail["caller"] = pkgCaller{stack.Caller(1)}
+	addCaller(detail)
 	switch l := logger.(type) {
 	case *Logger:
 		go l.Warn(event, detail)
@@ -106,7 +121,7 @@ func WarnOnce(logger interface{}, key string, event string, detail Pairs) {
 	if logger == nil {
 		return
 	}
-	detail["caller"] = pkgCaller{stack.Caller(1)}
+	addCaller(detail)
 	switch l := logger.(type) {
 	case *Logger: // must  be Synchronous to avoid double writes
 		l.WarnOnce(key, event, detail)
@@ -123,7 +138,7 @@ func Error(logger interface{}, event string, detail Pairs) {
 	if logger == nil {
 		return
 	}
-	detail["caller"] = pkgCaller{stack.Caller(1)}
+	addCaller(detail)
 	switch l := logger.(type) {
 	case *Logger:
 		go l.Error(event, detail)
@@ -140,7 +155,7 @@ func ErrorSynchronous(logger interface{}, event string, detail Pairs) {
 	if logger == nil {
 		return
 	}
-	detail["caller"] = pkgCaller{stack.Caller(1)}
+	addCaller(detail)
 	switch l := logger.(type) {
 	case *Logger:
 		l.Error(event, detail)
@@ -157,7 +172,7 @@ func ErrorSynchronous(logger interface{}, event string, detail Pairs) {
 func Fatal(logger interface{}, code int, event string, detail Pairs) {
 	// go-kit/log/level does not support Fatal, so implemented separately here
 	detail["level"] = "fatal"
-	detail["caller"] = pkgCaller{stack.Caller(1)}
+	addCaller(detail)
 	switch l := logger.(type) {
 	case *Logger:
 		l.Fatal(code, event, detail)
@@ -384,6 +399,7 @@ func (tl *Logger) Trace(event string, detail Pairs) {
 	// go-kit/log/level does not support Trace, so implemented separately here
 	if tl.level == "trace" {
 		detail["level"] = "trace"
+		addCaller(detail)
 		tl.logger.Log(detail.ToList(event)...)
 	}
 	tl.mtx.Unlock()
@@ -393,6 +409,7 @@ func (tl *Logger) Trace(event string, detail Pairs) {
 func (tl *Logger) Fatal(code int, event string, detail Pairs) {
 	// go-kit/log/level does not support Fatal, so implemented separately here
 	detail["level"] = "fatal"
+	addCaller(detail)
 	tl.logger.Log(detail.ToList(event)...)
 	if code >= 0 {
 		os.Exit(code)
@@ -409,15 +426,4 @@ func (tl *Logger) Close() {
 	if tl.closer != nil {
 		tl.closer.Close()
 	}
-}
-
-// pkgCaller wraps a stack.Call to make the default string output include the
-// package path.
-type pkgCaller struct {
-	c stack.Call
-}
-
-// String returns a path from the call stack that is relative to the root of the project
-func (pc pkgCaller) String() string {
-	return strings.TrimPrefix(fmt.Sprintf("%+v", pc.c), "github.com/trickstercache/trickster/pkg/")
 }
