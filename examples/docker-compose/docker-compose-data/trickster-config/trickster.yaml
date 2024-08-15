@@ -32,15 +32,13 @@ tracing:
       pretty_print: true
   zip1:
     provider: zipkin
-    collector_url: 'http://zipkin:9411/api/v2/spans'
+    endpoint: 'http://zipkin:9411/api/v2/spans'
   jc1:
-    provider: jaeger # jaeger collector
-    collector_url: 'http://jaeger:14268/api/traces'
+    provider: otlp # jaeger collector
+    endpoint: 'http://jaeger:14268/api/traces'
   ja1:
-    provider: jaeger # jaeger agent
-    collector_url: 'jaeger:6831'
-    jaeger:
-      endpoint_type: agent
+    provider: otlp # jaeger agent
+    endpoint: 'jaeger:6831'
 backends:
   prom1: # prometheus cached with a memory cache, traces sent to stdout
     provider: prometheus

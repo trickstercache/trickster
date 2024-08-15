@@ -601,24 +601,31 @@ backends:
 #   default:
 
 #     # provider specifies the type of backend tracing system where traces are sent (in that format)
-#     # options are: jaeger, zipkin, stdout or none.  none is the default
+#     # options are: otlp, zipkin, stdout or none.  none is the default
 #     provider: none
 
 #     # service_name specifies the service name under which the traces are registered by this tracer
 #     # default is trickster
 #     service_name: trickster
 
-#     # collector_url is the URL of the tracing backend
-#     # required for zipkin and jaeger, unused for stdout
-#     collector_url: http://jaeger:14268/api/traces
+#     # endpoint is the URL, URI or Path to the tracing backend
+#     # required for Zipkin and OTLP, unused for stdout
+#     endpoint: http://jaeger:14268/api/traces
 
-#     # collector_user is the username credential for authenticating with the tracing backend
-#     # optional jaeger; unused for zipkin and stdout
-#     collector_user: ''
+#     # timeout_ms is the amount of time in milliseconds for the tracing post
+#     # to wait for a response before timing out
+#     # default is no timeout set
+#     timeout_ms: 5000
 
-#     # collector_pass is the username credential for authenticating with the tracing backend
-#     # optional jaeger; unused for zipkin and stdout
-#     collector_pass: ''
+#     # headers is a list of http headers to include in the tracing post
+#     # default is none
+#     headers:
+#       "Header-Name-1": "header value 1"
+#       "Header-Name-2": "header value 2"
+
+#     # disable_compression should be set to true if tracing posts should not be compressed
+#     # default is false
+#     disable_compression: false
 
 #     # sample_rate sets the probability that a span will be recorded.
 #     # A floating point value of 0.0 to 1.0 (inclusive) is permitted
@@ -637,30 +644,22 @@ backends:
 #       key1: "value1"
 #       key2: "value2"
 
-#       # configurations for this tracer, specific to jaeger
-#     jaeger:
-#       # endpoint_type indicates whether the jaeger tracing backend is a collector or agent
-#       # default is collector
-#       endpoint_type: collector
-
 #       # configurations for this tracer, specific to stdout
 #     stdout:
 #       # pretty_print indicates whether the output to stdout is formatted better human readability
 #       # default is false
 #       pretty_print: false
 
-#     # another example tracing config named example using jaeger agent backend and a 50% sample rate
+#     # another example tracing config named example using otlp agent backend and a 50% sample rate
 #   example:
-#     provider: jaeger
-#     collector_url: jaeger:6831
+#     provider: otlp
+#     endpoint: jaeger:6831
 #     sample_rate: 0.5
-#     jaeger:
-#       endpoint_type: agent
 
 #     # another example tracing config named zipkin-example using zipkin backend and a 10% sample rate
 #   zipkin-example:
 #     provider: zipkin
-#     collector_url: https://zipkin.example.com:9411/api/v2/spans
+#     endpoint: https://zipkin.example.com:9411/api/v2/spans
 #     sample_rate: 0.1
 
 
