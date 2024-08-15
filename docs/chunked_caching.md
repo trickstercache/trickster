@@ -103,18 +103,16 @@ rules:
 
 tracing:
   jc1:
-    tracer_type: jaeger
-    collector_url: 'http://127.0.0.1:14268/api/traces'
+    tracer_type: otlp
+    endpoint: 'http://127.0.0.1:14268/api/traces'
     tags:
       testTag: testTagValue
       testTag2: testTag2Value
   ja1:
-    tracer_type: jaeger
-    collector_url: '127.0.0.1:6831'
+    tracer_type: otlp
+    endpoint: '127.0.0.1:6831'
     omit_tags:
       - http.url
-    jaeger:
-      endpoint_type: agent
 
 backends:
   prom1:

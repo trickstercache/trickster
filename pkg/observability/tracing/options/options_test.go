@@ -24,9 +24,9 @@ import (
 
 func TestNew(t *testing.T) {
 	o := New()
-	o.CollectorUser = "trickster"
+	o.Endpoint = "test:1234"
 	o2 := o.Clone()
-	if o2.CollectorUser != "trickster" {
+	if o2.Endpoint != "test:1234" {
 		t.Error("clone failed")
 	}
 }

@@ -47,7 +47,7 @@ func New(options *options.Options) (*tracing.Tracer, error) {
 	}
 
 	exporter, err := zipkin.New(
-		options.CollectorURL,
+		options.Endpoint,
 	)
 	if err != nil {
 		return nil, err

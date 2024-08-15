@@ -58,8 +58,8 @@ func TestRegisterAll(t *testing.T) {
 		t.Error(err)
 	}
 
-	tc.Provider = "jaeger"
-	tc.CollectorURL = "http://example.com"
+	tc.Provider = "otlp"
+	tc.Endpoint = "http://example.com"
 	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), false)
 	if err != nil {
 		t.Error(err)
