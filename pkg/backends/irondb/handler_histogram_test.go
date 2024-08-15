@@ -24,11 +24,11 @@ import (
 	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 func TestHistogramHandler(t *testing.T) {
@@ -204,7 +204,7 @@ func TestHistogramHandlerSetExtent(t *testing.T) {
 	}
 
 	r = request.SetResources(r,
-		request.NewResources(o, nil, nil, nil, client, nil, tl.ConsoleLogger("error")))
+		request.NewResources(o, nil, nil, nil, client, nil, logging.ConsoleLogger("error")))
 
 	now := time.Now()
 	then := now.Add(-5 * time.Hour)
@@ -241,7 +241,7 @@ func TestHistogramHandlerFastForwardRequestError(t *testing.T) {
 		t.Error(err)
 	}
 
-	rsc := request.NewResources(o, nil, nil, nil, client, nil, tl.ConsoleLogger("error"))
+	rsc := request.NewResources(o, nil, nil, nil, client, nil, logging.ConsoleLogger("error"))
 	r = request.SetResources(r, rsc)
 
 	r.URL.Path = "/histogram/x/900/300/00112233-4455-6677-8899-aabbccddeeff/metric"
