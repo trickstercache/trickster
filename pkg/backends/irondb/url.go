@@ -45,7 +45,7 @@ func (c *Client) FastForwardRequest(r *http.Request) (*http.Request, error) {
 
 	rsc := request.GetResources(r)
 	if rsc == nil || rsc.PathConfig == nil {
-		return nil, tkerr.ErrMissingPathconfig
+		return nil, tkerr.ErrMissingPathConfig
 	}
 
 	switch rsc.PathConfig.HandlerName {
@@ -68,7 +68,7 @@ func (c *Client) ParseTimeRangeQuery(
 
 	rsc := request.GetResources(r)
 	if rsc == nil || rsc.PathConfig == nil {
-		return nil, nil, false, tkerr.ErrMissingPathconfig
+		return nil, nil, false, tkerr.ErrMissingPathConfig
 	}
 
 	var trq *timeseries.TimeRangeQuery

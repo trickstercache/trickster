@@ -17,7 +17,10 @@
 // Package methods provides functionality for handling HTTP methods
 package methods
 
-import "net/http"
+import (
+	"net/http"
+	"strings"
+)
 
 const (
 	get uint16 = 1 << iota
@@ -107,4 +110,10 @@ func MethodMask(methods ...string) uint16 {
 		}
 	}
 	return i
+}
+
+// IsValidMethod returns true if the provided method is recognized in methodsMap
+func IsValidMethod(method string) bool {
+	_, ok := methodsMap[strings.ToUpper(method)]
+	return ok
 }

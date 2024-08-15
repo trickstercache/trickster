@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
+	"github.com/trickstercache/trickster/v2/pkg/errors"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
 
@@ -620,7 +621,7 @@ func TestLoadConfigurationWarning2(t *testing.T) {
 func TestLoadEmptyArgs(t *testing.T) {
 	a := []string{}
 	_, _, err := Load("trickster-test", "0", a)
-	if err != ErrNoValidBackends {
-		t.Error("expected error:", ErrNoValidBackends)
+	if err != errors.ErrNoValidBackends {
+		t.Error("expected error:", errors.ErrNoValidBackends)
 	}
 }
