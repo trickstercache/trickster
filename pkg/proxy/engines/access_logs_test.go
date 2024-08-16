@@ -37,7 +37,7 @@ func TestLogUpstreamRequest(t *testing.T) {
 	logUpstreamRequest(logger, "testBackend", "testType", "testHandler", "testMethod",
 		"testPath", "testUserAgent", 200, 0, 1.0)
 	if _, err := os.Stat(fileName); err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 	}
 	logger.Close()
 }
@@ -58,7 +58,7 @@ func TestLogDownstreamRequest(t *testing.T) {
 	logDownstreamRequest(logger, r)
 
 	if _, err := os.Stat(fileName); err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 	}
 	logger.Close()
 }

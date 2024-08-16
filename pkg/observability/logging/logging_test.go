@@ -68,7 +68,7 @@ func TestNewLogger_LogFile(t *testing.T) {
 	logger.SetLogAsynchronous(false)
 	logger.Info("testEntry ", Pairs{"testKey": "test Val", "testKey2": "testValue2"})
 	if _, err := os.Stat(instanceFileName); err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 	}
 	logger.Close()
 }
@@ -83,7 +83,7 @@ func TestNewLoggerDebug_LogFile(t *testing.T) {
 	logger.SetLogAsynchronous(false)
 	logger.Debug("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 	}
 	logger.Close()
 }
@@ -98,7 +98,7 @@ func TestNewLoggerWarn_LogFile(t *testing.T) {
 	logger.SetLogAsynchronous(false)
 	logger.Warn("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 	}
 	logger.Close()
 }
@@ -108,7 +108,7 @@ func TestNewLoggerWarnOnce_LogFile(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
-	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "x"}
+	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "info"}
 	logger := New(conf)
 	logger.SetLogAsynchronous(false)
 	key := "warnonce-test-key"
@@ -136,9 +136,10 @@ func TestNewLoggerWarnOnce_LogFile(t *testing.T) {
 	}
 
 	if _, err := os.Stat(fileName); err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 	}
 	logger.Close()
+	os.Remove(fileName)
 }
 
 func TestNewLoggerError_LogFile(t *testing.T) {
@@ -151,7 +152,7 @@ func TestNewLoggerError_LogFile(t *testing.T) {
 	logger.SetLogAsynchronous(false)
 	logger.Error("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 	}
 	logger.Close()
 }
@@ -176,7 +177,7 @@ func TestNewLoggerErrorOnce_LogFile(t *testing.T) {
 	}
 
 	if _, err := os.Stat(fileName); err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 	}
 	logger.Close()
 }
@@ -191,7 +192,7 @@ func TestNewLoggerDefault_LogFile(t *testing.T) {
 	logger.SetLogAsynchronous(false)
 	logger.Info("test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 	}
 	logger.Close()
 }
@@ -215,7 +216,7 @@ func TestNewLoggerInfoOnce_LogFile(t *testing.T) {
 	}
 
 	if _, err := os.Stat(fileName); err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 	}
 
 	logger.Close()
@@ -231,7 +232,7 @@ func TestNewLoggerFatal_LogFile(t *testing.T) {
 	logger.SetLogAsynchronous(false)
 	logger.Fatal(-1, "test entry", Pairs{"testKey": "testVal"})
 	if _, err := os.Stat(fileName); err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 	}
 	logger.Close()
 }
