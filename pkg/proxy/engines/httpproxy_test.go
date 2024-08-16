@@ -34,7 +34,7 @@ import (
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
 
-var testLogger = logging.ConsoleLogger("error")
+var testLogger = logging.ConsoleLogger("warn")
 
 func TestDoProxy(t *testing.T) {
 
@@ -153,7 +153,8 @@ func TestClockOffsetWarning(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", s.URL, nil)
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(o, pc, nil, nil, nil, tu.NewTestTracer(), testLogger)))
+		request.NewResources(o, pc, nil, nil, nil, tu.NewTestTracer(),
+			testLogger)))
 
 	if testLogger.HasWarnedOnce("clockoffset.default") {
 		t.Errorf("expected %t got %t", false, true)

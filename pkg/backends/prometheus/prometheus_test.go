@@ -27,7 +27,6 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
 	po "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
 	"github.com/trickstercache/trickster/v2/pkg/config"
@@ -36,8 +35,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
-
-var testModeler = model.NewModeler()
 
 func TestPrometheusClientInterfacing(t *testing.T) {
 
@@ -143,7 +140,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	req := &http.Request{URL: u}
 	o := bo.New()
 	o.Prometheus = &po.Options{Labels: map[string]string{"test": "trickster"}}
-	rsc := request.NewResources(o, nil, nil, nil, nil, nil, nil)
+	rsc := request.NewResources(o, nil, nil, nil, nil, nil, testLogger)
 	req = request.SetResources(req, rsc)
 
 	client := &Client{}
@@ -378,7 +375,7 @@ func TestParseVectorQuery(t *testing.T) {
 
 	o := bo.New()
 	o.Prometheus = &po.Options{Labels: map[string]string{"test": "trickster"}}
-	rsc := request.NewResources(o, nil, nil, nil, nil, nil, nil)
+	rsc := request.NewResources(o, nil, nil, nil, nil, nil, testLogger)
 	req = request.SetResources(req, rsc)
 
 	rounder := time.Second * 15

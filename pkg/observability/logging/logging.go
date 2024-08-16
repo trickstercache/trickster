@@ -94,6 +94,8 @@ func NoopLogger() Logger {
 	l := &logger{
 		logFunc:        func(level.Level, string, Pairs) {},
 		onceRanEntries: make(map[string]any),
+		levelID:        level.InfoID,
+		level:          level.Info,
 	}
 	return l
 }

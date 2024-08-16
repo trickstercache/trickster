@@ -49,7 +49,7 @@ type queryResult struct {
 	err          error
 }
 
-func queryConcurrent(ctx context.Context, c cache.Cache, key string, cr chan<- *queryResult, done func()) *queryResult {
+func queryConcurrent(_ context.Context, c cache.Cache, key string, cr chan<- *queryResult, done func()) *queryResult {
 	if done != nil {
 		defer done()
 	}
@@ -322,7 +322,7 @@ func stripConditionalHeaders(h http.Header) {
 	h.Del(headers.NameIfModifiedSince)
 }
 
-func writeConcurrent(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
+func writeConcurrent(_ context.Context, c cache.Cache, key string, d *HTTPDocument,
 	compress bool, ttl time.Duration, cr chan<- error, done func()) {
 
 	if done != nil {
@@ -443,7 +443,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 			close(cr)
 			// Handle results
 			for res := range cr {
-				if res != nil && err != nil {
+				if res != nil {
 					err = res
 					break
 				}
@@ -485,7 +485,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 			close(cr)
 			// Handle results
 			for res := range cr {
-				if res != nil && err != nil {
+				if res != nil {
 					err = res
 					break
 				}

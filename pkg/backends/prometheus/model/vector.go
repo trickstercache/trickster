@@ -74,7 +74,7 @@ func MergeAndWriteVector(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 					ds, ok := t2.(*dataset.DataSet)
 					if !ok {
 						rg.Resources.Logger.Error("vector unmarshaling error",
-							logging.Pairs{"provider": "prometheus", "detail": err.Error()})
+							logging.Pairs{"provider": "prometheus"})
 						continue
 					}
 					ts = ds

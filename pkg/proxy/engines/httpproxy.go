@@ -124,11 +124,11 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	}
 
 	elapsed = time.Since(start)
-	recordResults(r, "HTTPProxy", cacheStatusCode, resp.StatusCode,
-		r.URL.Path, "", elapsed.Seconds(), nil, resp.Header)
 
 	if resp != nil && rsc != nil && (rsc.IsMergeMember || rsc.TSTransformer != nil) {
 		rsc.Response = resp
+		recordResults(r, "HTTPProxy", cacheStatusCode, resp.StatusCode,
+			r.URL.Path, "", elapsed.Seconds(), nil, resp.Header)
 	}
 
 	return resp
