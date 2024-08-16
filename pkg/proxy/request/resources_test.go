@@ -22,12 +22,12 @@ import (
 	"testing"
 	"time"
 
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 )
 
 func TestNewAndCloneResources(t *testing.T) {
-	r := NewResources(nil, nil, nil, nil, nil, nil, tl.ConsoleLogger("error"))
+	r := NewResources(nil, nil, nil, nil, nil, nil, logging.ConsoleLogger("error"))
 	r.AlternateCacheTTL = time.Duration(1) * time.Second
 	r2 := r.Clone()
 	if r2.AlternateCacheTTL != r.AlternateCacheTTL {
@@ -42,7 +42,7 @@ func TestGetAndSetResources(t *testing.T) {
 		t.Error("expected nil reference")
 	}
 
-	r = NewResources(nil, nil, nil, nil, nil, nil, tl.ConsoleLogger("error"))
+	r = NewResources(nil, nil, nil, nil, nil, nil, logging.ConsoleLogger("error"))
 	r.AlternateCacheTTL = time.Duration(1) * time.Second
 	req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	ctx := context.Background()
@@ -69,13 +69,13 @@ func TestGetAndSetResources(t *testing.T) {
 }
 
 func TestMergeResources(t *testing.T) {
-	r1 := NewResources(nil, nil, nil, nil, nil, nil, tl.ConsoleLogger("error"))
+	r1 := NewResources(nil, nil, nil, nil, nil, nil, logging.ConsoleLogger("error"))
 	r1.NoLock = true
 	r1.Merge(nil)
 	if !r1.NoLock {
 		t.Errorf("nil merge shouldn't set anything in subject resources")
 	}
-	r2 := NewResources(nil, nil, nil, nil, nil, nil, tl.ConsoleLogger("error"))
+	r2 := NewResources(nil, nil, nil, nil, nil, nil, logging.ConsoleLogger("error"))
 	r1.Merge(r2)
 	if r1.NoLock {
 		t.Errorf("merge should override subject resources")

@@ -34,7 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	encoding "github.com/trickstercache/trickster/v2/pkg/encoding/handler"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/health"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -47,9 +47,8 @@ import (
 )
 
 // RegisterPprofRoutes will register the Pprof Debugging endpoints to the provided router
-func RegisterPprofRoutes(routerName string, r router.Router, logger interface{}) {
-	tl.Info(logger,
-		"registering pprof /debug routes", tl.Pairs{"routerName": routerName})
+func RegisterPprofRoutes(routerName string, r router.Router, logger logging.Logger) {
+	logger.Info("registering pprof /debug routes", logging.Pairs{"routerName": routerName})
 	r.RegisterRoute("/debug/pprof/", nil, nil,
 		false, http.HandlerFunc(pprof.Index))
 	r.RegisterRoute("/debug/pprof/cmdline", nil, nil,
@@ -66,7 +65,7 @@ func RegisterPprofRoutes(routerName string, r router.Router, logger interface{})
 // registers the routes for the configured backends
 func RegisterProxyRoutes(conf *config.Config, r router.Router,
 	metricsRouter router.Router, caches map[string]cache.Cache,
-	tracers tracing.Tracers, logger interface{},
+	tracers tracing.Tracers, logger logging.Logger,
 	dryRun bool) (backends.Backends, error) {
 
 	// a fake "top-level" backend representing the main frontend, so rules can route
@@ -95,7 +94,7 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router,
 					fmt.Errorf("only one backend can be marked as default. Found both %s and %s",
 						defaultBackend, k)
 			}
-			tl.Debug(logger, "default backend identified", tl.Pairs{"name": k})
+			logger.Debug("default backend identified", logging.Pairs{"name": k})
 			defaultBackend = k
 			cdo = o
 			continue
@@ -159,7 +158,7 @@ func RegisterHealthHandler(router router.Router, path string,
 
 func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 	conf *config.Config, k string, o *bo.Options, clients backends.Backends,
-	caches map[string]cache.Cache, tracers tracing.Tracers, logger interface{},
+	caches map[string]cache.Cache, tracers tracing.Tracers, logger logging.Logger,
 	dryRun bool) error {
 
 	var client backends.Backend
@@ -174,7 +173,7 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 	}
 
 	if !dryRun {
-		tl.Info(logger, "registering route paths", tl.Pairs{"backendName": k,
+		logger.Info("registering route paths", logging.Pairs{"backendName": k,
 			"backendProvider": o.Provider, "upstreamHost": o.Host})
 	}
 
@@ -200,8 +199,8 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 		if h, ok := client.Handlers()["health"]; ok && o.Name != "" && metricsRouter != nil && (o.HealthCheck == nil ||
 			o.HealthCheck.Verb != "x") {
 			hp := strings.Replace(conf.Main.HealthHandlerPath+"/"+o.Name, "//", "/", -1)
-			tl.Debug(logger, "registering health handler path",
-				tl.Pairs{"path": hp, "backendName": o.Name,
+			logger.Debug("registering health handler path",
+				logging.Pairs{"path": hp, "backendName": o.Name,
 					"upstreamPath": o.HealthCheck.Path,
 					"upstreamVerb": o.HealthCheck.Verb})
 			metricsRouter.RegisterRoute(hp, nil, nil, false,
@@ -218,7 +217,7 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 func RegisterPathRoutes(r router.Router, handlers map[string]http.Handler,
 	client backends.Backend, o *bo.Options, c cache.Cache,
 	paths map[string]*po.Options, tracers tracing.Tracers,
-	healthHandlerPath string, logger interface{}) {
+	healthHandlerPath string, logger logging.Logger) {
 
 	if o == nil {
 		return
@@ -279,8 +278,8 @@ func RegisterPathRoutes(r router.Router, handlers map[string]http.Handler,
 			p.Handler = h
 			plist = append(plist, k)
 		} else {
-			tl.Info(logger, "invalid handler name for path",
-				tl.Pairs{"path": p.Path, "handlerName": p.HandlerName})
+			logger.Info("invalid handler name for path",
+				logging.Pairs{"path": p.Path, "handlerName": p.HandlerName})
 			deletes = append(deletes, p.Path)
 		}
 	}
@@ -295,8 +294,8 @@ func RegisterPathRoutes(r router.Router, handlers map[string]http.Handler,
 		pathPrefix := "/" + o.Name
 		handledPath := pathPrefix + p.Path
 
-		tl.Debug(logger, "registering backend handler path",
-			tl.Pairs{"backendName": o.Name, "path": v, "handlerName": p.HandlerName,
+		logger.Debug("registering backend handler path",
+			logging.Pairs{"backendName": o.Name, "path": v, "handlerName": p.HandlerName,
 				"backendHost": o.Host, "handledPath": handledPath, "matchType": p.MatchType,
 				"frontendHosts": strings.Join(o.Hosts, ",")})
 		if p.Handler != nil && len(p.Methods) > 0 {
@@ -325,7 +324,7 @@ func RegisterPathRoutes(r router.Router, handlers map[string]http.Handler,
 
 // RegisterDefaultBackendRoutes will iterate the Backends and register the default routes
 func RegisterDefaultBackendRoutes(r router.Router, bknds backends.Backends,
-	logger interface{}, tracers tracing.Tracers) {
+	logger logging.Logger, tracers tracing.Tracers) {
 
 	decorate := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,
 		c cache.Cache, client backends.Backend) http.Handler {
@@ -358,14 +357,14 @@ func RegisterDefaultBackendRoutes(r router.Router, bknds backends.Backends,
 			if t, ok := tracers[o.TracingConfigName]; ok {
 				tr = t
 			}
-			tl.Info(logger,
-				"registering default backend handler paths", tl.Pairs{"backendName": o.Name})
+			logger.Info("registering default backend handler paths",
+				logging.Pairs{"backendName": o.Name})
 
 			for _, p := range o.Paths {
 				if p.Handler != nil && len(p.Methods) > 0 {
-					tl.Debug(logger,
+					logger.Debug(
 						"registering default backend handler paths",
-						tl.Pairs{"backendName": o.Name, "path": p.Path,
+						logging.Pairs{"backendName": o.Name, "path": p.Path,
 							"handlerName": p.HandlerName,
 							"matchType":   p.MatchType})
 

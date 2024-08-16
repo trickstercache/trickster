@@ -26,7 +26,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -80,7 +80,7 @@ type proxyRequest struct {
 	collapsedForwarder ProgressiveCollapseForwarder
 	cachingPolicy      *CachingPolicy
 
-	Logger            interface{}
+	Logger            logging.Logger
 	isPCF             bool
 	writeToCache      bool
 	hasWriteLock      bool
@@ -168,8 +168,8 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 		resp.Body = io.NopCloser(bytes.NewReader(body))
 	}
 	if err != nil {
-		tl.Error(pr.Logger, "error reading body from http response",
-			tl.Pairs{"url": pr.URL.String(), "detail": err.Error()})
+		pr.Logger.Error("error reading body from http response",
+			logging.Pairs{"url": pr.URL.String(), "detail": err.Error()})
 		return []byte{}, resp, 0
 	}
 

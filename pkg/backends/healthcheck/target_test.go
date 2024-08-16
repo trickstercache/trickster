@@ -224,6 +224,7 @@ func TestProbe(t *testing.T) {
 		baseRequest: r,
 		httpClient:  ts.Client(),
 		ec:          []int{200},
+		logger:      testLogger,
 	}
 	target.probe()
 	if target.successConsecutiveCnt.Load() != 1 {

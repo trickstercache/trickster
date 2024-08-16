@@ -26,10 +26,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
-func mockServe(oldConf *config.Config, wg *sync.WaitGroup, logger *tl.Logger,
+func mockServe(oldConf *config.Config, wg *sync.WaitGroup, logger logging.Logger,
 	oldCaches map[string]cache.Cache, args []string, errorFunc func()) error {
 	return nil
 }

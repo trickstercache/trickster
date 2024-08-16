@@ -26,7 +26,7 @@ import (
 	"strings"
 	"sync"
 
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	txe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
@@ -206,7 +206,8 @@ func (d *HTTPDocument) LoadRangeParts() {
 }
 
 // ParsePartialContentBody parses a Partial Content response body into 0 or more discrete parts
-func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte, logger interface{}) {
+func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response,
+	body []byte, logger logging.Logger) {
 
 	ct := resp.Header.Get(headers.NameContentType)
 	if cr := resp.Header.Get(headers.NameContentRange); cr != "" {
@@ -249,7 +250,8 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response, body []byte,
 			d.RangeParts.Compress()
 			d.Ranges = d.RangeParts.Ranges()
 		} else {
-			tl.Error(logger, "unable to parse multipart range response body", tl.Pairs{"detail": err.Error})
+			logger.Error("unable to parse multipart range response body",
+				logging.Pairs{"detail": err.Error})
 		}
 	} else {
 		if !strings.HasPrefix(ct, headers.ValueMultipartByteRanges) {

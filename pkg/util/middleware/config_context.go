@@ -17,27 +17,22 @@
 package middleware
 
 import (
-	"math/rand"
 	"net/http"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
-
 // WithResourcesContext ...
 func WithResourcesContext(client backends.Backend, o *bo.Options,
 	c cache.Cache, p *po.Options, t *tracing.Tracer,
-	l interface{}, next http.Handler) http.Handler {
+	l logging.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		if o != nil && (o.LatencyMinMS > 0 || o.LatencyMaxMS > 0) {

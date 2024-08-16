@@ -23,10 +23,10 @@ import (
 
 	io "github.com/trickstercache/trickster/v2/pkg/cache/index/options"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
-var testLogger = tl.ConsoleLogger("error")
+var testLogger = logging.ConsoleLogger("error")
 
 var testBulkIndex *Index
 

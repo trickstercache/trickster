@@ -28,7 +28,7 @@ import (
 	"testing"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	ct "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -129,7 +129,8 @@ func TestDeriveCacheKey(t *testing.T) {
 	}
 
 	newResources := func() *request.Resources {
-		return request.NewResources(cfg, cfg.Paths["root"], nil, nil, nil, nil, tl.ConsoleLogger("error"))
+		return request.NewResources(cfg, cfg.Paths["root"], nil, nil, nil,
+			nil, logging.ConsoleLogger("error"))
 	}
 
 	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
@@ -228,7 +229,7 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
 	tr = tr.WithContext(ct.WithResources(context.Background(),
 		request.NewResources(client.Configuration(), client.Configuration().Paths["root"],
-			nil, nil, nil, nil, tl.ConsoleLogger("error"))))
+			nil, nil, nil, nil, logging.ConsoleLogger("error"))))
 
 	tr.Header.Add("Authorization", "test")
 	tr.Header.Add("X-Test-Header", "test2")
@@ -260,7 +261,8 @@ func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
 
 	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
 	tr = tr.WithContext(ct.WithResources(context.Background(),
-		request.NewResources(client.Configuration(), nil, nil, nil, nil, nil, tl.ConsoleLogger("error"))))
+		request.NewResources(client.Configuration(), nil, nil, nil, nil, nil,
+			logging.ConsoleLogger("error"))))
 
 	pr := newProxyRequest(tr, nil)
 	ck := pr.DeriveCacheKey("extra")

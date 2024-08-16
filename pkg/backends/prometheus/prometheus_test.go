@@ -27,17 +27,14 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
 	po "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
 	"github.com/trickstercache/trickster/v2/pkg/config"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	pe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
-
-var testModeler = model.NewModeler()
 
 func TestPrometheusClientInterfacing(t *testing.T) {
 
@@ -67,7 +64,7 @@ func TestNewClient(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := cr.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
+	caches := cr.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
@@ -143,7 +140,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	req := &http.Request{URL: u}
 	o := bo.New()
 	o.Prometheus = &po.Options{Labels: map[string]string{"test": "trickster"}}
-	rsc := request.NewResources(o, nil, nil, nil, nil, nil, nil)
+	rsc := request.NewResources(o, nil, nil, nil, nil, nil, testLogger)
 	req = request.SetResources(req, rsc)
 
 	client := &Client{}
@@ -378,7 +375,7 @@ func TestParseVectorQuery(t *testing.T) {
 
 	o := bo.New()
 	o.Prometheus = &po.Options{Labels: map[string]string{"test": "trickster"}}
-	rsc := request.NewResources(o, nil, nil, nil, nil, nil, nil)
+	rsc := request.NewResources(o, nil, nil, nil, nil, nil, testLogger)
 	req = request.SetResources(req, rsc)
 
 	rounder := time.Second * 15

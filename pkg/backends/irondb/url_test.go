@@ -28,7 +28,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/irondb/common"
 	"github.com/trickstercache/trickster/v2/pkg/config"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -62,7 +62,7 @@ func TestSetExtent(t *testing.T) {
 	client.makeExtentSetters()
 
 	pcs := client.DefaultPathConfigs(o)
-	rsc := request.NewResources(o, nil, nil, nil, client, nil, tl.ConsoleLogger("error"))
+	rsc := request.NewResources(o, nil, nil, nil, client, nil, logging.ConsoleLogger("error"))
 
 	cases := []struct {
 		handler  string
@@ -230,7 +230,7 @@ func TestFastForwardURL(t *testing.T) {
 
 	pcs := client.DefaultPathConfigs(o)
 
-	rsc := request.NewResources(o, nil, nil, nil, client, nil, tl.ConsoleLogger("error"))
+	rsc := request.NewResources(o, nil, nil, nil, client, nil, logging.ConsoleLogger("error"))
 
 	cases := []struct {
 		handler string
@@ -327,7 +327,7 @@ func TestParseTimerangeQuery(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 
 	r = request.SetResources(r, request.NewResources(client.Configuration(), &po.Options{},
-		nil, nil, client, nil, tl.ConsoleLogger("error")))
+		nil, nil, client, nil, logging.ConsoleLogger("error")))
 
 	_, _, _, err = client.ParseTimeRangeQuery(r)
 	if err == nil || err != expected {

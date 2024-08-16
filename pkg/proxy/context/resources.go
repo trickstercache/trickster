@@ -22,7 +22,7 @@ import (
 
 // WithResources returns a copy of the provided context that also includes the BackendOptions,
 // CachingConfig and PathConfig for the request
-func WithResources(ctx context.Context, r interface{}) context.Context {
+func WithResources(ctx context.Context, r any) context.Context {
 	if r != nil {
 		return context.WithValue(StartRewriterHops(ctx), resourcesKey, r)
 	}
@@ -30,6 +30,6 @@ func WithResources(ctx context.Context, r interface{}) context.Context {
 }
 
 // Resources returns the interface reference to the Request's resources
-func Resources(ctx context.Context) interface{} {
+func Resources(ctx context.Context) any {
 	return ctx.Value(resourcesKey)
 }

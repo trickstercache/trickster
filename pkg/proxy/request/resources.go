@@ -24,6 +24,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -42,10 +43,10 @@ type Resources struct {
 	AlternateCacheTTL time.Duration
 	TimeRangeQuery    *timeseries.TimeRangeQuery
 	Tracer            *tracing.Tracer
-	Logger            interface{}
+	Logger            logging.Logger
 	IsMergeMember     bool
 	ResponseBytes     []byte
-	ResponseMergeFunc interface{}
+	ResponseMergeFunc any
 	TSUnmarshaler     timeseries.UnmarshalerFunc
 	TSMarshaler       timeseries.MarshalWriterFunc
 	TSTransformer     func(timeseries.Timeseries)
@@ -81,7 +82,7 @@ func (r *Resources) Clone() *Resources {
 // NewResources returns a new Resources collection based on the provided inputs
 func NewResources(oo *bo.Options, po *po.Options, co *co.Options,
 	c cache.Cache, client backends.Backend, t *tracing.Tracer,
-	logger interface{}) *Resources {
+	logger logging.Logger) *Resources {
 	return &Resources{
 		BackendOptions: oo,
 		PathConfig:     po,

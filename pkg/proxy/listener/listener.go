@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
@@ -117,7 +117,8 @@ func NewListenerGroup() *ListenerGroup {
 // connections (with operates with sampling through scrapes), and a set of
 // counter metrics for connections accepted, rejected and closed.
 func NewListener(listenAddress string, listenPort, connectionsLimit int,
-	tlsConfig *tls.Config, drainTimeout time.Duration, logger interface{}) (net.Listener, error) {
+	tlsConfig *tls.Config, drainTimeout time.Duration,
+	logger logging.Logger) (net.Listener, error) {
 
 	var listener net.Listener
 	var err error
@@ -140,7 +141,7 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int,
 		metrics.ProxyMaxConnections.Set(float64(connectionsLimit))
 	}
 
-	tl.Debug(logger, "starting proxy listener", tl.Pairs{
+	logger.Debug("starting proxy listener", logging.Pairs{
 		"connectionsLimit": connectionsLimit,
 		"scheme":           listenerType,
 		"address":          listenAddress,
@@ -165,7 +166,7 @@ func (lg *ListenerGroup) Get(name string) *Listener {
 // StartListener starts a new HTTP listener and adds it to the listener group
 func (lg *ListenerGroup) StartListener(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, router http.Handler, wg *sync.WaitGroup, tracers tracing.Tracers,
-	f func(), drainTimeout time.Duration, logger interface{}) error {
+	f func(), drainTimeout time.Duration, logger logging.Logger) error {
 	if wg != nil {
 		defer wg.Done()
 	}
@@ -182,15 +183,15 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 	var err error
 	l.Listener, err = NewListener(address, port, connectionsLimit, tlsConfig, drainTimeout, logger)
 	if err != nil {
-		tl.ErrorSynchronous(logger,
-			"http listener startup failed", tl.Pairs{"name": listenerName, "detail": err})
+		logger.ErrorSynchronous(
+			"http listener startup failed", logging.Pairs{"listenerName": listenerName, "detail": err})
 		if f != nil {
 			f()
 		}
 		return err
 	}
-	tl.Info(logger, "http listener starting",
-		tl.Pairs{"name": listenerName, "port": port, "address": address})
+	logger.Info("http listener starting",
+		logging.Pairs{"listenerName": listenerName, "port": port, "address": address})
 
 	lg.listenersLock.Lock()
 	lg.members[listenerName] = l
@@ -207,8 +208,8 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 		l.server = svr
 		err = svr.Serve(l)
 		if err != nil {
-			tl.ErrorSynchronous(logger,
-				"https listener stopping", tl.Pairs{"name": listenerName, "detail": err})
+			logger.ErrorSynchronous(
+				"https listener stopping", logging.Pairs{"listenerName": listenerName, "detail": err})
 			if l.exitOnError {
 				os.Exit(1)
 			}
@@ -222,8 +223,8 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 	l.server = svr
 	err = svr.Serve(l)
 	if err != nil {
-		tl.ErrorSynchronous(logger,
-			"http listener stopping", tl.Pairs{"name": listenerName, "detail": err})
+		logger.ErrorSynchronous("http listener stopping",
+			logging.Pairs{"listenerName": listenerName, "detail": err})
 		if l.exitOnError {
 			os.Exit(1)
 		}
@@ -231,14 +232,15 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 	return err
 }
 
-func handleTracerShutdowns(tracers tracing.Tracers, logger interface{}) {
+func handleTracerShutdowns(tracers tracing.Tracers, logger logging.Logger) {
 	for _, v := range tracers {
 		if v == nil || v.ShutdownFunc == nil {
 			continue
 		}
 		err := v.ShutdownFunc(context.Background())
 		if err != nil {
-			tl.Error(logger, "tracer shutdown failed", tl.Pairs{"detail": err.Error()})
+			logger.Error("tracer shutdown failed",
+				logging.Pairs{"detail": err.Error()})
 		}
 	}
 }
@@ -246,7 +248,7 @@ func handleTracerShutdowns(tracers tracing.Tracers, logger interface{}) {
 // StartListenerRouter starts a new HTTP listener with a new router, and adds it to the listener group
 func (lg *ListenerGroup) StartListenerRouter(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, path string, handler http.Handler, wg *sync.WaitGroup,
-	tracers tracing.Tracers, f func(), drainTimeout time.Duration, logger interface{}) error {
+	tracers tracing.Tracers, f func(), drainTimeout time.Duration, logger logging.Logger) error {
 	router := http.NewServeMux()
 	router.Handle(path, handler)
 	return lg.StartListener(listenerName, address, port, connectionsLimit,
@@ -260,7 +262,7 @@ func (lg *ListenerGroup) DrainAndClose(listenerName string, drainWait time.Durat
 		l.exitOnError = false
 		delete(lg.members, listenerName)
 		lg.listenersLock.Unlock()
-		if l == nil || l.Listener == nil {
+		if l.Listener == nil {
 			return errors.ErrNilListener
 		}
 		ctx := context.Background()

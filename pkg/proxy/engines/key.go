@@ -115,6 +115,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 					}
 				}
 			}
+			// TODO: this value of r does not appear to be used
 			r = request.SetBody(r, b)
 		}
 

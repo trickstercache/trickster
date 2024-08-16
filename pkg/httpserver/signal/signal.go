@@ -24,7 +24,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
 var hups = make(chan os.Signal, 1)
@@ -33,10 +33,10 @@ func init() {
 	signal.Notify(hups, syscall.SIGHUP)
 }
 
-type ServeFunc = func(*config.Config, *sync.WaitGroup, *tl.Logger,
+type ServeFunc = func(*config.Config, *sync.WaitGroup, logging.Logger,
 	map[string]cache.Cache, []string, func()) error
 
-func StartHupMonitor(conf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
+func StartHupMonitor(conf *config.Config, wg *sync.WaitGroup, logger logging.Logger,
 	caches map[string]cache.Cache, args []string, f ServeFunc) {
 	if conf == nil || conf.Resources == nil || f == nil {
 		return
@@ -48,15 +48,16 @@ func StartHupMonitor(conf *config.Config, wg *sync.WaitGroup, log *tl.Logger,
 			case <-hups:
 				conf.Main.ReloaderLock.Lock()
 				if conf.IsStale() {
-					tl.Warn(log, "configuration reload starting now", tl.Pairs{"source": "sighup"})
-					err := f(conf, wg, log, caches, args, nil)
+					logger.Warn("configuration reload starting now",
+						logging.Pairs{"source": "sighup"})
+					err := f(conf, wg, logger, caches, args, nil)
 					if err == nil {
 						conf.Main.ReloaderLock.Unlock()
 						return // runConfig will start a new HupMonitor in place of this one
 					}
 				}
 				conf.Main.ReloaderLock.Unlock()
-				tl.Warn(log, "configuration NOT reloaded", tl.Pairs{})
+				logger.Warn("configuration NOT reloaded", nil)
 			case <-conf.Resources.QuitChan:
 				return
 			}

@@ -65,7 +65,7 @@ func MergeAndWriteVector(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 
 				t2, err := UnmarshalTimeseries(rg.Body(), trq)
 				if err != nil {
-					logging.Error(rg.Resources.Logger, "vector unmarshaling error",
+					rg.Resources.Logger.Error("vector unmarshaling error",
 						logging.Pairs{"provider": "prometheus", "detail": err.Error()})
 					continue
 				}
@@ -73,8 +73,8 @@ func MergeAndWriteVector(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 				if ts == nil {
 					ds, ok := t2.(*dataset.DataSet)
 					if !ok {
-						logging.Error(rg.Resources.Logger, "vector unmarshaling error",
-							logging.Pairs{"provider": "prometheus", "detail": err.Error()})
+						rg.Resources.Logger.Error("vector unmarshaling error",
+							logging.Pairs{"provider": "prometheus"})
 						continue
 					}
 					ts = ds

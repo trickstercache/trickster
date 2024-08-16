@@ -73,8 +73,7 @@ func TestSetExtent(t *testing.T) {
 	pc.SetExtent(r, nil, e)
 	if int(r.ContentLength) != len(expected) {
 		b, _ := io.ReadAll(r.Body)
-		fmt.Println(string(b))
-		t.Errorf("expected %d got %d", len(expected), r.ContentLength)
+		t.Errorf("expected %d got %d / %d", len(expected), r.ContentLength, len(b))
 	}
 
 }

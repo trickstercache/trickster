@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	defaultEndpoint = "http://localhost:9411/api/v2/spans"
+	defaultCollectorURL = "http://localhost:9411/api/v2/spans"
 )
 
 // Exporter exports spans to the zipkin collector.
@@ -93,7 +93,7 @@ func WithClient(client *http.Client) Option {
 func New(collectorURL string, opts ...Option) (*Exporter, error) {
 	if collectorURL == "" {
 		// Use endpoint from env var or default collector URL.
-		collectorURL = envOr(envEndpoint, defaultEndpoint)
+		collectorURL = envOr(envEndpoint, defaultCollectorURL)
 	}
 	u, err := url.Parse(collectorURL)
 	if err != nil {

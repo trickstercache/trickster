@@ -69,14 +69,15 @@ func PurgePathHandlerFunc(conf *config.Config, from *backends.Backends) func(htt
 		purgeFrom := req.URL.Query().Get("backend")
 		purgePath := req.URL.Query().Get("path")
 		if purgeFrom == "" || purgePath == "" {
-			logging.Warn(rsc.Logger, "failed to get backend/path args", nil)
+			rsc.Logger.Warn("failed to get backend/path args", nil)
 			w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 			w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("Usage: " + config.DefaultPurgePathHandlerPath + "?backend={backend}&path={path}"))
 			return
 		}
-		logging.Debug(rsc.Logger, "purging cache item", logging.Pairs{"backend": purgeFrom, "path": purgePath})
+		rsc.Logger.Debug("purging cache item",
+			logging.Pairs{"backend": purgeFrom, "path": purgePath})
 		fromBackend := from.Get(purgeFrom)
 		if fromBackend == nil {
 			w.Header().Set(headers.NameContentType, headers.ValueTextPlain)

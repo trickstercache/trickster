@@ -24,12 +24,12 @@ import (
 	"net/http"
 	"sort"
 
+	"github.com/trickstercache/trickster/v2/pkg/checksum/fnv"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
-	"github.com/trickstercache/trickster/v2/pkg/checksum/fnv"
 )
 
 // WFAlerts is the Wire Format Document for the /alerts endpoint
@@ -130,7 +130,7 @@ func MergeAndWriteAlerts(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 				a1 := &WFAlerts{}
 				err := json.Unmarshal(rg.Body(), &a1)
 				if err != nil {
-					logging.Error(rg.Resources.Logger, "alerts unmarshaling error",
+					rg.Resources.Logger.Error("alerts unmarshaling error",
 						logging.Pairs{"provider": "prometheus", "detail": err.Error()})
 					continue
 				}

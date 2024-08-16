@@ -116,12 +116,12 @@ func (se *SeriesEnvelope) SetVolatileExtents(e timeseries.ExtentList) {
 type DataPoint struct {
 	Time  time.Time
 	Step  uint32
-	Value interface{}
+	Value any
 }
 
 // MarshalJSON encodes a data point value into a JSON byte slice.
 func (dp *DataPoint) MarshalJSON() ([]byte, error) {
-	v := []interface{}{}
+	v := []any{}
 	tn := float64(0)
 	fv, err := strconv.ParseFloat(common.FormatTimestamp(dp.Time, true), 64)
 	if err == nil {
@@ -139,7 +139,7 @@ func (dp *DataPoint) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON decodes a JSON byte slice into this data point value.
 func (dp *DataPoint) UnmarshalJSON(b []byte) error {
-	v := []interface{}{}
+	v := []any{}
 	err := json.Unmarshal(b, &v)
 	if err != nil {
 		return err

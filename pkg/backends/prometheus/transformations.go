@@ -48,7 +48,7 @@ func (c *Client) processVectorTransformations(w http.ResponseWriter, rg *merge.R
 	headers.Merge(h, rg.Header())
 	t2, err := model.UnmarshalTimeseries(bytes, trq)
 	if err != nil || t2 == nil {
-		logging.Error(rg.Resources.Logger, "vector unmarshaling error",
+		rg.Resources.Logger.Error("vector unmarshaling error",
 			logging.Pairs{"provider": "prometheus", "detail": err.Error()})
 		defaultWrite(rg.Response.StatusCode, w, bytes)
 		return

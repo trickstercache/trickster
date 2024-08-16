@@ -23,10 +23,10 @@ import (
 	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 func TestCAQLHandler(t *testing.T) {
@@ -88,7 +88,8 @@ func TestCaqlHandlerSetExtent(t *testing.T) {
 		t.Error(err)
 	}
 
-	r = request.SetResources(r, request.NewResources(cfg, nil, nil, nil, client, nil, tl.ConsoleLogger("error")))
+	r = request.SetResources(r, request.NewResources(cfg, nil, nil, nil, client,
+		nil, logging.ConsoleLogger("error")))
 
 	now := time.Now()
 	then := now.Add(-5 * time.Hour)
