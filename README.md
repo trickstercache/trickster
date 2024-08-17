@@ -98,7 +98,7 @@ Trickster Helm Charts are located at <https://helm.tricksterproxy.io> for instal
 ### Building from source
 
 To build Trickster from the source code yourself you need to have a working
-Go environment with [version 1.19 or greater installed](http://golang.org/doc/install).
+Go environment with [version 1.23 or greater installed](http://golang.org/doc/install).
 
 You can directly use the `go` tool to download and install the `trickster`
 binary into your `GOPATH`:
