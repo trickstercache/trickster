@@ -67,10 +67,12 @@ func (s *Status) Headers() http.Header {
 
 // Set updates the status
 func (s *Status) Set(i int32) {
+	s.mtx.Lock()
 	s.status.Store(i)
 	for _, ch := range s.subscribers {
 		ch <- i == i
 	}
+	s.mtx.Unlock()
 }
 
 // Prober returns the Prober func
