@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: [1.23]
+        go: [1.24]
 
     steps:
       
@@ -42,7 +42,7 @@ jobs:
           
       - uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go }}
+          go-version-file: go.mod
       - uses: actions/checkout@v4
       
         name: Get dependencies
