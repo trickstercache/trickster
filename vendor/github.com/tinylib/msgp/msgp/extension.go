@@ -15,7 +15,14 @@ const (
 
 	// TimeExtension is the extension number used for time.Time
 	TimeExtension = 5
+
+	// MsgTimeExtension is the extension number for timestamps as defined in
+	// https://github.com/msgpack/msgpack/blob/master/spec.md#timestamp-extension-type
+	MsgTimeExtension = -1
 )
+
+// msgTimeExtension is a painful workaround to avoid "constant -1 overflows byte".
+var msgTimeExtension = int8(MsgTimeExtension)
 
 // our extensions live here
 var extensionReg = make(map[int8]func() Extension)
@@ -477,15 +484,27 @@ func AppendExtension(b []byte, e Extension) ([]byte, error) {
 // - InvalidPrefixError
 // - An umarshal error returned from e.UnmarshalBinary
 func ReadExtensionBytes(b []byte, e Extension) ([]byte, error) {
+	typ, remain, data, err := readExt(b)
+	if err != nil {
+		return b, err
+	}
+	if typ != e.ExtensionType() {
+		return b, errExt(typ, e.ExtensionType())
+	}
+	return remain, e.UnmarshalBinary(data)
+}
+
+// readExt will read the extension type, and return remaining bytes,
+// as well as the data of the extension.
+func readExt(b []byte) (typ int8, remain []byte, data []byte, err error) {
 	l := len(b)
 	if l < 3 {
-		return b, ErrShortBytes
+		return 0, b, nil, ErrShortBytes
 	}
 	lead := b[0]
 	var (
 		sz  int // size of 'data'
 		off int // offset of 'data'
-		typ int8
 	)
 	switch lead {
 	case mfixext1:
@@ -513,35 +532,30 @@ func ReadExtensionBytes(b []byte, e Extension) ([]byte, error) {
 		typ = int8(b[2])
 		off = 3
 		if sz == 0 {
-			return b[3:], e.UnmarshalBinary(b[3:3])
+			return typ, b[3:], b[3:3], nil
 		}
 	case mext16:
 		if l < 4 {
-			return b, ErrShortBytes
+			return 0, b, nil, ErrShortBytes
 		}
 		sz = int(big.Uint16(b[1:]))
 		typ = int8(b[3])
 		off = 4
 	case mext32:
 		if l < 6 {
-			return b, ErrShortBytes
+			return 0, b, nil, ErrShortBytes
 		}
 		sz = int(big.Uint32(b[1:]))
 		typ = int8(b[5])
 		off = 6
 	default:
-		return b, badPrefix(ExtensionType, lead)
+		return 0, b, nil, badPrefix(ExtensionType, lead)
 	}
-
-	if typ != e.ExtensionType() {
-		return b, errExt(typ, e.ExtensionType())
-	}
-
 	// the data of the extension starts
 	// at 'off' and is 'sz' bytes long
-	if len(b[off:]) < sz {
-		return b, ErrShortBytes
-	}
 	tot := off + sz
-	return b[tot:], e.UnmarshalBinary(b[off:tot])
+	if len(b[off:]) < sz {
+		return 0, b, nil, ErrShortBytes
+	}
+	return typ, b[tot:], b[off:tot:tot], nil
 }

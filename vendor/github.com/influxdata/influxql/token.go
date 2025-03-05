@@ -93,6 +93,7 @@ const (
 	FIELD
 	FOR
 	FROM
+	FUTURE
 	GRANT
 	GRANTS
 	GROUP
@@ -112,6 +113,7 @@ const (
 	ON
 	ORDER
 	PASSWORD
+	PAST
 	POLICY
 	POLICIES
 	PRIVILEGES
@@ -217,6 +219,7 @@ var tokens = [...]string{
 	FIELD:         "FIELD",
 	FOR:           "FOR",
 	FROM:          "FROM",
+	FUTURE:        "FUTURE",
 	GRANT:         "GRANT",
 	GRANTS:        "GRANTS",
 	GROUP:         "GROUP",
@@ -236,6 +239,7 @@ var tokens = [...]string{
 	ON:            "ON",
 	ORDER:         "ORDER",
 	PASSWORD:      "PASSWORD",
+	PAST:          "PAST",
 	POLICY:        "POLICY",
 	POLICIES:      "POLICIES",
 	PRIVILEGES:    "PRIVILEGES",

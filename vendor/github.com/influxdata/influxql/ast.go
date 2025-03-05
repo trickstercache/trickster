@@ -592,6 +592,10 @@ type CreateDatabaseStatement struct {
 
 	// RetentionPolicyShardGroupDuration indicates shard group duration for the new database.
 	RetentionPolicyShardGroupDuration time.Duration
+
+	FutureWriteLimit *time.Duration
+
+	PastWriteLimit *time.Duration
 }
 
 // String returns a string representation of the create database statement.
@@ -612,6 +616,14 @@ func (s *CreateDatabaseStatement) String() string {
 		if s.RetentionPolicyShardGroupDuration > 0 {
 			_, _ = buf.WriteString(" SHARD DURATION ")
 			_, _ = buf.WriteString(s.RetentionPolicyShardGroupDuration.String())
+		}
+		if s.FutureWriteLimit != nil && *s.FutureWriteLimit > 0 {
+			_, _ = buf.WriteString(" FUTURE LIMIT ")
+			_, _ = buf.WriteString(FormatDuration(*s.FutureWriteLimit))
+		}
+		if s.PastWriteLimit != nil && *s.PastWriteLimit > 0 {
+			_, _ = buf.WriteString(" PAST LIMIT ")
+			_, _ = buf.WriteString(FormatDuration(*s.PastWriteLimit))
 		}
 		if s.RetentionPolicyName != "" {
 			_, _ = buf.WriteString(" NAME ")
@@ -931,6 +943,12 @@ type CreateRetentionPolicyStatement struct {
 
 	// Shard Duration.
 	ShardGroupDuration time.Duration
+
+	// Error on writes after this duration from now
+	FutureWriteLimit time.Duration
+
+	// Error on writes before this duration from now
+	PastWriteLimit time.Duration
 }
 
 // String returns a string representation of the create retention policy.
@@ -950,6 +968,14 @@ func (s *CreateRetentionPolicyStatement) String() string {
 	}
 	if s.Default {
 		_, _ = buf.WriteString(" DEFAULT")
+	}
+	if s.FutureWriteLimit != 0 {
+		_, _ = buf.WriteString(" FUTURE LIMIT ")
+		_, _ = buf.WriteString(FormatDuration(s.FutureWriteLimit))
+	}
+	if s.PastWriteLimit != 0 {
+		_, _ = buf.WriteString(" PAST LIMIT ")
+		_, _ = buf.WriteString(FormatDuration(s.PastWriteLimit))
 	}
 	return buf.String()
 }
@@ -983,6 +1009,12 @@ type AlterRetentionPolicyStatement struct {
 
 	// Duration of the Shard.
 	ShardGroupDuration *time.Duration
+
+	// Cutoff for future writes
+	FutureWriteLimit *time.Duration
+
+	// Cutoff for past writes
+	PastWriteLimit *time.Duration
 }
 
 // String returns a string representation of the alter retention policy statement.
@@ -1010,6 +1042,16 @@ func (s *AlterRetentionPolicyStatement) String() string {
 
 	if s.Default {
 		_, _ = buf.WriteString(" DEFAULT")
+	}
+
+	if s.FutureWriteLimit != nil && *s.FutureWriteLimit != 0 {
+		_, _ = buf.WriteString(" FUTURE LIMIT ")
+		_, _ = buf.WriteString(FormatDuration(*s.FutureWriteLimit))
+	}
+
+	if s.PastWriteLimit != nil && *s.PastWriteLimit != 0 {
+		_, _ = buf.WriteString(" PAST LIMIT ")
+		_, _ = buf.WriteString(FormatDuration(*s.PastWriteLimit))
 	}
 
 	return buf.String()
