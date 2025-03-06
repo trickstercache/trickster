@@ -228,7 +228,7 @@ func TestPartialCacheMissRangeRequestChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if deltas == nil || len(deltas) < 1 {
+	if len(deltas) == 0 {
 		t.Errorf("invalid deltas: %v", deltas)
 	} else if deltas[0].Start != 10 ||
 		deltas[0].End != 20 {

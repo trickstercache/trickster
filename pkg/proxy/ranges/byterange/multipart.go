@@ -27,8 +27,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 // MultipartByteRange represents one part of a list of multipart byte ranges
@@ -42,7 +42,7 @@ type MultipartByteRanges map[Range]*MultipartByteRange
 
 // Merge merges the source MultipartByteRanges map into the subject map
 func (mbrs MultipartByteRanges) Merge(src MultipartByteRanges) {
-	if src == nil || len(src) == 0 || mbrs == nil {
+	if len(src) == 0 || mbrs == nil {
 		return
 	}
 	for _, v := range src.Ranges() {
@@ -66,7 +66,7 @@ func (mbrs MultipartByteRanges) PackableMultipartByteRanges() map[string]*Multip
 func (mbrs MultipartByteRanges) Body(fullContentLength int64, contentType string) (http.Header, []byte) {
 
 	ranges := mbrs.Ranges()
-	if ranges == nil || len(ranges) == 0 {
+	if len(ranges) == 0 {
 		return nil, []byte{}
 	}
 
@@ -209,7 +209,7 @@ func ParseMultipartRangeResponseBody(body io.Reader,
 func (mbrs MultipartByteRanges) ExtractResponseRange(ranges Ranges, fullContentLength int64,
 	contentType string, body []byte) (http.Header, []byte) {
 
-	if ranges == nil || len(ranges) == 0 {
+	if len(ranges) == 0 {
 		return nil, body
 	}
 

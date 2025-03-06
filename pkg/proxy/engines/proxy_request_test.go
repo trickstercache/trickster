@@ -58,7 +58,7 @@ func TestParseRequestRanges(t *testing.T) {
 	}
 	pr.parseRequestRanges()
 
-	if pr.wantedRanges == nil || len(pr.wantedRanges) < 1 {
+	if len(pr.wantedRanges) == 0 {
 		t.Errorf("unexpected range parse: %v", pr.wantedRanges)
 	}
 
