@@ -30,7 +30,7 @@ import (
 
 // UpdateParams updates the provided query parameters collection with the provided updates
 func UpdateParams(params url.Values, updates map[string]string) {
-	if params == nil || updates == nil || len(updates) == 0 {
+	if params == nil || len(updates) == 0 {
 		return
 	}
 	for k, v := range updates {

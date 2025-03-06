@@ -80,7 +80,7 @@ func (o *Options) Equal(o2 *Options) bool {
 func (o *Options) Validate() (bool, error) {
 
 	if (o.FullChainCertPath == "" || o.PrivateKeyPath == "") &&
-		(o.CertificateAuthorityPaths == nil || len(o.CertificateAuthorityPaths) == 0) {
+		len(o.CertificateAuthorityPaths) == 0 {
 		return false, nil
 	}
 

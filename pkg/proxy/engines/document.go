@@ -275,7 +275,7 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response,
 // the caller must know that document's multipart ranges include full content length before calling this method
 func (d *HTTPDocument) FulfillContentBody() error {
 
-	if d.RangeParts == nil || len(d.RangeParts) == 0 {
+	if len(d.RangeParts) == 0 {
 		d.SetBody(nil)
 		return txe.ErrNoRanges
 	}
