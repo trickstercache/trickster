@@ -8,7 +8,6 @@ on:
     tags:
       - 'v[0-9]+\.[0-9]+\.[0-9]+'
     
-    
   pull_request:
     branches:
       - main
@@ -18,7 +17,18 @@ on:
 name: Continuous Integration and Build Tests
 
 jobs:
-
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64
+          args: --timeout 5m
   build:
     runs-on: ubuntu-latest
     strategy:
@@ -27,7 +37,6 @@ jobs:
         go: [1.24]
 
     steps:
-      
       - uses: actions/checkout@v4
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -39,24 +48,17 @@ jobs:
         run: pip install codespell
       - name: running codespell
         run: codespell --skip="vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz,go.mod,go.sum" --ignore-words="./testdata/ignore_words.txt"
-          
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - uses: actions/checkout@v4
-      
-        name: Get dependencies
-      - run: |
-          go get -v -t -d ./...
-          if [ -f Gopkg.toml ]; then
-              curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
-              dep ensure
-          fi
+      - name: Get dependencies
+        run: |
+          go mod download
       - run: go mod vendor
       - run: go test -v -coverprofile=profile.cov ./...
       - run: sed -i -e '/^.*_gen\.go:.*$/d' profile.cov
       - run: go build -o /dev/null ./cmd/trickster
-
       - name: Send coverage
         uses: shogo82148/actions-goveralls@v1
         with:
@@ -64,7 +66,8 @@ jobs:
           flag-name: Go-${{ matrix.go }}
           parallel: true
   finish:
-    needs: build
+    needs:
+      - build
     runs-on: ubuntu-latest
     steps:
       - uses: shogo82148/actions-goveralls@v1

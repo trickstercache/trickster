@@ -195,3 +195,8 @@ serve-debug:
 .PHONY: serve-info
 serve-info:
 	@cd cmd/trickster && go run . -config /etc/trickster/trickster.yaml --log-level info
+
+.PHONY: get-tools
+get-tools:
+	@echo "Installing tools..."
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6
