@@ -53,7 +53,7 @@ func New(options *options.Options) (*tracing.Tracer, error) {
 	}
 
 	var tags []attribute.KeyValue
-	if options.Tags != nil && len(options.Tags) > 0 {
+	if len(options.Tags) > 0 {
 		tags = make([]attribute.KeyValue, len(options.Tags))
 		for k, v := range options.Tags {
 			// TODO: just discovered that these aren't actually being used

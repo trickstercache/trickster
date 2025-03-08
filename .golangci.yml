@@ -6,15 +6,5 @@ linters-settings:
     line-length: 180
 
 linters:
-  disable-all: true
-  enable:
+  disable:
     - errcheck
-    - ineffassign
-    - gas
-    - gofumpt
-    - golint
-    - gosimple
-    - govet
-    - lll
-    - varcheck
-    - unused

@@ -51,20 +51,6 @@ const (
 	LookupStatusProxyHit
 )
 
-var cacheLookupStatusNames = map[string]LookupStatus{
-	"hit":         LookupStatusHit,
-	"phit":        LookupStatusPartialHit,
-	"rhit":        LookupStatusRevalidated,
-	"rmiss":       LookupStatusRangeMiss,
-	"kmiss":       LookupStatusKeyMiss,
-	"purge":       LookupStatusPurge,
-	"proxy-error": LookupStatusProxyError,
-	"proxy-only":  LookupStatusProxyOnly,
-	"nchit":       LookupStatusNegativeCacheHit,
-	"proxy-hit":   LookupStatusProxyHit,
-	"error":       LookupStatusError,
-}
-
 var cacheLookupStatusValues = map[LookupStatus]string{
 	LookupStatusHit:              "hit",
 	LookupStatusPartialHit:       "phit",
