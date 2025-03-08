@@ -162,7 +162,7 @@ func (l Lookup) Clone() Lookup {
 // If a key exists in both maps, the source value wins.
 // If the destination map is nil, the source map will not be merged
 func Merge(dst, src http.Header) {
-	if len(src) == 0 || len(dst) == 0 {
+	if len(src) == 0 || dst == nil {
 		return
 	}
 	for k, sv := range src {
