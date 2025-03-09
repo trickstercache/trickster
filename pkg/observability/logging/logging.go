@@ -64,7 +64,7 @@ type Pairs map[string]any
 // instance string.
 func New(conf *config.Config) Logger {
 	l := &logger{
-		onceRanEntries: make(map[string]any),
+		onceRanEntries: make(map[string]*sync.Once),
 	}
 	l.logFunc = l.logAsyncronous
 	if conf.Logging.LogFile == "" {
@@ -93,7 +93,7 @@ func New(conf *config.Config) Logger {
 func NoopLogger() Logger {
 	l := &logger{
 		logFunc:        func(level.Level, string, Pairs) {},
-		onceRanEntries: make(map[string]any),
+		onceRanEntries: make(map[string]*sync.Once),
 		levelID:        level.InfoID,
 		level:          level.Info,
 	}
@@ -103,7 +103,7 @@ func NoopLogger() Logger {
 func StreamLogger(w io.Writer, logLevel level.Level) Logger {
 	l := &logger{
 		writer:         w,
-		onceRanEntries: make(map[string]any),
+		onceRanEntries: make(map[string]*sync.Once),
 	}
 	l.logFunc = l.logAsyncronous
 
@@ -117,7 +117,7 @@ func StreamLogger(w io.Writer, logLevel level.Level) Logger {
 func ConsoleLogger(logLevel level.Level) Logger {
 	l := &logger{
 		writer:         os.Stdout,
-		onceRanEntries: make(map[string]any),
+		onceRanEntries: make(map[string]*sync.Once),
 	}
 	l.logFunc = l.logAsyncronous
 	l.SetLogLevel(logLevel)
@@ -131,7 +131,7 @@ type logger struct {
 	closer         io.Closer
 	onceMutex      sync.Mutex
 	mtx            sync.Mutex
-	onceRanEntries map[string]any
+	onceRanEntries map[string]*sync.Once
 	logFunc        logFunc
 }
 
@@ -260,10 +260,16 @@ func (l *logger) logOnce(logLevel level.Level, lid level.LevelID,
 	}
 	key = string(logLevel) + "." + key
 	l.onceMutex.Lock()
-	l.onceRanEntries[key] = nil
+	if l.onceRanEntries[key] == nil {
+		l.onceRanEntries[key] = &sync.Once{}
+	}
+	var ok bool
+	l.onceRanEntries[key].Do(func() {
+		l.log(logLevel, event, detail)
+		ok = true
+	})
 	l.onceMutex.Unlock()
-	l.logFunc(logLevel, event, detail)
-	return true
+	return ok
 }
 
 func (l *logger) DebugOnce(key, event string, detail Pairs) bool {
