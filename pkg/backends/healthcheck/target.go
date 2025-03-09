@@ -56,6 +56,7 @@ type target struct {
 	ec                    []int
 	logger                logging.Logger
 	isInLoop              bool
+	mtx                   sync.Mutex
 }
 
 // DemandProbe defines a health check probe that makes an HTTP Request to the backend and writes the
@@ -191,12 +192,16 @@ func (t *target) probeLoop() {
 		select {
 		case <-t.ctx.Done():
 			t.ctx = nil
+			t.mtx.Lock()
 			t.isInLoop = false
+			t.mtx.Unlock()
 			t.wg.Done()
 			time.Sleep(1 * time.Second)
 			return // avoid leaking of this goroutine when ctx is done.
 		default:
+			t.mtx.Lock()
 			t.isInLoop = true
+			t.mtx.Unlock()
 			t.probe()
 			time.Sleep(t.interval)
 		}

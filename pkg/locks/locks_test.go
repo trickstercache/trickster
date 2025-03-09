@@ -17,6 +17,7 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -268,7 +269,7 @@ func TestUpgrade(t *testing.T) {
 
 	nl, _ = locker.RAcquire("test2")
 	nl1 := nl.(*namedLock)
-	nl1.subsequentWriter = true
+	atomic.StoreInt32(&nl1.subsequentWriter, 1)
 	b = nl.Upgrade()
 	nl.Release()
 	if b {

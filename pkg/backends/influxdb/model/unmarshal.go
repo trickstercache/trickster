@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"io"
 	"sort"
 	"strconv"
@@ -169,13 +170,13 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			var sz int64
 			var mtx sync.Mutex
 			var wg sync.WaitGroup
-			var ume error
+			ume := make(chan error, len(wfd.Results[i].SeriesList[j].Values))
 			for vi, v := range wfd.Results[i].SeriesList[j].Values {
 				wg.Add(1)
 				go func(vals []interface{}, idx int) {
 					pt, cols, err := pointFromValues(vals, sh.TimestampIndex)
 					if err != nil {
-						ume = err
+						ume <- err
 						wg.Done()
 						return
 					}
@@ -195,14 +196,16 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 					mtx.Unlock()
 					wg.Done()
 				}(v, vi)
-				if ume != nil {
-					break
-				}
 			}
 			wg.Wait()
+			close(ume)
 			sort.Sort(pts)
-			if ume != nil {
-				return nil, ume
+			var errs []error
+			for e := range ume {
+				errs = append(errs, e)
+			}
+			if len(errs) > 0 {
+				return nil, errors.Join(errs...)
 			}
 			s := &dataset.Series{
 				Header:    sh,
