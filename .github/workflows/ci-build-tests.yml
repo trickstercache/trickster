@@ -25,10 +25,10 @@ jobs:
         with:
           go-version: stable
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: reviewdog/action-golangci-lint@v2
         with:
-          version: v1.64
-          args: --timeout 5m
+          go_version: go.mod
+          golangci_lint_flags: "--config=.golangci.yml --timeout 5m"
   build:
     runs-on: ubuntu-latest
     strategy:
