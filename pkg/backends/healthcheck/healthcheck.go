@@ -89,8 +89,14 @@ func (hc *healthChecker) Register(name, description string, o *ho.Options,
 	if t.interval > 0 {
 		t.Start()
 		// wait for the health check to be fully registered
-		for !t.isInLoop {
-			time.Sleep(1 * time.Millisecond)
+		var isInLoop bool
+		var count time.Duration
+		for !isInLoop {
+			time.Sleep(count * 1 * time.Millisecond)
+			t.mtx.Lock()
+			isInLoop = t.isInLoop
+			t.mtx.Unlock()
+			count++
 		}
 	}
 	hc.statuses[t.name] = t.status

@@ -109,9 +109,11 @@ type MainConfig struct {
 }
 
 func (mc *MainConfig) SetStalenessInfo(fp string, lm, rlt time.Time) {
+	mc.stalenessCheckLock.Lock()
 	mc.configFilePath = fp
 	mc.configLastModified = lm
 	mc.configRateLimitTime = rlt
+	mc.stalenessCheckLock.Unlock()
 }
 
 // Resources is a collection of values used by configs at runtime that are not part of the config itself

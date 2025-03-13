@@ -18,6 +18,7 @@
 package index
 
 import (
+	"context"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -53,6 +54,7 @@ type Index struct {
 	lastWrite      time.Time                          `msg:"-"`
 
 	isClosing     bool
+	cancel        context.CancelFunc
 	flusherExited bool
 	reaperExited  bool
 
@@ -61,7 +63,10 @@ type Index struct {
 
 // Close is called to signal the index to shut down any subroutines
 func (idx *Index) Close() {
+	idx.cancel()
+	idx.mtx.Lock()
 	idx.isClosing = true
+	idx.mtx.Unlock()
 }
 
 // ToBytes returns a serialized byte slice representing the Index
@@ -121,10 +126,11 @@ func NewIndex(cacheName, cacheProvider string, indexData []byte, o *options.Opti
 	i.flushFunc = flushFunc
 	i.bulkRemoveFunc = bulkRemoveFunc
 	i.options = o
-
+	ctx, cancel := context.WithCancel(context.Background())
+	i.cancel = cancel
 	if flushFunc != nil {
 		if o.FlushInterval > 0 {
-			go i.flusher(logger)
+			go i.flusher(ctx, logger)
 		} else {
 			logger.Warn("cache index flusher did not start",
 				logging.Pairs{"cacheName": i.name, "flushInterval": o.FlushInterval})
@@ -132,7 +138,7 @@ func NewIndex(cacheName, cacheProvider string, indexData []byte, o *options.Opti
 	}
 
 	if o.ReapInterval > 0 {
-		go i.reaper(logger)
+		go i.reaper(ctx, logger)
 	} else {
 		logger.Warn("cache reaper did not start",
 			logging.Pairs{"cacheName": i.name, "reapInterval": o.ReapInterval})
@@ -252,17 +258,27 @@ func (idx *Index) GetExpiration(cacheKey string) time.Time {
 }
 
 // flusher periodically calls the cache's index flush func that writes the cache index to disk
-func (idx *Index) flusher(logger logging.Logger) {
+func (idx *Index) flusher(ctx context.Context, logger logging.Logger) {
 	var lastFlush time.Time
-	for !idx.isClosing {
-		time.Sleep(idx.options.FlushInterval)
-		if idx.lastWrite.Before(lastFlush) {
-			continue
+FLUSHER:
+	for {
+		idx.mtx.Lock()
+		fi := idx.options.FlushInterval
+		idx.mtx.Unlock()
+		select {
+		case <-ctx.Done():
+			break FLUSHER
+		case <-time.After(fi):
+			if idx.lastWrite.Before(lastFlush) {
+				continue
+			}
+			idx.flushOnce(logger)
+			lastFlush = time.Now()
 		}
-		idx.flushOnce(logger)
-		lastFlush = time.Now()
 	}
+	idx.mtx.Lock()
 	idx.flusherExited = true
+	idx.mtx.Unlock()
 }
 
 func (idx *Index) flushOnce(logger logging.Logger) {
@@ -278,12 +294,22 @@ func (idx *Index) flushOnce(logger logging.Logger) {
 }
 
 // reaper continually iterates through the cache to find expired elements and removes them
-func (idx *Index) reaper(logger logging.Logger) {
-	for !idx.isClosing {
-		idx.reap(logger)
-		time.Sleep(idx.options.ReapInterval)
+func (idx *Index) reaper(ctx context.Context, logger logging.Logger) {
+REAPER:
+	for {
+		idx.mtx.Lock()
+		ri := idx.options.ReapInterval
+		idx.mtx.Unlock()
+		select {
+		case <-ctx.Done():
+			break REAPER
+		case <-time.After(ri):
+			idx.reap(logger)
+		}
 	}
+	idx.mtx.Lock()
 	idx.reaperExited = true
+	idx.mtx.Unlock()
 }
 
 type objectsAtime []*Object
