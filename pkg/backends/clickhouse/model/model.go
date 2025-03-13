@@ -327,7 +327,7 @@ func marshalTimeseriesXSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
 			}
 			rowVals[fd.OutputPosition] = fd.Name
 		}
-		for i, fd = range trq.ValueFieldDefinitions {
+		for _, fd = range trq.ValueFieldDefinitions {
 			rowVals[fd.OutputPosition] = fd.Name
 		}
 		tw.Write([]byte(strings.Join(rowVals, tw.separator) + "\n"))
@@ -346,7 +346,7 @@ func marshalTimeseriesXSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
 			}
 			rowVals[fd.OutputPosition] = fd.SDataType
 		}
-		for i, fd = range trq.ValueFieldDefinitions {
+		for _, fd = range trq.ValueFieldDefinitions {
 			rowVals[fd.OutputPosition] = fd.SDataType
 		}
 		tw.Write([]byte(strings.Join(rowVals, tw.separator) + "\n"))

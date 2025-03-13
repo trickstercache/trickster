@@ -40,7 +40,6 @@ type target struct {
 	baseRequest           *http.Request
 	httpClient            *http.Client
 	interval              time.Duration
-	timeout               time.Duration
 	status                *Status
 	failureThreshold      int
 	recoveryThreshold     int

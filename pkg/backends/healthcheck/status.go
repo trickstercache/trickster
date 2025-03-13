@@ -70,7 +70,7 @@ func (s *Status) Set(i int32) {
 	s.mtx.Lock()
 	s.status.Store(i)
 	for _, ch := range s.subscribers {
-		ch <- i == i
+		ch <- true
 	}
 	s.mtx.Unlock()
 }

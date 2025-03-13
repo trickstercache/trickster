@@ -316,14 +316,14 @@ func (c *Config) Clone() *Config {
 		nc.TracingConfigs[k] = v.Clone()
 	}
 
-	if c.Rules != nil && len(c.Rules) > 0 {
+	if len(c.Rules) > 0 {
 		nc.Rules = make(map[string]*rule.Options)
 		for k, v := range c.Rules {
 			nc.Rules[k] = v.Clone()
 		}
 	}
 
-	if c.RequestRewriters != nil && len(c.RequestRewriters) > 0 {
+	if len(c.RequestRewriters) > 0 {
 		nc.RequestRewriters = make(map[string]*rwopts.Options)
 		for k, v := range c.RequestRewriters {
 			nc.RequestRewriters[k] = v.Clone()

@@ -231,23 +231,21 @@ func (mbrs MultipartByteRanges) ExtractResponseRange(ranges Ranges, fullContentL
 			copy(mbr.Content[:], body[r.Start:r.End+1])
 		} else {
 			brs := mbrs.Ranges()
-			if brs != nil {
-				for _, r2 := range brs {
+			for _, r2 := range brs {
 
-					p := mbrs[r2]
+				p := mbrs[r2]
 
-					if r.Start >= p.Range.Start && r.End <= p.Range.End {
+				if r.Start >= p.Range.Start && r.End <= p.Range.End {
 
-						// unsure if we need this depending upon how ranges are filled and compressed
-						// so leaving it present but commented for now.
-						startOffset := r.Start - p.Range.Start
-						endOffset := (r.End - p.Range.Start) + 1
-						// mbr.Content = p.Content[startOffset : int64(len(p.Content))-endOffset]
+					// unsure if we need this depending upon how ranges are filled and compressed
+					// so leaving it present but commented for now.
+					startOffset := r.Start - p.Range.Start
+					endOffset := (r.End - p.Range.Start) + 1
+					// mbr.Content = p.Content[startOffset : int64(len(p.Content))-endOffset]
 
-						// and the shortcut alternative method that seems to work for current use cases
-						mbr.Content = p.Content[startOffset:endOffset]
-						break
-					}
+					// and the shortcut alternative method that seems to work for current use cases
+					mbr.Content = p.Content[startOffset:endOffset]
+					break
 				}
 			}
 		}
