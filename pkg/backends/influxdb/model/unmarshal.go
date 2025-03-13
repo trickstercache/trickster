@@ -144,8 +144,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 				Tags:           dataset.Tags(wfd.Results[i].SeriesList[j].Tags),
 				QueryStatement: trq.Statement,
 			}
-			if wfd.Results[i].SeriesList[j].Columns == nil ||
-				len(wfd.Results[i].SeriesList[j].Columns) < 2 {
+			if len(wfd.Results[i].SeriesList[j].Columns) < 2 {
 				return nil, timeseries.ErrInvalidBody
 			}
 			var timeFound bool

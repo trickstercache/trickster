@@ -206,7 +206,7 @@ func (pr *proxyRequest) prepareRevalidationRequest() {
 
 		var wr byterange.Ranges
 
-		if pr.wantedRanges != nil && len(pr.wantedRanges) > 0 {
+		if len(pr.wantedRanges) > 0 {
 			wr = pr.wantedRanges
 		} else {
 			wr = byterange.Ranges{{Start: 0, End: cl}}
@@ -239,7 +239,7 @@ func (pr *proxyRequest) prepareRevalidationRequest() {
 }
 
 func (pr *proxyRequest) setRangeHeader(h http.Header) {
-	if pr.neededRanges != nil && len(pr.neededRanges) > 0 {
+	if len(pr.neededRanges) > 0 {
 		pr.cachingPolicy.IsFresh = false
 		h.Set(headers.NameRange, pr.neededRanges.String())
 	}
@@ -262,7 +262,7 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 	}
 
 	// if we are articulating the origin range requests, break those out here
-	if pr.neededRanges != nil && len(pr.neededRanges) > 0 && rsc.BackendOptions.DearticulateUpstreamRanges {
+	if len(pr.neededRanges) > 0 && rsc.BackendOptions.DearticulateUpstreamRanges {
 		for _, r := range pr.neededRanges {
 			req := request.SetResources(pr.upstreamRequest.Clone(context.Background()), rsc)
 			req.Header.Set(headers.NameRange, "bytes="+r.String())
@@ -298,7 +298,7 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 		}()
 	}
 
-	if pr.originRequests != nil && len(pr.originRequests) > 0 {
+	if len(pr.originRequests) > 0 {
 		pr.originResponses = make([]*http.Response, len(pr.originRequests))
 		pr.originReaders = make([]io.ReadCloser, len(pr.originRequests))
 		for i := range pr.originRequests {
@@ -550,7 +550,7 @@ func (pr *proxyRequest) prepareResponse() {
 
 		resp.StatusCode = http.StatusPartialContent
 
-		if d.Ranges != nil && len(d.Ranges) > 0 {
+		if len(d.Ranges) > 0 {
 			d.LoadRangeParts()
 		}
 		var h http.Header

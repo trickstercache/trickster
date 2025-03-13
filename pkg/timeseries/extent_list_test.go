@@ -25,6 +25,7 @@ import (
 	"time"
 )
 
+var t0 = time.Unix(0, 0)
 var t98 = time.Unix(98, 0)
 var t99 = time.Unix(99, 0)
 var t100 = time.Unix(100, 0)
@@ -906,7 +907,7 @@ func TestSize(t *testing.T) {
 func TestCalculateDeltas(t *testing.T) {
 
 	// test when start is after end
-	trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(20, 0),
+	trq := TimeRangeQuery{Extent: Extent{Start: time.Unix(20, 0),
 		End: time.Unix(10, 0)}, Step: time.Duration(10) * time.Second}
 	ExtentList{Extent{}}.CalculateDeltas(trq.Extent, trq.Step)
 

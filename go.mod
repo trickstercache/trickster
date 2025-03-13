@@ -15,6 +15,7 @@ require (
 	github.com/klauspost/compress v1.18.0
 	github.com/prometheus/client_golang v1.21.1
 	github.com/prometheus/common/sigv4 v0.1.0
+	github.com/stretchr/testify v1.10.0
 	github.com/tinylib/msgp v1.2.5
 	github.com/trickstercache/mockster v1.1.2
 	go.etcd.io/bbolt v1.4.0
@@ -60,7 +61,6 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
-	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.28.0 // indirect

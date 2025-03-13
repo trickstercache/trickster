@@ -132,6 +132,10 @@ docker-release:
 style:
 	! gofmt -d $$(find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
+.PHONY: lint
+lint:
+	@golangci-lint run
+
 GO_TEST_FLAGS ?=
 .PHONY: test
 test:

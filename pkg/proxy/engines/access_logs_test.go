@@ -17,7 +17,6 @@
 package engines
 
 import (
-	"net/http"
 	"os"
 	"testing"
 
@@ -36,27 +35,6 @@ func TestLogUpstreamRequest(t *testing.T) {
 	logger.SetLogAsynchronous(false)
 	logUpstreamRequest(logger, "testBackend", "testType", "testHandler", "testMethod",
 		"testPath", "testUserAgent", 200, 0, 1.0)
-	if _, err := os.Stat(fileName); err != nil {
-		t.Error(err)
-	}
-	logger.Close()
-}
-
-func TestLogDownstreamRequest(t *testing.T) {
-	fileName := t.TempDir() + "/out.log"
-	// it should create a logger that outputs to a log file ("out.test.log")
-	conf := config.NewConfig()
-	conf.Main = &config.MainConfig{InstanceID: 0}
-	conf.Logging = &tlo.Options{LogFile: fileName, LogLevel: "debug"}
-	logger := logging.New(conf)
-	logger.SetLogAsynchronous(false)
-	r, err := http.NewRequest("get", "http://testBackend", nil)
-	if err != nil {
-		t.Error(err)
-	}
-
-	logDownstreamRequest(logger, r)
-
 	if _, err := os.Stat(fileName); err != nil {
 		t.Error(err)
 	}

@@ -215,8 +215,6 @@ type Options struct {
 	ShardStep time.Duration `yaml:"-"`
 	// SigV4
 	SigV4 *sigv4.SigV4Config `yaml:"sigv4,omitempty"`
-	//
-	md yamlx.KeyLookup `yaml:"-"`
 }
 
 // New will return a pointer to a Backend Options with the default configuration settings
