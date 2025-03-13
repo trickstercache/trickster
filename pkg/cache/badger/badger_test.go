@@ -206,7 +206,7 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
 
-	exp1, err := bc.getExpires(cacheKey)
+	exp1, err := bc.GetExpires(cacheKey)
 	if err != nil {
 		t.Error(err)
 	}
@@ -215,7 +215,7 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 	// 1 second, to ensure it remained in cache with the correct value
 	bc.SetTTL(cacheKey, time.Duration(3600)*time.Second)
 
-	exp2, err := bc.getExpires(cacheKey)
+	exp2, err := bc.GetExpires(cacheKey)
 	if err != nil {
 		t.Error(err)
 	}
@@ -242,7 +242,7 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 	}
 
 	// it should also not have an expires
-	_, err = bc.getExpires(ck2)
+	_, err = bc.GetExpires(ck2)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", ck2)
 	}

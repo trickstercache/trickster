@@ -40,7 +40,6 @@ type Client struct {
 
 	rule       *rule
 	pathPrefix string
-	router     http.Handler
 }
 
 var _ types.NewBackendClientFunc = NewClient
@@ -57,7 +56,6 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	b, err := backends.New(name, o, c.RegisterHandlers, router, nil)
 	c.Backend = b
 	return c, err
-
 }
 
 // Clients is a list of *rule.Client

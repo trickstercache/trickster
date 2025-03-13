@@ -17,8 +17,6 @@
 package engines
 
 import (
-	"net/http"
-
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
@@ -35,15 +33,5 @@ func logUpstreamRequest(logger logging.Logger, backendName, backendProvider, han
 			"code":            responseCode,
 			"size":            size,
 			"durationMS":      int(requestDuration * 1000),
-		})
-}
-
-func logDownstreamRequest(logger logging.Logger, r *http.Request) {
-	logger.Debug("downtream request",
-		logging.Pairs{
-			"uri":       r.RequestURI,
-			"method":    r.Method,
-			"userAgent": r.UserAgent(),
-			"clientIP":  r.RemoteAddr,
 		})
 }

@@ -158,7 +158,7 @@ func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
 	}
 }
 
-func (c *Cache) getExpires(cacheKey string) (int, error) {
+func (c *Cache) GetExpires(cacheKey string) (int, error) {
 	var expires int
 	err := c.dbh.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(cacheKey))

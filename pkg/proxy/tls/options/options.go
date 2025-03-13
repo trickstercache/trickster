@@ -94,7 +94,7 @@ func (o *Options) Validate() (bool, error) {
 	}
 
 	// Verify CA Paths
-	if o.CertificateAuthorityPaths != nil && len(o.CertificateAuthorityPaths) > 0 {
+	if len(o.CertificateAuthorityPaths) > 0 {
 		for _, path := range o.CertificateAuthorityPaths {
 			_, err = os.ReadFile(path)
 			if err != nil {

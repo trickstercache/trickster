@@ -38,9 +38,6 @@ type ReadCloserResetter interface {
 	io.ReadCloser
 }
 
-type nopReadCloserResetter struct {
-}
-
 // readCloserResetter implements ReadCloserResetter
 type readCloserResetter struct {
 	io.Reader

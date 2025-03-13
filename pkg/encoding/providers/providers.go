@@ -70,13 +70,12 @@ var providerValLookup = ReverseLookup{
 // these are populated in init based on maxWebProvider, providerVals, and providerValLookup
 var providers []string
 var webProviders []string
-var webProvidersBitmap Provider
 var providerLookup Lookup
 var webProviderLookup Lookup
 var webValLookup ReverseLookup
 var webProviderVals []Provider
 var AllSupportedWebProviders string
-var AllSupportedWwebProvidersBitmap Provider
+var AllSupportedWebProvidersBitmap Provider
 
 func init() {
 	l := len(providerVals)
@@ -93,7 +92,7 @@ func init() {
 			webProviders = append(webProviders, s)
 			webValLookup[p] = s
 			webProviderLookup[s] = p
-			AllSupportedWwebProvidersBitmap = AllSupportedWwebProvidersBitmap | p
+			AllSupportedWebProvidersBitmap = AllSupportedWebProvidersBitmap | p
 		}
 		providers = append(providers, s)
 		providerLookup[s] = p

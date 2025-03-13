@@ -69,7 +69,7 @@ func New(opts *options.Options) (*tracing.Tracer, error) {
 	serviceKey := attribute.String("service.name", opts.ServiceName)
 
 	var tags []attribute.KeyValue
-	if opts.Tags != nil && len(opts.Tags) > 0 {
+	if len(opts.Tags) > 0 {
 		tags = make([]attribute.KeyValue, 1, len(opts.Tags)+1)
 		tags[0] = serviceKey
 		for k, v := range opts.Tags {
