@@ -92,8 +92,6 @@ func (rc Clients) validate(rwi map[string]rewriter.RewriteInstructions) error {
 			if err := c.parseOptions(cfg.RuleOptions, rwi); err != nil {
 				return err
 			}
-		} else {
-
 		}
 	}
 	return nil

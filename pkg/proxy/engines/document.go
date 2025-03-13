@@ -195,7 +195,7 @@ func (d *HTTPDocument) LoadRangeParts() {
 		return
 	}
 
-	if d.StoredRangeParts != nil && len(d.StoredRangeParts) > 0 {
+	if len(d.StoredRangeParts) > 0 {
 		d.RangeParts = make(byterange.MultipartByteRanges)
 		for _, p := range d.StoredRangeParts {
 			d.RangeParts[p.Range] = p
