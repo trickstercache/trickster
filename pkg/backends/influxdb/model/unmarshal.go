@@ -64,8 +64,8 @@ func decodeCSV(reader io.Reader) (*WFDocument, error) {
 		rows = 0
 	}
 	wfd := &WFDocument{
-		Results: []WFResult{
-			{StatementID: 0, SeriesList: make([]models.Row, rows)},
+		Results: []*WFResult{
+			{StatementID: 0, SeriesList: make([]*models.Row, rows)},
 		},
 	}
 	for ri, r := range records {
@@ -75,7 +75,7 @@ func decodeCSV(reader io.Reader) (*WFDocument, error) {
 			continue
 		}
 		// Construct WFD row from record
-		row := models.Row{
+		row := &models.Row{
 			// Name, Tags deliberately left empty, they don't show up here
 			Columns: columns,
 			Values:  [][]interface{}{make([]interface{}, len(r))},

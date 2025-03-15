@@ -272,7 +272,7 @@ func TestMarshalDataSet(t *testing.T) {
 		t.Error(err)
 	}
 	var ok bool
-	if ds, ok = ts.(*DataSet); !ok {
+	if _, ok = ts.(*DataSet); !ok {
 		t.Error("invalid dataset")
 	}
 }
