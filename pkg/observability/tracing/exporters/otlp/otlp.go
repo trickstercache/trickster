@@ -28,13 +28,13 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	otlp "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
 // New returns a new OTLP Tracer based on the provided options
 func New(options *options.Options) (*tracing.Tracer, error) {
-
 	var tp trace.TracerProvider
 	var err error
 
@@ -56,7 +56,6 @@ func New(options *options.Options) (*tracing.Tracer, error) {
 	if len(options.Tags) > 0 {
 		tags = make([]attribute.KeyValue, len(options.Tags))
 		for k, v := range options.Tags {
-			// TODO: just discovered that these aren't actually being used
 			tags = append(tags, attribute.String(k, v))
 		}
 	}
@@ -94,11 +93,14 @@ func New(options *options.Options) (*tracing.Tracer, error) {
 		return nil, err
 	}
 
-	tp = sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithSampler(sampler),
-	)
-
+	tracerOpts := make([]sdktrace.TracerProviderOption, 0, 3)
+	tracerOpts = append(tracerOpts, sdktrace.WithSampler(sampler))
+	if len(tags) > 0 {
+		tracerOpts = append(tracerOpts,
+			sdktrace.WithResource(resource.NewWithAttributes("", tags...)))
+	}
+	tracerOpts = append(tracerOpts, sdktrace.WithBatcher(exporter))
+	tp = sdktrace.NewTracerProvider(tracerOpts...)
 	tracer := tp.Tracer(options.Name)
 
 	return &tracing.Tracer{
@@ -107,5 +109,4 @@ func New(options *options.Options) (*tracing.Tracer, error) {
 		Options:      options,
 		ShutdownFunc: exporter.Shutdown,
 	}, nil
-
 }
