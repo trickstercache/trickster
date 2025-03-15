@@ -25,15 +25,15 @@ import (
 
 // WFDocument the Wire Format Document for the timeseries
 type WFDocument struct {
-	Results []WFResult `json:"results"`
-	Err     string     `json:"error,omitempty"`
+	Results []*WFResult `json:"results"`
+	Err     string      `json:"error,omitempty"`
 }
 
 // WFResult is the Result section of the WFD
 type WFResult struct {
-	StatementID int          `json:"statement_id"`
-	SeriesList  []models.Row `json:"series,omitempty"`
-	Err         string       `json:"error,omitempty"`
+	StatementID int           `json:"statement_id"`
+	SeriesList  []*models.Row `json:"series,omitempty"`
+	Err         string        `json:"error,omitempty"`
 }
 
 var epochMultipliers = map[byte]int64{

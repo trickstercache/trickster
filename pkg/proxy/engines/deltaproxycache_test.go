@@ -231,8 +231,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 
 }
 
-// TODO: Will understand why this test is failing, and if it's due to an application or test defect,
-// Will commit to test issue fix in v1.2.0 or app defect fix in the next release of v1.1.x
+// TODO: Revisit when LRU is re-implemented
 
 // func TestDeltaProxyCacheRequestRemoveStaleLRU(t *testing.T) {
 

@@ -21,7 +21,6 @@
 package dataset
 
 import (
-	"io"
 	"sort"
 	"sync"
 	"time"
@@ -65,7 +64,7 @@ type DataSet struct {
 }
 
 // Marshaler is a function that serializes the provided DataSet into a byte slice
-type Marshaler func(*DataSet, *timeseries.RequestOptions, int, io.Writer) error
+type Marshaler func(*DataSet, *timeseries.RequestOptions, int) ([]byte, error)
 
 // CroppedClone returns a new, perfect copy of the DataSet, efficiently
 // cropped to the provided Extent. CroppedClone assumes the DataSet is sorted.

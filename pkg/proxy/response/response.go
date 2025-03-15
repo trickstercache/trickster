@@ -15,3 +15,38 @@
  */
 
 package response
+
+import (
+	"fmt"
+	"io"
+	"net/http"
+
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+)
+
+var contentTypeHints = map[byte]string{
+	0: fmt.Sprintf("%s; charset=UTF-8", headers.ValueApplicationJSON),
+	1: fmt.Sprintf("%s; charset=UTF-8", headers.ValueApplicationJSON),
+	2: fmt.Sprintf("%s; charset=UTF-8", headers.ValueApplicationCSV),
+}
+
+func WriteResponseHeader(w io.Writer, statusCode int, contentTypeHint byte,
+	h http.Header) error {
+	if rw, ok := w.(http.ResponseWriter); ok {
+		rwh := rw.Header()
+		if cth, ok := contentTypeHints[contentTypeHint]; ok && cth != "" {
+			rwh.Set(headers.NameContentType, cth)
+		}
+		for k, v := range h {
+			if len(v) == 0 {
+				continue
+			}
+			rwh.Set(k, v[0])
+		}
+		if statusCode == 0 {
+			statusCode = http.StatusOK
+		}
+		rw.WriteHeader(statusCode)
+	}
+	return nil
+}

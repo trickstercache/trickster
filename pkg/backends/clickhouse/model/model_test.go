@@ -17,8 +17,6 @@
 package model
 
 import (
-	"io"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -222,54 +220,42 @@ var testDataset = &dataset.DataSet{
 }
 
 func TestMarshalJSON(t *testing.T) {
-	w := httptest.NewRecorder()
-	marshalTimeseriesJSON(testDataset, &timeseries.RequestOptions{}, 200, w)
-	b, _ := io.ReadAll(w.Result().Body)
+	b, _ := marshalTimeseriesJSON(testDataset, &timeseries.RequestOptions{}, 200)
 	if string(b) != testDataJSON {
 		t.Error()
 	}
 }
 
 func TestMarshalCSV(t *testing.T) {
-	w := httptest.NewRecorder()
-	marshalTimeseriesCSV(testDataset, &timeseries.RequestOptions{OutputFormat: 1}, 200, w)
-	b, _ := io.ReadAll(w.Result().Body)
+	b, _ := marshalTimeseriesCSV(testDataset, &timeseries.RequestOptions{OutputFormat: 1}, 200)
 	if string(b) != testDataCSV {
 		t.Error()
 	}
 }
 
 func TestMarshalCSVWithNames(t *testing.T) {
-	w := httptest.NewRecorder()
-	marshalTimeseriesCSVWithNames(testDataset, &timeseries.RequestOptions{OutputFormat: 2}, 200, w)
-	b, _ := io.ReadAll(w.Result().Body)
+	b, _ := marshalTimeseriesCSVWithNames(testDataset, &timeseries.RequestOptions{OutputFormat: 2}, 200)
 	if string(b) != testDataCSVWithNames {
 		t.Error()
 	}
 }
 
 func TestMarshalTSV(t *testing.T) {
-	w := httptest.NewRecorder()
-	marshalTimeseriesTSV(testDataset, &timeseries.RequestOptions{OutputFormat: 3}, 200, w)
-	b, _ := io.ReadAll(w.Result().Body)
+	b, _ := marshalTimeseriesTSV(testDataset, &timeseries.RequestOptions{OutputFormat: 3}, 200)
 	if string(b) != testDataTSV {
 		t.Error()
 	}
 }
 
 func TestMarshalTSVWithNames(t *testing.T) {
-	w := httptest.NewRecorder()
-	marshalTimeseriesTSVWithNames(testDataset, &timeseries.RequestOptions{OutputFormat: 4}, 200, w)
-	b, _ := io.ReadAll(w.Result().Body)
+	b, _ := marshalTimeseriesTSVWithNames(testDataset, &timeseries.RequestOptions{OutputFormat: 4}, 200)
 	if string(b) != testDataTSVWithNames {
 		t.Error()
 	}
 }
 
 func TestMarshalTSVWithNamesAndTypes(t *testing.T) {
-	w := httptest.NewRecorder()
-	marshalTimeseriesTSVWithNamesAndTypes(testDataset, &timeseries.RequestOptions{OutputFormat: 5}, 200, w)
-	b, _ := io.ReadAll(w.Result().Body)
+	b, _ := marshalTimeseriesTSVWithNamesAndTypes(testDataset, &timeseries.RequestOptions{OutputFormat: 5}, 200)
 	if string(b) != testDataTSVWithNamesAndTypes {
 		t.Error()
 	}
