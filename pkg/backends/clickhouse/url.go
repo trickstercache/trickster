@@ -45,7 +45,8 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 
 	sqlQuery := interpolateTimeQuery(trq.Statement, trq.TimestampDefinition.Name, trq.TimestampDefinition.ProviderData1, extent, trq.Step)
 	if isBody {
-		r = request.SetBody(r, []byte(sqlQuery))
+		// TODO: the return value (a new *http.Request) is not being used
+		request.SetBody(r, []byte(sqlQuery))
 	} else {
 		qi.Set(upQuery, sqlQuery)
 		r.URL.RawQuery = qi.Encode()
