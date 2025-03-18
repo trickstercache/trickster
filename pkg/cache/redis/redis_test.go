@@ -21,12 +21,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	ro "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 
 	"github.com/alicebob/miniredis"
 )
@@ -68,7 +68,7 @@ func setupRedisCache(ct clientType) (*Cache, func()) {
 	cacheConfig := &co.Options{Provider: "redis", Redis: rcfg}
 	conf.Caches = map[string]*co.Options{"default": cacheConfig}
 
-	return &Cache{Config: cacheConfig, Logger: tl.ConsoleLogger("error")}, close
+	return &Cache{Config: cacheConfig, Logger: logging.ConsoleLogger("error")}, close
 }
 
 func TestClientSelectionSentinel(t *testing.T) {
@@ -84,7 +84,7 @@ func TestClientSelectionSentinel(t *testing.T) {
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := Cache{Name: cacheName, Config: cfg, Logger: tl.ConsoleLogger("error")}
+	cache := Cache{Name: cacheName, Config: cfg, Logger: logging.ConsoleLogger("error")}
 	if err != nil {
 		t.Error(err)
 	}
@@ -162,7 +162,7 @@ func TestClientSelectionCluster(t *testing.T) {
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := Cache{Name: cacheName, Config: cfg, Logger: tl.ConsoleLogger("error")}
+	cache := Cache{Name: cacheName, Config: cfg, Logger: logging.ConsoleLogger("error")}
 	if err != nil {
 		t.Error(err)
 	}
@@ -185,7 +185,7 @@ func TestClientSelectionStandard(t *testing.T) {
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := Cache{Name: cacheName, Config: cfg, Logger: tl.ConsoleLogger("error")}
+	cache := Cache{Name: cacheName, Config: cfg, Logger: logging.ConsoleLogger("error")}
 	if err != nil {
 		t.Error(err)
 	}

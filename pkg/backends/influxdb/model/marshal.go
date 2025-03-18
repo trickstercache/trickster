@@ -18,40 +18,36 @@ package model
 
 import (
 	"bytes"
-	"fmt"
+	"encoding/json"
 	"io"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/influxdata/influxdb/models"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
+const timeColumnName = "time"
+
 var marshalers = map[byte]dataset.Marshaler{
-	0: marshalTimeseriesJSON,
+	0: marshalTimeseriesJSONMinified,
 	1: marshalTimeseriesJSONPretty,
 	2: marshalTimeseriesCSV,
 }
 
 // MarshalTimeseries converts a Timeseries into a JSON blob
-func MarshalTimeseries(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int) ([]byte, error) {
-	buf := bytes.NewBuffer(nil)
-	err := MarshalTimeseriesWriter(ts, rlo, status, buf)
-	return buf.Bytes(), err
-}
-
-// MarshalTimeseriesWriter converts a Timeseries into a JSON blob via an io.Writer
-func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int, w io.Writer) error {
+func MarshalTimeseries(ts timeseries.Timeseries,
+	rlo *timeseries.RequestOptions, status int) ([]byte, error) {
 	if ts == nil {
-		return timeseries.ErrUnknownFormat
+		return nil, timeseries.ErrUnknownFormat
 	}
 	ds, ok := ts.(*dataset.DataSet)
 	if !ok {
-		return timeseries.ErrUnknownFormat
+		return nil, timeseries.ErrUnknownFormat
 	}
 	var of byte
 	if rlo != nil {
@@ -59,9 +55,37 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOp
 	}
 	marshaler, ok := marshalers[of]
 	if !ok {
-		return timeseries.ErrUnknownFormat
+		return nil, timeseries.ErrUnknownFormat
 	}
-	return marshaler(ds, rlo, status, w)
+	return marshaler(ds, rlo, status)
+}
+
+// MarshalTimeseriesWriter writes a Timeseries as a JSON blob to an io.Writer
+func MarshalTimeseriesWriter(ts timeseries.Timeseries,
+	rlo *timeseries.RequestOptions, status int, w io.Writer) error {
+	b, err := MarshalTimeseries(ts, rlo, status)
+	if err != nil {
+		return err
+	}
+	var of byte
+	if rlo != nil {
+		of = rlo.OutputFormat
+	}
+	err = response.WriteResponseHeader(w, status, of, nil)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(b)
+	return err
+}
+
+func formatRFC3339Time(epoch epoch.Epoch, m int64) any {
+	t := time.Unix(0, int64(epoch))
+	return t.UTC().Format(time.RFC3339Nano)
+}
+
+func formatEpochTime(epoch epoch.Epoch, m int64) any {
+	return int64(epoch) / m
 }
 
 func writeRFC3339Time(w io.Writer, epoch epoch.Epoch, m int64) {
@@ -73,25 +97,7 @@ func writeEpochTime(w io.Writer, epoch epoch.Epoch, m int64) {
 	w.Write([]byte(strconv.FormatInt(int64(epoch)/m, 10)))
 }
 
-func writeValue(w io.Writer, v interface{}, nilVal string) {
-	if v == nil {
-		w.Write([]byte(nilVal))
-	}
-	switch t := v.(type) {
-	case string:
-		w.Write([]byte(`"` + t + `"`))
-	case bool:
-		w.Write([]byte(strconv.FormatBool(t)))
-	case int64:
-		w.Write([]byte(strconv.FormatInt(t, 10)))
-	case int:
-		w.Write([]byte(strconv.Itoa(t)))
-	case float64:
-		w.Write([]byte(strconv.FormatFloat(t, 'f', -1, 64)))
-	}
-}
-
-func writeCSVValue(w io.Writer, v interface{}, nilVal string) {
+func writeCSVValue(w io.Writer, v any, nilVal string) {
 	if v == nil {
 		w.Write([]byte(nilVal))
 	}
@@ -114,207 +120,110 @@ func writeCSVValue(w io.Writer, v interface{}, nilVal string) {
 	}
 }
 
-func marshalTimeseriesJSON(ds *dataset.DataSet, rlo *timeseries.RequestOptions, status int, w io.Writer) error {
-	if ds == nil {
-		return nil
-	}
-	if rw, ok := w.(http.ResponseWriter); ok {
-		h := rw.Header()
-		h.Set(headers.NameContentType, headers.ValueApplicationJSON+"; charset=UTF-8")
-		rw.WriteHeader(status)
-	}
-	dw, multiplier := getDateWriter(rlo)
+func marshalTimeseriesJSONMinified(ds *dataset.DataSet,
+	rlo *timeseries.RequestOptions, status int) ([]byte, error) {
+	return marshalTimeseriesJSON(ds, rlo, status, false)
+}
 
-	w.Write([]byte(`{"results":[`))
+func marshalTimeseriesJSONPretty(ds *dataset.DataSet,
+	rlo *timeseries.RequestOptions, status int) ([]byte, error) {
+	return marshalTimeseriesJSON(ds, rlo, status, true)
+}
+
+func toWireFormat(ds *dataset.DataSet,
+	rlo *timeseries.RequestOptions) (*WFDocument, error) {
+	if ds == nil {
+		return nil, nil
+	}
+	df, multiplier := getDateFormatter(rlo)
+	out := &WFDocument{}
 	lr := len(ds.Results)
-	for i := range ds.Results {
-		w.Write([]byte(
-			fmt.Sprintf(`{"statement_id":%d,"series":[`,
-				ds.Results[i].StatementID)))
-		ls := len(ds.Results[i].SeriesList)
-		for si, s := range ds.Results[i].SeriesList {
+	if lr > 0 {
+		out.Results = make([]*WFResult, 0, lr)
+	}
+	for _, dr := range ds.Results {
+		res := &WFResult{
+			StatementID: dr.StatementID,
+		}
+		ls := len(dr.SeriesList)
+		if ls > 0 {
+			res.SeriesList = make([]*models.Row, 0, ls)
+		}
+		for _, s := range dr.SeriesList {
 			if s == nil {
 				continue
 			}
-			if s.Header.Tags == nil {
-				s.Header.Tags = make(dataset.Tags)
+			row := &models.Row{
+				Name: s.Header.Name,
+				Tags: s.Header.Tags,
 			}
-			w.Write([]byte(
-				fmt.Sprintf(`{"name":"%s","tags":%s,`, s.Header.Name,
-					s.Header.Tags.JSON())))
-			fl := len(s.Header.FieldsList)
-			l := fl + 1
-			cols := make([]string, l)
-			var j int
-			for _, f := range s.Header.FieldsList {
-				if j == s.Header.TimestampIndex {
-					cols[j] = "time"
-					j++
+			row.Columns = make([]string, 0, len(s.Header.FieldsList)+1)
+			var tsColumnAdded bool
+			for i, header := range s.Header.FieldsList {
+				if i == s.Header.TimestampIndex {
+					row.Columns = append(row.Columns, timeColumnName)
+					tsColumnAdded = true
 				}
-				cols[j] = f.Name
-				j++
+				row.Columns = append(row.Columns, header.Name)
 			}
-			w.Write([]byte(
-				`"columns":["` + strings.Join(cols, `","`) + `"],"values":[`,
-			))
-			lp := len(s.Points) - 1
-			for j := range s.Points {
-				w.Write([]byte("["))
-				lv := len(s.Points[j].Values)
-				for n, v := range s.Points[j].Values {
+			if !tsColumnAdded {
+				row.Columns = append(row.Columns, timeColumnName)
+				tsColumnAdded = true
+			}
+
+			row.Values = make([][]any, 0, len(s.Points))
+
+			for _, p := range s.Points {
+				if len(p.Values) == 0 {
+					continue
+				}
+				vals := make([]any, 0, len(p.Values))
+				var tsValAdded bool
+				for n, v := range p.Values {
 					if n == s.Header.TimestampIndex {
-						dw(w, s.Points[j].Epoch, multiplier)
-						if n < lv {
-							w.Write([]byte(","))
-						}
-						n++
+						vals = append(vals, df(p.Epoch, multiplier))
+						tsValAdded = true
 					}
-					writeValue(w, v, "null")
-					if n < lv {
-						w.Write([]byte(","))
-					}
+					vals = append(vals, v)
 				}
-				w.Write([]byte("]"))
-				if j < lp {
-					w.Write([]byte(","))
+				if !tsValAdded {
+					vals = append(vals, df(p.Epoch, multiplier))
 				}
+				row.Values = append(row.Values, vals)
 			}
-			w.Write([]byte("]}"))
-			if si < ls-1 {
-				w.Write([]byte(","))
-			}
+			res.SeriesList = append(res.SeriesList, row)
 		}
-		w.Write([]byte("]}"))
-		if i < lr-1 {
-			w.Write([]byte(","))
-		}
+		out.Results = append(out.Results, res)
 	}
-	w.Write([]byte("]}"))
-	return nil
+	return out, nil
 }
 
-func marshalTimeseriesJSONPretty(ds *dataset.DataSet, rlo *timeseries.RequestOptions, status int, w io.Writer) error {
-
+func marshalTimeseriesJSON(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
+	_ int, pretty bool) ([]byte, error) {
 	if ds == nil {
-		return nil
+		return nil, nil
 	}
-	if rw, ok := w.(http.ResponseWriter); ok {
-		h := rw.Header()
-		h.Set(headers.NameContentType, headers.ValueApplicationJSON+"; charset=UTF-8")
-		rw.WriteHeader(status)
+	wfdoc, err := toWireFormat(ds, rlo)
+	if err != nil {
+		return nil, err
 	}
-	dw, multiplier := getDateWriter(rlo)
-
-	w.Write([]byte("{\n    \"results\": [\n"))
-	lr := len(ds.Results)
-	for i := range ds.Results {
-		w.Write([]byte(
-			fmt.Sprintf("        {\n            \"statement_id\": %d,\n            \"series\": [\n",
-				ds.Results[i].StatementID)))
-		ls := len(ds.Results[i].SeriesList)
-		for si, s := range ds.Results[i].SeriesList {
-			if s == nil {
-				continue
-			}
-			if s.Header.Tags == nil {
-				s.Header.Tags = make(dataset.Tags)
-			}
-			w.Write([]byte(
-				"                {\n" +
-					fmt.Sprintf("                    \"name\": \"%s\",\n", s.Header.Name) +
-					"                    \"tags\": {\n"))
-			for j, k := range s.Header.Tags.Keys() {
-				w.Write([]byte(fmt.Sprintf("                        \"%s\": \"%s\"", k, s.Header.Tags[k])))
-				if j < len(s.Header.Tags)-1 {
-					w.Write([]byte(","))
-				}
-				w.Write([]byte("\n"))
-			}
-			w.Write([]byte("                    },\n                    \"columns\": [\n"))
-			for j, v := range s.Header.FieldsList {
-				if j == s.Header.TimestampIndex {
-					w.Write([]byte("                        \"time\""))
-					if j < len(s.Header.FieldsList)-1 {
-						w.Write([]byte(","))
-					}
-					w.Write([]byte("\n"))
-					j++
-				}
-				w.Write([]byte("                        \"" + v.Name + "\""))
-				if j < len(s.Header.FieldsList)-1 {
-					w.Write([]byte(","))
-				}
-				w.Write([]byte("\n"))
-				j++
-			}
-
-			fl := len(s.Header.FieldsList)
-			l := fl + 1
-			cols := make([]string, l)
-			var j int
-			for _, f := range s.Header.FieldsList {
-				if j == s.Header.TimestampIndex {
-					cols[j] = "time"
-					j++
-				}
-				cols[j] = f.Name
-				j++
-			}
-			w.Write([]byte("                    ],\n                    \"values\": [\n"))
-			lp := len(s.Points) - 1
-			for j := range s.Points {
-				w.Write([]byte("                        [\n"))
-				lv := len(s.Points[j].Values) - 1
-				for n, v := range s.Points[j].Values {
-					if n == s.Header.TimestampIndex {
-						w.Write([]byte("                            "))
-						dw(w, s.Points[j].Epoch, multiplier)
-						if n < lv {
-							w.Write([]byte(","))
-						}
-						w.Write([]byte("\n"))
-						n++
-					}
-					w.Write([]byte("                            "))
-					writeValue(w, v, "null")
-					if n < lv {
-						w.Write([]byte(","))
-					}
-					w.Write([]byte("\n"))
-				}
-				w.Write([]byte("                        ]"))
-				if j < lp {
-					w.Write([]byte(","))
-				}
-				w.Write([]byte("\n"))
-			}
-			w.Write([]byte("                    ]\n                }"))
-			if si < ls-1 {
-				w.Write([]byte(","))
-			}
-			w.Write([]byte("\n"))
-		}
-		w.Write([]byte("            ]"))
-		if i < lr-1 {
-			w.Write([]byte(","))
-		}
-		w.Write([]byte("\n"))
+	var b []byte
+	if pretty {
+		b, err = json.MarshalIndent(wfdoc, "", "  ")
+	} else {
+		b, err = json.Marshal(wfdoc)
 	}
-	w.Write([]byte("        }\n    ]\n}\n"))
-	return nil
+	return b, err
 }
 
-func marshalTimeseriesCSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions, status int, w io.Writer) error {
+func marshalTimeseriesCSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
+	status int) ([]byte, error) {
 	var headerWritten bool
 	dw, multiplier := getDateWriter(rlo)
 	if ds == nil {
-		return nil
+		return nil, nil
 	}
-	if rw, ok := w.(http.ResponseWriter); ok {
-		h := rw.Header()
-		h.Set(headers.NameContentType, headers.ValueApplicationCSV+"; charset=UTF-8")
-		rw.WriteHeader(status)
-	}
+	w := new(bytes.Buffer)
 	for _, s := range ds.Results[0].SeriesList {
 		if s == nil {
 			continue
@@ -325,7 +234,7 @@ func marshalTimeseriesCSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions, s
 			var j int
 			for _, f := range s.Header.FieldsList {
 				if j == s.Header.TimestampIndex {
-					cols[j] = "time"
+					cols[j] = timeColumnName
 					j++
 				}
 				cols[j] = f.Name
@@ -353,10 +262,32 @@ func marshalTimeseriesCSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions, s
 			w.Write([]byte("\n"))
 		}
 	}
-	return nil
+	return w.Bytes(), nil
 }
 
+type dateFormatter func(epoch.Epoch, int64) any
 type dateWriter func(io.Writer, epoch.Epoch, int64)
+
+func getDateFormatter(rlo *timeseries.RequestOptions) (dateFormatter, int64) {
+	var df dateFormatter
+	var tf byte
+	var multiplier int64
+	if rlo != nil {
+		tf = rlo.TimeFormat
+	}
+	switch tf {
+	case 0:
+		df = formatRFC3339Time
+	default:
+		if m, ok := epochMultipliers[tf]; ok {
+			multiplier = m
+		} else {
+			multiplier = 1
+		}
+		df = formatEpochTime
+	}
+	return df, multiplier
+}
 
 func getDateWriter(rlo *timeseries.RequestOptions) (dateWriter, int64) {
 	var dw dateWriter

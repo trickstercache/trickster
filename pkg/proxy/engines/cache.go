@@ -29,6 +29,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -48,14 +49,14 @@ type queryResult struct {
 	err          error
 }
 
-func queryConcurrent(ctx context.Context, c cache.Cache, key string, cr chan<- *queryResult, done func()) *queryResult {
+func queryConcurrent(_ context.Context, c cache.Cache, key string, cr chan<- *queryResult, done func()) *queryResult {
 	if done != nil {
 		defer done()
 	}
 	qr := &queryResult{queryKey: key, d: &HTTPDocument{}}
 	if c.Configuration().Provider == "memory" {
 		mc := c.(cache.MemoryCache)
-		var ifc interface{}
+		var ifc any
 		ifc, qr.lookupStatus, qr.err = mc.RetrieveReference(key, true)
 
 		if qr.err != nil || (qr.lookupStatus != status.LookupStatusHit) {
@@ -321,7 +322,7 @@ func stripConditionalHeaders(h http.Header) {
 	h.Del(headers.NameIfModifiedSince)
 }
 
-func writeConcurrent(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
+func writeConcurrent(_ context.Context, c cache.Cache, key string, d *HTTPDocument,
 	compress bool, ttl time.Duration, cr chan<- error, done func()) {
 
 	if done != nil {
@@ -372,7 +373,7 @@ func writeConcurrent(ctx context.Context, c cache.Cache, key string, d *HTTPDocu
 
 // WriteCache writes an HTTPDocument to the cache
 func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
-	ttl time.Duration, compressTypes map[string]interface{}, marshal timeseries.MarshalerFunc) error {
+	ttl time.Duration, compressTypes map[string]any, marshal timeseries.MarshalerFunc) error {
 
 	rsc := tc.Resources(ctx).(*request.Resources)
 
@@ -442,7 +443,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 			close(cr)
 			// Handle results
 			for res := range cr {
-				if res != nil && err != nil {
+				if res != nil {
 					err = res
 					break
 				}
@@ -484,7 +485,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 			close(cr)
 			// Handle results
 			for res := range cr {
-				if res != nil && err != nil {
+				if res != nil {
 					err = res
 					break
 				}
@@ -528,7 +529,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 // DocumentFromHTTPResponse returns an HTTPDocument from the provided
 // HTTP Response and Body
 func DocumentFromHTTPResponse(resp *http.Response, body []byte,
-	cp *CachingPolicy, logger interface{}) *HTTPDocument {
+	cp *CachingPolicy, logger logging.Logger) *HTTPDocument {
 	d := &HTTPDocument{}
 	d.StatusCode = resp.StatusCode
 	d.Status = resp.Status

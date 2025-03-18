@@ -58,7 +58,7 @@ type namedLock struct {
 	name             string
 	queueSize        atomic.Int32
 	locker           *namedLocker
-	subsequentWriter bool
+	subsequentWriter int32
 }
 
 func (nl *namedLock) release(unlockFunc func()) {
@@ -97,10 +97,10 @@ func (nl *namedLock) RRelease() error {
 func (nl *namedLock) Upgrade() bool {
 	nl.RUnlock()
 	nl.Lock()
-	if nl.subsequentWriter {
+	if atomic.LoadInt32(&nl.subsequentWriter) == 1 {
 		return false
 	}
-	nl.subsequentWriter = true
+	atomic.StoreInt32(&nl.subsequentWriter, 1)
 	return true
 }
 
@@ -130,7 +130,7 @@ func (lk *namedLocker) acquire(lockName string, isWrite bool) (NamedLock, error)
 		nl.RLock()
 		// if the Named Lock was previously a Write lock but is now a Read lock again,
 		// meaning RAcquires queued up while it was write-locked, this goes back to false
-		nl.subsequentWriter = false
+		atomic.StoreInt32(&nl.subsequentWriter, 0)
 	}
 	return nl, nil
 }

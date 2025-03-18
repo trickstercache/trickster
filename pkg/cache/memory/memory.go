@@ -28,7 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
 // Cache defines a a Memory Cache client that conforms to the Cache interface
@@ -37,7 +37,7 @@ type Cache struct {
 	client     sync.Map
 	Config     *options.Options
 	Index      *index.Index
-	Logger     interface{}
+	Logger     logging.Logger
 	locker     locks.NamedLocker
 	lockPrefix string
 }
@@ -71,7 +71,7 @@ func (c *Cache) Configuration() *options.Options {
 
 // Connect initializes the Cache
 func (c *Cache) Connect() error {
-	tl.Info(c.Logger, "memorycache setup", tl.Pairs{"name": c.Name,
+	c.Logger.Info("memorycache setup", logging.Pairs{"name": c.Name,
 		"maxSizeBytes": c.Config.Index.MaxSizeBytes, "maxSizeObjects": c.Config.Index.MaxSizeObjects})
 	c.lockPrefix = c.Name + ".memory."
 	c.client = sync.Map{}
@@ -113,8 +113,8 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 
 	if o1 != nil && o2 != nil {
 		nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
-		tl.Debug(c.Logger, "memorycache cache store",
-			tl.Pairs{"cacheName": c.Name, "cacheKey": cacheKey, "length": l, "ttl": ttl, "is_direct": isDirect})
+		c.Logger.Debug("memorycache cache store",
+			logging.Pairs{"cacheName": c.Name, "cacheKey": cacheKey, "length": l, "ttl": ttl, "is_direct": isDirect})
 		c.client.Store(cacheKey, o1)
 		if updateIndex {
 			c.Index.UpdateObject(o2)
@@ -162,7 +162,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index
 		o.Expiration = c.Index.GetExpiration(cacheKey)
 
 		if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
-			tl.Debug(c.Logger, "memory cache retrieve", tl.Pairs{"cacheKey": cacheKey})
+			c.Logger.Debug("memory cache retrieve", logging.Pairs{"cacheKey": cacheKey})
 			if atime {
 				go c.Index.UpdateObjectAccessTime(cacheKey)
 			}

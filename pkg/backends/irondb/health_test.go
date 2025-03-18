@@ -29,9 +29,7 @@ func TestDefaultHealthCheckConfig(t *testing.T) {
 	dho := c.DefaultHealthCheckConfig()
 	if dho == nil {
 		t.Error("expected non-nil result")
-	}
-
-	if dho.Path != "" {
+	} else if dho.Path != "" {
 		t.Error("expected / for path", dho.Path)
 	}
 

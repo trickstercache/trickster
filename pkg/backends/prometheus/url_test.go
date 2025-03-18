@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -73,8 +73,7 @@ func TestSetExtent(t *testing.T) {
 	pc.SetExtent(r, nil, e)
 	if int(r.ContentLength) != len(expected) {
 		b, _ := io.ReadAll(r.Body)
-		fmt.Println(string(b))
-		t.Errorf("expected %d got %d", len(expected), r.ContentLength)
+		t.Errorf("expected %d got %d / %d", len(expected), r.ContentLength, len(b))
 	}
 
 }

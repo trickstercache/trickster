@@ -1,0 +1,10 @@
+run:
+  tests: false
+
+linters-settings:
+  lll:
+    line-length: 180
+
+linters:
+  disable:
+    - errcheck

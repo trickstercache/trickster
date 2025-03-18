@@ -18,21 +18,27 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-	"github.com/trickstercache/trickster/v2/pkg/router"
 )
 
 // PurgeHandleFunc purges an object from a cache based on key.
 func PurgeKeyHandleFunc(conf *config.Config, from backends.Backends) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
-		params := router.Vars(req)
-		purgeFrom, purgeKey := params["backend"], params["key"]
+		vals := strings.Replace(req.URL.Path, conf.Main.PurgeKeyHandlerPath, "", 1)
+		parts := strings.Split(vals, "/")
+		if len(parts) != 2 {
+			http.NotFound(w, req)
+			return
+		}
+		purgeFrom := parts[0]
+		purgeKey := parts[1]
 		fromBackend := from.Get(purgeFrom)
 		if fromBackend == nil {
 			w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
@@ -63,14 +69,15 @@ func PurgePathHandlerFunc(conf *config.Config, from *backends.Backends) func(htt
 		purgeFrom := req.URL.Query().Get("backend")
 		purgePath := req.URL.Query().Get("path")
 		if purgeFrom == "" || purgePath == "" {
-			logging.Warn(rsc.Logger, "failed to get backend/path args", nil)
+			rsc.Logger.Warn("failed to get backend/path args", nil)
 			w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 			w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("Usage: " + config.DefaultPurgePathHandlerPath + "?backend={backend}&path={path}"))
 			return
 		}
-		logging.Debug(rsc.Logger, "purging cache item", logging.Pairs{"backend": purgeFrom, "path": purgePath})
+		rsc.Logger.Debug("purging cache item",
+			logging.Pairs{"backend": purgeFrom, "path": purgePath})
 		fromBackend := from.Get(purgeFrom)
 		if fromBackend == nil {
 			w.Header().Set(headers.NameContentType, headers.ValueTextPlain)

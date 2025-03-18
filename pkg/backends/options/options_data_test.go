@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
+	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
 func testNegativeCaches() negative.Lookups {
@@ -104,26 +105,21 @@ backends:
 
 `
 
-func fromTestYAML() (*Options, error) {
+func fromTestYAML() (*Options, yamlx.KeyLookup, error) {
 	return fromYAML(testYAML)
 }
 
-func fromTestYAMLWithDefault() (*Options, error) {
+func fromTestYAMLWithDefault() (*Options, yamlx.KeyLookup, error) {
 	conf := strings.Replace(testYAML, "    rule_name: ''", "    rule_name: ''\n    is_default: false", -1)
 	return fromYAML(conf)
 }
 
-func fromTestYAMLWithPath() (*Options, error) {
-	conf := strings.Replace(testYAML, "    rule_name: ''", "    rule_name: ''\n    is_default: false", -1)
-	return fromYAML(conf)
-}
-
-func fromTestYAMLWithReqRewriter() (*Options, error) {
+func fromTestYAMLWithReqRewriter() (*Options, yamlx.KeyLookup, error) {
 	conf := strings.Replace(testYAML, "    rule_name: ''", "    rule_name: ''\n    req_rewriter_name: test", -1)
 	return fromYAML(conf)
 }
 
-func fromTestYAMLWithALB() (*Options, error) {
+func fromTestYAMLWithALB() (*Options, yamlx.KeyLookup, error) {
 	conf := strings.Replace(strings.Replace(testYAML, "    rule_name: ''", `
     rule_name: ''
     alb:

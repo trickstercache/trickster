@@ -19,6 +19,7 @@ package engines
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
@@ -43,13 +44,16 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	}
 
 	var qp url.Values
-	r := pr.Request
+	useUR := pr.upstreamRequest != nil
+	var r *http.Request
 
-	if pr.upstreamRequest != nil {
+	if useUR {
 		r = pr.upstreamRequest
 		if r.URL == nil {
 			r.URL = pr.URL
 		}
+	} else {
+		r = pr.Request
 	}
 
 	var b []byte
@@ -116,8 +120,12 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 				}
 			}
 			r = request.SetBody(r, b)
+			if useUR {
+				pr.upstreamRequest = r
+			} else {
+				pr.Request = r
+			}
 		}
-
 		for _, f := range pc.CacheKeyFormFields {
 			if _, ok := pr.Form[f]; ok {
 				if v := pr.FormValue(f); v != "" {

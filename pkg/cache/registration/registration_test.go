@@ -19,7 +19,6 @@ package registration
 import (
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	bao "github.com/trickstercache/trickster/v2/pkg/cache/badger/options"
 	bbo "github.com/trickstercache/trickster/v2/pkg/cache/bbolt/options"
 	flo "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
@@ -27,7 +26,8 @@ import (
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
 func TestLoadCachesFromConfig(t *testing.T) {
@@ -51,7 +51,7 @@ func TestLoadCachesFromConfig(t *testing.T) {
 		}
 	}
 
-	caches := LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
+	caches := LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	defer CloseCaches(caches)
 	_, ok := caches["default"]
 	if !ok {

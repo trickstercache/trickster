@@ -32,7 +32,7 @@ Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications lik
 * [Negative Caching](./docs/negative-caching.md) to prevent domino effect outages
 * High-performance [Collapsed Forwarding](./docs/collapsed-forwarding.md)
 * Best-in-class [Byte Range Request caching and acceleration](./docs/range_request.md).
-* [Distributed Tracing](./docs/tracing.md) via OpenTelemetry, supporting Jaeger and Zipkin
+* [Distributed Tracing](./docs/tracing.md) via OpenTelemetry, supporting OTLP and Zipkin
 * Rules engine for custom request routing and rewriting
 
 ## Time Series Database Accelerator
@@ -98,7 +98,7 @@ Trickster Helm Charts are located at <https://helm.tricksterproxy.io> for instal
 ### Building from source
 
 To build Trickster from the source code yourself you need to have a working
-Go environment with [version 1.19 or greater installed](http://golang.org/doc/install).
+Go environment with [version 1.23 or greater installed](http://golang.org/doc/install).
 
 You can directly use the `go` tool to download and install the `trickster`
 binary into your `GOPATH`:

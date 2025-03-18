@@ -26,7 +26,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -80,7 +80,7 @@ type proxyRequest struct {
 	collapsedForwarder ProgressiveCollapseForwarder
 	cachingPolicy      *CachingPolicy
 
-	Logger            interface{}
+	Logger            logging.Logger
 	isPCF             bool
 	writeToCache      bool
 	hasWriteLock      bool
@@ -168,8 +168,8 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 		resp.Body = io.NopCloser(bytes.NewReader(body))
 	}
 	if err != nil {
-		tl.Error(pr.Logger, "error reading body from http response",
-			tl.Pairs{"url": pr.URL.String(), "detail": err.Error()})
+		pr.Logger.Error("error reading body from http response",
+			logging.Pairs{"url": pr.URL.String(), "detail": err.Error()})
 		return []byte{}, resp, 0
 	}
 
@@ -206,7 +206,7 @@ func (pr *proxyRequest) prepareRevalidationRequest() {
 
 		var wr byterange.Ranges
 
-		if pr.wantedRanges != nil && len(pr.wantedRanges) > 0 {
+		if len(pr.wantedRanges) > 0 {
 			wr = pr.wantedRanges
 		} else {
 			wr = byterange.Ranges{{Start: 0, End: cl}}
@@ -239,7 +239,7 @@ func (pr *proxyRequest) prepareRevalidationRequest() {
 }
 
 func (pr *proxyRequest) setRangeHeader(h http.Header) {
-	if pr.neededRanges != nil && len(pr.neededRanges) > 0 {
+	if len(pr.neededRanges) > 0 {
 		pr.cachingPolicy.IsFresh = false
 		h.Set(headers.NameRange, pr.neededRanges.String())
 	}
@@ -262,7 +262,7 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 	}
 
 	// if we are articulating the origin range requests, break those out here
-	if pr.neededRanges != nil && len(pr.neededRanges) > 0 && rsc.BackendOptions.DearticulateUpstreamRanges {
+	if len(pr.neededRanges) > 0 && rsc.BackendOptions.DearticulateUpstreamRanges {
 		for _, r := range pr.neededRanges {
 			req := request.SetResources(pr.upstreamRequest.Clone(context.Background()), rsc)
 			req.Header.Set(headers.NameRange, "bytes="+r.String())
@@ -298,7 +298,7 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 		}()
 	}
 
-	if pr.originRequests != nil && len(pr.originRequests) > 0 {
+	if len(pr.originRequests) > 0 {
 		pr.originResponses = make([]*http.Response, len(pr.originRequests))
 		pr.originReaders = make([]io.ReadCloser, len(pr.originRequests))
 		for i := range pr.originRequests {
@@ -550,7 +550,7 @@ func (pr *proxyRequest) prepareResponse() {
 
 		resp.StatusCode = http.StatusPartialContent
 
-		if d.Ranges != nil && len(d.Ranges) > 0 {
+		if len(d.Ranges) > 0 {
 			d.LoadRangeParts()
 		}
 		var h http.Header

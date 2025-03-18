@@ -22,7 +22,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/trickstercache/trickster/v2/pkg/runtime"
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 )
 
 const (
@@ -207,9 +207,9 @@ func SetVia(r *http.Request, hop *Hop) {
 		return
 	}
 	if hop.Via != "" {
-		r.Header.Set(NameVia, hop.Via+", "+hop.Protocol+" "+runtime.Server)
+		r.Header.Set(NameVia, hop.Via+", "+hop.Protocol+" "+appinfo.Server)
 	} else {
-		r.Header.Set(NameVia, hop.Protocol+" "+runtime.Server)
+		r.Header.Set(NameVia, hop.Protocol+" "+appinfo.Server)
 	}
 }
 

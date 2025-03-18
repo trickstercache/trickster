@@ -22,11 +22,12 @@ import (
 	"time"
 
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
 // HealthChecker defines the Health Checker interface
 type HealthChecker interface {
-	Register(string, string, *ho.Options, *http.Client, interface{}) (*Status, error)
+	Register(string, string, *ho.Options, *http.Client, logging.Logger) (*Status, error)
 	Unregister(string)
 	Status(string) *Status
 	Statuses() StatusLookup
@@ -66,7 +67,7 @@ func (hc *healthChecker) Shutdown() {
 }
 
 func (hc *healthChecker) Register(name, description string, o *ho.Options,
-	client *http.Client, logger interface{}) (*Status, error) {
+	client *http.Client, logger logging.Logger) (*Status, error) {
 	if o == nil {
 		return nil, ho.ErrNoOptionsProvided
 	}
@@ -88,8 +89,14 @@ func (hc *healthChecker) Register(name, description string, o *ho.Options,
 	if t.interval > 0 {
 		t.Start()
 		// wait for the health check to be fully registered
-		for !t.isInLoop {
-			time.Sleep(1 * time.Millisecond)
+		var isInLoop bool
+		var count time.Duration
+		for !isInLoop {
+			time.Sleep(count * 1 * time.Millisecond)
+			t.mtx.Lock()
+			isInLoop = t.isInLoop
+			t.mtx.Unlock()
+			count++
 		}
 	}
 	hc.statuses[t.name] = t.status

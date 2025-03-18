@@ -25,8 +25,6 @@ import (
 	"time"
 )
 
-var t0 = time.Unix(0, 0)
-
 // ExtentList is a type of []Extent used for sorting the slice
 type ExtentList []Extent
 

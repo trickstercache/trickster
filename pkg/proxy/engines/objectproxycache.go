@@ -25,7 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
@@ -435,12 +435,13 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		if f, ok := cacheResponseHandlers[pr.cacheStatus]; ok {
 			f(pr)
 		} else {
-			tl.Warn(pr.Logger,
-				"unhandled cache lookup response", tl.Pairs{"lookupStatus": pr.cacheStatus})
+			pr.Logger.Warn("unhandled cache lookup response",
+				logging.Pairs{"lookupStatus": pr.cacheStatus})
 			return nil, status.LookupStatusProxyOnly
 		}
 	} else {
-		tl.Error(pr.Logger, "cache lookup error", tl.Pairs{"detail": err.Error()})
+		pr.Logger.Error("cache lookup error",
+			logging.Pairs{"detail": err.Error()})
 		pr.cacheDocument = nil
 		pr.cacheStatus = status.LookupStatusKeyMiss
 		handleCacheKeyMiss(pr)

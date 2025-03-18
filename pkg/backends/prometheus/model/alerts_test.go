@@ -24,9 +24,13 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
+
+var testLogger = logging.NoopLogger()
+var testResources = request.NewResources(nil, nil, nil, nil, nil, nil, testLogger)
 
 func TestCalculateHash(t *testing.T) {
 
@@ -81,6 +85,11 @@ func TestMerge(t *testing.T) {
 
 }
 
+func newTestReq() *http.Request {
+	r, _ := http.NewRequest(http.MethodGet, "/", nil)
+	return r
+}
+
 func TestMergeAndWriteAlerts(t *testing.T) {
 
 	var nilRG *merge.ResponseGate
@@ -91,22 +100,22 @@ func TestMergeAndWriteAlerts(t *testing.T) {
 		expCode int
 	}{
 		{
-			nil,
+			newTestReq(),
 			nil,
 			http.StatusBadGateway,
 		},
 		{
-			nil,
+			newTestReq(),
 			merge.ResponseGates{nilRG},
 			http.StatusBadGateway,
 		},
 		{
-			nil,
+			newTestReq(),
 			testResponseGates1(),
 			http.StatusOK,
 		},
 		{
-			nil,
+			newTestReq(),
 			testResponseGates2(),
 			http.StatusBadRequest,
 		},
@@ -115,7 +124,7 @@ func TestMergeAndWriteAlerts(t *testing.T) {
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			w := httptest.NewRecorder()
-			MergeAndWriteAlerts(w, test.r, test.rgs)
+			MergeAndWriteAlerts(w, request.SetResources(test.r, testResources), test.rgs)
 			if w.Code != test.expCode {
 				t.Errorf("expected %d got %d", test.expCode, w.Code)
 			}
@@ -130,7 +139,7 @@ func testResponseGates1() merge.ResponseGates {
 		{"state":"test","labels":{},"annotations":{},"value":"x","activeAt":"y"}
 	]}}`)
 	closer1 := io.NopCloser(bytes.NewReader(b1))
-	rsc1 := request.NewResources(nil, nil, nil, nil, nil, nil, nil)
+	rsc1 := request.NewResources(nil, nil, nil, nil, nil, nil, testLogger)
 	rsc1.Response = &http.Response{
 		Body:       closer1,
 		StatusCode: 200,
@@ -144,7 +153,7 @@ func testResponseGates1() merge.ResponseGates {
 
 	b2bad := []byte(`{"stat`)
 	closer2 := io.NopCloser(bytes.NewReader(b2bad))
-	rsc2 := request.NewResources(nil, nil, nil, nil, nil, nil, nil)
+	rsc2 := request.NewResources(nil, nil, nil, nil, nil, nil, testLogger)
 	rsc2.Response = &http.Response{
 		Body:       closer2,
 		StatusCode: 200,
@@ -158,7 +167,7 @@ func testResponseGates1() merge.ResponseGates {
 
 	b3 := []byte(`{"status":"success","data":{"alerts":[]}}`)
 	closer3 := io.NopCloser(bytes.NewReader(b3))
-	rsc3 := request.NewResources(nil, nil, nil, nil, nil, nil, nil)
+	rsc3 := request.NewResources(nil, nil, nil, nil, nil, nil, testLogger)
 	rsc3.Response = &http.Response{
 		Body:       closer3,
 		StatusCode: 200,
@@ -178,7 +187,7 @@ func testResponseGates2() merge.ResponseGates {
 
 	b1 := []byte(`{"status":"error","data":{"alerts":[]}}`)
 	closer1 := io.NopCloser(bytes.NewReader(b1))
-	rsc1 := request.NewResources(nil, nil, nil, nil, nil, nil, nil)
+	rsc1 := request.NewResources(nil, nil, nil, nil, nil, nil, testLogger)
 	rsc1.Response = &http.Response{
 		Body:       closer1,
 		StatusCode: 400,
@@ -192,7 +201,7 @@ func testResponseGates2() merge.ResponseGates {
 
 	b2 := []byte(`{"status":"error","data":{"alerts":[]}}`)
 	closer2 := io.NopCloser(bytes.NewReader(b1))
-	rsc2 := request.NewResources(nil, nil, nil, nil, nil, nil, nil)
+	rsc2 := request.NewResources(nil, nil, nil, nil, nil, nil, testLogger)
 	rsc2.Response = &http.Response{
 		Body:       closer2,
 		StatusCode: 400,

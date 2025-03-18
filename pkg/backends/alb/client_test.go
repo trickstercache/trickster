@@ -46,25 +46,25 @@ func TestHandlers(t *testing.T) {
 	}
 
 	a.MechanismName = "fgr"
-	cl, err = NewClient("test", o, nil, nil, nil, nil)
+	_, err = NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
 
 	a.MechanismName = "nlm"
-	cl, err = NewClient("test", o, nil, nil, nil, nil)
+	_, err = NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
 
 	a.MechanismName = "tsm"
-	cl, err = NewClient("test", o, nil, nil, nil, types.Lookup{"prometheus": prometheus.NewClient})
+	_, err = NewClient("test", o, nil, nil, nil, types.Lookup{"prometheus": prometheus.NewClient})
 	if err != nil {
 		t.Error(err)
 	}
 
 	a.MechanismName = "rr"
-	cl, err = NewClient("test", o, nil, nil, nil, nil)
+	_, err = NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}

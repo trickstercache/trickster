@@ -21,10 +21,10 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
 func TestConfiguration(t *testing.T) {
@@ -44,7 +44,7 @@ func TestCache(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := cr.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
+	caches := cr.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {

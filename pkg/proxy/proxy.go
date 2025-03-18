@@ -52,7 +52,7 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 			TLSConfig.Certificates = []tls.Certificate{cert}
 		}
 
-		if o.TLS.CertificateAuthorityPaths != nil && len(o.TLS.CertificateAuthorityPaths) > 0 {
+		if len(o.TLS.CertificateAuthorityPaths) > 0 {
 
 			// credit snippet to https://forfuncsake.github.io/post/2017/08/trust-extra-ca-cert-in-go-app/
 			// Get the SystemCertPool, continue with an empty pool on error
@@ -89,7 +89,7 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 			MaxIdleConnsPerHost: o.MaxIdleConns,
 			TLSClientConfig:     TLSConfig,
 		},
-	} 
+	}
 
 	if o.SigV4 != nil {
 		var err error

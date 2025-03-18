@@ -36,7 +36,7 @@ func Encode(in []byte) ([]byte, error) {
 }
 
 func NewEncoder(w io.Writer, unused int) io.WriteCloser {
-	return snappy.NewWriter(w)
+	return snappy.NewBufferedWriter(w)
 }
 
 func NewDecoder(r io.Reader) reader.ReadCloserResetter {

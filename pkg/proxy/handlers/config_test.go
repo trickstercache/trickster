@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 )
 
 func TestConfigHandler(t *testing.T) {

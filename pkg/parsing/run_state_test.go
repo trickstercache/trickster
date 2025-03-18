@@ -25,9 +25,9 @@ import (
 )
 
 func TestNewRunState(t *testing.T) {
-	rs := NewRunState(context.Background())
+	rs := NewRunState(context.Background(), nil)
 	if rs == nil {
-		t.Error("expected non-nil error")
+		t.Error("expected non-nil run state")
 	}
 }
 
@@ -38,7 +38,7 @@ func testStateFn(p1, p2 Parser, rs *RunState) StateFn {
 func TestRunState(t *testing.T) {
 	v := "trickster"
 	ctx := context.Background()
-	rs := NewRunState(context.Background()).WithContext(ctx)
+	rs := NewRunState(context.Background(), nil).WithContext(ctx)
 	rs.SetResultsCollection("test", v)
 	v2, _ := rs.GetResultsCollection("test")
 	if v3, ok := v2.(string); !ok || v3 != v {
@@ -82,14 +82,16 @@ func TestRunState(t *testing.T) {
 	}
 
 	tk := &token.Token{Typ: token.EOF}
-	ch := rs.Tokens()
-	ch <- tk
+	tokens := token.Tokens{tk}
+	rs = NewRunState(context.Background(), tokens).WithContext(ctx)
 	rs.Peek()
-	if rs.Next() != tk {
-		t.Error("next mismatch")
+	tk2 := rs.Next()
+	if tk2 != tk {
+		t.Error("next mismatch", tk2)
 	}
-	if rs.Peek() != tk {
-		t.Error("peek mismatch")
+	tk2 = rs.Peek()
+	if tk2 != tk {
+		t.Error("peek mismatch", tk2)
 	}
 
 	StateUnexpectedToken(nil, nil, rs)

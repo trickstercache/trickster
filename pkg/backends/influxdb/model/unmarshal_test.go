@@ -17,6 +17,7 @@
 package model
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -61,7 +62,7 @@ func TestUnmarshalTimeseries(t *testing.T) {
 	}
 
 	_, err = UnmarshalTimeseries([]byte(testDocInvalid01), trq)
-	if err != timeseries.ErrInvalidTimeFormat {
+	if !errors.Is(err, timeseries.ErrInvalidTimeFormat) {
 		t.Error("expected ErrInvalidTimeFormat, got", err)
 	}
 }

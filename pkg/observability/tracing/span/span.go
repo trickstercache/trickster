@@ -50,7 +50,6 @@ func PrepareRequest(r *http.Request, tr *tracing.Tracer) (*http.Request, trace.S
 	r = r.WithContext(baggage.ContextWithBaggage(r.Context(), entries))
 
 	// This will add any configured static tags to the span for Zipkin
-	// For Jaeger, they are automatically included in the Process section of the Trace
 	if tr.Options.AttachTagsToSpan() {
 		if len(attrs) > 0 {
 			tracing.Tags(tr.Options.Tags).MergeAttr(attrs)

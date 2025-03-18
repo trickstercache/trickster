@@ -1,7 +1,7 @@
 on:
   push:
     tags:
-    - 'v[0-9]+\.[0-9]+\.[0-9]+' 
+      - 'v[0-9]+\.[0-9]+\.[0-9]+'
 
 name: Publish Trickster Release to Drafts
 
@@ -12,19 +12,19 @@ jobs:
     steps:
       - name: Get current date
         id: date
-        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+        run: echo "date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
         #
       - name: Get bare tag
         id: baretag
-        run: echo "::set-output name=baretag::$(echo ${{ github.ref }} | cut -b 12-)"
+        run: echo "baretag=$(echo ${{ github.ref }} | cut -b 12-)" >> "$GITHUB_OUTPUT"
         #
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         #
       - name: install golang
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.19'
+          go-version-file: go.mod
         #
       - name: Build project
         run: |

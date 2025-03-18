@@ -21,7 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )

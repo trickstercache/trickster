@@ -36,6 +36,8 @@ const (
 	ValueApplicationFlux = "application/vnd.flux"
 	// ValueChunked represents the HTTP Header Value of "chunked"
 	ValueChunked = "chunked"
+	// ValueClose represents the HTTP Header Value of "close"
+	ValueClose = "close"
 	// ValueMaxAge represents the HTTP Header Value of "max-age"
 	ValueMaxAge = "max-age"
 	// ValueMultipartFormData represents the HTTP Header Value of "multipart/form-data"
@@ -160,8 +162,11 @@ func (l Lookup) Clone() Lookup {
 // If a key exists in both maps, the source value wins.
 // If the destination map is nil, the source map will not be merged
 func Merge(dst, src http.Header) {
-	if src == nil || len(src) == 0 || dst == nil {
+	if len(src) == 0 {
 		return
+	}
+	if dst == nil {
+		dst = make(http.Header)
 	}
 	for k, sv := range src {
 		if len(sv) == 0 {
@@ -173,7 +178,7 @@ func Merge(dst, src http.Header) {
 
 // UpdateHeaders updates the provided headers collection with the provided updates
 func UpdateHeaders(headers http.Header, updates map[string]string) {
-	if headers == nil || updates == nil || len(updates) == 0 {
+	if headers == nil || len(updates) == 0 {
 		return
 	}
 	for k, v := range updates {
@@ -205,7 +210,7 @@ func ExtractHeader(headers http.Header, header string) (string, bool) {
 // String returns the string representation of the headers as if
 // they were transmitted over the wire (Header1: value1\nHeader2: value2\n\n)
 func String(h http.Header) string {
-	if h == nil || len(h) == 0 {
+	if len(h) == 0 {
 		return "\n\n"
 	}
 	sb := strings.Builder{}
@@ -222,7 +227,7 @@ func String(h http.Header) string {
 // LogString returns a compact string representation of the headers suitable for
 // use with logging
 func LogString(h http.Header) string {
-	if h == nil || len(h) == 0 {
+	if len(h) == 0 {
 		return "{}"
 	}
 

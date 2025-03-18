@@ -163,9 +163,7 @@ func (o *Options) URL() *url.URL {
 	u.Scheme = o.Scheme
 	u.Host = o.Host
 	u.Path = o.Path
-	if strings.HasPrefix(o.Query, "?") {
-		o.Query = o.Query[1:]
-	}
+	o.Query = strings.TrimPrefix(o.Query, "?")
 	u.RawQuery = o.Query
 	return u
 }

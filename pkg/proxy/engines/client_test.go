@@ -23,7 +23,6 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -37,7 +36,6 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	tst "github.com/trickstercache/trickster/v2/pkg/testutil/timeseries/model"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	tt "github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
@@ -355,83 +353,6 @@ func (c *TestClient) FastForwardRequest(r *http.Request) (*http.Request, error) 
 
 	params.SetRequestValues(nr, v)
 	return nr, nil
-}
-
-// // VectorEnvelope represents a Vector response object from the Prometheus HTTP API
-// type VectorEnvelope struct {
-// 	Status string     `json:"status"`
-// 	Data   VectorData `json:"data"`
-// }
-
-// // VectorData represents the Data body of a Vector response object from the Prometheus HTTP API
-// type VectorData struct {
-// 	ResultType string       `json:"resultType"`
-// 	Result     model.Vector `json:"result"`
-// }
-
-// // MatrixEnvelope represents a Matrix response object from the Prometheus HTTP API
-// type MatrixEnvelope struct {
-// 	Status       string                `json:"status"`
-// 	Data         MatrixData            `json:"data"`
-// 	ExtentList   timeseries.ExtentList `json:"extents,omitempty"`
-// 	StepDuration time.Duration         `json:"step,omitempty"`
-
-// 	timestamps map[time.Time]bool // tracks unique timestamps in the matrix data
-// 	tslist     times.Times
-// 	isSorted   bool // tracks if the matrix data is currently sorted
-// 	isCounted  bool // tracks if timestamps slice is up-to-date
-
-// 	timeRangeQuery *timeseries.TimeRangeQuery
-// }
-
-// // MatrixData represents the Data body of a Matrix response object from the Prometheus HTTP API
-// type MatrixData struct {
-// 	ResultType string       `json:"resultType"`
-// 	Result     model.Matrix `json:"result"`
-// }
-
-func (c *TestClient) marshalTimeseriesWriter(ts timeseries.Timeseries, w io.Writer) error {
-	// Marshal the Envelope back to a json object for Cache Storage
-	if c.RangeCacheKey == "failkey" {
-		return fmt.Errorf("generic failure for testing purposes (key: %s)", c.RangeCacheKey)
-	}
-
-	ds, ok := ts.(*dataset.DataSet)
-	if !ok {
-		return timeseries.ErrUnknownFormat
-	}
-	// With Prometheus we presume only one Result per Dataset
-	if len(ds.Results) != 1 {
-		return timeseries.ErrUnknownFormat
-	}
-
-	w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[`)) // todo: always "success" ?
-
-	seriesSep := ""
-	for _, s := range ds.Results[0].SeriesList {
-		w.Write([]byte(seriesSep + `{"metric":{`))
-		sep := ""
-		for _, k := range s.Header.Tags.Keys() {
-			w.Write([]byte(fmt.Sprintf(`%s"%s":"%s"`, sep, k, s.Header.Tags[k])))
-			sep = ","
-		}
-		w.Write([]byte(`},"values":[`))
-		sep = ""
-		sort.Sort(s.Points)
-		for _, p := range s.Points {
-			w.Write([]byte(fmt.Sprintf(`%s[%s,"%s"]`,
-				sep,
-				strconv.FormatFloat(float64(p.Epoch)/1000000000, 'f', -1, 64),
-				p.Values[0]),
-			))
-			sep = ","
-		}
-		w.Write([]byte("]}"))
-		seriesSep = ","
-	}
-	w.Write([]byte("]}}"))
-	return nil
-
 }
 
 func (c *TestClient) testModeler() *timeseries.Modeler {

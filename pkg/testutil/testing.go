@@ -26,10 +26,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registration"
@@ -39,7 +40,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
-	"github.com/trickstercache/trickster/v2/pkg/runtime"
 
 	"github.com/trickstercache/mockster/pkg/testutil"
 )
@@ -56,7 +56,7 @@ var ErrTest = errors.New("test error")
 // this actively sets the ApplicationName for testing purposes
 // do not import this package from main or any of its recursive imports
 func init() {
-	runtime.ApplicationName = "trickster-unit-tests"
+	appinfo.Name = "trickster-unit-tests"
 }
 
 // NewTestServer returns a new httptest.Server that responds with the provided code, body and headers
@@ -117,7 +117,7 @@ func NewTestInstance(
 		return nil, nil, nil, nil, fmt.Errorf("could not load configuration: %s", err.Error())
 	}
 
-	caches := cr.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
+	caches := cr.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	cache, ok := caches["default"]
 	if !ok {
 		return nil, nil, nil, nil, err
@@ -135,7 +135,7 @@ func NewTestInstance(
 
 	var tracer *tracing.Tracer
 
-	logger := tl.ConsoleLogger("error")
+	logger := logging.ConsoleLogger("error")
 	if o.TracingConfigName != "" {
 		if tc, ok := conf.TracingConfigs[o.TracingConfigName]; ok {
 			tracer, _ = tr.GetTracer(tc, logger, true)
@@ -186,7 +186,7 @@ func NewTestTracer() *tracing.Tracer {
 	tc := to.New()
 	tc.Name = "test"
 	tc.Provider = "stdout"
-	tracer, _ := tr.GetTracer(tc, tl.ConsoleLogger("warn"), true)
+	tracer, _ := tr.GetTracer(tc, logging.ConsoleLogger("warn"), true)
 	return tracer
 }
 

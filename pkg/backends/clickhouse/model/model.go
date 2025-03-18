@@ -27,10 +27,13 @@ import (
 	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/sqlparser"
 )
+
+const formatHeader = "X-Clickhouse-Format"
 
 var marshalers = map[byte]dataset.Marshaler{
 	0: marshalTimeseriesJSON,
@@ -88,26 +91,27 @@ func NewModeler() *timeseries.Modeler {
 }
 
 func marshalTimeseriesJSON(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
-	status int, w io.Writer) error {
-
+	status int) ([]byte, error) {
 	type md struct {
 		name  string
 		typ   string
 		quote bool
 	}
-
 	trq := ds.TimeRangeQuery
 	if trq == nil {
-		return timeseries.ErrNoTimerangeQuery
+		return nil, timeseries.ErrNoTimerangeQuery
 	}
-
-	if rw, ok := w.(http.ResponseWriter); ok {
-		h := rw.Header()
-		h.Set(headers.NameContentType, headers.ValueApplicationJSON+"; charset=UTF-8")
-		h.Set("X-Clickhouse-Format", "JSON")
-		rw.WriteHeader(status)
+	var h map[string]string
+	if rlo != nil {
+		if rlo.VendorData == nil {
+			h = make(map[string]string)
+			rlo.VendorData = h
+		}
+	} else {
+		h = make(map[string]string)
 	}
-
+	h[formatHeader] = "JSON"
+	w := new(bytes.Buffer)
 	w.Write([]byte(`{
 	"meta":
 	[`,
@@ -236,7 +240,7 @@ func marshalTimeseriesJSON(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
 	"rows": `))
 	w.Write([]byte(strconv.FormatInt(j, 10)))
 	w.Write([]byte("\n}\n"))
-	return nil
+	return w.Bytes(), nil
 }
 
 func shouldQuote(in string) bool {
@@ -247,55 +251,98 @@ func shouldQuote(in string) bool {
 }
 
 func marshalTimeseriesCSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
-	status int, w io.Writer) error {
-	return marshalTimeseriesXSV(ds, rlo, status,
-		&tsvWriter{Writer: w, separator: ","})
+	status int) ([]byte, error) {
+	w := new(bytes.Buffer)
+	err := marshalTimeseriesXSV(ds, rlo, &tsvWriter{Writer: w, separator: ","})
+	if err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
 }
 
-func marshalTimeseriesCSVWithNames(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
-	status int, w io.Writer) error {
-	return marshalTimeseriesXSV(ds, rlo, status,
+func marshalTimeseriesCSVWithNames(ds *dataset.DataSet,
+	rlo *timeseries.RequestOptions, status int) ([]byte, error) {
+	w := new(bytes.Buffer)
+	err := marshalTimeseriesXSV(ds, rlo,
 		&tsvWriter{Writer: w, writeNames: true, separator: ","})
+	if err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+
+func marshalTimeseriesTSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
+	status int) ([]byte, error) {
+	w := new(bytes.Buffer)
+	err := marshalTimeseriesXSV(ds, rlo, &tsvWriter{Writer: w, separator: "\t"})
+	if err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+
+func marshalTimeseriesTSVWithNames(ds *dataset.DataSet,
+	rlo *timeseries.RequestOptions, status int) ([]byte, error) {
+	w := new(bytes.Buffer)
+	err := marshalTimeseriesXSV(ds, rlo,
+		&tsvWriter{Writer: w, writeNames: true, separator: "\t"})
+	if err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+
+func marshalTimeseriesTSVWithNamesAndTypes(ds *dataset.DataSet,
+	rlo *timeseries.RequestOptions, status int) ([]byte, error) {
+	w := new(bytes.Buffer)
+	err := marshalTimeseriesXSV(ds, rlo,
+		&tsvWriter{Writer: w, writeNames: true, writeTypes: true, separator: "\t"})
+	if err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
 }
 
 func marshalTimeseriesXSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
-	status int, tw *tsvWriter) error {
+	tw *tsvWriter) error {
 	trq := ds.TimeRangeQuery
 	if trq == nil {
 		return timeseries.ErrNoTimerangeQuery
 	}
 
-	if rw, ok := tw.Writer.(http.ResponseWriter); ok {
-		h := rw.Header()
-
-		if tw.separator == "" {
-			tw.separator = ","
+	var h map[string]string
+	if rlo != nil {
+		if rlo.VendorData == nil {
+			rlo.VendorData = make(map[string]string)
 		}
-
-		var ctPart, fmtPart string
-		switch tw.separator {
-		case "\t":
-			ctPart = "tab"
-			fmtPart = "TSV"
-		default:
-			ctPart = "comma"
-			fmtPart = "CSV"
-			tw.separator = ","
-		}
-
-		h.Set(headers.NameContentType, "text/"+ctPart+"-separated-values; charset=UTF-8")
-		if tw.writeTypes {
-			h.Set("X-Clickhouse-Format", fmtPart+"WithNamesAndTypes")
-		} else if tw.writeNames {
-			h.Set("X-Clickhouse-Format", fmtPart+"WithNames")
-		} else {
-			h.Set("X-Clickhouse-Format", fmtPart)
-		}
-		rw.WriteHeader(status)
+		h = rlo.VendorData
 	}
 
-	if trq == nil || (len(trq.TagFieldDefintions) == 0 &&
-		len(trq.ValueFieldDefinitions) == 0) {
+	if tw.separator == "" {
+		tw.separator = ","
+	}
+
+	var ctPart, fmtPart string
+	switch tw.separator {
+	case "\t":
+		ctPart = "tab"
+		fmtPart = "TSV"
+	default:
+		ctPart = "comma"
+		fmtPart = "CSV"
+		tw.separator = ","
+	}
+	h[headers.NameContentType] = "text/" + ctPart + "-separated-values; charset=UTF-8"
+	if tw.writeTypes {
+		h[formatHeader] = fmtPart + "WithNamesAndTypes"
+	} else if tw.writeNames {
+		h[formatHeader] = fmtPart + "WithNames"
+	} else {
+		h[formatHeader] = fmtPart
+	}
+
+	if len(trq.TagFieldDefintions) == 0 &&
+		len(trq.ValueFieldDefinitions) == 0 {
 		return timeseries.ErrNoTimerangeQuery
 	}
 
@@ -327,7 +374,7 @@ func marshalTimeseriesXSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
 			}
 			rowVals[fd.OutputPosition] = fd.Name
 		}
-		for i, fd = range trq.ValueFieldDefinitions {
+		for _, fd = range trq.ValueFieldDefinitions {
 			rowVals[fd.OutputPosition] = fd.Name
 		}
 		tw.Write([]byte(strings.Join(rowVals, tw.separator) + "\n"))
@@ -346,7 +393,7 @@ func marshalTimeseriesXSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
 			}
 			rowVals[fd.OutputPosition] = fd.SDataType
 		}
-		for i, fd = range trq.ValueFieldDefinitions {
+		for _, fd = range trq.ValueFieldDefinitions {
 			rowVals[fd.OutputPosition] = fd.SDataType
 		}
 		tw.Write([]byte(strings.Join(rowVals, tw.separator) + "\n"))
@@ -386,40 +433,14 @@ func wrapCSVCell(in, separator string) string {
 	return in
 }
 
-func marshalTimeseriesTSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
-	status int, w io.Writer) error {
-	return marshalTimeseriesXSV(ds, rlo, status,
-		&tsvWriter{Writer: w, separator: "\t"})
-}
-
-func marshalTimeseriesTSVWithNames(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
-	status int, w io.Writer) error {
-	return marshalTimeseriesXSV(ds, rlo, status,
-		&tsvWriter{Writer: w, writeNames: true, separator: "\t"})
-}
-
-func marshalTimeseriesTSVWithNamesAndTypes(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
-	status int, w io.Writer) error {
-	return marshalTimeseriesXSV(ds, rlo, status,
-		&tsvWriter{Writer: w, writeNames: true, writeTypes: true, separator: "\t"})
-}
-
 // MarshalTimeseries converts a Timeseries into a JSON blob
 func MarshalTimeseries(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int) ([]byte, error) {
-	buf := bytes.NewBuffer(nil)
-	err := MarshalTimeseriesWriter(ts, rlo, status, buf)
-	return buf.Bytes(), err
-}
-
-// MarshalTimeseriesWriter converts a Timeseries into a JSON blob via an io.Writer
-func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions,
-	status int, w io.Writer) error {
 	if ts == nil {
-		return timeseries.ErrUnknownFormat
+		return nil, timeseries.ErrUnknownFormat
 	}
 	ds, ok := ts.(*dataset.DataSet)
 	if !ok {
-		return timeseries.ErrUnknownFormat
+		return nil, timeseries.ErrUnknownFormat
 	}
 	var of byte
 	if rlo != nil {
@@ -427,9 +448,36 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOp
 	}
 	marshaler, ok := marshalers[of]
 	if !ok {
-		return timeseries.ErrUnknownFormat
+		return nil, timeseries.ErrUnknownFormat
 	}
-	return marshaler(ds, rlo, status, w)
+	return marshaler(ds, rlo, status)
+}
+
+// MarshalTimeseriesWriter converts a Timeseries into a JSON blob via an io.Writer
+func MarshalTimeseriesWriter(ts timeseries.Timeseries,
+	rlo *timeseries.RequestOptions, status int, w io.Writer) error {
+	b, err := MarshalTimeseries(ts, rlo, status)
+	if err != nil {
+		return err
+	}
+	var of byte
+	if rlo != nil {
+		of = rlo.OutputFormat
+	}
+
+	var h http.Header
+	if rlo != nil && len(rlo.VendorData) > 0 {
+		h = make(http.Header)
+		for k, v := range rlo.VendorData {
+			h.Set(k, v)
+		}
+	}
+	err = response.WriteResponseHeader(w, status, of, h)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(b)
+	return err
 }
 
 // UnmarshalTimeseries converts a TSV blob into a Timeseries

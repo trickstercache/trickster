@@ -220,7 +220,7 @@ func SetDefaults(
 			p.ReqRewriter = ri
 		}
 		if len(p.Methods) == 0 {
-			p.Methods = []string{http.MethodGet, http.MethodHead}
+			p.Methods = []string{http.MethodGet}
 		}
 		p.Custom = make([]string, 0)
 		for _, pm := range pathMembers {
@@ -248,7 +248,7 @@ func SetDefaults(
 			p.MatchType = matching.PathMatchTypeExact
 			p.MatchTypeName = p.MatchType.String()
 		}
-		paths[p.Path+"-"+strings.Join(p.Methods, "-")] = p
+		paths[p.Path] = p
 	}
 	return nil
 }

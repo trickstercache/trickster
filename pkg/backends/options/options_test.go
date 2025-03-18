@@ -19,7 +19,6 @@ package options
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -42,25 +41,24 @@ type testOptions struct {
 	ncl      negative.Lookups
 }
 
-func fromYAML(conf string) (*Options, error) {
+func fromYAML(conf string) (*Options, yamlx.KeyLookup, error) {
 	to := &testOptions{}
 
 	err := yaml.Unmarshal([]byte(conf), to)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	md, err := yamlx.GetKeyList(conf)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// always return the first one
 	for k, o := range to.Backends {
 		o.Name = k
-		o.md = md
-		return o, err
+		return o, md, err
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
 func TestNew(t *testing.T) {
@@ -75,7 +73,7 @@ func TestClone(t *testing.T) {
 	o := New()
 	o.Hosts = []string{"test"}
 	o.CacheName = "test"
-	o.CompressibleTypes = map[string]interface{}{"test": nil}
+	o.CompressibleTypes = map[string]any{"test": nil}
 	o.Paths = map[string]*po.Options{"test": p}
 	o.NegativeCache = map[int]time.Duration{1: 1}
 	o.HealthCheck = &ho.Options{}
@@ -102,23 +100,9 @@ func TestValidateBackendName(t *testing.T) {
 
 }
 
-func testConfig() (Lookup, string) {
-	n := New()
-	n.Name = "test"
-	n.Provider = "test"
-	n.OriginURL = "http://1"
-	ol := Lookup{"test": n}
-
-	b, err := os.ReadFile("../../../testdata/test.empty.conf")
-	if err != nil {
-		panic(err)
-	}
-	return ol, string(b)
-}
-
 func TestValidateConfigMappings(t *testing.T) {
 
-	o, err := fromTestYAML()
+	o, _, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
@@ -194,7 +178,7 @@ func testIntegerValueValidationError(to *testOptions, sws []intSwapper) error {
 func TestValidate(t *testing.T) {
 
 	ncl := testNegativeCaches()
-	o, err := fromTestYAML()
+	o, _, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
@@ -210,7 +194,7 @@ func TestValidate(t *testing.T) {
 		to       *testOptions
 		loc      *string
 		val      string
-		expected interface{}
+		expected any
 	}{
 		{ // 0 - invalid negative cache name
 			to:       to,
@@ -282,7 +266,7 @@ func TestValidate(t *testing.T) {
 	tests2 := []struct {
 		to       *testOptions
 		sw       []intSwapper
-		expected interface{}
+		expected any
 	}{
 		{ // case 0 - MaxShardSizeMS > 0 and MaxShardSizePoints > 0 are mutually exclusive
 			to: to,
@@ -349,63 +333,63 @@ func TestValidate(t *testing.T) {
 
 func TestSetDefaults(t *testing.T) {
 
-	o, err := fromTestYAML()
+	o, md, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
 
 	backends := Lookup{o.Name: o}
 
-	_, err = SetDefaults("test", o, o.md, nil, backends, map[string]interface{}{})
+	_, err = SetDefaults("test", o, md, nil, backends, map[string]any{})
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o, nil, nil, backends, map[string]interface{}{})
+	_, err = SetDefaults("test", o, nil, nil, backends, map[string]any{})
 	if err != ErrInvalidMetadata {
 		t.Error("expected invalid metadata, got", err)
 	}
 
-	o2, err := fromTestYAMLWithDefault()
+	o2, md, err := fromTestYAMLWithDefault()
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o2, o2.md, nil, backends, map[string]interface{}{})
+	_, err = SetDefaults("test", o2, md, nil, backends, map[string]any{})
 	if err != nil {
 		t.Error(err)
 	}
 
 	o.Paths["series"].ReqRewriterName = "invalid"
-	_, err = SetDefaults("test", o, o.md, nil, backends, map[string]interface{}{})
+	_, err = SetDefaults("test", o, md, nil, backends, map[string]any{})
 	if err == nil {
 		t.Error("expected error for invalid rewriter name")
 	}
 
-	o2, err = fromTestYAMLWithReqRewriter()
+	o2, md, err = fromTestYAMLWithReqRewriter()
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o2, o2.md, map[string]rewriter.RewriteInstructions{"test": nil},
-		backends, map[string]interface{}{})
+	_, err = SetDefaults("test", o2, md, map[string]rewriter.RewriteInstructions{"test": nil},
+		backends, map[string]any{})
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o2, o2.md, map[string]rewriter.RewriteInstructions{"not-test": nil},
-		backends, map[string]interface{}{})
+	_, err = SetDefaults("test", o2, md, map[string]rewriter.RewriteInstructions{"not-test": nil},
+		backends, map[string]any{})
 	if err == nil {
 		t.Error("expected error for invalid rewriter name")
 	}
 
-	o2, err = fromTestYAMLWithALB()
+	o2, md, err = fromTestYAMLWithALB()
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o2, o2.md, nil,
-		backends, map[string]interface{}{})
+	_, err = SetDefaults("test", o2, md, nil,
+		backends, map[string]any{})
 	if err != nil {
 		t.Error(err)
 	}
@@ -414,7 +398,7 @@ func TestSetDefaults(t *testing.T) {
 
 func TestValidateTLSConfigs(t *testing.T) {
 
-	o, err := fromTestYAML()
+	o, _, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
@@ -460,7 +444,7 @@ func TestValidateTLSConfigs(t *testing.T) {
 
 func TestCloneYAMLSafe(t *testing.T) {
 
-	o, err := fromTestYAML()
+	o, _, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
@@ -486,7 +470,7 @@ func TestCloneYAMLSafe(t *testing.T) {
 }
 
 func TestToYAML(t *testing.T) {
-	o, err := fromTestYAML()
+	o, _, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}

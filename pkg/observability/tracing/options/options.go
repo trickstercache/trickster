@@ -17,7 +17,6 @@
 package options
 
 import (
-	jaegeropts "github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/jaeger/options"
 	stdoutopts "github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
@@ -25,18 +24,18 @@ import (
 
 // Options is a Tracing Options collection
 type Options struct {
-	Name          string            `yaml:"-"`
-	Provider      string            `yaml:"provider,omitempty"`
-	ServiceName   string            `yaml:"service_name,omitempty"`
-	CollectorURL  string            `yaml:"collector_url,omitempty"`
-	CollectorUser string            `yaml:"collector_user,omitempty"`
-	CollectorPass string            `yaml:"collector_pass,omitempty"`
-	SampleRate    float64           `yaml:"sample_rate,omitempty"`
-	Tags          map[string]string `yaml:"tags,omitempty"`
-	OmitTagsList  []string          `yaml:"omit_tags,omitempty"`
+	Name               string            `yaml:"-"`
+	Provider           string            `yaml:"provider,omitempty"`
+	ServiceName        string            `yaml:"service_name,omitempty"`
+	Endpoint           string            `yaml:"endpoint,omitempty"`
+	TimeoutMS          int               `yaml:"timeout_ms,omitempty"`
+	Headers            map[string]string `yaml:"headers,omitempty"`
+	DisableCompression bool              `yaml:"disable_compression,omitempty"`
+	SampleRate         float64           `yaml:"sample_rate,omitempty"`
+	Tags               map[string]string `yaml:"tags,omitempty"`
+	OmitTagsList       []string          `yaml:"omit_tags,omitempty"`
 
 	StdOutOptions *stdoutopts.Options `yaml:"stdout,omitempty"`
-	JaegerOptions *jaegeropts.Options `yaml:"jaeger,omitempty"`
 
 	OmitTags map[string]interface{} `yaml:"-"`
 	// for tracers that don't support WithProcess (e.g., Zipkin)
@@ -49,7 +48,6 @@ func New() *Options {
 		Provider:      DefaultTracerProvider,
 		ServiceName:   DefaultTracerServiceName,
 		StdOutOptions: &stdoutopts.Options{},
-		JaegerOptions: &jaegeropts.Options{},
 	}
 }
 
@@ -59,23 +57,16 @@ func (o *Options) Clone() *Options {
 	if o.StdOutOptions != nil {
 		so = o.StdOutOptions.Clone()
 	}
-	var jo *jaegeropts.Options
-	if o.JaegerOptions != nil {
-		jo = o.JaegerOptions.Clone()
-	}
 	return &Options{
 		Name:             o.Name,
 		Provider:         o.Provider,
 		ServiceName:      o.ServiceName,
-		CollectorURL:     o.CollectorURL,
-		CollectorUser:    o.CollectorUser,
-		CollectorPass:    o.CollectorPass,
+		Endpoint:         o.Endpoint,
 		SampleRate:       o.SampleRate,
 		Tags:             copiers.CopyStringLookup(o.Tags),
 		OmitTags:         copiers.CopyLookup(o.OmitTags),
 		OmitTagsList:     copiers.CopyStrings(o.OmitTagsList),
 		StdOutOptions:    so,
-		JaegerOptions:    jo,
 		attachTagsToSpan: o.attachTagsToSpan,
 	}
 }

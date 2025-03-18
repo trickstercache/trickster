@@ -17,15 +17,13 @@
 package engines
 
 import (
-	"net/http"
-
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
-func logUpstreamRequest(logger interface{}, backendName, backendProvider, handlerName, method,
+func logUpstreamRequest(logger logging.Logger, backendName, backendProvider, handlerName, method,
 	path, userAgent string, responseCode, size int, requestDuration float64) {
-	tl.Debug(logger, "upstream request",
-		tl.Pairs{
+	logger.Debug("upstream request",
+		logging.Pairs{
 			"backendName":     backendName,
 			"backendProvider": backendProvider,
 			"handlerName":     handlerName,
@@ -35,15 +33,5 @@ func logUpstreamRequest(logger interface{}, backendName, backendProvider, handle
 			"code":            responseCode,
 			"size":            size,
 			"durationMS":      int(requestDuration * 1000),
-		})
-}
-
-func logDownstreamRequest(logger interface{}, r *http.Request) {
-	tl.Debug(logger, "downtream request",
-		tl.Pairs{
-			"uri":       r.RequestURI,
-			"method":    r.Method,
-			"userAgent": r.UserAgent(),
-			"clientIP":  r.RemoteAddr,
 		})
 }

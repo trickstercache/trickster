@@ -33,7 +33,7 @@ func TestNew(t *testing.T) {
 
 	opt := options.New()
 	opt.Tags = map[string]string{"test": "test"}
-	opt.CollectorURL = "http://1.2.3.4:8000"
+	opt.Endpoint = "http://1.2.3.4:8000"
 
 	_, err = New(opt)
 	if err != nil {
@@ -52,7 +52,7 @@ func TestNew(t *testing.T) {
 		t.Error(err)
 	}
 
-	opt.CollectorURL = "1.2.3.4:5"
+	opt.Endpoint = "1.2.3.4:5"
 	_, err = New(opt)
 	if err == nil {
 		t.Error("expected error for invalid collector URL")

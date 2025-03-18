@@ -18,7 +18,6 @@ package sql
 
 import (
 	"fmt"
-	"sync"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/lex"
@@ -30,14 +29,12 @@ type mockParser struct {
 	l   lex.Lexer
 	lo  *lex.Options
 	err string
-	wg  sync.WaitGroup
 }
 
 // this mock parser simply drains the channel to prevent the
 // lexer from blocking on a full channel
-func (p *mockParser) run() {
-	var t *token.Token
-	for ; ; t = <-p.ch {
+func (p *mockParser) run(tokens token.Tokens) {
+	for _, t := range tokens {
 		if t != nil && t.Typ == token.Error {
 			p.err = t.Val
 		}
@@ -46,7 +43,6 @@ func (p *mockParser) run() {
 			break
 		}
 	}
-	p.wg.Done()
 }
 
 func newLexTestHarness(lo *lex.Options) *mockParser {
@@ -140,10 +136,8 @@ func TestLexer(t *testing.T) {
 	for i, test := range tests {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			p := newLexTestHarness(test.lo)
-			p.wg.Add(1)
-			go p.run()
-			p.l.Run(test.in, p.ch)
-			p.wg.Wait()
+			tokens := p.l.Run(test.in)
+			p.run(tokens)
 			if p.err != test.expected {
 				t.Errorf(`expected "%v" got "%v"`, test.expected, p.err)
 			}
@@ -179,7 +173,7 @@ func TestStateFuncs(t *testing.T) {
 	for i, test := range tests {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			p := newLexTestHarness(nil)
-			rs := &lex.RunState{Tokens: p.ch}
+			rs := &lex.RunState{}
 			f := test.f(p.l, rs)
 			if (test.expected != nil && f == nil) ||
 				(test.expected == nil && f != nil) {
@@ -193,14 +187,12 @@ func TestStateFuncs(t *testing.T) {
 func TestLexIdentifierError(t *testing.T) {
 	expected := `bad character U+0040 '@'`
 	p := newLexTestHarness(nil)
-	p.wg.Add(1)
-	go p.run()
-	rs := &lex.RunState{Tokens: p.ch, Pos: 2, InputLowered: "@@@@@@", InputWidth: 6}
+	rs := &lex.RunState{Pos: 2, InputLowered: "@@@@@@", InputWidth: 6}
 	f := lexIdentifier
 	for f != nil {
 		f = f(p.l, rs)
 	}
-	p.wg.Wait()
+	p.run(rs.Tokens)
 	if p.err != expected {
 		t.Errorf("expected `%s` got `%s`", expected, p.err)
 	}
@@ -208,8 +200,6 @@ func TestLexIdentifierError(t *testing.T) {
 
 func TestFullSQLLex(t *testing.T) {
 	p := newLexTestHarness(nil)
-	p.wg.Add(1)
-	go p.run()
 	stmt := `SELECT t1.x as x, t2.count(*) as cnt FROM test_db.test_table t1
 	INNER JOIN test_db.test_table2 t2 ON
 	t1.id =  t2.secondary_id
@@ -224,8 +214,8 @@ func TestFullSQLLex(t *testing.T) {
 	HAVING cnt > 15 // EOL COMMENT
 	ORDER BY x
 	LIMIT 100 // EOL COMMENT`
-	p.l.Run(stmt, p.ch)
-	p.wg.Wait()
+	tokens := p.l.Run(stmt)
+	p.run(tokens)
 	if p.err != "" {
 		t.Error(p.err)
 	}

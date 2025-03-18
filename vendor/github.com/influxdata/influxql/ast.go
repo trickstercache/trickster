@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
 	internal "github.com/influxdata/influxql/internal"
+	"google.golang.org/protobuf/proto"
 )
 
 // DataType represents the primitive data types available in InfluxQL.
@@ -592,6 +592,10 @@ type CreateDatabaseStatement struct {
 
 	// RetentionPolicyShardGroupDuration indicates shard group duration for the new database.
 	RetentionPolicyShardGroupDuration time.Duration
+
+	FutureWriteLimit *time.Duration
+
+	PastWriteLimit *time.Duration
 }
 
 // String returns a string representation of the create database statement.
@@ -612,6 +616,14 @@ func (s *CreateDatabaseStatement) String() string {
 		if s.RetentionPolicyShardGroupDuration > 0 {
 			_, _ = buf.WriteString(" SHARD DURATION ")
 			_, _ = buf.WriteString(s.RetentionPolicyShardGroupDuration.String())
+		}
+		if s.FutureWriteLimit != nil && *s.FutureWriteLimit > 0 {
+			_, _ = buf.WriteString(" FUTURE LIMIT ")
+			_, _ = buf.WriteString(FormatDuration(*s.FutureWriteLimit))
+		}
+		if s.PastWriteLimit != nil && *s.PastWriteLimit > 0 {
+			_, _ = buf.WriteString(" PAST LIMIT ")
+			_, _ = buf.WriteString(FormatDuration(*s.PastWriteLimit))
 		}
 		if s.RetentionPolicyName != "" {
 			_, _ = buf.WriteString(" NAME ")
@@ -931,6 +943,12 @@ type CreateRetentionPolicyStatement struct {
 
 	// Shard Duration.
 	ShardGroupDuration time.Duration
+
+	// Error on writes after this duration from now
+	FutureWriteLimit time.Duration
+
+	// Error on writes before this duration from now
+	PastWriteLimit time.Duration
 }
 
 // String returns a string representation of the create retention policy.
@@ -950,6 +968,14 @@ func (s *CreateRetentionPolicyStatement) String() string {
 	}
 	if s.Default {
 		_, _ = buf.WriteString(" DEFAULT")
+	}
+	if s.FutureWriteLimit != 0 {
+		_, _ = buf.WriteString(" FUTURE LIMIT ")
+		_, _ = buf.WriteString(FormatDuration(s.FutureWriteLimit))
+	}
+	if s.PastWriteLimit != 0 {
+		_, _ = buf.WriteString(" PAST LIMIT ")
+		_, _ = buf.WriteString(FormatDuration(s.PastWriteLimit))
 	}
 	return buf.String()
 }
@@ -983,6 +1009,12 @@ type AlterRetentionPolicyStatement struct {
 
 	// Duration of the Shard.
 	ShardGroupDuration *time.Duration
+
+	// Cutoff for future writes
+	FutureWriteLimit *time.Duration
+
+	// Cutoff for past writes
+	PastWriteLimit *time.Duration
 }
 
 // String returns a string representation of the alter retention policy statement.
@@ -1010,6 +1042,16 @@ func (s *AlterRetentionPolicyStatement) String() string {
 
 	if s.Default {
 		_, _ = buf.WriteString(" DEFAULT")
+	}
+
+	if s.FutureWriteLimit != nil && *s.FutureWriteLimit != 0 {
+		_, _ = buf.WriteString(" FUTURE LIMIT ")
+		_, _ = buf.WriteString(FormatDuration(*s.FutureWriteLimit))
+	}
+
+	if s.PastWriteLimit != nil && *s.PastWriteLimit != 0 {
+		_, _ = buf.WriteString(" PAST LIMIT ")
+		_, _ = buf.WriteString(FormatDuration(*s.PastWriteLimit))
 	}
 
 	return buf.String()
@@ -1405,8 +1447,8 @@ func (s *SelectStatement) RewriteFields(m FieldMapper) (*SelectStatement, error)
 //
 // Conditions that can currently be simplified are:
 //
-//     - host =~ /^foo$/ becomes host = 'foo'
-//     - host !~ /^foo$/ becomes host != 'foo'
+//   - host =~ /^foo$/ becomes host = 'foo'
+//   - host !~ /^foo$/ becomes host != 'foo'
 //
 // Note: if the regex contains groups, character classes, repetition or
 // similar, it's likely it won't be rewritten. In order to support rewriting
@@ -2093,6 +2135,7 @@ type ExplainStatement struct {
 	Statement *SelectStatement
 
 	Analyze bool
+	Verbose bool
 }
 
 // String returns a string representation of the explain statement.
@@ -2101,6 +2144,9 @@ func (e *ExplainStatement) String() string {
 	buf.WriteString("EXPLAIN ")
 	if e.Analyze {
 		buf.WriteString("ANALYZE ")
+	}
+	if e.Verbose {
+		buf.WriteString("VERBOSE ")
 	}
 	buf.WriteString(e.Statement.String())
 	return buf.String()
@@ -2578,7 +2624,7 @@ type ShowMeasurementsStatement struct {
 	// Retention policy to query. If blank, use all retention policies (do not use default)
 	RetentionPolicy string
 
-	WildcardDatabase bool
+	WildcardDatabase        bool
 	WildcardRetentionPolicy bool
 
 	// Measurement name or regex.
@@ -3571,7 +3617,19 @@ type NumberLiteral struct {
 }
 
 // String returns a string representation of the literal.
-func (l *NumberLiteral) String() string { return strconv.FormatFloat(l.Val, 'f', 3, 64) }
+func (l *NumberLiteral) String() string {
+	s := strconv.FormatFloat(l.Val, 'f', -1, 64)
+	// If l.Val is a whole number, s will not have a decimal point.
+	// Parsing the resulting string will result in a different AST with an IntegerLiteral
+	// instead of a NumberLiteral. Detect and correct this situation.
+	if strings.IndexByte(s, '.') >= 0 {
+		return s
+	}
+	if s != "NaN" && s != "+Inf" && s != "-Inf" {
+		return s + ".0"
+	}
+	return s
+}
 
 // IntegerLiteral represents an integer literal.
 type IntegerLiteral struct {

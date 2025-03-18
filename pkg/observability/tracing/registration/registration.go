@@ -21,11 +21,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
-	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/jaeger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/noop"
+	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/otlp"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/zipkin"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
@@ -35,7 +35,8 @@ import (
 
 // RegisterAll registers all Tracers in the provided configuration, and returns
 // their Flushers
-func RegisterAll(cfg *config.Config, logger interface{}, isDryRun bool) (tracing.Tracers, error) {
+func RegisterAll(cfg *config.Config, logger logging.Logger,
+	isDryRun bool) (tracing.Tracers, error) {
 	if cfg == nil {
 		return nil, errors.New("no config provided")
 	}
@@ -83,10 +84,11 @@ func RegisterAll(cfg *config.Config, logger interface{}, isDryRun bool) (tracing
 }
 
 // GetTracer returns a *Tracer based on the provided options
-func GetTracer(options *options.Options, logger interface{}, isDryRun bool) (*tracing.Tracer, error) {
+func GetTracer(options *options.Options, logger logging.Logger,
+	isDryRun bool) (*tracing.Tracer, error) {
 
 	if options == nil {
-		tl.Info(logger, "nil tracing config, using noop tracer", tl.Pairs{})
+		logger.Info("nil tracing config, using noop tracer", nil)
 		return noop.New(options)
 	}
 
@@ -94,15 +96,14 @@ func GetTracer(options *options.Options, logger interface{}, isDryRun bool) (*tr
 		if isDryRun {
 			return
 		}
-		tl.Info(logger,
-			"tracer registration",
-			tl.Pairs{
-				"name":         options.Name,
-				"provider":     options.Provider,
-				"serviceName":  options.ServiceName,
-				"collectorURL": options.CollectorURL,
-				"sampleRate":   options.SampleRate,
-				"tags":         strings.StringMap(options.Tags).String(),
+		logger.Info("tracer registration",
+			logging.Pairs{
+				"name":        options.Name,
+				"provider":    options.Provider,
+				"serviceName": options.ServiceName,
+				"endpoint":    options.Endpoint,
+				"sampleRate":  options.SampleRate,
+				"tags":        strings.StringMap(options.Tags).String(),
 			},
 		)
 	}
@@ -111,9 +112,9 @@ func GetTracer(options *options.Options, logger interface{}, isDryRun bool) (*tr
 	case providers.Stdout.String():
 		logTracerRegistration()
 		return stdout.New(options)
-	case providers.Jaeger.String():
+	case providers.OTLP.String():
 		logTracerRegistration()
-		return jaeger.New(options)
+		return otlp.New(options)
 	case providers.Zipkin.String():
 		logTracerRegistration()
 		return zipkin.New(options)

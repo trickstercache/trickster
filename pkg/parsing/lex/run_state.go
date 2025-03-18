@@ -24,16 +24,16 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
 )
 
-// RunState contains all the information about a particular run
+// RunState contains all the information about a particular lexer run
 type RunState struct {
-	Input        string            // the string being scanned
-	InputLowered string            // the lowercase version of the string being scanned
-	InputWidth   int               // width of the input (so we don't have to keep calling len)
-	Pos          int               // current position in the input
-	Start        int               // start position of this Token
-	Width        int               // width of last rune read from input
-	Tokens       chan *token.Token // channel of scanned items
-	ParenDepth   int               // nesting depth of ( ) exprs
+	Input        string // the string being scanned
+	InputLowered string // the lowercase version of the string being scanned
+	InputWidth   int    // width of the input (to avoid multiple calls to len)
+	Pos          int    // current position in the input
+	Start        int    // start position of this Token
+	Width        int    // width of last rune read from input
+	ParenDepth   int    // nesting depth of ( ) exprs
+	Tokens       token.Tokens
 }
 
 // Next returns the next rune in the input.
@@ -62,7 +62,8 @@ func (rs *RunState) Backup() {
 
 // Emit passes an Token back to the client.
 func (rs *RunState) Emit(t token.Typ) {
-	rs.Tokens <- &token.Token{Typ: t, Pos: rs.Start, Val: rs.InputLowered[rs.Start:rs.Pos]}
+	rs.Tokens = append(rs.Tokens, &token.Token{Typ: t, Pos: rs.Start,
+		Val: rs.InputLowered[rs.Start:rs.Pos]})
 	rs.Start = rs.Pos
 }
 
@@ -70,7 +71,7 @@ func (rs *RunState) Emit(t token.Typ) {
 // function output to be used as a value when needd to consolidate EmitToken and the
 // likely subsequent return nil
 func (rs *RunState) EmitToken(i *token.Token) StateFn {
-	rs.Tokens <- i
+	rs.Tokens = append(rs.Tokens, i)
 	rs.Start = rs.Pos
 	return nil
 }

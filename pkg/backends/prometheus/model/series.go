@@ -86,7 +86,7 @@ func MergeAndWriteSeries(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 				s1 := &WFSeries{}
 				err := json.Unmarshal(rg.Body(), &s1)
 				if err != nil {
-					logging.Error(rg.Resources.Logger, "series unmarshaling error",
+					rg.Resources.Logger.Error("series unmarshaling error",
 						logging.Pairs{"provider": "prometheus", "detail": err.Error()})
 					continue
 				}

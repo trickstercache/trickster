@@ -19,15 +19,15 @@ package registration
 import (
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 )
 
 func TestRegisterAll(t *testing.T) {
 
 	// test nil config
-	f, err := RegisterAll(nil, tl.ConsoleLogger("error"), true)
+	f, err := RegisterAll(nil, logging.ConsoleLogger("error"), true)
 	if err == nil {
 		t.Error("expected error for no config provided")
 	}
@@ -36,7 +36,7 @@ func TestRegisterAll(t *testing.T) {
 	}
 
 	// test good config
-	f, err = RegisterAll(config.NewConfig(), tl.ConsoleLogger("error"), true)
+	f, err = RegisterAll(config.NewConfig(), logging.ConsoleLogger("error"), true)
 	if err != nil {
 		t.Error(err)
 	}
@@ -53,47 +53,47 @@ func TestRegisterAll(t *testing.T) {
 	cfg.TracingConfigs["test3"] = tc
 	cfg.Backends["default"].TracingConfigName = "test"
 
-	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
+	_, err = RegisterAll(cfg, logging.ConsoleLogger("error"), true)
 	if err != nil {
 		t.Error(err)
 	}
 
-	tc.Provider = "jaeger"
-	tc.CollectorURL = "http://example.com"
-	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), false)
+	tc.Provider = "otlp"
+	tc.Endpoint = "http://example.com"
+	_, err = RegisterAll(cfg, logging.ConsoleLogger("error"), false)
 	if err != nil {
 		t.Error(err)
 	}
 
 	tc.Provider = "stdout"
-	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
+	_, err = RegisterAll(cfg, logging.ConsoleLogger("error"), true)
 	if err != nil {
 		t.Error(err)
 	}
 
 	tc.Provider = "zipkin"
-	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
+	_, err = RegisterAll(cfg, logging.ConsoleLogger("error"), true)
 	if err != nil {
 		t.Error(err)
 	}
 
 	tc.Provider = "foo"
 
-	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
+	_, err = RegisterAll(cfg, logging.ConsoleLogger("error"), true)
 	if err == nil {
 		t.Error("expected error for invalid provider")
 	}
 
 	// test empty implementation
 	tc.Provider = ""
-	f, _ = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
+	f, _ = RegisterAll(cfg, logging.ConsoleLogger("error"), true)
 	if len(f) > 0 {
 		t.Errorf("expected %d got %d", 0, len(f))
 	}
 
 	tc.Provider = "none"
 	cfg.Backends["default"].TracingConfigName = "test2"
-	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
+	_, err = RegisterAll(cfg, logging.ConsoleLogger("error"), true)
 	if err == nil {
 		t.Error("expected error for invalid tracing config name")
 	}
@@ -102,7 +102,7 @@ func TestRegisterAll(t *testing.T) {
 	temp := cfg.TracingConfigs
 	cfg.TracingConfigs = nil
 	// test nil tracing config
-	f, _ = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
+	f, _ = RegisterAll(cfg, logging.ConsoleLogger("error"), true)
 	if len(f) > 0 {
 		t.Errorf("expected %d got %d", 0, len(f))
 	}
@@ -110,7 +110,7 @@ func TestRegisterAll(t *testing.T) {
 
 	// test nil backend options
 	cfg.Backends = nil
-	_, err = RegisterAll(cfg, tl.ConsoleLogger("error"), true)
+	_, err = RegisterAll(cfg, logging.ConsoleLogger("error"), true)
 	if err == nil {
 		t.Error("expected error for invalid tracing implementation")
 	}
@@ -118,7 +118,7 @@ func TestRegisterAll(t *testing.T) {
 }
 
 func TestGetTracer(t *testing.T) {
-	tr, _ := GetTracer(nil, tl.ConsoleLogger("error"), true)
+	tr, _ := GetTracer(nil, logging.ConsoleLogger("error"), true)
 	if tr != nil {
 		t.Error("expected nil tracer")
 	}

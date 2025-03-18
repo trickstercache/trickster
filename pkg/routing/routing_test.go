@@ -23,7 +23,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
@@ -31,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
 	"github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/zipkin"
@@ -38,24 +38,24 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
-	"github.com/trickstercache/trickster/v2/pkg/router"
+	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
 
 func TestRegisterPprofRoutes(t *testing.T) {
-	router := http.NewServeMux()
+	router := lm.NewRouter()
 	log := logging.ConsoleLogger("info")
 	RegisterPprofRoutes("test", router, log)
 	r, _ := http.NewRequest("GET", "http://0/debug/pprof", nil)
-	_, p := router.Handler(r)
-	if p != "/debug/pprof/" {
-		t.Error("expected pprof route path")
+	h := router.Handler(r)
+	if h == nil {
+		t.Error("expected non-nil handler")
 	}
 }
 
 func TestRegisterHealthHandler(t *testing.T) {
-	router := http.NewServeMux()
+	router := lm.NewRouter()
 	path := "/test"
 	hc := healthcheck.New()
 	RegisterHealthHandler(router, path, hc)
@@ -73,11 +73,11 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	}
 	caches := registration.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	proxyClients, err = RegisterProxyRoutes(conf, router.NewRouter(), http.NewServeMux(), caches, nil, log, false)
+	proxyClients, err = RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches, nil, log, false)
 	if err != nil {
 		t.Error(err)
 	}
-	z, err := zipkin.New(&to.Options{ServiceName: "test", CollectorURL: "http://1.2.3.4/"})
+	z, err := zipkin.New(&to.Options{ServiceName: "test", Endpoint: "http://1.2.3.4/"})
 	if err != nil {
 		t.Error(err)
 	}
@@ -88,7 +88,7 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	o.Hosts = []string{"test", "test2"}
 
 	registration.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
-	RegisterProxyRoutes(conf, router.NewRouter(), http.NewServeMux(), caches, tr, log, false)
+	RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches, tr, log, false)
 
 	if len(proxyClients) == 0 {
 		t.Errorf("expected %d got %d", 1, 0)
@@ -108,34 +108,34 @@ func TestRegisterProxyRoutes(t *testing.T) {
 
 	conf.Backends["2"] = o2
 
-	router := router.NewRouter()
-	_, err = RegisterProxyRoutes(conf, router, http.NewServeMux(), caches, tr, log, false)
+	router := lm.NewRouter()
+	_, err = RegisterProxyRoutes(conf, router, lm.NewRouter(), caches, tr, log, false)
 	if err == nil {
 		t.Error("Expected error for too many default backends.")
 	}
 
 	o1.IsDefault = false
 	o1.CacheName = "invalid"
-	_, err = RegisterProxyRoutes(conf, router, http.NewServeMux(), caches, tr, log, false)
+	_, err = RegisterProxyRoutes(conf, router, lm.NewRouter(), caches, tr, log, false)
 	if err == nil {
 		t.Errorf("Expected error for invalid cache name")
 	}
 
 	o1.CacheName = o2.CacheName
-	_, err = RegisterProxyRoutes(conf, router, http.NewServeMux(), caches, tr, log, false)
+	_, err = RegisterProxyRoutes(conf, router, lm.NewRouter(), caches, tr, log, false)
 	if err != nil {
 		t.Error(err)
 	}
 
 	o2.IsDefault = false
 	o2.CacheName = "invalid"
-	_, err = RegisterProxyRoutes(conf, router, http.NewServeMux(), caches, tr, log, false)
+	_, err = RegisterProxyRoutes(conf, router, lm.NewRouter(), caches, tr, log, false)
 	if err == nil {
 		t.Errorf("Expected error for invalid cache name")
 	}
 
 	o2.CacheName = "default"
-	_, err = RegisterProxyRoutes(conf, router, http.NewServeMux(), caches, tr, log, false)
+	_, err = RegisterProxyRoutes(conf, router, lm.NewRouter(), caches, tr, log, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -148,9 +148,9 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	conf.Backends["1"] = o1
 	delete(conf.Backends, "default")
 
-	o1.Paths["/-0000000011"].Methods = nil
+	o1.Paths["/-GET-HEAD"].Methods = nil
 
-	_, err = RegisterProxyRoutes(conf, router, http.NewServeMux(), caches, tr, log, false)
+	_, err = RegisterProxyRoutes(conf, router, lm.NewRouter(), caches, tr, log, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -166,7 +166,7 @@ func TestRegisterProxyRoutesInflux(t *testing.T) {
 
 	caches := registration.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	proxyClients, err := RegisterProxyRoutes(conf, router.NewRouter(), http.NewServeMux(), caches,
+	proxyClients, err := RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, logging.ConsoleLogger("info"), false)
 	if err != nil {
 		t.Error(err)
@@ -187,7 +187,7 @@ func TestRegisterProxyRoutesReverseProxy(t *testing.T) {
 
 	caches := registration.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	proxyClients, err := RegisterProxyRoutes(conf, router.NewRouter(), http.NewServeMux(), caches,
+	proxyClients, err := RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, logging.ConsoleLogger("info"), false)
 	if err != nil {
 		t.Error(err)
@@ -209,7 +209,7 @@ func TestRegisterProxyRoutesClickHouse(t *testing.T) {
 
 	caches := registration.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	proxyClients, err := RegisterProxyRoutes(conf, router.NewRouter(), http.NewServeMux(), caches,
+	proxyClients, err := RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, logging.ConsoleLogger("info"), false)
 	if err != nil {
 		t.Error(err)
@@ -233,7 +233,7 @@ func TestRegisterProxyRoutesALB(t *testing.T) {
 
 	caches := registration.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	proxyClients, err := RegisterProxyRoutes(conf, router.NewRouter(), http.NewServeMux(), caches,
+	proxyClients, err := RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, logging.ConsoleLogger("info"), false)
 	if err != nil {
 		t.Error(err)
@@ -255,7 +255,7 @@ func TestRegisterProxyRoutesIRONdb(t *testing.T) {
 
 	caches := registration.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	proxyClients, err := RegisterProxyRoutes(conf, router.NewRouter(), http.NewServeMux(), caches,
+	proxyClients, err := RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, logging.ConsoleLogger("info"), false)
 	if err != nil {
 		t.Error(err)
@@ -280,7 +280,7 @@ func TestRegisterProxyRoutesWithReqRewriters(t *testing.T) {
 
 	caches := registration.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	proxyClients, err := RegisterProxyRoutes(conf, router.NewRouter(), http.NewServeMux(), caches,
+	proxyClients, err := RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, logging.ConsoleLogger("info"), false)
 	if err != nil {
 		t.Error(err)
@@ -302,7 +302,7 @@ func TestRegisterProxyRoutesMultipleDefaults(t *testing.T) {
 	}
 	caches := registration.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	_, err = RegisterProxyRoutes(conf, router.NewRouter(), http.NewServeMux(), caches,
+	_, err = RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, logging.ConsoleLogger("info"), false)
 	if err == nil {
 		t.Errorf("expected error `%s` got nothing", expected1)
@@ -346,7 +346,7 @@ func TestRegisterProxyRoutesInvalidCert(t *testing.T) {
 	}
 	caches := registration.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	_, err = RegisterProxyRoutes(conf, router.NewRouter(), http.NewServeMux(), caches,
+	_, err = RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, logging.ConsoleLogger("info"), false)
 	if err == nil {
 		t.Errorf("expected error: %s", expected)
@@ -376,7 +376,7 @@ func TestRegisterProxyRoutesBadProvider(t *testing.T) {
 	}
 	caches := registration.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	_, err = RegisterProxyRoutes(conf, router.NewRouter(), http.NewServeMux(), caches,
+	_, err = RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, logging.ConsoleLogger("info"), false)
 	if err == nil {
 		t.Errorf("expected error `%s` got nothing", expected)
@@ -393,7 +393,7 @@ func TestRegisterMultipleBackends(t *testing.T) {
 	}
 	caches := registration.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	_, err = RegisterProxyRoutes(conf, router.NewRouter(), http.NewServeMux(), caches,
+	_, err = RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, logging.ConsoleLogger("info"), false)
 	if err != nil {
 		t.Error(err)
@@ -408,7 +408,7 @@ func TestRegisterMultipleBackendsPlusDefault(t *testing.T) {
 	}
 	caches := registration.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	defer registration.CloseCaches(caches)
-	_, err = RegisterProxyRoutes(conf, router.NewRouter(), http.NewServeMux(), caches,
+	_, err = RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, logging.ConsoleLogger("info"), false)
 	if err != nil {
 		t.Error(err)
@@ -429,7 +429,7 @@ func TestRegisterPathRoutes(t *testing.T) {
 	}
 
 	oo := conf.Backends["default"]
-	rpc, _ := reverseproxycache.NewClient("test", oo, router.NewRouter(), nil, nil, nil)
+	rpc, _ := reverseproxycache.NewClient("test", oo, lm.NewRouter(), nil, nil, nil)
 	dpc := rpc.DefaultPathConfigs(oo)
 	dpc["/-GET-HEAD"].Methods = nil
 
@@ -438,7 +438,7 @@ func TestRegisterPathRoutes(t *testing.T) {
 
 	RegisterPathRoutes(nil, handlers, rpc, oo, nil, dpc, nil, "", logging.ConsoleLogger("INFO"))
 
-	router := router.NewRouter()
+	router := lm.NewRouter()
 	dpc = rpc.DefaultPathConfigs(oo)
 	dpc["/-GET-HEAD"].Methods = []string{"*"}
 	dpc["/-GET-HEAD"].Handler = testHandler
@@ -470,7 +470,7 @@ func TestValidateRuleClients(t *testing.T) {
 	o := conf.Backends["default"]
 	o.Provider = "rule"
 
-	_, err = RegisterProxyRoutes(conf, router.NewRouter(), http.NewServeMux(), caches,
+	_, err = RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, logging.ConsoleLogger("info"), false)
 	if err == nil {
 		t.Error("expected error")
@@ -482,7 +482,7 @@ func TestRegisterDefaultBackendRoutes(t *testing.T) {
 
 	// successful passing of this test is no panic
 
-	r := router.NewRouter()
+	r := lm.NewRouter()
 	conf := config.NewConfig()
 	oo := conf.Backends["default"]
 	w := httptest.NewRecorder()
@@ -497,7 +497,7 @@ func TestRegisterDefaultBackendRoutes(t *testing.T) {
 	oo.TracingConfigName = "testTracer"
 	oo.Paths = map[string]*po.Options{"root": po1}
 	oo.IsDefault = true
-	rpc, _ := reverseproxycache.NewClient("default", oo, router.NewRouter(), nil, nil, nil)
+	rpc, _ := reverseproxycache.NewClient("default", oo, lm.NewRouter(), nil, nil, nil)
 	b := backends.Backends{"default": rpc}
 
 	tr := tracing.Tracers{"testTracer": testutil.NewTestTracer()}
@@ -507,7 +507,7 @@ func TestRegisterDefaultBackendRoutes(t *testing.T) {
 	po1.ReqRewriter = ri
 	RegisterDefaultBackendRoutes(r, b, logger, tr)
 
-	r = router.NewRouter()
+	r = lm.NewRouter()
 	po1.MatchType = matching.PathMatchTypeExact
 	RegisterDefaultBackendRoutes(r, b, logger, tr)
 

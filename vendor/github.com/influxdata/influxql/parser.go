@@ -278,7 +278,24 @@ func (p *Parser) parseCreateRetentionPolicyStatement() (*CreateRetentionPolicySt
 	} else {
 		p.Unscan()
 	}
-
+	if tok, _, _ := p.ScanIgnoreWhitespace(); tok == FUTURE {
+		d, err := p.parseWriteLimit()
+		if err != nil {
+			return nil, err
+		}
+		stmt.FutureWriteLimit = d
+	} else {
+		p.Unscan()
+	}
+	if tok, _, _ := p.ScanIgnoreWhitespace(); tok == PAST {
+		d, err := p.parseWriteLimit()
+		if err != nil {
+			return nil, err
+		}
+		stmt.PastWriteLimit = d
+	} else {
+		p.Unscan()
+	}
 	return stmt, nil
 }
 
@@ -357,9 +374,21 @@ Loop:
 			}
 		case DEFAULT:
 			stmt.Default = true
+		case FUTURE:
+			d, err := p.parseWriteLimit()
+			if err != nil {
+				return nil, err
+			}
+			stmt.FutureWriteLimit = &d
+		case PAST:
+			d, err := p.parseWriteLimit()
+			if err != nil {
+				return nil, err
+			}
+			stmt.PastWriteLimit = &d
 		default:
 			if len(found) == 0 {
-				return nil, newParseError(tokstr(tok, lit), []string{"DURATION", "REPLICATION", "SHARD", "DEFAULT"}, pos)
+				return nil, newParseError(tokstr(tok, lit), []string{"DURATION", "REPLICATION", "SHARD", "DEFAULT", "FUTURE", "PAST"}, pos)
 			}
 			p.Unscan()
 			break Loop
@@ -368,6 +397,21 @@ Loop:
 	}
 
 	return stmt, nil
+}
+
+// Parses the "LIMIT <duration> from a "FUTURE LIMIT <duration>"
+// or "PAST LIMIT <duration>" statement.
+func (p *Parser) parseWriteLimit() (time.Duration, error) {
+	tok, pos, lit := p.ScanIgnoreWhitespace()
+	if tok == LIMIT {
+		d, err := p.ParseDuration()
+		if err != nil {
+			return 0, err
+		}
+		return d, nil
+	} else {
+		return 0, newParseError(tokstr(tok, lit), []string{"LIMIT"}, pos)
+	}
 }
 
 // ParseInt parses a string representing a base 10 integer and returns the number.
@@ -867,13 +911,9 @@ func (p *Parser) parseDeleteStatement() (Statement, error) {
 		WalkFunc(stmt.Sources, func(n Node) {
 			if t, ok := n.(*Measurement); ok {
 				// Don't allow database or retention policy in from clause for delete
-				// statement.  They apply to the selected database across all retention
-				// policies.
+				// statement. They apply across selected database.
 				if t.Database != "" {
 					err = &ParseError{Message: "database not supported"}
-				}
-				if t.RetentionPolicy != "" {
-					err = &ParseError{Message: "retention policy not supported"}
 				}
 			}
 		})
@@ -1069,7 +1109,7 @@ func (p *Parser) parseShowMeasurementsStatement() (*ShowMeasurementsStatement, e
 			stmt.Database = lit
 		} else if tok == MUL {
 			stmt.WildcardDatabase = true
-		} else{
+		} else {
 			return nil, newParseError(tokstr(tok, lit), []string{"identifier or *"}, pos)
 		}
 
@@ -1079,7 +1119,7 @@ func (p *Parser) parseShowMeasurementsStatement() (*ShowMeasurementsStatement, e
 				stmt.RetentionPolicy = lit
 			} else if tok == MUL {
 				stmt.WildcardRetentionPolicy = true
-			} else{
+			} else {
 				return nil, newParseError(tokstr(tok, lit), []string{"identifier or *"}, pos)
 			}
 		} else {
@@ -1759,8 +1799,8 @@ func (p *Parser) parseCreateDatabaseStatement() (*CreateDatabaseStatement, error
 	if tok, _, _ := p.ScanIgnoreWhitespace(); tok == WITH {
 		// validate that at least one of DURATION, NAME, REPLICATION or SHARD is provided
 		tok, pos, lit := p.ScanIgnoreWhitespace()
-		if tok != DURATION && tok != NAME && tok != REPLICATION && tok != SHARD {
-			return nil, newParseError(tokstr(tok, lit), []string{"DURATION", "NAME", "REPLICATION", "SHARD"}, pos)
+		if tok != DURATION && tok != NAME && tok != REPLICATION && tok != SHARD && tok != FUTURE && tok != PAST {
+			return nil, newParseError(tokstr(tok, lit), []string{"DURATION", "NAME", "REPLICATION", "SHARD", "FUTURE", "PAST"}, pos)
 		}
 		// rewind
 		p.Unscan()
@@ -1803,6 +1843,26 @@ func (p *Parser) parseCreateDatabaseStatement() (*CreateDatabaseStatement, error
 			if err != nil {
 				return nil, err
 			}
+		}
+
+		// Look for write limits
+		if tok, _, _ := p.ScanIgnoreWhitespace(); tok == FUTURE {
+			d, err := p.parseWriteLimit()
+			if err != nil {
+				return nil, err
+			}
+			stmt.FutureWriteLimit = &d
+		} else {
+			p.Unscan()
+		}
+		if tok, _, _ := p.ScanIgnoreWhitespace(); tok == PAST {
+			d, err := p.parseWriteLimit()
+			if err != nil {
+				return nil, err
+			}
+			stmt.PastWriteLimit = &d
+		} else {
+			p.Unscan()
 		}
 
 		// Look for "NAME"
@@ -1957,6 +2017,12 @@ func (p *Parser) parseExplainStatement() (*ExplainStatement, error) {
 
 	if tok, _, _ := p.ScanIgnoreWhitespace(); tok == ANALYZE {
 		stmt.Analyze = true
+	} else {
+		p.Unscan()
+	}
+
+	if tok, _, _ := p.ScanIgnoreWhitespace(); tok == VERBOSE {
+		stmt.Verbose = true
 	} else {
 		p.Unscan()
 	}

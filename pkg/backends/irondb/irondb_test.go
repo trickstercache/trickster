@@ -19,12 +19,11 @@ package irondb
 import (
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
-	"github.com/trickstercache/trickster/v2/pkg/backends/irondb/model"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
 func TestIRONdbClientInterfacing(t *testing.T) {
@@ -48,8 +47,6 @@ func TestIRONdbClientInterfacing(t *testing.T) {
 	}
 }
 
-var testModeler = model.NewModeler()
-
 func TestNewClient(t *testing.T) {
 	conf, _, err := config.Load("trickster", "test",
 		[]string{"-origin-url", "http://example.com", "-provider", "TEST_CLIENT"})
@@ -57,7 +54,7 @@ func TestNewClient(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := cr.LoadCachesFromConfig(conf, tl.ConsoleLogger("error"))
+	caches := cr.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
 	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {

@@ -17,10 +17,10 @@
 package irondb
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 
+	tkerr "github.com/trickstercache/trickster/v2/pkg/errors"
 	terr "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -45,7 +45,7 @@ func (c *Client) FastForwardRequest(r *http.Request) (*http.Request, error) {
 
 	rsc := request.GetResources(r)
 	if rsc == nil || rsc.PathConfig == nil {
-		return nil, errors.New("missing path config")
+		return nil, tkerr.ErrMissingPathConfig
 	}
 
 	switch rsc.PathConfig.HandlerName {
@@ -68,7 +68,7 @@ func (c *Client) ParseTimeRangeQuery(
 
 	rsc := request.GetResources(r)
 	if rsc == nil || rsc.PathConfig == nil {
-		return nil, nil, false, errors.New("missing path config")
+		return nil, nil, false, tkerr.ErrMissingPathConfig
 	}
 
 	var trq *timeseries.TimeRangeQuery

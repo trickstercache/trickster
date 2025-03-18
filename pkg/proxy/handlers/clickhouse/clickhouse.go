@@ -24,7 +24,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/registration"
-	"github.com/trickstercache/trickster/v2/pkg/router"
+	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 
@@ -57,8 +57,8 @@ func NewAcceleratorWithOptions(baseURL string, o *bo.Options, c *co.Options) (ht
 	o.Scheme = u.Scheme
 	o.Host = u.Host
 	o.PathPrefix = u.Path
-	r := router.NewRouter()
-	cl, err := clickhouse.NewClient("default", o, router.NewRouter(), cache, nil, nil)
+	r := lm.NewRouter()
+	cl, err := clickhouse.NewClient("default", o, lm.NewRouter(), cache, nil, nil)
 	if err != nil {
 		return nil, err
 	}

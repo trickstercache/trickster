@@ -21,8 +21,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -52,7 +52,8 @@ func TestHandleLocalResponse(t *testing.T) {
 	}
 
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(nil, pc, nil, nil, nil, nil, tl.ConsoleLogger("error"))))
+		request.NewResources(nil, pc, nil, nil, nil, nil,
+			logging.ConsoleLogger("error"))))
 
 	HandleLocalResponse(w, r)
 	resp := w.Result()
@@ -102,7 +103,7 @@ func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 	}
 
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(nil, pc, nil, nil, nil, nil, tl.ConsoleLogger("error"))))
+		request.NewResources(nil, pc, nil, nil, nil, nil, logging.ConsoleLogger("error"))))
 
 	HandleLocalResponse(w, r)
 	resp := w.Result()
@@ -139,7 +140,7 @@ func TestHandleLocalResponseNoPathConfig(t *testing.T) {
 	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
 
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(nil, nil, nil, nil, nil, nil, tl.ConsoleLogger("error"))))
+		request.NewResources(nil, nil, nil, nil, nil, nil, logging.ConsoleLogger("error"))))
 
 	HandleLocalResponse(w, r)
 	resp := w.Result()

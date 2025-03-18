@@ -21,12 +21,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	io "github.com/trickstercache/trickster/v2/pkg/cache/index/options"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
-	tl "github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
-var testLogger = tl.ConsoleLogger("error")
+var testLogger = logging.ConsoleLogger("error")
 
 var testBulkIndex *Index
 
@@ -58,21 +60,27 @@ func TestNewIndex(t *testing.T) {
 
 	idx.Close()
 	time.Sleep(500 * time.Millisecond)
-	if !idx.reaperExited {
+	idx.mtx.Lock()
+	re := idx.reaperExited
+	idx.mtx.Unlock()
+	if !re {
 		t.Error("expected true")
 	}
-	if !idx.flusherExited {
-		t.Error("expected true")
-	}
+	require.EventuallyWithT(t, func(t *assert.CollectT) {
+		idx.mtx.Lock()
+		assert.True(t, idx.flusherExited)
+		idx.mtx.Unlock()
+	}, time.Second*5, time.Millisecond*100)
 
 	idx2 := NewIndex("test", "test", idx.ToBytes(), cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, testLogger)
 	if idx2 == nil {
 		t.Errorf("nil cache index")
 	}
 
-	cacheConfig.Index.FlushInterval = 0
-	cacheConfig.Index.ReapInterval = 0
-	idx3 := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc, testLogger)
+	opts := *cacheConfig.Index
+	opts.FlushInterval = 0
+	opts.ReapInterval = 0
+	idx3 := NewIndex("test", "test", nil, &opts, testBulkRemoveFunc, fakeFlusherFunc, testLogger)
 	if idx3 == nil {
 		t.Errorf("nil cache index")
 	}

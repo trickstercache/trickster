@@ -16,6 +16,10 @@ type EndlessReader struct {
 
 // NewEndlessReader returns a new endless reader
 func NewEndlessReader(b []byte, tb timer) *EndlessReader {
+	// Double until we reach 4K.
+	for len(b) < 4<<10 {
+		b = append(b, b...)
+	}
 	return &EndlessReader{tb: tb, data: b, offset: 0}
 }
 
@@ -24,16 +28,14 @@ func NewEndlessReader(b []byte, tb timer) *EndlessReader {
 // fills the supplied slice while the benchmark
 // timer is stopped.
 func (c *EndlessReader) Read(p []byte) (int, error) {
-	c.tb.StopTimer()
 	var n int
 	l := len(p)
 	m := len(c.data)
+	nn := copy(p[n:], c.data[c.offset:])
+	n += nn
 	for n < l {
-		nn := copy(p[n:], c.data[c.offset:])
-		n += nn
-		c.offset += nn
-		c.offset %= m
+		n += copy(p[n:], c.data[:])
 	}
-	c.tb.StartTimer()
+	c.offset = (c.offset + l) % m
 	return n, nil
 }

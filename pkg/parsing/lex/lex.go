@@ -27,7 +27,7 @@ const EOF = -1
 
 // Lexer is the Lexer interface
 type Lexer interface {
-	Run(string, chan *token.Token)
+	Run(string) token.Tokens
 }
 
 // Options provides members that alter the behavior of the underlying Lexer

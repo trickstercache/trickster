@@ -132,9 +132,17 @@ docker-release:
 style:
 	! gofmt -d $$(find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
+.PHONY: lint
+lint:
+	@golangci-lint run
+
+GO_TEST_FLAGS ?=
 .PHONY: test
 test:
-	@go test -v -coverprofile=.coverprofile ./... 
+	go test -v -coverprofile=.coverprofile ${GO_TEST_FLAGS} ./... 
+
+data-race-test:
+	GO_TEST_FLAGS="-race" $(MAKE) test
 
 .PHONY: bench
 bench:
@@ -195,3 +203,8 @@ serve-debug:
 .PHONY: serve-info
 serve-info:
 	@cd cmd/trickster && go run . -config /etc/trickster/trickster.yaml --log-level info
+
+.PHONY: get-tools
+get-tools:
+	@echo "Installing tools..."
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6

@@ -38,14 +38,6 @@ const (
 	RevalStatusFailed
 )
 
-var revalidationStatusNames = map[string]RevalidationStatus{
-	"none":         RevalStatusNone,
-	"revalidating": RevalStatusInProgress,
-	"revalidated":  RevalStatusOK,
-	"failed":       RevalStatusFailed,
-	"local":        RevalStatusLocal,
-}
-
 var revalidationStatusValues = map[RevalidationStatus]string{
 	RevalStatusNone:       "none",
 	RevalStatusInProgress: "revalidating",

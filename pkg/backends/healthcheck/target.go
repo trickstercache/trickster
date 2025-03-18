@@ -40,7 +40,6 @@ type target struct {
 	baseRequest           *http.Request
 	httpClient            *http.Client
 	interval              time.Duration
-	timeout               time.Duration
 	status                *Status
 	failureThreshold      int
 	recoveryThreshold     int
@@ -54,8 +53,9 @@ type target struct {
 	eb                    string
 	eh                    http.Header
 	ec                    []int
-	logger                interface{}
+	logger                logging.Logger
 	isInLoop              bool
+	mtx                   sync.Mutex
 }
 
 // DemandProbe defines a health check probe that makes an HTTP Request to the backend and writes the
@@ -66,7 +66,7 @@ type DemandProbe func(w http.ResponseWriter)
 func newTarget(ctx context.Context,
 	name, description string, o *ho.Options,
 	client *http.Client,
-	logger interface{}) (*target, error) {
+	logger logging.Logger) (*target, error) {
 
 	if o == nil {
 		return nil, ho.ErrNoOptionsProvided
@@ -191,12 +191,16 @@ func (t *target) probeLoop() {
 		select {
 		case <-t.ctx.Done():
 			t.ctx = nil
+			t.mtx.Lock()
 			t.isInLoop = false
+			t.mtx.Unlock()
 			t.wg.Done()
 			time.Sleep(1 * time.Second)
 			return // avoid leaking of this goroutine when ctx is done.
 		default:
+			t.mtx.Lock()
 			t.isInLoop = true
+			t.mtx.Unlock()
 			t.probe()
 			time.Sleep(t.interval)
 		}
@@ -225,7 +229,7 @@ func (t *target) probe() {
 		t.status.failingSince = time.Now()
 		t.status.Set(-1)
 		t.ks = -1
-		logging.Info(t.logger, "hc status changed",
+		t.logger.Info("hc status changed",
 			logging.Pairs{"targetName": t.name, "status": "failed",
 				"detail": t.status.detail, "threshold": t.failureThreshold})
 	} else if passed && t.ks != 1 && (successCnt == t.recoveryThreshold || t.ks == 0) {
@@ -233,7 +237,7 @@ func (t *target) probe() {
 		t.status.Set(1)
 		t.ks = 1
 		t.status.detail = "" // this is only populated with failure details, so it is cleared upon recovery
-		logging.Info(t.logger, "hc status changed",
+		t.logger.Info("hc status changed",
 			logging.Pairs{"targetName": t.name, "status": "available",
 				"threshold": t.recoveryThreshold})
 	}

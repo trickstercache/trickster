@@ -28,10 +28,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/config"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -248,7 +248,7 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if deltas == nil || len(deltas) < 1 {
+	if len(deltas) == 0 {
 		t.Errorf("invalid deltas: %v", deltas)
 	} else if deltas[0].Start != 10 ||
 		deltas[0].End != 20 {

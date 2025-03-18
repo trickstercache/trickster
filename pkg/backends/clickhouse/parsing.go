@@ -545,7 +545,6 @@ func parseWhereTokens(results map[string]interface{},
 	for n, fieldParts := range wt {
 		var atLowerBound bool
 		var state int
-		var prev *token.Token
 		var i int
 		// c-style iteration, rather than ranging, allows passing a subslice of fieldParts to other funcs for
 		// processing, while also advancing the iterator
@@ -585,14 +584,7 @@ func parseWhereTokens(results map[string]interface{},
 				if err != nil {
 					return t, err
 				}
-				v, j, _ := SolveMathExpression(fieldParts[i:], ts, withVars)
-				// if the comparator is > or <, rather than >= or <=, then the timerange is _not_ inclusive.
-				// adjust the time boundary by one point in the appropriate time direction
-				if prev.Typ == token.GreaterThan {
-					v += int64(trq.Step.Seconds())
-				} else if prev.Typ == token.LessThan {
-					v -= int64(trq.Step.Seconds())
-				}
+				_, j, _ := SolveMathExpression(fieldParts[i:], ts, withVars)
 				if atLowerBound {
 					//e.Start = time.Unix(v, 0)
 					e.Start, _, _ = lsql.TokenToTime(t)
@@ -630,7 +622,6 @@ func parseWhereTokens(results map[string]interface{},
 				i += j
 				state++
 			}
-			prev = t
 		}
 	nextSet:
 	}

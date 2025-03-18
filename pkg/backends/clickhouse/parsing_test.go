@@ -162,49 +162,51 @@ func TestParseErrors(t *testing.T) {
 
 func TestAtWith(t *testing.T) {
 
-	rs := parsing.NewRunState(context.Background())
-	ch := rs.Tokens()
-	ch <- &token.Token{Typ: token.Space, Val: " "}
+	tk := token.Tokens{&token.Token{Typ: token.Space, Val: " "}}
+	rs := parsing.NewRunState(context.Background(), tk)
 	rs.Next()
 	f := atWith(nil, nil, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")
 	}
 
-	rs = parsing.NewRunState(context.Background())
-	ch = rs.Tokens()
-	ch <- &token.Token{Typ: lsql.TokenWith, Val: "with"}
+	tk = token.Tokens{&token.Token{Typ: lsql.TokenWith, Val: "with"}}
+	rs = parsing.NewRunState(context.Background(), tk)
 	rs.Next()
 	atWith(nil, nil, rs)
 	if rs.Error() != parsing.ErrUnsupportedParser {
 		t.Error("expected ErrUnsupportedParser")
 	}
 
-	rs = parsing.NewRunState(context.Background())
-	ch = rs.Tokens()
-	ch <- &token.Token{Typ: lsql.TokenWith, Val: "with"}
-	ch <- &token.Token{Typ: lsql.TokenSelect, Val: "select"}
+	tk = token.Tokens{
+		&token.Token{Typ: lsql.TokenWith, Val: "with"},
+		&token.Token{Typ: lsql.TokenSelect, Val: "select"},
+	}
+
+	rs = parsing.NewRunState(context.Background(), tk)
 	rs.Next()
 	f = atWith(parser, parser, rs)
 	if f == nil {
 		t.Error("expected non-nil StateFn")
 	}
 
-	rs = parsing.NewRunState(context.Background())
-	ch = rs.Tokens()
-	ch <- &token.Token{Typ: lsql.TokenWith, Val: "with"}
-	ch <- &token.Token{Typ: token.EOF}
+	tk = token.Tokens{
+		&token.Token{Typ: lsql.TokenWith, Val: "with"},
+		&token.Token{Typ: token.EOF},
+	}
+	rs = parsing.NewRunState(context.Background(), tk)
 	rs.Next()
 	f = atWith(parser, parser, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")
 	}
 
-	rs = parsing.NewRunState(context.Background())
-	ch = rs.Tokens()
-	ch <- &token.Token{Typ: lsql.TokenWith, Val: "with"}
-	ch <- &token.Token{Typ: token.Identifier, Val: "x"}
-	ch <- &token.Token{Typ: lsql.TokenSelect, Val: "select"}
+	tk = token.Tokens{
+		&token.Token{Typ: lsql.TokenWith, Val: "with"},
+		&token.Token{Typ: token.Identifier, Val: "x"},
+		&token.Token{Typ: lsql.TokenSelect, Val: "select"},
+	}
+	rs = parsing.NewRunState(context.Background(), tk)
 	rs.Next()
 	f = atWith(parser, parser, rs)
 	if f != nil {
@@ -216,7 +218,7 @@ func TestAtWith(t *testing.T) {
 }
 
 func TestAtPreWhere(t *testing.T) {
-	rs := parsing.NewRunState(context.Background())
+	rs := parsing.NewRunState(context.Background(), nil)
 	f := atPreWhere(nil, nil, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")
@@ -227,19 +229,22 @@ func TestAtPreWhere(t *testing.T) {
 }
 
 func TestAtFormat(t *testing.T) {
-	rs := parsing.NewRunState(context.Background())
-	ch := rs.Tokens()
-	ch <- &token.Token{Typ: lsql.TokenComment}
-	ch <- &token.Token{Typ: token.EOF}
+
+	tk := token.Tokens{
+		&token.Token{Typ: lsql.TokenComment},
+		&token.Token{Typ: token.EOF},
+	}
+	rs := parsing.NewRunState(context.Background(), tk)
 	f := atFormat(nil, nil, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")
 	}
 
-	rs = parsing.NewRunState(context.Background())
-	ch = rs.Tokens()
-	ch <- &token.Token{Typ: token.Identifier, Val: "UnsupportedFormat"}
-	ch <- &token.Token{Typ: token.EOF}
+	tk = token.Tokens{
+		&token.Token{Typ: token.Identifier, Val: "UnsupportedFormat"},
+		&token.Token{Typ: token.EOF},
+	}
+	rs = parsing.NewRunState(context.Background(), tk)
 	f = atFormat(nil, nil, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")

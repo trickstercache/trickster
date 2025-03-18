@@ -24,38 +24,42 @@ import (
 
 // RunState maintains the state of a unique parsing run
 type RunState struct {
-	tokens                   chan *token.Token
+	tokens                   token.Tokens
 	prev, curr, next, lastkw *token.Token
 	err                      error
 	ctx                      context.Context
 	nextOverride             StateFn
-	isPeeked                 bool
-	results                  map[string]interface{}
+	results                  map[string]any
+	pos                      int
+	cnt                      int
 }
 
 // NewRunState returns a new RunState object for the parser
-func NewRunState(ctx context.Context) *RunState {
+func NewRunState(ctx context.Context, tokens token.Tokens) *RunState {
+	t := tokens.Compress()
 	rs := &RunState{
-		tokens:  make(chan *token.Token, 8),
 		ctx:     ctx,
-		results: make(map[string]interface{}),
+		results: make(map[string]any),
+		tokens:  t,
+		cnt:     len(t),
+		pos:     -1,
 	}
 	return rs
 }
 
 // SetResultsCollection places a collection of results into the results map
-func (rs *RunState) SetResultsCollection(collectionName string, val interface{}) {
+func (rs *RunState) SetResultsCollection(collectionName string, val any) {
 	rs.results[collectionName] = val
 }
 
 // GetResultsCollection retrieves a collection from the results map
-func (rs *RunState) GetResultsCollection(collectionName string) (interface{}, bool) {
+func (rs *RunState) GetResultsCollection(collectionName string) (any, bool) {
 	v, ok := rs.results[collectionName]
 	return v, ok
 }
 
 // Results returns the results objecxt from the RunState
-func (rs *RunState) Results() map[string]interface{} {
+func (rs *RunState) Results() map[string]any {
 	return rs.results
 }
 
@@ -129,9 +133,10 @@ func (rs *RunState) Peek() *token.Token {
 	if rs.curr != nil && rs.curr.Typ == token.EOF {
 		return rs.curr
 	}
-	// this filters nil tokens so the parser is guaranteed to never encounter them
-	for ; rs.next == nil; rs.next = <-rs.tokens {
+	if rs.pos+1 >= rs.cnt {
+		return &token.Token{Typ: token.EOF, Pos: rs.pos}
 	}
+	rs.next = rs.tokens[rs.pos+1]
 	return rs.next
 }
 
@@ -140,17 +145,12 @@ func (rs *RunState) IsPeeked() bool {
 	return rs.next != nil
 }
 
-// Next retrieves the next location by peeking and then advancing
-// the state
+// Next retrieves the next location by peeking and then advancing the state
 func (rs *RunState) Next() *token.Token {
 	rs.Peek()
 	rs.prev = rs.curr
 	rs.curr = rs.next
+	rs.pos += 1
 	rs.next = nil
 	return rs.curr
-}
-
-// Tokens returns the Tokens Channel for the Run
-func (rs *RunState) Tokens() chan *token.Token {
-	return rs.tokens
 }

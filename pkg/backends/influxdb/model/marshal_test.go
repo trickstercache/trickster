@@ -85,12 +85,14 @@ func TestMarshalTimeseries(t *testing.T) {
 }
 
 func TestMarshalTimeseriesJSON(t *testing.T) {
-
-	err := marshalTimeseriesJSON(nil, nil, 200, nil)
+	_, err := marshalTimeseriesJSON(nil, nil, 200, false)
 	if err != nil {
 		t.Error(err)
 	}
-
+	_, err = marshalTimeseriesJSON(nil, nil, 200, true)
+	if err != nil {
+		t.Error(err)
+	}
 }
 
 func TestWriteEpochTime(t *testing.T) {
@@ -111,71 +113,10 @@ func TestWriteEpochTime(t *testing.T) {
 
 }
 
-func TestWriteValue(t *testing.T) {
-
-	tests := []struct {
-		val         interface{}
-		nilVal      string
-		expectedErr error
-		expectedVal string
-	}{
-		{ // 0
-			val:         nil,
-			nilVal:      "NULL",
-			expectedErr: nil,
-			expectedVal: "NULL",
-		},
-		{ // 1
-			val:         "trickster",
-			nilVal:      "",
-			expectedErr: nil,
-			expectedVal: `"trickster"`,
-		},
-		{ // 2
-			val:         true,
-			nilVal:      "",
-			expectedErr: nil,
-			expectedVal: `true`,
-		},
-		{ // 3
-			val:         int64(1),
-			nilVal:      "",
-			expectedErr: nil,
-			expectedVal: `1`,
-		},
-		{ // 4
-			val:         1,
-			nilVal:      "",
-			expectedErr: nil,
-			expectedVal: `1`,
-		},
-		{ // 5
-			val:         1.1,
-			nilVal:      "",
-			expectedErr: nil,
-			expectedVal: `1.1`,
-		},
-	}
-
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			w := httptest.NewRecorder()
-			writeValue(w, test.val, test.nilVal)
-			b, err := io.ReadAll(w.Body)
-			if err != test.expectedErr {
-				t.Errorf("expected %s got %s", test.expectedErr.Error(), err.Error())
-			}
-			if string(b) != test.expectedVal {
-				t.Errorf("expected %s got %s", test.expectedVal, string(b))
-			}
-		})
-	}
-}
-
 func TestWriteCSVValue(t *testing.T) {
 
 	tests := []struct {
-		val         interface{}
+		val         any
 		nilVal      string
 		expectedErr error
 		expectedVal string
@@ -242,7 +183,7 @@ func TestWriteCSVValue(t *testing.T) {
 
 func TestMarshalTimeseriesJSONPretty(t *testing.T) {
 
-	err := marshalTimeseriesJSONPretty(nil, nil, 200, nil)
+	_, err := marshalTimeseriesJSONPretty(nil, nil, 200)
 	if err != nil {
 		t.Error(err)
 	}

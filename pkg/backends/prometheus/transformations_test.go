@@ -21,10 +21,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
+
+var testLogger = logging.NoopLogger()
 
 func TestProcessTransformations(t *testing.T) {
 	// passing test case is no panics
@@ -50,7 +53,7 @@ func TestProcessVectorTransformations(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://example.com/", nil)
 	resp := &http.Response{StatusCode: 200}
 
-	rsc := &request.Resources{}
+	rsc := &request.Resources{Logger: testLogger}
 	rg := merge.NewResponseGate(w, r, rsc)
 	rg.Response = resp
 	rg.Write([]byte("trickster"))
