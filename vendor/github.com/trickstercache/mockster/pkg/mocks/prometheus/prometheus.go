@@ -236,8 +236,8 @@ func repeatableRandomVal(d *Modifiers, seriesIndex int, querySeed int64, t time.
 	if d.RangeLatency > 0 {
 		time.Sleep(d.RangeLatency)
 	}
-	rand.Seed(querySeed + int64(seriesIndex) + t.Unix())
-	return d.MinValue + rand.Intn(d.MaxValue-d.MinValue)
+	rng := rand.New(rand.NewSource(querySeed + int64(seriesIndex) + t.Unix()))
+	return d.MinValue + rng.Intn(d.MaxValue-d.MinValue)
 }
 
 func usageCurveVal(d *Modifiers, seriesIndex int, querySeed int64, t time.Time) int {
@@ -248,8 +248,8 @@ func usageCurveVal(d *Modifiers, seriesIndex int, querySeed int64, t time.Time) 
 	// Scale the max randomly if it is not index 0
 	max := d.MaxValue
 	if seriesIndex != 0 {
-		rand.Seed(int64(seriesIndex) + querySeed)
-		scale := rand.Float32()*.5 + .5
+		rng := rand.New(rand.NewSource(querySeed + int64(seriesIndex)))
+		scale := rng.Float32()*.5 + .5
 		max = int(float32(max-d.MinValue)*scale) + d.MinValue
 	}
 	_, offset := t.Zone()
