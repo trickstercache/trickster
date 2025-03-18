@@ -56,13 +56,20 @@ jobs:
         run: |
           go mod download
       - run: go mod vendor
-      - run: go test -v -coverprofile=profile.cov ./...
-      - run: sed -i -e '/^.*_gen\.go:.*$/d' profile.cov
+      - name: Run tests
+        run: make test
+      - name: Run tests (with race detection enabled)
+        run: |
+          echo "::group::Race Detection Tests"
+          make data-race-test
+          echo "::endgroup::"
+          make data-race-test-inspect
+      - run: sed -i -e '/^.*_gen\.go:.*$/d' .coverprofile
       - run: go build -o /dev/null ./cmd/trickster
       - name: Send coverage
         uses: shogo82148/actions-goveralls@v1
         with:
-          path-to-profile: profile.cov
+          path-to-profile: .coverprofile
           flag-name: Go-${{ matrix.go }}
           parallel: true
   finish:

@@ -42,8 +42,11 @@ cacheKey.expiration
 #Goland IDE
 .idea/
 
+# coverage profiles
+*.cov
+
 #log testing
-out.log
+*.log
 
 tags
 
