@@ -117,9 +117,10 @@ kube-local:
 	kubectl set image deployment/trickster trickster=trickster:dev
 	kubectl scale --replicas=1 deployment/trickster
 
+DOCKER_TARGET ?= final
 .PHONY: docker
 docker:
-	docker build --build-arg IMAGE_ARCH=$(IMAGE_ARCH)  --build-arg GOARCH=$(GOARCH) -f ./Dockerfile -t trickster:$(PROGVER) .
+	docker build --build-arg IMAGE_ARCH=$(IMAGE_ARCH) --target $(DOCKER_TARGET) --build-arg GOARCH=$(GOARCH) -f ./Dockerfile -t trickster:$(PROGVER) .
 
 .PHONY: docker-release
 docker-release:
@@ -136,13 +137,15 @@ style:
 lint:
 	@golangci-lint run
 
-GO_TEST_FLAGS ?=
+GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
 test:
-	go test -v -coverprofile=.coverprofile ${GO_TEST_FLAGS} ./... 
+	go test -v ${GO_TEST_FLAGS} ./...
 
 data-race-test:
-	GO_TEST_FLAGS="-race" $(MAKE) test
+	GO_TEST_FLAGS="-race" $(MAKE) test | tee race-output.log
+data-race-test-inspect:
+	./hack/inspect-race-output.sh race-output.log
 
 .PHONY: bench
 bench:
