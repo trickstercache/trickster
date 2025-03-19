@@ -1,48 +1,39 @@
 # Trickster Roadmap
 
-The roadmap for Trickster in 2021 focuses on delivering Trickster versions 2.0 and 2.1, as well as new supporting applications and cloud native integrations. Additional details for Q3 and Q4 will be provided as the year progresses.
+The roadmap for Trickster in 2025 focuses on delivering Trickster versions 2.0 and 2.1, as well as new supporting applications and cloud native integrations. Additional details for Q3 and Q4 will be provided as the year progresses.
 
 ## Timeline
 
-### Q1 2021
+### Q1 2025
 
-- [ ] Trickster v2.0 Beta Release
+- [ ] Trickster v2.0 Beta 3 Release
   - [x] Common Time Series Format used internally for all TSDBs
   - [x] Universal HTTP Health Checker Package
-  - [x] ALB with features for high availability and scatter/gather timeseries merge
   - [x] YAML config support
-  - [x] Extended support for ClickHouse
-  - [ ] Support for InfluxDB 2.0, Flux syntax and querying via Chronograf
-  - [ ] Purge object from cache by path or key
-  - [ ] Short-term caching of non-timeseries read-only queries (e.g., generic SELECT statements)
-  - [x] Support Brotli encoding over the wire and as a cache compression format
-  
-- [x] Submit Trickster for CNCF Sandbox Consideration
+  - [x] Purge object from cache by path or key
+  - [x] Short-term caching of non-timeseries read-only queries (e.g., generic SELECT statements)
+  - [x] Support Zstd and Brotli encoding over the wire and as a cache compression format
+  - [x] Ability to parallelize large timerange queries by scatter/gathering smaller sections of the main timerange.
+  - [x] Cache Chunking
+  - [x] Application Load Balancer
+  - [x] Performant HTTP Router designed specifically for Proxies
+  - [x] Resolve all known Race Conditions
+  - [-] Support for InfluxDB 2.0, Flux query syntax and caching queries from Chronograf
+  - [-] Support for MySQL as Time Series
+  - [-] Extended support for ClickHouse
+  - [-] Support for Autodiscovery (e.g., Kubernetes Pod Annotations)
+  - [ ] More easily-importable Trickster packages by other projects
 
-### Q2 2021
+### Q2 2025
 
 - [ ] Trickster v2.0 GA Release
-  - [ ] Documentation overhaul using MkDocs with Release deployment automation
-  - [ ] Migrate integration tests infrastructure as needed to easily integrate with related CNCF projects.
+  - [ ] Docker & Helm Charts overhauled for Trickster 2.0
+  - [ ] Overhaul Documentation for Trickster 2.0
 
 - [ ] Trickster v2.1 Beta Release
-  - [ ] Support for ElasticSearch
-  - [ ] Support operating as an adaptive, front-side cache for Grafana, including its UI, API's, and accelerating any supported timeseries datasources.
-  - [ ] Better support for operating in front of Thanos
-  - [ ] Ability to parallelize large timerange queries by scatter/gathering smaller sections of the main timerange.
   - [ ] Additional Rules Engine capabilities for more complex request routing
-  - [ ] Grafana-style environment variable support
-  - [ ] Subdirectory (e.g., `/etc/trickster.conf.d/`) support for chained config files
+  - [ ] Kube Gateway API support
 
-- [ ] Register Official Docker Hub Repositories
-
-### Q3 2021
-
-- [ ] Trickster v2.1 GA Release
-
-### Q4 2021
-
-- [ ] Trickster v2.2 Beta Release
 
 ## Get Involved
 
