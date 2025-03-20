@@ -19,6 +19,7 @@ package listener
 import (
 	"context"
 	"crypto/tls"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"net"
@@ -53,38 +54,45 @@ func TestListeners(t *testing.T) {
 
 	wg := &sync.WaitGroup{}
 	var err error
+	errs := make(chan error, 1)
 	wg.Add(1)
 	go func() {
-
 		tc := &tls.Config{
 			Certificates: make([]tls.Certificate, 1),
 		}
-
-		err = testLG.StartListener("httpListener",
+		errs <- testLG.StartListener("httpListener",
 			"", 0, 20, tc, http.NewServeMux(), wg, trs, nil, 0,
 			logging.ConsoleLogger("info"))
+		close(errs)
 	}()
 
 	time.Sleep(time.Millisecond * 300)
+	testLG.listenersLock.Lock()
 	l := testLG.members["httpListener"]
 	l.Close()
+	testLG.listenersLock.Unlock()
 	time.Sleep(time.Millisecond * 100)
-	if err == nil {
-		t.Error("expected non-nil err")
+	err = <-errs
+	if !stderrors.Is(err, net.ErrClosed) {
+		t.Error(err, "expected nil err")
 	}
-
 	wg.Add(1)
+	errs2 := make(chan error, 1)
 	go func() {
-		err = testLG.StartListenerRouter("httpListener2",
+		errs2 <- testLG.StartListenerRouter("httpListener2",
 			"", 0, 20, nil, "/", http.HandlerFunc(ph.HandleLocalResponse), wg,
 			nil, nil, 0, logging.ConsoleLogger("info"))
+		close(errs2)
 	}()
 	time.Sleep(time.Millisecond * 300)
+	testLG.listenersLock.Lock()
 	l = testLG.members["httpListener2"]
 	l.Listener.Close()
+	testLG.listenersLock.Unlock()
 	time.Sleep(time.Millisecond * 100)
-	if err == nil {
-		t.Error("expected non-nil err")
+	err = <-errs2
+	if !stderrors.Is(err, net.ErrClosed) {
+		t.Error(err, "expected nil err")
 	}
 
 	wg.Add(1)
