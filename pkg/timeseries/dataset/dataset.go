@@ -406,7 +406,6 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 		ds.ExtentList = ds.ExtentList.Crop(e)
 		return
 	}
-
 	ds.ExtentList = ds.ExtentList.Crop(e)
 	startNS := epoch.Epoch(e.Start.UnixNano())
 	endNS := epoch.Epoch(e.End.UnixNano())
@@ -421,12 +420,13 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 		}
 		var m sync.Mutex
 		sl := make([]*Series, len(ds.Results[i].SeriesList))
-		for j, s := range ds.Results[i].SeriesList {
+		var j int
+		for _, s := range ds.Results[i].SeriesList {
 			if s == nil || len(s.Points) == 0 {
 				continue
 			}
 			wg.Add(1)
-			go func(s2 *Series) {
+			go func(index int, s2 *Series) {
 				var start, end, l = 0, -1, len(s2.Points)
 				var iwg sync.WaitGroup
 				iwg.Add(2)
@@ -444,13 +444,14 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 					s2.PointSize = s2.Points.Size()
 				}
 				m.Lock()
-				sl[j] = s2
+				sl[index] = s2
 				m.Unlock()
 				wg.Done()
-			}(s)
+			}(j, s)
+			j++
 		}
 		wg.Wait()
-		ds.Results[i].SeriesList = sl
+		ds.Results[i].SeriesList = sl[:j]
 	}
 }
 
