@@ -71,8 +71,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	client := rsc.BackendClient.(backends.TimeseriesBackend)
 
 	trq, rlo, canOPC, err := client.ParseTimeRangeQuery(r)
+	rsc.Lock()
 	rsc.TimeRangeQuery = trq
 	rsc.TSReqestOptions = rlo
+	rsc.Unlock()
 	if err != nil {
 		if canOPC {
 			rsc.Logger.Debug("could not parse time range query, using object proxy cache",

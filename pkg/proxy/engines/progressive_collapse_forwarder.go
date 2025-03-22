@@ -45,17 +45,19 @@ type ProgressiveCollapseForwarder interface {
 }
 
 type progressiveCollapseForwarder struct {
-	resp            *http.Response
-	rIndex          atomic.Uint64
-	dataIndex       uint64
-	data            [][]byte
-	dataLen         uint64
-	dataStore       []byte
-	dataStoreLen    uint64
-	readCond        *sync.Cond
-	serverReadDone  atomic.Int32
-	clientWaitgroup *sync.WaitGroup
-	serverWaitCond  *sync.Cond
+	resp           *http.Response
+	rIndex         atomic.Uint64
+	dataIndex      uint64
+	dataLocker     sync.Mutex
+	data           [][]byte
+	dataLen        uint64
+	dataStore      []byte
+	dataStoreLen   uint64
+	readCond       *sync.Cond
+	serverReadDone atomic.Int32
+	clientCond     *sync.Cond
+	clientCount    int32
+	serverWaitCond *sync.Cond
 }
 
 // NewPCF returns a new instance of a ProgressiveCollapseForwarder
@@ -69,20 +71,20 @@ func NewPCF(resp *http.Response, contentLength int64) ProgressiveCollapseForward
 	dataStore := make([]byte, contentLength)
 	refs := make([][]byte, ((contentLength/HTTPBlockSize)*2)+1)
 
-	var wg sync.WaitGroup
 	sd := sync.NewCond(&sync.Mutex{})
 	rc := sync.NewCond(&sync.Mutex{})
+	cc := sync.NewCond(&sync.Mutex{})
 
 	pcf := &progressiveCollapseForwarder{
-		resp:            resp,
-		dataIndex:       0,
-		data:            refs,
-		dataLen:         uint64(len(refs)),
-		dataStore:       dataStore,
-		dataStoreLen:    uint64(contentLength),
-		readCond:        rc,
-		clientWaitgroup: &wg,
-		serverWaitCond:  sd,
+		resp:           resp,
+		dataIndex:      0,
+		data:           refs,
+		dataLen:        uint64(len(refs)),
+		dataStore:      dataStore,
+		dataStoreLen:   uint64(contentLength),
+		readCond:       rc,
+		clientCond:     cc,
+		serverWaitCond: sd,
 	}
 	pcf.rIndex.Store(0)
 	pcf.serverReadDone.Store(0)
@@ -93,7 +95,9 @@ func NewPCF(resp *http.Response, contentLength int64) ProgressiveCollapseForward
 // AddClient adds an io.Writer client to the ProgressiveCollapseForwarder
 // This client will read all the cached data and read from the live edge if caught up.
 func (pcf *progressiveCollapseForwarder) AddClient(w io.Writer) error {
-	pcf.clientWaitgroup.Add(1)
+	pcf.clientCond.L.Lock()
+	pcf.clientCount++
+	pcf.clientCond.L.Unlock()
 	var readIndex uint64
 	var err error
 	remaining := 0
@@ -126,7 +130,10 @@ func (pcf *progressiveCollapseForwarder) AddClient(w io.Writer) error {
 			break
 		}
 	}
-	pcf.clientWaitgroup.Done()
+	pcf.clientCond.L.Lock()
+	pcf.clientCount--
+	pcf.clientCond.L.Unlock()
+	pcf.clientCond.Broadcast()
 	return err
 }
 
@@ -144,7 +151,11 @@ func (pcf *progressiveCollapseForwarder) WaitServerComplete() {
 // WaitAllComplete will wait till all clients have completed or timedout
 // Need to no abandon goroutines
 func (pcf *progressiveCollapseForwarder) WaitAllComplete() {
-	pcf.clientWaitgroup.Wait()
+	pcf.clientCond.L.Lock()
+	for pcf.clientCount > 0 {
+		pcf.clientCond.Wait()
+	}
+	pcf.clientCond.L.Unlock()
 }
 
 // GetBody returns the underlying body of the data written into a PCF
@@ -167,8 +178,10 @@ func (pcf *progressiveCollapseForwarder) Write(b []byte) (int, error) {
 	if pcf.dataIndex+uint64(len(b)) > pcf.dataStoreLen || n > pcf.dataLen {
 		return 0, io.ErrShortWrite
 	}
+	pcf.dataLocker.Lock()
 	pcf.data[n] = pcf.dataStore[pcf.dataIndex : pcf.dataIndex+uint64(len(b))]
 	copy(pcf.data[n], b)
+	pcf.dataLocker.Unlock()
 	pcf.dataIndex += uint64(len(b))
 	pcf.rIndex.Add(1)
 	pcf.readCond.Broadcast()
@@ -198,6 +211,10 @@ func (pcf *progressiveCollapseForwarder) IndexRead(index uint64, b []byte) (int,
 		pcf.readCond.Wait()
 		pcf.readCond.L.Unlock()
 	}
+	var n int
+	pcf.dataLocker.Lock()
 	copy(b, pcf.data[index])
-	return len(pcf.data[index]), nil
+	n = len(pcf.data[index])
+	pcf.dataLocker.Unlock()
+	return n, nil
 }

@@ -680,15 +680,13 @@ func (pr *proxyRequest) reconstituteResponses() {
 				r := pr.originRequests[j]
 				resp := pr.originResponses[j]
 
+				// only set the upstream response
+				appendLock.Lock()
 				if pr.upstreamResponse == nil {
-					// only set the upstream response
-					appendLock.Lock()
-					if pr.upstreamResponse == nil {
-						pr.upstreamRequest = r
-						pr.upstreamResponse = resp
-					}
-					appendLock.Unlock()
+					pr.upstreamRequest = r
+					pr.upstreamResponse = resp
 				}
+				appendLock.Unlock()
 
 				if resp.StatusCode == http.StatusPartialContent {
 					b, _ := io.ReadAll(resp.Body)

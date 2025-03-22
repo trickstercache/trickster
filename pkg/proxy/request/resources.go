@@ -18,6 +18,7 @@ package request
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -34,6 +35,7 @@ import (
 // Resources is a collection of resources a Trickster request would need to fulfill the client request
 // This is stored in the client request's context for use by request handers.
 type Resources struct {
+	sync.Mutex
 	BackendOptions    *bo.Options
 	PathConfig        *po.Options
 	CacheConfig       *co.Options
