@@ -6,48 +6,9 @@ on:
 name: Publish Trickster Release Candidate to Drafts
 
 jobs:
-  build:
-    name: Publish Release Candidate
-    runs-on: ubuntu-latest
-    steps:
-      - name: Get current date
-        id: date
-        run: echo "date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
-        #
-      - name: Get bare tag
-        id: baretag
-        run: echo "baretag=$(echo ${{ github.ref }} | cut -b 12-)" >> "$GITHUB_OUTPUT"
-        #
-      - name: Checkout code
-        uses: actions/checkout@v4
-        #
-      - name: install golang
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-        #
-      - name: Build project
-        run: |
-          TAGVER=${{ steps.baretag.outputs.baretag }} make release
-        #
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Release v${{ steps.baretag.outputs.baretag }} / ${{ steps.date.outputs.date }}
-          draft: true
-          prerelease: true
-        #
-      - name: Upload Release Binaries Tarball
-        id: upload-release-candidate-asset-bundle
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./bin/trickster-${{ steps.baretag.outputs.baretag }}.tar.gz
-          asset_name: trickster-${{ steps.baretag.outputs.baretag }}.tar.gz
-          asset_content_type: application/gzip
+  release:
+    uses: ./.github/workflows/publish-release.yml
+    with:
+      draft: true
+      prerelease: true
+      job-suffix: 'Release Candidate'

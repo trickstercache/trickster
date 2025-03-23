@@ -2,12 +2,30 @@ on:
   push:
     tags:
       - 'v[0-9]+\.[0-9]+\.[0-9]+'
+  workflow_call:
+    inputs:
+      draft:
+        required: true
+        type: boolean
+        default: true
+      prerelease:
+        required: true
+        type: boolean
+        default: true
+      job-suffix:
+        required: false
+        type: string
+        default: ''
 
 name: Publish Trickster Release to Drafts
 
+env:
+  draft: ${{ inputs.draft || true }}
+  prerelease: ${{ inputs.prerelease || false }}
+
 jobs:
-  build:
-    name: Publish Release
+  release:
+    name: Publish Release ${{ inputs.job-suffix || '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Get current date
@@ -38,8 +56,8 @@ jobs:
         with:
           tag_name: ${{ github.ref }}
           release_name: Release v${{ steps.baretag.outputs.baretag }} / ${{ steps.date.outputs.date }}
-          draft: true
-          prerelease: false
+          draft: ${{ env.draft}}
+          prerelease: ${{ env.prerelease }}
         #
       - name: Upload Release Binaries Tarball
         id: upload-release-asset-bundle
@@ -51,3 +69,14 @@ jobs:
           asset_path: ./bin/trickster-${{ steps.baretag.outputs.baretag }}.tar.gz
           asset_name: trickster-${{ steps.baretag.outputs.baretag }}.tar.gz
           asset_content_type: application/gzip
+        #
+      - name: Upload Release sha256sum
+        id: upload-release-asset-sha256
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./bin/sha256sum.txt
+          asset_name: sha256sum.txt
+          asset_content_type: text/plain
