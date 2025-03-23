@@ -114,7 +114,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 			resp = pcf.GetResp()
 			pr.mapLock.Lock()
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
-			pr.mapLock.Lock()
+			pr.mapLock.Unlock()
 			pcf.AddClient(writer)
 		}
 	}
