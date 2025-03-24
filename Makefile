@@ -80,10 +80,10 @@ RELEASE_CHECKSUM_FILE=$(BUILD_SUBDIR)/sha256sum.txt
 .PHONY: release-sha256
 release-sha256:
 	@rm -f $(RELEASE_CHECKSUM_FILE) && touch $(RELEASE_CHECKSUM_FILE)
-	@pushd $(BUILD_SUBDIR) > /dev/null && sha256sum trickster-$(PROGVER).tar.gz > $$(basename $(RELEASE_CHECKSUM_FILE)) && popd > /dev/null
+	@bash -c "pushd $(BUILD_SUBDIR) > /dev/null && sha256sum trickster-$(PROGVER).tar.gz > $$(basename $(RELEASE_CHECKSUM_FILE)) && popd > /dev/null"
 	@RSF="$$(realpath $(RELEASE_CHECKSUM_FILE))" && for file in $(BIN_DIR)/* ; do \
 		if [[ "$$(basename $$file)" == "sha256sum.txt" ]]; then continue; fi ; \
-		pushd $$(dirname $$file) > /dev/null && sha256sum $$(basename $$file) >> $${RSF} && popd > /dev/null ; \
+		bash -c "pushd $$(dirname $$file) > /dev/null && sha256sum $$(basename $$file) >> $${RSF} && popd > /dev/null"; \
 	done
 	@cat $(RELEASE_CHECKSUM_FILE)
 
