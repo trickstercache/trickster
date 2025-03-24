@@ -17,6 +17,7 @@
 package dataset
 
 import (
+	"fmt"
 	"math/rand"
 	"testing"
 	"time"
@@ -39,6 +40,66 @@ func testDataSet() *DataSet {
 	return ds
 }
 
+func genTestDataSet(seriesCount int, resultsCount int) *DataSet {
+	if resultsCount <= 0 {
+		fmt.Println("resultsCount must be greater than 0")
+		resultsCount = 1
+	}
+	results := make([]*Result, 0, resultsCount)
+	for i := range resultsCount {
+		seriesList := make([]*Series, seriesCount)
+		for j := range seriesCount {
+			sh := testSeriesHeader()
+			sh.Name = "test" + string(fmt.Sprintf("%d-%d", i, j))
+			sh.CalculateHash()
+			points := newPoints()
+			seriesList[j] = &Series{
+				Header:    sh,
+				Points:    points,
+				PointSize: points.Size(),
+			}
+		}
+		r := &Result{
+			StatementID: i,
+			SeriesList:  seriesList,
+		}
+		results = append(results, r)
+	}
+
+	ds := &DataSet{
+		TimeRangeQuery: &timeseries.TimeRangeQuery{Step: time.Duration(5 * timeseries.Second)},
+		Results:        results,
+		ExtentList:     timeseries.ExtentList{timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(30, 0)}},
+	}
+
+	ds.Merger = ds.DefaultMerger
+	ds.SizeCropper = ds.DefaultSizeCropper
+	ds.RangeCropper = ds.DefaultRangeCropper
+	ds.Sorter = func() {}
+	return ds
+}
+
+func newPoints() Points {
+	return generateNewPoints(6, 5, 0, func(i int) []any {
+		return []any{1}
+	})
+}
+
+func generateNewPoints(points, interval, offset int, valueFn func(i int) []any) Points {
+	result := make(Points, points)
+	for i := range points {
+		epochTime := epoch.Epoch((offset + interval + i*interval) * timeseries.Second)
+		values := valueFn(i)
+		size := 16 * len(values)
+		result[i] = Point{
+			Epoch:  epochTime,
+			Size:   size,
+			Values: values,
+		}
+	}
+	return result
+}
+
 func testDataSet2() *DataSet {
 
 	sh1 := testSeriesHeader()
@@ -56,44 +117,7 @@ func testDataSet2() *DataSet {
 	sh4 := testSeriesHeader()
 	sh4.Name = "test4"
 	sh4.CalculateHash()
-
-	newPoints := func() Points {
-		return Points{
-			Point{
-				Epoch:  epoch.Epoch(5 * timeseries.Second),
-				Size:   16,
-				Values: []interface{}{1},
-			},
-			Point{
-				Epoch:  epoch.Epoch(10 * timeseries.Second),
-				Size:   16,
-				Values: []interface{}{1},
-			},
-			Point{
-				Epoch:  epoch.Epoch(15 * timeseries.Second),
-				Size:   16,
-				Values: []interface{}{1},
-			},
-			Point{
-				Epoch:  epoch.Epoch(20 * timeseries.Second),
-				Size:   16,
-				Values: []interface{}{1},
-			},
-			Point{
-				Epoch:  epoch.Epoch(25 * timeseries.Second),
-				Size:   16,
-				Values: []interface{}{1},
-			},
-			Point{
-				Epoch:  epoch.Epoch(30 * timeseries.Second),
-				Size:   16,
-				Values: []interface{}{1},
-			},
-		}
-	}
-
 	s := newPoints().Size()
-
 	// r1 s1
 	r1 := &Result{
 		StatementID: 0,
@@ -361,17 +385,65 @@ func TestCropToRange(t *testing.T) {
 	if len(exs) != 0 {
 		t.Error("invalid extent in crop", exs)
 	}
+
+	t.Run("remove empty or nil series", func(t *testing.T) {
+		// Create a fresh dataset for this test
+		ds := genTestDataSet(2, 2)
+
+		// Verify initial state
+		originalSeriesCount := len(ds.Results[0].SeriesList)
+		if originalSeriesCount != 2 {
+			t.Fatalf("unexpected initial series count: got %d, expected 2", originalSeriesCount)
+		}
+
+		// First, crop with all series intact - should maintain the same count
+		ex := timeseries.Extent{Start: time.Unix(15, 0), End: time.Unix(125, 0)}
+		ds.DefaultRangeCropper(ex)
+
+		// After first crop, we should still have the same number of series
+		afterFirstCropCount := len(ds.Results[0].SeriesList)
+		if afterFirstCropCount != originalSeriesCount {
+			t.Fatalf("after first crop: got %d series, expected %d", afterFirstCropCount, originalSeriesCount)
+		}
+
+		// Now explicitly set the points to nil for the first series
+		ds = genTestDataSet(2, 2)
+		ds.Results[0].SeriesList[0].Points = nil
+
+		// Crop again - this should remove the series with nil points
+		ex = timeseries.Extent{Start: time.Unix(15, 0), End: time.Unix(125, 0)}
+		ds.DefaultRangeCropper(ex)
+
+		// After second crop, we should have one less series
+		afterSecondCropCount := len(ds.Results[0].SeriesList)
+		expectedAfterSecondCrop := originalSeriesCount - 1
+
+		if afterSecondCropCount != expectedAfterSecondCrop {
+			t.Fatalf("after second crop: got %d series, expected %d",
+				afterSecondCropCount, expectedAfterSecondCrop)
+		}
+
+		// Verify the remaining series is not nil
+		if len(ds.Results[0].SeriesList) > 0 {
+			if ds.Results[0].SeriesList[0] == nil {
+				t.Error("expected non-nil series after crop")
+			}
+		} else {
+			t.Error("expected at least one series to remain after crop")
+		}
+	})
+
 }
 
 func genBenchmarkPoint(e epoch.Epoch, valuect int) Point {
-	vals := make([]int32, valuect)
-	for i := 0; i < valuect; i++ {
-		vals[i] = int32(rand.Int() % 1000)
-	}
-	return Point{
+	out := Point{
 		Epoch:  e,
-		Values: []interface{}{},
+		Values: make([]any, valuect),
 	}
+	for i := range valuect {
+		out.Values[i] = rand.Int() % 1000
+	}
+	return out
 }
 
 func genBenchmarkDataset(pointct int) *DataSet {
