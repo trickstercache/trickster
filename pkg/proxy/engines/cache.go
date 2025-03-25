@@ -405,7 +405,10 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 	}
 
 	if c.Configuration().UseCacheChunking {
-		if trq := rsc.TimeRangeQuery; trq != nil {
+		rsc.Lock()
+		trq := rsc.TimeRangeQuery
+		rsc.Unlock()
+		if trq != nil {
 			// Do timeseries chunking
 			meta := d.GetMeta()
 			// Determine chunk extent and number of chunks

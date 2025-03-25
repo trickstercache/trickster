@@ -13,6 +13,5 @@ if [ -z "$results" ]; then
 else
     echo "${totalRaces} race(s) detected across the following files:"
     echo "$results"
-    # TODO: Uncomment this to trigger failure once we resolve existing race conditions
-    # exit 2
+    exit 2
 fi
