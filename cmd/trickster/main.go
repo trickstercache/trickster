@@ -18,10 +18,16 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
+	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
+	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/httpserver"
 )
 
@@ -36,11 +42,44 @@ const (
 )
 
 func main() {
+	err := daemon()
+	if err != nil {
+		os.Exit(1)
+	}
+}
+
+func daemon() error {
 	wg := &sync.WaitGroup{}
 	appinfo.SetAppInfo(applicationName, applicationVersion,
 		applicationBuildTime, applicationGitCommitID)
-	httpserver.Serve(nil, wg, nil, nil, os.Args[1:], exitFatal)
-	wg.Wait()
+
+	// Load Config
+	conf, err := config.Load(appinfo.Name, appinfo.Version, os.Args[1:])
+	if err != nil {
+		fmt.Println("\nERROR: Could not load configuration:", err.Error())
+		if conf != nil && conf.Flags != nil && conf.Flags.ValidateConfig {
+			usage.PrintUsage()
+		}
+	}
+	if conf == nil {
+		return errors.ErrInvalidOptions
+	}
+
+	// Serve with Config
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	err = httpserver.Serve(conf, wg, nil, nil, exitFatal)
+	if err != nil {
+		return err
+	}
+
+	select {
+	case sig := <-quit:
+		fmt.Println("signal received", sig)
+		// more cases to be added
+	}
+
+	return nil
 }
 
 func exitFatal() {

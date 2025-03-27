@@ -66,6 +66,8 @@ type Config struct {
 	// ReloadConfig provides configurations for in-process config reloading
 	ReloadConfig *reload.Options `yaml:"reloading,omitempty"`
 
+	// Flags contains a compiled version of the CLI flags
+	Flags *Flags `yaml:"-"`
 	// Resources holds runtime resources uses by the Config
 	Resources *Resources `yaml:"-"`
 

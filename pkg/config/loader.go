@@ -28,7 +28,7 @@ import (
 
 // Load returns the Application Configuration, starting with a default config,
 // then overriding with any provided config file, then env vars, and finally flags
-func Load(applicationName string, applicationVersion string, args []string) (*Config, *Flags, error) {
+func Load(applicationName string, applicationVersion string, args []string) (*Config, error) {
 	// this sanitizes the args from -test flags, which can cause issues with unit tests relying on cli args
 	sargs := make([]string, 0, len(args))
 	for _, v := range args {
@@ -40,14 +40,14 @@ func Load(applicationName string, applicationVersion string, args []string) (*Co
 	c := NewConfig()
 	flags, err := parseFlags(applicationName, sargs) // Parse here to get config file path and version flags
 	if err != nil {
-		return nil, flags, err
+		return nil, err
 	}
 	if flags.PrintVersion {
-		return nil, flags, nil
+		return nil, nil
 	}
 	if err := c.loadFile(flags); err != nil && flags.customPath {
 		// a user-provided path couldn't be loaded. return the error for the application to handle
-		return nil, flags, err
+		return nil, err
 	}
 
 	c.loadEnvVars()
@@ -58,7 +58,7 @@ func Load(applicationName string, applicationVersion string, args []string) (*Co
 		if c.providedOriginURL != "" {
 			url, err := url.Parse(c.providedOriginURL)
 			if err != nil {
-				return nil, flags, err
+				return nil, err
 			}
 			if c.providedProvider != "" {
 				d.Provider = c.providedProvider
@@ -80,17 +80,17 @@ func Load(applicationName string, applicationVersion string, args []string) (*Co
 	}
 
 	if len(c.Backends) == 0 {
-		return nil, flags, errors.ErrNoValidBackends
+		return nil, errors.ErrNoValidBackends
 	}
 
 	ncl, err := negative.ConfigLookup(c.NegativeCacheConfigs).Validate()
 	if err != nil {
-		return nil, flags, err
+		return nil, err
 	}
 
 	err = bo.Lookup(c.Backends).Validate(ncl)
 	if err != nil {
-		return nil, flags, err
+		return nil, err
 	}
 
 	for _, c := range c.Caches {
@@ -98,5 +98,5 @@ func Load(applicationName string, applicationVersion string, args []string) (*Co
 		c.Index.ReapInterval = time.Duration(c.Index.ReapIntervalMS) * time.Millisecond
 	}
 
-	return c, flags, nil
+	return c, nil
 }

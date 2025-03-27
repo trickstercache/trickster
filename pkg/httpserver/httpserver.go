@@ -46,34 +46,20 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 
-var cfgLock = &sync.Mutex{}
 var hc healthcheck.HealthChecker
 
 var _ signal.ServeFunc = Serve
 
-func Serve(oldConf *config.Config, wg *sync.WaitGroup, logger logging.Logger,
-	oldCaches map[string]cache.Cache, args []string, errorFunc func()) error {
+func Serve(conf *config.Config, wg *sync.WaitGroup, logger logging.Logger,
+	oldCaches map[string]cache.Cache, errorFunc func()) error {
 
 	metrics.BuildInfo.WithLabelValues(goruntime.Version(),
 		appinfo.GitCommitID, appinfo.Version).Set(1)
 
-	cfgLock.Lock()
-	defer cfgLock.Unlock()
 	var err error
 
-	// load the config
-	conf, flags, err := config.Load(appinfo.Name, appinfo.Version, args)
-	if err != nil {
-		fmt.Println("\nERROR: Could not load configuration:", err.Error())
-		if flags != nil && !flags.ValidateConfig {
-			usage.PrintUsage()
-		}
-		handleStartupIssue("", nil, nil, errorFunc)
-		return err
-	}
-
 	// if it's a -version command, print version and exit
-	if flags.PrintVersion {
+	if conf.Flags != nil && conf.Flags.PrintVersion {
 		usage.PrintVersion()
 		return nil
 	}
@@ -83,17 +69,17 @@ func Serve(oldConf *config.Config, wg *sync.WaitGroup, logger logging.Logger,
 		handleStartupIssue("ERROR: Could not load configuration: "+err.Error(),
 			nil, nil, errorFunc)
 	}
-	if flags.ValidateConfig {
+	if conf.Flags != nil && conf.Flags.ValidateConfig {
 		fmt.Println("Trickster configuration validation succeeded.")
 		return nil
 	}
 
-	return applyConfig(conf, oldConf, wg, logger, oldCaches, args, errorFunc)
+	return applyConfig(conf, nil, wg, logger, oldCaches, errorFunc)
 
 }
 
 func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger logging.Logger,
-	oldCaches map[string]cache.Cache, args []string, errorFunc func()) error {
+	oldCaches map[string]cache.Cache, errorFunc func()) error {
 
 	if conf == nil {
 		return nil
@@ -132,7 +118,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger loggin
 		http.HandlerFunc((handlers.PingHandleFunc(conf))))
 
 	var caches = applyCachingConfig(conf, oldConf, logger, oldCaches)
-	rh := handlers.ReloadHandleFunc(Serve, conf, wg, logger, caches, args)
+	rh := handlers.ReloadHandleFunc(Serve, conf, wg, logger, caches)
 
 	o, err := routing.RegisterProxyRoutes(conf, r, mr, caches, tracers, logger, false)
 	if err != nil {
@@ -158,7 +144,8 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger loggin
 	alb.StartALBPools(o, hc.Statuses())
 	routing.RegisterDefaultBackendRoutes(r, o, logger, tracers)
 	routing.RegisterHealthHandler(mr, conf.Main.HealthHandlerPath, hc)
-	applyListenerConfigs(conf, oldConf, r, http.HandlerFunc(rh), mr, logger, tracers, o, wg, errorFunc)
+	applyListenerConfigs(conf, oldConf, r, http.HandlerFunc(rh), mr, logger,
+		tracers, o, wg, errorFunc)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
@@ -166,7 +153,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger loggin
 	if oldConf != nil && oldConf.Resources != nil {
 		oldConf.Resources.QuitChan <- true // this signals the old hup monitor goroutine to exit
 	}
-	signal.StartHupMonitor(conf, wg, logger, caches, args, Serve)
+	signal.StartHupMonitor(conf, wg, logger, caches, Serve)
 
 	return nil
 }

@@ -86,6 +86,7 @@ func parseFlags(applicationName string, arguments []string) (*Flags, error) {
 
 // loadFlags loads configuration from command line flags.
 func (c *Config) loadFlags(flags *Flags) {
+	c.Flags = flags
 	if len(flags.Origin) > 0 {
 		c.providedOriginURL = flags.Origin
 	}

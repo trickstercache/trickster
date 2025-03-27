@@ -34,10 +34,10 @@ func init() {
 }
 
 type ServeFunc = func(*config.Config, *sync.WaitGroup, logging.Logger,
-	map[string]cache.Cache, []string, func()) error
+	map[string]cache.Cache, func()) error
 
 func StartHupMonitor(conf *config.Config, wg *sync.WaitGroup, logger logging.Logger,
-	caches map[string]cache.Cache, args []string, f ServeFunc) {
+	caches map[string]cache.Cache, f ServeFunc) {
 	if conf == nil || conf.Resources == nil || f == nil {
 		return
 	}
@@ -50,7 +50,7 @@ func StartHupMonitor(conf *config.Config, wg *sync.WaitGroup, logger logging.Log
 				if conf.IsStale() {
 					logger.Warn("configuration reload starting now",
 						logging.Pairs{"source": "sighup"})
-					err := f(conf, wg, logger, caches, args, nil)
+					err := f(conf, wg, logger, caches, nil)
 					if err == nil {
 						conf.Main.ReloaderLock.Unlock()
 						return // runConfig will start a new HupMonitor in place of this one
