@@ -2,12 +2,17 @@ on:
   push:
     branches:
     - main
-
+  workflow_dispatch:
 name: Publish Latest Trickster Image
 
 jobs:
   publish-image:
     runs-on: ubuntu-latest
+    permissions:
+        contents: read
+        packages: write
+        attestations: write
+        id-token: write
     steps:
       - name: Get Build Date
         id: builddate
@@ -19,20 +24,28 @@ jobs:
         uses: docker/setup-buildx-action@v3
       - name: Login to Docker Hub
         uses: docker/login-action@v3
+        if: github.repository == 'trickstercache/trickster' # skip for forks
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: build & push image
         run: |
+          b=$(git branch -r --contains ${{ github.ref }}) && branch=${b##*/}
           docker buildx build \
             --label "org.opencontainers.image.revision=${{ github.sha }}" \
             --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
             --label "org.opencontainers.image.created=${{ steps.builddate.outputs.builddate }}" \
             --platform linux/arm64/v8,linux/amd64 \
-            --push \
             -f ./Dockerfile \
-            -t ${{ env.DOCKER_IO }}:main \
-            -t ${{ env.DOCKER_IO }}:${{ github.sha }} \
+            --push ${{ github.repository == 'trickstercache/trickster' && format('-t {0}:${branch} -t {0}:{1}', env.DOCKER_IO, github.sha) || '' }} \
+            -t ghcr.io/${{ github.repository_owner }}/trickster:${branch} \
+            -t ghcr.io/${{ github.repository_owner }}/trickster:${{ github.sha }} \
             .
         env:
           DOCKER_IO: trickstercache/trickster
