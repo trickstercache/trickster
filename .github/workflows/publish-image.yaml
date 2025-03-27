@@ -31,11 +31,8 @@ jobs:
             --platform linux/arm64/v8,linux/amd64 \
             --push \
             -f ./Dockerfile \
-            -t ${{ env.PROXY_TAG_PREFIX }}:main \
-            -t ${{ env.PROXY_TAG_PREFIX }}:${{ github.sha }} \
-            -t ${{ env.IO_TAG_PREFIX }}:main \
-            -t ${{ env.IO_TAG_PREFIX }}:${{ github.sha }} \
+            -t ${{ env.DOCKER_IO }}:main \
+            -t ${{ env.DOCKER_IO }}:${{ github.sha }} \
             .
         env:
-          PROXY_TAG_PREFIX: tricksterproxy/trickster
-          IO_TAG_PREFIX: tricksterio/trickster
+          DOCKER_IO: trickstercache/trickster
