@@ -61,16 +61,8 @@ func Serve(oldConf *config.Config, wg *sync.WaitGroup, logger logging.Logger,
 	defer cfgLock.Unlock()
 	var err error
 
-	sargs := make([]string, 0, len(args))
-	// this sanitizes the args from -test flags, which can cause issues with unit tests relying on cli args
-	for _, v := range args {
-		if !strings.HasPrefix(v, "-test.") {
-			sargs = append(sargs, v)
-		}
-	}
-
 	// load the config
-	conf, flags, err := config.Load(appinfo.Name, appinfo.Version, sargs)
+	conf, flags, err := config.Load(appinfo.Name, appinfo.Version, args)
 	if err != nil {
 		fmt.Println("\nERROR: Could not load configuration:", err.Error())
 		if flags != nil && !flags.ValidateConfig {

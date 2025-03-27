@@ -18,6 +18,7 @@ package config
 
 import (
 	"net/url"
+	"strings"
 	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -27,10 +28,17 @@ import (
 
 // Load returns the Application Configuration, starting with a default config,
 // then overriding with any provided config file, then env vars, and finally flags
-func Load(applicationName string, applicationVersion string, arguments []string) (*Config, *Flags, error) {
+func Load(applicationName string, applicationVersion string, args []string) (*Config, *Flags, error) {
+	// this sanitizes the args from -test flags, which can cause issues with unit tests relying on cli args
+	sargs := make([]string, 0, len(args))
+	for _, v := range args {
+		if !strings.HasPrefix(v, "-test.") {
+			sargs = append(sargs, v)
+		}
+	}
 
 	c := NewConfig()
-	flags, err := parseFlags(applicationName, arguments) // Parse here to get config file path and version flags
+	flags, err := parseFlags(applicationName, sargs) // Parse here to get config file path and version flags
 	if err != nil {
 		return nil, flags, err
 	}
