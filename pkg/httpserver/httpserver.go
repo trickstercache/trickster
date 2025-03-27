@@ -26,8 +26,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/cmd/trickster/usage"
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
+	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
