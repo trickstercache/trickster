@@ -25,6 +25,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
 const provider = "badger"
@@ -36,9 +38,10 @@ func newCacheConfig(dbPath string) *co.Options {
 }
 
 func TestConfiguration(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: cacheConfig, Logger: logging.ConsoleLogger("error")}
+	bc := Cache{Config: cacheConfig}
 
 	cfg := bc.Configuration()
 	if cfg.Provider != provider {
@@ -47,9 +50,10 @@ func TestConfiguration(t *testing.T) {
 }
 
 func TestBadgerCache_Connect(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: cacheConfig, Logger: logging.ConsoleLogger("error")}
+	bc := Cache{Config: cacheConfig}
 
 	// it should connect
 	if err := bc.Connect(); err != nil {
@@ -59,8 +63,9 @@ func TestBadgerCache_Connect(t *testing.T) {
 }
 
 func TestBadgerCache_ConnectFailed(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig("/root/trickster-test-noaccess")
-	bc := Cache{Config: cacheConfig, Logger: logging.ConsoleLogger("error")}
+	bc := Cache{Config: cacheConfig}
 
 	// it should connect
 	err := bc.Connect()
@@ -71,9 +76,10 @@ func TestBadgerCache_ConnectFailed(t *testing.T) {
 }
 
 func TestBadgerCache_Store(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: cacheConfig, Logger: logging.ConsoleLogger("error")}
+	bc := Cache{Config: cacheConfig}
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -88,9 +94,10 @@ func TestBadgerCache_Store(t *testing.T) {
 }
 
 func TestBadgerCache_Remove(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: cacheConfig, Logger: logging.ConsoleLogger("error")}
+	bc := Cache{Config: cacheConfig}
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -128,9 +135,10 @@ func TestBadgerCache_Remove(t *testing.T) {
 }
 
 func TestBadgerCache_BulkRemove(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: cacheConfig, Logger: logging.ConsoleLogger("error")}
+	bc := Cache{Config: cacheConfig}
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -171,9 +179,10 @@ func TestBadgerCache_BulkRemove(t *testing.T) {
 }
 
 func TestBadgerCache_Retrieve(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: cacheConfig, Logger: logging.ConsoleLogger("error")}
+	bc := Cache{Config: cacheConfig}
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -249,10 +258,10 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 }
 
 func TestBadgerCache_Close(t *testing.T) {
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := &co.Options{Provider: provider, Badger: &bo.Options{Directory: testDbPath, ValueDirectory: testDbPath}}
-	bc := Cache{Config: cacheConfig, Logger: logging.ConsoleLogger("error")}
+	bc := Cache{Config: cacheConfig}
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)

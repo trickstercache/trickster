@@ -39,7 +39,7 @@ func main() {
 	wg := &sync.WaitGroup{}
 	appinfo.SetAppInfo(applicationName, applicationVersion,
 		applicationBuildTime, applicationGitCommitID)
-	httpserver.Serve(nil, wg, nil, nil, os.Args[1:], exitFatal)
+	httpserver.Serve(nil, wg, nil, os.Args[1:], exitFatal)
 	wg.Wait()
 }
 

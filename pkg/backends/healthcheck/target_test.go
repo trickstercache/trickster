@@ -27,12 +27,13 @@ import (
 	"testing"
 
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 func TestNewTarget(t *testing.T) {
 
-	_, err := newTarget(nil, "", "", nil, nil, nil)
+	_, err := newTarget(context.Background(), "", "", nil, nil)
 	if err != ho.ErrNoOptionsProvided {
 		t.Errorf("expected %v got %v", ho.ErrNoOptionsProvided, err)
 	}
@@ -46,14 +47,14 @@ func TestNewTarget(t *testing.T) {
 	o.SetExpectedBody("expectedBody")
 	o.ExpectedCodes = nil
 
-	_, err = newTarget(ctx, "test", "test", o, nil, nil)
+	_, err = newTarget(ctx, "test", "test", o, nil)
 	if err != nil {
 		t.Error(err)
 	}
 
 	expected := `net/http: invalid method "INVALID METHOD"`
 	o.Verb = "INVALID METHOD"
-	_, err = newTarget(ctx, "test", "test", o, nil, nil)
+	_, err = newTarget(ctx, "test", "test", o, nil)
 	if err.Error() != expected {
 		t.Error("expected error for invalid method, got ", err)
 	}
@@ -214,7 +215,7 @@ func TestNewHTTPClient(t *testing.T) {
 }
 
 func TestProbe(t *testing.T) {
-
+	logger.SetLogger(testLogger)
 	ts := newTestServer(200, "OK", map[string]string{})
 
 	r, _ := http.NewRequest("GET", ts.URL+"/", nil)
@@ -224,19 +225,18 @@ func TestProbe(t *testing.T) {
 		baseRequest: r,
 		httpClient:  ts.Client(),
 		ec:          []int{200},
-		logger:      testLogger,
 	}
 	target.probe()
-	if target.successConsecutiveCnt.Load() != 1 {
-		t.Error("expected 1 got ", target.successConsecutiveCnt)
+	if v := target.successConsecutiveCnt.Load(); v != 1 {
+		t.Error("expected 1 got ", v)
 	}
 	target.ec[0] = 404
 	target.probe()
-	if target.successConsecutiveCnt.Load() != 0 {
-		t.Error("expected 0 got ", target.successConsecutiveCnt)
+	if v := target.successConsecutiveCnt.Load(); v != 0 {
+		t.Error("expected 0 got ", v)
 	}
-	if target.failConsecutiveCnt.Load() != 1 {
-		t.Error("expected 1 got ", target.failConsecutiveCnt)
+	if v := target.failConsecutiveCnt.Load(); v != 1 {
+		t.Error("expected 1 got ", v)
 	}
 
 }

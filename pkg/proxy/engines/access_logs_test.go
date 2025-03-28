@@ -22,6 +22,8 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tlo "github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
 )
 
@@ -31,12 +33,14 @@ func TestLogUpstreamRequest(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &tlo.Options{LogFile: fileName, LogLevel: "debug"}
-	logger := logging.New(conf)
-	logger.SetLogAsynchronous(false)
-	logUpstreamRequest(logger, "testBackend", "testType", "testHandler", "testMethod",
+	l := logging.New(conf)
+	l.SetLogAsynchronous(false)
+	logger.SetLogger(l)
+	logUpstreamRequest("testBackend", "testType", "testHandler", "testMethod",
 		"testPath", "testUserAgent", 200, 0, 1.0)
 	if _, err := os.Stat(fileName); err != nil {
 		t.Error(err)
 	}
-	logger.Close()
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	l.Close()
 }

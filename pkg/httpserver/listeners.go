@@ -25,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
@@ -39,7 +40,7 @@ var lg = listener.NewListenerGroup()
 
 func applyListenerConfigs(conf, oldConf *config.Config,
 	router, reloadHandler http.Handler, metricsRouter router.Router,
-	logger logging.Logger, tracers tracing.Tracers, o backends.Backends,
+	tracers tracing.Tracers, o backends.Backends,
 	wg *sync.WaitGroup, errorFunc func()) {
 
 	var err error
@@ -99,7 +100,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			go lg.StartListener("tlsListener",
 				conf.Frontend.TLSListenAddress, conf.Frontend.TLSListenPort,
 				conf.Frontend.ConnectionsLimit, tlsConfig, router, wg, tracers, errorFunc,
-				time.Duration(conf.ReloadConfig.DrainTimeoutMS)*time.Millisecond, logger)
+				time.Duration(conf.ReloadConfig.DrainTimeoutMS)*time.Millisecond)
 		}
 	} else if !conf.Frontend.ServeTLS && hasOldFC && oldConf.Frontend.ServeTLS {
 		// the TLS configs have been removed between the last config load and this one,
@@ -133,7 +134,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		}
 		go lg.StartListener("httpListener",
 			conf.Frontend.ListenAddress, conf.Frontend.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, router, wg, t2, errorFunc, 0, logger)
+			conf.Frontend.ConnectionsLimit, nil, router, wg, t2, errorFunc, 0)
 	}
 
 	// if the Metrics HTTP port is configured, then set up the http listener instance
@@ -146,12 +147,12 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		metricsRouter.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
 			false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "metrics" {
-			routing.RegisterPprofRoutes("metrics", metricsRouter, logger)
+			routing.RegisterPprofRoutes("metrics", metricsRouter)
 		}
 		wg.Add(1)
 		go lg.StartListener("metricsListener",
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, metricsRouter, wg, nil, errorFunc, 0, logger)
+			conf.Frontend.ConnectionsLimit, nil, metricsRouter, wg, nil, errorFunc, 0)
 	} else {
 		metricsRouter.RegisterRoute("/metrics", nil, nil,
 			false, metrics.Handler())
@@ -176,11 +177,11 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		rr.RegisterRoute(conf.Main.PurgePathHandlerPath, nil, nil,
 			false, http.HandlerFunc(handlers.PurgePathHandlerFunc(conf, &o)))
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "reload" {
-			routing.RegisterPprofRoutes("reload", rr, logger)
+			routing.RegisterPprofRoutes("reload", rr)
 		}
 		go lg.StartListener("reloadListener",
 			conf.ReloadConfig.ListenAddress, conf.ReloadConfig.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, rr, wg, nil, errorFunc, 0, logger)
+			conf.Frontend.ConnectionsLimit, nil, rr, wg, nil, errorFunc, 0)
 	} else {
 		rr.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
 			false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))

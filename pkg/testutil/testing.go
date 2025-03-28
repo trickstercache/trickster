@@ -31,6 +31,8 @@ import (
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registration"
@@ -117,7 +119,8 @@ func NewTestInstance(
 		return nil, nil, nil, nil, fmt.Errorf("could not load configuration: %s", err.Error())
 	}
 
-	caches := cr.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	caches := cr.LoadCachesFromConfig(conf)
 	cache, ok := caches["default"]
 	if !ok {
 		return nil, nil, nil, nil, err
@@ -135,10 +138,11 @@ func NewTestInstance(
 
 	var tracer *tracing.Tracer
 
-	logger := logging.ConsoleLogger("error")
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+
 	if o.TracingConfigName != "" {
 		if tc, ok := conf.TracingConfigs[o.TracingConfigName]; ok {
-			tracer, _ = tr.GetTracer(tc, logger, true)
+			tracer, _ = tr.GetTracer(tc, true)
 		}
 	} else {
 		tracer = NewTestTracer()
@@ -148,7 +152,7 @@ func NewTestInstance(
 		p.ResponseHeaders = respHeaders
 	}
 
-	rsc := request.NewResources(o, p, cache.Configuration(), cache, nil, tracer, logger)
+	rsc := request.NewResources(o, p, cache.Configuration(), cache, nil, tracer)
 	r = r.WithContext(tc.WithResources(r.Context(), rsc))
 
 	c := NewTestWebClient()
@@ -186,7 +190,7 @@ func NewTestTracer() *tracing.Tracer {
 	tc := to.New()
 	tc.Name = "test"
 	tc.Provider = "stdout"
-	tracer, _ := tr.GetTracer(tc, logging.ConsoleLogger("warn"), true)
+	tracer, _ := tr.GetTracer(tc, true)
 	return tracer
 }
 

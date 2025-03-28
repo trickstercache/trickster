@@ -25,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
 var hups = make(chan os.Signal, 1)
@@ -33,10 +34,10 @@ func init() {
 	signal.Notify(hups, syscall.SIGHUP)
 }
 
-type ServeFunc = func(*config.Config, *sync.WaitGroup, logging.Logger,
+type ServeFunc = func(*config.Config, *sync.WaitGroup,
 	map[string]cache.Cache, []string, func()) error
 
-func StartHupMonitor(conf *config.Config, wg *sync.WaitGroup, logger logging.Logger,
+func StartHupMonitor(conf *config.Config, wg *sync.WaitGroup,
 	caches map[string]cache.Cache, args []string, f ServeFunc) {
 	if conf == nil || conf.Resources == nil || f == nil {
 		return
@@ -50,7 +51,7 @@ func StartHupMonitor(conf *config.Config, wg *sync.WaitGroup, logger logging.Log
 				if conf.IsStale() {
 					logger.Warn("configuration reload starting now",
 						logging.Pairs{"source": "sighup"})
-					err := f(conf, wg, logger, caches, args, nil)
+					err := f(conf, wg, caches, args, nil)
 					if err == nil {
 						conf.Main.ReloaderLock.Unlock()
 						return // runConfig will start a new HupMonitor in place of this one

@@ -31,6 +31,8 @@ import (
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	pe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -58,13 +60,14 @@ func TestPrometheusClientInterfacing(t *testing.T) {
 }
 
 func TestNewClient(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 
 	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := cr.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
+	caches := cr.LoadCachesFromConfig(conf)
 	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
@@ -121,7 +124,7 @@ func TestParseTimeFails(t *testing.T) {
 }
 
 func TestParseTimeRangeQuery(t *testing.T) {
-
+	logger.SetLogger(testLogger)
 	qp := url.Values(map[string][]string{
 		"query": {`up-` + timeseries.FastForwardUserDisableFlag + " " +
 			timeseries.BackfillToleranceFlag + "30a"},
@@ -140,7 +143,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	req := &http.Request{URL: u}
 	o := bo.New()
 	o.Prometheus = &po.Options{Labels: map[string]string{"test": "trickster"}}
-	rsc := request.NewResources(o, nil, nil, nil, nil, nil, testLogger)
+	rsc := request.NewResources(o, nil, nil, nil, nil, nil)
 	req = request.SetResources(req, rsc)
 
 	client := &Client{}
@@ -362,7 +365,7 @@ func TestParseTimeRangeQueryWithOffset(t *testing.T) {
 }
 
 func TestParseVectorQuery(t *testing.T) {
-
+	logger.SetLogger(testLogger)
 	req := &http.Request{URL: &url.URL{
 		Scheme: "https",
 		Host:   "blah.com",
@@ -375,7 +378,7 @@ func TestParseVectorQuery(t *testing.T) {
 
 	o := bo.New()
 	o.Prometheus = &po.Options{Labels: map[string]string{"test": "trickster"}}
-	rsc := request.NewResources(o, nil, nil, nil, nil, nil, testLogger)
+	rsc := request.NewResources(o, nil, nil, nil, nil, nil)
 	req = request.SetResources(req, rsc)
 
 	rounder := time.Second * 15

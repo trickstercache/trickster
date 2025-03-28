@@ -22,7 +22,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -32,7 +31,7 @@ import (
 // WithResourcesContext ...
 func WithResourcesContext(client backends.Backend, o *bo.Options,
 	c cache.Cache, p *po.Options, t *tracing.Tracer,
-	l logging.Logger, next http.Handler) http.Handler {
+	next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		if o != nil && (o.LatencyMinMS > 0 || o.LatencyMaxMS > 0) {
@@ -41,9 +40,9 @@ func WithResourcesContext(client backends.Backend, o *bo.Options,
 
 		var resources *request.Resources
 		if c == nil {
-			resources = request.NewResources(o, p, nil, nil, client, t, l)
+			resources = request.NewResources(o, p, nil, nil, client, t)
 		} else {
-			resources = request.NewResources(o, p, c.Configuration(), c, client, t, l)
+			resources = request.NewResources(o, p, c.Configuration(), c, client, t)
 		}
 		ctx := r.Context()
 		rsc, ok := context.Resources(ctx).(*request.Resources)

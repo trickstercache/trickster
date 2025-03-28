@@ -22,19 +22,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	txe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
 )
 
 func TestDocumentFromHTTPResponse(t *testing.T) {
-
+	logger.SetLogger(testLogger)
 	expected := []byte("1234")
 
 	resp := &http.Response{}
 	resp.Header = http.Header{headers.NameContentRange: []string{"bytes 1-4/8"}}
 	resp.StatusCode = 206
-	d := DocumentFromHTTPResponse(resp, []byte("1234"), nil, testLogger)
+	d := DocumentFromHTTPResponse(resp, []byte("1234"), nil)
 
 	if len(d.Ranges) != 1 {
 		t.Errorf("expected 1 got %d", len(d.Ranges))
@@ -100,10 +101,10 @@ func TestFulfillContentBody(t *testing.T) {
 }
 
 func TestParsePartialContentBodyNoRanges(t *testing.T) {
-
+	logger.SetLogger(testLogger)
 	d := &HTTPDocument{}
 	resp := &http.Response{Header: make(http.Header)}
-	d.ParsePartialContentBody(resp, []byte("test"), testLogger)
+	d.ParsePartialContentBody(resp, []byte("test"))
 
 	if string(d.Body) != "test" {
 		t.Errorf("expected %s got %s", "test", string(d.Body))
@@ -112,6 +113,7 @@ func TestParsePartialContentBodyNoRanges(t *testing.T) {
 }
 
 func TestParsePartialContentBodySingleRange(t *testing.T) {
+	logger.SetLogger(testLogger)
 	d := &HTTPDocument{}
 	d.Ranges = make(byterange.Ranges, 0)
 	d.RangeParts = make(byterange.MultipartByteRanges)
@@ -121,7 +123,7 @@ func TestParsePartialContentBodySingleRange(t *testing.T) {
 		headers.NameContentRange: []string{"bytes 0-10/1222"},
 	}}
 
-	d.ParsePartialContentBody(resp, []byte("Lorem ipsum"), testLogger)
+	d.ParsePartialContentBody(resp, []byte("Lorem ipsum"))
 
 	if string(d.Body) != "" {
 		t.Errorf("expected %s got %s", "", string(d.Body))
@@ -133,6 +135,7 @@ func TestParsePartialContentBodySingleRange(t *testing.T) {
 }
 
 func TestParsePartialContentBodyMultipart(t *testing.T) {
+	logger.SetLogger(testLogger)
 	d := &HTTPDocument{}
 	d.Ranges = make(byterange.Ranges, 0)
 	d.RangeParts = make(byterange.MultipartByteRanges)
@@ -157,7 +160,7 @@ Content-Range: bytes 10-20/1222
 Content-Type: text/plain; charset=utf-8
 
 m dolor sit
---c4fb8e6049a6fdb126d32fa0b15c21e3--`), testLogger)
+--c4fb8e6049a6fdb126d32fa0b15c21e3--`))
 
 	if string(d.Body) != "" {
 		t.Errorf("expected %s got %s", "", string(d.Body))
@@ -169,6 +172,7 @@ m dolor sit
 }
 
 func TestParsePartialContentBodyMultipartBadBody(t *testing.T) {
+	logger.SetLogger(testLogger)
 	d := &HTTPDocument{}
 	d.Ranges = make(byterange.Ranges, 0)
 	d.RangeParts = make(byterange.MultipartByteRanges)
@@ -193,7 +197,7 @@ Content-Range: baytes 1s0-20/12s22x
 Content-Type: text/plain; charset=utf-8
 
 m dolor sit
---c4fb8e6049a6fdb126d32fa0b15c21e3--`), testLogger)
+--c4fb8e6049a6fdb126d32fa0b15c21e3--`))
 
 	if string(d.Body) != "" {
 		t.Errorf("expected %s got %s", "", string(d.Body))

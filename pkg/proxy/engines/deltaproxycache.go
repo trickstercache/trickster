@@ -33,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
@@ -77,7 +78,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	rsc.Unlock()
 	if err != nil {
 		if canOPC {
-			rsc.Logger.Debug("could not parse time range query, using object proxy cache",
+			logger.Debug("could not parse time range query, using object proxy cache",
 				logging.Pairs{"error": err.Error()})
 			rsc.AlternateCacheTTL = time.Second * o.FastForwardTTL
 			ObjectProxyCacheRequest(w, r)
@@ -100,7 +101,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	if o.TimeseriesEvictionMethod == evictionmethods.EvictionMethodOldest {
 		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * o.TimeseriesRetention))
 		if trq.Extent.End.Before(OldestRetainedTimestamp) {
-			pr.Logger.Debug("timerange end is too old to consider caching",
+			logger.Debug("timerange end is too old to consider caching",
 				logging.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp,
 					"step": trq.Step, "retention": o.TimeseriesRetention})
 			DoProxy(w, r, true)
@@ -160,7 +161,7 @@ checkCache:
 				cts = doc.timeseries
 			}
 			if err != nil {
-				pr.Logger.Error("cache object unmarshaling failed",
+				logger.Error("cache object unmarshaling failed",
 					logging.Pairs{"key": key, "backendName": client.Name(), "detail": err.Error()})
 				go cache.Remove(key)
 				cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
@@ -180,7 +181,7 @@ checkCache:
 						tsc >= int64(o.TimeseriesRetentionFactor) {
 						if trq.Extent.End.Before(el[0].Start) {
 							pr.cacheLock.RRelease()
-							pr.Logger.Debug("timerange end is too old to consider caching",
+							logger.Debug("timerange end is too old to consider caching",
 								logging.Pairs{"step": trq.Step, "retention": o.TimeseriesRetention})
 							DoProxy(w, r, true)
 							return
@@ -264,7 +265,7 @@ checkCache:
 				rlo.FastForwardDisable = true
 			} else {
 				ffReq = ffReq.WithContext(profile.ToContext(ffReq.Context(), dpcEncodingProfile.Clone()))
-				rs := request.NewResources(o, o.FastForwardPath, cc, cache, client, rsc.Tracer, pr.Logger)
+				rs := request.NewResources(o, o.FastForwardPath, cc, cache, client, rsc.Tracer)
 				rs.AlternateCacheTTL = o.FastForwardTTL
 				ffReq = ffReq.WithContext(tctx.WithResources(ffReq.Context(), rs))
 			}
@@ -295,7 +296,7 @@ checkCache:
 				ffts, err = modeler.WireUnmarshalerReader(getDecoderReader(resp), trq)
 				if err != nil {
 					ffStatus = "err"
-					pr.Logger.Error("proxy object unmarshaling failed",
+					logger.Error("proxy object unmarshaling failed",
 						logging.Pairs{"body": string(body)})
 					return
 				}
@@ -334,7 +335,7 @@ checkCache:
 			missRanges = missRanges.Splice(trq.Step, o.MaxShardSize, o.ShardStep, o.MaxShardSizePoints)
 		}
 		dpStatus["extentsFetched"] = missRanges.String()
-		frsc := request.NewResources(o, pc, cc, cache, client, rsc.Tracer, pr.Logger)
+		frsc := request.NewResources(o, pc, cc, cache, client, rsc.Tracer)
 		frsc.TimeRangeQuery = trq
 		mts, uncachedValueCount, mresp, ferr = fetchExtents(missRanges, frsc, doc.Headers, client,
 			pr, modeler.WireUnmarshalerReader, span)
@@ -419,7 +420,7 @@ checkCache:
 			if len(cts.Extents()) > 0 {
 				doc.timeseries = cts
 				if err := WriteCache(ctx, cache, key, doc, o.TimeseriesTTL, o.CompressibleTypes, modeler.CacheMarshaler); err != nil {
-					pr.Logger.Error("error writing object to cache",
+					logger.Error("error writing object to cache",
 						logging.Pairs{
 							"backendName": o.Name,
 							"cacheName":   cache.Configuration().Name,
@@ -459,7 +460,7 @@ checkCache:
 
 	// Respond to the user. Using the response headers from a Delta Response,
 	// so as to not map conflict with cacheData on WriteCache
-	logDeltaRoutine(pr.Logger, dpStatus)
+	logDeltaRoutine(dpStatus)
 	recordDPCResult(r, cacheStatus, sc, r.URL.Path, ffStatus, elapsed.Seconds(), missRanges, rh)
 
 	rsc.TS = rts
@@ -476,7 +477,7 @@ checkCache:
 	modeler.WireMarshalWriter(rts, rlo, sc, w)
 }
 
-func logDeltaRoutine(logger logging.Logger, p logging.Pairs) {
+func logDeltaRoutine(p logging.Pairs) {
 	logger.Debug("delta routine completed", p)
 }
 
@@ -518,7 +519,7 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 		elapsed = time.Since(start)
 	}
 
-	go logUpstreamRequest(pr.Logger, o.Name, o.Provider, handlerName,
+	go logUpstreamRequest(o.Name, o.Provider, handlerName,
 		pr.Method, pr.URL.String(), pr.UserAgent(), resp.StatusCode, 0, elapsed.Seconds())
 
 	d := &HTTPDocument{
@@ -608,7 +609,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				nts, ferr := wur(getDecoderReader(resp), rsc.TimeRangeQuery)
 				if ferr != nil {
-					pr.Logger.Error("proxy object unmarshaling failed",
+					logger.Error("proxy object unmarshaling failed",
 						logging.Pairs{"detail": ferr.Error()})
 					appendLock.Lock()
 					if err == nil {
@@ -638,7 +639,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 				if len(s) > 128 {
 					s = s[:128]
 				}
-				pr.Logger.Error("unexpected upstream response",
+				logger.Error("unexpected upstream response",
 					logging.Pairs{
 						"statusCode":              resp.StatusCode,
 						"clientRequestURL":        pr.Request.URL.String(),

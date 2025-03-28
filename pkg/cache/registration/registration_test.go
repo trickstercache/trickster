@@ -28,10 +28,12 @@ import (
 	ro "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
 func TestLoadCachesFromConfig(t *testing.T) {
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	conf, _, err := config.Load("trickster", "test",
 		[]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
@@ -51,7 +53,7 @@ func TestLoadCachesFromConfig(t *testing.T) {
 		}
 	}
 
-	caches := LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
+	caches := LoadCachesFromConfig(conf)
 	defer CloseCaches(caches)
 	_, ok := caches["default"]
 	if !ok {

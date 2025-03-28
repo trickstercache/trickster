@@ -23,6 +23,7 @@ import (
 
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
 var testLogger = logging.NoopLogger()
@@ -58,36 +59,38 @@ func TestShutdown(t *testing.T) {
 }
 
 func TestRegister(t *testing.T) {
+	logger.SetLogger(testLogger)
 	hc := New().(*healthChecker)
 	o := ho.New()
 	o.IntervalMS = 500
-	_, err := hc.Register("test", "test", o, http.DefaultClient, testLogger)
+	_, err := hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {
 		t.Error(err)
 	}
 	target := hc.targets["test"]
 	target.Start()
 	target.Stop()
-	_, err = hc.Register("test", "test", o, http.DefaultClient, testLogger)
+	_, err = hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {
 		t.Error(err)
 	}
 	o.Body = "test-body"
-	_, err = hc.Register("test", "test", o, http.DefaultClient, testLogger)
+	_, err = hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = hc.Register("test", "test", nil, http.DefaultClient, testLogger)
+	_, err = hc.Register("test", "test", nil, http.DefaultClient)
 	if err != ho.ErrNoOptionsProvided {
 		t.Errorf("expected %v got %v", ho.ErrNoOptionsProvided, err)
 	}
 }
 
 func TestUnregister(t *testing.T) {
+	logger.SetLogger(testLogger)
 	hc := New().(*healthChecker)
 	o := ho.New()
 	o.IntervalMS = 500
-	_, err := hc.Register("test", "test", o, http.DefaultClient, testLogger)
+	_, err := hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {
 		t.Error(err)
 	}
@@ -99,10 +102,11 @@ func TestUnregister(t *testing.T) {
 }
 
 func TestStatus(t *testing.T) {
+	logger.SetLogger(testLogger)
 	hc := New().(*healthChecker)
 	o := ho.New()
 	o.IntervalMS = 500
-	_, err := hc.Register("test", "test", o, http.DefaultClient, testLogger)
+	_, err := hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {
 		t.Error(err)
 	}
@@ -124,11 +128,11 @@ func TestStatus(t *testing.T) {
 }
 
 func TestStatuses(t *testing.T) {
-
+	logger.SetLogger(testLogger)
 	hc := New().(*healthChecker)
 	o := ho.New()
 	o.IntervalMS = 500
-	_, err := hc.Register("test", "test", o, http.DefaultClient, testLogger)
+	_, err := hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {
 		t.Error(err)
 	}
@@ -140,14 +144,14 @@ func TestStatuses(t *testing.T) {
 }
 
 func TestHealthCheckerProbe(t *testing.T) {
-
+	logger.SetLogger(testLogger)
 	hc := New().(*healthChecker)
 	o := ho.New()
 
 	ts := newTestServer(200, "OK", map[string]string{})
 	r, _ := http.NewRequest("GET", ts.URL+"/", nil)
 
-	_, err := hc.Register("test", "test", o, http.DefaultClient, testLogger)
+	_, err := hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {
 		t.Error(err)
 	}

@@ -24,8 +24,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
 // PurgeHandleFunc purges an object from a cache based on key.
@@ -65,18 +65,17 @@ func PurgeKeyHandleFunc(conf *config.Config, from backends.Backends) func(http.R
 
 func PurgePathHandlerFunc(conf *config.Config, from *backends.Backends) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
-		rsc := request.GetResources(req)
 		purgeFrom := req.URL.Query().Get("backend")
 		purgePath := req.URL.Query().Get("path")
 		if purgeFrom == "" || purgePath == "" {
-			rsc.Logger.Warn("failed to get backend/path args", nil)
+			logger.Warn("failed to get backend/path args", nil)
 			w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 			w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("Usage: " + config.DefaultPurgePathHandlerPath + "?backend={backend}&path={path}"))
 			return
 		}
-		rsc.Logger.Debug("purging cache item",
+		logger.Debug("purging cache item",
 			logging.Pairs{"backend": purgeFrom, "path": purgePath})
 		fromBackend := from.Get(purgeFrom)
 		if fromBackend == nil {

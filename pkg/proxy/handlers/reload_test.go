@@ -28,11 +28,13 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
 func TestReloadHandleFunc(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Info))
 
-	var emptyFunc = func(*config.Config, *sync.WaitGroup, logging.Logger,
+	var emptyFunc = func(*config.Config, *sync.WaitGroup,
 		map[string]cache.Cache, []string, func()) error {
 		return nil
 	}
@@ -51,11 +53,10 @@ func TestReloadHandleFunc(t *testing.T) {
 
 	cfg, _, _ := config.Load("testing", "testing", []string{"-config", testFile})
 	cfg.ReloadConfig.RateLimitMS = 0
-	log := logging.ConsoleLogger(level.Info)
 	w := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "/", nil)
 
-	f := ReloadHandleFunc(emptyFunc, cfg, nil, log, nil, nil)
+	f := ReloadHandleFunc(emptyFunc, cfg, nil, nil, nil)
 	f(w, r)
 	os.Remove(testFile)
 	time.Sleep(time.Millisecond * 500)
