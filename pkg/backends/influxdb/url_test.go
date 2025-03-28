@@ -44,7 +44,7 @@ func TestSetExtentInfluxQL(t *testing.T) {
 
 	expected := strings.Replace(strings.Replace(expectedTokenized, "$START_TIME$", startToken, -1), "$END_TIME$", endToken, -1)
 
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-origin-url", "none:9090", "-provider", "influxdb", "-log-level", "debug"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -91,7 +91,7 @@ var testQuery = `from("test-bucket")
 `
 
 func TestSetExtentFlux(t *testing.T) {
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-origin-url", "none:9090", "-provider", "influxdb", "-log-level", "debug"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())

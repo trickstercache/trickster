@@ -66,7 +66,7 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	var proxyClients backends.Backends
 
 	log := logging.ConsoleLogger("info")
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "prometheus"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -158,7 +158,7 @@ func TestRegisterProxyRoutes(t *testing.T) {
 }
 
 func TestRegisterProxyRoutesInflux(t *testing.T) {
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "influxdb"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -179,7 +179,7 @@ func TestRegisterProxyRoutesInflux(t *testing.T) {
 }
 
 func TestRegisterProxyRoutesReverseProxy(t *testing.T) {
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "rp"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -201,7 +201,7 @@ func TestRegisterProxyRoutesReverseProxy(t *testing.T) {
 
 func TestRegisterProxyRoutesClickHouse(t *testing.T) {
 
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "clickhouse"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -223,7 +223,7 @@ func TestRegisterProxyRoutesClickHouse(t *testing.T) {
 
 func TestRegisterProxyRoutesALB(t *testing.T) {
 
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "alb"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -247,7 +247,7 @@ func TestRegisterProxyRoutesALB(t *testing.T) {
 
 func TestRegisterProxyRoutesIRONdb(t *testing.T) {
 
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-origin-url", "http://example.com", "-provider", "irondb", "-log-level", "debug"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -268,7 +268,7 @@ func TestRegisterProxyRoutesIRONdb(t *testing.T) {
 
 func TestRegisterProxyRoutesWithReqRewriters(t *testing.T) {
 
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-config", "../../testdata/test.routing.req_rewriter.conf"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -296,7 +296,7 @@ func TestRegisterProxyRoutesMultipleDefaults(t *testing.T) {
 	expected2 := "only one backend can be marked as default. Found both test2 and test"
 
 	a := []string{"-config", "../../testdata/test.too_many_defaults.conf"}
-	conf, _, err := config.Load("trickster", "test", a)
+	conf, err := config.Load("trickster", "test", a)
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -340,7 +340,7 @@ func TestRegisterProxyRoutesInvalidCert(t *testing.T) {
 	}
 
 	a := []string{"-config", confFile}
-	conf, _, err := config.Load("trickster", "test", a)
+	conf, err := config.Load("trickster", "test", a)
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -359,7 +359,7 @@ func TestRegisterProxyRoutesInvalidCert(t *testing.T) {
 func TestRegisterProxyRoutesBadCacheName(t *testing.T) {
 	expected := `invalid cache name "test2" provided in backend options "test"`
 	a := []string{"-config", "../../testdata/test.bad_cache_name.conf"}
-	_, _, err := config.Load("trickster", "test", a)
+	_, err := config.Load("trickster", "test", a)
 	if err == nil {
 		t.Errorf("expected error `%s` got nothing", expected)
 	} else if err.Error() != expected {
@@ -370,7 +370,7 @@ func TestRegisterProxyRoutesBadCacheName(t *testing.T) {
 func TestRegisterProxyRoutesBadProvider(t *testing.T) {
 	expected := "unknown backend provider in backend options. backendName: test, backendProvider: foo"
 	a := []string{"-config", "../../testdata/test.unknown_backend_provider.conf"}
-	conf, _, err := config.Load("trickster", "test", a)
+	conf, err := config.Load("trickster", "test", a)
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -387,7 +387,7 @@ func TestRegisterProxyRoutesBadProvider(t *testing.T) {
 
 func TestRegisterMultipleBackends(t *testing.T) {
 	a := []string{"-config", "../../testdata/test.multiple_backends.conf"}
-	conf, _, err := config.Load("trickster", "test", a)
+	conf, err := config.Load("trickster", "test", a)
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -402,7 +402,7 @@ func TestRegisterMultipleBackends(t *testing.T) {
 
 func TestRegisterMultipleBackendsPlusDefault(t *testing.T) {
 	a := []string{"-config", "../../testdata/test.multiple_backends_plus_default.conf"}
-	conf, _, err := config.Load("trickster", "test", a)
+	conf, err := config.Load("trickster", "test", a)
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -422,7 +422,7 @@ func TestRegisterPathRoutes(t *testing.T) {
 	p := map[string]*po.Options{"test": {}}
 	RegisterPathRoutes(nil, nil, nil, nil, nil, p, nil, "", nil)
 
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "rpc"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -458,7 +458,7 @@ func TestValidateRuleClients(t *testing.T) {
 	var cl = backends.Backends{"test": c}
 	rule.ValidateOptions(cl, nil)
 
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "rpc"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())

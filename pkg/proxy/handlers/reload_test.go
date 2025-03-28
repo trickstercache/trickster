@@ -33,7 +33,7 @@ import (
 func TestReloadHandleFunc(t *testing.T) {
 
 	var emptyFunc = func(*config.Config, *sync.WaitGroup, logging.Logger,
-		map[string]cache.Cache, []string, func()) error {
+		map[string]cache.Cache, func()) error {
 		return nil
 	}
 
@@ -49,13 +49,13 @@ func TestReloadHandleFunc(t *testing.T) {
 		t.Error(err)
 	}
 
-	cfg, _, _ := config.Load("testing", "testing", []string{"-config", testFile})
+	cfg, _ := config.Load("testing", "testing", []string{"-config", testFile})
 	cfg.ReloadConfig.RateLimitMS = 0
 	log := logging.ConsoleLogger(level.Info)
 	w := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "/", nil)
 
-	f := ReloadHandleFunc(emptyFunc, cfg, nil, log, nil, nil)
+	f := ReloadHandleFunc(emptyFunc, cfg, nil, log, nil)
 	f(w, r)
 	os.Remove(testFile)
 	time.Sleep(time.Millisecond * 500)

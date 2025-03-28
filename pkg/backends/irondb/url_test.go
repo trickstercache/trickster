@@ -41,7 +41,7 @@ func TestSetExtent(t *testing.T) {
 	stFl := time.Unix(start.Unix()-(start.Unix()%300), 0)
 	etFl := time.Unix(end.Unix()-(end.Unix()%300), 0)
 	e := &timeseries.Extent{Start: start, End: end}
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-origin-url", "none:9090",
 			"-provider", "irondb",
 			"-log-level", "debug"})
@@ -205,7 +205,7 @@ func TestFastForwardURL(t *testing.T) {
 	now := time.Now().Unix()
 	start := now - (now % 300)
 	end := start + 300
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-origin-url", "none:9090",
 			"-provider", "irondb",
 			"-log-level", "debug"})

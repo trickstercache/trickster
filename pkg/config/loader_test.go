@@ -31,7 +31,7 @@ import (
 func TestLoadConfiguration(t *testing.T) {
 	a := []string{"-provider", "testing", "-origin-url", "http://prometheus:9090/test/path"}
 	// it should not error if config path is not set
-	conf, _, err := Load("trickster-test", "0", a)
+	conf, err := Load("trickster-test", "0", a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			_, _, err := Load("trickster-test", "0", []string{"-config", test.filename})
+			_, err := Load("trickster-test", "0", []string{"-config", test.filename})
 			if err == nil {
 				t.Errorf("expected error `%s` got nothing", test.expected)
 			} else if !strings.HasSuffix(err.Error(), test.expected) {
@@ -136,7 +136,7 @@ func TestFullLoadConfiguration(t *testing.T) {
 
 	a := []string{"-config", confFile}
 	// it should not error if config path is not set
-	conf, _, err := Load("trickster-test", "0", a)
+	conf, err := Load("trickster-test", "0", a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,7 +406,7 @@ func TestFullLoadConfiguration(t *testing.T) {
 func TestEmptyLoadConfiguration(t *testing.T) {
 	a := []string{"-config", "../../testdata/test.empty.conf"}
 	// it should not error if config path is not set
-	conf, _, err := Load("trickster-test", "0", a)
+	conf, err := Load("trickster-test", "0", a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -543,12 +543,12 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 func TestLoadConfigurationVersion(t *testing.T) {
 	a := []string{"-version"}
 	// it should not error if config path is not set
-	_, flags, err := Load("trickster-test", "0", a)
+	conf, err := Load("trickster-test", "0", a)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if !flags.PrintVersion {
+	if conf == nil || conf.Flags == nil || !conf.Flags.PrintVersion {
 		t.Errorf("expected true got false")
 	}
 }
@@ -558,7 +558,7 @@ func TestLoadConfigurationBadPath(t *testing.T) {
 
 	a := []string{"-config", badPath}
 	// it should not error if config path is not set
-	_, _, err := Load("trickster-test", "0", a)
+	_, err := Load("trickster-test", "0", a)
 	if err == nil {
 		t.Errorf("expected error: open %s: no such file or directory", badPath)
 	}
@@ -567,7 +567,7 @@ func TestLoadConfigurationBadPath(t *testing.T) {
 func TestLoadConfigurationBadUrl(t *testing.T) {
 	const badURL = ":httap:]/]/example.com9091"
 	a := []string{"-origin-url", badURL}
-	_, _, err := Load("trickster-test", "0", a)
+	_, err := Load("trickster-test", "0", a)
 	if err == nil {
 		t.Errorf("expected error: parse %s: missing protocol scheme", badURL)
 	}
@@ -576,7 +576,7 @@ func TestLoadConfigurationBadUrl(t *testing.T) {
 func TestLoadConfigurationBadArg(t *testing.T) {
 	const url = "http://0.0.0.0"
 	a := []string{"-origin-url", url, "-provider", "rpc", "-unknown-flag"}
-	_, _, err := Load("trickster-test", "0", a)
+	_, err := Load("trickster-test", "0", a)
 	if err == nil {
 		t.Error("expected error: flag provided but not defined: -unknown-flag")
 	}
@@ -586,7 +586,7 @@ func TestLoadConfigurationWarning1(t *testing.T) {
 
 	a := []string{"-config", "../../testdata/test.warning1.conf"}
 	// it should not error if config path is not set
-	conf, _, err := Load("trickster-test", "0", a)
+	conf, err := Load("trickster-test", "0", a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -604,7 +604,7 @@ func TestLoadConfigurationWarning2(t *testing.T) {
 
 	a := []string{"-config", "../../testdata/test.warning2.conf"}
 	// it should not error if config path is not set
-	conf, _, err := Load("trickster-test", "0", a)
+	conf, err := Load("trickster-test", "0", a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -620,7 +620,7 @@ func TestLoadConfigurationWarning2(t *testing.T) {
 
 func TestLoadEmptyArgs(t *testing.T) {
 	a := []string{}
-	_, _, err := Load("trickster-test", "0", a)
+	_, err := Load("trickster-test", "0", a)
 	if err != errors.ErrNoValidBackends {
 		t.Error("expected error:", errors.ErrNoValidBackends)
 	}

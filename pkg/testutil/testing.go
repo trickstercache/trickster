@@ -112,7 +112,7 @@ func NewTestInstance(
 		args = append(args, []string{"-config", configFile}...)
 	}
 
-	conf, _, err := config.Load("trickster", "test", args)
+	conf, err := config.Load("trickster", "test", args)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("could not load configuration: %s", err.Error())
 	}

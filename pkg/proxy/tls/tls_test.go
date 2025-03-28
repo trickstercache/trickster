@@ -160,7 +160,7 @@ func TestProcessTLSConfigs(t *testing.T) {
 	}
 
 	a := []string{"-config", confFile}
-	_, _, err = config.Load("trickster-test", "0", a)
+	_, err = config.Load("trickster-test", "0", a)
 	if err != nil {
 		t.Error(err)
 	}

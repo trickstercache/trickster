@@ -26,7 +26,7 @@ import (
 
 func TestPingHandler(t *testing.T) {
 
-	conf, _, err := config.Load("trickster-test", "test",
+	conf, err := config.Load("trickster-test", "test",
 		[]string{"-provider", "reverseproxycache", "-origin-url", "http://0/"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())

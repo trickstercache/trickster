@@ -186,7 +186,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 	es := httptest.NewServer(http.HandlerFunc(handler))
 	defer es.Close()
 
-	_, _, err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-provider", "prometheus"})
+	_, err := config.Load("trickster", "test", []string{"-origin-url", es.URL, "-provider", "prometheus"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

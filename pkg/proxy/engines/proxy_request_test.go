@@ -124,7 +124,7 @@ func TestWriteResponseBody(t *testing.T) {
 
 func TestDetermineCacheability(t *testing.T) {
 
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())

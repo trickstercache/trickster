@@ -61,7 +61,7 @@ func TestInvalidContentRange(t *testing.T) {
 
 func TestMultiPartByteRange(t *testing.T) {
 
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -91,7 +91,7 @@ func TestMultiPartByteRange(t *testing.T) {
 
 func TestCacheHitRangeRequest(t *testing.T) {
 	expected := "is a "
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -130,7 +130,7 @@ func TestCacheHitRangeRequest(t *testing.T) {
 
 func TestCacheHitRangeRequest2(t *testing.T) {
 
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -174,7 +174,7 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 }
 
 func TestCacheHitRangeRequest3(t *testing.T) {
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -213,7 +213,7 @@ func TestCacheHitRangeRequest3(t *testing.T) {
 }
 
 func TestPartialCacheMissRangeRequest(t *testing.T) {
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -257,7 +257,7 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 }
 
 func TestFullCacheMissRangeRequest(t *testing.T) {
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -320,7 +320,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 	bytes, _ := io.ReadAll(resp.Body)
 
 	//--------------------------------------
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -364,7 +364,7 @@ func TestQueryCache(t *testing.T) {
 
 	expected := "1234"
 
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

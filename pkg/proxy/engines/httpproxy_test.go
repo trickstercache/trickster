@@ -41,7 +41,7 @@ func TestDoProxy(t *testing.T) {
 	es := tu.NewTestServer(http.StatusOK, "test", nil)
 	defer es.Close()
 
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-origin-url", es.URL, "-provider", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -93,7 +93,7 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	const badUpstream = "http://127.0.0.1:64389"
 
 	// assume nothing listens on badUpstream, so this should force the proxy to generate a 502 Bad Gateway
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url",
+	conf, err := config.Load("trickster", "test", []string{"-origin-url",
 		badUpstream, "-provider", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -136,7 +136,7 @@ func TestClockOffsetWarning(t *testing.T) {
 	}
 	s := httptest.NewServer(http.HandlerFunc(handler))
 
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url",
+	conf, err := config.Load("trickster", "test", []string{"-origin-url",
 		s.URL, "-provider", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -179,7 +179,7 @@ func TestDoProxyWithPCF(t *testing.T) {
 	es := tu.NewTestServer(http.StatusOK, "test", nil)
 	defer es.Close()
 
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-origin-url", es.URL, "-provider", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -234,7 +234,7 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 	es := tu.NewTestServer(http.StatusOK, "test", nil)
 	defer es.Close()
 
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url",
+	conf, err := config.Load("trickster", "test", []string{"-origin-url",
 		es.URL, "-provider", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -286,7 +286,7 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 
 func TestPrepareFetchReaderErr(t *testing.T) {
 
-	conf, _, err := config.Load("trickster", "test",
+	conf, err := config.Load("trickster", "test",
 		[]string{"-origin-url", "http://example.com/", "-provider", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
