@@ -26,7 +26,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -52,16 +51,14 @@ func TestListeners(t *testing.T) {
 	trs := map[string]*tracing.Tracer{"default": tr}
 	testLG := NewListenerGroup()
 
-	wg := &sync.WaitGroup{}
 	var err error
 	errs := make(chan error, 1)
-	wg.Add(1)
 	go func() {
 		tc := &tls.Config{
 			Certificates: make([]tls.Certificate, 1),
 		}
 		errs <- testLG.StartListener("httpListener",
-			"", 0, 20, tc, http.NewServeMux(), wg, trs, nil, 0,
+			"", 0, 20, tc, http.NewServeMux(), trs, nil, 0,
 			logging.ConsoleLogger("info"))
 		close(errs)
 	}()
@@ -76,11 +73,10 @@ func TestListeners(t *testing.T) {
 	if !stderrors.Is(err, net.ErrClosed) {
 		t.Error(err, "expected nil err")
 	}
-	wg.Add(1)
 	errs2 := make(chan error, 1)
 	go func() {
 		errs2 <- testLG.StartListenerRouter("httpListener2",
-			"", 0, 20, nil, "/", http.HandlerFunc(ph.HandleLocalResponse), wg,
+			"", 0, 20, nil, "/", http.HandlerFunc(ph.HandleLocalResponse),
 			nil, nil, 0, logging.ConsoleLogger("info"))
 		close(errs2)
 	}()
@@ -95,13 +91,11 @@ func TestListeners(t *testing.T) {
 		t.Error(err, "expected nil err")
 	}
 
-	wg.Add(1)
 	err = testLG.StartListener("testBadPort",
-		"", -31, 20, nil, http.NewServeMux(), wg, trs, nil, 0, logging.ConsoleLogger("info"))
+		"", -31, 20, nil, http.NewServeMux(), trs, nil, 0, logging.ConsoleLogger("info"))
 	if err == nil {
 		t.Error("expected invalid port error")
 	}
-	wg.Wait()
 }
 
 func TestUpdateRouter(t *testing.T) {
@@ -128,7 +122,7 @@ func TestListenerAccept(t *testing.T) {
 	var err error
 	go func() {
 		err = testLG.StartListener("httpListener",
-			"", 0, 20, nil, http.NewServeMux(), nil, nil, nil, 0, logging.ConsoleLogger("info"))
+			"", 0, 20, nil, http.NewServeMux(), nil, nil, 0, logging.ConsoleLogger("info"))
 	}()
 	time.Sleep(time.Millisecond * 500)
 	if err != nil {

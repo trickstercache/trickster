@@ -18,7 +18,6 @@ package handlers
 
 import (
 	"net/http"
-	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
@@ -28,7 +27,7 @@ import (
 )
 
 // ReloadHandleFunc will reload the running configuration if it has changed
-func ReloadHandleFunc(f reload.ReloaderFunc, conf *config.Config, wg *sync.WaitGroup,
+func ReloadHandleFunc(f reload.ReloaderFunc, conf *config.Config,
 	logger logging.Logger,
 	caches map[string]cache.Cache) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +38,7 @@ func ReloadHandleFunc(f reload.ReloaderFunc, conf *config.Config, wg *sync.WaitG
 				logger.Warn(
 					"configuration reload starting now",
 					logging.Pairs{"source": "reloadEndpoint"})
-				err := f(conf, wg, logger, caches, nil)
+				err := f(conf, logger, caches, nil)
 				if err == nil {
 					w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 					w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)

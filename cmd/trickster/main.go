@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
@@ -49,7 +48,6 @@ func main() {
 }
 
 func daemon() error {
-	wg := &sync.WaitGroup{}
 	appinfo.SetAppInfo(applicationName, applicationVersion,
 		applicationBuildTime, applicationGitCommitID)
 
@@ -68,7 +66,7 @@ func daemon() error {
 	// Serve with Config
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	err = httpserver.Serve(conf, wg, nil, nil, exitFatal)
+	err = httpserver.Serve(conf, nil, nil, exitFatal)
 	if err != nil {
 		return err
 	}

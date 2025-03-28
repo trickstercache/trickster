@@ -18,7 +18,6 @@ package signal
 
 import (
 	"net/http/httptest"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -28,7 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
-func mockServe(oldConf *config.Config, wg *sync.WaitGroup, logger logging.Logger,
+func mockServe(oldConf *config.Config, logger logging.Logger,
 	oldCaches map[string]cache.Cache, errorFunc func()) error {
 	return nil
 }
@@ -40,16 +39,16 @@ func TestStartHupMonitor(t *testing.T) {
 	w := httptest.NewRecorder()
 	logger := logging.StreamLogger(w, "WARN")
 
-	StartHupMonitor(nil, nil, nil, nil, mockServe)
+	StartHupMonitor(nil, nil, nil, mockServe)
 
 	qch := make(chan bool)
 	conf := config.NewConfig()
 	conf.Resources = &config.Resources{QuitChan: qch}
-	StartHupMonitor(conf, nil, logger, nil, mockServe)
+	StartHupMonitor(conf, logger, nil, mockServe)
 	time.Sleep(time.Millisecond * 100)
 	qch <- true
 
-	StartHupMonitor(conf, nil, logger, nil, mockServe)
+	StartHupMonitor(conf, logger, nil, mockServe)
 	time.Sleep(time.Millisecond * 100)
 	hups <- syscall.SIGHUP
 	time.Sleep(time.Millisecond * 100)
@@ -62,7 +61,7 @@ func TestStartHupMonitor(t *testing.T) {
 	now := time.Unix(1577836800, 0)
 	nowMinus1m := time.Now().Add(-1 * time.Minute)
 	conf.Main.SetStalenessInfo("../../testdata/test.empty.conf", now, nowMinus1m)
-	StartHupMonitor(conf, nil, logger, nil, mockServe)
+	StartHupMonitor(conf, logger, nil, mockServe)
 	time.Sleep(time.Millisecond * 100)
 	hups <- syscall.SIGHUP
 	time.Sleep(time.Millisecond * 100)

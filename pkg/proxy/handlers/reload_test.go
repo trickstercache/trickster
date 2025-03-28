@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
@@ -32,7 +31,7 @@ import (
 
 func TestReloadHandleFunc(t *testing.T) {
 
-	var emptyFunc = func(*config.Config, *sync.WaitGroup, logging.Logger,
+	var emptyFunc = func(*config.Config, logging.Logger,
 		map[string]cache.Cache, func()) error {
 		return nil
 	}
@@ -55,7 +54,7 @@ func TestReloadHandleFunc(t *testing.T) {
 	w := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "/", nil)
 
-	f := ReloadHandleFunc(emptyFunc, cfg, nil, log, nil)
+	f := ReloadHandleFunc(emptyFunc, cfg, log, nil)
 	f(w, r)
 	os.Remove(testFile)
 	time.Sleep(time.Millisecond * 500)

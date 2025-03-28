@@ -23,7 +23,6 @@ import (
 	"os"
 	goruntime "runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
@@ -50,7 +49,7 @@ var hc healthcheck.HealthChecker
 
 var _ signal.ServeFunc = Serve
 
-func Serve(conf *config.Config, wg *sync.WaitGroup, logger logging.Logger,
+func Serve(conf *config.Config, logger logging.Logger,
 	oldCaches map[string]cache.Cache, errorFunc func()) error {
 
 	metrics.BuildInfo.WithLabelValues(goruntime.Version(),
@@ -74,11 +73,11 @@ func Serve(conf *config.Config, wg *sync.WaitGroup, logger logging.Logger,
 		return nil
 	}
 
-	return applyConfig(conf, nil, wg, logger, oldCaches, errorFunc)
+	return applyConfig(conf, nil, logger, oldCaches, errorFunc)
 
 }
 
-func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger logging.Logger,
+func applyConfig(conf, oldConf *config.Config, logger logging.Logger,
 	oldCaches map[string]cache.Cache, errorFunc func()) error {
 
 	if conf == nil {
@@ -118,7 +117,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger loggin
 		http.HandlerFunc((handlers.PingHandleFunc(conf))))
 
 	var caches = applyCachingConfig(conf, oldConf, logger, oldCaches)
-	rh := handlers.ReloadHandleFunc(Serve, conf, wg, logger, caches)
+	rh := handlers.ReloadHandleFunc(Serve, conf, logger, caches)
 
 	o, err := routing.RegisterProxyRoutes(conf, r, mr, caches, tracers, logger, false)
 	if err != nil {
@@ -145,7 +144,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger loggin
 	routing.RegisterDefaultBackendRoutes(r, o, logger, tracers)
 	routing.RegisterHealthHandler(mr, conf.Main.HealthHandlerPath, hc)
 	applyListenerConfigs(conf, oldConf, r, http.HandlerFunc(rh), mr, logger,
-		tracers, o, wg, errorFunc)
+		tracers, o, errorFunc)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
@@ -153,7 +152,7 @@ func applyConfig(conf, oldConf *config.Config, wg *sync.WaitGroup, logger loggin
 	if oldConf != nil && oldConf.Resources != nil {
 		oldConf.Resources.QuitChan <- true // this signals the old hup monitor goroutine to exit
 	}
-	signal.StartHupMonitor(conf, wg, logger, caches, Serve)
+	signal.StartHupMonitor(conf, logger, caches, Serve)
 
 	return nil
 }
