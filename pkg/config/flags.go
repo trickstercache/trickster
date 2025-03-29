@@ -47,7 +47,7 @@ type Flags struct {
 	LogLevel          string
 }
 
-func parseFlags(applicationName string, arguments []string) (*Flags, error) {
+func parseFlags(arguments []string) (*Flags, error) {
 
 	flags := &Flags{}
 	flagSet := flag.NewFlagSet("trickster", flag.ContinueOnError)

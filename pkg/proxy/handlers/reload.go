@@ -21,37 +21,22 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
-	"github.com/trickstercache/trickster/v2/pkg/config/reload"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/server/reload"
 )
 
 // ReloadHandleFunc will reload the running configuration if it has changed
-func ReloadHandleFunc(f reload.ReloaderFunc, conf *config.Config,
-	caches map[string]cache.Cache) func(http.ResponseWriter,
-	*http.Request) {
+func ReloadHandleFunc(conf *config.Config,
+	caches map[string]cache.Cache) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if conf != nil {
-			conf.Main.ReloaderLock.Lock()
-			defer conf.Main.ReloaderLock.Unlock()
-			if conf.IsStale() {
-				logger.Warn(
-					"configuration reload starting now",
-					logging.Pairs{"source": "reloadEndpoint"})
-				err := f(conf, caches, nil)
-				if err == nil {
-					w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
-					w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
-					w.WriteHeader(http.StatusOK)
-					w.Write([]byte("configuration reloaded"))
-					return
-				}
-			}
-		}
+		didReload, _ := reload.RequestReload(nil)
 		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 		w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("configuration NOT reloaded"))
+		if didReload {
+			w.Write([]byte(config.ConfigReloadedText))
+		} else {
+			w.Write([]byte(config.ConfigNotReloadedText))
+		}
 	}
 }

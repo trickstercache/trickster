@@ -38,7 +38,7 @@ func TestConfiguration(t *testing.T) {
 
 func TestCache(t *testing.T) {
 
-	conf, err := config.Load("trickster", "test", []string{"-provider", "influxdb", "-origin-url", "http://1"})
+	conf, err := config.Load([]string{"-provider", "influxdb", "-origin-url", "http://1"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

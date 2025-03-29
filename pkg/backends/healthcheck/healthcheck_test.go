@@ -88,6 +88,7 @@ func TestRegister(t *testing.T) {
 func TestUnregister(t *testing.T) {
 	logger.SetLogger(testLogger)
 	hc := New().(*healthChecker)
+	logger.SetLogger(testLogger)
 	o := ho.New()
 	o.IntervalMS = 500
 	_, err := hc.Register("test", "test", o, http.DefaultClient)

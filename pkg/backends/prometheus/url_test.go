@@ -40,8 +40,8 @@ func TestSetExtent(t *testing.T) {
 
 	expected := "end=" + endSecs + "&q=up&start=" + startSecs
 
-	conf, err := config.Load("trickster", "test",
-		[]string{"-origin-url", "none:9090", "-provider", "prometheus", "-log-level", "debug"})
+	conf, err := config.Load([]string{"-origin-url", "none:9090", "-provider",
+		"prometheus", "-log-level", "debug"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -82,8 +82,8 @@ func TestFastForwardURL(t *testing.T) {
 
 	expected := "q=up"
 
-	conf, err := config.Load("trickster", "test",
-		[]string{"-origin-url", "none:9090", "-provider", "prometheus", "-log-level", "debug"})
+	conf, err := config.Load([]string{"-origin-url", "none:9090", "-provider",
+		"prometheus", "-log-level", "debug"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

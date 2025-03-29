@@ -16,12 +16,3 @@
 
 // Package reload helps with reloading the running Trickster configuration
 package reload
-
-import (
-	"github.com/trickstercache/trickster/v2/pkg/cache"
-	"github.com/trickstercache/trickster/v2/pkg/config"
-)
-
-// ReloaderFunc describes a function that loads and applies a Trickster config at startup,
-// or gracefully over an existing running Config
-type ReloaderFunc func(*config.Config, map[string]cache.Cache, func()) error

@@ -31,7 +31,7 @@ func TestLoadEnvVars(t *testing.T) {
 	os.Setenv(evLogLevel, "info")
 
 	a := []string{}
-	conf, err := Load("trickster-test", "0", a)
+	conf, err := Load(a)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -45,6 +45,8 @@ type Cache interface {
 	SetLocker(locks.NamedLocker)
 }
 
+type CacheLookup map[string]Cache
+
 // MemoryCache is the interface for an in-memory cache
 // This offers an additional method for storing references to bypass serialization
 type MemoryCache interface {

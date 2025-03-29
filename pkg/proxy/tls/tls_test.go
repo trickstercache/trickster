@@ -31,6 +31,7 @@ func TestDefaultTLSConfig(t *testing.T) {
 	dc := options.New()
 	if dc == nil {
 		t.Errorf("expected config named %s", "default")
+		return
 	}
 
 	if dc.FullChainCertPath != "" {
@@ -152,6 +153,9 @@ func TestProcessTLSConfigs(t *testing.T) {
 	}
 
 	b, err := os.ReadFile("../../../testdata/test.full.tls.conf")
+	if err != nil {
+		t.Error(err)
+	}
 	b = []byte(strings.ReplaceAll(string(b), "../../../testdata/test.", td+"/"))
 
 	err = os.WriteFile(confFile, b, 0600)
@@ -160,7 +164,7 @@ func TestProcessTLSConfigs(t *testing.T) {
 	}
 
 	a := []string{"-config", confFile}
-	_, err = config.Load("trickster-test", "0", a)
+	_, err = config.Load(a)
 	if err != nil {
 		t.Error(err)
 	}

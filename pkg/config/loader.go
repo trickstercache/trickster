@@ -28,7 +28,7 @@ import (
 
 // Load returns the Application Configuration, starting with a default config,
 // then overriding with any provided config file, then env vars, and finally flags
-func Load(applicationName string, applicationVersion string, args []string) (*Config, error) {
+func Load(args []string) (*Config, error) {
 	// this sanitizes the args from -test flags, which can cause issues with unit tests relying on cli args
 	sargs := make([]string, 0, len(args))
 	for _, v := range args {
@@ -38,7 +38,7 @@ func Load(applicationName string, applicationVersion string, args []string) (*Co
 	}
 
 	c := NewConfig()
-	flags, err := parseFlags(applicationName, sargs) // Parse here to get config file path and version flags
+	flags, err := parseFlags(sargs) // Parse here to get config file path and version flags
 	if err != nil {
 		return nil, err
 	}

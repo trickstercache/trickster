@@ -101,9 +101,6 @@ type MainConfig struct {
 	// defaults to os.Hostname
 	ServerName string `yaml:"server_name,omitempty"`
 
-	// ReloaderLock is used to lock the config for reloading
-	ReloaderLock sync.Mutex `yaml:"-"`
-
 	configFilePath      string
 	configLastModified  time.Time
 	configRateLimitTime time.Time

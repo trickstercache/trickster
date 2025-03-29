@@ -115,7 +115,7 @@ func NewTestInstance(
 		args = append(args, []string{"-config", configFile}...)
 	}
 
-	conf, err := config.Load("trickster", "test", args)
+	conf, err := config.Load(args)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("could not load configuration: %s", err.Error())
 	}
@@ -140,7 +140,6 @@ func NewTestInstance(
 	var tracer *tracing.Tracer
 
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-
 	if o.TracingConfigName != "" {
 		if tc, ok := conf.TracingConfigs[o.TracingConfigName]; ok {
 			tracer, _ = tr.GetTracer(tc, true)
@@ -188,6 +187,7 @@ func NewTestPathConfig(
 
 // NewTestTracer returns a standard out tracer for testing purposes
 func NewTestTracer() *tracing.Tracer {
+	logger.SetLogger(logging.ConsoleLogger(level.Warn))
 	tc := to.New()
 	tc.Name = "test"
 	tc.Provider = "stdout"

@@ -47,7 +47,6 @@ func TestCheckCacheFreshness(t *testing.T) {
 
 func TestParseRequestRanges(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	r.Header.Set(headers.NameRange, "bytes=0-10")
 
@@ -127,8 +126,8 @@ func TestWriteResponseBody(t *testing.T) {
 func TestDetermineCacheability(t *testing.T) {
 	logger.SetLogger(testLogger)
 
-	conf, err := config.Load("trickster", "test",
-		[]string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider",
+		"test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}

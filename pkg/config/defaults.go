@@ -31,3 +31,6 @@ const (
 	// DefaultPprofServerName defines the default Pprof Server Name
 	DefaultPprofServerName = "both"
 )
+
+const ConfigNotReloadedText = "configuration NOT reloaded"
+const ConfigReloadedText = "configuration reloaded"
