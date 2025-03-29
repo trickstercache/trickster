@@ -2,10 +2,12 @@
 # https://github.com/trickstercache/trickster-docker-images/
 
 FROM golang:1.24 as builder
+ARG GIT_LATEST_COMMIT_ID
+
 COPY . /go/src/github.com/trickstercache/trickster
 WORKDIR /go/src/github.com/trickstercache/trickster
 
-RUN GOOS=linux CGO_ENABLED=0 make build
+RUN GOOS=linux CGO_ENABLED=0 BUILD_FLAGS=-v make build
 
 FROM alpine as final
 LABEL maintainer "The Trickster Authors <trickster-developers@googlegroups.com>"

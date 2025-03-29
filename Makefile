@@ -21,7 +21,7 @@ TRICKSTER_MAIN := cmd/trickster
 TRICKSTER      := $(FIRST_GOPATH)/bin/trickster
 PROGVER        := $(shell grep 'applicationVersion = ' $(TRICKSTER_MAIN)/main.go | awk '{print $$3}' | sed -e 's/\"//g')
 BUILD_TIME     := $(shell date -u +%FT%T%z)
-GIT_LATEST_COMMIT_ID     := $(shell git rev-parse HEAD)
+GIT_LATEST_COMMIT_ID     ?= $(shell git rev-parse HEAD)
 IMAGE_TAG      ?= latest
 IMAGE_ARCH     ?= amd64
 GOARCH         ?= amd64
@@ -52,9 +52,10 @@ go-mod-tidy:
 test-go-mod:
 	@git diff --quiet --exit-code go.mod go.sum || echo "There are changes to go.mod and go.sum which needs to be committed"
 
+BUILD_FLAGS ?= -a -v
 .PHONY: build
 build: go-mod-tidy go-mod-vendor
-	CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o ./$(BUILD_SUBDIR)/trickster -a -v $(TRICKSTER_MAIN)/*.go
+	CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o ./$(BUILD_SUBDIR)/trickster $(BUILD_FLAGS) $(TRICKSTER_MAIN)/*.go
 
 rpm: build
 	mkdir -p ./$(BUILD_SUBDIR)/SOURCES
@@ -132,7 +133,15 @@ kube-local:
 DOCKER_TARGET ?= final
 .PHONY: docker
 docker:
-	docker build --build-arg IMAGE_ARCH=$(IMAGE_ARCH) --target $(DOCKER_TARGET) --build-arg GOARCH=$(GOARCH) -f ./Dockerfile -t trickster:$(PROGVER) .
+	docker build \
+		--progress=plain \
+		--build-arg IMAGE_ARCH=$(IMAGE_ARCH) \
+		--build-arg GIT_LATEST_COMMIT_ID=$(GIT_LATEST_COMMIT_ID) \
+		--target $(DOCKER_TARGET) \
+		--build-arg GOARCH=$(GOARCH) \
+		-f ./Dockerfile \
+		-t trickster:$(PROGVER) \
+		.
 
 .PHONY: docker-release
 docker-release:
