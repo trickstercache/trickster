@@ -43,9 +43,10 @@ jobs:
             --label "org.opencontainers.image.created=${{ steps.builddate.outputs.builddate }}" \
             --platform linux/arm64/v8,linux/amd64 \
             -f ./Dockerfile \
-            --push ${{ github.repository == 'trickstercache/trickster' && format('-t {0}:${branch} -t {0}:{1}', env.DOCKER_IO, github.sha) || '' }} \
-            -t ghcr.io/${{ github.repository_owner }}/trickster:${branch} \
-            -t ghcr.io/${{ github.repository_owner }}/trickster:${{ github.sha }} \
+            --push ${{ github.repository == 'trickstercache/trickster' && format('-t {0}:${branch} -t {0}:{1}', env.DOCKER_HUB_REPO, github.sha) || '' }} \
+            -t ${{ env.GHCR_REPO }}:${branch} \
+            -t ${{ env.GHCR_REPO }}:${{ github.sha }} \
             .
         env:
-          DOCKER_IO: trickstercache/trickster
+          DOCKER_HUB_REPO: trickstercache/trickster
+          GHCR_REPO: ghcr.io/${{ github.repository_owner }}/trickster
