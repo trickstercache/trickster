@@ -19,7 +19,6 @@ package signal
 import (
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
@@ -34,11 +33,10 @@ func init() {
 	signal.Notify(hups, syscall.SIGHUP)
 }
 
-type ServeFunc = func(*config.Config, *sync.WaitGroup,
-	map[string]cache.Cache, []string, func()) error
+type ServeFunc = func(*config.Config, map[string]cache.Cache, func()) error
 
-func StartHupMonitor(conf *config.Config, wg *sync.WaitGroup,
-	caches map[string]cache.Cache, args []string, f ServeFunc) {
+func StartHupMonitor(conf *config.Config,
+	caches map[string]cache.Cache, f ServeFunc) {
 	if conf == nil || conf.Resources == nil || f == nil {
 		return
 	}
@@ -51,7 +49,7 @@ func StartHupMonitor(conf *config.Config, wg *sync.WaitGroup,
 				if conf.IsStale() {
 					logger.Warn("configuration reload starting now",
 						logging.Pairs{"source": "sighup"})
-					err := f(conf, wg, caches, args, nil)
+					err := f(conf, caches, nil)
 					if err == nil {
 						conf.Main.ReloaderLock.Unlock()
 						return // runConfig will start a new HupMonitor in place of this one

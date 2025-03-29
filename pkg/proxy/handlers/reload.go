@@ -29,7 +29,7 @@ import (
 
 // ReloadHandleFunc will reload the running configuration if it has changed
 func ReloadHandleFunc(f reload.ReloaderFunc, conf *config.Config,
-	caches map[string]cache.Cache, args []string) func(http.ResponseWriter,
+	caches map[string]cache.Cache) func(http.ResponseWriter,
 	*http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if conf != nil {
@@ -39,7 +39,7 @@ func ReloadHandleFunc(f reload.ReloaderFunc, conf *config.Config,
 				logger.Warn(
 					"configuration reload starting now",
 					logging.Pairs{"source": "reloadEndpoint"})
-				err := f(conf, caches, args, nil)
+				err := f(conf, caches, nil)
 				if err == nil {
 					w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 					w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)

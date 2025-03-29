@@ -23,7 +23,6 @@ import (
 	"os"
 	goruntime "runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
@@ -51,7 +50,7 @@ var hc healthcheck.HealthChecker
 
 var _ signal.ServeFunc = Serve
 
-func Serve(oldConf *config.Config, wg *sync.WaitGroup,
+func Serve(conf *config.Config,
 	oldCaches map[string]cache.Cache, args []string, errorFunc func()) error {
 
 	metrics.BuildInfo.WithLabelValues(goruntime.Version(),
@@ -118,8 +117,8 @@ func applyConfig(conf, oldConf *config.Config,
 		[]string{http.MethodGet, http.MethodHead}, false,
 		http.HandlerFunc((handlers.PingHandleFunc(conf))))
 
-	var caches = applyCachingConfig(conf, oldConf, logger, oldCaches)
-	rh := handlers.ReloadHandleFunc(Serve, conf, logger, caches)
+	var caches = applyCachingConfig(conf, oldConf, oldCaches)
+	rh := handlers.ReloadHandleFunc(Serve, conf, caches)
 
 	o, err := routing.RegisterProxyRoutes(conf, r, mr, caches, tracers, false)
 	if err != nil {
@@ -153,7 +152,7 @@ func applyConfig(conf, oldConf *config.Config,
 	if oldConf != nil && oldConf.Resources != nil {
 		oldConf.Resources.QuitChan <- true // this signals the old hup monitor goroutine to exit
 	}
-	signal.StartHupMonitor(conf, wg, caches, args, Serve)
+	signal.StartHupMonitor(conf, caches, Serve)
 
 	return nil
 }
