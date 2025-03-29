@@ -1,4 +1,4 @@
-//go:build !race
+//go:build race
 
 /*
  * Copyright 2018 The Trickster Authors
@@ -24,18 +24,25 @@
 package logger
 
 import (
+	"sync"
+
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 )
 
 var logger logging.Logger = logging.ConsoleLogger(level.Info)
+var mtx sync.Mutex
 
 func Logger() logging.Logger {
+	mtx.Lock()
+	defer mtx.Unlock()
 	return logger
 }
 
 // SetLogger sets the package-level logger object
 func SetLogger(l logging.Logger) {
+	mtx.Lock()
+	defer mtx.Unlock()
 	if l == nil {
 		return
 	}
@@ -43,96 +50,144 @@ func SetLogger(l logging.Logger) {
 }
 
 func SetLogLevel(logLevel level.Level) {
+	mtx.Lock()
+	defer mtx.Unlock()
 	logger.SetLogLevel(logLevel)
 }
 
 func SetLogAsynchronous(asyncEnabled bool) {
+	mtx.Lock()
+	defer mtx.Unlock()
 	logger.SetLogAsynchronous(asyncEnabled)
 }
 
 func Level() level.Level {
+	mtx.Lock()
+	defer mtx.Unlock()
 	return logger.Level()
 }
 
 func Log(logLevel level.Level, event string, detail logging.Pairs) {
+	mtx.Lock()
+	defer mtx.Unlock()
 	logger.Log(logLevel, event, detail)
 }
 
 func Debug(event string, detail logging.Pairs) {
+	mtx.Lock()
+	defer mtx.Unlock()
 	logger.Debug(event, detail)
 }
 
 func Info(event string, detail logging.Pairs) {
+	mtx.Lock()
+	defer mtx.Unlock()
 	logger.Info(event, detail)
 }
 
 func Warn(event string, detail logging.Pairs) {
+	mtx.Lock()
+	defer mtx.Unlock()
 	logger.Warn(event, detail)
 }
 
 func Error(event string, detail logging.Pairs) {
+	mtx.Lock()
+	defer mtx.Unlock()
 	logger.Error(event, detail)
 }
 
 func Fatal(code int, event string, detail logging.Pairs) {
+	mtx.Lock()
+	defer mtx.Unlock()
 	logger.Fatal(code, event, detail)
 }
 
 func LogSynchronous(logLevel level.Level, event string, detail logging.Pairs) {
+	mtx.Lock()
+	defer mtx.Unlock()
 	logger.LogSynchronous(logLevel, event, detail)
 }
 
 func DebugSynchronous(event string, detail logging.Pairs) {
+	mtx.Lock()
+	defer mtx.Unlock()
 	logger.DebugSynchronous(event, detail)
 }
 
 func InfoSynchronous(event string, detail logging.Pairs) {
+	mtx.Lock()
+	defer mtx.Unlock()
 	logger.InfoSynchronous(event, detail)
 }
 
 func WarnSynchronous(event string, detail logging.Pairs) {
+	mtx.Lock()
+	defer mtx.Unlock()
 	logger.WarnSynchronous(event, detail)
 }
 
 func ErrorSynchronous(event string, detail logging.Pairs) {
+	mtx.Lock()
+	defer mtx.Unlock()
 	logger.ErrorSynchronous(event, detail)
 }
 
 func LogOnce(logLevel level.Level, key, event string, detail logging.Pairs) bool {
+	mtx.Lock()
+	defer mtx.Unlock()
 	return logger.LogOnce(logLevel, key, event, detail)
 }
 
 func DebugOnce(key, event string, detail logging.Pairs) bool {
+	mtx.Lock()
+	defer mtx.Unlock()
 	return logger.DebugOnce(key, event, detail)
 }
 
 func InfoOnce(key, event string, detail logging.Pairs) bool {
+	mtx.Lock()
+	defer mtx.Unlock()
 	return logger.InfoOnce(key, event, detail)
 }
 
 func WarnOnce(key, event string, detail logging.Pairs) bool {
+	mtx.Lock()
+	defer mtx.Unlock()
 	return logger.WarnOnce(key, event, detail)
 }
 func ErrorOnce(key, event string, detail logging.Pairs) bool {
+	mtx.Lock()
+	defer mtx.Unlock()
 	return logger.ErrorOnce(key, event, detail)
 }
 
 func HasDebuggedOnce(key string) bool {
+	mtx.Lock()
+	defer mtx.Unlock()
 	return logger.HasDebuggedOnce(key)
 }
 
 func HasInfoedOnce(key string) bool {
+	mtx.Lock()
+	defer mtx.Unlock()
 	return logger.HasInfoedOnce(key)
 }
 
 func HasWarnedOnce(key string) bool {
+	mtx.Lock()
+	defer mtx.Unlock()
 	return logger.HasWarnedOnce(key)
 }
 
 func HasErroredOnce(key string) bool {
+	mtx.Lock()
+	defer mtx.Unlock()
 	return logger.HasErroredOnce(key)
 }
 
 func HasLoggedOnce(logLevel level.Level, key string) bool {
+	mtx.Lock()
+	defer mtx.Unlock()
 	return logger.HasLoggedOnce(logLevel, key)
 }
