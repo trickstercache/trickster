@@ -34,7 +34,8 @@ jobs:
     steps:
       - name: Get Build Date
         id: builddate
-        run: echo "::set-output name=builddate::$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        run: |
+          echo "builddate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" | tee $GITHUB_OUTPUT
       - uses: actions/checkout@v4
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -46,7 +47,7 @@ jobs:
             --label "org.opencontainers.image.revision=${{ github.sha }}" \
             --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
             --label "org.opencontainers.image.created=${{ steps.builddate.outputs.builddate }}" \
-            --platform linux/arm64/v8,linux/amd64 \
+            --platform linux/amd64 \
             -f ./Dockerfile  .
   build:
     runs-on: ubuntu-latest
@@ -86,7 +87,12 @@ jobs:
       - run: sed -i -e '/^.*_gen\.go:.*$/d' .coverprofile
       - run: go build -o /dev/null ./cmd/trickster
       - name: Send coverage
+        if: github.repository_owner == 'trickstercache' # Skip for forked repositories
         uses: shogo82148/actions-goveralls@v1
+        # publishing to coveralls should not fail; and if it does, it should not block the CI process.
+        # Likely coveralls maintenance: https://status.coveralls.io/
+        # TODO: publish PR comment if coveralls publish fails
+        continue-on-error: true
         with:
           path-to-profile: .coverprofile
           flag-name: Go-${{ matrix.go }}
@@ -97,5 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: shogo82148/actions-goveralls@v1
+        if: github.repository_owner == 'trickstercache' # Skip for forked repositories
+        continue-on-error: true
         with:
           parallel-finished: true
