@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
@@ -204,7 +205,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	resp, err := o.HTTPClient.Do(r)
 	if err != nil {
-		rsc.Logger.Error("error downloading url",
+		logger.Error("error downloading url",
 			logging.Pairs{"url": r.URL.String(), "detail": err.Error()})
 		// if there is an err and the response is nil, the server could not be reached
 		// so make a 502 for the downstream response
@@ -252,7 +253,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		d, err := http.ParseTime(date)
 		if err == nil {
 			if offset := time.Since(d); time.Duration(math.Abs(float64(offset))) > time.Minute {
-				rsc.Logger.WarnOnce("clockoffset."+o.Name,
+				logger.WarnOnce("clockoffset."+o.Name,
 					ClockOffsetWarning,
 					logging.Pairs{
 						"backendName":   o.Name,

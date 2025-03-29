@@ -27,6 +27,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
 const provider = "memory"
@@ -42,8 +44,9 @@ func (r *testReferenceObject) Size() int {
 }
 
 func storeBenchmark(b *testing.B) *Cache {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := co.Options{Provider: provider, Index: &io.Options{ReapInterval: 0}}
-	mc := &Cache{Config: &cacheConfig, Logger: logging.ConsoleLogger("error"), locker: testLocker}
+	mc := &Cache{Config: &cacheConfig, locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {
@@ -64,8 +67,9 @@ func newCacheConfig(t *testing.T) co.Options {
 }
 
 func TestConfiguration(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: logging.ConsoleLogger("error")}
+	mc := Cache{Config: &cacheConfig}
 	cfg := mc.Configuration()
 	if cfg.Provider != provider {
 		t.Fatalf("expected %s got %s", provider, cfg.Provider)
@@ -73,9 +77,9 @@ func TestConfiguration(t *testing.T) {
 }
 
 func TestCache_Connect(t *testing.T) {
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: logging.ConsoleLogger("error")}
+	mc := Cache{Config: &cacheConfig}
 
 	// it should connect
 	err := mc.Connect()
@@ -85,9 +89,9 @@ func TestCache_Connect(t *testing.T) {
 }
 
 func TestCache_StoreReferenceDirect(t *testing.T) {
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: logging.ConsoleLogger("error"), locker: testLocker}
+	mc := Cache{Config: &cacheConfig, locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {
@@ -103,14 +107,15 @@ func TestCache_StoreReferenceDirect(t *testing.T) {
 
 	_, _, err = mc.RetrieveReference("test2", true)
 	if err == nil {
-		t.Errorf("expected nil got %s", err.Error())
+		t.Errorf("expected non-nil error")
 	}
 
 }
 
 func TestCache_StoreReference(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: logging.ConsoleLogger("error"), locker: testLocker}
+	mc := Cache{Config: &cacheConfig, locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {
@@ -124,8 +129,9 @@ func TestCache_StoreReference(t *testing.T) {
 }
 
 func TestCache_Store(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: logging.ConsoleLogger("error"), locker: testLocker}
+	mc := Cache{Config: &cacheConfig, locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {
@@ -143,9 +149,9 @@ func BenchmarkCache_Store(b *testing.B) {
 }
 
 func TestCache_Retrieve(t *testing.T) {
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: logging.ConsoleLogger("error"), locker: testLocker}
+	mc := Cache{Config: &cacheConfig, locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {
@@ -232,14 +238,16 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 }
 
 func TestCache_Close(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: logging.ConsoleLogger("error")}
+	mc := Cache{Config: &cacheConfig}
 	mc.Close()
 }
 
 func TestCache_Remove(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: logging.ConsoleLogger("error"), locker: testLocker}
+	mc := Cache{Config: &cacheConfig, locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {
@@ -316,8 +324,9 @@ func BenchmarkCache_Remove(b *testing.B) {
 }
 
 func TestCache_BulkRemove(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: logging.ConsoleLogger("error"), locker: testLocker}
+	mc := Cache{Config: &cacheConfig, locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {
@@ -379,9 +388,9 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 }
 
 func TestMemoryCache_SetTTL(t *testing.T) {
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig(t)
-	mc := Cache{Config: &cacheConfig, Logger: logging.ConsoleLogger("error"), locker: testLocker}
+	mc := Cache{Config: &cacheConfig, locker: testLocker}
 
 	err := mc.Connect()
 	if err != nil {

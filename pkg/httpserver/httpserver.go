@@ -23,6 +23,7 @@ import (
 	"os"
 	goruntime "runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
@@ -38,6 +39,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/httpserver/signal"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registration"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
@@ -49,8 +51,8 @@ var hc healthcheck.HealthChecker
 
 var _ signal.ServeFunc = Serve
 
-func Serve(conf *config.Config, logger logging.Logger,
-	oldCaches map[string]cache.Cache, errorFunc func()) error {
+func Serve(oldConf *config.Config, wg *sync.WaitGroup,
+	oldCaches map[string]cache.Cache, args []string, errorFunc func()) error {
 
 	metrics.BuildInfo.WithLabelValues(goruntime.Version(),
 		appinfo.GitCommitID, appinfo.Version).Set(1)
@@ -66,18 +68,18 @@ func Serve(conf *config.Config, logger logging.Logger,
 	err = validateConfig(conf)
 	if err != nil {
 		handleStartupIssue("ERROR: Could not load configuration: "+err.Error(),
-			nil, nil, errorFunc)
+			nil, errorFunc)
 	}
 	if conf.Flags != nil && conf.Flags.ValidateConfig {
 		fmt.Println("Trickster configuration validation succeeded.")
 		return nil
 	}
 
-	return applyConfig(conf, nil, logger, oldCaches, errorFunc)
+	return applyConfig(conf, nil, oldCaches, errorFunc)
 
 }
 
-func applyConfig(conf, oldConf *config.Config, logger logging.Logger,
+func applyConfig(conf, oldConf *config.Config,
 	oldCaches map[string]cache.Cache, errorFunc func()) error {
 
 	if conf == nil {
@@ -93,17 +95,17 @@ func applyConfig(conf, oldConf *config.Config, logger logging.Logger,
 		conf.ReloadConfig = ro.New()
 	}
 
-	logger = applyLoggingConfig(conf, oldConf, logger)
+	applyLoggingConfig(conf, oldConf)
 
 	for _, w := range conf.LoaderWarnings {
 		logger.Warn(w, nil)
 	}
 
 	//Register Tracing Configurations
-	tracers, err := tr.RegisterAll(conf, logger, false)
+	tracers, err := tr.RegisterAll(conf, false)
 	if err != nil {
-		handleStartupIssue("tracing registration failed", logging.Pairs{"detail": err.Error()},
-			logger, errorFunc)
+		handleStartupIssue("tracing registration failed",
+			logging.Pairs{"detail": err.Error()}, errorFunc)
 		return err
 	}
 
@@ -119,10 +121,10 @@ func applyConfig(conf, oldConf *config.Config, logger logging.Logger,
 	var caches = applyCachingConfig(conf, oldConf, logger, oldCaches)
 	rh := handlers.ReloadHandleFunc(Serve, conf, logger, caches)
 
-	o, err := routing.RegisterProxyRoutes(conf, r, mr, caches, tracers, logger, false)
+	o, err := routing.RegisterProxyRoutes(conf, r, mr, caches, tracers, false)
 	if err != nil {
-		handleStartupIssue("route registration failed", logging.Pairs{"detail": err.Error()},
-			logger, errorFunc)
+		handleStartupIssue("route registration failed",
+			logging.Pairs{"detail": err.Error()}, errorFunc)
 		return err
 	}
 
@@ -136,15 +138,14 @@ func applyConfig(conf, oldConf *config.Config, logger logging.Logger,
 	if hc != nil {
 		hc.Shutdown()
 	}
-	hc, err = o.StartHealthChecks(logger)
+	hc, err = o.StartHealthChecks()
 	if err != nil {
 		return err
 	}
 	alb.StartALBPools(o, hc.Statuses())
-	routing.RegisterDefaultBackendRoutes(r, o, logger, tracers)
+	routing.RegisterDefaultBackendRoutes(r, o, tracers)
 	routing.RegisterHealthHandler(mr, conf.Main.HealthHandlerPath, hc)
-	applyListenerConfigs(conf, oldConf, r, http.HandlerFunc(rh), mr, logger,
-		tracers, o, errorFunc)
+	applyListenerConfigs(conf, oldConf, r, http.HandlerFunc(rh), mr, tracers, o, wg, errorFunc)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
@@ -152,48 +153,41 @@ func applyConfig(conf, oldConf *config.Config, logger logging.Logger,
 	if oldConf != nil && oldConf.Resources != nil {
 		oldConf.Resources.QuitChan <- true // this signals the old hup monitor goroutine to exit
 	}
-	signal.StartHupMonitor(conf, logger, caches, Serve)
+	signal.StartHupMonitor(conf, wg, caches, args, Serve)
 
 	return nil
 }
 
-func applyLoggingConfig(c, o *config.Config, oldLog logging.Logger) logging.Logger {
-
+func applyLoggingConfig(c, o *config.Config) {
 	if c == nil || c.Logging == nil {
-		return oldLog
+		return
 	}
-
 	if c.ReloadConfig == nil {
 		c.ReloadConfig = ro.New()
 	}
-
 	if o != nil && o.Logging != nil {
 		if c.Logging.LogFile == o.Logging.LogFile &&
 			c.Logging.LogLevel == o.Logging.LogLevel {
-			// no changes in logging config,
-			// so we keep the old logger intact
-			return oldLog
+			// no changes in logging config, keep the old logger intact
+			return
 		}
 		if c.Logging.LogFile != o.Logging.LogFile {
 			if o.Logging.LogFile != "" {
 				// if we're changing from file1 -> console or file1 -> file2, close file1 handle
 				// the extra 1s allows HTTP listeners to close first and finish their log writes
-				go delayedLogCloser(oldLog,
+				go delayedLogCloser(logger.Logger(),
 					time.Duration(c.ReloadConfig.DrainTimeoutMS+1000)*time.Millisecond)
 			}
-			return initLogger(c)
-		}
-		if c.Logging.LogLevel != o.Logging.LogLevel {
+		} else if c.Logging.LogLevel != o.Logging.LogLevel {
 			// the only change is the log level, so update it and return the original logger
-			oldLog.SetLogLevel(level.Level(c.Logging.LogLevel))
-			return oldLog
+			logger.SetLogLevel(level.Level(c.Logging.LogLevel))
+			return
 		}
 	}
-
-	return initLogger(c)
+	initLogger(c)
 }
 
-func applyCachingConfig(c, oc *config.Config, logger logging.Logger,
+func applyCachingConfig(c, oc *config.Config,
 	oldCaches map[string]cache.Cache) map[string]cache.Cache {
 
 	if c == nil {
@@ -204,7 +198,7 @@ func applyCachingConfig(c, oc *config.Config, logger logging.Logger,
 
 	if oc == nil || oldCaches == nil {
 		for k, v := range c.Caches {
-			caches[k] = registration.NewCache(k, v, logger)
+			caches[k] = registration.NewCache(k, v)
 		}
 		return caches
 	}
@@ -244,13 +238,14 @@ func applyCachingConfig(c, oc *config.Config, logger logging.Logger,
 		}
 
 		// the newly-named cache is not in the old config or couldn't be reused, so make it anew
-		caches[k] = registration.NewCache(k, v, logger)
+		caches[k] = registration.NewCache(k, v)
 	}
 	return caches
 }
 
-func initLogger(c *config.Config) logging.Logger {
-	logger := logging.New(c)
+func initLogger(c *config.Config) {
+	l := logging.New(c)
+	logger.SetLogger(l)
 	logger.Info("application loaded from configuration",
 		logging.Pairs{
 			"name":      appinfo.Name,
@@ -265,7 +260,6 @@ func initLogger(c *config.Config) logging.Logger {
 			"pid":       os.Getpid(),
 		},
 	)
-	return logger
 }
 
 func delayedLogCloser(logger logging.Logger, delay time.Duration) {
@@ -279,18 +273,15 @@ func delayedLogCloser(logger logging.Logger, delay time.Duration) {
 	logger.Close()
 }
 
-func handleStartupIssue(event string, detail logging.Pairs, logger logging.Logger, errorFunc func()) {
+func handleStartupIssue(event string, detail logging.Pairs, errorFunc func()) {
 	metrics.LastReloadSuccessful.Set(0)
 	if event != "" {
-		if logger != nil {
-			if errorFunc != nil {
-				logger.Error(event, detail)
-				errorFunc()
-			}
-			logger.Warn(event, detail)
-			return
+		if errorFunc != nil {
+			logger.Error(event, detail)
+			errorFunc()
 		}
-		fmt.Println(event)
+		logger.Warn(event, detail)
+		return
 	}
 	if errorFunc != nil {
 		errorFunc()
@@ -311,14 +302,13 @@ func validateConfig(conf *config.Config) error {
 	r := lm.NewRouter()
 	mr := lm.NewRouter()
 	mr.SetMatchingScheme(0) // metrics router is exact-match only
-	logger := logging.ConsoleLogger(level.Info)
 
-	tracers, err := tr.RegisterAll(conf, logger, true)
+	tracers, err := tr.RegisterAll(conf, true)
 	if err != nil {
 		return err
 	}
 
-	_, err = routing.RegisterProxyRoutes(conf, r, mr, caches, tracers, logger, true)
+	_, err = routing.RegisterProxyRoutes(conf, r, mr, caches, tracers, true)
 	if err != nil {
 		return err
 	}

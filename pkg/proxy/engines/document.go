@@ -27,6 +27,7 @@ import (
 	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	txe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
@@ -207,7 +208,7 @@ func (d *HTTPDocument) LoadRangeParts() {
 
 // ParsePartialContentBody parses a Partial Content response body into 0 or more discrete parts
 func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response,
-	body []byte, logger logging.Logger) {
+	body []byte) {
 
 	ct := resp.Header.Get(headers.NameContentType)
 	if cr := resp.Header.Get(headers.NameContentRange); cr != "" {

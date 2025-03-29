@@ -26,6 +26,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -37,7 +38,7 @@ import (
 var testLogger = logging.ConsoleLogger("warn")
 
 func TestDoProxy(t *testing.T) {
-
+	logger.SetLogger(testLogger)
 	es := tu.NewTestServer(http.StatusOK, "test", nil)
 	defer es.Close()
 
@@ -62,7 +63,7 @@ func TestDoProxy(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(o, pc, nil, nil, nil, tu.NewTestTracer(), testLogger)))
+		request.NewResources(o, pc, nil, nil, nil, tu.NewTestTracer())))
 
 	DoProxy(w, r, true)
 	resp := w.Result()
@@ -89,7 +90,7 @@ func TestDoProxy(t *testing.T) {
 }
 
 func TestProxyRequestBadGateway(t *testing.T) {
-
+	logger.SetLogger(testLogger)
 	const badUpstream = "http://127.0.0.1:64389"
 
 	// assume nothing listens on badUpstream, so this should force the proxy to generate a 502 Bad Gateway
@@ -111,7 +112,7 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", badUpstream, br)
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(o, pc, nil, nil, nil, tu.NewTestTracer(), testLogger)))
+		request.NewResources(o, pc, nil, nil, nil, tu.NewTestTracer())))
 
 	DoProxy(w, r, true)
 	resp := w.Result()
@@ -129,7 +130,6 @@ func TestProxyRequestBadGateway(t *testing.T) {
 }
 
 func TestClockOffsetWarning(t *testing.T) {
-
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add(headers.NameDate, time.Now().Add(-1*time.Hour).Format(http.TimeFormat))
 		w.WriteHeader(200)
@@ -141,7 +141,6 @@ func TestClockOffsetWarning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
-
 	o := conf.Backends["default"]
 	pc := &po.Options{
 		Path:            "/",
@@ -153,8 +152,8 @@ func TestClockOffsetWarning(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", s.URL, nil)
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(o, pc, nil, nil, nil, tu.NewTestTracer(),
-			testLogger)))
+		request.NewResources(o, pc, nil, nil, nil, tu.NewTestTracer())))
+	logger.SetLogger(testLogger)
 
 	if testLogger.HasWarnedOnce("clockoffset.default") {
 		t.Errorf("expected %t got %t", false, true)
@@ -175,7 +174,7 @@ func TestClockOffsetWarning(t *testing.T) {
 }
 
 func TestDoProxyWithPCF(t *testing.T) {
-
+	logger.SetLogger(testLogger)
 	es := tu.NewTestServer(http.StatusOK, "test", nil)
 	defer es.Close()
 
@@ -202,7 +201,7 @@ func TestDoProxyWithPCF(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(o, pc, nil, nil, nil, tu.NewTestTracer(), testLogger)))
+		request.NewResources(o, pc, nil, nil, nil, tu.NewTestTracer())))
 
 	// get URL
 	DoProxy(w, r, true)
@@ -230,7 +229,7 @@ func TestDoProxyWithPCF(t *testing.T) {
 }
 
 func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
-
+	logger.SetLogger(testLogger)
 	es := tu.NewTestServer(http.StatusOK, "test", nil)
 	defer es.Close()
 
@@ -257,7 +256,7 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(o, pc, nil, nil, nil, tu.NewTestTracer(), testLogger)))
+		request.NewResources(o, pc, nil, nil, nil, tu.NewTestTracer())))
 
 	// get URL
 	DoProxy(w, r, true)
@@ -285,7 +284,7 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 }
 
 func TestPrepareFetchReaderErr(t *testing.T) {
-
+	logger.SetLogger(testLogger)
 	conf, err := config.Load("trickster", "test",
 		[]string{"-origin-url", "http://example.com/", "-provider", "test", "-log-level", "debug"})
 	if err != nil {
@@ -297,7 +296,7 @@ func TestPrepareFetchReaderErr(t *testing.T) {
 
 	r := httptest.NewRequest("GET", "http://example.com/", nil)
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(o, nil, nil, nil, nil, tu.NewTestTracer(), testLogger)))
+		request.NewResources(o, nil, nil, nil, nil, tu.NewTestTracer())))
 	r.Method = "\t"
 	_, _, i := PrepareFetchReader(r)
 	if i != 0 {

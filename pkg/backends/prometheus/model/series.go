@@ -25,6 +25,7 @@ import (
 	"sort"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
@@ -86,7 +87,7 @@ func MergeAndWriteSeries(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 				s1 := &WFSeries{}
 				err := json.Unmarshal(rg.Body(), &s1)
 				if err != nil {
-					rg.Resources.Logger.Error("series unmarshaling error",
+					logger.Error("series unmarshaling error",
 						logging.Pairs{"provider": "prometheus", "detail": err.Error()})
 					continue
 				}

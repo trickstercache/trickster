@@ -22,6 +22,7 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
@@ -65,7 +66,7 @@ func MergeAndWriteVector(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 
 				t2, err := UnmarshalTimeseries(rg.Body(), trq)
 				if err != nil {
-					rg.Resources.Logger.Error("vector unmarshaling error",
+					logger.Error("vector unmarshaling error",
 						logging.Pairs{"provider": "prometheus", "detail": err.Error()})
 					continue
 				}
@@ -73,7 +74,7 @@ func MergeAndWriteVector(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 				if ts == nil {
 					ds, ok := t2.(*dataset.DataSet)
 					if !ok {
-						rg.Resources.Logger.Error("vector unmarshaling error",
+						logger.Error("vector unmarshaling error",
 							logging.Pairs{"provider": "prometheus"})
 						continue
 					}

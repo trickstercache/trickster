@@ -29,6 +29,7 @@ import (
 
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
@@ -53,7 +54,6 @@ type target struct {
 	eb                    string
 	eh                    http.Header
 	ec                    []int
-	logger                logging.Logger
 	isInLoop              bool
 	mtx                   sync.Mutex
 }
@@ -65,8 +65,7 @@ type DemandProbe func(w http.ResponseWriter)
 // newTarget returns a new target
 func newTarget(ctx context.Context,
 	name, description string, o *ho.Options,
-	client *http.Client,
-	logger logging.Logger) (*target, error) {
+	client *http.Client) (*target, error) {
 
 	if o == nil {
 		return nil, ho.ErrNoOptionsProvided
@@ -101,7 +100,6 @@ func newTarget(ctx context.Context,
 		failureThreshold:  o.FailureThreshold,
 		recoveryThreshold: o.RecoveryThreshold,
 		interval:          interval,
-		logger:            logger,
 	}
 	t.status = &Status{name: name, detail: isd, description: description, prober: t.demandProbe}
 	if len(o.ExpectedHeaders) > 0 {
@@ -229,7 +227,7 @@ func (t *target) probe() {
 		t.status.failingSince = time.Now()
 		t.status.Set(-1)
 		t.ks = -1
-		t.logger.Info("hc status changed",
+		logger.Info("hc status changed",
 			logging.Pairs{"targetName": t.name, "status": "failed",
 				"detail": t.status.detail, "threshold": t.failureThreshold})
 	} else if passed && t.ks != 1 && (successCnt == t.recoveryThreshold || t.ks == 0) {
@@ -237,7 +235,7 @@ func (t *target) probe() {
 		t.status.Set(1)
 		t.ks = 1
 		t.status.detail = "" // this is only populated with failure details, so it is cleared upon recovery
-		t.logger.Info("hc status changed",
+		logger.Info("hc status changed",
 			logging.Pairs{"targetName": t.name, "status": "available",
 				"threshold": t.recoveryThreshold})
 	}

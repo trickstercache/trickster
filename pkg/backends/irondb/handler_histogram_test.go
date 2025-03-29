@@ -25,6 +25,8 @@ import (
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
@@ -189,6 +191,7 @@ func TestHistogramHandlerParseTimeRangeQuery(t *testing.T) {
 
 func TestHistogramHandlerSetExtent(t *testing.T) {
 
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	// provide bad URL with no TimeRange query params
 	// hc := tu.NewTestWebClient()
 	o := bo.New()
@@ -204,7 +207,7 @@ func TestHistogramHandlerSetExtent(t *testing.T) {
 	}
 
 	r = request.SetResources(r,
-		request.NewResources(o, nil, nil, nil, client, nil, logging.ConsoleLogger("error")))
+		request.NewResources(o, nil, nil, nil, client, nil))
 
 	now := time.Now()
 	then := now.Add(-5 * time.Hour)
@@ -225,7 +228,7 @@ func TestHistogramHandlerSetExtent(t *testing.T) {
 }
 
 func TestHistogramHandlerFastForwardRequestError(t *testing.T) {
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	// provide bad URL with no TimeRange query params
 	// hc := tu.NewTestWebClient()
 	o := bo.New()
@@ -241,7 +244,7 @@ func TestHistogramHandlerFastForwardRequestError(t *testing.T) {
 		t.Error(err)
 	}
 
-	rsc := request.NewResources(o, nil, nil, nil, client, nil, logging.ConsoleLogger("error"))
+	rsc := request.NewResources(o, nil, nil, nil, client, nil)
 	r = request.SetResources(r, rsc)
 
 	r.URL.Path = "/histogram/x/900/300/00112233-4455-6677-8899-aabbccddeeff/metric"

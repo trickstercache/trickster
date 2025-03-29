@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 
 	"go.etcd.io/bbolt"
 )
@@ -37,7 +38,6 @@ import (
 type Cache struct {
 	Name       string
 	Config     *options.Options
-	Logger     logging.Logger
 	Index      *index.Index
 	locker     locks.NamedLocker
 	lockPrefix string
@@ -81,7 +81,7 @@ func (c *Cache) Configuration() *options.Options {
 
 // Connect instantiates the Cache mutex map and starts the Expired Entry Reaper goroutine
 func (c *Cache) Connect() error {
-	c.Logger.Info("bbolt cache setup",
+	logger.Info("bbolt cache setup",
 		logging.Pairs{"name": c.Name, "cacheFile": c.Config.BBolt.Filename})
 
 	c.lockPrefix = c.Name + ".bbolt."
@@ -106,7 +106,7 @@ func (c *Cache) Connect() error {
 	// Load Index here and pass bytes as param2
 	indexData, _, _ := c.retrieve(index.IndexKey, false, false)
 	c.Index = index.NewIndex(c.Name, c.Config.Provider, indexData,
-		c.Config.Index, c.BulkRemove, c.storeNoIndex, c.Logger)
+		c.Config.Index, c.BulkRemove, c.storeNoIndex)
 	return nil
 }
 
@@ -118,7 +118,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 	err := c.store(cacheKey, data, 31536000*time.Second, false)
 	if err != nil {
-		c.Logger.Error("cache failed to write non-indexed object",
+		logger.Error("cache failed to write non-indexed object",
 			logging.Pairs{"cacheName": c.Name, "cacheProvider": "bbolt",
 				"cacheKey": cacheKey, "objectSize": len(data)})
 	}
@@ -140,7 +140,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 	if err != nil {
 		return err
 	}
-	c.Logger.Debug("bbolt cache store",
+	logger.Debug("bbolt cache store",
 		logging.Pairs{"key": cacheKey, "ttl": ttl, "indexed": updateIndex})
 	if updateIndex {
 		c.Index.UpdateObject(o)
@@ -171,7 +171,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool,
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
 		data = b.Get([]byte(cacheKey))
 		if data == nil {
-			c.Logger.Debug("bbolt cache miss", logging.Pairs{"key": cacheKey})
+			logger.Debug("bbolt cache miss", logging.Pairs{"key": cacheKey})
 			metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
 			return cache.ErrKNF
 		}
@@ -198,7 +198,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool,
 	o.Expiration = c.Index.GetExpiration(cacheKey)
 
 	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
-		c.Logger.Debug("bbolt cache retrieve", logging.Pairs{"cacheKey": cacheKey})
+		logger.Debug("bbolt cache retrieve", logging.Pairs{"cacheKey": cacheKey})
 		if atime {
 			go c.Index.UpdateObjectAccessTime(cacheKey)
 		}
@@ -229,7 +229,7 @@ func (c *Cache) remove(cacheKey string, isBulk bool) error {
 	})
 	nl.Release()
 	if err != nil {
-		c.Logger.Error("bbolt cache key delete failure",
+		logger.Error("bbolt cache key delete failure",
 			logging.Pairs{"cacheKey": cacheKey, "reason": err.Error()})
 		return err
 	}
@@ -237,7 +237,7 @@ func (c *Cache) remove(cacheKey string, isBulk bool) error {
 		go c.Index.RemoveObject(cacheKey)
 	}
 	metrics.ObserveCacheDel(c.Name, c.Config.Provider, 0)
-	c.Logger.Debug("bbolt cache key delete", logging.Pairs{"key": cacheKey})
+	logger.Debug("bbolt cache key delete", logging.Pairs{"key": cacheKey})
 	return nil
 }
 

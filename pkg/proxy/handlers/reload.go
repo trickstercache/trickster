@@ -23,13 +23,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 // ReloadHandleFunc will reload the running configuration if it has changed
 func ReloadHandleFunc(f reload.ReloaderFunc, conf *config.Config,
-	logger logging.Logger,
-	caches map[string]cache.Cache) func(http.ResponseWriter, *http.Request) {
+	caches map[string]cache.Cache, args []string) func(http.ResponseWriter,
+	*http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if conf != nil {
 			conf.Main.ReloaderLock.Lock()
@@ -38,7 +39,7 @@ func ReloadHandleFunc(f reload.ReloaderFunc, conf *config.Config,
 				logger.Warn(
 					"configuration reload starting now",
 					logging.Pairs{"source": "reloadEndpoint"})
-				err := f(conf, logger, caches, nil)
+				err := f(conf, caches, args, nil)
 				if err == nil {
 					w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 					w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)

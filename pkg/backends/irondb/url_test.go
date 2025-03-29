@@ -29,6 +29,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/irondb/common"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -36,6 +38,7 @@ import (
 )
 
 func TestSetExtent(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	start := time.Now().Add(time.Duration(-6) * time.Hour)
 	end := time.Now()
 	stFl := time.Unix(start.Unix()-(start.Unix()%300), 0)
@@ -62,7 +65,7 @@ func TestSetExtent(t *testing.T) {
 	client.makeExtentSetters()
 
 	pcs := client.DefaultPathConfigs(o)
-	rsc := request.NewResources(o, nil, nil, nil, client, nil, logging.ConsoleLogger("error"))
+	rsc := request.NewResources(o, nil, nil, nil, client, nil)
 
 	cases := []struct {
 		handler  string
@@ -202,6 +205,7 @@ func TestSetExtent(t *testing.T) {
 }
 
 func TestFastForwardURL(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	now := time.Now().Unix()
 	start := now - (now % 300)
 	end := start + 300
@@ -230,7 +234,7 @@ func TestFastForwardURL(t *testing.T) {
 
 	pcs := client.DefaultPathConfigs(o)
 
-	rsc := request.NewResources(o, nil, nil, nil, client, nil, logging.ConsoleLogger("error"))
+	rsc := request.NewResources(o, nil, nil, nil, client, nil)
 
 	cases := []struct {
 		handler string
@@ -317,6 +321,7 @@ func TestFastForwardURL(t *testing.T) {
 }
 
 func TestParseTimerangeQuery(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	expected := errors.ErrNotTimeRangeQuery
 	backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
@@ -327,7 +332,7 @@ func TestParseTimerangeQuery(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 
 	r = request.SetResources(r, request.NewResources(client.Configuration(), &po.Options{},
-		nil, nil, client, nil, logging.ConsoleLogger("error")))
+		nil, nil, client, nil))
 
 	_, _, _, err = client.ParseTimeRangeQuery(r)
 	if err == nil || err != expected {

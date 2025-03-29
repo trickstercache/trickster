@@ -31,6 +31,8 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
@@ -46,6 +48,7 @@ func testListener() net.Listener {
 }
 
 func TestListeners(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	tr, _ := stdout.New(nil)
 	tr.ShutdownFunc = func(_ context.Context) error { return nil }
 	trs := map[string]*tracing.Tracer{"default": tr}
@@ -58,8 +61,7 @@ func TestListeners(t *testing.T) {
 			Certificates: make([]tls.Certificate, 1),
 		}
 		errs <- testLG.StartListener("httpListener",
-			"", 0, 20, tc, http.NewServeMux(), trs, nil, 0,
-			logging.ConsoleLogger("info"))
+			"", 0, 20, tc, http.NewServeMux(), wg, trs, nil, 0)
 		close(errs)
 	}()
 
@@ -76,8 +78,8 @@ func TestListeners(t *testing.T) {
 	errs2 := make(chan error, 1)
 	go func() {
 		errs2 <- testLG.StartListenerRouter("httpListener2",
-			"", 0, 20, nil, "/", http.HandlerFunc(ph.HandleLocalResponse),
-			nil, nil, 0, logging.ConsoleLogger("info"))
+			"", 0, 20, nil, "/", http.HandlerFunc(ph.HandleLocalResponse), wg,
+			nil, nil, 0)
 		close(errs2)
 	}()
 	time.Sleep(time.Millisecond * 300)
@@ -92,7 +94,7 @@ func TestListeners(t *testing.T) {
 	}
 
 	err = testLG.StartListener("testBadPort",
-		"", -31, 20, nil, http.NewServeMux(), trs, nil, 0, logging.ConsoleLogger("info"))
+		"", -31, 20, nil, http.NewServeMux(), wg, trs, nil, 0)
 	if err == nil {
 		t.Error("expected invalid port error")
 	}
@@ -109,8 +111,9 @@ func TestUpdateRouter(t *testing.T) {
 }
 
 func TestNewListenerErr(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	config.NewConfig()
-	l, err := NewListener("-", 0, 0, nil, 0, logging.ConsoleLogger("error"))
+	l, err := NewListener("-", 0, 0, nil, 0)
 	if err == nil {
 		l.Close()
 		t.Errorf("expected error: %s", `listen tcp: lookup -: no such host`)
@@ -118,11 +121,12 @@ func TestNewListenerErr(t *testing.T) {
 }
 
 func TestListenerAccept(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	testLG := NewListenerGroup()
 	var err error
 	go func() {
 		err = testLG.StartListener("httpListener",
-			"", 0, 20, nil, http.NewServeMux(), nil, nil, 0, logging.ConsoleLogger("info"))
+			"", 0, 20, nil, http.NewServeMux(), nil, nil, nil, 0)
 	}()
 	time.Sleep(time.Millisecond * 500)
 	if err != nil {
@@ -138,7 +142,7 @@ func TestListenerAccept(t *testing.T) {
 }
 
 func TestNewListenerTLS(t *testing.T) {
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	c := config.NewConfig()
 	o := c.Backends["default"]
 	c.Frontend.ServeTLS = true
@@ -162,7 +166,7 @@ func TestNewListenerTLS(t *testing.T) {
 		t.Error(err)
 	}
 
-	l, err := NewListener("", 0, 0, tlsConfig, 0, logging.ConsoleLogger("error"))
+	l, err := NewListener("", 0, 0, tlsConfig, 0)
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -172,7 +176,7 @@ func TestNewListenerTLS(t *testing.T) {
 }
 
 func TestListenerConnectionLimitWorks(t *testing.T) {
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		fmt.Fprint(w, "hello!")
@@ -219,7 +223,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 
 	for _, tc := range tt {
 		t.Run(tc.Name, func(t *testing.T) {
-			l, err := NewListener("", tc.ListenPort, tc.ConnectionsLimit, nil, 0, logging.ConsoleLogger("error"))
+			l, err := NewListener("", tc.ListenPort, tc.ConnectionsLimit, nil, 0)
 			if err != nil {
 				t.Fatal(err)
 			} else {

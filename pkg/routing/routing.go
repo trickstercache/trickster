@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	encoding "github.com/trickstercache/trickster/v2/pkg/encoding/handler"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/health"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -47,7 +48,7 @@ import (
 )
 
 // RegisterPprofRoutes will register the Pprof Debugging endpoints to the provided router
-func RegisterPprofRoutes(routerName string, r router.Router, logger logging.Logger) {
+func RegisterPprofRoutes(routerName string, r router.Router) {
 	logger.Info("registering pprof /debug routes", logging.Pairs{"routerName": routerName})
 	r.RegisterRoute("/debug/pprof/", nil, nil,
 		false, http.HandlerFunc(pprof.Index))
@@ -65,8 +66,7 @@ func RegisterPprofRoutes(routerName string, r router.Router, logger logging.Logg
 // registers the routes for the configured backends
 func RegisterProxyRoutes(conf *config.Config, r router.Router,
 	metricsRouter router.Router, caches map[string]cache.Cache,
-	tracers tracing.Tracers, logger logging.Logger,
-	dryRun bool) (backends.Backends, error) {
+	tracers tracing.Tracers, dryRun bool) (backends.Backends, error) {
 
 	// a fake "top-level" backend representing the main frontend, so rules can route
 	// to it via the clients map
@@ -106,7 +106,7 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router,
 			continue
 		}
 		err = registerBackendRoutes(r, metricsRouter, conf,
-			k, o, clients, caches, tracers, logger, dryRun)
+			k, o, clients, caches, tracers, dryRun)
 		if err != nil {
 			return nil, err
 		}
@@ -117,7 +117,8 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router,
 			cdo = ndo
 			defaultBackend = "default"
 		} else {
-			err = registerBackendRoutes(r, nil, conf, "default", ndo, clients, caches, tracers, logger, dryRun)
+			err = registerBackendRoutes(r, nil, conf, "default", ndo, clients,
+				caches, tracers, dryRun)
 			if err != nil {
 				return nil, err
 			}
@@ -125,7 +126,7 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router,
 	}
 	if cdo != nil {
 		err = registerBackendRoutes(r, metricsRouter, conf,
-			defaultBackend, cdo, clients, caches, tracers, logger, dryRun)
+			defaultBackend, cdo, clients, caches, tracers, dryRun)
 		if err != nil {
 			return nil, err
 		}
@@ -158,8 +159,7 @@ func RegisterHealthHandler(router router.Router, path string,
 
 func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 	conf *config.Config, k string, o *bo.Options, clients backends.Backends,
-	caches map[string]cache.Cache, tracers tracing.Tracers, logger logging.Logger,
-	dryRun bool) error {
+	caches map[string]cache.Cache, tracers tracing.Tracers, dryRun bool) error {
 
 	var client backends.Backend
 	var c cache.Cache
@@ -193,7 +193,7 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 		h := client.Handlers()
 
 		RegisterPathRoutes(r, h, client, o, c, defaultPaths,
-			tracers, conf.Main.HealthHandlerPath, logger)
+			tracers, conf.Main.HealthHandlerPath)
 
 		// now we'll go ahead and register the health handler
 		if h, ok := client.Handlers()["health"]; ok && o.Name != "" && metricsRouter != nil && (o.HealthCheck == nil ||
@@ -205,7 +205,7 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 					"upstreamVerb": o.HealthCheck.Verb})
 			metricsRouter.RegisterRoute(hp, nil, nil, false,
 				http.Handler(middleware.WithResourcesContext(client, o, nil,
-					nil, nil, logger, h)))
+					nil, nil, h)))
 		}
 	}
 	return nil
@@ -217,7 +217,7 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 func RegisterPathRoutes(r router.Router, handlers map[string]http.Handler,
 	client backends.Backend, o *bo.Options, c cache.Cache,
 	paths map[string]*po.Options, tracers tracing.Tracers,
-	healthHandlerPath string, logger logging.Logger) {
+	healthHandlerPath string) {
 
 	if o == nil {
 		return
@@ -241,7 +241,7 @@ func RegisterPathRoutes(r router.Router, handlers map[string]http.Handler,
 		// attach compression handler
 		h = encoding.HandleCompression(h, o.CompressibleTypes)
 		// add Backend, Cache, and Path Configs to the HTTP Request's context
-		h = middleware.WithResourcesContext(client, o, c, po1, tr, logger, h)
+		h = middleware.WithResourcesContext(client, o, c, po1, tr, h)
 		// attach any request rewriters
 		if len(o.ReqRewriter) > 0 {
 			h = rewriter.Rewrite(o.ReqRewriter, h)
@@ -324,7 +324,7 @@ func RegisterPathRoutes(r router.Router, handlers map[string]http.Handler,
 
 // RegisterDefaultBackendRoutes will iterate the Backends and register the default routes
 func RegisterDefaultBackendRoutes(r router.Router, bknds backends.Backends,
-	logger logging.Logger, tracers tracing.Tracers) {
+	tracers tracing.Tracers) {
 
 	decorate := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,
 		c cache.Cache, client backends.Backend) http.Handler {
@@ -335,7 +335,7 @@ func RegisterDefaultBackendRoutes(r router.Router, bknds backends.Backends,
 			h = middleware.Trace(tr, h)
 		}
 		// add Backend, Cache, and Path Configs to the HTTP Request's context
-		h = middleware.WithResourcesContext(client, o, c, po, tr, logger, h)
+		h = middleware.WithResourcesContext(client, o, c, po, tr, h)
 		// attach any request rewriters
 		if len(o.ReqRewriter) > 0 {
 			h = rewriter.Rewrite(o.ReqRewriter, h)

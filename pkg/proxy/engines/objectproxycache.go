@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
@@ -87,7 +88,7 @@ func handleCachePartialHit(pr *proxyRequest) error {
 		b, _ := io.ReadAll(pr.upstreamReader)
 		d2 := &HTTPDocument{}
 
-		d2.ParsePartialContentBody(resp, b, pr.Logger)
+		d2.ParsePartialContentBody(resp, b)
 		d.LoadRangeParts()
 
 		d2.Ranges = d2.RangeParts.Ranges()
@@ -348,10 +349,10 @@ func handleAllWrites(pr *proxyRequest) error {
 	handleResponse(pr)
 	if pr.writeToCache {
 		if pr.cacheDocument == nil || !pr.cacheDocument.isLoaded {
-			d := DocumentFromHTTPResponse(pr.upstreamResponse, nil, pr.cachingPolicy, pr.Logger)
+			d := DocumentFromHTTPResponse(pr.upstreamResponse, nil, pr.cachingPolicy)
 			pr.cacheDocument = d
 			if pr.isPartialResponse {
-				d.ParsePartialContentBody(pr.upstreamResponse, pr.cacheBuffer.Bytes(), pr.Logger)
+				d.ParsePartialContentBody(pr.upstreamResponse, pr.cacheBuffer.Bytes())
 			} else {
 				d.Body = pr.cacheBuffer.Bytes()
 			}
@@ -435,12 +436,12 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		if f, ok := cacheResponseHandlers[pr.cacheStatus]; ok {
 			f(pr)
 		} else {
-			pr.Logger.Warn("unhandled cache lookup response",
+			logger.Warn("unhandled cache lookup response",
 				logging.Pairs{"lookupStatus": pr.cacheStatus})
 			return nil, status.LookupStatusProxyOnly
 		}
 	} else {
-		pr.Logger.Error("cache lookup error",
+		logger.Error("cache lookup error",
 			logging.Pairs{"detail": err.Error()})
 		pr.cacheDocument = nil
 		pr.cacheStatus = status.LookupStatusKeyMiss

@@ -29,6 +29,8 @@ import (
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	ct "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -114,7 +116,7 @@ func TestDeepSearch(t *testing.T) {
 }
 
 func TestDeriveCacheKey(t *testing.T) {
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	rpath := &po.Options{
 		Path:               "/",
 		CacheKeyParams:     []string{"query", "step", "time"},
@@ -129,8 +131,7 @@ func TestDeriveCacheKey(t *testing.T) {
 	}
 
 	newResources := func() *request.Resources {
-		return request.NewResources(cfg, cfg.Paths["root"], nil, nil, nil,
-			nil, logging.ConsoleLogger("error"))
+		return request.NewResources(cfg, cfg.Paths["root"], nil, nil, nil, nil)
 	}
 
 	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
@@ -212,7 +213,7 @@ func exampleKeyHasher(path string, params url.Values, headers http.Header,
 }
 
 func TestDeriveCacheKeyAuthHeader(t *testing.T) {
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	client, err := NewTestClient("test", &bo.Options{
 		Paths: map[string]*po.Options{
 			"root": {
@@ -229,7 +230,7 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
 	tr = tr.WithContext(ct.WithResources(context.Background(),
 		request.NewResources(client.Configuration(), client.Configuration().Paths["root"],
-			nil, nil, nil, nil, logging.ConsoleLogger("error"))))
+			nil, nil, nil, nil)))
 
 	tr.Header.Add("Authorization", "test")
 	tr.Header.Add("X-Test-Header", "test2")
@@ -245,7 +246,7 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 }
 
 func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	client, err := NewTestClient("test", &bo.Options{
 		Paths: map[string]*po.Options{
 			"root": {
@@ -261,8 +262,7 @@ func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
 
 	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
 	tr = tr.WithContext(ct.WithResources(context.Background(),
-		request.NewResources(client.Configuration(), nil, nil, nil, nil, nil,
-			logging.ConsoleLogger("error"))))
+		request.NewResources(client.Configuration(), nil, nil, nil, nil, nil)))
 
 	pr := newProxyRequest(tr, nil)
 	ck := pr.DeriveCacheKey("extra")

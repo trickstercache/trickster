@@ -26,7 +26,6 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
 	"github.com/trickstercache/trickster/v2/pkg/config"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
 var testModeler = model.NewModeler()
@@ -60,7 +59,7 @@ func TestNewClient(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := cr.LoadCachesFromConfig(conf, logging.ConsoleLogger("error"))
+	caches := cr.LoadCachesFromConfig(conf)
 	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {

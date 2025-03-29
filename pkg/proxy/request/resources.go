@@ -25,7 +25,6 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -45,7 +44,6 @@ type Resources struct {
 	AlternateCacheTTL time.Duration
 	TimeRangeQuery    *timeseries.TimeRangeQuery
 	Tracer            *tracing.Tracer
-	Logger            logging.Logger
 	IsMergeMember     bool
 	ResponseBytes     []byte
 	ResponseMergeFunc any
@@ -69,7 +67,6 @@ func (r *Resources) Clone() *Resources {
 		AlternateCacheTTL: r.AlternateCacheTTL,
 		TimeRangeQuery:    r.TimeRangeQuery,
 		Tracer:            r.Tracer,
-		Logger:            r.Logger,
 		IsMergeMember:     r.IsMergeMember,
 		ResponseBytes:     r.ResponseBytes,
 		ResponseMergeFunc: r.ResponseMergeFunc,
@@ -83,15 +80,13 @@ func (r *Resources) Clone() *Resources {
 
 // NewResources returns a new Resources collection based on the provided inputs
 func NewResources(oo *bo.Options, po *po.Options, co *co.Options,
-	c cache.Cache, client backends.Backend, t *tracing.Tracer,
-	logger logging.Logger) *Resources {
+	c cache.Cache, client backends.Backend, t *tracing.Tracer) *Resources {
 	return &Resources{
 		BackendOptions: oo,
 		PathConfig:     po,
 		CacheConfig:    co,
 		CacheClient:    c,
 		BackendClient:  client,
-		Logger:         logger,
 		Tracer:         t,
 	}
 }
@@ -131,5 +126,4 @@ func (r *Resources) Merge(r2 *Resources) {
 	r.AlternateCacheTTL = r2.AlternateCacheTTL
 	r.TimeRangeQuery = r2.TimeRangeQuery
 	r.Tracer = r2.Tracer
-	r.Logger = r2.Logger
 }

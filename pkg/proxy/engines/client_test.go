@@ -403,7 +403,7 @@ func testResultHeaderPartMatch(header http.Header, kvp map[string]string) error 
 		return fmt.Errorf("missing response headers%s", "")
 	}
 
-	if h, ok := header["X-Trickster-Result"]; ok {
+	if h, ok := header[headers.NameTricksterResult]; ok {
 		res := strings.Join(h, "; ")
 		for k, v := range kvp {
 			if !strings.Contains(res, fmt.Sprintf("; %s=%s", k, v)) &&
@@ -412,7 +412,7 @@ func testResultHeaderPartMatch(header http.Header, kvp map[string]string) error 
 			}
 		}
 	} else {
-		return fmt.Errorf("missing X-Trickster-Result header%s", "")
+		return fmt.Errorf("missing %s header%s", headers.NameTricksterResult, "")
 	}
 
 	return nil
