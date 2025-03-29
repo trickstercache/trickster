@@ -644,7 +644,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 						"statusCode":              resp.StatusCode,
 						"clientRequestURL":        pr.Request.URL.String(),
 						"clientRequestMethod":     pr.Request.Method,
-						"clientRequestHeaders":    pr.Request.Header,
+						"clientRequestHeaders":    headers.SanitizeForLogging(pr.Request.Header),
 						"upstreamRequestURL":      pr.upstreamRequest.URL.String(),
 						"upstreamRequestMethod":   pr.upstreamRequest.Method,
 						"upstreamRequestHeaders":  headers.LogString(pr.upstreamRequest.Header),
