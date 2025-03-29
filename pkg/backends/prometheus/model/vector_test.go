@@ -23,6 +23,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -60,10 +61,10 @@ func TestMergeAndWriteVector(t *testing.T) {
 }
 
 func testResponseGates7() merge.ResponseGates {
-
+	logger.SetLogger(testLogger)
 	b1 := []byte(testVector)
 	closer1 := io.NopCloser(bytes.NewReader(b1))
-	rsc1 := request.NewResources(nil, nil, nil, nil, nil, nil, testLogger)
+	rsc1 := request.NewResources(nil, nil, nil, nil, nil, nil)
 	rsc1.Response = &http.Response{
 		Body:       closer1,
 		StatusCode: 200,
@@ -78,7 +79,7 @@ func testResponseGates7() merge.ResponseGates {
 
 	b2bad := []byte(`{"stat`)
 	closer2 := io.NopCloser(bytes.NewReader(b2bad))
-	rsc2 := request.NewResources(nil, nil, nil, nil, nil, nil, testLogger)
+	rsc2 := request.NewResources(nil, nil, nil, nil, nil, nil)
 	rsc2.Response = &http.Response{
 		Body:       closer2,
 		StatusCode: 200,
@@ -92,7 +93,7 @@ func testResponseGates7() merge.ResponseGates {
 
 	b3 := []byte(testVector2)
 	closer3 := io.NopCloser(bytes.NewReader(b3))
-	rsc3 := request.NewResources(nil, nil, nil, nil, nil, nil, testLogger)
+	rsc3 := request.NewResources(nil, nil, nil, nil, nil, nil)
 	rsc3.Response = &http.Response{
 		Body:       closer3,
 		StatusCode: 200,
@@ -111,10 +112,10 @@ func testResponseGates7() merge.ResponseGates {
 }
 
 func testResponseGates8() merge.ResponseGates {
-
+	logger.SetLogger(testLogger)
 	b1 := []byte(`{"status":"error","data":{}`)
 	closer1 := io.NopCloser(bytes.NewReader(b1))
-	rsc1 := request.NewResources(nil, nil, nil, nil, nil, nil, testLogger)
+	rsc1 := request.NewResources(nil, nil, nil, nil, nil, nil)
 	rsc1.Response = &http.Response{
 		Body:       closer1,
 		StatusCode: 400,
@@ -128,7 +129,7 @@ func testResponseGates8() merge.ResponseGates {
 
 	b2 := []byte(`{"status":"error","data":{}`)
 	closer2 := io.NopCloser(bytes.NewReader(b1))
-	rsc2 := request.NewResources(nil, nil, nil, nil, nil, nil, testLogger)
+	rsc2 := request.NewResources(nil, nil, nil, nil, nil, nil)
 	rsc2.Response = &http.Response{
 		Body:       closer2,
 		StatusCode: 400,

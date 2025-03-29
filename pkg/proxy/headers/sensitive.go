@@ -16,10 +16,14 @@
 
 package headers
 
+import (
+	"net/http"
+)
+
 var sensitiveCredentials = map[string]interface{}{NameAuthorization: nil}
 
-// HideAuthorizationCredentials replaces any sensitive HTTP header values with 5 asterisks
-// sensitive headers are defined in the sensitiveCredentials map
+// HideAuthorizationCredentials replaces any sensitive HTTP header values with 5
+// asterisks sensitive headers are defined in the sensitiveCredentials map
 func HideAuthorizationCredentials(headers Lookup) {
 	// strip Authorization Headers
 	for k := range headers {
@@ -28,3 +32,23 @@ func HideAuthorizationCredentials(headers Lookup) {
 		}
 	}
 }
+
+// SanitizeForLogging returns a sanitized version of the provided Header map,
+// that does not include senstiive info like credentials or cookies
+func SanitizeForLogging(h http.Header) Lookup {
+	if h == nil {
+		return nil
+	}
+	out := make(Lookup)
+	for _, hn := range allowList {
+		if v := h.Get(hn); v != "" {
+			out[hn] = v
+		}
+	}
+	return out
+}
+
+var allowList = []string{NameAccept, NameAcceptEncoding, NameAcceptLanguage,
+	NameCacheControl, NameConnection, NameContentLength, NameContentType,
+	NameDate, NameHost, NameIfModifiedSince, NameIfNoneMatch, NameRange,
+	NameUserAgent, NameVia, NameXForwardedFor, NameTricksterResult}

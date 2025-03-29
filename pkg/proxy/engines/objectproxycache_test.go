@@ -796,7 +796,7 @@ func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
 		"/": pc,
 	}
 	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig,
-		rsc.CacheClient, rsc.BackendClient, nil, rsc.Logger)))
+		rsc.CacheClient, rsc.BackendClient, nil)))
 
 	// Remove negative cache for first request
 	delete(cfg.NegativeCache, 404)

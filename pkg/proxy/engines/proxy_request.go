@@ -27,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -80,7 +81,6 @@ type proxyRequest struct {
 	collapsedForwarder ProgressiveCollapseForwarder
 	cachingPolicy      *CachingPolicy
 
-	Logger            logging.Logger
 	isPCF             bool
 	writeToCache      bool
 	hasWriteLock      bool
@@ -107,9 +107,6 @@ func newProxyRequest(r *http.Request, w io.Writer) *proxyRequest {
 		started:        time.Now(),
 		mapLock:        &sync.Mutex{},
 	}
-	if rsc != nil {
-		pr.Logger = rsc.Logger
-	}
 	return pr
 }
 
@@ -126,7 +123,6 @@ func (pr *proxyRequest) Clone() *proxyRequest {
 				trace.ContextWithSpan(context.Background(),
 					trace.SpanFromContext(pr.upstreamRequest.Context())),
 				rsc)),
-		Logger:             pr.Logger,
 		cacheDocument:      pr.cacheDocument,
 		key:                pr.key,
 		cacheStatus:        pr.cacheStatus,
@@ -168,14 +164,14 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 		resp.Body = io.NopCloser(bytes.NewReader(body))
 	}
 	if err != nil {
-		pr.Logger.Error("error reading body from http response",
+		logger.Error("error reading body from http response",
 			logging.Pairs{"url": pr.URL.String(), "detail": err.Error()})
 		return []byte{}, resp, 0
 	}
 
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
 
-	go logUpstreamRequest(pr.Logger, o.Name, o.Provider, handlerName, pr.upstreamRequest.Method,
+	go logUpstreamRequest(o.Name, o.Provider, handlerName, pr.upstreamRequest.Method,
 		pr.upstreamRequest.URL.String(), pr.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
 
 	return body, resp, elapsed
@@ -535,7 +531,7 @@ func (pr *proxyRequest) prepareResponse() {
 			if pr.upstreamReader != nil {
 				b, _ = io.ReadAll(pr.upstreamReader)
 			}
-			d = DocumentFromHTTPResponse(pr.upstreamResponse, b, pr.cachingPolicy, pr.Logger)
+			d = DocumentFromHTTPResponse(pr.upstreamResponse, b, pr.cachingPolicy)
 			pr.cacheBuffer = bytes.NewBuffer(b)
 			if pr.writeToCache {
 				d.isLoaded = true
@@ -667,7 +663,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 					// is now invalid. lets go ahead and reset it.
 					b, _ := io.ReadAll(resp.Body)
 					appendLock.Lock()
-					parts.ParsePartialContentBody(resp, b, pr.Logger)
+					parts.ParsePartialContentBody(resp, b)
 					appendLock.Unlock()
 					wg.Done()
 				}()
@@ -691,7 +687,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 				if resp.StatusCode == http.StatusPartialContent {
 					b, _ := io.ReadAll(resp.Body)
 					appendLock.Lock()
-					parts.ParsePartialContentBody(resp, b, pr.Logger)
+					parts.ParsePartialContentBody(resp, b)
 					appendLock.Unlock()
 				}
 				wg.Done()

@@ -27,6 +27,7 @@ import (
 	mockprom "github.com/trickstercache/mockster/pkg/mocks/prometheus"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
@@ -44,7 +45,7 @@ const (
 var testConfigFile string
 
 func setupTestHarnessDPC() (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
-
+	logger.SetLogger(logging.NoopLogger())
 	client := &TestClient{}
 	ts, w, r, _, err := tu.NewTestInstance(testConfigFile,
 		client.DefaultPathConfigs, 200, "", nil, "promsim", "/prometheus/api/v1/query_range", "debug")
@@ -55,7 +56,6 @@ func setupTestHarnessDPC() (*httptest.Server, *httptest.ResponseRecorder, *http.
 	rsc := request.GetResources(r)
 	rsc.BackendClient = client
 	rsc.Tracer = tu.NewTestTracer()
-	rsc.Logger = logging.NoopLogger()
 	pc := rsc.PathConfig
 
 	if pc == nil {

@@ -18,9 +18,10 @@ package engines
 
 import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
-func logUpstreamRequest(logger logging.Logger, backendName, backendProvider, handlerName, method,
+func logUpstreamRequest(backendName, backendProvider, handlerName, method,
 	path, userAgent string, responseCode, size int, requestDuration float64) {
 	logger.Debug("upstream request",
 		logging.Pairs{

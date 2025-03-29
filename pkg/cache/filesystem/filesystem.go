@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
 // Cache describes a Filesystem Cache
@@ -39,7 +40,6 @@ type Cache struct {
 	Name       string
 	Config     *options.Options
 	Index      *index.Index
-	Logger     logging.Logger
 	locker     locks.NamedLocker
 	lockPrefix string
 }
@@ -61,7 +61,7 @@ func (c *Cache) Configuration() *options.Options {
 
 // Connect instantiates the Cache mutex map and starts the Expired Entry Reaper goroutine
 func (c *Cache) Connect() error {
-	c.Logger.Info("filesystem cache setup", logging.Pairs{"name": c.Name,
+	logger.Info("filesystem cache setup", logging.Pairs{"name": c.Name,
 		"cachePath": c.Config.Filesystem.CachePath})
 	if err := makeDirectory(c.Config.Filesystem.CachePath); err != nil {
 		return err
@@ -71,7 +71,7 @@ func (c *Cache) Connect() error {
 	// Load Index here and pass bytes as param2
 	indexData, _, _ := c.retrieve(index.IndexKey, false, false)
 	c.Index = index.NewIndex(c.Name, c.Config.Provider, indexData,
-		c.Config.Index, c.BulkRemove, c.storeNoIndex, c.Logger)
+		c.Config.Index, c.BulkRemove, c.storeNoIndex)
 	return nil
 }
 
@@ -83,7 +83,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 	err := c.store(cacheKey, data, 31536000*time.Second, false)
 	if err != nil {
-		c.Logger.Error("cache failed to write non-indexed object",
+		logger.Error("cache failed to write non-indexed object",
 			logging.Pairs{"cacheName": c.Name, "cacheProvider": "filesystem",
 				"cacheKey": cacheKey, "objectSize": len(data)})
 	}
@@ -111,7 +111,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 		nl.Release()
 		return err
 	}
-	c.Logger.Debug("filesystem cache store",
+	logger.Debug("filesystem cache store",
 		logging.Pairs{"key": cacheKey, "dataFile": dataFile, "indexed": updateIndex})
 	if updateIndex {
 		c.Index.UpdateObject(o)
@@ -134,7 +134,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	nl.RRelease()
 
 	if err != nil {
-		c.Logger.Debug("filesystem cache miss",
+		logger.Debug("filesystem cache miss",
 			logging.Pairs{"key": cacheKey, "dataFile": dataFile})
 		metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
 		return nil, status.LookupStatusKeyMiss, cache.ErrKNF
@@ -156,7 +156,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 
 	o.Expiration = c.Index.GetExpiration(cacheKey)
 	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
-		c.Logger.Debug("filesystem cache retrieve",
+		logger.Debug("filesystem cache retrieve",
 			logging.Pairs{"key": cacheKey, "dataFile": dataFile})
 		if atime {
 			go c.Index.UpdateObjectAccessTime(cacheKey)

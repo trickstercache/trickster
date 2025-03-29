@@ -22,7 +22,6 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 )
 
 // Backends represents a map of Backends keyed by Name
@@ -30,7 +29,7 @@ type Backends map[string]Backend
 
 // StartHealthChecks iterates the backends to fully configure health checkers
 // and start up any intervaled health checks
-func (b Backends) StartHealthChecks(logger logging.Logger) (healthcheck.HealthChecker, error) {
+func (b Backends) StartHealthChecks() (healthcheck.HealthChecker, error) {
 	hc := healthcheck.New()
 	for k, c := range b {
 		bo := c.Configuration()
@@ -47,7 +46,7 @@ func (b Backends) StartHealthChecks(logger logging.Logger) (healthcheck.HealthCh
 		} else {
 			bo.HealthCheck.Overlay(k, hco)
 		}
-		st, err := hc.Register(k, bo.Provider, bo.HealthCheck, c.HealthCheckHTTPClient(), logger)
+		st, err := hc.Register(k, bo.Provider, bo.HealthCheck, c.HealthCheckHTTPClient())
 		if err != nil {
 			return nil, err
 		}

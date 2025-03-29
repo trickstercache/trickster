@@ -25,6 +25,8 @@ import (
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
@@ -73,7 +75,7 @@ func TestRollupHandler(t *testing.T) {
 }
 
 func TestRollupHandlerSetExtent(t *testing.T) {
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	// provide bad URL with no TimeRange query params
 	// hc := tu.NewTestWebClient()
 	o := bo.New()
@@ -88,7 +90,7 @@ func TestRollupHandlerSetExtent(t *testing.T) {
 		t.Error(err)
 	}
 
-	r = request.SetResources(r, request.NewResources(o, nil, nil, nil, client, nil, logging.ConsoleLogger("error")))
+	r = request.SetResources(r, request.NewResources(o, nil, nil, nil, client, nil))
 
 	now := time.Now()
 	then := now.Add(-5 * time.Hour)
@@ -104,7 +106,7 @@ func TestRollupHandlerSetExtent(t *testing.T) {
 }
 
 func TestRollupHandlerParseTimeRangeQuery(t *testing.T) {
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	// provide bad URL with no TimeRange query params
 	// hc := tu.NewTestWebClient()
 	o := bo.New()
@@ -119,7 +121,7 @@ func TestRollupHandlerParseTimeRangeQuery(t *testing.T) {
 		t.Error(err)
 	}
 
-	r = request.SetResources(r, request.NewResources(o, nil, nil, nil, client, nil, logging.ConsoleLogger("error")))
+	r = request.SetResources(r, request.NewResources(o, nil, nil, nil, client, nil))
 
 	// case where everything is good
 	r.URL.RawQuery = "start_ts=0&end_ts=900&rollup_span=300s&type=average"

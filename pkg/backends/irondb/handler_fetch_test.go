@@ -25,6 +25,8 @@ import (
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -97,6 +99,7 @@ func TestFetchHandlerDeriveCacheKey(t *testing.T) {
 
 func TestFetchHandlerSetExtent(t *testing.T) {
 
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	// provide bad URL with no TimeRange query params
 	//hc := tu.NewTestWebClient()
 	o := bo.New()
@@ -113,7 +116,7 @@ func TestFetchHandlerSetExtent(t *testing.T) {
 	}
 
 	r = request.SetResources(r, request.NewResources(o, nil, nil, nil, client,
-		nil, logging.ConsoleLogger("error")))
+		nil))
 
 	now := time.Now()
 	then := now.Add(-5 * time.Hour)

@@ -26,9 +26,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
-func mockServe(oldConf *config.Config, wg *sync.WaitGroup, logger logging.Logger,
+func mockServe(oldConf *config.Config, wg *sync.WaitGroup,
 	oldCaches map[string]cache.Cache, args []string, errorFunc func()) error {
 	return nil
 }
@@ -38,32 +40,36 @@ func TestStartHupMonitor(t *testing.T) {
 	// passing case for this test is no panics or hangs
 
 	w := httptest.NewRecorder()
-	logger := logging.StreamLogger(w, "WARN")
+	l := logging.StreamLogger(w, level.Warn)
+	logger.SetLogger(l)
 
-	StartHupMonitor(nil, nil, nil, nil, nil, mockServe)
+	StartHupMonitor(nil, nil, nil, nil, mockServe)
 
 	qch := make(chan bool)
 	conf := config.NewConfig()
 	conf.Resources = &config.Resources{QuitChan: qch}
-	StartHupMonitor(conf, nil, logger, nil, nil, mockServe)
+	StartHupMonitor(conf, nil, nil, nil, mockServe)
 	time.Sleep(time.Millisecond * 100)
 	qch <- true
 
-	StartHupMonitor(conf, nil, logger, nil, nil, mockServe)
+	StartHupMonitor(conf, nil, nil, nil, mockServe)
 	time.Sleep(time.Millisecond * 100)
 	hups <- syscall.SIGHUP
 	time.Sleep(time.Millisecond * 100)
 
-	logger.Close()
-
 	w = httptest.NewRecorder()
-	logger = logging.StreamLogger(w, "WARN")
+	l2 := logging.StreamLogger(w, level.Warn)
+	logger.SetLogger(l2)
+	l.Close()
 
 	now := time.Unix(1577836800, 0)
 	nowMinus1m := time.Now().Add(-1 * time.Minute)
 	conf.Main.SetStalenessInfo("../../testdata/test.empty.conf", now, nowMinus1m)
-	StartHupMonitor(conf, nil, logger, nil, nil, mockServe)
+	StartHupMonitor(conf, nil, nil, nil, mockServe)
 	time.Sleep(time.Millisecond * 100)
 	hups <- syscall.SIGHUP
 	time.Sleep(time.Millisecond * 100)
+
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	l2.Close()
 }

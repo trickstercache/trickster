@@ -23,6 +23,8 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -32,7 +34,7 @@ import (
 func TestHandleLocalResponse(t *testing.T) {
 
 	HandleLocalResponse(nil, nil)
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	_, _, err := config.Load("trickster-test", "test",
 		[]string{"-origin-url", "http://1.2.3.4", "-provider", "prometheus"})
 	if err != nil {
@@ -52,8 +54,7 @@ func TestHandleLocalResponse(t *testing.T) {
 	}
 
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(nil, pc, nil, nil, nil, nil,
-			logging.ConsoleLogger("error"))))
+		request.NewResources(nil, pc, nil, nil, nil, nil)))
 
 	HandleLocalResponse(w, r)
 	resp := w.Result()
@@ -83,7 +84,7 @@ func TestHandleLocalResponse(t *testing.T) {
 }
 
 func TestHandleLocalResponseBadResponseCode(t *testing.T) {
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	_, _, err := config.Load("trickster-test", "test",
 		[]string{"-origin-url", "http://1.2.3.4", "-provider", "prometheus"})
 	if err != nil {
@@ -103,7 +104,7 @@ func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 	}
 
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(nil, pc, nil, nil, nil, nil, logging.ConsoleLogger("error"))))
+		request.NewResources(nil, pc, nil, nil, nil, nil)))
 
 	HandleLocalResponse(w, r)
 	resp := w.Result()
@@ -129,7 +130,7 @@ func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 }
 
 func TestHandleLocalResponseNoPathConfig(t *testing.T) {
-
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	_, _, err := config.Load("trickster-test", "test",
 		[]string{"-origin-url", "http://1.2.3.4", "-provider", "prometheus"})
 	if err != nil {
@@ -140,7 +141,7 @@ func TestHandleLocalResponseNoPathConfig(t *testing.T) {
 	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
 
 	r = r.WithContext(tc.WithResources(r.Context(),
-		request.NewResources(nil, nil, nil, nil, nil, nil, logging.ConsoleLogger("error"))))
+		request.NewResources(nil, nil, nil, nil, nil, nil)))
 
 	HandleLocalResponse(w, r)
 	resp := w.Result()

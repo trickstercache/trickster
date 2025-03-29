@@ -26,6 +26,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/checksum/fnv"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
@@ -130,7 +131,7 @@ func MergeAndWriteAlerts(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 				a1 := &WFAlerts{}
 				err := json.Unmarshal(rg.Body(), &a1)
 				if err != nil {
-					rg.Resources.Logger.Error("alerts unmarshaling error",
+					logger.Error("alerts unmarshaling error",
 						logging.Pairs{"provider": "prometheus", "detail": err.Error()})
 					continue
 				}

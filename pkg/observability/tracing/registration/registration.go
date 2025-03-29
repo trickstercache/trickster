@@ -23,6 +23,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/noop"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/otlp"
@@ -35,8 +36,7 @@ import (
 
 // RegisterAll registers all Tracers in the provided configuration, and returns
 // their Flushers
-func RegisterAll(cfg *config.Config, logger logging.Logger,
-	isDryRun bool) (tracing.Tracers, error) {
+func RegisterAll(cfg *config.Config, isDryRun bool) (tracing.Tracers, error) {
 	if cfg == nil {
 		return nil, errors.New("no config provided")
 	}
@@ -74,7 +74,7 @@ func RegisterAll(cfg *config.Config, logger logging.Logger,
 			return nil, fmt.Errorf("invalid tracer type [%s] for tracing config [%s]",
 				tc.Provider, k)
 		}
-		tracer, err := GetTracer(tc, logger, isDryRun)
+		tracer, err := GetTracer(tc, isDryRun)
 		if err != nil {
 			return nil, err
 		}
@@ -84,8 +84,7 @@ func RegisterAll(cfg *config.Config, logger logging.Logger,
 }
 
 // GetTracer returns a *Tracer based on the provided options
-func GetTracer(options *options.Options, logger logging.Logger,
-	isDryRun bool) (*tracing.Tracer, error) {
+func GetTracer(options *options.Options, isDryRun bool) (*tracing.Tracer, error) {
 
 	if options == nil {
 		logger.Info("nil tracing config, using noop tracer", nil)
