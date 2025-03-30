@@ -26,10 +26,13 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
+	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/setup"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/signaling"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
 
@@ -37,8 +40,16 @@ var mtx sync.Mutex
 var wasStarted bool
 
 func Start() error {
+
+	var skipUnlock bool
+	unlock := func() {
+		if !skipUnlock {
+			mtx.Unlock()
+		}
+	}
 	mtx.Lock()
-	defer mtx.Unlock()
+	defer unlock()
+
 	if wasStarted {
 		return errors.ErrServerAlreadyStarted
 	}
@@ -62,28 +73,54 @@ func Start() error {
 		fmt.Println("Trickster configuration validation succeeded.")
 		return nil
 	}
-	wasStarted = true
 
 	si := &instance.ServerInstance{
-		ConfigValidator:  setup.LoadAndValidate,
-		ConfigApplicator: setup.ApplyConfig,
+		Config: conf,
+	}
+
+	var hupFunc reload.ReloadFunc = func() (bool, error) {
+		return Hup(si)
 	}
 
 	// Serve with Config
-	caches, err := setup.ApplyConfig(si, conf, func() { os.Exit(1) })
+	si.Caches, err = setup.ApplyConfig(si, conf, hupFunc, func() { os.Exit(1) })
 	if err != nil {
 		return err
 	}
-
-	si.Config = conf
-	si.Caches = caches
-
-	signaling.Wait(si)
-
+	wasStarted = true
+	skipUnlock = true
+	mtx.Unlock()
+	signaling.Wait(hupFunc)
 	return nil
 }
 
-func Hup() error {
-	return nil
+func Hup(si *instance.ServerInstance) (bool, error) {
+	mtx.Lock()
+	defer mtx.Unlock()
+	conf, err := setup.LoadAndValidate()
+	if err != nil {
+		return false, err
+	}
+	if conf == nil || conf.Resources == nil {
+		return false, errors.ErrInvalidOptions
+	}
+	if conf.IsStale() {
+		logger.Warn("configuration reload starting now",
+			logging.Pairs{"source": "sighup"})
+
+		var hupFunc reload.ReloadFunc = func() (bool, error) {
+			return Hup(si)
+		}
+		_, err = setup.ApplyConfig(si, conf, hupFunc, nil)
+		if err != nil {
+			logger.Warn(reload.ConfigNotReloadedText,
+				logging.Pairs{"error": err.Error()})
+			return false, err
+		}
+		logger.Info(reload.ConfigReloadedText, nil)
+		return true, nil
+	}
+	logger.Warn(reload.ConfigNotReloadedText, nil)
+	return false, nil
 
 }

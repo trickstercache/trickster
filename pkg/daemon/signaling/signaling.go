@@ -5,20 +5,18 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
-	"github.com/trickstercache/trickster/v2/pkg/daemon/reload"
+	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 )
 
-func Wait(si *instance.ServerInstance) {
+func Wait(reloader reload.ReloadFunc) {
 	// Serve with Config
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	for {
 		sig := <-sigs
-		switch sig {
-		case syscall.SIGHUP:
-			reload.RequestReload(si)
-		case syscall.SIGINT, syscall.SIGTERM:
+		if sig == syscall.SIGHUP {
+			reloader()
+		} else if sig == syscall.SIGINT || sig == syscall.SIGTERM {
 			break
 		}
 	}

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package handlers
+package reload
 
 import (
 	"net/http"
@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -32,13 +33,13 @@ import (
 func TestReloadHandleFunc(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 
-	// var emptyFunc = func(*config.Config, map[string]cache.Cache, func()) error {
-	// 	return nil
-	// }
+	var emptyFunc reload.ReloadFunc = func() (bool, error) {
+		return true, nil
+	}
 
 	testFile := t.TempDir() + "/trickster_test_config.conf"
 
-	tml, err := os.ReadFile("../../../testdata/test.empty.conf")
+	tml, err := os.ReadFile("../../../../../testdata/test.empty.conf")
 	if err != nil {
 		t.Error(err)
 	}
@@ -53,7 +54,7 @@ func TestReloadHandleFunc(t *testing.T) {
 	w := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "/", nil)
 
-	f := ReloadHandleFunc(cfg, nil)
+	f := ReloadHandleFunc(emptyFunc)
 	f(w, r)
 	os.Remove(testFile)
 	time.Sleep(time.Millisecond * 500)

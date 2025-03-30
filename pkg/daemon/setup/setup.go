@@ -1,7 +1,6 @@
 package setup
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/registration"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	dr "github.com/trickstercache/trickster/v2/pkg/config/reload"
 	ro "github.com/trickstercache/trickster/v2/pkg/config/reload/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/validate"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registration"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/reload"
 	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
@@ -65,7 +66,7 @@ func LoadAndValidate() (*config.Config, error) {
 }
 
 func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
-	errorFunc func()) (cache.CacheLookup, error) {
+	hupFunc dr.ReloadFunc, errorFunc func()) (cache.CacheLookup, error) {
 
 	if newConf == nil {
 		return nil, nil
@@ -81,10 +82,6 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 
 	applyLoggingConfig(newConf, si.Config)
-
-	for _, w := range newConf.LoaderWarnings {
-		logger.Warn(w, nil)
-	}
 
 	//Register Tracing Configurations
 	tracers, err := tr.RegisterAll(newConf, false)
@@ -105,8 +102,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		http.HandlerFunc((handlers.PingHandleFunc(newConf))))
 
 	var caches = applyCachingConfig(si, newConf)
-	rh := handlers.ReloadHandleFunc(newConf, caches)
-
+	rh := reload.ReloadHandleFunc(hupFunc)
 	o, err := routing.RegisterProxyRoutes(newConf, r, mr, caches, tracers, false)
 	if err != nil {
 		handleStartupIssue("route registration failed",
@@ -140,8 +136,6 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	if si.Config != nil && si.Config.Resources != nil {
 		si.Config.Resources.QuitChan <- true // this signals the old hup monitor goroutine to exit
 	}
-	// signal.StartHupMonitor(newConf, logger, caches, Serve)
-
 	return caches, nil
 }
 
@@ -281,43 +275,4 @@ func handleStartupIssue(event string, detail logging.Pairs, errorFunc func()) {
 	if errorFunc != nil {
 		errorFunc()
 	}
-}
-
-func validateConfig(conf *config.Config) error {
-
-	for _, w := range conf.LoaderWarnings {
-		fmt.Println(w)
-	}
-
-	var caches = make(map[string]cache.Cache)
-	for k := range conf.Caches {
-		caches[k] = nil
-	}
-
-	r := lm.NewRouter()
-	mr := lm.NewRouter()
-	mr.SetMatchingScheme(0) // metrics router is exact-match only
-
-	tracers, err := tr.RegisterAll(conf, true)
-	if err != nil {
-		return err
-	}
-
-	_, err = routing.RegisterProxyRoutes(conf, r, mr, caches, tracers, true)
-	if err != nil {
-		return err
-	}
-
-	if conf.Frontend.TLSListenPort < 1 && conf.Frontend.ListenPort < 1 {
-		return errors.New("no http or https listeners configured")
-	}
-
-	if conf.Frontend.ServeTLS && conf.Frontend.TLSListenPort > 0 {
-		_, err = conf.TLSCertConfig()
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }

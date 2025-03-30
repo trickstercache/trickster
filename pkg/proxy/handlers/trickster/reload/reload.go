@@ -14,29 +14,26 @@
  * limitations under the License.
  */
 
-package handlers
+package reload
 
 import (
 	"net/http"
 
-	"github.com/trickstercache/trickster/v2/pkg/cache"
-	"github.com/trickstercache/trickster/v2/pkg/config"
-	"github.com/trickstercache/trickster/v2/pkg/daemon/reload"
+	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 // ReloadHandleFunc will reload the running configuration if it has changed
-func ReloadHandleFunc(conf *config.Config,
-	caches map[string]cache.Cache) func(http.ResponseWriter, *http.Request) {
+func ReloadHandleFunc(f reload.ReloadFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		didReload, _ := reload.RequestReload(nil)
+		didReload, _ := f()
 		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 		w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
 		w.WriteHeader(http.StatusOK)
 		if didReload {
-			w.Write([]byte(config.ConfigReloadedText))
+			w.Write([]byte(reload.ConfigReloadedText))
 		} else {
-			w.Write([]byte(config.ConfigNotReloadedText))
+			w.Write([]byte(reload.ConfigNotReloadedText))
 		}
 	}
 }
