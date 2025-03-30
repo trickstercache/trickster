@@ -35,14 +35,19 @@ func TestCheckHealth(t *testing.T) {
 	tgt.hcStatus.Set(1)
 
 	p := &pool{ch: make(chan bool), ctx: ctx, targets: []*Target{tgt}, healthyFloor: -1}
-	go p.checkHealth()
+	go func() {
+		p.checkHealth()
+	}()
 	time.Sleep(150 * time.Millisecond)
 	p.ch <- true
 	time.Sleep(150 * time.Millisecond)
 	cancel()
 	time.Sleep(10 * time.Millisecond)
-	if len(p.healthy) != 1 {
-		t.Errorf("expected %d got %d", 0, len(p.healthy))
+	p.mtx.Lock()
+	l := len(p.healthy)
+	p.mtx.Unlock()
+	if l != 1 {
+		t.Errorf("expected %d got %d", 0, l)
 	}
 
 }
