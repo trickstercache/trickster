@@ -28,12 +28,6 @@ func TestCheckHealth(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// s, _, _, c, err := testutil.NewTestInstance("", nil, 200, "pass",
-	// 	map[string]string{}, "rp", "/", "INFO")
-	// if err != nil {
-	// 	t.Error(err)
-	// }
-
 	tgt := &Target{
 		hcStatus: &healthcheck.Status{},
 	}
@@ -52,11 +46,3 @@ func TestCheckHealth(t *testing.T) {
 	}
 
 }
-
-// // NewTarget returns a new Target using the provided inputs
-// func NewTarget(handler http.Handler, hcStatus *healthcheck.Status) *Target {
-// 	return &Target{
-// 		hcStatus: hcStatus,
-// 		handler:  handler,
-// 	}
-// }
