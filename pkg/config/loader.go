@@ -42,8 +42,12 @@ func Load(args []string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	if c == nil {
+		return nil, errors.ErrInvalidOptions
+	}
 	if flags.PrintVersion {
-		return nil, nil
+		c.Flags = flags
+		return c, nil
 	}
 	if err := c.loadFile(flags); err != nil && flags.customPath {
 		// a user-provided path couldn't be loaded. return the error for the application to handle
