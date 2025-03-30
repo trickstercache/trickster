@@ -29,6 +29,8 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -179,6 +181,9 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 					}
 					if qr.err == nil {
 						ress[outIdx] = qr.d.timeseries
+					} else {
+						logger.Error("dpc query cache chunk failed",
+							logging.Pairs{"detail": qr.err, "chunkIdx": outIdx})
 					}
 				}(resi)
 				resi++
