@@ -16,7 +16,7 @@
 
 // package server runs the Trickster process as an HTTP(S) Listener
 // based on the provided configuration
-package server
+package daemon
 
 import (
 	"fmt"
@@ -26,11 +26,11 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
+	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
+	"github.com/trickstercache/trickster/v2/pkg/daemon/setup"
+	"github.com/trickstercache/trickster/v2/pkg/daemon/signaling"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
-	"github.com/trickstercache/trickster/v2/pkg/server/instance"
-	"github.com/trickstercache/trickster/v2/pkg/server/setup"
-	"github.com/trickstercache/trickster/v2/pkg/server/signaling"
 )
 
 var mtx sync.Mutex

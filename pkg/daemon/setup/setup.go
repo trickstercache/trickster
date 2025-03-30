@@ -21,6 +21,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	ro "github.com/trickstercache/trickster/v2/pkg/config/reload/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/validate"
+	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	te "github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
@@ -30,7 +31,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
-	"github.com/trickstercache/trickster/v2/pkg/server/instance"
 )
 
 const ConfigNotReloadedText = "configuration NOT reloaded"

@@ -21,7 +21,7 @@ import (
 	"os"
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
-	"github.com/trickstercache/trickster/v2/pkg/server"
+	"github.com/trickstercache/trickster/v2/pkg/daemon"
 )
 
 var (
@@ -37,7 +37,7 @@ const (
 func main() {
 	appinfo.SetAppInfo(applicationName, applicationVersion,
 		applicationBuildTime, applicationGitCommitID)
-	err := server.Start()
+	err := daemon.Start()
 	if err != nil {
 		os.Exit(1)
 	}
