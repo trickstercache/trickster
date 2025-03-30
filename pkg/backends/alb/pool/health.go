@@ -21,11 +21,10 @@ import (
 )
 
 func (p *pool) checkHealth() {
-outer:
 	for {
 		select {
 		case <-p.ctx.Done():
-			break outer
+			return
 		case <-p.ch: // msg arrives whenever the healthy list must be rebuilt
 			p.mtx.Lock()
 			h := make([]http.Handler, 0, len(p.targets))
