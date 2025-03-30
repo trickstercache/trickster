@@ -51,7 +51,6 @@ func TestInfluxDBClientInterfacing(t *testing.T) {
 }
 
 func TestNewClient(t *testing.T) {
-
 	conf, err := config.Load([]string{"-provider", "influxdb", "-origin-url", "http://1"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())

@@ -282,7 +282,8 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 
 func TestPrepareFetchReaderErr(t *testing.T) {
 	logger.SetLogger(testLogger)
-	conf, err := config.Load([]string{"-origin-url", "http://example.com/", "-provider", "test", "-log-level", "debug"})
+	conf, err := config.Load([]string{"-origin-url", "http://example.com/",
+		"-provider", "test", "-log-level", "debug"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}

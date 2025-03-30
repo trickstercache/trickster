@@ -36,7 +36,6 @@ import (
 )
 
 func TestMultiPartByteRangeChunks(t *testing.T) {
-
 	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
