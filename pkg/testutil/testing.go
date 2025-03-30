@@ -37,7 +37,6 @@ import (
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registration"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	th "github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -202,8 +201,8 @@ func BasicHTTPHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	h := w.Header()
 	h.Set("Test-Header", "Trickster")
-	h.Set(headers.NameLastModified, "Wed, 01 Jan 2020 00:00:00 UTC")
-	h.Set(headers.NameTricksterResult, "engine=none")
+	h.Set(th.NameLastModified, "Wed, 01 Jan 2020 00:00:00 UTC")
+	h.Set(th.NameTricksterResult, "engine=none")
 	w.WriteHeader(200)
 	w.Write([]byte("{}"))
 }
