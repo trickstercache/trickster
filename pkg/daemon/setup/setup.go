@@ -115,7 +115,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 
 	var caches = applyCachingConfig(si, newConf)
 	rh := reload.ReloadHandleFunc(hupFunc)
-	o, err := routing.RegisterProxyRoutes(newConf, r, mr, caches, tracers, false)
+	backends, err := routing.RegisterProxyRoutes(newConf, r, mr, caches, tracers, false)
 	if err != nil {
 		handleStartupIssue("route registration failed",
 			logging.Pairs{"detail": err.Error()}, errorFunc)
@@ -127,25 +127,29 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 	r.RegisterRoute(newConf.Main.PurgeKeyHandlerPath, nil,
 		[]string{http.MethodDelete}, true,
-		http.HandlerFunc(handlers.PurgeKeyHandleFunc(newConf, o)))
+		http.HandlerFunc(handlers.PurgeKeyHandleFunc(newConf, backends)))
 
+	if si.Backends != nil {
+		alb.StopPools(si.Backends)
+	}
 	if si.HealthChecker != nil {
 		si.HealthChecker.Shutdown()
 	}
-	si.HealthChecker, err = o.StartHealthChecks()
+	si.HealthChecker, err = backends.StartHealthChecks()
 	if err != nil {
 		return err
 	}
-	alb.StartALBPools(o, si.HealthChecker.Statuses())
-	routing.RegisterDefaultBackendRoutes(r, o, tracers)
+	alb.StartALBPools(backends, si.HealthChecker.Statuses())
+	routing.RegisterDefaultBackendRoutes(r, backends, tracers)
 	routing.RegisterHealthHandler(mr, newConf.Main.HealthHandlerPath, si.HealthChecker)
 	applyListenerConfigs(newConf, si.Config, r, http.HandlerFunc(rh), mr,
-		tracers, o, errorFunc)
+		tracers, backends, errorFunc)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
 	si.Config = newConf
 	si.Caches = caches
+	si.Backends = backends
 	return nil
 }
 

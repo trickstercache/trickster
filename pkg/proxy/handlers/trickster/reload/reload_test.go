@@ -33,7 +33,7 @@ import (
 func TestReloadHandleFunc(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 
-	var emptyFunc reload.ReloadFunc = func() (bool, error) {
+	var emptyFunc reload.ReloadFunc = func(string) (bool, error) {
 		return true, nil
 	}
 
