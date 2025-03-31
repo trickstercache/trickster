@@ -50,11 +50,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 
-const ConfigNotReloadedText = "configuration NOT reloaded"
-const ConfigReloadedText = "configuration reloaded"
-
 var mtx sync.Mutex
-
 var hc healthcheck.HealthChecker
 
 func LoadAndValidate() (*config.Config, error) {
