@@ -25,7 +25,7 @@ Refer to [examples/conf/example.full.yaml](../examples/conf/example.full.yaml) f
 Trickster will then check for and evaluate the following Environment Variables:
 
 * `TRK_ORIGIN_URL=http://prometheus.example.com:9090` - The default origin URL for proxying all http requests
-* `TRK_ORIGIN_TYPE=prometheus` - The type of [supported backend server](./supported-origin-types.md)
+* `TRK_ORIGIN_TYPE=prometheus` - The type of [supported backend server](./supported-backend-providers.md)
 * `TRK_LOG_LEVEL=INFO` - Level of Logging that Trickster will output
 * `TRK_PROXY_PORT=8480` -Listener port for the HTTP Proxy Endpoint
 * `TRK_METRICS_PORT=8481` - Listener port for the Metrics and pprof debugging HTTP Endpoint

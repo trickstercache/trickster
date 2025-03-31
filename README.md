@@ -51,7 +51,7 @@ Trickster works with virtually any Dashboard application that makes queries to a
 
 <img src="./docs/images/external/irondb_logo_60.png" width=16 /> Circonus IRONdb
 
-See the [Supported TSDB Providers](./docs/supported-origin-types.md) document for full details
+See the [Supported TSDB Providers](./docs/supported-backend-providers.md) document for full details
 
 ### How Trickster Accelerates Time Series
 
