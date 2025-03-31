@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -170,30 +171,52 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 					End:   chunkStart.Add(csize - trq.Step),
 				}
 				// Derive subkey
-				subkey := key + chunkExtent.String()
+				subkey := getSubKey(key, chunkExtent)
 				// Query
 				wg.Add(1)
 				go func(outIdx int) {
 					defer wg.Done()
 					qr := queryConcurrent(ctx, c, subkey, nil, nil)
+					if qr.lookupStatus != status.LookupStatusHit &&
+						(qr.err == nil || qr.err == cache.ErrKNF) {
+						return
+					}
 					if c.Configuration().Provider != "memory" {
 						qr.d.timeseries, qr.err = unmarshal(qr.d.Body, nil)
 					}
-					if qr.err == nil {
+					if qr.err == nil && qr.d != nil && qr.d.timeseries != nil {
 						ress[outIdx] = qr.d.timeseries
 					} else {
 						logger.Error("dpc query cache chunk failed",
-							logging.Pairs{"detail": qr.err, "chunkIdx": outIdx})
+							logging.Pairs{"error": qr.err, "chunkIdx": outIdx,
+								"key": subkey, "cacheQueryStatus": qr.lookupStatus})
 					}
 				}(resi)
 				resi++
 			}
 			// Wait on queries
 			wg.Wait()
-			d.timeseries = ress[0]
-			d.timeseries.Merge(true, ress[1:]...)
-			if d.timeseries != nil {
-				d.timeseries.SetExtents(d.timeseries.Extents().Compress(trq.Step))
+			// this removes any nil entries (cache misses) from ress
+			cts := make([]timeseries.Timeseries, len(ress))
+			var j int
+			for _, ts := range ress {
+				if ts == nil {
+					continue
+				}
+				cts[j] = ts
+				j++
+			}
+			ress = cts[:j]
+			// this merges all of the timeseries from the different cache subkeys
+			// into a unified single timeseries
+			if j > 0 {
+				d.timeseries = ress[0]
+				if j > 1 {
+					d.timeseries.Merge(true, ress[1:]...)
+				}
+				if d.timeseries != nil {
+					d.timeseries.SetExtents(d.timeseries.Extents().Compress(trq.Step))
+				}
 			}
 		} else {
 			// Do byterange chunking
@@ -431,7 +454,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 					End:   chunkStart.Add(csize - trq.Step),
 				}
 				// Derive subkey
-				subkey := key + chunkExtent.String()
+				subkey := getSubKey(key, chunkExtent)
 				// Query
 				wg.Add(1)
 				go func() {
@@ -564,4 +587,8 @@ func DocumentFromHTTPResponse(resp *http.Response, body []byte,
 	}
 
 	return d
+}
+
+func getSubKey(key string, chunkExtent timeseries.Extent) string {
+	return fmt.Sprintf("%s.%s", key, chunkExtent)
 }
