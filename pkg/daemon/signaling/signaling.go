@@ -31,7 +31,7 @@ func Wait(reloader reload.ReloadFunc) {
 	for {
 		sig := <-sigs
 		if sig == syscall.SIGHUP {
-			reloader()
+			reloader("sighup")
 		} else if sig == syscall.SIGINT || sig == syscall.SIGTERM {
 			break
 		}

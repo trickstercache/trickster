@@ -79,8 +79,8 @@ func Start() error {
 
 	si := &instance.ServerInstance{}
 
-	var hupFunc reload.ReloadFunc = func() (bool, error) {
-		return Hup(si)
+	var hupFunc reload.ReloadFunc = func(source string) (bool, error) {
+		return Hup(si, source)
 	}
 
 	// Serve with Config
@@ -95,7 +95,7 @@ func Start() error {
 	return nil
 }
 
-func Hup(si *instance.ServerInstance) (bool, error) {
+func Hup(si *instance.ServerInstance, source string) (bool, error) {
 	mtx.Lock()
 	defer mtx.Unlock()
 	if si.Config != nil && si.Config.IsStale() {
@@ -107,21 +107,20 @@ func Hup(si *instance.ServerInstance) (bool, error) {
 			return false, errors.ErrInvalidOptions
 		}
 		logger.Warn("configuration reload starting now",
-			logging.Pairs{"source": "sighup"})
+			logging.Pairs{"source": source})
 
-		var hupFunc reload.ReloadFunc = func() (bool, error) {
-			return Hup(si)
+		var hupFunc reload.ReloadFunc = func(source string) (bool, error) {
+			return Hup(si, source)
 		}
 		err = setup.ApplyConfig(si, conf, hupFunc, nil)
 		if err != nil {
 			logger.Warn(reload.ConfigNotReloadedText,
-				logging.Pairs{"error": err.Error()})
+				logging.Pairs{"error": err.Error(), "source": source})
 			return false, err
 		}
-		logger.Info(reload.ConfigReloadedText, nil)
+		logger.Info(reload.ConfigReloadedText, logging.Pairs{"source": source})
 		return true, nil
 	}
-	logger.Warn(reload.ConfigNotReloadedText, nil)
+	logger.Warn(reload.ConfigNotReloadedText, logging.Pairs{"source": source})
 	return false, nil
-
 }
