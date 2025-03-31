@@ -3,20 +3,33 @@ on:
     branches:
     - main
   workflow_dispatch:
+  workflow_call:
+    inputs:
+        tag:
+          description: 'Tag to use for the image'
+          required: false
+          type: string
+          default: ''
 name: Publish Latest Trickster Image
 
 jobs:
   publish-image:
     runs-on: ubuntu-latest
     permissions:
-        contents: read
-        packages: write
-        attestations: write
-        id-token: write
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    strategy:
+      matrix:
+        arch:
+        - linux/amd64
+        - linux/arm64/v8
     steps:
       - name: Get Build Date
         id: builddate
-        run: echo "::set-output name=builddate::$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        run: |
+            echo "builddate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" | tee $GITHUB_OUTPUT
       - uses: actions/checkout@v4
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -34,19 +47,29 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: build & push image
+      - name: resolve branch name
+        if: inputs.tag == ''
+        id: get-branch
         run: |
           b=$(git branch -r --contains ${{ github.ref }}) && branch=${b##*/}
-          docker buildx build \
-            --label "org.opencontainers.image.revision=${{ github.sha }}" \
-            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
-            --label "org.opencontainers.image.created=${{ steps.builddate.outputs.builddate }}" \
-            --platform linux/arm64/v8,linux/amd64 \
-            -f ./Dockerfile \
-            --push ${{ github.repository == 'trickstercache/trickster' && format('-t {0}:${branch} -t {0}:{1}', env.DOCKER_HUB_REPO, github.sha) || '' }} \
-            -t ${{ env.GHCR_REPO }}:${branch} \
-            -t ${{ env.GHCR_REPO }}:${{ github.sha }} \
-            .
-        env:
-          DOCKER_HUB_REPO: trickstercache/trickster
-          GHCR_REPO: ghcr.io/${{ github.repository_owner }}/trickster
+          echo "branch=${branch}" | tee $GITHUB_OUTPUT
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          file: ${{ github.workspace }}/Dockerfile
+          context: ${{ github.workspace }}
+          platforms: ${{ matrix.arch}}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.created=${{ steps.builddate.outputs.builddate }}
+          build-args: |
+            GIT_LATEST_COMMIT_ID=${{ github.sha }}
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ inputs.tag || steps.get-branch.outputs.branch }}
+            ${{ inputs.tag == '' && format('ghcr.io/{0}:{1}', github.repository, github.sha) || '' }}
+            ${{ github.repository_owner == 'trickstercache' && format('{0}:{1}', github.repository, (inputs.tag || steps.get-branch.outputs.branch)) || '' }}
+            ${{ (inputs.tag == '' && github.repository_owner == 'trickstercache') && format('{0}:{1}', github.repository, github.sha) || '' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -7,6 +7,11 @@ name: Publish Trickster Beta Release to Drafts
 
 jobs:
   release:
+    permissions:
+      contents: write
+      packages: write
+      attestations: write
+      id-token: write
     uses: ./.github/workflows/publish-release.yml
     with:
       draft: true
