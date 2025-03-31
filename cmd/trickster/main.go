@@ -24,14 +24,15 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
+// application variables set at build time via go build's -ldflags
 var (
 	applicationGitCommitID string
 	applicationBuildTime   string
+	applicationVersion     string
 )
 
 const (
-	applicationName    = "trickster"
-	applicationVersion = "2.0.0-beta2"
+	applicationName = "trickster"
 )
 
 func main() {
