@@ -162,7 +162,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			// Prepare buffered results and waitgroup
 			wg := &sync.WaitGroup{}
 			// Result slice of timeseries
-			ress := make([]timeseries.Timeseries, cct)
+			ress := make(timeseries.TimeseriesList, cct)
 			resi := 0
 			for chunkStart := cext.Start; chunkStart.Before(cext.End); chunkStart = chunkStart.Add(csize) {
 				// Chunk range (inclusive, on-step)
@@ -204,27 +204,9 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			}
 			// Wait on queries
 			wg.Wait()
-			// this removes any nil entries (cache misses) from ress
-			cts := make([]timeseries.Timeseries, len(ress))
-			var j int
-			for _, ts := range ress {
-				if ts == nil {
-					continue
-				}
-				cts[j] = ts
-				j++
-			}
-			ress = cts[:j]
-			// this merges all of the timeseries from the different cache subkeys
-			// into a unified single timeseries
-			if j > 0 {
-				d.timeseries = ress[0]
-				if j > 1 {
-					d.timeseries.Merge(true, ress[1:]...)
-				}
-				if d.timeseries != nil {
-					d.timeseries.SetExtents(d.timeseries.Extents().Compress(trq.Step))
-				}
+			d.timeseries = ress.Merge()
+			if d.timeseries != nil {
+				d.timeseries.SetExtents(d.timeseries.Extents().Compress(trq.Step))
 			}
 		} else {
 			// Do byterange chunking
