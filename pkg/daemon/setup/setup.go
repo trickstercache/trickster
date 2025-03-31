@@ -85,10 +85,9 @@ func LoadAndValidate() (*config.Config, error) {
 }
 
 func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
-	hupFunc dr.ReloadFunc, errorFunc func()) (cache.CacheLookup, error) {
-
-	if newConf == nil {
-		return nil, nil
+	hupFunc dr.ReloadFunc, errorFunc func()) error {
+	if si == nil || newConf == nil {
+		return nil
 	}
 
 	if newConf.Main.ServerName == "" {
@@ -108,7 +107,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		handleStartupIssue("tracing registration failed",
 			logging.Pairs{"detail": err.Error()},
 			errorFunc)
-		return nil, err
+		return err
 	}
 
 	// every config (re)load is a new router
@@ -126,7 +125,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	if err != nil {
 		handleStartupIssue("route registration failed",
 			logging.Pairs{"detail": err.Error()}, errorFunc)
-		return nil, err
+		return err
 	}
 
 	if !strings.HasSuffix(newConf.Main.PurgeKeyHandlerPath, "/") {
@@ -141,7 +140,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 	hc, err = o.StartHealthChecks()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	alb.StartALBPools(o, hc.Statuses())
 	routing.RegisterDefaultBackendRoutes(r, o, tracers)
@@ -151,26 +150,21 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
-	// add Config Reload HUP Signal Monitor
-	if si.Config != nil && si.Config.Resources != nil {
-		si.Config.Resources.QuitChan <- true // this signals the old hup monitor goroutine to exit
-	}
-	return caches, nil
+	si.Config = newConf
+	si.Caches = caches
+	return nil
 }
 
 func applyLoggingConfig(c, o *config.Config) {
-
 	oldLogger := logger.Logger()
-
 	if c == nil || c.Logging == nil {
 		return
 	}
-
+	isReload := o != nil && c != o
 	if c.ReloadConfig == nil {
 		c.ReloadConfig = ro.New()
 	}
-
-	if o != nil && o.Logging != nil {
+	if isReload {
 		if c.Logging.LogFile == o.Logging.LogFile &&
 			c.Logging.LogLevel == o.Logging.LogLevel {
 			// no changes in logging config,
@@ -185,6 +179,7 @@ func applyLoggingConfig(c, o *config.Config) {
 					time.Duration(c.ReloadConfig.DrainTimeoutMS+1000)*time.Millisecond)
 			}
 			initLogger(c)
+			return
 		}
 		if c.Logging.LogLevel != o.Logging.LogLevel {
 			// the only change is the log level, so update it and return the original logger

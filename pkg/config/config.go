@@ -117,7 +117,6 @@ func (mc *MainConfig) SetStalenessInfo(fp string, lm, rlt time.Time) {
 
 // Resources is a collection of values used by configs at runtime that are not part of the config itself
 type Resources struct {
-	QuitChan chan bool `yaml:"-"`
 	metadata yamlx.KeyLookup
 }
 
@@ -152,9 +151,7 @@ func NewConfig() *Config {
 		},
 		ReloadConfig:   reload.New(),
 		LoaderWarnings: make([]string, 0),
-		Resources: &Resources{
-			QuitChan: make(chan bool, 1),
-		},
+		Resources:      &Resources{},
 	}
 }
 
@@ -293,9 +290,7 @@ func (c *Config) Clone() *Config {
 		nc.Frontend = c.Frontend.Clone()
 	}
 
-	nc.Resources = &Resources{
-		QuitChan: make(chan bool, 1),
-	}
+	nc.Resources = &Resources{}
 
 	if c.Logging != nil {
 		nc.Logging = c.Logging.Clone()

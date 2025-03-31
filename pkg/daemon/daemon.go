@@ -77,16 +77,14 @@ func Start() error {
 		}
 	}
 
-	si := &instance.ServerInstance{
-		Config: conf,
-	}
+	si := &instance.ServerInstance{}
 
 	var hupFunc reload.ReloadFunc = func() (bool, error) {
 		return Hup(si)
 	}
 
 	// Serve with Config
-	si.Caches, err = setup.ApplyConfig(si, conf, hupFunc, func() { os.Exit(1) })
+	err = setup.ApplyConfig(si, conf, hupFunc, func() { os.Exit(1) })
 	if err != nil {
 		return err
 	}
@@ -114,7 +112,7 @@ func Hup(si *instance.ServerInstance) (bool, error) {
 		var hupFunc reload.ReloadFunc = func() (bool, error) {
 			return Hup(si)
 		}
-		_, err = setup.ApplyConfig(si, conf, hupFunc, nil)
+		err = setup.ApplyConfig(si, conf, hupFunc, nil)
 		if err != nil {
 			logger.Warn(reload.ConfigNotReloadedText,
 				logging.Pairs{"error": err.Error()})
