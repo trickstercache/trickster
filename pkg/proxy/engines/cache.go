@@ -181,15 +181,23 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 						(qr.err == nil || qr.err == cache.ErrKNF) {
 						return
 					}
-					if c.Configuration().Provider != "memory" {
-						qr.d.timeseries, qr.err = unmarshal(qr.d.Body, nil)
-					}
-					if qr.err == nil && qr.d != nil && qr.d.timeseries != nil {
-						ress[outIdx] = qr.d.timeseries
-					} else {
+					if qr.err != nil {
 						logger.Error("dpc query cache chunk failed",
 							logging.Pairs{"error": qr.err, "chunkIdx": outIdx,
 								"key": subkey, "cacheQueryStatus": qr.lookupStatus})
+						return
+					}
+					if c.Configuration().Provider != "memory" {
+						qr.d.timeseries, qr.err = unmarshal(qr.d.Body, nil)
+						if qr.err != nil {
+							logger.Error("dpc query cache chunk failed",
+								logging.Pairs{"error": qr.err, "chunkIdx": outIdx,
+									"key": subkey, "cacheQueryStatus": qr.lookupStatus})
+							return
+						}
+					}
+					if qr.d.timeseries != nil {
+						ress[outIdx] = qr.d.timeseries
 					}
 				}(resi)
 				resi++
