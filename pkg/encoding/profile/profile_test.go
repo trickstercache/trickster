@@ -42,7 +42,7 @@ func TestString(t *testing.T) {
 		ContentType:          "text/plain",
 	}
 	s := p.String()
-	if strings.Index(s, "text/plain") < 0 {
+	if !strings.Contains(s, "text/plain") {
 		t.Error("mismatch")
 	}
 }

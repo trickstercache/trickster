@@ -197,8 +197,7 @@ func TestParseContentRangeHeader(t *testing.T) {
 	}
 
 	// trickster does not support caching raanges with  * content lengths
-	er = Range{Start: 0, End: 20}
-	r, _, err = ParseContentRangeHeader("bytes 0-20/*")
+	_, _, err = ParseContentRangeHeader("bytes 0-20/*")
 	if err == nil || err.Error() != "invalid input format" {
 		t.Errorf("expected error: %s", "invalid input format")
 	}
