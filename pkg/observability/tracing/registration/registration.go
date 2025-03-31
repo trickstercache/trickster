@@ -84,7 +84,8 @@ func RegisterAll(cfg *config.Config, isDryRun bool) (tracing.Tracers, error) {
 }
 
 // GetTracer returns a *Tracer based on the provided options
-func GetTracer(options *options.Options, isDryRun bool) (*tracing.Tracer, error) {
+func GetTracer(options *options.Options,
+	isDryRun bool) (*tracing.Tracer, error) {
 
 	if options == nil {
 		logger.Info("nil tracing config, using noop tracer", nil)

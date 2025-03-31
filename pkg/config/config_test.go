@@ -35,7 +35,7 @@ const emptyFilePath = "../../testdata/test.empty.conf"
 // EmptyTestConfig returns an empty config based on the testdata empty conf
 func emptyTestConfig() (*Config, string) {
 	const path = emptyFilePath
-	c, _, err := Load("testing", "testing", []string{"-config", path})
+	c, err := Load([]string{"-config", path})
 	if err != nil {
 		panic("could not load empty test config: " + err.Error())
 	}
@@ -290,7 +290,7 @@ func TestIsStale(t *testing.T) {
 		t.Error(err)
 	}
 
-	c, _, _ := Load("testing", "testing", []string{"-config", testFile})
+	c, _ := Load([]string{"-config", testFile})
 	c.ReloadConfig.RateLimitMS = 0
 
 	if c.IsStale() {

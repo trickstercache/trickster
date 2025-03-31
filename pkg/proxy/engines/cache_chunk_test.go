@@ -36,8 +36,7 @@ import (
 )
 
 func TestMultiPartByteRangeChunks(t *testing.T) {
-	logger.SetLogger(testLogger)
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -69,7 +68,7 @@ func TestMultiPartByteRangeChunks(t *testing.T) {
 func TestCacheHitRangeRequestChunks(t *testing.T) {
 	logger.SetLogger(testLogger)
 	expected := "is a "
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -109,7 +108,7 @@ func TestCacheHitRangeRequestChunks(t *testing.T) {
 
 func TestCacheHitRangeRequest2Chunks(t *testing.T) {
 	logger.SetLogger(testLogger)
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -155,7 +154,7 @@ func TestCacheHitRangeRequest2Chunks(t *testing.T) {
 
 func TestCacheHitRangeRequest3Chunks(t *testing.T) {
 	logger.SetLogger(testLogger)
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -196,7 +195,7 @@ func TestCacheHitRangeRequest3Chunks(t *testing.T) {
 
 func TestPartialCacheMissRangeRequestChunks(t *testing.T) {
 	logger.SetLogger(testLogger)
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -241,7 +240,7 @@ func TestPartialCacheMissRangeRequestChunks(t *testing.T) {
 }
 
 func TestFullCacheMissRangeRequestChunks(t *testing.T) {
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -305,7 +304,7 @@ func TestRangeRequestFromClientChunks(t *testing.T) {
 	bytes, _ := io.ReadAll(resp.Body)
 
 	//--------------------------------------
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -350,7 +349,7 @@ func TestQueryCacheChunks(t *testing.T) {
 	logger.SetLogger(testLogger)
 	expected := "1234"
 
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

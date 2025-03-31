@@ -14,38 +14,26 @@
  * limitations under the License.
  */
 
-package level
+package signaling
 
-import "strings"
+import (
+	"os"
+	"os/signal"
+	"syscall"
 
-type Level string
-type LevelID int
-
-const (
-	Debug Level = "debug"
-	Info  Level = "info"
-	Warn  Level = "warn"
-	Error Level = "error"
-	Fatal Level = "fatal"
-
-	DebugID LevelID = 1
-	InfoID  LevelID = 2
-	WarnID  LevelID = 3
-	ErrorID LevelID = 4
-	TraceID LevelID = 5
+	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 )
 
-var validLevels = map[Level]LevelID{
-	Debug: DebugID,
-	Info:  InfoID,
-	Warn:  WarnID,
-	Error: ErrorID,
-	Fatal: TraceID,
-}
-
-func GetLevelID(logLevel Level) LevelID {
-	if i, ok := validLevels[Level(strings.ToLower(string(logLevel)))]; ok {
-		return i
+func Wait(reloader reload.ReloadFunc) {
+	// Serve with Config
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	for {
+		sig := <-sigs
+		if sig == syscall.SIGHUP {
+			reloader("sighup")
+		} else if sig == syscall.SIGINT || sig == syscall.SIGTERM {
+			break
+		}
 	}
-	return 0
 }

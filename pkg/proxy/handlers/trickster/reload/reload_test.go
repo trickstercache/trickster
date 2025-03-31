@@ -14,18 +14,17 @@
  * limitations under the License.
  */
 
-package handlers
+package reload
 
 import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -34,14 +33,13 @@ import (
 func TestReloadHandleFunc(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 
-	var emptyFunc = func(*config.Config, *sync.WaitGroup,
-		map[string]cache.Cache, []string, func()) error {
-		return nil
+	var emptyFunc reload.ReloadFunc = func(string) (bool, error) {
+		return true, nil
 	}
 
 	testFile := t.TempDir() + "/trickster_test_config.conf"
 
-	tml, err := os.ReadFile("../../../testdata/test.empty.conf")
+	tml, err := os.ReadFile("../../../../../testdata/test.empty.conf")
 	if err != nil {
 		t.Error(err)
 	}
@@ -51,12 +49,12 @@ func TestReloadHandleFunc(t *testing.T) {
 		t.Error(err)
 	}
 
-	cfg, _, _ := config.Load("testing", "testing", []string{"-config", testFile})
+	cfg, _ := config.Load([]string{"-config", testFile})
 	cfg.ReloadConfig.RateLimitMS = 0
 	w := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "/", nil)
 
-	f := ReloadHandleFunc(emptyFunc, cfg, nil, nil, nil)
+	f := ReloadHandleFunc(emptyFunc)
 	f(w, r)
 	os.Remove(testFile)
 	time.Sleep(time.Millisecond * 500)

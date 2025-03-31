@@ -62,7 +62,8 @@ func TestPrometheusClientInterfacing(t *testing.T) {
 func TestNewClient(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 
-	conf, _, err := config.Load("trickster", "test", []string{"-origin-url", "http://1", "-provider", "test"})
+	conf, err := config.Load([]string{"-origin-url", "http://1",
+		"-provider", "test"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

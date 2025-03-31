@@ -35,8 +35,8 @@ func TestHandleLocalResponse(t *testing.T) {
 
 	HandleLocalResponse(nil, nil)
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	_, _, err := config.Load("trickster-test", "test",
-		[]string{"-origin-url", "http://1.2.3.4", "-provider", "prometheus"})
+	_, err := config.Load([]string{"-origin-url", "http://1.2.3.4", "-provider",
+		"prometheus"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -52,6 +52,8 @@ func TestHandleLocalResponse(t *testing.T) {
 		ResponseBodyBytes: []byte(expected),
 		ResponseHeaders:   map[string]string{headers.NameTricksterResult: "1234"},
 	}
+
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 
 	r = r.WithContext(tc.WithResources(r.Context(),
 		request.NewResources(nil, pc, nil, nil, nil, nil)))
@@ -85,8 +87,8 @@ func TestHandleLocalResponse(t *testing.T) {
 
 func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	_, _, err := config.Load("trickster-test", "test",
-		[]string{"-origin-url", "http://1.2.3.4", "-provider", "prometheus"})
+	_, err := config.Load([]string{"-origin-url", "http://1.2.3.4", "-provider",
+		"prometheus"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -103,6 +105,7 @@ func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 		ResponseHeaders:   map[string]string{headers.NameTricksterResult: "1234"},
 	}
 
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	r = r.WithContext(tc.WithResources(r.Context(),
 		request.NewResources(nil, pc, nil, nil, nil, nil)))
 
@@ -131,8 +134,8 @@ func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 
 func TestHandleLocalResponseNoPathConfig(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	_, _, err := config.Load("trickster-test", "test",
-		[]string{"-origin-url", "http://1.2.3.4", "-provider", "prometheus"})
+	_, err := config.Load([]string{"-origin-url", "http://1.2.3.4", "-provider",
+		"prometheus"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

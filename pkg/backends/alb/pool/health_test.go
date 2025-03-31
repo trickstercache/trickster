@@ -28,12 +28,6 @@ func TestCheckHealth(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// s, _, _, c, err := testutil.NewTestInstance("", nil, 200, "pass",
-	// 	map[string]string{}, "rp", "/", "INFO")
-	// if err != nil {
-	// 	t.Error(err)
-	// }
-
 	tgt := &Target{
 		hcStatus: &healthcheck.Status{},
 	}
@@ -41,22 +35,19 @@ func TestCheckHealth(t *testing.T) {
 	tgt.hcStatus.Set(1)
 
 	p := &pool{ch: make(chan bool), ctx: ctx, targets: []*Target{tgt}, healthyFloor: -1}
-	go p.checkHealth()
+	go func() {
+		p.checkHealth()
+	}()
 	time.Sleep(150 * time.Millisecond)
 	p.ch <- true
 	time.Sleep(150 * time.Millisecond)
 	cancel()
 	time.Sleep(10 * time.Millisecond)
-	if len(p.healthy) != 1 {
-		t.Errorf("expected %d got %d", 0, len(p.healthy))
+	p.mtx.Lock()
+	l := len(p.healthy)
+	p.mtx.Unlock()
+	if l != 1 {
+		t.Errorf("expected %d got %d", 0, l)
 	}
 
 }
-
-// // NewTarget returns a new Target using the provided inputs
-// func NewTarget(handler http.Handler, hcStatus *healthcheck.Status) *Target {
-// 	return &Target{
-// 		hcStatus: hcStatus,
-// 		handler:  handler,
-// 	}
-// }

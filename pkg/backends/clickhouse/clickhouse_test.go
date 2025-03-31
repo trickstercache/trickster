@@ -26,9 +26,6 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
 	"github.com/trickstercache/trickster/v2/pkg/config"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
 var testModeler = model.NewModeler()
@@ -56,8 +53,8 @@ func TestClickhouseClientInterfacing(t *testing.T) {
 }
 
 func TestNewClient(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	conf, _, err := config.Load("trickster", "test", []string{"-provider", "clickhouse", "-origin-url", "http://1"})
+
+	conf, err := config.Load([]string{"-provider", "clickhouse", "-origin-url", "http://1"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

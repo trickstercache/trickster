@@ -38,7 +38,7 @@ func TestLoadFlags(t *testing.T) {
 	}
 
 	// it should read command line flags
-	flags, err := parseFlags("trickster-test", a)
+	flags, err := parseFlags(a)
 	if err != nil {
 		t.Error(err)
 	}

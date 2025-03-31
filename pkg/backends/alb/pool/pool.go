@@ -29,6 +29,7 @@ import (
 // Pool defines the interface for a load balancer pool
 type Pool interface {
 	Next() []http.Handler
+	Stop()
 }
 
 type selectionFunc func(*pool) []http.Handler
@@ -45,11 +46,13 @@ func New(mechanism Mechanism, targets []*Target, healthyFloor int) Pool {
 	if !ok {
 		return nil
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	p := &pool{
 		mechanism:    mechanism,
 		targets:      targets,
 		f:            f,
-		ctx:          context.Background(),
+		ctx:          ctx,
+		stopper:      cancel,
 		ch:           make(chan bool, 16),
 		healthyFloor: healthyFloor,
 	}
@@ -80,11 +83,16 @@ type pool struct {
 	pos          atomic.Uint64
 	mtx          sync.RWMutex
 	ctx          context.Context
+	stopper      context.CancelFunc
 	ch           chan bool
 }
 
 func (p *pool) Next() []http.Handler {
 	return p.f(p)
+}
+
+func (p *pool) Stop() {
+	p.stopper()
 }
 
 func mechsToFuncs() map[Mechanism]selectionFunc {

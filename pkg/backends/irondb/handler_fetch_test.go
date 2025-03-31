@@ -98,7 +98,6 @@ func TestFetchHandlerDeriveCacheKey(t *testing.T) {
 }
 
 func TestFetchHandlerSetExtent(t *testing.T) {
-
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	// provide bad URL with no TimeRange query params
 	//hc := tu.NewTestWebClient()

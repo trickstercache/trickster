@@ -30,6 +30,7 @@ import (
 
 var logger logging.Logger = logging.ConsoleLogger(level.Info)
 
+// Logger returns gthe Package-level Logger
 func Logger() logging.Logger {
 	return logger
 }
@@ -42,97 +43,135 @@ func SetLogger(l logging.Logger) {
 	logger = l
 }
 
+// SetLogLevel sets the log level for the package-level logger
 func SetLogLevel(logLevel level.Level) {
 	logger.SetLogLevel(logLevel)
 }
 
+// SetLogAsynchronous indicates whether log calls should be made synchronously
+// (blocking) or asynchronously (non-blocking).
 func SetLogAsynchronous(asyncEnabled bool) {
 	logger.SetLogAsynchronous(asyncEnabled)
 }
 
+// Level returns the current Log Level for the package-level logger
 func Level() level.Level {
 	return logger.Level()
 }
 
+// Log logs an event to the package-level logger
 func Log(logLevel level.Level, event string, detail logging.Pairs) {
 	logger.Log(logLevel, event, detail)
 }
 
+// Debug logs a DEBUG event to the package-level logger
 func Debug(event string, detail logging.Pairs) {
 	logger.Debug(event, detail)
 }
 
+// Info logs an INFO event to the package-level logger
 func Info(event string, detail logging.Pairs) {
 	logger.Info(event, detail)
 }
 
+// Warn logs a WARN event to the package-level logger
 func Warn(event string, detail logging.Pairs) {
 	logger.Warn(event, detail)
 }
 
+// Error logs an ERROR event to the package-level logger
 func Error(event string, detail logging.Pairs) {
 	logger.Error(event, detail)
 }
 
+// Fatal logs a FATAL event to the package-level logger and exits the process
+// with the provided exit code
 func Fatal(code int, event string, detail logging.Pairs) {
 	logger.Fatal(code, event, detail)
 }
 
+// LogSynchronous logs an event to the package-level logger
+// synchronously even if LogAsynchronous is true
 func LogSynchronous(logLevel level.Level, event string, detail logging.Pairs) {
 	logger.LogSynchronous(logLevel, event, detail)
 }
 
+// Debug logs a DEBUG event to the package-level logger
+// synchronously even if LogAsynchronous is true
 func DebugSynchronous(event string, detail logging.Pairs) {
 	logger.DebugSynchronous(event, detail)
 }
 
+// Info logs an INFO event to the package-level logger
+// synchronously even if LogAsynchronous is true
 func InfoSynchronous(event string, detail logging.Pairs) {
 	logger.InfoSynchronous(event, detail)
 }
 
+// Warn logs a WARN event to the package-level logger
+// synchronously even if LogAsynchronous is true
 func WarnSynchronous(event string, detail logging.Pairs) {
 	logger.WarnSynchronous(event, detail)
 }
 
+// Error logs an ERROR event to the package-level logger
+// synchronously even if LogAsynchronous is true
 func ErrorSynchronous(event string, detail logging.Pairs) {
 	logger.ErrorSynchronous(event, detail)
 }
 
+// LogOnce logs an event to the package-level logger
+// only once based on unique key
 func LogOnce(logLevel level.Level, key, event string, detail logging.Pairs) bool {
 	return logger.LogOnce(logLevel, key, event, detail)
 }
 
+// Debug logs a DEBUG event to the package-level logger
+// only once based on unique key
 func DebugOnce(key, event string, detail logging.Pairs) bool {
 	return logger.DebugOnce(key, event, detail)
 }
 
+// Info logs an INFO event to the package-level logger
+// only once based on unique key
 func InfoOnce(key, event string, detail logging.Pairs) bool {
 	return logger.InfoOnce(key, event, detail)
 }
 
+// Warn logs a WARN event to the package-level logger
+// only once based on unique key
 func WarnOnce(key, event string, detail logging.Pairs) bool {
 	return logger.WarnOnce(key, event, detail)
 }
+
+// Error logs an ERROR event to the package-level logger
+// only once based on unique key
 func ErrorOnce(key, event string, detail logging.Pairs) bool {
 	return logger.ErrorOnce(key, event, detail)
 }
 
+// HasDebuggedOnce returns true if a Debug event for the provided key has been logged
 func HasDebuggedOnce(key string) bool {
 	return logger.HasDebuggedOnce(key)
 }
 
+// HasInfoedOnce returns true if an Info event for the provided key has been logged
 func HasInfoedOnce(key string) bool {
 	return logger.HasInfoedOnce(key)
 }
 
+// HasWarnedOnce returns true if a Warn event for the provided key has been logged
 func HasWarnedOnce(key string) bool {
 	return logger.HasWarnedOnce(key)
 }
 
+// HasErroredOnce returns true if an Error event for the provided key has been logged
 func HasErroredOnce(key string) bool {
 	return logger.HasErroredOnce(key)
 }
 
+// HasLoggedOnce returns true if an event for the provided key has been logged
+// at the provided level
 func HasLoggedOnce(logLevel level.Level, key string) bool {
 	return logger.HasLoggedOnce(logLevel, key)
 }

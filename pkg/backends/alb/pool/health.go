@@ -18,13 +18,16 @@ package pool
 
 import (
 	"net/http"
+
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
 func (p *pool) checkHealth() {
 	for {
 		select {
 		case <-p.ctx.Done():
-			break
+			logger.Debug("stopping ALB pool", nil)
+			return
 		case <-p.ch: // msg arrives whenever the healthy list must be rebuilt
 			p.mtx.Lock()
 			h := make([]http.Handler, 0, len(p.targets))

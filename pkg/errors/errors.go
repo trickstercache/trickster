@@ -24,6 +24,10 @@ var ErrNilWriter = errors.New("nil writer")
 // ErrInvalidOptions is an error for when a configuration is invalid
 var ErrInvalidOptions = errors.New("invalid options")
 
+// ErrServerAlreadyStarted is an error for when daemon.Start() is called
+// more than once
+var ErrServerAlreadyStarted = errors.New("server is already started")
+
 // ErrMissingPathconfig is an error for when a configuration is missing a path value
 var ErrMissingPathConfig = errors.New("missing path config")
 

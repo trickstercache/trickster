@@ -14,38 +14,18 @@
  * limitations under the License.
  */
 
-package level
+package instance
 
-import "strings"
-
-type Level string
-type LevelID int
-
-const (
-	Debug Level = "debug"
-	Info  Level = "info"
-	Warn  Level = "warn"
-	Error Level = "error"
-	Fatal Level = "fatal"
-
-	DebugID LevelID = 1
-	InfoID  LevelID = 2
-	WarnID  LevelID = 3
-	ErrorID LevelID = 4
-	TraceID LevelID = 5
+import (
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 )
 
-var validLevels = map[Level]LevelID{
-	Debug: DebugID,
-	Info:  InfoID,
-	Warn:  WarnID,
-	Error: ErrorID,
-	Fatal: TraceID,
-}
-
-func GetLevelID(logLevel Level) LevelID {
-	if i, ok := validLevels[Level(strings.ToLower(string(logLevel)))]; ok {
-		return i
-	}
-	return 0
+type ServerInstance struct {
+	Config        *config.Config
+	Caches        cache.CacheLookup
+	HealthChecker healthcheck.HealthChecker
+	Backends      backends.Backends
 }

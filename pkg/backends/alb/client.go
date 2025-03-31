@@ -122,6 +122,17 @@ func StartALBPools(clients backends.Backends, hcs healthcheck.StatusLookup) erro
 	return nil
 }
 
+// StopPools ensures that ALBs are fully stopped when the process's
+// configuration is reloaded
+func StopPools(clients backends.Backends) error {
+	for _, c := range clients {
+		if rc, ok := c.(*Client); ok {
+			rc.StopPool()
+		}
+	}
+	return nil
+}
+
 // ValidatePools iterates the backends and validates ALB backends
 func ValidatePools(clients backends.Backends) error {
 	for _, v := range clients {
@@ -177,6 +188,11 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 	}
 	c.pool = pool.New(m, targets, o.HealthyFloor)
 	return nil
+}
+
+// StopPool stops this Client's pool
+func (c *Client) StopPool() {
+	c.pool.Stop()
 }
 
 // Boilerplate Interface Functions (to EOF)

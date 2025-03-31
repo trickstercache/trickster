@@ -66,6 +66,8 @@ type Config struct {
 	// ReloadConfig provides configurations for in-process config reloading
 	ReloadConfig *reload.Options `yaml:"reloading,omitempty"`
 
+	// Flags contains a compiled version of the CLI flags
+	Flags *Flags `yaml:"-"`
 	// Resources holds runtime resources uses by the Config
 	Resources *Resources `yaml:"-"`
 
@@ -99,9 +101,6 @@ type MainConfig struct {
 	// defaults to os.Hostname
 	ServerName string `yaml:"server_name,omitempty"`
 
-	// ReloaderLock is used to lock the config for reloading
-	ReloaderLock sync.Mutex `yaml:"-"`
-
 	configFilePath      string
 	configLastModified  time.Time
 	configRateLimitTime time.Time
@@ -118,7 +117,6 @@ func (mc *MainConfig) SetStalenessInfo(fp string, lm, rlt time.Time) {
 
 // Resources is a collection of values used by configs at runtime that are not part of the config itself
 type Resources struct {
-	QuitChan chan bool `yaml:"-"`
 	metadata yamlx.KeyLookup
 }
 
@@ -153,9 +151,7 @@ func NewConfig() *Config {
 		},
 		ReloadConfig:   reload.New(),
 		LoaderWarnings: make([]string, 0),
-		Resources: &Resources{
-			QuitChan: make(chan bool, 1),
-		},
+		Resources:      &Resources{},
 	}
 }
 
@@ -294,9 +290,7 @@ func (c *Config) Clone() *Config {
 		nc.Frontend = c.Frontend.Clone()
 	}
 
-	nc.Resources = &Resources{
-		QuitChan: make(chan bool, 1),
-	}
+	nc.Resources = &Resources{}
 
 	if c.Logging != nil {
 		nc.Logging = c.Logging.Clone()

@@ -165,11 +165,8 @@ func (lg *ListenerGroup) Get(name string) *Listener {
 
 // StartListener starts a new HTTP listener and adds it to the listener group
 func (lg *ListenerGroup) StartListener(listenerName, address string, port int, connectionsLimit int,
-	tlsConfig *tls.Config, router http.Handler, wg *sync.WaitGroup, tracers tracing.Tracers,
+	tlsConfig *tls.Config, router http.Handler, tracers tracing.Tracers,
 	f func(), drainTimeout time.Duration) error {
-	if wg != nil {
-		defer wg.Done()
-	}
 	l := &Listener{routeSwapper: ph.NewSwitchHandler(router), exitOnError: f != nil}
 	if tlsConfig != nil && len(tlsConfig.Certificates) > 0 {
 		l.tlsConfig = tlsConfig
@@ -247,12 +244,12 @@ func handleTracerShutdowns(tracers tracing.Tracers) {
 
 // StartListenerRouter starts a new HTTP listener with a new router, and adds it to the listener group
 func (lg *ListenerGroup) StartListenerRouter(listenerName, address string, port int, connectionsLimit int,
-	tlsConfig *tls.Config, path string, handler http.Handler, wg *sync.WaitGroup,
+	tlsConfig *tls.Config, path string, handler http.Handler,
 	tracers tracing.Tracers, f func(), drainTimeout time.Duration) error {
 	router := http.NewServeMux()
 	router.Handle(path, handler)
 	return lg.StartListener(listenerName, address, port, connectionsLimit,
-		tlsConfig, router, wg, tracers, f, drainTimeout)
+		tlsConfig, router, tracers, f, drainTimeout)
 }
 
 // DrainAndClose drains and closes the named listener

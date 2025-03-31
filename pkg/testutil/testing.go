@@ -37,7 +37,6 @@ import (
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registration"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	th "github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -115,7 +114,7 @@ func NewTestInstance(
 		args = append(args, []string{"-config", configFile}...)
 	}
 
-	conf, _, err := config.Load("trickster", "test", args)
+	conf, err := config.Load(args)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("could not load configuration: %s", err.Error())
 	}
@@ -140,7 +139,6 @@ func NewTestInstance(
 	var tracer *tracing.Tracer
 
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-
 	if o.TracingConfigName != "" {
 		if tc, ok := conf.TracingConfigs[o.TracingConfigName]; ok {
 			tracer, _ = tr.GetTracer(tc, true)
@@ -188,6 +186,7 @@ func NewTestPathConfig(
 
 // NewTestTracer returns a standard out tracer for testing purposes
 func NewTestTracer() *tracing.Tracer {
+	logger.SetLogger(logging.ConsoleLogger(level.Warn))
 	tc := to.New()
 	tc.Name = "test"
 	tc.Provider = "stdout"
@@ -202,8 +201,8 @@ func BasicHTTPHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	h := w.Header()
 	h.Set("Test-Header", "Trickster")
-	h.Set(headers.NameLastModified, "Wed, 01 Jan 2020 00:00:00 UTC")
-	h.Set(headers.NameTricksterResult, "engine=none")
+	h.Set(th.NameLastModified, "Wed, 01 Jan 2020 00:00:00 UTC")
+	h.Set(th.NameTricksterResult, "engine=none")
 	w.WriteHeader(200)
 	w.Write([]byte("{}"))
 }

@@ -79,7 +79,7 @@ func TestClientSelectionSentinel(t *testing.T) {
 	const expected1 = "ERR unknown command `sentinel`"
 	args := []string{"-config", "../../../testdata/test.redis-sentinel.conf",
 		"-origin-url", "http://0.0.0.0", "-provider", "rpc", "-log-level", "info"}
-	conf, _, err := config.Load("trickster", "test", args)
+	conf, err := config.Load(args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestClientSelectionCluster(t *testing.T) {
 	expected1 := "invalid endpoint"
 	args := []string{"-config", "../../../testdata/test.redis-cluster.conf",
 		"-origin-url", "http://0.0.0.0", "-provider", "rpc", "-log-level", "info"}
-	conf, _, err := config.Load("trickster", "test", args)
+	conf, err := config.Load(args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestClientSelectionStandard(t *testing.T) {
 	expected1 := "invalid endpoint"
 	args := []string{"-config", "../../../testdata/test.redis-standard.conf",
 		"-origin-url", "http://0.0.0.0", "-provider", "rpc", "-log-level", "info"}
-	conf, _, err := config.Load("trickster", "test", args)
+	conf, err := config.Load(args)
 	if err != nil {
 		t.Fatal(err)
 	}

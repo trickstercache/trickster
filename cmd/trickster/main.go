@@ -18,11 +18,10 @@
 package main
 
 import (
-	"os"
-	"sync"
-
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
-	"github.com/trickstercache/trickster/v2/pkg/httpserver"
+	"github.com/trickstercache/trickster/v2/pkg/daemon"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
 var (
@@ -36,13 +35,11 @@ const (
 )
 
 func main() {
-	wg := &sync.WaitGroup{}
 	appinfo.SetAppInfo(applicationName, applicationVersion,
 		applicationBuildTime, applicationGitCommitID)
-	httpserver.Serve(nil, wg, nil, os.Args[1:], exitFatal)
-	wg.Wait()
-}
-
-func exitFatal() {
-	os.Exit(1)
+	err := daemon.Start()
+	if err != nil {
+		logger.Fatal(1, "trickster daemon failed to start",
+			logging.Pairs{"error": err})
+	}
 }

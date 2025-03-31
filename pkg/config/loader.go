@@ -18,6 +18,7 @@ package config
 
 import (
 	"net/url"
+	"strings"
 	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -27,19 +28,30 @@ import (
 
 // Load returns the Application Configuration, starting with a default config,
 // then overriding with any provided config file, then env vars, and finally flags
-func Load(applicationName string, applicationVersion string, arguments []string) (*Config, *Flags, error) {
+func Load(args []string) (*Config, error) {
+	// this sanitizes the args from -test flags, which can cause issues with unit tests relying on cli args
+	sargs := make([]string, 0, len(args))
+	for _, v := range args {
+		if !strings.HasPrefix(v, "-test.") {
+			sargs = append(sargs, v)
+		}
+	}
 
 	c := NewConfig()
-	flags, err := parseFlags(applicationName, arguments) // Parse here to get config file path and version flags
+	flags, err := parseFlags(sargs) // Parse here to get config file path and version flags
 	if err != nil {
-		return nil, flags, err
+		return nil, err
+	}
+	if c == nil {
+		return nil, errors.ErrInvalidOptions
 	}
 	if flags.PrintVersion {
-		return nil, flags, nil
+		c.Flags = flags
+		return c, nil
 	}
 	if err := c.loadFile(flags); err != nil && flags.customPath {
 		// a user-provided path couldn't be loaded. return the error for the application to handle
-		return nil, flags, err
+		return nil, err
 	}
 
 	c.loadEnvVars()
@@ -50,7 +62,7 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		if c.providedOriginURL != "" {
 			url, err := url.Parse(c.providedOriginURL)
 			if err != nil {
-				return nil, flags, err
+				return nil, err
 			}
 			if c.providedProvider != "" {
 				d.Provider = c.providedProvider
@@ -72,17 +84,17 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 	}
 
 	if len(c.Backends) == 0 {
-		return nil, flags, errors.ErrNoValidBackends
+		return nil, errors.ErrNoValidBackends
 	}
 
 	ncl, err := negative.ConfigLookup(c.NegativeCacheConfigs).Validate()
 	if err != nil {
-		return nil, flags, err
+		return nil, err
 	}
 
 	err = bo.Lookup(c.Backends).Validate(ncl)
 	if err != nil {
-		return nil, flags, err
+		return nil, err
 	}
 
 	for _, c := range c.Caches {
@@ -90,5 +102,5 @@ func Load(applicationName string, applicationVersion string, arguments []string)
 		c.Index.ReapInterval = time.Duration(c.Index.ReapIntervalMS) * time.Millisecond
 	}
 
-	return c, flags, nil
+	return c, nil
 }
