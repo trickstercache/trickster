@@ -18,10 +18,10 @@
 package main
 
 import (
-	"os"
-
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/daemon"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
 var (
@@ -39,6 +39,7 @@ func main() {
 		applicationBuildTime, applicationGitCommitID)
 	err := daemon.Start()
 	if err != nil {
-		os.Exit(1)
+		logger.Fatal(1, "trickster daemon failed to start",
+			logging.Pairs{"error": err})
 	}
 }
