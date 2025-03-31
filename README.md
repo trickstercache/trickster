@@ -104,7 +104,7 @@ You can directly use the `go` tool to download and install the `trickster`
 binary into your `GOPATH`:
 
 ```bash
-    $ go get github.com/trickstercache/trickster/cmd/trickster
+    $ go install github.com/trickstercache/trickster/cmd/trickster@main
     # this starts a prometheus accelerator proxy for the provided endpoint
     $ trickster -origin-url http://prometheus.example.com:9090 -provider prometheus
 ```
