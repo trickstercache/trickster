@@ -1,14 +1,14 @@
 # This docker file is for local dev, the official Dockerfile is at
 # https://github.com/trickstercache/trickster-docker-images/
 ARG BUILDPLATFORM=linux/amd64
-ARG TARGETPLATFORM=linux/amd64
 FROM --platform=${BUILDPLATFORM} golang:1.24 as builder
 ARG GIT_LATEST_COMMIT_ID
 
 COPY . /go/src/github.com/trickstercache/trickster
 WORKDIR /go/src/github.com/trickstercache/trickster
 
-RUN GOOS=linux GOARCH=${TARGETPLATFORM} CGO_ENABLED=0 BUILD_FLAGS=-v make build
+ARG TARGETARCH
+RUN GOOS=linux GOARCH=${TARGETARCH} CGO_ENABLED=0 BUILD_FLAGS=-v make build
 
 FROM alpine as final
 LABEL maintainer "The Trickster Authors <trickster-developers@googlegroups.com>"

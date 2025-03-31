@@ -20,11 +20,6 @@ jobs:
       packages: write
       attestations: write
       id-token: write
-    strategy:
-      matrix:
-        arch:
-        - linux/amd64
-        - linux/arm64/v8
     steps:
       - name: Get Build Date
         id: builddate
@@ -59,7 +54,7 @@ jobs:
           push: true
           file: ${{ github.workspace }}/Dockerfile
           context: ${{ github.workspace }}
-          platforms: ${{ matrix.arch}}
+          platforms: linux/amd64,linux/arm64/v8
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
