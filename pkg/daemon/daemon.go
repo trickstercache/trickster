@@ -98,14 +98,14 @@ func Start() error {
 func Hup(si *instance.ServerInstance) (bool, error) {
 	mtx.Lock()
 	defer mtx.Unlock()
-	conf, err := setup.LoadAndValidate()
-	if err != nil {
-		return false, err
-	}
-	if conf == nil || conf.Resources == nil {
-		return false, errors.ErrInvalidOptions
-	}
-	if conf.IsStale() {
+	if si.Config != nil && si.Config.IsStale() {
+		conf, err := setup.LoadAndValidate()
+		if err != nil {
+			return false, err
+		}
+		if conf == nil || conf.Resources == nil {
+			return false, errors.ErrInvalidOptions
+		}
 		logger.Warn("configuration reload starting now",
 			logging.Pairs{"source": "sighup"})
 
