@@ -28,7 +28,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
-	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
@@ -51,7 +50,6 @@ import (
 )
 
 var mtx sync.Mutex
-var hc healthcheck.HealthChecker
 
 func LoadAndValidate() (*config.Config, error) {
 	mtx.Lock()
@@ -131,16 +129,16 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		[]string{http.MethodDelete}, true,
 		http.HandlerFunc(handlers.PurgeKeyHandleFunc(newConf, o)))
 
-	if hc != nil {
-		hc.Shutdown()
+	if si.HealthChecker != nil {
+		si.HealthChecker.Shutdown()
 	}
-	hc, err = o.StartHealthChecks()
+	si.HealthChecker, err = o.StartHealthChecks()
 	if err != nil {
 		return err
 	}
-	alb.StartALBPools(o, hc.Statuses())
+	alb.StartALBPools(o, si.HealthChecker.Statuses())
 	routing.RegisterDefaultBackendRoutes(r, o, tracers)
-	routing.RegisterHealthHandler(mr, newConf.Main.HealthHandlerPath, hc)
+	routing.RegisterHealthHandler(mr, newConf.Main.HealthHandlerPath, si.HealthChecker)
 	applyListenerConfigs(newConf, si.Config, r, http.HandlerFunc(rh), mr,
 		tracers, o, errorFunc)
 
