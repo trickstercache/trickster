@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
@@ -42,7 +43,7 @@ func testDataSet() *DataSet {
 
 func genTestDataSet(seriesCount int, resultsCount int) *DataSet {
 	if resultsCount <= 0 {
-		fmt.Println("resultsCount must be greater than 0")
+		logger.Error("resultsCount must be greater than 0", nil)
 		resultsCount = 1
 	}
 	results := make([]*Result, 0, resultsCount)

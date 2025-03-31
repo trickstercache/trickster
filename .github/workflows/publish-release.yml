@@ -19,6 +19,12 @@ on:
 
 name: Publish Trickster Release to Drafts
 
+permissions:
+  contents: write
+  packages: write
+  attestations: write
+  id-token: write
+
 env:
   draft: ${{ inputs.draft || true }}
   prerelease: ${{ inputs.prerelease || false }}
@@ -27,6 +33,8 @@ jobs:
   release:
     name: Publish Release ${{ inputs.job-suffix || '' }}
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.baretag.outputs.baretag }}
     steps:
       - name: Get current date
         id: date
@@ -80,3 +88,9 @@ jobs:
           asset_path: ./bin/sha256sum.txt
           asset_name: sha256sum.txt
           asset_content_type: text/plain
+  publish-image:
+    needs:
+      - release
+    uses: ./.github/workflows/publish-image.yaml
+    with:
+      tag: ${{ needs.release.outputs.tag }}

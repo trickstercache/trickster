@@ -352,8 +352,12 @@ func (l *logger) log(logLevel level.Level, event string, detail Pairs) {
 	if ld > 0 {
 		sortedKeys := make([]string, ld)
 		for k, v := range detail {
-			if s, ok := v.(string); ok && strings.Contains(s, " ") {
-				v = `"` + s + `"`
+			if s, ok := v.(string); ok {
+				v = quoteAsNeeded(s)
+			} else if stringer, ok := v.(fmt.Stringer); ok {
+				v = quoteAsNeeded(stringer.String())
+			} else if err, ok := v.(error); ok {
+				v = quoteAsNeeded(err.Error())
 			}
 			sortedKeys[i] = fmt.Sprintf("%s=%v", k, v)
 			i++

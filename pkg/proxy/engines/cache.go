@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -29,6 +30,8 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -159,7 +162,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			// Prepare buffered results and waitgroup
 			wg := &sync.WaitGroup{}
 			// Result slice of timeseries
-			ress := make([]timeseries.Timeseries, cct)
+			ress := make(timeseries.TimeseriesList, cct)
 			resi := 0
 			for chunkStart := cext.Start; chunkStart.Before(cext.End); chunkStart = chunkStart.Add(csize) {
 				// Chunk range (inclusive, on-step)
@@ -168,16 +171,32 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 					End:   chunkStart.Add(csize - trq.Step),
 				}
 				// Derive subkey
-				subkey := key + chunkExtent.String()
+				subkey := getSubKey(key, chunkExtent)
 				// Query
 				wg.Add(1)
 				go func(outIdx int) {
 					defer wg.Done()
 					qr := queryConcurrent(ctx, c, subkey, nil, nil)
+					if qr.lookupStatus != status.LookupStatusHit &&
+						(qr.err == nil || qr.err == cache.ErrKNF) {
+						return
+					}
+					if qr.err != nil {
+						logger.Error("dpc query cache chunk failed",
+							logging.Pairs{"error": qr.err, "chunkIdx": outIdx,
+								"key": subkey, "cacheQueryStatus": qr.lookupStatus})
+						return
+					}
 					if c.Configuration().Provider != "memory" {
 						qr.d.timeseries, qr.err = unmarshal(qr.d.Body, nil)
+						if qr.err != nil {
+							logger.Error("dpc query cache chunk failed",
+								logging.Pairs{"error": qr.err, "chunkIdx": outIdx,
+									"key": subkey, "cacheQueryStatus": qr.lookupStatus})
+							return
+						}
 					}
-					if qr.err == nil {
+					if qr.d.timeseries != nil {
 						ress[outIdx] = qr.d.timeseries
 					}
 				}(resi)
@@ -185,8 +204,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			}
 			// Wait on queries
 			wg.Wait()
-			d.timeseries = ress[0]
-			d.timeseries.Merge(true, ress[1:]...)
+			d.timeseries = ress.Merge()
 			if d.timeseries != nil {
 				d.timeseries.SetExtents(d.timeseries.Extents().Compress(trq.Step))
 			}
@@ -426,7 +444,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 					End:   chunkStart.Add(csize - trq.Step),
 				}
 				// Derive subkey
-				subkey := key + chunkExtent.String()
+				subkey := getSubKey(key, chunkExtent)
 				// Query
 				wg.Add(1)
 				go func() {
@@ -559,4 +577,8 @@ func DocumentFromHTTPResponse(resp *http.Response, body []byte,
 	}
 
 	return d
+}
+
+func getSubKey(key string, chunkExtent timeseries.Extent) string {
+	return fmt.Sprintf("%s.%s", key, chunkExtent)
 }

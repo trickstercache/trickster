@@ -55,7 +55,7 @@ test-go-mod:
 BUILD_FLAGS ?= -a -v
 .PHONY: build
 build: go-mod-tidy go-mod-vendor
-	CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o ./$(BUILD_SUBDIR)/trickster $(BUILD_FLAGS) $(TRICKSTER_MAIN)/*.go
+	CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) $(BUILD_FLAGS) -o ./$(BUILD_SUBDIR)/trickster  $(TRICKSTER_MAIN)/*.go
 
 rpm: build
 	mkdir -p ./$(BUILD_SUBDIR)/SOURCES
@@ -80,13 +80,7 @@ release: validate-app-version clean go-mod-tidy go-mod-vendor release-artifacts 
 RELEASE_CHECKSUM_FILE=$(BUILD_SUBDIR)/sha256sum.txt
 .PHONY: release-sha256
 release-sha256:
-	@rm -f $(RELEASE_CHECKSUM_FILE) && touch $(RELEASE_CHECKSUM_FILE)
-	@bash -c "pushd $(BUILD_SUBDIR) > /dev/null && sha256sum trickster-$(PROGVER).tar.gz > $$(basename $(RELEASE_CHECKSUM_FILE)) && popd > /dev/null"
-	@RSF="$$(realpath $(RELEASE_CHECKSUM_FILE))" && for file in $(BIN_DIR)/* ; do \
-		if [[ "$$(basename $$file)" == "sha256sum.txt" ]]; then continue; fi ; \
-		bash -c "pushd $$(dirname $$file) > /dev/null && sha256sum $$(basename $$file) >> $${RSF} && popd > /dev/null"; \
-	done
-	@cat $(RELEASE_CHECKSUM_FILE)
+	./hack/release-sha256.sh $(RELEASE_CHECKSUM_FILE) $(BUILD_SUBDIR) $(PROGVER) $(BIN_DIR)
 
 .PHONY: release-artifacts
 release-artifacts: clean
@@ -102,11 +96,11 @@ release-artifacts: clean
 	cp ./LICENSE $(PACKAGE_DIR)
 	cp ./examples/conf/*.yaml $(CONF_DIR)
 
-	GOOS=darwin  GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).darwin-amd64  -a -v $(TRICKSTER_MAIN)/*.go
-	GOOS=darwin  GOARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).darwin-arm64  -a -v $(TRICKSTER_MAIN)/*.go
-	GOOS=linux   GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-amd64   -a -v $(TRICKSTER_MAIN)/*.go
-	GOOS=linux   GOARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-arm64   -a -v $(TRICKSTER_MAIN)/*.go
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).windows-amd64 -a -v $(TRICKSTER_MAIN)/*.go
+	GOOS=darwin  GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).darwin-amd64  -v $(TRICKSTER_MAIN)/*.go
+	GOOS=darwin  GOARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).darwin-arm64  -v $(TRICKSTER_MAIN)/*.go
+	GOOS=linux   GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-amd64   -v $(TRICKSTER_MAIN)/*.go
+	GOOS=linux   GOARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-arm64   -v $(TRICKSTER_MAIN)/*.go
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).windows-amd64 -v $(TRICKSTER_MAIN)/*.go
 
 	cd ./$(BUILD_SUBDIR) && tar cvfz ./trickster-$(PROGVER).tar.gz ./trickster-$(PROGVER)/*
 
