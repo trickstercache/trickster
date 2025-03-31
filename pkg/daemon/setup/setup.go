@@ -72,6 +72,9 @@ func LoadAndValidate() (*config.Config, error) {
 	if cfg == nil {
 		return nil, te.ErrInvalidOptions
 	}
+	if cfg.Flags != nil && (cfg.Flags.PrintVersion) {
+		return cfg, nil
+	}
 
 	// Validate Config
 	if err = validate.Validate(cfg); err != nil {

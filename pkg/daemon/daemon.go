@@ -61,17 +61,20 @@ func Start() error {
 	if err != nil {
 		return err
 	}
-
-	// if it's a -version command, print version and exit
-	if conf.Flags != nil && conf.Flags.PrintVersion {
-		usage.PrintVersion()
-		return nil
+	if conf == nil {
+		return errors.ErrInvalidOptions
 	}
-
-	// if it's a -validate command, print validation result
-	if conf.Flags != nil && conf.Flags.ValidateConfig {
-		fmt.Println("Trickster configuration validation succeeded.")
-		return nil
+	if conf.Flags != nil {
+		// if it's a -version command, print version and exit
+		if conf.Flags.PrintVersion {
+			usage.PrintVersion()
+			return nil
+		}
+		// if it's a -validate command, print validation result
+		if conf.Flags != nil && conf.Flags.ValidateConfig {
+			fmt.Println("Trickster configuration validation succeeded.")
+			return nil
+		}
 	}
 
 	si := &instance.ServerInstance{
