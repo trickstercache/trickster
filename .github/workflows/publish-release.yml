@@ -19,12 +19,6 @@ on:
 
 name: Publish Trickster Release to Drafts
 
-permissions:
-  contents: write
-  packages: write
-  attestations: write
-  id-token: write
-
 env:
   draft: ${{ inputs.draft || true }}
   prerelease: ${{ inputs.prerelease || false }}
@@ -32,6 +26,9 @@ env:
 jobs:
   release:
     name: Publish Release ${{ inputs.job-suffix || '' }}
+    permissions:
+      contents: write
+      id-token: write
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.baretag.outputs.baretag }}
@@ -92,5 +89,10 @@ jobs:
     needs:
       - release
     uses: ./.github/workflows/publish-image.yaml
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
     with:
       tag: ${{ needs.release.outputs.tag }}
