@@ -59,6 +59,10 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.created=${{ steps.builddate.outputs.builddate }}
+            org.opencontainers.image.title="Trickster"
+            org.opencontainers.image.description="an HTTP Reverse Proxy Cache and time series dashboard accelerator"
+            org.opencontainers.image.documentation="https://github.com/${{ github.repository }}/tree/main/docs"
+
           build-args: |
             GIT_LATEST_COMMIT_ID=${{ github.sha }}
           tags: |

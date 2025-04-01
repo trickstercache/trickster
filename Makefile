@@ -22,8 +22,8 @@ TRICKSTER      := $(FIRST_GOPATH)/bin/trickster
 BUILD_TIME     := $(shell date -u +%FT%T%z)
 GIT_LATEST_COMMIT_ID     ?= $(shell git rev-parse HEAD)
 IMAGE_TAG      ?= latest
-IMAGE_ARCH     ?= amd64
-GOARCH         ?= amd64
+IMAGE_ARCH     ?= $(shell $(GO) env GOARCH)
+GOARCH         ?= $(shell $(GO) env GOARCH)
 TAGVER         ?= $(shell git describe --tags --dirty --always)
 LDFLAGS         =-ldflags "-extldflags '-static' -w -s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicationGitCommitID=$(GIT_LATEST_COMMIT_ID) -X main.applicationVersion=$(TAGVER)"
 BUILD_SUBDIR   := bin
@@ -128,7 +128,7 @@ docker:
 		--build-arg GOARCH=$(GOARCH) \
 		-f ./Dockerfile \
 		-t trickster:$(TAGVER) \
-		--platform linux/amd64 \
+		--platform linux/$(IMAGE_ARCH) \
 		.
 
 .PHONY: docker-release

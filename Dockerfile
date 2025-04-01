@@ -1,5 +1,6 @@
-# This docker file is for local dev, the official Dockerfile is at
-# https://github.com/trickstercache/trickster-docker-images/
+FROM alpine:latest as certs
+RUN apk update && apk add ca-certificates
+
 ARG BUILDPLATFORM=linux/amd64
 FROM --platform=${BUILDPLATFORM} golang:1.24 as builder
 ARG GIT_LATEST_COMMIT_ID
@@ -10,15 +11,11 @@ WORKDIR /go/src/github.com/trickstercache/trickster
 ARG TARGETARCH
 RUN GOOS=linux GOARCH=${TARGETARCH} CGO_ENABLED=0 BUILD_FLAGS=-v make build
 
-FROM alpine as final
+FROM gcr.io/distroless/static-debian12 as final
 LABEL maintainer "The Trickster Authors <trickster-developers@googlegroups.com>"
 
-COPY --from=builder /go/src/github.com/trickstercache/trickster/bin/trickster /usr/local/bin/trickster
+COPY --from=certs /etc/ssl /etc/ssl
+COPY --from=builder /go/src/github.com/trickstercache/trickster/bin/trickster /trickster
 COPY examples/conf/example.full.yaml /etc/trickster/trickster.yaml
-RUN chown nobody /usr/local/bin/trickster
-RUN chmod +x /usr/local/bin/trickster
-
-RUN apk update && apk add ca-certificates && rm -rf /var/cache/apk/*
-
 USER nobody
-ENTRYPOINT ["trickster"]
+ENTRYPOINT ["/trickster"]
