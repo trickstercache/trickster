@@ -150,8 +150,11 @@ GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 test:
 	go test -v ${GO_TEST_FLAGS} ./...
 
+.PHONY: data-race-test
 data-race-test:
 	GO_TEST_FLAGS="-race" $(MAKE) test | tee race-output.log
+
+.PHONY: data-race-test-inspect
 data-race-test-inspect:
 	./hack/inspect-race-output.sh race-output.log
 
@@ -219,3 +222,15 @@ serve-info:
 get-tools:
 	@echo "Installing tools..."
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6
+
+.PHONY: start-developer
+start-developer:
+	@cd docs/developer/environment && docker compose up -d
+	
+.PHONY: delete-developer
+delete-developer:
+	@cd docs/developer/environment && docker compose down
+
+.PHONY: serve-dev
+serve-dev:
+	@go run cmd/trickster/main.go -config docs/developer/environment/trickster-config/trickster.yaml

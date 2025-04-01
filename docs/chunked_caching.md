@@ -1,8 +1,14 @@
 # Chunked Caching
 
 ## Overview
+In some caching setups, users may want to increase `timeseries_retention_factor` or `timeseries_ttl_ms` for a given backend to a very large size (e.g., a duration of days or weeks). This can cause issues if the cache provider is
+`filesystem` or `redis`, because the entire time series is loaded to extract
+even just a few data points. Eventually, this could negate the effects of
+caching altogether.
 
-In some use cases, it may be desirable to reduce the amount of data being transmitted from the cache for small requests. Trickster accomplishes this by *chunking* cache data, or splitting it into subdivisions of a configurable maximum size. Chunking can be configured per-cache and applies to both timeseries and byterange data.
+To mitigate this, Trickster supports *chunking* cache data, by splitting large datasets into subdivisions of a configurable maximum size. The chunks are reconstituted upon retrieval. Only the chunks needed to service a client request are accessed, rather than the entire time series cache object.
+
+Chunking can be configured per-cache and applies to both timeseries and byterange data.
 
 ## Configuration
 

@@ -51,7 +51,7 @@ Trickster works with virtually any Dashboard application that makes queries to a
 
 <img src="./docs/images/external/irondb_logo_60.png" width=16 /> Circonus IRONdb
 
-See the [Supported TSDB Providers](./docs/supported-origin-types.md) document for full details
+See the [Supported TSDB Providers](./docs/supported-backend-providers.md) document for full details
 
 ### How Trickster Accelerates Time Series
 
@@ -104,7 +104,7 @@ You can directly use the `go` tool to download and install the `trickster`
 binary into your `GOPATH`:
 
 ```bash
-    $ go get github.com/trickstercache/trickster/cmd/trickster
+    $ go install github.com/trickstercache/trickster/cmd/trickster@main
     # this starts a prometheus accelerator proxy for the provided endpoint
     $ trickster -origin-url http://prometheus.example.com:9090 -provider prometheus
 ```

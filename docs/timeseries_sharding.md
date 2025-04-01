@@ -70,7 +70,7 @@ backends:
     provider: 'prometheus'
     origin_url: http://prometheus:9090
     shard_step_ms: 7200000
-    shard_size_ms: 14400000
+    shard_max_size_ms: 14400000
 ```
 
 Neither `shard_step_ms` or `shard_max_size_ms` can be used in conjunction with `shard_max_size_points`.

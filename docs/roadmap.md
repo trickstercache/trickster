@@ -18,6 +18,8 @@ The roadmap for Trickster in 2025 focuses on delivering Trickster versions 2.0 a
   - [x] Application Load Balancer
   - [x] Performant HTTP Router designed specifically for Proxies
   - [x] Resolve all known Race Conditions
+  - [X] Docker & Helm Charts overhauled for Trickster 2.0
+  - [X] Additional Rules Engine capabilities for more complex request routing
   - [-] Support for InfluxDB 2.0, Flux query syntax and caching queries from Chronograf
   - [-] Support for MySQL as Time Series
   - [-] Extended support for ClickHouse
@@ -27,13 +29,10 @@ The roadmap for Trickster in 2025 focuses on delivering Trickster versions 2.0 a
 ### Q2 2025
 
 - [ ] Trickster v2.0 GA Release
-  - [ ] Docker & Helm Charts overhauled for Trickster 2.0
   - [ ] Overhaul Documentation for Trickster 2.0
 
 - [ ] Trickster v2.1 Beta Release
-  - [ ] Additional Rules Engine capabilities for more complex request routing
   - [ ] Kube Gateway API support
-
 
 ## Get Involved
 

@@ -1,5 +1,3 @@
-version: '3.7'
-
 networks:
   trk-ex-front-tier:
   trk-ex-back-tier:
@@ -7,7 +5,7 @@ networks:
 services:
 
   prometheus:
-    image: prom/prometheus:v2.25.0
+    image: prom/prometheus:v3.2.1
     volumes:
       - ./docker-compose-data/prometheus-config:/etc/prometheus
     command:
@@ -22,7 +20,7 @@ services:
     restart: always
 
   influxdb:
-    image: influxdb:2.0
+    image: influxdb:2.7
     volumes:
       - ./docker-compose-data/influxdb-config/config.yml:/etc/influxdb2/config.yml
       - influxdbv2:/.influxdbv2
@@ -38,7 +36,7 @@ services:
   influxdb_cli:
     links:
       - influxdb
-    image: influxdb:2.0
+    image: influxdb:2.7
     volumes:
       - ./docker-compose-data/influxdb-config/setup-influxdb.sh:/bin/setup-influxdb.sh
     entrypoint: sh /bin/setup-influxdb.sh
@@ -51,7 +49,7 @@ services:
       - influxdb
 
   telegraf:
-    image: telegraf:1.17
+    image: telegraf:1.34-alpine
     volumes:
       - ./docker-compose-data/telegraf-config/telegraf.conf:/etc/telegraf/telegraf.conf
     depends_on:
@@ -61,7 +59,7 @@ services:
     restart: always
 
   grafana:
-    image: grafana/grafana:7.4.3
+    image: grafana/grafana:11.6.0
     user: nobody
     ports:
       - 3000:3000
@@ -91,7 +89,7 @@ services:
     restart: always
 
   jaeger:
-    image: jaegertracing/all-in-one:1.22
+    image: jaegertracing/all-in-one:1.67.0
     ports:
      - 5775:5775/udp
      - 6831:6831/udp
@@ -123,14 +121,6 @@ services:
     networks:
       - trk-ex-back-tier
     restart: always
-
-  # zipkin:
-  #   image: openzipkin/zipkin:latest
-  #   ports:
-  #    - 9411:9411
-  #   networks:
-  #     - trk-ex-back-tier
-  #   restart: always
 
 volumes:
   influxdbv2:
