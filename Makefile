@@ -120,7 +120,7 @@ kube-local:
 DOCKER_TARGET ?= final
 .PHONY: docker
 docker:
-	docker build \
+	docker buildx build \
 		--progress=plain \
 		--build-arg IMAGE_ARCH=$(IMAGE_ARCH) \
 		--build-arg GIT_LATEST_COMMIT_ID=$(GIT_LATEST_COMMIT_ID) \
@@ -128,6 +128,7 @@ docker:
 		--build-arg GOARCH=$(GOARCH) \
 		-f ./Dockerfile \
 		-t trickster:$(TAGVER) \
+		--platform linux/amd64 \
 		.
 
 .PHONY: docker-release
