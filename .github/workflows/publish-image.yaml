@@ -10,7 +10,11 @@ on:
           required: false
           type: string
           default: ''
-name: Publish Latest Trickster Image
+name: Publish Trickster Image
+
+env:
+  oci_metadata: |
+    org.opencontainers.image.description="Open Source HTTP Reverse Proxy Cache and Time Series Dashboard Accelerator"
 
 jobs:
   publish-image:
@@ -21,10 +25,6 @@ jobs:
       attestations: write
       id-token: write
     steps:
-      - name: Get Build Date
-        id: builddate
-        run: |
-            echo "builddate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" | tee $GITHUB_OUTPUT
       - uses: actions/checkout@v4
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -42,33 +42,38 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: resolve branch name
-        if: inputs.tag == ''
-        id: get-branch
-        run: |
-          b=$(git branch -r --contains ${{ github.ref }}) && branch=${b##*/}
-          echo "branch=${branch}" | tee $GITHUB_OUTPUT
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # Create an image for ghcr.io/github_owner/repo_name and docker.io/github_owner/repo_name
+          images: |
+            ghcr.io/${{ github.repository }}
+            ${{ github.repository_owner == 'trickstercache' && github.repository || ''}}
+          annotations: ${{ env.oci_metadata }}
+          labels:  ${{ env.oci_metadata }}
+          flavor: |
+            latest=${{ github.ref_name == 'main' &&  'auto' || 'false' }}
+          tags: |
+            type=semver,pattern={{major}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{version}}
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,format=long
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
+          provenance: true
+          sbom: true
           push: true
           file: ${{ github.workspace }}/Dockerfile
           context: ${{ github.workspace }}
           platforms: linux/amd64,linux/arm64/v8
-          labels: |
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.created=${{ steps.builddate.outputs.builddate }}
-            org.opencontainers.image.title="Trickster"
-            org.opencontainers.image.description="an HTTP Reverse Proxy Cache and time series dashboard accelerator"
-            org.opencontainers.image.documentation="https://github.com/${{ github.repository }}/tree/main/docs"
-
+          annotations: ${{ steps.meta.outputs.annotations }}
+          labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             GIT_LATEST_COMMIT_ID=${{ github.sha }}
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ inputs.tag || steps.get-branch.outputs.branch }}
-            ${{ inputs.tag == '' && format('ghcr.io/{0}:{1}', github.repository, github.sha) || '' }}
-            ${{ github.repository_owner == 'trickstercache' && format('{0}:{1}', github.repository, (inputs.tag || steps.get-branch.outputs.branch)) || '' }}
-            ${{ (inputs.tag == '' && github.repository_owner == 'trickstercache') && format('{0}:{1}', github.repository, github.sha) || '' }}
+          tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
