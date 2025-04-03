@@ -92,7 +92,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 
 	pr := newProxyRequest(r, w)
 	rlo.FastForwardDisable = o.FastForwardDisable || rlo.FastForwardDisable
-	trq.NormalizeExtent()
+	trq = trq.NormalizeExtent()
 	now := time.Now()
 	bt := trq.GetBackfillTolerance(o.BackfillTolerance, o.BackfillTolerancePoints)
 	bfs := now.Add(-bt).Truncate(trq.Step) // start of the backfill tolerance window
@@ -118,7 +118,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		Extent: timeseries.Extent{Start: time.Unix(0, 0), End: now},
 		Step:   trq.Step,
 	}
-	normalizedNow.NormalizeExtent()
+	normalizedNow = normalizedNow.NormalizeExtent()
 
 	var cts timeseries.Timeseries
 	var doc *HTTPDocument
