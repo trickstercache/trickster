@@ -81,9 +81,24 @@ Check out our end-to-end [Docker Compose demo composition](./examples/docker-com
 
 ### Docker
 
-Docker images are available on Docker Hub:
+Docker images are available on Docker Hub (docker.io):
+```bash
+$ docker run --name trickster -d -v /path/to/trickster.yaml:/etc/trickster/trickster.yaml -p 0.0.0.0:8480:8480 trickstercache/trickster
+```
+Or via  Github Container Registry (ghcr.io):
+```bash
+    $ docker run --name trickster -d -v /path/to/trickster.yaml:/etc/trickster/trickster.yaml -p 0.0.0.0:8480:8480 ghcr.io/trickstercache/trickster
+```
+#### Verifying Docker Image
 
-    $ docker run --name trickster -d -v /path/to/trickster.yaml:/etc/trickster/trickster.yaml -p 0.0.0.0:8480:8480 trickstercache/trickster
+To verify that the Trickster Docker image is running, first walk through the [cosign quickstart guide](https://docs.sigstore.dev/quickstart/quickstart-cosign/).
+
+To verify a trickster image, you can use the following command:
+
+```bash
+cosign verify ghcr.io/trickstercache/trickster:x.y.z --certificate-oidc-issuer=https://token.actions.githubusercontent.com --certificate-identity=https://github.com/trickstercache/trickster/.github/workflows/publish-image.yaml@refs/tags/vx.y.z
+```
+
 
 See the 'deploy' Directory for more information about using or creating Trickster docker images.
 

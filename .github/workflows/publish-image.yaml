@@ -63,6 +63,7 @@ jobs:
             type=sha,format=long
       - name: Build and push
         uses: docker/build-push-action@v6
+        id: build-and-push
         with:
           provenance: true
           sbom: true
@@ -77,3 +78,15 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+      - name: Sign Images
+        env:
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          images=""
+          for tag in ${TAGS}; do
+            images+="${tag}@${DIGEST} "
+          done
+          cosign sign --yes ${images}

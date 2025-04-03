@@ -54,37 +54,16 @@ jobs:
           TAGVER=${{ steps.baretag.outputs.baretag }} make release
         #
       - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Release v${{ steps.baretag.outputs.baretag }} / ${{ steps.date.outputs.date }}
-          draft: ${{ env.draft}}
-          prerelease: ${{ env.prerelease }}
-        #
-      - name: Upload Release Binaries Tarball
-        id: upload-release-asset-bundle
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./bin/trickster-${{ steps.baretag.outputs.baretag }}.tar.gz
-          asset_name: trickster-${{ steps.baretag.outputs.baretag }}.tar.gz
-          asset_content_type: application/gzip
-        #
-      - name: Upload Release sha256sum
-        id: upload-release-asset-sha256
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./bin/sha256sum.txt
-          asset_name: sha256sum.txt
-          asset_content_type: text/plain
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --generate-notes \
+            --title "Release v${{ steps.baretag.outputs.baretag }} / ${{ steps.date.outputs.date }}" \
+            --draft=${{ env.draft }} \
+            --prerelease=${{ env.prerelease }} \
+            ./bin/trickster-${{ steps.baretag.outputs.baretag }}.tar.gz \
+            ./bin/sha256sum.txt
   publish-image:
     needs:
       - release
