@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/util/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
 )
 
@@ -69,10 +70,7 @@ func (rg *ResponseGate) Write(b []byte) (int, error) {
 	if len(rg.body) == 0 {
 		rg.body = copiers.CopyBytes(b)
 	} else {
-		merged := make([]byte, len(rg.body)+len(b))
-		copy(merged, rg.body)
-		copy(merged[len(rg.body):], b)
-		rg.body = merged
+		rg.body = bytes.MergeSlices(rg.body, b)
 	}
 	return len(b), nil
 }
