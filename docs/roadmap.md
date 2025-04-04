@@ -1,10 +1,10 @@
 # Trickster Roadmap
 
-The roadmap for Trickster in 2025 focuses on delivering Trickster versions 2.0 and 2.1, as well as new supporting applications and cloud native integrations. Additional details for Q3 and Q4 will be provided as the year progresses.
+The roadmap for Trickster in 2025 focuses on delivering Trickster versions 2.0 and 2.1, as well as supporting new time series applications and cloud native integrations. Additional details for Q3 and Q4 will be provided as the year progresses.
 
 ## Timeline
 
-### Q1 2025
+### April 2025
 
 - [ ] Trickster v2.0 Beta 3 Release
   - [x] Common Time Series Format used internally for all TSDBs
@@ -20,16 +20,20 @@ The roadmap for Trickster in 2025 focuses on delivering Trickster versions 2.0 a
   - [x] Resolve all known Race Conditions
   - [X] Docker & Helm Charts overhauled for Trickster 2.0
   - [X] Additional Rules Engine capabilities for more complex request routing
+  - [-] Extended support for ClickHouse
+
+- [ ] Trickster v2.0 Beta 4 Release
+  - [ ] More easily-importable Trickster packages by other projects
   - [-] Support for InfluxDB 2.0, Flux query syntax and caching queries from Chronograf
   - [-] Support for MySQL as Time Series
-  - [-] Extended support for ClickHouse
   - [-] Support for Autodiscovery (e.g., Kubernetes Pod Annotations)
-  - [ ] More easily-importable Trickster packages by other projects
 
-### Q2 2025
+### Later in Q2 2025
 
 - [ ] Trickster v2.0 GA Release
   - [ ] Overhaul Documentation for Trickster 2.0
+
+### Q3 2025
 
 - [ ] Trickster v2.1 Beta Release
   - [ ] Kube Gateway API support
