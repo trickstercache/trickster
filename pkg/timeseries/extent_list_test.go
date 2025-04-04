@@ -944,7 +944,7 @@ func TestCalculateDeltas(t *testing.T) {
 
 			trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(test.start, 0),
 				End: time.Unix(test.end, 0)}, Step: time.Duration(test.stepSecs) * time.Second}
-			trq.NormalizeExtent()
+			trq = *trq.NormalizeExtent()
 			d := ExtentList(test.have).CalculateDeltas(trq.Extent, trq.Step)
 
 			if len(d) != len(test.expected) {
