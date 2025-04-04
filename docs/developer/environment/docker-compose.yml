@@ -1,0 +1,159 @@
+services:
+
+  # caches
+
+  redis:
+    image: redis:latest
+    user: nobody
+    build:
+      context: .
+      network: host
+    restart: always
+    ports:
+     - 6379:6379
+
+  # ui's
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    user: nobody
+    volumes:
+      - ./docker-compose-data/grafana-config:/etc/grafana
+      - ./docker-compose-data/dashboards:/var/lib/grafana/dashboards
+    build:
+      context: .
+      network: host
+    restart: always
+    ports:
+     - 3000:3000
+    depends_on:
+      - influxdb
+
+  chronograf:
+    image: chronograf:1.10
+    ports:
+     - 8888:8888
+    build:
+      context: .
+      network: host
+    restart: always
+
+  # TSDBs
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    volumes:
+      - ./docker-compose-data/prometheus-config:/etc/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    build:
+      context: .
+      network: host
+    ports:
+     - 9090:9090
+    restart: always
+
+  # influxdb 1.8
+  influxdb:
+    image: influxdb:1.8
+    volumes:
+      - influxdbv1:/var/lib/influxdb
+      - ./docker-compose-data/influxdb-config:/etc/influxdb
+    build:
+      context: .
+      network: host
+    restart: always
+    ports:
+     - 8186:8086
+    environment:
+      - "INFLUXDB_DB=trickster"
+
+  # influxdb 2.0
+  influxdb2:
+    image: influxdb:2.7
+    volumes:
+      - ./docker-compose-data/influxdb2-config/config.yml:/etc/influxdb2/config.yml
+      - influxdbv2:/.influxdbv2
+    build:
+      context: .
+      network: host
+    restart: always
+    ports:
+     - 8086:8086
+    command:
+      - '--reporting-disabled'
+      # Mount for influxdb data directory and configuration
+
+  # influxdb 2.0 cli, for seeding influxdb on startup
+  influxdb_cli:
+    links:
+      - influxdb2
+    image: influxdb:2.7
+    volumes:
+      - ./docker-compose-data/influxdb2-config/setup-influxdb2.sh:/bin/setup-influxdb2.sh
+  # Use these same configurations parameters in your telegraf configuration, mytelegraf.conf.
+    entrypoint: sh /bin/setup-influxdb2.sh
+    build:
+      context: .
+      network: host
+    restart: on-failure:10
+    depends_on:
+      # Wait for the influxd service in the influxdb container has fully before
+      # trying to setup an influxdb instance with the influxdb_cli service. 
+      - influxdb2
+
+  # clickhouse
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.3
+    ports:
+     - 9000:9000
+     - 8123:8123
+    build:
+      context: .
+      network: host
+    restart: always
+
+  # Mocks
+
+  mockster:
+    image: tricksterproxy/mockster:latest
+    build:
+      context: .
+      network: host
+    restart: always
+    ports:
+     - 8482:8482
+
+  # Tracing
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.67.0
+    ports:
+     - 5775:5775/udp
+     - 6831:6831/udp
+     - 6832:6832/udp
+     - 5778:5778
+     - 16686:16686
+     - 14268:14268
+     - 14250:14250
+    build:
+      context: .
+      network: host
+    restart: always
+
+  # polling
+
+  telegraf:
+    image: telegraf:1.34-alpine
+    volumes:
+      - ./docker-compose-data/telegraf-config/telegraf.conf:/etc/telegraf/telegraf.conf
+    depends_on:
+      - influxdb
+      - influxdb2
+
+volumes:
+  influxdbv1:
+  influxdbv2:

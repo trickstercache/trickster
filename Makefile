@@ -19,26 +19,19 @@ GOFMT          ?= $(GO)fmt
 FIRST_GOPATH   := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
 TRICKSTER_MAIN := cmd/trickster
 TRICKSTER      := $(FIRST_GOPATH)/bin/trickster
-PROGVER        := $(shell grep 'applicationVersion = ' $(TRICKSTER_MAIN)/main.go | awk '{print $$3}' | sed -e 's/\"//g')
 BUILD_TIME     := $(shell date -u +%FT%T%z)
 GIT_LATEST_COMMIT_ID     ?= $(shell git rev-parse HEAD)
 IMAGE_TAG      ?= latest
-IMAGE_ARCH     ?= amd64
-GOARCH         ?= amd64
-TAGVER         ?= unspecified
-LDFLAGS         =-ldflags "-extldflags '-static' -w -s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicationGitCommitID=$(GIT_LATEST_COMMIT_ID)"
+IMAGE_ARCH     ?= $(shell $(GO) env GOARCH)
+GOARCH         ?= $(shell $(GO) env GOARCH)
+TAGVER         ?= $(shell git describe --tags --dirty --always)
+LDFLAGS         =-ldflags "-extldflags '-static' -w -s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicationGitCommitID=$(GIT_LATEST_COMMIT_ID) -X main.applicationVersion=$(TAGVER)"
 BUILD_SUBDIR   := bin
-PACKAGE_DIR    := ./$(BUILD_SUBDIR)/trickster-$(PROGVER)
+PACKAGE_DIR    := ./$(BUILD_SUBDIR)/trickster-$(TAGVER)
 BIN_DIR        := $(PACKAGE_DIR)/bin
 CONF_DIR       := $(PACKAGE_DIR)/conf
 CGO_ENABLED    ?= 0
 BUMPER_FILE    := ./testdata/license_header_template.txt
-
-.PHONY: validate-app-version
-validate-app-version:
-	@if [ "$(PROGVER)" != $(TAGVER) ]; then\
-		(echo "mismatch between TAGVER '$(TAGVER)' and applicationVersion '$(PROGVER)'"; exit 1);\
-	fi
 
 .PHONY: go-mod-vendor
 go-mod-vendor:
@@ -65,22 +58,22 @@ rpm: build
 		-e 's%prometheus:9090%localhost:9090%' \
 		< examples/conf/example.full.yaml > ./$(BUILD_SUBDIR)/SOURCES/trickster.yaml
 	rpmbuild --define "_topdir $(CURDIR)/$(BUILD_SUBDIR)" \
-		--define "_version $(PROGVER)" \
+		--define "_version $(TAGVER)" \
 		--define "_release 1" \
 		-ba deploy/packaging/trickster.spec
 
 .PHONY: install
 install:
-	$(GO) install -o $(TRICKSTER) $(PROGVER)
+	$(GO) install -o $(TRICKSTER) $(TAGVER)
 
 .PHONY: release
-release: validate-app-version clean go-mod-tidy go-mod-vendor release-artifacts release-sha256
+release: clean go-mod-tidy go-mod-vendor release-artifacts release-sha256
 
 # generate sha256sum for all release artifacts
 RELEASE_CHECKSUM_FILE=$(BUILD_SUBDIR)/sha256sum.txt
 .PHONY: release-sha256
 release-sha256:
-	./hack/release-sha256.sh $(RELEASE_CHECKSUM_FILE) $(BUILD_SUBDIR) $(PROGVER) $(BIN_DIR)
+	./hack/release-sha256.sh $(RELEASE_CHECKSUM_FILE) $(BUILD_SUBDIR) $(TAGVER) $(BIN_DIR)
 
 .PHONY: release-artifacts
 release-artifacts: clean
@@ -96,13 +89,13 @@ release-artifacts: clean
 	cp ./LICENSE $(PACKAGE_DIR)
 	cp ./examples/conf/*.yaml $(CONF_DIR)
 
-	GOOS=darwin  GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).darwin-amd64  -v $(TRICKSTER_MAIN)/*.go
-	GOOS=darwin  GOARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).darwin-arm64  -v $(TRICKSTER_MAIN)/*.go
-	GOOS=linux   GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-amd64   -v $(TRICKSTER_MAIN)/*.go
-	GOOS=linux   GOARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).linux-arm64   -v $(TRICKSTER_MAIN)/*.go
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(PROGVER).windows-amd64 -v $(TRICKSTER_MAIN)/*.go
+	GOOS=darwin  GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(TAGVER).darwin-amd64  -v $(TRICKSTER_MAIN)/*.go
+	GOOS=darwin  GOARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(TAGVER).darwin-arm64  -v $(TRICKSTER_MAIN)/*.go
+	GOOS=linux   GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(TAGVER).linux-amd64   -v $(TRICKSTER_MAIN)/*.go
+	GOOS=linux   GOARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(TAGVER).linux-arm64   -v $(TRICKSTER_MAIN)/*.go
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(TAGVER).windows-amd64 -v $(TRICKSTER_MAIN)/*.go
 
-	cd ./$(BUILD_SUBDIR) && tar cvfz ./trickster-$(PROGVER).tar.gz ./trickster-$(PROGVER)/*
+	cd ./$(BUILD_SUBDIR) && tar cvfz ./trickster-$(TAGVER).tar.gz ./trickster-$(TAGVER)/*
 
 # Minikube and helm bootstrapping are done via deploy/helm/Makefile
 .PHONY: helm-local
@@ -127,14 +120,15 @@ kube-local:
 DOCKER_TARGET ?= final
 .PHONY: docker
 docker:
-	docker build \
+	docker buildx build \
 		--progress=plain \
 		--build-arg IMAGE_ARCH=$(IMAGE_ARCH) \
 		--build-arg GIT_LATEST_COMMIT_ID=$(GIT_LATEST_COMMIT_ID) \
 		--target $(DOCKER_TARGET) \
 		--build-arg GOARCH=$(GOARCH) \
 		-f ./Dockerfile \
-		-t trickster:$(PROGVER) \
+		-t trickster:$(TAGVER) \
+		--platform linux/$(IMAGE_ARCH) \
 		.
 
 .PHONY: docker-release
@@ -157,8 +151,11 @@ GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 test:
 	go test -v ${GO_TEST_FLAGS} ./...
 
+.PHONY: data-race-test
 data-race-test:
 	GO_TEST_FLAGS="-race" $(MAKE) test | tee race-output.log
+
+.PHONY: data-race-test-inspect
 data-race-test-inspect:
 	./hack/inspect-race-output.sh race-output.log
 
@@ -226,3 +223,15 @@ serve-info:
 get-tools:
 	@echo "Installing tools..."
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6
+
+.PHONY: start-developer
+start-developer:
+	@cd docs/developer/environment && docker compose up -d
+	
+.PHONY: delete-developer
+delete-developer:
+	@cd docs/developer/environment && docker compose down
+
+.PHONY: serve-dev
+serve-dev:
+	@go run cmd/trickster/main.go -config docs/developer/environment/trickster-config/trickster.yaml

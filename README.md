@@ -51,7 +51,7 @@ Trickster works with virtually any Dashboard application that makes queries to a
 
 <img src="./docs/images/external/irondb_logo_60.png" width=16 /> Circonus IRONdb
 
-See the [Supported TSDB Providers](./docs/supported-origin-types.md) document for full details
+See the [Supported TSDB Providers](./docs/supported-backend-providers.md) document for full details
 
 ### How Trickster Accelerates Time Series
 
@@ -81,9 +81,24 @@ Check out our end-to-end [Docker Compose demo composition](./examples/docker-com
 
 ### Docker
 
-Docker images are available on Docker Hub:
+Docker images are available on Docker Hub (docker.io):
+```bash
+$ docker run --name trickster -d -v /path/to/trickster.yaml:/etc/trickster/trickster.yaml -p 0.0.0.0:8480:8480 trickstercache/trickster
+```
+Or via  Github Container Registry (ghcr.io):
+```bash
+    $ docker run --name trickster -d -v /path/to/trickster.yaml:/etc/trickster/trickster.yaml -p 0.0.0.0:8480:8480 ghcr.io/trickstercache/trickster
+```
+#### Verifying Docker Image
 
-    $ docker run --name trickster -d -v /path/to/trickster.yaml:/etc/trickster/trickster.yaml -p 0.0.0.0:8480:8480 trickstercache/trickster
+To verify that the Trickster Docker image is running, first walk through the [cosign quickstart guide](https://docs.sigstore.dev/quickstart/quickstart-cosign/).
+
+To verify a trickster image, you can use the following command:
+
+```bash
+cosign verify ghcr.io/trickstercache/trickster:x.y.z --certificate-oidc-issuer=https://token.actions.githubusercontent.com --certificate-identity=https://github.com/trickstercache/trickster/.github/workflows/publish-image.yaml@refs/tags/vx.y.z
+```
+
 
 See the 'deploy' Directory for more information about using or creating Trickster docker images.
 
@@ -104,7 +119,7 @@ You can directly use the `go` tool to download and install the `trickster`
 binary into your `GOPATH`:
 
 ```bash
-    $ go get github.com/trickstercache/trickster/cmd/trickster
+    $ go install github.com/trickstercache/trickster/cmd/trickster@main
     # this starts a prometheus accelerator proxy for the provided endpoint
     $ trickster -origin-url http://prometheus.example.com:9090 -provider prometheus
 ```
