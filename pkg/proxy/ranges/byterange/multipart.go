@@ -113,10 +113,13 @@ func (mbrs MultipartByteRanges) Ranges() Ranges {
 	if len(mbrs) == 0 {
 		return Ranges{}
 	}
-	ranges := make(Ranges, 0, len(mbrs))
+	ranges := make(Ranges, len(mbrs))
+	var k int
 	for _, v := range mbrs {
-		ranges = append(ranges, v.Range)
+		ranges[k] = v.Range
+		k++
 	}
+	ranges = ranges[:k]
 	sort.Sort(ranges)
 	return ranges
 }

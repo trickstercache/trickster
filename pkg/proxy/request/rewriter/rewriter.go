@@ -59,7 +59,8 @@ func ProcessConfigs(rwl map[string]*options.Options) (map[string]RewriteInstruct
 
 // ParseRewriteList converts a Rewriter Configuration into parsed instructions
 func ParseRewriteList(rl options.RewriteList) (RewriteInstructions, error) {
-	fri := make(RewriteInstructions, 0, len(rl))
+	fri := make(RewriteInstructions, len(rl))
+	var k int
 	for _, sri := range rl {
 		if len(sri) > 1 {
 			key := sri[0] + "-" + sri[1]
@@ -72,10 +73,11 @@ func ParseRewriteList(rl options.RewriteList) (RewriteInstructions, error) {
 			if err != nil {
 				return nil, err
 			}
-			fri = append(fri, ri)
+			fri[k] = ri
+			k++
 		}
 	}
-	return fri, nil
+	return fri[:k], nil
 }
 
 // Rewrite returns a handler that executes the Rewriter and passes

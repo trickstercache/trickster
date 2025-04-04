@@ -111,12 +111,14 @@ func (t Tokens) Compress() Tokens {
 	if len(t) == 0 {
 		return t
 	}
-	out := make(Tokens, 0, len(t))
+	out := make(Tokens, len(t))
+	var k int
 	for _, tk := range t {
 		if tk == nil {
 			continue
 		}
-		out = append(out, tk)
+		out[k] = tk
+		k++
 	}
-	return out
+	return out[:k]
 }

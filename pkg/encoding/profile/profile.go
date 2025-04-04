@@ -63,39 +63,48 @@ func (p *Profile) Clone() *Profile {
 }
 
 func (p *Profile) String() string {
-	lines := make([]string, 0, 7)
+	lines := make([]string, 8)
+	var k int
 	if p.ClientAcceptEncoding != "" {
-		lines = append(lines, fmt.Sprintf(`"clientAcceptEncoding":"%s"`, p.ClientAcceptEncoding))
+		lines[k] = fmt.Sprintf(`"clientAcceptEncoding":"%s"`, p.ClientAcceptEncoding)
+		k++
 	}
 	if p.SupportedHeaderVal != "" {
-		lines = append(lines, fmt.Sprintf(`"supportedHeaderVal":"%s"`, p.SupportedHeaderVal))
+		lines[k] = fmt.Sprintf(`"supportedHeaderVal":"%s"`, p.SupportedHeaderVal)
+		k++
 	}
 	if p.Supported > 0 {
-		lines = append(lines, fmt.Sprintf(`"supportedBitmap":%d`, p.Supported))
+		lines[k] = fmt.Sprintf(`"supportedBitmap":%d`, p.Supported)
+		k++
 	}
 	if p.NoTransform {
-		lines = append(lines, fmt.Sprintf(`"noTransform":%t`, p.NoTransform))
+		lines[k] = fmt.Sprintf(`"noTransform":%t`, p.NoTransform)
+		k++
 	}
 	if len(p.CompressTypes) > 0 {
 		vals := make([]string, len(p.CompressTypes))
 		var i int
-		for k := range p.CompressTypes {
-			vals[i] = `"` + k + `"`
+		for l := range p.CompressTypes {
+			vals[i] = `"` + l + `"`
 			i++
 		}
 		sort.Strings(vals)
-		lines = append(lines, fmt.Sprintf(`"compressTypes":[%s]`, strings.Join(vals, ",")))
+		lines[k] = fmt.Sprintf(`"compressTypes":[%s]`, strings.Join(vals, ","))
+		k++
 	}
 	if p.ContentEncoding != "" {
-		lines = append(lines, fmt.Sprintf(`"contentEncoding":"%s"`, p.ContentEncoding))
+		lines[k] = fmt.Sprintf(`"contentEncoding":"%s"`, p.ContentEncoding)
+		k++
 	}
 	if p.ContentType != "" {
-		lines = append(lines, fmt.Sprintf(`"contentType":"%s"`, p.ContentType))
+		lines[k] = fmt.Sprintf(`"contentType":"%s"`, p.ContentType)
+		k++
 	}
 	if p.Level > -1 {
-		lines = append(lines, fmt.Sprintf(`"level":"%d"`, p.Level))
+		lines[k] = fmt.Sprintf(`"level":"%d"`, p.Level)
+		k++
 	}
-	return "{" + strings.Join(lines, ",") + "}"
+	return "{" + strings.Join(lines[:k], ",") + "}"
 }
 
 func (p *Profile) ClientAcceptsEncoding(enc providers.Provider) bool {

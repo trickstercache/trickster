@@ -65,7 +65,6 @@ func MakeResultsHeader(engine, status, ffstatus string, fetched timeseries.Exten
 
 // MergeResultHeaderVals merges 2 Trickster Result Headers
 func MergeResultHeaderVals(h1, h2 string) string {
-
 	if h1 == "" {
 		return h2
 	}
@@ -91,17 +90,16 @@ func MergeResultHeaderVals(h1, h2 string) string {
 
 	if len(r1.Fetched) == 0 {
 		r1.Fetched = r2.Fetched
-	} else {
-		r1.Fetched = append(r1.Fetched, r2.Fetched...)
+	} else if len(r2.Fetched) > 0 {
+		merged := make(timeseries.ExtentList, len(r1.Fetched)+len(r2.Fetched))
+		copy(merged, r1.Fetched)
+		copy(merged[len(r1.Fetched):], r2.Fetched)
 		r1.Fetched = r1.Fetched.Compress(0)
 	}
-
 	return r1.String()
-
 }
 
 func parseResultHeaderVals(h string) ResultHeaderParts {
-
 	r := ResultHeaderParts{}
 	parts := strings.Split(h, "; ")
 	for _, part := range parts {
@@ -125,7 +123,8 @@ func parseResultHeaderVals(h string) ResultHeaderParts {
 			case "fetched":
 				val = strings.ReplaceAll(strings.ReplaceAll(val, "[", ""), "]", "")
 				fparts := strings.Split(val, ";")
-				el := make(timeseries.ExtentList, 0, len(fparts))
+				el := make(timeseries.ExtentList, len(fparts))
+				var k int
 				for _, fpart := range fparts {
 					if i = strings.Index(fpart, "-"); i > 0 && i < len(fpart)-1 {
 
@@ -137,18 +136,16 @@ func parseResultHeaderVals(h string) ResultHeaderParts {
 						if err != nil {
 							continue
 						}
-						el = append(el, timeseries.Extent{
+						el[k] = timeseries.Extent{
 							Start: time.Unix(0, start*1000000),
 							End:   time.Unix(0, end*1000000),
-						},
-						)
+						}
+						k++
 					}
 				}
-				r.Fetched = el
+				r.Fetched = el[:k]
 			}
 		}
 	}
-
 	return r
-
 }

@@ -375,14 +375,15 @@ func writeConcurrent(_ context.Context, c cache.Cache, key string, d *HTTPDocume
 	}
 
 	if compress {
-		// tl.Debug(rsc.Logger, "compressing cache data", tl.Pairs{"cacheKey": key})
 		buf := bytes.NewBuffer([]byte{1})
 		encoder := brotli.NewWriter(buf)
 		encoder.Write(b)
 		encoder.Close()
 		b = buf.Bytes()
 	} else {
-		b = append([]byte{0}, b...)
+		buf := make([]byte, len(b)+1)
+		copy(buf[1:], b)
+		b = buf
 	}
 
 	cr <- c.Store(key, b, ttl)

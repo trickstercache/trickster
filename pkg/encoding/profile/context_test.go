@@ -32,7 +32,7 @@ func TestContext(t *testing.T) {
 		t.Errorf("expected %d got %d", 8, ep2.Supported)
 	}
 
-	ep2 = FromContext(nil)
+	ep2 = FromContext(context.Background())
 	if ep2 != nil {
 		t.Error("expected nil")
 	}

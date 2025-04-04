@@ -24,8 +24,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/checksum/fnv"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // SeriesHeader is the header section of a series, and describes its
@@ -44,10 +44,15 @@ type SeriesHeader struct {
 	QueryStatement string `msg:"query"`
 	// Size is the memory utilization of the Header in bytes
 	Size int `msg:"size"`
+
+	hash Hash
 }
 
 // CalculateHash sums the FNV64a hash for the Header and stores it to the Hash member
 func (sh *SeriesHeader) CalculateHash() Hash {
+	if sh.hash > 0 {
+		return sh.hash
+	}
 	hash := fnv.NewInlineFNV64a()
 	hash.Write([]byte(sh.Name))
 	hash.Write([]byte(sh.QueryStatement))
@@ -62,23 +67,23 @@ func (sh *SeriesHeader) CalculateHash() Hash {
 	b := make([]byte, 4)
 	binary.LittleEndian.PutUint32(b, uint32(sh.TimestampIndex))
 	hash.Write(b)
-	return Hash(hash.Sum64())
+	sh.hash = Hash(hash.Sum64())
+	return sh.hash
 }
 
 // Clone returns a perfect, new copy of the SeriesHeader
 func (sh *SeriesHeader) Clone() SeriesHeader {
 	clone := SeriesHeader{
-		Name:       sh.Name,
-		Tags:       sh.Tags.Clone(),
-		FieldsList: make([]timeseries.FieldDefinition, len(sh.FieldsList)),
-		//FieldsLookup:   make(map[string]*FieldDefinition),
+		Name:           sh.Name,
+		Tags:           sh.Tags.Clone(),
+		FieldsList:     make([]timeseries.FieldDefinition, len(sh.FieldsList)),
 		TimestampIndex: sh.TimestampIndex,
 		QueryStatement: sh.QueryStatement,
 		Size:           sh.Size,
+		hash:           sh.hash,
 	}
 	for i, fd := range sh.FieldsList {
 		clone.FieldsList[i] = fd.Clone()
-		//clone.FieldsLookup[fd.Name] = clone.FieldsList[i]
 	}
 	return clone
 }

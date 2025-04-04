@@ -208,7 +208,10 @@ checkCache:
 			// this checks the timeseries's volatile ranges for any overlap with
 			// the request extent, and adds those to the missRanges to refresh
 			if cvr = vr.Crop(trq.Extent); len(cvr) > 0 {
-				missRanges = append(missRanges, cvr...).Compress(trq.Step)
+				merged := make(timeseries.ExtentList, len(missRanges)+len(cvr))
+				copy(merged, missRanges)
+				copy(merged[len(missRanges):], cvr)
+				missRanges = merged.Compress(trq.Step)
 			}
 		}
 	}
@@ -323,7 +326,7 @@ checkCache:
 		"reqEnd":      trq.Extent.End.Unix(),
 	}
 
-	var mts []timeseries.Timeseries
+	var mts timeseries.TimeseriesList
 	var uncachedValueCount int64
 	var mresp *http.Response
 
@@ -565,7 +568,7 @@ func getDecoderReader(resp *http.Response) io.Reader {
 // this will concurrently fetch provided requested extents
 func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Header,
 	client backends.TimeseriesBackend, pr *proxyRequest, wur timeseries.UnmarshalerReaderFunc,
-	span trace.Span) ([]timeseries.Timeseries, int64, *http.Response, error) {
+	span trace.Span) (timeseries.TimeseriesList, int64, *http.Response, error) {
 
 	var uncachedValueCount atomic.Int64
 	var wg sync.WaitGroup
@@ -573,7 +576,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 	var err error
 
 	// the list of time series created from the responses
-	mts := make([]timeseries.Timeseries, 0, len(el))
+	mts := make(timeseries.TimeseriesList, 0, len(el))
 	// the meta-response aggregating all upstream responses
 	mresp := &http.Response{Header: h}
 

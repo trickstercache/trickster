@@ -128,20 +128,25 @@ func AddForwardingHeaders(r *http.Request, headerType string) {
 
 // String returns a "Forwarded" Header value
 func (hop *Hop) String(expand ...bool) string {
-	parts := make([]string, 0, 4)
+	parts := make([]string, 4)
+	var k int
 	if hop.Server != "" {
-		parts = append(parts, fmt.Sprintf("by=%s", formatForwardedAddress(hop.Server)))
+		parts[k] = fmt.Sprintf("by=%s", formatForwardedAddress(hop.Server))
+		k++
 	}
 	if hop.RemoteAddr != "" {
-		parts = append(parts, fmt.Sprintf("for=%s", formatForwardedAddress(hop.RemoteAddr)))
+		parts[k] = fmt.Sprintf("for=%s", formatForwardedAddress(hop.RemoteAddr))
+		k++
 	}
 	if hop.Host != "" {
-		parts = append(parts, fmt.Sprintf("host=%s", formatForwardedAddress(hop.Host)))
+		parts[k] = fmt.Sprintf("host=%s", formatForwardedAddress(hop.Host))
+		k++
 	}
 	if hop.Scheme != "" {
-		parts = append(parts, fmt.Sprintf("proto=%s", formatForwardedAddress(hop.Scheme)))
+		parts[k] = fmt.Sprintf("proto=%s", formatForwardedAddress(hop.Scheme))
+		k++
 	}
-	currentHop := strings.Join(parts, ";")
+	currentHop := strings.Join(parts[:k], ";")
 	if (len(expand) == 1 && !expand[0]) || len(hop.Hops) == 0 {
 		return currentHop
 	}
@@ -240,11 +245,11 @@ func HopsFromHeader(h http.Header) Hops {
 }
 
 func parseForwardHeaders(h http.Header) Hops {
-	var hops Hops
 	fh := h.Get(NameForwarded)
 	if fh != "" {
 		fwds := strings.Split(strings.Replace(fh, " ", "", -1), ",")
-		hops = make(Hops, 0, len(fwds))
+		var k int
+		hops := make(Hops, len(fwds))
 		for _, f := range fwds {
 			hop := &Hop{}
 			var ok bool
@@ -267,11 +272,13 @@ func parseForwardHeaders(h http.Header) Hops {
 			}
 			if ok {
 				hop.normalizeAddresses()
-				hops = append(hops, hop)
+				hops[k] = hop
+				k++
 			}
 		}
+		return hops[:k]
 	}
-	return hops
+	return nil
 }
 
 func (hop *Hop) normalizeAddresses() {

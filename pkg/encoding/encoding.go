@@ -28,8 +28,6 @@ import (
 //
 // Example Input: s1="zstd, gzip,deflate, gzip" s2="br,gzip, deflate"
 // Example Output: "zstd, gzip, deflate, br"
-//
-//
 func MergeCommaSeparated(s1, s2 string) string {
 	return MergeDelimeterSeparated(s1, s2, ",", true)
 }
@@ -44,25 +42,28 @@ func MergeDelimeterSeparated(s1, s2, delimiter string, pad bool) string {
 	used := make(map[string]interface{})
 	l1 := strings.Split(s1, delimiter)
 	l2 := strings.Split(s2, delimiter)
-	full := make([]string, 0, len(l1)+len(l2))
+	full := make([]string, len(l1)+len(l2))
+	var k int
 	for _, v := range l1 {
-		v = strings.Trim(v, " \n\t")
+		v = strings.TrimSpace(v)
 		if _, ok := used[v]; ok {
 			continue
 		}
 		used[v] = nil
-		full = append(full, v)
+		full[k] = v
+		k++
 	}
 	for _, v := range l2 {
-		v = strings.Trim(v, " \n\t")
+		v = strings.TrimSpace(v)
 		if _, ok := used[v]; ok {
 			continue
 		}
 		used[v] = nil
-		full = append(full, v)
+		full[k] = v
+		k++
 	}
 	if pad {
 		delimiter += " "
 	}
-	return strings.Join(full, delimiter)
+	return strings.Join(full[:k], delimiter)
 }
