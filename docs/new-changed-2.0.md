@@ -42,15 +42,17 @@
     - `ghcr.io/trickstercache/trickster`
 - We've eliminated over 70 race conditions and random panics
 - We've switched from Regular Expression matches for SQL-based Time Series Backends to an extensible lexer/parser solution
-  - ClickHouse and MySQL backend providers now use the new SQL Parser
+  - ClickHouse backend providers now use the new SQL Parser
 - We now support [Simiulated Latency](./simulated-latency.md) if you want to use Trickster for that purpose in a test harness.
 
 ## Still to Come
 
-Trickster 2.0 is not yet feature complete, and we anticipate including the following additional features before the GA Release:
+Trickster 2.0 is not yet feature complete, and we anticipate including the following additional features in Beta 4 before the GA Release:
 - an up-to-date Grafana dashboard template for monitoring Trickster
 - incorporate ALB examples into the docker-compose demo
 - support for Auto-Discovery of Backend Targets (e.g., Kubernetes Pod Annotations)
+- support MySQL as a Backend Time Series
+- Better InfluxDB support, including Flux query language
 
 ## Known Issues With the Latest Beta
 
