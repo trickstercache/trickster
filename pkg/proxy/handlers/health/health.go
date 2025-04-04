@@ -130,9 +130,6 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 	u = u[:ul]
 	q = q[:ql]
 
-	sort.Strings(u)
-	sort.Strings(q)
-
 	if len(a) > 0 {
 		json.WriteString(`,"available":[`)
 		sort.Strings(a)
@@ -168,7 +165,7 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 
 	if len(q) > 0 {
 		json.WriteString(`,"unchecked":[`)
-		sort.Strings(a)
+		sort.Strings(q)
 		for i, k := range q {
 			if i > 0 {
 				json.WriteString(",")
