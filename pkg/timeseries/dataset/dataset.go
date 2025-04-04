@@ -161,13 +161,16 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 		}
 		wg.Wait()
 		if skips {
-			sl := make([]*Series, 0, len(ds.Results[i].SeriesList))
+			sl := make([]*Series, len(ds.Results[i].SeriesList))
+			var k int
 			for _, s := range ds.Results[i].SeriesList {
-				if s != nil {
-					sl = append(sl, s)
+				if s == nil {
+					continue
 				}
+				sl[k] = s
+				k++
 			}
-			ds.Results[i].SeriesList = sl
+			ds.Results[i].SeriesList = sl[:k]
 		}
 	}
 	return clone
@@ -303,24 +306,29 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 						if gs == nil {
 							return
 						}
-						// otherwise, we append points
-						es.Points = append(es.Points, gs.Points...)
+						// otherwise, we merge the points from the two slices
+						merged := make(Points, len(es.Points)+len(gs.Points))
+						copy(merged, es.Points)
+						copy(merged[len(es.Points):], gs.Points)
+						es.Points = merged
 						// This will sort and dupe kill the list of points, keeping the newest version
 						if sortSeries {
 							n := len(es.Points)
 							sort.Sort(es.Points)
 							if n <= 1 {
-								// extra 10 capacity prevents an extra copy/expand of the whole
-								// slice for small incremental merges on the next load
 								es.Points = es.Points.CloneRange(0, n)
 							} else {
-								x := make(Points, 0, len(es.Points)+10)
-								for k := 0; k < n; k++ {
-									if k+1 == n || es.Points[k].Epoch != es.Points[k+1].Epoch {
-										x = append(x, es.Points[k])
+								// extra 10 capacity prevents an extra copy/expand of the whole
+								// slice for small incremental merges on the next load
+								points := make(Points, len(es.Points), len(es.Points)+10)
+								var k int
+								for l := range n {
+									if l+1 == n || es.Points[l].Epoch != es.Points[l+1].Epoch {
+										points[k] = es.Points[l]
+										k++
 									}
 								}
-								es.Points = x
+								es.Points = points[:k]
 							}
 						}
 						es.PointSize = es.Points.Size()

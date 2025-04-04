@@ -138,7 +138,8 @@ func (brs Ranges) CalculateDelta(haves Ranges, fullContentLength int64) Ranges {
 
 	sort.Sort(brs)
 	sort.Sort(haves)
-	need := make(Ranges, 0, len(brs)+len(haves))
+	need := make(Ranges, (len(brs)+len(haves))*2)
+	var k int
 
 	deltaRange := func() Range {
 		return Range{Start: -1, End: -1}
@@ -172,7 +173,8 @@ func (brs Ranges) CalculateDelta(haves Ranges, fullContentLength int64) Ranges {
 				if nr.Start > -1 && nr.End == -1 {
 					nr.End = want.End
 					checkpoint = nr.End
-					need = append(need, nr)
+					need[k] = nr
+					k++
 					checked = true
 					nr = deltaRange()
 				}
@@ -203,10 +205,10 @@ func (brs Ranges) CalculateDelta(haves Ranges, fullContentLength int64) Ranges {
 				nr.Start = want.Start
 			}
 			if want.End <= have.End {
-
 				if nr.Start > -1 && have.Start > 0 {
 					nr.End = have.Start - 1
-					need = append(need, nr)
+					need[k] = nr
+					k++
 				}
 				checked = true
 				nr = deltaRange()
@@ -215,7 +217,8 @@ func (brs Ranges) CalculateDelta(haves Ranges, fullContentLength int64) Ranges {
 			if want.Start < have.Start && want.End > have.End {
 				nr.End = have.Start - 1
 				checkpoint = nr.End
-				need = append(need, nr)
+				need[k] = nr
+				k++
 				checked = true
 				nr = deltaRange()
 				nr.Start = have.End + 1
@@ -228,15 +231,18 @@ func (brs Ranges) CalculateDelta(haves Ranges, fullContentLength int64) Ranges {
 			if nr.Start > -1 {
 				want.Start = nr.Start
 			}
-			need = append(need, want)
+			need[k] = want
+			k++
 			nr = deltaRange()
 		}
 	}
 
 	if nr.Start != -1 && nr.End == -1 {
 		nr.End = brs[len(brs)-1].End
-		need = append(need, nr)
+		need[k] = nr
+		k++
 	}
+	need = need[:k]
 	sort.Sort(need)
 	return need
 }

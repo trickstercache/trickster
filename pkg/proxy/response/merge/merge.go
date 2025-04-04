@@ -62,18 +62,17 @@ func (rg *ResponseGate) Body() []byte {
 
 // Write is not used with a ResponseGate
 func (rg *ResponseGate) Write(b []byte) (int, error) {
-
 	l := len(b)
-
 	if l == 0 {
 		return 0, nil
 	}
-
-	if rg.body == nil {
+	if len(rg.body) == 0 {
 		rg.body = copiers.CopyBytes(b)
 	} else {
-		rg.body = append(rg.body, b...)
+		merged := make([]byte, len(rg.body)+len(b))
+		copy(merged, rg.body)
+		copy(merged[len(rg.body):], b)
+		rg.body = merged
 	}
-
 	return len(b), nil
 }

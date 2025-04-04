@@ -78,15 +78,17 @@ func Unique(in []string) []string {
 		return in
 	}
 	m := make(map[string]interface{})
-	out := make([]string, 0, l)
+	out := make([]string, l)
+	var k int
 	for _, v := range in {
 		if _, ok := m[v]; ok {
 			continue
 		}
-		out = append(out, v)
+		out[k] = v
+		k++
 		m[v] = nil
 	}
-	return out
+	return out[:k]
 }
 
 // ErrKeyNotInMap represents an error for key not found in map

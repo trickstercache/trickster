@@ -54,4 +54,10 @@ func TestListMerge(t *testing.T) {
 		t.Error("expected 2 got", len(sl))
 	}
 
+	sl = SeriesList{testSeries(), testSeries3()}
+	sl2 = SeriesList{testSeries(), testSeries2()}
+	sl = sl.merge(sl2)
+	if len(sl) != 3 {
+		t.Error("expected 3 got", len(sl))
+	}
 }

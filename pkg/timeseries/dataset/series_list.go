@@ -35,9 +35,8 @@ func (sl SeriesList) merge(sl2 SeriesList) SeriesList {
 	if sl.Equal(sl2) || len(sl2) == 0 {
 		return sl
 	}
-	var m map[Hash]int
+	m := make(map[Hash]int)
 	updateLookup := func(sl3 SeriesList) {
-		m = make(map[Hash]int)
 		for i, v := range sl3 {
 			h := v.Header.CalculateHash()
 			if _, ok := m[h]; !ok {
@@ -45,28 +44,43 @@ func (sl SeriesList) merge(sl2 SeriesList) SeriesList {
 			}
 		}
 	}
-	updateLookup(sl)
-	buf := make(SeriesList, len(sl), len(sl)+len(sl2)*2)
-	copy(buf, sl)
+	out := make(SeriesList, len(sl)+len(sl2))
+	var k int
+	for _, s := range sl {
+		h := s.Header.CalculateHash()
+		if _, ok := m[h]; ok {
+			continue
+		}
+		out[k] = s
+		m[h] = k
+		k++
+	}
+	seen := make(map[Hash]struct{}, len(sl2))
 	var pj int
 	for _, v := range sl2 {
 		h := v.Header.CalculateHash()
+		if _, ok := seen[h]; ok {
+			continue
+		}
+		seen[h] = struct{}{}
 		j, ok := m[h]
 		if !ok {
-			pj = len(buf)
-			buf = append(buf, v)
-			updateLookup(buf)
+			out[k] = v
+			pj = k
+			k++
+			updateLookup(out[:k])
 			continue
 		}
 		if j < pj {
-			pj = len(buf) - 1
-			buf = append(buf[:j], append(buf[j+1:], buf[j])...)
-			updateLookup(buf)
+			pj = k - 1
+			copy(out[j:], out[j+1:])
+			out[pj] = v
+			updateLookup(out[:k])
 			continue
 		}
 		pj = j
 	}
-	return buf
+	return out[:k]
 }
 
 // Equal returns true if the slices contain identical values in the identical order

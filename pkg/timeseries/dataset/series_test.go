@@ -30,6 +30,22 @@ func testSeries() *Series {
 	}
 }
 
+func testSeries2() *Series {
+	sh := testSeriesHeader2()
+	return &Series{
+		Header: sh,
+		Points: testPoints(),
+	}
+}
+
+func testSeries3() *Series {
+	sh := testSeriesHeader3()
+	return &Series{
+		Header: sh,
+		Points: testPoints(),
+	}
+}
+
 func TestSeriesSize(t *testing.T) {
 	s := testSeries()
 	size := s.Size()
@@ -72,6 +88,40 @@ func testSeriesHeader() SeriesHeader {
 	return sh
 }
 
+func testSeriesHeader2() SeriesHeader {
+	sh := SeriesHeader{
+		Name:           "test2",
+		QueryStatement: "SELECT TRICKSTER2!",
+		Tags:           Tags{"test2": "value2"},
+		FieldsList: []timeseries.FieldDefinition{
+			{
+				Name:     "Field1",
+				DataType: timeseries.FieldDataType(1),
+			},
+		},
+		TimestampIndex: 37,
+		Size:           56,
+	}
+	return sh
+}
+
+func testSeriesHeader3() SeriesHeader {
+	sh := SeriesHeader{
+		Name:           "test3",
+		QueryStatement: "SELECT TRICKSTER!",
+		Tags:           Tags{"test3": "value3"},
+		FieldsList: []timeseries.FieldDefinition{
+			{
+				Name:     "Field1",
+				DataType: timeseries.FieldDataType(1),
+			},
+		},
+		TimestampIndex: 37,
+		Size:           56,
+	}
+	return sh
+}
+
 func TestSeriesHeaderCalculateHash(t *testing.T) {
 	sh := testSeriesHeader()
 	if sh.CalculateHash() == 0 {
@@ -83,7 +133,7 @@ func TestSeriesHeaderClone(t *testing.T) {
 	sh := testSeriesHeader()
 	sh2 := sh.Clone()
 	if sh2.Size != sh.Size ||
-		len(sh2.FieldsList) != 1 || //len(sh2.FieldsLookup) != 1 ||
+		len(sh2.FieldsList) != 1 ||
 		sh2.FieldsList[0].Name != "Field1" {
 		t.Error("series header clone mismatch")
 	}

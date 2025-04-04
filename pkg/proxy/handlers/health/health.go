@@ -107,24 +107,31 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 	b := bytes.NewBuffer(nil)
 	tw := tabwriter.NewWriter(b, 10, 10, 3, ' ', 0)
 
-	a := make([]string, 0, len(st))
-	u := make([]string, 0, len(st))
-	q := make([]string, 0, len(st))
+	a := make([]string, len(st))
+	u := make([]string, len(st))
+	q := make([]string, len(st))
+	var al, ul, ql int
 
 	for k, v := range st {
 		switch v.Get() {
 		case 1:
-			a = append(a, k)
+			a[al] = k
+			al++
 		case -1:
-			u = append(u, k)
+			u[ul] = k
+			ul++
 		default:
-			q = append(q, k)
+			q[ql] = k
+			ql++
 		}
-
-		sort.Strings(u)
-		sort.Strings(q)
-
 	}
+
+	a = a[:al]
+	u = u[:ul]
+	q = q[:ql]
+
+	sort.Strings(u)
+	sort.Strings(q)
 
 	if len(a) > 0 {
 		json.WriteString(`,"available":[`)

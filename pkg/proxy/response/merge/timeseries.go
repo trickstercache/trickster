@@ -38,7 +38,8 @@ func Timeseries(w http.ResponseWriter, r *http.Request, rgs ResponseGates) {
 	var bestResp *http.Response
 
 	h := w.Header()
-	tsm := make([]timeseries.Timeseries, 0)
+	tsm := make(timeseries.TimeseriesList, len(rgs))
+	var k int
 	for i, rg := range rgs {
 
 		if rg == nil || rg.Resources == nil ||
@@ -61,7 +62,8 @@ func Timeseries(w http.ResponseWriter, r *http.Request, rgs ResponseGates) {
 				ts = rg.Resources.TS
 				continue
 			}
-			tsm = append(tsm, rg.Resources.TS)
+			tsm[k] = rg.Resources.TS
+			k++
 		}
 		if bestResp == nil || resp.StatusCode < bestResp.StatusCode {
 			bestResp = resp
@@ -86,8 +88,8 @@ func Timeseries(w http.ResponseWriter, r *http.Request, rgs ResponseGates) {
 		statusCode = bestResp.StatusCode
 	}
 
-	if len(tsm) > 0 {
-		ts.Merge(true, tsm...)
+	if k > 0 {
+		ts.Merge(true, tsm[:k]...)
 	}
 
 	headers.StripMergeHeaders(h)

@@ -145,14 +145,16 @@ func GetCompatibleWebProviders(acceptedEncodings string) (string, Provider) {
 	if b == 0 {
 		return s, b
 	}
-	comp := make([]string, 0, len(providerValLookup))
+	comp := make([]string, len(providerValLookup))
+	var k int
 	// otherwise, this builds the list of compatible encoders from the bitmap
 	for i := Provider(1); i <= maxWebProvider; i = i << 1 {
 		if b&i == i {
-			comp = append(comp, providerValLookup[i])
+			comp[k] = providerValLookup[i]
+			k++
 		}
 	}
-	return strings.Join(comp, ", "), b
+	return strings.Join(comp[:k], ", "), b
 }
 
 // Clone returns a perfect copy of the
