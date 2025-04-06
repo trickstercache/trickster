@@ -42,8 +42,8 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	qp, qb, fromBody := params.GetRequestValues(r)
 	q := strings.Trim(strings.ToLower(qp.Get(upQuery)), " \t\n")
 	if q == "" {
-		if qb != "" && fromBody {
-			q = qb
+		if len(qb) > 0 && fromBody {
+			q = string(qb)
 		} else {
 			c.ProxyHandler(w, r)
 			return
@@ -78,7 +78,10 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	var valuer = &influxql.NowValuer{Now: time.Now()}
 
-	values, _, _ := params.GetRequestValues(r)
+	values, b, isBody := params.GetRequestValues(r)
+	if isBody {
+		trq.OriginalBody = b
+	}
 	statement := values.Get(upQuery)
 	if methods.HasBody(r.Method) {
 		raw, err := io.ReadAll(r.Body)

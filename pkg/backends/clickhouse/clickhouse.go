@@ -62,8 +62,10 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	var sqlQuery string
 	var qi url.Values
 	isBody := methods.HasBody(r.Method)
+	var originalBody []byte
 	if isBody {
-		sqlQuery = string(request.GetBody(r))
+		originalBody = request.GetBody(r)
+		sqlQuery = string(originalBody)
 	} else {
 		qi = r.URL.Query()
 		if p, ok := qi[upQuery]; ok {
@@ -77,7 +79,9 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	if err != nil {
 		return nil, nil, canOPC, err
 	}
-
+	if isBody && trq != nil {
+		trq.OriginalBody = originalBody
+	}
 	var bf time.Duration
 	res := request.GetResources(r)
 	if res == nil {
