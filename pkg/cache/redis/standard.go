@@ -37,7 +37,7 @@ func (c *Cache) clientOpts() (*redis.Options, error) {
 	}
 
 	if c.Config.Redis.Password != "" {
-		o.Password = c.Config.Redis.Password
+		o.Password = string(c.Config.Redis.Password)
 	}
 
 	if c.Config.Redis.DB != 0 {
