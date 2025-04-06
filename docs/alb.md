@@ -58,7 +58,7 @@ backends:
     path_routing_disabled: true # disables frontend request routing via /node02 path
     origin_url: http://node-02.example.com # make unsecured requests
     request_headers: # this backend might use basic auth headers
-      Authoriziation: "basic jdoe:*****"
+      Authoriziation: "basic jdoe:${NODE_02_AUTH_TOKEN}"
 
   # Trickster 2.0 ALB backend configuration, using above backends as pool members
 
