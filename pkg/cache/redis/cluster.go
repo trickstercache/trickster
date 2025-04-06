@@ -31,7 +31,7 @@ func (c *Cache) clusterOpts() (*redis.ClusterOptions, error) {
 	}
 
 	if c.Config.Redis.Password != "" {
-		o.Password = c.Config.Redis.Password
+		o.Password = string(c.Config.Redis.Password)
 	}
 
 	if c.Config.Redis.MaxRetries != 0 {
