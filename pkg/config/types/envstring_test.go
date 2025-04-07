@@ -24,3 +24,22 @@ func TestEnvString(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "barbaz", string(example))
 }
+
+func TestEnvStringMap(t *testing.T) {
+	os.Setenv("FIZZ", "buzz")
+	os.Setenv("BIZZ", "quux")
+	example := EnvStringMap{}
+	// expect fizz
+	err := example.Unmarshal([]byte(`abc: "${FIZZ}"`))
+	require.NoError(t, err)
+	require.Equal(t, "buzz", example["abc"])
+	// expect bizz
+	err = example.Unmarshal([]byte(`def: "${BIZZ}"`))
+	require.NoError(t, err)
+	require.Equal(t, "quux", example["def"])
+	// expect both
+	err = example.Unmarshal([]byte(`abc: "${FIZZ}"` + "\n" + `def: "${BIZZ}"`))
+	require.NoError(t, err)
+	require.Equal(t, "buzz", example["abc"])
+	require.Equal(t, "quux", example["def"])
+}

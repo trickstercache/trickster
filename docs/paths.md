@@ -67,6 +67,25 @@ To Set a header or parameter means to insert if non-existent, or fully replace i
 
 As an example, if the client request provides a `Cache-Control: no-store` header, a Path Config with a header 'set' directive for `'Cache-Control' = 'no-transform'` will replace the `no-store` entirely with a `no-transform`; client requests that have no `Cache-Control` header that are routed through this Path will have the Trickster-configured header injected outright. The same logic applies to query parameters.
 
+##### Environment Variable Substitution
+
+The `request_headers`, `request_params` and `response_headers` sections support environment variable substitution. This means you can use environment variables in your header or query parameter values. Example:
+
+```yaml
+backends:
+  default:
+    # ...
+    paths:
+      root:
+        # ...
+        request_params:
+          'token': '${REQUEST_PARAM_TOKEN}'
+        request_headers:
+          'X-Auth-Token': '${REQUEST_HEADER_TOKEN}'
+        response_headers:
+          'X-Auth-Token': '${RESPONSE_HEADER_TOKEN}'
+```
+
 #### Appending
 
 Appending a means inserting the header or parameter if it doesn't exist, or appending the configured value(s) into a pre-existing header with the given name. To indicate an append behavior (as opposed to set), prefix the header or parameter name with a '+' in the Path Config.
@@ -124,9 +143,10 @@ backends:
         methods: [ '*' ] # All HTTP methods applicable to this config
         match_type: prefix # matches any path under '/'
         handler: proxy # proxy only, no caching (this is the default)
-        # modify the query params en route to the origin; this adds authToken=secret_string
+        # modify the query params en route to the origin; this adds authToken=${ROOT_REQUEST_AUTH_TOKEN}
+        # (sourced from the environment variable ROOT_REQUEST_AUTH_TOKEN)
         request_params:
-          authToken: secret string
+          authToken: ${ROOT_REQUEST_AUTH_TOKEN}
         # When a user requests a path matching this route, Trickster will
         # inject these headers into the request before contacting the Origin
         request_headers:

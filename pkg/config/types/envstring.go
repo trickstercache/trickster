@@ -23,3 +23,17 @@ func (s *EnvString) Unmarshal(data []byte) error {
 	}
 	return nil
 }
+
+// EnvStringMap is a map of strings that should automatically expand environment variables
+// as it is decoded from YAML (like EnvString).
+type EnvStringMap map[string]string
+
+func (s *EnvStringMap) Unmarshal(data []byte) error {
+	if err := yaml.Unmarshal(data, s); err != nil {
+		return err
+	}
+	for k, v := range *s {
+		(*s)[k] = os.ExpandEnv(v)
+	}
+	return nil
+}
