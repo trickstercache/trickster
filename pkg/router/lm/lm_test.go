@@ -21,7 +21,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/router/route"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/writer"
 )
 
@@ -231,4 +233,31 @@ func verifyTestResponse2(h http.Handler, w *writer.TestResponseWriter,
 
 func verifyBadRequest(w *writer.TestResponseWriter) bool {
 	return w.StatusCode == http.StatusBadRequest
+}
+
+func Test_lmRouter(t *testing.T) {
+	l := lmRouter{
+		routes: map[string]*route.HostRouteSet{
+			"foo": {
+				PrefixMatchRoutes: []*route.PrefixRouteSet{
+					{Path: "/baz", PathLen: 3},
+					{Path: "/quxx", PathLen: 4},
+					{Path: "/ab", PathLen: 2},
+				},
+			},
+		},
+	}
+	// sort the routes (by path length)
+	l.sort()
+	route := l.routes["foo"]
+	require.Equal(t, 3, len(route.PrefixMatchRoutes))
+	prefixes := route.PrefixMatchRoutes
+	// check the order of sorted routes
+	require.Equal(t, "/quxx", prefixes[0].Path)
+	require.Equal(t, 4, prefixes[0].PathLen)
+	require.Equal(t, "/baz", prefixes[1].Path)
+	require.Equal(t, 3, prefixes[1].PathLen)
+	require.Equal(t, "/ab", prefixes[2].Path)
+	require.Equal(t, 2, prefixes[2].PathLen)
+
 }

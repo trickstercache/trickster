@@ -20,6 +20,7 @@ package strings
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -33,62 +34,11 @@ func Substring(s string, i int, length int) string {
 	return s[i : i+length]
 }
 
-// IndexInSlice returns the index of a string element in a given slice
-func IndexInSlice(arr []string, val string) int {
-	for i, v := range arr {
-		if v == val {
-			return i
-		}
-	}
-	return -1
-}
-
-// CloneBoolMap returns an exact copy of a map consisting string key and bool value
-func CloneBoolMap(in map[string]bool) map[string]bool {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]bool)
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
-
-// Equal returns true if the slices contain identical values in the identical order
-func Equal(s1, s2 []string) bool {
-	if s1 == nil && s2 == nil {
-		return true
-	}
-	if s1 == nil || s2 == nil || len(s1) != len(s2) {
-		return false
-	}
-	for i, v := range s1 {
-		if v != s2[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // Unique returns a uniqueified version of the list
 func Unique(in []string) []string {
-	l := len(in)
-	if l == 0 {
-		return in
-	}
-	m := make(map[string]interface{})
-	out := make([]string, l)
-	var k int
-	for _, v := range in {
-		if _, ok := m[v]; ok {
-			continue
-		}
-		out[k] = v
-		k++
-		m[v] = nil
-	}
-	return out[:k]
+	out := slices.Clone(in)
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 // ErrKeyNotInMap represents an error for key not found in map
@@ -97,8 +47,8 @@ var ErrKeyNotInMap = errors.New("key not found in map")
 // StringMap represents a map[string]string
 type StringMap map[string]string
 
-// Lookup represents a map[string]interface{} with assumed nil values
-type Lookup map[string]interface{}
+// Lookup represents a map[string]any with assumed nil values
+type Lookup map[string]any
 
 func (m StringMap) String() string {
 	delimiter := ""
