@@ -17,11 +17,11 @@
 package merge
 
 import (
+	stdbytes "bytes"
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/util/bytes"
-	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
 )
 
 // ResponseGate is a Request/ResponseWriter Pair that must be handled in its entirety
@@ -68,7 +68,7 @@ func (rg *ResponseGate) Write(b []byte) (int, error) {
 		return 0, nil
 	}
 	if len(rg.body) == 0 {
-		rg.body = copiers.CopyBytes(b)
+		rg.body = stdbytes.Clone(b)
 	} else {
 		rg.body = bytes.MergeSlices(rg.body, b)
 	}

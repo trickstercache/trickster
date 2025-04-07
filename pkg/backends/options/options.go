@@ -19,6 +19,7 @@ package options
 import (
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -35,7 +36,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	"github.com/trickstercache/trickster/v2/pkg/router"
-	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 
 	"gopkg.in/yaml.v2"
@@ -311,8 +311,8 @@ func (o *Options) Clone() *Options {
 		no.HealthCheck = o.HealthCheck.Clone()
 	}
 
-	no.Hosts = copiers.CopyStrings(o.Hosts)
-	no.CompressibleTypeList = copiers.CopyStrings(no.CompressibleTypeList)
+	no.Hosts = slices.Clone(o.Hosts)
+	no.CompressibleTypeList = slices.Clone(no.CompressibleTypeList)
 
 	if o.CompressibleTypes != nil {
 		no.CompressibleTypes = make(map[string]interface{})
@@ -531,7 +531,7 @@ func SetDefaults(
 	}
 
 	if metadata.IsDefined("backends", name, "hosts") && o != nil {
-		no.Hosts = copiers.CopyStrings(o.Hosts)
+		no.Hosts = slices.Clone(o.Hosts)
 	}
 
 	if metadata.IsDefined("backends", name, "is_default") {
