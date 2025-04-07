@@ -17,6 +17,9 @@
 package options
 
 import (
+	"maps"
+	"slices"
+
 	stdoutopts "github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
@@ -63,9 +66,9 @@ func (o *Options) Clone() *Options {
 		ServiceName:      o.ServiceName,
 		Endpoint:         o.Endpoint,
 		SampleRate:       o.SampleRate,
-		Tags:             copiers.CopyStringLookup(o.Tags),
-		OmitTags:         copiers.CopyLookup(o.OmitTags),
-		OmitTagsList:     copiers.CopyStrings(o.OmitTagsList),
+		Tags:             maps.Clone(o.Tags),
+		OmitTags:         maps.Clone(o.OmitTags),
+		OmitTagsList:     slices.Clone(o.OmitTagsList),
 		StdOutOptions:    so,
 		attachTagsToSpan: o.attachTagsToSpan,
 	}

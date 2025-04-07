@@ -19,7 +19,9 @@ package options
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/key"
@@ -27,7 +29,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
-	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
 	strutil "github.com/trickstercache/trickster/v2/pkg/util/strings"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
@@ -122,22 +123,22 @@ func (o *Options) Clone() *Options {
 		MatchType:               o.MatchType,
 		HandlerName:             o.HandlerName,
 		Handler:                 o.Handler,
-		RequestHeaders:          copiers.CopyStringLookup(o.RequestHeaders),
-		RequestParams:           copiers.CopyStringLookup(o.RequestParams),
+		RequestHeaders:          maps.Clone(o.RequestHeaders),
+		RequestParams:           maps.Clone(o.RequestParams),
 		ReqRewriter:             o.ReqRewriter,
 		ReqRewriterName:         o.ReqRewriterName,
-		ResponseHeaders:         copiers.CopyStringLookup(o.ResponseHeaders),
+		ResponseHeaders:         maps.Clone(o.ResponseHeaders),
 		ResponseBody:            o.ResponseBody,
 		ResponseBodyBytes:       o.ResponseBodyBytes,
 		CollapsedForwardingName: o.CollapsedForwardingName,
 		CollapsedForwardingType: o.CollapsedForwardingType,
 		NoMetrics:               o.NoMetrics,
 		HasCustomResponseBody:   o.HasCustomResponseBody,
-		Methods:                 copiers.CopyStrings(o.Methods),
-		CacheKeyParams:          copiers.CopyStrings(o.CacheKeyParams),
-		CacheKeyHeaders:         copiers.CopyStrings(o.CacheKeyHeaders),
-		CacheKeyFormFields:      copiers.CopyStrings(o.CacheKeyFormFields),
-		Custom:                  copiers.CopyStrings(o.Custom),
+		Methods:                 slices.Clone(o.Methods),
+		CacheKeyParams:          slices.Clone(o.CacheKeyParams),
+		CacheKeyHeaders:         slices.Clone(o.CacheKeyHeaders),
+		CacheKeyFormFields:      slices.Clone(o.CacheKeyFormFields),
+		Custom:                  slices.Clone(o.Custom),
 		KeyHasher:               o.KeyHasher,
 	}
 	return c
