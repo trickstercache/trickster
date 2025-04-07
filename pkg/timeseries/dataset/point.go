@@ -19,17 +19,14 @@
 package dataset
 
 import (
-	"sync"
-	"sync/atomic"
-
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
 // Point represents a timeseries data point
 type Point struct {
-	Epoch  epoch.Epoch   `msg:"epoch"`
-	Size   int           `msg:"size"`
-	Values []interface{} `msg:"values"`
+	Epoch  epoch.Epoch `msg:"epoch"`
+	Size   int         `msg:"size"`
+	Values []any       `msg:"values"`
 }
 
 // Points is a slice of type *Point
@@ -42,7 +39,7 @@ func (p *Point) Clone() Point {
 		Size:  p.Size,
 	}
 	if p.Values != nil {
-		clone.Values = make([]interface{}, len(p.Values))
+		clone.Values = make([]any, len(p.Values))
 		copy(clone.Values, p.Values)
 	}
 	return clone
@@ -50,18 +47,11 @@ func (p *Point) Clone() Point {
 
 // Size returns the memory utilization of the Points in bytes
 func (p Points) Size() int64 {
-	var c atomic.Int64
-	c.Store(16)
-	var wg sync.WaitGroup
-	for i, pt := range p {
-		wg.Add(1)
-		go func(s, e int64, j int) {
-			c.Add(s)
-			wg.Done()
-		}(int64(pt.Size), int64(pt.Epoch), i)
+	var c int64 = 16
+	for _, pt := range p {
+		c += int64(pt.Size)
 	}
-	wg.Wait()
-	return c.Load()
+	return c
 }
 
 // Clone returns a perfect copy of the Points
