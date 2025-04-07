@@ -34,38 +34,6 @@ func TestSubstring(t *testing.T) {
 	}
 }
 
-func TestEqual(t *testing.T) {
-
-	l1 := []string{"test1", "test2"}
-	l2 := []string{"test1", "test2"}
-	l3 := []string{"test3", "test4"}
-	l4 := []string{}
-
-	if !Equal(l1, l2) {
-		t.Error("expected true got false")
-	}
-
-	if Equal(l1, l3) {
-		t.Error("expected false got true")
-	}
-
-	if Equal(l1, l4) {
-		t.Error("expected false got true")
-	}
-
-	if !Equal(nil, nil) {
-		t.Error("expected true got false")
-	}
-}
-
-func BenchmarkEqual(b *testing.B) {
-	l1 := []string{"test1", "test2"}
-	l2 := []string{"test1", "test2"}
-	for i := 0; i < b.N; i++ {
-		Equal(l1, l2)
-	}
-}
-
 func TestStringMap(t *testing.T) {
 
 	sm := StringMap(map[string]string{"test": "value"})

@@ -34,11 +34,6 @@ func Substring(s string, i int, length int) string {
 	return s[i : i+length]
 }
 
-// Equal returns true if the slices contain identical values in the identical order
-func Equal(s1, s2 []string) bool {
-	return slices.Equal(s1, s2)
-}
-
 // Unique returns a uniqueified version of the list
 func Unique(in []string) []string {
 	out := slices.Clone(in)
