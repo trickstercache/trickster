@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
@@ -32,14 +33,26 @@ func testPoints() Points {
 		Point{
 			Epoch:  epoch.Epoch(5 * timeseries.Second),
 			Size:   27,
-			Values: []interface{}{1, 37},
+			Values: []any{1, 37},
 		},
 		Point{
 			Epoch:  epoch.Epoch(10 * timeseries.Second),
 			Size:   27,
-			Values: []interface{}{1, 24},
+			Values: []any{1, 24},
 		},
 	}
+}
+
+func genTestPoints(baseEpoch, n int) Points {
+	points := make(Points, n)
+	for i := 0; i < n; i++ {
+		points[i] = Point{
+			Epoch:  epoch.Epoch((i * 10 * timeseries.Second) + baseEpoch),
+			Size:   27,
+			Values: []any{1, 24 + (i * 5)},
+		}
+	}
+	return points
 }
 
 func TestPointClone(t *testing.T) {
@@ -51,6 +64,17 @@ func TestPointClone(t *testing.T) {
 	p2 := p.Clone()
 	if p2.Epoch != p.Epoch || p2.Values[0] != p.Values[0] || p2.Size != p.Size {
 		t.Error("clone mismatch")
+	}
+}
+
+func BenchmarkPointClone(b *testing.B) {
+	p := &Point{
+		Epoch:  epoch.Epoch(1),
+		Size:   27,
+		Values: []interface{}{1},
+	}
+	for i := 0; i < b.N; i++ {
+		p.Clone()
 	}
 }
 
@@ -107,6 +131,21 @@ func TestPointsClone(t *testing.T) {
 		t.Error("clone mismatch")
 	}
 
+}
+
+func TestPointsSize(t *testing.T) {
+	pts := testPoints()
+	size := pts.Size()
+	require.Equal(t, int64(70), size)
+}
+
+func BenchmarkPointsSize(b *testing.B) {
+	for i := range b.N {
+		b.StopTimer()
+		pts := genTestPoints(i, 1000)
+		b.StartTimer()
+		pts.Size()
+	}
 }
 
 func TestPointsSort(t *testing.T) {

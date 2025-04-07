@@ -19,7 +19,6 @@ package lm
 
 import (
 	"net/http"
-	"slices"
 	"sort"
 	"strings"
 
@@ -161,7 +160,6 @@ func (rt *lmRouter) sort() {
 		}
 		prs := prefixRouteSets(hrc.PrefixMatchRoutes)
 		sort.Sort(prs)
-		slices.Reverse(prs)
 		hrc.PrefixMatchRoutes = route.PrefixRouteSets(prs)
 	}
 }
@@ -238,5 +236,5 @@ func (prs prefixRouteSets) Swap(i, j int) {
 }
 
 func (prs prefixRouteSets) Less(i, j int) bool {
-	return prs[i].PathLen < prs[j].PathLen
+	return prs[i].PathLen > prs[j].PathLen
 }

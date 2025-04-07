@@ -34,46 +34,6 @@ func TestSubstring(t *testing.T) {
 	}
 }
 
-func TestIndexOfString(t *testing.T) {
-
-	arr := []string{"string0", "string1", "string2"}
-
-	i := IndexInSlice(arr, "string0")
-	if i != 0 {
-		t.Errorf(`expected 0. got %d`, i)
-	}
-
-	i = IndexInSlice(arr, "string3")
-	if i != -1 {
-		t.Errorf(`expected -1. got %d`, i)
-	}
-
-}
-
-func TestEqual(t *testing.T) {
-
-	l1 := []string{"test1", "test2"}
-	l2 := []string{"test1", "test2"}
-	l3 := []string{"test3", "test4"}
-	l4 := []string{}
-
-	if !Equal(l1, l2) {
-		t.Error("expected true got false")
-	}
-
-	if Equal(l1, l3) {
-		t.Error("expected false got true")
-	}
-
-	if Equal(l1, l4) {
-		t.Error("expected false got true")
-	}
-
-	if !Equal(nil, nil) {
-		t.Error("expected true got false")
-	}
-}
-
 func TestStringMap(t *testing.T) {
 
 	sm := StringMap(map[string]string{"test": "value"})
@@ -82,29 +42,6 @@ func TestStringMap(t *testing.T) {
 
 	if s != expected {
 		t.Errorf("expected %s got %s", expected, s)
-	}
-
-}
-
-func TestCloneBoolMap(t *testing.T) {
-
-	m1 := CloneBoolMap(nil)
-	if m1 != nil {
-		t.Error("expected nil map")
-	}
-
-	const expected = true
-
-	m := map[string]bool{"test": expected}
-	m2 := CloneBoolMap(m)
-
-	v, ok := m2["test"]
-	if !ok {
-		t.Errorf("expected true got %t", ok)
-	}
-
-	if v != expected {
-		t.Errorf("expected %t got %t", expected, v)
 	}
 
 }
@@ -120,6 +57,13 @@ func TestUnique(t *testing.T) {
 	empty := Unique(nil)
 	if len(empty) != 0 {
 		t.Error("expected empty list")
+	}
+}
+
+func BenchmarkUnique(b *testing.B) {
+	initial := []string{"test", "test", "test1", "test2", "test2", "test", "test3"}
+	for i := 0; i < b.N; i++ {
+		Unique(initial)
 	}
 }
 
