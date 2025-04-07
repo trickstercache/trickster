@@ -17,6 +17,8 @@
 package dataset
 
 import (
+	"fmt"
+	"slices"
 	"testing"
 )
 
@@ -40,24 +42,50 @@ func TestEqual(t *testing.T) {
 
 func TestListMerge(t *testing.T) {
 
-	sl := SeriesList{testSeries()}
-	if sl.Equal(nil) {
-		t.Error("expected false")
+	tests := []struct {
+		sl1, sl2 SeriesList
+		expected []string
+	}{
+		{
+			sl1:      SeriesList{testSeries()},
+			sl2:      SeriesList{testSeries2()},
+			expected: []string{"test", "test2"},
+		},
+		{
+			sl1:      SeriesList{testSeries(), testSeries3()},
+			sl2:      SeriesList{testSeries(), testSeries2()},
+			expected: []string{"test", "test3", "test2"},
+		},
+		{
+			sl1:      SeriesList{testSeries3(), testSeries2(), testSeries(), testSeries3()},
+			sl2:      SeriesList{testSeries(), testSeries2(), testSeries3(), testSeries3(), testSeries()},
+			expected: []string{"test", "test2", "test3"},
+		},
 	}
 
-	sl2 := SeriesList{testSeries(), testSeries()}
-	sl2[1].Header.Name = "test2"
-
-	sl = sl.merge(sl2)
-
-	if len(sl) != 2 {
-		t.Error("expected 2 got", len(sl))
+	namesFromList := func(sl SeriesList) []string {
+		out := make([]string, len(sl))
+		for i, s := range sl {
+			out[i] = s.Header.Name
+		}
+		return out
 	}
 
-	sl = SeriesList{testSeries(), testSeries3()}
-	sl2 = SeriesList{testSeries(), testSeries2()}
-	sl = sl.merge(sl2)
-	if len(sl) != 3 {
-		t.Error("expected 3 got", len(sl))
+	for i, test := range tests {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			if test.sl1.Equal(nil) || test.sl2.Equal(nil) {
+				t.Error("expected false")
+			}
+			out := test.sl1.merge(test.sl2)
+			if len(out) != len(test.expected) {
+				t.Errorf("expected %d got %d", len(test.expected), len(out))
+			} else {
+				names := namesFromList(out)
+				if !slices.Equal(names, test.expected) {
+					t.Errorf("expected %v got %v", test.expected, names)
+				}
+			}
+		})
 	}
+
 }
