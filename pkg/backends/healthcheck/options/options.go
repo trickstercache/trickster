@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
@@ -59,7 +60,7 @@ type Options struct {
 	// Query provides the HTTP query parameters to use when making an upstream health check
 	Query string `yaml:"query,omitempty"`
 	// Headers provides the HTTP Headers to apply when making an upstream health check
-	Headers map[string]string `yaml:"headers,omitempty"`
+	Headers types.EnvStringMap `yaml:"headers,omitempty"`
 	// Body provides a body to apply when making an upstream health check request
 	Body string `yaml:"body,omitempty"`
 	// TimeoutMS is the amount of time a health check probe should wait for a response
@@ -109,7 +110,7 @@ func (o *Options) Clone() *Options {
 	c.IntervalMS = o.IntervalMS
 	c.ExpectedBody = o.ExpectedBody
 	if o.Headers != nil {
-		c.Headers = headers.Lookup(o.Headers).Clone()
+		c.Headers = types.EnvStringMap(headers.Lookup(o.Headers).Clone())
 	}
 	if o.ExpectedHeaders != nil {
 		c.ExpectedHeaders = headers.Lookup(o.ExpectedHeaders).Clone()

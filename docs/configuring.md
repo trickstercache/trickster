@@ -20,6 +20,20 @@ When a `-config` parameter is not provided, Trickster will check for the presenc
 
 Refer to [examples/conf/example.full.yaml](../examples/conf/example.full.yaml) for full documentation on format of a configuration file.
 
+### Configuring Secrets or Sensitive Information
+
+Trickster supports Environment variable substitution in its configuration file where sensitive information is expected.
+- Supported via the following fields:
+  - `caches[*].redis.password`, `backends[*].healthcheck.headers`, `backends[*].paths[*].request_headers`, `backends[*].paths[*].request_params`, `backends[*].paths[*].response_headers`
+
+Usage `${ENV_VAR_NAME}`, example:
+```yaml
+caches:
+  default:
+    redis:
+      password: "${MY_REDIS_PW}"
+```
+
 ## Environment Variables
 
 Trickster will then check for and evaluate the following Environment Variables:

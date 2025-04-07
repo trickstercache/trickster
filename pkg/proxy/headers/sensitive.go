@@ -24,10 +24,10 @@ var sensitiveCredentials = map[string]interface{}{NameAuthorization: nil}
 
 // HideAuthorizationCredentials replaces any sensitive HTTP header values with 5
 // asterisks sensitive headers are defined in the sensitiveCredentials map
-func HideAuthorizationCredentials(headers Lookup) {
+func HideAuthorizationCredentials[m ~map[K]V, K ~string, V ~string](headers m) {
 	// strip Authorization Headers
 	for k := range headers {
-		if _, ok := sensitiveCredentials[k]; ok {
+		if _, ok := sensitiveCredentials[string(k)]; ok {
 			headers[k] = "*****"
 		}
 	}
