@@ -38,8 +38,7 @@ func Substring(s string, i int, length int) string {
 func Unique(in []string) []string {
 	out := slices.Clone(in)
 	slices.Sort(out)
-	out = slices.Compact(out)
-	return out
+	return slices.Compact(out)
 }
 
 // ErrKeyNotInMap represents an error for key not found in map
