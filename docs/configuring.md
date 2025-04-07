@@ -24,7 +24,7 @@ Refer to [examples/conf/example.full.yaml](../examples/conf/example.full.yaml) f
 
 Trickster supports Environment variable substitution in its configuration file where sensitive information is expected.
 - Supported via the following fields:
-  - `caches[*].redis.password`, `backends[*].healthcheck.headers`, `backends[*].paths[*].request_headers`, `backends[*].paths[*].response_headers`
+  - `caches[*].redis.password`, `backends[*].healthcheck.headers`, `backends[*].paths[*].request_headers`, `backends[*].paths[*].request_params`, `backends[*].paths[*].response_headers`
 
 Usage `${ENV_VAR_NAME}`, example:
 ```yaml

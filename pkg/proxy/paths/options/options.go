@@ -53,8 +53,8 @@ type Options struct {
 	CacheKeyFormFields []string `yaml:"cache_key_form_fields,omitempty"`
 	// RequestHeaders is a map of headers that will be added to requests to the upstream Origin for this path
 	RequestHeaders types.EnvStringMap `yaml:"request_headers,omitempty"`
-	// RequestParams is a map of headers that will be added to requests to the upstream Origin for this path
-	RequestParams map[string]string `yaml:"request_params,omitempty"`
+	// RequestParams is a map of parameters that will be added to requests to the upstream Origin for this path
+	RequestParams types.EnvStringMap `yaml:"request_params,omitempty"`
 	// ResponseHeaders is a map of http headers that will be added to responses to the downstream client
 	ResponseHeaders types.EnvStringMap `yaml:"response_headers,omitempty"`
 	// ResponseCode sets a custom response code to be sent to downstream clients for this path.

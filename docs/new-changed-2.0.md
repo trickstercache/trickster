@@ -46,7 +46,7 @@
 - We now support [Simiulated Latency](./simulated-latency.md) if you want to use Trickster for that purpose in a test harness.
 - We now support Environment variable substitution in configuration files where sensitive information is expected.
   - Supported via the following fields:
-    - `caches[*].redis.password`, `backends[*].healthcheck.headers`, `backends[*].paths[*].request_headers`, `backends[*].paths[*].response_headers`
+    - `caches[*].redis.password`, `backends[*].healthcheck.headers`, `backends[*].paths[*].request_headers`, `backends[*].paths[*].request_params`, `backends[*].paths[*].response_headers`
   - Usage: `password: ${MY_SECRET_VAR}`
 
 ## Still to Come

@@ -69,19 +69,21 @@ As an example, if the client request provides a `Cache-Control: no-store` header
 
 ##### Environment Variable Substitution
 
-The `request_headers` and `response_headers` sections support environment variable substitution. This means you can use environment variables in your header or query parameter values. Example:
+The `request_headers`, `request_params` and `response_headers` sections support environment variable substitution. This means you can use environment variables in your header or query parameter values. Example:
 
 ```yaml
 backends:
   default:
-    // ...
+    # ...
     paths:
       root:
-        // ...
+        # ...
+        request_params:
+          'token': '${REQUEST_PARAM_TOKEN}'
         request_headers:
-          'X-Auth-Token': '${AUTH_TOKEN}'
+          'X-Auth-Token': '${REQUEST_HEADER_TOKEN}'
         response_headers:
-          'X-Auth-Token': '${AUTH_TOKEN}'
+          'X-Auth-Token': '${RESPONSE_HEADER_TOKEN}'
 ```
 
 #### Appending
@@ -141,9 +143,10 @@ backends:
         methods: [ '*' ] # All HTTP methods applicable to this config
         match_type: prefix # matches any path under '/'
         handler: proxy # proxy only, no caching (this is the default)
-        # modify the query params en route to the origin; this adds authToken=secret_string
+        # modify the query params en route to the origin; this adds authToken=${ROOT_REQUEST_AUTH_TOKEN}
+        # (sourced from the environment variable ROOT_REQUEST_AUTH_TOKEN)
         request_params:
-          authToken: secret string
+          authToken: ${ROOT_REQUEST_AUTH_TOKEN}
         # When a user requests a path matching this route, Trickster will
         # inject these headers into the request before contacting the Origin
         request_headers:
