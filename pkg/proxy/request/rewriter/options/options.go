@@ -16,7 +16,7 @@
 
 package options
 
-import "github.com/trickstercache/trickster/v2/pkg/util/copiers"
+import "slices"
 
 const MaxRewriterChainExecutions int = 32
 
@@ -43,7 +43,7 @@ func (rl RewriteList) Clone() RewriteList {
 	if len(rl) > 0 {
 		rl2 = make(RewriteList, len(rl))
 		for i := range rl {
-			rl2[i] = copiers.CopyStrings(rl[i])
+			rl2[i] = slices.Clone(rl[i])
 		}
 	}
 	return rl2

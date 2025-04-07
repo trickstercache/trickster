@@ -18,8 +18,8 @@ package options
 
 import (
 	"os"
+	"slices"
 
-	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
 	strutil "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
@@ -60,7 +60,7 @@ func (o *Options) Clone() *Options {
 		PrivateKeyPath:            o.PrivateKeyPath,
 		ServeTLS:                  o.ServeTLS,
 		InsecureSkipVerify:        o.InsecureSkipVerify,
-		CertificateAuthorityPaths: copiers.CopyStrings(o.CertificateAuthorityPaths),
+		CertificateAuthorityPaths: slices.Clone(o.CertificateAuthorityPaths),
 		ClientCertPath:            o.ClientCertPath,
 		ClientKeyPath:             o.ClientKeyPath,
 	}

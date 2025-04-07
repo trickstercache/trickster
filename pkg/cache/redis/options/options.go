@@ -16,6 +16,8 @@
 
 package options
 
+import "github.com/trickstercache/trickster/v2/pkg/config/types"
+
 // Options is a collection of Configurations for Connecting to Redis
 type Options struct {
 	// ClientType defines the type of Redis Client ("standard", "cluster", "sentinel")
@@ -27,7 +29,7 @@ type Options struct {
 	// Endpoints represents FQDN:port or IP:Port collection of a Redis Cluster or Sentinel Nodes
 	Endpoints []string `yaml:"endpoints,omitempty"`
 	// Password can be set when using password protected redis instance.
-	Password string `yaml:"password,omitempty"`
+	Password types.EnvString `yaml:"password,omitempty"`
 	// SentinelMaster should be set when using Redis Sentinel to indicate the Master Node
 	SentinelMaster string `yaml:"sentinel_master,omitempty"`
 	// DB is the Database to be selected after connecting to the server.

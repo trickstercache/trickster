@@ -16,7 +16,7 @@
 
 package options
 
-import "github.com/trickstercache/trickster/v2/pkg/util/copiers"
+import "maps"
 
 // Options stores information about Prometheus Options
 type Options struct {
@@ -27,6 +27,6 @@ type Options struct {
 func (o *Options) Clone() *Options {
 	return &Options{
 		InstantRoundMS: o.InstantRoundMS,
-		Labels:         copiers.CopyStringLookup(o.Labels),
+		Labels:         maps.Clone(o.Labels),
 	}
 }

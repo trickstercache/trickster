@@ -16,62 +16,6 @@
 
 package copiers
 
-// CopyBytes returns an exact copy of the byte slice
-func CopyBytes(b []byte) []byte {
-	if b == nil {
-		return nil
-	}
-	clone := make([]byte, len(b))
-	copy(clone, b)
-	return clone
-}
-
-// CopyStrings returns an exact copy of the string slice
-func CopyStrings(s []string) []string {
-	if s == nil {
-		return nil
-	}
-	clone := make([]string, len(s))
-	copy(clone, s)
-	return clone
-}
-
-// CopyInterfaces returns an exact copy of the Interface slice
-// note if the underlying interface value is a Pointer, this will
-// be a shallow copy
-func CopyInterfaces(i []interface{}) []interface{} {
-	if i == nil {
-		return nil
-	}
-	clone := make([]interface{}, len(i))
-	copy(clone, i)
-	return clone
-}
-
-// CopyLookup returns an exact copy of the lookup map
-func CopyLookup(l map[string]interface{}) map[string]interface{} {
-	if l == nil {
-		return nil
-	}
-	clone := make(map[string]interface{})
-	for k := range l {
-		clone[k] = nil
-	}
-	return clone
-}
-
-// CopyStringLookup returns an exact copy of the lookup map
-func CopyStringLookup(l map[string]string) map[string]string {
-	if l == nil {
-		return nil
-	}
-	clone := make(map[string]string)
-	for k, v := range l {
-		clone[k] = v
-	}
-	return clone
-}
-
 // LookupFromStrings retrurns a lookup map from a list of keys
 func LookupFromStrings(s []string) map[string]interface{} {
 	if s == nil {

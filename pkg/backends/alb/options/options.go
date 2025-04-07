@@ -18,10 +18,10 @@ package options
 
 import (
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
-	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
@@ -81,7 +81,7 @@ func (o *Options) Clone() *Options {
 		FgrCodesLookup: fscm,
 		FGRStatusCodes: fsc,
 	}
-	c.Pool = copiers.CopyStrings(o.Pool)
+	c.Pool = slices.Clone(o.Pool)
 	return c
 }
 

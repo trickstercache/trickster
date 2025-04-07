@@ -17,11 +17,10 @@
 package providers
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
-
-	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
 )
 
 const (
@@ -115,14 +114,14 @@ func (p Provider) String() string {
 func WebProviders() []string {
 	mtx.Lock()
 	defer mtx.Unlock()
-	return copiers.CopyStrings(webProviders)
+	return slices.Clone(webProviders)
 }
 
 // Providers returns the list of encodings that are known to be decodable in a web browser
 func Providers() []string {
 	mtx.Lock()
 	defer mtx.Unlock()
-	return copiers.CopyStrings(providers)
+	return slices.Clone(providers)
 }
 
 // GetCompatibleWebProviders returns the string and the bitmap of the compatible providers
