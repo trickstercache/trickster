@@ -17,6 +17,7 @@
 package providers
 
 import (
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -156,13 +157,9 @@ func GetCompatibleWebProviders(acceptedEncodings string) (string, Provider) {
 	return strings.Join(comp[:k], ", "), b
 }
 
-// Clone returns a perfect copy of the
+// Clone returns a perfect copy of the lookup
 func (l Lookup) Clone() Lookup {
-	c := make(Lookup)
-	for k, v := range l {
-		c[k] = v
-	}
-	return c
+	return maps.Clone(l)
 }
 
 // ProviderID returns the byte value of the provided encoding provider name

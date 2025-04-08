@@ -17,6 +17,7 @@
 package model
 
 import (
+	"maps"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -220,10 +221,7 @@ func (se *DF4SeriesEnvelope) Clone() timeseries.Timeseries {
 	}
 
 	for i, v := range se.Meta {
-		b.Meta[i] = make(map[string]interface{}, len(se.Meta[i]))
-		for k, mv := range v {
-			b.Meta[i][k] = mv
-		}
+		b.Meta[i] = maps.Clone(v)
 	}
 
 	return b

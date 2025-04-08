@@ -20,6 +20,7 @@ package negative
 
 import (
 	"fmt"
+	"maps"
 	"strconv"
 	"time"
 )
@@ -43,11 +44,7 @@ type Lookups map[string]Lookup
 
 // Clone returns an exact copy of a Config
 func (nc Config) Clone() Config {
-	nc2 := make(Config)
-	for k, v := range nc {
-		nc2[k] = v
-	}
-	return nc2
+	return maps.Clone(nc)
 }
 
 // Get returns the named Lookup from the Lookups collection if it exists
