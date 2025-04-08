@@ -157,7 +157,7 @@ func GetCompatibleWebProviders(acceptedEncodings string) (string, Provider) {
 	return strings.Join(comp[:k], ", "), b
 }
 
-// Clone returns a perfect copy of the
+// Clone returns a perfect copy of the lookup
 func (l Lookup) Clone() Lookup {
 	return maps.Clone(l)
 }
