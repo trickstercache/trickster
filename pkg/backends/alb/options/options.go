@@ -18,6 +18,7 @@ package options
 
 import (
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 
@@ -68,10 +69,7 @@ func (o *Options) Clone() *Options {
 	}
 
 	if o.FgrCodesLookup != nil {
-		fscm = make(map[int]interface{})
-		for k, v := range o.FgrCodesLookup {
-			fscm[k] = v
-		}
+		fscm = maps.Clone(o.FgrCodesLookup)
 	}
 
 	c := &Options{

@@ -17,6 +17,7 @@
 package options
 
 import (
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -315,10 +316,7 @@ func (o *Options) Clone() *Options {
 	no.CompressibleTypeList = slices.Clone(no.CompressibleTypeList)
 
 	if o.CompressibleTypes != nil {
-		no.CompressibleTypes = make(map[string]interface{})
-		for k := range o.CompressibleTypes {
-			no.CompressibleTypes[k] = true
-		}
+		no.CompressibleTypes = maps.Clone(o.CompressibleTypes)
 	}
 
 	no.Paths = make(map[string]*po.Options)
@@ -328,11 +326,7 @@ func (o *Options) Clone() *Options {
 
 	no.NegativeCacheName = o.NegativeCacheName
 	if o.NegativeCache != nil {
-		m := make(map[int]time.Duration)
-		for c, t := range o.NegativeCache {
-			m[c] = t
-		}
-		no.NegativeCache = m
+		no.NegativeCache = maps.Clone(o.NegativeCache)
 	}
 
 	if o.TLS != nil {
