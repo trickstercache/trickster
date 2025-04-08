@@ -1,0 +1,97 @@
+header:
+  schema-version: 2.0.0
+  last-updated: '2025-04-08'
+  last-reviewed: '2025-04-08'
+  url: https://github.com/trickstercache/trickster
+
+project:
+  name: Trickster
+  homepage: https://trickstercache.org/
+  roadmap: https://github.com/trickstercache/trickster/blob/main/docs/roadmap.md
+  administrators:
+    - name: James Ranson
+      affiliation: Virga
+      email: james@ranson.org
+      primary: true
+    - name: Chris Randles
+      affiliation: WB Discovery
+      email: randles.chris@gmail.com
+    - name: Adam Ross
+      affiliation: Amazon
+      email: adamross1126@gmail.com
+  documentation:
+    code-of-conduct: https://github.com/trickstercache/trickster?tab=coc-ov-file#readme
+    detailed-guide: https://trickstercache.org/docs/
+    quickstart-guide: https://trickstercache.org/docs/quickstart/
+    release-process: https://trickstercache.org/docs/release-info/
+
+  repositories:
+    - name: trickster
+      url: https://github.com/trickstercache/trickster
+      comment: |
+        Trickster is the primary repository of the trickstercache project.
+    - name: helm-charts
+      url: https://github.com/trickstercache/helm-charts
+      comment: |
+        Helm charts repository for Trickster.
+    - name: trickstercache.org
+      url: https://github.com/trickstercache/trickstercache.org
+      comment: |
+        Trickster website repository.
+    - name: tricktool
+      url: https://github.com/trickstercache/tricktool
+      comment: |
+        A companion utility app for Trickster.
+    - name: mockster
+      url: https://github.com/trickstercache/mockster
+      comment: |
+        HTTP Server Mocks for Byte Range and Time Series Databases.
+    - name: benchster
+      url: https://github.com/trickstercache/benchster
+      comment: |
+        Compliance and Benchmarking Tools for HTTP Proxies.
+  vulnerability-reporting:
+    reports-accepted: true
+    bug-bounty-available: false
+    contact:
+      name: Trickster Maintainers
+      email: cncf-trickster-maintainers@lists.cncf.io
+      primary: true
+    comment: |
+      Note that messages to the Maintainers List are not private. If the vulnerability is sensitive and should be communicated privately, contact the Project Lead directly using the contact information in https://github.com/trickstercache/trickster/blob/main/MAINTAINERS.md#project-lead
+    security-policy: https://github.com/trickstercache/trickster/tree/main?tab=security-ov-file#readme
+
+repository:
+  url: https://github.com/trickstercache/trickster
+  status: active
+  accepts-change-request: true
+  accepts-automated-change-request: true
+  core-team:
+    - name: James Ranson
+      affiliation: Virga
+      email: james@ranson.org
+      primary: true
+    - name: Chris Randles
+      affiliation: WB Discovery
+      email: randles.chris@gmail.com
+    - name: Adam Ross
+      affiliation: Amazon
+      email: adamross1126@gmail.com
+  license:
+    url: https://github.com/trickstercache/trickster/blob/main/LICENSE
+    expression: Apache-2.0
+  documentation:
+    contributing-guide: https://github.com/trickstercache/trickster/blob/main/CONTRIBUTING.md
+    governance: https://github.com/trickstercache/trickster/blob/main/GOVERNANCE.md
+    review-policy: https://github.com/trickstercache/trickster/blob/main/MAINTAINERS.md#reviewers
+    security-policy: https://github.com/trickstercache/trickster/tree/main?tab=security-ov-file#readme
+  release:
+    automated-pipeline: true
+    distribution-points:
+      - uri: https://github.com/trickstercache/trickster/releases
+        comment: GitHub Release Page
+  security:
+    assessments:
+      self:
+        comment: |
+          Self assessment has not yet been completed.
