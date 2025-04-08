@@ -131,7 +131,7 @@ func TestProxyRequestBadGateway(t *testing.T) {
 func TestClockOffsetWarning(t *testing.T) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add(headers.NameDate, time.Now().Add(-1*time.Hour).Format(http.TimeFormat))
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 	}
 	s := httptest.NewServer(http.HandlerFunc(handler))
 

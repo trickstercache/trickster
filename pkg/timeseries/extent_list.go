@@ -182,7 +182,7 @@ func (el ExtentList) spliceByTimeAligned(step, maxRange, spliceStep time.Duratio
 		// if the size of the extent is smaller than the max splice size, and
 		// the extent doesn't cross spliceSteps, pass through and continue
 		if e.End.Sub(e.Start) <= maxRange &&
-			e.End.Truncate(spliceStep) == e.Start.Truncate(spliceStep) {
+			e.End.Truncate(spliceStep).Equal(e.Start.Truncate(spliceStep)) {
 			out = append(out, e)
 			continue
 		}
@@ -209,7 +209,7 @@ func (el ExtentList) spliceByTimeAligned(step, maxRange, spliceStep time.Duratio
 		//
 		// this re-checks if e is shallower than maxRange, since it might've just been reduced
 		if e.End.Sub(e.Start) <= maxRange &&
-			e.End.Truncate(spliceStep) == e.Start.Truncate(spliceStep) {
+			e.End.Truncate(spliceStep).Equal(e.Start.Truncate(spliceStep)) {
 			out = append(out, e)
 			continue
 		}

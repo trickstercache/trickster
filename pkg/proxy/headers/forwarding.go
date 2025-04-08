@@ -247,7 +247,7 @@ func HopsFromHeader(h http.Header) Hops {
 func parseForwardHeaders(h http.Header) Hops {
 	fh := h.Get(NameForwarded)
 	if fh != "" {
-		fwds := strings.Split(strings.Replace(fh, " ", "", -1), ",")
+		fwds := strings.Split(strings.ReplaceAll(fh, " ", ""), ",")
 		var k int
 		hops := make(Hops, len(fwds))
 		for _, f := range fwds {
@@ -306,7 +306,7 @@ func formatForwardedAddress(input string) string {
 func parseXForwardHeaders(h http.Header) Hops {
 	xff := h.Get(NameXForwardedFor)
 	if xff != "" {
-		fwds := strings.Split(strings.Replace(xff, " ", "", -1), ",")
+		fwds := strings.Split(strings.ReplaceAll(xff, " ", ""), ",")
 		hops := make(Hops, len(fwds))
 		for i, f := range fwds {
 			hop := &Hop{RemoteAddr: f}

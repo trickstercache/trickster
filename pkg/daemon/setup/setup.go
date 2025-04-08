@@ -95,7 +95,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 
 	applyLoggingConfig(newConf, si.Config)
 
-	//Register Tracing Configurations
+	// Register Tracing Configurations
 	tracers, err := tr.RegisterAll(newConf, false)
 	if err != nil {
 		handleStartupIssue("tracing registration failed",
@@ -142,8 +142,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	alb.StartALBPools(backends, si.HealthChecker.Statuses())
 	routing.RegisterDefaultBackendRoutes(r, backends, tracers)
 	routing.RegisterHealthHandler(mr, newConf.Main.HealthHandlerPath, si.HealthChecker)
-	applyListenerConfigs(newConf, si.Config, r, http.HandlerFunc(rh), mr,
-		tracers, backends, errorFunc)
+	applyListenerConfigs(newConf, si.Config, r, rh, mr, tracers, backends, errorFunc)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
@@ -222,7 +221,8 @@ func applyCachingConfig(si *instance.ServerInstance,
 			// is the only change. In this case, we'll apply the new index configuration,
 			// then add the old cache with the new index config to the new cache map
 			if ocfg.ProviderID == v.ProviderID &&
-				ocfg.ProviderID == providers.Memory {
+				v.ProviderID == providers.Memory {
+				// Note: this is only necessary for the memory cache as all other providers will be closed and reopened with the newest config
 				if v.Index != nil {
 					mc := w.(*memory.Cache)
 					mc.Index.UpdateOptions(v.Index)

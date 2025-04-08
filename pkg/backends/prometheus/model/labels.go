@@ -96,7 +96,6 @@ func MergeAndWriteLabelData(w http.ResponseWriter, r *http.Request, rgs merge.Re
 		}
 	}
 
-	statusCode := 0
 	if ld == nil || len(responses) == 0 {
 		if bestResp != nil {
 			h := w.Header()
@@ -111,12 +110,12 @@ func MergeAndWriteLabelData(w http.ResponseWriter, r *http.Request, rgs merge.Re
 	}
 
 	sort.Ints(responses)
-	statusCode = responses[0]
+	statusCode := responses[0]
 	ld.StartMarshal(w, statusCode)
 
 	if len(ld.Data) > 0 {
 		sort.Strings(ld.Data)
-		w.Write([]byte(fmt.Sprintf(`,"data":["%s"]`, strings.Join(ld.Data, `","`))))
+		fmt.Fprintf(w, `,"data":["%s"]`, strings.Join(ld.Data, `","`))
 	}
 	w.Write([]byte("}"))
 }

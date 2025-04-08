@@ -76,7 +76,7 @@ func (c *Client) caqlHandlerParseTimeRangeQuery(
 
 	qp := r.URL.Query()
 	var err error
-	p := ""
+	var p string
 
 	if p = qp.Get(upQuery); p == "" {
 		if p = qp.Get(upCAQLQuery); p == "" {

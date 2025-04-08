@@ -101,7 +101,7 @@ func (rs *RunState) GetReturnFunc(f StateFn, ds DecisionSet, exitOnEOF bool) Sta
 	} else if ds != nil && rs.curr != nil {
 		if f1, ok := ds[rs.curr.Typ]; ok {
 			if rs.lastkw != nil && rs.curr.Typ > token.CustomKeyword &&
-				!(rs.curr.Typ > rs.lastkw.Typ) {
+				rs.curr.Typ <= rs.lastkw.Typ {
 				rs.WithError(ErrInvalidKeywordOrder)
 				return nil
 			}

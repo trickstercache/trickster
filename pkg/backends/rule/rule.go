@@ -78,7 +78,7 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 		r.ingressReqRewriter.Execute(hr)
 	}
 
-	var h http.Handler = r.defaultRouter
+	h := r.defaultRouter
 	res := r.operationFunc(r.extractionFunc(hr, r.extractionArg),
 		r.operationArg, r.negateOpResult)
 	var nonDefault bool
@@ -134,7 +134,7 @@ func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, e
 		r.ingressReqRewriter.Execute(hr)
 	}
 
-	var h http.Handler = r.defaultRouter
+	h := r.defaultRouter
 	var nonDefault bool
 
 	for _, c := range r.caseList {

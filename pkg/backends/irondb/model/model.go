@@ -399,7 +399,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 // UnmarshalTimeseries converts a JSON blob into a Timeseries value.
 func UnmarshalTimeseries(data []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries,
 	error) {
-	if strings.Contains(strings.Replace(string(data), " ", "", -1),
+	if strings.Contains(strings.ReplaceAll(string(data), " ", ""),
 		`"version":"DF4"`) {
 		se := &DF4SeriesEnvelope{timeRangeQuery: trq}
 		if trq != nil {

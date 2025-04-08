@@ -88,5 +88,5 @@ func IsVirtual(provider string) bool {
 // UsesCache returns true if the backend uses a cache
 // (anything except Virtuals and ReverseProxy)
 func UsesCache(provider string) bool {
-	return !(IsVirtual(provider)) && !(provider == "rp") && !(provider == "reverseproxy")
+	return !IsVirtual(provider) && provider != "rp" && provider != "reverseproxy"
 }

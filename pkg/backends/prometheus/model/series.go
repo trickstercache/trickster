@@ -104,7 +104,6 @@ func MergeAndWriteSeries(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 		}
 	}
 
-	statusCode := 0
 	if s == nil || len(responses) == 0 {
 		if bestResp != nil {
 			h := w.Header()
@@ -119,15 +118,15 @@ func MergeAndWriteSeries(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 	}
 
 	sort.Ints(responses)
-	statusCode = responses[0]
+	statusCode := responses[0]
 	s.StartMarshal(w, statusCode)
 
 	var sep string
 	if len(s.Data) > 0 {
 		w.Write([]byte(`,"data":[`))
 		for _, series := range s.Data {
-			w.Write([]byte(fmt.Sprintf(`%s{"__name__":"%s","instance":"%s","job":"%s"}`,
-				sep, series.Name, series.Instance, series.Job)))
+			fmt.Fprintf(w, `%s{"__name__":"%s","instance":"%s","job":"%s"}`,
+				sep, series.Name, series.Instance, series.Job)
 			sep = ","
 		}
 		w.Write([]byte("]"))

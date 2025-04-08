@@ -131,7 +131,7 @@ func (cp *CachingPolicy) Merge(src *CachingPolicy) {
 
 // TTL returns a TTL based on the subject caching policy and the provided multiplier and max values
 func (cp *CachingPolicy) TTL(multiplier float64, max time.Duration) time.Duration {
-	var ttl time.Duration = time.Duration(cp.FreshnessLifetime) * time.Second
+	ttl := time.Duration(cp.FreshnessLifetime) * time.Second
 	if cp.CanRevalidate {
 		ttl *= time.Duration(multiplier)
 	}
@@ -272,7 +272,7 @@ var supportedCCD = map[string]bool{
 }
 
 func (cp *CachingPolicy) parseCacheControlDirectives(directives string) {
-	dl := strings.Split(strings.Replace(strings.ToLower(directives), " ", "", -1), ",")
+	dl := strings.Split(strings.ReplaceAll(strings.ToLower(directives), " ", ""), ",")
 	var noCache bool
 	var hasSharedMaxAge bool
 	var foundFreshnessDirective bool

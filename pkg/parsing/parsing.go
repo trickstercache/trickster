@@ -84,7 +84,7 @@ var ErrNoLexer = errors.New("no lexer provided")
 // ErrUnsupportedParser means the passed parser does not support the function being called
 var ErrUnsupportedParser = errors.New("this state function is not supported by this parser")
 
-//ErrUnexpectedToken is returned when the next token provided to the parser does not have a
+// ErrUnexpectedToken is returned when the next token provided to the parser does not have a
 // value in the current DecisionSet
 var ErrUnexpectedToken = errors.New("unexpected token")
 

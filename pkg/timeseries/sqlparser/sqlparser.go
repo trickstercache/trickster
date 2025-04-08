@@ -108,6 +108,7 @@ func ParseEpoch(input string) (epoch.Epoch, byte, error) {
 			return million * epoch.Epoch(i), 1, nil
 		}
 	}
+
 	if (li == 10 || li == 19) && (input[4] == '-' && input[7] == '-') {
 		var typ byte = 3
 		year, err := strconv.Atoi(input[0:4])
@@ -122,23 +123,23 @@ func ParseEpoch(input string) (epoch.Epoch, byte, error) {
 		if err != nil {
 			return 0, 0, err
 		}
-		var hour, min, sec int
+		var hour, minute, second int
 		if (li == 19) && (input[13] == ':' && input[16] == ':') {
 			typ = 2
 			hour, err = strconv.Atoi(input[11:13])
 			if err != nil {
 				return 0, 0, err
 			}
-			min, err = strconv.Atoi(input[14:16])
+			minute, err = strconv.Atoi(input[14:16])
 			if err != nil {
 				return 0, 0, err
 			}
-			sec, err = strconv.Atoi(input[17:19])
+			second, err = strconv.Atoi(input[17:19])
 			if err != nil {
 				return 0, 0, err
 			}
 		}
-		t := time.Date(year, time.Month(month), day, hour, min, sec, 0, time.UTC)
+		t := time.Date(year, time.Month(month), day, hour, minute, second, 0, time.UTC)
 		return epoch.Epoch(t.UnixNano()), typ, nil
 	}
 	return ts, 0, timeseries.ErrInvalidTimeFormat

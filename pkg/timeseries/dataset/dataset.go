@@ -496,7 +496,7 @@ func (ds *DataSet) Size() int64 {
 		(len(ds.ExtentList) * 72) +
 		len(ds.Error))
 	for i := range ds.Results {
-		c += int64(ds.Results[i].Size())
+		c += ds.Results[i].Size()
 	}
 	return c
 }

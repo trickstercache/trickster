@@ -324,8 +324,8 @@ func (se *DF4SeriesEnvelope) CropToSize(sz int, t time.Time,
 		newData = append(newData, data[rc:])
 	}
 
-	se.Head.Start += int64(rc) * se.Head.Period
-	se.Head.Count -= int64(rc)
+	se.Head.Start += rc * se.Head.Period
+	se.Head.Count -= rc
 	se.Data = newData
 	se.ExtentList = timeseries.ExtentList{timeseries.Extent{
 		Start: time.Unix(se.Head.Start, 0),

@@ -76,7 +76,7 @@ type Options struct {
 	// timestamps worth of data to store in cache for each query
 	TimeseriesRetentionFactor int `yaml:"timeseries_retention_factor,omitempty"`
 	// TimeseriesEvictionMethodName specifies which methodology ("oldest", "lru") is used to identify
-	//timeseries to evict from a full cache object
+	// timeseries to evict from a full cache object
 	TimeseriesEvictionMethodName string `yaml:"timeseries_eviction_method,omitempty"`
 	// BackfillToleranceMS prevents values with timestamps newer than the provided number of
 	// milliseconds from being cached. this allows propagation of upstream backfill operations

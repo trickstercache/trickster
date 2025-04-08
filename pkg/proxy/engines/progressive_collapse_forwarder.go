@@ -100,10 +100,8 @@ func (pcf *progressiveCollapseForwarder) AddClient(w io.Writer) error {
 	pcf.clientCond.L.Unlock()
 	var readIndex uint64
 	var err error
-	remaining := 0
-	n := 0
+	var n, remaining int
 	buf := make([]byte, HTTPBlockSize)
-
 	for {
 		n, err = pcf.IndexRead(readIndex, buf)
 		if n > 0 {

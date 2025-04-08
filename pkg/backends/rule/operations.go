@@ -21,9 +21,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/trickstercache/trickster/v2/pkg/encoding/base64"
 	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 	"github.com/trickstercache/trickster/v2/pkg/checksum/sha1"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/base64"
 )
 
 type operation string
