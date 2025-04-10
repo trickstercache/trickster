@@ -30,7 +30,8 @@ func emptyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestHandleCompression(t *testing.T) {
-	f := HandleCompression(http.HandlerFunc(emptyHandler), sets.New([]string{"text/plain"}))
+	f := HandleCompression(http.HandlerFunc(emptyHandler),
+		sets.New([]string{headers.ValueTextPlain}))
 	r, _ := http.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
 	w := httptest.NewRecorder()
 	f.ServeHTTP(w, r)

@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -38,11 +39,11 @@ func TestString(t *testing.T) {
 		SupportedHeaderVal:   "test-ae-header",
 		NoTransform:          true,
 		ContentEncoding:      "gzip",
-		CompressTypes:        sets.New([]string{"text/plain"}),
-		ContentType:          "text/plain",
+		CompressTypes:        sets.New([]string{headers.ValueTextPlain}),
+		ContentType:          headers.ValueTextPlain,
 	}
 	s := p.String()
-	if !strings.Contains(s, "text/plain") {
+	if !strings.Contains(s, headers.ValueTextPlain) {
 		t.Error("mismatch")
 	}
 }
@@ -88,7 +89,7 @@ func TestGetEncoderInitializer(t *testing.T) {
 		t.Error("expected empty string, got", s)
 	}
 
-	p.CompressTypes = sets.New([]string{"text/plain"})
+	p.CompressTypes = sets.New([]string{headers.ValueTextPlain})
 	f, s = p.GetEncoderInitializer()
 	if f == nil {
 		t.Error("expected non-nil")

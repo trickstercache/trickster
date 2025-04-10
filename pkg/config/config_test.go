@@ -52,7 +52,7 @@ func TestClone(t *testing.T) {
 
 	const expected = "trickster"
 
-	o.CompressibleTypeList = []string{"text/plain"}
+	o.CompressibleTypeList = []string{headers.ValueTextPlain}
 	o.CompressibleTypes = sets.New(o.CompressibleTypeList)
 	o.NegativeCacheName = "default"
 	o.NegativeCache = map[int]time.Duration{404: time.Duration(10) * time.Second}

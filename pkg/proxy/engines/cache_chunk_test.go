@@ -60,7 +60,7 @@ func TestMultiPartByteRangeChunks(t *testing.T) {
 
 	ranges := make(byterange.Ranges, 1)
 	ranges[0] = byterange.Range{Start: 5, End: 10}
-	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{"text/plain"}), nil)
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{headers.ValueTextPlain}), nil)
 	if err != nil {
 		t.Error("Expected multi part byte range request to pass, but failed with ", err.Error())
 	}
@@ -89,7 +89,7 @@ func TestCacheHitRangeRequestChunks(t *testing.T) {
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
-	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{"text/plain"}), nil)
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{headers.ValueTextPlain}), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -134,7 +134,7 @@ func TestCacheHitRangeRequest2Chunks(t *testing.T) {
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
-	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{"text/plain"}), nil)
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{headers.ValueTextPlain}), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -179,7 +179,7 @@ func TestCacheHitRangeRequest3Chunks(t *testing.T) {
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
-	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{"text/plain"}), nil)
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{headers.ValueTextPlain}), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -222,7 +222,7 @@ func TestPartialCacheMissRangeRequestChunks(t *testing.T) {
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
-	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{"text/plain"}), nil)
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{headers.ValueTextPlain}), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -267,7 +267,7 @@ func TestFullCacheMissRangeRequestChunks(t *testing.T) {
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
-	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{"text/plain"}), nil)
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{headers.ValueTextPlain}), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -321,7 +321,7 @@ func TestRangeRequestFromClientChunks(t *testing.T) {
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
 	d := DocumentFromHTTPResponse(resp, bytes, nil)
-	err = WriteCache(ctx, cache, "testKey2", d, time.Duration(60)*time.Second, sets.New([]string{"text/plain"}), nil)
+	err = WriteCache(ctx, cache, "testKey2", d, time.Duration(60)*time.Second, sets.New([]string{headers.ValueTextPlain}), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -368,12 +368,12 @@ func TestQueryCacheChunks(t *testing.T) {
 	resp.StatusCode = 200
 	resp.Header.Add(headers.NameContentLength, "4")
 	d := DocumentFromHTTPResponse(resp, []byte(expected), nil)
-	d.ContentType = "text/plain"
+	d.ContentType = headers.ValueTextPlain
 
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
-	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{"text/plain"}), nil)
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{headers.ValueTextPlain}), nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -405,7 +405,7 @@ func TestQueryCacheChunks(t *testing.T) {
 		t.Errorf("expected error")
 	}
 
-	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{"text/plain"}), nil)
+	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{headers.ValueTextPlain}), nil)
 	if err != nil {
 		t.Error(err)
 	}

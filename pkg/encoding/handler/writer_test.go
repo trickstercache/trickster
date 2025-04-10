@@ -194,10 +194,10 @@ func TestPrepareWriter(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	h := w.Header()
-	ep := &profile.Profile{Supported: 1, ContentType: "text/plain",
-		CompressTypes: sets.New([]string{"text/plain"})}
+	ep := &profile.Profile{Supported: 1, ContentType: headers.ValueTextPlain,
+		CompressTypes: sets.New([]string{headers.ValueTextPlain})}
 	ew := &responseEncoder{EncodingProfile: ep, ResponseWriter: w}
-	h.Set(headers.NameContentType, "text/plain")
+	h.Set(headers.NameContentType, headers.ValueTextPlain)
 	ew.prepareWriter()
 	if ew.encoder == nil {
 		t.Error("expected non-nil encoder")
